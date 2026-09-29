@@ -8,6 +8,7 @@ import {
   formatSeatIdentity,
   formatShortSeatIdentity,
   PLANNER_INHERITANCE,
+  seatIdsOf,
 } from './identity.js';
 
 const planner: RunnerConfig = { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4' };
@@ -33,7 +34,7 @@ const openCodeMax: RunnerConfig = {
 
 describe('formatSeatIdentity', () => {
   it('names the tool and the model, separated once', () => {
-    const identity = formatSeatIdentity(planner);
+    const identity = formatSeatIdentity({ seat: planner });
 
     expect(identity).toContain('Claude Code CLI');
     expect(identity).toContain(' · ');
@@ -42,30 +43,34 @@ describe('formatSeatIdentity', () => {
   });
 
   it('says the automatic word instead of resolving a catalog default', () => {
-    expect(formatSeatIdentity({ kind: 'cli', tool: 'claude-code' })).toContain('auto');
-    expect(formatSeatIdentity({ kind: 'cli', tool: 'cursor', model: 'auto' })).toBe(
+    expect(formatSeatIdentity({ seat: { kind: 'cli', tool: 'claude-code' } })).toContain('auto');
+    expect(formatSeatIdentity({ seat: { kind: 'cli', tool: 'cursor', model: 'auto' } })).toBe(
       'Cursor Agent CLI · auto',
     );
     expect(
       formatSeatIdentity({
-        kind: 'api',
-        provider: 'custom-endpoint',
-        service: 'custom-endpoint',
-        offering: 'payg',
-        model: 'auto',
-        apiBase: 'https://api.example.test/v1',
+        seat: {
+          kind: 'api',
+          provider: 'custom-endpoint',
+          service: 'custom-endpoint',
+          offering: 'payg',
+          model: 'auto',
+          apiBase: 'https://api.example.test/v1',
+        },
       }),
     ).toContain('auto');
   });
 
   it('renders a hostile model id as measurable, control-free text', () => {
     const identity = formatSeatIdentity({
-      kind: 'api',
-      provider: 'ollama',
-      service: 'ollama',
-      offering: 'local',
-      model: '\u001b[31mvendor/\u001b]0;pwned\u0007model\u001b[0m',
-      apiBase: 'http://127.0.0.1:11434/v1',
+      seat: {
+        kind: 'api',
+        provider: 'ollama',
+        service: 'ollama',
+        offering: 'local',
+        model: '\u001b[31mvendor/\u001b]0;pwned\u0007model\u001b[0m',
+        apiBase: 'http://127.0.0.1:11434/v1',
+      },
     });
 
     expect(identity).not.toContain('\u001b');
@@ -75,17 +80,17 @@ describe('formatSeatIdentity', () => {
   });
 
   it('prefers displayName when provided over formatModelName fallback', () => {
-    expect(formatSeatIdentity(planner, 'Claude Sonnet 5')).toBe(
+    expect(formatSeatIdentity({ seat: planner, displayName: 'Claude Sonnet 5' })).toBe(
       'Claude Code CLI · Claude Sonnet 5',
     );
-    expect(formatSeatIdentity(planner)).toBe('Claude Code CLI · claude-sonnet-4');
+    expect(formatSeatIdentity({ seat: planner })).toBe('Claude Code CLI · claude-sonnet-4');
   });
 
   it('sanitizes displayName before measuring and formatting', () => {
-    const identity = formatSeatIdentity(
-      planner,
-      '\u001b[31mClaude\u001b]0;pwned\u0007 Sonnet 5\u001b[0m',
-    );
+    const identity = formatSeatIdentity({
+      seat: planner,
+      displayName: '\u001b[31mClaude\u001b]0;pwned\u0007 Sonnet 5\u001b[0m',
+    });
     expect(identity).toBe('Claude Code CLI · Claude Sonnet 5');
     expect(identity).not.toContain('\u001b');
     expect(identity).not.toContain('pwned');
@@ -95,111 +100,126 @@ describe('formatSeatIdentity', () => {
     const effort = 'high';
 
     expect(
-      formatSeatIdentity({ kind: 'cli', tool: 'claude-code', model: 'claude-opus-5', effort }),
+      formatSeatIdentity({
+        seat: { kind: 'cli', tool: 'claude-code', model: 'claude-opus-5', effort },
+      }),
     ).toBe(`Claude Code CLI · claude-opus-5 · ${effort}`);
-    expect(formatSeatIdentity({ kind: 'cli', tool: 'claude-code', model: 'claude-opus-5' })).toBe(
-      'Claude Code CLI · claude-opus-5',
-    );
+    expect(
+      formatSeatIdentity({ seat: { kind: 'cli', tool: 'claude-code', model: 'claude-opus-5' } }),
+    ).toBe('Claude Code CLI · claude-opus-5');
   });
 
   it("states an opencode seat's variant as the config spells it", () => {
-    expect(formatSeatIdentity(openCodeMax)).toBe(
+    expect(formatSeatIdentity({ seat: openCodeMax })).toBe(
       `OpenCode CLI · openai/gpt-5.6-luna · ${openCodeMax.variant}`,
     );
   });
 
   it('spells each axis of a cursor id exactly once, in effort, thinking, fast order', () => {
-    expect(formatSeatIdentity(cursorMultiAxis)).toBe(
+    expect(formatSeatIdentity({ seat: cursorMultiAxis })).toBe(
       'Cursor Agent CLI · claude-opus-5 · xhigh · thinking · fast',
     );
     expect(
-      formatSeatIdentity(
-        { kind: 'cli', tool: 'cursor', model: 'claude-opus-5-thinking-high' },
-        'Claude Opus 5 1M Thinking',
-      ),
+      formatSeatIdentity({
+        seat: { kind: 'cli', tool: 'cursor', model: 'claude-opus-5-thinking-high' },
+        displayName: 'Claude Opus 5 1M Thinking',
+      }),
     ).toBe('Cursor Agent CLI · Claude Opus 5 · high · thinking');
-    expect(formatSeatIdentity({ kind: 'cli', tool: 'cursor', model: 'gpt-5.5-none' })).toBe(
-      'Cursor Agent CLI · gpt-5.5 · none',
-    );
+    expect(
+      formatSeatIdentity({ seat: { kind: 'cli', tool: 'cursor', model: 'gpt-5.5-none' } }),
+    ).toBe('Cursor Agent CLI · gpt-5.5 · none');
   });
 
   it("keeps the catalog's own words when a cursor id spells no axis to peel", () => {
     expect(
-      formatSeatIdentity(
-        { kind: 'cli', tool: 'cursor', model: 'claude-4.5-sonnet' },
-        'Claude Sonnet 4.5',
-      ),
+      formatSeatIdentity({
+        seat: { kind: 'cli', tool: 'cursor', model: 'claude-4.5-sonnet' },
+        displayName: 'Claude Sonnet 4.5',
+      }),
     ).toBe('Cursor Agent CLI · Claude Sonnet 4.5');
     expect(
-      formatSeatIdentity({ kind: 'cli', tool: 'cursor', model: 'gpt-5.3-codex' }, 'Codex 5.3'),
+      formatSeatIdentity({
+        seat: { kind: 'cli', tool: 'cursor', model: 'gpt-5.3-codex' },
+        displayName: 'Codex 5.3',
+      }),
     ).toBe('Cursor Agent CLI · Codex 5.3');
   });
 
   it('spells a cursor family by its catalog name with the axis words peeled, never by the id', () => {
     expect(
-      formatSeatIdentity(
-        { kind: 'cli', tool: 'cursor', model: 'gpt-5.3-codex-high' },
-        'Codex 5.3 High',
-      ),
+      formatSeatIdentity({
+        seat: { kind: 'cli', tool: 'cursor', model: 'gpt-5.3-codex-high' },
+        displayName: 'Codex 5.3 High',
+      }),
     ).toBe('Cursor Agent CLI · Codex 5.3 · high');
     expect(
-      formatSeatIdentity(
-        { kind: 'cli', tool: 'cursor', model: 'claude-4.5-sonnet-thinking' },
-        'Claude Sonnet 4.5 Thinking',
-      ),
+      formatSeatIdentity({
+        seat: { kind: 'cli', tool: 'cursor', model: 'claude-4.5-sonnet-thinking' },
+        displayName: 'Claude Sonnet 4.5 Thinking',
+      }),
     ).toBe('Cursor Agent CLI · Claude Sonnet 4.5 · thinking');
     expect(
-      formatSeatIdentity(
-        { kind: 'cli', tool: 'cursor', model: 'claude-4-sonnet-thinking' },
-        'Claude Sonnet 4 Thinking',
-      ),
+      formatSeatIdentity({
+        seat: { kind: 'cli', tool: 'cursor', model: 'claude-4-sonnet-thinking' },
+        displayName: 'Claude Sonnet 4 Thinking',
+      }),
     ).toBe('Cursor Agent CLI · Claude Sonnet 4 · thinking');
   });
 
   it('never carries a parenthesised vendor flag or a context word into the identity', () => {
     expect(
-      formatSeatIdentity(
-        { kind: 'cli', tool: 'cursor', model: 'claude-fable-5-thinking-high' },
-        'Claude Fable 5 1M Thinking (NO ZDR)',
-      ),
+      formatSeatIdentity({
+        seat: { kind: 'cli', tool: 'cursor', model: 'claude-fable-5-thinking-high' },
+        displayName: 'Claude Fable 5 1M Thinking (NO ZDR)',
+      }),
     ).toBe('Cursor Agent CLI · Claude Fable 5 · high · thinking');
   });
 
   it('falls back to the peeled id when the catalog name is nothing but axis words', () => {
-    expect(formatSeatIdentity({ kind: 'cli', tool: 'cursor', model: 'acme-1-high' }, 'High')).toBe(
-      'Cursor Agent CLI · acme-1 · high',
-    );
+    expect(
+      formatSeatIdentity({
+        seat: { kind: 'cli', tool: 'cursor', model: 'acme-1-high' },
+        displayName: 'High',
+      }),
+    ).toBe('Cursor Agent CLI · acme-1 · high');
   });
 
   it('reads one string for the word and the peel, so a padded id still states its axes', () => {
     expect(
       formatSeatIdentity({
-        kind: 'cli',
-        tool: 'cursor',
-        model: 'claude-opus-5-thinking-xhigh-fast ',
+        seat: {
+          kind: 'cli',
+          tool: 'cursor',
+          model: 'claude-opus-5-thinking-xhigh-fast ',
+        },
       }),
     ).toBe('Cursor Agent CLI · claude-opus-5 · xhigh · thinking · fast');
   });
 
   it('names an id made only of axis words instead of splitting it into name and axis', () => {
-    expect(formatSeatIdentity({ kind: 'cli', tool: 'cursor', model: 'extra-high' })).toBe(
+    expect(formatSeatIdentity({ seat: { kind: 'cli', tool: 'cursor', model: 'extra-high' } })).toBe(
       'Cursor Agent CLI · extra-high',
     );
-    expect(formatSeatIdentity({ kind: 'cli', tool: 'cursor', model: 'thinking-fast' })).toBe(
-      'Cursor Agent CLI · thinking-fast',
-    );
+    expect(
+      formatSeatIdentity({ seat: { kind: 'cli', tool: 'cursor', model: 'thinking-fast' } }),
+    ).toBe('Cursor Agent CLI · thinking-fast');
   });
 
   it('adds nothing on a channel that carries no effort, whatever the config holds', () => {
-    expect(formatSeatIdentity({ ...build, effort: 'high' })).toBe('Ollama · qwen2.5-coder:7b');
+    // SeatIds now names a kind too, so the effort literal no longer narrows against the union.
+    expect(formatSeatIdentity({ seat: { ...build, effort: 'high' as const } })).toBe(
+      'Ollama · qwen2.5-coder:7b',
+    );
   });
 
   it('renders a hostile variant as measurable, control-free text', () => {
     const identity = formatSeatIdentity({
-      kind: 'cli',
-      tool: 'opencode',
-      model: 'openai/gpt-5.6-luna',
-      variant: '\u001b[31mhigh\u001b]0;pwned\u0007',
+      seat: {
+        kind: 'cli',
+        tool: 'opencode',
+        model: 'openai/gpt-5.6-luna',
+        variant: '\u001b[31mhigh\u001b]0;pwned\u0007',
+      },
     });
 
     expect(identity).not.toContain('\u001b');
@@ -211,36 +231,81 @@ describe('formatSeatIdentity', () => {
   it('names a claude-code alias by its resolved name, and by its id when none resolved', () => {
     const seat: RunnerConfig = { kind: 'cli', tool: 'claude-code', model: 'fable' };
 
-    expect(formatSeatIdentity(seat, 'Fable 5.1')).toBe('Claude Code CLI · Fable 5.1');
-    expect(formatSeatIdentity(seat)).toBe('Claude Code CLI · fable');
+    expect(formatSeatIdentity({ seat: seat, displayName: 'Fable 5.1' })).toBe(
+      'Claude Code CLI · Fable 5.1',
+    );
+    expect(formatSeatIdentity({ seat: seat })).toBe('Claude Code CLI · fable');
   });
 });
 
 describe('formatShortSeatIdentity', () => {
   it('drops the brand and keeps every remaining word', () => {
-    expect(formatShortSeatIdentity(planner)).toBe('claude-sonnet-4');
-    expect(formatShortSeatIdentity(build)).toBe('qwen2.5-coder:7b');
-    expect(formatShortSeatIdentity({ kind: 'cli', tool: 'claude-code' })).toBe('auto');
+    expect(formatShortSeatIdentity({ seat: planner })).toBe('claude-sonnet-4');
+    expect(formatShortSeatIdentity({ seat: build })).toBe('qwen2.5-coder:7b');
+    expect(formatShortSeatIdentity({ seat: { kind: 'cli', tool: 'claude-code' } })).toBe('auto');
   });
 
   it('carries no axis word, in the suffix or inside the model word', () => {
-    expect(formatShortSeatIdentity(cursorMultiAxis)).toBe('claude-opus-5');
-    expect(formatShortSeatIdentity(openCodeMax)).toBe('openai/gpt-5.6-luna');
+    expect(formatShortSeatIdentity({ seat: cursorMultiAxis })).toBe('claude-opus-5');
+    expect(formatShortSeatIdentity({ seat: openCodeMax })).toBe('openai/gpt-5.6-luna');
   });
 
   it('peels the catalog name of a cursor seat the same way the full form does', () => {
     expect(
-      formatShortSeatIdentity(
-        { kind: 'cli', tool: 'cursor', model: 'gpt-5.3-codex-high' },
-        'Codex 5.3 High',
-      ),
+      formatShortSeatIdentity({
+        seat: { kind: 'cli', tool: 'cursor', model: 'gpt-5.3-codex-high' },
+        displayName: 'Codex 5.3 High',
+      }),
     ).toBe('Codex 5.3');
   });
 
   it('still names a model whose only word is the brand', () => {
-    expect(formatShortSeatIdentity({ kind: 'cli', tool: 'claude-code', model: 'claude' })).toBe(
-      'claude',
+    expect(
+      formatShortSeatIdentity({ seat: { kind: 'cli', tool: 'claude-code', model: 'claude' } }),
+    ).toBe('claude');
+  });
+});
+
+describe('a seat named by the ids a run recorded', () => {
+  it('reads exactly as the configured seat the ids were taken from', () => {
+    const opusMax: RunnerConfig = {
+      kind: 'cli',
+      tool: 'claude-code',
+      model: 'opus',
+      effort: 'max',
+    };
+    for (const runner of [planner, build, cursorMultiAxis, openCodeMax, opusMax]) {
+      const ids = seatIdsOf(runner);
+      expect(formatSeatIdentity({ seat: ids })).toBe(formatSeatIdentity({ seat: runner }));
+      expect(formatSeatIdentity({ seat: ids, displayName: 'Label 1' })).toBe(
+        formatSeatIdentity({ seat: runner, displayName: 'Label 1' }),
+      );
+      expect(formatShortSeatIdentity({ seat: ids })).toBe(
+        formatShortSeatIdentity({ seat: runner }),
+      );
+    }
+    expect(formatSeatIdentity({ seat: seatIdsOf(opusMax), displayName: 'Opus 5.5' })).toBe(
+      'Claude Code CLI · Opus 5.5 · max',
     );
+  });
+
+  it('shortens a label the way the rail does: the brand dropped, a cursor axis peeled', () => {
+    expect(
+      formatShortSeatIdentity({
+        seat: { tool: 'ollama', model: 'claude-sonnet-5' },
+        displayName: 'Claude Sonnet 5',
+      }),
+    ).toBe('Sonnet 5');
+    expect(
+      formatShortSeatIdentity({
+        seat: { tool: 'cursor', model: 'gpt-5.3-codex-high' },
+        displayName: 'Codex 5.3 High',
+      }),
+    ).toBe('Codex 5.3');
+    expect(formatShortSeatIdentity({ seat: { tool: 'cursor', model: 'gpt-5.3-codex-high' } })).toBe(
+      'gpt-5.3-codex',
+    );
+    expect(formatShortSeatIdentity({ seat: { tool: 'codex' } })).toBe('auto');
   });
 });
 
@@ -396,11 +461,13 @@ describe('fitSeatIdentity', () => {
   });
 
   it('leaves an identity that already fits alone', () => {
-    expect(fitSeatIdentity({ runner: planner, budget: 80 })).toBe(formatSeatIdentity(planner));
+    expect(fitSeatIdentity({ runner: planner, budget: 80 })).toBe(
+      formatSeatIdentity({ seat: planner }),
+    );
   });
 
   it('cuts the suffixed identity, keeping the tool name and losing the axis tail', () => {
-    const full = formatSeatIdentity(cursorMultiAxis);
+    const full = formatSeatIdentity({ seat: cursorMultiAxis });
     const fitted = fitSeatIdentity({ runner: cursorMultiAxis, budget: full.length - 8 });
 
     expect(getTerminalCellWidth(fitted)).toBeLessThanOrEqual(full.length - 8);
@@ -447,7 +514,7 @@ describe('cutSeatIdentity', () => {
       model: 'claude-sonnet-4',
       effort: 'high',
     };
-    const identity = formatSeatIdentity(seat);
+    const identity = formatSeatIdentity({ seat: seat });
 
     expect(identity).toBe('Claude Code CLI · claude-sonnet-4 · high');
     for (let budget = 33; budget < getTerminalCellWidth(identity); budget++) {
@@ -460,16 +527,110 @@ describe('cutSeatIdentity', () => {
   });
 
   it('matches fitSeatIdentity for every budget from 4 to identity length', () => {
-    const identity = formatSeatIdentity(planner);
+    const identity = formatSeatIdentity({ seat: planner });
     for (let budget = 4; budget <= identity.length; budget++) {
       expect(fitSeatIdentity({ runner: planner, budget })).toBe(cutSeatIdentity(identity, budget));
     }
   });
 
   it('never leaves a trailing separator before the ellipsis at any budget', () => {
-    const identity = formatSeatIdentity(planner);
+    const identity = formatSeatIdentity({ seat: planner });
     for (let budget = 4; budget <= identity.length; budget++) {
       expect(fitSeatIdentity({ runner: planner, budget })).not.toMatch(/[ ·]…$/);
     }
+  });
+});
+
+describe('kind-aware seat identity', () => {
+  const apiTwin = (provider: string, model?: string): RunnerConfig => ({
+    kind: 'api',
+    provider,
+    service: provider,
+    offering: 'payg',
+    ...(model !== undefined && { model }),
+    apiBase: 'https://my-endpoint.example/v1',
+    apiKey: 'sk-inline',
+  });
+
+  it('keeps a custom API provider literal even when it reuses a CLI tool id', () => {
+    expect(formatSeatIdentity({ seat: apiTwin('opencode', 'gpt-5') })).toBe('opencode · gpt-5');
+    expect(formatSeatIdentity({ seat: apiTwin('claude-code', 'sonnet') })).toBe(
+      'claude-code · sonnet',
+    );
+  });
+
+  it('keeps a catalogued API provider under its display name', () => {
+    expect(formatSeatIdentity({ seat: build })).toBe('Ollama · qwen2.5-coder:7b');
+  });
+
+  it('keeps a CLI seat under its catalog display name', () => {
+    expect(formatSeatIdentity({ seat: openCodeMax })).toBe(
+      `OpenCode CLI · openai/gpt-5.6-luna · ${openCodeMax.variant}`,
+    );
+  });
+
+  it('never reads an API seat model through the CLI tool vocabulary it is named after', () => {
+    // `cursor` is a CLI tool id whose model-id channel peels axis words; an API
+    // seat that reuses the name keeps the model id exactly as configured.
+    expect(formatSeatIdentity({ seat: apiTwin('cursor', 'gpt-5.3-codex-high') })).toBe(
+      'cursor · gpt-5.3-codex-high',
+    );
+    expect(formatShortSeatIdentity({ seat: apiTwin('cursor', 'gpt-5.3-codex-high') })).toBe(
+      'gpt-5.3-codex-high',
+    );
+  });
+
+  it('spells a recorded identity with the kind the caller recovered for it', () => {
+    const recorded = { tool: 'opencode', model: 'gpt-5' };
+    expect(formatSeatIdentity({ seat: recorded })).toBe('OpenCode CLI · gpt-5');
+    expect(formatSeatIdentity({ seat: recorded, displayName: undefined, kind: 'api' })).toBe(
+      'opencode · gpt-5',
+    );
+    expect(formatShortSeatIdentity({ seat: recorded, displayName: undefined, kind: 'api' })).toBe(
+      'gpt-5',
+    );
+  });
+
+  it('reads a recorded seat by the kind the record kept for it', () => {
+    const recorded = seatIdsOf(apiTwin('opencode', 'gpt-5'));
+
+    expect(recorded.kind).toBe('api');
+    expect(formatSeatIdentity({ seat: recorded })).toBe('opencode · gpt-5');
+    expect(formatShortSeatIdentity({ seat: recorded })).toBe('gpt-5');
+  });
+
+  it('keeps a kind-qualified recorded API identity literal without axis words', () => {
+    // The exported union accepts this exact shape: a record that kept its kind but not
+    // its axes. It must not be read as a live runner block, which has no tool word.
+    const recorded = { tool: 'opencode', model: 'gpt-5', kind: 'api' as const };
+
+    expect(formatSeatIdentity({ seat: recorded })).toBe('opencode · gpt-5');
+    expect(formatShortSeatIdentity({ seat: recorded })).toBe('gpt-5');
+  });
+
+  it('keeps a kind-qualified recorded CLI identity whose tool left the catalog literal', () => {
+    // The exported union accepts any tool word: a record may outlive its CLI tool's
+    // catalog entry. It must format as a record, not crash the live catalog lookup.
+    const recorded = { tool: 'retired-tool', model: 'gpt-5', kind: 'cli' as const };
+
+    expect(formatSeatIdentity({ seat: recorded })).toBe('retired-tool · gpt-5');
+    expect(formatShortSeatIdentity({ seat: recorded })).toBe('gpt-5');
+  });
+
+  it('keeps the recorded axis words when a recorded CLI seat carries its kind', () => {
+    const recorded = seatIdsOf({ kind: 'cli', tool: 'claude-code', model: 'opus', effort: 'max' });
+
+    expect(formatSeatIdentity({ seat: recorded })).toBe('Claude Code CLI · opus · max');
+    expect(formatShortSeatIdentity({ seat: recorded })).toBe('opus');
+  });
+
+  it('carries the API kind into the collapsed crew line', () => {
+    const line = formatCollapsedSeatLine({
+      planner: apiTwin('cursor', 'gpt-5.3-codex-high'),
+      build: apiTwin('my-endpoint', 'gpt-5'),
+      reviewer: undefined,
+    });
+    expect(line).toContain('gpt-5.3-codex-high');
+    expect(line).not.toContain('Cursor Agent CLI');
   });
 });

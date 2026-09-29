@@ -104,6 +104,10 @@ The ledger schema (`EvidenceLedgerSchema`, version 1) contains: `sessionId`, `fe
 
 The ledger is consumed during the final review phase indirectly: `analyzeBriefDrift()` reads the ledger alongside the diff and task list to compute a drift report, and the drift report is injected into the review prompt as a `Deterministic Drift Report` section. The planner does not see the raw ledger -- it sees the drift analysis derived from it. After the review, `writeReviewPacket()` writes a combined packet alongside the ledger.
 
+Final review attributes changes using the separate session artifact `review-changes.json`. After an isolated promotion, its input bytes must match the acquisition baseline and its output bytes must match the exact writer receipt, including mode and deletion. Captured pairs carry the task ID and brief hash. A mismatch records unknown provenance; it never adopts a later operator save. Stopped promotions record only their applied prefix. This artifact is review evidence and grants no write or recovery authority.
+
+The reviewer receives the captured promotion diffs in order and the complete workspace comparison as separate context. Edits after the last captured output are also shown, even when they revert a file to the Git baseline. Mixed files retain operator input without attributing it to the implementer. Final deterministic drift uses only captured promotions. Missing, invalid, obsolete-brief and uncaptured direct-write evidence remains explicit unknown context. Both reviewer transports keep acceptance and integration failures blocking. The review packet records the evidence status, promoted paths, workspace paths and uncertain paths.
+
 ---
 
 ## 8. Session directory lifecycle

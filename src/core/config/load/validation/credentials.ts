@@ -1,5 +1,5 @@
 import { PROVIDER_CATALOG } from '../../../providers/catalog.js';
-import { isProviderId } from '../../../schemas/enums.js';
+import { isApiProviderId } from '../../../providers/api-provider-catalog.js';
 import type { Config } from '../../../schemas/config.js';
 import { configuredReviewerRunner } from '../../accessors/reviewer-runner.js';
 import { missingRunnerCredential } from '../../accessors/runner-credentials.js';
@@ -72,7 +72,9 @@ function intermediateProviderCredentialErrors(config: Config): ConfigError[] {
   const escalation = config.escalation;
   const provider = escalation?.intermediateProvider;
   if (!provider || escalation.enabled === false) return [];
-  if (!isProviderId(provider)) return [];
+  // The intermediate tier is always an `api` runner, so a CLI tool id here is a
+  // custom API provider name — never a CLI identity to look up in the catalog.
+  if (!isApiProviderId(provider)) return [];
 
   const info = PROVIDER_CATALOG[provider];
   if (info.isLocal || !info.apiKeyEnv || process.env[info.apiKeyEnv]) return [];

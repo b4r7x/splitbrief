@@ -1,3 +1,5 @@
+import { useRef } from 'react';
+
 import { configStore } from '../../stores/project/config.js';
 import { detectionStore } from '../../stores/project/detection.js';
 import { routerStore } from '../../stores/navigation/router.js';
@@ -11,14 +13,19 @@ import { SOFT_SEP } from '../../core/separators.js';
 import { error } from '../../utils/error.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { cliProviderAuthFacts } from '../../core/discovery/detection.js';
-import { formatModelName } from '../../core/model-display.js';
 import type { CustomCommandRunnerKind } from '../../core/config/custom-commands.js';
 
-import { CREW_SEAT_LABELS, PLANNER_INHERITANCE } from '../../core/crew/identity.js';
+import {
+  CREW_SEAT_LABELS,
+  formatSeatIdentity,
+  PLANNER_INHERITANCE,
+} from '../../core/crew/identity.js';
+import { resolveSeatDisplayName } from '../../engine/providers/model/display-names.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 
 import { isAutomaticModel } from '../../core/providers/automatic-model.js';
 import type { ApiProviderId } from '../../core/providers/api-provider-catalog.js';
-import { getKnownProviderBaseURL, getProviderDisplayName } from '../../core/providers/catalog.js';
+import { getKnownProviderBaseURL } from '../../core/providers/catalog.js';
 import { buildRunnerConfig } from '../../core/config/runtime/build-runner.js';
 import {
   clearReviewerSeat,
@@ -217,6 +224,19 @@ function changesRunningSeat(before: Config, after: Config): boolean {
   );
 }
 
+/**
+ * The seat a save kept, in the words the crew rows and the sidebar show for it: the model's
+ * catalog label and every axis the saved block carries, so a level the tool cannot spell, which
+ * the commit dropped, is never announced.
+ */
+function savedSeatIdentity(saved: Config, role: ActiveRunnerRole): string {
+  const runner = readActiveRunner({ config: saved, role });
+  return formatSeatIdentity({
+    seat: runner,
+    displayName: resolveSeatDisplayName(runner, role, modelCacheStore),
+  });
+}
+
 /** A picker action runs unawaited; its failure has to reach the user here. */
 async function reportFailure(task: () => Promise<void>): Promise<void> {
   try {
@@ -286,6 +306,7 @@ export function usePickerActions(opts: {
   const config = configStore.useConfig();
   const view = pickerViewStore.use((s) => s.view);
   const preservedLeftIndex = pickerViewStore.use((s) => s.preservedLeftIndex);
+  const saveInFlight = useRef(false);
 
   const reportNotice = (notice: string | undefined) => {
     if (notice !== undefined && !feedbackStore.get().isError) {
@@ -294,14 +315,22 @@ export function usePickerActions(opts: {
   };
 
   const commit = async (updated: Config, message: string) => {
-    const result = await deps.saveConfig(updated);
-    if (reportConfigSaveFailure(result)) return;
-    feedbackStore.setMessage(
-      changesRunningSeat(config, updated)
-        ? `${CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS[role]]} seat changes after this brief`
-        : message,
-    );
-    overlayStore.close();
+    // Enter can land again before the first save settles; the hold survives
+    // re-renders and every outcome releases it so a later retry can save.
+    if (saveInFlight.current) return;
+    saveInFlight.current = true;
+    try {
+      const result = await deps.saveConfig(updated);
+      if (reportConfigSaveFailure(result)) return;
+      feedbackStore.setMessage(
+        changesRunningSeat(config, updated)
+          ? `${CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS[role]]} seat changes after this brief`
+          : message,
+      );
+      overlayStore.close();
+    } finally {
+      saveInFlight.current = false;
+    }
   };
 
   // Axis 2 of the role: which config node a selection is written to. A reviewer
@@ -364,14 +393,10 @@ export function usePickerActions(opts: {
       effort,
       effortChoices,
     );
-    const label =
-      modelId === null
-        ? selection.displayName
-        : `${selection.displayName}${SOFT_SEP}${formatModelName(modelId)}`;
-    // The line names what the commit kept: a level the seat's tool cannot spell
-    // is dropped there, and announcing it would retract itself one line later.
-    const saved = seat.effort === undefined ? label : `${label}${SOFT_SEP}${seat.effort}`;
-    await commit(seat.config, `${catalog.roleLabel} set to: ${saved}`);
+    await commit(
+      seat.config,
+      `${catalog.roleLabel} set to: ${savedSeatIdentity(seat.config, seatRole)}`,
+    );
     // Both notices are news the save does not carry: neither may overwrite the
     // other, so they land as one line.
     reportNotice(
@@ -505,7 +530,7 @@ export function usePickerActions(opts: {
         });
         await commit(
           updated,
-          `${catalog.roleLabel} set to: ${customModelItem.displayName}${SOFT_SEP}${formatModelName(modelName)}`,
+          `${catalog.roleLabel} set to: ${savedSeatIdentity(updated, seatRole)}`,
         );
       });
     },
@@ -572,9 +597,7 @@ export function useLocalConnectionActions(
               });
         const result = await deps.saveConfig(updated);
         if (reportConfigSaveFailure(result)) return;
-        feedbackStore.setMessage(
-          `${roleLabel} set to: ${getProviderDisplayName(input.provider)}${SOFT_SEP}${formatModelName(input.model)}`,
-        );
+        feedbackStore.setMessage(`${roleLabel} set to: ${savedSeatIdentity(updated, seatRole)}`);
         overlayStore.close();
       });
     },

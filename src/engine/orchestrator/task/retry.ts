@@ -8,6 +8,7 @@ import type { UndeclaredWritesPolicy } from '../../implementers/types.js';
 import type { RetryAttemptFailure } from '../escalation/types.js';
 
 import { toErrorMessage, labelError } from '../../../utils/format-errors.js';
+import { retentionError } from '../isolation/retention.js';
 import { isAbortError } from '../../../utils/abort.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { publishError } from '../events.js';
@@ -95,8 +96,11 @@ export async function retryAndRecord(
       ...(opts.initialFailure !== undefined && { initialFailure: opts.initialFailure }),
     }));
   } catch (err) {
+    if (retentionError.isFailed(err) || retentionError.isUnavailable(err)) throw err;
     if (isAbortError(err) || wctx.signal?.aborted) {
-      return { state: opts.state, completed: false };
+      const stoppedState = loadState(wctx) ?? opts.state;
+      setTrackedState(stoppedState);
+      return { state: stoppedState, completed: false };
     }
     const message = labelError('Retry/escalation failed', err);
     publishError({ bus: wctx.bus, phase: opts.state.phase, message: message });

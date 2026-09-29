@@ -66,6 +66,33 @@ describe('StopSheet', () => {
     ui.unmount();
   });
 
+  it('paints no blank row above the legend and keeps one height, whichever row is selected', async () => {
+    const rows = stopSheetRows({ ...RUNNING_BRIEF, hasChanges: true });
+    for (const cols of [80, 60]) {
+      terminalSizeStore.__testReset({ cols, rows: 24, isSmall: true });
+      const ui = renderSheet(rows);
+      await tick();
+      const frames = [ui.lastFrame() ?? ''];
+      for (let press = 1; press < rows.length; press += 1) {
+        await flushEffects();
+        ui.stdin.write(ARROW_DOWN);
+        await tick(30);
+        frames.push(ui.lastFrame() ?? '');
+      }
+
+      for (const frame of frames) {
+        const lines = frame.split('\n');
+        const body = lines.slice(
+          lines.findIndex((line) => line.includes('Stop options')) + 1,
+          lines.findIndex((line) => line.includes('↑↓ select')),
+        );
+        expect(body.filter((line) => line.replace(/[│|]/g, '').trim() === '')).toEqual([]);
+        expect(lines.length).toBe(frames[0]?.split('\n').length);
+      }
+      ui.unmount();
+    }
+  });
+
   it('stops the run on the first row', async () => {
     const abort = vi.fn();
     createAbortHandlerScope()(abort);

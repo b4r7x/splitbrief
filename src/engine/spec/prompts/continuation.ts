@@ -1,5 +1,5 @@
 /** What a partial contributes before it stops being context and starts being noise. */
-const PARTIAL_MAX_CHARS = 8_000;
+export const PARTIAL_MAX_CHARS = 8_000;
 
 const DEFAULT_STEER = 'continue from where you left off';
 

@@ -2,7 +2,7 @@ import type { z } from 'zod';
 import { redactSecretsWithMetadata } from '../../utils/redact.js';
 import { stripTerminalControls } from '../../utils/display-text.js';
 import { sha256Hex } from '../../utils/sha256.js';
-import { isRecord } from '../../utils/type-guards.js';
+import { assertNever, isRecord } from '../../utils/type-guards.js';
 import type { RunnerCallActivityKindSchema, RunnerCallActivityStageSchema } from './schema.js';
 import type { RunnerCallEvent, RunnerCallWarning } from './types.js';
 import { normalizeRunnerCallWarning, showsRunnerCallWarningOnPrimarySurface } from './warnings.js';
@@ -115,20 +115,18 @@ export function projectRunnerCallActivity(
         diagnosticPartial: event.error.message,
         rawAvailable: event.partial,
       });
+    // A success is told by its settled batch and the block after it; only a failure is news.
     case 'call_completed':
-      return buildActivity({
-        activityId: `${event.callId}:terminal`,
-        stage: 'completed',
-        kind: 'text',
-        label: `completed ${event.role}`,
-      });
     case 'call_runtime_status':
     case 'call_started':
     case 'call_usage':
     case 'call_stalled':
     case 'call_stall_cleared':
+    case 'call_heartbeat':
       return null;
   }
+
+  return assertNever(event);
 }
 
 function toolActivity(opts: {

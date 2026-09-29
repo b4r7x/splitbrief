@@ -1,3 +1,4 @@
+import { routerStore } from '../../../stores/navigation/router.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import {
@@ -18,6 +19,11 @@ export function useStopByline(): StopByline | null {
   const view = selectTaskListView(tasks);
   const brief = selectRunningBrief(tasks);
   const questionPending = controlsStore.use((s) => s.inputMode === 'question');
+  // A stop that ended the run loop settles it at rest, and the record it re-read says where it
+  // stopped and what it kept.
+  const record = routerStore.use((s) =>
+    s.screen === 'workflow' && s.execution.kind === 'at-rest' ? s.run : null,
+  );
   // A boundary park has no running brief left, so the brief it is holding back is the one after
   // the brief it parked on.
   const parkedId = stop.parked?.taskId ?? null;
@@ -34,5 +40,6 @@ export function useStopByline(): StopByline | null {
     elapsedMs: stop.requestedAt === null ? 0 : Date.now() - stop.requestedAt,
     questionPending,
     error: stop.error,
+    record,
   });
 }

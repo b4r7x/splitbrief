@@ -18,6 +18,7 @@ import type { CliToolDetection } from '../../../src/core/discovery/detection.js'
 import type { ClaudeCodeModelOption } from '../../../src/core/providers/claude-code-options.js';
 import type { ScopedCliCatalogAttempt } from '../../../src/engine/detection/cli-catalog-outcomes.js';
 import type { ModelsDevRefreshOutcome } from '../../../src/engine/detection/models-dev-lane.js';
+import { resolveMode } from '../../../src/core/config/runtime/resolve.js';
 import type { Config } from '../../../src/core/schemas/config.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
 import type { SkillMeta } from '../../../src/core/skills/types.js';
@@ -204,7 +205,14 @@ export function createWorkflowBaseFixture(
     });
     return {
       screen: 'workflow',
-      run: makeRunRecord({ ref: prepared.session.ref, feature }),
+      run: makeRunRecord({
+        ref: prepared.session.ref,
+        feature,
+        // The rail trusts the record's saved mode, so the fixture stamps the mode a real
+        // start or continuation would have resolved: the saved resume state's mode first,
+        // else the effective project config's.
+        mode: resolveMode({ config, savedMode: resumeState?.mode }),
+      }),
       execution: { kind: 'local', prepared },
     };
   }, config);
@@ -606,6 +614,19 @@ function createCommandArgumentFixture(): FixtureLifecycle {
   };
 }
 
+// `/mode` typed on a run's screen: the run keeps the mode it saved, so the answer names the next run.
+function createModeNextRunFixture(): FixtureLifecycle {
+  const workflow = createWorkflowBaseFixture();
+  return {
+    setup: async (context) => {
+      await workflow.setup(context);
+      composerDraftStore.request('/mode quick');
+    },
+    teardown: workflow.teardown,
+    afterMount: (write) => write('\r'),
+  };
+}
+
 // The home fixture already selects two project skills, so the seeded catalog keeps them; the rest
 // overflow the eight-row window the menu gets at these viewports.
 function createSkillsCompletionFixture(): FixtureLifecycle {
@@ -701,5 +722,6 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('home-draft-image'), createDraftImageFixture],
   [scenarioId('workflow-continuing'), createWorkflowContinuingFixture],
   [scenarioId('workflow-command-argument'), createCommandArgumentFixture],
+  [scenarioId('workflow-mode-next-run'), createModeNextRunFixture],
   [scenarioId('setup-initial'), createSetupFixture],
 ]);

@@ -7,12 +7,44 @@ import { makeCallbacks, makeBusRecorder } from '#testing/helpers/orchestrator-fa
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
+import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
+import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import type { UserEditConflictAction } from '../../../core/schemas/enums.js';
+import { sha256Hex } from '../../../utils/sha256.js';
+import { hashTaskBrief } from '../../brief-hash.js';
 import type { UserEditConflict } from '../../events/workflow-events.js';
 import { captureChangedFilesBaseline } from '../changed-files-baseline.js';
 import { checkUserEditConflicts } from './detection.js';
 
 let projectDir: string;
+
+/** The ledger's record that a promotion of `task` left `content` in `file`. */
+function recordPromotion({
+  task,
+  file,
+  content,
+}: {
+  task: ReturnType<typeof makeTask>;
+  file: string;
+  content: string;
+}): void {
+  const ledger = createEvidenceLedger({
+    sessionId: 'sess-detection',
+    feature: 'feat',
+    tasks: [task],
+  });
+  writeEvidenceLedger(
+    { projectDir, sessionId: 'sess-detection' },
+    {
+      ...ledger,
+      tasks: ledger.tasks.map((entry) => ({
+        ...entry,
+        promotedBriefHash: hashTaskBrief([task]),
+        promotedFiles: [{ path: file, sha256: sha256Hex(content), mode: 0o644 }],
+      })),
+    },
+  );
+}
 
 beforeEach(() => {
   projectDir = createTempDir('user-edit-detection');
@@ -152,6 +184,11 @@ describe('checkUserEditConflicts', () => {
     createTestGitRepo(projectDir, { 'src/current.ts': 'v1', 'notes.txt': 'note' });
     const task = makeTask({ id: 'T001', status: 'in_progress', file: 'src/current.ts' });
     const baseline = await captureChangedFilesBaseline(projectDir);
+    recordPromotion({
+      task,
+      file: 'src/current.ts',
+      content: 'half written by the parked attempt',
+    });
     writeFileSync(join(projectDir, 'src/current.ts'), 'half written by the parked attempt');
     writeFileSync(join(projectDir, 'notes.txt'), 'user edit');
 
@@ -177,6 +214,11 @@ describe('checkUserEditConflicts', () => {
     createTestGitRepo(projectDir, { 'src/current.ts': 'v1' });
     const task = makeTask({ id: 'T001', status: 'in_progress', file: 'src/current.ts' });
     const baseline = await captureChangedFilesBaseline(projectDir);
+    recordPromotion({
+      task,
+      file: 'src/current.ts',
+      content: 'half written by the parked attempt',
+    });
     writeFileSync(join(projectDir, 'src/current.ts'), 'half written by the parked attempt');
 
     const { result, events } = await runCheck({ tasks: [task], baseline });
@@ -184,6 +226,61 @@ describe('checkUserEditConflicts', () => {
     expect(result.stopped).toBe(false);
     expect(result.state.pendingRecovery).toBeUndefined();
     expect(events.find((event) => event.type === 'paused_external_changes')).toBeUndefined();
+  });
+
+  it("asks about an edit to a parked brief's declared file that the brief never wrote", async () => {
+    createTestGitRepo(projectDir, { 'src/current.ts': 'v1' });
+    const task = makeTask({ id: 'T001', status: 'in_progress', file: 'src/current.ts' });
+    const baseline = await captureChangedFilesBaseline(projectDir);
+    writeFileSync(join(projectDir, 'src/current.ts'), 'operator edit while the run was parked');
+    const onUserEditConflict = vi.fn().mockResolvedValue('continue-unrelated');
+
+    const { result, events, acknowledgedUserEditFiles } = await runCheck({
+      tasks: [task],
+      baseline,
+      onUserEditConflict,
+    });
+
+    expect(events.find((event) => event.type === 'warning')).toBeUndefined();
+    expect(onUserEditConflict).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'future-task-stale-input', safeToContinue: true }),
+    );
+    expect(events.find((event) => event.type === 'paused_external_changes')).toMatchObject({
+      selectedAction: 'continue-unrelated',
+      conflict: {
+        kind: 'future-task-stale-input',
+        files: ['src/current.ts'],
+        affectedTaskIds: ['T001'],
+      },
+    });
+    expect(result.stopped).toBe(false);
+    expect(result.absorbedFiles).toEqual(['src/current.ts']);
+    expect(acknowledgedUserEditFiles.has('src/current.ts')).toBe(true);
+  });
+
+  it('halts on an edit made over what a parked brief wrote', async () => {
+    createTestGitRepo(projectDir, { 'src/current.ts': 'v1' });
+    const task = makeTask({ id: 'T001', status: 'in_progress', file: 'src/current.ts' });
+    const baseline = await captureChangedFilesBaseline(projectDir);
+    recordPromotion({ task, file: 'src/current.ts', content: 'promoted by the parked attempt' });
+    writeFileSync(join(projectDir, 'src/current.ts'), 'operator edit over the promoted file');
+
+    const { result, events } = await runCheck({ tasks: [task], baseline });
+
+    expect(events.find((event) => event.type === 'warning')).toBeUndefined();
+    expect(events.find((event) => event.type === 'paused_external_changes')).toMatchObject({
+      selectedAction: 'pause',
+      conflict: {
+        kind: 'current-task-conflict',
+        files: ['src/current.ts'],
+        affectedTaskIds: ['T001'],
+      },
+    });
+    expect(result.stopped).toBe(true);
+    expect(result.state.pendingRecovery).toMatchObject({
+      reason: 'user-edit-conflict',
+      files: ['src/current.ts'],
+    });
   });
 
   it('raises no recovery issue when nothing changed since the baseline', async () => {

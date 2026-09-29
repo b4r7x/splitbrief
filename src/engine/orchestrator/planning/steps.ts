@@ -1,6 +1,10 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { plannerStepsFor, type PlannerStep } from '../../../core/pipeline-spec/steps.js';
+import {
+  opensPlanGate,
+  plannerStepsFor,
+  type PlannerStep,
+} from '../../../core/pipeline-spec/steps.js';
 import { isPlannerDocument } from '../../../core/pipeline-spec/planner-documents.js';
 import { extractQuestionsFromStream } from '../../parsers/question.js';
 import {
@@ -122,6 +126,13 @@ export async function runPlanningSteps(
   const mode = state.mode ?? 'standard';
   const approveLevel = opts.approveLevel ?? state.approve ?? 'default';
   const steps = plannerStepsFor(mode, approveLevel);
+  // Compiled briefs wait at the plan gate only in a run whose steps open it; the others keep them
+  // in planning, the phase that compiled them.
+  const planGate = opensPlanGate(mode, approveLevel);
+  const briefsCompiled = (compiled: Task[]): MachineAction =>
+    planGate
+      ? { type: 'PLAN_DONE', tasks: compiled }
+      : { type: 'BRIEFS_COMPILED', tasks: compiled };
   const skillsContext = await buildPlanningSkillsContext(opts, state);
   const passedGates = new Set<GateName>(opts.passedGates ?? []);
   let languageContext = buildProjectLanguageContext(
@@ -250,7 +261,7 @@ export async function runPlanningSteps(
           priorMessages = undefined;
           attachments = undefined;
           if (step.call === 'research') {
-            state = recordDiscoveredValidation(state, run.result.text);
+            state = recordDiscoveredValidation(opts, state, run.result.text);
             languageContext = buildProjectLanguageContext(
               projectDir,
               extractLanguageFromResearch(run.result.text) ?? state.discoveredValidation?.language,
@@ -305,8 +316,8 @@ export async function runPlanningSteps(
       if (step.call === 'tasks') {
         tasks = await readTasks();
         if (tasks.length === 0) return noBriefsHalt(opts, state);
-        state = transitionAndSave(ref, state, { type: 'PLAN_DONE', tasks });
-        publishPlannerStatus(bus, state, 'running');
+        state = transitionAndSave(ref, state, briefsCompiled(tasks));
+        if (planGate) publishPlannerStatus(bus, state, 'running');
       }
 
       if (
@@ -346,9 +357,9 @@ export async function runPlanningSteps(
 
     tasks = await readTasks();
     if (tasks.length === 0) return noBriefsHalt(opts, state);
-    if (state.phase !== 'reviewing-plan') {
-      state = transitionAndSave(ref, state, { type: 'PLAN_DONE', tasks });
-      publishPlannerStatus(bus, state, 'running');
+    if (state.phase !== (planGate ? 'reviewing-plan' : 'planning')) {
+      state = transitionAndSave(ref, state, briefsCompiled(tasks));
+      if (planGate) publishPlannerStatus(bus, state, 'running');
     }
   } catch (err) {
     return handlePlanningFailure({ err, projectDir, sessionId, state, wctx });
@@ -357,8 +368,15 @@ export async function runPlanningSteps(
   return { disposition: 'tasks-ready', state: { ...state, tasks }, tasks };
 }
 
-function recordDiscoveredValidation(state: WorkflowState, researchText: string): WorkflowState {
-  const discovered = sanitizeDiscoveredValidation(parseDiscoveredValidation(researchText));
+function recordDiscoveredValidation(
+  opts: PlanningStepsOptions,
+  state: WorkflowState,
+  researchText: string,
+): WorkflowState {
+  const discovered = sanitizeDiscoveredValidation(parseDiscoveredValidation(researchText), {
+    bus: opts.wctx.bus,
+    phase: state.phase,
+  });
   return discovered ? { ...state, discoveredValidation: discovered } : state;
 }
 

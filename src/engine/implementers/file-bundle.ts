@@ -58,6 +58,8 @@ export interface AppliedFile {
   action: 'create' | 'modify';
   beforeSha256: string | null;
   afterSha256: string;
+  /** Permission bits the writer verified; absent on older external results. */
+  afterMode?: number;
   diff: string;
   linesAdded: number;
   linesRemoved: number;

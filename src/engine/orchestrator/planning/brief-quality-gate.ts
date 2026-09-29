@@ -1,9 +1,13 @@
 import type { WorkflowState, QueuedMessage } from '../../../core/schemas/workflow.js';
 import type { Planner } from '../../planners/types.js';
-import type { SpecMetadata } from '../../../core/paths-io.js';
+import { BRIEF_QUALITY_FILE } from '../../../core/paths.js';
+import { readSpecFile, type SpecMetadata } from '../../../core/paths-io.js';
 import type { OrchestratorCallbacks, WorkflowSinks } from '../types.js';
 import { briefErrorMessages } from '../../spec/brief-quality.js';
+import { formatTasks } from '../../spec/formatter.js';
+import { splitTaskBlocks } from '../../spec/tasks/blocks.js';
 import { createBusTextHandler } from '../events.js';
+import { hashTaskBrief } from '../../brief-hash.js';
 import { buildBriefQualityRepairComment } from './regen-targeted.js';
 import { regenerateTasks } from './regen.js';
 import {
@@ -17,7 +21,7 @@ import type { Phase } from '../../../core/schemas/enums.js';
 import { countBySeverity } from '../../../utils/collections.js';
 import { evaluateBriefQuality } from '../../spec/brief-quality.js';
 import { detectStack } from '../../../core/validation/stacks/registry.js';
-import { writeBriefQualityReport } from '../../spec/brief-quality-file.js';
+import { briefQualityReportBytes, writeBriefQualityReport } from '../../spec/brief-quality-file.js';
 import type { BriefQualityCode, BriefQualityReport } from '../../spec/brief-quality.js';
 
 export type BriefQualityGateIssue = {
@@ -66,13 +70,22 @@ export function runQualityGateAndReport(input: {
   sessionId: string;
   bus: EventBus;
   phase: Phase;
+  /**
+   * The briefs are the ones `brief-quality.json` already measured. The report carries the
+   * briefs' `briefHash`, so a passing report that leaves the file as it was is written again
+   * but not announced again: the transcript shows it. A report written for other briefs, or
+   * one that predates the identity and carries no hash, cannot suppress the pass.
+   */
+  sameBriefs?: boolean | undefined;
 }): BriefQualityGateResult {
+  const ref = { projectDir: input.projectDir, sessionId: input.sessionId };
   const result = runBriefQualityGate({ tasks: input.tasks, projectDir: input.projectDir });
-  writeBriefQualityReport({
-    ref: { projectDir: input.projectDir, sessionId: input.sessionId },
-    content: { issues: result.report.issues },
-    metadata: null,
-  });
+  const content = { issues: result.report.issues, briefHash: hashTaskBrief(input.tasks) };
+  const unchanged =
+    input.sameBriefs === true &&
+    readSpecFile(ref, BRIEF_QUALITY_FILE) === briefQualityReportBytes(content);
+  writeBriefQualityReport({ ref, content, metadata: null });
+  if (result.ok && unchanged) return result;
   const counts = countBySeverity(result.report.issues);
   if (result.ok) {
     input.bus.publish({
@@ -115,6 +128,8 @@ export type BriefQualityRepairResult = {
   tasks: Task[];
   report: BriefQualityGateReport;
   attempts: number;
+  /** The planner replaced the briefs it was given, which no file holds yet. */
+  regenerated: boolean;
 };
 
 export async function runBriefQualityWithRepair(
@@ -129,11 +144,12 @@ export async function runBriefQualityWithRepair(
   let state = pending.state;
   let tasks = opts.tasks;
   let queued: readonly QueuedMessage[] = pending.messages;
+  let regenerated = false;
 
   const regenerate = async (feedback: string | undefined, summary: string): Promise<void> => {
     createBusTextHandler({ bus: opts.bus, phase: state.phase })(`\n[${summary}]\n`);
     try {
-      const regenerated = await regenerateTasks({
+      const next = await regenerateTasks({
         ...ref,
         planner: opts.planner,
         callbacks: opts.callbacks,
@@ -148,9 +164,10 @@ export async function runBriefQualityWithRepair(
         ...(opts.sinks === undefined ? {} : { sinks: opts.sinks }),
         ...(feedback === undefined ? {} : { feedback }),
       });
-      state = regenerated.state;
-      tasks = regenerated.tasks;
-      queued = regenerated.queuedMessages;
+      state = next.state;
+      tasks = next.tasks;
+      queued = next.queuedMessages;
+      regenerated = true;
     } catch (err) {
       releaseQueueMessagesForPrompt(ref, queued);
       throw err;
@@ -164,8 +181,13 @@ export async function runBriefQualityWithRepair(
   let result = runQualityGateAndReport({ ...ref, tasks, bus: opts.bus, phase: state.phase });
   let attempts = 1;
   while (!result.ok && attempts <= opts.maxRetries) {
+    const fenceWarnings: string[] = [];
+    splitTaskBlocks(formatTasks(tasks), (warning) => fenceWarnings.push(warning));
     await regenerate(
-      buildBriefQualityRepairComment(briefErrorMessages(result.report)),
+      buildBriefQualityRepairComment({
+        errorMessages: briefErrorMessages(result.report),
+        fenceWarnings,
+      }),
       'regenerating Task Briefs to clear the brief quality gate',
     );
     result = runQualityGateAndReport({ ...ref, tasks, bus: opts.bus, phase: state.phase });
@@ -185,5 +207,5 @@ export async function runBriefQualityWithRepair(
     }
   }
 
-  return { state, tasks, report: result.report, attempts };
+  return { state, tasks, report: result.report, attempts, regenerated };
 }

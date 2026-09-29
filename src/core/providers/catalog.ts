@@ -1,5 +1,9 @@
-import { isProviderId, type ProviderId } from '../schemas/enums.js';
-import { CLI_TOOL_CATALOG, type CliToolDescriptor } from '../runners/cli-tool-catalog.js';
+import { isProviderId, RUNNER_KINDS, type ProviderId, type RunnerKind } from '../schemas/enums.js';
+import {
+  CLI_TOOL_CATALOG,
+  cliToolIdForCommand,
+  type CliToolDescriptor,
+} from '../runners/cli-tool-catalog.js';
 import { mapRecord } from '../../utils/type-guards.js';
 import {
   API_PROVIDER_CATALOG,
@@ -124,6 +128,46 @@ export function isSameOrigin(candidate: string, expected: string): boolean {
 export function getProviderDisplayName(id: string): string {
   if (!isProviderId(id)) return id;
   return providerInfo(id).displayName;
+}
+
+function isRunnerKind(value: string): value is RunnerKind {
+  return (RUNNER_KINDS as readonly string[]).includes(value);
+}
+
+/**
+ * The display word for one runner identity, decided by its backend kind. A
+ * catalogued API provider keeps its display name and a custom API provider —
+ * even one named after a CLI tool — stays literal; a CLI call named by its
+ * command resolves through the tool it starts. Shell and agent identities are
+ * their own literal names. An identity recorded without a kind keeps the
+ * merged-catalog resolution for records written before kinds.
+ */
+export function getRunnerIdentityDisplayName(kind: RunnerKind | undefined, id: string): string {
+  if (kind === 'api') return isApiProviderId(id) ? getProviderDisplayName(id) : id;
+  if (kind === 'cli') return getProviderDisplayName(cliToolIdForCommand(id) ?? id);
+  if (kind === 'shell' || kind === 'agent') return id;
+  return getProviderDisplayName(id);
+}
+
+/**
+ * The kind-qualified identity one recorded runner is keyed by, so `api:opencode`
+ * and `cli:opencode` are two runners and never one.
+ */
+export function runnerIdentityKey(kind: RunnerKind, id: string): string {
+  return `${kind}:${id}`;
+}
+
+/**
+ * Reads a key back. A name that carries no kind prefix — including a custom
+ * name that itself contains a colon — is a legacy name-only identity.
+ */
+export function parseRunnerIdentityKey(key: string): { kind: RunnerKind | undefined; id: string } {
+  const separator = key.indexOf(':');
+  if (separator > 0 && separator < key.length - 1) {
+    const kind = key.slice(0, separator);
+    if (isRunnerKind(kind)) return { kind, id: key.slice(separator + 1) };
+  }
+  return { kind: undefined, id: key };
 }
 
 export function getProviderBaseURL(id: string): string {

@@ -527,6 +527,27 @@ describe('parseEngineEvent', () => {
     ).toBeNull();
   });
 
+  it('turn_interrupted names the step the stop parked, and refuses one that is not a step', () => {
+    expect(
+      parseEngineEvent({
+        type: 'turn_interrupted',
+        ts: 1,
+        phase: 'reviewing-plan',
+        source: 'user',
+        at: 'boundary',
+        step: { kind: 'gate', gate: 'plan' },
+      }),
+    ).toEqual(expect.objectContaining({ step: { kind: 'gate', gate: 'plan' } }));
+    expect(
+      parseEngineEvent({
+        type: 'turn_interrupted',
+        ts: 1,
+        phase: 'reviewing-plan',
+        step: { kind: 'gate', gate: 'nowhere' },
+      }),
+    ).toBeNull();
+  });
+
   it('runner_call_stalled requires silentMs and runner_call_stall_cleared parses', () => {
     const base = {
       ts: 1,

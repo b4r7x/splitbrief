@@ -46,6 +46,7 @@ describe('groupEventsIntoSections', () => {
     const section = requireSection(sections, 0, 'completed-task');
     const summary = section.summary;
     expect(summary.index).toBe(1);
+    expect(summary.id).toBe('T001');
     expect(summary.title).toBe('Auth');
     expect(summary.method).toBe('local');
     expect(summary.retries).toBe(1);
@@ -197,7 +198,7 @@ describe('findLatestRenderableDiffKey', () => {
         type: 'completed-task',
         items: [],
         startIndex: 1,
-        summary: { index: 1, title: 'done', method: 'local', retries: 0, duration: 0 },
+        summary: { index: 1, id: 'T001', title: 'done', method: 'local', retries: 0, duration: 0 },
       },
       {
         type: 'active-task',

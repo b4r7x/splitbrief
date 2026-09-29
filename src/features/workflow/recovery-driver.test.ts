@@ -23,6 +23,7 @@ import {
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 import { createRecoveryDriver } from './recovery-driver.js';
 import { readFileSync } from 'node:fs';
+import { readEvidenceLedger } from '../../core/evidence/ledger-storage.js';
 import { join } from 'node:path';
 import { REVIEW_FILE, sessionDir } from '../../core/paths.js';
 import { ensureSessionDir, writeSpecFile } from '../../core/paths-io.js';
@@ -163,6 +164,16 @@ function sessionLog(prepared: PreparedExecution): string {
 }
 
 describe('createRecoveryDriver', () => {
+  it('records skipped brief evidence in the saved run mode after config changes', async () => {
+    const { prepared, state } = setupSession();
+    const saved = { ...state, mode: 'speckit' as const };
+    saveState(prepared.session.ref, saved);
+    const { inputMode } = makeInputMode(['skip-current-task']);
+    const result = await runDriver(prepared, saved, inputMode);
+    expect(result.shouldRun).toBe(true);
+    expect(readEvidenceLedger(prepared.session.ref)?.mode).toBe('speckit');
+  });
+
   it('applies a valid action on the first answer without re-prompting', async () => {
     const { prepared, state } = setupSession();
     const { inputMode, feedbackAtPrompt } = makeInputMode(['pause']);

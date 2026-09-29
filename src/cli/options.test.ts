@@ -24,8 +24,13 @@ function parseWorkflowOptions(args: string[]): WorkflowOpts {
 
 function idsListedInHelp(label: string): string[] {
   const help = addWorkflowOptions(new Command()).helpInformation().replace(/\s+/g, ' ');
-  const listed = new RegExp(`${label} \\(([^)]+)\\)`).exec(help)?.[1];
-  if (listed === undefined) throw new Error(`no "${label}" entry in --help`);
+  const start = help.indexOf(label);
+  if (start === -1) throw new Error(`no "${label}" entry in --help`);
+  // The entry runs to the next option term; its ids are the last parenthetical,
+  // after any explanatory one the label's sentence carries.
+  const entry = help.slice(start).split(/ --/)[0] ?? '';
+  const listed = /.*\(([^)]+)\)/.exec(entry)?.[1];
+  if (listed === undefined) throw new Error(`no "${label}" id list in --help`);
   return listed.split(', ');
 }
 

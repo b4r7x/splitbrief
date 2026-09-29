@@ -88,7 +88,7 @@ export function runtimeFor(
     createStage:
       input.createStage ??
       (async (sourceProjectDir: string, _role: 'planner' | 'implementer') =>
-        createStagedProject(sourceProjectDir)),
+        createStagedProject({ projectDir: sourceProjectDir })),
     admission: {
       interaction: 'headless',
       allowRepoRunners: input.allowRepoRunners ?? true,

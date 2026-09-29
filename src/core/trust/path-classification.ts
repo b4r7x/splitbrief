@@ -2,31 +2,50 @@ import { accessSync, constants, lstatSync, realpathSync, statSync } from 'node:f
 import { delimiter, dirname, extname, join, resolve } from 'node:path';
 import { isInsideRoot } from '../../lib/path-confinement.js';
 import { parseShellCommand } from '../../utils/parse-shell-command.js';
+import { executableName } from './interpreter-command-string.js';
 
 const CODE_LOADING_INTERPRETERS = new Set([
   'node',
   'nodejs',
   'python',
-  'python3',
   'ruby',
   'perl',
   'php',
   'npx',
   'tsx',
   'ts-node',
+  'nodemon',
   'bun',
   'deno',
 ]);
 
 const PACKAGE_MANAGERS = new Set(['npm', 'pnpm', 'yarn', 'bun']);
-const PACKAGE_SCRIPT_ALIASES = new Set(['start', 'stop', 'restart', 'test']);
+// yarn installs `yarnpkg` as a second name; `isPackageManager` keeps its pinned policy, so the
+// alias applies only where a script is read.
+const PACKAGE_MANAGER_ALIASES = new Map([['yarnpkg', 'yarn']]);
+// npm resolves a command through its aliases and any unique prefix, and reads camelCase as
+// kebab-case, so `rum`, `ur`, `run-s` and `runS` all name `run-script`.
+const NPM_RUN_ALIASES = new Set(['run', 'rum', 'urn', 'ur']);
+const NPM_LIFECYCLE_ALIASES = new Map([
+  ['test', 'test'],
+  ['t', 'test'],
+  ['tst', 'test'],
+  ['tes', 'test'],
+  ['start', 'start'],
+  ['stop', 'stop'],
+  ['sto', 'stop'],
+  ['restart', 'restart'],
+  ['restar', 'restart'],
+  ['resta', 'restart'],
+  ['rest', 'restart'],
+  ['res', 'restart'],
+]);
 const PROMPT_PLACEHOLDER = '{prompt}';
 const SHELL_EVALUATORS = new Set(['sh', 'bash']);
 const INLINE_PROGRAM_FLAGS = new Map<string, ReadonlySet<string>>([
   ['node', new Set(['-e', '--eval', '-p', '--print'])],
   ['nodejs', new Set(['-e', '--eval', '-p', '--print'])],
   ['python', new Set(['-c'])],
-  ['python3', new Set(['-c'])],
   ['ruby', new Set(['-e'])],
   ['perl', new Set(['-e', '-E'])],
   ['php', new Set(['-r'])],
@@ -51,15 +70,39 @@ export function isRepoLocal(token: string, projectDir: string): boolean {
 
 export function commandTokensAfterInterpreter(tokens: readonly string[]): readonly string[] {
   const interpreter = tokens[0] ?? '';
-  const name = commandName(interpreter);
+  const name = interpreterName(interpreter);
   if (!CODE_LOADING_INTERPRETERS.has(name) || tokens.length <= 1) return tokens;
   return interpreterPathTokens(name, tokens.slice(1));
 }
 
+// The operands of the first interpreter anywhere in the argv: `yarn tsx check.ts` and
+// `timeout 5 node check.mjs` run their file as `node check.mjs` does.
+export function interpreterOperands(tokens: readonly string[]): readonly string[] {
+  const at = tokens.findIndex((token) => CODE_LOADING_INTERPRETERS.has(interpreterName(token)));
+  if (at === -1) return [];
+  return interpreterPathTokens(interpreterName(tokens[at] ?? ''), tokens.slice(at + 1));
+}
+
 export function commandName(command: string): string {
   const executable = parseShellCommand(command)[0] ?? command;
-  const name = executable.split(/[\\/]/).pop() ?? executable;
-  return name.replace(/\.(cmd|exe|bat|ps1)$/i, '');
+  return executableName(executable);
+}
+
+// `npm@10` and `tsx@4` name the registry packages whose binaries are `npm` and `tsx`.
+function withoutPackageSpec(command: string): string {
+  const name = commandName(command);
+  return name.startsWith('@') ? name : name.replace(/@[^@]*$/, '');
+}
+
+// The free-threaded `python3.13t`, the windowed `pythonw` and `pypy3` all run the Python
+// interpreter.
+const PYTHON_NAME = /^(?:pythonw?|pypy)\d*(?:\.\d+)*t?$/;
+
+// A versioned binary such as `python3.13` or `perl5.34` runs the interpreter it names.
+function interpreterName(command: string): string {
+  const name = withoutPackageSpec(command);
+  if (PYTHON_NAME.test(name)) return 'python';
+  return name.replace(/\d+(\.\d+)*$/, '');
 }
 
 function interpreterPathTokens(interpreter: string, tokens: readonly string[]): string[] {
@@ -102,24 +145,54 @@ function firstNonOptionIndex(tokens: readonly string[], start: number): number |
   return null;
 }
 
-function hasScriptNameAfterRun(tokens: readonly string[], runIndex: number): boolean {
-  return firstNonOptionIndex(tokens, runIndex + 1) !== null;
+export function isPackageManager(name: string): boolean {
+  return PACKAGE_MANAGERS.has(name);
+}
+
+function runsNamedScript(manager: string, command: string): boolean {
+  if (manager !== 'npm') return command === 'run' || command === 'run-script';
+  return NPM_RUN_ALIASES.has(command) || (command.length >= 4 && 'run-script'.startsWith(command));
+}
+
+// yarn, pnpm and bun run the script that a bare word names; npm does so only for its
+// lifecycle commands.
+export function packageManagerScriptName(tokens: readonly string[]): string | null {
+  const name = withoutPackageSpec(tokens[0] ?? '');
+  const manager = PACKAGE_MANAGER_ALIASES.get(name) ?? name;
+  if (!isPackageManager(manager)) return null;
+
+  const subcommandIndex = firstNonOptionIndex(tokens, 1);
+  if (subcommandIndex === null) return null;
+
+  const subcommand = tokens[subcommandIndex] ?? '';
+  const command =
+    manager === 'npm'
+      ? subcommand.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)
+      : subcommand;
+  if (runsNamedScript(manager, command)) {
+    const scriptIndex = firstNonOptionIndex(tokens, subcommandIndex + 1);
+    return scriptIndex === null ? null : (tokens[scriptIndex] ?? null);
+  }
+
+  if (manager !== 'npm') return subcommand;
+  return NPM_LIFECYCLE_ALIASES.get(command) ?? null;
+}
+
+// A wrapper or another package manager can run the manager: `timeout 5 npm run check`,
+// `npx npm run check` and `pnpm exec npm run check` run `check` too.
+export function packageManagerScriptNames(tokens: readonly string[]): readonly string[] {
+  return tokens.flatMap((_, index) => packageManagerScriptName(tokens.slice(index)) ?? []);
 }
 
 export function isPackageManagerScriptInvocation(tokens: readonly string[]): boolean {
-  if (tokens.length < 2) return false;
-  const manager = commandName(tokens[0] ?? '');
-  if (!PACKAGE_MANAGERS.has(manager)) return false;
+  return packageManagerScriptName(tokens) !== null;
+}
 
-  const subcommandIndex = firstNonOptionIndex(tokens, 1);
-  if (subcommandIndex === null) return false;
-
-  const subcommand = tokens[subcommandIndex] ?? '';
-  if (subcommand === 'run' || subcommand === 'run-script') {
-    return hasScriptNameAfterRun(tokens, subcommandIndex);
-  }
-
-  return PACKAGE_SCRIPT_ALIASES.has(subcommand);
+// A package manager runs `pre<name>` and `post<name>` around the script it names. For `restart`,
+// pnpm also runs `stop` and `start`, and npm does when the project has no `restart` script.
+export function scriptsRunFor(scriptName: string): readonly string[] {
+  const names = scriptName === 'restart' ? ['stop', 'restart', 'start'] : [scriptName];
+  return names.flatMap((name) => [`pre${name}`, name, `post${name}`]);
 }
 
 type SafeForms = Readonly<{ bare: boolean; alone: readonly string[] }>;
@@ -216,10 +289,6 @@ const TOOLCHAIN_FILES = new Map<string, readonly string[]>([
   ['bundle', BUNDLER_LOCK_FILES],
 ]);
 
-function programName(command: string): string {
-  return commandName(command).toLowerCase();
-}
-
 function entryExists(path: string): boolean {
   try {
     lstatSync(path);
@@ -231,6 +300,15 @@ function entryExists(path: string): boolean {
 
 export function existsInProject(name: string, projectDir: string): boolean {
   return entryExists(resolve(projectDir, name));
+}
+
+export function isProjectFile(input: { name: string; projectDir: string }): boolean {
+  const { name, projectDir } = input;
+  try {
+    return lstatSync(resolve(projectDir, name)).isFile();
+  } catch {
+    return false;
+  }
 }
 
 function fileAtOrAbove(dir: string, files: readonly string[]): boolean {
@@ -247,14 +325,14 @@ function projectSelectsToolchain(program: string, projectDir: string): boolean {
 }
 
 export function isProjectDrivenProgram(command: string): boolean {
-  const program = programName(command);
+  const program = commandName(command);
   return PROJECT_DRIVEN_PROGRAMS.has(program) || TOOLCHAIN_FILES.has(program);
 }
 
 export function runsProjectDefinedCode(argv: readonly string[], projectDir: string): boolean {
   const [command, ...args] = argv;
   if (command === undefined) return false;
-  const program = programName(command);
+  const program = commandName(command);
   if (projectSelectsToolchain(program, projectDir)) return true;
   const forms = PROJECT_DRIVEN_PROGRAMS.get(program);
   if (forms === undefined) return false;

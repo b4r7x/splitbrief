@@ -70,4 +70,29 @@ describe('modelRowLanes', () => {
       }
     },
   );
+
+  it('reads API lanes for an API runner named after a CLI tool, whatever its list state', () => {
+    expect(modelRowLanes({ providerId: 'codex', hasRuntimeList: false, kind: 'api' })).toEqual({
+      modelsDev: true,
+      bundled: true,
+      claudeCodeOptions: false,
+    });
+    expect(modelRowLanes({ providerId: 'claude-code', hasRuntimeList: true, kind: 'api' })).toEqual(
+      { modelsDev: true, bundled: false, claudeCodeOptions: false },
+    );
+    expect(
+      modelRowLanes({
+        providerId: 'codex',
+        hasRuntimeList: false,
+        kind: 'api',
+        browseCatalog: true,
+      }),
+    ).toEqual({ modelsDev: true, bundled: true, claudeCodeOptions: false });
+    // The CLI runner of that name keeps its own lanes.
+    expect(modelRowLanes({ providerId: 'codex', hasRuntimeList: false, kind: 'cli' })).toEqual({
+      modelsDev: false,
+      bundled: true,
+      claudeCodeOptions: false,
+    });
+  });
 });

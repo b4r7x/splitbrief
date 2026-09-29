@@ -9,6 +9,7 @@ import {
   type FixtureSession,
   type FixtureSessionInput,
 } from '../gallery/fixture-session.js';
+import { flushEffects } from '#testing/helpers/ink.js';
 
 export type PreviewSession = FixtureSession;
 
@@ -40,6 +41,8 @@ export interface PreviewController {
   readonly subscribe: (listener: () => void) => () => void;
   readonly attachInput: (source: NodeJS.ReadableStream) => () => void;
   readonly forwardToPreview: (input: string) => void;
+  /** The scripted-key form: forwards one key, then yields until the view has applied it. */
+  readonly pressToPreview: (input: string) => Promise<void>;
   readonly handleInput: (input: Buffer | string) => void;
   readonly flushInput: () => void;
   readonly moveSelection: (delta: number) => void;
@@ -416,6 +419,13 @@ export function createPreviewController(options: PreviewControllerOptions): Prev
     },
     forwardToPreview: (input) => {
       if (!disposed) options.forward(Buffer.from(input));
+    },
+    pressToPreview: async (input) => {
+      if (disposed) return;
+      options.forward(Buffer.from(input));
+      // A preview owns no painted-frame probe, so settlement is the React turns the key
+      // schedules: the same three `setImmediate` turns `flushEffects` gives a test key.
+      await flushEffects();
     },
     handleInput: (input) => {
       if (!disposed) inputFilter.push(input);

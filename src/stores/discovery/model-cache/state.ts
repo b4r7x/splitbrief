@@ -10,7 +10,7 @@ import {
 } from '../../../core/discovery/clone-detection.js';
 import { cloneDetectedModel } from '../../../core/discovery/clone-model.js';
 import type { ApiProviderId } from '../../../core/providers/api-provider-catalog.js';
-import type { ProviderId } from '../../../core/schemas/enums.js';
+import type { ProviderId, RunnerKind } from '../../../core/schemas/enums.js';
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
 import {
   readClaudeCodeModelOptions,
@@ -310,9 +310,11 @@ export const modelCacheStore = {
     });
   },
 
-  getProviderModels(provider: ProviderId): readonly DetectedModel[] | null {
+  getProviderModels(provider: ProviderId, kind?: RunnerKind): readonly DetectedModel[] | null {
     const current = store.get();
-    if (includes(CLI_TOOL_IDS, provider)) {
+    // The CLI catalog lane answers CLI runners only: an API runner named
+    // `opencode` is a custom endpoint and must not read the local CLI rows.
+    if (kind !== 'api' && includes(CLI_TOOL_IDS, provider)) {
       // A remembered row is not an authoritative answer until a live lane has
       // run, and a tool with two executables stays ambiguous.
       if (!current.cliCatalogsLoaded) return null;
@@ -327,9 +329,9 @@ export const modelCacheStore = {
     return cache?.models ?? null;
   },
 
-  isProviderModelCacheStale(provider: ProviderId): boolean {
+  isProviderModelCacheStale(provider: ProviderId, kind?: RunnerKind): boolean {
     const current = store.get();
-    if (includes(CLI_TOOL_IDS, provider)) {
+    if (kind !== 'api' && includes(CLI_TOOL_IDS, provider)) {
       // Mirrors getProviderModels: nothing is authoritative before a live lane.
       if (!current.cliCatalogsLoaded) return false;
       return (

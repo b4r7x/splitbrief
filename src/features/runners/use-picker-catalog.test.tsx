@@ -272,6 +272,48 @@ describe('usePickerCatalog', () => {
     ui.unmount();
   });
 
+  it('marks no CLI row current for an API implementer that reuses the CLI id', async () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({
+        implementer: {
+          kind: 'api',
+          provider: 'opencode',
+          service: 'opencode',
+          offering: 'payg',
+          apiBase: 'https://my-endpoint.example/v1',
+          apiKey: 'sk-inline',
+          model: 'gpt-5',
+        },
+      }),
+    });
+    seedDetections();
+
+    const ui = renderFeature(<CurrentSelectionProbe role="implementer" />);
+    await tick(20);
+
+    expect(ui.lastFrame()).toContain(
+      `${CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS.implementer]}|none|gpt-5`,
+    );
+    ui.unmount();
+  });
+
+  it('marks the CLI row current for the CLI seat of that name', async () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({ implementer: { kind: 'cli', tool: 'opencode', model: 'gpt-5' } }),
+    });
+    seedDetections();
+
+    const ui = renderFeature(<CurrentSelectionProbe role="implementer" />);
+    await tick(20);
+
+    expect(ui.lastFrame()).toContain(
+      `${CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS.implementer]}|opencode|gpt-5`,
+    );
+    ui.unmount();
+  });
+
   it('reports the persisted model regardless of the browsed tool, and only counts confirmed models as detected', async () => {
     configStore.__testReset({
       projectDir: '/tmp/project',

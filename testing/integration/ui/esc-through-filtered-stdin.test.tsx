@@ -274,6 +274,51 @@ describe('ESC through the real FilteredStdin pipeline (live workflow)', () => {
     harness.unmount();
   });
 
+  it('a batched double Ctrl+C (\\x03\\x03 in one chunk) quits a run parked behind its session options', async () => {
+    const route = routerStore.get();
+    if (route.screen !== 'workflow') throw new Error('expected workflow');
+    stopStore.request('stop-now');
+    stopStore.park('mid-brief', null, null);
+    routerStore.updateRun({ run: route.run, execution: { kind: 'at-rest' } });
+    overlayStore.open('stop-sheet');
+    const exit = vi.fn();
+    const harness = renderThroughFilteredStdin(<WorkflowApp exit={exit} />);
+    await tick(30);
+    harness.pressBytes(CTRL_C + CTRL_C);
+    await tick(30);
+    expect(exit).toHaveBeenCalledTimes(1);
+    harness.unmount();
+  });
+
+  it('typed text and a batched double Ctrl+C (fix\\x03\\x03 in one chunk) quit a parked run', async () => {
+    const route = routerStore.get();
+    if (route.screen !== 'workflow') throw new Error('expected workflow');
+    stopStore.request('stop-now');
+    stopStore.park('mid-brief', null, null);
+    routerStore.updateRun({ run: route.run, execution: { kind: 'at-rest' } });
+    const exit = vi.fn();
+    const harness = renderThroughFilteredStdin(<WorkflowApp exit={exit} />);
+    await tick(30);
+    harness.pressBytes(`fix${CTRL_C}${CTRL_C}`);
+    await tick(30);
+    expect(exit).toHaveBeenCalledTimes(1);
+    harness.unmount();
+  });
+
+  it('stops now on a Ctrl+C read with typed text (\\x03fix in one chunk) without exiting', async () => {
+    const abort = vi.fn();
+    handlers.createAbortHandlerScope()(abort);
+    const exit = vi.fn();
+    const harness = renderThroughFilteredStdin(<WorkflowApp exit={exit} />);
+    await tick(30);
+    harness.pressBytes(`${CTRL_C}fix`);
+    await tick(AFTER_PRESS_MS);
+    expect(abort).toHaveBeenCalledTimes(1);
+    expect(stopStore.get()).toMatchObject({ intent: 'stop-now', phase: 'requested' });
+    expect(exit).not.toHaveBeenCalled();
+    harness.unmount();
+  });
+
   it('does not arm for a lone ESC inside a bracketed paste; the pasted text reaches the app', async () => {
     const harness = renderThroughFilteredStdin(<WorkflowApp />);
     const delivered: string[] = [];

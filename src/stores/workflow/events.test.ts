@@ -4,6 +4,7 @@ import {
   MAX_EVENTS,
   MAX_MERGED_TEXT_LENGTH,
   mergeEvent,
+  mergeEventLog,
   projectEventForTuiEventLog,
 } from './events.js';
 import { addEvent } from './actions/event.js';
@@ -11,10 +12,14 @@ import { resetWorkflow } from './actions/reset.js';
 import { taskId } from '../../core/schemas/task.js';
 import type { EngineEventOf } from '../../engine/events/types.js';
 import { boundEngineEventForConsumer } from '../../engine/events/bound.js';
+import { parseEngineEvent } from '../../engine/events/schema.js';
 import type { RunnerCallWarningInput } from '../../engine/calls/types.js';
 import { normalizeRunnerCallWarning } from '../../engine/calls/warnings.js';
 import { makePlannerText, makePlannerStatus } from '#testing/helpers/events/planner.js';
-import { makeRunnerCallActivity } from '#testing/helpers/events/runner-call.js';
+import {
+  makeRunnerCallActivity,
+  makeRunnerCallHeartbeat,
+} from '#testing/helpers/events/runner-call.js';
 import {
   makeTaskStart,
   makeValidate,
@@ -216,6 +221,34 @@ describe('eventsStore — append via addEvent', () => {
     const s = eventsStore.get();
     expect(s.events).toHaveLength(1);
     expect((s.events[0] as { text: string }).text).toBe('hello world');
+  });
+
+  it('keeps marked implementer messages separate while joining their token chunks', () => {
+    const chunks = [
+      makePlannerText({ role: 'implementer', text: 'First ' }),
+      makePlannerText({ role: 'implementer', text: 'message.' }),
+      makePlannerText({ role: 'implementer', text: 'Second ', messageStart: true }),
+      makePlannerText({ role: 'implementer', text: 'message.' }),
+    ];
+    for (const chunk of chunks) addEvent(chunk);
+
+    const live = eventsStore.get().events;
+    expect(live.map((event) => (event.type === 'planner_text' ? event.text : ''))).toEqual([
+      'First message.',
+      'Second message.',
+    ]);
+    expect(mergeEventLog(chunks)).toEqual(live);
+  });
+
+  it('keeps legacy and extracted-code chunks joined without a boundary marker', () => {
+    const old = makePlannerText({ role: 'implementer', text: 'export const ' });
+    const next = makePlannerText({ role: 'implementer', text: 'value = 1;' });
+    expect(parseEngineEvent(old)).toMatchObject(old);
+    expect(parseEngineEvent({ ...next, messageStart: true })).toMatchObject({
+      ...next,
+      messageStart: true,
+    });
+    expect(mergeEventLog([old, next])).toMatchObject([{ text: 'export const value = 1;' }]);
   });
 
   it('omits runner call text deltas and keeps visible planner text coalesced', () => {
@@ -582,5 +615,9 @@ describe('projectEventForTuiEventLog', () => {
         sequence: 2,
       }),
     ).toBeNull();
+  });
+
+  it('drops runner_call_heartbeat, which only moves the freshness clock', () => {
+    expect(projectEventForTuiEventLog(makeRunnerCallHeartbeat())).toBeNull();
   });
 });

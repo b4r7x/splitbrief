@@ -294,12 +294,16 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     case 'runner_call_stalled':
     case 'runner_call_stall_cleared':
     case 'runner_call_runtime_status':
+    case 'runner_call_heartbeat':
     case 'artifact_written':
+    case 'spec_approved':
     case 'spec_rejected':
     case 'spec_regenerated':
     case 'plan_approved':
     case 'plan_rejected':
     case 'plan_regenerated':
+    case 'briefs_approved':
+    case 'briefs_rejected':
     case 'rewind_to_spec':
     case 'rewind_to_plan':
     case 'all_tasks_done':

@@ -161,7 +161,10 @@ export function addWorkflowOptions(cmd: Command): Command {
     .option('--approve <level>', 'Approval gates: none, spec, plan, all, default (follows mode)')
     .option('--model <model>', 'Override implementer model (alias for --implementer-model)')
     .option('--provider <provider>', 'Override implementer provider (alias for --implementer)')
-    .option('--planner <tool>', `Planner tool (${PLANNER_TOOL_IDS.join(', ')})`)
+    .option(
+      '--planner <tool>',
+      `Planner tool or API provider; a CLI tool id always selects the CLI (custom API providers are YAML-only) (${PLANNER_TOOL_IDS.join(', ')})`,
+    )
     .option('--planner-model <model>', 'Planner model (for API planners)')
     .option('--planner-command <cmd>', 'Custom planner command (when --planner=shell)')
     .option('--planner-api-base <url>', 'Planner API base URL for API providers')
@@ -181,7 +184,10 @@ export function addWorkflowOptions(cmd: Command): Command {
       'Planner context length',
       parsePositiveIntegerOption,
     )
-    .option('--implementer <provider>', `Implementer provider (${IMPLEMENTER_TOOL_IDS.join(', ')})`)
+    .option(
+      '--implementer <provider>',
+      `Implementer provider or CLI tool; a CLI tool id always selects the CLI (custom API providers are YAML-only) (${IMPLEMENTER_TOOL_IDS.join(', ')})`,
+    )
     .option('--implementer-model <model>', 'Implementer model')
     .option('--implementer-command <cmd>', 'Custom implementer command (when --implementer=shell)')
     .option('--implementer-api-base <url>', 'Implementer API base URL for API providers')
@@ -205,7 +211,10 @@ export function addWorkflowOptions(cmd: Command): Command {
       'Implementer context length',
       parsePositiveIntegerOption,
     )
-    .option('--reviewer <tool>', `Reviewer tool (${PLANNER_TOOL_IDS.join(', ')})`)
+    .option(
+      '--reviewer <tool>',
+      `Reviewer tool or API provider; a CLI tool id always selects the CLI (custom API providers are YAML-only) (${PLANNER_TOOL_IDS.join(', ')})`,
+    )
     .option('--reviewer-model <model>', 'Reviewer model (for API reviewers)')
     .option('--reviewer-command <cmd>', 'Custom reviewer command (when --reviewer=shell)')
     .option('--reviewer-api-base <url>', 'Reviewer API base URL for API providers')

@@ -1,5 +1,9 @@
 import { CREW_SEAT_LABELS } from '../../core/crew/identity.js';
 import { formatCost } from '../../core/formatting.js';
+import {
+  getRunnerIdentityDisplayName,
+  parseRunnerIdentityKey,
+} from '../../core/providers/catalog.js';
 import type {
   RunnerCallCounterCoverage,
   RunnerCallCounterCoverageState,
@@ -409,13 +413,16 @@ const PROVEN_BASES: ReadonlySet<BillingAttribution['basis']> = new Set([
 
 // What the run proved outranks what the catalog assumes: a tool enforced onto an API key is
 // metered here even where its catalogued default reads subscription-included. With nothing proven
-// the catalogued posture stands, and the row says it is a default.
+// the catalogued posture stands, and the row says it is a default. A kind-qualified key is named
+// in the words of the identity it kept — a custom API provider stays literal — while a legacy
+// name-only key stays exactly as recorded.
 function deriveBilling(breakdown: CostBreakdown | null): UsageBillingRow[] {
-  return Object.entries(breakdown?.providerRunMetadata ?? {}).map(([tool, metadata]) => {
+  return Object.entries(breakdown?.providerRunMetadata ?? {}).map(([key, metadata]) => {
+    const { kind, id } = parseRunnerIdentityKey(key);
     const attribution = metadata.billingAttribution;
     const proven = attribution !== undefined && PROVEN_BASES.has(attribution.basis);
     return {
-      tool,
+      tool: kind === undefined ? id : getRunnerIdentityDisplayName(kind, id),
       posture: proven && attribution !== undefined ? attribution.posture : metadata.billing,
       basis: attribution?.basis ?? 'legacy-unattributed',
       proven,

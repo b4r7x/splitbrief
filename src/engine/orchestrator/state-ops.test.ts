@@ -13,6 +13,7 @@ import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import {
   transitionAndSave,
+  parkStoppedRun,
   raisePendingRecovery,
   rebaseOnPersistedWorkflowState,
   addUsageAndSave,
@@ -224,6 +225,66 @@ describe('raisePendingRecovery', () => {
       expect(next.pendingRecovery).toEqual(issue);
       expect(loadState({ projectDir, sessionId })?.pendingRecovery).toEqual(issue);
       expect(events.some((event) => event.type === 'recovery_prompted')).toBe(true);
+    } finally {
+      cleanupTempDir(projectDir);
+    }
+  });
+});
+
+describe('parkStoppedRun', () => {
+  it('parks the run at the step it picks up at and records the stop as a row', () => {
+    const { projectDir, sessionId } = setupProject();
+    try {
+      const bus = createEventBus();
+      const events: EngineEvent[] = [];
+      bus.subscribe((event) => events.push(event));
+      const state = { ...createInitialState('feature'), phase: 'reviewing-spec' as const };
+
+      const next = parkStoppedRun({ projectDir, sessionId, bus }, state);
+
+      const gate = { kind: 'gate', gate: 'spec' } as const;
+      expect(next.interruptedStep).toMatchObject({ step: gate, source: 'user', cut: 'boundary' });
+      expect(loadState({ projectDir, sessionId })?.interruptedStep).toMatchObject({
+        step: gate,
+        cut: 'boundary',
+      });
+      expect(events).toEqual([
+        {
+          type: 'turn_interrupted',
+          ts: expect.any(Number),
+          phase: 'reviewing-spec',
+          source: 'user',
+          at: 'boundary',
+          step: gate,
+        },
+      ]);
+    } finally {
+      cleanupTempDir(projectDir);
+    }
+  });
+
+  it('a park already recorded stands: a second stop changes nothing and adds no row', () => {
+    const { projectDir, sessionId } = setupProject();
+    try {
+      const bus = createEventBus();
+      const events: EngineEvent[] = [];
+      bus.subscribe((event) => events.push(event));
+      const parked = transition(
+        { ...createInitialState('feature'), phase: 'planning' as const },
+        {
+          type: 'INTERRUPT_STEP',
+          step: { kind: 'planner', call: 'plan' },
+          source: 'watchdog',
+          cut: 'mid-step',
+        },
+      );
+      saveState({ projectDir, sessionId }, parked);
+
+      const next = parkStoppedRun({ projectDir, sessionId, bus }, parked);
+
+      expect(next).toBe(parked);
+      expect(loadState({ projectDir, sessionId })?.interruptedStep).toEqual(parked.interruptedStep);
+      expect(events).toEqual([]);
     } finally {
       cleanupTempDir(projectDir);
     }

@@ -1,17 +1,28 @@
-import { describe, expect, it, vi, afterEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { sanitizeDiscoveredValidation } from './sanitize-discovered-validation.js';
 import type { DiscoveredValidation } from '../../../core/schemas/workflow.js';
 
-const warnSpy = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+let recorder = makeBusRecorder();
 
-afterEach(() => {
-  warnSpy.mockClear();
+beforeEach(() => {
+  stderr.mockClear();
+  recorder = makeBusRecorder();
 });
+
+function sanitize(discovered: DiscoveredValidation | null | undefined) {
+  return sanitizeDiscoveredValidation(discovered, { bus: recorder.bus, phase: 'researching' });
+}
+
+function warnings(): string[] {
+  return recorder.events.flatMap((event) => (event.type === 'warning' ? [event.message] : []));
+}
 
 describe('sanitizeDiscoveredValidation', () => {
   it('returns undefined for null input', () => {
-    expect(sanitizeDiscoveredValidation(null)).toBeUndefined();
-    expect(sanitizeDiscoveredValidation(undefined)).toBeUndefined();
+    expect(sanitize(null)).toBeUndefined();
+    expect(sanitize(undefined)).toBeUndefined();
   });
 
   it('passes through safe commands unchanged', () => {
@@ -22,7 +33,7 @@ describe('sanitizeDiscoveredValidation', () => {
       language: 'typescript',
       testPattern: '*.test.ts',
     };
-    const result = sanitizeDiscoveredValidation(input);
+    const result = sanitize(input);
     expect(result).toEqual(input);
   });
 
@@ -33,20 +44,20 @@ describe('sanitizeDiscoveredValidation', () => {
       testCommand: 'cargo test',
       language: 'rust',
     };
-    expect(sanitizeDiscoveredValidation(rust)).toEqual(rust);
+    expect(sanitize(rust)).toEqual(rust);
 
     const go: DiscoveredValidation = {
       typecheckCommand: 'go vet ./...',
       testCommand: 'go test ./...',
       language: 'go',
     };
-    expect(sanitizeDiscoveredValidation(go)).toEqual(go);
+    expect(sanitize(go)).toEqual(go);
 
     const python: DiscoveredValidation = {
       testCommand: 'pytest',
       language: 'python',
     };
-    expect(sanitizeDiscoveredValidation(python)).toEqual(python);
+    expect(sanitize(python)).toEqual(python);
   });
 
   it('blocks commands with relative paths like ./evil-script', () => {
@@ -54,16 +65,16 @@ describe('sanitizeDiscoveredValidation', () => {
       testCommand: './scripts/evil',
       language: 'javascript',
     };
-    const result = sanitizeDiscoveredValidation(input);
+    const result = sanitize(input);
     expect(result?.testCommand).toBeUndefined();
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('./scripts/evil'));
+    expect(warnings()).toEqual([expect.stringContaining('./scripts/evil')]);
   });
 
   it('blocks commands with parent-relative paths', () => {
     const input: DiscoveredValidation = {
       typecheckCommand: '../other-repo/typecheck.sh',
     };
-    const result = sanitizeDiscoveredValidation(input);
+    const result = sanitize(input);
     expect(result).toBeUndefined();
   });
 
@@ -71,7 +82,7 @@ describe('sanitizeDiscoveredValidation', () => {
     const input: DiscoveredValidation = {
       lintCommand: '/usr/local/bin/custom-linter',
     };
-    const result = sanitizeDiscoveredValidation(input);
+    const result = sanitize(input);
     expect(result).toBeUndefined();
   });
 
@@ -84,7 +95,7 @@ describe('sanitizeDiscoveredValidation', () => {
       'npm test $(whoami)',
     ];
     for (const cmd of cases) {
-      const result = sanitizeDiscoveredValidation({ testCommand: cmd });
+      const result = sanitize({ testCommand: cmd });
       expect(result?.testCommand).toBeUndefined();
     }
   });
@@ -99,13 +110,13 @@ describe('sanitizeDiscoveredValidation', () => {
       'node --require ./evil.js -e ""',
     ];
     for (const cmd of cases) {
-      const result = sanitizeDiscoveredValidation({ testCommand: cmd });
+      const result = sanitize({ testCommand: cmd });
       expect(result?.testCommand).toBeUndefined();
     }
   });
 
   it('allows node without script-loading arguments', () => {
-    const result = sanitizeDiscoveredValidation({ testCommand: 'node --version' });
+    const result = sanitize({ testCommand: 'node --version' });
     expect(result?.testCommand).toBe('node --version');
   });
 
@@ -117,33 +128,98 @@ describe('sanitizeDiscoveredValidation', () => {
       'npx --package evil scripts/pwn.js',
     ];
     for (const cmd of cases) {
-      const result = sanitizeDiscoveredValidation({ testCommand: cmd });
+      const result = sanitize({ testCommand: cmd });
       expect(result?.testCommand).toBeUndefined();
     }
+  });
+
+  it.each([
+    'npx NPM run pwn',
+    'npx Node pwn',
+    'npx npm@10 run pwn',
+    'npx NoDe@20 pwn',
+    'npx TsX@4 pwn',
+    'npx npm@ run pwn',
+    'npx Node@ pwn',
+    'npx TsX@ pwn',
+  ])('refuses a code-running command behind %s', (command) => {
+    expect(sanitize({ lintCommand: command })).toBeUndefined();
+    expect(warnings()).toEqual([expect.stringContaining(`${command} from the planner`)]);
+  });
+
+  it.each([
+    'npx tsc --noEmit',
+    'npx tsc@5 --noEmit',
+    'npx tsc@ --noEmit',
+    'npx biome@2 check',
+    'npx npm@10 test',
+    'npx npm@ test',
+  ])('keeps an admitted tool form: %s', (command) => {
+    expect(sanitize({ lintCommand: command })).toEqual({ lintCommand: command });
+    expect(warnings()).toEqual([]);
   });
 
   it('blocks npm/pnpm/yarn script runners', () => {
     const cases = ['npm run pwn', 'pnpm run pwn', 'yarn run pwn', 'npm exec scripts/pwn.js'];
     for (const cmd of cases) {
-      const result = sanitizeDiscoveredValidation({ testCommand: cmd });
+      const result = sanitize({ testCommand: cmd });
       expect(result?.testCommand).toBeUndefined();
     }
+  });
+
+  it('warns on the run bus, once per stage, that a run script is not taken from the planner', () => {
+    const result = sanitize({
+      language: 'typescript',
+      typecheckCommand: 'npm run typecheck',
+      lintCommand: 'npm run lint',
+      testCommand: 'npm test',
+    });
+    expect(result).toEqual({ language: 'typescript', testCommand: 'npm test' });
+    expect(recorder.events).toEqual([
+      expect.objectContaining({ type: 'warning', phase: 'researching', category: 'validation' }),
+      expect.objectContaining({ type: 'warning', phase: 'researching', category: 'validation' }),
+    ]);
+    expect(warnings()).toEqual([
+      expect.stringMatching(
+        /^The typecheck stage .*npm run typecheck from the planner.*package script/,
+      ),
+      expect.stringMatching(/^The lint stage .*npm run lint from the planner.*package script/),
+    ]);
+    expect(warnings().join('\n')).not.toMatch(/ignored|sanitize-discovered|allowlist/);
+    expect(stderr).not.toHaveBeenCalled();
+  });
+
+  it('blames the allowlist only for a program outside it', () => {
+    const allowlisted = [
+      'npm run lint',
+      'node -e "process.exit(0)"',
+      'npx tsx scripts/pwn.ts',
+      'vitest --config scripts/pwn.js',
+      'npm test | grep pass',
+    ];
+    for (const cmd of allowlisted) sanitize({ lintCommand: cmd });
+    expect(warnings()).toHaveLength(allowlisted.length);
+    expect(warnings().join('\n')).not.toContain('allowlist');
+
+    recorder = makeBusRecorder();
+    sanitize({ lintCommand: 'custom-lint --all' });
+    expect(warnings()).toEqual([expect.stringContaining('outside the allowlist')]);
   });
 
   it('blocks vitest/jest config paths that load repo-local files', () => {
     const cases = ['vitest --config scripts/pwn.js', 'jest -c scripts/pwn.js'];
     for (const cmd of cases) {
-      const result = sanitizeDiscoveredValidation({ testCommand: cmd });
+      const result = sanitize({ testCommand: cmd });
       expect(result?.testCommand).toBeUndefined();
     }
   });
 
   it('admits uv run pytest, golangci-lint run and make test, still rejects node -e', () => {
     for (const cmd of ['uv run pytest', 'golangci-lint run', 'make test']) {
-      expect(sanitizeDiscoveredValidation({ testCommand: cmd })?.testCommand).toBe(cmd);
+      expect(sanitize({ testCommand: cmd })?.testCommand).toBe(cmd);
     }
     for (const cmd of ['node -e "process.exit(0)"', 'uv run python -c "print(1)"']) {
-      expect(sanitizeDiscoveredValidation({ testCommand: cmd })?.testCommand).toBeUndefined();
+      expect(sanitize({ testCommand: cmd })?.testCommand).toBeUndefined();
     }
   });
 
@@ -151,7 +227,7 @@ describe('sanitizeDiscoveredValidation', () => {
     const input: DiscoveredValidation = {
       testCommand: 'custom-test-tool --all',
     };
-    const result = sanitizeDiscoveredValidation(input);
+    const result = sanitize(input);
     expect(result?.testCommand).toBeUndefined();
   });
 
@@ -162,7 +238,7 @@ describe('sanitizeDiscoveredValidation', () => {
       language: 'typescript',
       testPattern: '*.test.ts',
     };
-    const result = sanitizeDiscoveredValidation(input);
+    const result = sanitize(input);
     expect(result?.typecheckCommand).toBe('npx tsc --noEmit');
     expect(result?.testCommand).toBeUndefined();
     expect(result?.language).toBe('typescript');
@@ -170,13 +246,27 @@ describe('sanitizeDiscoveredValidation', () => {
   });
 
   it('blocks traversal testPattern values', () => {
-    const result = sanitizeDiscoveredValidation({
+    const result = sanitize({
       testPattern: '../../outside.test.ts',
       language: 'typescript',
     });
     expect(result?.testPattern).toBeUndefined();
     expect(result?.language).toBe('typescript');
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('../../outside.test.ts'));
+    expect(warnings()).toEqual([
+      expect.stringMatching(/^The test stage .*\.\.\/\.\.\/outside\.test\.ts from the planner/),
+    ]);
+  });
+
+  it('gives each refused testPattern a reason that holds for it', () => {
+    const refused = ['..test.ts', 'src/*.test.ts', 'tests\\*.test.ts', '../../outside.test.ts'];
+    for (const testPattern of refused) sanitize({ testPattern });
+    expect(warnings()).toEqual(
+      refused.map((pattern) =>
+        expect.stringContaining(
+          `${pattern} from the planner (it contains ".." or a path separator)`,
+        ),
+      ),
+    );
   });
 
   it('preserves language and testPattern even when all commands are blocked', () => {
@@ -185,9 +275,143 @@ describe('sanitizeDiscoveredValidation', () => {
       language: 'javascript',
       testPattern: '*.spec.js',
     };
-    const result = sanitizeDiscoveredValidation(input);
+    const result = sanitize(input);
     expect(result?.testCommand).toBeUndefined();
     expect(result?.language).toBe('javascript');
     expect(result?.testPattern).toBe('*.spec.js');
+  });
+});
+
+describe('sanitizeDiscoveredValidation — script runners', () => {
+  it('blocks the aliases, short forms and exec forms of every package manager', () => {
+    const cases = [
+      'npm run-script pwn',
+      'npm rum pwn',
+      'npm run-s pwn',
+      'npm x pwn',
+      'npm start',
+      'npm create pwn',
+      'npm --prefix test run-script pwn',
+      'pnpm pwn',
+      'pnpm run-script pwn',
+      'yarn pwn',
+      'yarn exec pwn',
+      'bun run pwn',
+      'bun pwn',
+      'bun x pwn',
+      'bun exec pwn',
+    ];
+    for (const cmd of cases) {
+      const result = sanitize({ testCommand: cmd });
+      expect(result?.testCommand).toBeUndefined();
+    }
+  });
+
+  it('blocks a path that the test entry passes on', () => {
+    const cases = [
+      'npm test -- --config scripts/pwn.js',
+      'npm test -- --config=pwn.config.ts',
+      'npm test --prefix ../other',
+      'bun test --preload ./pwn.ts',
+      'bun test --preload pwn.ts',
+    ];
+    for (const cmd of cases) {
+      const result = sanitize({ testCommand: cmd });
+      expect(result?.testCommand).toBeUndefined();
+    }
+  });
+
+  it('blocks make and just recipes other than a validation stage', () => {
+    const cases = [
+      'make pwn',
+      'just pwn',
+      'make test pwn',
+      'make -f pwn.mk test',
+      'make test SHELL=./pwn.sh',
+    ];
+    for (const cmd of cases) {
+      const result = sanitize({ testCommand: cmd });
+      expect(result?.testCommand).toBeUndefined();
+    }
+  });
+
+  it('blocks a runner or an unlisted command behind a front-end', () => {
+    const cases = [
+      'uv run npm run pwn',
+      'npx npm run pwn',
+      'poetry run make pwn',
+      'uv run touch pwn',
+      'uv run pwn.py',
+      'poetry run pwn',
+      'uv tool run pwn',
+    ];
+    for (const cmd of cases) {
+      const result = sanitize({ testCommand: cmd });
+      expect(result?.testCommand).toBeUndefined();
+    }
+  });
+
+  it('blocks node --run and flags spelled with =', () => {
+    const cases = ['node --run pwn', 'node --run=pwn', 'npx --package=evil pwn'];
+    for (const cmd of cases) {
+      const result = sanitize({ testCommand: cmd });
+      expect(result?.testCommand).toBeUndefined();
+    }
+  });
+
+  it('blocks a script, module or inline program that an interpreter runs', () => {
+    const cases = [
+      'node pwn.js',
+      'node pwn',
+      'node -p process.env',
+      'python pwn.py',
+      'python -m pwn',
+      'python -mpwn',
+      'python -cimport pwn',
+      'uv run python pwn.py',
+    ];
+    for (const cmd of cases) {
+      const result = sanitize({ testCommand: cmd });
+      expect(result?.testCommand).toBeUndefined();
+    }
+  });
+
+  it('gives each new refusal a reason that holds for it', () => {
+    const refusals = [
+      ['yarn lint', 'runs a package manager, not as a bare test'],
+      ['pnpm --filter web test', 'runs a package manager, not as a bare test'],
+      ['npm test --prefix ../other', 'passes a path to the test command'],
+      ['make check', 'runs make or just, not on a bare stage'],
+      ['make -j4 test', 'runs make or just, not on a bare stage'],
+      ['uv run --frozen pytest', 'differs from a bare run of a Python tool'],
+      ['python -m pwn', 'runs a script or inline code'],
+      ['npx --package=evil pwn', 'runs code through npx'],
+    ] as const;
+    for (const [cmd] of refusals) sanitize({ testCommand: cmd });
+    expect(warnings()).toEqual(
+      refusals.map(([cmd, reason]) =>
+        expect.stringContaining(`${cmd} from the planner (it ${reason})`),
+      ),
+    );
+  });
+
+  it('still admits the test entry, the stage targets and Python tools behind a front-end', () => {
+    const cases = [
+      'npm test',
+      'npm test -- --run --reporter=dot',
+      'pnpm test',
+      'yarn test',
+      'bun test',
+      'make lint',
+      'just typecheck',
+      'poetry run pytest',
+      'uv run python -m pytest',
+      'python -m pytest -rA',
+      'node --test',
+    ];
+    for (const cmd of cases) {
+      expect(sanitize({ testCommand: cmd })?.testCommand).toBe(cmd);
+    }
+    expect(warnings()).toEqual([]);
   });
 });

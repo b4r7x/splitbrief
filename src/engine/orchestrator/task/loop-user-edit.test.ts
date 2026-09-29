@@ -441,13 +441,22 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
 
     let stateAtBrief: WorkflowState | null = null;
     const implementer = makeImplementer({
+      capabilities: { writesFiles: 'direct' },
       implement: vi
         .fn()
-        .mockImplementation(async ({ task }: { task: ReturnType<typeof makeTask> }) => {
-          if (task.id === 'T001') stateAtBrief ??= loadState({ projectDir, sessionId });
-          writeFileSync(join(projectDir, task.file), `implementation for ${task.id}\n`);
-          return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
-        }),
+        .mockImplementation(
+          async ({
+            task,
+            projectDir: runDir,
+          }: {
+            task: ReturnType<typeof makeTask>;
+            projectDir: string;
+          }) => {
+            if (task.id === 'T001') stateAtBrief ??= loadState({ projectDir, sessionId });
+            writeFileSync(join(runDir, task.file), `implementation for ${task.id}\n`);
+            return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
+          },
+        ),
     });
     const onUserEditConflict = vi.fn().mockResolvedValue('continue-unrelated');
     const { callbacks } = makeCallbacks({ onUserEditConflict });
@@ -493,12 +502,25 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
         config: makeNoValidationConfig({ workflow: defaultWorkflow }),
         callbacks: secondCallbacks,
         implementer: makeImplementer({
+          capabilities: { writesFiles: 'direct' },
           implement: vi
             .fn()
-            .mockImplementation(async ({ task }: { task: ReturnType<typeof makeTask> }) => {
-              writeFileSync(join(projectDir, task.file), `implementation for ${task.id}\n`);
-              return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
-            }),
+            .mockImplementation(
+              async ({
+                task,
+                projectDir: runDir,
+              }: {
+                task: ReturnType<typeof makeTask>;
+                projectDir: string;
+              }) => {
+                writeFileSync(join(runDir, task.file), `implementation for ${task.id}\n`);
+                return {
+                  success: true,
+                  output: 'code',
+                  usage: { inputTokens: 10, outputTokens: 5 },
+                };
+              },
+            ),
         }),
         bus: secondBus,
       }),

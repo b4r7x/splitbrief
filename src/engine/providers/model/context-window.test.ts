@@ -141,3 +141,54 @@ describe('resolveRunnerContextWindow', () => {
     expect(result).toEqual({ contextLength: 1_050_000, source: 'known-catalog' });
   });
 });
+
+describe('resolveRunnerContextWindow — kind-aware lanes', () => {
+  it('never budgets a CLI-named custom API provider against the local CLI catalog', () => {
+    const cache = makeModelCacheAccessor({
+      providerModels: {
+        opencode: [{ id: 'opencode/gpt-5', contextLength: 999_000 }],
+      },
+    });
+
+    // Legacy callers keep the name-only lane choice.
+    expect(
+      resolveRunnerContextWindow({ providerId: 'opencode', model: 'opencode/gpt-5', cache }),
+    ).toEqual({ contextLength: 999_000, source: 'runtime' });
+
+    // The API seat of that name is a custom endpoint with no catalog identity.
+    expect(
+      resolveRunnerContextWindow({
+        providerId: 'opencode',
+        model: 'opencode/gpt-5',
+        kind: 'api',
+        cache,
+      }),
+    ).toBeNull();
+  });
+
+  it('keeps a catalogued API provider on its API lanes and a CLI tool on its own', () => {
+    const cache = makeModelCacheAccessor({
+      catalog: {
+        ollama: {
+          id: 'ollama',
+          models: { 'qwen3-coder:30b': { id: 'qwen3-coder:30b', limit: { context: 400_000 } } },
+        },
+      },
+    });
+
+    expect(
+      resolveRunnerContextWindow({
+        providerId: 'ollama',
+        model: 'qwen3-coder:30b',
+        kind: 'api',
+        cache,
+      }),
+    ).toEqual({ contextLength: 400_000, source: 'models-dev' });
+    expect(resolveRunnerContextWindow({ providerId: 'codex', model: 'auto', kind: 'cli' })).toEqual(
+      { contextLength: 272_000, source: 'automatic-catalog' },
+    );
+    expect(
+      resolveRunnerContextWindow({ providerId: 'codex', model: 'auto', kind: 'shell' }),
+    ).toBeNull();
+  });
+});

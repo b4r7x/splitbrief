@@ -2,6 +2,7 @@ import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   ANALYZE_FILE,
+  BRIEF_QUALITY_FILE,
   CLARIFICATIONS_FILE,
   CONSTITUTION_CHECK_FILE,
   PLAN_FILE,
@@ -29,7 +30,10 @@ const DOWNSTREAM: Partial<Record<PlannerCall, readonly PlannerStepArtifact[]>> =
 /**
  * Drops the artifacts a revised call invalidates, so the step loop re-runs the
  * calls that produced them. The revised artifact itself stays: it is the input
- * the downstream calls read.
+ * the downstream calls read. The brief-quality report measures the briefs, and
+ * every call this follows has just rewritten or invalidated them, so the report
+ * is dropped too. It is not a planner artifact, so the returned list names only
+ * the planner artifacts that were removed.
  */
 export function invalidateFrom(
   ref: { projectDir: string; sessionId: string },
@@ -41,5 +45,6 @@ export function invalidateFrom(
     rmSync(join(dir, artifact), { force: true });
     dropped.push(artifact);
   }
+  rmSync(join(dir, BRIEF_QUALITY_FILE), { force: true });
   return dropped;
 }

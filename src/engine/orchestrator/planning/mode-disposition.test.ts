@@ -31,6 +31,25 @@ describe('cross-mode disposition contract', () => {
     expect(result.state.phase).toBe('implementing');
   });
 
+  // The briefs are measured where they wait: at the plan gate in a run whose steps open one, and in
+  // planning, the phase that compiled them, in every other run.
+  it.each([
+    [{ mode: 'quick' }, 'planning'],
+    [{ mode: 'standard' }, 'planning'],
+    [{ mode: 'standard', approve: 'none' }, 'planning'],
+    [{ mode: 'speckit', approve: 'spec' }, 'planning'],
+    [{ mode: 'standard', approve: 'plan' }, 'reviewing-plan'],
+    [{ mode: 'speckit' }, 'reviewing-plan'],
+  ] as const)('%o measures its briefs in %s', async (workflow, phase) => {
+    const { result, events } = await runPlanningTurn(dirs, { config: makeConfig({ workflow }) });
+
+    expect(result.state.phase).toBe('implementing');
+    expect(events.find((event) => event.type === 'brief_quality_passed')?.phase).toBe(phase);
+    expect(events.some((event) => event.phase === 'reviewing-plan')).toBe(
+      phase === 'reviewing-plan',
+    );
+  });
+
   it.each([
     { label: 'quick mode', workflow: auto('quick') },
     { label: 'standard mode with --approve none', workflow: auto('standard') },

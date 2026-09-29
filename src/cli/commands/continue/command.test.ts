@@ -494,20 +494,31 @@ describe('continueCommand', () => {
     expect([...skillsStore.get().selected].sort()).toEqual(['react', 'typescript']);
   });
 
-  it('overrides the saved workflow mode when --mode is passed explicitly', async () => {
+  it('keeps the saved workflow mode and says so when --mode names another', async () => {
     const projectDir = makeTmpProject();
     const sessDir = makeSessionDir(projectDir, '2025-04-01-override-mode');
     writeLockfile(sessDir, { exitedAt: Date.now(), sessionId: '2025-04-01-override-mode' });
     writeState(sessDir, 'implementing', { mode: 'speckit', approve: 'all' });
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    // `mockRestore` clears the recorded calls, so they are read before it runs.
+    let warnings: string[] = [];
 
-    await continueCommand(
-      '2025-04-01-override-mode',
-      { projectDir, json: true, mode: 'quick' },
-      deps,
+    try {
+      await continueCommand(
+        '2025-04-01-override-mode',
+        { projectDir, json: true, mode: 'quick' },
+        deps,
+      );
+      warnings = warnSpy.mock.calls.map((call) => call.join(' '));
+    } finally {
+      warnSpy.mockRestore();
+    }
+
+    expect(warnings).toContain(
+      "The run keeps its saved workflow mode 'speckit'; --mode quick applies only to a new run.",
     );
-
     expect(headlessRuns).toHaveLength(1);
-    expect(headlessRuns[0]?.state).toMatchObject({ mode: 'quick' });
+    expect(headlessRuns[0]?.state).toMatchObject({ mode: 'speckit' });
   });
 
   it('strips terminal control bytes from the pre-TUI resume status line', async () => {

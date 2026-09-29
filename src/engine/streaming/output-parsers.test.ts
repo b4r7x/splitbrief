@@ -112,6 +112,7 @@ describe('wrapStreamParser field projections', () => {
   it('omits undefined optional fields from the wrapped parse result', () => {
     expect(parse(jsonLine({ type: 'system', session_id: 'only-session' }))).toEqual({
       sessionId: 'only-session',
+      isHeartbeat: true,
     });
   });
 });

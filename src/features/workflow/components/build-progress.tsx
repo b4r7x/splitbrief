@@ -1,5 +1,6 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
+import { useSharedClock } from '../../../hooks/use-shared-clock.js';
 import { configStore } from '../../../stores/project/config.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { operationsStore } from '../../../stores/workflow/operations/state.js';
@@ -13,15 +14,28 @@ export function BuildProgressBlock({ cols }: { cols: number }) {
   const t = useTheme();
   const [tasks, lifecycle, operations] = useStores(tasksStore, lifecycleStore, operationsStore);
   const config = configStore.use((state) => state.config);
+  const running = lifecycle.status === 'running';
+  // Freshness counts the seconds since the seat last spoke, so it has to move while the seat says
+  // nothing: the shared run clock repaints the block when nothing else does.
+  const now = useSharedClock({ active: running });
   const width = getChromeContentWidth(cols);
-  const progress = deriveBuildProgress({ tasks, lifecycle, operations, config, now: Date.now() });
+  const progress = deriveBuildProgress({ tasks, lifecycle, operations, config, now });
+  const lines = buildProgressLines(progress, width);
   return (
     <Box flexDirection="column" flexShrink={0}>
-      {buildProgressLines(progress, width).map((line, index) => (
-        <Text key={line} color={index === 0 ? t.text : t.textDim} wrap="truncate">
-          {truncateTerminalDisplayText(line, width)}
-        </Text>
-      ))}
+      {lines.map((line, index) => {
+        const text = truncateTerminalDisplayText(line, width);
+        // Freshness closes the last row at every width. A silence takes the warning colour the
+        // byline's stall lead wears; the facts that share its row keep theirs.
+        const silence =
+          progress.silent && index === lines.length - 1 && text.endsWith(progress.freshness);
+        return (
+          <Text key={line} color={index === 0 ? t.text : t.textDim} wrap="truncate">
+            {silence ? text.slice(0, text.length - progress.freshness.length) : text}
+            {silence && <Text color={t.warning}>{progress.freshness}</Text>}
+          </Text>
+        );
+      })}
     </Box>
   );
 }

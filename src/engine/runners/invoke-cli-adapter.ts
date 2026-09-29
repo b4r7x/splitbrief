@@ -17,7 +17,7 @@ type InvokeCliOptions = {
   invocation: CliInvocation;
   prompt: string;
   callContext: RunnerCallContext;
-  onOutput?: ((text: string) => void) | undefined;
+  onOutput?: ((text: string, opts?: { messageStart?: boolean | undefined }) => void) | undefined;
   onSessionId?: ((id: string) => void) | undefined;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   idle?: { warnMs?: number | undefined; killMs?: number | undefined } | undefined;
@@ -44,11 +44,17 @@ export function toCliEnvironment(environment: NodeJS.ProcessEnv): Readonly<Recor
 export async function invokeCliAdapter(opts: InvokeCliOptions): Promise<RunnerCallResult> {
   let streamedText = '';
   let blockText = '';
-  const stream = (text: string): void => {
+  let nextAssistantStartsMessage = false;
+  const stream = (
+    text: string,
+    channel: Extract<RunnerCallEvent, { type: 'call_text_delta' }>['channel'],
+  ): void => {
     if (text.length === 0) return;
     streamedText += text;
     blockText += text;
-    opts.onOutput?.(text);
+    const messageStart = channel === 'assistant' && nextAssistantStartsMessage;
+    opts.onOutput?.(text, { messageStart });
+    if (messageStart) nextAssistantStartsMessage = false;
   };
   const forwardText = (event: Extract<RunnerCallEvent, { type: 'call_text_delta' }>): void => {
     if (!contributesToStreamedText(event.channel)) {
@@ -56,7 +62,7 @@ export async function invokeCliAdapter(opts: InvokeCliOptions): Promise<RunnerCa
       return;
     }
     if (event.semantics !== 'final') {
-      stream(event.text);
+      stream(event.text, event.channel);
       return;
     }
     // `final` text restates rather than extends: an assistant record restates
@@ -65,7 +71,7 @@ export async function invokeCliAdapter(opts: InvokeCliOptions): Promise<RunnerCa
     const alreadyStreamed = event.channel === 'result' ? streamedText : blockText;
     const reconciliation = reconcileFinalText(alreadyStreamed, event.text);
     if (reconciliation.kind === 'full' || reconciliation.kind === 'suffix') {
-      stream(reconciliation.text);
+      stream(reconciliation.text, event.channel);
     } else if (reconciliation.kind === 'replace') {
       if (event.channel === 'result') {
         if (streamedText.endsWith(reconciliation.text)) return;
@@ -81,7 +87,7 @@ export async function invokeCliAdapter(opts: InvokeCliOptions): Promise<RunnerCa
         }
       } else {
         blockText = '';
-        stream(reconciliation.text);
+        stream(reconciliation.text, event.channel);
       }
     }
     if (event.channel !== 'result') blockText = '';
@@ -98,7 +104,14 @@ export async function invokeCliAdapter(opts: InvokeCliOptions): Promise<RunnerCa
     toolUseGuard: opts.toolUseGuard,
     onEvent: (event) => {
       opts.onCallEvent?.(event);
-      if (event.type === 'call_text_delta') forwardText(event);
+      if (event.type === 'call_text_delta') {
+        forwardText(event);
+        // A final assistant record closes one message after reconciling its streamed deltas.
+        // Only the next assistant text starts a new transcript row.
+        if (event.channel === 'assistant' && event.semantics === 'final') {
+          nextAssistantStartsMessage = true;
+        }
+      }
       if (event.type === 'call_session_id') opts.onSessionId?.(event.nativeSessionId);
     },
   });

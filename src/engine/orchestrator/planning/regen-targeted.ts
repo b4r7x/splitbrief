@@ -21,11 +21,23 @@ export function buildTargetedRejectionComment(
   ].join('\n');
 }
 
-export function buildBriefQualityRepairComment(errorMessages: readonly string[]): string {
+export function buildBriefQualityRepairComment(input: {
+  errorMessages: readonly string[];
+  fenceWarnings?: readonly string[] | undefined;
+}): string {
+  const { errorMessages, fenceWarnings = [] } = input;
   return [
     'The Task Brief quality gate rejected the briefs you just produced. Every issue below is blocking:',
     '',
     ...errorMessages.map((message) => `- ${message}`),
+    ...(fenceWarnings.length === 0
+      ? []
+      : [
+          '',
+          'The parser also reported these code fence warnings. They are not blocking on their own, but fix them so every brief parses as intended:',
+          '',
+          ...fenceWarnings.map((warning) => `- ${warning}`),
+        ]),
     '',
     'Regenerate the complete tasks.md so every brief clears the Brief Contract on its own: concrete `### Tests` bullets (required even when a different brief owns the test file — list the cases that verify this brief), `### Scope` bounds, `### Evidence` bullets, and numbered `### Implementation Steps`.',
     'Keep the feature scope, the brief ids, and the dependency links unchanged wherever the issues above do not require otherwise.',

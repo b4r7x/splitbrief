@@ -86,6 +86,7 @@ export function WorkflowFooter({
   reviewEpoch,
   questionEpoch,
   waitingForUser = false,
+  buildBlockShown = false,
   recoveryMenuFocused = false,
   onToggleRecoveryMenu,
   questionPanelFocused = false,
@@ -117,6 +118,8 @@ export function WorkflowFooter({
   reviewEpoch?: number | undefined;
   questionEpoch?: number | undefined;
   waitingForUser?: boolean | undefined;
+  /** The build block is on screen above the body, and its freshness line states the silence. */
+  buildBlockShown?: boolean | undefined;
   questionPanelFocused?: boolean | undefined;
   onReturnToQuestion?: (() => void) | undefined;
   recoveryMenuFocused?: boolean | undefined;
@@ -132,7 +135,11 @@ export function WorkflowFooter({
   const composerWidth = getChromeContentWidth(terminalSizeStore.use((s) => s.cols));
   const footer = (
     <Box flexDirection="column" paddingX={WORKFLOW_GUTTER_X}>
-      <FeedbackRow keyHint={feedbackHint ?? undefined} inputHint={inputHint} />
+      <FeedbackRow
+        keyHint={feedbackHint ?? undefined}
+        inputHint={inputHint}
+        collapseWhenEmpty={beforeComposer !== undefined}
+      />
       {beforeComposer}
       <Composer
         maxRows={compactInput ? 1 : 6}
@@ -160,7 +167,11 @@ export function WorkflowFooter({
         {...(onReviewInteraction ? { onReviewInteraction } : {})}
         reviewYankActive={reviewYankActive}
       />
-      <InputFooter waiting={waitingForUser} {...(byline !== undefined && { byline })} />
+      <InputFooter
+        waiting={waitingForUser}
+        buildBlockShown={buildBlockShown}
+        {...(byline !== undefined && { byline })}
+      />
     </Box>
   );
   return footer;

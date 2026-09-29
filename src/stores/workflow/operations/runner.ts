@@ -152,6 +152,7 @@ function operationFromRunnerStart(event: EngineEventOf<'runner_call_started'>): 
     warnings: [],
     partial: false,
     ...(event.taskId !== undefined && { taskId: event.taskId }),
+    ...(event.backendKind !== undefined && { backendKind: event.backendKind }),
     ...(runnerName !== undefined && { runnerName }),
     ...(model !== undefined && { model }),
     ...(event.attempt !== undefined && { attempt: event.attempt }),

@@ -12,32 +12,42 @@ import {
   WorkflowStateSchema,
 } from '../../../src/core/schemas/workflow.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
+import { readRunnerPids } from '../../../src/core/sessions/runner-pids.js';
+import { canSignalProcess } from '../../../src/lib/process/liveness.js';
 import { isRecord } from '../../../src/utils/type-guards.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { spawnCli } from '../helpers/live-cli-harness.js';
 import { assertPlainStdout } from '../helpers/run-dir-assertions.js';
 import {
   createStopContinueFixture,
+  endImplementerHold,
+  GREET_FILE,
   GREET_SOURCE,
   MARKER_FILE,
   type StopContinueFixture,
 } from '../helpers/stop-continue-fixture.js';
 
-const START_TIMEOUT_MS = 60_000;
-const CONTINUE_TIMEOUT_MS = 60_000;
-const MARKER_WAIT_MS = 45_000;
+const START_TIMEOUT_MS = 90_000;
+const CONTINUE_TIMEOUT_MS = 120_000;
+const MARKER_WAIT_MS = 75_000;
 
 let fixture: StopContinueFixture | undefined;
 
-afterEach(() => {
-  if (fixture !== undefined) cleanupTempDir(fixture.tmpDir);
+afterEach(async () => {
+  if (fixture !== undefined) {
+    // Confirm the held implementer is gone (or take it down) before its release file's
+    // directory is removed: deleting first would race the child's 50 ms poll.
+    await endImplementerHold(fixture);
+    cleanupTempDir(fixture.tmpDir);
+  }
   fixture = undefined;
 });
 
 /**
  * Starts the run, waits until the implementer has written its marker — which is
- * only true once the brief is executing — and then signals the whole process
- * group so the tool subprocess goes with the CLI.
+ * only true once the brief is executing — and then signals the CLI's process
+ * group. The implementer runs in a group of its own, so only the CLI gets the
+ * signal: a SIGINT reaches the tool through the CLI's abort, a SIGKILL does not.
  */
 async function startAndSignal(
   target: StopContinueFixture,
@@ -186,7 +196,7 @@ function expectFinishedPlainRun(stdout: string): void {
   expect(lines).toContain('done: 1 tasks');
 }
 
-describe('stop → continue → finish', () => {
+describe('stop → continue → finish', { timeout: 240_000 }, () => {
   it('parks a brief cut by SIGINT and continues it to a passing review', async () => {
     fixture = createStopContinueFixture();
     const target = fixture;
@@ -229,6 +239,17 @@ describe('stop → continue → finish', () => {
 
     const killed = await startAndSignal(target, 'SIGKILL');
     expect(killed.exitCode).toBeNull();
+    // The kill cuts the CLI, not the implementer: the first attempt stays in its hold, holding
+    // the marker as its only partial, until the continuation's boot reaps it. The test reaps
+    // nothing itself — the continuation owning that cleanup is what this case exercises.
+    const orphans = readRunnerPids({ projectDir: target.projectDir, sessionId: killed.sessionId });
+    expect(orphans, 'the killed run left no runner pid in its ledger to reap').not.toEqual([]);
+    for (const { pid } of orphans) {
+      expect(
+        canSignalProcess(pid),
+        `implementer ${pid} died before the continuation could reap it`,
+      ).toBe(true);
+    }
 
     const killedState = readState(target, killed.sessionId);
     expect(killedState.interruptedStep).toBeUndefined();
@@ -238,6 +259,17 @@ describe('stop → continue → finish', () => {
     const resumed = await continueRun(target);
     expect(resumed.exitCode, resumed.stderr).toBe(0);
     expectFinishedPlainRun(resumed.stdout);
+
+    // The continuation reaped the orphan and released its ledger entry before it ran the brief.
+    for (const { pid } of orphans) {
+      expect(
+        canSignalProcess(pid),
+        `implementer ${pid} outlived the continuation's reap, so it can still write ${GREET_FILE} into the worktree`,
+      ).toBe(false);
+    }
+    expect(readRunnerPids({ projectDir: target.projectDir, sessionId: killed.sessionId })).toEqual(
+      [],
+    );
 
     const events = readEvents(target, killed.sessionId);
     expect(warningMessages(events)).toContainEqual(

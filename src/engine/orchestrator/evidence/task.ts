@@ -4,6 +4,7 @@ import type { ValidationResult } from '../validation/result.js';
 import type {
   EvidenceApiApply,
   EvidenceLedger,
+  EvidencePromotedFile,
   EvidencePromotionAttempt,
   EvidenceTask,
   EvidenceValidationEntry,
@@ -13,6 +14,7 @@ import { findOrSeed, withUpdatedTask } from '../../../core/evidence/ledger-state
 import { uniquePush } from '../../../utils/collections.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
+import { hashTaskBrief } from '../../brief-hash.js';
 
 const VALIDATION_PASSED_LABEL: Record<EvidenceValidationEntry['stage'], string> = {
   typecheck: 'typecheck passed',
@@ -51,6 +53,7 @@ function apiApplyReceipt(result: BundleApplyResult): EvidenceApiApply {
       action: file.action,
       beforeSha256: file.beforeSha256,
       afterSha256: file.afterSha256,
+      ...(file.afterMode === undefined ? {} : { afterMode: file.afterMode }),
     })),
     noops: [...result.noops],
     untouched: [...result.untouched],
@@ -89,6 +92,64 @@ export function recordedApiCreatedPaths(ref: SessionRef, task: Task): string[] {
   } catch {
     return [];
   }
+}
+
+/** Historical receipts can establish prior output, but cannot prove its current contents. */
+export function recordedTargetOutput(
+  ref: SessionRef,
+  task: Task,
+): { files: EvidencePromotedFile[]; hasOutput: boolean } {
+  try {
+    const entry = readEvidenceLedger(ref)?.tasks.find((entry) => entry.id === task.id);
+    const hasOutput =
+      entry?.promotedBriefHash !== undefined ||
+      (entry?.promotedFiles?.length ?? 0) > 0 ||
+      (entry?.promotionAttempts ?? []).some((attempt) => attempt.appliedFiles.length > 0) ||
+      (entry?.apiApply?.workspacePath === undefined && (entry?.apiApply?.applied.length ?? 0) > 0);
+    return {
+      files: entry?.promotedBriefHash === hashTaskBrief([task]) ? (entry.promotedFiles ?? []) : [],
+      hasOutput,
+    };
+  } catch {
+    return { files: [], hasOutput: false };
+  }
+}
+
+/** One current owner per path across every task and every target-write path. */
+function withTargetWrites(input: {
+  ledger: EvidenceLedger;
+  task: Task;
+  files: EvidencePromotedFile[];
+  unknownPaths?: string[] | undefined;
+}): EvidenceLedger {
+  const { ledger, task, files, unknownPaths = [] } = input;
+  if (files.length === 0 && unknownPaths.length === 0) return ledger;
+  const hash = hashTaskBrief([task]);
+  const latest = [...new Map(files.map((file) => [file.path, file])).values()];
+  const replaced = new Set([...latest.map((file) => file.path), ...unknownPaths]);
+  return {
+    ...ledger,
+    tasks: ledger.tasks.map((entry) => {
+      if (entry.id === task.id) {
+        const previous = entry.promotedBriefHash === hash ? (entry.promotedFiles ?? []) : [];
+        const created = provenCreatedPaths(entry);
+        for (const file of latest) {
+          if (file.created === true) uniquePush(created, file.path);
+        }
+        return {
+          ...entry,
+          promotedBriefHash: hash,
+          promotedFiles: [...previous.filter((file) => !replaced.has(file.path)), ...latest],
+          ...(created.length > 0 ? { apiCreatedPaths: created } : {}),
+        };
+      }
+      if (entry.promotedFiles === undefined) return entry;
+      return {
+        ...entry,
+        promotedFiles: entry.promotedFiles.filter((file) => !replaced.has(file.path)),
+      };
+    }),
+  };
 }
 
 function isExemptStage(
@@ -272,7 +333,36 @@ export function recordPromotionFailureEvidence(
     next.observedEvidence,
     `promotion failed at ${input.attempt.failedFile} after applying ${input.attempt.appliedFiles.length} file(s)`,
   );
-  return withUpdatedTask(input.ledger, next.id, () => next);
+  return withTargetWrites({
+    ledger: withUpdatedTask(input.ledger, next.id, () => next),
+    task: input.task,
+    files: input.attempt.appliedFiles,
+    unknownPaths: [input.attempt.failedFile],
+  });
+}
+
+export type RecordPromotedFilesEvidenceInput = {
+  ledger: EvidenceLedger;
+  task: Task;
+  files: EvidencePromotedFile[];
+  briefHash?: string | null;
+};
+
+/**
+ * What a promotion left on the target, recorded when it lands rather than when the brief ends: an
+ * attempt that promoted and then failed validation leaves those bytes to the attempts after it,
+ * and a brief parked there needs this record to tell them from an edit made while it was parked.
+ */
+export function recordPromotedFilesEvidence(
+  input: RecordPromotedFilesEvidenceInput,
+): EvidenceLedger {
+  const next = findOrSeed(input.ledger, input.task, input.briefHash);
+  next.briefHash = input.briefHash ?? next.briefHash ?? null;
+  return withTargetWrites({
+    ledger: withUpdatedTask(input.ledger, next.id, () => next),
+    task: input.task,
+    files: input.files,
+  });
 }
 
 function apiApplyLabel(result: BundleApplyResult): string {
@@ -292,9 +382,9 @@ export type RecordApiApplyEvidenceInput = {
 
 /**
  * The durable record of what one bundle response did on disk, written before
- * the attempt's own outcome is decided. It is the only proof a later attempt
- * has that this task created a file it now finds in place; without it the
- * capture cannot establish ownership and parks the brief instead of overwriting.
+ * the attempt's own outcome is decided. Together with promotion receipts, it
+ * proves which targets this task created. Without creation proof, a later
+ * capture parks a create brief whose anchor already exists.
  */
 export function recordApiApplyEvidence(input: RecordApiApplyEvidenceInput): EvidenceLedger {
   const next = findOrSeed(input.ledger, input.task, input.briefHash);
@@ -319,7 +409,21 @@ export function recordApiApplyEvidence(input: RecordApiApplyEvidenceInput): Evid
     next.observedEvidence,
     `${input.workspacePath === undefined ? '' : 'worker workspace: '}${apiApplyLabel(input.result)}`,
   );
-  return withUpdatedTask(input.ledger, next.id, () => next);
+  const updated = withUpdatedTask(input.ledger, next.id, () => next);
+  if (input.workspacePath !== undefined) return updated;
+  return withTargetWrites({
+    ledger: updated,
+    task: input.task,
+    files: input.result.applied.map((file) => ({
+      path: file.path,
+      sha256: file.afterSha256,
+      mode: file.afterMode ?? null,
+    })),
+    unknownPaths:
+      input.result.status === 'partial' || input.result.status === 'failed'
+        ? [input.result.failedPath]
+        : [],
+  });
 }
 
 export type RecordSkippedTaskEvidenceInput = {

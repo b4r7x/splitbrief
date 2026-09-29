@@ -52,11 +52,80 @@ describe('HookEntrySchema', () => {
   );
 
   it.each([
+    [{ command: 'npx', args: ['--call', 'npm run check'] }, 0, '--call'],
+    [{ command: 'npx', args: ['--call=npm run check'] }, 0, '--call=npm run check'],
+    [{ command: '/usr/local/bin/NPX', args: ['--call=npm run check'] }, 0, '--call=npm run check'],
+    [
+      { command: 'npx', args: ['--cache', '.cache', '--call=npm run check'] },
+      2,
+      '--call=npm run check',
+    ],
+    [
+      { command: 'npx', args: ['--userconfig', '.npmrc', '--call=npm run check'] },
+      2,
+      '--call=npm run check',
+    ],
+    [{ command: 'npm', args: ['exec', '--call', 'npm run check'] }, 1, '--call'],
+    [{ command: 'npm', args: ['--silent', 'exec', '--call=npm check'] }, 2, '--call=npm check'],
+    [{ command: 'npm', args: ['x', '--call=npm run check'] }, 1, '--call=npm run check'],
+    [{ command: 'npm', args: ['--call=npm run check', 'exec'] }, 0, '--call=npm run check'],
+    [{ command: 'npm', args: ['--call', 'npm run check', 'exec'] }, 0, '--call'],
+    [
+      {
+        command: 'npx',
+        args: ['--registry', 'https://registry.npmjs.org', '--call', 'npm run check'],
+      },
+      2,
+      '--call',
+    ],
+    [
+      { command: 'npx', args: ['--loglevel', 'silly', '--call=npm run check'] },
+      2,
+      '--call=npm run check',
+    ],
+    [{ command: 'npx', args: ['--omit', 'dev', '--call', 'npm run check'] }, 2, '--call'],
+    [{ command: 'npm', args: ['--omit', 'dev', 'exec', '--call', 'npm run check'] }, 3, '--call'],
+    [
+      { command: 'npm', args: ['--tag', 'next', 'exec', '--call=npm run check'] },
+      3,
+      '--call=npm run check',
+    ],
+    [{ command: 'npm', args: ['--call', 'npm run check', '--', 'exec'] }, 0, '--call'],
+    [{ command: 'npm', args: ['exec', '-c=npm run check'] }, 1, '-c=npm run check'],
+    [{ command: 'npm', args: ['exec', '--c=npm run check'] }, 1, '--c=npm run check'],
+    [{ command: 'npx', args: ['--c=npm run check'] }, 0, '--c=npm run check'],
+  ] as const)('rejects the npx/npm exec command-string option in %o', (entry, index, flag) => {
+    const result = HookEntrySchema.safeParse(entry);
+    expect(result.success).toBe(false);
+    expect(result.error?.issues).toContainEqual(
+      expect.objectContaining({ path: ['args', index], message: expect.stringContaining(flag) }),
+    );
+  });
+
+  it.each([
     [{ command: 'node', args: ['hooks/check.mjs'] }],
     [{ command: 'npx', args: ['prettier', '--check', 'src/app.ts'] }],
     [{ command: './hooks/check.sh', args: ['--rules=./hooks/rules.json', '-v'] }],
     [{ command: '/usr/local/bin/shellcheck', args: ['hooks/check.sh'] }],
   ])('accepts the script hook %o', (entry) => {
+    expect(HookEntrySchema.safeParse(entry).success).toBe(true);
+  });
+
+  it.each([
+    [{ command: './hooks/check.sh', args: ['--call', 'rules.json'] }],
+    [{ command: 'npm', args: ['--call', 'exec'] }],
+    [{ command: 'npm', args: ['test', '--call=literal'] }],
+    [{ command: 'npx', args: ['--', '--call'] }],
+    [{ command: 'npm', args: ['exec', '--', '--call'] }],
+    [{ command: 'npx', args: ['prettier', '--call'] }],
+    [{ command: 'npx', args: ['--yes', 'prettier', '--call'] }],
+    [{ command: 'npx', args: ['--package', 'prettier', '--', '--call'] }],
+    [{ command: 'npx', args: ['--registry', 'https://registry.npmjs.org', 'prettier', '--call'] }],
+    [{ command: 'npx', args: ['--force', 'prettier', '--call'] }],
+    [{ command: 'npm', args: ['--yes', 'test', '--call=literal'] }],
+    [{ command: 'npm', args: ['--omit', 'dev', 'test', '--call=literal'] }],
+    [{ command: 'npm', args: ['--call', 'npm run check', '--', 'prettier'] }],
+  ])('accepts the literal --call argument in %o outside an npx/npm exec option', (entry) => {
     expect(HookEntrySchema.safeParse(entry).success).toBe(true);
   });
 });

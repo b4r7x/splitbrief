@@ -286,7 +286,7 @@ describe('eventRows colored left-rule callouts', () => {
         } satisfies EngineEvent,
       },
       {
-        label: 'generating README.md',
+        label: 'working on README.md…',
         event: {
           type: 'implementer_generate_running',
           ts: 0,
@@ -347,6 +347,20 @@ describe('eventRows colored left-rule callouts', () => {
       expect(rows.map(rowText).join('\n')).toContain(label);
       expect(rows.every((rowValue) => getTerminalCellWidth(rowText(rowValue)) <= 80)).toBe(true);
       expect(rows.every((rowValue) => rowValue.kind.length > 0)).toBe(true);
+    }
+  });
+
+  it('uses a neutral running label at wide and narrow widths', () => {
+    const event: EngineEventOf<'implementer_generate_running'> = {
+      type: 'implementer_generate_running',
+      ts: 0,
+      phase: 'implementing',
+      taskId: taskId('T001'),
+      file: 'README.md',
+    };
+
+    for (const width of [120, 80, 60]) {
+      expect(rowsFor(event, width).map(rowText).join('\n')).toContain('working on README.md…');
     }
   });
 });

@@ -24,6 +24,7 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { PlannerConfig } from '../../../core/schemas/planner-config.js';
 import { buildContextOverflowRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/task.js';
 import { runWorkflow } from '../../../engine/orchestrator/run/workflow.js';
+import { readRunEvents } from '../../../engine/events/replay.js';
 import type { PrepareExecutionInput } from '../../../engine/runners/prepare-execution/prepare-execution.js';
 import type { PreparedExecution } from '../../../engine/runners/prepared-execution.js';
 import { useInputMode } from './use-input-mode.js';
@@ -1310,6 +1311,7 @@ describe('useRunLoop', () => {
           saveState(
             ref,
             makeImplState([makeTask({ id: 'T001', status: 'failed' })], {
+              mode: 'speckit',
               pendingRecovery: makeRecoveryIssue({
                 reason: 'runner-usage-limit',
                 availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
@@ -1358,6 +1360,8 @@ describe('useRunLoop', () => {
         kind: 'cli',
         tool: 'claude-code',
       });
+      // The seat change resumes the same run: its saved speckit mode survives and recovery clears.
+      expect(loadState(ref)?.mode).toBe('speckit');
       expect(loadState(ref)?.pendingRecovery).toBeUndefined();
       expect(errorMessages()).toEqual([expect.stringContaining('is not available')]);
 
@@ -1498,6 +1502,17 @@ describe('useRunLoop', () => {
       expect(saved?.interruptedStep?.cut).toBe('mid-step');
       expect(saved?.pendingRecovery).toBeUndefined();
       expect(settledRun()?.status.kind).toBe('open');
+      expect(
+        (await readRunEvents(prepared.session.ref)).events.filter(
+          (event) => event.type === 'turn_interrupted',
+        ),
+      ).toMatchObject([
+        {
+          source: 'user',
+          at: 'mid-step',
+          step: saved?.interruptedStep?.step,
+        },
+      ]);
 
       inst.unmount();
     });

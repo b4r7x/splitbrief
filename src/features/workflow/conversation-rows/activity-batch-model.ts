@@ -1,5 +1,9 @@
 import { formatToolModel } from '../../../core/model-display.js';
+import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
+import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
+import { resolveModelDisplayName } from '../../../engine/providers/model/display-names.js';
+import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { countNoun } from '../../../utils/pluralize.js';
 import { assertNever } from '../../../utils/type-guards.js';
@@ -38,6 +42,8 @@ export interface ActivityBatchViewModel {
   hiddenCount: number;
   headerCount: number;
   headerText: string | null;
+  /** The tool and model the batch's call ran on; the header row fits it after `headerText`. */
+  headerRunner: string | null;
   tone: ConversationRowTone;
   renderableUnits: number;
   expandableKey: string | null;
@@ -88,6 +94,7 @@ export function buildActivityBatchViewModel(input: {
     hiddenCount,
     headerCount: projection.headerCount,
     headerText,
+    headerRunner: activityBatchRunner(input.events),
     tone: activityBatchTone(input.events),
     renderableUnits: projection.headerCount,
     expandableKey: hiddenCount > 0 ? input.batchKey : null,
@@ -200,7 +207,6 @@ function activityBatchHeader(
   const latest = events.at(-1);
   if (latest === undefined) return null;
 
-  const tool = sanitizeTerminalDisplayText(formatToolModel(latest.runnerName, latest.model));
   const warnings = severityCounts.warning;
   const errors = severityCounts.error;
   const roleLabel = `${runnerActivityRoleLabel(latest.role)} activity`;
@@ -209,10 +215,54 @@ function activityBatchHeader(
     countNoun(headerCount, 'update'),
     warnings > 0 ? `${warnings} warn` : null,
     errors > 0 ? `${errors} err` : null,
-    tool ? `[${tool}]` : null,
   ]
     .filter((part): part is string => part !== null)
     .join('  ');
+}
+
+/**
+ * The tool and model this batch's own call ran on, in the words the seat identity uses for them,
+ * so a batch from before a seat swap keeps naming the runner that produced it.
+ */
+function activityBatchRunner(events: readonly RunnerActivityEvent[]): string | null {
+  const latest = events.at(-1);
+  if (latest === undefined) return null;
+
+  const runner =
+    latest.backendKind === 'cli' && latest.runnerName !== undefined
+      ? (cliToolIdForCommand(latest.runnerName) ?? latest.runnerName)
+      : latest.runnerName;
+  const displayName =
+    runner === undefined || latest.model === undefined
+      ? undefined
+      : resolveModelDisplayName({
+          providerId: runner,
+          model: latest.model,
+          role: catalogRole(latest.role),
+          cache: modelCacheStore,
+          kind: latest.backendKind,
+        });
+  const identity = sanitizeTerminalDisplayText(
+    formatToolModel({ tool: runner, model: displayName ?? latest.model, kind: latest.backendKind }),
+  );
+  return identity === '' ? null : identity;
+}
+
+/** The seat whose model catalog names the call's model; the planner's runner makes the side calls. */
+function catalogRole(role: RunnerActivityEvent['role']): ActiveRunnerRole {
+  switch (role) {
+    case 'implementer':
+      return 'implementer';
+    case 'review':
+      return 'reviewer';
+    case 'planner':
+    case 'summary':
+    case 'compaction':
+    case 'escalation':
+      return 'planner';
+    default:
+      return assertNever(role);
+  }
 }
 
 function collapsedVisibleKeys(input: {

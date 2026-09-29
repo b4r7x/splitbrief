@@ -39,6 +39,19 @@ describe('buildSummary', () => {
     expect(summary.failed).toBe(0);
   });
 
+  it('names the mode the run saved, not the one the config names today', () => {
+    const summary = buildSummary({
+      feature: 'auth',
+      state: makeState({ mode: 'quick' }),
+      startTime: Date.now() - 5000,
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+      mode: 'standard',
+    });
+
+    expect(summary.mode).toBe('quick');
+  });
+
   it('run without a reviewer omits reviewer identity', () => {
     const summary = buildSummary({
       feature: 'auth',

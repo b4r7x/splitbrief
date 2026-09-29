@@ -241,6 +241,127 @@ describe('useAppKeys: Ctrl+C', () => {
     },
   );
 
+  // A terminal read late hands both presses to Ink in one chunk, which arrives as `\x03\x03` with
+  // no ctrl flag. A run stopped at a gate sat parked behind its session options exactly like this.
+  it.each([
+    'home',
+    'at rest',
+    'parked with the session options',
+    'parked without the session options',
+  ] as const)('quits on two Ctrl+C presses read in one chunk when %s', async (state) => {
+    if (state === 'home') routerStore.navigate({ to: 'home' });
+    else
+      routerStore.navigate({
+        to: 'workflow',
+        run: makeRunRecord(),
+        execution: { kind: 'at-rest' },
+      });
+    if (state.startsWith('parked')) {
+      stopStore.request('stop-now');
+      stopStore.park('mid-brief', null, null);
+    }
+    if (state === 'parked with the session options') overlayStore.open('stop-sheet');
+    const exit = vi.fn();
+    const ui = renderFeature(<Harness exit={exit} />);
+    await tick();
+    await writeKey(ui, '\x03\x03');
+    await tick();
+    expect(exit).toHaveBeenCalledTimes(1);
+    ui.unmount();
+  });
+
+  it('stops now on the first of two Ctrl+C presses read in one chunk and quits once it settles', async () => {
+    const abort = vi.fn();
+    handlers.createAbortHandlerScope()(abort);
+    const exit = vi.fn();
+    const ui = renderFeature(<Harness exit={exit} />);
+    await tick();
+    await writeKey(ui, '\x03\x03');
+    await tick();
+    expect(abort).toHaveBeenCalledTimes(1);
+    expect(stopStore.get().intent).toBe('stop-now');
+    expect(exit).not.toHaveBeenCalled();
+    stopStore.park('mid-brief', null, null);
+    await tick();
+    expect(exit).toHaveBeenCalledTimes(1);
+    ui.unmount();
+  });
+
+  it('reads two Kitty-encoded Ctrl+C presses in one chunk as two presses', async () => {
+    routerStore.navigate({ to: 'home' });
+    const exit = vi.fn();
+    const ui = renderFeature(<Harness exit={exit} />);
+    await tick();
+    await writeKey(ui, '\x1b[99;5u\x1b[99;5u');
+    await tick();
+    expect(exit).toHaveBeenCalledTimes(1);
+    ui.unmount();
+  });
+
+  // Text typed in the same late read shares the chunk with the presses. Each `\x03` in it is still
+  // a press, and the text between presses clears the quit confirmation, as typing does.
+  it.each(['home', 'at rest'] as const)(
+    'quits on two Ctrl+C presses read in one chunk after typed text when %s',
+    async (state) => {
+      if (state === 'home') routerStore.navigate({ to: 'home' });
+      else
+        routerStore.navigate({
+          to: 'workflow',
+          run: makeRunRecord(),
+          execution: { kind: 'at-rest' },
+        });
+      const exit = vi.fn();
+      const ui = renderFeature(<Harness exit={exit} />);
+      await tick();
+      await writeKey(ui, 'fix\x03\x03');
+      await tick();
+      expect(exit).toHaveBeenCalledTimes(1);
+      ui.unmount();
+    },
+  );
+
+  it('stops now on typed text and two Ctrl+C presses read in one chunk and quits once it settles', async () => {
+    const abort = vi.fn();
+    handlers.createAbortHandlerScope()(abort);
+    const exit = vi.fn();
+    const ui = renderFeature(<Harness exit={exit} />);
+    await tick();
+    await writeKey(ui, 'fix\x03\x03');
+    await tick();
+    expect(abort).toHaveBeenCalledTimes(1);
+    expect(exit).not.toHaveBeenCalled();
+    stopStore.park('mid-brief', null, null);
+    await tick();
+    expect(exit).toHaveBeenCalledTimes(1);
+    ui.unmount();
+  });
+
+  it('stops now on a Ctrl+C read in one chunk before typed text', async () => {
+    const abort = vi.fn();
+    handlers.createAbortHandlerScope()(abort);
+    const exit = vi.fn();
+    const ui = renderFeature(<Harness exit={exit} />);
+    await tick();
+    await writeKey(ui, '\x03fix');
+    await tick();
+    expect(abort).toHaveBeenCalledTimes(1);
+    expect(stopStore.get()).toMatchObject({ intent: 'stop-now', phase: 'requested' });
+    expect(exit).not.toHaveBeenCalled();
+    ui.unmount();
+  });
+
+  it('cancels the quit confirmation with text read between two Ctrl+C presses in one chunk', async () => {
+    routerStore.navigate({ to: 'home' });
+    const exit = vi.fn();
+    const ui = renderFeature(<Harness exit={exit} />);
+    await tick();
+    await writeKey(ui, '\x03fix\x03');
+    await tick();
+    expect(exit).not.toHaveBeenCalled();
+    expect(feedbackStore.get().message).toBe('Press ctrl+c again to quit');
+    ui.unmount();
+  });
+
   it('expires the idle quit hint after two seconds', async () => {
     routerStore.navigate({ to: 'home' });
     const exit = vi.fn();

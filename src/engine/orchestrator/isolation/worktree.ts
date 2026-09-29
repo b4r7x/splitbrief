@@ -1,5 +1,5 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, realpath, symlink, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative } from 'node:path';
 import { ensureConfigGitignore } from '../../../core/config/load/document.js';
 import { isolationMarkerPath, SPLITBRIEF_DIR } from '../../../core/paths.js';
@@ -76,6 +76,18 @@ async function readIsolationMarker(wtPath: string): Promise<IsolationMarker | nu
     return parseIsolationMarker(await readFile(isolationMarkerPath(wtPath), 'utf-8'));
   } catch {
     return null;
+  }
+}
+
+async function markerOwnsProject(
+  marker: IsolationMarker | null,
+  projectDir: string,
+): Promise<boolean> {
+  if (marker?.projectDir == null) return false;
+  try {
+    return (await realpath(marker.projectDir)) === (await realpath(projectDir));
+  } catch {
+    return false;
   }
 }
 
@@ -232,7 +244,8 @@ export async function ensureIsolationWorktree(opts: {
 
   let reused: boolean;
   if (existsSync(wtPath)) {
-    if ((await readIsolationMarker(wtPath))?.sessionId !== sessionId) {
+    const marker = await readIsolationMarker(wtPath);
+    if (marker?.sessionId !== sessionId || !(await markerOwnsProject(marker, projectDir))) {
       return {
         kind: 'fallback',
         reason: `directory ${wtPath} already exists and is not owned by session ${sessionId}`,

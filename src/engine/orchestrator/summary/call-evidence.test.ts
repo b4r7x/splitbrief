@@ -138,7 +138,7 @@ describe('run call evidence', () => {
       evidenceId: 'api.custom-worker.api-key',
     });
     expect(items[0]?.invocationIdentity).toEqual(ENFORCED_API_KEY);
-    expect(breakdown?.providerRunMetadata?.[SEAT_TOOL]?.billingAttribution).toEqual({
+    expect(breakdown?.providerRunMetadata?.[`api:${SEAT_TOOL}`]?.billingAttribution).toEqual({
       posture: 'api-metered',
       basis: 'enforced-channel',
       evidenceId: 'api.custom-worker.api-key',

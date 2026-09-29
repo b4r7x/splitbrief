@@ -3,10 +3,13 @@ import { configStore } from '../../src/stores/project/config.js';
 import { WORKFLOW_GUTTER_X } from '../../src/features/workflow/layout/chrome-rows.js';
 import { terminalSizeStore } from '../../src/stores/ui/terminal-size.js';
 import { stripTerminalControls } from '../../src/utils/display-text.js';
+import { formatElapsedClock } from '../../src/utils/format-time.js';
 import { findVisualScenario, REQUIRED_VIEWPORTS } from './catalog.js';
 import { viewport, type Viewport } from './contracts/geometry.js';
 import { ArtifactProvenanceSchema } from './contracts/selection.js';
 import { teardownVisualFixture } from './fixtures/screen-fixtures.js';
+import { VISUAL_FIXTURE_EPOCH } from './fixtures/common.js';
+import { FIXED_CLOCK } from './gallery/environment.js';
 import { mountGalleryScenario } from './gallery/mount.js';
 import { parseTerminalFrame } from './terminal/parse.js';
 import { createFrameIdentity } from './visual-contract-fixtures.js';
@@ -113,6 +116,37 @@ describe('production App gallery mount', () => {
     expect(configStore.get().config).toBeNull();
     expect(terminalSizeStore.get()).toEqual(terminalBefore);
     await handle.unmount();
+  });
+});
+
+// The capture clock stands past the fixture epoch, so every live clock has counted. A clock set
+// before the runs it paints clamps them all to 0:00 and the gallery can guard none of them.
+describe('the capture clock', () => {
+  const counted = formatElapsedClock(Date.parse(FIXED_CLOCK) - VISUAL_FIXTURE_EPOCH);
+
+  it.each([
+    { scenarioId: 'workflow-planning' },
+    { scenarioId: 'workflow-implementation' },
+    { scenarioId: 'workflow-recovery-usage-limit' },
+  ])('paints the counted run clock on $scenarioId', async ({ scenarioId }) => {
+    const scenario = requireScenario(scenarioId);
+    const checkpoint = requireCheckpoint(scenario);
+    const handle = await mountGalleryScenario({
+      scenario,
+      checkpoint,
+      viewport: viewport({ cols: 120, rows: 40 }),
+    });
+
+    try {
+      const frame = await handle.waitForCheckpoint();
+      const rows = frameRows(frame);
+      expect(counted).not.toBe('0:00');
+      expect(rows[0] ?? '').toContain(counted);
+      // The checkpoint's own state is on screen with the counted clock, not only the header.
+      expect(frame).toContain(checkpoint.marker);
+    } finally {
+      await handle.unmount();
+    }
   });
 });
 

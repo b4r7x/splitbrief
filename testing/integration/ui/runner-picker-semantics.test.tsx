@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ReactElement } from 'react';
 import { pickerCatalog } from '#testing/helpers/runner-picker.js';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { PINNED_CLAUDE_CODE_OPTIONS } from '#testing/helpers/factories/model-cache.js';
 import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -47,6 +49,7 @@ import { ToolModelPicker } from '../../../src/app/overlays/runners.js';
 
 const ENTER = '\r';
 const BACKSPACE = '\u007f';
+const ARROW_DOWN = '\u001b[B';
 type Viewport = Readonly<{ cols: number; rows: number }>;
 const VIEWPORT: Viewport = { cols: 140, rows: 40 };
 const WIDE_VIEWPORT: Viewport = { cols: 200, rows: 40 };
@@ -143,9 +146,20 @@ function catalogForItem(
   });
 }
 
+// A failing expect skips the unmount in a test body, and the leaked Ink tree keeps
+// re-registering its row zones over later tests' click targets. The afterEach backstop
+// unmounts whether or not the body reached its own unmount, which Ink makes idempotent.
+const mounted: Array<() => void> = [];
+
+function mount(element: ReactElement, viewport?: Viewport) {
+  const ui = renderFeature(element, viewport);
+  mounted.push(ui.unmount);
+  return ui;
+}
+
 async function renderPicker(role: 'planner' | 'implementer', viewport: Viewport = VIEWPORT) {
   overlayStore.open(role === 'planner' ? 'planner-picker' : 'implementer-picker');
-  const ui = renderFeature(<ToolModelPicker role={role} />, viewport);
+  const ui = mount(<ToolModelPicker role={role} />, viewport);
   await flushEffects();
   return ui;
 }
@@ -157,12 +171,16 @@ function frameText(ui: ReturnType<typeof renderFeature>): string {
 describe('runner picker semantics integration', () => {
   beforeEach(() => {
     resetAllStores();
+    // A picker render must never read the operator's `~/.claude.json`; the reader memoises, so
+    // the pin goes on right after the reset that dropped the previous one.
+    modelCacheStore.__testSetClaudeCodeModelOptions(PINNED_CLAUDE_CODE_OPTIONS);
     _resetMouseZones();
     terminalSizeStore.__testReset({ ...VIEWPORT, isSmall: false });
     configStore.__testReset({ projectDir: '/tmp/project', config: makeConfig() });
   });
 
   afterEach(() => {
+    while (mounted.length > 0) mounted.pop()?.();
     vi.restoreAllMocks();
   });
 
@@ -234,7 +252,7 @@ describe('runner picker semantics integration', () => {
         if (!codex) return;
 
         const label = formatPickerStatusLabel(codex.status);
-        const ui = renderFeature(
+        const ui = mount(
           <PickerView
             role="implementer"
             catalog={catalogForItem('implementer', options, codex, [], true)}
@@ -337,13 +355,15 @@ describe('runner picker semantics integration', () => {
         ui.stdin.write(ENTER);
         await flushEffects();
 
+        // The file lands before the save settles: the write still reads it back, syncs the
+        // directory and drops its lock, and only then does the commit announce the seat.
         await vi.waitFor(() => {
+          expect(feedbackStore.get().message).toContain(`${CREW_SEAT_LABELS.plan} set to`);
           expect(loadConfig(projectDir).config.planner).toMatchObject({
             kind: 'cli',
             tool: 'codex',
           });
         });
-        expect(feedbackStore.get().message).toContain(`${CREW_SEAT_LABELS.plan} set to`);
         ui.unmount();
       });
     });
@@ -430,7 +450,7 @@ describe('runner picker semantics integration', () => {
       ];
 
       for (const { item, headline, detail, allowsCustom } of policies) {
-        const ui = renderFeature(
+        const ui = mount(
           <PickerView
             role="implementer"
             catalog={catalogForItem('implementer', [item], item, [], true)}
@@ -479,7 +499,7 @@ describe('runner picker semantics integration', () => {
       // `auto` hands the choice to the tool itself (F-001).
       expect(rightModels).toEqual([{ id: 'auto' }]);
 
-      const ui = renderFeature(
+      const ui = mount(
         <PickerView
           role="implementer"
           catalog={catalogForItem('implementer', [item], item, rightModels, true)}
@@ -494,7 +514,7 @@ describe('runner picker semantics integration', () => {
       ui.unmount();
 
       // With the tool column focused the Auto row still names itself.
-      const guidanceUi = renderFeature(
+      const guidanceUi = mount(
         <PickerView
           role="implementer"
           catalog={catalogForItem('implementer', [item], item, rightModels, false)}
@@ -526,7 +546,7 @@ describe('runner picker semantics integration', () => {
         status: { state: 'ready', remediation: null },
         available: true,
       });
-      const emptyUi = renderFeature(
+      const emptyUi = mount(
         <PickerView
           role="planner"
           catalog={catalogForItem('planner', [customEndpoint], customEndpoint, [], true)}
@@ -548,7 +568,7 @@ describe('runner picker semantics integration', () => {
           membership: 'confirmed' as const,
         },
       ];
-      const discoveredUi = renderFeature(
+      const discoveredUi = mount(
         <PickerView
           role="planner"
           catalog={catalogForItem('planner', [customEndpoint], customEndpoint, discovered, false)}
@@ -711,7 +731,10 @@ describe('runner picker semantics integration', () => {
         await flushEffects();
         plannerUi.unmount();
 
+        // Each save must settle before the next step: one still in flight hands the next
+        // seat a stale revision, or loses its directory to the temp-dir cleanup.
         await vi.waitFor(() => {
+          expect(feedbackStore.get().message).toContain(`${CREW_SEAT_LABELS.plan} set to`);
           expect(loadConfig(projectDir).config.planner).toMatchObject({
             kind: 'cli',
             tool: 'claude-code',
@@ -729,6 +752,7 @@ describe('runner picker semantics integration', () => {
         implementerUi.unmount();
 
         await vi.waitFor(() => {
+          expect(feedbackStore.get().message).toContain(`${CREW_SEAT_LABELS.build} set to`);
           expect(loadConfig(projectDir).config.implementer).toMatchObject({
             kind: 'api',
             provider: 'ollama',
@@ -762,12 +786,28 @@ describe('runner picker semantics integration', () => {
           }
           expect(frameText(ui)).not.toContain('Claude Code');
           await flushEffects();
+          ui.stdin.write(ENTER); // the filtered tool; the model column resets to the configured row
+          await flushEffects();
+          // The configured row keeps the selection. Enter opens that row's own axes; the
+          // expansion is the settled state the walk below needs, and the commit assertion
+          // after the walk pins the model those axes belonged to.
+          expect(frameText(ui)).toContain('gpt-5.4');
           ui.stdin.write(ENTER);
+          await vi.waitFor(() => {
+            expect(frameText(ui)).toContain('effort');
+          });
+          // Selecting the already-configured tool saved nothing; the receipt below belongs to
+          // the confirmation walk, not to the filter's tool select.
+          expect(feedbackStore.get().message).toBeNull();
+          ui.stdin.write(ARROW_DOWN);
           await flushEffects();
           ui.stdin.write(ENTER);
           await flushEffects();
           ui.unmount();
 
+          await vi.waitFor(() => {
+            expect(feedbackStore.get().message).toContain(`${CREW_SEAT_LABELS.plan} set to`);
+          });
           expect(loadConfig(projectDir).config.planner).toMatchObject({
             kind: 'cli',
             tool: 'codex',

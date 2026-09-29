@@ -34,6 +34,15 @@ describe('createInitialState', () => {
 });
 describe('transition', () => {
   it.each([
+    ['quick', 'planning'],
+    ['standard', 'researching'],
+    ['speckit', 'researching'],
+  ] as const)('START enters the first planner phase for %s', (mode, phase) => {
+    const state: WorkflowState = { ...createInitialState('feat'), mode };
+    expect(transition(state, { type: 'START' }).phase).toBe(phase);
+  });
+
+  it.each([
     ['idle', 'VALIDATION_PASS'],
     ['implementing', 'VALIDATION_FAIL'],
     ['implementing', 'ESCALATE'],
@@ -83,6 +92,16 @@ describe('transition', () => {
     expect(next.tasks).toEqual(tasks);
     expect(next.currentTaskIndex).toBe(1);
     expect(next.attempt).toBe(2);
+  });
+
+  it.each(['complete', 'ended'] as const)('CLOSE_RUN preserves the first %s closure', (as) => {
+    const initial = { ...createInitialState('feat'), phase: 'final-review' as const };
+    const closed = transition(
+      initial,
+      as === 'complete' ? { type: 'REVIEW_DONE', reviewStatus: 'passed' } : { type: 'CLOSE_RUN' },
+      { now: new Date('2026-05-01T10:00:00Z') },
+    );
+    expect(transition(closed, { type: 'CLOSE_RUN', at: '2026-05-02T10:00:00.000Z' })).toBe(closed);
   });
 
   it('CLOSE_RUN takes the timestamp the caller gives it', () => {
@@ -756,21 +775,36 @@ describe('transition', () => {
     expect(next.tasks).toEqual(tasks);
   });
 
-  it('BEGIN_IMPLEMENTATION enters implementing without a permit', () => {
-    const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'reviewing-briefs',
-      tasks,
-      currentTaskIndex: 3,
-      attempt: 2,
-    };
-    const next = transition(state, { type: 'BEGIN_IMPLEMENTATION' });
-    expect(next.phase).toBe('implementing');
-    expect(next.tasks).toEqual(tasks);
-    expect(next.currentTaskIndex).toBe(0);
-    expect(next.attempt).toBe(0);
-  });
+  it.each(['planning', 'reviewing-plan', 'analyzing'] as const)(
+    'BRIEFS_COMPILED from %s keeps the briefs in planning, for a run with no plan gate',
+    (phase) => {
+      const tasks = [makeTask({ id: 'T001' })];
+      const state: WorkflowState = { ...createInitialState('feat'), phase };
+      const next = transition(state, { type: 'BRIEFS_COMPILED', tasks });
+      expect(next.phase).toBe('planning');
+      expect(next.tasks).toEqual(tasks);
+      expect(transition(next, { type: 'BRIEF_ADMISSION_OPENED' }).phase).toBe('reviewing-briefs');
+    },
+  );
+
+  it.each(['planning', 'reviewing-plan', 'reviewing-briefs'] as const)(
+    'BEGIN_IMPLEMENTATION enters implementing from %s',
+    (phase) => {
+      const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
+      const state: WorkflowState = {
+        ...createInitialState('feat'),
+        phase,
+        tasks,
+        currentTaskIndex: 3,
+        attempt: 2,
+      };
+      const next = transition(state, { type: 'BEGIN_IMPLEMENTATION' });
+      expect(next.phase).toBe('implementing');
+      expect(next.tasks).toEqual(tasks);
+      expect(next.currentTaskIndex).toBe(0);
+      expect(next.attempt).toBe(0);
+    },
+  );
 
   it('SET_PENDING_RECOVERY stores recovery overlay without changing phase', () => {
     const issue = makeRecoveryIssue();

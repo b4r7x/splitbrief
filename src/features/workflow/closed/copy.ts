@@ -14,7 +14,7 @@ import {
 } from '../../../core/crew/identity.js';
 import { formatScoreSummary } from '../../../core/formatting.js';
 import { SESSIONS_DIR, SPLITBRIEF_DIR } from '../../../core/paths.js';
-import { SOFT_SEP } from '../../../core/separators.js';
+import { SOFT_SEP, arrowSep } from '../../../core/separators.js';
 import { formatTime } from '../../../utils/format-time.js';
 import { countNoun } from '../../../utils/pluralize.js';
 
@@ -177,8 +177,20 @@ function seatWord(seat: SeatView): string {
       return seat.short;
     case 'mixed':
       return seat.profiles.length === 0
-        ? 'mixed implementers'
-        : `mixed profiles (${seat.profiles.join(', ')})`;
+        ? 'mixed workers'
+        : `mixed workers (${seat.profiles.join(', ')})`;
+    // A seat that left one tool for good reads as the move; one that went back and forth has no
+    // single move to name, so it says how much each tool did.
+    case 'moved':
+      return seat.contiguous
+        ? seat.seats.map((moved) => moved.short).join(arrowSep())
+        : seat.seats
+            .map((moved, index) =>
+              index === 0
+                ? `${countNoun(moved.briefs, 'brief')} on ${moved.short}`
+                : `${moved.briefs} on ${moved.short}`,
+            )
+            .join(', ');
     case 'inherits':
       return PLANNER_INHERITANCE.mark;
     default:

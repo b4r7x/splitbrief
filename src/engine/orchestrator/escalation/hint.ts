@@ -1,3 +1,5 @@
+import { isAbortError } from '../../../utils/abort.js';
+import { isResumableWorkspaceStop, workspaceOwner } from '../isolation/retention.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { truncateByChars } from '../../../utils/truncate.js';
 import { HINT_ERROR_TEMPLATE, MAX_HINT_ERROR_LENGTH } from '../../../core/pipeline-spec/ladder.js';
@@ -55,6 +57,7 @@ export async function runHintTier(input: TierStepInput): Promise<RetryStepOutcom
   );
   const workspace = await ctx.isolation.acquire({
     role: 'planner',
+    owner: workspaceOwner({ task: initialTask, attempt: state.attempt, config: ctx.config }),
     config: ctx.config,
     writesFiles:
       ctx.implementer.capabilities?.writesFiles ??
@@ -82,7 +85,8 @@ export async function runHintTier(input: TierStepInput): Promise<RetryStepOutcom
         }),
     });
   } catch (err) {
-    workspace.cleanup();
+    if (isAbortError(err) && isResumableWorkspaceStop(ctx.signal)) await workspace.retain?.();
+    else workspace.cleanup();
     throw err;
   }
   state = addUsageAndSave(ctx, state, 'escalation', tier1Result.usage);
@@ -103,7 +107,13 @@ export async function runHintTier(input: TierStepInput): Promise<RetryStepOutcom
     signal: ctx.signal,
     cleanup: workspace.cleanup,
     handleConflict: (s, files) =>
-      handleApprovalTimeUserEditConflict({ ctx, state: s, task: initialTask, files }),
+      handleApprovalTimeUserEditConflict({
+        ctx,
+        state: s,
+        task: initialTask,
+        files,
+        workspacePath: workspace.projectDir,
+      }),
     onApproved: (decision) => persistRetryApprovalEvidence(ctx, state, initialTask, decision),
   });
   const gateBlocked = handleHintTierGateOutcome({
@@ -156,6 +166,7 @@ export async function runHintTier(input: TierStepInput): Promise<RetryStepOutcom
     invokeRetry: makeImplementerRetryInvoker({
       context: ctx.context,
       kind: 'hint',
+      sessionId: ctx.sessionId,
       languageContext,
       phase: state.phase,
       onOutput: retryHandler,
@@ -184,8 +195,8 @@ function handleHintTierGateOutcome(input: {
       state: gateResult.state,
       task,
       lastError,
-      attempts,
-      result: failedRetry(attempts),
+      attempts: gateResult.state.attempt,
+      result: failedRetry(gateResult.state.attempt),
     };
   }
   if (gateResult.outcome === 'gate-denied') {

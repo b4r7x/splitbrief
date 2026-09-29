@@ -274,6 +274,39 @@ describe('usage details billing', () => {
 
     expect(value(unproven, 'billing:codex')).toBe('subscription · no evidence, tool default');
   });
+
+  it('names a kind-qualified identity in its own words, keeping the API twin literal', () => {
+    const input = {
+      tokenUsage: usage({ plannerInput: 10 }),
+      costBreakdown: breakdown({
+        providerRunMetadata: {
+          'api:opencode': {
+            service: 'opencode',
+            offering: 'payg' as const,
+            normalizedEndpoint: 'https://my-endpoint.example/v1',
+            billing: 'api-metered' as const,
+            asOf: '',
+            billingAttribution: { posture: 'unknown' as const, basis: 'unknown' as const },
+          },
+          'cli:opencode': {
+            service: 'opencode',
+            offering: 'payg' as const,
+            normalizedEndpoint: 'cli:opencode',
+            billing: 'provider-dependent' as const,
+            asOf: '',
+            billingAttribution: { posture: 'unknown' as const, basis: 'unknown' as const },
+          },
+        },
+      }),
+    };
+
+    expect(deriveUsageDetails(input).billing.map((row) => row.tool)).toEqual([
+      'opencode',
+      'OpenCode CLI',
+    ]);
+    expect(value(input, 'billing:opencode')).toBe('metered · no evidence, tool default');
+    expect(value(input, 'billing:OpenCode CLI')).toBe('provider · no evidence, tool default');
+  });
 });
 
 function contextIssue(facts: Record<string, RecoveryFact>): RecoveryIssue {

@@ -464,7 +464,7 @@ describe('ConversationFlow', () => {
 
     expect(bottomRows).toEqual(['stream-1', 'stream-2', 'stream-3', 'stream-4', 'stream-5']);
     expect(scrolledRows).toEqual([
-      'generating README.md...',
+      'working on README.md…',
       'stream-1',
       'stream-2',
       'stream-3',
@@ -513,6 +513,21 @@ describe('ConversationFlow', () => {
     expect(frame).toContain(COMPLETED_HEADER);
     expect(frame).toContain('Finished task');
     expect(frame.match(new RegExp(COMPLETED_HEADER, 'g')) ?? []).toHaveLength(1);
+
+    ui.unmount();
+  });
+
+  it('names a pinned brief by its own id, as the byline and the Tasks card do', () => {
+    const events: EngineEvent[] = [
+      { ...makeLongTaskStarted(), taskId: taskId('T002'), index: 1, title: 'Finished task' },
+      { ...makeTaskCompleted(), taskId: taskId('T002') },
+    ];
+
+    const ui = renderConversation(events, 8, 80);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('T002 Finished task');
+    expect(frame).not.toContain('T2 Finished task');
 
     ui.unmount();
   });

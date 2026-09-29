@@ -27,6 +27,13 @@ const PaletteConfigSchema = z.object({
 
 const EscalationConfigSchema = z
   .object({
+    /**
+     * The mid-tier worker, always an `api` runner. It names an API catalog provider
+     * (`ollama`, `lm-studio`, `llama-cpp`) or a custom API provider; a custom name
+     * reuses the API implementer's endpoint and inline key, with the configured name
+     * as its identity. A CLI tool id here (`opencode`) is a custom provider of that
+     * name, never the CLI tool.
+     */
     intermediateProvider: z.string().optional(),
     intermediateModel: z.string().optional(),
     enabled: z.boolean().optional(),

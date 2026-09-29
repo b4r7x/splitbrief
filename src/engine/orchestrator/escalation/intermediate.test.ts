@@ -102,6 +102,63 @@ describe('runEscalationTier intermediate tier guard ordering', () => {
     );
   });
 
+  it('does not publish a tier-0 escalate event when a CLI-named custom intermediate is keyless', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
+    const { bus, events } = makeBusRecorder();
+    const { callbacks } = makeCallbacks();
+    const ctx: EscalationContext = {
+      projectDir,
+      sessionId,
+      config: makeNoValidationConfig({
+        implementer: {
+          kind: 'api',
+          provider: 'ollama',
+          model: 'qwen',
+          apiBase: 'http://localhost:11434/v1',
+        },
+        escalation: {
+          intermediateProvider: 'opencode',
+          intermediateModel: 'opencode/test-model',
+          enabled: true,
+        },
+      }),
+      callbacks,
+      bus,
+      planner: makePlanner({}),
+      reviewer: makePlanner({}),
+      context: defaultContext,
+      implementer: makeImplementer(),
+      metadata: TEST_METADATA,
+      sinks: TEST_SINKS,
+      validator: createValidator(),
+      isolation: makeCopyingIsolation({ projectDir: projectDir, sessionId }),
+      taskStartSnapshot,
+      dependsOnFiles: [],
+    };
+    const task = makeTask();
+    const state = makeImplState([task]);
+
+    const outcome = await runEscalationTier(INTERMEDIATE_TIER, {
+      ctx,
+      task,
+      state,
+      lastError: 'validation failed',
+      priorAttempts: 0,
+    });
+
+    expect(outcome.attempts).toBe(0);
+    expect(events.some((e) => e.type === 'escalate')).toBe(false);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'warning',
+        message: expect.stringContaining(
+          'Custom provider opencode intermediate provider is missing',
+        ),
+      }),
+    );
+  });
+
   it('does not publish a tier-0 escalate event when the intermediate config cannot resolve', async () => {
     const { projectDir, sessionId } = setupProject();
     const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
@@ -366,5 +423,28 @@ describe('resolveIntermediateConfig', () => {
     if (intermediate?.kind !== 'api') throw new Error('expected api implementer');
     expect(intermediate.temperature).toBeUndefined();
     expect(intermediate.customModels).toBeUndefined();
+  });
+
+  it('does not budget a CLI-named custom intermediate against the CLI catalog', () => {
+    const ctx = makeIntermediateCtx();
+    ctx.config.escalation = {
+      intermediateProvider: 'opencode',
+      intermediateModel: 'custom-model',
+      enabled: true,
+    };
+    ctx.modelCache = {
+      getModelsDevCatalog: () => null,
+      getProviderModels: (providerId) =>
+        providerId === 'opencode' ? [{ id: 'custom-model', contextLength: 900_000 }] : null,
+    };
+    const state = makeImplState([makeTask()]);
+
+    const resolved = resolveIntermediateConfig(ctx, state);
+
+    expect(resolved?.implementer).toMatchObject({
+      provider: 'opencode',
+      apiBase: 'http://localhost:11434/v1',
+    });
+    expect(resolved?.implementer.contextLength).toBeUndefined();
   });
 });

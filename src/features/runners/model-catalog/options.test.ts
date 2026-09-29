@@ -418,6 +418,47 @@ describe('current config visibility', () => {
     expect(claude?.status.state).toBe('incompatible');
     expect(claude?.available).toBe(false);
   });
+
+  it('never marks a CLI row current for an API seat that reuses its id', () => {
+    const config = makeConfig({
+      implementer: {
+        kind: 'api',
+        provider: 'opencode',
+        service: 'opencode',
+        offering: 'payg',
+        apiBase: 'https://my-endpoint.example/v1',
+        apiKey: 'sk-inline',
+        model: 'gpt-5',
+      },
+    });
+    const options = buildPickerOptions(
+      'implementer',
+      assemblePickerDescriptors(),
+      { cliTools: [cliDetectionFor('ready', 'opencode')], providers: [] },
+      config.implementer,
+    );
+    const cliRow = options.find((item) => item.id === 'opencode');
+    if (cliRow === undefined) throw new Error('no implementer picker row for opencode');
+
+    expect(cliRow.kind).toBe('cli');
+    expect(cliRow.isCurrent).toBeUndefined();
+    expect(isCurrentConfig(cliRow, config, 'implementer')).toBe(false);
+  });
+
+  it('keeps a CLI row current for the CLI seat of the same name', () => {
+    const config = makeConfig({ implementer: { kind: 'cli', tool: 'opencode' } });
+    const options = buildPickerOptions(
+      'implementer',
+      assemblePickerDescriptors(),
+      { cliTools: [], providers: [] },
+      config.implementer,
+    );
+    const cliRow = options.find((item) => item.id === 'opencode');
+    if (cliRow === undefined) throw new Error('no implementer picker row for opencode');
+
+    expect(cliRow.isCurrent).toBe(true);
+    expect(isCurrentConfig(cliRow, config, 'implementer')).toBe(true);
+  });
 });
 
 describe('reviewer seat', () => {

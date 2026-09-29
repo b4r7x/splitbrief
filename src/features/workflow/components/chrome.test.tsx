@@ -1,4 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { Text } from 'ink';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
@@ -16,6 +17,7 @@ import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js'
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
+import { controlsStore } from '../../../stores/ui/controls.js';
 import { WORKFLOW_GUTTER_X } from '../layout/chrome-rows.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { WorkflowFooter, WorkflowHeader } from './chrome.js';
@@ -341,6 +343,52 @@ describe('WorkflowFooter', () => {
     );
     await tick(20);
     expect(ui.lastFrame()).not.toContain('owner one draft');
+    ui.unmount();
+  });
+
+  // The reachable production state behind the blank row: a question (or review gate) owns the run,
+  // so the feedback row resolves no word — and the stop sheet hides that panel while it is up.
+  it('paints no blank row above the stop sheet while a question owns the run', async () => {
+    lifecycleStore.__testReset({ phase: 'researching', status: 'running', startedAt: 0 });
+    controlsStore.setInputMode('question');
+    const ui = renderFeature(
+      <WorkflowFooter
+        handleInput={() => {}}
+        onRuntimeCommand={() => {}}
+        commands={[]}
+        mode="question"
+        inputHint=""
+        disabled={false}
+        beforeComposer={<Text>Stop options</Text>}
+      />,
+      { cols: 100, rows: 24 },
+    );
+    await tick();
+
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    expect(lines.findIndex((line) => line.includes('Stop options'))).toBe(0);
+    ui.unmount();
+  });
+
+  it('keeps the running legend on the row above the stop sheet', async () => {
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    const ui = renderFeature(
+      <WorkflowFooter
+        handleInput={() => {}}
+        onRuntimeCommand={() => {}}
+        commands={[]}
+        mode="normal"
+        inputHint=""
+        disabled={false}
+        beforeComposer={<Text>Stop options</Text>}
+      />,
+      { cols: 100, rows: 24 },
+    );
+    await tick();
+
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    expect(lines[0]).toContain('esc stop options');
+    expect(lines.findIndex((line) => line.includes('Stop options'))).toBe(1);
     ui.unmount();
   });
 });

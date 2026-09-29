@@ -816,6 +816,11 @@ export function isCliToolId(tool: string): tool is CliToolId {
   return Object.hasOwn(CLI_TOOL_CATALOG, tool);
 }
 
+/** The tool whose own command a runner call is named after: the Claude runner names its calls `claude`. */
+export function cliToolIdForCommand(command: string): CliToolId | undefined {
+  return CLI_TOOL_IDS.find((id) => CLI_TOOL_CATALOG[id].command === command);
+}
+
 /**
  * The admitted CLIs that ship a read-only per-provider credential listing.
  * Both the probe commands and the detection normalizer derive from this set,

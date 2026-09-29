@@ -130,6 +130,23 @@ describe('/mode command', () => {
     expect(savedMode).toBe('speckit');
   });
 
+  // A started run keeps the mode it saved, so the mode set here is the next run's on every screen.
+  it.each(['home', 'workflow', 'setup'] as const)(
+    'says the mode it sets on the %s screen is for the next run',
+    async (screen) => {
+      let feedback: string | undefined;
+      const commands = createRuntimeCommands(
+        makeCtx({
+          setFeedbackMessage: (m) => {
+            feedback = m;
+          },
+        }),
+      );
+      await runCommandInTest({ commands, raw: '/mode quick', screen, onError: noop });
+      expect(feedback).toBe('Workflow mode set to: quick for the next run');
+    },
+  );
+
   it.each(['conflict', 'durability-uncertain', 'failure'] as const)(
     'does not show success feedback when mode persistence resolves %s',
     async (kind) => {
@@ -179,7 +196,9 @@ describe('/mode command', () => {
       onError: noop,
     });
     expect(savedMode).toBe('quick');
-    expect(feedback).toBe('instant was merged into quick; workflow mode set to: quick');
+    expect(feedback).toBe(
+      'Workflow mode set to: quick for the next run; instant was merged into quick',
+    );
   });
 
   it('still rejects a value that was never a mode', async () => {

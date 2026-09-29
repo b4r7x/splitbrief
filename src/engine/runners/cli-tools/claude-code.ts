@@ -152,11 +152,14 @@ function protocolEvents(parsed: StreamParseResult): readonly CliProtocolEvent[] 
   if (parsed.sessionId !== undefined) {
     events.push({ type: 'session', nativeSessionId: parsed.sessionId });
   }
-  if (parsed.text !== undefined && !parsed.isResult && parsed.text.length > 0) {
+  if (
+    !parsed.isResult &&
+    ((parsed.text !== undefined && parsed.text.length > 0) || parsed.textSemantics === 'final')
+  ) {
     events.push({
       type: 'text',
       channel: parsed.channel ?? 'assistant',
-      text: parsed.text,
+      text: parsed.text ?? '',
       ...(parsed.textSemantics !== undefined && { semantics: parsed.textSemantics }),
     });
   }
@@ -185,8 +188,14 @@ function protocolEvents(parsed: StreamParseResult): readonly CliProtocolEvent[] 
     });
   }
   for (const warning of parsed.warning ?? []) {
-    events.push({ type: 'warning', code: warning.code, message: warning.message });
+    events.push({
+      type: 'warning',
+      code: warning.code,
+      message: warning.message,
+      ...(warning.severity !== undefined && { severity: warning.severity }),
+    });
   }
+  if (parsed.isHeartbeat) events.push({ type: 'heartbeat' });
   if (parsed.isResult) {
     const isError = parsed.isError === true;
     if (isError) {

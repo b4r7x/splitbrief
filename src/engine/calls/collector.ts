@@ -247,6 +247,11 @@ function applyRunnerCallEvent(state: RunnerCallCollectionState, event: RunnerCal
         // bounds it, the event budget counts records.
         const accepted = limiter.accept(event.text);
         if (event.semantics === 'final') {
+          // An empty assistant final closes a message but has no text to replace its streamed partial.
+          if (event.channel === 'assistant' && accepted.text.length === 0) {
+            state.textLimiter = limiter;
+            return;
+          }
           state.text = accepted.text;
           state.textLimiter = limiter;
           if (accepted.limit === null && state.resultLimit?.code === 'runner_call_text_limit') {
@@ -378,6 +383,7 @@ function applyRunnerCallEvent(state: RunnerCallCollectionState, event: RunnerCal
     case 'call_runtime_status':
     case 'call_stalled':
     case 'call_stall_cleared':
+    case 'call_heartbeat':
       return;
     default:
       assertNever(event);

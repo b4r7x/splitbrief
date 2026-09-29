@@ -86,6 +86,7 @@ async function parkAtBoundary(args: {
     phase: state.phase,
     source: 'user',
     at: 'boundary',
+    step,
   });
 
   // No prompt surface means nothing can continue this run in place; the park is

@@ -186,7 +186,7 @@ function configuredRuntime(
     authorizationPathEnv: process.env.PATH ?? '',
     ...(process.env.PATHEXT === undefined ? {} : { authorizationPathExt: process.env.PATHEXT }),
     createStage: async (projectDir) => {
-      const staged = await createStagedProject(projectDir);
+      const staged = await createStagedProject({ projectDir: projectDir });
       return {
         projectDir: staged.projectDir,
         snapshot: staged.snapshot,

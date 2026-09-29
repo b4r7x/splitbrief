@@ -16,8 +16,10 @@ import {
   type ContinuationLoopCtx,
 } from './continuation.js';
 import { composeContinuation } from '../spec/prompts/continuation.js';
-import { appendMessage } from '../../core/sessions/log-writer.js';
+import { appendEngineEvent, appendMessage } from '../../core/sessions/log-writer.js';
 import { createEventBus } from '../events/bus.js';
+import { readMessages } from '../../core/sessions/log-reader.js';
+import { createTranscriptBuffer } from '../streaming/transcript-buffer.js';
 import { processError } from '../../lib/process/errors.js';
 import type { WorkflowSinks } from './types.js';
 
@@ -56,8 +58,19 @@ describe('readInterruptedPartial', () => {
   it('returns the last interrupted flush and ignores completed messages', async () => {
     const { projectDir, sessionId } = setupProjectDir();
     const ref = { projectDir, sessionId };
+    const started = (callId: string) =>
+      appendEngineEvent(ref, {
+        type: 'runner_call_started',
+        ts: Date.now(),
+        phase: 'implementing',
+        callId,
+        role: 'implementer',
+      });
+    started('old');
     appendMessage(ref, { role: 'assistant', text: 'an older cut', interrupted: true });
+    started('finished');
     appendMessage(ref, { role: 'assistant', text: 'a finished call' });
+    started('cut');
     appendMessage(ref, { role: 'assistant', text: 'the cut attempt', interrupted: true });
 
     expect(await readInterruptedPartial(ref)).toBe('the cut attempt');
@@ -68,6 +81,81 @@ describe('readInterruptedPartial', () => {
     appendMessage({ projectDir, sessionId }, { role: 'assistant', text: 'a finished call' });
 
     expect(await readInterruptedPartial({ projectDir, sessionId })).toBeUndefined();
+  });
+
+  it('leaves a cut with its own call: a call started after it was cut before any output', async () => {
+    const { projectDir, sessionId } = setupProjectDir();
+    const ref = { projectDir, sessionId };
+    const callStarted = (callId: string) => ({
+      type: 'runner_call_started',
+      ts: Date.now(),
+      phase: 'implementing',
+      callId,
+      role: 'implementer',
+    });
+    appendEngineEvent(ref, callStarted('implementer-1'));
+    appendMessage(ref, { role: 'assistant', text: 'T001 wrote half', interrupted: true });
+
+    expect(await readInterruptedPartial(ref)).toBe('T001 wrote half');
+
+    appendEngineEvent(ref, callStarted('implementer-2'));
+
+    expect(await readInterruptedPartial(ref)).toBeUndefined();
+  });
+
+  it('reconstructs a bounded tail across flushed chunks and an empty final marker', async () => {
+    const ref = setupProjectDir();
+    appendEngineEvent(ref, {
+      type: 'runner_call_started',
+      ts: Date.now(),
+      phase: 'implementing',
+      callId: 'cut-call',
+      role: 'implementer',
+    });
+    const buffer = createTranscriptBuffer({ ...ref, phase: 'implementing' });
+    buffer.append('A'.repeat(16 * 1024 + 1));
+    buffer.append('TAIL');
+    buffer.flushInterrupted();
+
+    expect(await readInterruptedPartial(ref)).toBe(`…${'A'.repeat(7_995)}TAIL`);
+
+    appendEngineEvent(ref, {
+      type: 'runner_call_started',
+      ts: Date.now(),
+      phase: 'implementing',
+      callId: 'next-call',
+      role: 'implementer',
+    });
+    expect(await readInterruptedPartial(ref)).toBeUndefined();
+  });
+
+  it('recognizes a cut before the first text as an empty partial', async () => {
+    const ref = setupProjectDir();
+    const buffer = createTranscriptBuffer({ ...ref, phase: 'implementing' });
+    buffer.flushInterrupted();
+
+    expect(await readInterruptedPartial(ref)).toBe('');
+  });
+
+  it('reads only the latest cut after repeated call restarts', async () => {
+    const ref = setupProjectDir();
+    for (const [callId, text] of [
+      ['first', 'FIRST'],
+      ['second', 'SECOND'],
+      ['third', 'THIRD'],
+    ] as const) {
+      appendEngineEvent(ref, {
+        type: 'runner_call_started',
+        ts: Date.now(),
+        phase: 'implementing',
+        callId,
+        role: 'implementer',
+      });
+      const buffer = createTranscriptBuffer({ ...ref, phase: 'implementing' });
+      buffer.append(text);
+      buffer.flushInterrupted();
+      expect(await readInterruptedPartial(ref)).toBe(text);
+    }
   });
 });
 
@@ -117,11 +205,142 @@ describe('createContinuationHolder', () => {
 
     expect(holder.take({ kind: 'brief', taskId: taskId('T002'), attempt: 0 })).toBeUndefined();
   });
+
+  it('keeps a cut review in its own cycle', () => {
+    const holder = createContinuationHolder({
+      step: { kind: 'review', cycle: 0 },
+      partial: 'an earlier review finding',
+    });
+
+    expect(holder.take({ kind: 'review', cycle: 1 })).toBeUndefined();
+    expect(holder.take({ kind: 'review', cycle: 0 })).toEqual({
+      partial: 'an earlier review finding',
+    });
+  });
+
+  it('gives an empty cut only to its recorded step and only once', () => {
+    const step = { kind: 'brief' as const, taskId: taskId('T001'), attempt: 1 };
+    const holder = createContinuationHolder({ step, partial: '' });
+
+    expect(holder.take({ ...step, attempt: 2 })).toBeUndefined();
+    expect(holder.take(step)).toEqual({ partial: '' });
+    expect(holder.take(step)).toBeUndefined();
+  });
 });
 
 const PLANNER_STEP: StepRef = { kind: 'planner', call: 'research' };
 
 describe('withContinuationLoop', () => {
+  it('starts an ordinary call without a continuation note', async () => {
+    const ref = setupProjectDir();
+    const { callbacks } = makeCallbacks();
+    const prompts: string[] = [];
+
+    await withContinuationLoop({
+      ctx: { ...ref, callbacks, bus: createEventBus(), sinks: makeSinks() },
+      state: createInitialState('feat'),
+      step: PLANNER_STEP,
+      body: async ({ partial, steer }) => {
+        prompts.push(
+          partial === undefined && steer === undefined
+            ? 'PRIMARY PROMPT'
+            : composeContinuation({ basePrompt: 'PRIMARY PROMPT', partial, steer }),
+        );
+        return 'done';
+      },
+    });
+
+    expect(prompts).toEqual(['PRIMARY PROMPT']);
+  });
+
+  it('marks a live cut with no output as a continuation when the same step restarts', async () => {
+    const ref = setupProjectDir();
+    const sinks = makeSinks();
+    const { callbacks } = makeCallbacks({ onContinuationNeeded: async () => '' });
+    const prompts: string[] = [];
+
+    await withContinuationLoop({
+      ctx: { ...ref, callbacks, bus: createEventBus(), sinks },
+      state: createInitialState('feat'),
+      step: PLANNER_STEP,
+      body: async ({ partial, steer }) => {
+        prompts.push(
+          partial === undefined && steer === undefined
+            ? 'PRIMARY PROMPT'
+            : composeContinuation({ basePrompt: 'PRIMARY PROMPT', partial, steer }),
+        );
+        if (prompts.length === 1) sinks.trigger();
+        return 'done';
+      },
+    });
+
+    expect(prompts[0]).toBe('PRIMARY PROMPT');
+    expect(prompts[1]).toContain('[Continuation]');
+    expect(prompts[1]).toContain('No output from an earlier attempt');
+  });
+
+  it('adds a continuation note for an explicit empty seed', async () => {
+    const ref = setupProjectDir();
+    const { callbacks } = makeCallbacks();
+    const prompts: string[] = [];
+
+    await withContinuationLoop({
+      ctx: { ...ref, callbacks, bus: createEventBus(), sinks: makeSinks() },
+      state: createInitialState('feat'),
+      step: PLANNER_STEP,
+      seed: {},
+      body: async ({ partial, steer }) => {
+        prompts.push(
+          partial === undefined && steer === undefined
+            ? 'PRIMARY PROMPT'
+            : composeContinuation({ basePrompt: 'PRIMARY PROMPT', partial, steer }),
+        );
+        return 'done';
+      },
+    });
+
+    expect(prompts[0]).toContain('[Continuation]');
+    expect(prompts[0]).toContain('No output from an earlier attempt');
+  });
+
+  it('records an in-process steer in the authoritative session log', async () => {
+    const ref = setupProjectDir();
+    const workspaceDir = createTempDir('continuation-workspace');
+    dirs.push(workspaceDir);
+    const sinks = makeSinks();
+    const { callbacks } = makeCallbacks({
+      onContinuationNeeded: async () => 'focus on the parser',
+    });
+    let calls = 0;
+
+    await withContinuationLoop({
+      ctx: {
+        projectDir: workspaceDir,
+        sessionId: ref.sessionId,
+        persistRef: ref,
+        callbacks,
+        bus: createEventBus(),
+        sinks,
+      },
+      state: createInitialState('feat'),
+      step: PLANNER_STEP,
+      body: async () => {
+        calls += 1;
+        if (calls === 1) sinks.trigger();
+        return 'done';
+      },
+    });
+
+    const messages = [];
+    for await (const message of readMessages(ref)) messages.push(message);
+    expect(messages).toEqual([
+      expect.objectContaining({ role: 'user', text: 'focus on the parser' }),
+    ]);
+    expect(
+      existsSync(join(workspaceDir, '.splitbrief', 'sessions', ref.sessionId, 'session.jsonl')),
+    ).toBe(false);
+  });
+
   it('returns the body value on happy path and leaves awaitingContinue false', async () => {
     const { projectDir, sessionId } = setupProjectDir();
     const { callbacks } = makeCallbacks();
@@ -420,7 +639,7 @@ describe('withContinuationLoop', () => {
     expect(publishedBeforePrompt).toEqual([true]);
     const interrupted = events.filter((e) => e.type === 'turn_interrupted');
     expect(interrupted).toHaveLength(1);
-    expect(interrupted[0]).toMatchObject({ source: 'user' });
+    expect(interrupted[0]).toMatchObject({ source: 'user', at: 'mid-step', step: PLANNER_STEP });
   });
 
   it('propagates a non-abort throw immediately when no continuation handler is set', async () => {

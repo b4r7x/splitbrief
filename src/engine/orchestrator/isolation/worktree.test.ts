@@ -401,7 +401,7 @@ describe('ensureIsolationWorktree', { timeout: 90_000 }, () => {
       targetBaseline: await captureAcquisitionBaseline(repoDir),
     });
 
-    expect(promoted).toEqual({ promotedFiles: ['.gitignore'], conflictedFiles: [] });
+    expect(promoted).toMatchObject({ promotedFiles: ['.gitignore'], conflictedFiles: [] });
     expect(await readFile(join(repoDir, '.gitignore'), 'utf-8')).toBe(`${original}dist/\n`);
   });
 

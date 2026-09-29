@@ -1,9 +1,11 @@
-import { useState, useEffect, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { formatElapsedClock } from '../../../utils/format-time.js';
+import { useSharedClock } from '../../../hooks/use-shared-clock.js';
+import { useRunMode } from '../hooks/use-run-mode.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
@@ -12,6 +14,7 @@ import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js
 import { configStore } from '../../../stores/project/config.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
+import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
 import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import { formatCollapsedSeatLine } from '../../../core/crew/identity.js';
 import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
@@ -20,9 +23,6 @@ import { formatResetNote } from '../../../core/recovery/reset-clock.js';
 import type { RailStageState } from '../../../core/rail-stages.js';
 import { getChromeContentWidth, type RailForm } from '../layout/chrome-rows.js';
 import { measureRailCells, Rail } from './rail.js';
-import { controlsStore } from '../../../stores/ui/controls.js';
-import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
-import { deriveWorkflowDisplay } from '../display/workflow-status.js';
 
 interface HeaderProps {
   startedAt: string;
@@ -44,42 +44,44 @@ export interface HeaderLayout {
   showSeats: boolean;
 }
 
-function formatElapsed(
-  startedAt: number,
-  endedAt: number | null,
-  durationMs: number | null,
-): string {
+function formatElapsed(input: {
+  startedAt: number;
+  endedAt: number | null;
+  durationMs: number | null;
+  now: number;
+}): string {
+  const { startedAt, endedAt, durationMs, now } = input;
   if (durationMs != null) return formatElapsedClock(durationMs);
-  const end = endedAt ?? Date.now();
+  const end = endedAt ?? now;
   return formatElapsedClock(end - startedAt);
 }
 
+/**
+ * The run clock: wall-clock time since the run started. It keeps counting while a gate, a question,
+ * an approval or a recovery choice waits on the user, because the run is still running; only the
+ * byline's clock leaves those waits out. It stops when the run stops: a park, a run at rest, the
+ * end. The seconds come from the shared clock the sidebar reads, so the two surfaces state the
+ * same run clock.
+ */
 function ElapsedClock({
   mountedAt,
   lifecycleStartedAt,
   endedAt,
   durationMs,
-  animate,
+  running,
 }: {
   mountedAt: string;
   lifecycleStartedAt: number | null;
   endedAt: number | null;
   durationMs: number | null;
-  animate: boolean;
+  running: boolean;
 }) {
   const t = useTheme();
   const mountedAtMs = Date.parse(mountedAt);
   const startedAt = lifecycleStartedAt ?? (Number.isFinite(mountedAtMs) ? mountedAtMs : Date.now());
-  const [elapsed, setElapsed] = useState(() => formatElapsed(startedAt, endedAt, durationMs));
-
-  useEffect(() => {
-    setElapsed(formatElapsed(startedAt, endedAt, durationMs));
-    if (endedAt != null || durationMs != null || !animate) return;
-    const id = setInterval(() => setElapsed(formatElapsed(startedAt, null, null)), 1000);
-    return () => clearInterval(id);
-  }, [startedAt, endedAt, durationMs, animate]);
-
-  return <Text color={t.textDim}>{elapsed}</Text>;
+  const ticking = endedAt == null && durationMs == null && running;
+  const now = useSharedClock({ active: ticking });
+  return <Text color={t.textDim}>{formatElapsed({ startedAt, endedAt, durationMs, now })}</Text>;
 }
 
 /** An open halt annotates its own seat and only while it names both the seat and a reset. */
@@ -112,32 +114,27 @@ export function getHeaderLayout(input: {
 }
 
 export function Header({ startedAt, railForm, stages, seatLine: givenSeatLine }: HeaderProps) {
-  const [{ cols }, lifecycle, tasks, tokens, eventsState, recoveryNotice, controls, approval] =
-    useStores(
-      terminalSizeStore,
-      lifecycleStore,
-      tasksStore,
-      tokensStore,
-      eventsStore,
-      recoveryNoticeStore,
-      controlsStore,
-      approvalPromptStore,
-    );
+  const [{ cols }, lifecycle, tasks, tokens, eventsState, recoveryNotice] = useStores(
+    terminalSizeStore,
+    lifecycleStore,
+    tasksStore,
+    tokensStore,
+    eventsStore,
+    recoveryNoticeStore,
+  );
   const { startedAt: lifecycleStartedAt, endedAt, durationMs, phase, cancelled } = lifecycle;
-  const display = deriveWorkflowDisplay({
-    status: lifecycle.status,
-    cancelled,
-    pendingQuestion: controls.inputMode !== 'normal',
-    pendingRecovery: recoveryNotice.issue !== null,
-    pendingApproval: approval.status === 'pending',
-  });
   const config = configStore.use((s) => s.config);
   const displayNames = useCrewDisplayNames(config);
+  // The rail draws the run's own mode, not the config's: quick has no Spec step, so an old quick
+  // `researching` phase maps onto Plan and Spec never earns a completed mark. The shared
+  // derivation keeps the rail on the mode the engine resolved when `/mode` writes the next run's.
+  const mode = useRunMode() ?? DEFAULT_WORKFLOW_MODE;
   const railCells = measureRailCells({
     phase,
     cancelled,
     form: railForm ?? 'B',
     cols,
+    mode,
     tasks,
     localCount: tokens.localCount,
     events: eventsState.events,
@@ -164,14 +161,14 @@ export function Header({ startedAt, railForm, stages, seatLine: givenSeatLine }:
       cols={cols}
       railCells={railCells}
       seatLine={seatLine}
-      rail={<Rail form={railForm} {...(stages !== undefined && { stages })} />}
+      rail={<Rail form={railForm} mode={mode} {...(stages !== undefined && { stages })} />}
       clock={
         <ElapsedClock
           mountedAt={startedAt}
           lifecycleStartedAt={lifecycleStartedAt}
           endedAt={endedAt}
           durationMs={durationMs}
-          animate={display.animate}
+          running={lifecycle.status === 'running'}
         />
       }
     />

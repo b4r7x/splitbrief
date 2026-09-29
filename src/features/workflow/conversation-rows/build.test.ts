@@ -658,6 +658,101 @@ describe('buildConversationRows', () => {
     expect(implementer.rows).toHaveLength(planner.rows.length);
   });
 
+  it('names each batch after the tool and model its own call ran, as the seat identity spells them', () => {
+    // The Claude runner names a plan call by its command and a build call by its tool id, both on
+    // the `opus` alias. The Codex call is the plan seat after a swap; the Claude batches keep theirs.
+    const call = (input: {
+      callId: string;
+      role: 'planner' | 'implementer';
+      runnerName: string;
+      model: string;
+      sequence: number;
+    }) =>
+      activity({
+        callId: input.callId,
+        role: input.role,
+        runnerName: input.runnerName,
+        model: input.model,
+        sequence: input.sequence,
+        activityId: input.callId,
+        kind: 'read',
+        label: `reading ${input.callId}.ts`,
+      });
+    const { rows } = buildConversationRows({
+      sections: [
+        {
+          type: 'events',
+          startIndex: 0,
+          items: [
+            call({
+              callId: 'plan-claude',
+              role: 'planner',
+              runnerName: 'claude',
+              model: 'opus',
+              sequence: 1,
+            }),
+            call({
+              callId: 'build-claude',
+              role: 'implementer',
+              runnerName: 'claude-code',
+              model: 'opus',
+              sequence: 2,
+            }),
+            call({
+              callId: 'plan-codex',
+              role: 'planner',
+              runnerName: 'codex',
+              model: 'gpt-5.5',
+              sequence: 3,
+            }),
+          ],
+        },
+      ],
+      expandedDiffs: new Set(),
+      expandedActivityBatches: new Set(),
+      cols: 88,
+      viewportHeight: 20,
+      streaming,
+    });
+
+    expect(rows.filter((row) => row.kind === 'activity').map(rowText)).toEqual([
+      `${CREW_SEAT_LABELS.plan} activity  1 update  [${CLAUDE_CODE_LABEL} · Opus 5.5]`,
+      `${CREW_SEAT_LABELS.build} activity  1 update  [${CLAUDE_CODE_LABEL} · Opus 5.5]`,
+      `${CREW_SEAT_LABELS.plan} activity  1 update  [${CODEX_LABEL} · gpt-5.5]`,
+    ]);
+  });
+
+  it('sheds the model, then the whole runner, before a narrow header would cut a name', () => {
+    const items = [
+      activity({ runnerName: 'claude', model: 'opus', kind: 'read', label: 'reading a.ts' }),
+      activity({
+        runnerName: 'claude',
+        model: 'opus',
+        sequence: 2,
+        activityId: 'warning',
+        stage: 'warning',
+        kind: 'warning',
+        label: 'warning stderr',
+      }),
+    ];
+    const headerAt = (cols: number): string | undefined => {
+      const [header] = buildConversationRows({
+        sections: [{ type: 'events', startIndex: 0, items }],
+        expandedDiffs: new Set(),
+        expandedActivityBatches: new Set(),
+        cols,
+        viewportHeight: 20,
+        streaming,
+      }).rows;
+      return header === undefined ? undefined : rowText(header);
+    };
+    const summary = `${CREW_SEAT_LABELS.plan} activity  2 updates  1 warn`;
+
+    expect(headerAt(88)).toBe(`${summary}  [${CLAUDE_CODE_LABEL} · Opus 5.5]`);
+    expect(headerAt(60)).toBe(`${summary}  [${CLAUDE_CODE_LABEL}]`);
+    expect(headerAt(48)).toBe(summary);
+  });
+
   it('expands two same-timestamp diffs independently', () => {
     const ts = 1234;
     const sections: Section<EngineEvent>[] = [

@@ -27,6 +27,7 @@ import {
 } from '../evidence/persistence.js';
 import { retryAndRecord } from './retry.js';
 import { runPreTaskHooksAndPublish } from './pre-task.js';
+import { isResumableWorkspaceStop, retentionError } from '../isolation/retention.js';
 import { runImplementation } from './run-implementation.js';
 import { applyChangedFiles } from './apply-changed-files.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
@@ -182,6 +183,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       streamingSink: wctx.streamingSink,
     });
   } catch (err) {
+    if (retentionError.isFailed(err) || retentionError.isUnavailable(err)) throw err;
     if (isAbortError(err) || wctx.signal?.aborted) return state;
     publishError({
       bus: wctx.bus,
@@ -211,6 +213,21 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   state = addUsageAndSave(wctx, implState.state, 'implementer', implState.implResult.usage);
   setTrackedState(state);
 
+  if (
+    implState.workspace !== undefined &&
+    wctx.signal?.aborted &&
+    implState.implResult.applyResult === undefined
+  ) {
+    if (
+      isResumableWorkspaceStop(wctx.signal) &&
+      !implState.preApplyApprovalDenied &&
+      (implState.implResult.success || implState.implResult.outcome === 'user-abort')
+    ) {
+      await implState.workspace.retain?.();
+    } else implState.workspace.cleanup();
+    return state;
+  }
+
   if (!implState.implResult.success) {
     return await handleFailedImplementation({
       wctx,
@@ -235,7 +252,14 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     recordApprovalDenial: (s, decision, message) =>
       recordApprovalDenial({ wctx, state: s, task, decision, message }),
     handleConflict: (s, files) =>
-      handleApprovalTimeUserEditConflict({ ctx: wctx, state: s, task, files, setTrackedState }),
+      handleApprovalTimeUserEditConflict({
+        ctx: wctx,
+        state: s,
+        task,
+        files,
+        setTrackedState,
+        workspacePath: implState.workspace?.projectDir,
+      }),
   });
   if (!applyResult.proceed) return applyResult.state;
   state = applyResult.state;

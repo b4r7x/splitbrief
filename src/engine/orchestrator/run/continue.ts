@@ -2,6 +2,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { OwnedResumeState } from '../../../core/state/resume-hydration.js';
 import { deriveRunStatus, NO_ARTIFACTS } from '../../../core/sessions/run-status.js';
+import { sanitizePasteBody } from '../../../lib/terminal/filtered-stdin/paste.js';
 
 export type ContinueRunOutcome =
   /** A park this process was holding settled; the run carried on where it stood. */
@@ -36,9 +37,11 @@ export function continueRun(
   input: Readonly<{ ref: SessionRef; steer?: string | undefined; deps: ContinueRunDeps }>,
 ): ContinueRunOutcome {
   const { ref, deps } = input;
-  const steer = input.steer?.trim();
+  // The steer becomes a prompt, and a seat that takes its prompt in argv (cursor, opencode) cannot
+  // be spawned with a NUL in it. It keeps only what a paste may carry, whatever put it in the draft.
+  const steer = sanitizePasteBody(input.steer ?? '').trim();
 
-  if (deps.resumeParked(steer ?? '')) return { kind: 'continued-in-place' };
+  if (deps.resumeParked(steer)) return { kind: 'continued-in-place' };
 
   const hydrated = deps.loadState(ref);
   if (hydrated.kind === 'missing') {

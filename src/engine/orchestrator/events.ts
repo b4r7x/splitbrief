@@ -87,9 +87,9 @@ type ValidationPhase =
 export function createBusTextHandler(
   ctx: BusContext,
   options: PlannerTextOptions = {},
-): (text: string) => void {
+): (text: string, opts?: { messageStart?: boolean | undefined }) => void {
   const { role, content } = options;
-  return (text) =>
+  return (text, opts) =>
     ctx.bus.publish({
       type: 'planner_text',
       ts: Date.now(),
@@ -97,6 +97,7 @@ export function createBusTextHandler(
       text,
       ...(role !== undefined && { role }),
       ...(content !== undefined && { content }),
+      ...(opts?.messageStart === true && { messageStart: true }),
     });
 }
 

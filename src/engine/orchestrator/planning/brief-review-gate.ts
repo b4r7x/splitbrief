@@ -2,6 +2,7 @@ import { taskFiles, type Task } from '../../../core/schemas/task.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { EventBus } from '../../events/types.js';
 import { sha256Hex } from '../../../utils/sha256.js';
+import { stripFileFrontmatter } from '../../spec/tasks/blocks.js';
 import { publishWarning } from '../events.js';
 import { formatBriefReadinessBlocks } from './brief-readiness-gate.js';
 import type { BriefReadinessGateReport } from './brief-readiness-gate.js';
@@ -15,7 +16,8 @@ export function briefReviewFingerprint(tasks: Task[], briefsBody: string, detail
   const taskSignature = tasks
     .map((task) => `${task.id}:${task.action}:${taskFiles(task).join(',')}`)
     .join('\n');
-  return sha256Hex([taskSignature, briefsBody, detail].join('\n'));
+  // Every write of tasks.md stamps a new created_at in its header, which changes no brief.
+  return sha256Hex([taskSignature, stripFileFrontmatter(briefsBody), detail].join('\n'));
 }
 
 export function readinessBlockDetail(report: BriefReadinessGateReport): string {

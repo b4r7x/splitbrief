@@ -130,7 +130,9 @@ async function runRegenerationReview(opts: {
   };
   let state = opts.state;
 
-  publishPlannerStatus(opts.ctx.bus, { ...state, phase: statusPhase }, 'running');
+  publishPlannerStatus(opts.ctx.bus, { ...state, phase: statusPhase }, 'running', {
+    call: 'tasks',
+  });
   opts.ctx.bus.publish({
     type: 'planner_heartbeat',
     ts: Date.now(),

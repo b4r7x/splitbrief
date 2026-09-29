@@ -7,9 +7,12 @@ import {
   auto,
   makePassingPlanner,
   makePassingTask,
+  prepareState,
+  runOwnedPlanningPhase,
   runPlanningTurn as runPhaseHelper,
 } from '#testing/helpers/planning-phase.js';
 import { MODE_UPGRADE } from '../../../core/pipeline-spec/modes.js';
+import { adviseRun } from './mode-advisor.js';
 import type { EngineEvent } from '../../events/types.js';
 
 let dirs: string[] = [];
@@ -87,6 +90,7 @@ describe('runPlanningPhase — the advisor reads the @ context', () => {
   it('reports the missing validation hint when the sentence stands alone', async () => {
     const { events } = await runPhaseHelper(dirs, {
       feature: VAGUE,
+      state: { ...prepareState(), feature: VAGUE },
       config: makeConfig({ workflow: auto('standard') }),
     });
 
@@ -98,10 +102,49 @@ describe('runPlanningPhase — the advisor reads the @ context', () => {
   it('is silent once the @ context supplies it', async () => {
     const { events } = await runPhaseHelper(dirs, {
       feature: VAGUE,
+      state: { ...prepareState(), feature: VAGUE },
       plannerContext: CONTEXT,
       config: makeConfig({ workflow: auto('standard') }),
     });
 
     expect(modeAdvice(events)).toEqual([]);
+  });
+
+  it('reads a scenario id in the @ context as a name, not a risk', async () => {
+    const { events } = await runPhaseHelper(dirs, {
+      feature: VAGUE,
+      state: { ...prepareState(), feature: VAGUE },
+      plannerContext: `${CONTEXT}\n- render \`overlay-picker-auth-config-owned\``,
+      config: makeConfig({ workflow: auto('standard') }),
+    });
+
+    expect(modeAdvice(events)).toEqual([]);
+  });
+});
+
+describe('runPlanningPhases — saved-input advice', () => {
+  it('counts @ context once and agrees with the advice from saved inputs', async () => {
+    const feature = 'update footer copy in src/readme.md';
+    const plannerContext = 'Fix typo in docs, then run tests now';
+    const state = { ...prepareState(), plannerContext };
+    const { events, result } = await runOwnedPlanningPhase(dirs, {
+      feature,
+      plannerContext,
+      state,
+      config: makeConfig({
+        workflow: auto('standard'),
+        codebase: { enabled: false, tokenBudget: 4000 },
+      }),
+    });
+    const [liveAdvice] = modeAdvice(events);
+    const savedAdvice = adviseRun({
+      feature,
+      plannerContext,
+      mode: 'standard',
+      tasks: result.tasks,
+    });
+
+    expect(savedAdvice).toMatchObject({ kind: 'downgrade', risk: 'trivial' });
+    expect(liveAdvice).toMatchObject(savedAdvice);
   });
 });

@@ -17,7 +17,7 @@ import {
 import { ApprovalTierSchema } from '../../core/schemas/config.js';
 import { TaskIdSchema } from '../../core/schemas/task.js';
 import { AnsweredQuestionSchema } from '../../core/schemas/question.js';
-import { PlannerCallSchema, StepCutSchema } from '../../core/schemas/run-step.js';
+import { PlannerCallSchema, StepCutSchema, StepRefSchema } from '../../core/schemas/run-step.js';
 import { TaskReviewRecoverySchema } from '../../core/schemas/recovery/schemas.js';
 import { CREW_SEAT_IDS } from '../../core/crew/identity.js';
 import { TaskTokenUsageSchema, TokenUsageSchema } from '../../core/schemas/tokens.js';
@@ -243,8 +243,10 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   }),
   phaseEvent('turn_interrupted').extend({
     source: z.enum(['user', 'watchdog']).optional(),
-    /** Where the stop landed: inside the call, or between two briefs. */
+    /** Where the stop landed: inside the call, or on a boundary — between two briefs, or at a gate. */
     at: StepCutSchema.optional(),
+    /** The step the stop parked, as the state records it; absent on logs written before the field. */
+    step: StepRefSchema.optional(),
   }),
   phaseEvent('workflow_config').extend({
     mode: WorkflowModeSchema,
@@ -303,6 +305,8 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     text: z.string(),
     role: z.enum(['planner', 'implementer']).optional(),
     content: z.enum(['plain', 'markdown']).optional(),
+    /** First chunk of a new implementer message; absent in older logs and continuous streams. */
+    messageStart: z.boolean().optional(),
   }),
   phaseEvent('planner_heartbeat').extend({
     elapsedMs: z.number(),
@@ -361,6 +365,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     silentMs: z.number().int().nonnegative(),
   }),
   strictCallPhaseEvent('runner_call_stall_cleared'),
+  strictCallPhaseEvent('runner_call_heartbeat'),
   phaseEvent('artifact_written').extend({
     filename: z.string(),
     path: z.string(),
@@ -369,11 +374,14 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     omittedCount: z.number().int().nonnegative(),
     omittedUnit: z.enum(['line', 'section', 'task']),
   }),
+  phaseEvent('spec_approved'),
   phaseEvent('spec_rejected'),
   phaseEvent('spec_regenerated').extend({ comment: z.string() }),
   phaseEvent('plan_approved'),
   phaseEvent('plan_rejected'),
   phaseEvent('plan_regenerated').extend({ comment: z.string() }),
+  phaseEvent('briefs_approved'),
+  phaseEvent('briefs_rejected'),
   ...RewindEventVariantSchemas,
   phaseEvent('all_tasks_done'),
   phaseEvent('brief_quality_passed').extend({

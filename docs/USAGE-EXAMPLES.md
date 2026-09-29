@@ -566,9 +566,9 @@ task_completed T003
 
 ---
 
-### 16. Switch mode mid-workflow
+### 16. Choose the mode for the next run
 
-**When:** the run is taking longer than expected, or the planner classified the task wrong.
+**When:** the mode advisor says the task needs more or less planning than this mode gives, and you want the next run in another mode.
 
 **Run:**
 
@@ -579,12 +579,12 @@ task_completed T003
 **You'll see:**
 
 ```
-Workflow mode set to: quick
+Workflow mode set to: quick for the next run
 ```
 
-`/mode <name>` accepts `quick`, `standard`, or `speckit` and persists the value to config. The retired `instant` is accepted too: it sets `quick` and reports that the modes were merged. `/mode` with no argument refills the composer with `/mode `, so the three modes appear as completion rows carrying their planning-call and gate counts, with `current` on the one in force.
+`/mode <name>` accepts `quick`, `standard`, or `speckit` and persists the value to config. A run keeps the mode it saved when it started, so the run on screen goes on in its own mode, and continuing it later does not change that; the new mode applies from the next run. The retired `instant` is accepted too: it sets `quick` and reports that the modes were merged. `/mode` with no argument refills the composer with `/mode `, so the three modes appear as completion rows carrying their planning-call and gate counts, with `current` on the one the config names.
 
-**Variations:** `--mode <name>` on `start` / `resume` is the same setting at the CLI boundary. The mode advisor (`mode_advice` event) hints when the current mode looks wrong but never auto-switches.
+**Variations:** `--mode <name>` on `start` is the same setting at the CLI boundary; on `resume` / `continue` a started run keeps its saved mode and the flag prints a notice. The mode advisor (`mode_advice` event) hints when the current mode looks wrong but never auto-switches.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md) §1.2.
 
@@ -609,17 +609,17 @@ Stop options · Changes and draft stay.
 ```
 ⠙ Stopping T002 · Waiting for processes to exit · elapsed 2s   No new work will start
 ◌ Paused at T002 · Partial changes kept
-  /resume · type instructions, enter to send and resume · /end · esc home
+  /resume · /stop options · esc back to sessions · ctrl+c quit
 ```
 
-- **`Stop now`** (also `ctrl+c`, one press, no armed window) aborts the in-flight call and any retry, escalation or per-task review call, schedules nothing new, and parks with the partial changes kept.
+- **`Stop now`** (also `ctrl+c`, one press — that press also arms the two-second quit confirmation) aborts the in-flight call and any retry, escalation or per-task review call, schedules nothing new, and parks with the partial changes kept.
 - **`Pause after this brief`** lets `T002` finish its checks and per-task review, then parks before `T003`: `Paused after T002 · 2 of 7 briefs complete`. While the pause is pending, the sheet's second row reads `Keep running` — that is how you take it back.
-- **`End run`** stops the same way as Stop now and persists the session with status `cancelled`: `Cancelled by you at T002 · Changes kept`.
+- **`End run`** stops the same way as Stop now and persists the session with status `ended`: `Cancelled by you at T002 · Changes kept`.
 - **`ctrl+q` / `/quit`** stops safely, saves the session, and then exits.
 
 No option reverts files: git is the layer that reverses a run, which is why SPLITBRIEF leaves the changes unstaged. Opening the menu preserves the draft; `Tab` dismisses it and returns to writing.
 
-**Variations:** `/resume` restarts a parked run — typed instructions steer it, a blank Enter never resumes; `/end` cancels a parked one. From the shell, `splitbrief resume` re-enters the active saved phase and `splitbrief continue <session-id>` works when the active pointer is gone. Resumable phases are `reviewing-spec`, `planning`, `reviewing-plan`, `reviewing-briefs`, `implementing`, `validating-task`, `escalating` and `final-review`; a run killed during validation or escalation re-enters at the start of the brief it was on. `researching` and `specifying` refuse resume with a clear error.
+**Variations:** `/resume` continues an open run — typed instructions steer it, a blank Enter resumes a continuable run at rest but not a run parked in this process; `/end` closes a parked one. From the shell, `splitbrief resume` re-enters the active saved run and `splitbrief continue <session-id>` works when the active pointer is gone. Every open run is continuable, `researching` and `specifying` included; a run killed during validation or escalation re-enters at the start of the brief it was on. Only a closed run is refused, and a saved state that is not the current version must be migrated before it will resume.
 
 **See also:** [docs/FEATURES.md](./FEATURES.md#stopping-a-run), [docs/WORKFLOW.md](./WORKFLOW.md) §1.5, §1.6.
 

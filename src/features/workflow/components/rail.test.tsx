@@ -257,17 +257,24 @@ describe('Rail — completion reward', () => {
 
 describe('Rail — Form C (narrow floor)', () => {
   it('builds the active stage line without a task fraction outside task stages', () => {
-    expect(railFormCText(getRailStages('planning'), '')).toBe(`${ACTIVE} Plan`);
+    expect(railFormCText({ stages: getRailStages('planning'), fraction: '' })).toBe(
+      `${ACTIVE} Plan`,
+    );
   });
 
   it('builds the active task stage line with its task fraction', () => {
-    expect(railFormCText(getRailStages('implementing'), '3/7')).toBe(`${ACTIVE} Build  task 3/7`);
+    expect(railFormCText({ stages: getRailStages('implementing'), fraction: '3/7' })).toBe(
+      `${ACTIVE} Build  task 3/7`,
+    );
   });
 
   it('builds the cancelled stage line without a task fraction', () => {
-    expect(railFormCText(getRailStages('implementing', { cancelled: true }), '3/7')).toBe(
-      `${CANCELLED} Build${RAIL_FORM_C_CANCELLED_SUFFIX}`,
-    );
+    expect(
+      railFormCText({
+        stages: getRailStages('implementing', { cancelled: true }),
+        fraction: '3/7',
+      }),
+    ).toBe(`${CANCELLED} Build${RAIL_FORM_C_CANCELLED_SUFFIX}`);
   });
 
   it('renders only the active stage and its fraction, no verb', async () => {

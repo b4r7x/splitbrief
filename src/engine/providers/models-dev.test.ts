@@ -377,7 +377,10 @@ describe('getModelsForProvider', () => {
       },
     };
 
-    const [model] = getModelsDevEntries('ollama', makeModelCacheAccessor({ catalog }));
+    const [model] = getModelsDevEntries({
+      providerId: 'ollama',
+      cache: makeModelCacheAccessor({ catalog }),
+    });
 
     expect(model).toMatchObject({
       id: 'openai/gpt-5.4-20260101',

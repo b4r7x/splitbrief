@@ -136,7 +136,11 @@ export function createRunnerAttemptCallbackBuffer(
       },
       onCallEvent: (event) => {
         captureCallContext(event);
-        if (event.type === 'call_stalled' || event.type === 'call_stall_cleared') {
+        if (
+          event.type === 'call_stalled' ||
+          event.type === 'call_stall_cleared' ||
+          event.type === 'call_heartbeat'
+        ) {
           callbacks.onCallEvent?.(event);
           return;
         }

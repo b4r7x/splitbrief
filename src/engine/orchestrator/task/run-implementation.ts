@@ -1,3 +1,5 @@
+import { isInDeclaredSet, taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
+import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
@@ -9,10 +11,21 @@ import { createStreamingFeed, noopStreamingSink } from './streaming-feed.js';
 import type { StreamingSink } from './streaming-feed.js';
 import { withContinuationLoop } from '../continuation.js';
 import { gateChangedFiles } from '../approval/gate-files.js';
-import { persistApiApplyEvidence, persistApprovalEvidence } from '../evidence/persistence.js';
+import {
+  persistApiApplyEvidence,
+  persistApprovalEvidence,
+  invalidateTargetWriteEvidence,
+} from '../evidence/persistence.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import { inferTaskAcceptedChangedFiles } from '../changed-files-baseline.js';
+import { hashTaskBrief } from '../../brief-hash.js';
+import { isAbortError } from '../../../utils/abort.js';
+import {
+  isResumableWorkspaceStop,
+  retentionError,
+  workspaceOwner,
+} from '../isolation/retention.js';
 import { recordedApiCreatedPaths } from '../evidence/task.js';
 
 /**
@@ -26,7 +39,13 @@ async function changedDeclaredFilesNote(
   taskStartSnapshot: ChangedFilesSnapshot,
 ): Promise<{ extra?: string }> {
   try {
-    const changed = await inferTaskAcceptedChangedFiles(projectDir, task, taskStartSnapshot.head);
+    const patterns = taskDeclaredPatterns(task);
+    const changed =
+      taskStartSnapshot.baselineFileHashes === undefined
+        ? await inferTaskAcceptedChangedFiles(projectDir, task, taskStartSnapshot.head)
+        : (await getChangedFilesSinceSnapshot(projectDir, taskStartSnapshot)).filter((file) =>
+            isInDeclaredSet(file, patterns),
+          );
     if (changed.length === 0) return {};
     return {
       extra: `These declared files already differ from the commit this brief started on: ${changed.join(', ')}`,
@@ -62,19 +81,25 @@ export async function runImplementation(opts: {
     { bus: wctx.bus, phase: state.phase },
     { role: 'implementer' },
   );
-  const streamingFeed = createStreamingFeed(task.id, opts.streamingSink ?? noopStreamingSink);
+  const usesIsolation = wctx.implementer.capabilities?.writesFiles === 'direct';
+  // A direct writer narrates between tool calls; that text has one home, the transcript rows
+  // textHandler feeds. The preview under `working on <file>…` is for the code an extractor
+  // streams: it splits lines, not messages, so narration there would repeat and run together.
+  const streamingFeed = createStreamingFeed(
+    task.id,
+    usesIsolation ? noopStreamingSink : (opts.streamingSink ?? noopStreamingSink),
+  );
 
   // A brief reopened by the final review already has code on disk; the fix
   // attempt is framed as a retry carrying the reviewer's findings as the error.
   const reviewFindings = state.reviewFixes?.findings[task.id];
 
-  const usesIsolation = wctx.implementer.capabilities?.writesFiles === 'direct';
   let workspace: IsolatedWorkspace | undefined;
   let preApplyApprovalDenied = false;
   let preApplyApprovedFiles: string[] = [];
 
   const step = { kind: 'brief' as const, taskId: task.id, attempt: state.attempt };
-  const seed = wctx.continuation?.take(step);
+  const seed = wctx.continuation?.take(step, hashTaskBrief([task]));
   const createdByThisTask = recordedApiCreatedPaths({ projectDir, sessionId }, task);
 
   let loop: { state: WorkflowState; value: ImplementerResult };
@@ -87,7 +112,9 @@ export async function runImplementation(opts: {
           role: 'implementer',
           writesFiles: 'direct',
           config,
-          fresh: state.attempt === 0 && seed?.partial === undefined,
+          fresh: seed?.keepWorkspace !== true,
+          owner: workspaceOwner({ task, attempt: state.attempt, config }),
+          resume: seed?.keepWorkspace === true,
         })
       : undefined;
     loop = await withContinuationLoop<ImplementerResult>({
@@ -105,6 +132,9 @@ export async function runImplementation(opts: {
       ...(seed === undefined ? {} : { seed }),
       onStateChange: setTrackedState,
       body: async ({ signal, partial, steer, recordOutput }) => {
+        if (workspace === undefined || workspace.projectDir === projectDir) {
+          invalidateTargetWriteEvidence({ ref: { projectDir, sessionId }, task });
+        }
         // The brief restarts on its own prompt. What the cut attempt already
         // wrote is still on disk, so it is named rather than re-derived.
         const continuation =
@@ -116,7 +146,9 @@ export async function runImplementation(opts: {
                 ...(await changedDeclaredFilesNote(
                   workspace?.projectDir ?? projectDir,
                   task,
-                  opts.taskStartSnapshot,
+                  workspace?.snapshot.baselineFileHashes === undefined
+                    ? opts.taskStartSnapshot
+                    : workspace.snapshot,
                 )),
               };
         const call: ImplementerOptions = {
@@ -128,9 +160,9 @@ export async function runImplementation(opts: {
             projectDir,
             state.discoveredValidation?.language,
           ),
-          onOutput: (text) => {
+          onOutput: (text, opts) => {
             recordOutput(text);
-            textHandler(text);
+            textHandler(text, { messageStart: usesIsolation && opts?.messageStart === true });
             streamingFeed.onText(text);
           },
           sessionId,
@@ -181,7 +213,8 @@ export async function runImplementation(opts: {
       },
     });
   } catch (err) {
-    workspace?.cleanup();
+    if (isAbortError(err) && isResumableWorkspaceStop(wctx.signal)) await workspace?.retain?.();
+    else if (!retentionError.isFailed(err)) workspace?.cleanup();
     throw err;
   } finally {
     streamingFeed.stop();

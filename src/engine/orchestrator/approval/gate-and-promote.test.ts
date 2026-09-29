@@ -8,6 +8,8 @@ import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeBusRecorder, makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
+import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import { sha256Hex } from '../../../utils/sha256.js';
 import { createStagedProject } from './staged-project.js';
 import { gateAndPromoteChangedFiles, type GateAndPromoteOpts } from './gate-and-promote.js';
 import { getChangedFilesSnapshot } from './file-snapshots/capture.js';
@@ -59,7 +61,7 @@ async function acquiredProject(name: string) {
   writeFileSync(join(projectDir, 'src', 'app.ts'), 'original\n');
 
   const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
-  const workspace = await createStagedProject(projectDir);
+  const workspace = await createStagedProject({ projectDir: projectDir });
   dirs.push(workspace.projectDir);
   writeFileSync(join(workspace.projectDir, 'src', 'app.ts'), 'worker\n');
   return { projectDir, workspace, taskStartSnapshot };
@@ -78,7 +80,7 @@ describe('gateAndPromoteChangedFiles', () => {
       writeFileSync(join(projectDir, 'src', 'app.ts'), 'export const app = true;\n');
 
       const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
-      const workspace = await createStagedProject(projectDir);
+      const workspace = await createStagedProject({ projectDir: projectDir });
 
       // Make the staged copy diverge so the gate sees a changed file to promote.
       writeFileSync(join(workspace.projectDir, 'src', 'app.ts'), 'export const app = false;\n');
@@ -117,7 +119,7 @@ describe('gateAndPromoteChangedFiles', () => {
     createTestGitRepo(projectDir);
 
     const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
-    const workspace = await createStagedProject(projectDir);
+    const workspace = await createStagedProject({ projectDir: projectDir });
     dirs.push(workspace.projectDir);
 
     // The staged copy has no src/user.ts; the user creates it in the real project
@@ -144,7 +146,7 @@ describe('gateAndPromoteChangedFiles', () => {
     createTestGitRepo(projectDir, { 'src/app.ts': 'export const app = true;\n' });
 
     const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
-    const workspace = await createStagedProject(projectDir);
+    const workspace = await createStagedProject({ projectDir: projectDir });
     dirs.push(workspace.projectDir);
 
     writeFileSync(join(workspace.projectDir, 'src', 'app.ts'), 'export const app = false;\n');
@@ -167,7 +169,7 @@ describe('gateAndPromoteChangedFiles', () => {
     createTestGitRepo(projectDir, { 'src/app.ts': 'export const app = true;\n' });
 
     const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
-    const workspace = await createStagedProject(projectDir);
+    const workspace = await createStagedProject({ projectDir: projectDir });
     dirs.push(workspace.projectDir);
 
     writeFileSync(join(workspace.projectDir, 'src', 'app.ts'), 'export const app = false;\n');
@@ -232,6 +234,42 @@ describe('gateAndPromoteChangedFiles', () => {
     expect(existsSync(join(projectDir, 'src', 'app.ts'))).toBe(false);
   });
 
+  it('records on the ledger what each promoted file holds once it lands', async () => {
+    const { projectDir, workspace, taskStartSnapshot } = await acquiredProject('gate-record');
+
+    const task = makeTask({ id: 'T010', file: 'src/app.ts' });
+    const outcome = await runGate({
+      task,
+      state: makeImplState([task]),
+      projectDir,
+      workspace,
+      taskStartSnapshot,
+    });
+
+    expect(outcome.outcome).toBe('allow');
+    const entry = readEvidenceLedger({ projectDir, sessionId: 'sess-gate' })?.tasks[0];
+    expect(entry?.promotedFiles).toEqual([
+      { path: 'src/app.ts', sha256: sha256Hex('worker\n'), mode: expect.any(Number) },
+    ]);
+  });
+
+  it('records a promoted deletion as a file with no digest', async () => {
+    const { projectDir, workspace, taskStartSnapshot } = await acquiredProject('gate-record');
+    rmSync(join(workspace.projectDir, 'src', 'app.ts'));
+
+    const task = makeTask({ id: 'T010', file: 'src/app.ts' });
+    await runGate({
+      task,
+      state: makeImplState([task]),
+      projectDir,
+      workspace,
+      taskStartSnapshot,
+    });
+
+    const entry = readEvidenceLedger({ projectDir, sessionId: 'sess-gate' })?.tasks[0];
+    expect(entry?.promotedFiles).toEqual([{ path: 'src/app.ts', sha256: null, mode: null }]);
+  });
+
   it('conflicts on a post-acquisition user edit with approval enabled', async () => {
     const { projectDir, workspace, taskStartSnapshot } = await acquiredProject('gate-baseline');
     writeFileSync(join(projectDir, 'src', 'app.ts'), 'user edit\n');
@@ -281,7 +319,7 @@ describe('gateAndPromoteChangedFiles', () => {
     createTestGitRepo(projectDir, { 'docs/guide.md': 'before\n' });
 
     const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
-    const workspace = await createStagedProject(projectDir);
+    const workspace = await createStagedProject({ projectDir: projectDir });
     dirs.push(workspace.projectDir);
 
     // The operator edits the checkout while the worker's call runs; the worker

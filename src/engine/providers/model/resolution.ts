@@ -6,7 +6,7 @@ import {
 } from '../../../core/providers/api-provider-catalog.js';
 import type { KnownModel } from '../../../core/providers/known-models.js';
 import { KNOWN_MODELS } from '../../../core/providers/known-models.js';
-import type { ProviderId } from '../../../core/schemas/enums.js';
+import type { ProviderId, RunnerKind } from '../../../core/schemas/enums.js';
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
 import {
   CLI_TOOL_IDS,
@@ -27,9 +27,14 @@ import { includes } from '../../../utils/type-guards.js';
 
 export interface ModelCacheAccessor {
   getModelsDevCatalog(): ModelsDevCatalog | null;
-  getProviderModels(providerId: ProviderId): readonly DetectedModel[] | null;
+  /**
+   * Remembered provider rows. `kind` names the caller's runner kind, so an API
+   * runner whose name is also a CLI tool id never reads the CLI catalog lane;
+   * absent keeps the legacy name-only lookup.
+   */
+  getProviderModels(providerId: ProviderId, kind?: RunnerKind): readonly DetectedModel[] | null;
   /** Staleness of the generic memory backing getProviderModels (remembered rows). */
-  isProviderModelCacheStale?(providerId: ProviderId): boolean;
+  isProviderModelCacheStale?(providerId: ProviderId, kind?: RunnerKind): boolean;
   /**
    * Current role-scoped API membership. When present, this is authoritative
    * for API model lookup and prevents ambiguous generic reuse.
@@ -95,7 +100,10 @@ function scopedRuntimeProvider(providerId: ProviderId): ApiProviderId | null {
   return isApiProviderId(providerId) ? providerId : null;
 }
 
-function scopedCliTool(providerId: ProviderId): CliToolId | null {
+function scopedCliTool(providerId: ProviderId, kind?: RunnerKind): CliToolId | null {
+  // An `api` runner reads API lanes only: `provider: opencode` is a custom HTTP
+  // endpoint that reuses the tool's name, never the local OpenCode CLI catalog.
+  if (kind === 'api') return null;
   return includes(CLI_TOOL_IDS, providerId) ? providerId : null;
 }
 
@@ -110,10 +118,11 @@ export function getScopedRuntimeSnapshot(
     providerId: ProviderId;
     role?: ActiveRunnerRole | undefined;
     cache: ModelCacheAccessor;
+    kind?: RunnerKind | undefined;
   }>,
 ): RuntimeModelSnapshot | undefined {
   if (input.role === undefined) return undefined;
-  const cliTool = scopedCliTool(input.providerId);
+  const cliTool = scopedCliTool(input.providerId, input.kind);
   if (cliTool !== null && input.cache.getCliCatalogRuntime !== undefined) {
     const runtime = input.cache.getCliCatalogRuntime({ tool: cliTool });
     if (runtime === undefined) return undefined;
@@ -140,25 +149,33 @@ export function getRuntimeModelSnapshot(
     providerId: ProviderId;
     role?: ActiveRunnerRole | undefined;
     cache: ModelCacheAccessor;
+    kind?: RunnerKind | undefined;
   }>,
 ): RuntimeModelSnapshot | null {
   const scoped = getScopedRuntimeSnapshot(input);
   if (scoped !== undefined) return scoped;
   const runtimeProviderId = input.providerId;
-  const entries = input.cache.getProviderModels(runtimeProviderId);
+  const entries = input.cache.getProviderModels(runtimeProviderId, input.kind);
   if (entries === null) return null;
   return {
     providerId: runtimeProviderId,
     entries,
-    isStale: input.cache.isProviderModelCacheStale?.(runtimeProviderId) ?? false,
+    isStale: input.cache.isProviderModelCacheStale?.(runtimeProviderId, input.kind) ?? false,
   };
 }
 
-export function getModelsDevEntries(
-  providerId: ProviderId,
-  cache: ModelCacheAccessor,
-): DetectedModel[] {
-  if (isCliToolId(providerId)) return [];
+/**
+ * models.dev rows exist for `api` runners only. A `cli` runner's rows come from
+ * its own listing, and a CLI-named `api` runner is a custom endpoint, so the
+ * name alone only decides the lane for legacy callers that pass no kind.
+ */
+export function getModelsDevEntries(input: {
+  providerId: ProviderId;
+  cache: ModelCacheAccessor;
+  kind?: RunnerKind | undefined;
+}): DetectedModel[] {
+  const { providerId, cache, kind } = input;
+  if (kind === 'cli' || (kind === undefined && isCliToolId(providerId))) return [];
   const catalog = cache.getModelsDevCatalog();
   if (!catalog) return [];
   return getModelsForProvider(catalog, providerId);
@@ -170,10 +187,15 @@ export function resolveExactModelsDevModel(
     selectionId: string;
     cache: ModelCacheAccessor;
     sourceProviderId?: string | undefined;
+    kind?: RunnerKind | undefined;
   }>,
 ): ExactModelLookup {
   return exactLookup({
-    entries: getModelsDevEntries(input.providerId, input.cache),
+    entries: getModelsDevEntries({
+      providerId: input.providerId,
+      cache: input.cache,
+      kind: input.kind,
+    }),
     selectionId: input.selectionId,
     ...(input.sourceProviderId === undefined ? {} : { sourceProviderId: input.sourceProviderId }),
   });
@@ -186,6 +208,7 @@ export function resolveExactRuntimeModel(
     cache: ModelCacheAccessor;
     sourceProviderId?: string | undefined;
     role?: ActiveRunnerRole | undefined;
+    kind?: RunnerKind | undefined;
   }>,
 ): ExactModelLookup {
   const snapshot = getRuntimeModelSnapshot(input);
@@ -197,28 +220,34 @@ export function resolveExactRuntimeModel(
   });
 }
 
-export function lookupModelsDevModel(
-  providerId: ProviderId,
-  modelId: string,
-  cache: ModelCacheAccessor,
-): DetectedModel | null {
+export function lookupModelsDevModel(input: {
+  providerId: ProviderId;
+  modelId: string;
+  cache: ModelCacheAccessor;
+  kind?: RunnerKind | undefined;
+}): DetectedModel | null {
+  const { providerId, modelId, cache, kind } = input;
   const outcome = resolveExactModelsDevModel({
     providerId,
     selectionId: modelId,
     cache,
+    ...(kind === undefined ? {} : { kind }),
   });
   return outcome.kind === 'found' ? outcome.model : null;
 }
 
-export function lookupRuntimeModel(
-  providerId: ProviderId,
-  modelId: string,
-  cache: ModelCacheAccessor,
-): DetectedModel | null {
+export function lookupRuntimeModel(input: {
+  providerId: ProviderId;
+  modelId: string;
+  cache: ModelCacheAccessor;
+  kind?: RunnerKind | undefined;
+}): DetectedModel | null {
+  const { providerId, modelId, cache, kind } = input;
   const outcome = resolveExactRuntimeModel({
     providerId,
     selectionId: modelId,
     cache,
+    ...(kind === undefined ? {} : { kind }),
   });
   return outcome.kind === 'found' ? outcome.model : null;
 }

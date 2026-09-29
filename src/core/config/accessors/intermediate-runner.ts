@@ -35,6 +35,12 @@ export function resolveIntermediateRunner(
       offering: identity.offering,
       apiBase,
       model: escalation.intermediateModel,
+      // A custom intermediate (including a CLI tool id reused as a provider
+      // name) runs on the API implementer's endpoint, so it uses that
+      // endpoint's inline key; a catalogued provider reads its own credential env.
+      ...(descriptor === undefined && fallback?.apiKey !== undefined
+        ? { apiKey: fallback.apiKey }
+        : {}),
       ...(input.contextLength !== undefined && { contextLength: input.contextLength }),
       ...(config.implementer.timeout !== undefined && { timeout: config.implementer.timeout }),
     },

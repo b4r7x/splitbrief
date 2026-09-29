@@ -52,7 +52,7 @@ export async function dispatchNativeInjection(
   if (signal?.aborted) return { status: 'not-delivered', reason: 'aborted' };
   if (wasCleared(ref, message.id)) return { status: 'not-delivered', reason: 'cleared' };
 
-  const current = rebaseOnPersistedWorkflowState(ref, getState());
+  const current = rebaseOnPersistedWorkflowState(ref, getState(), { keepUnsaved: true });
   const queued = findQueuedMessage(current, message.id);
   if (!queued) return { status: 'not-delivered', reason: 'cleared' };
   if (!isQueuedMessagePendingDelivery(queued)) {
@@ -86,7 +86,7 @@ export async function dispatchNativeInjection(
     if (wasCleared(ref, message.id)) {
       return { status: 'not-delivered', reason: 'cleared' };
     }
-    const latest = rebaseOnPersistedWorkflowState(ref, getState());
+    const latest = rebaseOnPersistedWorkflowState(ref, getState(), { keepUnsaved: true });
     const latestMessage = findQueuedMessage(latest, message.id);
     if (!latestMessage) {
       return { status: 'not-delivered', reason: 'cleared' };
@@ -124,7 +124,7 @@ export async function dispatchNativeInjection(
     if (wasCleared(ref, message.id)) {
       return { status: 'not-delivered', reason: 'cleared' };
     }
-    const latest = rebaseOnPersistedWorkflowState(ref, getState());
+    const latest = rebaseOnPersistedWorkflowState(ref, getState(), { keepUnsaved: true });
     const latestMessage = findQueuedMessage(latest, message.id);
     if (!latestMessage) {
       return { status: 'not-delivered', reason: 'cleared' };

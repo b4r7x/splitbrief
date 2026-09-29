@@ -8,13 +8,20 @@ import { getChangedFilesSinceSnapshot } from './file-snapshots/capture.js';
 import { restoreDirtyFilesFromSnapshot } from './file-snapshots/restore.js';
 import { promoteStagedChanges, stagedProjectError } from './staged-project.js';
 import { readConfinedEntry } from './file-snapshots/entry.js';
-import { persistPromotionFailureEvidence } from '../evidence/persistence.js';
+import {
+  persistPromotedFilesEvidence,
+  persistPromotionFailureEvidence,
+  invalidateTargetWriteEvidence,
+} from '../evidence/persistence.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { nowIso } from '../../../utils/format-time.js';
+import { capturePromotedReviewChanges } from '../evidence/review-capture.js';
 import type { EvidencePromotedFile } from '../../../core/schemas/evidence.js';
 import type { IsolatedWorkspace } from '../isolation/types.js';
 import { createRecoveryIssue } from '../recovery/builders/issue.js';
 import { raisePendingRecovery } from '../state-ops.js';
+import { isAbortError } from '../../../utils/abort.js';
+import { isResumableWorkspaceStop } from '../isolation/retention.js';
 import { error } from '../../../utils/error.js';
 
 export type GateAndPromoteOutcome =
@@ -138,6 +145,10 @@ export async function gateAndPromoteChangedFiles(
     }
 
     if (signal?.aborted) {
+      if (workspace !== undefined && isResumableWorkspaceStop(signal)) {
+        retainWorkspaceOutput = true;
+        await workspace.retain?.();
+      }
       return { outcome: 'aborted', state };
     }
 
@@ -170,6 +181,11 @@ export async function gateAndPromoteChangedFiles(
     if (workspace !== undefined) {
       let promoteResult: Awaited<ReturnType<typeof promoteStagedChanges>>;
       try {
+        invalidateTargetWriteEvidence({
+          ref: { projectDir, sessionId },
+          task,
+          files: changedFiles,
+        });
         promoteResult = await promoteStagedChanges({
           targetProjectDir: projectDir,
           stagedProjectDir: workspace.projectDir,
@@ -180,6 +196,13 @@ export async function gateAndPromoteChangedFiles(
         retainWorkspaceOutput = true;
         return { outcome: 'error', state, error: err };
       }
+      await capturePromotedReviewChanges({
+        ref: { projectDir, sessionId },
+        task,
+        files: promoteResult.appliedFiles ?? [],
+        before: preApprovalEntries,
+        baseline: workspace.targetBaseline,
+      });
       // A partial apply never reaches an allow decision: the failure detail names
       // the file the target stopped at, with the prefix already written.
       const partialConflict =
@@ -265,10 +288,24 @@ export async function gateAndPromoteChangedFiles(
           conflictedFiles: promoteResult.conflictedFiles,
         };
       }
+      if ((promoteResult.appliedFiles?.length ?? 0) > 0) {
+        persistPromotedFilesEvidence({
+          ref: { projectDir, sessionId },
+          bus,
+          state,
+          task,
+          mode: config.workflow.mode,
+          files: promoteResult.appliedFiles ?? [],
+        });
+      }
     }
 
     return { outcome: 'allow', state, changedFiles };
   } catch (err) {
+    if (workspace !== undefined && isAbortError(err) && isResumableWorkspaceStop(signal)) {
+      retainWorkspaceOutput = true;
+      await workspace.retain?.();
+    }
     isUnwindingPrimaryError = true;
     throw err;
   } finally {

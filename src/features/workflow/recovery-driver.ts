@@ -7,7 +7,7 @@ import {
   toolRowFocus,
   type OverlayType,
 } from '../../core/navigation/types.js';
-import { DEFAULT_WORKFLOW_MODE } from '../../core/schemas/config.js';
+import { resolveMode } from '../../core/config/runtime/resolve.js';
 import type { RecoveryAction } from '../../core/schemas/enums.js';
 import type { RecoveryIssue, SeatSwapCandidate } from '../../core/schemas/recovery/schemas.js';
 import type { TaskId } from '../../core/schemas/task.js';
@@ -225,7 +225,7 @@ export function createRecoveryDriver(
         action,
         bus,
         config,
-        mode: config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
+        mode: resolveMode({ config, savedMode: state.mode }),
         ...(comment.trim() === '' ? {} : { comment }),
       });
 

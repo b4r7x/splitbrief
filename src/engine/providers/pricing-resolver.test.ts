@@ -138,6 +138,50 @@ describe('pricing-resolver', () => {
       });
     });
 
+    it('meters an API runner by model even when its name is a CLI tool id', () => {
+      const pricing = resolvePricing('api:opencode', cache, 'claude-sonnet-5');
+      expect(pricing.isPriced).toBe(true);
+      expect(pricing.pricingMode).toBe('api-priced');
+      expect(pricing.provider).toBe('opencode');
+      expect(pricing.inputPer1M).toBe(3);
+    });
+
+    it('keeps the CLI twin of that name unpriced, and a bare legacy name with it', () => {
+      expect(resolvePricing('cli:opencode', cache, 'claude-sonnet-5')).toMatchObject({
+        isPriced: false,
+        pricingMode: 'unpriced-cli',
+      });
+      expect(resolvePricing('opencode', cache, 'claude-sonnet-5')).toMatchObject({
+        isPriced: false,
+        pricingMode: 'unpriced-cli',
+      });
+    });
+
+    it('keeps a catalogued API provider on its catalog mode whatever its kind says', () => {
+      expect(resolvePricing('api:ollama', cache, 'claude-sonnet-5')).toMatchObject({
+        isPriced: false,
+        pricingMode: 'unpriced-local',
+      });
+    });
+
+    it('leaves a custom API runner unpriced-unknown when no rate lists its model', () => {
+      expect(resolvePricing('api:opencode', cache, 'some-private-model')).toMatchObject({
+        isPriced: false,
+        pricingMode: 'unpriced-unknown',
+      });
+    });
+
+    it('keeps shell and agent identities off the priced path whatever they are named', () => {
+      expect(resolvePricing('shell:opencode', cache, 'claude-sonnet-5')).toMatchObject({
+        isPriced: false,
+        pricingMode: 'unpriced-meta',
+      });
+      expect(resolvePricing('agent:opencode', cache, 'claude-sonnet-5')).toMatchObject({
+        isPriced: false,
+        pricingMode: 'unpriced-meta',
+      });
+    });
+
     it('never prices a removed CLI tool or runner kind a resumed run still names', () => {
       expect(isApiPricedProvider('aider')).toBe(false);
       expect(isApiPricedProvider('agent-sdk')).toBe(false);

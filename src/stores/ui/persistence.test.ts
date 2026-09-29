@@ -95,6 +95,14 @@ describe('loadHistoryFromDisk', () => {
     expect(loadHistoryFromDisk().map(draftDocumentText)).toEqual(['first', 'second']);
   });
 
+  it('strips ANSI escapes and raw controls from legacy disk lines', async () => {
+    seedHistoryFile('first\u0007 line\n\u001b[31mred\u001b[0m\u007f second\tkept');
+
+    const { loadHistoryFromDisk } = await loadModules();
+    const entries = loadHistoryFromDisk().map(draftDocumentText);
+    expect(entries).toEqual(['first line', 'red second\tkept']);
+  });
+
   it('deduplicates before capping entries from disk', async () => {
     const duplicated = Array.from({ length: MAX_INPUT_HISTORY }, () => 'same');
     const olderUnique = Array.from({ length: MAX_INPUT_HISTORY }, (_, i) => `older-${i}`);
@@ -117,6 +125,45 @@ describe('installHistoryPersistence', () => {
     teardown = installHistoryPersistence();
 
     expect(inputHistoryStore.get().entries.map(draftDocumentText)).toEqual(['alpha', 'beta']);
+  });
+
+  it('sanitizes a versioned envelope on install and preserves image metadata', async () => {
+    const attachment = {
+      id: 'img-1',
+      kind: 'image' as const,
+      path: join(tmpHome, 'shot.png'),
+      mimeType: 'image/png',
+      sizeBytes: 4,
+    };
+    seedHistoryFile(
+      JSON.stringify({
+        version: 1,
+        entries: [
+          {
+            version: 1,
+            parts: [
+              { kind: 'text', text: '\u001b[31mred\u001b[0m\u0007 \u007fkept' },
+              { kind: 'image', attachment },
+              { kind: 'text', text: '\n\u0000tail' },
+            ],
+          },
+        ],
+      }),
+    );
+
+    const { installHistoryPersistence, inputHistoryStore } = await loadModules();
+    teardown = installHistoryPersistence();
+
+    expect(inputHistoryStore.get().entries).toEqual([
+      {
+        version: 1,
+        parts: [
+          { kind: 'text', text: 'red kept' },
+          { kind: 'image', attachment },
+          { kind: 'text', text: '\ntail' },
+        ],
+      },
+    ]);
   });
 
   it('push triggers a debounced save to disk after 300ms', async () => {

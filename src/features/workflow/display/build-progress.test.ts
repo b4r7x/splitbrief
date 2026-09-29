@@ -10,6 +10,7 @@ import type { LifecycleState } from '../../../stores/workflow/lifecycle.js';
 import type {
   OperationsState,
   RunningOperation,
+  TerminalOperation,
 } from '../../../stores/workflow/operations/state.js';
 import type { TasksState, WorkflowTask } from '../../../stores/workflow/tasks.js';
 
@@ -27,7 +28,9 @@ function tasksState(tasks: WorkflowTask[], overrides: Partial<TasksState> = {}):
   };
 }
 
-function lifecycleState(overrides: { lastRunnerEventTs?: number | null } = {}): LifecycleState {
+function lifecycleState(
+  overrides: { lastRunnerEventTs?: number | null; stall?: LifecycleState['stall'] } = {},
+): LifecycleState {
   const state: LifecycleState = {
     phase: 'implementing',
     status: 'running',
@@ -69,6 +72,17 @@ function runningOperation(overrides: Partial<RunningOperation> = {}): RunningOpe
   };
 }
 
+function completedOperation(overrides: Partial<TerminalOperation> = {}): TerminalOperation {
+  return {
+    ...runningOperation(),
+    status: 'completed',
+    endedAt: NOW - 1_000,
+    durationMs: 30_000,
+    partial: false,
+    ...overrides,
+  };
+}
+
 function input(overrides: Partial<DeriveBuildProgressInput> = {}): DeriveBuildProgressInput {
   return {
     tasks: tasksState([
@@ -84,15 +98,38 @@ function input(overrides: Partial<DeriveBuildProgressInput> = {}): DeriveBuildPr
 }
 
 describe('deriveBuildProgress', () => {
-  it('60 s silence line names the tool instead of a freshness age', () => {
+  it('states the watchdog silence span without naming the tool a second time', () => {
     const progress = deriveBuildProgress(
       input({
-        lifecycle: lifecycleState({ lastRunnerEventTs: NOW - UI_IDLE_WARN_MS }),
+        operations: operationsState({ active: runningOperation() }),
+        lifecycle: lifecycleState({
+          lastRunnerEventTs: NOW - UI_IDLE_WARN_MS,
+          stall: { since: NOW, silentMs: UI_IDLE_WARN_MS, runnerName: 'codex' },
+        }),
         now: NOW,
       }),
     );
 
-    expect(progress.freshness).toBe('No update from the worker for 60s');
+    expect(progress.activity).toBe('OpenAI Codex CLI · implementing');
+    expect(progress.freshness).toBe('No update for 1m 0s');
+    expect(progress.silent).toBe(true);
+  });
+
+  it('reads the silence from the stall, not a heartbeat that only says the process is alive', () => {
+    const progress = deriveBuildProgress(
+      input({
+        operations: operationsState({ active: runningOperation() }),
+        // A usage event refreshed the heartbeat two seconds ago while the watchdog's silence stands.
+        lifecycle: lifecycleState({
+          lastRunnerEventTs: NOW - 2_000,
+          stall: { since: NOW - 10_000, silentMs: 300_000, runnerName: 'codex' },
+        }),
+        now: NOW,
+      }),
+    );
+
+    expect(progress.freshness).toBe('No update for 5m 10s');
+    expect(progress.silent).toBe(true);
   });
 
   it('reports freshness while the seat is still speaking', () => {
@@ -155,7 +192,201 @@ describe('deriveBuildProgress', () => {
       input({ operations: operationsState({ active: runningOperation() }) }),
     );
 
-    expect(progress.activity).toBe('codex · implementing');
+    expect(progress.activity).toBe('OpenAI Codex CLI · implementing');
+  });
+
+  it('names the tool by its display name, whichever name its runner gave the call', () => {
+    const progress = deriveBuildProgress(
+      input({
+        operations: operationsState({
+          active: runningOperation({ role: 'escalation', runnerName: 'claude' }),
+        }),
+        lifecycle: lifecycleState({
+          stall: { since: NOW, silentMs: UI_IDLE_WARN_MS, runnerName: 'claude' },
+        }),
+      }),
+    );
+
+    expect(progress.activity).toBe('Claude Code CLI · implementing');
+    expect(progress.freshness).toBe('No update for 1m 0s');
+  });
+
+  it('shows a shell command named claude literally, as the shell, not the CLI', () => {
+    const progress = deriveBuildProgress(
+      input({
+        operations: operationsState({
+          active: runningOperation({ backendKind: 'shell', runnerName: 'claude' }),
+        }),
+        lifecycle: lifecycleState({
+          stall: { since: NOW, silentMs: UI_IDLE_WARN_MS, runnerName: 'claude' },
+        }),
+      }),
+    );
+
+    expect(progress.activity).toBe('claude · implementing');
+    expect(progress.freshness).toBe('No update for 1m 0s');
+  });
+
+  it('shows a custom API name literally even when it matches a CLI name', () => {
+    for (const runnerName of ['claude-code', 'opencode']) {
+      const progress = deriveBuildProgress(
+        input({
+          operations: operationsState({
+            active: runningOperation({ backendKind: 'api', runnerName }),
+          }),
+        }),
+      );
+
+      expect(progress.activity).toBe(`${runnerName} · implementing`);
+    }
+  });
+
+  it('keeps a catalogued API provider under its display name', () => {
+    const progress = deriveBuildProgress(
+      input({
+        operations: operationsState({
+          active: runningOperation({ backendKind: 'api', runnerName: 'ollama' }),
+        }),
+        lifecycle: lifecycleState({
+          stall: { since: NOW, silentMs: UI_IDLE_WARN_MS, runnerName: 'ollama' },
+        }),
+      }),
+    );
+
+    expect(progress.activity).toBe('Ollama · implementing');
+    expect(progress.freshness).toBe('No update for 1m 0s');
+  });
+
+  it('keeps the Claude Code CLI display for a cli call named by its command', () => {
+    const progress = deriveBuildProgress(
+      input({
+        operations: operationsState({
+          active: runningOperation({ backendKind: 'cli', runnerName: 'claude' }),
+        }),
+      }),
+    );
+
+    expect(progress.activity).toBe('Claude Code CLI · implementing');
+  });
+
+  it('keeps the estimate when an escalation and the brief ran on the same tool', () => {
+    const progress = deriveBuildProgress(
+      input({
+        tasks: tasksState(
+          [
+            { id: 'T001', title: 'One', status: 'done' },
+            { id: 'T002', title: 'Two', status: 'in_progress' },
+          ],
+          { taskCompletionTimes: [120_000] },
+        ),
+        operations: operationsState({
+          active: runningOperation({ runnerName: 'claude-code' }),
+          last: completedOperation({ role: 'escalation', runnerName: 'claude' }),
+        }),
+      }),
+    );
+
+    expect(progress.eta).toEqual({ kind: 'estimate', remainingMs: 120_000 });
+  });
+
+  it('retires the estimate when the brief moved to another tool', () => {
+    const progress = deriveBuildProgress(
+      input({
+        tasks: tasksState(
+          [
+            { id: 'T001', title: 'One', status: 'done' },
+            { id: 'T002', title: 'Two', status: 'in_progress' },
+          ],
+          { taskCompletionTimes: [120_000] },
+        ),
+        operations: operationsState({
+          active: runningOperation({ runnerName: 'codex' }),
+          last: completedOperation({ runnerName: 'claude-code' }),
+        }),
+      }),
+    );
+
+    expect(progress.eta).toEqual({ kind: 'unavailable', reason: 'worker changed' });
+  });
+
+  it('retires a CLI estimate when a shell call only shares its command name', () => {
+    const progress = deriveBuildProgress(
+      input({
+        tasks: tasksState(
+          [
+            { id: 'T001', title: 'One', status: 'done' },
+            { id: 'T002', title: 'Two', status: 'in_progress' },
+          ],
+          { taskCompletionTimes: [120_000] },
+        ),
+        operations: operationsState({
+          active: runningOperation({ backendKind: 'shell', runnerName: 'claude' }),
+          last: completedOperation({ backendKind: 'cli', runnerName: 'claude-code' }),
+        }),
+      }),
+    );
+
+    expect(progress.eta).toEqual({ kind: 'unavailable', reason: 'worker changed' });
+  });
+
+  it('retires a CLI estimate when an API worker only shares its name', () => {
+    const progress = deriveBuildProgress(
+      input({
+        tasks: tasksState(
+          [
+            { id: 'T001', title: 'One', status: 'done' },
+            { id: 'T002', title: 'Two', status: 'in_progress' },
+          ],
+          { taskCompletionTimes: [120_000] },
+        ),
+        operations: operationsState({
+          active: runningOperation({ backendKind: 'api', runnerName: 'claude-code' }),
+          last: completedOperation({ backendKind: 'cli', runnerName: 'claude-code' }),
+        }),
+      }),
+    );
+
+    expect(progress.eta).toEqual({ kind: 'unavailable', reason: 'worker changed' });
+  });
+
+  it('keeps the estimate across cli calls named by the command and by the id', () => {
+    const progress = deriveBuildProgress(
+      input({
+        tasks: tasksState(
+          [
+            { id: 'T001', title: 'One', status: 'done' },
+            { id: 'T002', title: 'Two', status: 'in_progress' },
+          ],
+          { taskCompletionTimes: [120_000] },
+        ),
+        operations: operationsState({
+          active: runningOperation({ backendKind: 'cli', runnerName: 'claude' }),
+          last: completedOperation({ backendKind: 'cli', runnerName: 'claude-code' }),
+        }),
+      }),
+    );
+
+    expect(progress.eta).toEqual({ kind: 'estimate', remainingMs: 120_000 });
+  });
+
+  it('keeps the old alias identity when a call carries no backend kind', () => {
+    const progress = deriveBuildProgress(
+      input({
+        tasks: tasksState(
+          [
+            { id: 'T001', title: 'One', status: 'done' },
+            { id: 'T002', title: 'Two', status: 'in_progress' },
+          ],
+          { taskCompletionTimes: [120_000] },
+        ),
+        operations: operationsState({
+          active: runningOperation({ runnerName: 'claude' }),
+          last: completedOperation({ runnerName: 'claude-code' }),
+        }),
+      }),
+    );
+
+    expect(progress.eta).toEqual({ kind: 'estimate', remainingMs: 120_000 });
   });
 
   it('names the phase alone between calls', () => {
@@ -167,7 +398,7 @@ describe('deriveBuildProgress', () => {
       input({ operations: operationsState({ active: runningOperation({ role: 'summary' }) }) }),
     );
 
-    expect(progress.activity).toBe('codex · summary');
+    expect(progress.activity).toBe('OpenAI Codex CLI · summary');
   });
 
   it('names the running gate command instead of the seat', () => {
@@ -182,7 +413,41 @@ describe('deriveBuildProgress', () => {
 
     expect(progress.activity).toContain('npm test');
     expect(progress.activity).toContain('running 1m 30s');
-    expect(progress.activity).toContain('no output for 30s');
+  });
+
+  // No seat is on a call while a gate command runs, so a long command is no one's silence: its row
+  // says how long it has run, and freshness how long ago a seat last spoke, once.
+  it('keeps a long gate command out of the silence warning', () => {
+    const progress = deriveBuildProgress(
+      input({
+        operations: operationsState({
+          validationStage: { stage: 'test', command: 'npm test', stageStartedTs: NOW - 90_000 },
+        }),
+        lifecycle: lifecycleState({ lastRunnerEventTs: NOW - 90_000 }),
+      }),
+    );
+
+    expect(buildProgressLines(progress, 120)[1]).toBe(
+      'npm test · running 1m 30s · last event 1m 30s ago',
+    );
+    expect(progress.silent).toBe(false);
+  });
+
+  it('spells a long silence the way every other elapsed span in the block reads', () => {
+    const progress = deriveBuildProgress(
+      input({
+        operations: operationsState({ active: runningOperation() }),
+        lifecycle: lifecycleState({
+          stall: {
+            since: NOW - 10_000,
+            silentMs: 302_000,
+            runnerName: 'codex',
+          },
+        }),
+      }),
+    );
+
+    expect(progress.freshness).toBe('No update for 5m 12s');
   });
 });
 
@@ -209,7 +474,7 @@ describe('buildProgressLines', () => {
 
     for (const width of [120, 80, 60]) {
       const block = buildProgressLines(progress, width).join('\n');
-      expect(block).toContain('codex · implementing');
+      expect(block).toContain('OpenAI Codex CLI · implementing');
       expect(block).toContain('last event 5s ago');
       expect(block).toContain('1/2 briefs passed');
       expect(block).toContain('attempt 1 of');

@@ -39,7 +39,7 @@ describe('applyChangedFiles', () => {
     const task = makeTask({ id: 'T001', file: 'src/hello.ts' });
     const state = makeImplState([task]);
 
-    const workspace = await createStagedProject(projectDir);
+    const workspace = await createStagedProject({ projectDir: projectDir });
     const stagedProjectDir = workspace.projectDir;
 
     mkdirSync(join(workspace.projectDir, 'src'), { recursive: true });
@@ -67,7 +67,7 @@ describe('applyChangedFiles', () => {
     const task = makeTask({ id: 'T001', file: 'src/hello.ts' });
     const state = makeImplState([task]);
 
-    const staged = await createStagedProject(projectDir);
+    const staged = await createStagedProject({ projectDir: projectDir });
     const stagedProjectDir = staged.projectDir;
     // The staged copy carries no .git, so a git-status read of it cannot succeed.
     const workspace = { ...staged, snapshot: emptySnapshot() };
@@ -97,12 +97,12 @@ describe('applyChangedFiles', () => {
     );
   });
 
-  it('aborts and runs staged cleanup when the workflow signal is already aborted', async () => {
+  it('aborts and keeps the staged output when the workflow signal is already aborted', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001', file: 'src/hello.ts' });
     const state = makeImplState([task]);
 
-    const workspace = await createStagedProject(projectDir);
+    const workspace = await createStagedProject({ projectDir: projectDir });
     const stagedProjectDir = workspace.projectDir;
 
     mkdirSync(join(workspace.projectDir, 'src'), { recursive: true });
@@ -124,14 +124,16 @@ describe('applyChangedFiles', () => {
     });
 
     expect(result.proceed).toBe(false);
-    expect(existsSync(stagedProjectDir)).toBe(false);
+    // A resumable stop keeps the worker's output for continuation rather than disposing it.
+    expect(existsSync(stagedProjectDir)).toBe(true);
+    workspace.cleanup();
   });
 
   it('preserves an approval gate error when staged cleanup also throws', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001', file: 'src/hello.ts' });
     const state = makeImplState([task]);
-    const workspace = await createStagedProject(projectDir);
+    const workspace = await createStagedProject({ projectDir: projectDir });
     const stagedProjectDir = workspace.projectDir;
     mkdirSync(join(stagedProjectDir, 'src'), { recursive: true });
     writeFileSync(join(stagedProjectDir, 'src/other.ts'), 'out of scope');
@@ -176,7 +178,7 @@ describe('applyChangedFiles', () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001', file: 'src/hello.ts' });
     const state = makeImplState([task]);
-    const workspace = await createStagedProject(projectDir);
+    const workspace = await createStagedProject({ projectDir: projectDir });
     const stagedProjectDir = workspace.projectDir;
     mkdirSync(join(stagedProjectDir, 'src'), { recursive: true });
     writeFileSync(join(stagedProjectDir, 'src/hello.ts'), 'implementation');

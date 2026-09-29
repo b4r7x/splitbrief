@@ -1,8 +1,11 @@
 import { flushSessionDrafts } from '../../stores/ui/session-drafts.js';
 import { readActiveRecord } from '../../core/sessions/active-pointer.js';
 import { readRunRecord } from '../../core/sessions/run-record-io.js';
-import { transitionAndSave } from '../../engine/orchestrator/state-ops.js';
+import { closeRunIfOpen } from '../../engine/orchestrator/run/close.js';
 import { finalizeEndedRun } from '../../engine/orchestrator/session-lifecycle/finalize.js';
+import { createRecoveryBus } from '../../engine/orchestrator/recovery/bus.js';
+import { WORKFLOW_CANCEL_REASON_USER } from '../../engine/events/workflow-cancel.js';
+import { addTuiEvent } from './tui-sink.js';
 import { hydrateResume } from './resume-hydration.js';
 import { configStore } from '../../stores/project/config.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
@@ -186,8 +189,16 @@ export function requestEndRun(): boolean {
         active?.kind === 'v1' && active.receipt.sessionId === record.ref.sessionId
           ? active.receipt
           : undefined;
-      const state = transitionAndSave(record.ref, hydrated.state, { type: 'CLOSE_RUN' });
-      finalizeEndedRun({ ref: record.ref, active: receipt, config, state });
+      const closure = closeRunIfOpen(record.ref, hydrated.state);
+      if (closure.closedNow) {
+        createRecoveryBus({ ...record.ref, sink: addTuiEvent }).publish({
+          type: 'workflow_cancelled',
+          ts: Date.now(),
+          phase: closure.state.phase,
+          reason: WORKFLOW_CANCEL_REASON_USER,
+        });
+      }
+      finalizeEndedRun({ ref: record.ref, active: receipt, config, state: closure.state });
       routerStore.updateRun({ run: readRunRecord(record.ref), execution: { kind: 'at-rest' } });
       stopStore.end();
       sessionsStore.refresh();

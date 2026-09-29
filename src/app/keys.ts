@@ -19,6 +19,8 @@ import { assertNever } from '../utils/type-guards.js';
 import { SEAT_PICKER_OVERLAYS, type OverlayType } from '../core/navigation/types.js';
 import { requestQuit, requestStopNow, requestLeaveSession } from '../features/workflow/handlers.js';
 import { sessionSelectStore } from '../stores/navigation/session-select.js';
+import type { CopyOutcome } from '../lib/clipboard/clipboard.js';
+import { formatCopyResult } from '../core/runtime/commands/types.js';
 import { refreshSkills } from './refresh-skills.js';
 
 type AppKeyAction =
@@ -110,6 +112,14 @@ function isSecondEscapePress(input: string): boolean {
   );
 }
 
+// A late read hands Ink every byte it collected as one input, so two Ctrl+C presses arrive as
+// `\x03\x03` with no ctrl flag, and text typed around them shares the chunk (`fix\x03\x03`). Each
+// `\x03` is still one press, and every other byte is other input, in the order it was typed.
+function ctrlCKeys(input: string, key: Key): ('press' | 'other')[] {
+  if (key.ctrl && input === 'c') return ['press'];
+  return Array.from(input, (char) => (char === '\x03' ? 'press' : 'other'));
+}
+
 function runDeferredEscape(input: string, immediate: () => void, deferred: () => void): void {
   if (isSecondEscapePress(input)) {
     cancelEscapeAction();
@@ -121,6 +131,7 @@ function runDeferredEscape(input: string, immediate: () => void, deferred: () =>
 
 export function useAppKeys({ exit, deps = defaultAppKeyDeps }: UseAppKeysOptions) {
   const quitUntil = useRef(0);
+  const copyRevision = useRef(0);
   const quitTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const exited = useRef(false);
   const exitOnce = () => {
@@ -130,6 +141,7 @@ export function useAppKeys({ exit, deps = defaultAppKeyDeps }: UseAppKeysOptions
     }
   };
   const clearQuitHint = () => {
+    copyRevision.current++;
     quitUntil.current = 0;
     clearTimeout(quitTimer.current);
     if (feedbackStore.get().message === 'Press ctrl+c again to quit')
@@ -185,24 +197,61 @@ export function useAppKeys({ exit, deps = defaultAppKeyDeps }: UseAppKeysOptions
     [],
   );
 
+  useEffect(() => {
+    const stdin = getActiveFilteredStdin()?.stdin;
+    if (!stdin) return;
+    const onCopyKey = (result: Promise<CopyOutcome | undefined>) => {
+      clearQuitHint();
+      const revision = copyRevision.current;
+      const feedback = feedbackStore.get();
+      void result.then((outcome) => {
+        if (
+          outcome === undefined ||
+          copyRevision.current !== revision ||
+          feedbackStore.get() !== feedback
+        )
+          return;
+        if (outcome === 'unavailable') feedbackStore.setError(formatCopyResult(outcome));
+        else feedbackStore.setMessage(formatCopyResult(outcome));
+      });
+    };
+    stdin.on('selection-copy', onCopyKey);
+    return () => {
+      copyRevision.current++;
+      stdin.off('selection-copy', onCopyKey);
+    };
+  }, []);
+
   useInput((input, key) => {
-    if (!(key.ctrl && input === 'c')) {
+    copyRevision.current++;
+    const keys = ctrlCKeys(input, key);
+    if (!keys.includes('press')) {
       clearQuitHint();
       return;
     }
     if (getActiveFilteredStdin()?.isPasteActive()) return;
-    const phase = stopStore.get().phase;
-    const stopping =
-      stoppedOrStopping() && phase !== 'parked' && phase !== 'ended' && phase !== 'failed';
-    if (quitUntil.current > Date.now() || stopping) {
-      clearQuitHint();
-      deps.requestQuit(exitOnce);
-      return;
-    }
-    armQuit();
-    if (route.screen === 'workflow' && route.execution.kind !== 'at-rest' && !stoppedOrStopping()) {
-      if (overlayStore.get().active === 'stop-sheet') overlayStore.close();
-      deps.requestStopNow();
+    for (const pressed of keys) {
+      if (pressed === 'other') {
+        clearQuitHint();
+        continue;
+      }
+      const phase = stopStore.get().phase;
+      const stopping =
+        stoppedOrStopping() && phase !== 'parked' && phase !== 'ended' && phase !== 'failed';
+      if (quitUntil.current > Date.now() || stopping) {
+        clearQuitHint();
+        deps.requestQuit(exitOnce);
+        return;
+      }
+      armQuit();
+      if (
+        route.screen === 'workflow' &&
+        route.execution.kind !== 'at-rest' &&
+        !stoppedOrStopping()
+      ) {
+        if (overlayStore.get().active === 'stop-sheet') overlayStore.close();
+        deps.requestStopNow();
+      }
     }
   });
 

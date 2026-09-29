@@ -56,7 +56,7 @@ export function createCustomRunnerRuntime(
     ...(authorizationPathEnv !== undefined && { authorizationPathEnv }),
     ...(authorizationPathExt !== undefined && { authorizationPathExt }),
     createStage: async (sourceProjectDir) => {
-      const staged = await createStagedProject(sourceProjectDir);
+      const staged = await createStagedProject({ projectDir: sourceProjectDir });
       return {
         projectDir: staged.projectDir,
         snapshot: staged.snapshot,

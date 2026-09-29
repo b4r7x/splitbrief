@@ -100,7 +100,7 @@ describe('configured direct planner terminal cleanup', () => {
         stateDir,
         ...(input.sourceEnv === undefined ? {} : { sourceEnv: input.sourceEnv }),
         createStage: async (sourceProjectDir) => {
-          const stage = await createStagedProject(sourceProjectDir);
+          const stage = await createStagedProject({ projectDir: sourceProjectDir });
           stagePath = stage.projectDir;
           return {
             ...stage,

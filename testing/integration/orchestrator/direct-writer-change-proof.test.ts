@@ -290,6 +290,7 @@ async function runDirectWriterImplementation(
   projectDir: string,
 ): Promise<Awaited<ReturnType<typeof runImplementation>>> {
   const sessionId = 'sess-direct-writer-proof';
+  ensureSessionDir(projectDir, sessionId);
   const task = proofTask();
   const state = makeImplState([task]);
   const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);

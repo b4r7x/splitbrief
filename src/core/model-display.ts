@@ -1,10 +1,26 @@
 import { redactSecrets } from '../utils/redact.js';
-import { getProviderDisplayName } from './providers/catalog.js';
+import { getProviderDisplayName, getRunnerIdentityDisplayName } from './providers/catalog.js';
+import type { RunnerKind } from './schemas/enums.js';
 import { EFFORT_AXIS_TOKENS } from './runners/effort-channel.js';
 
-export function formatToolModel(tool?: string, model?: string): string {
+/**
+ * `<tool> · <model>` for one call, with the tool word decided by the call's
+ * backend kind when the caller knows it: a custom API provider stays literal
+ * even when it reuses a CLI tool id. Without a kind the merged catalog answers,
+ * exactly as records written before kinds read.
+ */
+export function formatToolModel(input: {
+  tool?: string | undefined;
+  model?: string | undefined;
+  kind?: RunnerKind | undefined;
+}): string {
+  const { tool, model, kind } = input;
   if (!tool && !model) return '';
-  const display = getProviderDisplayName(tool ?? '');
+  const display = !tool
+    ? ''
+    : kind === undefined
+      ? getProviderDisplayName(tool)
+      : getRunnerIdentityDisplayName(kind, tool);
   const name = model ? formatModelName(model) : '';
   if (name) return display ? `${display} · ${name}` : name;
   return display || '';

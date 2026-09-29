@@ -87,7 +87,7 @@ describe('runLocalRetries — aborted outcomes', () => {
     expect(events.filter((e) => e.type === 'task_retry')).toEqual([]);
   });
 
-  it('announces the aborted attempt on a retry row but rolls its persisted attempt back', async () => {
+  it('announces the aborted attempt on a retry row and keeps its persisted attempt for the stopped retry', async () => {
     const { projectDir, sessionId } = setupProject();
     const controller = new AbortController();
     let secondRetryEntered: () => void = () => {};
@@ -138,14 +138,16 @@ describe('runLocalRetries — aborted outcomes', () => {
     controller.abort();
     const outcome = await run;
 
-    expect(outcome.attempts).toBe(1);
-    expect(outcome.result).toEqual({ completed: false, method: 'failed', attempts: 1 });
+    // The aborted attempt is the stopped retry a continuation re-enters at the
+    // same attempt (docs/WORKFLOW.md), so its persisted counter is not rolled back.
+    expect(outcome.attempts).toBe(2);
+    expect(outcome.result).toEqual({ completed: false, method: 'failed', attempts: 2 });
     expect(retry).toHaveBeenCalledTimes(2);
     const retryAttempts = events
       .filter((e) => e.type === 'task_retry')
       .map((e) => (e.type === 'task_retry' ? e.attempt : -1));
     expect(retryAttempts).toEqual([1, 2]);
-    expect(loadState({ projectDir, sessionId })?.attempt).toBe(1);
+    expect(loadState({ projectDir, sessionId })?.attempt).toBe(2);
   });
 
   it('the retry row precedes the attempt it announces', async () => {

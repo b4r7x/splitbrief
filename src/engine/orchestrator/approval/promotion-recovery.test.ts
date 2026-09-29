@@ -7,12 +7,18 @@ import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeBusRecorder, makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { matches } from '../../../utils/error.js';
 import { sha256Hex } from '../../../utils/sha256.js';
-import { evidenceLedgerPath, readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
+import {
+  evidenceLedgerPath,
+  readEvidenceLedger,
+  writeEvidenceLedger,
+} from '../../../core/evidence/ledger-storage.js';
 import { writeSecureFile } from '../../../lib/fs.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 
-const control = vi.hoisted(() => ({ failWriteBasename: '' }));
+const control = vi.hoisted(() => ({ failWriteBasename: '', failEvidenceWrite: false }));
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>();
@@ -32,6 +38,26 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   };
 });
 
+// The evidence ledger is written synchronously through `writeSecureFile`, so its
+// controlled failure boundary is the sync module: only the ledger's own temp
+// write is intercepted, and only while a case arms the flag.
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  return {
+    ...actual,
+    writeFileSync: (path: Parameters<typeof actual.writeFileSync>[0], ...rest: unknown[]) => {
+      if (
+        control.failEvidenceWrite &&
+        typeof path === 'string' &&
+        path.includes('.evidence.json.tmp.')
+      ) {
+        throw new Error('EIO: simulated evidence write failure');
+      }
+      return (actual.writeFileSync as (...a: unknown[]) => unknown)(path, ...rest);
+    },
+  };
+});
+
 const { createStagedProject } = await import('./staged-project.js');
 const { gateAndPromoteChangedFiles } = await import('./gate-and-promote.js');
 const { getChangedFilesSnapshot } = await import('./file-snapshots/capture.js');
@@ -43,6 +69,7 @@ let dirs: string[] = [];
 
 afterEach(() => {
   control.failWriteBasename = '';
+  control.failEvidenceWrite = false;
   for (const dir of dirs) cleanupTempDir(dir);
   dirs = [];
 });
@@ -72,7 +99,7 @@ async function acquiredProject(name: string) {
   writeFileSync(join(projectDir, 'src', 'b.ts'), 'target b\n');
 
   const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
-  const workspace = await createStagedProject(projectDir);
+  const workspace = await createStagedProject({ projectDir: projectDir });
   dirs.push(workspace.projectDir);
   mockRunner(workspace.projectDir, { 'src/a.ts': 'staged a\n', 'src/b.ts': 'staged b\n' });
   return { projectDir, workspace, taskStartSnapshot, state: makeImplState([task]) };
@@ -201,10 +228,11 @@ describe('partial promotion recovery', { timeout: 60_000 }, () => {
     expect(entry.promotionAttempts?.at(-1)?.failedFile).toBe('src/b.ts');
   });
 
-  it('reports both errors and keeps the workspace when evidence cannot be persisted', async () => {
-    const acquired = await acquiredProject('promotion-recovery-evidence');
+  it('stops on corrupt preflight evidence before any target write', async () => {
+    const acquired = await acquiredProject('promotion-recovery-corrupt-evidence');
     const { projectDir, workspace } = acquired;
-    // Valid JSON the ledger schema rejects: the read inside the mutation throws.
+    // Valid JSON the ledger schema rejects: the read before promotion throws, so
+    // the target is never touched and the failure carries no partial apply.
     writeSecureFile(
       evidenceLedgerPath({ projectDir, sessionId: SESSION_ID }),
       `${JSON.stringify({ version: 2 })}\n`,
@@ -216,11 +244,51 @@ describe('partial promotion recovery', { timeout: 60_000 }, () => {
 
     expect(outcome.outcome).toBe('error');
     if (outcome.outcome !== 'error') return;
-    expect(outcome.promotion?.evidenceError).toBeDefined();
-    expect(outcome.promotion?.appliedFiles.map((f) => f.path)).toEqual(['src/a.ts']);
-    expect(outcome.error).toBeInstanceOf(AggregateError);
-    expect((outcome.error as AggregateError).errors).toHaveLength(2);
+    expect(matches('recovery-evidence-storage')(outcome.error)).toBe(true);
+    expect(outcome.promotion).toBeUndefined();
+    expect(readFileSync(join(projectDir, 'src', 'a.ts'), 'utf-8')).toBe('target a\n');
+    expect(readFileSync(join(projectDir, 'src', 'b.ts'), 'utf-8')).toBe('target b\n');
     expect(cleanup).not.toHaveBeenCalled();
     expect(existsSync(workspace.projectDir)).toBe(true);
+  });
+
+  it('reports both errors and keeps the workspace when evidence cannot be persisted', async () => {
+    const acquired = await acquiredProject('promotion-recovery-evidence');
+    const { projectDir, workspace, state } = acquired;
+    // A valid preflight ledger lets promotion reach the target: the first file
+    // lands, the second fails for real, and only the failure record is left to
+    // fail at its own persistence boundary.
+    writeEvidenceLedger(
+      { projectDir, sessionId: SESSION_ID },
+      createEvidenceLedger({ sessionId: SESSION_ID, feature: state.feature, tasks: state.tasks }),
+    );
+    const cleanup = vi.fn(workspace.cleanup);
+    control.failWriteBasename = 'b.ts';
+    control.failEvidenceWrite = true;
+
+    const outcome = await runGate({ ...acquired, cleanup });
+
+    expect(outcome.outcome).toBe('error');
+    if (outcome.outcome !== 'error') return;
+    expect(outcome.promotion?.evidenceError).toBeDefined();
+    expect(String(outcome.promotion?.evidenceError)).toContain('simulated evidence write failure');
+    expect(outcome.promotion?.failedFile).toBe('src/b.ts');
+    expect(outcome.promotion?.appliedFiles.map((f) => f.path)).toEqual(['src/a.ts']);
+
+    // The prefix is on the target, the failing file is untouched, and the
+    // workspace keeps the output that never reached the target.
+    expect(readFileSync(join(projectDir, 'src', 'a.ts'), 'utf-8')).toBe('staged a\n');
+    expect(readFileSync(join(projectDir, 'src', 'b.ts'), 'utf-8')).toBe('target b\n');
+    expect(ledgerTask(projectDir).entry.promotionAttempts).toBeUndefined();
+    expect(outcome.state.pendingRecovery?.reason).toBe('approval-promotion-conflict');
+    expect(cleanup).not.toHaveBeenCalled();
+    expect(existsSync(workspace.projectDir)).toBe(true);
+
+    // Both the target-write failure and the evidence-persistence failure surface.
+    expect(outcome.error).toBeInstanceOf(AggregateError);
+    const causes = (outcome.error as AggregateError).errors;
+    expect(causes).toHaveLength(2);
+    expect(String(causes[0])).toContain('simulated write failure');
+    expect(String(causes[1])).toContain('simulated evidence write failure');
   });
 });

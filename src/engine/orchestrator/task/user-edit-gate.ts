@@ -6,6 +6,7 @@ import type { RoutingDecision } from '../context-routing/types.js';
 import type { ChangedFilesBaseline } from '../changed-files-baseline.js';
 import { checkUserEditConflicts } from '../user-edit/detection.js';
 import { stopWithReview } from './stop-with-review.js';
+import { deriveRunStatus, NO_ARTIFACTS } from '../../../core/sessions/run-status.js';
 
 export async function checkUserEditGate(opts: {
   wctx: WorkflowContext;
@@ -43,6 +44,11 @@ export async function checkUserEditGate(opts: {
   const absorbedFiles = conflictAction.absorbedFiles;
   if (!conflictAction.stopped) {
     return { state, stopped: false, cancelled: false, absorbedFiles };
+  }
+  if (
+    deriveRunStatus({ state, liveness: 'not-alive', artifacts: NO_ARTIFACTS }).kind === 'closed'
+  ) {
+    return { state, stopped: true, cancelled: conflictAction.cancelled, absorbedFiles };
   }
   const review = await stopWithReview({
     wctx: reviewWctx,

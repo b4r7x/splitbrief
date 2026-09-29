@@ -1,5 +1,8 @@
 import type { RecoveryAction, RecoveryReason } from '../../core/schemas/enums.js';
-import { PROMPTABLE_RECOVERY_ACTIONS } from '../../core/schemas/enums.js';
+import {
+  PROMPTABLE_RECOVERY_ACTIONS,
+  UserEditConflictKindSchema,
+} from '../../core/schemas/enums.js';
 import type {
   RecoveryFact,
   RecoveryIssue,
@@ -11,11 +14,21 @@ import {
   formatSeatCandidateIdentity,
   type CrewSeatId,
 } from '../../core/crew/identity.js';
-import { recoveryFactNumber, recoveryFactString } from '../../core/schemas/recovery/facts.js';
+import { CREW_SEAT_ROLES } from '../../core/crew/seats.js';
+import { resolveModelDisplayName } from '../../engine/providers/model/display-names.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
+import {
+  recoveryFactBoolean,
+  recoveryFactNumber,
+  recoveryFactString,
+} from '../../core/schemas/recovery/facts.js';
+import { TaskIdSchema } from '../../core/schemas/task.js';
 import { countNoun } from '../../utils/pluralize.js';
 import { glyph } from '../../lib/glyphs.js';
 import { formatResetNote } from '../../core/recovery/reset-clock.js';
+import { userEditConflictRelation } from '../../core/recovery/user-edit-conflict-words.js';
 import { formatRecoveryHeadline } from '../../core/recovery/headline.js';
+import { formatContextLength, formatTruncatedList } from '../../core/formatting.js';
 import {
   readRecoveryContext,
   recoveryContextCauseWords,
@@ -195,7 +208,16 @@ function switchSeatRowKey(index: number, offered: number): string {
 }
 
 function switchSeatRowText(seat: CrewSeatId, candidate: SeatSwapCandidate): string {
-  return `switch ${CREW_SEAT_LABELS[seat]} to ${formatSeatCandidateIdentity(candidate)} · restarts this brief there, edits kept`;
+  const displayName =
+    candidate.model === undefined
+      ? undefined
+      : resolveModelDisplayName({
+          providerId: candidate.tool,
+          model: candidate.model,
+          role: CREW_SEAT_ROLES[seat],
+          cache: modelCacheStore,
+        });
+  return `switch ${CREW_SEAT_LABELS[seat]} to ${formatSeatCandidateIdentity(candidate, displayName)} · restarts this brief there, edits kept`;
 }
 
 /**
@@ -256,9 +278,7 @@ function formatRecoveryActionChoice(
 }
 
 export function formatMiddotList(values: string[], max: number): string {
-  const visible = values.slice(0, max).join(' · ');
-  const hidden = values.length - max;
-  return hidden > 0 ? `${visible} · ${hidden} more` : visible;
+  return formatTruncatedList(values, max);
 }
 
 function buildRecoveryActionRows(
@@ -524,24 +544,91 @@ function formatDetailLines(issue: RecoveryIssue): string[] {
   return issue.details
     .filter((detail) => !detail.startsWith('Worker profile:'))
     .slice(0, MAX_DETAIL_LINES)
-    .map(formatDetailLine)
+    .map((detail) => formatDetailLine(detail, issue))
     .map((detail) => (dropQuotedReset ? stripRecoveryResetClause(detail) : detail));
 }
 
-function formatDetailLine(detail: string): string {
+function formatDetailLine(detail: string, issue: RecoveryIssue): string {
   if (detail.startsWith('Validation: ')) return `Last check ${detail.slice('Validation: '.length)}`;
   if (detail.startsWith('Validation ')) return `Last check ${detail.slice('Validation '.length)}`;
   if (detail.startsWith('Spent ')) return `Spent ${detail.slice('Spent '.length)}`;
+  if (isConflictRecovery(issue)) {
+    const conflictSummary = formatConflictSummary(detail, issue);
+    if (conflictSummary !== undefined) return conflictSummary;
+    const continuation = formatConflictContinuation(detail, issue);
+    if (continuation !== undefined) return continuation;
+    const fileConflict = formatFileConflictDetail(detail, issue);
+    if (fileConflict !== undefined) return fileConflict;
+  }
   return detail;
+}
+
+function isConflictRecovery(issue: RecoveryIssue): boolean {
+  return issue.reason === 'user-edit-conflict' || issue.reason === 'approval-promotion-conflict';
+}
+
+function formatConflictSummary(detail: string, issue: RecoveryIssue): string | undefined {
+  const prefix = 'Conflict kind: ';
+  if (!detail.startsWith(prefix)) return undefined;
+  const value = detail.slice(prefix.length);
+  const parsed = UserEditConflictKindSchema.safeParse(value);
+  const factKind = issue.facts?.conflictKind;
+  if (!parsed.success || (factKind !== undefined && factKind !== value)) return undefined;
+  return `Edit relation: ${userEditConflictRelation({
+    kind: parsed.data,
+    affectedTaskIds: issue.affectedTaskIds,
+    currentTaskId: issue.taskId,
+  })}`;
+}
+
+function formatConflictContinuation(detail: string, issue: RecoveryIssue): string | undefined {
+  const safeToContinue = recoveryFactBoolean(issue.facts, 'safeToContinue');
+  if (safeToContinue === undefined) return undefined;
+  const expected = `Safe to continue: ${safeToContinue ? 'yes' : 'no'}`;
+  if (detail !== expected) return undefined;
+  return safeToContinue ? 'Continuing is safe' : 'Continuing is not safe';
+}
+
+function formatFileConflictDetail(detail: string, issue: RecoveryIssue): string | undefined {
+  for (const file of issue.files) {
+    const prefix = `${file}: `;
+    if (!detail.startsWith(prefix)) continue;
+    const description = detail.slice(prefix.length);
+    for (const kind of UserEditConflictKindSchema.options) {
+      if (description === kind) {
+        return `${file}: ${userEditConflictRelation({
+          kind,
+          affectedTaskIds: issue.affectedTaskIds,
+          currentTaskId: issue.taskId,
+        })}`;
+      }
+      const affectedPrefix = `${kind} affects `;
+      if (!description.startsWith(affectedPrefix)) continue;
+      const affectedTaskIds = description.slice(affectedPrefix.length).split(', ');
+      if (
+        affectedTaskIds.length === 0 ||
+        affectedTaskIds.some((id) => !TaskIdSchema.safeParse(id).success)
+      ) {
+        return undefined;
+      }
+      return `${file}: ${userEditConflictRelation({
+        kind,
+        affectedTaskIds,
+        currentTaskId: issue.taskId,
+      })}`;
+    }
+  }
+  return undefined;
 }
 
 function formatWorkerLines(issue: RecoveryIssue): string[] {
   const worker = issue.selectedImplementerProfile;
   if (!worker) return [];
   const contextLength = recoveryFactNumber(issue.facts, 'contextLength');
+  const formattedLength = formatContextLength(contextLength) || contextLength;
   return [
     contextLength === undefined
       ? `Worker ${worker}`
-      : `Worker ${worker} · ${contextLength} context`,
+      : `Worker ${worker} · ${formattedLength} context`,
   ];
 }

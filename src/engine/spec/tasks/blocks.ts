@@ -1,6 +1,6 @@
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import { taskId } from '../../../core/schemas/task.js';
-import { fenceMarkerLength, nextFenceLength } from './fence-marker.js';
+import { closesOpenFence, fenceMarkerLength, nextFenceLength } from './fence-marker.js';
 import { readTaskFrontmatter, TaskFrontmatterSchema } from './frontmatter.js';
 import { extractSections } from './sections.js';
 
@@ -96,31 +96,65 @@ const FRONTMATTER_FIELD_LINE_RE = new RegExp(
   `^(?:${Object.keys(TaskFrontmatterSchema.shape).join('|')})\\s*:`,
 );
 
-export function splitTaskBlocks(markdown: string): string[] {
+export function splitTaskBlocks(markdown: string, onWarning?: (message: string) => void): string[] {
   const blocks: string[] = [];
   const lines = markdown.split('\n');
   let current: string[] = [];
   let state: 'idle' | 'in-frontmatter' | 'in-body' = 'idle';
   let fenceLength = 0;
+  let fenceInfo = '';
+  let fenceOpenedAt = -1;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] ?? '';
     const trimmed = line.trim();
 
+    const insideOpenFence = fenceLength > 0 && state === 'in-body';
+    const gluedSeparator = insideOpenFence ? splitGluedSeparator(line) : null;
+    const bareHeaderInFence =
+      insideOpenFence && trimmed === '---' && nextNonBlankLineIsTaskId(lines, i + 1);
+    const gluedHeaderInFence = gluedSeparator !== null && nextNonBlankLineIsTaskId(lines, i + 1);
     const recoversFromUnclosedFence =
-      fenceLength > 0 &&
-      state === 'in-body' &&
-      trimmed === '---' &&
-      nextNonBlankLineIsTaskId(lines, i + 1) &&
-      !fenceClosesBefore(lines, i + 1, fenceLength);
-    if (recoversFromUnclosedFence) fenceLength = 0;
+      (bareHeaderInFence || gluedHeaderInFence) &&
+      fenceEndsAtBriefHeader({ lines, header: i, fenceLength, fenceOpenedAt });
+    if (recoversFromUnclosedFence) {
+      onWarning?.(
+        `${briefName(current, 0)} never closes its ${(lines[fenceOpenedAt] ?? '').trim()} code fence, so the rest of the brief is read as code; the fence ends at ${briefName(lines, i)}`,
+      );
+      fenceLength = 0;
+      fenceInfo = '';
+    } else if (bareHeaderInFence && !opensSampleOfFormat(lines, fenceOpenedAt)) {
+      // A fence that opens on a brief header is a sample of the format. Any other fence that holds
+      // a header may hold a brief the planner meant, so the brief it keeps as code is named.
+      onWarning?.(
+        `${briefName(current, 0)} holds the header of ${briefName(lines, i)} in its ${(lines[fenceOpenedAt] ?? '').trim()} code fence, so ${briefName(lines, i)} is read as code, not as a brief`,
+      );
+    }
 
-    fenceLength = nextFenceLength(fenceLength, trimmed);
+    const markerLength = fenceMarkerLength(trimmed);
+    if (markerLength !== null) {
+      const markerInfo = trimmed.slice(markerLength).trim();
+      if (fenceLength === 0) {
+        fenceLength = markerLength;
+        fenceInfo = markerInfo;
+        fenceOpenedAt = i;
+      } else if (closesOpenFence({ fenceLength, fenceInfo, markerLength, markerInfo })) {
+        fenceLength = 0;
+        fenceInfo = '';
+      }
+    }
 
     const isSeparator = (fenceLength === 0 && trimmed === '---') || recoversFromUnclosedFence;
     const opensTaskBlock = isSeparator && nextNonBlankLineIsFrontmatterField(lines, i + 1);
 
-    if (state === 'idle' && opensTaskBlock) {
+    if (recoversFromUnclosedFence && gluedSeparator !== null) {
+      // The separator was glued to the last code line of the unclosed fence: the brief that owns
+      // the fence keeps the code text, and the separator opens the next brief.
+      current.push(gluedSeparator.body);
+      blocks.push(current.join('\n'));
+      current = [gluedSeparator.separator];
+      state = 'in-frontmatter';
+    } else if (state === 'idle' && opensTaskBlock) {
       current = [line];
       state = 'in-frontmatter';
     } else if (state === 'in-frontmatter' && isSeparator) {
@@ -145,18 +179,38 @@ export function splitTaskBlocks(markdown: string): string[] {
 export function normalizeTaskSeparators(content: string): string {
   const lines = content.split('\n');
   let fenceLength = 0;
+  let fenceInfo = '';
+  let fenceOpenedAt = -1;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] ?? '';
     const trimmed = line.trim();
-    if (fenceMarkerLength(trimmed) !== null) {
-      fenceLength = nextFenceLength(fenceLength, trimmed);
+    const markerLength = fenceMarkerLength(trimmed);
+    if (markerLength !== null) {
+      const markerInfo = trimmed.slice(markerLength).trim();
+      if (fenceLength === 0) {
+        fenceLength = markerLength;
+        fenceInfo = markerInfo;
+        fenceOpenedAt = i;
+      } else if (closesOpenFence({ fenceLength, fenceInfo, markerLength, markerInfo })) {
+        fenceLength = 0;
+        fenceInfo = '';
+      }
       continue;
     }
 
-    if (fenceLength > 0) continue;
-    if (!/^id:/.test(lines[i + 1] ?? '')) continue;
+    if (fenceLength > 0) {
+      // Glue inside an actually unclosed fence belongs to the next brief — the same decision
+      // splitTaskBlocks makes — so repair it; a header in a closed sample stays code.
+      const briefHeaderInFence =
+        (trimmed === '---' || /[^\r]---\r?$/.test(line)) && nextNonBlankLineIsTaskId(lines, i + 1);
+      if (!briefHeaderInFence) continue;
+      if (!fenceEndsAtBriefHeader({ lines, header: i, fenceLength, fenceOpenedAt })) continue;
+      fenceLength = 0;
+      fenceInfo = '';
+    }
 
+    if (!/^id:/.test(lines[i + 1] ?? '')) continue;
     lines[i] = line.replace(/([^\r])---(\r?)$/, '$1\n---$2');
   }
 
@@ -187,6 +241,18 @@ export function opensUnterminatedFrontmatter(block: string): boolean {
   return separators < 2 && contentAfterOpen;
 }
 
+/**
+ * Splits a line whose separator lost its preceding newline — the planner wrote
+ * `const cut = 1;---` — into the code text and the separator. A line that is exactly `---`
+ * (with an optional `\r`) carries no glue and returns null.
+ */
+function splitGluedSeparator(line: string): { body: string; separator: string } | null {
+  const match = /[^\r]---\r?$/.exec(line);
+  if (match === null) return null;
+  const separator = match[0].slice(1);
+  return { body: line.slice(0, line.length - separator.length), separator };
+}
+
 function nextNonBlankLineIsTaskId(lines: string[], from: number): boolean {
   for (let i = from; i < lines.length; i++) {
     const trimmed = (lines[i] ?? '').trim();
@@ -205,12 +271,127 @@ function nextNonBlankLineIsFrontmatterField(lines: string[], from: number): bool
   return false;
 }
 
-function fenceClosesBefore(lines: string[], from: number, openLength: number): boolean {
+/**
+ * A brief header inside an open code fence reads two ways: the fence was never closed and the
+ * header starts the next brief, or the header is text in a code sample whose later markers close
+ * the fence. The header stays code only when that is the one reading under which every marker
+ * pairs up — the open fence closes through the markers after the header. If ending the fence at
+ * the header also closes, or keeping it open does not, the header starts a brief. Pairing spans
+ * the whole rest of the document, so a sample two briefs down decides a header above it, and the
+ * same fence line repeated inside its own fence closes it (validator finding, 2026-09-26).
+ *
+ * The header the fence itself opened on is never recovered, whatever the markers say: an
+ * md/markdown fence whose first content is a Task Brief header — ```md before a quoted T900,
+ * whose `---` may be glued to sample text — is a sample of the format, so that header stays
+ * quoted. A header further down the same fence is not a sample: a genuine T002 after the quoted
+ * content, or after an unclosed ```ts, still ends the fence and starts a block (validator finding,
+ * 2026-09-26).
+ */
+function fenceEndsAtBriefHeader(input: {
+  lines: string[];
+  header: number;
+  fenceLength: number;
+  fenceOpenedAt: number;
+}): boolean {
+  const { lines, header, fenceLength, fenceOpenedAt } = input;
+  if (fenceOpenedOnHeader({ lines, header, fenceOpenedAt })) return false;
+  const opener = (lines[fenceOpenedAt] ?? '').trim();
+  const marker = fenceMarkerLength(opener);
+  const openerInfo = marker === null ? '' : opener.slice(marker).trim();
+  if (!fenceRunCloses({ lines, from: header + 1, openLength: fenceLength, openInfo: openerInfo }))
+    return true;
+  return fenceRunCloses({ lines, from: header + 1, openLength: 0, openInfo: '' });
+}
+
+/** True when the markers from `from` pair up and every fence they open is closed at the end. */
+function fenceRunCloses(input: {
+  lines: string[];
+  from: number;
+  openLength: number;
+  openInfo: string;
+}): boolean {
+  const { lines, from, openLength, openInfo } = input;
+  let fenceLength = openLength;
+  let fenceInfo = openInfo;
   for (let i = from; i < lines.length; i++) {
-    const marker = fenceMarkerLength((lines[i] ?? '').trim());
-    if (marker !== null && marker >= openLength) return true;
+    const trimmed = (lines[i] ?? '').trim();
+    const marker = fenceMarkerLength(trimmed);
+    if (marker === null) continue;
+    const info = trimmed.slice(marker).trim();
+    if (fenceLength === 0) {
+      fenceLength = marker;
+      fenceInfo = info;
+    } else if (
+      closesOpenFence({ fenceLength, fenceInfo, markerLength: marker, markerInfo: info })
+    ) {
+      fenceLength = 0;
+      fenceInfo = '';
+    }
+  }
+  return fenceLength === 0;
+}
+
+/** Info strings that announce a sample of the markdown format the Task Briefs themselves use. */
+const MARKDOWN_SAMPLE_INFO_RE = /^(?:md|markdown)$/;
+
+/**
+ * True when the fence that opened at `fenceOpenedAt` announces the markdown format and holds
+ * `header` as its first content: a bare `---`, or sample text glued to one (`example---` before
+ * an `id:` line). Only md/markdown owns either form: an md/markdown fence is a sample of the
+ * format, while a bare `---` or the same glue in a code fence — ```ts before `const cut = 1;---`
+ * — is the document's next separator, not quoted text. A bare opener is excluded: it may be the
+ * closer of an earlier sample that an unclosed fence made the parser read as an opener.
+ */
+function fenceOpenedOnHeader(input: {
+  lines: string[];
+  header: number;
+  fenceOpenedAt: number;
+}): boolean {
+  const { lines, header, fenceOpenedAt } = input;
+  const opener = (lines[fenceOpenedAt] ?? '').trim();
+  const marker = fenceMarkerLength(opener);
+  if (marker === null || opener.length === marker) return false;
+  if (!MARKDOWN_SAMPLE_INFO_RE.test(opener.slice(marker).trim())) return false;
+  for (let i = fenceOpenedAt + 1; i < lines.length; i++) {
+    const trimmed = (lines[i] ?? '').trim();
+    if (trimmed === '') continue;
+    if (i !== header) return false;
+    if (trimmed === '---') return true;
+    return splitGluedSeparator(lines[i] ?? '') !== null;
   }
   return false;
+}
+
+/**
+ * Only a marker with an info string is certainly an opener: a closing fence carries none
+ * (CommonMark), so a bare ``` before a brief header may be the closer of an earlier sample that
+ * an unclosed fence made the parser read as an opener. Silencing that one would drop the brief
+ * behind it without a name.
+ */
+function opensSampleOfFormat(lines: string[], opener: number): boolean {
+  const trimmed = (lines[opener] ?? '').trim();
+  const marker = fenceMarkerLength(trimmed);
+  return marker !== null && trimmed.length > marker && opensOnTaskBrief(lines, opener + 1);
+}
+
+function opensOnTaskBrief(lines: string[], from: number): boolean {
+  for (let i = from; i < lines.length; i++) {
+    const trimmed = (lines[i] ?? '').trim();
+    if (trimmed === '') continue;
+    return trimmed === '---' && nextNonBlankLineIsFrontmatterField(lines, i + 1);
+  }
+  return false;
+}
+
+/** `Task <id>` for the brief header whose opening `---` is `lines[start]`. */
+function briefName(lines: string[], start: number): string {
+  for (let i = start + 1; i < lines.length; i++) {
+    const trimmed = (lines[i] ?? '').trim();
+    if (trimmed === '---') break;
+    const id = /^id:\s*(\S.*)$/.exec(trimmed)?.[1];
+    if (id !== undefined) return `Task ${id.replace(/^(["'])(.*)\1$/, '$2')}`;
+  }
+  return 'A Task Brief';
 }
 
 export function stripFileFrontmatter(content: string): string {

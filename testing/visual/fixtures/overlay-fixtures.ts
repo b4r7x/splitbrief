@@ -28,8 +28,12 @@ import {
 } from '../../../src/engine/providers/cli-model-catalog.js';
 import { ModelsDevCatalogSchema } from '../../../src/core/schemas/models-dev.js';
 import type { RecoveryIssue } from '../../../src/core/schemas/recovery/schemas.js';
-import type { CostBreakdown } from '../../../src/core/schemas/summary.js';
+import type { CostBreakdown, Summary } from '../../../src/core/schemas/summary.js';
+import type { EvidenceLedger } from '../../../src/core/schemas/evidence.js';
+import type { Task } from '../../../src/core/schemas/task.js';
 import { ZERO_TOKEN_USAGE } from '../../../src/core/schemas/tokens.js';
+import type { RunStatus } from '../../../src/core/sessions/run-status.js';
+import { createInitialState } from '../../../src/core/state/machine.js';
 import { seatAxisFocus } from '../../../src/core/navigation/types.js';
 import { deriveCrewRows } from '../../../src/core/crew/rows.js';
 import { crewActivate } from '../../../src/features/crew/rows.js';
@@ -59,6 +63,9 @@ import { scenarioId } from '../contracts/identifiers.js';
 import { cliDetectionFor } from '../../helpers/factories/detection.js';
 import { makeSession } from '../../helpers/factories/session.js';
 import { makeSummary } from '../../helpers/factories/summary.js';
+import { makeTask } from '../../helpers/factories/task.js';
+import { createEvidenceLedger } from '../../../src/core/evidence/ledger-state.js';
+import { hashTaskBrief } from '../../../src/engine/brief-hash.js';
 import type { FixtureFactory, FixtureLifecycle, FixtureRegistry } from './common.js';
 import {
   publishVisualDiscovery,
@@ -593,6 +600,16 @@ const BUILD_ANTHROPIC_SEAT = {
   tool: 'claude-code',
   model: 'claude-sonnet-4',
 } as const;
+/** A custom endpoint named after a CLI tool: the identity collision these fixtures render. */
+const BUILD_API_TWIN_SEAT = {
+  kind: 'api',
+  provider: 'opencode',
+  service: 'opencode',
+  offering: 'payg',
+  apiBase: 'https://my-endpoint.example/v1',
+  apiKey: 'sk-inline',
+  model: 'gpt-5',
+} as const;
 const PLANNER_HIGH_EFFORT = {
   kind: 'cli',
   tool: 'claude-code',
@@ -655,6 +672,13 @@ const createSettingsClaudeAliasFixture: FixtureFactory = () =>
       planner: { kind: 'cli', tool: 'claude-code', model: 'opus', effort: 'max' },
     }),
     focus: 'seat:plan',
+  });
+/** An API build seat that reuses a CLI tool's name: the row reads its own endpoint, not that CLI. */
+const createSettingsCrewApiTwinFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'settings',
+    seed: seedConfig({ planner: PLANNER_HIGH_EFFORT, implementer: BUILD_API_TWIN_SEAT }),
+    focus: 'seat:build',
   });
 const createSettingsFloorFullFixture: FixtureFactory = () =>
   createOverlayFixture({
@@ -767,9 +791,11 @@ const createClaudeEffortSetFixture: FixtureFactory = () =>
 const createClaudeEffortReturnedFixture: FixtureFactory = () => ({
   ...createClaudeEffortSetFixture(),
   afterMount: async (write) => {
+    // Every key waits for the frame it changed. Sending the four keys without a settle lets
+    // the walk outrun the view: the archived 120x40 capture photographed the cursor on
+    // `+ Add custom command…` instead of the returned effort row.
     for (const key of ['\x1b[D', '\x1b[B', '\x1b[A', '\x1b[C']) {
-      write(key);
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await write.press(key);
     }
   },
 });
@@ -1044,6 +1070,17 @@ const createImplementerPickerClaudeFixture: FixtureFactory = () =>
       seedConfig({ implementer: { kind: 'cli', tool: 'claude-code' } })();
     },
   });
+// The build seat is a custom endpoint named `opencode`: no CLI row may claim it as current, or
+// confirming the pre-selected row would silently change the seat's kind.
+const createImplementerPickerApiTwinFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'implementer-picker',
+    seed: () => {
+      seedOpencodeReady();
+      seedConfig({ implementer: BUILD_API_TWIN_SEAT })();
+    },
+    focus: 'tool:opencode',
+  });
 // What a quota halt opens when the operator takes its seat swap: the seat's own picker, preselected
 // on the tool the halt offered. `pickSwappedSeat` opens this exact overlay and focus token. A halt
 // only ever offers a tool its readiness pass found ready, so the preselected row is seeded ready —
@@ -1111,7 +1148,7 @@ function seedStopSheet(): void {
     file: 'src/features/workflow/stop/sheet.tsx',
     action: 'create',
     tool: 'ollama',
-    model: 'fixture-model-v1',
+    model: 'qwen2.5-coder:7b',
   });
 }
 
@@ -1120,6 +1157,17 @@ const createStopSheetFixture: FixtureFactory = () =>
     overlay: 'stop-sheet',
     seed: seedStopSheet,
     underlyingScreen: 'workflow',
+  });
+const createParkedStopMenuFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'stop-sheet',
+    underlyingScreen: 'workflow',
+    seed: () => {
+      seedStopSheet();
+      stopStore.request('stop-now');
+      stopStore.park('mid-brief', 'T002', null);
+      markWorkflowPaused();
+    },
   });
 const createSessionsFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'sessions', seed: seedSessions });
@@ -1199,6 +1247,66 @@ function usageContextRoute(): RouteData {
     }),
     execution: { kind: 'at-rest' },
   };
+}
+
+const PLAN_GATE_FEATURE = 'Fix the capped validation record';
+const PLAN_GATE_TASKS = [
+  makeTask({ id: 'T001', title: 'Record the initial result', file: 'src/validation/result.ts' }),
+  makeTask({ id: 'T002', title: 'Apply the retry result', file: 'src/validation/retry.ts' }),
+  makeTask({ id: 'T003', title: 'Show the final result', file: 'src/validation/display.ts' }),
+];
+const OLD_PLAN_TASK = makeTask({
+  id: 'T001',
+  title: 'Write the old validation path',
+  file: 'src/validation/old.ts',
+  status: 'done',
+});
+const OLD_PLAN_LEDGER = createEvidenceLedger({
+  sessionId: '2026-09-25-plan-gate-stop',
+  feature: PLAN_GATE_FEATURE,
+  tasks: [OLD_PLAN_TASK],
+  briefHash: hashTaskBrief([OLD_PLAN_TASK]),
+});
+const REWOUND_GATE_LEDGER: EvidenceLedger = {
+  ...OLD_PLAN_LEDGER,
+  tasks: OLD_PLAN_LEDGER.tasks.map((task) => ({
+    ...task,
+    status: 'done',
+    method: 'local',
+    changedFiles: ['src/validation/old.ts'],
+  })),
+};
+
+/**
+ * A stop at the plan gate, where the product leaves it: the run loop has returned, the route carries
+ * the record it re-read, and no brief has started. End run closes the same record.
+ */
+function planGateRoute(
+  status: RunStatus,
+  summary: Summary | null = null,
+  options: { tasks?: Task[]; ledger?: EvidenceLedger } = {},
+): () => RouteData {
+  return () => ({
+    screen: 'workflow',
+    run: makeRunRecord({
+      ref: { projectDir: VISUAL_FIXTURE_PROJECT_DIR, sessionId: '2026-09-25-plan-gate-stop' },
+      feature: PLAN_GATE_FEATURE,
+      hydration: {
+        kind: 'loaded',
+        state: {
+          ...createInitialState(PLAN_GATE_FEATURE, new Date(VISUAL_PUBLISHED_AT)),
+          phase: 'reviewing-plan',
+          tasks: options.tasks ?? PLAN_GATE_TASKS,
+          mode: 'standard',
+          awaitingContinue: status.kind === 'open',
+        },
+      },
+      status,
+      summary,
+      ledger: options.ledger ?? null,
+    }),
+    execution: { kind: 'at-rest' },
+  });
 }
 
 /** The crew the recorded breakdown was priced for, so the run on screen and its record agree. */
@@ -1368,6 +1476,96 @@ const createUsageDetailsLegacyFixture: FixtureFactory = () =>
     underlyingScreen: 'workflow',
     workflowRoute: usageRoute(USAGE_LEGACY_BREAKDOWN),
   });
+
+/**
+ * The same name spent twice: a custom API endpoint named `opencode` and the CLI tool of that
+ * name. The billing rows must name the endpoint literally and the tool by its catalog name.
+ */
+const USAGE_API_TWIN_BREAKDOWN: CostBreakdown = {
+  actualPlannerCost: 0.42,
+  actualImplementerCost: 1.18,
+  totalActualCost: 1.6,
+  hasPricedUsage: true,
+  hasUnpricedUsage: true,
+  providerCosts: {
+    'api:opencode': { inputTokens: 400_000, outputTokens: 20_000, cost: 1.18 },
+  },
+  requestEstimate: {
+    amount: null,
+    currency: 'USD',
+    basis: 'catalog-estimate',
+    completeness: 'partial',
+    knownSubtotal: 1.18,
+    reasons: ['unpriced-model'],
+    items: [
+      {
+        callId: 'call-api-1',
+        role: 'implementer',
+        usageBoundary: 'single-request',
+        amount: 1.18,
+        knownSubtotal: 1.18,
+        completeness: 'complete',
+        reasons: [],
+        billing: { posture: 'api-metered', basis: 'observed-invocation' },
+        rates: {
+          source: 'models-dev',
+          provider: 'opencode',
+          model: 'gpt-5',
+          inputPer1M: 1.25,
+          outputPer1M: 10,
+          capturedAt: VISUAL_PUBLISHED_AT,
+        },
+      },
+      {
+        callId: 'call-cli-1',
+        role: 'planner',
+        usageBoundary: 'single-request',
+        amount: null,
+        knownSubtotal: 0,
+        completeness: 'unavailable',
+        reasons: ['unpriced-model'],
+        billing: { posture: 'unknown', basis: 'unknown' },
+      },
+    ],
+  },
+  providerRunMetadata: {
+    'api:opencode': {
+      service: 'opencode',
+      offering: 'payg',
+      normalizedEndpoint: 'https://my-endpoint.example/v1',
+      billing: 'api-metered',
+      asOf: '',
+      billingAttribution: {
+        posture: 'api-metered',
+        basis: 'observed-invocation',
+        evidenceId: 'api.observed.api-key',
+      },
+    },
+    'cli:opencode': {
+      service: 'opencode',
+      offering: 'coding-subscription',
+      normalizedEndpoint: 'cli:opencode',
+      billing: 'subscription-included',
+      asOf: '',
+      billingAttribution: { posture: 'unknown', basis: 'unknown' },
+    },
+  },
+  offeringPresentations: {
+    'api:opencode': { costLabel: '$1.18', billingLabel: 'api-metered' },
+    'cli:opencode': { costLabel: 'subscription-included', billingLabel: 'subscription-included' },
+  },
+};
+
+const createUsageDetailsApiTwinFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'usage-details',
+    seed: () => {
+      seedUsageCounters();
+      seedVisualConfig({ ...USAGE_CREW, implementer: BUILD_API_TWIN_SEAT });
+    },
+    underlyingScreen: 'workflow',
+    workflowRoute: usageRoute(USAGE_API_TWIN_BREAKDOWN),
+  });
 const createUsageContextFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'usage-details',
@@ -1388,6 +1586,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-settings-inherited-effort'), createSettingsInheritedEffortFixture],
   [scenarioId('overlay-settings-crew-kilo-copilot'), createSettingsCrewKiloCopilotFixture],
   [scenarioId('overlay-settings-claude-alias'), createSettingsClaudeAliasFixture],
+  [scenarioId('overlay-settings-crew-api-twin'), createSettingsCrewApiTwinFixture],
   [scenarioId('overlay-settings-floor-full'), createSettingsFloorFullFixture],
   [scenarioId('overlay-settings-filtered'), createSettingsFilteredFixture],
   [scenarioId('overlay-settings-filter-plan'), createSettingsFilterPlanFixture],
@@ -1497,24 +1696,16 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-picker-save-refused'), createSaveRefusedFixture],
   [scenarioId('overlay-implementer-picker'), createImplementerPickerFixture],
   [scenarioId('overlay-implementer-picker-claude'), createImplementerPickerClaudeFixture],
+  [scenarioId('overlay-implementer-picker-api-twin'), createImplementerPickerApiTwinFixture],
   [scenarioId('overlay-picker-seat-swap'), createSeatSwapPickerFixture],
   [scenarioId('overlay-picker-browse-escape'), createPickerBrowseEscapeFixture],
   [scenarioId('overlay-reviewer-picker-inherited'), createReviewerPickerFixture],
   [scenarioId('overlay-reviewer-picker-tool'), createReviewerPickerToolFixture],
   [scenarioId('workflow-stop-sheet'), createStopSheetFixture],
+  [scenarioId('workflow-stop-menu-parked'), createParkedStopMenuFixture],
   [
-    scenarioId('workflow-stop-menu-parked'),
-    () =>
-      createOverlayFixture({
-        overlay: 'stop-sheet',
-        underlyingScreen: 'workflow',
-        seed: () => {
-          seedStopSheet();
-          stopStore.request('stop-now');
-          stopStore.park('mid-brief', 'T002', null);
-          markWorkflowPaused();
-        },
-      }),
+    scenarioId('workflow-stop-menu-quit-hint'),
+    () => ({ ...createParkedStopMenuFixture(), afterMount: (write) => write('\x03') }),
   ],
   [
     scenarioId('workflow-stop-menu-failed'),
@@ -1575,9 +1766,96 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
     scenarioId('workflow-stop-menu-pause'),
     () => ({ ...createStopSheetFixture(), afterMount: (write) => write('\x1b[B') }),
   ],
+  [
+    scenarioId('workflow-stop-menu-parked-gate'),
+    () => ({
+      ...createOverlayFixture({
+        overlay: 'stop-sheet',
+        underlyingScreen: 'workflow',
+        workflowRoute: planGateRoute({
+          kind: 'open',
+          stop: { kind: 'paused', at: 'mid-step' },
+          resumeAt: { kind: 'gate', gate: 'plan' },
+        }),
+        seed: () => {
+          stopStore.request('stop-now');
+          stopStore.park('mid-brief', null, null);
+          markWorkflowPaused();
+        },
+      }),
+      afterMount: (write) => write('\x1b[B'),
+    }),
+  ],
+  [
+    scenarioId('workflow-stop-menu-ended-gate'),
+    () =>
+      createOverlayFixture({
+        overlay: 'stop-sheet',
+        underlyingScreen: 'workflow',
+        workflowRoute: planGateRoute(
+          { kind: 'closed', as: 'ended' },
+          makeSummary({
+            feature: PLAN_GATE_FEATURE,
+            phase: 'reviewing-plan',
+            totalTasks: 3,
+            completedByLocal: 0,
+            plannerTool: 'claude-code',
+            plannerModel: 'claude-sonnet-4',
+            implementerTool: 'ollama',
+            implementerModel: 'qwen2.5-coder:7b',
+            mode: 'standard',
+          }),
+        ),
+        seed: () => {
+          stopStore.request('end-run');
+          stopStore.end();
+        },
+      }),
+  ],
+  [
+    scenarioId('workflow-stop-menu-ended-rewound-gate'),
+    () =>
+      createOverlayFixture({
+        overlay: 'stop-sheet',
+        underlyingScreen: 'workflow',
+        workflowRoute: planGateRoute(
+          { kind: 'closed', as: 'ended' },
+          makeSummary({
+            feature: PLAN_GATE_FEATURE,
+            phase: 'reviewing-plan',
+            totalTasks: 1,
+            completedByLocal: 0,
+            changedFiles: ['src/validation/old.ts'],
+            stoppedAt: { taskId: OLD_PLAN_TASK.id, partialFiles: ['src/validation/old.ts'] },
+            taskBreakdown: [
+              {
+                taskId: OLD_PLAN_TASK.id,
+                taskTitle: OLD_PLAN_TASK.title,
+                method: 'local',
+                implementerTokens: 100,
+                escalationTokens: 0,
+                retryCount: 0,
+              },
+            ],
+            mode: 'standard',
+          }),
+          { tasks: PLAN_GATE_TASKS.slice(0, 1), ledger: REWOUND_GATE_LEDGER },
+        ),
+        seed: () => {
+          stopStore.request('end-run');
+          stopStore.end();
+        },
+      }),
+  ],
+  [
+    scenarioId('workflow-stop-sheet-planning'),
+    // No brief has run, so the sheet has no changes to promise.
+    () => createOverlayFixture({ overlay: 'stop-sheet', underlyingScreen: 'workflow' }),
+  ],
   [scenarioId('overlay-sessions'), createSessionsFixture],
   [scenarioId('overlay-usage-details'), createUsageDetailsFixture],
   [scenarioId('overlay-usage-details-legacy'), createUsageDetailsLegacyFixture],
+  [scenarioId('overlay-usage-details-api-twin'), createUsageDetailsApiTwinFixture],
   [scenarioId('overlay-usage-context-insufficient'), createUsageContextFixture],
   [scenarioId('overlay-editor'), createEditorFixture],
 ]);

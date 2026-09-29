@@ -12,7 +12,8 @@ import {
   ControlledMultilineInput,
   type ControlledMultilineInputProps,
 } from './controlled-multiline-input.js';
-import { isLoneTerminalControl } from '../../lib/terminal/text-entry.js';
+import { isTerminalControlRun } from '../../lib/terminal/text-entry.js';
+import { sanitizePasteBody } from '../../lib/terminal/filtered-stdin/paste.js';
 import { SUPPORTED_IMAGE_EXTS } from '../../core/schemas/attachment.js';
 
 const MULTI_BYTE_SUPPRESS_MS = 50;
@@ -329,11 +330,6 @@ export function MultilineInput({
 
     if (key.ctrl || key.meta || key.super || key.hyper) return;
 
-    let nextPasteLength = 0;
-    if (input.length > 1) {
-      nextPasteLength = input.length;
-    }
-
     if (key.upArrow || key.downArrow || key.leftArrow || key.rightArrow) {
       if (!showCursor) return;
     }
@@ -374,15 +370,17 @@ export function MultilineInput({
         commit(currentValue.slice(0, prev) + currentValue.slice(currentCursor), prev);
       }
     } else {
-      // A lone C0 control byte (e.g. Ctrl+/ as `\x1f` on legacy terminals) is a
-      // chord the global handler owns, not text — inserting it would corrupt the draft.
-      if (isLoneTerminalControl(input)) return;
-      if (input) {
-        const normalized = normalizeLineEndings(input).normalize('NFC');
+      // A C0 control byte (e.g. Ctrl+/ as `\x1f` on legacy terminals), alone or in a run a late
+      // read delivered together, is a chord the global handler owns, not text — inserting it
+      // would corrupt the draft. Read together with typed text (`fix\x03\x03`), it is dropped
+      // from that text, which keeps only what a paste may carry.
+      if (isTerminalControlRun(input)) return;
+      const normalized = sanitizePasteBody(input).normalize('NFC');
+      if (normalized) {
         const newValue =
           currentValue.slice(0, currentCursor) + normalized + currentValue.slice(currentCursor);
         commit(newValue, currentCursor + normalized.length);
-        setPasteLength(nextPasteLength);
+        setPasteLength(normalized.length > 1 ? normalized.length : 0);
       }
     }
   };

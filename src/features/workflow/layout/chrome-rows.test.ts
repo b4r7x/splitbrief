@@ -23,6 +23,7 @@ import {
   getChromeContentWidth,
   getChromeHeight,
   getContentTopRow,
+  getContentTopRowIndex,
   getProgressRows,
   getRailDriftPassed,
   getWorkflowChromeRows,
@@ -104,6 +105,11 @@ describe('workflow chrome row contract', () => {
 describe('getContentTopRow', () => {
   it('starts after the baseline top chrome rows', () => {
     expect(getContentTopRow()).toBe(3);
+  });
+
+  it('states the same boundary in the frame row numbering', () => {
+    expect(getContentTopRowIndex()).toBe(getContentTopRow() - 1);
+    expect(getContentTopRowIndex()).toBe(2);
   });
 });
 
@@ -319,6 +325,15 @@ describe('getProgressRows', () => {
     expect(getProgressRows({ phase: 'validating-task', cols: 82 })).toBe(4);
     expect(getProgressRows({ phase: 'validating-task', cols: 80 })).toBe(5);
     expect(getProgressRows({ phase: 'final-review', cols: 60 })).toBe(5);
+  });
+
+  it('stands down whenever nothing is building or something waits on an answer', () => {
+    const building = { phase: 'implementing', cols: 120 } as const;
+    expect(getProgressRows({ ...building, cancelled: true })).toBe(0);
+    expect(getProgressRows({ ...building, halted: true })).toBe(0);
+    expect(getProgressRows({ ...building, promptRows: 3 })).toBe(0);
+    expect(getProgressRows({ ...building, atRest: true })).toBe(0);
+    expect(getProgressRows({ ...building, promptRows: 0, halted: false, atRest: false })).toBe(4);
   });
 
   it('leaves its rows to the chrome, so the body is measured around it', () => {

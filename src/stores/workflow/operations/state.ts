@@ -26,6 +26,7 @@ export interface OperationWarningGroup {
 interface OperationBase {
   callId: string;
   role: OperationRole;
+  backendKind?: EngineEventOf<'runner_call_started'>['backendKind'];
   phase: Phase;
   taskId?: string;
   label: string;

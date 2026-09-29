@@ -14,6 +14,9 @@ import { PLAN_FILE, SPEC_FILE } from '../../../core/paths.js';
 import { runApprovalLoop } from './loop.js';
 import { enqueueUserMessage } from '../queue/submit.js';
 import type { WorkflowSinks } from '../types.js';
+import { createEventBus } from '../../events/bus.js';
+import { readRunEvents } from '../../events/replay.js';
+import { createJsonlSink } from '../../events/sinks/jsonl.js';
 
 let dirs: string[] = [];
 
@@ -66,9 +69,98 @@ describe('runApprovalLoop', () => {
     });
     expect(result.closed).toBe(true);
     expect(events.some((e) => e.type === 'spec_rejected')).toBe(true);
+    expect(events.some((e) => e.type === 'spec_approved')).toBe(false);
     expect(
       events.some((e) => e.type === 'planner_status' && 'status' in e && e.status === 'done'),
     ).toBe(true);
+  });
+
+  it.each([
+    { type: 'spec' as const, state: prepareState, phase: 'reviewing-spec' },
+    { type: 'plan' as const, state: preparePlanState, phase: 'reviewing-plan' },
+  ])(
+    'records the $type gate approval in session.jsonl',
+    async ({ type, state: makeState, phase }) => {
+      const { projectDir, sessionId, specPath } = setupProject();
+      const { callbacks } = makeCallbacks({
+        onApprovalNeeded: vi.fn().mockResolvedValue({ approved: true }),
+      });
+      const bus = createEventBus();
+      bus.subscribe(createJsonlSink({ projectDir, sessionId }));
+
+      await runApprovalLoop({
+        type,
+        filePath: specPath,
+        planner: makePlanner(),
+        projectDir,
+        sessionId,
+        callbacks,
+        bus,
+        state: makeState(),
+      });
+
+      const { events } = await readRunEvents({ projectDir, sessionId });
+      expect(events.filter((event) => event.type === `${type}_approved`)).toEqual([
+        { type: `${type}_approved`, ts: expect.any(Number), phase },
+      ]);
+    },
+  );
+
+  it('records one approval, after the revision the gate approved', async () => {
+    const { projectDir, sessionId, specPath } = setupProject();
+    const { callbacks } = makeCallbacks({
+      onApprovalNeeded: vi
+        .fn()
+        .mockResolvedValueOnce({ approved: false, action: 'revise', comment: 'add auth' })
+        .mockResolvedValueOnce({ approved: true }),
+    });
+    const { bus, events } = makeBusRecorder();
+
+    await runApprovalLoop({
+      type: 'spec',
+      filePath: specPath,
+      planner: makePlanner({
+        regenerate: async () => ({ text: '# Spec\n\nWith auth.\n', usage: null }),
+      }),
+      projectDir,
+      sessionId,
+      callbacks,
+      bus,
+      state: prepareState(),
+    });
+
+    expect(
+      events
+        .map((event) => event.type)
+        .filter((type) => type === 'spec_regenerated' || type === 'spec_approved'),
+    ).toEqual(['spec_regenerated', 'spec_approved']);
+  });
+
+  it('records no approval for an answer that arrives after the run was stopped', async () => {
+    const { projectDir, sessionId, specPath } = setupProject();
+    const controller = new AbortController();
+    const { callbacks } = makeCallbacks({
+      onApprovalNeeded: async () => {
+        controller.abort();
+        return { approved: true as const };
+      },
+    });
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runApprovalLoop({
+      type: 'spec',
+      filePath: specPath,
+      planner: makePlanner(),
+      projectDir,
+      sessionId,
+      callbacks,
+      bus,
+      state: prepareState(),
+      signal: controller.signal,
+    });
+
+    expect(result.aborted).toBe(true);
+    expect(events.some((e) => e.type === 'spec_approved')).toBe(false);
   });
 
   it('returns not-closed immediately when AbortSignal is already aborted', async () => {
@@ -123,47 +215,163 @@ describe('runApprovalLoop', () => {
     expect(approvalPrompts).toBe(1);
   });
 
-  it('regenerate on feedback: planner.regenerate receives prompt containing user comment, loop continues until approval', async () => {
-    const { projectDir, sessionId, specPath } = setupProject();
-    const approvalPrompts = [
-      { approved: false, action: 'revise', comment: 'please add auth section' },
-      { approved: true },
-    ] as const;
-    let approvalCalls = 0;
-    const onApprovalNeeded = async () => {
-      const next = approvalPrompts[approvalCalls++];
-      if (!next) throw new Error('unexpected extra approval prompt');
-      return next;
-    };
-    const { callbacks } = makeCallbacks({ onApprovalNeeded });
-    const { bus } = makeBusRecorder();
+  it.each([
+    {
+      type: 'spec' as const,
+      state: prepareState,
+      phase: 'specifying',
+      filename: SPEC_FILE,
+      current: '# Spec\n\nFirst draft.\n',
+      replacement: '# Spec\n\nRegenerated.\n',
+    },
+    {
+      type: 'plan' as const,
+      state: preparePlanState,
+      phase: 'planning',
+      filename: PLAN_FILE,
+      current: '# Plan\n\nFirst draft.\n',
+      replacement: '# Plan\n\nRegenerated.\n',
+    },
+  ])(
+    'regenerates $type on feedback and associates both planner statuses with its call',
+    async ({ type, state: makeState, phase, filename, current, replacement }) => {
+      const { projectDir, sessionId, specPath } = setupProject();
+      writeSpecFile({ projectDir, sessionId }, filename, current, null);
+      const approvalPrompts = [
+        { approved: false, action: 'revise', comment: 'please add auth section' },
+        { approved: true },
+      ] as const;
+      let approvalCalls = 0;
+      const onApprovalNeeded = async () => {
+        const next = approvalPrompts[approvalCalls++];
+        if (!next) throw new Error('unexpected extra approval prompt');
+        return next;
+      };
+      const { callbacks } = makeCallbacks({ onApprovalNeeded });
+      const { bus, events } = makeBusRecorder();
 
-    const regenCalls: string[] = [];
-    const planner = makePlanner({
-      regenerate: async (opts) => {
-        regenCalls.push(opts.prompt);
-        return { text: '# Spec\n\nRegenerated.', usage: null };
-      },
-    });
+      const regenCalls: string[] = [];
+      const planner = makePlanner({
+        regenerate: async (opts) => {
+          regenCalls.push(opts.prompt);
+          return { text: replacement, usage: null };
+        },
+      });
 
-    const result = await runApprovalLoop({
-      type: 'spec',
-      filePath: specPath,
-      planner,
-      projectDir,
-      sessionId,
-      callbacks,
-      bus,
-      state: prepareState(),
-    });
+      const result = await runApprovalLoop({
+        type,
+        filePath: specPath,
+        planner,
+        projectDir,
+        sessionId,
+        callbacks,
+        bus,
+        state: makeState(),
+      });
 
-    expect(result.closed).toBe(false);
-    expect(result.regenerated).toBe(true);
-    expect(regenCalls).toHaveLength(1);
-    expect(regenCalls[0]).toContain('please add auth section');
-    expect(regenCalls[0]).toContain('spec');
-    expect(approvalCalls).toBe(2);
-  });
+      expect(result.closed).toBe(false);
+      expect(result.regenerated).toBe(true);
+      expect(regenCalls).toHaveLength(1);
+      expect(regenCalls[0]).toContain('please add auth section');
+      expect(regenCalls[0]).toContain(type);
+      expect(approvalCalls).toBe(2);
+      expect(
+        events.flatMap((event) =>
+          event.type === 'planner_status'
+            ? [{ phase: event.phase, status: event.status, call: event.call }]
+            : [],
+        ),
+      ).toEqual([
+        { phase, status: 'running', call: type },
+        { phase, status: 'done', call: type },
+      ]);
+      expect(
+        readFileSync(join(projectDir, '.splitbrief', 'sessions', sessionId, filename), 'utf8'),
+      ).toBe(replacement);
+      expect(events.filter((event) => event.type === `${type}_regenerated`)).toHaveLength(1);
+      expect(events.filter((event) => event.type === `${type}_approved`)).toHaveLength(1);
+    },
+  );
+
+  it.each([
+    { type: 'spec' as const, outcome: 'fails' as const },
+    { type: 'plan' as const, outcome: 'fails' as const },
+    { type: 'spec' as const, outcome: 'is cancelled' as const },
+    { type: 'plan' as const, outcome: 'is cancelled' as const },
+  ])(
+    'associates $type regeneration start and completion with the call when it $outcome',
+    async ({ type, outcome }) => {
+      const { projectDir, sessionId, specPath } = setupProject();
+      const filename = type === 'spec' ? SPEC_FILE : PLAN_FILE;
+      const phase = type === 'spec' ? 'specifying' : 'planning';
+      const state = type === 'spec' ? prepareState() : preparePlanState();
+      const current = type === 'spec' ? '# Spec\n\nFirst draft.\n' : '# Plan\n\nFirst draft.\n';
+      writeSpecFile({ projectDir, sessionId }, filename, current, null);
+      const artifactPath = join(projectDir, '.splitbrief', 'sessions', sessionId, filename);
+      const before = readFileSync(artifactPath);
+      const controller = new AbortController();
+      const onApprovalNeeded = vi.fn().mockResolvedValue({
+        approved: false,
+        action: 'revise',
+        comment: 'make one replacement',
+      });
+      const { callbacks } = makeCallbacks({ onApprovalNeeded });
+      const planner = makePlanner({
+        regenerate: vi.fn(async ({ callbacks: plannerCallbacks }) => {
+          if (outcome === 'is cancelled') {
+            await new Promise<never>((_resolve, reject) => {
+              plannerCallbacks.signal?.addEventListener(
+                'abort',
+                () => reject(new Error('planner call cancelled')),
+                { once: true },
+              );
+              controller.abort();
+            });
+          }
+          throw new Error('planner call failed');
+        }),
+      });
+      const { bus, events } = makeBusRecorder();
+      const run = runApprovalLoop({
+        type,
+        filePath: specPath,
+        planner,
+        projectDir,
+        sessionId,
+        callbacks,
+        bus,
+        state,
+        ...(outcome === 'is cancelled' ? { signal: controller.signal } : {}),
+      });
+
+      if (outcome === 'is cancelled') {
+        await expect(run).resolves.toMatchObject({
+          closed: false,
+          regenerated: false,
+          aborted: true,
+        });
+      } else {
+        await expect(run).rejects.toThrow('planner call failed');
+      }
+
+      expect(planner.regenerate).toHaveBeenCalledTimes(1);
+      expect(onApprovalNeeded).toHaveBeenCalledTimes(1);
+      expect(readFileSync(artifactPath)).toEqual(before);
+      expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(0);
+      expect(events.filter((event) => event.type === `${type}_regenerated`)).toHaveLength(0);
+      expect(events.filter((event) => event.type === `${type}_approved`)).toHaveLength(0);
+      expect(
+        events.flatMap((event) =>
+          event.type === 'planner_status'
+            ? [{ phase: event.phase, status: event.status, call: event.call }]
+            : [],
+        ),
+      ).toEqual([
+        { phase, status: 'running', call: type },
+        { phase, status: 'done', call: type },
+      ]);
+    },
+  );
 
   it.each([
     {
@@ -315,6 +523,16 @@ describe('runApprovalLoop', () => {
     expect(regenCalls[0]).toContain('keep this brief-only');
     expect(onApprovalNeeded).toHaveBeenCalledTimes(1);
     expect(events.some((e) => e.type === 'queue_drained' && e.count === 1)).toBe(true);
+    expect(
+      events.flatMap((event) =>
+        event.type === 'planner_status'
+          ? [{ phase: event.phase, status: event.status, call: event.call }]
+          : [],
+      ),
+    ).toEqual([
+      { phase: 'specifying', status: 'running', call: 'spec' },
+      { phase: 'specifying', status: 'done', call: 'spec' },
+    ]);
     expect(
       events.some(
         (e) =>

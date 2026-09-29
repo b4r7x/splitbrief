@@ -8,6 +8,8 @@ import type {
 } from '../../../core/schemas/summary.js';
 import type { InvocationIdentity } from '../../../core/schemas/invocation-identity.js';
 import type { CallUsageEvidence } from '../../../core/schemas/usage-evidence.js';
+import { runnerIdentityKey } from '../../../core/providers/catalog.js';
+import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
 import { selectPricingForContext } from '../cost-math.js';
 import { resolvePricing, type ResolvedPricing } from '../pricing-resolver.js';
 import type { ModelCacheAccessor } from '../model/resolution.js';
@@ -22,15 +24,26 @@ export type RequestEstimatePricing =
 
 type PricedCategory = { tokens: number; rate: number | undefined };
 
-export function callRunnerName(call: CallUsageEvidence): string | undefined {
-  return call.invocationIdentity?.runner.id ?? call.runnerName;
+/**
+ * The runner a call ran on, as a kind-qualified identity so `api:opencode` and
+ * `cli:opencode` are two runners and never one. A CLI call named by its command
+ * resolves through the tool it starts, the way the call labels do; a record
+ * with no invocation identity still carries its own backend kind.
+ */
+export function callRunnerKey(call: CallUsageEvidence): string | undefined {
+  const runner = call.invocationIdentity?.runner;
+  const kind = runner?.kind ?? call.backendKind;
+  const raw = runner?.id ?? call.runnerName;
+  if (raw === undefined) return undefined;
+  const id = kind === 'cli' ? (cliToolIdForCommand(raw) ?? raw) : raw;
+  return runnerIdentityKey(kind, id);
 }
 
 export function resolveCallPricing(
   call: CallUsageEvidence,
   cache: ModelCacheAccessor | undefined,
 ): ResolvedPricing | undefined {
-  const runner = callRunnerName(call);
+  const runner = callRunnerKey(call);
   const model = call.invocationIdentity?.model ?? call.model;
   return runner === undefined || model === undefined
     ? undefined

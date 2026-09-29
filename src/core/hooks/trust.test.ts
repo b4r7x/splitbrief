@@ -6,6 +6,7 @@ import {
   existsSync,
   readFileSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -57,6 +58,138 @@ describe('trust', () => {
 
       expect(isHooksConfigTrusted(projectDir, cfg)).toBe(false);
     });
+
+    it.each([
+      ['npm rum check', ['npm', 'rum', 'check']],
+      ['yarn check', ['yarn', 'check']],
+      ['yarnpkg check', ['yarnpkg', 'check']],
+      ['pnpm check', ['pnpm', 'check']],
+      ['bun check', ['bun', 'check']],
+      ['NPM run check', ['NPM', 'run', 'check']],
+      ['timeout 5 npm run check', ['timeout', '5', 'npm', 'run', 'check']],
+      ['npx npm run check', ['npx', 'npm', 'run', 'check']],
+      ['npx npm@10 run check', ['npx', 'npm@10', 'run', 'check']],
+      ['pnpm exec npm run check', ['pnpm', 'exec', 'npm', 'run', 'check']],
+      ['npm exec -- yarn check', ['npm', 'exec', '--', 'yarn', 'check']],
+    ])('returns false after the package script a %s hook runs changes', (_label, argv) => {
+      const [command, ...args] = argv;
+      const cfg = { pre_task: [{ command, args }] };
+      writeFileSync(
+        join(projectDir, 'package.json'),
+        JSON.stringify({ scripts: { check: 'exit 0' } }),
+      );
+      markHooksConfigTrusted(projectDir, cfg);
+      expect(isHooksConfigTrusted(projectDir, cfg)).toBe(true);
+
+      writeFileSync(
+        join(projectDir, 'package.json'),
+        JSON.stringify({ scripts: { check: 'exit 1' } }),
+      );
+
+      expect(isHooksConfigTrusted(projectDir, cfg)).toBe(false);
+    });
+
+    it.each([
+      ['npm run check', 'precheck'],
+      ['npm run check', 'postcheck'],
+      ['npm test', 'pretest'],
+      ['yarn check', 'postcheck'],
+      ['npm restart', 'stop'],
+    ])('returns false after %s runs a changed %s script', (hook, script) => {
+      const [command, ...args] = hook.split(' ');
+      const cfg = { pre_task: [{ command, args }] };
+      const scripts = {
+        check: 'exit 0',
+        test: 'exit 0',
+        precheck: 'exit 0',
+        pretest: 'exit 0',
+        stop: 'exit 0',
+      };
+      writeFileSync(join(projectDir, 'package.json'), JSON.stringify({ scripts }));
+      markHooksConfigTrusted(projectDir, cfg);
+      expect(isHooksConfigTrusted(projectDir, cfg)).toBe(true);
+
+      writeFileSync(
+        join(projectDir, 'package.json'),
+        JSON.stringify({ scripts: { ...scripts, [script]: 'exit 1' } }),
+      );
+
+      expect(isHooksConfigTrusted(projectDir, cfg)).toBe(false);
+    });
+
+    it.each([
+      ['node check.mjs', 'check.mjs'],
+      ['nodemon check.mjs', 'check.mjs'],
+      ['python3 check.py', 'check.py'],
+      ['npx tsx check.ts', 'check.ts'],
+      ['pnpm dlx tsx@4 check.ts', 'check.ts'],
+      ['yarn tsx check.ts', 'check.ts'],
+      ['NODE check.mjs', 'check.mjs'],
+      ['Node check.mjs', 'check.mjs'],
+      ['Python3 check.py', 'check.py'],
+      ['python3.13 check.py', 'check.py'],
+      ['python3.13t check.py', 'check.py'],
+      ['pythonw check.py', 'check.py'],
+      ['pypy3 check.py', 'check.py'],
+      ['perl5.34 check.pl', 'check.pl'],
+    ])('returns false after the file that %s runs changes', (hook, file) => {
+      const [command, ...args] = hook.split(' ');
+      const cfg = { pre_task: [{ command, args }] };
+      writeFileSync(join(projectDir, file), 'exit 0\n');
+      markHooksConfigTrusted(projectDir, cfg);
+      expect(isHooksConfigTrusted(projectDir, cfg)).toBe(true);
+
+      writeFileSync(join(projectDir, file), 'exit 1\n');
+
+      expect(isHooksConfigTrusted(projectDir, cfg)).toBe(false);
+    });
+
+    it('returns false after only the repo-local executable an interpreter hook names changes', () => {
+      writeFileSync(join(projectDir, 'nodemon'), '#!/bin/sh\nexit 0\n');
+      writeFileSync(join(projectDir, 'check.mjs'), 'export default () => ({ kind: "allow" });\n');
+      const cfg = { pre_task: [{ command: './nodemon', args: ['check.mjs'] }] };
+      markHooksConfigTrusted(projectDir, cfg);
+      expect(isHooksConfigTrusted(projectDir, cfg)).toBe(true);
+
+      writeFileSync(join(projectDir, 'nodemon'), '#!/bin/sh\nexit 1\n');
+
+      expect(isHooksConfigTrusted(projectDir, cfg)).toBe(false);
+    });
+
+    it('returns false after only the absolute repo-local executable an interpreter hook names changes', () => {
+      const executable = join(projectDir, 'nodemon');
+      writeFileSync(executable, '#!/bin/sh\nexit 0\n');
+      writeFileSync(join(projectDir, 'check.mjs'), 'export default () => ({ kind: "allow" });\n');
+      const cfg = { pre_task: [{ command: executable, args: ['check.mjs'] }] };
+      markHooksConfigTrusted(projectDir, cfg);
+      expect(isHooksConfigTrusted(projectDir, cfg)).toBe(true);
+
+      writeFileSync(executable, '#!/bin/sh\nexit 1\n');
+
+      expect(isHooksConfigTrusted(projectDir, cfg)).toBe(false);
+    });
+
+    itUnix(
+      'returns false after only the executable a symlinked-directory `..` path actually runs changes',
+      () => {
+        mkdirSync(join(projectDir, 'other', 'subdir'), { recursive: true });
+        writeFileSync(join(projectDir, 'nodemon'), '#!/bin/sh\nexit 0\n');
+        writeFileSync(join(projectDir, 'other', 'nodemon'), '#!/bin/sh\nexit 0\n');
+        writeFileSync(join(projectDir, 'check.mjs'), 'export default () => ({ kind: "allow" });\n');
+        symlinkSync(join('other', 'subdir'), join(projectDir, 'link'));
+        const cfg = {
+          pre_task: [{ command: `${projectDir}/link/../nodemon`, args: ['check.mjs'] }],
+        };
+        markHooksConfigTrusted(projectDir, cfg);
+        expect(isHooksConfigTrusted(projectDir, cfg)).toBe(true);
+
+        // The kernel walks `link` before collapsing `..`, so this command runs
+        // `<projectDir>/other/nodemon`; rewriting it must invalidate the receipt.
+        writeFileSync(join(projectDir, 'other', 'nodemon'), '#!/bin/sh\nexit 1\n');
+
+        expect(isHooksConfigTrusted(projectDir, cfg)).toBe(false);
+      },
+    );
   });
 
   describe('markHooksConfigTrusted', () => {

@@ -1,8 +1,11 @@
 import { describe, it, expect } from 'vitest';
+import { makeTask } from '#testing/helpers/factories/task.js';
+import { MODE_UPGRADE } from '../../../core/pipeline-spec/modes.js';
 import type { WorkflowMode } from '../../../core/schemas/enums.js';
 import {
   adviseMode,
   advisePlanSize,
+  adviseRun,
   formatAdvisoryText,
   formatPlanAdviceText,
   type AdvisorResult,
@@ -132,6 +135,40 @@ describe('adviseMode — high risk patterns', () => {
     const result = adviseMode('rename authClient variable', 'standard');
     expect(result.risk).not.toBe('high');
   });
+
+  it.each<[string, string]>([
+    [
+      'a scenario id in a code span',
+      '- Render and look at: `overlay-picker-seat-swap`, `overlay-picker-auth-config-owned`',
+    ],
+    ['a file name in a code span', 'count the lines `session.jsonl` holds for each run'],
+    ['a kebab-case name in prose', 'render the overlay-picker-auth-config-owned scenario again'],
+    ['a snake_case name in prose', 'raise the auth_token_ttl default to one hour'],
+    [
+      'fenced code',
+      'keep the reader as it is:\n```ts\nconst password = readSecret(session);\n```\ntrim the rest',
+    ],
+    ['a fence that never closes', 'trim the fixture\n~~~\nlogin(password)'],
+    ["a brief's file line", 'file: src/features/workflow/hooks/use-run-loop.ts'],
+    [
+      "a brief's files list",
+      'files: [src/features/workflow/hooks/use-run-loop.ts, src/stores/workflow/session.ts]',
+    ],
+    ['an attached file header', '--- @docs/auth/login.md ---\nthe copy reads badly'],
+  ])('%s is a name, not a risk signal', (_case, prompt) => {
+    expect(adviseMode(prompt, 'quick').risk).not.toBe('high');
+  });
+
+  it.each<[string]>([
+    ['render `overlay-picker-auth-config-owned`, then fix the login redirect'],
+    ['harden the session cookie flags'],
+    ['rotate the auth secret before the release'],
+    ['add a git hook that blocks the push'],
+    ['harden the login page'],
+    ['```\nconst x = 1;\n```\nthen hash the password'],
+  ])('prose "%s" is still high-risk', (prompt) => {
+    expect(adviseMode(prompt, 'quick').risk).toBe('high');
+  });
 });
 
 describe('adviseMode — confidence and factors', () => {
@@ -177,8 +214,29 @@ describe('formatAdvisoryText', () => {
     const text = formatAdvisoryText(result);
     expect(text).toContain('advisor:');
     expect(text).toContain('consider');
+    // A prompt upgrade keeps its risk reason; the classifier's matched patterns stay internal.
+    expect(text).toContain('security/config risk');
+    expect(text).not.toContain('matched:');
     expect(text).not.toContain('\n');
     expect(text.length).toBeLessThan(80);
+  });
+
+  it('keeps the plan-size facts when an upgrade comes from the plan', () => {
+    const result = adviseRun({
+      feature: 'Trim the catalog fixture',
+      mode: 'quick',
+      tasks: [
+        makeTask({ files: ['a.json', 'b.ts'] }),
+        makeTask({ files: ['c.ts', 'd.ts'] }),
+        makeTask({ files: ['e.ts', 'f.test.ts'] }),
+      ],
+    });
+    expect(result).toMatchObject({
+      kind: 'upgrade',
+      suggestedMode: 'standard',
+      factors: ['6 files over 5'],
+    });
+    expect(formatAdvisoryText(result)).toBe('advisor: consider standard · 6 files over 5');
   });
 
   it('formats missing-context advisory with missing flag', () => {
@@ -231,5 +289,68 @@ describe('advisePlanSize — thresholds from MODE_UPGRADE', () => {
   it('does not upgrade a standard plan that is only past the quick thresholds', () => {
     const advice = advisePlanSize({ files: 6, briefs: 6 }, 'standard');
     expect(advice.kind).toBe('none');
+  });
+});
+
+describe('adviseRun — the verdict a run shows from its saved inputs', () => {
+  const NAMES_ONLY = '- render `overlay-picker-auth-config-owned`\n- `npm test` passes';
+
+  it('reads the sentence and its @ context the way the prompt advice does', () => {
+    const run = { feature: 'trim the catalog fixture', plannerContext: NAMES_ONLY };
+    expect(adviseRun({ ...run, mode: 'quick', tasks: [] })).toEqual(
+      adviseMode(`${run.feature}\n\n${run.plannerContext}`, 'quick'),
+    );
+  });
+
+  it('earns no advice for a planned run whose context only names a scenario', () => {
+    const advice = adviseRun({
+      feature: 'Trim the 140 KB opencode catalog fixture below 50 KB',
+      plannerContext: NAMES_ONLY,
+      mode: 'quick',
+      tasks: [makeTask({ files: ['a.json', 'b.ts', 'c.test.ts'] })],
+    });
+    expect(advice.kind).toBe('none');
+    expect(formatAdvisoryText(advice)).toBe('');
+  });
+
+  it("stands on the plan's advice once the briefs give one, keeping the prompt's risk", () => {
+    const over = MODE_UPGRADE.standardCap + 1;
+    const tasks = Array.from({ length: over }, (_, i) => makeTask({ id: `T${100 + i}` }));
+    const advice = adviseRun({ feature: 'harden the login page', mode: 'standard', tasks });
+    expect(advice).toMatchObject({ kind: 'stop', risk: 'high', confidence: 1, missing: [] });
+    expect(formatAdvisoryText(advice)).toContain('split the work');
+  });
+});
+
+describe('adviseMode — trivial and small signals are whole words of prose', () => {
+  it.each<[string, string]>([
+    ['a longer word that starts with one', 'fix the typography of the settings page'],
+    ['a kebab-case name', 'add the rename-session command'],
+    ['a name in a code span', 'add a `rename` subcommand to the cli'],
+  ])('%s is not a trivial edit', (_case, prompt) => {
+    expect(adviseMode(prompt, 'standard').risk).not.toBe('trivial');
+  });
+
+  it('a camelCase name is not a small change', () => {
+    expect(adviseMode('wire the loggerLevel option into the config', 'standard').risk).not.toBe(
+      'small',
+    );
+  });
+
+  it.each<[string]>([
+    ['fix typos in README'],
+    ['rename foo to bar'],
+    ['fix indentation in the footer'],
+    ['reformatting only, no logic change'],
+  ])('"%s" is still a trivial edit', (prompt) => {
+    expect(adviseMode(prompt, 'standard').risk).toBe('trivial');
+  });
+
+  it.each<[string]>([
+    ['add logging to the parser before the retry'],
+    ['remove the stray console.log call'],
+    ['add a null check before the call'],
+  ])('"%s" is still a small change', (prompt) => {
+    expect(adviseMode(prompt, 'standard').risk).toBe('small');
   });
 });

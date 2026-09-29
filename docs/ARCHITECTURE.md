@@ -683,9 +683,9 @@ src/
 │   │                              input-history, overlay, picker-view,
 │   │                              composer-draft, command-palette-mru,
 │   │                              persistence, terminal-size
-│   └── workflow/                  abort, actions, attachments,
+│   └── workflow/                  actions, attachments,
 │                                  conversation-scroll, events, lifecycle,
-│                                  operations, review, tasks, tokens
+│                                  operations, review, stop, tasks, tokens
 │
 ├── features/                      TUI feature slices — components/hooks/helpers
 │                                  (page entries are FLAT pages under app/)
@@ -832,9 +832,9 @@ Three modes are canonical (`'quick' | 'standard' | 'speckit'`); the retired `'in
 
 Implementation: `src/engine/orchestrator/planning/steps.ts` runs every mode from the step table in `src/core/pipeline-spec/steps.ts`; `speckit.ts` holds the three calls only speckit makes. The shared helpers each live in their own file:
 
-- `runBriefQualityGate(...)` (`planning/brief-quality-gate.ts`) — runs `BriefQualityScorer` (`src/engine/spec/brief-quality.ts`) and writes `brief-quality.json`. Error codes: `missing_scope`, `missing_validation`, `vague_validation`, `missing_evidence`, `missing_escalation`, `missing_code_context`, `empty_task_list`, `multi_file_task`, `missing_implementation_steps`. Warning code: `missing_type_definitions`. Publishes `brief_quality_passed` or `brief_quality_failed`.
+- `runBriefQualityGate(...)` (`planning/brief-quality-gate.ts`) — runs `evaluateBriefQuality` (`src/engine/spec/brief-quality.ts`). `runQualityGateAndReport(...)`, in the same file, writes `brief-quality.json` and publishes `brief_quality_passed` or `brief_quality_failed`. Error codes: `missing_scope`, `missing_validation`, `vague_validation`, `missing_evidence`, `missing_escalation`, `missing_code_context`, `empty_task_list`, `write_outside_declared_files`, `anchor_not_in_files`, `missing_implementation_steps`. Warning codes: `missing_type_definitions`, `test_without_code`.
 - `runBriefReadinessGateAndReport({...})` (`planning/brief-readiness-gate.ts`) — runs `evaluateBriefReadiness` over routing-preview metadata, writes `brief-readiness.json`, and publishes `brief_readiness_passed` or `brief_readiness_blocked`.
-- `runBriefsApprovalLoop({...})` (`planning/briefs-approval-loop.ts`) — invoked from `planning/run.ts` after the quality pass and from `planning/resume-briefs.ts` on a resumed gate. Enters `reviewing-briefs` phase and publishes `planner_status` with that phase, as the spec and plan gates do when they open, so the screen shows the briefs gate; then awaits `callbacks.onApprovalNeeded('briefs', tasksFilePath)`.
+- `runBriefsApprovalLoop({...})` (`planning/briefs-approval-loop.ts`) — invoked from `admitBriefs()` (`planning/run.ts`) after the quality pass, and from `planning/resume-briefs.ts` on a resumed briefs gate. A spec or plan gate approved on resume reaches `admitBriefs()` too (`run/resume-parked-approval.ts`), so its briefs pass the same quality check and bounded repair as in a run that never stopped. Enters `reviewing-briefs` phase and publishes `planner_status` with that phase, as the spec and plan gates do when they open, so the screen shows the briefs gate; then awaits `callbacks.onApprovalNeeded('briefs', tasksFilePath)`.
 
 A `mode-advisor` (`planning/mode-advisor.ts`) emits `mode_advice` for trivial requests in higher modes; user can /mode to switch.
 
@@ -859,7 +859,7 @@ Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orch
 `src/engine/events/schema.ts` defines the type-dispatched event contract as `EngineEventSchema` (the `EngineEvent` alias is `z.infer`d in `src/engine/events/types.ts`). Every `EngineEvent` carries `ts: number`; most carry `phase: Phase`. The phase-less variants are `snapshot_restored`, `snapshot_restore_conflict`, and `approval_mode_changed`. The grouped summary below is a navigation aid; use the source contract for the exact, exhaustive event list and field shapes. For key event shapes with full field definitions, see [ENGINE.md](./ENGINE.md).
 
 **Workflow lifecycle (7):**
-`workflow_started`, `workflow_resumed`, `workflow_complete`, `workflow_cancelled`, `workflow_config`, `paused_external_changes`, `turn_interrupted` — the pause event. It carries `source` (`user` | `watchdog`) and `at`, where the stop landed: `mid-step` inside a call, `boundary` between two briefs. One event covers both parks; the position is the only difference.
+`workflow_started`, `workflow_resumed`, `workflow_complete`, `workflow_cancelled`, `workflow_config`, `paused_external_changes`, `turn_interrupted` — the pause event. It carries `source` (`user` | `watchdog`), `at`, where the stop landed — `mid-step` inside a call, `boundary` where it cut nothing: between two briefs, or at a gate — and `step`, the step the stop parked, as `interruptedStep.step` records it. Every park publishes it: a stop from the stop sheet (`parkStoppedRun`, `src/engine/orchestrator/state-ops.ts`), a stop inside a planner call, a park in place and a pause between briefs. The transcript row names a gate stop by its gate (`Paused at the plan gate`), because a gate runs no turn to retry.
 
 **Recovery:**
 `recovery_prompted`, `recovery_action_selected`, `recovery_action_failed`, `recovery_resolved`. The last three carry an optional `seat` (`plan` | `build` | `review`), the seat the halt stopped, so a transcript row names it; a log written before the field existed replays without it and its row names no seat.
@@ -867,8 +867,8 @@ Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orch
 **Planner stream:**
 `planner_status`, `planner_text`, `planner_heartbeat`
 
-**Planning milestones (20):**
-`spec_rejected`, `spec_regenerated`, `plan_approved`, `plan_rejected`, `plan_regenerated` (the two `*_rejected` names predate the gate rewrite: a gate no longer rejects, and these now record that a gate ended the run rather than approving it — the wire name is kept so old logs replay), `rewind_to_spec`, `rewind_to_plan`, `all_tasks_done`, `brief_quality_passed`, `brief_quality_failed`, `brief_readiness_passed`, `brief_readiness_blocked`, `drift_report`, `drift_chain_detected`, `snapshot_created`, `snapshot_restored`, `snapshot_restore_conflict`, `mode_resolved`, `mode_advice`, `instant_plan_received` (retained for back-compatibility so pre-merge sessions replay; nothing produces it since `instant` merged into `quick`)
+**Planning milestones (23):**
+`spec_approved`, `spec_rejected`, `spec_regenerated`, `plan_approved`, `plan_rejected`, `plan_regenerated`, `briefs_approved`, `briefs_rejected` (a gate that passes publishes its `*_approved` event in its own review phase, so the approval is a row of `session.jsonl`; End run at a gate publishes its `*_rejected` event. `spec_rejected` and `plan_rejected` predate the gate rewrite: a gate no longer rejects, and the wire names are kept so old logs replay; `briefs_rejected` takes the same form for the briefs gate), `rewind_to_spec`, `rewind_to_plan`, `all_tasks_done`, `brief_quality_passed`, `brief_quality_failed`, `brief_readiness_passed`, `brief_readiness_blocked`, `drift_report`, `drift_chain_detected`, `snapshot_created`, `snapshot_restored`, `snapshot_restore_conflict`, `mode_resolved`, `mode_advice`, `instant_plan_received` (retained for back-compatibility so pre-merge sessions replay; nothing produces it since `instant` merged into `quick`)
 
 **Task lifecycle:**
 `task_started`, `task_completed`, `task_skipped`, `task_retry`, `task_escalating`, `task_scope_widened`, `task_full_fail`, `task_reset`, `task_tokens`, `task_review_needed`, `hint_failed`, `review_fix_started`

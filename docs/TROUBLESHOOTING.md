@@ -591,14 +591,14 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 
 ### Symptom: I want to stop a run and I am not sure which key does what
 
-**Likely cause:** Older builds spent `esc esc` on an interrupt ladder with a 2-second armed window and asked for `Ctrl-C` twice to exit. Both are gone. There is now one sheet and one immediate key.
+**Likely cause:** Older builds spent `esc esc` on an interrupt ladder with a 2-second armed window, and quitting was a ladder of its own. The interrupt ladder is gone: `esc` opens the **Stop options** sheet, and `ctrl+c` stops a live run in one press. Quitting still asks once: from home or on a run at rest, the first `ctrl+c` shows `Press ctrl+c again to quit` and the second press within two seconds exits.
 
 **Fix:**
-1. `esc` on an empty composer opens the **Stop options** sheet: `Stop now` (stop execution, keep partial changes), `Pause after this brief` (finish `T<id>` including its checks and review, start no next brief), `End run` (stop and close the run, keep changes). `↑↓ · ⏎ · esc`, no letter keys, and `esc` closes it without touching the run. No option reverts files.
+1. `esc` opens the **Stop options** sheet, with or without a draft: `Stop now` (stop execution, keep partial changes while a brief runs), `Pause after this brief` (finish `T<id>` including its checks and review, start no next brief), `End run` (stop and close the run, keep changes once a brief has run). `↑↓ · ⏎ · esc`, no letter keys. `esc` from the sheet is Stop now — it goes back to sessions once the run is parked or at rest — and `Tab` dismisses the sheet without stopping. No option reverts files.
 2. `ctrl+c` is Stop now, immediately, one press. It aborts the in-flight call along with any retry, escalation or per-task review call, and parks the run as `Paused at T<id> · Partial changes kept`.
 3. `ctrl+q` or `/quit` stops safely, saves the session, then exits.
-4. With text in the composer, `esc` changes neither the run nor the draft — the feedback row says `clear the draft or ctrl+c to stop now`.
-5. Restart with `/resume` (type instructions first if you want to steer; a blank Enter never resumes) or from the shell with `splitbrief continue <session-id>`. `/end` closes a parked run; after that nothing picks it up.
+4. With text in the composer, `esc` opens the same sheet and leaves the draft in place — the composer swallows no part of the key.
+5. Restart with `/resume` (type instructions first if you want to steer) or from the shell with `splitbrief continue <session-id>`; a continuable run at rest continues on a bare `⏎`, while a run parked in this process answers a blank `⏎` with `type instructions or /resume`. `/end` closes a parked run; after that nothing picks it up.
 
 **Prevention:** None needed — the legend row states the live keys (`esc stop options · ctrl+c stop now · ctrl+k commands · /help`), and a cancelled call still never spends retries or escalation attempts: an aborted implementer call stops the retry loop instead of consuming `workflow.maxRetries`.
 
@@ -705,12 +705,12 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 
 ## Workflow issues
 
-### Symptom: `Still working — silent 5:12` sits in the byline for minutes with OpenCode
+### Symptom: `Still working` sits in the byline for minutes with OpenCode
 
 **Likely cause:** OpenCode's `run --format json` mode reports a tool only once that tool completes, and it never forwards child-session (subagent) events at all. A `task explore` subagent that runs for two minutes therefore produces no output until it lands, so the idle watchdog warns at `RUNNER_IDLE_WARN_MS` (5 minutes) even though the call is healthy. The run is not hung.
 
 **Fix:**
-1. Wait. The byline appends `· tools report when done` when the silent runner is one that only reports finished tools, which is the signal that this silence is expected rather than a hang.
+1. Wait. The byline appends `· tools report when done` when the silent runner is one that only reports finished tools, which is the signal that this silence is expected rather than a hang. How long the runner has been silent is stated once: in the build block's freshness line (`No update for 5m 12s`) while the block is on screen, and on the byline itself (`Still working — silent 5m 12s`) whenever no block is painted — during planning, or while the stop menu takes its rows.
 2. If you want to confirm liveness, the watchdog is still armed underneath: a genuinely dead process is killed at `RUNNER_IDLE_KILL_MS` (30 minutes), and the stall clears on the next activity, completion, or error event.
 3. To see what the tool actually did, read the run tree after the call completes — the tool uses land there in one batch.
 

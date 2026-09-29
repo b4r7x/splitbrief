@@ -6,6 +6,7 @@ import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { PINNED_CLAUDE_CODE_OPTIONS } from '#testing/helpers/factories/model-cache.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { loadConfig, writeConfig } from '../../core/config/load/io.js';
 import { createDefaultConfig } from '../../core/config/load/defaults.js';
@@ -56,6 +57,16 @@ const SAVED: ConfigSaveResult = {
   },
 };
 
+/**
+ * `resetAllStores()` drops the Claude option pin, and the reader memoises the operator's own
+ * `~/.claude.json`, so every picker describe pins again right after the reset: no test in this
+ * file reads the host's account cache, and the pinned rows are the rows the picker paints.
+ */
+function resetPickerStores(): void {
+  resetAllStores();
+  modelCacheStore.__testSetClaudeCodeModelOptions(PINNED_CLAUDE_CODE_OPTIONS);
+}
+
 async function openContractChoice(ui: ReturnType<typeof renderFeature>) {
   await vi.waitFor(() => {
     const frame = ui.lastFrame() ?? '';
@@ -86,7 +97,7 @@ async function openCustomCommand(ui: ReturnType<typeof renderFeature>) {
 
 describe('ToolModelPicker custom-command input', () => {
   beforeEach(() => {
-    resetAllStores();
+    resetPickerStores();
     terminalSizeStore.__testReset({ cols: 120, rows: 36, isSmall: false });
     configStore.__testReset({
       projectDir: '/tmp/project',
@@ -304,7 +315,7 @@ describe('ToolModelPicker provider routes', () => {
 
   beforeEach(() => {
     forceUnicodeGlyphs();
-    resetAllStores();
+    resetPickerStores();
     _resetMouseZones();
     terminalSizeStore.__testReset({ cols: 140, rows: 40, isSmall: false });
     projectDir = createTempDir('runners-provider-routes');
@@ -453,7 +464,7 @@ describe('ToolModelPicker provider routes', () => {
 
 describe('ToolModelPicker discovery state', () => {
   beforeEach(() => {
-    resetAllStores();
+    resetPickerStores();
     terminalSizeStore.__testReset({ cols: 120, rows: 36, isSmall: false });
     configStore.__testReset({ projectDir: '/tmp/project', config: makeConfig() });
   });
@@ -627,7 +638,7 @@ describe('ToolModelPicker discovery state', () => {
 describe('ToolModelPicker model catalog', () => {
   beforeEach(() => {
     forceUnicodeGlyphs();
-    resetAllStores();
+    resetPickerStores();
     terminalSizeStore.__testReset({ cols: 120, rows: 36, isSmall: false });
     configStore.__testReset({
       projectDir: '/tmp/project',
@@ -680,6 +691,23 @@ describe('ToolModelPicker model catalog', () => {
     ui.unmount();
   });
 
+  it('renders the pinned Claude options instead of the operator account cache', async () => {
+    // The fixture every describe in this file pins after `resetAllStores()`, read back at the
+    // seam the picker itself reads.
+    expect(modelCacheStore.getClaudeCodeModelOptions()).toEqual(PINNED_CLAUDE_CODE_OPTIONS);
+
+    const ui = renderFeature(<ToolModelPicker role="planner" />);
+    await tick(20);
+
+    // The probe row can only come from the pin: no bundled model answers to its id, and the
+    // reader would have served the operator's own account cache instead.
+    const frame = frameText(ui);
+    expect(modelColumnLines(frame).join('\n')).toContain('Pinned Probe');
+    // The colliding id folded into the bundled Sonnet row rather than adding a second row.
+    expect(frame).not.toContain('Pinned Sonnet');
+    ui.unmount();
+  });
+
   const MAX_SEAT = makeConfig({
     planner: { kind: 'cli', tool: 'claude-code', model: 'opus', effort: 'max' },
   });
@@ -699,11 +727,21 @@ describe('ToolModelPicker model catalog', () => {
       .split('\n')
       .find((line) => line.includes(`${glyph('divider')} effort`));
 
+  /** The value the focused effort row carries: the axis name's own metadata cell, exactly. */
+  const effortAxisValue = (ui: ReturnType<typeof renderFeature>) =>
+    effortAxisLine(ui)?.match(/\beffort\s+(\S+)/)?.[1];
+
   it('opens on the effort the seat runs when its crew row expanded the model', async () => {
     const ui = openFromPlanCrewRow();
     await tick(20);
 
-    expect(effortAxisLine(ui)).toContain('max');
+    // The crew row opened the seat's own model expansion on the level it runs; the cursor sits on
+    // that expansion's effort axis, so Space steps the drafted level only from there.
+    expect(pickerViewStore.get()).toMatchObject({ expandedModelId: 'opus', effortDraft: 'max' });
+    expect(effortAxisValue(ui)).toBe('max');
+    ui.stdin.write(' ');
+    await flushEffects();
+    expect(pickerViewStore.get().effortDraft).not.toBe('max');
     ui.unmount();
   });
 
@@ -720,11 +758,18 @@ describe('ToolModelPicker model catalog', () => {
       ui.stdin.write(key);
       await tick(20);
     }
-    expect(effortAxisLine(ui)).toContain('max');
+    // Returning to the seat's tool re-reads its level on the axis, and Enter commits the row the
+    // cursor landed on: the saved planner names the model and the effort that row read.
+    expect(effortAxisValue(ui)).toBe('max');
 
     ui.stdin.write('\r');
     await vi.waitFor(() => {
-      expect(saveConfig.mock.calls.at(-1)?.[0].planner).toMatchObject({ effort: 'max' });
+      expect(saveConfig.mock.calls.at(-1)?.[0].planner).toMatchObject({
+        kind: 'cli',
+        tool: 'claude-code',
+        model: 'opus',
+        effort: 'max',
+      });
     });
     ui.unmount();
   });
@@ -733,7 +778,7 @@ describe('ToolModelPicker model catalog', () => {
 describe('ToolModelPicker custom model entry', () => {
   beforeEach(() => {
     forceUnicodeGlyphs();
-    resetAllStores();
+    resetPickerStores();
     terminalSizeStore.__testReset({ cols: 120, rows: 36, isSmall: false });
     configStore.__testReset({
       projectDir: '/tmp/project',
@@ -772,7 +817,7 @@ describe('ToolModelPicker leaving a text-output shell seat', () => {
 
   beforeEach(() => {
     forceUnicodeGlyphs();
-    resetAllStores();
+    resetPickerStores();
     _resetMouseZones();
     terminalSizeStore.__testReset({ cols: 120, rows: 36, isSmall: false });
     projectDir = createTempDir('runners-shell-seat');
@@ -798,7 +843,11 @@ describe('ToolModelPicker leaving a text-output shell seat', () => {
   }
 
   // Tool, then the Sonnet row, whose Enter opens its effort axis, whose Enter commits.
-  async function chooseClaudeSonnet(ui: ReturnType<typeof renderFeature>) {
+  // `beforeConfirm` runs with the effort row focused, before that last Enter saves.
+  async function chooseClaudeSonnet(
+    ui: ReturnType<typeof renderFeature>,
+    beforeConfirm?: () => void,
+  ) {
     const active = listRowLead('active');
     const steps: readonly (readonly [string, string])[] = [
       ['Claude Code', `${active}Claude Code CLI`],
@@ -814,6 +863,7 @@ describe('ToolModelPicker leaving a text-output shell seat', () => {
       });
       await flushEffects();
     }
+    beforeConfirm?.();
     ui.stdin.write('\r');
   }
 
@@ -828,7 +878,7 @@ describe('ToolModelPicker leaving a text-output shell seat', () => {
         model: 'sonnet',
       });
       expect(feedbackStore.get()).toMatchObject({
-        message: 'PLAN set to: Claude Code CLI · sonnet',
+        message: 'PLAN set to: Claude Code CLI · Sonnet 5',
         isError: false,
       });
     });
@@ -836,21 +886,30 @@ describe('ToolModelPicker leaving a text-output shell seat', () => {
   });
 
   it('shows a refused save in the picker, which the overlay would otherwise hide', async () => {
-    const saveConfig = vi.fn<PickerEffectDeps['saveConfig']>(async () => ({
-      kind: 'failure',
-      ok: false,
-      error: new Error('Failed to save config to .splitbrief/config.yaml'),
-    }));
+    let attempts = 0;
+    const saveConfig = vi.fn<PickerEffectDeps['saveConfig']>(async (updated) => {
+      attempts += 1;
+      if (attempts === 1) {
+        return {
+          kind: 'failure',
+          ok: false,
+          error: new Error('Failed to save config to .splitbrief/config.yaml'),
+        };
+      }
+      return defaultPickerEffectDeps.saveConfig(updated);
+    });
     const ui = openFromPlanCrewRow({ ...defaultPickerEffectDeps, saveConfig });
     await flushEffects();
     ui.stdin.write('Claude Code');
     await vi.waitFor(() => {
-      expect(frameText(ui)).toContain(`${listRowLead('active')}Claude Code CLI`);
+      expect(frameText(ui)).toContain('Claude Code CLI');
     });
     await flushEffects();
     ui.stdin.write('\r'); // select the tool; the cursor lands on the auto row
     await vi.waitFor(() => {
-      expect(frameText(ui)).toContain(`${listRowLead('active')}auto`);
+      // The byline resolves the highlighted model row, so the automatic selection is asserted in
+      // its own words ("no --model flag") rather than in the cursor's glyph and spacing.
+      expect(frameText(ui)).toContain('no --model flag');
     });
     await flushEffects();
     ui.stdin.write('\r');
@@ -858,8 +917,24 @@ describe('ToolModelPicker leaving a text-output shell seat', () => {
     await vi.waitFor(() => {
       expect(frameText(ui)).toContain('Failed to save config');
     });
-    expect(frameText(ui)).toContain('Models');
+    // The refusal lands inside the picker rather than closing it: the overlay is still up and
+    // the disk still holds the seat the refused save would have replaced.
+    expect(overlayStore.get().active).toBe('planner-picker');
     expect(loadConfig(projectDir).config.planner).toMatchObject(shellPlanner);
+    expect(saveConfig).toHaveBeenCalledTimes(1);
+
+    // The cursor never left the refused row: the retried Enter saves its automatic selection.
+    await flushEffects();
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(loadConfig(projectDir).config.planner).toEqual({
+        kind: 'cli',
+        tool: 'claude-code',
+        model: 'auto',
+      });
+      expect(overlayStore.get().active).toBe('none');
+    });
+    expect(saveConfig).toHaveBeenCalledTimes(2);
     ui.unmount();
   });
 
@@ -877,6 +952,140 @@ describe('ToolModelPicker leaving a text-output shell seat', () => {
     expect(loadConfig(projectDir).config.planner).toMatchObject(shellPlanner);
     ui.unmount();
   });
+
+  it('saves once when Enter lands again while the first save is still in flight', async () => {
+    const barrier = Promise.withResolvers<void>();
+    const saveConfig = vi.fn<PickerEffectDeps['saveConfig']>(async (updated) => {
+      await barrier.promise;
+      return defaultPickerEffectDeps.saveConfig(updated);
+    });
+    const ui = openFromPlanCrewRow({ ...defaultPickerEffectDeps, saveConfig });
+    try {
+      await chooseClaudeSonnet(ui); // the trailing Enter starts the first save
+      await vi.waitFor(() => {
+        expect(saveConfig).toHaveBeenCalledTimes(1);
+      });
+      await flushEffects();
+
+      ui.stdin.write('\r'); // Enter again on the same effort row, first save still pending
+      await flushEffects();
+
+      // A picker that holds the in-flight confirm starts no second save here.
+      expect(saveConfig).toHaveBeenCalledTimes(1);
+
+      // The row the user confirmed is still the drafted state under the pending save: its model
+      // expansion has not been torn down, and the overlay stays up until the port settles.
+      expect(pickerViewStore.get().expandedModelId).toBe('sonnet');
+      expect(overlayStore.get().active).toBe('planner-picker');
+
+      barrier.resolve();
+      await vi.waitFor(() => {
+        expect(overlayStore.get().active).toBe('none');
+      });
+
+      expect(saveConfig).toHaveBeenCalledTimes(1);
+      expect(saveConfig.mock.calls[0]?.[0].planner).toEqual({
+        kind: 'cli',
+        tool: 'claude-code',
+        model: 'sonnet',
+      });
+      // The deferred port ran the real compare-and-swap, so the choice is on disk.
+      expect(loadConfig(projectDir).config.planner).toEqual({
+        kind: 'cli',
+        tool: 'claude-code',
+        model: 'sonnet',
+      });
+      expect(feedbackStore.get()).toMatchObject({
+        message: 'PLAN set to: Claude Code CLI · Sonnet 5',
+        isError: false,
+      });
+    } finally {
+      // An assertion above must not leave the port pending or the tree mounted.
+      barrier.resolve();
+      await Promise.allSettled(saveConfig.mock.results.map((result) => result.value));
+      await flushEffects();
+      ui.unmount();
+    }
+  });
+
+  it('reports an external config change and keeps the external bytes', async () => {
+    const ui = openFromPlanCrewRow();
+    let externalBytes = '';
+    await chooseClaudeSonnet(ui, () => {
+      externalBytes = writeConfig(
+        projectDir,
+        makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'haiku' } }),
+      );
+    });
+
+    await vi.waitFor(() => {
+      // The picker states the conflict where the overlay cannot hide it.
+      expect(frameText(ui)).toContain('Config changed on disk');
+      expect(feedbackStore.get()).toMatchObject({
+        message: 'Config changed on disk. Reload before saving again.',
+        isError: true,
+      });
+    });
+    expect(overlayStore.get().active).toBe('planner-picker');
+    // The refused save left the bytes the other writer put on disk.
+    expect(readFileSync(join(projectDir, '.splitbrief', 'config.yaml'), 'utf8')).toBe(
+      externalBytes,
+    );
+    expect(loadConfig(projectDir).config.planner).toMatchObject({
+      kind: 'cli',
+      tool: 'claude-code',
+      model: 'haiku',
+    });
+    ui.unmount();
+  });
+
+  it('keeps the first error until the focused axis retries through the real port', async () => {
+    let attempts = 0;
+    const saveConfig = vi.fn<PickerEffectDeps['saveConfig']>(async (updated) => {
+      attempts += 1;
+      if (attempts === 1) {
+        return {
+          kind: 'failure',
+          ok: false,
+          error: new Error('the config directory is read-only'),
+        };
+      }
+      return defaultPickerEffectDeps.saveConfig(updated);
+    });
+    const ui = openFromPlanCrewRow({ ...defaultPickerEffectDeps, saveConfig });
+    await chooseClaudeSonnet(ui); // the first save, which this control refuses
+
+    await vi.waitFor(() => {
+      expect(feedbackStore.get()).toMatchObject({
+        message: 'Failed to save config: the config directory is read-only',
+        isError: true,
+      });
+    });
+    // The refusal stands while the same effort row keeps the focus.
+    await flushEffects();
+    expect(frameText(ui)).toContain('Failed to save config');
+    expect(overlayStore.get().active).toBe('planner-picker');
+    expect(loadConfig(projectDir).config.planner).toMatchObject(shellPlanner);
+    expect(saveConfig).toHaveBeenCalledTimes(1);
+
+    await flushEffects();
+    ui.stdin.write('\r'); // retry the same focused effort row
+
+    await vi.waitFor(() => {
+      expect(loadConfig(projectDir).config.planner).toEqual({
+        kind: 'cli',
+        tool: 'claude-code',
+        model: 'sonnet',
+      });
+      expect(overlayStore.get().active).toBe('none');
+    });
+    expect(saveConfig).toHaveBeenCalledTimes(2);
+    expect(feedbackStore.get()).toMatchObject({
+      message: 'PLAN set to: Claude Code CLI · Sonnet 5',
+      isError: false,
+    });
+    ui.unmount();
+  });
 });
 
 // The seat a live check could not leave: written by hand, so its keys are camelCase, with an
@@ -888,7 +1097,7 @@ describe('ToolModelPicker leaving a hand-written shell seat', () => {
 
   beforeEach(() => {
     forceUnicodeGlyphs();
-    resetAllStores();
+    resetPickerStores();
     _resetMouseZones();
     terminalSizeStore.__testReset({ cols: 120, rows: 36, isSmall: false });
     outside = createTempDir('runners-limit-planner');

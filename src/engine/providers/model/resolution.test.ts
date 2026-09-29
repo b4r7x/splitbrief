@@ -25,16 +25,34 @@ describe('exact model resolution', () => {
       },
     });
 
-    expect(lookupRuntimeModel('claude-code', 'claude-sonnet-4-6', cache)?.id).toBe(
-      'claude-sonnet-4-6',
-    );
-    expect(lookupRuntimeModel('claude-code', 'CLAUDE-SONNET-4-6', cache)).toBeNull();
-    expect(lookupRuntimeModel('claude-code', 'claude-sonnet-4-6-20260201', cache)?.id).toBe(
-      'claude-sonnet-4-6-20260201',
-    );
-    expect(lookupRuntimeModel('claude-code', 'anthropic/claude-sonnet-4-6', cache)?.id).toBe(
-      'anthropic/claude-sonnet-4-6',
-    );
+    expect(
+      lookupRuntimeModel({
+        providerId: 'claude-code',
+        modelId: 'claude-sonnet-4-6',
+        cache,
+      })?.id,
+    ).toBe('claude-sonnet-4-6');
+    expect(
+      lookupRuntimeModel({
+        providerId: 'claude-code',
+        modelId: 'CLAUDE-SONNET-4-6',
+        cache,
+      }),
+    ).toBeNull();
+    expect(
+      lookupRuntimeModel({
+        providerId: 'claude-code',
+        modelId: 'claude-sonnet-4-6-20260201',
+        cache,
+      })?.id,
+    ).toBe('claude-sonnet-4-6-20260201');
+    expect(
+      lookupRuntimeModel({
+        providerId: 'claude-code',
+        modelId: 'anthropic/claude-sonnet-4-6',
+        cache,
+      })?.id,
+    ).toBe('anthropic/claude-sonnet-4-6');
   });
 
   it('uses only runner-admitted source entries instead of crossing into another provider catalog', () => {
@@ -94,7 +112,10 @@ describe('exact model resolution', () => {
       },
     };
 
-    const entries = getModelsDevEntries('claude-code', makeModelCacheAccessor({ catalog }));
+    const entries = getModelsDevEntries({
+      providerId: 'claude-code',
+      cache: makeModelCacheAccessor({ catalog }),
+    });
 
     expect(entries).toEqual([]);
   });
@@ -111,7 +132,10 @@ describe('exact model resolution', () => {
       },
     };
 
-    const entries = getModelsDevEntries('ollama', makeModelCacheAccessor({ catalog }));
+    const entries = getModelsDevEntries({
+      providerId: 'ollama',
+      cache: makeModelCacheAccessor({ catalog }),
+    });
 
     expect(entries.map((entry) => [entry.providerId, entry.id])).toEqual([
       ['ollama', 'qwen3-coder:30b'],
@@ -383,13 +407,21 @@ describe('metadata overlay', () => {
       },
     });
 
-    expect(lookupRuntimeModel('ollama', 'claude-sonnet-4-6', cache)).toMatchObject({
+    expect(
+      lookupRuntimeModel({
+        providerId: 'ollama',
+        modelId: 'claude-sonnet-4-6',
+        cache,
+      }),
+    ).toMatchObject({
       id: 'claude-sonnet-4-6',
       displayName: 'Native Sonnet',
       contextLength: 32_768,
       pricingInput: 8,
     });
-    expect(lookupModelsDevModel('ollama', 'claude-sonnet-4-6', cache)).toMatchObject({
+    expect(
+      lookupModelsDevModel({ providerId: 'ollama', modelId: 'claude-sonnet-4-6', cache }),
+    ).toMatchObject({
       id: 'claude-sonnet-4-6',
       pricingOutput: 15,
       releaseDate: '2026-01-10',
@@ -424,7 +456,13 @@ describe('metadata overlay', () => {
       },
     });
 
-    expect(lookupRuntimeModel('ollama', 'native-false-capabilities', cache)).toMatchObject({
+    expect(
+      lookupRuntimeModel({
+        providerId: 'ollama',
+        modelId: 'native-false-capabilities',
+        cache,
+      }),
+    ).toMatchObject({
       supportsImages: false,
       supportsToolCalls: false,
       supportsReasoning: false,
@@ -448,7 +486,13 @@ describe('metadata overlay', () => {
       providerModels: { ollama: [{ id: 'claude-sonnet-4-6', contextLength: 64_000 }] },
     });
 
-    expect(lookupRuntimeModel('ollama', 'claude-sonnet-4-6', cache)).toEqual({
+    expect(
+      lookupRuntimeModel({
+        providerId: 'ollama',
+        modelId: 'claude-sonnet-4-6',
+        cache,
+      }),
+    ).toEqual({
       id: 'claude-sonnet-4-6',
       contextLength: 64_000,
     });
@@ -466,6 +510,75 @@ describe('NULL_CACHE', () => {
   it('has no public or runtime model membership', () => {
     expect(NULL_CACHE.getModelsDevCatalog()).toBeNull();
     expect(NULL_CACHE.getProviderModels('claude-code')).toBeNull();
-    expect(lookupModelsDevModel('claude-code', 'claude-sonnet-4-6', NULL_CACHE)).toBeNull();
+    expect(
+      lookupModelsDevModel({
+        providerId: 'claude-code',
+        modelId: 'claude-sonnet-4-6',
+        cache: NULL_CACHE,
+      }),
+    ).toBeNull();
+  });
+});
+
+describe('kind-aware lookup lanes', () => {
+  it('keeps the CLI runtime lane out of an API runner that reuses a tool id', () => {
+    const cache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => null,
+      getProviderModels: (_providerId, kind) =>
+        kind === 'api' ? [{ id: 'api-endpoint-row' }] : [{ id: 'legacy-row' }],
+      getCliCatalogRuntime: () => ({
+        connection: { tool: 'codex', contextKey: 'codex-exact-context' },
+        state: 'fresh',
+        models: [{ id: 'cli-listed-row' }],
+        fetchedAt: 1,
+        validatedAt: 1,
+      }),
+    };
+
+    expect(
+      resolveExactRuntimeModel({
+        providerId: 'codex',
+        selectionId: 'cli-listed-row',
+        role: 'planner',
+        kind: 'api',
+        cache,
+      }),
+    ).toEqual({ kind: 'not-found' });
+    expect(
+      resolveExactRuntimeModel({
+        providerId: 'codex',
+        selectionId: 'api-endpoint-row',
+        role: 'planner',
+        kind: 'api',
+        cache,
+      }),
+    ).toMatchObject({ kind: 'found', model: { id: 'api-endpoint-row' } });
+
+    // Without a kind the CLI catalog lane still owns the tool id.
+    expect(
+      resolveExactRuntimeModel({
+        providerId: 'codex',
+        selectionId: 'cli-listed-row',
+        role: 'planner',
+        cache,
+      }),
+    ).toMatchObject({ kind: 'found', model: { id: 'cli-listed-row' } });
+  });
+
+  it('gives an API runner the models.dev lane its CLI twin cannot read', () => {
+    const cache = makeModelCacheAccessor({
+      catalog: {
+        opencode: {
+          id: 'opencode',
+          models: { 'endpoint-model': { id: 'endpoint-model' } },
+        },
+      },
+    });
+
+    expect(getModelsDevEntries({ providerId: 'opencode', cache, kind: 'api' })).toMatchObject([
+      { id: 'endpoint-model' },
+    ]);
+    expect(getModelsDevEntries({ providerId: 'opencode', cache, kind: 'cli' })).toEqual([]);
+    expect(getModelsDevEntries({ providerId: 'opencode', cache })).toEqual([]);
   });
 });

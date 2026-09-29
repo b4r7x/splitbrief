@@ -133,3 +133,8 @@ export function plannerStepsFor(
       return assertNever(mode);
   }
 }
+
+/** Whether a run's steps open the plan gate: quick mode never does, the others only at `plan` or `all`. */
+export function opensPlanGate(mode: WorkflowMode, approveLevel: ApproveLevel): boolean {
+  return plannerStepsFor(mode, approveLevel).some((step) => step.gateAfter === 'plan');
+}

@@ -122,7 +122,8 @@ describe('runSectionRows', () => {
       stripAnsiStyles(unnamed.lastFrame() ?? '')
         .split('\n')
         .find((line) => line.startsWith('   Crew')) ?? '';
-    expect(crewLine).toContain('PLAN OpenAI Codex CLI');
+    // A codex seat that named no model: the rail's own short form says `auto`.
+    expect(crewLine).toContain('PLAN auto');
     expect(crewLine).toContain('BUILD qwen-small');
     unnamed.unmount();
   });

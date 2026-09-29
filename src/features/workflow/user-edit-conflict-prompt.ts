@@ -2,21 +2,33 @@ import type { UserEditConflictAction } from '../../core/schemas/enums.js';
 import type { UserEditConflict } from '../../engine/events/workflow-events.js';
 import { formatMiddotList, formatRecoveryActionLines } from './recovery-prompt.js';
 import { userEditActionToRecoveryAction } from '../../core/recovery/user-edit-actions.js';
+import { userEditConflictRelation } from '../../core/recovery/user-edit-conflict-words.js';
 
-function formatFiles(files: string[]): string {
+function formatFiles(conflict: UserEditConflict): string {
+  const relevant = new Set(
+    conflict.fileConflicts
+      .filter((fileConflict) => fileConflict.kind !== 'unrelated')
+      .map((fileConflict) => fileConflict.file),
+  );
+  const files = [
+    ...conflict.files.filter((file) => relevant.has(file)),
+    ...conflict.files.filter((file) => !relevant.has(file)),
+  ];
   return formatMiddotList(files, 3) || 'no files';
 }
 
 export function formatUserEditConflictPrompt(conflict: UserEditConflict): string {
-  const task = conflict.currentTaskId ?? conflict.affectedTaskIds[0];
+  const relation = userEditConflictRelation({
+    kind: conflict.kind,
+    affectedTaskIds: conflict.affectedTaskIds,
+    currentTaskId: conflict.currentTaskId,
+  });
   const actions = conflict.availableActions.map((action) => userEditActionToRecoveryAction(action));
   const recommended = actions.includes('pause-run') ? 'pause-run' : actions[0];
   const lines = [
-    task
-      ? `recovery needed · your edits conflict with ${task}`
-      : 'recovery needed · your edits require a decision',
+    conflict.safeToContinue ? relation : `recovery needed · ${relation}`,
     '',
-    `files ${formatFiles(conflict.files)}`,
+    `files ${formatFiles(conflict)}`,
     conflict.affectedTaskIds.length > 0
       ? `affected ${formatMiddotList(conflict.affectedTaskIds, 3)}`
       : '',

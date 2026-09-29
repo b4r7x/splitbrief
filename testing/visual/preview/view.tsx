@@ -5,6 +5,7 @@ import { App, type AppProps } from '../../../src/app/root.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
 import { truncateTerminalDisplayText } from '../../../src/utils/display-text.js';
 import { formatViewport, type Viewport } from '../contracts/geometry.js';
+import type { FixtureWrite } from '../fixtures/common.js';
 import type { PreviewController, PreviewSession, PreviewState } from './controller.js';
 
 export interface PreviewViewProps {
@@ -115,7 +116,11 @@ export function PreviewView({ controller }: PreviewViewProps): ReactNode {
 
   useEffect(() => {
     if (session === undefined) return;
-    void session.activate(controller.forwardToPreview).catch((error: unknown) => {
+    const write: FixtureWrite = Object.assign(
+      (input: string) => controller.forwardToPreview(input),
+      { press: controller.pressToPreview },
+    );
+    void session.activate(write).catch((error: unknown) => {
       feedbackStore.setError('Preview activation failed: ' + errorMessage(error));
     });
   }, [controller, session]);

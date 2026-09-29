@@ -192,7 +192,8 @@ describe('runEscalationTier hint tier gate handling', () => {
       priorAttempts: 0,
     });
 
-    expect(outcome.result).toEqual({ completed: false, method: 'failed', attempts: 1 });
+    // An abort parks the run without spending the attempt: the count stays put.
+    expect(outcome.result).toEqual({ completed: false, method: 'failed', attempts: 0 });
     expect(existsSync(join(projectDir, RETRY_MARKER))).toBe(false);
   });
 

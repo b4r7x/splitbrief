@@ -48,9 +48,11 @@ export type EvidenceValidationEntry = z.infer<typeof EvidenceValidationEntrySche
 
 const EvidencePromotedFileSchema = z.object({
   path: z.string(),
-  /** Digest of the target after the write; null when it is absent or unreadable. */
+  /** Digest supplied by the writer; null only for a recorded deletion. */
   sha256: z.string().nullable(),
   mode: z.number().nonnegative().nullable(),
+  /** This write created a target that the acquisition baseline proved absent. */
+  created: z.literal(true).optional(),
 });
 export type EvidencePromotedFile = z.infer<typeof EvidencePromotedFileSchema>;
 
@@ -69,6 +71,7 @@ const EvidenceApiAppliedFileSchema = z.object({
   /** Digest the target held before the write; null when it did not exist. */
   beforeSha256: z.string().nullable(),
   afterSha256: z.string(),
+  afterMode: z.number().nonnegative().optional(),
 });
 
 /**
@@ -108,8 +111,12 @@ const EvidenceTaskSchema = z.object({
   escalated: z.boolean(),
   briefHash: z.string().nullable().optional(),
   promotionAttempts: z.array(EvidencePromotionAttemptSchema).optional(),
+  /** Latest writer receipts for this brief, with one current owner per target path. */
+  promotedFiles: z.array(EvidencePromotedFileSchema).optional(),
+  /** Hash of this single brief, excluding runtime status and current-code context. */
+  promotedBriefHash: z.string().optional(),
   apiApply: EvidenceApiApplySchema.optional(),
-  /** Proven target creations accumulated across this task's application receipts. */
+  /** Proven target creations accumulated across this task's writer receipts. */
   apiCreatedPaths: z.array(z.string().min(1)).optional(),
 });
 export type EvidenceTask = z.infer<typeof EvidenceTaskSchema>;

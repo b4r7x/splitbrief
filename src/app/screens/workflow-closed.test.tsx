@@ -19,8 +19,13 @@ import { routerStore } from '../../stores/navigation/router.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
+import { controlsStore } from '../../stores/ui/controls.js';
 import { COMMANDS_ONLY_NOTICE } from '../../components/composer/composer.js';
 import { WORKFLOW_GUTTER_X } from '../../features/workflow/layout/chrome-rows.js';
+import {
+  getWorkflowContentWidth,
+  getWorkflowSidebarWidth,
+} from '../../features/workflow/layout/rect.js';
 import { MARK_SLOT_CELLS } from '../../components/row-leading.js';
 import { WorkflowScreen } from './workflow.js';
 
@@ -254,6 +259,44 @@ describe('the workflow screen showing a closed run', () => {
     ui.unmount();
   });
 
+  it('stands the sidebar down and spends its width on a closed run', () => {
+    // Control: an open run at this width paints the pane, so its absence below is the closed
+    // stand-down and not a viewport that could never draw one.
+    routerStore.init({
+      screen: 'workflow',
+      run: makeRunRecord({
+        ref: {
+          projectDir: join(process.env.XDG_STATE_HOME ?? tmpdir(), 'workflow-closed-test'),
+          sessionId: '2026-09-14-test-feature',
+        },
+        status: { kind: 'running' },
+        summary: makeSummary(),
+        ledger: null,
+      }),
+      execution: { kind: 'at-rest' },
+    });
+    const control = mount(160, 40);
+    expect(stripAnsiStyles(control.lastFrame() ?? '')).toContain('Tasks');
+    control.unmount();
+
+    showClosedRun({ summary: makeSummary() });
+    // The pane is wanted at this width; only the closed record stands it down.
+    expect(controlsStore.get().sidebarVisible).toBe(true);
+    expect(getWorkflowSidebarWidth({ cols: 160, sidebarVisible: true })).toBeGreaterThan(0);
+
+    const ui = mount(160, 40);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    // No `Tasks` pane anywhere: the closed account takes the column the sidebar would hold.
+    expect(frame).not.toContain('Tasks');
+
+    // Its ledger rule spans the reclaimed pane, one cell short where `LedgerRule` ink stops.
+    const rule = frame.split('\n').find((line) => /^\s*Closed \S/.test(line)) ?? '';
+    expect(rule.length).toBe(getWorkflowContentWidth({ cols: 160, sidebarVisible: false }) - 1);
+
+    ui.unmount();
+  });
+
   it('states the whole crew on exactly one surface, at 160 and at 80', () => {
     for (const cols of [160, 80]) {
       showClosedRun({
@@ -311,7 +354,8 @@ describe('the workflow screen showing a closed run', () => {
     const lines = withoutTextLead(stripAnsiStyles(ui.lastFrame() ?? '')).split('\n');
     const crewRow = lines.find((line) => line.startsWith('Crew')) ?? '';
 
-    expect(crewRow).toContain('OpenAI Codex CLI');
+    // A codex seat that named no model reads `auto`, as the live rail reads it.
+    expect(crewRow).toContain('PLAN auto');
     expect(crewRow).toContain('qwen-small');
     expect(crewRow).toContain(PLANNER_INHERITANCE.mark);
 
@@ -354,7 +398,7 @@ describe('the workflow screen showing a closed run', () => {
     const ui = mount(160, 40);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('mixed profiles');
+    expect(frame).toContain('mixed workers');
     expect(frame).toContain('cheap-cloud');
     expect(frame).toContain('local-qwen');
 
@@ -376,6 +420,22 @@ describe('the workflow screen showing a closed run', () => {
     expect(frame).toContain('no briefs compiled');
     expect(frame).toContain('nothing built');
     expect(frame).toContain('esc home');
+
+    ui.unmount();
+  });
+
+  it('says nothing was built for a run ended at the plan gate, before its first brief', () => {
+    showClosedRun({
+      summary: makeSummary({ totalTasks: 3, completedByLocal: 0, escalatedToPlanner: 0 }),
+      as: 'ended',
+      phase: 'reviewing-plan',
+    });
+
+    const ui = mount(120, 40);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('Ended · Plan 0/3 · nothing built');
+    expect(frame).not.toContain('files not recorded');
 
     ui.unmount();
   });

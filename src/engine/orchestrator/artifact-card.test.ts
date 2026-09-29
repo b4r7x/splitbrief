@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { PLAN_FILE, SPEC_FILE, TASKS_FILE, sessionDir } from '../../core/paths.js';
@@ -149,6 +150,49 @@ describe('buildArtifactExcerpt — section outline', () => {
     expect(result.excerpt.length + result.omittedCount).toBe(14);
   });
 
+  // Run 2's spec.md (2026-09-25): its frontmatter and every heading line verbatim, bodies dropped.
+  // The card said `+ 15 more sections` for the fourteen `###` sections it did not nest.
+  it('counts the sections it leaves out, not the title above them', () => {
+    const spec = join(
+      import.meta.dirname,
+      '../../../testing/fixtures/artifacts/standard-titled-spec.md',
+    );
+
+    const result = buildArtifactExcerpt(readFileSync(spec, 'utf-8'), SPEC_FILE);
+
+    expect(result.excerpt.map((row) => row.split('  ')[0])).toEqual([
+      'Overview',
+      'User Scenarios',
+      'Acceptance Criteria',
+      'Functional Requirements',
+      'Non-Functional Requirements',
+      'Out of Scope',
+    ]);
+    expect(result.omittedUnit).toBe('section');
+    expect(result.omittedCount).toBe(14);
+  });
+
+  it('counts an unshown section when the document has no title', () => {
+    const lines = [
+      ...section('## Requirements', 1),
+      ...section('### One', 1),
+      ...section('### Two', 1),
+      ...section('### Three', 1),
+      ...section('### Four', 1),
+    ];
+
+    const result = buildArtifactExcerpt(lines.join('\n'), SPEC_FILE);
+
+    expect(result.excerpt.map((row) => row.split('  ')[0])).toEqual([
+      'One',
+      'Two',
+      'Three',
+      'Four',
+    ]);
+    expect(result.omittedUnit).toBe('section');
+    expect(result.omittedCount).toBe(1);
+  });
+
   it('skips a heading level whose titles repeat, because it is a per-section template', () => {
     const lines = [
       ...section('## Brief', 4),
@@ -268,6 +312,23 @@ describe('buildArtifactExcerpt — Task Brief outline', () => {
     const result = buildArtifactExcerpt(lines.join('\n'), TASKS_FILE);
 
     expect(result.excerpt).toEqual(['T001  Fix the startup router']);
+  });
+
+  // Only `tasks.md` is the list a run executes. The parser reads a fenced brief when nothing
+  // outside a fence parses, so a plan that quotes the format would preview the quote.
+  it('reads a brief a plan quotes as part of the plan, not as its outline', () => {
+    const lines = [
+      ...section('## Approach', 6),
+      '```markdown',
+      ...brief('T001', 'Quote the brief format', 'src/quoted.ts'),
+      '```',
+      ...section('## Risks', 6),
+    ];
+
+    const result = buildArtifactExcerpt(lines.join('\n'), PLAN_FILE);
+
+    expect(result.excerpt.map((row) => row.split('  ')[0])).toEqual(['Approach', 'Risks']);
+    expect(result.omittedUnit).toBe('section');
   });
 });
 

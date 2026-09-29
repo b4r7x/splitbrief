@@ -217,7 +217,7 @@ describe('projectRunnerCallEvent', () => {
     });
   });
 
-  it('adds terminal activity projections for completed calls', () => {
+  it('adds no activity row for a completed call', () => {
     const projected = projectRunnerCallEvents(
       {
         type: 'call_completed',
@@ -239,15 +239,6 @@ describe('projectRunnerCallEvent', () => {
 
     expect(projected).toEqual([
       expect.objectContaining({ type: 'runner_call_completed', sequence: 7 }),
-      expect.objectContaining({
-        type: 'runner_call_activity',
-        activityId: 'call-1:terminal',
-        stage: 'completed',
-        kind: 'text',
-        label: 'completed implementer',
-        rawAvailable: false,
-        expandId: 'call-1:terminal',
-      }),
     ]);
   });
 

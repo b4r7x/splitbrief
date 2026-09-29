@@ -25,14 +25,18 @@ function getImplementerProvider(config: Config): ProviderDef {
 function lookupConfiguredCatalogContextLength(config: Config): number | undefined {
   const implementer = config.implementer;
   if (implementer.kind === 'api') {
+    // Kind first: an API implementer named `opencode` is a custom endpoint and
+    // must not take the local OpenCode CLI bundled window.
     return resolveRunnerContextWindow({
       providerId: implementer.provider,
+      kind: 'api',
       model: implementer.model,
     })?.contextLength;
   }
   if (implementer.kind === 'cli') {
     return resolveRunnerContextWindow({
       providerId: implementer.tool,
+      kind: 'cli',
       model: implementer.model,
     })?.contextLength;
   }

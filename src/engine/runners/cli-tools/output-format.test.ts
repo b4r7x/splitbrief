@@ -75,6 +75,36 @@ describe('withOutputFormat', () => {
     });
   });
 
+  it('keeps stream-json rate-limit severities and never fabricates a terminal result', () => {
+    const adapter = withOutputFormat(opencodeImplementerAdapter, 'stream-json');
+    const parseRateFrame = (rateLimitInfo: Record<string, unknown>) =>
+      adapter.parse(
+        JSON.stringify({
+          type: 'rate_limit_event',
+          session_id: 'sess-rate',
+          rate_limit_info: rateLimitInfo,
+        }),
+      );
+    const warningsIn = (events: readonly CliProtocolEvent[]) =>
+      events.filter((event) => event.type === 'warning');
+
+    const allowed = parseRateFrame({
+      status: 'allowed',
+      overageStatus: 'rejected',
+      rateLimitType: 'seven_day',
+    });
+    const approaching = parseRateFrame({ status: 'allowed_warning', rateLimitType: 'seven_day' });
+    const rejected = parseRateFrame({ status: 'rejected', rateLimitType: 'five_hour' });
+    const rateEvents = [...allowed, ...approaching, ...rejected];
+
+    expect(warningsIn(allowed)).toEqual([]);
+    expect(warningsIn(approaching)).toMatchObject([
+      { code: 'claude_rate_limit', severity: 'warning' },
+    ]);
+    expect(warningsIn(rejected)).toMatchObject([{ code: 'claude_rate_limit', severity: 'error' }]);
+    expect(rateEvents.some((event) => event.type === 'result')).toBe(false);
+  });
+
   it('refuses to downgrade a required structured-terminal contract with user config', () => {
     expectFormatConflict(() => withOutputFormat(claudeCodeImplementerAdapter, 'text'));
     expectFormatConflict(() => withOutputFormat(codexImplementerAdapter, 'jsonl'));

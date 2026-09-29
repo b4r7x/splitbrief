@@ -70,14 +70,16 @@ function makeCall(overrides: {
   outputTokens: number;
   taskId?: string;
   role?: CallUsageEvidence['role'];
+  runnerName?: string;
+  backendKind?: CallUsageEvidence['backendKind'];
 }): CallUsageEvidence {
   return CallUsageEvidenceSchema.parse({
     callId: overrides.callId,
     taskId: overrides.taskId ?? 'T001',
     attempt: overrides.attempt,
     role: overrides.role ?? 'implementer',
-    backendKind: 'api',
-    runnerName: 'custom-worker-api',
+    backendKind: overrides.backendKind ?? 'api',
+    runnerName: overrides.runnerName ?? 'custom-worker-api',
     model: overrides.model,
     usageBoundary: 'single-request',
     usage: {
@@ -212,6 +214,54 @@ describe('calculateTaskUsageCost — escalation leg', () => {
 
 describe('isTaskUsageCostKnown', () => {
   const seats = { implementerTool: 'custom-worker-api', plannerTool: 'claude-code' };
+
+  it('prices an API call named opencode by model and leaves the CLI twin of that name unpriced', () => {
+    const task = makeTaskUsage({
+      implementerTokens: 2_000_000,
+      implementerInputTokens: 1_000_000,
+      implementerOutputTokens: 1_000_000,
+      implementerCacheReadTokens: 0,
+      implementerCacheCreateTokens: 0,
+    });
+    const options = {
+      task,
+      implementerTool: 'opencode',
+      plannerTool: 'claude-code',
+      implementerModel: 'metered-1-10',
+      callEvidence: [
+        makeCall({
+          callId: 'api-1',
+          attempt: 1,
+          model: 'metered-1-10',
+          inputTokens: 1_000_000,
+          outputTokens: 1_000_000,
+          runnerName: 'opencode',
+        }),
+      ],
+    };
+
+    // The API twin meters by model: 1M input @ $1/MTok + 1M output @ $10/MTok.
+    expect(taskCostKnown(options)).toBe(true);
+    expect(taskCost(options)).toBeCloseTo(11, 10);
+
+    // The CLI twin of the same name is never priced from a model rate.
+    const cliTwin = {
+      ...options,
+      callEvidence: [
+        makeCall({
+          callId: 'cli-1',
+          attempt: 1,
+          model: 'metered-1-10',
+          inputTokens: 1_000_000,
+          outputTokens: 1_000_000,
+          runnerName: 'opencode',
+          backendKind: 'cli',
+        }),
+      ],
+    };
+    expect(taskCostKnown(cliTwin)).toBe(false);
+    expect(taskCost(cliTwin)).toBe(0);
+  });
 
   it('reports a combined-only implementer record incomplete, with no cost at all', () => {
     const legacy = makeTaskUsage({

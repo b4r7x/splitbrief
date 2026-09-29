@@ -62,6 +62,9 @@ import { error } from '../../../utils/error.js';
 import { parsePreparedConfig, type RunnerGate } from '../../runners/prepared-execution.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
+import { readRunEvents } from '../../events/replay.js';
+import { makePassingPlanner } from '#testing/helpers/planning-phase.js';
+import type { OrchestratorCallbacks } from '../types.js';
 
 let dirs: string[] = [];
 
@@ -1003,6 +1006,62 @@ describe('runWorkflow — smoke', () => {
     const saved = loadState({ projectDir, sessionId });
     expect(saved?.closed).toBeUndefined();
     expect(saved?.interruptedStep?.source).toBe('user');
+    const { events } = await readRunEvents({ projectDir, sessionId });
+    expect(events.findLast((event) => event.type === 'turn_interrupted')).toMatchObject({
+      source: 'user',
+      at: 'mid-step',
+      step: { kind: 'brief', taskId: 'T001' },
+    });
+  });
+
+  it('records a stop at an open gate as the last row of session.jsonl, naming the gate', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'gate-stop-sid';
+    const controller = new AbortController();
+    let stoppedAt = 0;
+    const { callbacks } = makeCallbacks({
+      onApprovalNeeded: vi.fn(async () => {
+        stoppedAt = Date.now();
+        controller.abort();
+        return { approved: false as const };
+      }),
+    });
+
+    await runWorkflow({
+      feature: 'stop at the spec gate',
+      projectDir,
+      config: makeConfig({
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: { approve: 'spec', mode: 'standard' },
+      }),
+      callbacks,
+      sessionId,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      signal: controller.signal,
+      _planner: makePassingPlanner(),
+    });
+
+    const gate = { kind: 'gate', gate: 'spec' } as const;
+    // A gate runs no call, so the stop there cut nothing.
+    expect(loadState({ projectDir, sessionId })?.interruptedStep).toMatchObject({
+      step: gate,
+      source: 'user',
+      cut: 'boundary',
+    });
+    const { events } = await readRunEvents({ projectDir, sessionId });
+    const logged = events.filter(
+      (event) => event.type !== 'replay_started' && event.type !== 'replay_complete',
+    );
+    const last = logged.at(-1);
+    expect(last).toMatchObject({
+      type: 'turn_interrupted',
+      phase: 'reviewing-spec',
+      source: 'user',
+      at: 'boundary',
+      step: gate,
+    });
+    // The run at rest reads its clock off the last row, so the clock ends at the stop.
+    expect(last?.ts).toBeGreaterThanOrEqual(stoppedAt);
   });
 
   it('persists workflow_cancelled when user cancellation reaches the unavailable-planner path', async () => {
@@ -1078,6 +1137,48 @@ describe('runWorkflow — smoke', () => {
       comment: 'rewind to the plan',
     });
     expect(loadState({ projectDir, sessionId })?.phase).toBe('reviewing-plan');
+  });
+
+  it('records every gate approval in session.jsonl, in the order the gates opened', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'gate-approvals-sid';
+    const controller = new AbortController();
+    const onApprovalNeeded = vi
+      .fn<OrchestratorCallbacks['onApprovalNeeded']>()
+      .mockResolvedValue({ approved: true });
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+
+    await runWorkflow({
+      feature: 'record the gate approvals',
+      projectDir,
+      config: makeConfig({
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: { approve: 'all', mode: 'standard' },
+      }),
+      callbacks,
+      sessionId,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      signal: controller.signal,
+      _planner: makePassingPlanner(),
+      _implementer: makeImplementer({
+        implement: vi.fn().mockImplementation(async () => {
+          controller.abort();
+          return { success: false, output: '', usage: null };
+        }),
+      }),
+    });
+
+    expect(onApprovalNeeded.mock.calls.map(([type]) => type)).toEqual(['spec', 'plan', 'briefs']);
+    const { events } = await readRunEvents({ projectDir, sessionId });
+    expect(
+      events
+        .filter((event) => event.type.endsWith('_approved'))
+        .map((event) => [event.type, 'phase' in event ? event.phase : undefined]),
+    ).toEqual([
+      ['spec_approved', 'reviewing-spec'],
+      ['plan_approved', 'reviewing-plan'],
+      ['briefs_approved', 'reviewing-briefs'],
+    ]);
   });
 
   it('keeps the active session for an aborted run so it can be picked up', async () => {
@@ -1318,6 +1419,13 @@ describe('runWorkflow — smoke', () => {
         runPhase: vi.fn(async (opts: RunPhaseInput) => {
           opts.callbacks.onCallEvent?.({ type: 'call_started', ts: startedAt, ...call });
           opts.callbacks.onCallEvent?.({
+            type: 'call_tool_use_done',
+            ts: startedAt + 1,
+            ...call,
+            channel: 'tool',
+            toolUse: { id: 'tool-read-1', name: 'Read', input: { file_path: 'src/hello.ts' } },
+          });
+          opts.callbacks.onCallEvent?.({
             type: 'call_usage',
             ts: startedAt + 1,
             ...call,
@@ -1351,9 +1459,10 @@ describe('runWorkflow — smoke', () => {
       events.filter((event) => event.type.startsWith('runner_call_')).map((event) => event.type),
     ).toEqual([
       'runner_call_started',
+      'runner_call_tool_use',
+      'runner_call_activity',
       'runner_call_usage',
       'runner_call_completed',
-      'runner_call_activity',
     ]);
     expect(events.find((event) => event.type === 'runner_call_completed')).toMatchObject({
       type: 'runner_call_completed',
@@ -1365,8 +1474,8 @@ describe('runWorkflow — smoke', () => {
     expect(events.find((event) => event.type === 'runner_call_activity')).toMatchObject({
       callId: 'planner-call-test',
       role: 'planner',
-      stage: 'completed',
-      kind: 'text',
+      kind: 'read',
+      label: 'reading src/hello.ts',
     });
   });
 

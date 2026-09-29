@@ -1,6 +1,6 @@
 import { resolveCliModel } from '../../providers/automatic-model.js';
 import { resolveAutoModel } from '../../providers/model-selection.js';
-import { getProviderDisplayName } from '../../providers/catalog.js';
+import { getProviderDisplayName, getRunnerIdentityDisplayName } from '../../providers/catalog.js';
 import type { PlannerToolId } from '../../schemas/enums.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import type { Config } from '../../schemas/config.js';
@@ -79,7 +79,8 @@ export function getRunnerCatalogDisplayName(runner: RunnerConfig): string {
     case 'cli':
       return getProviderDisplayName(runner.tool);
     case 'api':
-      return getProviderDisplayName(runner.provider);
+      // A custom provider name stays literal even when it reuses a CLI tool id.
+      return getRunnerIdentityDisplayName('api', runner.provider);
     case 'shell':
     case 'agent':
       return getProviderDisplayName(runner.kind);

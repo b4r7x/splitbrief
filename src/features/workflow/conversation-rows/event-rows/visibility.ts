@@ -5,11 +5,14 @@ const TRANSCRIPT_ROWLESS_EVENT_TYPES = [
   'workflow_resumed',
   'workflow_complete',
   'workflow_config',
+  'spec_approved',
   'spec_rejected',
   'spec_regenerated',
   'plan_approved',
   'plan_rejected',
   'plan_regenerated',
+  'briefs_approved',
+  'briefs_rejected',
   'all_tasks_done',
   'planner_status',
   'planner_heartbeat',
@@ -40,6 +43,7 @@ const TRANSCRIPT_ROWLESS_EVENT_TYPES = [
   'runner_call_stalled',
   'runner_call_stall_cleared',
   'runner_call_runtime_status',
+  'runner_call_heartbeat',
 ] as const satisfies readonly EngineEvent['type'][];
 
 type TranscriptRowlessEventType = (typeof TRANSCRIPT_ROWLESS_EVENT_TYPES)[number];

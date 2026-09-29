@@ -1,8 +1,9 @@
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import type { EvidenceLedger, EvidenceTask } from '../../../core/schemas/evidence.js';
 import type { CostBreakdown, Summary } from '../../../core/schemas/summary.js';
-import type { TaskId } from '../../../core/schemas/task.js';
+import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type {
   BriefRow,
   BriefRowState,
@@ -14,111 +15,327 @@ import type {
   SummaryView,
 } from './view-model.js';
 import { costKnownFlags, unmeteredRunCostLabel } from '../../../core/schemas/summary.js';
-import { formatToolModel } from '../../../core/model-display.js';
-import { getProviderDisplayName } from '../../../core/providers/catalog.js';
+import { formatSeatIdentity, formatShortSeatIdentity } from '../../../core/crew/identity.js';
+import {
+  getProviderDisplayName,
+  getRunnerIdentityDisplayName,
+  parseRunnerIdentityKey,
+} from '../../../core/providers/catalog.js';
+import type { RunnerKind } from '../../../core/schemas/enums.js';
+import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
+import { resolveModelDisplayName } from '../../../engine/providers/model/display-names.js';
+import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { classifyTaskCompletionMethod } from '../../../core/task-completion.js';
 import { uniqueSorted } from '../../../utils/collections.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
+import { hashTaskBrief } from '../../../engine/brief-hash.js';
 
-export function seatView(tool: string | undefined, model: string | undefined): SeatView {
+/** A seat the run recorded, spelled by the same formatters the live crew surfaces use. */
+function seatView(input: {
+  tool: string | undefined;
+  model: string | undefined;
+  role: ActiveRunnerRole;
+  kind: RunnerKind | undefined;
+}): SeatView {
+  const { tool, model, role, kind } = input;
   if (tool === undefined) return { kind: 'unset' };
+  const seat = { tool, ...(model !== undefined && { model }) };
+  const displayName =
+    model === undefined
+      ? undefined
+      : resolveModelDisplayName({ providerId: tool, model, role, cache: modelCacheStore, kind });
   return {
     kind: 'named',
-    identity: sanitizeTerminalDisplayText(formatToolModel(tool, model)),
-    short: sanitizeTerminalDisplayText(model ?? getProviderDisplayName(tool)),
+    identity: formatSeatIdentity({ seat, displayName, kind }),
+    short: formatShortSeatIdentity({ seat, displayName, kind }),
   };
 }
 
-/** A run whose briefs went to more than one seat names the profiles, never one global implementer. */
+/**
+ * The kind the run's own cost record kept for a recorded tool name, when it
+ * kept exactly one: a run that used both `api:opencode` and `cli:opencode`
+ * leaves the name ambiguous, and the record is read as written.
+ */
+function recordedSeatKind(summary: Summary, tool: string): RunnerKind | undefined {
+  const kinds = new Set<RunnerKind>();
+  for (const key of Object.keys(summary.costBreakdown?.providerRunMetadata ?? {})) {
+    const parsed = parseRunnerIdentityKey(key);
+    if (parsed.kind !== undefined && parsed.id === tool) kinds.add(parsed.kind);
+  }
+  return kinds.size === 1 ? [...kinds][0] : undefined;
+}
+
+/** The planner seat of record, with whatever kind the run's cost record kept for it. */
+export function plannerSeatView(summary: Summary): SeatView {
+  const tool = summary.plannerTool;
+  return seatView({
+    tool,
+    model: summary.plannerModel,
+    role: 'planner',
+    kind: tool === undefined ? undefined : recordedSeatKind(summary, tool),
+  });
+}
+
+/**
+ * The build seat of record, unless the briefs ran elsewhere too: briefs routed to more than one
+ * profile name the profiles, and one seat that changed tools mid-run says where it went.
+ */
 export function buildSeatView(summary: Summary): SeatView {
   const breakdown = summary.taskBreakdown ?? [];
-  const identified = breakdown.filter(
-    (task) =>
-      task.tool !== undefined || task.model !== undefined || task.implementerProfile !== undefined,
+  const profiles = uniqueSorted(
+    breakdown
+      .map((task) => task.implementerProfile)
+      .filter((profile): profile is string => profile !== undefined),
   );
-  const keys = new Set(
-    identified.map(
-      (task) => `${task.implementerProfile ?? ''}\u0000${task.tool ?? ''}\u0000${task.model ?? ''}`,
-    ),
-  );
-  if (keys.size > 1) {
+  if (profiles.length > 1) {
     return {
       kind: 'mixed',
-      profiles: uniqueSorted(
-        breakdown
-          .map((task) => task.implementerProfile)
-          .filter((profile): profile is string => profile !== undefined),
-      ).map((profile) => sanitizeTerminalDisplayText(profile)),
+      profiles: profiles.map((profile) => sanitizeTerminalDisplayText(profile)),
     };
   }
-  return seatView(summary.implementerTool, summary.implementerModel);
+  const kindOfTool = (tool: string): RunnerKind | undefined => recordedSeatKind(summary, tool);
+  const implementerTool = summary.implementerTool;
+  return (
+    movedBuildSeat(breakdown, kindOfTool) ??
+    seatView({
+      tool: implementerTool,
+      model: summary.implementerModel,
+      role: 'implementer',
+      kind: implementerTool === undefined ? undefined : recordedSeatKind(summary, implementerTool),
+    })
+  );
+}
+
+/**
+ * The seats the briefs ran on, in the order the plan first used each, when there was more than
+ * one. Two seats a short form cannot tell apart (`auto` on two tools) are named with their tool.
+ */
+function movedBuildSeat(
+  breakdown: readonly TaskTokenUsage[],
+  kindOfTool: (tool: string) => RunnerKind | undefined,
+): SeatView | null {
+  const seats = new Map<
+    string,
+    { tool: string; kind: RunnerKind | undefined; short: string; briefs: number }
+  >();
+  const keys: string[] = [];
+  for (const task of breakdown) {
+    if (task.tool === undefined) continue;
+    const kind = kindOfTool(task.tool);
+    const named = seatView({ tool: task.tool, model: task.model, role: 'implementer', kind });
+    if (named.kind !== 'named') continue;
+    const key = `${task.tool}\u0000${named.short}`;
+    const seat = seats.get(key) ?? { tool: task.tool, kind, short: named.short, briefs: 0 };
+    seats.set(key, { ...seat, briefs: seat.briefs + 1 });
+    keys.push(key);
+  }
+  if (seats.size < 2) return null;
+  const shorts = [...seats.values()].map((seat) => seat.short);
+  const ambiguous = new Set(shorts).size < shorts.length;
+  return {
+    kind: 'moved',
+    seats: [...seats.values()].map((seat) => ({
+      short: ambiguous
+        ? sanitizeTerminalDisplayText(`${runnerWord(seat.tool, seat.kind)} ${seat.short}`)
+        : seat.short,
+      briefs: seat.briefs,
+    })),
+    contiguous: eachRunsOneStretch(keys),
+  };
+}
+
+/** A recorded tool name in its own kind's words; without a kind the merged catalog answers. */
+function runnerWord(tool: string, kind: RunnerKind | undefined): string {
+  return kind === undefined
+    ? getProviderDisplayName(tool)
+    : getRunnerIdentityDisplayName(kind, tool);
+}
+
+/** Whether every seat ran one unbroken stretch of the plan, so the plan order is the move order. */
+function eachRunsOneStretch(keys: readonly string[]): boolean {
+  const left = new Set<string>();
+  let current: string | undefined;
+  for (const key of keys) {
+    if (key === current) continue;
+    if (left.has(key)) return false;
+    if (current !== undefined) left.add(current);
+    current = key;
+  }
+  return true;
 }
 
 export function reviewSeatView(summary: Summary): SeatView {
   if (summary.reviewerTool !== undefined) {
-    return seatView(summary.reviewerTool, summary.reviewerModel);
+    return seatView({
+      tool: summary.reviewerTool,
+      model: summary.reviewerModel,
+      role: 'reviewer',
+      kind: recordedSeatKind(summary, summary.reviewerTool),
+    });
   }
   return summary.plannerTool === undefined ? { kind: 'unset' } : { kind: 'inherits' };
 }
 
-/**
- * Plan order comes from the ledger, which is seeded with every brief the planner compiled; the
- * per-brief spend record joins onto it by id. A brief the ledger never saw still appears, because
- * the spend record is the only place a run that died before its first write left a trace.
- */
-export function briefRows(summary: Summary, ledger: EvidenceLedger | null): BriefRow[] {
-  const spend = new Map<string, TaskTokenUsage>();
-  for (const task of summary.taskBreakdown ?? []) spend.set(task.taskId, task);
+/** Saved tasks name the current plan. Ledger and spend rows may belong to a plan before a rewind. */
+export function briefRows(input: {
+  summary: Summary;
+  ledger: EvidenceLedger | null;
+  currentTasks: Task[] | null;
+}): { current: BriefRow[]; earlier: BriefRow[] } {
+  const { summary, ledger, currentTasks } = input;
+  const spend = foldBriefSpend(summary.taskBreakdown ?? []);
   const stoppedId = summary.stoppedAt?.taskId;
   const partialFiles = summary.stoppedAt?.partialFiles.length ?? 0;
   const ledgerTasks = ledger?.tasks ?? [];
-  const seen = new Set<string>();
-  const rows: BriefRow[] = [];
+  const usedLedger = new Set<EvidenceTask>();
+  const usedSpend = new Set<BookedBrief>();
+  const current: BriefRow[] = [];
 
+  if (currentTasks !== null) {
+    const currentHash = hashTaskBrief(currentTasks);
+    for (const task of currentTasks) {
+      const ledgerTask = ledgerTasks.find(
+        (entry) => entry.id === task.id && sameCurrentBrief(entry, task, currentHash),
+      );
+      if (ledgerTask !== undefined) usedLedger.add(ledgerTask);
+      const booked = spend.find(
+        (entry) =>
+          entry.taskId === task.id &&
+          entry.taskTitle === task.title &&
+          task.status !== 'pending' &&
+          (ledgerTask !== undefined || ledger === null),
+      );
+      if (booked !== undefined) usedSpend.add(booked);
+      current.push(
+        briefRow({
+          id: task.id,
+          title: task.title,
+          booked,
+          ledgerTask,
+          stopped: task.id === stoppedId,
+          partialFiles,
+          currentStatus: task.status,
+        }),
+      );
+    }
+  }
+
+  const earlier: BriefRow[] = [];
   for (const task of ledgerTasks) {
-    seen.add(task.id);
-    rows.push(
+    if (usedLedger.has(task)) continue;
+    const booked = spend.find(
+      (entry) =>
+        !usedSpend.has(entry) && entry.taskId === task.id && entry.taskTitle === task.title,
+    );
+    if (booked !== undefined) usedSpend.add(booked);
+    earlier.push(
       briefRow({
         id: task.id,
         title: task.title,
-        booked: spend.get(task.id),
+        booked,
         ledgerTask: task,
-        stopped: task.id === stoppedId,
-        partialFiles,
+        stopped: currentTasks === null && task.id === stoppedId,
+        partialFiles: currentTasks === null ? partialFiles : 0,
       }),
     );
   }
-  for (const task of summary.taskBreakdown ?? []) {
-    if (seen.has(task.taskId)) continue;
-    seen.add(task.taskId);
-    rows.push(
+  for (const task of spend) {
+    if (usedSpend.has(task)) continue;
+    earlier.push(
       briefRow({
         id: task.taskId,
         title: task.taskTitle,
         booked: task,
         ledgerTask: undefined,
-        stopped: task.taskId === stoppedId,
-        partialFiles,
+        stopped: currentTasks === null && task.taskId === stoppedId,
+        partialFiles: currentTasks === null ? partialFiles : 0,
       }),
     );
   }
-  return rows;
+  return currentTasks === null ? { current: earlier, earlier: [] } : { current, earlier };
+}
+
+/**
+ * One brief's folded spend: the completion the last execution earned, and the retries every
+ * execution spent. Repeated executions of one brief are one booking — a summary written without
+ * call evidence keeps each execution as its own record — and the fold matches the priced
+ * summary's own fold of the same records. A rewound brief that reused an id under another title
+ * is a different brief and stays a separate fold.
+ */
+interface BookedBrief {
+  taskId: TaskId;
+  taskTitle: string;
+  method: TaskCompletionMethod;
+  retryCount: number;
+}
+
+function foldBriefSpend(taskBreakdown: readonly TaskTokenUsage[]): BookedBrief[] {
+  const folded = new Map<string, BookedBrief>();
+  for (const entry of taskBreakdown) {
+    const key = `${entry.taskId}\u0000${entry.taskTitle}`;
+    const previous = folded.get(key);
+    folded.set(key, {
+      taskId: entry.taskId,
+      taskTitle: entry.taskTitle,
+      method: entry.method,
+      retryCount: (previous?.retryCount ?? 0) + entry.retryCount,
+    });
+  }
+  return [...folded.values()];
+}
+
+function sameCurrentBrief(ledgerTask: EvidenceTask, task: Task, planHash: string): boolean {
+  if (task.status === 'pending' && ledgerTask.status !== 'pending') return false;
+  if (task.status === 'in_progress' && ledgerTask.status !== 'in_progress') return false;
+  if (ledgerTask.briefHash != null) return ledgerTask.briefHash === planHash;
+  return ledgerTask.title === task.title && ledgerTask.file === task.file;
+}
+
+/** Older summaries can name a stopped brief whose ID a later plan reused. */
+export function stoppedAtForCurrentPlan(input: {
+  summary: Summary;
+  ledger: EvidenceLedger | null;
+  state: WorkflowState | null;
+}): Summary['stoppedAt'] {
+  const { summary, ledger, state } = input;
+  const stopped = summary.stoppedAt;
+  if (state === null || stopped === undefined) return stopped;
+  const current = state.tasks[state.currentTaskIndex];
+  if (
+    state.phase === 'complete' ||
+    current?.status !== 'in_progress' ||
+    current.id !== stopped.taskId
+  )
+    return undefined;
+  const booked = ledger?.tasks.find(
+    (task) => task.id === current.id && sameCurrentBrief(task, current, hashTaskBrief(state.tasks)),
+  );
+  return {
+    taskId: current.id,
+    partialFiles: stopped.partialFiles.filter((file) => booked?.changedFiles.includes(file)),
+  };
 }
 
 function briefRow(input: {
   id: TaskId;
   title: string;
-  booked: TaskTokenUsage | undefined;
+  booked: BookedBrief | undefined;
   ledgerTask: EvidenceTask | undefined;
   stopped: boolean;
   partialFiles: number;
+  currentStatus?: Task['status'] | undefined;
 }): BriefRow {
   const { booked, ledgerTask } = input;
-  const method = booked?.method ?? ledgerTask?.method ?? null;
+  const method = rowMethod(input.currentStatus, booked?.method ?? ledgerTask?.method ?? null);
   return {
     id: input.id,
     title: sanitizeTerminalDisplayText(input.title),
-    state: briefRowState({ method, ledgerTask, stopped: input.stopped }),
+    state: briefRowState({
+      method,
+      ledgerTask,
+      stopped: input.stopped,
+      currentStatus: input.currentStatus,
+    }),
     method,
     retries: booked?.retryCount ?? ledgerTask?.retries ?? 0,
     durationMs: ledgerTask?.durationMs ?? null,
@@ -127,12 +344,29 @@ function briefRow(input: {
   };
 }
 
+function rowMethod(
+  status: Task['status'] | undefined,
+  recorded: TaskCompletionMethod | null,
+): TaskCompletionMethod | null {
+  if (status === undefined) return recorded;
+  if (status === 'done') return 'local';
+  if (status === 'escalated')
+    return recorded !== null && classifyTaskCompletionMethod(recorded) === 'escalated'
+      ? recorded
+      : 'escalated-full';
+  if (status === 'failed') return 'failed';
+  if (status === 'skipped') return 'skipped';
+  return null;
+}
+
 function briefRowState(input: {
   method: TaskCompletionMethod | null;
   ledgerTask: EvidenceTask | undefined;
   stopped: boolean;
+  currentStatus?: Task['status'] | undefined;
 }): BriefRowState {
   if (input.stopped) return 'stopped';
+  if (input.currentStatus === 'pending' || input.currentStatus === 'in_progress') return 'pending';
   if (input.method !== null) return classifyTaskCompletionMethod(input.method);
   const status = input.ledgerTask?.status;
   if (status === 'done') return input.ledgerTask?.escalated === true ? 'escalated' : 'local';

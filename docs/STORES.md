@@ -61,12 +61,13 @@ src/stores/
 │   ├── lifecycle.ts          # Phase, cancelled, queue depth
 │   ├── operations/           # Active / last runner operation (state.ts, reducer.ts, …)
 │   ├── actions/              # Composite writes across sub-stores (event, load, hydrate, interrupt, resume, pause, reset, sections)
-│   ├── abort.ts              # Armed abort intent (ArmedKind) + auto-clear timer
+│   ├── stop.ts               # Stop/quit intent + termination phase (stopStore)
 │   ├── attachments.ts        # Pending prompt attachments
 │   ├── conversation-scroll.ts # Scroll position + expanded diffs
 │   ├── streaming-output.ts   # Live streamed runner output
 │   ├── transcript-tail.ts    # What the blocks after the run's events add to the transcript
 │   ├── recovery-notice.ts    # Halted seat + its quota reset, for the header
+│   ├── mode-advice.ts        # The run's mode and the advice the byline and sidebar show
 │   └── review.ts             # Review file path + scroll
 ├── approval-prompt/          # Tiered approval request/response prompt
 │   └── prompt.ts             # approvalPromptStore (via channels/prompt)
@@ -203,15 +204,16 @@ routerStore.navigate('workflow', { feature: 'auth' });
 | `eventsStore` | `workflow/events.ts` | `{ events: EngineEvent[] }` | internal writes via `actions.addEvent` |
 | `tasksStore` | `workflow/tasks.ts` | `{ currentTask, totalTasks, taskCompletionTimes, taskMap, tasks }` | internal writes via `actions.addEvent` |
 | `tokensStore` | `workflow/tokens.ts` | `{ localCount, escalatedCount, tokenUsage }` | internal writes via `actions.addEvent` |
-| `lifecycleStore` | `workflow/lifecycle.ts` | `{ phase, status, cancelled, queueDepth, startedAt, endedAt, durationMs, reason, plannerCall, waitingSince, waitedMs, resumedAt }` — `plannerCall` is the call the phase is on when the engine names one, `waitingSince` / `waitedMs` keep time spent waiting on the user out of the stage clock, `resumedAt` keeps a resumed run's park out of it | internal writes via `actions.addEvent` / local cancel intent |
+| `lifecycleStore` | `workflow/lifecycle.ts` | `{ phase, status, cancelled, queueDepth, startedAt, endedAt, durationMs, reason, plannerCall, plannerCallStartedTs, waitingSince, waitedMs, resumedAt }` — `plannerCall` is the call the phase is on when the engine names one, `plannerCallStartedTs` is where the byline clock of that call starts, `waitingSince` / `waitedMs` keep time spent waiting on the user out of the stage clock, `resumedAt` keeps a resumed run's park out of it | internal writes via `actions.addEvent` / local cancel intent |
 | `operationsStore` | `workflow/operations/state.ts` | `{ active, last, byCallId }` compact runner lifecycle/status | internal writes via `actions.addEvent` / local cancel intent |
-| `abortStore` | `workflow/abort.ts` | `{ armed: ArmedKind }` | `arm(kind)` (2s auto-clear), `clear()` |
+| `stopStore` | `workflow/stop.ts` | `{ intent, phase, requestedAt, parked, error? }` — the run's stop intent and where its termination stands | `request(intent)`, phase marks (`markTerminating()`, `markSettling()`, `markForcing()`), `park()`, `resume(steer)`, `end()`, `fail()` |
 | `conversationScrollStore` | `workflow/conversation-scroll.ts` | `{ scrollOffset, expandedDiffs, ... }` | `scrollUp()`, `scrollDown()`, `scrollToBottom()`, `toggleDiff()` |
 | `reviewStore` | `workflow/review.ts` | `{ filePath, scrollOffset, renderedLineCount }` | `setReviewFile()`, `setScrollOffset()`, `setRenderedLineCount()`, `clearReview()` |
 | `attachmentsStore` | `workflow/attachments.ts` | `{ pending: Attachment[] }` | `add()`, `remove()`, `drain()`, `peek()` — `attachImage()` / `detachImage()` / `listAttachments()` helpers |
 | `streamingOutputStore` | `workflow/streaming-output.ts` | `{ taskId, lines, active }` | `startStreaming()`, `replaceLines()`, `stopStreaming()` |
 | `transcriptTailStore` | `workflow/transcript-tail.ts` | `{ rowCount, renderableUnits }` — what a closed run's ledger adds after the run's own events | `setMetrics()` — written by the transcript, read by the keyboard so both measure one document |
 | `recoveryNoticeStore` | `workflow/recovery-notice.ts` | `{ seat, resetAt }` — the seat an open halt stopped on and the clock its quota returns on | `open({ seat, resetAt })`, `clear()` — written by the TUI recovery driver |
+| `modeAdviceStore` | `workflow/mode-advice.ts` | `{ mode, advice }` — the last mode `mode_resolved` named and the last `mode_advice` verdict, `none` included, kept apart from the capped event log | internal writes via `actions.addEvent` / `loadEvents`; `settle({ mode, advice })` — written by `readRunHistory` with the mode a replayed run continues in and the advice its saved inputs earn |
 | `approvalPromptStore` | `approval-prompt/prompt.ts` | `{ status: 'idle' } \| { status: 'pending', request, resolve }` | `openApprovalPrompt()`, `closeApprovalPrompt()` (via `channels/prompt`) |
 | `routerStore` | `navigation/router.ts` | `RouteData` (discriminated union on `screen`) | `navigate()`, `init()` — with transition guards |
 | `configStore` | `project/config.ts` | `{ config: Config \| null, projectDir, overrides }` | `load()`, `save()`, `useConfig()` |

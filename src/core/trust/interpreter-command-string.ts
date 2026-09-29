@@ -22,11 +22,18 @@ const COMMAND_STRING_INTERPRETER_PROFILES: readonly CommandStringInterpreterProf
   },
 ];
 
+// The launcher suffixes a name may carry: `node.exe`, `npm.cmd`, and `.bat`/`.ps1` scripts all
+// name the program a command runs, so the basename drops the suffix before the name is compared.
+const EXECUTABLE_SUFFIXES = /\.(cmd|exe|bat|ps1)$/i;
+
+// Shared executable basename/suffix normalization. Callers compare the result against bare
+// program names (`bash`, `powershell`, `env`), so a directory and a recognised launcher suffix
+// never take part in the comparison.
 export function executableName(value: string): string {
   const separator = Math.max(value.lastIndexOf('/'), value.lastIndexOf('\\'));
   return value
     .slice(separator + 1)
-    .replace(/\.exe$/i, '')
+    .replace(EXECUTABLE_SUFFIXES, '')
     .toLowerCase();
 }
 

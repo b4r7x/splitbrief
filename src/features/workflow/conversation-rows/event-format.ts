@@ -1,4 +1,5 @@
 import { formatToolModel } from '../../../core/model-display.js';
+import { SOFT_SEP } from '../../../core/separators.js';
 import { ValidationStageSchema, type ValidationStage } from '../../../core/schemas/enums.js';
 import type { TaskContextFit } from '../../../core/schemas/enums.js';
 import type {
@@ -6,48 +7,77 @@ import type {
   ValidationStages,
   ValidationStageSkips,
 } from '../../../engine/events/types.js';
+import { resolveModelDisplayName } from '../../../engine/providers/model/display-names.js';
+import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { formatDuration } from '../../../utils/format-time.js';
-import { formatTruncatedList } from '../../../core/formatting.js';
+import { formatContextLength, formatTruncatedList } from '../../../core/formatting.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { truncateTerminalDisplayText } from '../../../utils/display-text.js';
+import { userEditConflictRelation } from '../../../core/recovery/user-edit-conflict-words.js';
+import { formatUsageTokens } from '../usage-details-model.js';
 import type { ConversationRowSegment, ConversationRowTone } from './types.js';
 
 export function formatTaskStartedValue(
   event: Extract<EngineEvent, { type: 'task_started' }>,
 ): string {
+  return formatTaskStartedParts(event).join(SOFT_SEP);
+}
+
+// The value's own facts, one label each. A label can carry the separator inside it — the tool and
+// its model are one label — so callers that lay the value out themselves need the parts, not the
+// joined string, or a wrap cannot tell one label's ` · ` from another's.
+export function formatTaskStartedParts(
+  event: Extract<EngineEvent, { type: 'task_started' }>,
+): string[] {
   const parts = [`${event.file} (${event.action})`];
-  const toolLabel = formatToolModel(event.tool, event.model);
+  const displayName =
+    event.tool === undefined || event.model === undefined
+      ? undefined
+      : resolveModelDisplayName({
+          providerId: event.tool,
+          model: event.model,
+          role: 'implementer',
+          cache: modelCacheStore,
+        });
+  const toolLabel = formatToolModel({ tool: event.tool, model: displayName ?? event.model });
   if (toolLabel) parts.push(toolLabel);
-  if (event.implementerProfile) parts.push(`profile ${event.implementerProfile}`);
-  if (event.contextFit) {
-    parts.push(
-      `fit ${formatEventContextFit(event.contextFit, event.estimatedTokens, event.contextLength)}`,
-    );
+  // The recovery panel names this value `Worker`. The routing sentence (`Selected profile default
+  // (fits, estimated …)`) restates the worker and the fit, so it stays in the run log.
+  if (event.implementerProfile) parts.push(`worker ${event.implementerProfile}`);
+  if (event.contextFit && event.contextFit !== 'fits') {
+    parts.push(formatEventContextFit(event.contextFit, event.estimatedTokens, event.contextLength));
   }
   if (event.currentCodeContextMode && event.currentCodeContextMode !== 'none') {
     parts.push(`code ${event.currentCodeContextMode}`);
   }
-  if (event.routingReason) parts.push(`why ${event.routingReason}`);
-  return parts.join(' · ');
+  return parts;
 }
 
+// The verdict and the file list are two lines, the way the recovery panel puts its files under its
+// headline: in one line the list wrapped into the verdict and split it.
 export function formatExternalChangesValue(
   event: Extract<EngineEvent, { type: 'paused_external_changes' }>,
 ): string {
-  if (!event.conflict) {
-    return event.selectedAction
-      ? `External changes detected · ${event.selectedAction}`
-      : 'External changes detected';
-  }
-
-  const filesLabel = formatTruncatedList(event.conflict.files, 3) || 'no files';
-  const tasksLabel =
-    event.conflict.affectedTaskIds.length > 0
-      ? ` · tasks ${event.conflict.affectedTaskIds.join(', ')}`
-      : '';
-  const actionLabel = event.selectedAction ? ` · ${event.selectedAction}` : '';
-
-  return `${event.conflict.kind} · ${filesLabel}${tasksLabel}${actionLabel}`;
+  // Only `continue-unrelated` lets the brief start. Every other answer raises a recovery issue,
+  // so the card must not name an action that the recovery panel offers next.
+  const outcome =
+    event.selectedAction === undefined
+      ? undefined
+      : event.selectedAction === 'continue-unrelated'
+        ? 'run continued'
+        : 'recovery needed';
+  const verdict = [
+    event.conflict
+      ? userEditConflictRelation({
+          kind: event.conflict.kind,
+          affectedTaskIds: event.conflict.affectedTaskIds,
+          currentTaskId: event.conflict.currentTaskId,
+        })
+      : 'External changes detected',
+    ...(outcome === undefined ? [] : [outcome]),
+  ].join(' · ');
+  const files = event.conflict ? formatTruncatedList(event.conflict.files, 3) : '';
+  return files === '' ? verdict : `${verdict}\n${files}`;
 }
 
 // One flat string could not show which stage failed without being read word by word, and it wrapped
@@ -116,12 +146,10 @@ function formatEventContextFit(
   estimatedTokens: number | undefined,
   contextLength: number | undefined,
 ): string {
-  if (contextFit === 'fits') return contextFit;
-  const tokenLabel =
-    contextLength === undefined
-      ? `${estimatedTokens ?? '?'} tok`
-      : `${estimatedTokens ?? '?'}/${contextLength} tok`;
-  return `${contextFit} ${tokenLabel}`;
+  if (estimatedTokens === undefined) return `context (${contextFit})`;
+  const window = formatContextLength(contextLength);
+  const share = window === '' ? '' : ` of ${window}`;
+  return `~${formatUsageTokens(estimatedTokens)}${share} context tokens (${contextFit})`;
 }
 
 type ValidationStageState = 'passed' | 'failed' | 'exempt' | 'running' | 'skipped' | 'not-run';

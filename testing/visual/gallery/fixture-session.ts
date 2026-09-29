@@ -41,7 +41,11 @@ import {
   type ScenarioDefinition,
 } from '../contracts/catalog.js';
 import { ViewportSchema, type Viewport } from '../contracts/geometry.js';
-import { PREVIEW_UNAVAILABLE, type FixtureLifecycle } from '../fixtures/common.js';
+import {
+  PREVIEW_UNAVAILABLE,
+  type FixtureLifecycle,
+  type FixtureWrite,
+} from '../fixtures/common.js';
 import { overlayFixtureRegistry } from '../fixtures/overlay-fixtures.js';
 import { screenFixtureRegistry, VISUAL_FIXTURE_PROJECT_DIR } from '../fixtures/screen-fixtures.js';
 import { createWorkflowFixtureAppDeps } from '../fixtures/workflow/setup.js';
@@ -306,7 +310,7 @@ export interface FixtureSession {
   readonly checkpoint: CheckpointDefinition;
   readonly props: AppProps;
   /** Runs fixture input once, after the App has mounted its input handlers. */
-  readonly activate: (write: (input: string) => void) => Promise<void>;
+  readonly activate: (write: FixtureWrite) => Promise<void>;
   /** Publishes a new terminal size to the store every screen sizes from. */
   readonly resize: (viewport: Viewport) => Viewport;
   /** Idempotent: the fixture is torn down once and the prior stores are put back once. */

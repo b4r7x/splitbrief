@@ -1,14 +1,13 @@
-import type { Phase } from '../../../core/schemas/enums.js';
+import type { Phase, WorkflowMode } from '../../../core/schemas/enums.js';
 import { resolveGlyphTier } from '../../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { SIMPLE_REVIEW_BASE_CHROME_ROWS, SIMPLE_TASK_ROW_HEIGHT } from './brief-review.js';
 import {
   getActiveRailStage,
   getRailStages,
-  isRailCurrent,
   railIsHandoff,
+  selectRailStage,
   type RailStage,
-  type RailStageState,
 } from '../../../core/rail-stages.js';
 import {
   chooseFormBVariant,
@@ -125,8 +124,11 @@ export function resolveRailFraction(input: {
   currentTask: number;
   totalTasks: number;
   cancelled: boolean;
+  mode?: WorkflowMode;
 }): string {
-  const activeStage = input.cancelled ? null : getActiveRailStage(input.phase);
+  const activeStage = input.cancelled
+    ? null
+    : getActiveRailStage(input.phase, input.mode ?? 'standard');
   return activeStage
     ? buildRailFraction(activeStage.stage, input.currentTask, input.totalTasks)
     : '';
@@ -141,17 +143,6 @@ export interface RailStageZone {
   bottom: number;
 }
 
-function railFormCRenderedStage(
-  stages: RailStageState[],
-): { state: RailStageState; index: number } | null {
-  const currentIndex = stages.findIndex((state) => isRailCurrent(state.status));
-  const pendingIndex = stages.findIndex((state) => state.status === 'pending');
-  const index =
-    currentIndex >= 0 ? currentIndex : pendingIndex >= 0 ? pendingIndex : stages.length - 1;
-  const state = stages[index];
-  return state ? { state, index } : null;
-}
-
 // Click zones for the rendered rail, computed from the post-truncation layout the renderer uses
 // (the same chooseFormBVariant result and connector widths) so a clipped or short label never
 // becomes a phantom hotspot. Each Form-B zone spans the whole stage segment: marker, gap, label.
@@ -161,18 +152,20 @@ export function getRailStageZones(input: {
   cols: number;
   fraction: string;
   cancelled?: boolean;
+  mode?: WorkflowMode;
   leftCol?: number;
   topRow?: number;
 }): RailStageZone[] {
   const leftCol = input.leftCol ?? RAIL_CONTENT_LEFT_COL;
   const topRow = input.topRow ?? RAIL_STAGE_FIRST_ROW;
+  const mode = input.mode ?? 'standard';
   const tier = resolveGlyphTier();
-  const stages = getRailStages(input.phase, { cancelled: input.cancelled ?? false });
+  const stages = getRailStages(input.phase, { cancelled: input.cancelled ?? false, mode });
   const contentWidth = getChromeContentWidth(input.cols);
   const maxCol = leftCol + contentWidth - 1;
 
   if (input.form === 'C') {
-    const rendered = railFormCRenderedStage(stages);
+    const rendered = selectRailStage(stages, mode);
     if (!rendered) return [];
     const { state, index } = rendered;
     const fractionWidth =

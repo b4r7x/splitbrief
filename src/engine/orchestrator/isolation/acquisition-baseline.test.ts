@@ -44,7 +44,7 @@ function tempProject(name: string): string {
 }
 
 async function acquire(projectDir: string): Promise<IsolatedWorkspace> {
-  const workspace = await createStagedProject(projectDir);
+  const workspace = await createStagedProject({ projectDir: projectDir });
   dirs.push(workspace.projectDir);
   return workspace;
 }

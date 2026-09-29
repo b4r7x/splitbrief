@@ -6,6 +6,7 @@ import {
 } from '#testing/helpers/factories/summary-view.js';
 import type { BriefRow, CostView, SummaryView } from './view-model.js';
 import { taskId } from '../../../core/schemas/task.js';
+import { arrowSep } from '../../../core/separators.js';
 import { briefRowParts, crewLine, filesRows, runRowValue, runRows } from './copy.js';
 
 describe('runRows', () => {
@@ -152,14 +153,45 @@ describe('crewLine', () => {
     const view = makeView({
       seats: { ...makeView().seats, build: { kind: 'mixed', profiles: ['careful', 'quick'] } },
     });
-    expect(crewLine(view, 200)).toContain('BUILD mixed profiles (careful, quick)');
+    expect(crewLine(view, 200)).toContain('BUILD mixed workers (careful, quick)');
   });
 
-  it('says mixed implementers when no profile was named', () => {
+  it('names the tool a seat moved from and the one it moved to', () => {
     const view = makeView({
-      seats: { ...makeView().seats, build: { kind: 'mixed', profiles: [] } },
+      seats: {
+        ...makeView().seats,
+        build: {
+          kind: 'moved',
+          seats: [
+            { short: 'gemini-3.8-flash-high', briefs: 3 },
+            { short: 'deepseek-v4.1-flash', briefs: 2 },
+          ],
+          contiguous: true,
+        },
+      },
     });
-    expect(crewLine(view, 200)).toContain('BUILD mixed implementers');
+    expect(crewLine(view, 200)).toContain(
+      `BUILD gemini-3.8-flash-high${arrowSep()}deepseek-v4.1-flash`,
+    );
+  });
+
+  it('counts the briefs on each tool when the seat did not move once', () => {
+    const view = makeView({
+      seats: {
+        ...makeView().seats,
+        build: {
+          kind: 'moved',
+          seats: [
+            { short: 'gemini-3.8-flash-high', briefs: 15 },
+            { short: 'deepseek-v4.1-flash', briefs: 4 },
+          ],
+          contiguous: false,
+        },
+      },
+    });
+    expect(crewLine(view, 200)).toContain(
+      'BUILD 15 briefs on gemini-3.8-flash-high, 4 on deepseek-v4.1-flash',
+    );
   });
 
   it('says a seat is unrecorded rather than inventing one', () => {

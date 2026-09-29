@@ -74,8 +74,8 @@ splitbrief start [feature] [--mode <mode>] [--approve <level>] \
 | Flag | Type | Default | Description |
 |---|---|---|---|
 | `--mode <mode>` | enum | `standard` (or `workflow.mode` from config) | One of `quick`, `standard`, `speckit`. The retired `instant` still parses and resolves to `quick` with a deprecation notice. See [WORKFLOW.md](./WORKFLOW.md). |
-| `--approve <level>` | enum | `default` | Spec/plan document gates: `none`, `spec`, `plan`, `all`, `default`. `default` follows the mode's built-in policy. |
-| `--planner <tool>` | string | from config | Planner tool: `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code`, `antigravity`, `shell`, `agent`. The flag's help text is derived from `PLANNER_TOOL_IDS` (`src/core/schemas/enums.ts`), so `splitbrief start --help` always prints the admitted set. |
+| `--approve <level>` | enum | `default` | Document approval gates: `none`, `spec`, `plan`, `all`, `default`. `none` skips every approval gate; other concrete levels include briefs review in standard/speckit. Quick opens no gates. `default` follows the mode. |
+| `--planner <tool>` | string | from config | Planner tool: `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code`, `antigravity`, `ollama`, `lm-studio`, `llama-cpp`, `shell`, `agent`. The flag's help text is derived from `PLANNER_TOOL_IDS` (`src/core/schemas/enums.ts`), so `splitbrief start --help` always prints the admitted set. A CLI tool id here always selects the CLI; an API provider that reuses a CLI tool's id is configured in `.splitbrief/config.yaml` (`kind: api`) and cannot be selected by this flag. |
 | `--planner-model <model>` | string | from config | Planner model identifier (for API planners). |
 | `--planner-command <cmd>` | string | from config | Custom planner command (when `--planner=shell`). |
 | `--planner-api-base <url>` | string | from config | Planner API base URL. Applies only to `api` runners; ignored (with a stderr warning) for other kinds. |
@@ -84,7 +84,7 @@ splitbrief start [feature] [--mode <mode>] [--approve <level>] \
 | `--planner-output-format <format>` | enum | from config | Planner output format: `stream-json`, `jsonl`, `text`, or `opencode`. Applies to `cli`, `shell`, and `agent` runners. |
 | `--planner-context-length <tokens>` | number | from config | Planner context length in tokens. Consumed only by the `api` planner kind, where it sizes the request's `max_tokens` output budget; other kinds delegate the budget to their backend and ignore it. |
 | `--planner-effort <level>` | enum | — | Planner effort hint: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. The seat's tool accepts a subset and reports what it rejects; dropped with a warning on seats that cannot send it. |
-| `--implementer <provider>` | string | from config | Implementer provider: `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code`, `antigravity`, `ollama`, `lm-studio`, `shell`, `agent`. The flag's help text is derived from the catalog's implementer role admission (`src/cli/options.ts`), so `splitbrief start --help` always prints the admitted set. |
+| `--implementer <provider>` | string | from config | Implementer provider: `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code`, `antigravity`, `ollama`, `lm-studio`, `llama-cpp`, `shell`, `agent`. The flag's help text is derived from the catalog's implementer role admission (`src/cli/options.ts`), so `splitbrief start --help` always prints the admitted set. A CLI tool id here always selects the CLI; an API provider that reuses a CLI tool's id is configured in `.splitbrief/config.yaml` (`kind: api`) and cannot be selected by this flag. |
 | `--implementer-model <model>` | string | from config | Implementer model identifier. |
 | `--implementer-command <cmd>` | string | from config | Custom implementer command (when `--implementer=shell`). |
 | `--implementer-api-base <url>` | string | from config | Implementer API base URL. Applies only to `api` runners; ignored (with a stderr warning) for other kinds. |
@@ -92,7 +92,7 @@ splitbrief start [feature] [--mode <mode>] [--approve <level>] \
 | `--implementer-args <arg>` | string | from config | Append one implementer CLI/shell argument. Repeatable; each use adds another argument. Applies to `cli`, `shell`, and `agent` runners. |
 | `--implementer-output-format <format>` | enum | from config | Implementer output format: `stream-json`, `jsonl`, `text`, or `opencode`. Applies to `cli`, `shell`, and `agent` runners. |
 | `--implementer-context-length <tokens>` | number | from config | Implementer context length in tokens. |
-| `--reviewer <tool>` | string | from config | Reviewer tool. Same admitted set as `--planner` — the flag's help text is derived from `PLANNER_TOOL_IDS` too. Without any `--reviewer-*` flag and without a `reviewer` block in config, the planner keeps the review seat. |
+| `--reviewer <tool>` | string | from config | Reviewer tool. Same admitted set as `--planner` — the flag's help text is derived from `PLANNER_TOOL_IDS` too. Without any `--reviewer-*` flag and without a `reviewer` block in config, the planner keeps the review seat. A CLI tool id here always selects the CLI; an API provider that reuses a CLI tool's id is configured in `.splitbrief/config.yaml` (`kind: api`) and cannot be selected by this flag. |
 | `--reviewer-model <model>` | string | from config | Reviewer model identifier (for API reviewers). |
 | `--reviewer-command <cmd>` | string | from config | Custom reviewer command (when `--reviewer=shell`). |
 | `--reviewer-api-base <url>` | string | from config | Reviewer API base URL. Applies only to `api` runners; ignored (with a stderr warning) for other kinds. |
@@ -595,7 +595,8 @@ Resume accepts the same workflow override options as `start`. See [`splitbrief s
 | `--json` | Resume the run in headless mode, streaming NDJSON to stdout. |
 | `--plain` | Resume the run in headless mode, writing plain lines to stdout. Mutually exclusive with `--json`. |
 | `--skills <ids>` | Comma-separated planner-skill ids for the rest of the run; they replace the selection saved with the session. Applies in headless and interactive mode alike. |
-| `--mode` / `--approve` / planner+implementer flags | Override the persisted values for this run only. The workflow mode resolved on the original run is saved in `state.json`; resume reuses it unless `--mode` is passed, which overrides it and prints a warning. |
+| `--approve` / planner+implementer flags | Override the persisted values for this run only. |
+| `--mode` | A started run keeps the mode saved in its `state.json`: a `--mode` that names another mode prints a notice and changes nothing. Only a `state.json` from an older release, which saved no mode, takes the flag. |
 
 ### Examples
 
@@ -633,7 +634,7 @@ splitbrief resume --implementer claude-code --implementer-model claude-sonnet-4-
 - A session with a pending recovery is not refused headlessly. `resume --plain` and `resume --json` print the issue, the recommended action and the `splitbrief continue … --action …` line to stderr and exit `1`; pass that action to `continue` to carry on.
 - Any open run resumes. `deriveRunStatus` (`src/core/sessions/run-status.ts`) decides: a run is open until it is closed, and only two things close it — a final review that passed, and an explicit End run. A closed run is refused with `Run <id> is closed (complete|ended); nothing to resume.` A run killed during validation or escalation re-enters at the start of the brief it was on, with that brief's files restored from its task-start snapshot.
 - A short `Resuming: <feature> (phase: <phase>, task N/M)` line prints before the TUI mounts. `N` never exceeds `M`: a run whose briefs have all settled reads `M/M`.
-- The workflow mode is pinned in `state.json` alongside `plannerModel`; resume reuses the saved mode and approval level unless `--mode` is passed explicitly, in which case the override applies and a warning is printed.
+- The workflow mode is pinned in `state.json` alongside `plannerModel` when the run starts, and resume keeps it: a `--mode` that names another mode prints a notice and changes nothing. The saved approval level applies unless `--approve` or `workflow.approve` sets a level other than `default`.
 
 ---
 
@@ -704,7 +705,7 @@ splitbrief continue 2026-05-01-add-auth --action end-run
 - `continue` delegates to `resume`, including `--json` or `--plain` when passed.
 - `--action end-run` is the one action that does not re-enter the run: the close is recorded on `state.json`, the run lists as `ended`, and the command returns 0 without starting anything.
 - `--action` is applied before the run re-enters: the named `RecoveryAction` runs through the same `applyRecoveryAction` transition the panel uses, and the run continues from the state it produced. Without `--action`, a session with a pending recovery is not refused outright — headless prints the issue, the recommended action and the exact `continue --action …` line to stderr and exits `1`, and `resume --plain` behaves the same way.
-- Both commands compare the crew they are about to run against the crew the session last ran with (`.splitbrief/sessions/<id>/seats.json`). A seat that changed prints one stderr line per seat — `PLAN seat changed <old> → <new>; context will be rebuilt` for the plan seat, `…; the rest of the run uses the new seat` for the others. A moved plan seat also drops the saved planner session, because it cannot be replayed on a different tool, so the run rebuilds planner context from the transcript. The run itself re-records the crew once it starts, so a resume that never gets past preparation keeps the notice for the next attempt, and an in-app resume from the sessions overlay maintains the record the same way (it reports the change as a workflow warning). The identity is the same `<tool> · <model>` string the crew rows and the workflow header show.
+- Both commands compare the crew they are about to run against the crew the session last ran with (`.splitbrief/sessions/<id>/seats.json`). A seat that changed prints one stderr line per seat — `PLAN seat changed <old> → <new>; context will be rebuilt` for the plan seat, `…; the rest of the run uses the new seat` for the others. A moved plan seat also drops the saved planner session, because it cannot be replayed on a different tool, so the run rebuilds planner context from the transcript. The run itself re-records the crew once it starts, so a resume that never gets past preparation keeps the notice for the next attempt, and an in-app resume from the sessions overlay maintains the record the same way (it reports the change as a workflow warning). The record compares the configured ids (`Claude Code CLI · opus · max`), so a model the catalog renames never reads as a seat that moved; it also keeps each seat's tool and model ids and the runner kind the seat ran on, and the notice spells both sides the way the crew rows and the workflow header do (`Claude Code CLI · Opus 5.5 · max`) — a custom API provider that reuses a CLI tool's name is spelled as the provider, not as that CLI. A record written before the ids or the runner kind were kept gains them on the next run without a notice; should that run report a seat change, its notice keeps the recorded labels on both sides.
 
 ---
 
@@ -802,7 +803,7 @@ Commands in this section share stable `stateId` / `state` identifiers and copyab
 | Flag | Commands | Default | Notes |
 |---|---|---|---|
 | `--project <dir>` | most | cwd | Project directory. |
-| `--mode <mode>` | `start`, `spec`, `resume`, `continue` | `workflow.mode`, else `standard` | One of `quick`, `standard`, `speckit`; the retired `instant` parses as `quick` with a deprecation notice. Validated against the same enum everywhere; on the resume family it overrides the mode saved in `state.json` and prints a warning. |
+| `--mode <mode>` | `start`, `spec`, `resume`, `continue` | `workflow.mode`, else `standard` | One of `quick`, `standard`, `speckit`; the retired `instant` parses as `quick` with a deprecation notice. Validated against the same enum everywhere; on the resume family a started run keeps the mode saved in `state.json`, and a flag that names another mode prints a notice. |
 | `--allow-hooks` | `start`, `resume`, `continue`, `spec` | `false` | Skip the hook-trust prompt. CI flag. |
 | `--allow-repo-runners` | `start`, `resume`, `continue`, `spec`, `review` | `false` | Trust repo-local shell/agent runner execution from project config. Separate from hook trust. |
 | `--allow-unverified-auth` | `start`, `resume`, `continue`, `review` | `false` | Let a headless run proceed with unverified CLI authentication. No effect on interactive runs, which disclose and prompt. |

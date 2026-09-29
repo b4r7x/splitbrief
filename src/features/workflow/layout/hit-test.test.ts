@@ -12,7 +12,7 @@ import {
   type RailStageZone,
 } from './hit-test.js';
 import type { WorkflowContentRect } from './rect.js';
-import { WORKFLOW_GUTTER_X } from './chrome-rows.js';
+import { getChromeContentWidth, WORKFLOW_GUTTER_X } from './chrome-rows.js';
 
 function zoneByIndex(zones: RailStageZone[], index: number): RailStageZone {
   const zone = zones.find((z) => z.index === index);
@@ -215,6 +215,67 @@ describe('rail stage hit zones', () => {
     const zone = zoneByIndex(zones, 3);
     expect(zone.left).toBe(RAIL_CONTENT_LEFT_COL);
     expect(zone.top).toBe(RAIL_STAGE_FIRST_ROW);
+  });
+
+  it('maps a quick researching run onto Plan in a narrow Form C zone, never Spec', () => {
+    const cols = 20;
+    const maxCol = RAIL_CONTENT_LEFT_COL + getChromeContentWidth(cols) - 1;
+    const zones = getRailStageZones({
+      form: 'C',
+      phase: 'researching',
+      cols,
+      fraction: '',
+      mode: 'quick',
+    });
+    expect(zones).toHaveLength(1);
+    const zone = zoneByIndex(zones, 1);
+    expect(zone.stage).toBe('plan');
+    expect(zone.left).toBe(RAIL_CONTENT_LEFT_COL);
+    expect(zone.right).toBeLessThanOrEqual(maxCol);
+    expect(zone.top).toBe(RAIL_STAGE_FIRST_ROW);
+    expect(zones.some((candidate) => candidate.stage === 'spec')).toBe(false);
+    expect(hitRailStage(zones, zone.left, RAIL_STAGE_FIRST_ROW)).toBe(1);
+  });
+
+  it('keeps a completed quick run off Spec in a narrow Form C zone', () => {
+    const cols = 20;
+    const maxCol = RAIL_CONTENT_LEFT_COL + getChromeContentWidth(cols) - 1;
+    const zones = getRailStageZones({
+      form: 'C',
+      phase: 'complete',
+      cols,
+      fraction: '',
+      mode: 'quick',
+    });
+    expect(zones).toHaveLength(1);
+    const zone = zoneByIndex(zones, 4);
+    expect(zone.stage).toBe('review');
+    expect(zone.left).toBe(RAIL_CONTENT_LEFT_COL);
+    expect(zone.right).toBeLessThanOrEqual(maxCol);
+    expect(zone.top).toBe(RAIL_STAGE_FIRST_ROW);
+    expect(zones.some((candidate) => candidate.stage === 'spec')).toBe(false);
+    expect(hitRailStage(zones, zone.left, RAIL_STAGE_FIRST_ROW)).toBe(4);
+  });
+
+  it('maps an ended quick run onto its stop stage in a narrow Form C zone, never Spec', () => {
+    const cols = 20;
+    const maxCol = RAIL_CONTENT_LEFT_COL + getChromeContentWidth(cols) - 1;
+    const zones = getRailStageZones({
+      form: 'C',
+      phase: 'implementing',
+      cols,
+      fraction: '',
+      cancelled: true,
+      mode: 'quick',
+    });
+    expect(zones).toHaveLength(1);
+    const zone = zoneByIndex(zones, 3);
+    expect(zone.stage).toBe('build');
+    expect(zone.left).toBe(RAIL_CONTENT_LEFT_COL);
+    expect(zone.right).toBe(maxCol);
+    expect(zone.top).toBe(RAIL_STAGE_FIRST_ROW);
+    expect(zones.some((candidate) => candidate.stage === 'spec')).toBe(false);
+    expect(hitRailStage(zones, zone.left, RAIL_STAGE_FIRST_ROW)).toBe(3);
   });
 
   it('drops zones past the truncated rail width so a clipped label is never a phantom hotspot', () => {

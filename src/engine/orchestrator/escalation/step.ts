@@ -1,3 +1,4 @@
+import { loadState } from '../../../core/state/persistence.js';
 import { defaultImplementerWriteMode } from '../../../core/schemas/implementer-config.js';
 import { formatValidationError } from '../validation/format-error.js';
 import { addUsageAndSave, raisePendingRecovery, transitionAndSave } from '../state-ops.js';
@@ -13,72 +14,17 @@ import { handleApprovalTimeUserEditConflict } from './approval-conflict.js';
 import { validateAndCommit } from './validate-and-commit.js';
 import { boundedHandBack, failedRetry } from './types.js';
 import type { RetryStepOpts, RetryStepOutcome } from './types.js';
-import type { AppliedFile, BundleApplyResult } from '../../implementers/file-bundle.js';
-import type { PartialPromotionDetail } from '../approval/gate-and-promote.js';
-import { readConfinedEntry } from '../approval/file-snapshots/entry.js';
 import { recordedApiCreatedPaths } from '../evidence/task.js';
-import { persistApiApplyEvidence, raiseApiApplyRecovery } from '../evidence/persistence.js';
+import {
+  persistApiApplyEvidence,
+  raiseApiApplyRecovery,
+  invalidateTargetWriteEvidence,
+} from '../evidence/persistence.js';
+import { isAbortError } from '../../../utils/abort.js';
+import { isResumableWorkspaceStop, workspaceOwner } from '../isolation/retention.js';
+import { commitWorkflowState } from '../state-ops.js';
+import { error } from '../../../utils/error.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
-
-/** Attribute only gate-confirmed writes whose actual target content matches the response. */
-async function targetApplyReceipt(input: {
-  projectDir: string;
-  result: BundleApplyResult;
-  acceptedPaths: readonly string[];
-  promotion?: PartialPromotionDetail | undefined;
-}): Promise<BundleApplyResult> {
-  const { result, promotion } = input;
-  if (result.status !== 'applied') return result;
-  const accepted = new Set(input.acceptedPaths);
-  const applied: AppliedFile[] = [];
-  for (const file of result.applied) {
-    if (!accepted.has(file.path)) continue;
-    if (promotion !== undefined) {
-      if (
-        promotion.appliedFiles.some(
-          (entry) => entry.path === file.path && entry.sha256 === file.afterSha256,
-        )
-      ) {
-        applied.push(file);
-      }
-      continue;
-    }
-    try {
-      const target = await readConfinedEntry(input.projectDir, file.path);
-      if (target.kind === 'file' && target.sha256 === file.afterSha256) applied.push(file);
-    } catch {
-      // An unreadable target cannot be attributed from its former workspace content.
-    }
-  }
-  const appliedPaths = new Set(applied.map((file) => file.path));
-  const missing = result.applied.find((file) => !appliedPaths.has(file.path));
-  if (promotion === undefined && missing === undefined) return { ...result, applied };
-  const failedPath = promotion?.failedFile ?? missing?.path ?? result.candidatePaths[0] ?? '';
-  const error =
-    promotion === undefined
-      ? `${failedPath}: target content after promotion could not be attributed to this response`
-      : toErrorMessage(promotion.error);
-  const untouched = [
-    ...new Set([
-      ...result.untouched,
-      ...result.candidatePaths.filter(
-        (path) => !appliedPaths.has(path) && !result.noops.includes(path),
-      ),
-    ]),
-  ].sort();
-  const common = {
-    callId: result.callId,
-    candidatePaths: result.candidatePaths,
-    code: 'write-uncertain' as const,
-    error,
-    failedPath,
-    noops: result.noops,
-    untouched,
-  };
-  return applied.length === 0
-    ? { ...common, status: 'failed', applied: [] }
-    : { ...common, status: 'partial', applied };
-}
 
 export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcome> {
   const {
@@ -115,8 +61,23 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
     state = stateForRetryProfile(state, retryRuntime.profile);
   }
 
+  const invocationAttempt = Math.max(state.attempt, attempts);
+  if (state.attempt !== invocationAttempt) {
+    const saved = commitWorkflowState({
+      ref: ctx,
+      expected: loadState(ctx) === null ? null : state,
+      next: { ...state, attempt: invocationAttempt },
+    });
+    if (saved.kind !== 'committed')
+      throw error(
+        'retry-state-persistence',
+        'Could not persist the retry attempt before execution.',
+      );
+    state = saved.state;
+  }
   const workspace = await ctx.isolation.acquire({
     role: isolationRole ?? 'implementer',
+    owner: workspaceOwner({ task, attempt: state.attempt, config: retryRuntime.config }),
     config: retryRuntime.config,
     writesFiles:
       retryRuntime.implementer.capabilities?.writesFiles ??
@@ -124,6 +85,9 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
   });
   let retryResult: Awaited<ReturnType<typeof invokeRetry>>;
   try {
+    if (workspace.projectDir === ctx.projectDir) {
+      invalidateTargetWriteEvidence({ ref: ctx, task });
+    }
     retryResult = await withPerCallAbort({
       sinks: ctx.sinks,
       signal: ctx.signal,
@@ -131,7 +95,7 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
         invokeRetry({
           task,
           lastError,
-          attempts,
+          attempts: state.attempt,
           projectDir: workspace.projectDir,
           config: retryRuntime.config,
           implementer: retryRuntime.implementer,
@@ -147,7 +111,8 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
         }),
     });
   } catch (err) {
-    workspace.cleanup();
+    if (isAbortError(err) && isResumableWorkspaceStop(ctx.signal)) await workspace.retain?.();
+    else workspace.cleanup();
     throw err;
   }
   state = addUsageAndSave(ctx, state, usageCategory, retryResult.usage);
@@ -163,6 +128,16 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
   ) {
     state = raiseApiApplyRecovery({ wctx: ctx, state, task, result: applyResult, workspacePath });
     return { state, task, lastError: applyResult.error, attempts, result: failedRetry(attempts) };
+  }
+
+  if (ctx.signal?.aborted && applyResult === undefined) {
+    if (
+      isResumableWorkspaceStop(ctx.signal) &&
+      (retryResult.success || retryResult.outcome === 'user-abort')
+    )
+      await workspace.retain?.();
+    else workspace.cleanup();
+    return { state, task, lastError, attempts: state.attempt, result: failedRetry(state.attempt) };
   }
 
   if (!retryResult.success) {
@@ -205,26 +180,23 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
     callbacks: ctx.callbacks,
     config: ctx.config,
     getApprovalEnabled: ctx.getApprovalEnabled,
-    workspace,
+    workspace: workspacePath === undefined ? undefined : workspace,
     taskStartSnapshot: ctx.taskStartSnapshot,
     dependsOnFiles: ctx.dependsOnFiles,
     signal: ctx.signal,
     cleanup: workspace.cleanup,
     handleConflict: (s, files) =>
-      handleApprovalTimeUserEditConflict({ ctx, state: s, task, files }),
+      handleApprovalTimeUserEditConflict({
+        ctx,
+        state: s,
+        task,
+        files,
+        workspacePath: workspace.projectDir,
+      }),
     onApproved: (decision) => persistRetryApprovalEvidence(ctx, state, task, decision),
   });
 
   if (gateResult.outcome === 'error') {
-    if (applyResult !== undefined && gateResult.promotion !== undefined) {
-      const targetResult = await targetApplyReceipt({
-        projectDir: ctx.projectDir,
-        result: applyResult,
-        acceptedPaths: gateResult.promotion.appliedFiles.map((file) => file.path),
-        promotion: gateResult.promotion,
-      });
-      persistApiApplyEvidence({ wctx: ctx, state: gateResult.state, task, result: targetResult });
-    }
     if (gateResult.state.pendingRecovery !== undefined) {
       return {
         state: gateResult.state,
@@ -241,8 +213,8 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
       state,
       task,
       lastError,
-      attempts,
-      result: failedRetry(attempts),
+      attempts: state.attempt,
+      result: failedRetry(state.attempt),
     };
   }
   if (gateResult.outcome === 'gate-denied') {
@@ -308,25 +280,6 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
       });
     }
   }
-  if (applyResult !== undefined) {
-    const targetResult = await targetApplyReceipt({
-      projectDir: ctx.projectDir,
-      result: applyResult,
-      acceptedPaths: actualChangedFiles,
-    });
-    persistApiApplyEvidence({ wctx: ctx, state, task, result: targetResult });
-    if (targetResult.status === 'partial' || targetResult.status === 'failed') {
-      state = raiseApiApplyRecovery({ wctx: ctx, state, task, result: targetResult });
-      return {
-        state,
-        task,
-        lastError: targetResult.error,
-        attempts,
-        result: failedRetry(attempts),
-      };
-    }
-  }
-
   const commitResult = await validateAndCommit({
     ctx: retryCtx,
     task,

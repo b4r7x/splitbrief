@@ -36,7 +36,9 @@ export function enqueueUserMessage({
   result: QueueSubmissionResult;
   message?: QueuedMessage | undefined;
 } {
-  const base = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state);
+  const base = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state, {
+    keepUnsaved: true,
+  });
   if (enforcePhasePolicy && !canQueueInPhase(phase)) {
     const message = `Queue is only available while the planner is running; current phase is ${phase}.`;
     publishWarning({

@@ -79,4 +79,33 @@ describe('taskStartedRowBlock continuations', () => {
       expect(text).not.toMatch(/^·/);
     }
   });
+
+  // The reproduction: at 120 columns the old space wrap broke `OpenCode CLI` after `OpenCode` and
+  // stripped the leading separator, so the continuation opened with a bare `CLI · model`.
+  it('keeps a multi-word tool label whole and strands no separator at the break', () => {
+    const rows = eventRows({
+      event: makeTaskStart({
+        taskId: taskId('T901'),
+        title: 'Project deterministic workflow activity',
+        file: 'testing/visual/fixtures/workflow/projections.ts',
+        action: 'modify',
+        tool: 'opencode',
+        model: 'openai/gpt-5.6-luna',
+      }),
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 120, viewportRows: 20, streaming },
+    });
+
+    const lines = rows.map((row) => row.segments.map((segment) => segment.text).join(''));
+    expect(lines.length).toBeGreaterThan(1);
+    expect(lines.some((line) => line.includes('OpenCode CLI · openai/gpt-5.6-luna'))).toBe(true);
+    for (const line of lines) {
+      expect(line.trimEnd()).not.toMatch(/·$/);
+    }
+    for (const line of lines.slice(1)) {
+      expect(line).not.toMatch(/^\s*CLI\b/);
+      expect(line).not.toMatch(/\bOpenCode\s*$/);
+    }
+  });
 });

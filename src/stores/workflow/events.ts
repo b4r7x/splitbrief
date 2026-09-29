@@ -47,6 +47,7 @@ export function projectEventForTuiEventLog(event: EngineEvent): EngineEvent | nu
     case 'runner_call_completed':
     case 'runner_call_stalled':
     case 'runner_call_stall_cleared':
+    case 'runner_call_heartbeat':
       return null;
     case 'planner_heartbeat':
       return null;
@@ -79,6 +80,7 @@ function mergeIntoTail(last: EngineEvent | undefined, event: EngineEvent): TailM
   if (
     event.type === 'planner_text' &&
     last?.type === 'planner_text' &&
+    !(event.role === 'implementer' && event.messageStart === true) &&
     (last.role ?? 'planner') === (event.role ?? 'planner') &&
     (last.content ?? 'plain') === (event.content ?? 'plain')
   ) {

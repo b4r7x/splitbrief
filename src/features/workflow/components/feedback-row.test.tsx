@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { Text } from 'ink';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
@@ -10,6 +11,7 @@ import { openApprovalPrompt } from '../../../stores/approval-prompt/prompt.js';
 import { REVIEW_HINT } from '../review-commands.js';
 import { KEY_LEGEND_LEADING } from '../../../core/key-legend.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
+import { formatCopyResult } from '../../../core/runtime/commands/types.js';
 import { FeedbackRow, RUNNING_LEGEND } from './feedback-row.js';
 
 describe('FeedbackRow', () => {
@@ -43,6 +45,17 @@ describe('FeedbackRow', () => {
 
     ui.unmount();
   });
+
+  it.each(['native', 'tmux-buffer', 'osc52'] as const)(
+    'shows the %s copy receipt beside a gate',
+    (outcome) => {
+      controlsStore.setInputMode('review');
+      feedbackStore.setMessage(formatCopyResult(outcome));
+      const ui = renderFeature(<FeedbackRow inputHint={REVIEW_HINT} />);
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(formatCopyResult(outcome));
+      ui.unmount();
+    },
+  );
 
   it('says nothing while a tiered approval is pending', () => {
     void openApprovalPrompt({
@@ -201,6 +214,31 @@ describe('FeedbackRow', () => {
     expect(frame).toContain('y approve');
     expect(frame).not.toContain('Failed to open editor');
 
+    ui.unmount();
+  });
+
+  // The sheet under the row is the panel that owns the footer, so a row with nothing to say must
+  // not leave its reserved blank line behind.
+  it('drops its empty slot when a panel under it owns the footer', () => {
+    const ui = renderFeature(
+      <>
+        <Text>above</Text>
+        <FeedbackRow collapseWhenEmpty />
+        <Text>below</Text>
+      </>,
+    );
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+
+    expect(lines).toEqual(['above', 'below']);
+    ui.unmount();
+  });
+
+  it('keeps the row when a message resolves above a panel that owns the footer', () => {
+    feedbackStore.setMessage('Message queued for the next planner turn.');
+    const ui = renderFeature(<FeedbackRow collapseWhenEmpty />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('Message queued for the next planner turn.');
     ui.unmount();
   });
 });

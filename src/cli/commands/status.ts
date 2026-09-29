@@ -8,9 +8,40 @@ import {
 } from '../../core/state/selectors.js';
 import { canonicalizeProjectDir } from '../setup.js';
 import { readActive } from '../../core/sessions/active-pointer.js';
-import { getProviderDisplayName } from '../../core/providers/catalog.js';
+import {
+  getProviderDisplayName,
+  getRunnerIdentityDisplayName,
+} from '../../core/providers/catalog.js';
+import type { RunnerKind } from '../../core/schemas/enums.js';
+import type { CallUsageEvidence } from '../../core/schemas/usage-evidence.js';
+import { resolveCallUsageEvidence } from '../../engine/orchestrator/summary/call-evidence.js';
 import { formatModelName } from '../../core/model-display.js';
 import { stripTerminalControls } from '../../utils/display-text.js';
+
+/**
+ * The kind the displayed seat's own calls recorded for its tool name, when they
+ * recorded exactly one. A seat whose calls recorded both an API and a CLI kind
+ * for the same name is ambiguous and keeps the literal name; a seat with no
+ * record at all is missing legacy evidence and resolves through the merged
+ * catalog as before.
+ */
+function recordedRunnerKind(
+  evidence: readonly CallUsageEvidence[] | undefined,
+  role: 'planner' | 'implementer',
+  tool: string,
+): RunnerKind | 'ambiguous' | undefined {
+  if (evidence === undefined) return undefined;
+  const kinds = new Set<RunnerKind>();
+  for (const call of evidence) {
+    if (call.role !== role) continue;
+    const runner = call.invocationIdentity?.runner;
+    const id = runner?.id ?? call.runnerName;
+    if (id !== tool) continue;
+    kinds.add(runner?.kind ?? call.backendKind);
+  }
+  if (kinds.size === 0) return undefined;
+  return kinds.size === 1 ? [...kinds][0] : 'ambiguous';
+}
 
 export function registerStatusCommand(program: Command): void {
   program
@@ -26,6 +57,18 @@ export function registerStatusCommand(program: Command): void {
       if (!state) {
         console.log('No active workflow.');
       } else {
+        // The displayed seat's own calls name its kind, so an API provider that
+        // shares a name with a CLI tool is not reported as that CLI, and a seat
+        // whose own record is ambiguous stays literal instead of guessing.
+        const evidence =
+          sessionId === null ? undefined : resolveCallUsageEvidence({ projectDir, sessionId });
+        const seatLabel = (role: 'planner' | 'implementer', tool: string): string => {
+          const recorded = recordedRunnerKind(evidence, role, tool);
+          if (recorded === 'ambiguous') return tool;
+          return recorded === undefined
+            ? getProviderDisplayName(tool)
+            : getRunnerIdentityDisplayName(recorded, tool);
+        };
         console.log(
           `${ansis.dim('Feature:')}  ${ansis.bold(stripTerminalControls(state.feature))}`,
         );
@@ -43,7 +86,7 @@ export function registerStatusCommand(program: Command): void {
             ? ` (${stripTerminalControls(formatModelName(state.plannerModel))})`
             : '';
           console.log(
-            `${ansis.dim('Planner:')}  ${stripTerminalControls(getProviderDisplayName(state.plannerTool))}${model}`,
+            `${ansis.dim('Planner:')}  ${stripTerminalControls(seatLabel('planner', state.plannerTool))}${model}`,
           );
         }
         if (state.implementerTool) {
@@ -51,7 +94,7 @@ export function registerStatusCommand(program: Command): void {
             ? ` (${stripTerminalControls(formatModelName(state.implementerModel))})`
             : '';
           console.log(
-            `${ansis.dim('Impl:')}     ${stripTerminalControls(getProviderDisplayName(state.implementerTool))}${model}`,
+            `${ansis.dim('Impl:')}     ${stripTerminalControls(seatLabel('implementer', state.implementerTool))}${model}`,
           );
         }
 

@@ -99,4 +99,22 @@ describe('runnerAuthDisplayName', () => {
     }).implementer;
     expect(runnerAuthDisplayName(implementer)).toBe('OpenAI Codex CLI');
   });
+
+  it('keeps a custom API provider literal even when it reuses a CLI tool id', () => {
+    const implementer = makeConfig({
+      implementer: {
+        kind: 'api',
+        provider: 'opencode',
+        service: 'opencode',
+        offering: 'payg',
+        apiBase: 'https://my-endpoint.example/v1',
+        apiKey: 'sk-inline',
+      },
+    }).implementer;
+
+    expect(runnerAuthDisplayName(implementer)).toBe('opencode');
+    expect(runnerLoginInstruction(implementer)).toBe(
+      'Provide a valid opencode API key, then retry.',
+    );
+  });
 });

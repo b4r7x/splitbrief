@@ -48,7 +48,13 @@ function outcomeSegments(view: SummaryView): string[] {
   const kind = view.outcome.kind;
   if (kind !== 'ended') return settledSegments(view, kind);
   if (view.briefs.total === 0) {
-    return [ENDED_LEAD, stageWord(view), 'no briefs compiled', 'nothing built'];
+    const earlierWork = view.briefs.earlierRows.length > 0 || (view.files.changed?.length ?? 0) > 0;
+    return [
+      ENDED_LEAD,
+      stageWord(view),
+      earlierWork ? 'no current briefs' : 'no briefs compiled',
+      haltedDisposition(view),
+    ];
   }
   const stoppedId = view.files.stoppedAt?.taskId ?? null;
   return [
@@ -87,10 +93,18 @@ function stageWord(view: SummaryView): string {
 }
 
 function haltedDisposition(view: SummaryView): string {
-  if (view.files.changed === null) return 'files not recorded';
+  if (view.files.changed === null)
+    return stoppedBeforeBuild(view) && view.briefs.earlierRows.length === 0
+      ? 'nothing built'
+      : 'files not recorded';
   if (view.files.partial.size > 0) return 'partial changes kept';
   if (view.files.changed.length > 0) return 'changes kept';
   return 'nothing built';
+}
+
+/** The rail froze before Build, so no brief started: a run with no changed set built nothing. */
+function stoppedBeforeBuild(view: SummaryView): boolean {
+  return view.rail.find((state) => state.stage === 'build')?.status === 'pending';
 }
 
 function filesFact(view: SummaryView): string {

@@ -61,6 +61,68 @@ describe('inputHistoryStore', () => {
     expect(homeEntries()).toEqual(['first', 'second']);
   });
 
+  it('strips ANSI escapes and raw controls from hydrated strings but keeps tabs, newlines and Unicode', () => {
+    inputHistoryStore.hydrate([
+      '\u001b[31mred\u001b[0m\u0007\u007f plain',
+      'tabs\tnewlines\nand ünïcødé 🚀',
+    ]);
+    expect(homeEntries()).toEqual(['red plain', 'tabs\tnewlines\nand ünïcødé 🚀']);
+  });
+
+  it('drops hydrated entries whose text is only controls', () => {
+    inputHistoryStore.hydrate(['\u001b[2J\u0000\u007f']);
+    expect(homeEntries()).toEqual([]);
+  });
+
+  it('sanitizes document text parts before deduplication and preserves image metadata and ordering', () => {
+    const attachment = {
+      id: 'img-1',
+      kind: 'image' as const,
+      path: '/tmp/shot.png',
+      mimeType: 'image/png',
+      sizeBytes: 4,
+    };
+    const withImage: DraftDocument = {
+      version: 1,
+      parts: [
+        { kind: 'text', text: '\u001b[2Jbefore\u0000' },
+        { kind: 'image', attachment },
+        { kind: 'text', text: '\u007f\nünicode\tkept' },
+      ],
+    };
+
+    inputHistoryStore.hydrate(['\u001b[1mdirty\u001b[0m\u0007', 'dirty', withImage]);
+
+    expect(getInputHistoryDocuments(inputHistoryStore.get(), { currentScreen: 'home' })).toEqual([
+      createDraftDocument('dirty'),
+      {
+        version: 1,
+        parts: [
+          { kind: 'text', text: 'before' },
+          { kind: 'image', attachment },
+          { kind: 'text', text: '\nünicode\tkept' },
+        ],
+      },
+    ]);
+  });
+
+  it('sanitizes entries on hydrate then retrieval for home and workflow screens', () => {
+    const dirty: DraftDocument = {
+      version: 1,
+      parts: [{ kind: 'text', text: 'recall \u001b[31mred\u001b[0m\u0007' }],
+    };
+
+    inputHistoryStore.hydrate([dirty]);
+    const state = inputHistoryStore.get();
+
+    expect(getInputHistoryDocuments(state, { currentScreen: 'home' })).toEqual([
+      createDraftDocument('recall red'),
+    ]);
+    expect(getInputHistoryDocuments(state, { currentScreen: 'workflow' })).toEqual([
+      createDraftDocument('recall red'),
+    ]);
+  });
+
   it('caps hydrated entries at the maximum', () => {
     const lines = Array.from({ length: MAX_INPUT_HISTORY + 3 }, (_, i) => `item-${i}`);
     inputHistoryStore.hydrate(lines);

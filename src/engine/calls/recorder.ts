@@ -54,6 +54,8 @@ type RunnerCallUnknownUpstreamMetadata = Extract<
   { type: 'call_unknown_upstream' }
 >['backendMetadata'];
 
+const RUNNER_CALL_HEARTBEAT_INTERVAL_MS = 1_000;
+
 export interface RunnerCallRecorder {
   readonly context: RunnerCallContext;
   readonly startedAt: number;
@@ -96,6 +98,7 @@ export interface RunnerCallRecorder {
   }) => void;
   stalled: (opts: { silentMs: number; ts?: number | undefined }) => void;
   stallCleared: (opts?: { ts?: number | undefined }) => void;
+  heartbeat: (opts?: { ts?: number | undefined }) => void;
   finishCompleted: (opts?: {
     usage?: RunnerCallUsage | null | undefined;
     nativeSessionId?: string | null | undefined;
@@ -133,6 +136,7 @@ export function createRunnerCallRecorder(opts: {
   let stderrPreview = '';
   let stderrWarningEmitted = false;
   let lastNativeSessionId: string | null = null;
+  let lastHeartbeatTs: number | null = null;
   const emittedLimitWarnings = new Set<string>();
   let textLimiter = createTextLimiter();
   const stderrLimiter = createRunnerCallDeltaLimiter({
@@ -572,6 +576,17 @@ export function createRunnerCallRecorder(opts: {
         ts: eventOpts?.ts ?? Date.now(),
         ...context,
       }),
+    // Only the feed needs a heartbeat; the result has nothing to keep from one. Claude Code sends
+    // its bookkeeping frames in bursts, and the freshness clock counts whole seconds, so one
+    // heartbeat a second tells the feed all that a burst can.
+    heartbeat: (eventOpts) => {
+      const ts = eventOpts?.ts ?? Date.now();
+      if (lastHeartbeatTs !== null && ts - lastHeartbeatTs < RUNNER_CALL_HEARTBEAT_INTERVAL_MS) {
+        return;
+      }
+      lastHeartbeatTs = ts;
+      emit({ type: 'call_heartbeat', ts, ...context }, false);
+    },
     finishCompleted,
     finishFailed,
     finishIncomplete,

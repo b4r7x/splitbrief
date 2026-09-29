@@ -301,7 +301,7 @@ export const gates: readonly Gate[] = [
     id: '50',
     description: 'No resumable-phase or summary-screen vocabulary (every open run is continuable)',
     command:
-      '{ rg -n "isResumable|resumeVerdict|SummaryPayload|loadSummaryContext|RESUMABLE_PHASES" src || true; } | wc -l',
+      '{ rg -n "\\b(isResumable|resumeVerdict|SummaryPayload|loadSummaryContext|RESUMABLE_PHASES)\\b" src || true; } | wc -l',
     expected: 0,
   },
   {

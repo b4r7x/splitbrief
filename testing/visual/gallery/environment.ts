@@ -8,8 +8,12 @@ import {
   type TerminalProfile,
 } from '../contracts/manifest-fields.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
+import { VISUAL_FIXTURE_EPOCH } from '../fixtures/common.js';
 
-const FIXED_CLOCK = '2026-01-01T00:00:00.000Z';
+// Forty-two seconds into the fixture runs: the header and the byline clocks read as a run under way,
+// and no seat has stalled, so a freshness line reads `last event …` rather than the watchdog's
+// silence warning. A capture clock before the runs it paints clamps every clock to 0:00.
+export const FIXED_CLOCK = new Date(VISUAL_FIXTURE_EPOCH + 42_000).toISOString();
 const RANDOM_SEED = 'splitbrief-visual-v1';
 const TERMINAL_PROFILES = TerminalProfileSchema.options;
 

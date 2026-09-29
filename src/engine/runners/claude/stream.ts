@@ -288,6 +288,8 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
       }
     }
 
+    if (parsed.isHeartbeat) state.recorder.heartbeat();
+
     if (parsed.isResult) {
       state.sawResult = true;
       if (parsed.text) {

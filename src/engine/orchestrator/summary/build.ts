@@ -3,10 +3,10 @@ import type { Summary } from '../../../core/schemas/summary.js';
 import type { CallUsageEvidence } from '../../../core/schemas/usage-evidence.js';
 import type { WorkflowMode } from '../../../core/schemas/enums.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { isTaskCompleted } from '../../../core/schemas/task.js';
 import { readSpecFileOrEmpty } from '../../../core/paths-io.js';
 import { REVIEW_FILE } from '../../../core/paths.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import { hashTaskBrief } from '../../brief-hash.js';
 import { parseFinalReview } from '../../parsers/final-review.js';
 import { calculateCostBreakdown } from '../../providers/cost/breakdown.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
@@ -42,7 +42,7 @@ export type SummaryBase = {
 };
 
 type BuildSummaryOptions = SummaryBase & {
-  state: BuildSummaryState & Pick<WorkflowState, 'phase' | 'currentTaskIndex'>;
+  state: BuildSummaryState & Pick<WorkflowState, 'phase' | 'currentTaskIndex' | 'mode'>;
   taskBreakdowns?: TaskTokenUsage[];
   phaseTimings?: Record<string, number>;
   /**
@@ -79,11 +79,18 @@ function readFileAttribution(
   if (ledger === null) return {};
   const changedFiles = [...new Set(ledger.tasks.flatMap((task) => task.changedFiles))].sort();
   const current = state.phase === 'complete' ? undefined : state.tasks[state.currentTaskIndex];
-  if (current === undefined || isTaskCompleted(current.status)) return { changedFiles };
+  if (current?.status !== 'in_progress') return { changedFiles };
   const booked = ledger.tasks.find((task) => task.id === current.id);
+  const currentPlanHash = hashTaskBrief(state.tasks);
+  const sameBrief =
+    booked !== undefined &&
+    booked.status === 'in_progress' &&
+    (booked.briefHash != null
+      ? booked.briefHash === currentPlanHash
+      : booked.title === current.title && booked.file === current.file);
   return {
     changedFiles,
-    stoppedAt: { taskId: current.id, partialFiles: booked?.changedFiles ?? [] },
+    stoppedAt: { taskId: current.id, partialFiles: sameBrief && booked ? booked.changedFiles : [] },
   };
 }
 
@@ -106,6 +113,8 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     pricingCache,
     callEvidence,
   } = opts;
+  // The mode the run saved wins, as planning resolves it; the base names the config's.
+  const runMode = state.mode ?? mode;
   const totalTasks = state.tasks.length;
   const completionCounts = countLocalAndEscalatedTasks(state, taskBreakdowns);
   const completedByLocal = completionCounts.local;
@@ -206,7 +215,7 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     ...(reviewerTool !== undefined && { reviewerTool }),
     ...(reviewerModel !== undefined && { reviewerModel }),
     phaseTimings,
-    ...(mode !== undefined && { mode }),
+    ...(runMode !== undefined && { mode: runMode }),
     ...(evidenceSummary && { evidenceSummary }),
     ...(briefQuality && { briefQuality }),
     ...(driftSummary && { driftSummary }),

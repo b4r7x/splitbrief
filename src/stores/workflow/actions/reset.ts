@@ -5,6 +5,7 @@ import { tasksStore } from '../tasks.js';
 import { tokensStore } from '../tokens.js';
 import { lifecycleStore } from '../lifecycle.js';
 import { operationsStore } from '../operations/state.js';
+import { modeAdviceStore } from '../mode-advice.js';
 import { recoveryNoticeStore } from '../recovery-notice.js';
 import { streamingOutputStore } from '../streaming-output.js';
 import { clearSectionsCache } from './sections.js';
@@ -21,6 +22,7 @@ export function resetWorkflow(): void {
   tokensStore.reset();
   lifecycleStore.reset();
   operationsStore.reset();
+  modeAdviceStore.reset();
   recoveryNoticeStore.reset();
   streamingOutputStore.reset();
   clearSectionsCache();

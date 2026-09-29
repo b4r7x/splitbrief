@@ -28,6 +28,7 @@ describe('makeImplementerRetryInvoker', () => {
     const invoker = makeImplementerRetryInvoker({
       context: defaultContext,
       kind: 'hint',
+      sessionId: 'sess-retry',
       languageContext,
       phase: 'implementing',
       onOutput: () => {},
@@ -64,6 +65,7 @@ describe('makeImplementerRetryInvoker', () => {
       error: 'boom',
       attempt: 3,
       kind: 'hint',
+      sessionId: 'sess-retry',
       phase: 'implementing',
       signal,
       sandboxEnv: { FOO: 'bar' },
@@ -79,6 +81,7 @@ describe('makeImplementerRetryInvoker', () => {
     const invoker = makeImplementerRetryInvoker({
       context: defaultContext,
       kind: 'local',
+      sessionId: 'sess-retry',
       languageContext: buildLanguageContext('typescript'),
       phase: 'implementing',
       onOutput: () => {},
@@ -105,6 +108,7 @@ describe('makeImplementerRetryInvoker', () => {
     const invoker = makeImplementerRetryInvoker({
       context: defaultContext,
       kind: 'local',
+      sessionId: 'sess-retry',
       languageContext: buildLanguageContext('typescript'),
       phase: 'implementing',
       onOutput: () => {},

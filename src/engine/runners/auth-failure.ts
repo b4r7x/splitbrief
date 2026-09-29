@@ -4,7 +4,7 @@ import {
   type RunnerConfig,
 } from '../../core/config/accessors/runner-config.js';
 import { HALT_SIGNATURES } from '../../core/pipeline-spec/halts.js';
-import { getProviderDisplayName } from '../../core/providers/catalog.js';
+import { getRunnerIdentityDisplayName } from '../../core/providers/catalog.js';
 import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool-catalog.js';
 
 /**
@@ -20,7 +20,7 @@ export function isAuthFailureDiagnostic(message: string): boolean {
 /** How the runner is named in signed-out messages: catalog names, not config ids. */
 export function runnerAuthDisplayName(runner: DeepReadonly<RunnerConfig>): string {
   if (runner.kind === 'cli') return CLI_TOOL_CATALOG[runner.tool].displayName;
-  if (runner.kind === 'api') return getProviderDisplayName(runner.provider);
+  if (runner.kind === 'api') return getRunnerIdentityDisplayName('api', runner.provider);
   return getRunnerDisplayName(runner);
 }
 
@@ -42,7 +42,7 @@ export function runnerLoginInstruction(runner: DeepReadonly<RunnerConfig>): stri
     }
   }
   if (runner.kind === 'api') {
-    return `Provide a valid ${getProviderDisplayName(runner.provider)} API key, then retry.`;
+    return `Provide a valid ${getRunnerIdentityDisplayName('api', runner.provider)} API key, then retry.`;
   }
   return `Re-authenticate the ${runnerAuthDisplayName(runner)} runner, then retry.`;
 }

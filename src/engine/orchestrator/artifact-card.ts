@@ -1,22 +1,21 @@
 import { join } from 'node:path';
 import type { Phase } from '../../core/schemas/enums.js';
-import { sessionDir } from '../../core/paths.js';
+import { sessionDir, TASKS_FILE } from '../../core/paths.js';
 import {
   getTerminalCellWidth,
   iterateTerminalGraphemes,
   truncateTerminalDisplayText,
 } from '../../utils/display-text.js';
 import type { EventBus } from '../events/types.js';
+import { parseTaskSourceBlocks } from '../spec/tasks/parse.js';
 
 const EXCERPT_MAX_ROWS = 10;
 const EXCERPT_MAX_LINE_CELLS = 200;
 const OUTLINE_TITLE_MAX_CELLS = 44;
-const BRIEF_HEADER_MAX_LINES = 12;
 const INDENT = '  ';
 const FRONTMATTER_BLOCK = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
 const FENCE_LINE = /^ {0,3}(?:`{3,}|~{3,})/;
 const HEADING_LINE = /^(#{1,6})\s+(\S.*?)(?:\s+#+)?\s*$/;
-const YAML_FIELD = /^([A-Za-z_]+):[ \t]*(.*)$/;
 const NARRATION_OPENER = /^(?:I['’](?:ll|m|ve|d)\b|I \b|I(?:'|’)|Let(?:'|’)?s? me\b|Let me\b)/;
 const CODE_SPAN = /(`+)[^`]*?\1/g;
 const STRONG_STAR = /\*\*(?=\S)(.*?\S)\*\*/g;
@@ -56,7 +55,8 @@ interface Outline {
  *
  * 1. the document from its first real content, when the rest fits — nothing is selected, so
  *    nothing can be selected wrong;
- * 2. its outline — Task Brief ids and titles, else its sections with their sizes;
+ * 2. its outline — the Task Brief ids and titles the parser reads from a `tasks.md`, else its
+ *    sections with their sizes;
  * 3. a slice from the same starting point, which is the fallback when neither outline exists.
  *
  * Every row is a display string, not a file byte: block heading markers and paired inline
@@ -72,7 +72,7 @@ export function buildArtifactExcerpt(text: string, filename: string): ArtifactEx
   const start = sliceStart(structure, filename);
   if (lineCount - start <= EXCERPT_MAX_ROWS) return slice(lines, structure, start, filename);
 
-  const outline = outlineOf(structure, lines, filename);
+  const outline = outlineOf({ text, structure, lines, filename });
   if (outline !== null) return outline;
   return slice(lines, structure, start, filename);
 }
@@ -156,11 +156,17 @@ function displayLine(line: string, fenced: boolean): string {
   return clip(stripEmphasis(heading === null ? trimmed : (heading[2] ?? '')));
 }
 
-function outlineOf(
-  structure: readonly string[],
-  lines: readonly string[],
-  filename: string,
-): ArtifactExcerpt | null {
+function outlineOf(input: {
+  text: string;
+  structure: readonly string[];
+  lines: readonly string[];
+  filename: string;
+}): ArtifactExcerpt | null {
+  const { text, structure, lines, filename } = input;
+  if (filename === TASKS_FILE) {
+    const briefs = briefOutline(text);
+    if (briefs.total > 0) return outlineExcerpt(lines.length, briefs, 'task');
+  }
   const outline = outlineIn(structure, lines.length, filename);
   if (outline !== null) return outline;
   // A fence holding most of the document is the planner wrapping its whole reply, not a sample
@@ -174,8 +180,6 @@ function outlineIn(
   lineCount: number,
   filename: string,
 ): ArtifactExcerpt | null {
-  const briefs = briefOutline(structure);
-  if (briefs.total > 0) return outlineExcerpt(lineCount, briefs, 'task');
   const sections = sectionOutline(structure, filename);
   return sections.total > 0 ? outlineExcerpt(lineCount, sections, 'section') : null;
 }
@@ -189,30 +193,27 @@ function outlineExcerpt(lineCount: number, outline: Outline, unit: ExcerptUnit):
   };
 }
 
-/** `id` and `title` of every Task Brief block, which is what a `tasks.md` is a list of. */
-function briefOutline(structure: readonly string[]): Outline {
-  const briefs: { id: string; title: string }[] = [];
-  for (let index = 0; index < structure.length; index++) {
-    if (structure[index]?.trim() !== '---') continue;
-    const end = Math.min(index + 1 + BRIEF_HEADER_MAX_LINES, structure.length);
-    let id = '';
-    let title = '';
-    let close = index + 1;
-    for (; close < end && structure[close]?.trim() !== '---'; close++) {
-      const field = YAML_FIELD.exec(structure[close] ?? '');
-      if (field?.[1] === 'id') id = unquote(field[2] ?? '');
-      else if (field?.[1] === 'title') title = unquote(field[2] ?? '');
-    }
-    if (close >= end || id === '' || title === '') continue;
-    briefs.push({ id, title: stripEmphasis(title) });
-    index = close;
-  }
+/**
+ * `id` and `title` of every Task Brief the parser reads, which is the list the run executes. The
+ * card keeps no brief grammar of its own: its own reader disagreed with the parser wherever the two
+ * rules differed — a code fence one brief never closed, a separator glued to the line before it,
+ * CRLF line endings, a title YAML writes as a block scalar.
+ */
+function briefOutline(text: string): Outline {
+  const briefs = parseTaskSourceBlocks(text);
   const shown = briefs.slice(0, EXCERPT_MAX_ROWS);
   const idWidth = columnWidth(shown.map((brief) => brief.id));
   return {
-    rows: shown.map((brief) => clip(`${pad(brief.id, idWidth)}${INDENT}${brief.title}`)),
+    rows: shown.map((brief) =>
+      clip(`${pad(brief.id, idWidth)}${INDENT}${briefTitle(brief.title)}`),
+    ),
     total: briefs.length,
   };
+}
+
+/** A block scalar keeps the title's line breaks, and a card row has none to keep. */
+function briefTitle(title: string): string {
+  return stripEmphasis(title.replace(/\s+/g, ' ').trim());
 }
 
 /**
@@ -247,9 +248,19 @@ function sectionOutline(structure: readonly string[], filename: string): Outline
         `${pad(labels[index] ?? '', labelWidth)}${INDENT}${padStart(sizes[index] ?? '', sizeWidth)}`,
     ),
     // Every section the outline does not carry is omitted, including the deeper levels it chose
-    // not to nest — a complete top level is not a complete list of the document's sections.
-    total: headings.length,
+    // not to nest — a complete top level is not a complete list of the document's sections. The
+    // title is not one of them: it names the document rather than dividing it.
+    total: headings.length - (isTitled(headings) ? 1 : 0),
   };
+}
+
+/**
+ * A document is titled when its H1 stands above every other heading, as `# Spec: …` does over
+ * its `##` sections. A lone H2 above H3 children is still a section the card has not shown.
+ */
+function isTitled(headings: readonly Heading[]): boolean {
+  const [first, ...rest] = headings;
+  return first?.depth === 1 && rest.every((entry) => entry.depth > first.depth);
 }
 
 function documentHeadings(structure: readonly string[], filename: string): Heading[] {
@@ -316,8 +327,8 @@ function sliceStart(structure: readonly string[], filename: string): number {
 }
 
 /**
- * The document with fenced regions blanked out, so samples inside them read as neither headings
- * nor Task Brief delimiters. Indices stay aligned with the source lines.
+ * The document with fenced regions blanked out, so samples inside them never read as headings.
+ * Indices stay aligned with the source lines.
  */
 function structuralLines(lines: readonly string[]): string[] {
   const structure: string[] = [];
@@ -359,14 +370,6 @@ function stripEmphasisRun(text: string): string {
     .replace(STRONG_UNDERSCORE, '$1$2')
     .replace(EM_STAR, '$1')
     .replace(EM_UNDERSCORE, '$1$2');
-}
-
-function unquote(value: string): string {
-  const quote = value[0];
-  if ((quote === '"' || quote === "'") && value.length > 1 && value.endsWith(quote)) {
-    return value.slice(1, -1);
-  }
-  return value;
 }
 
 function columnWidth(values: readonly string[]): number {

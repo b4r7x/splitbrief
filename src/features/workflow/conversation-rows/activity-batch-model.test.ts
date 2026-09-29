@@ -265,3 +265,51 @@ describe('activity batch tone resolution', () => {
     expect(colorForTone(toneToConversationTone('info'), theme)).toBe(theme.info);
   });
 });
+
+describe('activity batch runner identity', () => {
+  it('keeps a custom API call literal even when its name is a CLI tool id', () => {
+    const model = buildActivityBatchViewModel({
+      batchKey: 'batch-1',
+      events: [activity({ backendKind: 'api', runnerName: 'opencode', model: 'gpt-5' })],
+    });
+
+    expect(model.headerRunner).toBe('opencode · gpt-5');
+  });
+
+  it('names a CLI call by its catalog display name', () => {
+    const model = buildActivityBatchViewModel({
+      batchKey: 'batch-1',
+      events: [activity({ backendKind: 'cli', runnerName: 'opencode', model: 'gpt-5' })],
+    });
+
+    expect(model.headerRunner).toBe('OpenCode CLI · gpt-5');
+  });
+
+  it('names a CLI call recorded by its command through the tool it starts', () => {
+    const model = buildActivityBatchViewModel({
+      batchKey: 'batch-1',
+      events: [activity({ backendKind: 'cli', runnerName: 'claude', model: 'sonnet' })],
+    });
+
+    expect(model.headerRunner).toBe('Claude Code CLI · Sonnet 5');
+  });
+
+  it('keeps an API call literal when its model name is a CLI alias', () => {
+    const model = buildActivityBatchViewModel({
+      batchKey: 'batch-1',
+      events: [activity({ backendKind: 'api', runnerName: 'claude-code', model: 'sonnet' })],
+    });
+
+    // The API twin named after the CLI tool must not borrow the CLI alias's display name.
+    expect(model.headerRunner).toBe('claude-code · sonnet');
+  });
+
+  it('keeps a shell call literal even when it reuses a CLI tool id', () => {
+    const model = buildActivityBatchViewModel({
+      batchKey: 'batch-1',
+      events: [activity({ backendKind: 'shell', runnerName: 'opencode', model: 'gpt-5' })],
+    });
+
+    expect(model.headerRunner).toBe('opencode · gpt-5');
+  });
+});

@@ -269,6 +269,7 @@ export async function runOwnedPlanningPhase(dirs: string[], opts: OwnedRunOpts =
     metadata: TEST_METADATA,
     bus: recorder.bus,
     sinks,
+    ...(opts.plannerContext !== undefined && { plannerContext: opts.plannerContext }),
   });
   const planning = await runPlanningPhases({
     wctx,

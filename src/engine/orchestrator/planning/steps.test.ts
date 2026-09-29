@@ -196,8 +196,35 @@ describe('runPlanningSteps — one call per step', () => {
     await runSteps({ mode: 'standard', planner, project });
 
     expect(seenPhases).toEqual(['researching', 'specifying', 'planning', 'planning']);
-    expect(loadState(project)?.phase).toBe('reviewing-plan');
+    expect(loadState(project)?.phase).toBe('planning');
   });
+
+  // Compiled briefs wait at the plan gate only in a run whose steps open it.
+  it.each([
+    ['quick', 'none', 'planning'],
+    ['quick', 'all', 'planning'],
+    ['standard', 'none', 'planning'],
+    ['standard', 'spec', 'planning'],
+    ['standard', 'plan', 'reviewing-plan'],
+  ] as const)(
+    'keeps the briefs of a %s run with approve %s in %s',
+    async (mode, approveLevel, phase) => {
+      const project = setupProject(mode);
+      const { planner } = recordingPlanner();
+
+      const { events } = await runSteps({ mode, planner, project, approveLevel });
+
+      expect(loadState(project)?.phase).toBe(phase);
+      expect(loadState(project)?.tasks.map((task) => task.id)).toEqual(['T001']);
+      const announced = events.flatMap((event) =>
+        event.type === 'planner_status' && event.call === undefined ? [event.phase] : [],
+      );
+      // A running status with no call announces a phase: only the plan gate is one to announce.
+      expect(announced.filter((announcedPhase) => announcedPhase !== 'reviewing-spec')).toEqual(
+        phase === 'reviewing-plan' ? ['reviewing-plan'] : [],
+      );
+    },
+  );
 
   it('speckit adds clarify, constitution and analyze around the documents', async () => {
     const project = setupProject('speckit');
@@ -615,12 +642,20 @@ describe('runPlanningSteps — research ingress', () => {
 Some architecture.`;
     const { planner } = recordingPlanner({ texts: { research } });
 
-    const { projectDir, sessionId } = await runSteps({ mode: 'standard', planner });
+    const { projectDir, sessionId, events } = await runSteps({ mode: 'standard', planner });
 
     const persisted = loadState({ projectDir, sessionId });
     expect(persisted?.discoveredValidation?.typecheckCommand).toBe('npx tsc --noEmit');
     expect(persisted?.discoveredValidation?.lintCommand).toBe('npx biome check');
     expect(persisted?.discoveredValidation?.testCommand).toBeUndefined();
+    // The refusal is a run event, so the transcript shows it and session.jsonl keeps it.
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'warning',
+        phase: 'researching',
+        message: expect.stringMatching(/^The test stage .*\.\/scripts\/evil from the planner/),
+      }),
+    );
   });
 
   it('books the token usage of every call it made', async () => {

@@ -1,4 +1,4 @@
-import { plannerStepsFor } from '../pipeline-spec/steps.js';
+import { opensPlanGate, plannerStepsFor } from '../pipeline-spec/steps.js';
 import type { Phase } from '../schemas/enums.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
 import type { GateName, PlannerCall, StepRef } from '../schemas/run-step.js';
@@ -66,6 +66,21 @@ const PHASE_GATE: Partial<Record<Phase, GateName>> = {
 };
 
 /**
+ * The gate a saved phase waits at. The briefs of a run whose steps open no plan gate once waited in
+ * `reviewing-plan` too, so a state that records such a run there is at its briefs call. A state that
+ * records neither its mode nor its approve level stays at the gate it names.
+ */
+function parkedGate(state: WorkflowState): GateName | undefined {
+  if (state.phase === 'reviewing-plan' && recordsNoPlanGate(state)) return undefined;
+  return PHASE_GATE[state.phase];
+}
+
+function recordsNoPlanGate(state: WorkflowState): boolean {
+  if (state.mode === 'quick') return true;
+  return state.approve !== undefined && !opensPlanGate(state.mode ?? 'standard', state.approve);
+}
+
+/**
  * Where a run picks up. First match wins: the gate it is parked at, the brief it
  * was building, the review it reached, else the first planner artifact its mode
  * has not written yet.
@@ -74,7 +89,7 @@ export function resumeStep(state: WorkflowState, artifacts: ArtifactPresence): S
   if (state.pendingPlannerConversation !== undefined) {
     return { kind: 'planner', call: state.pendingPlannerConversation.call };
   }
-  const gate = PHASE_GATE[state.phase];
+  const gate = parkedGate(state);
   if (gate !== undefined) return { kind: 'gate', gate };
 
   switch (state.phase) {
@@ -152,7 +167,7 @@ export function deriveRunStatus(
   }
   if (state.awaitingContinue) return open({ kind: 'paused', at: 'mid-step' });
 
-  const gate = PHASE_GATE[state.phase];
+  const gate = parkedGate(state);
   if (gate !== undefined) return open({ kind: 'waiting', gate });
   if (state.lastFailure !== undefined) {
     return open({ kind: 'failed', message: state.lastFailure.message });

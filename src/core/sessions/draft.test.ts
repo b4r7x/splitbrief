@@ -52,6 +52,32 @@ describe('session drafts', () => {
     expect(() => writeSessionDraft({ projectDir, sessionId: 'two' }, document)).toThrow();
   });
 
+  // A bare ⏎ on a reopened run sends the restored draft as its steer, so key bytes a late read
+  // turned into draft text must not survive the restore. Tabs and line breaks are text.
+  it('restores a draft without the control bytes an earlier build saved into it', () => {
+    const dir = sessionDir(projectDir, 'one');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, 'draft.json'),
+      JSON.stringify({
+        version: 1,
+        parts: [
+          { kind: 'text', text: '\u0003\u0003' },
+          { kind: 'text', text: 'fix\tthe\u0004 test\r\nnext line\u001a' },
+        ],
+      }),
+    );
+    expect(readSessionDraft({ projectDir, sessionId: 'one' })).toEqual({
+      version: 1,
+      parts: [{ kind: 'text', text: 'fix\tthe test\nnext line' }],
+    });
+    writeFileSync(
+      join(dir, 'draft.json'),
+      JSON.stringify({ version: 1, parts: [{ kind: 'text', text: '\u0003\u0003' }] }),
+    );
+    expect(readSessionDraft({ projectDir, sessionId: 'one' })).toEqual({ version: 1, parts: [] });
+  });
+
   it('rejects invalid persisted documents', () => {
     const dir = sessionDir(projectDir, 'one');
     mkdirSync(dir, { recursive: true });

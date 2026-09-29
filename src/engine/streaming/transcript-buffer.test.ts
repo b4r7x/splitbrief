@@ -121,13 +121,39 @@ describe('createTranscriptBuffer', () => {
     );
   });
 
-  it('flush() on an empty buffer is a no-op', () => {
+  it('flush() on an empty buffer is a no-op; an empty cut leaves a marker', () => {
     const buf = bufferFor();
 
     buf.flush();
+    expect(readEntries(tmp, SESSION_ID)).toEqual([]);
     buf.flushInterrupted();
 
-    const logPath = join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID, SESSION_LOG_FILE);
-    expect(existsSync(logPath)).toBe(false);
+    expect(readEntries(tmp, SESSION_ID)).toEqual([
+      expect.objectContaining({ text: '', interrupted: true }),
+    ]);
+  });
+
+  it('marks a cut after a 16 KB boundary without repeating the flushed text', () => {
+    const buf = bufferFor();
+    const text = 'x'.repeat(16 * 1024 + 1);
+    buf.append(text);
+    buf.flushInterrupted();
+
+    expect(readEntries(tmp, SESSION_ID)).toEqual([
+      expect.objectContaining({ text }),
+      expect.objectContaining({ text: '', interrupted: true }),
+    ]);
+  });
+
+  it('keeps exactly 16 KB in the interrupted record', () => {
+    const buf = bufferFor();
+    const text = 'x'.repeat(16 * 1024);
+    buf.append(text);
+    expect(readEntries(tmp, SESSION_ID)).toEqual([]);
+    buf.flushInterrupted();
+
+    expect(readEntries(tmp, SESSION_ID)).toEqual([
+      expect.objectContaining({ text, interrupted: true }),
+    ]);
   });
 });

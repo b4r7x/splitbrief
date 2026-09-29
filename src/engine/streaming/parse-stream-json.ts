@@ -9,13 +9,15 @@ import type {
 } from '../runners/types.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import { accumulateTokenUsage, BackendTokenUsageSchema, toTokenDelta } from '../calls/usage.js';
+import { formatUsageLimitReset } from '../runners/usage-limit.js';
+import { formatDuration } from '../../utils/format-time.js';
 import { isRecord, optionalString } from '../../utils/type-guards.js';
 import { parsedMalformedRecordWarning, parsedUnknownRecordWarning } from './parser-warnings.js';
 
 export interface StreamParseResult {
   text?: string | undefined;
   channel?: ParsedTextChannel | undefined;
-  /** `final` marks text that restates a block already streamed as deltas. */
+  /** `final` closes an assistant record; its text, when present, restates streamed deltas. */
   textSemantics?: ParsedTextSemantics | undefined;
   sessionId?: string | undefined;
   isResult?: boolean | undefined;
@@ -33,6 +35,8 @@ export interface StreamParseResult {
   isMessageStart?: boolean | undefined;
   /** `message_delta.delta.stop_reason`: why the open message ended. */
   stopReason?: string | undefined;
+  /** A frame that says nothing to the operator and only proves the CLI is still working. */
+  isHeartbeat?: boolean | undefined;
 }
 
 export const EMPTY_RESULT: StreamParseResult = Object.freeze({});
@@ -129,6 +133,14 @@ const SessionEvent = z.object({
   session_id: z.string(),
 });
 
+const ApiRetryEvent = z.object({
+  attempt: z.number(),
+  max_retries: z.number(),
+  retry_delay_ms: z.number(),
+  error_status: z.number().nullable(),
+  error: z.string(),
+});
+
 function firstString(...values: unknown[]): string | undefined {
   for (const value of values) {
     const candidate = optionalString(value, { trim: true, nonEmpty: true });
@@ -205,33 +217,186 @@ function parseStreamEvent(event: Record<string, unknown>): StreamParseResult | n
   return { sessionId };
 }
 
+/** `overloaded (HTTP 529): retry 2 of 10 in 4.0s`, from the fields Claude Code documents. */
+function apiRetryWarning(event: Record<string, unknown>): ParsedWarningInfo {
+  const retry = ApiRetryEvent.safeParse(event);
+  if (!retry.success) {
+    return {
+      code: 'claude_api_retry',
+      severity: 'warning',
+      message: 'retrying a failed API request',
+    };
+  }
+  const { attempt, max_retries, retry_delay_ms, error_status, error } = retry.data;
+  const status = error_status === null ? 'no HTTP response' : `HTTP ${error_status}`;
+  return {
+    code: 'claude_api_retry',
+    severity: 'warning',
+    message: `${error} (${status}): retry ${attempt} of ${max_retries} in ${formatDuration(retry_delay_ms)}`,
+  };
+}
+
+/**
+ * `claude-opus-5-5 → claude-opus-4-8 (refusal: cyber)`: the models and the cause Claude Code
+ * names, short enough that an 80-column row keeps both models. With no cause, its own notice
+ * gives the reason.
+ */
+function modelFallbackWarning(event: Record<string, unknown>): ParsedWarningInfo {
+  const from = firstString(event.original_model);
+  const to = firstString(event.fallback_model);
+  const cause = [firstString(event.trigger), firstString(event.api_refusal_category)]
+    .filter((part) => part !== undefined)
+    .join(': ');
+  const notice = firstString(event.content);
+  const models = from !== undefined && to !== undefined ? `${from} → ${to}` : 'switched model';
+  const reason = cause !== '' ? ` (${cause})` : notice === undefined ? '' : `: ${notice}`;
+  return { code: 'claude_fallback', severity: 'warning', message: `${models}${reason}` };
+}
+
+/** A refusal with no model to fall back to; Claude Code sends it with an empty notice. */
+function modelRefusalWarning(event: Record<string, unknown>): ParsedWarningInfo {
+  const model = firstString(event.original_model) ?? 'the model';
+  const category = firstString(event.api_refusal_category);
+  const head = category === undefined ? `${model} refused` : `${model} refused (${category})`;
+  const reason = firstString(event.api_refusal_explanation, event.content);
+  return {
+    code: 'claude_refusal',
+    severity: 'error',
+    message: `${head}: ${reason ?? 'no fallback model'}`,
+  };
+}
+
+function permissionDeniedWarning(event: Record<string, unknown>): ParsedWarningInfo {
+  const tool = firstString(event.tool_name) ?? 'a tool';
+  const decidedBy = firstString(event.decision_reason_type);
+  const head = decidedBy === undefined ? `${tool} denied` : `${tool} denied (${decidedBy})`;
+  const reason = firstString(event.decision_reason, event.message);
+  return {
+    code: 'claude_permission_denied',
+    severity: 'warning',
+    message: reason === undefined ? head : `${head}: ${reason}`,
+  };
+}
+
+function noticeWarning(
+  text: unknown,
+  severity: 'warning' | 'error' = 'warning',
+): ParsedWarningInfo | null {
+  const message = firstString(text);
+  return message === undefined ? null : { code: 'claude_notice', severity, message };
+}
+
+/**
+ * The `system` frames a headless operator needs: a request Claude Code retries, a model it
+ * swapped or that refused, a tool call it denied, a notification it colours as a warning or an
+ * error (in stream-json mode Claude Code sends its own terminal warnings this way, such as the
+ * effort cap), and an informational banner at `warning` level. The frame keeps the severity its
+ * activity row is coloured by: a refusal with no fallback and an error-coloured notification
+ * are errors, while a retry, a fallback, a denial and a `warning`-level banner stay warnings.
+ * A `notice` banner (hook feedback is one), like an `info` or `suggestion` banner and every
+ * other frame, is below the warning channel and is bookkeeping.
+ */
+function systemFrameWarning(
+  subtype: string | undefined,
+  event: Record<string, unknown>,
+): ParsedWarningInfo | null {
+  switch (subtype) {
+    case 'api_retry':
+      return apiRetryWarning(event);
+    case 'model_fallback':
+    case 'model_consent_fallback':
+    case 'model_refusal_fallback':
+      return modelFallbackWarning(event);
+    case 'model_refusal_no_fallback':
+      return modelRefusalWarning(event);
+    case 'permission_denied':
+      return permissionDeniedWarning(event);
+    case 'notification':
+      return event.color === 'warning' || event.color === 'error'
+        ? noticeWarning(event.text, event.color === 'error' ? 'error' : 'warning')
+        : null;
+    case 'informational':
+      return event.level === 'warning' ? noticeWarning(event.content, 'warning') : null;
+    default:
+      return null;
+  }
+}
+
+/**
+ * A `system` frame is never text. One the operator needs becomes a warning; the rest — init,
+ * hooks, status, thinking-token estimates, background tasks — are Claude Code's own bookkeeping,
+ * a heartbeat that keeps a thinking seat from reading as silent.
+ */
 function parseSystemProgress(event: Record<string, unknown>): StreamParseResult | null {
   const type = firstString(event.type);
   if (!type) return null;
   const sessionId = firstString(event.session_id);
   if (type === 'system') {
     const subtype = firstString(event.subtype);
-    return subtype
-      ? {
-          text: subtype,
-          channel: 'system',
-          sessionId,
-          ...(subtype === 'init' && { isSessionInit: true }),
-        }
-      : { sessionId };
-  }
-  if (type === 'api_error' || type === 'api_retry' || type === 'plugin_progress') {
+    const warning = systemFrameWarning(subtype, event);
     return {
-      text: type,
-      channel: 'system',
       sessionId,
-      warning:
-        type === 'api_error'
-          ? [{ code: 'claude_api_error', message: firstString(event.message) ?? type }]
-          : undefined,
+      ...(subtype === 'init' && { isSessionInit: true }),
+      ...(warning === null ? { isHeartbeat: true } : { warning: [warning] }),
     };
   }
+  if (type === 'api_error') {
+    return {
+      sessionId,
+      warning: [
+        {
+          code: 'claude_api_error',
+          severity: 'warning',
+          message: firstString(event.message) ?? type,
+        },
+      ],
+    };
+  }
+  if (type === 'api_retry' || type === 'plugin_progress') return { sessionId, isHeartbeat: true };
   return null;
+}
+
+/**
+ * A top-level `rate_limit_event`. `allowed` is the steady state, and `overageStatus` can stay
+ * `rejected` while `status` is `allowed`; only an approaching or rejected limit is news.
+ * Unknown and missing statuses stay telemetry, so the parser never invents a limit.
+ */
+function parseRateLimitEvent(event: Record<string, unknown>): StreamParseResult | null {
+  if (firstString(event.type) !== 'rate_limit_event') return null;
+  const sessionId = firstString(event.session_id);
+  const info = isRecord(event.rate_limit_info) ? event.rate_limit_info : null;
+  const status = info === null ? undefined : firstString(info.status);
+  if (info !== null && (status === 'allowed_warning' || status === 'rejected')) {
+    return { sessionId, warning: [rateLimitWarning(status, info)] };
+  }
+  return { sessionId, isHeartbeat: true };
+}
+
+/**
+ * `seven_day rate limit approaching (resets Nov 3, 2026, 4:30 PM)`: the limit type and its
+ * reset when the frame names them, and a shorter clause when it does not.
+ */
+function rateLimitWarning(
+  status: 'allowed_warning' | 'rejected',
+  info: Record<string, unknown>,
+): ParsedWarningInfo {
+  const type = firstString(info.rateLimitType);
+  const reached = status === 'rejected';
+  const reset = rateLimitResetLabel(info.resetsAt);
+  const state = reached ? 'reached' : 'approaching';
+  const head = type === undefined ? 'rate limit' : `${type} rate limit`;
+  return {
+    code: 'claude_rate_limit',
+    severity: reached ? 'error' : 'warning',
+    message: reset === undefined ? `${head} ${state}` : `${head} ${state} (resets ${reset})`,
+  };
+}
+
+/** `resetsAt` is epoch seconds; a value the runtime cannot read drops the reset clause. */
+function rateLimitResetLabel(value: unknown): string | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  const resetsAt = new Date(value * 1000);
+  return Number.isNaN(resetsAt.getTime()) ? undefined : formatUsageLimitReset(resetsAt);
 }
 
 export function parseStreamLine(line: string): StreamParseResult {
@@ -269,9 +434,9 @@ function parseLine(line: string, collectUsage?: CollectMessageUsage): StreamPars
       return {
         text: texts.length > 0 ? texts.join('') : undefined,
         channel: texts.length > 0 ? 'assistant' : undefined,
-        // A non-partial `assistant` record restates the whole block whose
-        // `text_delta` slices already streamed; it replaces them, never appends.
-        textSemantics: texts.length > 0 ? 'final' : undefined,
+        // A non-partial `assistant` record closes the message. Its text, when
+        // present, restates streamed deltas rather than appending to them.
+        textSemantics: 'final',
         sessionId: assistant.data.session_id ?? undefined,
         toolUse: tools.length > 0 ? tools : undefined,
         ...(usage !== undefined && { usage, usageSemantics: 'cumulative' }),
@@ -302,6 +467,8 @@ function parseLine(line: string, collectUsage?: CollectMessageUsage): StreamPars
       }
       const systemProgress = parseSystemProgress(record);
       if (systemProgress) return systemProgress;
+      const rateLimit = parseRateLimitEvent(record);
+      if (rateLimit) return rateLimit;
     }
 
     const session = SessionEvent.safeParse(event);

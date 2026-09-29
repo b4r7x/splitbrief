@@ -23,6 +23,14 @@ describe('hashTaskBrief', () => {
     expect(withCode).toBe(withoutCode);
   });
 
+  it('excludes currentCodeByFile while retaining real brief revisions', () => {
+    const task = makeTask({ files: ['src/first.ts', 'src/second.ts'] });
+    const first = hashTaskBrief([{ ...task, currentCodeByFile: { 'src/second.ts': 'before' } }]);
+    const second = hashTaskBrief([{ ...task, currentCodeByFile: { 'src/second.ts': 'after' } }]);
+    expect(first).toBe(second);
+    expect(first).not.toBe(hashTaskBrief([{ ...task, description: 'Revised requirement' }]));
+  });
+
   it('produces different hashes for different titles', () => {
     const a = hashTaskBrief([makeTask({ title: 'Alpha task' })]);
     const b = hashTaskBrief([makeTask({ title: 'Beta task' })]);

@@ -1,6 +1,7 @@
 import type { Summary } from '../../../../core/schemas/summary.js';
 import type { WorkflowState } from '../../../../core/schemas/workflow.js';
 import type { ReviewPacket } from '../../../../core/schemas/review-packet.js';
+import type { ReviewProvenance } from '../../../../core/schemas/review-changes.js';
 
 export type BuildReviewPacketOptions = {
   projectDir: string;
@@ -8,6 +9,7 @@ export type BuildReviewPacketOptions = {
   summary: Summary;
   state: WorkflowState;
   finalReviewStatus: 'written' | 'failed';
+  provenance?: ReviewProvenance;
 };
 
 export type BriefQualityArtifact = {

@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import type { ApprovalReviewResult } from '../../../core/approval/types.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
@@ -9,13 +10,20 @@ import {
   publishPlannerStatus,
   publishWarning,
 } from '../events.js';
-import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
+import {
+  commitWorkflowState,
+  MAX_STATE_CONFLICT_RETRIES,
+  raisePendingRecovery,
+  readWorkflowStateHead,
+  transitionAndSave,
+} from '../state-ops.js';
 import { buildBriefReviewNoProgressRecoveryIssue } from '../recovery/builders/planner.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { TASKS_FILE, sessionDir } from '../../../core/paths.js';
-import { readSpecFile } from '../../../core/paths-io.js';
+import { readSpecFile, writeSpecFile } from '../../../core/paths-io.js';
 import { topoSort } from '../../../core/state/topo-sort.js';
 import { labelError } from '../../../utils/format-errors.js';
+import { error } from '../../../utils/error.js';
 import { firstBriefError, type BriefQualityReport } from '../../spec/brief-quality.js';
 import { formatTasks } from '../../spec/formatter.js';
 import { runQualityGateAndReport } from './brief-quality-gate.js';
@@ -100,6 +108,10 @@ export async function runBriefsApprovalLoop(
 ): Promise<BriefsApprovalLoopResult> {
   const { planner, projectDir, sessionId, callbacks, bus, config, metadata, signal, sinks } = opts;
   let { state, tasks } = opts;
+  // The briefs whose card is in the transcript. The gate opens on briefs the run already
+  // announced, and only a successful announcement moves this forward: `tasks` can run ahead of
+  // it when a revision reads a tasks.md edited outside the TUI.
+  let announcedTasks = tasks;
   const ref = { projectDir, sessionId };
   const tasksFilePath = join(sessionDir(projectDir, sessionId), TASKS_FILE);
 
@@ -114,6 +126,28 @@ export async function runBriefsApprovalLoop(
       metadata,
       items: [{ kind: 'task-briefs', text }],
     });
+    announcedTasks = tasks;
+    // A resumed gate compares the disk artifact with the last card the run announced.
+    // Saving only the tasks keeps the gate's phase, attempt and pending messages intact.
+    for (let attempt = 0; attempt <= MAX_STATE_CONFLICT_RETRIES; attempt++) {
+      const saved = commitWorkflowState({ ref, expected: state, next: { ...state, tasks } });
+      if (saved.kind === 'committed') {
+        state = saved.state;
+        return;
+      }
+      const head = saved.kind === 'conflict' ? readWorkflowStateHead(ref)?.state : undefined;
+      if (
+        attempt === MAX_STATE_CONFLICT_RETRIES ||
+        head === undefined ||
+        !isDeepStrictEqual(
+          { ...head, stateRevision: 0, messageQueue: [] },
+          { ...state, stateRevision: 0, messageQueue: [] },
+        )
+      ) {
+        throw error('briefs-announcement-save-failed', 'Could not save the announced Task Briefs.');
+      }
+      state = head;
+    }
   };
 
   const readinessFor = (candidate: Task[]) =>
@@ -132,7 +166,7 @@ export async function runBriefsApprovalLoop(
 
   // A subscriber learns the phase from the bus, not from disk, so the gate announces the phase it
   // parks at before it asks — the same way the spec and plan gates open.
-  state = transitionAndSave(ref, state, { type: 'BRIEF_ADMISSION_OPENED' });
+  state = transitionAndSave(ref, { ...state, tasks }, { type: 'BRIEF_ADMISSION_OPENED' });
   publishPlannerStatus(bus, state, 'running');
   const tracker = createBriefReviewTracker();
 
@@ -159,24 +193,29 @@ export async function runBriefsApprovalLoop(
   const registerFailure = (detail: string): boolean =>
     tracker.registerFailure(briefReviewFingerprint(tasks, briefsBody(), detail));
 
-  const qualityFor = (candidate: Task[]) =>
+  const qualityFor = (input: { tasks: Task[]; sameBriefs?: boolean | undefined }) =>
     runQualityGateAndReport({
-      tasks: candidate,
+      tasks: input.tasks,
       projectDir,
       sessionId,
       bus,
       phase: state.phase,
+      sameBriefs: input.sameBriefs ?? false,
     });
 
   /** Re-measures the candidate briefs; 'halt' once the no-progress tracker has tripped. */
-  const gateQuality = (candidate: Task[], detail: string): 'ok' | 'failed' | 'halt' => {
-    const quality = qualityFor(candidate);
+  const gateQuality = (input: {
+    candidate: Task[];
+    detail: string;
+    sameBriefs: boolean;
+  }): 'ok' | 'failed' | 'halt' => {
+    const quality = qualityFor({ tasks: input.candidate, sameBriefs: input.sameBriefs });
     if (quality.ok) {
       tracker.reset();
       return 'ok';
     }
     publishBriefQualityFailure(bus, state.phase, quality.report);
-    return registerFailure(`quality:${detail}`) ? 'halt' : 'failed';
+    return registerFailure(`quality:${input.detail}`) ? 'halt' : 'failed';
   };
 
   while (true) {
@@ -224,7 +263,7 @@ export async function runBriefsApprovalLoop(
       }
       tasks = edited.tasks;
       writeBriefs(briefsBody());
-      const quality = qualityFor(tasks);
+      const quality = qualityFor({ tasks });
       if (!quality.ok) publishBriefQualityFailure(bus, state.phase, quality.report);
       if (registerFailure('edit-applied')) return haltNoProgress();
       continue;
@@ -280,7 +319,7 @@ export async function runBriefsApprovalLoop(
         return { state, tasks, outcome: 'failed' };
       }
       writeBriefs(formatTasks(tasks));
-      const quality = qualityFor(tasks);
+      const quality = qualityFor({ tasks });
       if (!quality.ok) {
         createBusTextHandler({ bus, phase: state.phase })(
           `\n[Brief quality gate failed after revision: ${firstBriefErrorMessage(quality.report)}. Please review and try again.]\n`,
@@ -309,14 +348,16 @@ export async function runBriefsApprovalLoop(
       }
       const readiness = await readinessFor(approved.tasks);
       if (!readiness.ok) {
+        // The override is keyed on the briefs as parsed, so it holds until they change; the gate's
+        // own rewrite of tasks.md below does not drop it. It lets them past readiness, but it is
+        // not progress: the no-progress count runs on.
         const fingerprint = briefReviewFingerprint(
           approved.tasks,
-          briefsBody(),
+          formatTasks(approved.tasks),
           readinessBlockDetail(readiness),
         );
         if (tracker.isOverrideOffered(fingerprint)) {
           recordReadinessOverride({ bus, phase: state.phase });
-          tracker.reset();
         } else {
           tracker.offerOverride(fingerprint);
           publishReadinessBlockWarning({ bus, phase: state.phase, report: readiness });
@@ -324,6 +365,10 @@ export async function runBriefsApprovalLoop(
           continue;
         }
       }
+      // Compared with the last announced briefs, not with the latest parsed ones: a targeted
+      // revision that failed after reading an externally edited tasks.md left `tasks` ahead of
+      // the transcript, so those briefs still need their card.
+      const changed = formatTasks(approved.tasks) !== formatTasks(announcedTasks);
       tasks = approved.tasks;
       if (tasks.length < 1) {
         publishError({
@@ -345,16 +390,25 @@ export async function runBriefsApprovalLoop(
         if (registerFailure(labelError('topo-sort', err))) return haltNoProgress();
         continue;
       }
-      writeBriefs(formatTasks(tasks));
-      const verdict = gateQuality(tasks, 'approved');
+      // What the gate approved is what runs, so the file is rewritten to exactly those briefs. Their
+      // card is already in the transcript unless an edit made outside the TUI changed them: the gate
+      // opened on announced briefs, and its own edits and revisions announce when they land.
+      if (changed) writeBriefs(formatTasks(tasks));
+      else writeSpecFile(ref, TASKS_FILE, formatTasks(tasks), metadata);
+      // They are measured again for the same reason. Unchanged briefs whose report matches
+      // brief-quality.json keep the verdict the transcript shows; any other verdict, and every
+      // failure, is announced.
+      const verdict = gateQuality({ candidate: tasks, detail: 'approved', sameBriefs: !changed });
       if (verdict === 'halt') return haltNoProgress();
       if (verdict === 'failed') continue;
-      state = transitionAndSave(ref, state, { type: 'BEGIN_IMPLEMENTATION' });
+      bus.publish({ type: 'briefs_approved', ts: Date.now(), phase: state.phase });
+      state = transitionAndSave(ref, { ...state, tasks }, { type: 'BEGIN_IMPLEMENTATION' });
       return { state, tasks, outcome: 'accepted' };
     }
 
     if (isEndRunDecision(decision)) {
       state = transitionAndSave(ref, state, { type: 'CLOSE_RUN' });
+      bus.publish({ type: 'briefs_rejected', ts: Date.now(), phase: state.phase });
       return { state, tasks, outcome: 'closed' };
     }
     // No decision reached the gate: re-ask rather than reading silence as an end.

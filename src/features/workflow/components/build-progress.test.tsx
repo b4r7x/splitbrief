@@ -1,12 +1,43 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { renderFeature } from '#testing/helpers/ink.js';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Text } from 'ink';
+import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import {
+  makeRunnerCallStarted,
+  makeRunnerCallStalled,
+} from '#testing/helpers/events/runner-call.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { getTheme } from '../../../components/theme.js';
 import { configStore } from '../../../stores/project/config.js';
+import { addEvent } from '../../../stores/workflow/actions/event.js';
+import { markWorkflowPaused } from '../../../stores/workflow/actions/pause.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { BuildProgressBlock } from './build-progress.js';
+
+// Ink resolves chalk's colour level against the capture stdout unless FORCE_COLOR is set before
+// ink first loads, so the colour assertion below would pass on a frame with no colour in it.
+const originalForceColor = vi.hoisted(() => {
+  const saved = process.env['FORCE_COLOR'];
+  process.env['FORCE_COLOR'] = '3';
+  return saved;
+});
+
+afterAll(() => {
+  if (originalForceColor === undefined) delete process.env['FORCE_COLOR'];
+  else process.env['FORCE_COLOR'] = originalForceColor;
+});
+
+const NOW = 1_783_958_400_000;
+
+function colorOpen(color: string): string {
+  const ui = renderFeature(<Text color={color}>x</Text>);
+  const frame = ui.lastFrame();
+  ui.unmount();
+  return frame.slice(0, frame.indexOf('x'));
+}
 
 beforeEach(() => {
   resetAllStores();
@@ -41,6 +72,7 @@ function seedRunningAttemptTokens(): void {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   resetAllStores();
 });
 
@@ -80,5 +112,77 @@ describe('BuildProgressBlock', () => {
 
       ui.unmount();
     }
+  });
+
+  it('counts the quiet up while nothing else repaints it, and stops with the run', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(NOW);
+    addEvent(makeRunnerCallStarted({ ts: NOW - 2_000, runnerName: 'opencode' }));
+
+    const ui = renderFeature(<BuildProgressBlock cols={120} />);
+    expect(stripAnsiStyles(ui.lastFrame())).toContain('last event 2s ago');
+
+    vi.advanceTimersByTime(3_000);
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame())).toContain('last event 5s ago');
+
+    markWorkflowPaused();
+    await flushEffects();
+    vi.advanceTimersByTime(3_000);
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame())).toContain('last event 5s ago');
+
+    ui.unmount();
+  });
+
+  it('paints a silent seat in the warning colour, and only the silence on its row', () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(NOW);
+    addEvent(makeRunnerCallStarted({ ts: NOW - 312_000, runnerName: 'opencode' }));
+    addEvent(makeRunnerCallStalled({ ts: NOW - 12_000, silentMs: 300_000 }));
+    const warning = colorOpen(getTheme().warning);
+
+    const ui = renderFeature(<BuildProgressBlock cols={160} />, { cols: 160, rows: 24 });
+    const frame = ui.lastFrame();
+
+    expect(stripAnsiStyles(frame)).toContain('OpenCode CLI · implementing · No update for 5m 12s');
+    expect(frame).toContain(`${warning}No update for 5m 12s`);
+    expect(frame).not.toContain(`${warning}OpenCode CLI · implementing`);
+
+    ui.unmount();
+  });
+
+  it('keeps a shell command named claude literal in its activity line', () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(NOW);
+    addEvent(
+      makeRunnerCallStarted({ ts: NOW - 312_000, runnerName: 'claude', backendKind: 'shell' }),
+    );
+    addEvent(makeRunnerCallStalled({ ts: NOW - 12_000, silentMs: 300_000 }));
+
+    const ui = renderFeature(<BuildProgressBlock cols={160} />, { cols: 160, rows: 24 });
+    const frame = stripAnsiStyles(ui.lastFrame());
+
+    expect(frame).toContain('claude · implementing · No update for 5m 12s');
+    expect(frame).not.toContain('Claude Code CLI');
+
+    ui.unmount();
+  });
+
+  it('keeps an API provider named claude-code literal in its activity line', () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(NOW);
+    addEvent(
+      makeRunnerCallStarted({ ts: NOW - 312_000, runnerName: 'claude-code', backendKind: 'api' }),
+    );
+    addEvent(makeRunnerCallStalled({ ts: NOW - 12_000, silentMs: 300_000 }));
+
+    const ui = renderFeature(<BuildProgressBlock cols={160} />, { cols: 160, rows: 24 });
+    const frame = stripAnsiStyles(ui.lastFrame());
+
+    expect(frame).toContain('claude-code · implementing · No update for 5m 12s');
+    expect(frame).not.toContain('Claude Code CLI');
+
+    ui.unmount();
   });
 });

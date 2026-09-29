@@ -213,7 +213,7 @@ If a file in `src/components/` turns out to have a single feature consumer, demo
 
 | File (old home in `components/`) | Real consumer | New home |
 |---|---|---|
-| `components/composer/feedback-row.tsx` | `src/app/screens/workflow.tsx`; reads `abortStore` (workflow domain) | `features/workflow/components/feedback-row.tsx` |
+| `components/composer/feedback-row.tsx` | `src/app/screens/workflow.tsx`; reads `lifecycleStore` (workflow domain) | `features/workflow/components/feedback-row.tsx` |
 
 The demotions cost one import-path rewrite each; the benefit is that `src/components/` stops advertising false sharing.
 

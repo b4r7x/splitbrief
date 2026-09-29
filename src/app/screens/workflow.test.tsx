@@ -39,6 +39,7 @@ const workflowDeps = { runWorkflow };
 const { configStore } = await import('../../stores/project/config.js');
 const { terminalSizeStore } = await import('../../stores/ui/terminal-size.js');
 const { routerStore } = await import('../../stores/navigation/router.js');
+const { overlayStore } = await import('../../stores/ui/overlay.js');
 const { inputHeightStore } = await import('../../stores/ui/input-height.js');
 const { inputHistoryStore } = await import('../../stores/ui/input-history.js');
 const { feedbackStore } = await import('../../stores/ui/feedback.js');
@@ -636,6 +637,107 @@ describe('WorkflowScreen showing a run at rest', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain('Accepted');
     expect(frame).not.toContain('Keep it with /run accept');
+    ui.unmount();
+  });
+});
+
+describe('WorkflowScreen stating a silent seat', () => {
+  let projectDir = '';
+  const brief = taskId('T001');
+  const call = {
+    phase: 'implementing',
+    taskId: brief,
+    callId: 'silent-call',
+    role: 'implementer',
+    backendKind: 'cli',
+    runnerName: 'opencode',
+    model: 'silent-model',
+    attempt: 1,
+  } as const;
+
+  beforeEach(() => {
+    resetAllStores();
+    projectDir = createTempDir('workflow-silent-seat');
+    runWorkflow.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    resetAllStores();
+    if (projectDir) cleanupTempDir(projectDir);
+  });
+
+  // Only the clocks are faked: React still paints on setImmediate, so a flush paints and a second
+  // passes only when the test advances it.
+  it('states the silence in the block, and on the byline once the block stands down', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(FIXED_TS);
+    configStore.__testReset({ config: makeConfig(), projectDir });
+    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
+    navigatePreparedWorkflow(projectDir, 'silent seat');
+    runWorkflow.mockImplementation(async (opts) => {
+      publishEvent(opts, {
+        type: 'workflow_started',
+        ts: FIXED_TS - 400_000,
+        phase: 'implementing',
+        feature: 'silent seat',
+      });
+      publishEvent(opts, {
+        type: 'task_started',
+        ts: FIXED_TS - 390_000,
+        phase: 'implementing',
+        taskId: brief,
+        title: 'Silent brief',
+        index: 0,
+        total: 1,
+        file: 'src/a.ts',
+        action: 'modify',
+        tool: 'opencode',
+        model: 'silent-model',
+      });
+      publishEvent(opts, {
+        type: 'runner_call_started',
+        ts: FIXED_TS - 310_000,
+        ...call,
+        sequence: 0,
+      });
+      publishEvent(opts, {
+        type: 'runner_call_stalled',
+        ts: FIXED_TS - 10_000,
+        ...call,
+        sequence: 1,
+        silentMs: 300_000,
+      });
+      return pendingWorkflow();
+    });
+
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+      { cols: 120, rows: 40 },
+    );
+    await flushEffects();
+
+    const beside = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(beside).toContain('No update for 5m 10s');
+    expect(beside).toContain('Still working · tools report when done');
+    expect(beside).not.toContain('silent 5m');
+
+    vi.advanceTimersByTime(3_000);
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('No update for 5m 13s');
+
+    overlayStore.open('stop-sheet');
+    await flushEffects();
+
+    const menuOpen = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(menuOpen).toContain('Stop options');
+    expect(menuOpen).not.toContain('No update');
+    expect(menuOpen).toContain('Still working — silent 5m 13s · tools report when done');
+
+    vi.advanceTimersByTime(2_000);
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Still working — silent 5m 15s');
+
     ui.unmount();
   });
 });

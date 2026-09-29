@@ -12,6 +12,7 @@ import {
 } from '../lifecycle.js';
 import { _operationsInternal } from '../operations/state.js';
 import { updateOperations } from '../operations/reducer.js';
+import { _modeAdviceInternal, updateModeAdvice } from '../mode-advice.js';
 
 export function addEvent(event: EngineEvent): void {
   if (event.type === 'cost_update') {
@@ -33,6 +34,8 @@ export function addEvent(event: EngineEvent): void {
   _lifecycleInternal.set((s) => reduceLifecycle(s, event));
 
   _operationsInternal.set((s) => updateOperations(s, event));
+
+  _modeAdviceInternal.set((s) => updateModeAdvice(s, event));
 }
 
 export function reduceTasks(state: TasksState, event: EngineEvent): TasksState {

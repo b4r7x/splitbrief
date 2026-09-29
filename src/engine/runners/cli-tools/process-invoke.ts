@@ -275,8 +275,16 @@ export async function invokeProcessCli(
         return;
       case 'warning':
         recorder.warning({
-          warning: { code: event.code, source: 'provider', message: event.message },
+          warning: {
+            code: event.code,
+            source: 'provider',
+            message: event.message,
+            ...(event.severity !== undefined && { severity: event.severity }),
+          },
         });
+        return;
+      case 'heartbeat':
+        recorder.heartbeat();
         return;
       case 'result':
         terminalSeen = true;

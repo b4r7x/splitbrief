@@ -1,10 +1,12 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import YAML from 'yaml';
 import { SPLITBRIEF_IDENTITY } from '../../../src/core/identity.js';
 import { ISOLATION_TREES_DIR, SPLITBRIEF_DIR } from '../../../src/core/paths.js';
 import type { Config } from '../../../src/core/schemas/config.js';
+import { canSignalProcess } from '../../../src/lib/process/liveness.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 
@@ -25,8 +27,11 @@ export const GREET_SOURCE = `export function greet(name: string): string {
   return name === '' ? 'hello' : \`hello \${name}\`;
 }`;
 
-/** How long the implementer stays in the call after writing the marker. */
-const IMPLEMENTER_HOLD_MS = 4000;
+/** How long the first implementer holds if the continuation never reaps it; a backstop, not a pace. */
+const IMPLEMENTER_HOLD_MS = 180_000;
+
+/** How long teardown waits for the held implementer to leave, or to die after a signal. */
+const HOLD_EXIT_TIMEOUT_MS = 5_000;
 
 const TASK_BRIEF = `---
 id: T001
@@ -124,20 +129,46 @@ process.stdout.write(prompt.includes('Final Implementation Review') ? REVIEW : T
 `;
 
 /**
- * Writes its two declared files in two steps with the hold between them, so a cut lands with the
- * marker on disk and the anchor still missing. A direct writer is what the brief needs: an
- * extracting runner can only carry one file back, and this brief declares two.
+ * The first invocation writes the marker and then holds for the fixture's release file, so the
+ * run can be signalled mid-step with the anchor still missing; the continuation's orphan reaper
+ * is what ends that hold in the exercised path, and teardown's release bounds it on failure.
+ * Every later invocation is a replay: it writes both declared files at once and finishes, which
+ * is what lets the same fixture serve the interrupted first attempt and the resumed one.
  */
-const IMPLEMENTER_SCRIPT = `import { mkdirSync, writeFileSync } from 'node:fs';
+function implementerHoldScript(tmpDir: string): string {
+  const releasePath = join(tmpDir, 'release-implementer');
+  const pidPath = join(tmpDir, 'implementer-hold.pid');
+  const exitPath = join(tmpDir, 'implementer-hold-exited');
+  const invocationsPath = join(tmpDir, 'implementer-invocations');
+  return `import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 
 for await (const chunk of process.stdin) void chunk;
 
+const countPath = ${JSON.stringify(invocationsPath)};
+let invocations = 0;
+try {
+  invocations = Number(readFileSync(countPath, 'utf8')) || 0;
+} catch {}
+writeFileSync(countPath, String(invocations + 1));
+
+if (invocations > 0) {
+  mkdirSync('src', { recursive: true });
+  writeFileSync(${JSON.stringify(MARKER_FILE)}, ${JSON.stringify(MARKER_SOURCE)});
+  writeFileSync(${JSON.stringify(GREET_FILE)}, ${JSON.stringify(GREET_SOURCE)});
+  process.exit(0);
+}
+
+// The pid first, so teardown can always confirm this process is gone once the marker exists.
+writeFileSync(${JSON.stringify(pidPath)}, String(process.pid));
 mkdirSync('src', { recursive: true });
 writeFileSync(${JSON.stringify(MARKER_FILE)}, ${JSON.stringify(MARKER_SOURCE)});
-await delay(${IMPLEMENTER_HOLD_MS});
-writeFileSync(${JSON.stringify(GREET_FILE)}, ${JSON.stringify(GREET_SOURCE)});
+const releasePath = ${JSON.stringify(releasePath)};
+const deadline = Date.now() + ${IMPLEMENTER_HOLD_MS};
+while (!existsSync(releasePath) && Date.now() < deadline) await delay(50);
+writeFileSync(${JSON.stringify(exitPath)}, '');
 `;
+}
 
 export type StopContinueFixture = Readonly<{
   tmpDir: string;
@@ -151,7 +182,49 @@ export type StopContinueFixture = Readonly<{
   isolationTreesDir: string;
   markerPath: string;
   greetPath: string;
+  /** Creating this file releases a first implementer still holding; teardown does it. */
+  releaseHoldPath: string;
+  /** The first implementer's pid, written before its hold begins. */
+  implementerPidPath: string;
+  /** Written by the first implementer once it has left its hold, whether reaped or released. */
+  implementerExitPath: string;
 }>;
+
+/** Releases a first implementer still holding, so teardown never leaves the handshake open. */
+export function releaseImplementerHold(fixture: StopContinueFixture): void {
+  writeFileSync(fixture.releaseHoldPath, '');
+}
+
+/**
+ * Ends the fixture's implementer hold and confirms the held process is gone before the
+ * caller deletes the fixture directory. Releasing alone is racy: the release file lives
+ * inside the directory cleanup removes, and the child polls it every 50 ms, so a delete
+ * that wins the race leaves the process holding until its deadline. A process that will
+ * not leave on release is terminated and its exit awaited.
+ */
+export async function endImplementerHold(fixture: StopContinueFixture): Promise<void> {
+  releaseImplementerHold(fixture);
+  let pid: number;
+  try {
+    pid = Number(readFileSync(fixture.implementerPidPath, 'utf8'));
+  } catch {
+    // The first implementer never started, so no process holds the handshake.
+    return;
+  }
+  if (!Number.isInteger(pid) || pid <= 0) return;
+  const deadline = Date.now() + HOLD_EXIT_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    if (existsSync(fixture.implementerExitPath) || !canSignalProcess(pid)) return;
+    await delay(25);
+  }
+  try {
+    process.kill(pid, 'SIGKILL');
+  } catch {
+    // It exited between the last liveness check and the signal.
+  }
+  const killDeadline = Date.now() + HOLD_EXIT_TIMEOUT_MS;
+  while (canSignalProcess(pid) && Date.now() < killDeadline) await delay(10);
+}
 
 /**
  * Writes both declared files at once — and creates a branch in the checkout the
@@ -180,16 +253,17 @@ export const ESCAPED_BRANCH = 'escaped';
  * so the whole stop → continue → finish path runs without a model call.
  */
 export function createStopContinueFixture(
-  implementerScript: (projectDir: string) => string = () => IMPLEMENTER_SCRIPT,
+  implementerScript?: (projectDir: string) => string,
 ): StopContinueFixture {
   const tmpDir = mkdtempSync(join(tmpdir(), 'splitbrief-stop-continue-'));
   const projectDir = join(tmpDir, 'project');
   mkdirSync(projectDir, { recursive: true });
+  const script = implementerScript ?? (() => implementerHoldScript(tmpDir));
 
   createTestGitRepo(projectDir, {
     '.gitignore': 'node_modules\n',
     'tools/planner.mjs': PLANNER_SCRIPT,
-    'tools/implementer.mjs': implementerScript(projectDir),
+    'tools/implementer.mjs': script(projectDir),
   });
 
   mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
@@ -209,6 +283,9 @@ export function createStopContinueFixture(
     isolationTreesDir: join(stateHome, SPLITBRIEF_IDENTITY.slug, ISOLATION_TREES_DIR),
     markerPath: join(projectDir, MARKER_FILE),
     greetPath: join(projectDir, GREET_FILE),
+    releaseHoldPath: join(tmpDir, 'release-implementer'),
+    implementerPidPath: join(tmpDir, 'implementer-hold.pid'),
+    implementerExitPath: join(tmpDir, 'implementer-hold-exited'),
   };
 }
 

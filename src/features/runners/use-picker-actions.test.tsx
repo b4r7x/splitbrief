@@ -517,7 +517,7 @@ describe('usePickerActions', () => {
 
     expect(
       messages.filter((message) => message.startsWith(`${CREW_SEAT_LABELS.plan} set to:`)),
-    ).toEqual([`${CREW_SEAT_LABELS.plan} set to: Claude Code CLI · opus · high`]);
+    ).toEqual([`${CREW_SEAT_LABELS.plan} set to: Claude Code CLI · Opus 5.5 · high`]);
     expect(configStore.get().config?.planner).toMatchObject({
       tool: 'claude-code',
       effort: 'high',
@@ -555,7 +555,7 @@ describe('usePickerActions', () => {
 
     expect(
       messages.filter((message) => message.startsWith(`${CREW_SEAT_LABELS.plan} set to:`)),
-    ).toEqual([`${CREW_SEAT_LABELS.plan} set to: Claude Code CLI · opus`]);
+    ).toEqual([`${CREW_SEAT_LABELS.plan} set to: Claude Code CLI · Opus 5.5`]);
     expect(messages.some((message) => message.includes('Effort ludicrous'))).toBe(true);
     expect(configStore.get().config?.planner).not.toHaveProperty('effort');
     ui.unmount();

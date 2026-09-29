@@ -1,3 +1,4 @@
+import { deriveRunStatus, NO_ARTIFACTS } from '../sessions/run-status.js';
 import type { MachineAction, StateAction } from './types.js';
 import { WORKFLOW_STATE_VERSION, type WorkflowState } from '../schemas/workflow.js';
 import { isTaskCompleted, type TaskId } from '../schemas/task.js';
@@ -52,13 +53,22 @@ const phaseActions = {
   planning: [
     'RESEARCH_DONE',
     'PLAN_DONE',
+    'BRIEFS_COMPILED',
     'SPEC_CLARIFY_START',
     'BRIEF_ADMISSION_OPENED',
+    'BEGIN_IMPLEMENTATION',
     'ANALYZE_START',
   ],
-  'reviewing-plan': ['PLAN_DONE', 'BRIEF_ADMISSION_OPENED', 'ANALYZE_START', 'BEGIN_PLANNING'],
+  'reviewing-plan': [
+    'PLAN_DONE',
+    'BRIEFS_COMPILED',
+    'BRIEF_ADMISSION_OPENED',
+    'BEGIN_IMPLEMENTATION',
+    'ANALYZE_START',
+    'BEGIN_PLANNING',
+  ],
   'reviewing-briefs': ['BRIEF_ADMISSION_OPENED', 'BEGIN_IMPLEMENTATION'],
-  analyzing: ['PLAN_DONE'],
+  analyzing: ['PLAN_DONE', 'BRIEFS_COMPILED'],
   implementing: [
     'START_TASK',
     'UPDATE_TASK_CODE',
@@ -226,7 +236,7 @@ export function transition(
 
   switch (action.type) {
     case 'START':
-      return { ...state, phase: 'researching' };
+      return { ...state, phase: state.mode === 'quick' ? 'planning' : 'researching' };
 
     case 'RESEARCH_DONE':
       return { ...state, phase: 'specifying' };
@@ -242,6 +252,10 @@ export function transition(
 
     case 'PLAN_DONE':
       return { ...state, phase: 'reviewing-plan', tasks: action.tasks };
+
+    // A run whose steps open no plan gate keeps its compiled briefs in the phase that compiled them.
+    case 'BRIEFS_COMPILED':
+      return { ...state, phase: 'planning', tasks: action.tasks };
 
     case 'BEGIN_IMPLEMENTATION':
       return {
@@ -367,6 +381,11 @@ export function transition(
     }
 
     case 'CLOSE_RUN':
+      if (
+        deriveRunStatus({ state, liveness: 'not-alive', artifacts: NO_ARTIFACTS }).kind === 'closed'
+      ) {
+        return state;
+      }
       return {
         ...state,
         closed: { at: action.at ?? now.toISOString(), as: 'ended' },
@@ -389,7 +408,17 @@ export function transition(
       };
 
     case 'RESUME_STEP':
-      return { ...state, interruptedStep: undefined, awaitingContinue: false };
+      return {
+        ...state,
+        ...(state.interruptedStep?.cut === 'mid-step' &&
+          state.interruptedStep.step.kind === 'brief' &&
+          state.rewindPending === undefined &&
+          (state.phase === 'implementing' ||
+            state.phase === 'validating-task' ||
+            state.phase === 'escalating') && { phase: 'implementing' as const }),
+        interruptedStep: undefined,
+        awaitingContinue: false,
+      };
 
     case 'SET_PLANNER_CONVERSATION':
       return {

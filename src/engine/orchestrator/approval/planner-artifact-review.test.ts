@@ -27,7 +27,7 @@ async function createFixture(): Promise<Fixture> {
     createTestGitRepo(projectDir);
     mkdirSync(join(projectDir, 'src'), { recursive: true });
     writeFileSync(join(projectDir, 'src', 'app.ts'), 'export const app = true;\n');
-    return { projectDir, staged: await createStagedProject(projectDir) };
+    return { projectDir, staged: await createStagedProject({ projectDir: projectDir }) };
   } catch (err) {
     cleanupTempDir(projectDir);
     throw err;

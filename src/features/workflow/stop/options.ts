@@ -1,8 +1,14 @@
 import { routerStore } from '../../../stores/navigation/router.js';
-import { wrapHard } from '../../../utils/wrap.js';
-import { selectRunningBrief, tasksStore } from '../../../stores/workflow/tasks.js';
+import {
+  selectRunningBrief,
+  selectTaskListView,
+  tasksStore,
+  type TasksState,
+} from '../../../stores/workflow/tasks.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
+import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
+import { wrappedProseTexts } from '../conversation-rows/row-format/text.js';
 
 export type StopRowId =
   | 'stop-now'
@@ -24,6 +30,30 @@ export const STOP_SHEET_TITLE = 'Stop options';
 export const STOP_SHEET_FOOTER = 'Changes and draft stay.';
 export const STOP_SHEET_LEGEND = '↑↓ select · enter confirm · esc stop · tab back';
 
+/** A wrapped consequence hangs in from its label, so a continuation never reads as another row. */
+const CONSEQUENCE_HANG = '  ';
+
+// A consequence is a list of clauses. A row breaks after a `;` wherever the next clause fits on the
+// line below, so no line ends on half a clause (`do` above `not start T003`).
+function wrapClauses(text: string, width: number): string[] {
+  const lines: string[] = [];
+  let current = '';
+  for (const clause of text.split(/(?<=;) /u)) {
+    const joined = current === '' ? clause : `${current} ${clause}`;
+    if (getTerminalCellWidth(joined) <= width) {
+      current = joined;
+    } else if (getTerminalCellWidth(clause) <= width) {
+      lines.push(current);
+      current = clause;
+    } else {
+      const wrapped = wrappedProseTexts(joined, width);
+      lines.push(...wrapped.slice(0, -1));
+      current = wrapped.at(-1) ?? '';
+    }
+  }
+  return [...lines, current];
+}
+
 export function stopMenuLayout(rows: readonly StopRow[], cols: number) {
   // The sheet stacks on the composer inside the gutter, so it takes the composer's width and the
   // two boxes share both edges.
@@ -31,21 +61,35 @@ export function stopMenuLayout(rows: readonly StopRow[], cols: number) {
   const innerWidth = Math.max(1, width - 6);
   const options = rows.map((row) => ({
     row,
-    lines: wrapHard(`${row.label} · ${row.consequence}`, innerWidth).split('\n'),
+    lines: wrapClauses(
+      `${row.label} · ${row.consequence}`,
+      Math.max(1, innerWidth - CONSEQUENCE_HANG.length),
+    ).map((line, index) => (index === 0 ? line : `${CONSEQUENCE_HANG}${line}`)),
   }));
-  const bodyRows = rows.length + Math.max(0, ...options.map((option) => option.lines.length - 1));
+  // Every row states its consequence, so the sheet is exactly as tall as what it paints whichever
+  // row is selected: the transcript above holds still as the cursor moves, and no row stands blank.
+  const bodyRows = options.reduce((total, option) => total + option.lines.length, 0);
   return { width, bodyRows, height: bodyRows + 4, options };
 }
 
 export interface StopSheetInput {
   readonly currentTaskId: string | null;
   readonly nextTaskId: string | null;
+  /** A brief has run, so the run has changes to keep. */
+  readonly hasChanges?: boolean | undefined;
   readonly boundaryPauseRequested: boolean;
 }
 
 export function stopSheetRows(input: StopSheetInput): StopRow[] {
   const rows: StopRow[] = [
-    { id: 'stop-now', label: 'Stop now', consequence: 'stop execution; keep partial changes' },
+    {
+      id: 'stop-now',
+      label: 'Stop now',
+      consequence:
+        input.currentTaskId === null
+          ? 'stop execution; keep the run open'
+          : 'stop execution; keep partial changes',
+    },
   ];
   // A pause that is already pending has nothing left to ask for: the second row is the way back.
   if (input.boundaryPauseRequested) {
@@ -64,7 +108,10 @@ export function stopSheetRows(input: StopSheetInput): StopRow[] {
   rows.push({
     id: 'end-run',
     label: 'End run',
-    consequence: 'stop execution; mark this run cancelled; keep changes',
+    consequence:
+      input.hasChanges === true
+        ? 'stop execution; close this run; keep changes'
+        : 'stop execution; close this run',
   });
   return rows;
 }
@@ -94,7 +141,9 @@ export function readStopMenuRows(): StopRow[] {
             {
               id: 'end-run' as const,
               label: 'End run',
-              consequence: 'close this run; keep changes',
+              consequence: briefsHaveRun(tasksStore.get())
+                ? 'close this run; keep changes'
+                : 'close this run',
             },
           ]
         : []),
@@ -113,10 +162,27 @@ export function readStopMenuRows(): StopRow[] {
         consequence: 'return to sessions once cleanup and saving finish',
       },
     ];
-  const brief = selectRunningBrief(tasksStore.get());
+  const tasks = tasksStore.get();
+  const brief = selectRunningBrief(tasks);
   return stopSheetRows({
     currentTaskId: brief.current?.id ?? null,
     nextTaskId: brief.next?.id ?? null,
+    hasChanges: briefsHaveRun(tasks),
     boundaryPauseRequested: stopStore.get().intent === 'pause-after-brief',
   });
+}
+
+/** A brief that ran left changes behind; until the first one starts, the run has none to keep. */
+function briefsHaveRun(tasks: TasksState): boolean {
+  const view = selectTaskListView(tasks);
+  return selectRunningBrief(tasks).current !== null || view.finished + view.failed > 0;
+}
+
+/** What every row keeps: the draft always, the run's changes once a brief has made some. */
+export function stopSheetFooter(input: { hasChanges: boolean }): string {
+  return input.hasChanges ? STOP_SHEET_FOOTER : 'Draft stays.';
+}
+
+export function readStopSheetFooter(): string {
+  return stopSheetFooter({ hasChanges: briefsHaveRun(tasksStore.get()) });
 }

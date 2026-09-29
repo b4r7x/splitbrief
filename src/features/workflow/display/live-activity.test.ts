@@ -11,6 +11,7 @@ const base = {
   resumedAt: null,
   reviewerLabel: null,
   plannerCall: null,
+  plannerCallStartedTs: null,
 };
 
 describe('deriveLiveStatus', () => {
@@ -112,6 +113,68 @@ describe('deriveLiveStatus', () => {
     expect(firstStage?.stageStart).toBe(90_000);
   });
 
+  it('opens the quick Plan clock with the run, not the Spec completion quick never has', () => {
+    const waits = { researching: 1_000, specifying: 2_000, planning: 4_000, implementing: 8_000 };
+    const quick = deriveLiveStatus({
+      ...base,
+      phase: 'researching',
+      mode: 'quick',
+      waitedMs: waits,
+    });
+    expect(quick).toEqual({
+      verb: 'Researching…',
+      stageStart: 1000,
+      waitedMs: 7_000,
+      tone: 'planner',
+    });
+
+    const resumed = deriveLiveStatus({
+      ...base,
+      phase: 'researching',
+      mode: 'quick',
+      resumedAt: 90_000,
+      plannerCallStartedTs: 60_000,
+    });
+    expect(resumed?.stageStart).toBe(90_000);
+
+    const namedCall = deriveLiveStatus({
+      ...base,
+      phase: 'researching',
+      mode: 'quick',
+      plannerCall: 'research',
+      plannerCallStartedTs: 60_000,
+    });
+    expect(namedCall?.stageStart).toBe(60_000);
+
+    const standard = deriveLiveStatus({ ...base, phase: 'researching', waitedMs: waits });
+    expect(standard?.stageStart).toBe(1000);
+    expect(standard?.waitedMs).toBe(3_000);
+  });
+
+  it('counts the planner call the engine names, and the stage once it names none', () => {
+    const planStage = {
+      ...base,
+      phase: 'planning' as const,
+      phaseFirstSeenTs: { planning: 5_000 },
+    };
+
+    expect(
+      deriveLiveStatus({ ...planStage, plannerCall: 'tasks', plannerCallStartedTs: 60_000 })
+        ?.stageStart,
+    ).toBe(60_000);
+    expect(deriveLiveStatus({ ...planStage, plannerCallStartedTs: 60_000 })?.stageStart).toBe(
+      5_000,
+    );
+    expect(
+      deriveLiveStatus({
+        ...planStage,
+        plannerCall: 'tasks',
+        plannerCallStartedTs: 60_000,
+        resumedAt: 90_000,
+      })?.stageStart,
+    ).toBe(90_000);
+  });
+
   it('names the reviewer seat during final review and keeps the seatless wording without one', () => {
     const configured = deriveLiveStatus({
       ...base,
@@ -137,16 +200,23 @@ describe('deriveLiveStatus', () => {
 
 describe('stallRunnerHint', () => {
   it('explains the silence for a runner that only reports finished tools', () => {
+    expect(stallRunnerHint('opencode', 'cli')).toBe('tools report when done');
     expect(stallRunnerHint('opencode')).toBe('tools report when done');
   });
 
+  it('never hands the CLI hint to an API call that reuses the name', () => {
+    expect(stallRunnerHint('opencode', 'api')).toBeNull();
+    expect(stallRunnerHint('opencode', 'shell')).toBeNull();
+    expect(stallRunnerHint('opencode', 'agent')).toBeNull();
+  });
+
   it('stays silent for runners that stream tool use live, and when the runner is unknown', () => {
-    expect(stallRunnerHint('claude-code')).toBeNull();
-    expect(stallRunnerHint('codex')).toBeNull();
-    expect(stallRunnerHint(null)).toBeNull();
+    expect(stallRunnerHint('claude-code', 'cli')).toBeNull();
+    expect(stallRunnerHint('codex', 'cli')).toBeNull();
+    expect(stallRunnerHint(null, 'cli')).toBeNull();
   });
 
   it('is short enough to sit inside the byline', () => {
-    expect((stallRunnerHint('opencode') ?? '').length).toBeLessThanOrEqual(24);
+    expect((stallRunnerHint('opencode', 'cli') ?? '').length).toBeLessThanOrEqual(24);
   });
 });

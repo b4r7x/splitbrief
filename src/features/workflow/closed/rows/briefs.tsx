@@ -9,15 +9,17 @@ import { LedgerRule } from './lead.js';
  * same grammar the transcript settles a brief with, so a finished run reads like the run did.
  */
 export function briefsSectionRows(
-  input: Readonly<{ view: SummaryView; width: number }>,
+  input: Readonly<{ view: SummaryView; width: number; earlier?: boolean }>,
 ): ScrollableDocumentRow[] {
-  const { view, width } = input;
+  const { view, width, earlier = false } = input;
+  const label = earlier ? 'Earlier work' : 'Briefs';
+  const briefs = earlier ? view.briefs.earlierRows : view.briefs.rows;
   const rows: ScrollableDocumentRow[] = [
-    { key: 'briefs-heading', node: <LedgerRule label="Briefs" width={width} /> },
+    { key: `briefs-heading:${label}`, node: <LedgerRule label={label} width={width} /> },
   ];
-  for (const row of view.briefs.rows) {
+  for (const [index, row] of briefs.entries()) {
     rows.push({
-      key: `brief:${row.id}`,
+      key: `brief:${label}:${index}:${row.id}`,
       node: <TaskSummary width={width} {...briefRowParts({ row })} />,
     });
   }

@@ -81,7 +81,7 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
         projectDir,
         stateDir,
         createStage: async (sourceProjectDir) => {
-          const stage = await createStagedProject(sourceProjectDir);
+          const stage = await createStagedProject({ projectDir: sourceProjectDir });
           return {
             ...stage,
             cleanup: () => {
@@ -219,7 +219,7 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
         projectDir,
         stateDir,
         createStage: async (sourceProjectDir) => {
-          const stage = await createStagedProject(sourceProjectDir);
+          const stage = await createStagedProject({ projectDir: sourceProjectDir });
           childStagePath = stage.projectDir;
           mkdirSync(join(stage.projectDir, '.splitbrief-runner'));
           return stage;
@@ -250,7 +250,7 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
         projectDir,
         stateDir,
         createStage: async (sourceProjectDir) => {
-          const stage = await createStagedProject(sourceProjectDir);
+          const stage = await createStagedProject({ projectDir: sourceProjectDir });
           childStagePath = stage.projectDir;
           symlinkSync(symlinkTarget, join(stage.projectDir, '.splitbrief-runner'));
           return stage;
@@ -282,7 +282,7 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
         stateDir,
         sourceEnv: { CUSTOM_PLANNER_CANARY: 'only-from-source' },
         createStage: async (sourceProjectDir) => {
-          const stage = await createStagedProject(sourceProjectDir);
+          const stage = await createStagedProject({ projectDir: sourceProjectDir });
           stage.sandboxEnv.CUSTOM_PLANNER_CANARY = 'only-from-stage';
           return stage;
         },
@@ -308,7 +308,7 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
         stateDir,
         sourceEnv: {},
         createStage: async (sourceProjectDir) => {
-          const stage = await createStagedProject(sourceProjectDir);
+          const stage = await createStagedProject({ projectDir: sourceProjectDir });
           stage.sandboxEnv.CUSTOM_PLANNER_CANARY = 'only-from-stage';
           return stage;
         },
@@ -345,7 +345,7 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
 
   it('uses the supplied outer stage for direct full escalation without a nested stage', async () => {
     const { projectDir, stateDir } = testProject('configured-direct-full-escalation');
-    const outerStage = await createStagedProject(projectDir);
+    const outerStage = await createStagedProject({ projectDir: projectDir });
     const staleReviewRoot = reviewCandidateRoot(projectDir);
     const stalePath = join(staleReviewRoot, 'stale-call', 'result');
     mkdirSync(join(staleReviewRoot, 'stale-call'), { recursive: true });

@@ -173,7 +173,7 @@ function configuredRetryRuntime(
     authorizationPathEnv: process.env.PATH ?? '',
     ...(process.env.PATHEXT === undefined ? {} : { authorizationPathExt: process.env.PATHEXT }),
     createStage: async (projectDir) => {
-      const workspace = await createStagedProject(projectDir);
+      const workspace = await createStagedProject({ projectDir: projectDir });
       return {
         projectDir: workspace.projectDir,
         snapshot: workspace.snapshot,
@@ -379,7 +379,10 @@ describe('createRetryRuntime', () => {
       const task = makeTask({ id: 'T001', file: taskFile });
 
       if (retryContract === 'direct') {
-        const workspace = await createStagedProject(projectDir, retryRuntime.config);
+        const workspace = await createStagedProject({
+          projectDir: projectDir,
+          config: retryRuntime.config,
+        });
         try {
           const result = await retryRuntime.implementer.retry({
             task,

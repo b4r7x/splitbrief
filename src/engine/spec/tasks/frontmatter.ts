@@ -1,6 +1,7 @@
 import YAML from 'yaml';
 import { z } from 'zod';
 import { FileActionSchema } from '../../../core/schemas/enums.js';
+import { TaskIdSchema } from '../../../core/schemas/task.js';
 import { isPathConfined } from '../../../lib/path-confinement.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { isRecord } from '../../../utils/type-guards.js';
@@ -13,13 +14,13 @@ const confinedPath = z
   });
 
 export const TaskFrontmatterSchema = z.object({
-  id: z.string().min(1),
+  id: TaskIdSchema,
   title: z.string().min(1),
   action: FileActionSchema,
   file: confinedPath,
   files: z.union([z.array(confinedPath).min(1), confinedPath.transform((p) => [p])]).optional(),
   depends_on: z
-    .union([z.array(z.string()), z.string().transform((s) => [s])])
+    .union([z.array(TaskIdSchema), TaskIdSchema.transform((s) => [s])])
     .optional()
     .default([]),
 });

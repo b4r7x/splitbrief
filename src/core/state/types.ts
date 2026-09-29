@@ -22,6 +22,7 @@ export type StateAction =
   | { type: 'APPROVE_SPEC' }
   | { type: 'BEGIN_PLANNING' }
   | { type: 'PLAN_DONE'; tasks: Task[] }
+  | { type: 'BRIEFS_COMPILED'; tasks: Task[] }
   | { type: 'BRIEF_ADMISSION_OPENED' }
   | { type: 'BEGIN_IMPLEMENTATION' }
   | { type: 'SPEC_CLARIFY_START' }
@@ -48,7 +49,7 @@ export type StateAction =
       type: 'INTERRUPT_STEP';
       step: StepRef;
       source: 'user' | 'watchdog';
-      /** Where the stop landed: inside the call, or between two briefs. */
+      /** Where the stop landed: inside the call, or on a boundary — between two briefs, or at a gate. */
       cut: StepCut;
       partialRef?: { kind: 'session-log'; index: number };
     }

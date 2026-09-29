@@ -361,5 +361,8 @@ export function isCurrentConfig(
   if (item.kind === 'custom-command') {
     return runnerConfig.kind === 'shell' || runnerConfig.kind === 'agent';
   }
-  return item.id === getRunnerDisplayName(runnerConfig);
+  if (item.kind === 'inherit-planner') return false;
+  // The kind is part of the identity: a CLI row must never stand in for an API
+  // seat that merely reuses its id, or Enter would silently change the kind.
+  return item.kind === runnerConfig.kind && item.id === getRunnerDisplayName(runnerConfig);
 }

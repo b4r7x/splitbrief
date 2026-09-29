@@ -242,6 +242,20 @@ describe('preview controller', () => {
     detach();
   });
 
+  it('forwards a scripted key and settles before its promise resolves', async () => {
+    const fixture = setup();
+    activeControllers.push(fixture.controller);
+
+    const order: string[] = [];
+    const pressed = fixture.controller.pressToPreview('\u001b[B');
+    setImmediate(() => order.push('immediate'));
+    await pressed;
+    order.push('resolved');
+
+    expect(Buffer.concat(fixture.forwarded).toString()).toBe('\u001b[B');
+    expect(order).toEqual(['immediate', 'resolved']);
+  });
+
   it('forwards pasted shortcuts literally at every byte split, then handles a real shortcut', async () => {
     const fixture = setup();
     activeControllers.push(fixture.controller);

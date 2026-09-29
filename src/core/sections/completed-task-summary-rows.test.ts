@@ -9,6 +9,7 @@ function completedSection(index: number): Extract<Section, { type: 'completed-ta
     startIndex: index,
     summary: {
       index,
+      id: `T${String(index).padStart(3, '0')}`,
       title: `done-${index}`,
       method: 'local',
       retries: 0,

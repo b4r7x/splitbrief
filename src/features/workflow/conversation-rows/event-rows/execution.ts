@@ -18,7 +18,7 @@ export function runningImplementerRowBlock(
   event: Extract<EngineEvent, { type: 'implementer_generate_running' }>,
   ctx: RowBuildContext,
 ): ConversationRowBlock | null {
-  const fileHint = event.file ? `generating ${event.file}...` : 'generating...';
+  const fileHint = event.file ? `working on ${event.file}…` : 'working…';
   const streamLines =
     ctx.streaming.active && ctx.streaming.taskId === event.taskId
       ? ctx.streaming.lines.slice(0, 5)

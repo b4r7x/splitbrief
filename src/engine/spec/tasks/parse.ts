@@ -56,6 +56,7 @@ export function parseTasksStrict(
 
 export interface TaskSourceBlock {
   id: string;
+  title: string;
   source: string;
 }
 
@@ -64,7 +65,9 @@ export function parseTaskSourceBlocks(tasksMarkdown: string): TaskSourceBlock[] 
   const result: TaskSourceBlock[] = [];
   for (const block of splitTaskBlocks(stripped)) {
     const parsed = parseTaskBlock(block);
-    if (parsed.ok) result.push({ id: parsed.task.id, source: block.trim() });
+    if (parsed.ok) {
+      result.push({ id: parsed.task.id, title: parsed.task.title, source: block.trim() });
+    }
   }
   if (result.length === 0) {
     const unwrapped = unwrapFencedTaskDocument(stripped);
@@ -86,7 +89,8 @@ function parseTaskBlocksFromMarkdown(
   opts: { strict: boolean; onWarning?: (message: string) => void },
 ): Task[] {
   const stripped = normalizeTaskSeparators(stripFileFrontmatter(tasksMarkdown));
-  const blocks = splitTaskBlocks(stripped);
+  const fenceWarnings: string[] = [];
+  const blocks = splitTaskBlocks(stripped, (message) => fenceWarnings.push(message));
   const tasks: Task[] = [];
   const rejectionWarnings: string[] = [];
   let strictFailure: Error | null = null;
@@ -115,6 +119,7 @@ function parseTaskBlocksFromMarkdown(
     if (unwrapped !== null) return parseTaskBlocksFromMarkdown(unwrapped, opts);
   }
   if (strictFailure) throw strictFailure;
+  for (const warning of fenceWarnings) opts.onWarning?.(warning);
   for (const warning of rejectionWarnings) opts.onWarning?.(warning);
   for (const warning of overlappingFileWarnings(tasks)) opts.onWarning?.(warning);
   if (tasks.length === 0 && rejected === 0) {
@@ -140,9 +145,10 @@ function overlappingFileWarnings(tasks: readonly Task[]): string[] {
   }
   return [...idsByPath]
     .filter(([, ids]) => ids.length > 1)
-    .map(
-      ([path, ids]) =>
-        `Task Briefs ${ids.join(', ')} all declare ${path}; the later brief modifies what the earlier one wrote`,
+    .map(([path, ids]) =>
+      ids.length === 2
+        ? `Task Briefs ${ids.join(' and ')} both declare ${path}; the later brief modifies what the earlier one wrote`
+        : `Task Briefs ${ids.slice(0, -1).join(', ')} and ${ids.at(-1)} all declare ${path}; each later brief modifies what the earlier ones wrote`,
     );
 }
 

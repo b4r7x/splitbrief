@@ -200,6 +200,11 @@ function existingPlannerCapabilities(
     : undefined;
 }
 
+/**
+ * Name-only kind inference for flags. A CLI tool id always means the CLI, and API-only
+ * flags never flip the inferred kind: a custom API provider that reuses a CLI tool's
+ * name is configurable in YAML only. `inferKind` applies an explicit kind first.
+ */
 export function inferKindFromTool(tool: string): RunnerKind {
   if (tool === 'shell') return 'shell';
   if (tool === 'agent') return 'agent';

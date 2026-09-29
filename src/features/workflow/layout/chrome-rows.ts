@@ -72,13 +72,23 @@ export function getWorkflowChromeRows(inputRows: number, progressRows = 0): Work
 
 // The block rides above the transcript, so its rows leave the body rather than overlapping it. It
 // paints only while a brief is actually being built or reviewed: a stopped run has no attempt in
-// flight and no seat to hear from, and a live heartbeat over a dead run states neither.
+// flight and no seat to hear from, and a live heartbeat over a dead run states neither. A gate, a
+// question or the stop menu is the only thing to act on and needs every row it can get, so the
+// block stands down while one is open. The screen, its input paths and the byline all read this
+// one answer, because the byline states the silence the block would have stated.
 export function getProgressRows(input: {
   phase: Phase;
   cols: number;
   cancelled?: boolean;
+  /** A recovery choice holds the run: nothing is building until it is answered. */
+  halted?: boolean;
+  /** The rows a gate, a question or the stop menu takes above the composer. */
+  promptRows?: number;
+  /** The run was read back from disk, and no process is building it. */
+  atRest?: boolean;
 }): number {
-  if (input.cancelled === true) return 0;
+  if (input.cancelled === true || input.halted === true || input.atRest === true) return 0;
+  if ((input.promptRows ?? 0) > 0) return 0;
   if (!isImplementerPhase(input.phase) && input.phase !== 'final-review') return 0;
   return buildProgressRowCount(getChromeContentWidth(input.cols));
 }
@@ -95,6 +105,14 @@ export function getChromeHeight(inputRows: number, progressRows = 0): number {
 
 export function getContentTopRow(): number {
   return TOP_FIXED_CHROME_ROWS + 1;
+}
+
+/**
+ * The body's first row in the 0-based numbering the frame artifacts and their cell rects use;
+ * `getContentTopRow` states the same boundary in the 1-based numbering the hit-test rect uses.
+ */
+export function getContentTopRowIndex(): number {
+  return getContentTopRow() - 1;
 }
 
 // The most recent drift verdict from the event log, used for the review-stage done tail.

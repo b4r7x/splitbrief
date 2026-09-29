@@ -35,7 +35,7 @@ describe('promoteStagedChanges', () => {
   it('creates an empty staged root for a project without Git entries', async () => {
     const projectDir = createTempDir('staged-empty-no-git');
     try {
-      const staged = await createStagedProject(projectDir);
+      const staged = await createStagedProject({ projectDir: projectDir });
       try {
         expect(existsSync(staged.projectDir)).toBe(true);
         expect(staged.snapshot.baselineFileHashes).toEqual({});
@@ -63,7 +63,7 @@ describe('promoteStagedChanges', () => {
         targetBaseline: await captureAcquisitionBaseline(projectDir),
       });
 
-      expect(promoted).toEqual({ promotedFiles: ['src/app.ts'], conflictedFiles: [] });
+      expect(promoted).toMatchObject({ promotedFiles: ['src/app.ts'], conflictedFiles: [] });
       expect(readFileSync(join(projectDir, 'src', 'app.ts'), 'utf-8')).toBe('staged\n');
     } finally {
       cleanupTempDir(stagedDir);
@@ -89,7 +89,7 @@ describe('promoteStagedChanges', () => {
         targetBaseline: await captureAcquisitionBaseline(projectDir),
       });
 
-      expect(promoted).toEqual({ promotedFiles: ['.gitignore'], conflictedFiles: [] });
+      expect(promoted).toMatchObject({ promotedFiles: ['.gitignore'], conflictedFiles: [] });
       expect(readFileSync(join(projectDir, '.gitignore'), 'utf-8')).toBe(`${original}coverage/\n`);
     } finally {
       cleanupTempDir(stagedDir);
@@ -179,7 +179,7 @@ describe('promoteStagedChanges', () => {
         targetBaseline: await captureAcquisitionBaseline(projectDir),
       });
 
-      expect(promoted).toEqual({ promotedFiles: ['logo.bin'], conflictedFiles: [] });
+      expect(promoted).toMatchObject({ promotedFiles: ['logo.bin'], conflictedFiles: [] });
       expect(readFileSync(join(projectDir, 'logo.bin'))).toEqual(payload);
     } finally {
       cleanupTempDir(stagedDir);
@@ -202,7 +202,7 @@ describe('promoteStagedChanges', () => {
         targetBaseline: await captureAcquisitionBaseline(projectDir),
       });
 
-      expect(promoted).toEqual({ promotedFiles: ['logo.bin'], conflictedFiles: [] });
+      expect(promoted).toMatchObject({ promotedFiles: ['logo.bin'], conflictedFiles: [] });
       expect(readFileSync(join(projectDir, 'logo.bin'))).toEqual(payload);
     } finally {
       cleanupTempDir(stagedDir);
@@ -224,7 +224,7 @@ describe('promoteStagedChanges', () => {
         targetBaseline: await captureAcquisitionBaseline(projectDir),
       });
 
-      expect(promoted).toEqual({ promotedFiles: ['run.sh'], conflictedFiles: [] });
+      expect(promoted).toMatchObject({ promotedFiles: ['run.sh'], conflictedFiles: [] });
       expect(statSync(join(projectDir, 'run.sh')).mode & 0o777).toBe(0o755);
     } finally {
       cleanupTempDir(stagedDir);
@@ -246,7 +246,7 @@ describe('promoteStagedChanges', () => {
         targetBaseline: await captureAcquisitionBaseline(projectDir),
       });
 
-      expect(promoted).toEqual({ promotedFiles: ['install.sh'], conflictedFiles: [] });
+      expect(promoted).toMatchObject({ promotedFiles: ['install.sh'], conflictedFiles: [] });
       expect(statSync(join(projectDir, 'install.sh')).mode & 0o7777).toBe(0o755);
     } finally {
       cleanupTempDir(stagedDir);
@@ -270,7 +270,7 @@ describe('promoteStagedChanges', () => {
         targetBaseline: await captureAcquisitionBaseline(projectDir),
       });
 
-      expect(promoted).toEqual({ promotedFiles: ['.gitignore'], conflictedFiles: [] });
+      expect(promoted).toMatchObject({ promotedFiles: ['.gitignore'], conflictedFiles: [] });
       expect(readFileSync(join(projectDir, '.gitignore'), 'utf-8')).toBe(original);
       expect(statSync(join(projectDir, '.gitignore')).mode & 0o777).toBe(0o664);
     } finally {
@@ -293,7 +293,7 @@ describe('promoteStagedChanges', () => {
         targetBaseline: await captureAcquisitionBaseline(projectDir),
       });
 
-      expect(promoted).toEqual({ promotedFiles: ['src/scratch.ts'], conflictedFiles: [] });
+      expect(promoted).toMatchObject({ promotedFiles: ['src/scratch.ts'], conflictedFiles: [] });
       expect(existsSync(join(projectDir, 'src', 'scratch.ts'))).toBe(false);
     } finally {
       cleanupTempDir(stagedDir);
@@ -327,6 +327,34 @@ describe('promoteStagedChanges', () => {
     }
   });
 
+  itUnix('conflicts when target permissions change after acquisition', async () => {
+    const projectDir = createTempDir('promote-mode-target');
+    const stagedDir = createTempDir('promote-mode-staged');
+    try {
+      writeFileSync(join(projectDir, 'a'), 'same bytes');
+      writeFileSync(join(stagedDir, 'a'), 'same bytes');
+      chmodSync(join(projectDir, 'a'), 0o644);
+      chmodSync(join(stagedDir, 'a'), 0o644);
+      const targetBaseline = await captureAcquisitionBaseline(projectDir);
+      chmodSync(join(projectDir, 'a'), 0o600);
+      chmodSync(join(stagedDir, 'a'), 0o700);
+
+      const promoted = await promoteStagedChanges({
+        targetProjectDir: projectDir,
+        stagedProjectDir: stagedDir,
+        files: ['a'],
+        targetBaseline,
+      });
+
+      expect(promoted).toEqual({ promotedFiles: [], conflictedFiles: ['a'] });
+      expect(readFileSync(join(projectDir, 'a'), 'utf-8')).toBe('same bytes');
+      expect(statSync(join(projectDir, 'a')).mode & 0o777).toBe(0o600);
+    } finally {
+      cleanupTempDir(stagedDir);
+      cleanupTempDir(projectDir);
+    }
+  });
+
   it('treats a target already holding the staged bytes as promoted, not as a conflict', async () => {
     const projectDir = createTempDir('promote-project');
     const stagedDir = createTempDir('promote-staged');
@@ -345,7 +373,7 @@ describe('promoteStagedChanges', () => {
         targetBaseline,
       });
 
-      expect(promoted).toEqual({ promotedFiles: ['src/app.ts'], conflictedFiles: [] });
+      expect(promoted).toMatchObject({ promotedFiles: ['src/app.ts'], conflictedFiles: [] });
       expect(readFileSync(join(projectDir, 'src', 'app.ts'), 'utf-8')).toBe('staged\n');
     } finally {
       cleanupTempDir(stagedDir);

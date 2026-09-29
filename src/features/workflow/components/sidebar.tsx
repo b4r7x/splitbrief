@@ -13,6 +13,8 @@ import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { selectTaskListView, taskTargetLabel, tasksStore } from '../../../stores/workflow/tasks.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { configStore } from '../../../stores/project/config.js';
+import type { WorkflowMode } from '../../../core/schemas/enums.js';
+import { useRunMode } from '../hooks/use-run-mode.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import {
   CREW_LABEL_WIDTH,
@@ -22,7 +24,7 @@ import {
 import { CREW_SEAT_ROLES, deriveCrewSeats, type CrewSeat } from '../../../core/crew/seats.js';
 import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
 import { formatStageLabel } from '../../../core/phase-display.js';
-import { formatStageElapsed } from '../display/live-activity.js';
+import { formatElapsedClock } from '../../../utils/format-time.js';
 import { getActiveRailStage } from '../../../core/rail-stages.js';
 import {
   getSidebarTaskListRows,
@@ -32,6 +34,7 @@ import {
 } from '../layout/rect.js';
 import { useAdvisory } from '../hooks/use-advisory.js';
 import { useSpinnerFrame } from '../../../hooks/use-spinner-frame.js';
+import { useSharedClock } from '../../../hooks/use-shared-clock.js';
 import { formatLocalSharePct, localShare } from '../display/local-share.js';
 import { Divider } from '../../../components/divider.js';
 import { useStores } from '../../../stores/use-stores.js';
@@ -131,7 +134,7 @@ function rowSpec(status: WorkflowTask['status'], t: Theme): RowSpec {
   }
 }
 
-function SidebarWaiting() {
+function SidebarWaiting({ mode }: { mode: WorkflowMode | null }) {
   const t = useTheme();
   const [lifecycle, controls, approval, recovery] = useStores(
     lifecycleStore,
@@ -147,6 +150,9 @@ function SidebarWaiting() {
     pendingApproval: approval.status === 'pending',
   });
   const { frame } = useSpinnerFrame(display.animate);
+  // The run clock the header shows, from the same ticking sample: the two surfaces cannot read
+  // different seconds for one run.
+  const now = useSharedClock({ active: lifecycle.status === 'running' });
 
   if (recovery.issue !== null) {
     return <Text color={t.warning}>{`${LIST_INDENT}Planning stopped`}</Text>;
@@ -158,9 +164,8 @@ function SidebarWaiting() {
     return <Text color={t.textDim}>{`${LIST_INDENT}No tasks yet`}</Text>;
   }
 
-  const stage = getActiveRailStage(lifecycle.phase)?.stage ?? '';
-  const elapsed =
-    lifecycle.startedAt !== null ? formatStageElapsed(Date.now() - lifecycle.startedAt) : '';
+  const stage = getActiveRailStage(lifecycle.phase, mode ?? 'standard')?.stage ?? '';
+  const elapsed = lifecycle.startedAt !== null ? formatElapsedClock(now - lifecycle.startedAt) : '';
   return (
     <Box flexDirection="column">
       <Text color={t.textDim}>{`${LIST_INDENT}No tasks yet`}</Text>
@@ -268,7 +273,9 @@ export function Sidebar({ width, height }: SidebarProps) {
   const view = tasksStore.use(selectTaskListView);
   const config = configStore.use((s) => s.config);
   const displayNames = useCrewDisplayNames(config);
-  const mode = config?.workflow?.mode;
+  // The mode the run is on, as the one shared derivation reads it: the engine's resolved mode
+  // leads, the record's prepared-run mode stands in, and only a run with neither reads the config.
+  const mode = useRunMode();
   const seats: readonly CrewSeat[] = config ? deriveCrewSeats({ config, displayNames }) : [];
   const advisory = useAdvisory();
   // The footer reports how much of the build the local seat carried, which is a routing fact. The
@@ -340,7 +347,7 @@ export function Sidebar({ width, height }: SidebarProps) {
         flexShrink={1}
         overflow="hidden"
       >
-        {tasks.length === 0 && <SidebarWaiting />}
+        {tasks.length === 0 && <SidebarWaiting mode={mode} />}
         {listWindow.showAbove && <Text color={t.textDim}>{`${LIST_INDENT}${aboveLabel}`}</Text>}
         {visible.map((task) => (
           <TaskRow key={task.id} task={task} width={width} statusCells={statusCells} />

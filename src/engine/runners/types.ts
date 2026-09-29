@@ -61,6 +61,7 @@ export type ParsedLine =
       toolUseDelta?: ToolUseDeltaInfo[] | undefined;
       toolUseDone?: ToolUseInfo[] | undefined;
       warning?: ParsedWarningInfo[] | undefined;
+      isHeartbeat?: boolean | undefined;
     }
   | {
       text?: undefined;
@@ -75,6 +76,7 @@ export type ParsedLine =
       toolUseDelta?: ToolUseDeltaInfo[] | undefined;
       toolUseDone?: ToolUseInfo[] | undefined;
       warning?: ParsedWarningInfo[] | undefined;
+      isHeartbeat?: boolean | undefined;
     }
   | {
       text?: undefined;
@@ -89,6 +91,7 @@ export type ParsedLine =
       toolUseDelta?: ToolUseDeltaInfo[] | undefined;
       toolUseDone?: ToolUseInfo[] | undefined;
       warning?: ParsedWarningInfo[] | undefined;
+      isHeartbeat?: boolean | undefined;
     };
 
 /**

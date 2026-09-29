@@ -1,9 +1,12 @@
 import { existsSync } from 'node:fs';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { retainedWorkspaceNotice, retentionError } from '../isolation/retention.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
-import { DEFAULT_WORKFLOW_MODE, type Config } from '../../../core/schemas/config.js';
+import type { Config } from '../../../core/schemas/config.js';
+import { resolveMode } from '../../../core/config/runtime/resolve.js';
+import { WORKFLOW_REWIND_ABORT_REASON } from '../../../core/phases.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { pruneOrphanSessions } from '../../../core/sessions/orphans.js';
 import { recordRunnerPid, releaseRunnerPid } from '../../../core/sessions/runner-pids.js';
@@ -43,15 +46,17 @@ import {
   type PlannerCallPublisherContext,
 } from './call-publishing.js';
 import { acquireLiveness } from './liveness.js';
+import { closeRunIfOpen } from './close.js';
 import {
+  parkStoppedRun,
   readWorkflowStateHead,
   rebaseOnPersistedWorkflowState,
   recordLastFailure,
-  transitionAndSave,
+  stateOpsError,
 } from '../state-ops.js';
 import { sessionDir } from '../../../core/paths.js';
 import { artifactPresence } from '../../../core/sessions/run-record-io.js';
-import { resumeStep } from '../../../core/sessions/run-status.js';
+import { deriveRunStatus, NO_ARTIFACTS, resumeStep } from '../../../core/sessions/run-status.js';
 
 function resolveSessionStart(savedState: WorkflowState | undefined): number {
   if (!savedState) return Date.now();
@@ -98,6 +103,17 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   }
   const requestedSavedState = opts.savedState ?? runtime.resumeState;
   let savedState: WorkflowState | undefined;
+  if (opts.prepared.purpose !== 'new-workflow') {
+    try {
+      savedState = readWorkflowStateHead({ projectDir, sessionId })?.state;
+    } catch (err) {
+      // The mode lookup must not fail the run ahead of the guarded read below:
+      // an unreadable head leaves the mode to the config and the read inside the
+      // run body reports the state problem through the run's own error path.
+      if (!stateOpsError.isInvalidHead(err)) throw err;
+    }
+  }
+  const mode = resolveMode({ config, savedMode: savedState?.mode });
   const { selectedSkills } = opts;
   // A boundary interrupt raised before this run started (Esc-Esc in a dead zone
   // of a previous run that then ended into recovery without passing a call
@@ -121,7 +137,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
       ...(ident.implementerModel !== undefined && { implementerModel: ident.implementerModel }),
       ...(ident.reviewerTool !== undefined && { reviewerTool: ident.reviewerTool }),
       ...(ident.reviewerModel !== undefined && { reviewerModel: ident.reviewerModel }),
-      mode: source.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
+      mode,
       projectDir,
       sessionId,
       ...(opts.modelCache !== undefined && { pricingCache: opts.modelCache }),
@@ -134,7 +150,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     plannerModel: summaryBase.plannerModel,
     implementerTool: summaryBase.implementerTool,
     implementerModel: summaryBase.implementerModel,
-    mode: config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
+    mode,
   };
 
   let trackedState: WorkflowState | undefined;
@@ -159,20 +175,13 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
       at: nowIso(),
     });
 
-  // End run is the only stop that closes a run: the close goes on the state, so
-  // the record reads `closed · ended` and nothing resumes it.
-  const closeRun = (state: WorkflowState): WorkflowState => {
-    if (state.closed !== undefined) return state;
-    const latest = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state);
-    return transitionAndSave({ projectDir, sessionId }, latest, { type: 'CLOSE_RUN' });
-  };
-
   // Every other abort parks the step it cut, so the run reads `open · paused`.
   // A crash that never reached this point still reads `interrupted`, which is
   // the honest answer for a run that had no chance to say where it stopped.
   const parkRun = (state: WorkflowState): WorkflowState => {
     const latest = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state);
     if (
+      opts.signal?.reason === WORKFLOW_REWIND_ABORT_REASON ||
       latest.closed !== undefined ||
       latest.phase === 'complete' ||
       latest.interruptedStep !== undefined ||
@@ -180,17 +189,20 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     ) {
       return latest;
     }
-    return transitionAndSave({ projectDir, sessionId }, latest, {
-      type: 'INTERRUPT_STEP',
-      step: resumeStep(latest, artifactPresence({ projectDir, sessionId })),
-      source: 'user',
-      cut: 'mid-step',
-    });
+    return parkStoppedRun({ projectDir, sessionId, bus: wctx?.bus ?? workflowBus }, latest);
   };
 
   const publishWorkflowCancellation = (reason: typeof WORKFLOW_CANCEL_REASON_USER): void => {
     const bus = wctx?.bus ?? workflowBus;
     if (!bus || cancellationPublished) return;
+    if (trackedState !== undefined) {
+      const status = deriveRunStatus({
+        state: trackedState,
+        liveness: 'not-alive',
+        artifacts: NO_ARTIFACTS,
+      });
+      if (status.kind === 'closed' && status.as === 'complete') return;
+    }
     bus.publish({
       type: 'workflow_cancelled',
       ts: Date.now(),
@@ -211,7 +223,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     projectDir,
     sessionId,
     feature,
-    mode: config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
+    mode,
     signal: opts.signal,
   });
 
@@ -239,13 +251,13 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
         message: `Isolation worktree unavailable; falling back to a staged copy: ${reason}`,
       });
     },
-    onRetained: (dir: string): void => {
+    onRetained: (dir, purpose): void => {
       const bus = wctx?.bus ?? workflowBus;
       if (!bus) return;
       publishWarning({
         bus,
         phase: trackedState?.phase ?? workflowPhase ?? createInitialState(feature).phase,
-        message: `Isolation worktree retained at ${dir}; unpromoted work remains`,
+        message: retainedWorkspaceNotice(dir, purpose),
       });
     },
     warningPublisher: (message: string): void => {
@@ -269,11 +281,12 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
       },
       async () => {
         try {
-          const savedStateResult =
+          // The mode lookup above serves liveness. Read progress again after acquisition:
+          // the previous runner may have finished while orphan cleanup was awaiting.
+          savedState =
             opts.prepared.purpose === 'new-workflow'
-              ? null
-              : readWorkflowStateHead({ projectDir, sessionId });
-          savedState = savedStateResult?.state;
+              ? undefined
+              : readWorkflowStateHead({ projectDir, sessionId })?.state;
           if (opts.prepared.purpose !== 'new-workflow') reopenSessionRecord(ref);
           trackedState = savedState ?? createInitialState(feature);
           const resumeHolder: ResumeContextHolder = { messages: [] };
@@ -392,7 +405,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
           }
         } catch (err) {
           await killAllProcesses();
-          if (!opts.signal?.aborted) {
+          if (!opts.signal?.aborted || retentionError.isFailed(err)) {
             const bus = wctx?.bus ?? workflowBus;
             const message = toErrorMessage(err);
             if (bus && trackedState) {
@@ -419,16 +432,21 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     await killAllProcesses();
 
     const signalCancellationReason = workflowCancelledReasonFromSignal(opts.signal);
-    if (cancelled || signalCancellationReason !== undefined) {
-      publishWorkflowCancellation(signalCancellationReason ?? WORKFLOW_CANCEL_REASON_USER);
-    }
     const stoppedState = trackedState;
     if (stoppedState !== undefined) {
       if (signalCancellationReason !== undefined) {
-        trackedState = closeRun(stoppedState);
+        const closure = closeRunIfOpen({ projectDir, sessionId }, stoppedState);
+        trackedState = closure.state;
+        if (result !== undefined && result.phase !== closure.state.phase) {
+          result = { ...result, phase: closure.state.phase };
+        }
+        if (closure.closedNow) publishWorkflowCancellation(signalCancellationReason);
       } else if (opts.signal?.aborted) {
         trackedState = parkRun(stoppedState);
       }
+    }
+    if (cancelled && signalCancellationReason === undefined) {
+      publishWorkflowCancellation(WORKFLOW_CANCEL_REASON_USER);
     }
     if (!result) {
       if (cancelled) {

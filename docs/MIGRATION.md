@@ -24,11 +24,11 @@ A run is now a durable, continuable record until the user closes it. Nothing res
 
 New actions: `CLOSE_RUN`, `INTERRUPT_STEP`, `RESUME_STEP`, `BEGIN_PLANNING`. New recovery reasons: `planner-call-failed`, `planner-returned-no-briefs`, `constitution-check-failed`, `brief-review-no-progress`, `brief-quality-unrepaired`. New recovery actions: `revise`, `revise-spec`.
 
-`spec_rejected` and `plan_rejected` keep their wire names so old logs replay; they now record that a gate ended the run rather than approving it. The `recovery_resolved` outcome literal for `end-run` is still `aborted`, for the same reason.
+`spec_rejected` and `plan_rejected` keep their wire names so old logs replay; they now record that a gate ended the run rather than approving it. The `recovery_resolved` outcome literal for `end-run` is still `aborted`, for the same reason. A gate that passes publishes `spec_approved`, `plan_approved` or `briefs_approved`; `spec_approved` and `briefs_approved` are new event types. End run at the briefs gate publishes the new `briefs_rejected`.
 
 ### Removed events
 
-`cost_prediction`, `budget_warning`, `budget_paused`, `budget_exceeded`. A consumer that switched on them should drop those arms; `cost_update` is unchanged and is the only spend event. New: `turn_interrupted` carries an optional `at` (`mid-step` | `boundary`), and `replay_started` / `replay_complete` wrap a log read back into an event array.
+`cost_prediction`, `budget_warning`, `budget_paused`, `budget_exceeded`. A consumer that switched on them should drop those arms; `cost_update` is unchanged and is the only spend event. New: `turn_interrupted` carries an optional `at` (`mid-step` | `boundary`; a stop at a gate is `boundary`, because it cuts nothing) and an optional `step`, the step the stop parked, and `replay_started` / `replay_complete` wrap a log read back into an event array.
 
 ### Removed config keys
 

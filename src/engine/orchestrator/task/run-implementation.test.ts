@@ -9,13 +9,16 @@ import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
+import { ensureSessionDir } from '../../../core/paths-io.js';
 import {
+  makeBusRecorder,
   makeCallbacks,
   makeImplementer,
   makeWctx,
 } from '#testing/helpers/orchestrator-factories.js';
 import { createContinuationHolder } from '../continuation.js';
 import type { RunIsolation } from '../isolation/types.js';
+import type { Implementer, ImplementerOptions } from '../../implementers/types.js';
 import {
   customRunnerSecurityPosture,
   type ConfiguredCustomRunner,
@@ -28,6 +31,7 @@ import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { createStagedProject } from '../approval/staged-project.js';
 import { applyChangedFiles } from './apply-changed-files.js';
 import { runImplementation } from './run-implementation.js';
+import type { StreamingSink } from './streaming-feed.js';
 
 const directories: string[] = [];
 
@@ -74,7 +78,8 @@ function runtimeFor(
     authorizationPathEnv: process.env.PATH ?? '',
     ...(process.env.PATHEXT === undefined ? {} : { authorizationPathExt: process.env.PATHEXT }),
     createStage:
-      input.createStage ?? (async (sourceProjectDir) => createStagedProject(sourceProjectDir)),
+      input.createStage ??
+      (async (sourceProjectDir) => createStagedProject({ projectDir: sourceProjectDir })),
     admission: { interaction: 'headless', allowRepoRunners: true, stateDir: input.stateDir },
     cleanupStaleArtifactReviews: async () => {},
     beginDeclaredArtifactReview: async () => {
@@ -122,6 +127,7 @@ function setupDirectScenario(approval: 'approved' | 'rejected'): {
 
 async function runIsolatedDirectScenario(approval: 'approved' | 'rejected'): Promise<void> {
   const { projectDir, stateDir, outsideDir } = setupDirectScenario(approval);
+  ensureSessionDir(projectDir, 't028-session-must-not-reach-child');
   const outsideSentinel = join(outsideDir, 'child-can-reach-host');
   const task = makeTask({
     id: approval === 'approved' ? 'T029' : 'T030',
@@ -151,7 +157,7 @@ async function runIsolatedDirectScenario(approval: 'approved' | 'rejected'): Pro
     "  '// cwd:' + process.cwd(),",
     "  '// allowed:' + (process.env.T028_ALLOWED_VALUE ?? 'absent'),",
     "  '// undeclared:' + (process.env.T028_UNDECLARED_SECRET ?? 'absent'),",
-    "  '// session-in-prompt:' + prompt.includes('t028-session-must-not-reach-child'),",
+    "  '// session-id-outside-workspace-path:' + prompt.split(process.cwd()).join('').includes('t028-session-must-not-reach-child'),",
     "  'export const direct = true;',",
     '];',
     "fs.writeFileSync('src/direct.ts', lines.join('\\n') + '\\n');",
@@ -204,7 +210,9 @@ async function runIsolatedDirectScenario(approval: 'approved' | 'rejected'): Pro
   expect(stagedOutput).toContain(`// cwd:${realpathSync(workspace.projectDir)}`);
   expect(stagedOutput).toContain('// allowed:runtime-source-only');
   expect(stagedOutput).toContain('// undeclared:absent');
-  expect(stagedOutput).toContain('// session-in-prompt:false');
+  // The confinement rule names the workspace path, which lives under the session
+  // directory; the session id must not travel anywhere else in the prompt.
+  expect(stagedOutput).toContain('// session-id-outside-workspace-path:false');
   expect(readFileSync(outsideSentinel, 'utf8')).toBe('outside-stage-reachable');
   expect(existsSync(join(projectDir, 'src', 'direct.ts'))).toBe(false);
 
@@ -238,7 +246,7 @@ describe('runImplementation configured custom contracts', () => {
         T028_UNDECLARED_SECRET: 'must-not-reach-child',
       },
       createStage: async (sourceProjectDir) => {
-        const stage = await createStagedProject(sourceProjectDir);
+        const stage = await createStagedProject({ projectDir: sourceProjectDir });
         childStages.push(realpathSync(stage.projectDir));
         stage.sandboxEnv.T028_ALLOWED_VALUE = 'stage-sandbox-only';
         return stage;
@@ -307,7 +315,7 @@ describe('runImplementation configured custom contracts', () => {
 
 describe('runImplementation worktree freshness', () => {
   async function capturedFresh(
-    seed: { partial?: string; steer?: string; attempt?: number } | undefined,
+    seed: { partial?: string; steer?: string; attempt?: number; keepWorkspace?: true } | undefined,
     stateOverrides?: Partial<WorkflowState>,
   ): Promise<boolean | undefined> {
     const { projectDir } = setupProject('reseed');
@@ -335,6 +343,7 @@ describe('runImplementation worktree freshness', () => {
             step: { kind: 'brief', taskId: task.id, attempt: seed.attempt ?? 0 },
             ...(seed.partial !== undefined && { partial: seed.partial }),
             ...(seed.steer !== undefined && { steer: seed.steer }),
+            ...(seed.keepWorkspace === true && { keepWorkspace: true }),
           });
     const wctx = makeWctx({
       projectDir,
@@ -368,7 +377,8 @@ describe('runImplementation worktree freshness', () => {
   });
 
   it('keeps the worktree for a genuine mid-step park continuation', async () => {
-    expect(await capturedFresh({ partial: 'half a brief' })).toBe(false);
+    // A genuine park carries what `resumeContinuation` records: the partial and the keep flag.
+    expect(await capturedFresh({ partial: 'half a brief', keepWorkspace: true })).toBe(false);
   });
 
   it("reseeds when a prior attempt's partial no longer matches the reset attempt", async () => {
@@ -424,5 +434,107 @@ describe('runImplementation continuation note', () => {
       extra:
         'These declared files already differ from the commit this brief started on: src/reseed.ts',
     });
+  });
+});
+
+describe('runImplementation live preview', () => {
+  // A Claude Code build call's text as it reached onOutput in a real run: two messages with tool
+  // calls between them, and no line break where one message ends and the next begins.
+  const CLAUDE_CODE_NARRATION = [
+    "Using the brief's ste",
+    'ps directly. I start with or',
+    'ientation: the f',
+    'ixture size',
+    ', the two comment s',
+    'ites, and the git state.',
+    'The g',
+    'allery file',
+    ' already',
+    ' car',
+    'ries an',
+    ' uncommitted change. I',
+    ' check that',
+    ' diff before I ed',
+    'it it,',
+    ' so my ed',
+    'it does',
+    ' not disturb it.',
+  ];
+
+  async function streamThrough(
+    capabilities: Implementer['capabilities'],
+    chunks: readonly string[],
+  ): Promise<{ sink: StreamingSink; narration: string }> {
+    const { projectDir } = setupProject('live-preview');
+    const task = makeTask({ id: 'T050', file: 'src/preview.ts', action: 'modify' });
+    const { bus, events } = makeBusRecorder();
+    const isolation: RunIsolation = {
+      acquire: async () => ({
+        projectDir,
+        sandboxEnv: {},
+        snapshot: await getChangedFilesSnapshot(projectDir),
+        targetBaseline: undefined,
+        changeDetection: 'file-hashes',
+        cleanup: () => {},
+      }),
+      dispose: async () => {},
+    };
+    const implementer = makeImplementer({
+      capabilities,
+      implement: vi.fn(async ({ onOutput }: ImplementerOptions) => {
+        for (const chunk of chunks) onOutput(chunk);
+        return { success: true, output: '' };
+      }),
+    });
+    const sink: StreamingSink = { start: vi.fn(), replaceLines: vi.fn(), stop: vi.fn() };
+
+    await runImplementation({
+      wctx: makeWctx({
+        projectDir,
+        sessionId: 'live-preview-session',
+        bus,
+        implementer,
+        isolation,
+      }),
+      task,
+      state: makeImplState([task]),
+      taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
+      setTrackedState: vi.fn(),
+      recordApprovalDenial: vi.fn(),
+      streamingSink: sink,
+    });
+
+    const narration = events
+      .flatMap((event) =>
+        event.type === 'planner_text' && event.role === 'implementer' ? [event.text] : [],
+      )
+      .join('');
+    return { sink, narration };
+  }
+
+  it("draws a direct writer's narration in its transcript rows only, never in the preview", async () => {
+    const { sink, narration } = await streamThrough(
+      { writesFiles: 'direct' },
+      CLAUDE_CODE_NARRATION,
+    );
+
+    expect(narration).toBe(CLAUDE_CODE_NARRATION.join(''));
+    expect(vi.mocked(sink.replaceLines).mock.calls).toEqual([]);
+    expect(sink.start).not.toHaveBeenCalled();
+  });
+
+  it('previews the code an extractor streams', async () => {
+    const { sink } = await streamThrough({ writesFiles: 'extracted-code' }, [
+      '```ts\n',
+      'export const preview = 1;\n',
+      '```\n',
+    ]);
+
+    expect(sink.start).toHaveBeenCalledWith('T050');
+    expect(vi.mocked(sink.replaceLines).mock.calls.at(-1)?.[0]).toEqual([
+      '```ts',
+      'export const preview = 1;',
+      '```',
+    ]);
   });
 });

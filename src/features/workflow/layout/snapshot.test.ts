@@ -32,6 +32,12 @@ import { taskId } from '../../../core/schemas/task.js';
 import type { TieredApprovalRequest } from '../../../core/approval/types.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import { makeTaskStart } from '#testing/helpers/events/task.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
+import { routerStore } from '../../../stores/navigation/router.js';
+import { configStore } from '../../../stores/project/config.js';
+import { modeAdviceStore } from '../../../stores/workflow/mode-advice.js';
 
 beforeEach(() => {
   terminalSizeStore.reset();
@@ -422,6 +428,108 @@ describe('readRailSnapshot', () => {
     expect(snap.zones.every((zone) => zone.index === 3)).toBe(true);
   });
 
+  it('maps saved quick researching to the Plan Form-C zone under a standard config', () => {
+    terminalSizeStore.__testReset({ cols: 30, rows: 30, isSmall: true });
+    configStore.__testReset({ config: makeConfig({ workflow: { mode: 'standard' } }) });
+    lifecycleStore.__testReset({ phase: 'researching', status: 'running', startedAt: 0 });
+    routerStore.init({
+      screen: 'workflow',
+      run: makeRunRecord({ mode: 'quick' }),
+      execution: { kind: 'at-rest' },
+    });
+
+    try {
+      // The run's saved quick mode beats the standard config: an old quick `researching` phase has
+      // no Spec step to activate, so Plan is the active stage and Form C's only zone.
+      const quick = readRailSnapshot();
+      expect(quick.activeIndex).toBe(1);
+      expect(quick.zones).toHaveLength(1);
+      expect(quick.zones[0]?.stage).toBe('plan');
+      expect(quick.zones[0]?.index).toBe(1);
+
+      // Standard control: the same researching phase under standard mode activates Spec.
+      routerStore.init({
+        screen: 'workflow',
+        run: makeRunRecord({ mode: 'standard' }),
+        execution: { kind: 'at-rest' },
+      });
+      const standard = readRailSnapshot();
+      expect(standard.activeIndex).toBe(0);
+      expect(standard.zones).toHaveLength(1);
+      expect(standard.zones[0]?.stage).toBe('spec');
+      expect(standard.zones[0]?.index).toBe(0);
+    } finally {
+      routerStore.reset();
+      configStore.__testReset();
+    }
+  });
+
+  it('keeps a fresh run on its resolved mode when the next-run config changes', () => {
+    terminalSizeStore.__testReset({ cols: 30, rows: 30, isSmall: true });
+    configStore.__testReset({ config: makeConfig({ workflow: { mode: 'standard' } }) });
+    lifecycleStore.__testReset({ phase: 'researching', status: 'running', startedAt: 0 });
+    // A fresh run: home read the record before any state was saved, so it carries no mode.
+    routerStore.init({
+      screen: 'workflow',
+      run: makeRunRecord({ mode: null }),
+      execution: { kind: 'at-rest' },
+    });
+    // The engine resolved the mode this run started under; quick has no Spec step.
+    modeAdviceStore.__testReset({ mode: 'quick' });
+
+    try {
+      const before = readRailSnapshot();
+      expect(before.activeIndex).toBe(1);
+      expect(before.zones[0]?.stage).toBe('plan');
+
+      // `/mode speckit` is written for the next run and must not move this run's rail.
+      configStore.__testReset({ config: makeConfig({ workflow: { mode: 'speckit' } }) });
+      const after = readRailSnapshot();
+      expect(after).toEqual(before);
+    } finally {
+      routerStore.reset();
+      configStore.__testReset();
+      modeAdviceStore.__testReset();
+    }
+  });
+
+  it('keeps a fresh run on its prepared mode when the next-run config changes', () => {
+    terminalSizeStore.__testReset({ cols: 30, rows: 30, isSmall: true });
+    configStore.__testReset({ config: makeConfig({ workflow: { mode: 'standard' } }) });
+    lifecycleStore.__testReset({ phase: 'researching', status: 'running', startedAt: 0 });
+    // A fresh local run whose record was read before any state was saved: no recorded and no
+    // resolved mode yet, but its prepared execution still knows the config it started under.
+    routerStore.init({
+      screen: 'workflow',
+      run: makeRunRecord({ mode: null }),
+      execution: {
+        kind: 'local',
+        prepared: makePreparedExecution({
+          projectDir: '/tmp/prepared-run',
+          sessionId: 'prepared-run-session',
+          feature: 'add auth',
+          config: makeConfig({ workflow: { mode: 'quick' } }),
+        }),
+      },
+    });
+    modeAdviceStore.__testReset();
+
+    try {
+      const before = readRailSnapshot();
+      expect(before.activeIndex).toBe(1);
+      expect(before.zones[0]?.stage).toBe('plan');
+
+      // `/mode speckit` is written for the next run and must not move this run's rail or zones.
+      configStore.__testReset({ config: makeConfig({ workflow: { mode: 'speckit' } }) });
+      const after = readRailSnapshot();
+      expect(after).toEqual(before);
+    } finally {
+      routerStore.reset();
+      configStore.__testReset();
+      modeAdviceStore.__testReset();
+    }
+  });
+
   it('selects the rail form from width alone, independent of the live fraction', () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 30, isSmall: false });
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
@@ -456,6 +564,21 @@ describe('readReviewContentHeight', () => {
     const height = readReviewContentHeight();
 
     expect(height).toBeGreaterThan(0);
+  });
+
+  it('budgets no block for a run at rest, which the screen paints without one', () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 30, isSmall: false });
+    inputHeightStore.__testReset({ rows: 3 });
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    routerStore.init({ screen: 'workflow', run: makeRunRecord(), execution: { kind: 'at-rest' } });
+
+    try {
+      expect(readConversationScrollSnapshot().contentRect.height).toBe(
+        getWorkflowViewportHeight({ rows: 30, inputRows: 3, progressRows: 0 }),
+      );
+    } finally {
+      routerStore.reset();
+    }
   });
 
   it('keeps the review body on the same rows as the transcript while the block paints', () => {

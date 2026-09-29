@@ -1,7 +1,9 @@
+import { spawnSync } from 'node:child_process';
 import { describe, it, expect } from 'vitest';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { OwnedResumeState } from '../../../core/state/resume-hydration.js';
 import { createInitialState } from '../../../core/state/machine.js';
+import { composeContinuation } from '../../spec/prompts/continuation.js';
 import { continueRun, type ContinueRunDeps } from './continue.js';
 
 const REF = { projectDir: '/tmp/project', sessionId: 'sess-1' };
@@ -82,6 +84,36 @@ describe('continueRun', () => {
     continueRun({ ref: REF, steer: '   ', deps });
 
     expect(restarted).toEqual([{ state, steer: undefined }]);
+  });
+
+  it('keeps only what a paste may carry in the steer, on both paths into the run', () => {
+    const state = openState();
+    const { deps, parked, restarted } = makeDeps({ loaded: { kind: 'loaded', state } });
+
+    continueRun({ ref: REF, steer: '\x03\x03fix\x00 the\ttest\r\nnext\x1a', deps });
+
+    expect(parked).toEqual(['fix the\ttest\nnext']);
+    expect(restarted).toEqual([{ state, steer: 'fix the\ttest\nnext' }]);
+  });
+
+  // cursor and opencode carry the prompt in argv, and Node refuses to spawn an argument with a NUL.
+  it('hands the run a steer that a prompt in argv can carry', () => {
+    const state = openState();
+    const { deps, restarted } = makeDeps({ loaded: { kind: 'loaded', state } });
+    const typed = 'fix\x00 it';
+    const promptArgv = (steer: string | undefined) => [
+      '-e',
+      '0',
+      '--',
+      composeContinuation({ basePrompt: 'Build T001.', steer }),
+    ];
+    expect(() => spawnSync(process.execPath, promptArgv(typed))).toThrow(/null bytes/);
+
+    continueRun({ ref: REF, steer: typed, deps });
+
+    const spawned = spawnSync(process.execPath, promptArgv(restarted[0]?.steer));
+    expect(spawned.error).toBeUndefined();
+    expect(spawned.status).toBe(0);
   });
 
   it('refuses a run that was ended', () => {

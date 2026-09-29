@@ -315,7 +315,7 @@ export function usePickerCatalog(
     plannerIdentity: (() => {
       const plannerRunner = readActiveRunner({ config, role: 'planner' });
       const displayName = resolveSeatDisplayName(plannerRunner, 'planner', modelCacheStore);
-      return formatSeatIdentity(plannerRunner, displayName);
+      return formatSeatIdentity({ seat: plannerRunner, displayName });
     })(),
     currentModel,
     persistedModel,

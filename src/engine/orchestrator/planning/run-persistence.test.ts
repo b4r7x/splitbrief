@@ -5,11 +5,19 @@ import {
   auto,
   prepareState,
   runPlanningTurn as runPhaseHelper,
+  setupProject,
+  makeBriefQualityFailureTask,
   makePassingTask,
   makePassingPlanner,
+  REAL_TASKS_MD,
   type RunOpts,
 } from '#testing/helpers/planning-phase.js';
-import { loadState } from '../../../core/state/persistence.js';
+import { readSpecFileOrEmpty } from '../../../core/paths-io.js';
+import { TASKS_FILE } from '../../../core/paths.js';
+import { loadState, saveState } from '../../../core/state/persistence.js';
+import { createInitialState } from '../../../core/state/machine.js';
+import { makeWctx } from '#testing/helpers/orchestrator-factories.js';
+import { admitBriefs } from './run.js';
 import {
   createPlannerArtifactAttemptId,
   OwnedPlannerArtifactSchema,
@@ -22,6 +30,7 @@ import type {
   PlannerDocumentCall,
   RunPhaseInput,
 } from '../../planners/types.js';
+import type { EngineEvent } from '../../events/types.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 
 let dirs: string[] = [];
@@ -33,6 +42,41 @@ afterEach(() => {
 function runPhase(opts: RunOpts = {}) {
   return runPhaseHelper(dirs, opts);
 }
+
+describe('admitBriefs — automatic admission', () => {
+  it.each([
+    ['quick', 'none', 'planning'],
+    ['quick', 'all', 'reviewing-plan'],
+    ['standard', 'none', 'planning'],
+    ['speckit', 'none', 'planning'],
+  ] as const)(
+    '%s at %s saves one direct step from %s to implementation',
+    async (mode, approve, phase) => {
+      const { projectDir, sessionId } = setupProject(dirs);
+      const tasks = [makePassingTask()];
+      const state = { ...createInitialState('feat'), mode, approve, phase, tasks };
+      saveState({ projectDir, sessionId }, state);
+      const config = makeConfig({ workflow: { mode, approve } });
+      const wctx = makeWctx({ projectDir, sessionId, config });
+
+      const result = await admitBriefs({
+        wctx,
+        planner: makePassingPlanner(),
+        state,
+        tasks,
+        mode,
+        approveLevel: approve,
+        risk: 'small',
+      });
+
+      expect(result.disposition).toBe('ready-for-tasks');
+      if (result.disposition !== 'ready-for-tasks') return;
+      expect(result.state.phase).toBe('implementing');
+      expect(result.state.stateRevision).toBe(1);
+      expect(loadState({ projectDir, sessionId })?.phase).toBe('implementing');
+    },
+  );
+});
 
 function phaseResult(
   logicalName: PlannerArtifactLogicalName,
@@ -119,5 +163,52 @@ describe('runPlanningPhase — persistence', () => {
     expect(readFileSync(specPath, 'utf-8')).not.toContain('raw planner noise');
     expect(readFileSync(planPath, 'utf-8')).toContain('Use JWT');
     expect(readFileSync(planPath, 'utf-8')).not.toContain('raw planner noise');
+  });
+});
+
+/** The excerpt of every tasks.md card the transcript would draw, in order. */
+function briefCards(events: readonly EngineEvent[]): string[] {
+  return events.flatMap((event) =>
+    event.type === 'artifact_written' && event.filename === TASKS_FILE
+      ? [event.excerpt.join('\n')]
+      : [],
+  );
+}
+
+describe('runPlanningPhase — the Task Brief card', () => {
+  it('announces tasks.md once when the quality pass keeps the compiled briefs', async () => {
+    const { result, projectDir, sessionId, events } = await runPhase({
+      config: makeConfig({ workflow: auto('quick') }),
+    });
+
+    expect(result.disposition).toBe('ready-for-tasks');
+    expect(briefCards(events)).toEqual([expect.stringContaining('Create hello module')]);
+    expect(readSpecFileOrEmpty({ projectDir, sessionId }, TASKS_FILE)).toContain(
+      'title: Create hello module',
+    );
+  });
+
+  it('announces the briefs again when the quality pass repairs them', async () => {
+    const planner = makePassingPlanner({
+      runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
+        makePhaseCallResult({
+          call,
+          ...(call === 'tasks' ? { tasks: [makeBriefQualityFailureTask()] } : {}),
+        }),
+      ),
+      review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
+    });
+
+    const { result, projectDir, sessionId, events } = await runPhase({
+      planner,
+      config: makeConfig({ workflow: { ...auto('quick'), maxRetries: 1 } }),
+    });
+
+    expect(result.disposition).toBe('ready-for-tasks');
+    expect(briefCards(events)).toEqual([
+      expect.stringContaining('Create a hello world module'),
+      expect.stringContaining('Add auth'),
+    ]);
+    expect(readSpecFileOrEmpty({ projectDir, sessionId }, TASKS_FILE)).toContain('title: Add auth');
   });
 });

@@ -4,8 +4,13 @@ import {
 } from '../display/activity-display-text.js';
 import { ACTIVITY_LABEL_PAD, displayActivityLabel } from '../display/activity-label-display.js';
 import type { RunnerActivityLedgerLabel } from '../display/runner-activity-display.js';
+import { cutSeatIdentity } from '../../../core/crew/identity.js';
 import { getShortcutKey } from '../../../core/keybindings/registry.js';
-import { truncateTerminalDisplayText } from '../../../utils/display-text.js';
+import {
+  ELLIPSIS,
+  getTerminalCellWidth,
+  truncateTerminalDisplayText,
+} from '../../../utils/display-text.js';
 import {
   buildActivityBatchViewModel,
   type ActivityBatchViewModel,
@@ -14,6 +19,8 @@ import {
 import { row, segmentedRow } from './row-format/rows.js';
 import { rowLeadingCells } from './row-markers.js';
 import type { ConversationRow, ConversationRowBlock, ConversationRowTone } from './types.js';
+
+const HEADER_RUNNER_GAP = '  ';
 
 type RunnerActivityBatchRowsInput = {
   events: readonly RunnerActivityEvent[];
@@ -83,13 +90,14 @@ export function runnerActivityBatchWindowRows(input: {
 
   const headerText = model.headerText;
   if (headerText !== null) {
+    const prefixCells = rowLeadingCells('activity');
     appendVisibleRow(() =>
       activityHeaderRow({
         key: `${model.batchKey}-header`,
         text: fitCompactActivityDisplayLine({
-          label: headerText,
+          label: activityHeaderLabel(headerText, model.headerRunner, width - prefixCells),
           rowCells: width,
-          prefixCells: rowLeadingCells('activity'),
+          prefixCells,
         }).text,
         tone: model.tone,
       }),
@@ -123,6 +131,18 @@ export function runnerActivityBatchWindowRows(input: {
   }
 
   return rows;
+}
+
+/**
+ * The runner closes the header and sheds the way a seat identity does: the model goes before the
+ * tool, and a tool name that would be cut leaves the line instead, so no header ends in half a name.
+ */
+function activityHeaderLabel(text: string, runner: string | null, cells: number): string {
+  if (runner === null) return text;
+  const budget = cells - getTerminalCellWidth(`${text}${HEADER_RUNNER_GAP}[]`);
+  if (budget <= 0) return text;
+  const fitted = cutSeatIdentity(runner, budget);
+  return fitted.endsWith(ELLIPSIS) ? text : `${text}${HEADER_RUNNER_GAP}[${fitted}]`;
 }
 
 function activityHeaderRow(input: {

@@ -104,9 +104,15 @@ function DiscoveryPanel({ width }: { width: number }) {
     (refresh.readiness.outcome === 'failed' || refresh.readiness.outcome === 'not-run');
   if (!refreshing && !stalled) return null;
   const failedOutcome = refresh.readiness.outcome === 'failed';
-  const plannerSeat = `${CREW_SEAT_LABELS.plan} ${formatShortSeatIdentity(config.planner, displayNames.plan)}`;
+  const plannerSeat = `${CREW_SEAT_LABELS.plan} ${formatShortSeatIdentity({
+    seat: config.planner,
+    displayName: displayNames.plan,
+  })}`;
   const build = resolveImplementerProfiles(config).defaultProfile.config;
-  const implementerSeat = `${CREW_SEAT_LABELS.build} ${formatShortSeatIdentity(build, displayNames.build)}`;
+  const implementerSeat = `${CREW_SEAT_LABELS.build} ${formatShortSeatIdentity({
+    seat: build,
+    displayName: displayNames.build,
+  })}`;
   const notes = shedToFit({
     lead: [plannerSeat, implementerSeat],
     optional: [FIRST_RUN_NOTE],

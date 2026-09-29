@@ -305,7 +305,10 @@ describe('configured direct stage canaries', () => {
             },
             'retry-direct',
           );
-          const stage = await createStagedProject(projectDir, retryRuntime.config);
+          const stage = await createStagedProject({
+            projectDir: projectDir,
+            config: retryRuntime.config,
+          });
           try {
             expect(
               (

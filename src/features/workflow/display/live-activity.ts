@@ -1,4 +1,9 @@
-import { PHASES, type Phase } from '../../../core/schemas/enums.js';
+import {
+  PHASES,
+  type Phase,
+  type RunnerKind,
+  type WorkflowMode,
+} from '../../../core/schemas/enums.js';
 import type { PlannerCall } from '../../../core/schemas/run-step.js';
 import type { CliToolId } from '../../../core/runners/cli-tool-catalog.js';
 import { activeVerb } from './phase-verb.js';
@@ -28,10 +33,18 @@ const RAIL_GATE_PHASES: ReadonlySet<Phase> = new Set([
 // stall warning alone reads as a hang.
 const QUIET_STREAM_RUNNERS: ReadonlySet<string> = new Set<CliToolId>(['opencode']);
 
-export function stallRunnerHint(runnerName: string | null): string | null {
-  return runnerName !== null && QUIET_STREAM_RUNNERS.has(runnerName)
-    ? 'tools report when done'
-    : null;
+/**
+ * The hint explains a CLI behavior, so only a CLI call earns it: an API call
+ * that reuses the name reports its own progress and must not be told to wait.
+ * A call with no recorded kind keeps the name-only rule for legacy records.
+ */
+export function stallRunnerHint(
+  runnerName: string | null,
+  backendKind?: RunnerKind | undefined,
+): string | null {
+  if (runnerName === null) return null;
+  if (backendKind !== undefined && backendKind !== 'cli') return null;
+  return QUIET_STREAM_RUNNERS.has(runnerName) ? 'tools report when done' : null;
 }
 
 export function formatStageElapsed(ms: number): string {
@@ -72,21 +85,31 @@ export function deriveLiveStatus(input: {
   resumedAt: number | null;
   reviewerLabel: string | null;
   plannerCall: PlannerCall | null;
+  plannerCallStartedTs: number | null;
+  mode?: WorkflowMode;
 }): LiveStatus | null {
   if (input.status !== 'running') return null;
   if (input.cancelled) return null;
   if (RAIL_GATE_PHASES.has(input.phase)) return null;
-  const activeIndex = getRailActiveIndex(input.phase);
-  const activeStage = getActiveRailStage(input.phase);
+  const mode = input.mode ?? 'standard';
+  const activeIndex = getRailActiveIndex(input.phase, mode);
+  const activeStage = getActiveRailStage(input.phase, mode);
   if (activeIndex < 0 || activeStage === null) return null;
-  const completionTimes = railStageCompletionTimesFromPhaseFirstSeen(input.phaseFirstSeenTs);
+  const completionTimes = railStageCompletionTimesFromPhaseFirstSeen(input.phaseFirstSeenTs, mode);
+  // Quick has no Spec step: Plan is the first stage it runs, so it opens with the run itself
+  // rather than with a Spec completion that never happens.
+  const firstRunStage = mode === 'quick' ? 1 : 0;
   const stageOpened =
-    activeIndex > 0 ? (completionTimes[activeIndex - 1] ?? 0) : (input.startedAt ?? 0);
-  // A resumed run counts from its resume: the time it sat parked was no stage's work.
-  const stageStart = Math.max(stageOpened, input.resumedAt ?? 0);
+    activeIndex > firstRunStage ? (completionTimes[activeIndex - 1] ?? 0) : (input.startedAt ?? 0);
+  // A resumed run counts from its resume: the time it sat parked was no stage's work. While the
+  // engine names a planner call the clock is that call's, so the stage's earlier calls stay out.
+  const callStart = input.plannerCall === null ? 0 : (input.plannerCallStartedTs ?? 0);
+  const stageStart = Math.max(stageOpened, input.resumedAt ?? 0, callStart);
   const waitedMs = PHASES.reduce(
     (total, phase) =>
-      getRailActiveIndex(phase) === activeIndex ? total + (input.waitedMs[phase] ?? 0) : total,
+      getRailActiveIndex(phase, mode) === activeIndex
+        ? total + (input.waitedMs[phase] ?? 0)
+        : total,
     0,
   );
   return {

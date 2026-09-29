@@ -1,5 +1,5 @@
 import { PROVIDER_CATALOG, isSameOrigin } from '../providers/catalog.js';
-import { isProviderId } from '../schemas/enums.js';
+import { isApiProviderId } from '../providers/api-provider-catalog.js';
 import type { ImplementerConfig } from '../schemas/implementer-config.js';
 import type { PlannerConfig } from '../schemas/planner-config.js';
 import { redactSecrets } from '../../utils/redact.js';
@@ -37,7 +37,9 @@ export function customEndpointCredentialSourceError(opts: {
 }): { path: string; message: string } | undefined {
   const { role, path, config } = opts;
   if (config.kind !== 'api') return undefined;
-  if (!isProviderId(config.provider)) return undefined;
+  // Kind is the API catalog here: a CLI tool id reused as a custom provider name
+  // (`provider: opencode`) is a custom endpoint, not a catalogued API identity.
+  if (!isApiProviderId(config.provider)) return undefined;
 
   const info = PROVIDER_CATALOG[config.provider];
   if (!info.apiKeyEnv || !info.baseURL || !config.apiBase) return undefined;
@@ -61,7 +63,7 @@ export function customProviderEnvApiKeyReferenceError(opts: {
 }): { path: string; message: string } | undefined {
   const { role, path, config } = opts;
   if (config.kind !== 'api') return undefined;
-  if (isProviderId(config.provider)) return undefined;
+  if (isApiProviderId(config.provider)) return undefined;
 
   const envVar = parseApiKeyEnvRef(config.apiKey);
   if (!envVar) return undefined;

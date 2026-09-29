@@ -1,4 +1,5 @@
 import { confinedCreateFile, confinedReplaceFile } from '../../lib/confined-fs.js';
+import { SECURE_FILE_MODE } from '../../lib/fs.js';
 import { assertModelWritablePathConfined } from '../../lib/path-confinement.js';
 import { computeDiff } from '../../utils/diff.js';
 import { sha256Hex } from '../../utils/sha256.js';
@@ -72,7 +73,7 @@ function untouchedPaths(
 }
 
 type WriteOutcome =
-  | { kind: 'applied'; afterSha256: string }
+  | { kind: 'applied'; afterSha256: string; afterMode: number }
   | { kind: 'failed'; code: 'io-failure' | 'write-uncertain'; error: string };
 
 /**
@@ -93,6 +94,8 @@ async function writeCandidate(
   } catch (err) {
     return { kind: 'failed', code: 'io-failure', error: message(err) };
   }
+  const mode =
+    baseline.kind === 'text' ? baseline.mode & 0o777 : SECURE_FILE_MODE & ~process.umask();
   let writeError: string | undefined;
   try {
     if (baseline.kind === 'missing') {
@@ -116,8 +119,8 @@ async function writeCandidate(
     };
   }
 
-  if (after.kind === 'file' && after.sha256 === expected) {
-    return { kind: 'applied', afterSha256: after.sha256 };
+  if (after.kind === 'file' && after.sha256 === expected && after.mode === mode) {
+    return { kind: 'applied', afterSha256: expected, afterMode: mode };
   }
   const unchanged =
     baseline.kind === 'missing'
@@ -137,11 +140,13 @@ async function writeCandidate(
   };
 }
 
-function appliedFile(
-  baseline: BundleBaseline,
-  candidate: FileBundleCandidate,
-  afterSha256: string,
-): AppliedFile {
+function appliedFile(input: {
+  baseline: BundleBaseline;
+  candidate: FileBundleCandidate;
+  afterSha256: string;
+  afterMode: number;
+}): AppliedFile {
+  const { baseline, candidate, afterSha256, afterMode } = input;
   const before = baseline.kind === 'text' ? baseline.content : '';
   const { diff, linesAdded, linesRemoved } = computeDiff(before, candidate.content);
   return {
@@ -149,6 +154,7 @@ function appliedFile(
     action: candidate.action,
     beforeSha256: baseline.kind === 'text' ? baseline.sha256 : null,
     afterSha256,
+    afterMode,
     diff,
     linesAdded,
     linesRemoved,
@@ -257,7 +263,14 @@ export async function applyFileBundle(input: ApplyFileBundleInput): Promise<Bund
     if (outcome.kind === 'failed') {
       return stopped(outcome.code, outcome.error, candidate.path);
     }
-    applied.push(appliedFile(baseline, candidate, outcome.afterSha256));
+    applied.push(
+      appliedFile({
+        baseline,
+        candidate,
+        afterSha256: outcome.afterSha256,
+        afterMode: outcome.afterMode,
+      }),
+    );
   }
 
   return {

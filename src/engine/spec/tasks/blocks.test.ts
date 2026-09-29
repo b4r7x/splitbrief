@@ -113,6 +113,42 @@ This task must not be swallowed by the unclosed fence above.
     expect(blocks[1]).toContain('id: T302');
   });
 
+  // A brief header inside an open fence stays code only when reading it as code is the one way the
+  // later fences all close. These two documents close under neither reading and under both.
+  it('ends an unclosed fence at the next brief when the later fences close under neither reading', () => {
+    const input = [
+      taskBlock('T001'),
+      '````markdown',
+      'A sample that is never closed.',
+      '',
+      taskBlock('T002'),
+      taskBlock('T003'),
+      '```ts',
+      'export function cut(',
+    ].join('\n');
+
+    const ids = splitTaskBlocks(input).map((block) => /id: (\S+)/.exec(block)?.[1]);
+
+    expect(ids).toEqual(['T001', 'T002', 'T003']);
+  });
+
+  it('ends an unclosed fence at the next brief when the later fences close under either reading', () => {
+    const input = [
+      taskBlock('T001'),
+      '```ts',
+      'const open = true;',
+      '',
+      taskBlock('T002'),
+      '````markdown',
+      '```ts',
+      '````',
+    ].join('\n');
+
+    const ids = splitTaskBlocks(input).map((block) => /id: (\S+)/.exec(block)?.[1]);
+
+    expect(ids).toEqual(['T001', 'T002']);
+  });
+
   it('preserves fenced --- delimiters inside a block body', () => {
     const input = `---
 id: T201

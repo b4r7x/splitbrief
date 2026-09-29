@@ -4,6 +4,17 @@ import type { ModelsDevCatalog } from '../../../src/core/schemas/models-dev.js';
 import type { DetectedModel } from '../../../src/core/discovery/detection.js';
 import type { ProviderId } from '../../../src/core/schemas/enums.js';
 
+/**
+ * The Claude Code option cache a test pins through `modelCacheStore.__testSetClaudeCodeModelOptions`
+ * so its picks never read the operator's own `~/.claude.json` (the reader memoises, so a store
+ * reset cannot undo a read). One id a bundled alias answers to — the pin must fold it into that
+ * row, not double it — and one no bundled row answers to, which the pin must paint as its own row.
+ */
+export const PINNED_CLAUDE_CODE_OPTIONS: readonly ClaudeCodeModelOption[] = [
+  { id: 'claude-sonnet-5', displayName: 'Pinned Sonnet' },
+  { id: 'pinned-opus-probe', displayName: 'Pinned Probe' },
+];
+
 export function makeModelCacheAccessor(overrides?: {
   catalog?: ModelsDevCatalog | null;
   providerModels?: Partial<Record<ProviderId, DetectedModel[]>>;

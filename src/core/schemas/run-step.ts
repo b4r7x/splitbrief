@@ -28,7 +28,10 @@ export const STOP_KINDS = [
 export const StopKindSchema = z.enum(STOP_KINDS);
 export type StopKind = z.infer<typeof StopKindSchema>;
 
-/** Where a stop landed: inside the call it cut, or between two briefs. */
+/**
+ * Where a stop landed: inside the call it cut, or on a boundary where it cut nothing — between two
+ * briefs, or at a gate, which runs no call.
+ */
 export const STEP_CUTS = ['mid-step', 'boundary'] as const;
 export const StepCutSchema = z.enum(STEP_CUTS);
 export type StepCut = z.infer<typeof StepCutSchema>;

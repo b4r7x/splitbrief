@@ -14,6 +14,7 @@ import { makePassingTask } from '#testing/helpers/planning-phase.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import {
   ANALYZE_FILE,
+  BRIEF_QUALITY_FILE,
   CLARIFICATIONS_FILE,
   CONSTITUTION_CHECK_FILE,
   PLAN_FILE,
@@ -46,6 +47,8 @@ const BLOCKING_VERDICT =
   '```json\n{"passed":false,"violations":[{"principle":"one-slice","reason":"too broad","severity":"hard"}]}\n```';
 const FAILED_VERDICT_JSON =
   '{"passed":false,"violations":[{"principle":"one-slice","reason":"too broad","severity":"hard"}]}';
+const QUALITY_REPORT =
+  '{"version":1,"passed":true,"score":1,"issues":[],"ruleVersion":"brief-quality-v1"}\n';
 
 function setupProject(): { projectDir: string; sessionId: string; dir: string } {
   const projectDir = createTempDir('spec-invalidation');
@@ -130,6 +133,7 @@ describe('invalidateFrom', () => {
       [PLAN_FILE]: '# Plan\n',
       [TASKS_FILE]: '# Task Briefs\n',
       [ANALYZE_FILE]: '{}',
+      [BRIEF_QUALITY_FILE]: QUALITY_REPORT,
     });
 
     const dropped = invalidateFrom({ projectDir, sessionId }, 'spec');
@@ -144,18 +148,40 @@ describe('invalidateFrom', () => {
     for (const artifact of dropped) {
       expect(existsSync(join(dir, artifact))).toBe(false);
     }
+    expect(existsSync(join(dir, BRIEF_QUALITY_FILE))).toBe(false);
     expect(readSpecFileOrEmpty({ projectDir, sessionId }, SPEC_FILE)).toBe(SPEC_B);
     expect(existsSync(join(dir, RESEARCH_FILE))).toBe(true);
   });
 
   it('a revised plan drops the briefs and the analyze verdict', () => {
     const { projectDir, sessionId, dir } = setupProject();
-    seed(dir, { [PLAN_FILE]: '# Plan\n', [TASKS_FILE]: '# Task Briefs\n', [ANALYZE_FILE]: '{}' });
+    seed(dir, {
+      [PLAN_FILE]: '# Plan\n',
+      [TASKS_FILE]: '# Task Briefs\n',
+      [ANALYZE_FILE]: '{}',
+      [BRIEF_QUALITY_FILE]: QUALITY_REPORT,
+    });
 
     const dropped = invalidateFrom({ projectDir, sessionId }, 'plan');
 
     expect(dropped).toEqual([TASKS_FILE, ANALYZE_FILE]);
     expect(existsSync(join(dir, PLAN_FILE))).toBe(true);
+    expect(existsSync(join(dir, BRIEF_QUALITY_FILE))).toBe(false);
+  });
+
+  it('a revised tasks call drops the report and keeps the briefs it revised over', () => {
+    const { projectDir, sessionId, dir } = setupProject();
+    seed(dir, {
+      [TASKS_FILE]: '# Task Briefs\n',
+      [ANALYZE_FILE]: '{}',
+      [BRIEF_QUALITY_FILE]: QUALITY_REPORT,
+    });
+
+    const dropped = invalidateFrom({ projectDir, sessionId }, 'tasks');
+
+    expect(dropped).toEqual([ANALYZE_FILE]);
+    expect(existsSync(join(dir, TASKS_FILE))).toBe(true);
+    expect(existsSync(join(dir, BRIEF_QUALITY_FILE))).toBe(false);
   });
 });
 
@@ -291,5 +317,42 @@ describe('a spec change reruns the dependent constitution step', () => {
 
     expect(calls).toEqual(['tasks']);
     expect(result.disposition).toBe('tasks-ready');
+  });
+
+  it('a quick rewind drops the removed briefs and the report that measured them', async () => {
+    const project = setupProject();
+    seed(project.dir, {
+      [TASKS_FILE]: '# Task Briefs\n',
+      [BRIEF_QUALITY_FILE]: QUALITY_REPORT,
+    });
+    const { planner, calls } = recordingPlanner();
+    const state: WorkflowState = {
+      ...stateFor('quick', { phase: 'planning' }),
+      rewindPending: { target: 'spec', comment: 'tighten the briefs' },
+    };
+
+    const result = await runRewindPlanning(
+      {
+        wctx: {
+          projectDir: project.projectDir,
+          sessionId: project.sessionId,
+          config: makeConfig({ workflow: { mode: 'quick', approve: 'none' } }),
+          callbacks: makeCallbacks().callbacks,
+          bus: makeBusRecorder().bus,
+          metadata: TEST_METADATA,
+          sinks: TEST_SINKS,
+        },
+        planner,
+        state,
+        feature: 'feat',
+        approveLevel: 'none',
+      },
+      { target: 'spec', comment: 'tighten the briefs' },
+    );
+
+    expect(calls).toEqual(['tasks']);
+    expect(result.disposition).toBe('tasks-ready');
+    expect(existsSync(join(project.dir, BRIEF_QUALITY_FILE))).toBe(false);
+    expect(existsSync(join(project.dir, TASKS_FILE))).toBe(true);
   });
 });

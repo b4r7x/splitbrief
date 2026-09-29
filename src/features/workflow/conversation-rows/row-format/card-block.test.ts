@@ -186,4 +186,29 @@ describe('prepareCardRows wraps on whole words', () => {
     for (const line of lines) expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(10);
     expect(lines.join(' ').split(' ')).toEqual(Array.from({ length: 6 }, () => word));
   });
+
+  it('drops a separator only when wrapping it onto a card continuation', () => {
+    const cases = [
+      { text: '1234567 · abcdef', width: 10, expected: ['1234567', 'abcdef'] },
+      { text: 'abcdefgh · 👩‍💻', width: 12, expected: ['abcdefgh', '👩‍💻'] },
+    ];
+
+    for (const testCase of cases) {
+      const lines = bodyTexts(testCase.text, testCase.width);
+
+      expect(lines, `width ${testCase.width}`).toEqual(testCase.expected);
+      expect(
+        lines.every((line) => !line.startsWith('·')),
+        `width ${testCase.width}`,
+      ).toBe(true);
+      for (const line of lines) {
+        expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(
+          wrapWidthFor('card-body', testCase.width),
+        );
+      }
+    }
+
+    expect(bodyTexts('first · item', 30)).toEqual(['first · item']);
+    expect(bodyTexts('first\n· item', 30)).toEqual(['first', '· item']);
+  });
 });

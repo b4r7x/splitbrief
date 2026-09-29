@@ -37,7 +37,7 @@ describe('createStagedProject', () => {
       writeFileSync(join(dir, SANDBOX_DIR, 'cache', 'file'), 'cache');
       writeFileSync(join(dir, '.trees', 'worktree', 'file.ts'), 'tree');
 
-      const staged = await createStagedProject(dir);
+      const staged = await createStagedProject({ projectDir: dir });
       let cleaned = false;
       try {
         expect(staged.projectDir).not.toBe(dir);
@@ -79,7 +79,7 @@ describe('createStagedProject', () => {
       mkdirSync(join(dir, 'src'), { recursive: true });
       writeFileSync(join(dir, 'src', 'app.ts'), 'export const app = true;\n');
 
-      const staged = await createStagedProject(dir);
+      const staged = await createStagedProject({ projectDir: dir });
       try {
         mkdirSync(join(staged.projectDir, 'dist'), { recursive: true });
         writeFileSync(join(staged.projectDir, 'dist', 'bundle.js'), 'ignored output\n');
@@ -107,7 +107,7 @@ describe('createStagedProject', () => {
       writeFileSync(join(dir, 'src', 'app.ts'), 'export const app = true;\n');
       writeFileSync(join(dir, 'src', 'gone.ts'), 'export const gone = true;\n');
 
-      const staged = await createStagedProject(dir);
+      const staged = await createStagedProject({ projectDir: dir });
       try {
         rmSync(join(staged.projectDir, 'src', 'gone.ts'));
 
@@ -142,7 +142,7 @@ describe('createStagedProject', () => {
       writeFileSync(join(dir, 'src', 'app.ts'), 'export const app = true;\n');
       symlinkSync(join(dir, 'src', 'app.ts'), join(dir, 'src', 'linked.ts'));
 
-      const staged = await createStagedProject(dir);
+      const staged = await createStagedProject({ projectDir: dir });
       try {
         expect(existsSync(join(staged.projectDir, 'src', 'linked.ts'))).toBe(false);
         expect(readFileSync(join(staged.projectDir, 'src', 'app.ts'), 'utf-8')).toBe(
@@ -162,7 +162,7 @@ describe('createStagedProject', () => {
     const sentinelPath = join(outsideDir, 'reachable-from-staged-child');
     try {
       createTestGitRepo(projectDir);
-      const staged = await createStagedProject(projectDir);
+      const staged = await createStagedProject({ projectDir: projectDir });
       try {
         execFileSync(
           process.execPath,
@@ -197,7 +197,7 @@ describe('createStagedProject', () => {
       writeFileSync(join(dir, 'reports', 'summary.html'), 'report output\n');
       writeFileSync(join(dir, 'debug.log'), 'log output\n');
 
-      const staged = await createStagedProject(dir);
+      const staged = await createStagedProject({ projectDir: dir });
       try {
         expect(readFileSync(join(staged.projectDir, 'src', 'app.ts'), 'utf-8')).toBe(
           'export const app = true;\n',
@@ -230,7 +230,7 @@ describe('createStagedProject', () => {
       writeFileSync(join(dir, 'secret.txt'), 'local secret\n');
       writeFileSync(join(dir, 'public.txt'), 'public\n');
 
-      const staged = await createStagedProject(dir);
+      const staged = await createStagedProject({ projectDir: dir });
       try {
         expect(existsSync(join(staged.projectDir, 'secret.txt'))).toBe(false);
         expect(readFileSync(join(staged.projectDir, 'public.txt'), 'utf-8')).toBe('public\n');
@@ -250,7 +250,7 @@ describe('createStagedProject', () => {
         'env.example': 'export const example = true;\n',
       });
 
-      const staged = await createStagedProject(dir);
+      const staged = await createStagedProject({ projectDir: dir });
       try {
         expect(existsSync(join(staged.projectDir, '.env'))).toBe(false);
         expect(readFileSync(join(staged.projectDir, 'env.example'), 'utf-8')).toBe(
@@ -271,7 +271,7 @@ describe('createStagedProject', () => {
       mkdirSync(join(dir, 'sub', 'src'), { recursive: true });
       writeFileSync(join(dir, 'sub', 'src', 'app.ts'), 'export const app = true;\n');
 
-      const staged = await createStagedProject(join(dir, 'sub'));
+      const staged = await createStagedProject({ projectDir: join(dir, 'sub') });
       try {
         expect(readFileSync(join(staged.projectDir, 'init.txt'), 'utf-8')).toBe('init\n');
         expect(readFileSync(join(staged.projectDir, 'src', 'app.ts'), 'utf-8')).toBe(
@@ -301,7 +301,7 @@ describe('createStagedProject', () => {
       execSync('git init', { cwd: embedded, stdio: 'pipe' });
       writeFileSync(join(embedded, 'inner.txt'), 'inner\n');
 
-      const staged = await createStagedProject(dir);
+      const staged = await createStagedProject({ projectDir: dir });
       try {
         expect(existsSync(join(staged.projectDir, 'embedded'))).toBe(false);
       } finally {
@@ -322,7 +322,7 @@ describe('createStagedProject', () => {
       rmSync(join(dir, 'src', 'gone.ts'));
       expect(await listTrackedAndUntrackedFiles(dir)).toContain('src/gone.ts');
 
-      const staged = await createStagedProject(dir);
+      const staged = await createStagedProject({ projectDir: dir });
       try {
         expect(readFileSync(join(staged.projectDir, 'src', 'app.ts'), 'utf-8')).toBe(
           'export const app = true;\n',
@@ -350,7 +350,7 @@ describe('createStagedProject', () => {
       );
       expect(await listTrackedAndUntrackedFiles(dir)).toContain('sub');
 
-      const staged = await createStagedProject(dir);
+      const staged = await createStagedProject({ projectDir: dir });
       try {
         expect(existsSync(join(staged.projectDir, 'sub'))).toBe(false);
         expect(readFileSync(join(staged.projectDir, 'src', 'app.ts'), 'utf-8')).toBe(
@@ -375,7 +375,7 @@ describe('createStagedProject', () => {
       execSync('git add real.txt link.txt', { cwd: dir, stdio: 'pipe' });
       execSync('git commit -m "add symlink"', { cwd: dir, stdio: 'pipe' });
 
-      const staged = await createStagedProject(dir);
+      const staged = await createStagedProject({ projectDir: dir });
       try {
         expect(existsSync(join(staged.projectDir, 'link.txt'))).toBe(false);
         expect(readFileSync(join(staged.projectDir, 'real.txt'), 'utf-8')).toBe('real\n');
@@ -407,7 +407,7 @@ describe('createStagedProject', () => {
       writeFileSync(join(dir, 'node_modules', 'pkg', 'cache.js'), 'cache');
       writeFileSync(join(dir, '.env'), 'SECRET=canary\n');
 
-      const staged = await createStagedProject(dir);
+      const staged = await createStagedProject({ projectDir: dir });
       try {
         expect(readFileSync(join(staged.projectDir, 'src', 'app.ts'), 'utf-8')).toBe(
           'export const app = true;\n',
@@ -448,9 +448,9 @@ describe('createStagedProject — sensitive file exclusion', () => {
         for (const file of excluded) writeFileSync(join(dir, file), 'SECRET=canary\n');
         for (const file of retained) writeFileSync(join(dir, file), 'public boundary\n');
 
-        const staged = await createStagedProject(
-          dir,
-          makeConfig({
+        const staged = await createStagedProject({
+          projectDir: dir,
+          config: makeConfig({
             implementer: {
               kind: 'api',
               provider: 'ollama',
@@ -465,8 +465,8 @@ describe('createStagedProject — sensitive file exclusion', () => {
               model: 'claude-sonnet',
             },
           }),
-          runnerRole,
-        );
+          role: runnerRole,
+        });
         try {
           expect(existsSync(join(staged.projectDir, 'src', 'app.ts'))).toBe(true);
           for (const file of excluded) {
@@ -524,7 +524,7 @@ describe('createStagedProject — sensitive file exclusion', () => {
         },
       });
 
-      const staged = await createStagedProject(dir, config);
+      const staged = await createStagedProject({ projectDir: dir, config: config });
       try {
         expect(staged.sandboxEnv.OLLAMA_LOCAL_API_KEY).toBe('sk-ollama');
         expect(staged.sandboxEnv.CUSTOM_ENDPOINT_API_KEY).toBeUndefined();
@@ -568,7 +568,7 @@ describe('createStagedProject — sensitive file exclusion', () => {
         },
       });
 
-      const staged = await createStagedProject(dir, config, 'planner');
+      const staged = await createStagedProject({ projectDir: dir, config, role: 'planner' });
       try {
         expect(staged.sandboxEnv.CUSTOM_ENDPOINT_API_KEY).toBe('sk-custom');
         expect(staged.sandboxEnv.OLLAMA_LOCAL_API_KEY).toBeUndefined();
@@ -592,18 +592,18 @@ describe('createStagedProject — sensitive file exclusion', () => {
       process.env.OPENAI_API_KEY = 'sk-openai';
       process.env.ANTHROPIC_API_KEY = 'sk-anthropic';
 
-      const session = await createStagedProject(
-        dir,
-        makeConfig({
+      const session = await createStagedProject({
+        projectDir: dir,
+        config: makeConfig({
           implementer: { kind: 'cli', tool: 'codex', authChannel: 'session' },
         }),
-      );
-      const apiKey = await createStagedProject(
-        dir,
-        makeConfig({
+      });
+      const apiKey = await createStagedProject({
+        projectDir: dir,
+        config: makeConfig({
           implementer: { kind: 'cli', tool: 'codex', authChannel: 'api-key' },
         }),
-      );
+      });
       try {
         expect(session.sandboxEnv.HOME).toBe(
           join(session.projectDir, SANDBOX_DIR, 'implementer', 'codex', 'home'),

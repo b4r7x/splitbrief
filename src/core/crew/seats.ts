@@ -34,7 +34,7 @@ export type CrewSeats = readonly [
 function seatRunner(runner: RunnerConfig, displayName?: string | undefined): CrewSeatRunner {
   return {
     runner,
-    model: formatSeatIdentity(runner, displayName),
+    model: formatSeatIdentity({ seat: runner, displayName }),
     posture: runnerBillingPosture(runner),
   };
 }

@@ -12,8 +12,9 @@ import {
   type KnownModel,
 } from '../../../core/providers/known-models.js';
 import { isCliToolId } from '../../../core/runners/cli-tool-catalog.js';
+import { isApiProviderId } from '../../../core/providers/api-provider-catalog.js';
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
-import { isProviderId, type ProviderId } from '../../../core/schemas/enums.js';
+import { isProviderId, type ProviderId, type RunnerKind } from '../../../core/schemas/enums.js';
 import { findCatalogModelByIdentity } from '../models-dev.js';
 import { getPricingMode, type PricingMode } from '../pricing-resolver.js';
 import type { ClaudeCodeModelOption } from '../../../core/providers/claude-code-options.js';
@@ -53,6 +54,13 @@ export interface ResolveModelCatalogOptions {
   readonly configuredSelectionId?: string | undefined;
   readonly role?: ActiveRunnerRole | undefined;
   readonly browseCatalog?: boolean | undefined;
+  /**
+   * The asking runner's kind. Kind decides the lane; a CLI-named `api` provider
+   * is a custom endpoint with no catalog rows (like any custom name), and a
+   * non-CLI-named `cli` tool can never read the API lanes. Absent keeps the
+   * legacy name-only behavior.
+   */
+  readonly kind?: RunnerKind | undefined;
 }
 
 export interface ResolvedModelCatalogEntry extends DetectedModel {
@@ -462,12 +470,19 @@ function compareSuggestions(
   return left.sourceProviderId.localeCompare(right.sourceProviderId);
 }
 
-function runtimeModels(
-  providerId: ProviderId,
-  cache: ModelCacheAccessor,
-  role: ActiveRunnerRole | undefined,
-): ReturnType<typeof getRuntimeModelSnapshot> {
-  return getRuntimeModelSnapshot({ providerId, cache, role });
+function runtimeModels(input: {
+  providerId: ProviderId;
+  cache: ModelCacheAccessor;
+  role: ActiveRunnerRole | undefined;
+  kind: RunnerKind | undefined;
+}): ReturnType<typeof getRuntimeModelSnapshot> {
+  const { providerId, cache, role, kind } = input;
+  return getRuntimeModelSnapshot({
+    providerId,
+    cache,
+    role,
+    ...(kind === undefined ? {} : { kind }),
+  });
 }
 
 function configuredSelectionId(
@@ -568,11 +583,12 @@ function resolveCatalogEntries(
     configuredSelectionId?: string | undefined;
     role?: ActiveRunnerRole | undefined;
     browseCatalog?: boolean | undefined;
+    kind?: RunnerKind | undefined;
   }>,
 ): ResolvedModelCatalogEntry[] {
   const { providerId, cache } = input;
-  const modelsDevEntries = getModelsDevEntries(providerId, cache);
-  const runtimeSnapshot = runtimeModels(providerId, cache, input.role);
+  const modelsDevEntries = getModelsDevEntries({ providerId, cache, kind: input.kind });
+  const runtimeSnapshot = runtimeModels({ providerId, cache, role: input.role, kind: input.kind });
   const runtime = runtimeSnapshot?.entries ?? [];
   const runtimeRows: ResolvedModelCatalogEntry[] = [];
   const runtimeKeys = new Set<string>();
@@ -581,6 +597,7 @@ function resolveCatalogEntries(
     providerId,
     hasRuntimeList: runtime.length > 0,
     browseCatalog: input.browseCatalog,
+    ...(input.kind === undefined ? {} : { kind: input.kind }),
   });
 
   runtime.forEach((model, nativeOrder) => {
@@ -748,6 +765,13 @@ export function resolveModelCatalog(
   options: ResolveModelCatalogOptions = {},
 ): ResolvedModelCatalogEntry[] {
   if (!isProviderId(providerId)) return [];
+  const { kind } = options;
+  // A CLI tool's rows belong to the CLI runner; an API runner that happens to
+  // reuse the tool's name as a custom provider is not that runner. Only a
+  // caller that passes no kind keeps the legacy name-only lane choice.
+  if (kind === 'api' && !isApiProviderId(providerId)) return [];
+  if (kind === 'cli' && !isCliToolId(providerId)) return [];
+  if (kind !== undefined && kind !== 'api' && kind !== 'cli') return [];
   const cache = options.cache ?? NULL_CACHE;
   return withToolEffortFloor(
     providerId,
@@ -760,6 +784,7 @@ export function resolveModelCatalog(
         configuredSelectionId: options.configuredSelectionId,
         role: options.role,
         browseCatalog: options.browseCatalog,
+        ...(kind === undefined ? {} : { kind }),
       }),
     ),
   );

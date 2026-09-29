@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -524,3 +526,19 @@ describe('applyRecoveryAction: switch-seat', () => {
     expect(result).toMatchObject({ ok: false, code: 'seat-swap-unavailable' });
   });
 });
+
+it.each([undefined, 'quick'] as const)(
+  'records CLI recovery evidence in the saved mode when caller mode is %s',
+  (mode) => {
+    const ref = setupSession('skip-saved-mode');
+    const state = makeImplState([makeTask({ status: 'failed' })], {
+      mode: 'speckit',
+      pendingRecovery: makeRecoveryIssue(),
+    });
+    saveState(ref, state);
+    const { bus } = makeBusRecorder();
+    const result = applyRecoveryAction({ ...ref, state, action: 'skip-current-task', bus, mode });
+    expect(result.ok).toBe(true);
+    expect(readEvidenceLedger(ref)?.mode).toBe('speckit');
+  },
+);

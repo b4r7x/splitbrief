@@ -339,8 +339,8 @@ describe('ApprovalPrompt document review panel', () => {
       <ApprovalPrompt review={{ artifact: 'plan', selectedIndex: 0, commenting: false }} />,
     );
     const frame = stripColor(ui.lastFrame());
-    expect(frame).toContain('Approve plan and compile briefs');
-    expect(frame).toContain('End run (close this run; keep changes)');
+    expect(frame).toContain('Approve plan and review the briefs');
+    expect(frame).toContain('End run (close this run)');
     expect(frame).toContain(REVIEW_DOCUMENT_HINTS);
     ui.unmount();
   });

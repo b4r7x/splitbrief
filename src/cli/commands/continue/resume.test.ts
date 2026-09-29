@@ -4,9 +4,14 @@ import { createInitialState } from '../../../core/state/machine.js';
 import type { PrepareExecutionInput } from '../../../engine/runners/prepare-execution/prepare-execution.js';
 import { RETIRED_WORKFLOW_MODE_NOTICE } from '../../../core/schemas/enums.js';
 import { resumeSavedSession } from './resume.js';
-import { readSeatIdentities, writeSeatIdentities } from '../../../core/state/seats.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import {
+  readSeatIdentities,
+  seatIdentitiesFromConfig,
+  writeSeatIdentities,
+} from '../../../core/state/seats.js';
 
-describe('resume mode reconciliation', () => {
+describe('resume mode notice', () => {
   it('resolves --mode instant to quick and emits the retirement notice', async () => {
     const state = {
       ...createInitialState('retired mode feature'),
@@ -56,7 +61,9 @@ describe('resume mode reconciliation', () => {
       writeSpy.mockRestore();
     }
 
-    expect(prepareExecution.mock.calls[0]?.[0]).toMatchObject({ resumeState: { mode: 'quick' } });
+    expect(prepareExecution.mock.calls[0]?.[0]).toMatchObject({
+      resumeState: { mode: 'standard' },
+    });
     expect(warnings.join('\n')).toContain('resolves to quick');
     expect(stderr.join('')).toContain(RETIRED_WORKFLOW_MODE_NOTICE);
   });
@@ -109,6 +116,58 @@ describe('resume seat-change notice', () => {
         expect(warnings.join('\n')).toContain('PLAN seat changed Retired Tool · retired-model →');
         expect(warnings.join('\n')).toContain('context will be rebuilt');
         expect(readSeatIdentities(ref)?.plan).toBe('Retired Tool · retired-model');
+      });
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('names the seat it moved from in the words the seat identity uses', async () => {
+    const state = { ...createInitialState('seat label feature'), phase: 'planning' as const };
+    const prepareExecution = vi.fn(
+      async (_input: PrepareExecutionInput) => ({ kind: 'aborted' }) as const,
+    );
+    const warnings: string[] = [];
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation((...args: unknown[]) => {
+      warnings.push(args.join(' '));
+    });
+
+    try {
+      await withTempDir('resume-seat-labels', async (projectDir) => {
+        const ref = { projectDir, sessionId: 'session-seat-labels' };
+        writeSeatIdentities(
+          ref,
+          seatIdentitiesFromConfig(
+            makeConfig({
+              planner: { kind: 'cli', tool: 'claude-code', model: 'opus', effort: 'max' },
+            }),
+          ),
+        );
+
+        await expect(
+          resumeSavedSession({
+            projectDir,
+            sessionId: ref.sessionId,
+            state,
+            opts: {},
+            deps: {
+              prepareExecution,
+              initStores: async () => {},
+              renderApp: async () => {},
+              runHeadless: async () => {},
+              setupWorkflow: async () => ({
+                projectDir,
+                useFullscreen: false,
+                useMouse: false,
+                useHover: false,
+              }),
+            },
+          }),
+        ).rejects.toThrow(/cancelled/);
+
+        expect(warnings.join('\n')).toContain(
+          'PLAN seat changed Claude Code CLI · Opus 5.5 · max →',
+        );
       });
     } finally {
       warnSpy.mockRestore();

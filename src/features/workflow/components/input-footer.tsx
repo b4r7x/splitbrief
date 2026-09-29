@@ -11,6 +11,8 @@ import { routerStore } from '../../../stores/navigation/router.js';
 import { preparationStore } from '../../../stores/navigation/preparation.js';
 import { focusHasResolvableCopy } from '../copy/resolve.js';
 import { getActiveRailStage } from '../../../core/rail-stages.js';
+import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
+import { useRunMode } from '../hooks/use-run-mode.js';
 import {
   deriveLiveStatus,
   formatStageElapsed,
@@ -18,7 +20,8 @@ import {
   PAUSED_LIVE_STATUS_VERB,
 } from '../display/live-activity.js';
 import { colorForTone } from '../display/tone-color.js';
-import { deriveBuildProgress, etaText } from '../display/build-progress.js';
+import { deriveBuildProgress, etaText, runnerSilenceMs } from '../display/build-progress.js';
+import { formatTime } from '../../../utils/format-time.js';
 import { selectTaskListView, tasksStore } from '../../../stores/workflow/tasks.js';
 import { operationsStore } from '../../../stores/workflow/operations/state.js';
 import { useStopByline } from '../stop/use-stop-byline.js';
@@ -44,10 +47,13 @@ import { deriveWorkflowDisplay } from '../display/workflow-status.js';
 export function InputFooter({
   width,
   waiting = false,
+  buildBlockShown = false,
   byline: givenByline,
 }: {
   width?: number | undefined;
   waiting?: boolean | undefined;
+  /** The build block is on screen, and its freshness line states the seat's silence. */
+  buildBlockShown?: boolean | undefined;
   /** A run at rest states where it stands from its record; there is no live status to derive. */
   byline?: string | undefined;
 }) {
@@ -71,11 +77,15 @@ export function InputFooter({
   const advisory = useAdvisory();
   const config = configStore.useConfig();
   const displayNames = useCrewDisplayNames(config);
+  // The byline draws the run's own mode, not the config's: quick has no Spec step, so an old quick
+  // `researching` phase maps onto Plan and Spec never earns a completed mark. The shared derivation
+  // keeps the byline on the mode the engine resolved when `/mode` writes the next run's.
+  const mode = useRunMode() ?? DEFAULT_WORKFLOW_MODE;
   const reviewer = configuredReviewerRunner(config);
   const reviewerSeat = reviewer
-    ? formatSeatIdentity(reviewer, displayNames.review ?? displayNames.plan)
+    ? formatSeatIdentity({ seat: reviewer, displayName: displayNames.review ?? displayNames.plan })
     : '';
-  const activeStage = getActiveRailStage(lifecycle.phase);
+  const activeStage = getActiveRailStage(lifecycle.phase, mode);
   const stageText = activeStage ? formatStageLabel(activeStage.stage) : '';
   const fractionText = stageFractionText(taskListView);
   // Only advertise `y copy` when the focused region actually resolves a value, so the affordance
@@ -103,6 +113,7 @@ export function InputFooter({
       ? null
       : deriveLiveStatus({
           phase: lifecycle.phase,
+          mode,
           status: lifecycle.status,
           cancelled: lifecycle.cancelled,
           startedAt: lifecycle.startedAt,
@@ -111,6 +122,7 @@ export function InputFooter({
           resumedAt: lifecycle.resumedAt ?? null,
           reviewerLabel: reviewerSeat === '' ? null : reviewerSeat,
           plannerCall: lifecycle.plannerCall ?? null,
+          plannerCallStartedTs: lifecycle.plannerCallStartedTs ?? null,
         });
   const { frame } = useSpinnerFrame(display.animate || checkingStage !== null);
 
@@ -151,12 +163,15 @@ export function InputFooter({
   const stoppedLead = joinBylineParts([`${stoppedGlyph} ${stoppedWord}`, stageCore]);
   const recoveryStoppedLead = `${glyph('statusFailed')} Run stopped`;
   const stall = lifecycle.status === 'running' ? lifecycle.stall : null;
-  // stall.since is the warning time; silentMs is the silence already elapsed when
-  // the warning fired, so the byline shows the full span since the last output.
-  const stalledFor =
-    stall !== null ? formatStageElapsed(Date.now() - stall.since + stall.silentMs) : '';
+  // The silence span comes from the same derivation the block's freshness line reads, so the two
+  // surfaces state one number; the block prints it while it is on screen, this lead otherwise.
+  const stalledFor = stall === null ? '' : formatTime(runnerSilenceMs(lifecycle, Date.now()) ?? 0);
   const stalledLead =
-    stall !== null ? `${glyph('statusWarning')} Still working — silent ${stalledFor}` : '';
+    stall === null
+      ? ''
+      : buildBlockShown
+        ? `${glyph('statusWarning')} Still working`
+        : `${glyph('statusWarning')} Still working — silent ${stalledFor}`;
 
   // An actionable prompt takes precedence over the lifecycle state it interrupted.
   // The stop's own keys are the legend row's job: crowding them onto this row would cost the
@@ -179,7 +194,7 @@ export function InputFooter({
                   ? {
                       lead: stalledLead,
                       leadColor: t.warning,
-                      hintText: stallRunnerHint(stall.runnerName),
+                      hintText: stallRunnerHint(stall.runnerName, stall.backendKind),
                     }
                   : liveStatus !== null
                     ? {

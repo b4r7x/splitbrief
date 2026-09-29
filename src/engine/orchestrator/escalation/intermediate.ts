@@ -3,13 +3,7 @@ import type { Config } from '../../../core/schemas/config.js';
 import { missingRunnerCredential } from '../../../core/config/accessors/runner-credentials.js';
 import { resolveIntermediateRunner } from '../../../core/config/accessors/intermediate-runner.js';
 import { getApiProviderDescriptor } from '../../../core/providers/api-provider-catalog.js';
-import { isProviderId } from '../../../core/schemas/enums.js';
-import {
-  findKnownModel,
-  getEffectiveModelId,
-  lookupModelsDevModel,
-  lookupRuntimeModel,
-} from '../../providers/model/resolution.js';
+import { resolveRunnerContextWindow } from '../../providers/model/context-window.js';
 import type { Implementer } from '../../implementers/types.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import {
@@ -96,6 +90,7 @@ export async function runIntermediateTier(input: TierStepInput): Promise<RetrySt
     invokeRetry: makeImplementerRetryInvoker({
       context: ctx.context,
       kind: 'local',
+      sessionId: ctx.sessionId,
       languageContext: buildProjectLanguageContext(
         ctx.projectDir,
         state.discoveredValidation?.language,
@@ -113,19 +108,15 @@ function resolveIntermediateContextLength(
   provider: string,
   model: string,
 ): number | undefined {
-  if (!isProviderId(provider)) return undefined;
-  const modelId = getEffectiveModelId(provider, model);
-  if (!modelId) return undefined;
-
-  const cache = ctx.modelCache;
-  if (cache) {
-    const modelsDev = lookupModelsDevModel(provider, modelId, cache);
-    if (modelsDev?.contextLength !== undefined) return modelsDev.contextLength;
-    const runtime = lookupRuntimeModel(provider, modelId, cache);
-    if (runtime?.contextLength !== undefined) return runtime.contextLength;
-  }
-
-  return findKnownModel(provider, modelId)?.contextLength;
+  // The intermediate tier is always an `api` runner: a CLI-named provider is a
+  // custom endpoint and must not budget against the local CLI catalog.
+  const resolved = resolveRunnerContextWindow({
+    providerId: provider,
+    kind: 'api',
+    model,
+    ...(ctx.modelCache !== undefined && { cache: ctx.modelCache }),
+  });
+  return resolved?.contextLength;
 }
 
 export function resolveIntermediateConfig(

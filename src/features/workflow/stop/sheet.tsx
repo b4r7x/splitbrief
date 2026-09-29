@@ -51,9 +51,11 @@ function performStop(id: StopRowId): void {
 export function StopSheet({
   rows,
   height,
+  footer = STOP_SHEET_FOOTER,
 }: {
   rows: readonly StopRow[];
   height?: number | undefined;
+  footer?: string | undefined;
 }) {
   const t = useTheme();
   const cols = terminalSizeStore.use((state) => state.cols);
@@ -86,13 +88,12 @@ export function StopSheet({
       flexShrink={0}
     >
       <Text color={t.textDim}>
-        {rows.some((row) => row.id === 'leave') ? 'Session options' : STOP_SHEET_TITLE} ·{' '}
-        {STOP_SHEET_FOOTER}
+        {rows.some((row) => row.id === 'leave') ? 'Session options' : STOP_SHEET_TITLE} · {footer}
       </Text>
       <Box height={layout.bodyRows} flexDirection="column" flexShrink={0}>
         {layout.options.map(({ row, lines }, index) => (
           <Box key={row.id} flexDirection="column">
-            {(index === selectedIndex ? lines : [row.label]).map((line, lineIndex) => (
+            {lines.map((line, lineIndex) => (
               <Text key={lineIndex} color={index === selectedIndex ? t.accent : t.text}>
                 {index === selectedIndex && lineIndex === 0 ? `${glyph('liveBar')} ` : '  '}
                 {line}

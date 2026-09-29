@@ -44,6 +44,30 @@ function writeActiveSession(
   writeFileSync(join(projectDir, SPLITBRIEF_DIR, 'active'), sessionId + '\n');
 }
 
+function writeRunnerCalls(
+  sessionId: string,
+  calls: readonly {
+    callId: string;
+    role: 'planner' | 'implementer';
+    backendKind: 'api' | 'cli';
+    runnerName: string;
+  }[],
+): void {
+  const lines = calls.map((call, index) =>
+    JSON.stringify({
+      ts: `2026-09-27T10:00:0${index}.000Z`,
+      kind: 'event',
+      type: 'runner_call_started',
+      phase: 'implementing',
+      data: { ...call, attempt: 1, sequence: index + 1 },
+    }),
+  );
+  writeFileSync(
+    join(tmp, SPLITBRIEF_DIR, 'sessions', sessionId, SESSION_LOG_FILE),
+    `${lines.join('\n')}\n`,
+  );
+}
+
 async function runStatus(args: string[]): Promise<void> {
   const program = new Command();
   program.exitOverride();
@@ -93,5 +117,78 @@ describe('status command', () => {
     const out = captureOutput();
     expect(out).toContain('add auth');
     expect(out).not.toContain('No active workflow');
+  });
+
+  it('names a custom API seat literally even when its name is a CLI tool id', async () => {
+    const sessionId = '2026-09-27-api-twin';
+    writeActiveSession(tmp, sessionId, 'api twin', {
+      plannerTool: 'opencode',
+      plannerModel: 'gpt-5',
+    });
+    writeRunnerCalls(sessionId, [
+      { callId: 'call-1', role: 'planner', backendKind: 'api', runnerName: 'opencode' },
+    ]);
+
+    await runStatus([]);
+
+    const out = stripVTControlCharacters(captureOutput());
+    expect(out).toContain('Planner:  opencode (gpt-5)');
+    expect(out).not.toContain('OpenCode CLI');
+  });
+
+  it('resolves each seat from its own recorded kind when API and CLI share a name', async () => {
+    const sessionId = '2026-09-27-twin-seats';
+    writeActiveSession(tmp, sessionId, 'twin seats', {
+      plannerTool: 'opencode',
+      plannerModel: 'gpt-5',
+      implementerTool: 'opencode',
+      implementerModel: 'gpt-5',
+    });
+    writeRunnerCalls(sessionId, [
+      { callId: 'call-planner', role: 'planner', backendKind: 'api', runnerName: 'opencode' },
+      {
+        callId: 'call-implementer',
+        role: 'implementer',
+        backendKind: 'cli',
+        runnerName: 'opencode',
+      },
+    ]);
+
+    await runStatus([]);
+
+    const out = stripVTControlCharacters(captureOutput());
+    expect(out).toContain('Planner:  opencode (gpt-5)');
+    expect(out).toContain('Impl:     OpenCode CLI (gpt-5)');
+  });
+
+  it('keeps a seat literal when its own calls recorded both kinds', async () => {
+    const sessionId = '2026-09-27-ambiguous-seat';
+    writeActiveSession(tmp, sessionId, 'ambiguous seat', {
+      plannerTool: 'opencode',
+      plannerModel: 'gpt-5',
+    });
+    writeRunnerCalls(sessionId, [
+      { callId: 'call-first', role: 'planner', backendKind: 'api', runnerName: 'opencode' },
+      { callId: 'call-second', role: 'planner', backendKind: 'cli', runnerName: 'opencode' },
+    ]);
+
+    await runStatus([]);
+
+    const out = stripVTControlCharacters(captureOutput());
+    expect(out).toContain('Planner:  opencode (gpt-5)');
+    expect(out).not.toContain('OpenCode CLI');
+  });
+
+  it('keeps the CLI catalog name for a recorded CLI seat', async () => {
+    writeActiveSession(tmp, '2026-09-27-cli-seat', 'cli seat', {
+      plannerTool: 'claude-code',
+      plannerModel: 'sonnet',
+    });
+
+    await runStatus([]);
+
+    expect(stripVTControlCharacters(captureOutput())).toContain(
+      'Planner:  Claude Code CLI (sonnet)',
+    );
   });
 });

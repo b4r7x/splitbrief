@@ -205,6 +205,34 @@ describe('collectRunnerCallResult', () => {
     expect(result.text).toBe('final text');
   });
 
+  it('keeps partial text on an empty assistant final but honors an empty result final', () => {
+    const prefix: RunnerCallEvent[] = [
+      { type: 'call_started', ...base },
+      { type: 'call_text_delta', ...base, channel: 'assistant', text: 'partial' },
+    ];
+    const completed: RunnerCallEvent = {
+      type: 'call_completed',
+      ...base,
+      status: 'completed',
+      ...completedTerminal,
+    };
+
+    expect(
+      collectRunnerCallResult([
+        ...prefix,
+        { type: 'call_text_delta', ...base, channel: 'assistant', text: '', semantics: 'final' },
+        completed,
+      ]).text,
+    ).toBe('partial');
+    expect(
+      collectRunnerCallResult([
+        ...prefix,
+        { type: 'call_text_delta', ...base, channel: 'result', text: '', semantics: 'final' },
+        completed,
+      ]).text,
+    ).toBe('');
+  });
+
   it('replaces a full-size draft with final result text', () => {
     const result = collectRunnerCallResult([
       { type: 'call_started', ...base },

@@ -18,6 +18,9 @@ import { eventsStore } from '../../stores/workflow/events.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../stores/workflow/tasks.js';
 import { tokensStore } from '../../stores/workflow/tokens.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { configStore } from '../../stores/project/config.js';
+import { modeAdviceStore } from '../../stores/workflow/mode-advice.js';
 import { hydrateRun, readRunHistory } from './run-history.js';
 
 let projectDir = '';
@@ -83,6 +86,7 @@ beforeEach(() => {
 
 afterEach(() => {
   resetWorkflow();
+  configStore.__testReset();
   if (projectDir) cleanupTempDir(projectDir);
   projectDir = '';
 });
@@ -112,6 +116,20 @@ describe('hydrateRun', () => {
     ]);
     expect(tasksStore.get().taskMap.get('T001')?.status).toBe(live.tasks);
     expect(lifecycleStore.get().phase).toBe(live.phase);
+  });
+
+  it('settles the mode the run saved, whatever the config names today', async () => {
+    writeLog(RUN);
+    configStore.__testReset({ projectDir, config: makeConfig({ workflow: { mode: 'standard' } }) });
+
+    await hydrateRun(
+      makeRunRecord({
+        ref: { projectDir, sessionId: SESSION_ID },
+        hydration: { kind: 'loaded', state: { ...savedState(), mode: 'quick' } },
+      }),
+    );
+
+    expect(modeAdviceStore.get().mode).toBe('quick');
   });
 
   it('lays the saved state over the replay: the brief list and the spend come from it', async () => {
@@ -158,6 +176,57 @@ describe('hydrateRun', () => {
 
     // The replay's own two markers are not the run's history, so they never answer for its clock.
     expect(lifecycleStore.get().durationMs).toBe(90_000);
+  });
+
+  it('keeps each gate approval in the replayed history and draws no row for it', async () => {
+    const approvals: readonly EngineEvent[] = [
+      { type: 'spec_approved', ts: 1_200, phase: 'reviewing-spec' },
+      { type: 'plan_approved', ts: 1_400, phase: 'reviewing-plan' },
+      { type: 'briefs_approved', ts: 1_600, phase: 'reviewing-briefs' },
+    ];
+    writeLog([...RUN.slice(0, 1), ...approvals, ...RUN.slice(1)]);
+
+    await hydrateRun(
+      makeRunRecord({
+        ref: { projectDir, sessionId: SESSION_ID },
+        hydration: { kind: 'loaded', state: savedState() },
+      }),
+    );
+
+    expect(eventsStore.get().events.filter((event) => event.type.endsWith('_approved'))).toEqual(
+      approvals,
+    );
+    const rows = approvals.flatMap((event, globalIndex) =>
+      eventRows({
+        event,
+        globalIndex,
+        expanded: false,
+        ctx: { width: 80, viewportRows: 20, streaming: { taskId: null, lines: [], active: false } },
+      }),
+    );
+    expect(rows).toEqual([]);
+    expect(lifecycleStore.get().phase).toBe('implementing');
+  });
+
+  it('ends the clock of a run at rest at the stop its log recorded', async () => {
+    const stop: EngineEvent = {
+      type: 'turn_interrupted',
+      ts: 9_000,
+      phase: 'implementing',
+      source: 'user',
+      at: 'mid-step',
+      step: { kind: 'brief', taskId: taskId('T002'), attempt: 0 },
+    };
+    writeLog([...RUN, stop]);
+
+    await hydrateRun(
+      makeRunRecord({
+        ref: { projectDir, sessionId: SESSION_ID },
+        hydration: { kind: 'loaded', state: savedState() },
+      }),
+    );
+
+    expect(lifecycleStore.get().durationMs).toBe(9_000 - 1_000);
   });
 
   it('shows a run whose state cannot be read as the log alone', async () => {

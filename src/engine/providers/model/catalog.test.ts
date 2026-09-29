@@ -1546,10 +1546,54 @@ describe('runner-owned catalog resolution', () => {
       contextLength: 262_144,
     });
     expect(
-      getModelsDevEntries('ollama', cache).find((entry) => entry.id === 'qwen3-coder:30b'),
+      getModelsDevEntries({ providerId: 'ollama', cache }).find(
+        (entry) => entry.id === 'qwen3-coder:30b',
+      ),
     ).toMatchObject({
       pricingInput: 2,
       pricingOutput: 7,
     });
+  });
+});
+
+describe('resolveModelCatalog — kind-aware identity', () => {
+  it('gives a CLI-named API provider no rows from the CLI lanes it collides with', () => {
+    const cache = makeModelCacheAccessor({
+      providerModels: {
+        opencode: [{ id: 'opencode/gpt-5', contextLength: 128_000 }],
+      },
+      catalog: {
+        opencode: { id: 'opencode', models: { 'grok-code': { id: 'grok-code' } } },
+      },
+    });
+
+    // Legacy callers keep the name-only lane choice.
+    expect(resolveModelCatalog('opencode', { cache }).map((row) => row.selectionId)).toContain(
+      'opencode/gpt-5',
+    );
+
+    // The API runner of that name is a custom endpoint with no catalog identity.
+    expect(resolveModelCatalog('opencode', { cache, kind: 'api' })).toEqual([]);
+    // And the CLI runner keeps its rows.
+    expect(
+      resolveModelCatalog('opencode', { cache, kind: 'cli' }).map((row) => row.selectionId),
+    ).toContain('opencode/gpt-5');
+  });
+
+  it('never serves a CLI runner the models.dev rows only api runners may read', () => {
+    const cache = makeModelCacheAccessor({
+      catalog: {
+        ollama: {
+          id: 'ollama',
+          models: { 'qwen3-coder:30b': { id: 'qwen3-coder:30b' } },
+        },
+      },
+    });
+
+    expect(
+      resolveModelCatalog('ollama', { cache, kind: 'api' }).map((row) => row.selectionId),
+    ).toContain('qwen3-coder:30b');
+    expect(resolveModelCatalog('ollama', { cache, kind: 'cli' })).toEqual([]);
+    expect(resolveModelCatalog('codex', { cache, kind: 'shell' })).toEqual([]);
   });
 });

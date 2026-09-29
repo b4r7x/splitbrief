@@ -214,6 +214,22 @@ describe('jsonlSink', () => {
     expect(existsSync(logPath)).toBe(false);
   });
 
+  it('does not write runner_call_heartbeat to session.jsonl', () => {
+    const sink = createJsonlSink({ projectDir, sessionId });
+    const logPath = join(sessionDir(projectDir, sessionId), 'session.jsonl');
+
+    sink({
+      type: 'runner_call_heartbeat',
+      ts: 100,
+      phase: 'implementing',
+      callId: 'call-1',
+      role: 'implementer',
+      backendKind: 'cli',
+      sequence: 1,
+    });
+    expect(existsSync(logPath)).toBe(false);
+  });
+
   it('writes each retained event kind as exactly one line with matching type', () => {
     const sink = createJsonlSink({ projectDir, sessionId });
     const events: EngineEvent[] = [

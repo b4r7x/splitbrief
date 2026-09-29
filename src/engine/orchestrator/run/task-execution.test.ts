@@ -175,6 +175,7 @@ describe('runTasksAndReview boundary pause', { timeout: 120_000 }, () => {
     expect(events.find((e) => e.type === 'turn_interrupted')).toMatchObject({
       source: 'user',
       at: 'boundary',
+      step: { kind: 'brief', taskId: 'T002', attempt: 0 },
     });
     // Both briefs ran: the park held the run between them rather than ending it.
     expect(implementer.implement).toHaveBeenCalledTimes(2);

@@ -542,6 +542,46 @@ describe('modelCacheStore', () => {
     expect(modelCacheStore.getProviderModels('codex')).toBeNull();
   });
 
+  it('answers an API runner by kind even when its name is a remembered CLI tool id', () => {
+    expect(
+      modelCacheStore.hydrateDetection({
+        providers: [],
+        cliTools: [],
+        fetchedAt: 50,
+        validatedAt: 60,
+        generation: 1,
+        requestId: 1,
+        contexts: scopedContexts,
+        cliCatalogs: [{ tool: 'opencode', models: [{ id: 'cli-listed-row' }], probedAt: 40 }],
+      }),
+    ).toBe(true);
+    modelCacheStore.setProviderModels('opencode', [{ id: 'api-endpoint-row' }]);
+
+    // The role-scoped CLI lane still answers the legacy CLI identity...
+    expect(
+      getRuntimeModelSnapshot({
+        providerId: 'opencode',
+        role: 'implementer',
+        cache: modelCacheStore,
+      }),
+    ).toMatchObject({ entries: [{ id: 'cli-listed-row' }] });
+    // ...while the role-blind lookup stays unknown before a live lane.
+    expect(modelCacheStore.getProviderModels('opencode')).toBeNull();
+    // The API runner of that name reads its own provider row instead.
+    expect(modelCacheStore.getProviderModels('opencode', 'api')).toEqual([
+      { id: 'api-endpoint-row' },
+    ]);
+    expect(modelCacheStore.isProviderModelCacheStale('opencode', 'api')).toBe(false);
+    expect(
+      getRuntimeModelSnapshot({
+        providerId: 'opencode',
+        role: 'implementer',
+        kind: 'api',
+        cache: modelCacheStore,
+      }),
+    ).toMatchObject({ entries: [{ id: 'api-endpoint-row' }] });
+  });
+
   it('provider cache lifecycle retains the last published models until reset', () => {
     modelCacheStore.setProviderModels('ollama', ollamaModels);
     expect(modelCacheStore.getProviderModels('ollama')).toEqual(ollamaModels);

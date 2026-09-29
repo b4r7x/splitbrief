@@ -229,9 +229,32 @@ describe('the packet an API review seat is handed', () => {
       baseline: { head: 'abc1234', runStartChangedFiles: ['src/login.ts'] },
     });
 
-    expect(packet.text).toContain('Run baseline: commit abc1234');
+    expect(packet.text).toContain('Workspace comparison: commit abc1234');
     expect(packet.text).toContain('- src/login.ts — already modified before this run started');
     expect(packet.text).toContain('You have no filesystem, shell or search tool on this call');
+  });
+
+  it('refuses unsupported captured effects even when the current workspace is text', () => {
+    const packet = refused({
+      reviewScope: {
+        diff: 'diff --git a/logo.png b/logo.png\nBinary files a/logo.png and b/logo.png differ\n',
+        description: 'Recorded promotion.',
+      },
+    });
+    expect(packet.cause).toBe('unsupported-required');
+    expect(packet.missingSections).toContain('logo.png');
+  });
+
+  it('includes the whole promotion history in the API input budget', () => {
+    const packet = refused({
+      contextLength: 10_000,
+      reviewScope: {
+        diff: diffOfLength('src/login.ts', 100_001),
+        description: 'Recorded promotion.',
+      },
+    });
+    expect(packet.cause).toBe('input-budget');
+    expect(packet.missingSections).toContain('recorded promotions');
   });
 });
 
@@ -323,7 +346,7 @@ describe('a REVIEW seat that reads no files of its own', () => {
     expect(prompts).toHaveLength(1);
     expect(prompts[0]).toContain(universe.fullDiff);
     expect(prompts[0]).toContain('Deterministic Drift Report');
-    expect(prompts[0]).toContain('Files changed in this run (1)');
+    expect(prompts[0]).toContain('Workspace comparison files (1)');
     expect(existsSync(join(sessionDir(ref.projectDir, ref.sessionId), DRIFT_REPORT_FILE))).toBe(
       true,
     );
@@ -350,7 +373,7 @@ describe('a REVIEW seat that reads no files of its own', () => {
     const result = await review({ ...ref, config, prompts });
 
     expect(prompts).toHaveLength(1);
-    expect(prompts[0]).toContain('Files changed in this run: none.');
+    expect(prompts[0]).toContain('Workspace comparison files: none.');
     expect(result.reviewStatus).toBe('written');
   });
 

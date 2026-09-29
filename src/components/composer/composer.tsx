@@ -332,7 +332,7 @@ function ComposerInput({
       }
       const displayName = resolveSeatDisplayName(config.planner, 'planner', modelCacheStore);
       feedbackStore.setError(
-        noVisionFeedbackMessage(formatSeatIdentity(config.planner, displayName)),
+        noVisionFeedbackMessage(formatSeatIdentity({ seat: config.planner, displayName })),
       );
       return false;
     }
@@ -480,10 +480,10 @@ function ComposerInput({
       feedbackStore.setError(
         submission.reason === 'no-vision' && config !== null
           ? noVisionFeedbackMessage(
-              formatSeatIdentity(
-                config.planner,
-                resolveSeatDisplayName(config.planner, 'planner', modelCacheStore),
-              ),
+              formatSeatIdentity({
+                seat: config.planner,
+                displayName: resolveSeatDisplayName(config.planner, 'planner', modelCacheStore),
+              }),
             )
           : submission.reason === 'no-vision'
             ? 'Cannot send image: the planner cannot see images. Choose a vision model with /crew plan.'

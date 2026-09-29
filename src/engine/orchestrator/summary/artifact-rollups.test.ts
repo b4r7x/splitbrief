@@ -10,6 +10,8 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
 import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { recordLocalTaskEvidence } from '../evidence/task.js';
+import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
+import { transition } from '../../../core/state/machine.js';
 import { writeDriftChainState } from '../drift/chain-state.js';
 import type { DriftChainState } from '../../../core/schemas/drift-chain.js';
 import { reviewPacketJsonPath } from '../../../core/paths.js';
@@ -112,6 +114,62 @@ describe('buildSummary session artifact rollups', () => {
 
       expect(summary.stoppedAt).toEqual({ taskId: 'T002', partialFiles: ['src/stopped.ts'] });
       expect(summary.changedFiles).toEqual(['src/first.ts', 'src/stopped.ts']);
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps earlier files after a real rewind without charging them to the new T001', () => {
+    const projectDir = mkdtempSync(join(tmpdir(), 'summary-rewound-'));
+    try {
+      const sessionId = 'rewound-at-plan-gate';
+      const oldTask = makeTask({
+        id: 'T001',
+        title: 'Old brief',
+        file: 'src/old.ts',
+        status: 'done',
+      });
+      const newTask = makeTask({ id: 'T001', title: 'New brief', file: 'src/new.ts' });
+      const ledger = recordLocalTaskEvidence({
+        ledger: createEvidenceLedger({
+          sessionId,
+          feature: 'rewound',
+          mode: 'standard',
+          tasks: [oldTask],
+        }),
+        task: oldTask,
+        status: 'done',
+        method: 'local',
+        validation: [],
+        changedFiles: ['src/old.ts'],
+      });
+      writeEvidenceLedger({ projectDir, sessionId }, ledger);
+      const rewound = transition(makeImplState([oldTask]), { type: 'REWIND_TO_PLAN' });
+      const gate = transition(rewound, { type: 'PLAN_DONE', tasks: [newTask] });
+      const base = {
+        feature: 'rewound',
+        startTime: Date.now(),
+        plannerTool: 'claude-code',
+        implementerTool: 'ollama',
+        projectDir,
+        sessionId,
+      };
+
+      const atGate = buildSummary({ ...base, state: gate });
+      expect(atGate.changedFiles).toEqual(['src/old.ts']);
+      expect(atGate.stoppedAt).toBeUndefined();
+      expect(atGate.totalTasks).toBe(1);
+      expect(atGate.completedByLocal).toBe(0);
+
+      const inNewBrief = buildSummary({
+        ...base,
+        state: transition(transition(gate, { type: 'BEGIN_IMPLEMENTATION' }), {
+          type: 'START_TASK',
+          taskId: newTask.id,
+        }),
+      });
+      expect(inNewBrief.stoppedAt).toEqual({ taskId: newTask.id, partialFiles: [] });
+      expect(inNewBrief.changedFiles).toEqual(['src/old.ts']);
     } finally {
       rmSync(projectDir, { recursive: true, force: true });
     }

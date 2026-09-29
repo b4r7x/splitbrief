@@ -199,6 +199,7 @@ export const RunnerCallEventSchema = z.discriminatedUnion('type', [
     silentMs: nonnegativeInteger,
   }),
   callEvent('call_stall_cleared', {}),
+  callEvent('call_heartbeat', {}),
 ]);
 
 const runnerCallResultBaseFields = {

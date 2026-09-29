@@ -117,7 +117,7 @@ Commands that decide who does the work and how: the three seats, the workflow mo
 - **Screens**: all (`home`, `workflow`, `setup`).
 - **Args**: optional. Valid values: `quick`, `standard`, `speckit` (the `WORKFLOW_MODES` tuple in `src/core/schemas/enums.ts`). The retired `instant` is still accepted and sets `quick`. Invalid values print `"Invalid mode: <x>. Valid modes: quick, standard, speckit"`.
 - **Example**: `/mode`, `/mode speckit`, `/mode quick`
-- **Behavior**: Successful save prints `"Workflow mode set to: <mode>"`, or `"instant was merged into quick; workflow mode set to: quick"` when the retired name was used. Failure to save (typically a malformed config file) surfaces the underlying error on the feedback line. Mode semantics live in `docs/WORKFLOW.md` §3.
+- **Behavior**: Successful save prints `"Workflow mode set to: <mode> for the next run"`, or `"Workflow mode set to: quick for the next run; instant was merged into quick"` when the retired name was used. The run on the workflow screen keeps the mode it saved when it started, so the new mode is the next run's. Failure to save (typically a malformed config file) surfaces the underlying error on the feedback line. Mode semantics live in `docs/WORKFLOW.md` §3.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/crew.ts`; persistence in `src/core/runtime/commands/context-factory.ts` — `createCommandContext` owns the `saveConfig` path every config-writing command goes through, and the app builder only supplies the `saveConfig` callback.
 - **See also**: `/settings`, `/crew`.
 
@@ -197,7 +197,7 @@ Commands that mutate the active run: rewind to an earlier phase, re-run a task, 
 - **Phase guard**: `isLivePhase(phase)`; elsewhere the feedback line reads `"No run to resume in this phase"`.
 - **Args**: none.
 - **Example**: `/resume`
-- **Behavior**: Calls `ctx.resumeRun()`, which reaches `continueRun` (`src/engine/orchestrator/run/continue.ts`) — the one path for both cases. A park this process is holding settles in place: a brief parked mid-call re-enters that brief, a boundary park starts the next one. A run at rest is re-entered on its saved state. With nothing parked the feedback line reads `"Nothing to resume."`, and a closed run is refused with its reason rather than restarted. Typing instructions and pressing Enter continues with that text as the step's steer, composed into the step's own prompt rather than replacing it; a blank Enter never resumes a mid-brief park.
+- **Behavior**: Calls `ctx.resumeRun()`, which reaches `continueRun` (`src/engine/orchestrator/run/continue.ts`) — the one path for both cases. A park this process is holding settles in place: a brief parked mid-call re-enters that brief, a boundary park starts the next one. A run at rest is re-entered on its saved state. With nothing parked the feedback line reads `"Nothing to resume."`, and a closed run is refused with its reason rather than restarted. Typing instructions and pressing Enter continues with that text as the step's steer, composed into the step's own prompt rather than replacing it; a blank Enter resumes a continuable run at rest, while a run parked in this process answers a blank Enter with `type instructions or /resume`.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/workflow.ts`; the park itself is `stopStore` (`src/stores/workflow/stop.ts`).
 - **See also**: `/end`, `/quit`.
 
@@ -208,7 +208,7 @@ Commands that mutate the active run: rewind to an earlier phase, re-run a task, 
 - **Phase guard**: `isLivePhase(phase)`; elsewhere the feedback line reads `"No run to end in this phase"`.
 - **Args**: none.
 - **Example**: `/end`
-- **Behavior**: Calls `ctx.endRun()` — the same transition as the sheet's `End run` row. Execution stops as it does for Stop now, the state records `closed: { at, as: 'ended' }` so the run lists as `ended` and nothing resumes it, and the byline reads `Cancelled by you at T<id> · Changes kept` with the hint `esc home · /quit`. With no active run the feedback line reads `"No active run to end."`. Nothing is reverted; git is still the layer that reverses a run.
+- **Behavior**: Calls `ctx.endRun()` — the same transition as the sheet's `End run` row. Execution stops as it does for Stop now, the state records `closed: { at, as: 'ended' }` so the run lists as `ended` and nothing resumes it, and the byline reads `Cancelled by you at T<id> · Changes kept` — `Cancelled by you at the plan gate` when no brief ran — with the hint `esc back to sessions · ctrl+c quit`. With no active run the feedback line reads `"No active run to end."`. Nothing is reverted; git is still the layer that reverses a run.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/workflow.ts`.
 - **See also**: `/resume`, `/run`.
 
@@ -327,7 +327,7 @@ Commands that move data in or out: clipboard copies and image attachments. `cate
   - `brief` — the focused (or top-of-window) Task Brief's source text.
   - `path` — the focused brief's file path, relative to the project directory.
   - `command` — the configured planner runner command.
-  - `cost` — an explicit export of available cost details; the legacy config value `workflow.showSpend: false` makes it answer `spend display is off`. There is no Settings toggle or main-screen counter.
+  - `cost` — an explicit export of available cost details; it reads the same spend text as `/usage`, and the legacy `workflow.showSpend` key does not switch it off. There is no Settings toggle or main-screen counter.
 - **Example**: `/copy`, `/copy brief`, `/copy path`, `/copy cost`
 - **Behavior**: Resolves the raw value (never the sanitized display copy) and writes it to the clipboard. When the target has no value the feedback line reads `"Nothing to copy"`. A confirmed native or tmux copy reads `"Copied (native)"` / `"Copied (tmux-buffer)"`; an OSC-52 escape the terminal may silently drop reads `"Copy escape sent; verify your clipboard (some terminals block it)"`; a failure reads `"Could not copy"`.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/io.ts`; value resolution in `src/features/workflow/copy/resolve.ts`; clipboard delivery in `src/lib/clipboard/clipboard.ts`.
@@ -384,12 +384,12 @@ Most slash commands have no dedicated keybinding — open the command palette wi
 | `Ctrl+/` | Open help overlay (sent as control character `\x1f`) | `src/app/keys.ts` |
 | `Ctrl+,` | Open settings overlay | `src/app/keys.ts` |
 | `Ctrl+Q` | Stop the run safely, save the session, exit | `src/app/keys.ts` |
-| `Ctrl+C` | Stop now (workflow screen) or exit otherwise — one press, always | `src/app/keys.ts` |
+| `Ctrl+C` | Stop now on a live workflow; from home or a run at rest, the first press arms a two-second quit confirmation and the second exits | `src/app/keys.ts` |
 | `Esc` | Open the stop menu (live workflow); a second Escape stops now; go home on a run at rest; otherwise close the topmost overlay | `src/app/keys.ts` |
 
-`Ctrl+C` is one press with one meaning. Off the workflow screen, and on a run at rest, it exits immediately. On the workflow screen with a run left to stop it performs **Stop now** (`requestStopNow` in `src/features/workflow/handlers.ts`): the in-flight call aborts along with any retry, escalation or per-task review call, no new brief is scheduled, and the run parks as `Paused at T<id> · Partial changes kept`. There is no armed window and no second press to learn.
+`Ctrl+C` is Stop now while a run can still be stopped: one press performs **Stop now** (`requestStopNow` in `src/features/workflow/handlers.ts`), aborting the in-flight call along with any retry, escalation or per-task review call, scheduling no new brief, and parking the run as `Paused at T<id> · Partial changes kept`. It is also how you quit, and that press is confirmed: the first press arms a two-second `Press ctrl+c again to quit` confirmation — on a live run, the press that stops it is the one that arms it — and the next press within the window exits, while any other interaction clears the confirmation.
 
-`Esc` during a live workflow opens the **Stop options** menu immediately above the composer (`src/features/workflow/stop/menu.tsx`), with or without a draft. The transcript stays visible and updates. `↑↓` selects, `Enter` executes, a second `Esc` performs resumable **Stop now**, and `Tab` dismisses. **End run** stays an explicit selection. The pause row appears while a brief is running and becomes **Keep running** when a pause is pending. Changes and draft stay; the selected consequence is shown in full. `Ctrl+C` remains immediate Stop now. Completion, editor and permission dialogs retain their own Escape handling. On an inactive run, Escape goes home only with an empty composer.
+`Esc` during a live workflow opens the **Stop options** menu immediately above the composer (`src/features/workflow/stop/menu.tsx`), with or without a draft. The transcript stays visible and updates. `↑↓` selects, `Enter` executes, a second `Esc` performs resumable **Stop now**, and `Tab` dismisses. **End run** stays an explicit selection. The pause row appears while a brief is running and becomes **Keep running** when a pause is pending. The title line promises `Changes and draft stay.` once a brief has run and `Draft stays.` before that; every row shows its consequence in full. `Ctrl+C` remains immediate Stop now. Completion, editor and permission dialogs retain their own Escape handling. On an inactive run, Escape goes home, draft or no draft.
 
 ### Home screen only
 

@@ -25,32 +25,54 @@ describe('formatModelName', () => {
 
 describe('formatToolModel', () => {
   it('returns empty string when both tool and model are undefined', () => {
-    expect(formatToolModel(undefined, undefined)).toBe('');
+    expect(formatToolModel({})).toBe('');
   });
 
   it('returns empty string when both tool and model are empty strings', () => {
-    expect(formatToolModel('', '')).toBe('');
+    expect(formatToolModel({ tool: '', model: '' })).toBe('');
   });
 
   it('returns display name + separator + model for known tool', () => {
-    expect(formatToolModel('ollama', 'qwen2.5-coder:7b')).toBe('Ollama \u00b7 qwen2.5-coder:7b');
+    expect(formatToolModel({ tool: 'ollama', model: 'qwen2.5-coder:7b' })).toBe(
+      'Ollama \u00b7 qwen2.5-coder:7b',
+    );
   });
 
   it('passes through raw tool name + model for unknown tool', () => {
-    expect(formatToolModel('my-provider', 'some-model')).toBe('my-provider \u00b7 some-model');
+    expect(formatToolModel({ tool: 'my-provider', model: 'some-model' })).toBe(
+      'my-provider \u00b7 some-model',
+    );
   });
 
   it('returns just the display name when only tool is provided', () => {
-    expect(formatToolModel('ollama')).toBe('Ollama');
+    expect(formatToolModel({ tool: 'ollama' })).toBe('Ollama');
   });
 
   it('returns just the model when only model is provided', () => {
-    expect(formatToolModel(undefined, 'gpt-4o')).toBe('gpt-4o');
+    expect(formatToolModel({ model: 'gpt-4o' })).toBe('gpt-4o');
   });
 
   it('redacts a credential-shaped model id in the tool line', () => {
-    const line = formatToolModel('ollama', 'model sk-abcdefghijklmnopqrstuvwxyz');
+    const line = formatToolModel({ tool: 'ollama', model: 'model sk-abcdefghijklmnopqrstuvwxyz' });
     expect(line).toContain('***REDACTED***');
     expect(line.toLowerCase()).not.toContain('abcdefghijklmnopqrstuvwxyz');
+  });
+
+  it('keeps a custom API provider literal even when it reuses a CLI tool id', () => {
+    expect(formatToolModel({ tool: 'opencode', model: 'gpt-5', kind: 'api' })).toBe(
+      'opencode \u00b7 gpt-5',
+    );
+    expect(formatToolModel({ tool: 'claude-code', kind: 'api' })).toBe('claude-code');
+  });
+
+  it('resolves a CLI call named by its command through the tool it starts', () => {
+    expect(formatToolModel({ tool: 'claude', kind: 'cli' })).toBe('Claude Code CLI');
+  });
+
+  it('keeps shell and agent call names literal', () => {
+    expect(formatToolModel({ tool: 'opencode', model: 'gpt-5', kind: 'shell' })).toBe(
+      'opencode \u00b7 gpt-5',
+    );
+    expect(formatToolModel({ tool: 'claude', kind: 'agent' })).toBe('claude');
   });
 });

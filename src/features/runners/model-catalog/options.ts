@@ -260,12 +260,20 @@ export function buildPickerOptions(
   sort?: { filterActive: boolean } | undefined,
 ): PickerOption[] {
   const lane = seatPickerLane(role);
-  const currentId = currentConfig !== undefined ? getRunnerDisplayName(currentConfig) : undefined;
+  const current =
+    currentConfig === undefined
+      ? undefined
+      : { kind: currentConfig.kind, id: getRunnerDisplayName(currentConfig) };
 
   const options = descriptors.flatMap((entry) => {
     if (!descriptorSupportsRole(entry, lane)) return [];
 
-    const isCurrent = currentId === pickerDescriptorId(entry);
+    // The kind is part of the identity, so a CLI row never claims an API seat
+    // that reuses its id.
+    const isCurrent =
+      current !== undefined &&
+      entry.kind === current.kind &&
+      pickerDescriptorId(entry) === current.id;
     if (entry.kind === 'cli') {
       return [projectCliOption(entry.descriptor, lane, detections, isCurrent)];
     }

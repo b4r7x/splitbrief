@@ -260,6 +260,38 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-quick-setup',
+      title: 'Workflow · quick setup',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'quick-setup',
+        title: 'Preparing a quick run before its briefs call',
+        kind: 'planning',
+        marker: 'Planning…',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-quick-researching',
+      title: 'Workflow · quick run researching',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'quick-researching',
+        title: 'A quick run researching before its briefs call',
+        kind: 'planning',
+        marker: 'Researching…',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-planning',
       title: 'Workflow · planning',
       surface: screenSurface('workflow'),
@@ -273,6 +305,36 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Planning transcript' },
         { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-briefs-compiled',
+      title: 'Workflow · briefs compiled and measured',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'briefs-compiled',
+        title: 'One Task Brief card, then its quality verdict',
+        kind: 'planning',
+        marker: 'brief quality',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Briefs transcript' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-briefs-approved',
+      title: 'Workflow · briefs approved without an edit',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'briefs-approved',
+        title: 'The approval re-measures the briefs and repeats neither card nor verdict',
+        kind: 'implementation',
+        marker: 'brief readiness',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Briefs transcript' },
       ],
     }),
     defineScenario({
@@ -291,6 +353,38 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'transcript', title: 'Implementation transcript' },
         { id: 'activity', title: 'Implementation activity block' },
         { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-implementation-narration',
+      title: 'Workflow · a Claude Code build call narrating between tool calls',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'implementation-narration',
+        title: 'Build narration around a tool call',
+        kind: 'implementation',
+        marker: 'registry.ts',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'activity', title: 'Implementation activity block' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-implementation-adjacent-narration',
+      title: 'Workflow · two build messages without a tool call between them',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'implementation-adjacent-narration',
+        title: 'Adjacent build narration',
+        kind: 'implementation',
+        marker: 'I run the two brief checks now.',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'activity', title: 'Implementation activity block' },
       ],
     }),
     defineScenario({
@@ -326,6 +420,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-planner-commands-refused',
+      title: 'Workflow · stage commands not taken from the planner',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'planner-commands-refused',
+        title: 'Refused planner commands',
+        kind: 'planning',
+        marker: 'The lint stage does not take',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Planning transcript' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-implementation-escalated',
       title: 'Workflow · escalated brief',
       surface: screenSurface('workflow'),
@@ -339,6 +448,38 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Implementation transcript' },
         { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-implementation-user-edits',
+      title: 'Workflow · a brief started after edits outside the run',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'implementation-user-edits',
+        title: 'The edits card, then the brief it let start',
+        kind: 'implementation',
+        marker: '~24,310',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-user-edit-conflict-prompt',
+      title: 'Workflow · safe user edit prompt',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'user-edit-conflict-prompt',
+        title: 'A future brief file leads the safe edit prompt',
+        kind: 'question',
+        marker: 'input to T901',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Workflow transcript' },
+        { id: 'question-panel', title: 'User edit prompt' },
+        { id: 'composer', title: 'Workflow composer' },
       ],
     }),
     defineScenario({
@@ -366,7 +507,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'approval-document',
         title: 'Document review gate',
         kind: 'review',
-        marker: 'Approve plan and compile briefs',
+        marker: 'Approve plan and review the briefs',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -392,6 +533,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-briefs-shared-file',
+      title: 'Workflow · brief parser warnings',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'briefs-shared-file',
+        title: 'Parser warnings',
+        kind: 'planning',
+        marker: 'Edge Cases',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Planning transcript' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-reviewing-briefs',
       title: 'Workflow · briefs review gate',
       surface: screenSurface('workflow'),
@@ -405,6 +561,42 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Briefs transcript' },
         { id: 'approval-panel', title: 'Briefs review panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    // Seven briefs as `formatTasks` persists them, two with headers past twelve lines: the card
+    // lists every one of them.
+    defineScenario({
+      id: 'workflow-tasks-card',
+      title: 'Workflow · tasks card with long brief headers',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'tasks-card',
+        title: 'Tasks card listing every brief',
+        kind: 'planning',
+        marker: 'T007',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Tasks card transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    // A titled spec, then briefs past an unclosed code sample and a block-scalar title: the spec
+    // card counts sections and not its title, the Tasks card lists what the parser reads.
+    defineScenario({
+      id: 'workflow-spec-tasks-cards',
+      title: 'Workflow · spec and tasks cards',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'spec-tasks-cards',
+        title: 'Spec and tasks cards',
+        kind: 'planning',
+        marker: 'T003',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Spec and tasks cards transcript' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
@@ -540,6 +732,18 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-selection-copy',
+      title: 'Workflow · selection copied at a gate',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'selection-copy',
+        title: 'Selection copy receipt',
+        kind: 'ready',
+        marker: 'Copied (native)',
+      },
+      elements: [{ id: 'composer', title: 'Workflow composer' }],
+    }),
+    defineScenario({
       id: 'workflow-quit-hint',
       title: 'Workflow · quit confirmation',
       surface: screenSurface('workflow'),
@@ -576,6 +780,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Paused run at rest',
         kind: 'ready',
         marker: 'Paused at',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-at-rest-quick',
+      title: 'Workflow · a quick run paused at rest',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'at-rest-paused',
+        title: 'Quick run paused at rest',
+        kind: 'ready',
+        marker: 'a correction or ⏎ to continue',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -664,6 +884,54 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-closed-ended-review',
+      title: 'Workflow · ended after a failed review',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'closed-ended-review',
+        title: 'Ended failed review',
+        kind: 'failure',
+        marker: 'visual-ended-review',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Closed run ledger' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-closed-seat-moved',
+      title: 'Workflow · closed after the build seat moved tools',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'closed-seat-moved',
+        title: 'Closed run whose build seat moved',
+        kind: 'success',
+        marker: 'visual-closed-seat-moved',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Closed run ledger' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-closed-mixed-workers',
+      title: 'Workflow · closed after briefs used mixed workers',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'closed-mixed-workers',
+        title: 'Closed run with mixed workers',
+        kind: 'success',
+        marker: 'visual-closed-mixed-workers',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Closed run ledger' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-replayed-history',
       title: 'Workflow · history replayed from the run log',
       surface: screenSurface('workflow'),
@@ -680,6 +948,54 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-gates-approved',
+      title: 'Workflow · gates approved, replayed from the run log',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'gates-approved',
+        title: 'Replayed run past its approved gates',
+        kind: 'ready',
+        marker: 'T002',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-gate-stopped',
+      title: 'Workflow · stopped at a gate, replayed from the run log',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'gate-stopped',
+        title: 'Run stopped while a gate was open',
+        kind: 'ready',
+        marker: 'plan gate',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-gate-corrected',
+      title: 'Workflow · parked gate corrected, replayed from the run log',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'gate-corrected',
+        title: 'Correction applied before the plan gate reopens',
+        kind: 'ready',
+        marker: 'plan gate',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed correction and revised plan' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-stopped',
       title: 'Workflow · cancelled by the user',
       surface: screenSurface('workflow'),
@@ -692,6 +1008,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Stopped transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-retained-workspace',
+      title: 'Workflow · retained workspace notices',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'retained-workspace',
+        title: 'Stopped and retired workspace notices',
+        kind: 'failure',
+        marker: 'reuse',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Workspace notices' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
@@ -720,6 +1052,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Usage-limit recovery menu',
         kind: 'question',
         marker: 'Change BUILD tool',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-user-edits',
+      title: 'Workflow · user edits that conflict with the active brief',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery-user-edits',
+        title: 'User-edit conflict recovery menu',
+        kind: 'question',
+        marker: 'Recovery needed · User edits conflict with T901',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -757,6 +1105,24 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Recovery transcript' },
         { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-plan-activity',
+      title: 'Workflow · plan activity beside the seat that ran it',
+      surface: screenSurface('workflow'),
+      viewports: [...WIDE_VIEWPORTS, viewport({ cols: 220, rows: 45 })],
+      checkpoint: {
+        id: 'plan-activity',
+        title: 'Plan activity batch',
+        kind: 'planning',
+        marker: 'PLAN activity',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Planning transcript' },
+        { id: 'activity', title: 'Plan activity block' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
       ],
     }),
     defineScenario({
@@ -906,6 +1272,50 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'completion', title: 'Command argument completion menu' },
       ],
     }),
+    defineScenario({
+      id: 'workflow-mode-next-run',
+      title: 'Workflow · a mode set for the next run',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Mode saved for the next run',
+        kind: 'ready',
+        marker: 'for the next run',
+      },
+      elements: [{ id: 'composer', title: 'Workflow composer' }],
+    }),
+    defineScenario({
+      id: 'workflow-planning-claude-frames',
+      title: 'Workflow · a Claude Code plan call and its system frames',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'planning-claude-frames',
+        title: 'Plan activity after the system frames',
+        kind: 'planning',
+        marker: 'src/engine/streaming/parse-stream-json.ts',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Planning transcript' },
+        { id: 'activity', title: 'Plan activity block' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-implementation-silent',
+      title: 'Workflow · a silent seat mid-brief',
+      surface: screenSurface('workflow'),
+      viewports: [...WIDE_VIEWPORTS, viewport({ cols: 220, rows: 45 })],
+      checkpoint: {
+        id: 'implementation-silent',
+        title: 'Silence stated once, in the build block',
+        kind: 'implementation',
+        marker: 'Still working',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
   ],
   setup: [
     defineScenario({
@@ -930,6 +1340,7 @@ interface OverlayScenarioInput {
   readonly id: string;
   readonly title: string;
   readonly marker: string;
+  readonly viewports?: readonly Viewport[];
 }
 
 interface OverlayGroupInput {
@@ -953,6 +1364,7 @@ function overlayGroup(input: OverlayGroupInput): readonly ScenarioDefinition[] {
         marker: scenario.marker,
       },
       elements: [{ id: 'overlay-panel', title: input.panelTitle }],
+      viewports: scenario.viewports,
     }),
   );
 }
@@ -1021,6 +1433,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       {
         id: 'overlay-settings-claude-alias',
         title: 'Overlay · settings · Claude alias plan seat',
+        marker: 'Settings',
+      },
+      {
+        id: 'overlay-settings-crew-api-twin',
+        title: 'Overlay · settings · API build seat named after a CLI tool',
         marker: 'Settings',
       },
       {
@@ -1259,6 +1676,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         title: 'Overlay · implementer picker · Claude Code build seat',
         marker: PICKER_TITLE_MARKER,
       },
+      {
+        id: 'overlay-implementer-picker-api-twin',
+        title: 'Overlay · implementer picker · API build seat named after a CLI tool',
+        marker: PICKER_TITLE_MARKER,
+      },
       // The seat swap a quota halt offers opens this picker, on the tool it offered: the halt
       // names a tool, the picker names the model, and there is no third surface between them.
       {
@@ -1299,9 +1721,35 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
     scenarios: [
       { id: 'workflow-stop-sheet', title: 'Workflow · stop options', marker: 'Stop options' },
       {
+        id: 'workflow-stop-menu-parked-gate',
+        title: 'Workflow · parked at the plan gate',
+        marker: 'Paused at the plan gate',
+      },
+      {
+        id: 'workflow-stop-menu-ended-gate',
+        title: 'Workflow · ended at the plan gate',
+        marker: 'Cancelled by you at the plan gate',
+      },
+      {
+        id: 'workflow-stop-menu-ended-rewound-gate',
+        title: 'Workflow · ended after revising the plan',
+        marker: 'Cancelled by you at the plan gate',
+        viewports: [...REQUIRED_VIEWPORTS, viewport({ cols: 60, rows: 40 })],
+      },
+      {
+        id: 'workflow-stop-sheet-planning',
+        title: 'Workflow · stop options before any brief',
+        marker: 'keep the run open',
+      },
+      {
         id: 'workflow-stop-menu-parked',
         title: 'Workflow · parked options',
         marker: 'Back to sessions',
+      },
+      {
+        id: 'workflow-stop-menu-quit-hint',
+        title: 'Workflow · parked options · quit armed',
+        marker: 'Press ctrl+c again to quit',
       },
       { id: 'workflow-stop-menu-failed', title: 'Workflow · failed stop', marker: 'Retry stop' },
       { id: 'workflow-stop-menu-pause', title: 'Workflow · pause option', marker: 'finish T002' },
@@ -1323,6 +1771,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       {
         id: 'overlay-usage-details',
         title: 'Overlay · usage details · priced run',
+        marker: 'Usage details',
+      },
+      {
+        id: 'overlay-usage-details-api-twin',
+        title: 'Overlay · usage details · an API endpoint named after a CLI tool',
         marker: 'Usage details',
       },
       {

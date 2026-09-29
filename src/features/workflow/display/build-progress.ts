@@ -1,12 +1,23 @@
 import type { Config } from '../../../core/schemas/config.js';
+import { isApiProviderId } from '../../../core/providers/api-provider-catalog.js';
+import { getProviderDisplayName } from '../../../core/providers/catalog.js';
+import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { formatTime } from '../../../utils/format-time.js';
 import type { LifecycleState } from '../../../stores/workflow/lifecycle.js';
-import type { OperationRole, OperationsState } from '../../../stores/workflow/operations/state.js';
+import type {
+  ActiveOperation,
+  OperationRole,
+  OperationsState,
+} from '../../../stores/workflow/operations/state.js';
 import { selectTaskListView, type TasksState } from '../../../stores/workflow/tasks.js';
 import { inlineActiveVerb } from './phase-verb.js';
 
-/** How long a seat may say nothing before the block stops reporting freshness and reports silence. */
+/**
+ * The floor under the silence warning: the block never paints it for a seat quieter than this,
+ * however early a runner is configured to warn. The watchdog's own warn decides when a stall
+ * stands.
+ */
 export const UI_IDLE_WARN_MS = 60_000;
 
 export type BuildProgressEta =
@@ -24,6 +35,8 @@ export interface BuildProgress {
   activity: string;
   /** How long ago it last said so. */
   freshness: string;
+  /** True when the watchdog's stall makes freshness the silence warning, not the ordinary age. */
+  silent: boolean;
 }
 
 export interface DeriveBuildProgressInput {
@@ -34,15 +47,43 @@ export interface DeriveBuildProgressInput {
   now: number;
 }
 
-function seconds(ms: number): number {
-  return Math.max(0, Math.round(ms / 1000));
-}
-
 // Calls the run makes beside the seat's own work; the phase names the seat's work, never theirs.
 const SIDE_CALL_ROLES: ReadonlySet<OperationRole> = new Set<OperationRole>([
   'summary',
   'compaction',
 ]);
+
+/** The tool a call ran on: the Claude runner names its calls `claude`, its command, not its id. */
+function runnerTool(runnerName: string): string {
+  return cliToolIdForCommand(runnerName) ?? runnerName;
+}
+
+/**
+ * The worker a call ran on, as an identity two calls can be compared by. The backend kind is part
+ * of that identity, so a shell command named `claude` never equals a CLI call on Claude Code or an
+ * API worker of the same name. A call with no recorded kind keeps the old alias identity.
+ */
+function runnerIdentity(operation: ActiveOperation): string | null {
+  const { backendKind, runnerName } = operation;
+  if (runnerName === undefined) return null;
+  if (backendKind === undefined || backendKind === 'cli') {
+    return `cli:${runnerTool(runnerName)}`;
+  }
+  return `${backendKind}:${runnerName}`;
+}
+
+function runnerLabel(
+  backendKind: ActiveOperation['backendKind'],
+  runnerName: string | undefined,
+): string | undefined {
+  if (runnerName === undefined) return undefined;
+  if (backendKind === 'api') {
+    // A catalogued API provider gets its display name; a custom name stays literal.
+    return isApiProviderId(runnerName) ? getProviderDisplayName(runnerName) : runnerName;
+  }
+  if (backendKind === 'shell' || backendKind === 'agent') return runnerName;
+  return getProviderDisplayName(runnerTool(runnerName));
+}
 
 function etaFor(input: DeriveBuildProgressInput, remaining: number): BuildProgressEta {
   const { taskCompletionTimes } = input.tasks;
@@ -57,7 +98,7 @@ function etaFor(input: DeriveBuildProgressInput, remaining: number): BuildProgre
     last !== null &&
     active.runnerName !== undefined &&
     last.runnerName !== undefined &&
-    active.runnerName !== last.runnerName
+    runnerIdentity(active) !== runnerIdentity(last)
   ) {
     return { kind: 'unavailable', reason: 'worker changed' };
   }
@@ -71,13 +112,10 @@ function etaFor(input: DeriveBuildProgressInput, remaining: number): BuildProgre
 function activityLine(input: DeriveBuildProgressInput): string {
   const stage = input.operations.validationStage ?? null;
   if (stage !== null) {
+    // How long the command has run is its proof of life. When the run last heard from a seat is
+    // the freshness line's to say, so the row does not say it twice.
     const command = stage.command ?? stage.stage;
-    const silentMs = input.now - (input.lifecycle.lastRunnerEventTs ?? stage.stageStartedTs);
-    return [
-      command,
-      `running ${formatTime(input.now - stage.stageStartedTs)}`,
-      `no output for ${seconds(silentMs)}s`,
-    ].join(SOFT_SEP);
+    return [command, `running ${formatTime(input.now - stage.stageStartedTs)}`].join(SOFT_SEP);
   }
   const operation = input.operations.active;
   // Between calls there is no seat and no operation to name, and printing the phase twice would
@@ -89,20 +127,36 @@ function activityLine(input: DeriveBuildProgressInput): string {
   const doing = SIDE_CALL_ROLES.has(operation.role)
     ? operation.role
     : inlineActiveVerb(operation.phase);
-  return [operation.runnerName ?? input.lifecycle.phase, doing]
+  return [runnerLabel(operation.backendKind, operation.runnerName) ?? input.lifecycle.phase, doing]
     .filter((part) => part !== '')
     .join(SOFT_SEP);
 }
 
-function freshnessLine(input: DeriveBuildProgressInput): string {
-  const lastTs = input.lifecycle.lastRunnerEventTs ?? null;
-  if (lastTs === null) return 'no update yet';
-  const silentMs = input.now - lastTs;
-  if (silentMs >= UI_IDLE_WARN_MS) {
-    const tool = input.operations.active?.runnerName ?? 'the worker';
-    return `No update from ${tool} for ${seconds(silentMs)}s`;
+/**
+ * How long the call in flight has been silent: the one span the block's freshness line and the
+ * byline's stall lead both state. The watchdog's stall is the source — it survives a usage or
+ * warning heartbeat that says the process is alive without saying the seat spoke — and `null`
+ * means no silence warning stands. `lastRunnerEventTs` stays what it is, when the run last heard
+ * anything, and is only the ordinary freshness age.
+ */
+export function runnerSilenceMs(lifecycle: LifecycleState, now: number): number | null {
+  const stall = lifecycle.stall;
+  if (stall === null) return null;
+  return Math.max(0, now - stall.since + stall.silentMs);
+}
+
+// Silence is a seat's. With no call running — a gate command, the step between two calls — no one
+// is expected to speak, and the quiet is only how long ago the last word was. The seat's name is
+// already on the activity line beside this one, so the silence names only itself.
+function freshnessOf(input: DeriveBuildProgressInput): Pick<BuildProgress, 'freshness' | 'silent'> {
+  const call = input.operations.active;
+  const silentMs = call === null ? null : runnerSilenceMs(input.lifecycle, input.now);
+  if (silentMs !== null && silentMs >= UI_IDLE_WARN_MS) {
+    return { freshness: `No update for ${formatTime(silentMs)}`, silent: true };
   }
-  return `last event ${seconds(silentMs)}s ago`;
+  const lastTs = input.lifecycle.lastRunnerEventTs ?? null;
+  if (lastTs === null) return { freshness: 'no update yet', silent: false };
+  return { freshness: `last event ${formatTime(input.now - lastTs)} ago`, silent: false };
 }
 
 export function deriveBuildProgress(input: DeriveBuildProgressInput): BuildProgress {
@@ -118,7 +172,7 @@ export function deriveBuildProgress(input: DeriveBuildProgressInput): BuildProgr
     },
     eta: etaFor(input, view.total - view.finished - view.failed),
     activity: activityLine(input),
-    freshness: freshnessLine(input),
+    ...freshnessOf(input),
   };
 }
 

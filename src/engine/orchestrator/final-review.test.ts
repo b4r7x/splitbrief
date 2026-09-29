@@ -36,6 +36,8 @@ import type { Summary } from '../../core/schemas/summary.js';
 import { ReviewPacketSchema } from '../../core/schemas/review-packet.js';
 import { createEvidenceLedger, withUpdatedTask } from '../../core/evidence/ledger-state.js';
 import { readEvidenceLedger, writeEvidenceLedger } from '../../core/evidence/ledger-storage.js';
+import { appendReviewChanges } from '../../core/evidence/review-changes.js';
+import { readConfinedEntry } from './approval/file-snapshots/entry.js';
 
 let dirs: string[] = [];
 
@@ -96,6 +98,40 @@ const REVIEWER_IDENTITY = getRunnerCatalogDisplayName(REVIEWER_RUNNER);
 function packetStatus(projectDir: string, sessionId: string): string {
   const packetPath = join(sessionDir(projectDir, sessionId), REVIEW_PACKET_JSON_FILE);
   return ReviewPacketSchema.parse(JSON.parse(readFileSync(packetPath, 'utf-8'))).finalReview.status;
+}
+
+// The final review attributes run effects from review-changes.json, never from
+// the working tree: a scenario where a task wrote a file must record the
+// promotion the way the promotion gate does.
+async function recordPromotion({
+  projectDir,
+  sessionId,
+  task,
+  path,
+}: {
+  projectDir: string;
+  sessionId: string;
+  task: Task;
+  path: string;
+}): Promise<void> {
+  const after = await readConfinedEntry(projectDir, path);
+  appendReviewChanges({ projectDir, sessionId }, [
+    {
+      kind: 'captured',
+      taskId: task.id,
+      briefHash: hashTaskBrief([task]),
+      path,
+      before: null,
+      after:
+        after.kind === 'file'
+          ? {
+              base64: after.bytes.toString('base64'),
+              sha256: after.sha256,
+              mode: after.mode,
+            }
+          : null,
+    },
+  ]);
 }
 
 describe('runFinalReviewPhase continuation', () => {
@@ -640,12 +676,14 @@ describe('runFinalReviewPhase', () => {
     const reviewer = makePlanner({
       review: vi.fn().mockResolvedValue({ text: 'ok', usage: null }),
     });
-    const tasks = [makeTask({ id: 'T001', file: 'src/hello.ts', status: 'done' })];
+    const task = makeTask({ id: 'T001', file: 'src/hello.ts', status: 'done' });
+    const tasks = [task];
 
-    // The completed task's target file is present in the working tree, so the
-    // run's changed-file universe covers it and no missing_expected_file fires.
     mkdirSync(join(projectDir, 'src'), { recursive: true });
     writeFileSync(join(projectDir, 'src/hello.ts'), 'export const hello = () => "hi";\n');
+    // The task's target carries a recorded promotion, so the drift universe
+    // covers it and no missing_expected_file fires.
+    await recordPromotion({ projectDir, sessionId, task, path: 'src/hello.ts' });
 
     await runFinalReviewPhase({
       projectDir,
@@ -721,6 +759,10 @@ describe('runFinalReviewPhase', () => {
       status: 'done',
       scope: { outOfBounds: ['docs/**'] },
     });
+    // Both worker effects carry recorded promotions, so they reach the drift
+    // universe; the out-of-scope one is what the report must fail on.
+    await recordPromotion({ projectDir, sessionId, task, path: 'src/feature.ts' });
+    await recordPromotion({ projectDir, sessionId, task, path: 'src/hook-output.ts' });
     const ledger = withUpdatedTask(
       createEvidenceLedger({ sessionId, feature: 'feat', tasks: [task] }),
       task.id,
@@ -803,14 +845,15 @@ describe('runFinalReviewPhase', () => {
     expect(reviewPrompts[0]).toContain(marker);
   });
 
-  it('derives the review diff and drift universe from per-task commits when the tree is clean', async () => {
+  it('derives the review diff and drift universe from recorded promotions when the tree is clean', async () => {
     const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
 
     // Per-task commit strategy: the implemented file is committed (with the
     // run-authored message prefix) and the working tree is left clean — so a
-    // raw `git status` / `git diff` universe is empty and would (incorrectly)
-    // produce an empty review diff plus a false missing_expected_file warning.
+    // raw `git status` / `git diff` universe is empty. The review diff and
+    // drift universe come from the recorded promotion instead, and no false
+    // missing_expected_file warning fires.
     const committedMarker = 'COMMITTED_REVIEW_MARKER_77';
     mkdirSync(join(projectDir, 'src'), { recursive: true });
     writeFileSync(join(projectDir, 'src/feature.ts'), `export const y = "${committedMarker}";\n`);
@@ -829,7 +872,10 @@ describe('runFinalReviewPhase', () => {
         return { text: 'ok', usage: null };
       },
     });
-    const tasks = [makeTask({ id: 'T001', file: 'src/feature.ts', status: 'done' })];
+    const task = makeTask({ id: 'T001', file: 'src/feature.ts', status: 'done' });
+    const tasks = [task];
+
+    await recordPromotion({ projectDir, sessionId, task, path: 'src/feature.ts' });
 
     await runFinalReviewPhase({
       projectDir,
@@ -894,6 +940,7 @@ describe('runFinalReviewPhase', () => {
       },
     });
     const task = makeTask({ id: 'T001', file: 'src/post-run.ts', status: 'done' });
+    await recordPromotion({ projectDir, sessionId, task, path: 'src/post-run.ts' });
     const state: WorkflowState = {
       ...allTasksDoneState([task], runStartHead),
       changedFilesBaseline: {
@@ -945,6 +992,7 @@ describe('runFinalReviewPhase', () => {
       },
     });
     const task = makeTask({ id: 'T001', file: 'src/from-unborn.ts', status: 'done' });
+    await recordPromotion({ projectDir, sessionId, task, path: 'src/from-unborn.ts' });
 
     await runFinalReviewPhase({
       projectDir,
@@ -997,6 +1045,7 @@ describe('runFinalReviewPhase', () => {
       status: 'done',
       scope: { outOfBounds: [prohibitedMarker] },
     });
+    await recordPromotion({ projectDir, sessionId, task, path: 'src/large.ts' });
 
     await runFinalReviewPhase({
       projectDir,

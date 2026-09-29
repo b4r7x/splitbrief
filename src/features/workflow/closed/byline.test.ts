@@ -47,14 +47,32 @@ describe('bylineText', () => {
   it('points at the failed briefs when the review and the scope are clean', () => {
     const view = makeView({
       outcome: { kind: 'needs-attention' },
-      briefs: { total: 3, passed: 2, local: 2, escalated: 0, failed: 1, skipped: 0, rows: [] },
+      briefs: {
+        total: 3,
+        passed: 2,
+        local: 2,
+        escalated: 0,
+        failed: 1,
+        skipped: 0,
+        rows: [],
+        earlierRows: [],
+      },
     });
     expect(bylineText(view, WIDE)).toBe(
       'Fix the failed brief, or revert it with /run reject confirm',
     );
     const two = makeView({
       outcome: { kind: 'needs-attention' },
-      briefs: { total: 3, passed: 1, local: 1, escalated: 0, failed: 2, skipped: 0, rows: [] },
+      briefs: {
+        total: 3,
+        passed: 1,
+        local: 1,
+        escalated: 0,
+        failed: 2,
+        skipped: 0,
+        rows: [],
+        earlierRows: [],
+      },
     });
     expect(bylineText(two, WIDE)).toBe(
       'Fix the 2 failed briefs, or revert it with /run reject confirm',

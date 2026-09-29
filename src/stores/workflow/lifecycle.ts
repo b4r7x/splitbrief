@@ -1,5 +1,5 @@
 import { eventPhase, isInfrastructurePhaseEvent } from '../../core/event-phase.js';
-import type { Phase } from '../../core/schemas/enums.js';
+import type { Phase, RunnerKind } from '../../core/schemas/enums.js';
 import type { PlannerCall } from '../../core/schemas/run-step.js';
 import type { EngineEvent } from '../../engine/events/types.js';
 import { createStore, storeBase } from '../create-store.js';
@@ -16,7 +16,13 @@ type RunningPhase = Exclude<Phase, 'complete'>;
 type LifecycleStatus = 'idle' | 'running' | 'interrupted' | 'paused' | 'complete' | 'cancelled';
 type PhaseFirstSeenTs = Readonly<Partial<Record<Phase, number>>>;
 
-type LifecycleStall = { since: number; silentMs: number; runnerName: string | null } | null;
+type LifecycleStall = {
+  since: number;
+  silentMs: number;
+  runnerName: string | null;
+  /** The backend kind of the stalled call; absent on records written before kinds. */
+  backendKind?: RunnerKind | undefined;
+} | null;
 
 interface LifecycleBase {
   queueDepth: number;
@@ -28,6 +34,11 @@ interface LifecycleBase {
   attemptStartedTs?: number | null;
   /** The planner call the phase is on, when the engine named one: a phase can hold two. */
   plannerCall?: PlannerCall | null;
+  /**
+   * Where the byline clock of that call starts: the moment it opened, or, for the first call since
+   * the run started or resumed, that start — the preparation before it was the call's too.
+   */
+  plannerCallStartedTs?: number | null;
   /** When the run started waiting on the user, so that time stays out of the stage clock. */
   waitingSince?: number | null;
   /** Time already spent waiting on the user, by the phase it was spent in. */
@@ -138,6 +149,7 @@ const initial: LifecycleState = {
   lastRunnerEventTs: null,
   attemptStartedTs: null,
   plannerCall: null,
+  plannerCallStartedTs: null,
   waitingSince: null,
   waitedMs: {},
   resumedAt: null,
@@ -165,6 +177,7 @@ export const lifecycleStore = {
 
 const RUNNER_HEARTBEAT_EVENT_TYPES = new Set<EngineEvent['type']>([
   'runner_call_started',
+  'runner_call_heartbeat',
   'runner_call_activity',
   'runner_call_usage',
   'runner_call_warning',
@@ -199,7 +212,18 @@ function updateRunClocks(state: LifecycleState, event: EngineEvent): LifecycleSt
 function updatePlannerCall(state: LifecycleState, event: EngineEvent): LifecycleState {
   if (event.type !== 'planner_status') return state;
   const plannerCall = event.status === 'running' ? (event.call ?? null) : null;
-  return plannerCall === (state.plannerCall ?? null) ? state : { ...state, plannerCall };
+  if (plannerCall === (state.plannerCall ?? null)) return state;
+  if (plannerCall === null) return { ...state, plannerCall };
+  if ((state.plannerCallStartedTs ?? null) === null) {
+    return {
+      ...state,
+      plannerCall,
+      plannerCallStartedTs: state.resumedAt ?? state.startedAt ?? event.ts,
+    };
+  }
+  // A call that follows another starts the byline clock again, and the waits the stage spent
+  // before it go with the call they were spent in.
+  return { ...state, plannerCall, plannerCallStartedTs: event.ts, waitedMs: {} };
 }
 
 export function updatePhase(state: LifecycleState, event: EngineEvent): LifecycleState {
@@ -309,7 +333,12 @@ export function updateStall(state: LifecycleState, event: EngineEvent): Lifecycl
   if (event.type === 'runner_call_stalled') {
     return {
       ...state,
-      stall: { since: event.ts, silentMs: event.silentMs, runnerName: event.runnerName ?? null },
+      stall: {
+        since: event.ts,
+        silentMs: event.silentMs,
+        runnerName: event.runnerName ?? null,
+        ...(event.backendKind !== undefined && { backendKind: event.backendKind }),
+      },
     };
   }
   if (state.stall === null) return state;
@@ -350,7 +379,7 @@ export function markLifecyclePaused(state: LifecycleState): LifecycleState {
   return { ...state, status: 'paused', interruptParked: false, stall: null };
 }
 
-// A wait is the run's clock stopping on the user: a question, a review gate, an approval. One wait
+// A wait is the byline clock stopping on the user: a question, a review gate, an approval. One wait
 // is open at a time, and a prompt that supersedes another keeps the same wait open.
 export function markLifecycleWaitStarted(state: LifecycleState, ts: number): LifecycleState {
   if (state.status !== 'running' || (state.waitingSince ?? null) !== null) return state;
@@ -534,6 +563,7 @@ function runningLifecycleState(input: {
     lastRunnerEventTs: input.lastRunnerEventTs ?? null,
     attemptStartedTs: input.attemptStartedTs ?? null,
     plannerCall: null,
+    plannerCallStartedTs: null,
     waitingSince: null,
     waitedMs: {},
     resumedAt: input.resumedAt ?? null,

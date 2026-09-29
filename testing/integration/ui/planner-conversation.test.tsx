@@ -30,6 +30,17 @@ let projectDir = '';
 let ui: ReturnType<typeof mountWorkflowScreen> | undefined;
 let restorePath: (() => void) | undefined;
 
+/** The header's run clock keeps counting while the planner waits; nothing else on screen moves. */
+function withoutRunClock(frame: string): string {
+  const [header = '', ...body] = frame.split('\n');
+  return [header.replace(/\d+(?::\d{2}){1,2}$/, '<run clock>'), ...body].join('\n');
+}
+
+/** The run clock reading in the header, when the header carries one. */
+function runClockOf(frame: string): string | null {
+  return frame.split('\n')[0]?.match(/\d+(?::\d{2}){1,2}$/)?.[0] ?? null;
+}
+
 beforeEach(() => {
   resetAllStores();
   routerStore.init({ screen: 'home' });
@@ -152,6 +163,8 @@ if (index === 1) {
           expect(frame).toContain('Refactor src/auth.ts; preserve the public API.');
           expect(frame).toContain('Inspecting the authentication module now.');
           expect(frame).toContain('src/auth.ts');
+          expect(frame).not.toContain('system activity');
+          expect(frame).not.toContain('completed planner');
           expect(frame.indexOf('Refactor src/auth.ts;')).toBeLessThan(
             frame.indexOf('Inspecting the authentication'),
           );
@@ -395,8 +408,14 @@ emit({type: 'result', result: documents[calls.length - 1]});
       expect(received).not.toHaveBeenCalled();
       await flushEffects();
       const waitingFrame = stripAnsiStyles(screen.lastFrame());
+      // The header's run clock keeps counting while the planner waits; nothing else moves.
+      const workingClock = runClockOf(waitingFrame);
+      expect(workingClock).not.toBeNull();
       await tick(1100);
-      expect(stripAnsiStyles(screen.lastFrame())).toBe(waitingFrame);
+      expect(withoutRunClock(stripAnsiStyles(screen.lastFrame()))).toBe(
+        withoutRunClock(waitingFrame),
+      );
+      expect(runClockOf(stripAnsiStyles(screen.lastFrame()))).not.toBe(workingClock);
 
       await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
       await flushEffects();

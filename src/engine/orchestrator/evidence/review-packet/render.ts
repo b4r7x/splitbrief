@@ -97,6 +97,15 @@ export function renderReviewPacketMarkdown(packet: ReviewPacket): string {
     `- Expected files: ${packet.changes.expectedFiles.length}`,
     `- Out-of-scope files: ${packet.changes.outOfScopeFiles.length}`,
     `- Diff: ${packet.changes.diffReference}`,
+    ...(packet.changes.provenance === undefined
+      ? []
+      : [
+          `- Promotion evidence: ${packet.changes.provenance.status} (${packet.changes.provenance.path}).`,
+          `- Recorded run effects: ${packet.changes.provenance.promotedFiles.join(', ') || 'none recorded'}.`,
+          `- Workspace context: ${packet.changes.provenance.workspaceFiles.join(', ') || 'none'}.`,
+          `- Uncertain attribution or later edits: ${packet.changes.provenance.uncertainFiles.join(', ') || 'none observed'}.`,
+          '- Workspace changes alone do not establish implementer authorship. Review mixed and uncertain edits against the recorded promotions and current behavior.',
+        ]),
     '',
     '## Checkpoints And Restore',
     ...checkpointLines,

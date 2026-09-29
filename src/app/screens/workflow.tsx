@@ -221,16 +221,14 @@ export function WorkflowScreen({
         questionWriting: questionState.focus === 'answer',
         cols,
       });
-  // A gate on screen is the only thing to act on, and it needs every row it can get. The build
-  // block stands down while one is open rather than clipping the panel that is waiting on an answer.
-  const progressRows =
-    requestedPromptRows > 0 || model.atRestRecord !== undefined
-      ? 0
-      : getProgressRows({
-          phase: model.phase,
-          cols,
-          cancelled: model.cancelled || recoveryIssue !== null,
-        });
+  const progressRows = getProgressRows({
+    phase: model.phase,
+    cols,
+    cancelled: model.cancelled,
+    halted: recoveryIssue !== null,
+    promptRows: requestedPromptRows,
+    atRest: model.atRestRecord !== undefined,
+  });
   const promptRows = clampWorkflowPromptRows({
     rows,
     inputRows,
@@ -343,6 +341,7 @@ export function WorkflowScreen({
             feedbackHint={legend}
             commandsOnly={model.commandsOnly}
             waitingForUser={model.inputMode.mode !== 'normal' || model.promptPending}
+            buildBlockShown={progressRows > 0}
             {...(recoveryPromptOpen
               ? {
                   recoveryMenuFocused,

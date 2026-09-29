@@ -7,6 +7,7 @@ import { adviseMode } from '../../../engine/orchestrator/planning/mode-advisor.j
 import type { AdvisorResult } from '../../../engine/orchestrator/planning/mode-advisor.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
+import { modeAdviceStore } from '../../../stores/workflow/mode-advice.js';
 import { configStore } from '../../../stores/project/config.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
@@ -93,6 +94,7 @@ describe('InputFooter', () => {
     tasksStore.__testReset();
     tokensStore.__testReset();
     operationsStore.__testReset();
+    modeAdviceStore.__testReset();
   });
 
   afterEach(() => {
@@ -105,6 +107,7 @@ describe('InputFooter', () => {
     tasksStore.__testReset();
     tokensStore.__testReset();
     operationsStore.__testReset();
+    modeAdviceStore.__testReset();
   });
 
   it('renders flush, leaving the gutter to the footer that wraps it', () => {
@@ -340,6 +343,63 @@ describe('InputFooter', () => {
     terminalSizeStore.reset();
   });
 
+  // The plan stage holds two planner calls and the verb names the one running, so the clock counts
+  // that call: not the plan call before it, and not the waits that call spent on the user.
+  it.each([
+    {
+      flow: 'straight after the plan call',
+      between: (ago: (minutes: number) => number) => {
+        markWaitStarted(ago(8));
+        markWaitEnded(ago(6));
+      },
+    },
+    {
+      flow: 'after the plan gate',
+      between: (ago: (minutes: number) => number) => {
+        addEvent(makePlannerStatus({ phase: 'reviewing-plan', ts: ago(6) }));
+        markWaitStarted(ago(6));
+        markWaitEnded(ago(3));
+      },
+    },
+  ])('counts the tasks call from its own start $flow', ({ between }) => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    const now = Date.now();
+    const ago = (minutes: number) => now - minutes * 60_000;
+    addEvent({ type: 'workflow_started', ts: ago(20), phase: 'researching', feature: 'demo' });
+    addEvent(makePlannerStatus({ phase: 'researching', call: 'research', ts: ago(20) }));
+    addEvent(makePlannerStatus({ phase: 'specifying', call: 'spec', ts: ago(17) }));
+    addEvent(makePlannerStatus({ phase: 'planning', call: 'plan', ts: ago(13) }));
+    between(ago);
+    addEvent(makePlannerStatus({ phase: 'planning', call: 'tasks', ts: ago(2) }));
+
+    const ui = renderFeature(<InputFooter />);
+
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toMatch(/Compiling briefs… 2:0\d/);
+
+    ui.unmount();
+    terminalSizeStore.reset();
+  });
+
+  it('starts the clock again when one planner call follows another, never at the first', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    const now = Date.now();
+    const ago = (minutes: number) => now - minutes * 60_000;
+    // The research call opens once the repo map is built: that wait is research too, so the first
+    // call of a run keeps the clock the run's start opened.
+    addEvent({ type: 'workflow_started', ts: ago(10), phase: 'researching', feature: 'demo' });
+    addEvent(makePlannerStatus({ phase: 'researching', call: 'research', ts: ago(10) + 6_000 }));
+    const research = renderFeature(<InputFooter />);
+    expect(stripAnsiStyles(research.lastFrame() ?? '')).toMatch(/Researching… 10:0\d/);
+    research.unmount();
+
+    addEvent(makePlannerStatus({ phase: 'specifying', call: 'spec', ts: ago(3) }));
+    const spec = renderFeature(<InputFooter />);
+    expect(stripAnsiStyles(spec.lastFrame() ?? '')).toMatch(/Specifying… 3:0\d/);
+    spec.unmount();
+
+    terminalSizeStore.reset();
+  });
+
   it('keeps the live lead below the Form-B rail width', () => {
     terminalSizeStore.__testReset({ cols: 24, rows: 24, isSmall: false });
     lifecycleStore.__testReset({
@@ -562,8 +622,45 @@ describe('InputFooter', () => {
     const ui = renderFeature(<InputFooter />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('advisor: 13 briefs over the 12 cap');
-    expect(frame).toContain('split the work');
+    expect(frame).toContain('advisor: 13 briefs over the 12 cap · split the work');
+
+    ui.unmount();
+    terminalSizeStore.reset();
+  });
+
+  it('renders a plan-size upgrade with its facts instead of the generic risk label', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    publishAdvisory({
+      kind: 'upgrade',
+      risk: 'normal',
+      currentMode: 'quick',
+      suggestedMode: 'standard',
+      confidence: 1,
+      factors: ['6 files over 5'],
+      missing: [],
+    });
+
+    const ui = renderFeature(<InputFooter />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('advisor: consider standard');
+    expect(frame).toContain('6 files over 5');
+    expect(frame).not.toContain('standard scope');
+
+    ui.unmount();
+    terminalSizeStore.reset();
+  });
+
+  it('renders a prompt-risk upgrade with its risk reason, not the classifier signals', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    publishAdvisory(adviseMode('add auth middleware', 'quick'));
+
+    const ui = renderFeature(<InputFooter />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('advisor: consider speckit');
+    expect(frame).toContain('security/config risk');
+    expect(frame).not.toContain('matched:');
 
     ui.unmount();
     terminalSizeStore.reset();
@@ -649,7 +746,7 @@ describe('InputFooter', () => {
     terminalSizeStore.reset();
   });
 
-  it('a stalled running call shows the still-working silence warning', () => {
+  it('a stalled call with no build block on screen states its silence on the byline', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     lifecycleStore.__testReset({
       status: 'running',
@@ -667,11 +764,40 @@ describe('InputFooter', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     // The shown span includes the silence that elapsed before the warning fired:
-    // 5s since the warning + the 60s warn threshold = 1:05.
-    expect(frame).toContain(`${glyph('statusWarning')} Still working — silent 1:05`);
+    // 5s since the warning + the 60s warn threshold = 1m 5s.
+    expect(frame).toContain('Still working — silent 1m 5s');
     expect(frame).not.toContain('tools report when done');
 
     ui.unmount();
+    terminalSizeStore.reset();
+  });
+
+  it('a stalled call beside the build block leaves the silence to the block', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    lifecycleStore.__testReset({
+      status: 'running',
+      phase: 'implementing',
+      startedAt: Date.now() - 120_000,
+    });
+    addEvent(
+      makeRunnerCallStalled({
+        ts: Date.now() - 5_000,
+        silentMs: 60_000,
+      }),
+    );
+
+    const besideBlock = renderFeature(<InputFooter buildBlockShown />);
+    const besideBlockFrame = stripAnsiStyles(besideBlock.lastFrame() ?? '');
+    expect(besideBlockFrame).toContain('Still working');
+    expect(besideBlockFrame).not.toContain('silent');
+    besideBlock.unmount();
+
+    // The same stalled call states its silence once the block is not on screen, so the silence
+    // above is the block's doing and not a footer that never had one to show.
+    const bare = renderFeature(<InputFooter />);
+    expect(stripAnsiStyles(bare.lastFrame() ?? '')).toContain('silent');
+    bare.unmount();
+
     terminalSizeStore.reset();
   });
 
@@ -693,7 +819,7 @@ describe('InputFooter', () => {
     const ui = renderFeature(<InputFooter />);
 
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(
-      'Still working — silent 1:05 · tools report when done',
+      'Still working — silent 1m 5s · tools report when done',
     );
 
     ui.unmount();
@@ -718,7 +844,7 @@ describe('InputFooter', () => {
     const ui = renderFeature(<InputFooter />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('Still working — silent 1:05');
+    expect(frame).toContain('Still working — silent 1m 5s');
     expect(frame).not.toContain('tools report when done');
 
     ui.unmount();

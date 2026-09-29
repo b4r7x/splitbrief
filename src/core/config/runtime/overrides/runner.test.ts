@@ -195,6 +195,32 @@ describe('applyCLIOverrides — unusable provider overrides', () => {
     expect(output).toMatch(/--planner-api-base is ignored/);
   });
 
+  it('names the CLI identity and the YAML route when API flags collide with a CLI tool id', () => {
+    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    const result = applyCLIOverrides(baseConfig, {
+      implementer: {
+        tool: 'opencode',
+        model: 'opencode/test-model',
+        apiBase: 'https://my-endpoint.example/v1',
+        apiKey: 'env:MY_KEY',
+      },
+    });
+    const output = stderr.mock.calls.map((c) => String(c[0])).join('');
+
+    expect(result.implementer).toEqual({
+      kind: 'cli',
+      tool: 'opencode',
+      model: 'opencode/test-model',
+    });
+    expect(output).toMatch(
+      /--implementer-api-base is ignored: 'opencode' selects the OpenCode CLI runner/,
+    );
+    expect(output).toMatch(
+      /--implementer-api-key-env is ignored: 'opencode' selects the OpenCode CLI runner/,
+    );
+    expect(output).toMatch(/implementer\.kind: api in splitbrief\.yaml/);
+  });
+
   it('does not warn when api-key-env is supplied for an API runner', () => {
     const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
     applyCLIOverrides(baseConfig, {

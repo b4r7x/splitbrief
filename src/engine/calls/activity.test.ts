@@ -351,7 +351,7 @@ describe('projectRunnerCallActivity', () => {
     expect(activity?.label).not.toContain('abcdefghijklmnopqrst');
   });
 
-  it('projects terminal success and failure states as distinct activity', () => {
+  it('projects a terminal failure as activity and a success as none', () => {
     expect(
       projectRunnerCallActivity(
         {
@@ -368,13 +368,7 @@ describe('projectRunnerCallActivity', () => {
         },
         10,
       ),
-    ).toMatchObject({
-      activityId: 'call-1:terminal',
-      stage: 'completed',
-      kind: 'text',
-      label: 'completed implementer',
-      rawAvailable: false,
-    });
+    ).toBeNull();
 
     expect(
       projectRunnerCallActivity(

@@ -175,6 +175,8 @@ export function createParsedLineRecorder(opts: {
         }
       }
 
+      if (parsed.isHeartbeat) opts.recorder.heartbeat();
+
       if (parsed.isError) {
         opts.recorder.finishFailed({
           status: 'failed',

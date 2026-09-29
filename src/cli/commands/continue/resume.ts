@@ -20,6 +20,8 @@ import {
   seatIdentitiesFromConfig,
   seatIdentityChanges,
 } from '../../../core/state/seats.js';
+import { labelSeatChange } from '../../../engine/providers/model/display-names.js';
+import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import type { WorkflowOpts } from '../../../core/types/config-options.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Config } from '../../../core/schemas/config.js';
@@ -50,17 +52,18 @@ const defaultResumeTailDeps: ResumeTailDeps = {
   prepareExecution,
 };
 
-function reconcileResumeMode(
-  state: WorkflowState,
-  cliMode: WorkflowMode | undefined,
-): WorkflowState {
+/**
+ * A started run keeps the mode it saved: planning reads it back from `state.json`, so `--mode`
+ * cannot change it. A flag that names another mode gets a notice. A state that saved no mode
+ * takes the flag through the config, so it gets none.
+ */
+function reportKeptMode(state: WorkflowState, cliMode: WorkflowMode | undefined): void {
   const mode = normalizeWorkflowMode(cliMode);
-  if (mode === undefined || state.mode === undefined || mode === state.mode) return state;
+  if (mode === undefined || state.mode === undefined || mode === state.mode) return;
   const resolved = mode === cliMode ? '' : ` (resolves to ${mode})`;
   console.warn(
-    `Overriding saved workflow mode '${state.mode}' with --mode ${cliMode}${resolved} for this resume.`,
+    `The run keeps its saved workflow mode '${state.mode}'; --mode ${cliMode}${resolved} applies only to a new run.`,
   );
-  return { ...state, mode };
 }
 
 /**
@@ -75,7 +78,7 @@ function reconcileResumeMode(
 function reportSeatChanges(ref: { projectDir: string; sessionId: string }, config: Config): void {
   const current = seatIdentitiesFromConfig(config);
   for (const change of seatIdentityChanges(readSeatIdentities(ref), current)) {
-    console.warn(formatSeatChangeNotice(change));
+    console.warn(formatSeatChangeNotice(labelSeatChange(change, modelCacheStore)));
   }
 }
 
@@ -95,7 +98,8 @@ export async function resumeSavedSession(args: {
   // prevents a raw legacy object from reaching preparation, rendering, or a
   // provider.
   assertResumableState(args.state, sessionId);
-  const state = reconcileResumeMode(args.state, opts.mode);
+  const { state } = args;
+  reportKeptMode(state, opts.mode);
 
   const config = args.config ?? resolveRunConfig({ projectDir, opts });
   const ref = { projectDir, sessionId };

@@ -58,6 +58,7 @@ export async function reconcileAfterTask(opts: {
   state: WorkflowState;
   baseline: ChangedFilesBaseline;
   stop: boolean;
+  cancelled: boolean;
 }> {
   const { wctx, taskWctx, task, taskIndex, taskBreakdowns, setTrackedState } = opts;
   const { projectDir } = wctx;
@@ -79,7 +80,7 @@ export async function reconcileAfterTask(opts: {
   });
   state = postTaskConflict.state;
   if (postTaskConflict.stopped) {
-    return { state, baseline, stop: true };
+    return { state, baseline, stop: true, cancelled: postTaskConflict.cancelled };
   }
   if (opts.acknowledgedUserEditFiles.size > 0) {
     baseline = await refreshChangedFilesBaseline({
@@ -90,5 +91,5 @@ export async function reconcileAfterTask(opts: {
     opts.acknowledgedUserEditFiles.clear();
   }
 
-  return { state, baseline, stop: false };
+  return { state, baseline, stop: false, cancelled: false };
 }

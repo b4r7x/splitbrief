@@ -18,18 +18,32 @@ import { loadState, saveState } from '../../../core/state/persistence.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { reactivateExistingSession } from '../../../core/sessions/active-pointer.js';
 import { readSession } from '../../../core/sessions/io.js';
-import { artifactPresence } from '../../../core/sessions/run-record-io.js';
+import { artifactPresence, readRunRecord } from '../../../core/sessions/run-record-io.js';
 import { resumeStep } from '../../../core/sessions/run-status.js';
 import { transitionAndSave } from '../../../engine/orchestrator/state-ops.js';
 import { finalizeEndedRun } from '../../../engine/orchestrator/session-lifecycle/finalize.js';
+import { buildReviewFailedRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/task.js';
+import { readRunEvents } from '../../../engine/events/replay.js';
+import { continueRun } from '../../../engine/orchestrator/run/continue.js';
+import { hydrateResume } from '../resume-hydration.js';
 import { buildContextOverflowRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/task.js';
 import type { PreparedExecution } from '../../../engine/runners/prepared-execution.js';
 import { killAllProcesses, registeredProcessCount } from '../../../lib/process/registry.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
+import { overlayStore } from '../../../stores/ui/overlay.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
-import { clearAllHandlers, requestLeaveSession, requestQuit, requestStopNow } from '../handlers.js';
+import {
+  clearAllHandlers,
+  requestEndRun,
+  requestLeaveSession,
+  requestQuit,
+  requestSeatChangeAtBoundary,
+  requestStopNow,
+} from '../handlers.js';
+import { useStopByline } from '../stop/use-stop-byline.js';
 import { useInputMode } from './use-input-mode.js';
 import { useRunContinue } from './use-run-continue.js';
 import { useRunLoop, type RunWorkflowFn } from './use-run-loop.js';
@@ -44,7 +58,8 @@ function Harness({
   const inputMode = useInputMode();
   const continuation = useRunContinue({ prepared, inputMode });
   useRunLoop({ prepared, inputMode, continuation, runWorkflow: engine });
-  return <Text>{inputMode.mode}</Text>;
+  const stopped = useStopByline();
+  return <Text>{stopped?.lead ?? inputMode.mode}</Text>;
 }
 
 type EngineOptions = Parameters<RunWorkflowFn>[0];
@@ -82,6 +97,38 @@ function awaitAbort(options: EngineOptions): Promise<void> {
   return new Promise((resolve) => {
     if (options.signal?.aborted) resolve();
     else options.signal?.addEventListener('abort', () => resolve(), { once: true });
+  });
+}
+
+function stopAsked(): Promise<void> {
+  return new Promise((resolve) => {
+    const off = stopStore.subscribe(() => {
+      if (stopStore.get().intent === 'none') return;
+      off();
+      resolve();
+    });
+  });
+}
+
+/** The final review passed before the stop reached the engine, so the run closes complete. */
+function passFinalReview(options: EngineOptions) {
+  const { ref, active } = options.prepared.session;
+  const state = loadState(ref);
+  if (state === null) throw new Error('missing fixture state');
+  const passed = transitionAndSave(ref, state, { type: 'REVIEW_DONE', reviewStatus: 'passed' });
+  options.tuiSink?.({
+    type: 'workflow_complete',
+    ts: Date.now(),
+    phase: passed.phase,
+    review: 'passed',
+  });
+  return finalizeEndedRun({ ref, active, config: options.prepared.config, state: passed });
+}
+
+function finalReviewState(): WorkflowState {
+  return makeImplState([makeTask({ id: 'T001', status: 'done' })], {
+    phase: 'final-review',
+    currentTaskIndex: 1,
   });
 }
 
@@ -263,6 +310,85 @@ describe('run-loop stop completion', () => {
     expect(saved?.pendingRecovery?.id).toBe(state.pendingRecovery?.id);
   });
 
+  it.each(['Stop now', 'End run'] as const)(
+    '%s at a failed-review recovery preserves the review and saves the requested status',
+    async (action) => {
+      const state = transition(finalReviewState(), { type: 'REVIEW_DONE', reviewStatus: 'failed' });
+      state.pendingRecovery = buildReviewFailedRecoveryIssue({
+        blocking: 1,
+        phase: state.phase,
+        createdAt: new Date().toISOString(),
+      });
+      const prepared = prepare(state);
+      const engine = vi.fn<RunWorkflowFn>();
+      mount(prepared, engine);
+      await vi.waitFor(() => expect(controlsStore.get().inputMode).toBe('question'));
+      expect(action === 'End run' ? requestEndRun() : requestStopNow()).toBe(true);
+      await vi.waitFor(() =>
+        expect(routerStore.get()).toMatchObject({
+          execution: { kind: 'at-rest' },
+        }),
+      );
+      const ended = action === 'End run';
+      expect(readRunRecord(prepared.session.ref)?.status).toMatchObject(
+        ended ? { kind: 'closed', as: 'ended' } : { kind: 'open', stop: { kind: 'halted' } },
+      );
+      const saved = loadState(prepared.session.ref);
+      expect(saved?.reviewStatus).toBe('failed');
+      expect(saved?.completedAt).toBe(state.completedAt);
+      expect(saved?.pendingRecovery).toEqual(ended ? undefined : state.pendingRecovery);
+      expect(stopStore.get().phase).toBe(ended ? 'ended' : 'parked');
+      expect(mounted?.lastFrame()).toContain(
+        ended ? 'Cancelled by you at the review' : 'Paused at the review',
+      );
+      const cancellations = (await readRunEvents(prepared.session.ref)).events.filter(
+        (event) => event.type === 'workflow_cancelled',
+      );
+      expect(cancellations).toHaveLength(ended ? 1 : 0);
+      expect(engine).not.toHaveBeenCalled();
+      const restart = vi.fn();
+      expect(
+        continueRun({
+          ref: prepared.session.ref,
+          deps: { resumeParked: () => false, loadState: hydrateResume, restart },
+        }).kind,
+      ).toBe(ended ? 'refused' : 'restarted');
+      expect(restart).toHaveBeenCalledTimes(ended ? 0 : 1);
+    },
+  );
+
+  it('keeps one closure and one cancellation when End run retries finalization', async () => {
+    const state = transition(finalReviewState(), { type: 'REVIEW_DONE', reviewStatus: 'failed' });
+    state.pendingRecovery = buildReviewFailedRecoveryIssue({
+      blocking: 1,
+      phase: state.phase,
+      createdAt: new Date().toISOString(),
+    });
+    const prepared = prepare(state);
+    const engine = vi.fn<RunWorkflowFn>();
+    mount(prepared, engine);
+    await vi.waitFor(() => expect(controlsStore.get().inputMode).toBe('question'));
+    const summaryPath = join(
+      sessionDir(projectDir, prepared.session.ref.sessionId),
+      'summary.json',
+    );
+    mkdirSync(summaryPath);
+    expect(requestEndRun()).toBe(true);
+    await vi.waitFor(() => expect(stopStore.get().phase).toBe('failed'));
+    const first = loadState(prepared.session.ref);
+    expect(first?.closed?.as).toBe('ended');
+    rmdirSync(summaryPath);
+    expect(requestStopNow()).toBe(true);
+    await vi.waitFor(() => expect(stopStore.get().phase).toBe('ended'));
+    expect(loadState(prepared.session.ref)).toEqual(first);
+    expect(
+      (await readRunEvents(prepared.session.ref)).events.filter(
+        (event) => event.type === 'workflow_cancelled',
+      ),
+    ).toHaveLength(1);
+    expect(engine).not.toHaveBeenCalled();
+  });
+
   it.each(['home', 'quit'] as const)(
     'holds queued %s until engine cleanup and persistence finish',
     async (destination) => {
@@ -321,4 +447,63 @@ describe('run-loop stop completion', () => {
     await expectParked(prepared);
     expect(engine).toHaveBeenCalledTimes(1);
   });
+
+  it.each([
+    ['Stop now', requestStopNow],
+    ['End run', requestEndRun],
+    ['a seat change', requestSeatChangeAtBoundary],
+  ] as const)('shows no stop when the final review passes as %s lands', async (_stop, request) => {
+    const prepared = prepare(finalReviewState());
+    const engine = vi.fn<RunWorkflowFn>(async (options) => {
+      await stopAsked();
+      return passFinalReview(options);
+    });
+    mount(prepared, engine);
+    await vi.waitFor(() => expect(engine).toHaveBeenCalledTimes(1));
+    request();
+    await vi.waitFor(() =>
+      expect(routerStore.get()).toMatchObject({
+        execution: { kind: 'at-rest' },
+        run: { status: { kind: 'closed', as: 'complete' } },
+      }),
+    );
+    await vi.waitFor(() => expect(mounted?.lastFrame()).toBe('normal'));
+    expect(overlayStore.get().active).toBe('none');
+    expect(stopStore.get()).toMatchObject({ intent: 'none', phase: 'idle' });
+    expect(lifecycleStore.get()).toMatchObject({
+      phase: 'complete',
+      status: 'complete',
+      cancelled: false,
+    });
+  });
+
+  it.each(['home', 'quit'] as const)(
+    'delivers a queued %s when the final review passes before the stop lands',
+    async (destination) => {
+      const cleanup = Promise.withResolvers<void>();
+      const prepared = prepare(finalReviewState());
+      const engine = vi.fn<RunWorkflowFn>(async (options) => {
+        await stopAsked();
+        await cleanup.promise;
+        return passFinalReview(options);
+      });
+      const exit = vi.fn();
+      mount(prepared, engine);
+      await vi.waitFor(() => expect(engine).toHaveBeenCalledTimes(1));
+      requestStopNow();
+      if (destination === 'home') requestLeaveSession();
+      else requestQuit(exit);
+      await tick(30);
+      expect(routerStore.get().screen).toBe('workflow');
+      expect(exit).not.toHaveBeenCalled();
+      cleanup.resolve();
+      if (destination === 'home')
+        await vi.waitFor(() => expect(routerStore.get().screen).toBe('home'));
+      else await vi.waitFor(() => expect(exit).toHaveBeenCalledTimes(1));
+      expect(readRunRecord(prepared.session.ref).status).toEqual({
+        kind: 'closed',
+        as: 'complete',
+      });
+    },
+  );
 });

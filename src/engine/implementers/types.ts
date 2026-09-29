@@ -68,7 +68,7 @@ export interface ImplementerOptions extends UndeclaredWritesPolicy {
   projectDir: string;
   config: Config;
   context: ProjectContext;
-  onOutput: (text: string) => void;
+  onOutput: (text: string, opts?: { messageStart?: boolean | undefined }) => void;
   sessionId?: string | undefined;
   signal?: AbortSignal | undefined;
   sandboxEnv?: NodeJS.ProcessEnv | undefined;
@@ -108,7 +108,7 @@ export interface InvokeOpts extends UndeclaredWritesPolicy {
   task: Task;
   projectDir: string;
   config: Config;
-  onOutput: (text: string) => void;
+  onOutput: (text: string, opts?: { messageStart?: boolean | undefined }) => void;
   systemPreamble: string;
   temperature?: number;
   signal?: AbortSignal | undefined;

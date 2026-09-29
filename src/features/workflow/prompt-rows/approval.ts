@@ -74,10 +74,11 @@ export const STICKY_OPTIONS: ReadonlyArray<ApprovalOption> = [
 export type ReviewArtifact = 'spec' | 'plan' | 'briefs';
 
 // Approving an artifact is not an end in itself — it releases the next step. Naming that step on
-// the row is what tells a first-time reader what `y` actually does to the run.
+// the row is what tells a first-time reader what `y` actually does to the run. The plan gate opens
+// once the briefs are already compiled, so the step it releases is their review.
 const REVIEW_NEXT_STEP: Record<ReviewArtifact, string> = {
   spec: 'write the plan',
-  plan: 'compile briefs',
+  plan: 'review the briefs',
   briefs: 'start the build',
 };
 
@@ -103,7 +104,9 @@ export function reviewDocumentOptions(artifact: ReviewArtifact): ReadonlyArray<R
     },
     { key: 'c', label: 'Request changes (type what to change)', command: 'comment' },
     { key: 'e', label: 'Edit in $EDITOR', command: 'edit-file' },
-    { key: 'q', label: 'End run (close this run; keep changes)', command: 'end-run' },
+    // A document gate opens before any brief of its plan has run, so the row promises no kept
+    // changes: it says what the stop menu says at the same gate.
+    { key: 'q', label: 'End run (close this run)', command: 'end-run' },
   ];
 }
 

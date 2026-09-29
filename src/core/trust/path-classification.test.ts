@@ -4,12 +4,17 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   commandTokensAfterInterpreter,
+  interpreterOperands,
   isBareCommandResolvedInsideProject,
   isPackageManagerScriptInvocation,
   isPathLike,
+  isProjectFile,
   isRepoLocal,
   isShellEvaluatedPromptArg,
+  packageManagerScriptName,
+  packageManagerScriptNames,
   resolveBareCommandOnPath,
+  scriptsRunFor,
 } from './path-classification.js';
 
 describe('isPathLike', () => {
@@ -53,6 +58,22 @@ describe('isRepoLocal', () => {
   });
 });
 
+describe('isProjectFile', () => {
+  it('flags an existing file and nothing else', () => {
+    const projectDir = mkdtempSync(join(tmpdir(), 'splitbrief-project-file-'));
+    try {
+      writeFileSync(join(projectDir, 'check.mjs'), 'export {};\n');
+      mkdirSync(join(projectDir, 'hooks'));
+
+      expect(isProjectFile({ name: 'check.mjs', projectDir })).toBe(true);
+      expect(isProjectFile({ name: 'hooks', projectDir })).toBe(false);
+      expect(isProjectFile({ name: 'missing.mjs', projectDir })).toBe(false);
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('commandTokensAfterInterpreter', () => {
   it('drops a leading code-loading interpreter token', () => {
     expect(commandTokensAfterInterpreter(['node', 'scripts/malicious.js'])).toEqual([
@@ -77,6 +98,7 @@ describe('commandTokensAfterInterpreter', () => {
     expect(commandTokensAfterInterpreter(['python', '-c', 'print("file: src/hello.py")'])).toEqual(
       [],
     );
+    expect(commandTokensAfterInterpreter(['Python3.13', '-c', 'print(1)'])).toEqual([]);
   });
 
   it('keeps interpreter flags that load repo-local files', () => {
@@ -90,6 +112,26 @@ describe('commandTokensAfterInterpreter', () => {
   });
 });
 
+describe('interpreterOperands', () => {
+  it.each([
+    ['node check.mjs', ['check.mjs']],
+    ['yarn tsx check.ts', ['check.ts']],
+    ['pnpm dlx tsx@4 check.ts', ['check.ts']],
+    ['nodemon check.mjs', ['check.mjs']],
+    ['timeout 5 node check.mjs', ['check.mjs']],
+    ['node -e code check.mjs', ['check.mjs']],
+    ['prettier --check README.md', []],
+    ['NODE check.mjs', ['check.mjs']],
+    ['python3.13 check.py', ['check.py']],
+    ['python3.13t check.py', ['check.py']],
+    ['pythonw check.py', ['check.py']],
+    ['pypy3 check.py', ['check.py']],
+    ['perl5.34 -e code check.pl', ['check.pl']],
+  ])('reads the operands of the interpreter in %s', (command, operands) => {
+    expect(interpreterOperands(command.split(' '))).toEqual(operands);
+  });
+});
+
 describe('isPackageManagerScriptInvocation', () => {
   it.each([
     ['npm run build', ['npm', 'run', 'build']],
@@ -99,8 +141,45 @@ describe('isPackageManagerScriptInvocation', () => {
     ['bun run build', ['bun', 'run', 'build']],
     ['npm --silent run build', ['npm', '--silent', 'run', 'build']],
     ['npm run --if-present build', ['npm', 'run', '--if-present', 'build']],
+    ['npm rum build', ['npm', 'rum', 'build']],
+    ['npm ur build', ['npm', 'ur', 'build']],
+    ['npm run-s build', ['npm', 'run-s', 'build']],
+    ['npm runS build', ['npm', 'runS', 'build']],
+    ['npm t', ['npm', 't']],
+    ['npm res', ['npm', 'res']],
+    ['yarn build', ['yarn', 'build']],
+    ['yarnpkg check', ['yarnpkg', 'check']],
+    ['pnpm build', ['pnpm', 'build']],
+    ['bun build', ['bun', 'build']],
   ])('flags package script execution for %s', (_label, tokens) => {
     expect(isPackageManagerScriptInvocation(tokens)).toBe(true);
+  });
+
+  it.each([
+    ['npm rum build', ['npm', 'rum', 'build'], 'build'],
+    ['npm runScript build', ['npm', 'runScript', 'build'], 'build'],
+    ['npm tst', ['npm', 'tst'], 'test'],
+    ['npm sto', ['npm', 'sto'], 'stop'],
+    ['yarn --silent build', ['yarn', '--silent', 'build'], 'build'],
+    ['yarnpkg check', ['yarnpkg', 'check'], 'check'],
+    ['pnpm test:unit', ['pnpm', 'test:unit'], 'test:unit'],
+    ['bun run build', ['bun', 'run', 'build'], 'build'],
+    ['npm install', ['npm', 'install'], null],
+  ])('names the script that %s runs', (_label, tokens, script) => {
+    expect(packageManagerScriptName(tokens)).toBe(script);
+  });
+
+  it.each([
+    ['NPM run check', ['check']],
+    ['timeout 5 npm run check', ['check']],
+    ['npx npm run check', ['check']],
+    ['npx npm@10 run check', ['check']],
+    ['pnpm exec npm run check', ['exec', 'check']],
+    ['npm exec -- yarn check', ['check']],
+    ['yarnpkg check', ['check']],
+    ['prettier --check README.md', []],
+  ])('names the scripts that each package manager in %s runs', (command, scripts) => {
+    expect(packageManagerScriptNames(command.split(' '))).toEqual(scripts);
   });
 
   it.each([
@@ -109,6 +188,26 @@ describe('isPackageManagerScriptInvocation', () => {
     ['node runner', ['node', 'runner']],
   ])('does not flag non-script package manager commands for %s', (_label, tokens) => {
     expect(isPackageManagerScriptInvocation(tokens)).toBe(false);
+  });
+
+  it.each([
+    ['check', ['precheck', 'check', 'postcheck']],
+    [
+      'restart',
+      [
+        'prestop',
+        'stop',
+        'poststop',
+        'prerestart',
+        'restart',
+        'postrestart',
+        'prestart',
+        'start',
+        'poststart',
+      ],
+    ],
+  ])('names the scripts a package manager runs for %s', (script, scripts) => {
+    expect(scriptsRunFor(script)).toEqual(scripts);
   });
 });
 

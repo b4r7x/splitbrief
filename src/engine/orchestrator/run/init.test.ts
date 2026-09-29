@@ -22,17 +22,26 @@ import { reactivateExistingSession } from '../../../core/sessions/active-pointer
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { taskId } from '../../../core/schemas/task.js';
+import { taskId, type Task } from '../../../core/schemas/task.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import type { EngineEvent, EventBus } from '../../events/types.js';
 import { createEventBus } from '../../events/bus.js';
 import { formatValidationError } from '../validation/format-error.js';
 import { loadState } from '../../../core/state/persistence.js';
+import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
+import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import { hashTaskBrief } from '../../brief-hash.js';
+import { sha256Hex } from '../../../utils/sha256.js';
+import { resolveMode } from '../../../core/config/runtime/resolve.js';
 import {
   captureChangedFilesBaseline,
   serializeChangedFilesBaseline,
 } from '../changed-files-baseline.js';
-import { readSeatIdentities, writeSeatIdentities } from '../../../core/state/seats.js';
+import {
+  readSeatIdentities,
+  seatIdentitiesFromConfig,
+  writeSeatIdentities,
+} from '../../../core/state/seats.js';
 import type { SummaryBase } from '../summary/build.js';
 import { initializeWorkflow } from './init.js';
 import { createRunIsolation } from '../isolation/create.js';
@@ -757,16 +766,20 @@ describe('initializeWorkflow — a cut step that names a passed brief', () => {
 
       expect(init.ok).toBe(true);
       expect(tracked.current).toMatchObject({
-        phase: 'implementing',
+        // The realigned cut names T003, and a mid-step brief cut is a park: the run continues
+        // T003 with the partial it left instead of resetting it to the brief's start.
+        phase: 'escalating',
         currentTaskIndex: 2,
         tasks: [
           { id: 'T001', status: 'done' },
           { id: 'T002', status: 'done' },
-          { id: 'T003', status: 'pending' },
+          { id: 'T003', status: 'in_progress' },
         ],
         interruptedStep: { step: { kind: 'brief', taskId: 'T003', attempt: 1 } },
       });
-      expect(loadState({ projectDir, sessionId })?.currentTaskIndex).toBe(2);
+      expect(readFileSync(join(projectDir, 'src/running.ts'), 'utf-8')).toBe(
+        'half written before the stop',
+      );
       expect(
         events
           .filter((e): e is Extract<EngineEvent, { type: 'warning' }> => e.type === 'warning')
@@ -790,7 +803,41 @@ describe('initializeWorkflow — seat record', () => {
       expect(init.ok).toBe(true);
       const recorded = readSeatIdentities({ projectDir, sessionId });
       expect(recorded).not.toBeNull();
-      expect(Object.values(recorded ?? {}).every((identity) => identity.length > 0)).toBe(true);
+      const identities = [recorded?.plan, recorded?.build, recorded?.review];
+      expect(identities.every((identity) => (identity ?? '').length > 0)).toBe(true);
+    });
+  });
+
+  it('names both sides of a moved seat in the words the seat identity uses', async () => {
+    await withTempDir('splitbrief-init-seat-labels', async (projectDir) => {
+      const feature = 'resume on another model';
+      const sessionId = 'session-init-seat-labels';
+      const events: EngineEvent[] = [];
+      ensureSessionDir(projectDir, sessionId);
+      writeSeatIdentities(
+        { projectDir, sessionId },
+        seatIdentitiesFromConfig(
+          makeConfig({
+            planner: { kind: 'cli', tool: 'claude-code', model: 'opus', effort: 'max' },
+          }),
+        ),
+      );
+
+      const { init } = await initializeTestWorkflow({
+        projectDir,
+        sessionId,
+        feature,
+        savedState: { ...createInitialState(feature), phase: 'implementing' },
+        eventSink: (e) => events.push(e),
+      });
+
+      expect(init.ok).toBe(true);
+      const warnings = events
+        .filter((e): e is Extract<EngineEvent, { type: 'warning' }> => e.type === 'warning')
+        .map((e) => e.message);
+      expect(warnings).toContain(
+        'PLAN seat changed Claude Code CLI · Opus 5.5 · max → Claude Code CLI · auto; context will be rebuilt',
+      );
     });
   });
 
@@ -868,7 +915,101 @@ describe('initializeWorkflow — the @ context outlives the process', () => {
   });
 });
 
+describe('initializeWorkflow — the mode a run starts in', () => {
+  it.each([
+    ['quick', 'planning'],
+    ['standard', 'researching'],
+    ['speckit', 'researching'],
+  ] as const)('saves the %s setup in %s', async (mode, phase) => {
+    await withTempDir('splitbrief-init-first-phase', async (projectDir) => {
+      const sessionId = `session-init-${mode}-phase`;
+      const events: EngineEvent[] = [];
+      const { init } = await initializeTestWorkflow({
+        projectDir,
+        sessionId,
+        feature: 'ship the banner',
+        configOverrides: { workflow: { mode } },
+        eventSink: (event) => events.push(event),
+      });
+
+      expect(init.ok).toBe(true);
+      expect(loadState({ projectDir, sessionId })?.phase).toBe(phase);
+      expect(events).toContainEqual(expect.objectContaining({ type: 'workflow_started', phase }));
+      expect(events).toContainEqual(expect.objectContaining({ type: 'planner_status', phase }));
+    });
+  });
+
+  it('saves the mode and approval level it resolves with the start', async () => {
+    await withTempDir('splitbrief-init-mode', async (projectDir) => {
+      const sessionId = 'session-init-mode';
+      const started = await initializeTestWorkflow({
+        projectDir,
+        sessionId,
+        feature: 'ship the banner',
+        configOverrides: { workflow: { mode: 'standard', approve: 'all' } },
+      });
+
+      expect(started.init.ok).toBe(true);
+      expect(loadState({ projectDir, sessionId })).toMatchObject({
+        mode: 'standard',
+        approve: 'all',
+      });
+    });
+  });
+
+  it('continues in the mode it started in after the config changes', async () => {
+    await withTempDir('splitbrief-init-mode-kept', async (projectDir) => {
+      const sessionId = 'session-init-mode-kept';
+      const feature = 'ship the banner';
+      await initializeTestWorkflow({
+        projectDir,
+        sessionId,
+        feature,
+        configOverrides: { workflow: { mode: 'standard' } },
+      });
+      const saved = loadState({ projectDir, sessionId });
+      if (!saved) throw new Error('the start saved no state');
+
+      const continued = await initializeTestWorkflow({
+        projectDir,
+        sessionId,
+        feature,
+        savedState: saved,
+        configOverrides: { workflow: { mode: 'quick' } },
+      });
+
+      expect(continued.init.ok).toBe(true);
+      if (!continued.init.ok) return;
+      // How planning resolves the mode of the pass it runs.
+      expect(resolveMode({ config: continued.config, savedMode: continued.init.state.mode })).toBe(
+        'standard',
+      );
+    });
+  });
+});
+
 describe('initializeWorkflow — a halt about files the operator put back', () => {
+  /**
+   * A brief is in flight only when its target output is on record; the same edit to a brief with
+   * no recorded output is that brief's starting input, not a conflict (user-edit/detection.ts
+   * `assessChangedUserEdits`).
+   */
+  function recordBriefOutput(projectDir: string, sessionId: string, task: Task): void {
+    ensureSessionDir(projectDir, sessionId);
+    const ledger = createEvidenceLedger({ sessionId, feature: 'feat', tasks: [task] });
+    writeEvidenceLedger(
+      { projectDir, sessionId },
+      {
+        ...ledger,
+        tasks: ledger.tasks.map((entry) => ({
+          ...entry,
+          promotedBriefHash: hashTaskBrief([task]),
+          promotedFiles: [{ path: 'src/edited.ts', sha256: sha256Hex('original'), mode: 0o644 }],
+        })),
+      },
+    );
+  }
+
   async function initWithFileHalt(
     projectDir: string,
     sessionId: string,
@@ -877,6 +1018,8 @@ describe('initializeWorkflow — a halt about files the operator put back', () =
     taskStatus: 'pending' | 'in_progress' = 'pending',
   ) {
     const baseline = serializeChangedFilesBaseline(await captureChangedFilesBaseline(projectDir));
+    const task = makeTask({ id: 'T001', status: taskStatus, file: 'src/edited.ts' });
+    if (taskStatus === 'in_progress') recordBriefOutput(projectDir, sessionId, task);
     if (editAfterBaseline !== undefined) {
       writeFileSync(join(projectDir, 'src/edited.ts'), editAfterBaseline);
     }
@@ -889,7 +1032,7 @@ describe('initializeWorkflow — a halt about files the operator put back', () =
       savedState: {
         ...createInitialState(feature),
         phase: 'implementing',
-        tasks: [makeTask({ id: 'T001', status: taskStatus, file: 'src/edited.ts' })],
+        tasks: [task],
         currentTaskIndex: 0,
         changedFilesBaseline: baseline,
         pendingRecovery: makeRecoveryIssue({

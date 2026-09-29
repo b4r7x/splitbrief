@@ -42,6 +42,7 @@ describe('addEvent — runner call stall', () => {
       since: 2_000,
       silentMs: 60_000,
       runnerName: null,
+      backendKind: 'cli',
     });
 
     addEvent({

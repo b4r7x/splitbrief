@@ -16,6 +16,7 @@ import {
 import type { AppProps } from '../../../src/app/root.js';
 import type { SessionRef } from '../../../src/core/types/session-ref.js';
 import { viewport, type Viewport } from '../contracts/geometry.js';
+import { FIXED_CLOCK } from './environment.js';
 
 /** Every production effect an interactive path could still reach, spied at its own module. */
 const production = vi.hoisted(() => ({
@@ -100,6 +101,8 @@ const { routerStore } = await import('../../../src/stores/navigation/router.js')
 const { terminalSizeStore } = await import('../../../src/stores/ui/terminal-size.js');
 const { findVisualScenario } = await import('../catalog.js');
 const { PREVIEW_UNAVAILABLE } = await import('../fixtures/common.js');
+const { createPreviewController } = await import('../preview/controller.js');
+const { PreviewView } = await import('../preview/view.js');
 const { createFixtureSession, FIXTURE_SESSION_ROOT, isInsideFixtureRoot } = await import(
   './fixture-session.js'
 );
@@ -246,8 +249,8 @@ describe('the preview session owns one scenario at a time', () => {
     expect(Math.random).toBe(random);
     await tick(2);
     expect(Date.now()).toBeGreaterThanOrEqual(before);
-    // The capture's frozen instant is 2026-01-01; a live preview must never read it.
-    expect(Date.now()).not.toBe(Date.parse('2026-01-01T00:00:00.000Z'));
+    // The capture's frozen instant is FIXED_CLOCK; a live preview must never read it.
+    expect(Date.now()).not.toBe(Date.parse(FIXED_CLOCK));
     await preview.close();
   });
 });
@@ -396,6 +399,66 @@ describe('a previewed App spends fixture effects and no production one', () => {
     await preview.close();
     expectNoProductionEffect();
   });
+});
+
+describe('a replayed fixture walk', () => {
+  it('returns the configured Claude effort after the cursor leaves and comes back', async () => {
+    const forwarded: string[] = [];
+    let rendered: RenderFeatureResult | undefined;
+    // The real preview composition: its own view hands the fixture session the controller's
+    // `pressToPreview`, so the scripted keys await the settlement production preview uses.
+    const controller = createPreviewController({
+      scenarios: [scenarioNamed('overlay-picker-claude-effort-returned')],
+      hostViewport: WIDE,
+      forward: (input) => {
+        const text = input.toString('utf8');
+        forwarded.push(text);
+        if (rendered === undefined) throw new Error('input forwarded before the view rendered');
+        rendered.stdin.write(text);
+      },
+    });
+    rendered = renderFeature(createElement(PreviewView, { controller }), WIDE);
+    try {
+      await flushEffects();
+      await controller.selectScenario('overlay-picker-claude-effort-returned');
+
+      // Each scripted key went through the preview's settlement form, in order.
+      await vi.waitFor(
+        () => expect(forwarded).toEqual(['\u001b[D', '\u001b[B', '\u001b[A', '\u001b[C']),
+        { timeout: 10_000 },
+      );
+      // The return restored the seat's effort level into the draft, and the expanded effort
+      // axis reads it again; a reset lands on the unset word, never `high`. Only that axis
+      // row carries both words, so this is not the seat identity line's `high`.
+      await vi.waitFor(
+        () => {
+          expect(pickerViewStore.get().effortDraft).toBe('high');
+          const lines = frame(rendered as RenderFeatureResult).split('\n');
+          expect(
+            lines.some((line) => line.includes('effort') && line.includes('high')),
+            lines.join('\n'),
+          ).toBe(true);
+        },
+        { timeout: 10_000 },
+      );
+      // Semantic confirmation: Enter acts on the cursor row. On the returned Claude row it
+      // saves exactly the configured seat and closes the picker; on the launcher row it only
+      // browses (the picker stays open), and on any other row it saves that row instead.
+      // `high` stays visible in the seat identity throughout, so the saved seat — not the
+      // frame text — is what establishes the returned selection.
+      await controller.pressToPreview('\r');
+      await vi.waitFor(() => expect(overlayStore.get().active).toBe('none'), { timeout: 10_000 });
+      expect(configStore.get().config?.planner).toEqual({
+        kind: 'cli',
+        tool: 'claude-code',
+        model: 'opus',
+        effort: 'high',
+      });
+    } finally {
+      await controller.dispose();
+      rendered.unmount();
+    }
+  }, 30_000);
 });
 
 describe('the preview answers for the effects it cannot simulate', () => {

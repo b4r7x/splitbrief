@@ -669,4 +669,15 @@ describe('inferKindFromTool', () => {
   ] as const)('%s', (_label, tool, kind) => {
     expect(inferKindFromTool(tool)).toBe(kind);
   });
+
+  it('keeps a CLI tool id on the CLI whatever the API-only flags say', () => {
+    expect(
+      buildRunnerConfig('implementer', {
+        tool: 'opencode',
+        model: 'opencode/test-model',
+        apiBase: 'https://my-endpoint.example/v1',
+        apiKey: 'sk-inline',
+      }),
+    ).toMatchObject({ kind: 'cli', tool: 'opencode' });
+  });
 });

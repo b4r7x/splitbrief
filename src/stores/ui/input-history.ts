@@ -2,6 +2,7 @@ import { createStore, storeBase } from '../create-store.js';
 import { createDraftDocument, normalizeDraftDocument } from '../../core/composer/document.js';
 import type { Screen } from '../../core/navigation/types.js';
 import type { DraftDocument, DraftPart } from '../../core/schemas/draft-document.js';
+import { sanitizePasteBody } from '../../lib/terminal/filtered-stdin/paste.js';
 
 export interface InputHistoryState {
   entries: DraftDocument[];
@@ -50,10 +51,19 @@ function isSameDocument(a: DraftDocument, b: DraftDocument): boolean {
   });
 }
 
+function sanitizeDocumentText(document: DraftDocument): DraftDocument {
+  return {
+    version: 1,
+    parts: document.parts.map((part) =>
+      part.kind === 'text' ? { ...part, text: sanitizePasteBody(part.text) } : part,
+    ),
+  };
+}
+
 export function normalizeInputHistoryEntries(entries: readonly DraftDocument[]): DraftDocument[] {
   const deduped: DraftDocument[] = [];
   for (const entry of entries) {
-    const document = normalizeDraftDocument(entry);
+    const document = normalizeDraftDocument(sanitizeDocumentText(entry));
     if (isBlankDocument(document)) continue;
     if (deduped.some((kept) => isSameDocument(kept, document))) continue;
     deduped.push(document);

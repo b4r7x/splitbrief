@@ -52,10 +52,13 @@ export function closedBlockRows(input: ClosedBlockInput): ScrollableDocumentRow[
   if (view === null) return rows;
 
   const sections: ScrollableDocumentRow[][] = [];
-  if (view.briefs.total > 0 && view.briefs.rows.length > 0) {
+  if (view.briefs.rows.length > 0) {
     sections.push(briefsSectionRows({ view, width }));
   }
-  if (view.briefs.total > 0 && filesRows(view).length > 0) {
+  if (view.briefs.earlierRows.length > 0) {
+    sections.push(briefsSectionRows({ view, width, earlier: true }));
+  }
+  if (filesRows(view).length > 0) {
     sections.push(filesSectionRows({ view, width, theme }));
   }
   sections.push(runSectionRows({ view, width, theme, crewNamed }));

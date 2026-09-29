@@ -7,6 +7,7 @@ import { findVisualScenario, listVisualScenarios } from '../catalog.js';
 import { createCropCellGrid } from '../artifacts/crop.js';
 import { mountGalleryScenario } from '../gallery/mount.js';
 import { parseTerminalFrame } from '../terminal/parse.js';
+import { readConversationHoverSnapshot } from '../../../src/features/workflow/layout/snapshot.js';
 import { createFrameIdentity } from '../visual-contract-fixtures.js';
 import { LOCATOR_FAILURE_CODE } from './types.js';
 import { LOCATOR_REGISTRY } from './registry.js';
@@ -126,6 +127,44 @@ describe('semantic visual locators', { timeout: 90_000 }, () => {
         0,
       ),
     );
+  }, 120_000);
+
+  it('lands the transcript on the body row the mounted screen budgeted, for every workflow scenario', async () => {
+    let checked = 0;
+    for (const scenario of listVisualScenarios()) {
+      if (scenario.surface.kind !== 'screen' || scenario.surface.screen !== 'workflow') continue;
+      if (!scenario.elements.some((element) => element.id === 'transcript')) continue;
+      const checkpoint = requireCheckpoint(scenario);
+      for (const frameViewport of scenario.viewports) {
+        const label = `${scenario.id}/${frameViewport.cols}x${frameViewport.rows}`;
+        const handle = await mountGalleryScenario({
+          scenario,
+          checkpoint,
+          viewport: frameViewport,
+        });
+        let frame: string;
+        let paintedBodyTop: number;
+        try {
+          frame = await handle.waitForCheckpoint();
+          // The body top the mounted screen's own snapshot derives from its stores (1-based rect
+          // convention); the locator counts the 0-based rows the frame artifacts use.
+          paintedBodyTop = readConversationHoverSnapshot().contentRect.top - 1;
+        } finally {
+          await handle.unmount();
+        }
+        const grid = await createFrameGrid(scenario, frameViewport, frame);
+        const transcript = resolveElementLocator({
+          scenario,
+          checkpoint,
+          grid,
+          elementId: 'transcript',
+        });
+        expect(transcript.rect.y, label).toBe(paintedBodyTop);
+        checked += 1;
+      }
+    }
+
+    expect(checked).toBeGreaterThan(0);
   }, 120_000);
 
   it('pins the header, sidebar, composer, approval and hero rects at 80x24 / 120x40 / 160x45', async () => {

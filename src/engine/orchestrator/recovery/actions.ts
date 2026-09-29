@@ -784,7 +784,7 @@ function recordRecoverySkipEvidence(opts: {
     {
       sessionId: opts.sessionId,
       feature: opts.state.feature,
-      mode: opts.mode ?? DEFAULT_WORKFLOW_MODE,
+      mode: opts.state.mode ?? opts.mode ?? DEFAULT_WORKFLOW_MODE,
       tasks: opts.state.tasks,
       briefHash,
     },

@@ -159,6 +159,25 @@ describe('operationsStore', () => {
     });
   });
 
+  it('carries a shell backend kind from an active operation into the terminal last operation', () => {
+    addEvent(runnerStarted({ backendKind: 'shell', runnerName: 'bash' }));
+
+    expect(operationsStore.get().active).toMatchObject({
+      callId: 'call-1',
+      backendKind: 'shell',
+      status: 'running',
+    });
+
+    addEvent(runnerCompleted({ backendKind: 'shell', runnerName: 'bash' }));
+
+    expect(operationsStore.get().active).toBeNull();
+    expect(operationsStore.get().last).toMatchObject({
+      callId: 'call-1',
+      backendKind: 'shell',
+      status: 'completed',
+    });
+  });
+
   it('restores the newest still-running operation when the active call completes', () => {
     addEvent(
       runnerStarted({

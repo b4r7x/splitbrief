@@ -31,6 +31,7 @@ import { plannerTextRowBlock } from './planner-text.js';
 import { isTranscriptRowlessEvent } from './visibility.js';
 import { WORKFLOW_CANCEL_REASON_USER } from '../../../../engine/events/workflow-cancel.js';
 import { stripRecoveryResetClause } from '../../recovery-prompt.js';
+import { stepWord } from '../../closed/byline.js';
 import { recoveryActionLabel } from '../../recovery-prompt.js';
 
 function sentenceCaseIdentifier(value: string): string {
@@ -197,7 +198,7 @@ export function eventRowBlock(options: {
     case 'task_started':
       return taskStartedRowBlock({
         keyPrefix,
-        index: event.index,
+        taskId: event.taskId,
         title: event.title,
         metadata: taskStartedMetadata(event),
         width: ctx.width,
@@ -376,7 +377,14 @@ export function eventRowBlock(options: {
       return calloutRowsBlock({
         keyPrefix,
         label: 'interrupted',
-        value: 'Turn stopped — type instructions to steer, or press Enter to retry.',
+        // A gate runs no turn: continuing it reopens the gate, it retries nothing.
+        // A boundary brief event names the brief to resume, not the one just completed.
+        value:
+          event.step?.kind === 'gate'
+            ? `Paused at ${stepWord(event.step)} — press Enter to reopen it.`
+            : event.at === 'boundary' && event.step?.kind === 'brief'
+              ? `Paused before ${event.step.taskId}.`
+              : 'Turn stopped — type instructions to steer, or press Enter to retry.',
         width: ctx.width,
         severity: 'warning',
       });

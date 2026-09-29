@@ -24,7 +24,7 @@ function frameOf(node: React.ReactElement): string {
 describe('DocumentReviewPrompt', () => {
   it.each([
     ['spec', 'Approve spec and write the plan'],
-    ['plan', 'Approve plan and compile briefs'],
+    ['plan', 'Approve plan and review the briefs'],
     ['briefs', 'Approve briefs and start the build'],
   ] as const)('names the step %s approval releases', (artifact, row) => {
     const frame = frameOf(
@@ -32,7 +32,8 @@ describe('DocumentReviewPrompt', () => {
     );
 
     expect(frame).toContain(row);
-    expect(frame).toContain('End run (close this run; keep changes)');
+    expect(frame).toContain('End run (close this run)');
+    expect(frame).not.toContain('keep changes');
   });
 
   it('teaches the selection keys once, inside its own border', () => {

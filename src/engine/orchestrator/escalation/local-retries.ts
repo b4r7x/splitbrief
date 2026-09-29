@@ -3,7 +3,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { ABORTED_OUTCOME_TEXT } from '../../implementers/pipeline/call-result.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import { createBusTextHandler, publishRetry } from '../events.js';
-import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
+import { transitionAndSave } from '../state-ops.js';
 import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js';
 import { runRetryStep } from './step.js';
 import { failedRetry, type EscalationContext, type RetryStepOutcome } from './types.js';
@@ -67,17 +67,16 @@ export async function runLocalRetries(
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     if (ctx.signal?.aborted) break;
-    attempts = attempt;
-    const attemptBefore = state.attempt;
     if (state.phase === 'implementing') {
       state = persistTransition(state, { type: 'TASK_SENT' });
     }
     state = persistTransition(state, { type: 'VALIDATION_FAIL' }, { maxRetries });
+    attempts = state.attempt;
     const retryRow = {
       bus: ctx.bus,
       phase: state.phase,
       taskId: task.id,
-      attempt,
+      attempt: state.attempt,
       maxRetries,
       error: lastError,
     };
@@ -98,6 +97,7 @@ export async function runLocalRetries(
       invokeRetry: makeImplementerRetryInvoker({
         context: ctx.context,
         kind: 'local',
+        sessionId: ctx.sessionId,
         languageContext: buildProjectLanguageContext(
           ctx.projectDir,
           state.discoveredValidation?.language,
@@ -111,17 +111,6 @@ export async function runLocalRetries(
     task = outcome.task;
     lastError = outcome.lastError;
     if (outcome.result === undefined && isAbortedOutcome(lastError, ctx.signal)) {
-      attempts = attempt - 1;
-      const merged = rebaseOnPersistedWorkflowState(ctx, state);
-      state = persistTransition(
-        { ...merged, attempt: attemptBefore },
-        {
-          type: 'MARK_INJECTING_NATIVE',
-          id: '__workflow_retry_abort__',
-          attempt: attemptBefore,
-        },
-      );
-      state = { ...state, attempt: attemptBefore };
       return { state, task, lastError, attempts, result: failedRetry(attempts) };
     }
     if (outcome.result) {

@@ -1,7 +1,8 @@
 import type { TaskId } from '../../../core/schemas/task.js';
 import { extractFrontmatter } from '../../../utils/frontmatter.js';
+import { countNoun } from '../../../utils/pluralize.js';
 import { TASK_BRIEF_HEADINGS } from '../headings.js';
-import { fenceMarkerLength, nextFenceLength } from './fence-marker.js';
+import { closesOpenFence, fenceMarkerLength } from './fence-marker.js';
 
 export type ParsedTaskSections = {
   description: string;
@@ -43,9 +44,21 @@ export function unknownSectionHeaders(block: string): string[] {
   const { body } = extractFrontmatter(block);
   const unknown: string[] = [];
   let fenceLength = 0;
+  let fenceInfo = '';
 
   for (const line of body.split('\n')) {
-    fenceLength = nextFenceLength(fenceLength, line.trim());
+    const trimmed = line.trim();
+    const markerLength = fenceMarkerLength(trimmed);
+    if (markerLength !== null) {
+      const markerInfo = trimmed.slice(markerLength).trim();
+      if (fenceLength === 0) {
+        fenceLength = markerLength;
+        fenceInfo = markerInfo;
+      } else if (closesOpenFence({ fenceLength, fenceInfo, markerLength, markerInfo })) {
+        fenceLength = 0;
+        fenceInfo = '';
+      }
+    }
 
     const headerMatch = fenceLength > 0 ? null : line.match(/^###\s+(.+)/);
     if (headerMatch?.[1]) {
@@ -65,7 +78,7 @@ export function warnUnknownSections(
   const unknown = unknownSectionHeaders(block);
   if (unknown.length === 0) return;
   onWarning(
-    `Task ${id} has section(s) not in the Task Brief grammar and will be dropped: ${unknown.join(', ')}`,
+    `Task ${id} has ${countNoun(unknown.length, 'section')} not in the Task Brief grammar; ${unknown.length === 1 ? 'it' : 'they'} will be dropped: ${unknown.join(', ')}`,
   );
 }
 
@@ -75,10 +88,22 @@ export function extractSections(block: string): ParsedTaskSections {
   const sectionMap: Record<string, string> = {};
   let currentHeader = '';
   let fenceLength = 0;
+  let fenceInfo = '';
   const lines = body.split('\n');
 
   for (const line of lines) {
-    fenceLength = nextFenceLength(fenceLength, line.trim());
+    const trimmed = line.trim();
+    const markerLength = fenceMarkerLength(trimmed);
+    if (markerLength !== null) {
+      const markerInfo = trimmed.slice(markerLength).trim();
+      if (fenceLength === 0) {
+        fenceLength = markerLength;
+        fenceInfo = markerInfo;
+      } else if (closesOpenFence({ fenceLength, fenceInfo, markerLength, markerInfo })) {
+        fenceLength = 0;
+        fenceInfo = '';
+      }
+    }
 
     const headerMatch = fenceLength > 0 ? null : line.match(/^###\s+(.+)/);
     if (headerMatch?.[1]) {

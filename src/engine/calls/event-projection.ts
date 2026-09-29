@@ -146,6 +146,8 @@ export function projectRunnerCallEvent(
       return { type: 'runner_call_stalled', ...base, silentMs: event.silentMs };
     case 'call_stall_cleared':
       return { type: 'runner_call_stall_cleared', ...base };
+    case 'call_heartbeat':
+      return { type: 'runner_call_heartbeat', ...base };
     default:
       return assertNever(event);
   }

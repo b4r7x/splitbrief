@@ -482,7 +482,7 @@ describe('event row dispatch', () => {
     expect(text).not.toContain(secret);
   });
 
-  it('renders the routing reason on a task-start row', () => {
+  it('renders a tight fit on a task-start row as its estimate against the window', () => {
     const event: EngineEventOf<'task_started'> = {
       type: 'task_started',
       ts: 0,
@@ -510,9 +510,13 @@ describe('event row dispatch', () => {
     const lines = rows.map(rowText);
     const text = lines.join('\n');
 
-    expect(text.replace(/\s+/g, ' ')).toContain(
-      'why current code reduced to fit cheap-cloud context',
-    );
+    const normalized = text.replace(/\s+/g, ' ');
+    // MAIN112 F4 wraps task-header metadata label-atomically: a label that moves to a
+    // continuation drops the ` · ` it broke on. Assert the facts, not the old wrap point.
+    expect(normalized).toContain('worker cheap-cloud');
+    expect(normalized).toContain('~95,000 of 100K context tokens (tight)');
+    expect(lines.every((line) => !line.trimEnd().endsWith('·'))).toBe(true);
+    expect(normalized).not.toContain('current code reduced');
     expect(lines.every((line) => line.length <= 52)).toBe(true);
   });
 
@@ -534,20 +538,67 @@ describe('event row dispatch', () => {
       routingReason: 'selected cheapest capable profile',
     };
 
-    const text = eventRows({
+    const lines = eventRows({
       event,
       globalIndex: 0,
       expanded: false,
       ctx: { width: 52, viewportRows: 20, streaming },
-    })
-      .map(rowText)
-      .join('\n');
+    }).map(rowText);
+    const text = lines.join('\n');
 
     const normalized = text.replace(/\s+/g, ' ');
 
-    expect(normalized).toContain('fit fits');
-    expect(normalized).toContain('why selected cheapest capable profile');
-    expect(normalized).not.toContain('3911/32768 tok');
+    // Same label-atomic wrap as the tight-fit case above: the worker can open a continuation
+    // without the separator that introduced it.
+    expect(normalized).toContain('src/app.ts (modify)');
+    expect(normalized).toContain('worker cheap-cloud');
+    expect(lines.every((line) => !line.trimEnd().endsWith('·'))).toBe(true);
+    expect(normalized).not.toContain('fit');
+    expect(normalized).not.toContain('selected cheapest capable profile');
+    expect(normalized).not.toContain('3,911');
+  });
+
+  it('draws the user-edits card as its verdict over its files', () => {
+    const files = ['CHANGELOG.md', 'docs/CLI-REFERENCE.md', 'docs/ENGINE.md', 'src/app/keys.ts'];
+    const event: EngineEventOf<'paused_external_changes'> = {
+      type: 'paused_external_changes',
+      ts: 0,
+      phase: 'implementing',
+      conflict: {
+        kind: 'unrelated',
+        files,
+        affectedTaskIds: [],
+        currentTaskId: taskId('T001'),
+        fileConflicts: files.map((file) => ({ file, kind: 'unrelated', affectedTaskIds: [] })),
+        safeToContinue: true,
+        availableActions: ['continue-unrelated', 'pause', 'abort-workflow'],
+      },
+      selectedAction: 'continue-unrelated',
+    };
+
+    for (const width of [119, 79, 59]) {
+      const lines = eventRows({
+        event,
+        globalIndex: 0,
+        expanded: false,
+        ctx: { width, viewportRows: 20, streaming },
+      }).map((row) => rowText(row).trim());
+
+      expect(lines[0]).toBe('user edits');
+      expect(lines[1]).toBe('outside the remaining briefs · run continued');
+      const fileRows = lines.slice(2);
+      expect(fileRows.join(' ')).toBe(
+        width === 59
+          ? 'CHANGELOG.md · docs/CLI-REFERENCE.md · docs/ENGINE.md +1 more'
+          : 'CHANGELOG.md · docs/CLI-REFERENCE.md · docs/ENGINE.md · +1 more',
+      );
+      if (width === 59) {
+        expect(fileRows).toEqual([
+          'CHANGELOG.md · docs/CLI-REFERENCE.md · docs/ENGINE.md',
+          '+1 more',
+        ]);
+      }
+    }
   });
 
   it.each([
@@ -880,6 +931,77 @@ describe('event row dispatch', () => {
     );
     expect(rows.length).toBeGreaterThan(0);
     expect(rows.every((rowValue) => rowValue.markerTone === 'warning')).toBe(true);
+  });
+
+  it('turn_interrupted at a gate names the gate and never offers a retry', () => {
+    const event: EngineEventOf<'turn_interrupted'> = {
+      type: 'turn_interrupted',
+      ts: 0,
+      phase: 'reviewing-plan',
+      source: 'user',
+      at: 'boundary',
+      step: { kind: 'gate', gate: 'plan' },
+    };
+
+    const text = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    })
+      .map(rowText)
+      .join('\n');
+
+    expect(text).toContain('Paused at the plan gate — press Enter to reopen it.');
+    expect(text).not.toContain('Turn stopped');
+    expect(text).not.toContain('retry');
+  });
+
+  it('turn_interrupted at a brief boundary names the brief it pauses before', () => {
+    const event: EngineEventOf<'turn_interrupted'> = {
+      type: 'turn_interrupted',
+      ts: 0,
+      phase: 'implementing',
+      source: 'user',
+      at: 'boundary',
+      step: { kind: 'brief', taskId: taskId('T002'), attempt: 0 },
+    };
+
+    const text = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    })
+      .map(rowText)
+      .join('\n');
+
+    expect(text).toContain('Paused before T002.');
+    expect(text).not.toContain('Turn stopped');
+    expect(text).not.toContain('retry');
+    expect(text).not.toContain('after T002');
+  });
+
+  it('turn_interrupted mid-brief keeps the retry copy', () => {
+    const event: EngineEventOf<'turn_interrupted'> = {
+      type: 'turn_interrupted',
+      ts: 0,
+      phase: 'implementing',
+      source: 'user',
+      at: 'mid-step',
+      step: { kind: 'brief', taskId: taskId('T002'), attempt: 0 },
+    };
+
+    const text = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    })
+      .map(rowText)
+      .join('\n');
+
+    expect(text).toContain('Turn stopped — type instructions to steer, or press Enter to retry.');
   });
 
   it('task_retry counts attempts the way the build block does', () => {

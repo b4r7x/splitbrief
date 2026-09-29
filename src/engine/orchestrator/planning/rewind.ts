@@ -4,7 +4,13 @@ import type { QueuedMessage, WorkflowState } from '../../../core/schemas/workflo
 import type { Planner } from '../../planners/types.js';
 import type { PlannerCallbacksContext } from '../types.js';
 import { readSpecFileOrEmpty, type SpecMetadata } from '../../../core/paths-io.js';
-import { SPEC_FILE, PLAN_FILE, TASKS_FILE, sessionDir } from '../../../core/paths.js';
+import {
+  BRIEF_QUALITY_FILE,
+  PLAN_FILE,
+  SPEC_FILE,
+  TASKS_FILE,
+  sessionDir,
+} from '../../../core/paths.js';
 import { buildRegeneratePrompt } from '../../spec/prompts/plan.js';
 import { createBusTextHandler, publishPlannerStatus } from '../events.js';
 import { writeAndPublishArtifact } from '../artifact-write.js';
@@ -85,9 +91,12 @@ export async function runRewindPlanning(
   publishPlannerStatus(wctx.bus, state, 'running');
 
   // Quick mode has one artifact and no documents to revise: the comment rides the
-  // feature and the briefs are compiled again.
+  // feature and the briefs are compiled again. The report that measured the removed
+  // briefs goes with them.
   if ((state.mode ?? 'standard') === 'quick') {
-    rmSync(join(sessionDir(projectDir, sessionId), TASKS_FILE), { force: true });
+    const dir = sessionDir(projectDir, sessionId);
+    rmSync(join(dir, TASKS_FILE), { force: true });
+    rmSync(join(dir, BRIEF_QUALITY_FILE), { force: true });
     return runPlanningSteps({
       ...opts,
       state,

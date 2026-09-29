@@ -9,6 +9,7 @@ export function makeImplementerRetryInvoker(opts: {
   context: ProjectContext;
   kind: RetryOptions['kind'];
   languageContext: LanguageContext;
+  sessionId: string;
   phase: Phase;
   onOutput: (text: string) => void;
   implementer?: Implementer | undefined;
@@ -39,6 +40,7 @@ export function makeImplementerRetryInvoker(opts: {
       attempt: attempts,
       kind: opts.kind,
       onOutput: opts.onOutput,
+      sessionId: opts.sessionId,
       phase: opts.phase,
       signal,
       sandboxEnv,

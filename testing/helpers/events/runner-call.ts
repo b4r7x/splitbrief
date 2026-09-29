@@ -80,6 +80,21 @@ export function makeRunnerCallStallCleared(
   };
 }
 
+export function makeRunnerCallHeartbeat(
+  overrides?: Partial<EventOfType<'runner_call_heartbeat'>>,
+): EventOfType<'runner_call_heartbeat'> {
+  return {
+    type: 'runner_call_heartbeat',
+    ts: 2_500,
+    phase: 'implementing',
+    callId: 'call-1',
+    role: 'implementer',
+    backendKind: 'cli',
+    sequence: 2,
+    ...overrides,
+  };
+}
+
 export function makeRunnerCallStarted(
   overrides?: Partial<EventOfType<'runner_call_started'>>,
 ): EventOfType<'runner_call_started'> {

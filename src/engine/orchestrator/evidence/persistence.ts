@@ -10,6 +10,7 @@ import { mutateEvidenceLedger, readEvidenceLedger } from '../../../core/evidence
 import {
   recordApiApplyEvidence,
   recordLocalTaskEvidence,
+  recordPromotedFilesEvidence,
   recordPromotionFailureEvidence,
   recordRetryOrEscalationEvidence,
   recordSkippedTaskEvidence,
@@ -28,10 +29,13 @@ import { hashTaskBrief } from '../../brief-hash.js';
 import type { GateDecision } from '../approval/types.js';
 import type {
   EvidenceLedger,
+  EvidencePromotedFile,
   EvidencePromotionAttempt,
   EvidenceValidationEntry,
 } from '../../../core/schemas/evidence.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
+import { isInDeclaredSet, taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
+import type { EventBus } from '../../events/types.js';
 
 export function getOrCreateLedger(opts: {
   ref: SessionRef;
@@ -250,6 +254,65 @@ export function persistPromotionFailureEvidence(opts: {
     return { persisted: true };
   } catch (err) {
     return { persisted: false, error: err };
+  }
+}
+
+/** Invalidate before a possible target write, so a lost new receipt cannot revive an old one. */
+export function invalidateTargetWriteEvidence(opts: {
+  ref: SessionRef;
+  task: Task;
+  files?: readonly string[];
+}): void {
+  const patterns = taskDeclaredPatterns(opts.task);
+  const affected = (path: string) =>
+    opts.files === undefined ? isInDeclaredSet(path, patterns) : opts.files.includes(path);
+  const current = readEvidenceLedger(opts.ref);
+  if (!current?.tasks.some((entry) => entry.promotedFiles?.some((file) => affected(file.path)))) {
+    return;
+  }
+  // Failure propagates before the writer runs. The existing ledger lock keeps
+  // unrelated evidence written since the first read intact.
+  mutateEvidenceLedger(opts.ref, (existing) => {
+    const ledger = existing ?? current;
+    return {
+      ...ledger,
+      generatedAt: nowIso(),
+      tasks: ledger.tasks.map((entry) =>
+        entry.promotedFiles === undefined
+          ? entry
+          : {
+              ...entry,
+              promotedFiles: entry.promotedFiles.filter((file) => !affected(file.path)),
+            },
+      ),
+    };
+  });
+}
+
+/**
+ * Persist the writer's receipt before validation. A persistence error remains
+ * visible as a warning; no target read is used to reconstruct missing evidence.
+ */
+export function persistPromotedFilesEvidence(opts: {
+  ref: SessionRef;
+  bus: EventBus;
+  state: WorkflowState;
+  task: Task;
+  mode?: WorkflowMode | undefined;
+  files: EvidencePromotedFile[];
+}): void {
+  const { ref, bus, state, task, mode, files } = opts;
+  try {
+    mutateEvidenceLedger(ref, (existing) =>
+      recordPromotedFilesEvidence({
+        ledger: existing ?? getOrCreateLedger({ ref, state, mode }),
+        task,
+        files,
+        briefHash: hashTaskBrief(state.tasks),
+      }),
+    );
+  } catch (err) {
+    publishWarningFromError({ bus, phase: state.phase }, 'failed to record promoted files', err);
   }
 }
 

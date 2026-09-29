@@ -1,3 +1,4 @@
+import type { WorkspaceOwner } from '../../../core/schemas/retained-workspace.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow.js';
 import type { ChangeDetectionKind } from '../../change-detection.js';
@@ -10,10 +11,12 @@ export type IsolatedWorkspace = {
   sandboxEnv: NodeJS.ProcessEnv;
   snapshot: ChangedFilesSnapshot;
   cleanup: () => void;
+  retain?: (() => Promise<void>) | undefined;
   /**
-   * The target project's own files as they stood before the worker was given
-   * this workspace. Promotion compares the target against it and never against
-   * what the worker's run left behind; a workspace without one promotes nothing.
+   * Target inputs the workspace may replace. Reused worktrees retain the old
+   * fingerprint where operator edits overlap unfinished work, so a new
+   * acquisition cannot authorize overwriting them. A workspace without a
+   * baseline promotes nothing.
    */
   targetBaseline: AcquisitionBaseline | undefined;
   /**
@@ -32,10 +35,13 @@ export type RunIsolation = {
     /**
      * A brief's first attempt starts from the project as promoted: whatever an
      * earlier attempt left in the shared worktree that the project never received
-     * is discarded before the hand-out, or the worker reads its own leftovers as
-     * finished work. A retry keeps them: it iterates on the previous attempt.
+     * is discarded before the hand-out, except where the target changed as well.
+     * Those conflicting copies stay for recovery. A retry keeps its unfinished
+     * work: it iterates on the previous attempt.
      */
     fresh?: boolean | undefined;
+    owner?: WorkspaceOwner | undefined;
+    resume?: boolean | undefined;
   }) => Promise<IsolatedWorkspace>;
   dispose: () => Promise<void>;
 };

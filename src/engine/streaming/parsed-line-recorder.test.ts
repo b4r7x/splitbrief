@@ -158,6 +158,16 @@ describe('createParsedLineRecorder', () => {
     );
   });
 
+  it('turns a heartbeat line into a heartbeat event and no text', () => {
+    const { events, parsed, text } = createHarness();
+
+    parsed.apply({ sessionId: 'sess-1', isHeartbeat: true });
+
+    expect(text).toEqual([]);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'call_heartbeat' }));
+    expect(events.some((event) => event.type === 'call_text_delta')).toBe(false);
+  });
+
   it('preserves parsed tool ids in structured tool events', () => {
     const { events, parsed } = createHarness();
 

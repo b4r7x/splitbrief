@@ -78,13 +78,24 @@ describe('eventRows task header and planner phase header', () => {
       .join('');
 
     expect(first.kind).toBe('task-header');
-    expect(text).toContain('T1 Route ordinary task');
+    expect(text).toContain('T001 Route ordinary task');
     expect(metadata).toContain('src/app.ts (modify)');
     expect(metadata).toContain('OpenAI Codex CLI');
-    expect(metadata).toContain('profile cheap-cloud');
-    expect(metadata).toContain('fit fits');
-    expect(metadata).toContain('why selected cheapest capable');
+    expect(metadata).toContain('worker cheap-cloud');
+    expect(metadata).not.toContain('fit');
+    expect(metadata).not.toContain('selected cheapest capable');
     expect(rows.every((row) => getTerminalCellWidth(rowText(row)) <= 120)).toBe(true);
+  });
+
+  it('names the brief by its own id, as the byline and the Tasks card do', () => {
+    const rows = eventRows({
+      event: makeTaskStarted({ taskId: taskId('T002'), index: 1, total: 2 }),
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 120, viewportRows: 20, streaming },
+    });
+
+    expect(rowText(requireRow(rows, 0))).toMatch(/^T002 Route ordinary task/);
   });
 
   it('keeps title bold on wrapped continuation lines before metadata', () => {

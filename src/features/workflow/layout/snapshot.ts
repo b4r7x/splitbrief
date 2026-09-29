@@ -1,4 +1,7 @@
 import { getRailActiveIndex } from '../../../core/rail-stages.js';
+import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
+import type { WorkflowMode } from '../../../core/schemas/enums.js';
+import { resolveRunMode } from '../display/run-mode.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { readStopMenuRows, stopMenuLayout } from '../stop/options.js';
 import { getProgressRows, selectRailForm, WORKFLOW_GUTTER_X } from './chrome-rows.js';
@@ -24,6 +27,9 @@ import {
 } from './brief-review.js';
 import { inputHeightStore } from '../../../stores/ui/input-height.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
+import { routerStore } from '../../../stores/navigation/router.js';
+import { configStore } from '../../../stores/project/config.js';
+import { modeAdviceStore } from '../../../stores/workflow/mode-advice.js';
 import { getSections } from '../../../stores/workflow/actions/sections.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
@@ -92,21 +98,40 @@ function readWorkflowPromptRows(): number {
   });
 }
 
-// The build block leaves its rows to the chrome and stands down while a gate is open, exactly as
-// the screen budgets them (`src/app/screens/workflow.tsx`). The input paths measure the same body
-// or they scroll and hit-test a viewport the renderer never painted.
+// The build block's rows, asked from the same facts the screen asks from
+// (`src/app/screens/workflow.tsx`). The input paths measure the same body or they scroll and
+// hit-test a viewport the renderer never painted.
 function readProgressRows(promptRows: number): number {
-  if (promptRows > 0) return 0;
-  if (recoveryNoticeStore.get().issue !== null) return 0;
   const lifecycle = lifecycleStore.get();
+  const route = routerStore.get();
   return getProgressRows({
     phase: lifecycle.phase,
     cols: terminalSizeStore.get().cols,
     cancelled: lifecycle.cancelled,
+    halted: recoveryNoticeStore.get().issue !== null,
+    promptRows,
+    atRest: route.screen === 'workflow' && route.execution.kind === 'at-rest',
   });
 }
 
-function readRailFraction(): string {
+// The mode the rail draws: the one shared run-mode derivation, then the standard default when no
+// resolved, recorded, prepared or configured mode exists yet. Quick has no Spec step, so the rail
+// needs this to map an old quick `researching` phase onto Plan.
+function readRailMode(): WorkflowMode {
+  const route = routerStore.get();
+  const mode = resolveRunMode({
+    resolvedMode: modeAdviceStore.get().mode,
+    savedMode: route.screen === 'workflow' ? route.run.mode : null,
+    preparedConfig:
+      route.screen === 'workflow' && route.execution.kind === 'local'
+        ? route.execution.prepared.config
+        : null,
+    config: configStore.get().config,
+  });
+  return mode ?? DEFAULT_WORKFLOW_MODE;
+}
+
+function readRailFraction(mode: WorkflowMode): string {
   const tasks = tasksStore.get();
   const lifecycle = lifecycleStore.get();
   return resolveRailFraction({
@@ -114,6 +139,7 @@ function readRailFraction(): string {
     currentTask: tasks.currentTask,
     totalTasks: tasks.totalTasks,
     cancelled: lifecycle.cancelled,
+    mode,
   });
 }
 
@@ -130,11 +156,12 @@ export function readRailSnapshot(): RailSnapshot {
   const { cols } = terminalSizeStore.get();
   const phase = lifecycleStore.get().phase;
   const cancelled = lifecycleStore.get().cancelled;
-  const fraction = readRailFraction();
+  const mode = readRailMode();
+  const fraction = readRailFraction(mode);
   const form = selectRailForm({ phase, cols });
   return {
-    zones: getRailStageZones({ form, phase, cols, fraction, cancelled }),
-    activeIndex: getRailActiveIndex(phase),
+    zones: getRailStageZones({ form, phase, cols, fraction, cancelled, mode }),
+    activeIndex: getRailActiveIndex(phase, mode),
   };
 }
 

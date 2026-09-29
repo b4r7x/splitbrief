@@ -57,6 +57,33 @@ function parkedState(phase: 'reviewing-spec' | 'reviewing-plan'): WorkflowState 
 }
 
 describe('resumeArtifactApproval', () => {
+  it.each(['reviewing-spec', 'reviewing-plan'] as const)(
+    'does not invent a missing artifact or gate for a saved quick run in %s',
+    async (phase) => {
+      const { projectDir, sessionId } = setupProject();
+      const { callbacks } = makeCallbacks();
+      const { bus, events } = makeBusRecorder();
+      const planner = makePlanner();
+      const result = await resumeArtifactApproval({
+        wctx: makeWctx({
+          projectDir,
+          sessionId,
+          callbacks,
+          bus,
+          planner,
+          config: makeConfig({ workflow: { mode: 'speckit', approve: 'all' } }),
+        }),
+        state: { ...parkedState(phase), mode: 'quick', approve: 'all' },
+        phase,
+      });
+      expect(result.cancelled).toBe(false);
+      expect(result.state.mode).toBe('quick');
+      expect(callbacks.onApprovalNeeded).not.toHaveBeenCalled();
+      expect(planner.runPhase).not.toHaveBeenCalled();
+      expect(events.filter((event) => event.type === 'error')).toEqual([]);
+    },
+  );
+
   it('resumes a reviewing-spec session into the spec approval prompt over the persisted spec.md', async () => {
     const { projectDir, sessionId } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec', TEST_METADATA);
@@ -138,7 +165,9 @@ describe('resumeArtifactApproval', () => {
     expect(callbacks.onApprovalNeeded).not.toHaveBeenCalled();
   });
 
-  it('derives the effective approval level from the current config, not the persisted state', async () => {
+  // The saved level applies only while the config leaves `workflow.approve` at its default
+  // (`resolveApproveLevel`).
+  it('lets an approval level the config names outrank the saved one', async () => {
     const { projectDir, sessionId } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec', TEST_METADATA);
     const { callbacks } = makeCallbacks();
@@ -168,6 +197,75 @@ describe('resumeArtifactApproval', () => {
 
     expect(prompted.cancelled).toBe(false);
     expect(onApprovalNeeded).toHaveBeenCalledTimes(1);
+  });
+
+  // Quick has no spec or plan gate, so only the two modes that park at one are listed.
+  it.each([
+    ['standard', 'none', 'reviewing-spec', false],
+    ['standard', 'spec', 'reviewing-spec', true],
+    ['standard', 'plan', 'reviewing-spec', false],
+    ['standard', 'all', 'reviewing-spec', true],
+    ['standard', 'none', 'reviewing-plan', false],
+    ['standard', 'spec', 'reviewing-plan', false],
+    ['standard', 'plan', 'reviewing-plan', true],
+    ['standard', 'all', 'reviewing-plan', true],
+    ['speckit', 'none', 'reviewing-spec', false],
+    ['speckit', 'spec', 'reviewing-spec', true],
+    ['speckit', 'plan', 'reviewing-spec', false],
+    ['speckit', 'all', 'reviewing-spec', true],
+    ['speckit', 'none', 'reviewing-plan', false],
+    ['speckit', 'spec', 'reviewing-plan', false],
+    ['speckit', 'plan', 'reviewing-plan', true],
+    ['speckit', 'all', 'reviewing-plan', true],
+  ] as const)(
+    'resumes a %s run saved with approve %s in %s at its own level under a quick config (opens: %s)',
+    async (mode, approve, phase, opens) => {
+      const { projectDir, sessionId } = setupProject();
+      const ref = { projectDir, sessionId };
+      writeSpecFile(
+        ref,
+        phase === 'reviewing-spec' ? SPEC_FILE : PLAN_FILE,
+        '# Doc',
+        TEST_METADATA,
+      );
+      const onApprovalNeeded = vi
+        .fn<OrchestratorCallbacks['onApprovalNeeded']>()
+        .mockResolvedValue({ approved: true });
+      const { callbacks } = makeCallbacks({ onApprovalNeeded });
+      const { bus } = makeBusRecorder();
+      const config = makeConfig({ workflow: { mode: 'quick' } });
+
+      const result = await resumeArtifactApproval({
+        wctx: makeWctx({ projectDir, sessionId, callbacks, bus, config }),
+        state: { ...parkedState(phase), mode, approve },
+        phase,
+      });
+
+      expect(onApprovalNeeded).toHaveBeenCalledTimes(opens ? 1 : 0);
+      expect(result).toMatchObject({ cancelled: false, closed: false, state: { mode, approve } });
+    },
+  );
+
+  // The steps after the gate read the pair from this state, so a state that saved none carries the
+  // pair the gate was decided by, not a fallback of its own.
+  it('hands on the mode and level it resolved for a state that saved neither', async () => {
+    const { projectDir, sessionId } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec', TEST_METADATA);
+    const onApprovalNeeded = vi
+      .fn<OrchestratorCallbacks['onApprovalNeeded']>()
+      .mockResolvedValue({ approved: true });
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const { bus } = makeBusRecorder();
+    const config = makeConfig({ workflow: { mode: 'speckit' } });
+
+    const result = await resumeArtifactApproval({
+      wctx: makeWctx({ projectDir, sessionId, callbacks, bus, config }),
+      state: parkedState('reviewing-spec'),
+      phase: 'reviewing-spec',
+    });
+
+    expect(onApprovalNeeded).toHaveBeenCalledTimes(1);
+    expect(result.state).toMatchObject({ mode: 'speckit', approve: 'all' });
   });
 
   it('resumes a reviewing-plan session over plan.md', async () => {

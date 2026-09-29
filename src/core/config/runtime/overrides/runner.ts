@@ -1,6 +1,8 @@
 import { buildRunnerConfig, inferKindFromTool, type BuildRunnerOpts } from '../build-runner.js';
 import { assertNever } from '../../../../utils/type-guards.js';
 import { warnStderr } from '../../../../lib/warn.js';
+import { getProviderDisplayName } from '../../../providers/catalog.js';
+import { isCliToolId } from '../../../runners/cli-tool-catalog.js';
 import type { RunnerKind } from '../../../schemas/enums.js';
 import type { Config } from '../../../schemas/config.js';
 import type { PlannerConfig } from '../../../schemas/planner-config.js';
@@ -92,19 +94,27 @@ export function applyRunnerOverrides(
   }
 }
 
-function warnUnusableProviderOverrides(
-  role: ActiveRunnerRole,
-  kind: RunnerKind,
-  apiBase: string | undefined,
-  apiKey: string | undefined,
-): void {
-  const usesApiKey = kind === 'api';
-  const usesApiBase = kind === 'api';
-  if (apiKey !== undefined && !usesApiKey) {
-    warnStderr(`--${role}-api-key-env is ignored: the ${role} '${kind}' runner does not use it.`);
+function warnUnusableProviderOverrides(input: {
+  role: ActiveRunnerRole;
+  kind: RunnerKind;
+  tool: string | undefined;
+  apiBase: string | undefined;
+  apiKey: string | undefined;
+}): void {
+  const { role, kind, tool, apiBase, apiKey } = input;
+  if (kind === 'api') return;
+  // A CLI tool id always selects the CLI in flags, so an API-only flag is
+  // ignored. Name the identity the name resolved to and the only route to an
+  // API provider of that name, so the collision is not a silent kind change.
+  const reason =
+    tool !== undefined && isCliToolId(tool)
+      ? `'${tool}' selects the ${getProviderDisplayName(tool)} runner, which does not use it; a custom API provider with this name must set ${role}.kind: api in splitbrief.yaml`
+      : `the ${role} '${kind}' runner does not use it`;
+  if (apiKey !== undefined) {
+    warnStderr(`--${role}-api-key-env is ignored: ${reason}.`);
   }
-  if (apiBase !== undefined && !usesApiBase) {
-    warnStderr(`--${role}-api-base is ignored: the ${role} '${kind}' runner does not use it.`);
+  if (apiBase !== undefined) {
+    warnStderr(`--${role}-api-base is ignored: ${reason}.`);
   }
 }
 
@@ -138,7 +148,7 @@ function buildRunnerFromOverrides(
           ? { kind: 'api' as const }
           : existingToOpts(existing);
   const kind = baseOpts.kind ?? existing.kind;
-  warnUnusableProviderOverrides(role, kind, apiBase, apiKey);
+  warnUnusableProviderOverrides({ role, kind, tool, apiBase, apiKey });
   const applies =
     tool !== undefined ||
     model !== undefined ||

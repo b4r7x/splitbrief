@@ -71,6 +71,7 @@ export type ApiReviewContextInput = Readonly<{
   driftSection: string | undefined;
   /** Whether the ledger was read at all, beside what it recorded. */
   validation: Readonly<{ recorded: boolean; evidence: string | undefined }>;
+  reviewScope?: Readonly<{ diff: string; description: string }> | undefined;
   queueText?: string | undefined;
   /** The reviewer seat's configured window; its allocation is derived from it. */
   contextLength?: number | undefined;
@@ -100,18 +101,19 @@ function coverageBody(input: ApiReviewContextInput): string {
   const preRun = new Set(input.baseline.runStartChangedFiles);
   const lines = [
     input.baseline.head === null
-      ? 'Run baseline: the project had no commit when this run started, so the whole working tree is what it changed.'
-      : `Run baseline: commit ${input.baseline.head}. Every change below is measured against it.`,
+      ? 'Workspace comparison: the project had no commit when this run started.'
+      : `Workspace comparison: commit ${input.baseline.head}. This comparison alone does not establish authorship.`,
     '',
     input.changedFiles.length === 0
-      ? 'Files changed in this run: none.'
-      : `Files changed in this run (${input.changedFiles.length}):`,
+      ? 'Workspace comparison files: none.'
+      : `Workspace comparison files (${input.changedFiles.length}):`,
   ];
   for (const path of input.changedFiles) {
     lines.push(
       preRun.has(path) ? `- ${path} — already modified before this run started` : `- ${path}`,
     );
   }
+  if (input.reviewScope !== undefined) lines.push('', input.reviewScope.description);
   lines.push('', NO_TOOLS_NOTICE);
   return lines.join('\n');
 }
@@ -180,6 +182,7 @@ export function buildApiReviewContext(input: ApiReviewContextInput): ApiReviewCo
 
   // A change the diff cannot show is a change this seat cannot review.
   const { covered, binary } = readDiffCoverage(input.fullDiff);
+  for (const path of readDiffCoverage(input.reviewScope?.diff ?? '').binary) binary.add(path);
   for (const path of binary) {
     manifest.push({ path, kind: 'required', state: 'unsupported' });
     missingSections.push(path);
@@ -195,6 +198,10 @@ export function buildApiReviewContext(input: ApiReviewContextInput): ApiReviewCo
   // missing source only when a file the run universe names is absent from it.
   manifest.push({ path: RUN_DIFF, kind: 'required', state: 'included' });
   parts.push({ name: RUN_DIFF, body: input.fullDiff });
+  if (input.reviewScope !== undefined) {
+    manifest.push({ path: 'recorded promotions', kind: 'required', state: 'included' });
+    parts.push({ name: 'recorded promotions', body: input.reviewScope.diff });
+  }
 
   const coverage = coverageBody(input);
   manifest.push({ path: CHANGED_FILES, kind: 'required', state: 'included' });
@@ -225,7 +232,8 @@ export function buildApiReviewContext(input: ApiReviewContextInput): ApiReviewCo
   const prompt = buildFinalReviewPrompt({
     spec,
     taskBriefs,
-    diff: input.fullDiff,
+    diff: input.reviewScope?.diff ?? input.fullDiff,
+    ...(input.reviewScope !== undefined && { workspaceDiff: input.fullDiff }),
     changeCoverage: coverage,
     driftReport: drift,
     validationEvidence: validation,

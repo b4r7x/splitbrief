@@ -79,7 +79,14 @@ export async function buildReviewPacket(opts: BuildReviewPacketOptions): Promise
     generatedAt: nowIso(),
     run: buildRun(opts, events),
     readiness,
-    changes: buildChanges({ state: opts.state, ledger, drift, changedFiles }),
+    changes: {
+      ...buildChanges({ state: opts.state, ledger, drift, changedFiles }),
+      ...(opts.provenance !== undefined && {
+        provenance: opts.provenance,
+        diffReference:
+          'Recorded promotion pairs are in review-changes.json; git diff is workspace context and does not establish authorship.',
+      }),
+    },
     checkpoints,
     recoveryDecisions: makeRecoveryWithSources({
       projectDir: opts.projectDir,

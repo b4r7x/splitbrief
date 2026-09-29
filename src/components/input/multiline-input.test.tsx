@@ -225,8 +225,8 @@ describe('MultilineInput control-byte sanitization', () => {
     unmount = undefined;
   });
 
-  it.each(['\x07', '\x01'])(
-    'does not echo multi-character control byte %j into the rendered draft',
+  it.each(['\x07', '\x01', '\x00', '\x03'])(
+    'keeps control byte %j read together with text out of the draft',
     async (byte) => {
       let stored = '';
       const ui = renderFeature(<SanitizeHarness onChange={(v) => (stored = v)} />);
@@ -237,7 +237,7 @@ describe('MultilineInput control-byte sanitization', () => {
       await flushEffects();
 
       const frame = ui.lastFrame() ?? '';
-      expect(stored).toBe(`a${byte}b`);
+      expect(stored).toBe('ab');
       expect(frame).toContain('ab');
       expect(frame).not.toContain(byte);
     },

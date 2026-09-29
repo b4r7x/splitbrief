@@ -1,5 +1,5 @@
 import type { RunnerCallCredentialRedactor } from './status.js';
-import { isRecord } from '../../utils/type-guards.js';
+import { assertNever, isRecord } from '../../utils/type-guards.js';
 import type { RunnerCallEvent, RunnerCallEventInput, RunnerCallWarningInput } from './types.js';
 
 export type RunnerCallToolUse = Extract<RunnerCallEvent, { type: 'call_tool_use_done' }>['toolUse'];
@@ -73,8 +73,11 @@ export function redactRunnerCallEventInput(
     case 'call_usage':
     case 'call_stalled':
     case 'call_stall_cleared':
+    case 'call_heartbeat':
       return input;
   }
+
+  return assertNever(input);
 }
 
 export function redactRunnerCallWarningInput(

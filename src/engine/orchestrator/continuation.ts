@@ -7,35 +7,55 @@ import { withPerCallAbort } from './cancellable-call.js';
 import { rebaseOnPersistedWorkflowState, transitionAndSave } from './state-ops.js';
 import { appendMessage } from '../../core/sessions/log-writer.js';
 import { publishUserMessage } from './events.js';
-import { readMessages } from '../../core/sessions/log-reader.js';
+import { readSessionLog } from '../../core/sessions/log-reader.js';
 import { processError } from '../../lib/process/errors.js';
 import { throwIfAborted } from '../../utils/abort.js';
+import { PARTIAL_MAX_CHARS } from '../spec/prompts/continuation.js';
 
 /**
- * The partial a killed process left behind. The transcript buffer flushes it
- * marked `interrupted`, so the last such message is the cut attempt's output —
- * no index to carry across the restart.
+ * The cut call's assistant stream, bounded to the continuation prompt's
+ * existing limit. A final interrupted marker identifies that call even when
+ * the buffer already flushed its last text chunk or the call printed nothing.
+ * A later call start clears every earlier candidate.
  */
 export async function readInterruptedPartial(ref: SessionRef): Promise<string | undefined> {
   let latest: string | undefined;
+  let tail = '';
+  let truncated = false;
   try {
-    for await (const message of readMessages(ref)) {
-      if (message.interrupted === true) latest = message.text;
+    for await (const entry of readSessionLog(ref)) {
+      if (entry.kind === 'event' && entry.type === 'runner_call_started') {
+        latest = undefined;
+        tail = '';
+        truncated = false;
+      }
+      if (entry.kind !== 'message' || entry.role !== 'assistant') continue;
+      tail += entry.text;
+      if (tail.length > PARTIAL_MAX_CHARS) {
+        tail = tail.slice(1 - PARTIAL_MAX_CHARS);
+        truncated = true;
+      }
+      if (entry.interrupted === true) {
+        latest = truncated ? `…${tail}` : tail;
+        tail = '';
+        truncated = false;
+      }
     }
   } catch {
     return undefined;
   }
-  return latest === undefined || latest.trim() === '' ? undefined : latest;
+  return latest;
 }
 
 export type ContinuationSeed = {
   partial?: string | undefined;
   steer?: string | undefined;
+  keepWorkspace?: true | undefined;
 };
 
 export type ContinuationHolder = {
   /** The seed for this step, when the run was continued at it. Consumed once. */
-  take: (step: StepRef) => ContinuationSeed | undefined;
+  take: (step: StepRef, briefFingerprint?: string) => ContinuationSeed | undefined;
   /** Holds a steer for the step the run is about to start. */
   hold: (step: StepRef, steer: string | undefined) => void;
 };
@@ -51,7 +71,7 @@ function sameStep(a: StepRef, b: StepRef): boolean {
   if (a.kind === 'gate') return b.kind === 'gate' && a.gate === b.gate;
   if (a.kind === 'brief')
     return b.kind === 'brief' && a.taskId === b.taskId && a.attempt === b.attempt;
-  return true;
+  return b.kind === 'review' && a.cycle === b.cycle;
 }
 
 /**
@@ -60,18 +80,23 @@ function sameStep(a: StepRef, b: StepRef): boolean {
  * the run stopped at — so a later step never inherits another step's partial.
  */
 export function createContinuationHolder(
-  initial?: (ContinuationSeed & { step: StepRef }) | undefined,
+  initial?: (ContinuationSeed & { step: StepRef; briefFingerprint?: string }) | undefined,
 ): ContinuationHolder {
   let pending = initial;
   return {
-    take(step) {
+    take(step, briefFingerprint) {
       if (pending === undefined || !sameStep(pending.step, step)) return undefined;
-      const { partial, steer } = pending;
+      if (pending.briefFingerprint !== undefined && pending.briefFingerprint !== briefFingerprint) {
+        pending = undefined;
+        return undefined;
+      }
+      const { partial, steer, keepWorkspace } = pending;
       pending = undefined;
-      if (partial === undefined && steer === undefined) return undefined;
+      if (partial === undefined && steer === undefined && keepWorkspace !== true) return undefined;
       return {
         ...(partial !== undefined && { partial }),
         ...(steer !== undefined && { steer }),
+        ...(keepWorkspace === true && { keepWorkspace }),
       };
     },
     hold(step, steer) {
@@ -126,10 +151,11 @@ function recordSteer(
   text: string | undefined,
 ): void {
   if (text === undefined || text.trim() === '') return;
-  appendMessage(
-    { projectDir: ctx.projectDir, sessionId: ctx.sessionId },
-    { role: 'user', phase, text },
-  );
+  appendMessage(ctx.persistRef ?? { projectDir: ctx.projectDir, sessionId: ctx.sessionId }, {
+    role: 'user',
+    phase,
+    text,
+  });
   publishUserMessage({ bus: ctx.bus, phase }, text);
 }
 
@@ -140,7 +166,10 @@ export async function withContinuationLoop<T>(
   const { projectDir, sessionId, callbacks, sinks, bus } = ctx;
   const persistRef = ctx.persistRef ?? { projectDir, sessionId };
   let state = opts.state;
-  let partial = opts.seed?.partial;
+  // An explicit empty seed names a cut attempt even when it produced no text.
+  let partial =
+    opts.seed?.partial ??
+    (opts.seed !== undefined && opts.seed.steer === undefined ? '' : undefined);
   let steer = opts.seed?.steer;
   let partialOutput = '';
 
@@ -172,6 +201,7 @@ export async function withContinuationLoop<T>(
       phase: state.phase,
       source,
       at: 'mid-step',
+      step,
     });
     const userText = await onContinuationNeeded(partialOutput, 'mid-step');
     throwIfAborted(ctx.signal);

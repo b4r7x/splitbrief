@@ -33,8 +33,14 @@ function parsedLineToProtocolEvents(parsed: ParsedLine): readonly CliProtocolEve
     });
   }
   for (const warning of parsed.warning ?? []) {
-    events.push({ type: 'warning', code: warning.code, message: warning.message });
+    events.push({
+      type: 'warning',
+      code: warning.code,
+      message: warning.message,
+      ...(warning.severity !== undefined && { severity: warning.severity }),
+    });
   }
+  if (parsed.isHeartbeat) events.push({ type: 'heartbeat' });
   if (parsed.isError) {
     events.push({
       type: 'result',

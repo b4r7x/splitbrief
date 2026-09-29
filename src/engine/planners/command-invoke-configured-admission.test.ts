@@ -61,7 +61,7 @@ describe('createConfiguredCustomPlanner admission and output behavior', () => {
         projectDir,
         stateDir,
         createStage: async (sourceProjectDir) => {
-          const stage = await createStagedProject(sourceProjectDir);
+          const stage = await createStagedProject({ projectDir: sourceProjectDir });
           childStagePath = stage.projectDir;
           return stage;
         },
@@ -158,7 +158,8 @@ describe('createConfiguredCustomPlanner admission and output behavior', () => {
       sourceEnv: { PATH: sourceOnlyBin },
       authorizationPathEnv: undefined,
       authorizationPathExt: undefined,
-      createStage: async (sourceProjectDir) => createStagedProject(sourceProjectDir),
+      createStage: async (sourceProjectDir) =>
+        createStagedProject({ projectDir: sourceProjectDir }),
       admission: {
         interaction: 'headless',
         allowRepoRunners: true,
@@ -249,7 +250,7 @@ describe('createConfiguredCustomPlanner admission and output behavior', () => {
         createStage: async (sourceProjectDir) => {
           unlinkSync(authorizationPathLink);
           symlinkSync(competingBin, authorizationPathLink);
-          return createStagedProject(sourceProjectDir);
+          return createStagedProject({ projectDir: sourceProjectDir });
         },
         admission: {
           interaction: 'headless',

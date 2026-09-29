@@ -2,10 +2,12 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { PlanningPhaseResult } from './types.js';
 import type { PlannerCallbacksContext } from '../types.js';
 import { publishError } from '../events.js';
+import { workflowCancelledReasonFromSignal } from '../../events/workflow-cancel.js';
+import { WORKFLOW_REWIND_ABORT_REASON } from '../../../core/phases.js';
 import {
+  parkStoppedRun,
   raisePendingRecovery,
   rebaseOnPersistedWorkflowState,
-  transitionAndSave,
 } from '../state-ops.js';
 import { typedRunnerCallErrorMessage } from '../../implementers/pipeline/call-result.js';
 import {
@@ -19,8 +21,6 @@ import {
   usageLimitDetailFromError,
   usageLimitWaitClause,
 } from '../../runners/usage-limit.js';
-import { artifactPresence } from '../../../core/sessions/run-record-io.js';
-import { resumeStep } from '../../../core/sessions/run-status.js';
 import {
   buildPlannerCallFailedRecoveryIssue,
   type PlannerSeatFailure,
@@ -51,15 +51,14 @@ export async function handlePlanningFailure(opts: {
   // signal, and a CLI or API runner wraps that abort in its own call error, so
   // the signal decides; a runner's own timeout never aborts it.
   if (isAbortError(err) || wctx.signal?.aborted === true) {
+    // End run closes the run behind this branch and keeps no park, so a stop row here would sit
+    // in a closed run's log inviting a retry.
+    const ending = workflowCancelledReasonFromSignal(wctx.signal) !== undefined;
+    const rewinding = wctx.signal?.reason === WORKFLOW_REWIND_ABORT_REASON;
     return {
       disposition: 'terminal',
-      state: transitionAndSave(ref, latest, {
-        type: 'INTERRUPT_STEP',
-        step: resumeStep(latest, artifactPresence(ref)),
-        source: 'user',
-        cut: 'mid-step',
-      }),
-      outcome: 'interrupted',
+      state: ending || rewinding ? latest : parkStoppedRun({ ...ref, bus: wctx.bus }, latest),
+      outcome: ending ? 'cancelled' : 'interrupted',
     };
   }
 

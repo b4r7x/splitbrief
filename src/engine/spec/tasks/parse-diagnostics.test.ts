@@ -1,16 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { dependencyTaskBlock } from '#testing/helpers/factories/task.js';
 import type { Task } from '../../../core/schemas/task.js';
-import { parseTasks, parseTasksStrict } from './parse.js';
+import { parseTaskSourceBlocks, parseTasks, parseTasksStrict } from './parse.js';
 
 describe('parseTasks — rejection diagnostics', () => {
-  function metaSyntaxBlock(overrides: { action: string; dependsOn: string }): string {
+  function metaSyntaxBlock(overrides: { id?: string; action: string; dependsOn?: string }): string {
     return `---
-id: T001
+id: ${overrides.id ?? 'T001'}
 title: Short descriptive title
 action: ${overrides.action}
 file: src/path/to/file.ts
-depends_on: ${overrides.dependsOn}
+depends_on: ${overrides.dependsOn ?? '[]'}
 ---
 
 ### Description
@@ -142,6 +142,74 @@ What to implement and why.
 
     expect(tasks.map((t) => t.id)).toEqual(['T001']);
     expect(warnings).toEqual([]);
+  });
+
+  it.each(['T1', 'T1234', 't001', 'T００１', 'T001/x', '123'])(
+    'rejects malformed id %s as a block rejection, not a raw schema throw',
+    (id) => {
+      const input = metaSyntaxBlock({ id, action: 'create', dependsOn: '[]' });
+      const { tasks, warnings } = collectWarnings(input);
+
+      expect(tasks).toEqual([]);
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain(`task ${id}`);
+      expect(warnings[0]).toContain('`id`');
+      expect(() => parseTasksStrict(input)).toThrow(
+        expect.objectContaining({ kind: 'parse-tasks-invalid-block' }),
+      );
+      expect(parseTaskSourceBlocks(input)).toEqual([]);
+    },
+  );
+
+  it.each(['T9', '[T001, T9999]', '[123]', 'null'])(
+    'rejects malformed depends_on %s as a block rejection, not a raw schema throw',
+    (dependsOn) => {
+      const input = metaSyntaxBlock({ action: 'create', dependsOn });
+      const { tasks, warnings } = collectWarnings(input);
+
+      expect(tasks).toEqual([]);
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain('`depends_on`');
+      expect(() => parseTasksStrict(input)).toThrow(
+        expect.objectContaining({ kind: 'parse-tasks-invalid-block' }),
+      );
+      expect(parseTaskSourceBlocks(input)).toEqual([]);
+    },
+  );
+
+  it.each(['T000', 'T999'])('keeps accepted boundary id %s parsing', (id) => {
+    const input = metaSyntaxBlock({ id, action: 'create', dependsOn: '[]' });
+    const { tasks, warnings } = collectWarnings(input);
+
+    expect(tasks.map((t) => t.id)).toEqual([id]);
+    expect(warnings).toEqual([]);
+    expect(parseTasksStrict(input).map((t) => t.id)).toEqual([id]);
+    expect(parseTaskSourceBlocks(input).map((t) => t.id)).toEqual([id]);
+  });
+
+  it('keeps a scalar depends_on naming an accepted id parsing', () => {
+    const input = [
+      metaSyntaxBlock({ action: 'create', dependsOn: 'T000' }),
+      dependencyTaskBlock('T000'),
+    ].join('\n');
+    const { tasks, warnings } = collectWarnings(input);
+
+    expect(tasks.map((t) => t.id)).toEqual(['T000', 'T001']);
+    expect(warnings).toEqual([]);
+    expect(parseTasksStrict(input).map((t) => t.id)).toEqual(['T000', 'T001']);
+  });
+
+  it('keeps a list depends_on naming accepted ids parsing', () => {
+    const input = [
+      metaSyntaxBlock({ action: 'create', dependsOn: '[T000, T999]' }),
+      dependencyTaskBlock('T000'),
+      dependencyTaskBlock('T999'),
+    ].join('\n');
+    const { tasks, warnings } = collectWarnings(input);
+
+    expect(tasks.map((t) => t.id)).toEqual(['T000', 'T999', 'T001']);
+    expect(warnings).toEqual([]);
+    expect(parseTasksStrict(input).map((t) => t.id)).toEqual(['T000', 'T999', 'T001']);
   });
 });
 

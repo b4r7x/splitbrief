@@ -1,5 +1,6 @@
 import { getWorkflowSidebarWidth } from '../../../src/features/workflow/layout/rect.js';
 import {
+  getContentTopRowIndex,
   getProgressRows,
   WORKFLOW_GUTTER_X,
 } from '../../../src/features/workflow/layout/chrome-rows.js';
@@ -9,13 +10,12 @@ import {
   workflowFixtureProjections,
   type WorkflowFixtureProjection,
 } from '../fixtures/workflow/projections.js';
-import { PhaseSchema, type Phase } from '../../../src/core/schemas/enums.js';
+import { projectionChromeFacts } from '../fixtures/workflow/projection-chrome.js';
 import type { Cell, CellGrid } from '../contracts/cells.js';
 import { CellRectSchema, type CellRect } from '../contracts/geometry.js';
 import type { LocatorContext, LocatorDefinition } from './types.js';
 
 const DEFAULT_INPUT_ROWS = 3;
-const PAINTED_WORKFLOW_HEADER_ROWS = 2;
 
 const BASE_LOCATOR_REGISTRY: Record<string, LocatorDefinition> = {
   'home:header': {
@@ -144,22 +144,24 @@ function sidebarWidthFor(context: LocatorContext): number {
   return getWorkflowSidebarWidth({ cols, sidebarVisible: projectionFor(context).sidebarVisible });
 }
 
-// The phase the screen is in at the checkpoint: the last event that carries one.
-function checkpointPhase(projection: WorkflowFixtureProjection): Phase {
-  for (let index = projection.events.length - 1; index >= 0; index -= 1) {
-    const parsed = PhaseSchema.safeParse(projection.events[index]?.phase);
-    if (parsed.success) return parsed.data;
-  }
-  return 'idle';
-}
-
 // The build-progress block rides between the rail and the divider, so the body's first row moves
-// with the run's phase and width; a constant here would crop the block instead of the body.
+// with the run's phase, width and the states that stand the block down; a constant here would crop
+// the block instead of the body. The facts come from the projection the frame's screen was mounted
+// from, the same facts the page and the snapshot hand to `getProgressRows`, and the top row comes
+// from the chrome measure those callers use, not a second count of the header rows.
 function bodyTopRow(context: LocatorContext): number {
   const { cols } = context.grid.identity.provenance.viewport;
+  const facts = projectionChromeFacts(projectionFor(context), cols);
   return (
-    PAINTED_WORKFLOW_HEADER_ROWS +
-    getProgressRows({ phase: checkpointPhase(projectionFor(context)), cols })
+    getContentTopRowIndex() +
+    getProgressRows({
+      phase: facts.phase,
+      cols,
+      cancelled: facts.cancelled,
+      halted: facts.halted,
+      promptRows: facts.promptRows,
+      atRest: facts.atRest,
+    })
   );
 }
 
@@ -179,7 +181,7 @@ function resolveWorkflowSidebar(context: LocatorContext): CellRect {
 
 function resolveWorkflowHeader(context: LocatorContext): CellRect {
   const { cols } = context.grid.identity.provenance.viewport;
-  return CellRectSchema.parse({ x: 0, y: 0, width: cols, height: PAINTED_WORKFLOW_HEADER_ROWS });
+  return CellRectSchema.parse({ x: 0, y: 0, width: cols, height: getContentTopRowIndex() });
 }
 
 function resolveWorkflowTranscript(context: LocatorContext): CellRect {

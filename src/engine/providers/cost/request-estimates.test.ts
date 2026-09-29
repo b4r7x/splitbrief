@@ -7,7 +7,8 @@ import {
   type UsageBoundary,
 } from '../../../core/schemas/usage-evidence.js';
 import type { ResolvedPricing } from '../pricing-resolver.js';
-import { sumRequestEstimates } from './request-estimates.js';
+import { InvocationIdentitySchema } from '../../../core/schemas/invocation-identity.js';
+import { callRunnerKey, sumRequestEstimates } from './request-estimates.js';
 
 const FULL_COVERAGE: RunnerCallCounterCoverage = {
   input: 'reported',
@@ -394,5 +395,54 @@ describe('sumRequestEstimates — generated tokens and cache premiums', () => {
     expect(item.completeness).toBe('partial');
     expect(item.amount).toBeNull();
     expect(item.reasons).toContain('unknown-output-count');
+  });
+});
+
+describe('callRunnerKey — kind-qualified identity', () => {
+  function callWith(overrides: {
+    backendKind: 'api' | 'cli' | 'shell' | 'agent';
+    runnerName?: string;
+    identity?: CallUsageEvidence['invocationIdentity'];
+  }): CallUsageEvidence {
+    return CallUsageEvidenceSchema.parse({
+      callId: 'c1',
+      role: 'implementer',
+      backendKind: overrides.backendKind,
+      ...(overrides.runnerName !== undefined && { runnerName: overrides.runnerName }),
+      usageBoundary: 'unknown',
+      usage: null,
+      ...(overrides.identity !== undefined && { invocationIdentity: overrides.identity }),
+    });
+  }
+
+  it('qualifies a recorded name with its kind, so the CLI and API twins differ', () => {
+    expect(callRunnerKey(callWith({ backendKind: 'cli', runnerName: 'opencode' }))).toBe(
+      'cli:opencode',
+    );
+    expect(callRunnerKey(callWith({ backendKind: 'api', runnerName: 'opencode' }))).toBe(
+      'api:opencode',
+    );
+  });
+
+  it('normalizes a CLI command to the tool it starts', () => {
+    expect(callRunnerKey(callWith({ backendKind: 'cli', runnerName: 'claude' }))).toBe(
+      'cli:claude-code',
+    );
+  });
+
+  it('takes the invocation identity over the call name when both are recorded', () => {
+    const identity = InvocationIdentitySchema.parse({
+      version: 1,
+      capturedAt: 1,
+      runner: { kind: 'api', id: 'my-endpoint' },
+      billing: { posture: 'unknown', basis: 'unknown' },
+    });
+    expect(callRunnerKey(callWith({ backendKind: 'cli', runnerName: 'claude', identity }))).toBe(
+      'api:my-endpoint',
+    );
+  });
+
+  it('leaves a call with no name keyless', () => {
+    expect(callRunnerKey(callWith({ backendKind: 'shell' }))).toBeUndefined();
   });
 });

@@ -11,6 +11,7 @@ export function plannerCallbacksContextOf(wctx: WorkflowContext): PlannerCallbac
     metadata: wctx.metadata,
     sinks: wctx.sinks,
     drainPendingAttachments: wctx.drainPendingAttachments,
+    ...(wctx.plannerContext !== undefined && { plannerContext: wctx.plannerContext }),
     ...(wctx.modelCache !== undefined && { modelCache: wctx.modelCache }),
     ...(wctx.detectedContextLength !== undefined && {
       detectedContextLength: wctx.detectedContextLength,

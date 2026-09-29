@@ -12,9 +12,12 @@ import { confinedAtomicWriteFileSync, type ConfigRevision } from '../../lib/conf
 import { SECURE_FILE_MODE } from '../../lib/fs.js';
 import { STATE_FILE, sessionDir } from '../../core/paths.js';
 import { assertSessionDirConfined } from '../../core/sessions/confinement.js';
-import { error, type AppError } from '../../utils/error.js';
+import { error, matches, type AppError } from '../../utils/error.js';
 import { warnError } from '../../lib/warn.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
+import { artifactPresence } from '../../core/sessions/run-record-io.js';
+import { resumeStep } from '../../core/sessions/run-status.js';
+import type { EventBus } from '../events/types.js';
 import { addUsage, type UsageCategory } from './tokens.js';
 import { publishCostUpdate, publishRecoveryPrompted } from './events.js';
 import type { WorkflowPersistenceContext } from './types.js';
@@ -60,6 +63,7 @@ export const stateOpsError = {
     ),
   invalidHead: (message: string, cause?: unknown) =>
     error('state-head-invalid', message, undefined, cause),
+  isInvalidHead: matches('state-head-invalid'),
   durabilityUncertain: (cause?: unknown) =>
     error(
       'state-durability-uncertain',
@@ -186,10 +190,22 @@ function mergeQueues(
 export function rebaseOnPersistedWorkflowState(
   ref: SessionRef,
   state: WorkflowState,
+  options?: Readonly<{ keepUnsaved?: boolean | undefined }>,
 ): WorkflowState {
   const persisted = readStateHead(ref)?.state;
   if (persisted === undefined) return state;
-  return { ...persisted, messageQueue: mergeQueues(persisted.messageQueue, state.messageQueue) };
+  // Queue reads keep unsaved workflow fields their caller has not saved yet while the
+  // caller and disk share a committed revision. Every other caller treats the persisted
+  // head as truth: a rewind, recovery, or usage write that landed behind its back at the
+  // same revision must not be erased by the caller's older in-memory copy.
+  const current =
+    options?.keepUnsaved === true &&
+    (state.stateRevision ?? 0) > 0 &&
+    state.stateRevision === persisted.stateRevision &&
+    state.phase === persisted.phase
+      ? state
+      : persisted;
+  return { ...current, messageQueue: mergeQueues(persisted.messageQueue, state.messageQueue) };
 }
 
 function expectedIdentity(expected: StateOperationExpectedRevision | undefined): ExpectedIdentity {
@@ -394,7 +410,12 @@ function mutateState(input: MutationInput): WorkflowState {
         : hasExplicitRevision
           ? input.mergeQueue
             ? {
-                ...head.state,
+                ...(input.operation === 'queue' &&
+                (input.state.stateRevision ?? 0) > 0 &&
+                input.state.stateRevision === head.state.stateRevision &&
+                input.state.phase === head.state.phase
+                  ? input.state
+                  : head.state),
                 messageQueue: mergeQueues(head.state.messageQueue, input.state.messageQueue),
               }
             : head.state
@@ -486,6 +507,36 @@ export function raisePendingRecovery(
   const next = transitionAndSave(scope, state, { type: 'SET_PENDING_RECOVERY', issue });
   publishRecoveryPrompted(scope.bus, scope.sessionId, issue);
   setTrackedState?.(next);
+  return next;
+}
+
+/**
+ * A stop the operator asked for parks the run at the step it picks up at, and the log holds the stop
+ * as a row, not only the state. A run stopped before it had a bus still parks. A gate runs no call,
+ * so a stop there cuts nothing. A park already recorded stands: leaving a run parked in place is
+ * the same stop, so the state and the row stay the first stop's.
+ */
+export function parkStoppedRun(
+  scope: SessionRef & { bus?: EventBus | undefined },
+  state: WorkflowState,
+): WorkflowState {
+  if (state.interruptedStep !== undefined) return state;
+  const step = resumeStep(state, artifactPresence(scope));
+  const cut = step.kind === 'gate' ? 'boundary' : 'mid-step';
+  const next = transitionAndSave(scope, state, {
+    type: 'INTERRUPT_STEP',
+    step,
+    source: 'user',
+    cut,
+  });
+  scope.bus?.publish({
+    type: 'turn_interrupted',
+    ts: Date.now(),
+    phase: next.phase,
+    source: 'user',
+    at: cut,
+    step,
+  });
   return next;
 }
 

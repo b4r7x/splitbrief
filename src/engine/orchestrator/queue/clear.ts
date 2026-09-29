@@ -12,7 +12,7 @@ export function clearPendingQueue({
   bus,
 }: QueueStateMutationOptions): { state: WorkflowState; count: number } {
   const ref = { projectDir, sessionId };
-  const base = rebaseOnPersistedWorkflowState(ref, state);
+  const base = rebaseOnPersistedWorkflowState(ref, state, { keepUnsaved: true });
   const pending = base.messageQueue.filter(isQueuedMessageClearable);
   if (pending.length === 0) return { state: base, count: 0 };
 

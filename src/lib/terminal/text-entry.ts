@@ -1,9 +1,14 @@
 import type { Key } from 'ink';
 
-export function isLoneTerminalControl(input: string): boolean {
-  if (input.length !== 1) return false;
-  const code = input.codePointAt(0);
+function isTerminalControl(char: string): boolean {
+  const code = char.codePointAt(0);
   return code !== undefined && (code < 0x20 || code === 0x7f);
+}
+
+// A late read hands Ink every byte it collected as one input, so two chords can arrive as one
+// `\x03\x03` chunk. A run of control bytes is keys, never text, however many of them there are.
+export function isTerminalControlRun(input: string): boolean {
+  return input.length > 0 && input.split('').every(isTerminalControl);
 }
 
 export function isTextEntryInput(input: string, key: Key): boolean {
@@ -25,7 +30,7 @@ export function isTextEntryInput(input: string, key: Key): boolean {
   ) {
     return false;
   }
-  return !isLoneTerminalControl(input);
+  return !isTerminalControlRun(input);
 }
 
 export function isUnmodifiedYInput(input: string, key: Key): boolean {

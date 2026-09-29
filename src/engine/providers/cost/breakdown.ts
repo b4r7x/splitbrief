@@ -8,15 +8,21 @@ import type {
 import type { CallUsageEvidence } from '../../../core/schemas/usage-evidence.js';
 import {
   API_PROVIDER_CATALOG,
+  isApiProviderId,
   type ApiOffering,
 } from '../../../core/providers/api-provider-catalog.js';
-import { CLI_TOOL_CATALOG, type CliToolId } from '../../../core/runners/cli-tool-catalog.js';
-import { META_PROVIDER_IDS } from '../../../core/schemas/enums.js';
+import {
+  CLI_TOOL_CATALOG,
+  cliToolIdForCommand,
+  type CliToolId,
+} from '../../../core/runners/cli-tool-catalog.js';
+import { META_PROVIDER_IDS, type RunnerKind } from '../../../core/schemas/enums.js';
 import {
   REMOVED_API_PROVIDER_IDS,
   REMOVED_CLI_TOOL_IDS,
   REMOVED_RUNNER_KINDS,
 } from '../../../core/schemas/runner-fields.js';
+import { parseRunnerIdentityKey } from '../../../core/providers/catalog.js';
 import type { RunnerBillingPosture } from '../../../core/runners/runner-billing.js';
 import { isReviewSeatCall } from '../../calls/review-seat.js';
 import { normalizeProviderEndpoint } from '../../../core/providers/endpoint-policy.js';
@@ -25,7 +31,7 @@ import { formatCost } from '../../../core/formatting.js';
 import { resolvePricing, type ResolvedPricing } from '../pricing-resolver.js';
 import type { ModelCacheAccessor } from '../model/resolution.js';
 import {
-  callRunnerName,
+  callRunnerKey,
   deriveCallBilling,
   resolveCallPricing,
   sumRequestEstimates,
@@ -41,6 +47,7 @@ import {
 
 type ResolveProviderRunMetadataOpts = {
   tool: string;
+  kind?: RunnerKind | undefined;
   normalizedEndpoint?: string | undefined;
 };
 
@@ -54,12 +61,13 @@ const DESCRIPTORLESS_TOOL_IDS = new Set<string>([
   ...REMOVED_RUNNER_KINDS,
 ]);
 
-function isApiProviderId(tool: string): tool is keyof typeof API_PROVIDER_CATALOG {
-  return Object.hasOwn(API_PROVIDER_CATALOG, tool);
-}
-
 function isCliToolId(tool: string): tool is CliToolId {
   return Object.hasOwn(CLI_TOOL_CATALOG, tool);
+}
+
+/** Whether a recorded identity is a CLI runner: its kind says so, or a legacy name did. */
+function isCliRunnerIdentity(kind: RunnerKind | undefined, id: string): boolean {
+  return kind === 'cli' || (kind === undefined && isCliToolId(id));
 }
 
 function cliOfferingFromBilling(billing: RunnerBillingPosture): ApiOffering {
@@ -83,44 +91,46 @@ function defaultEndpointForApiProvider(providerId: keyof typeof API_PROVIDER_CAT
 const UNATTRIBUTED_BILLING: BillingAttribution = { posture: 'unknown', basis: 'unknown' };
 const LEGACY_BILLING: BillingAttribution = { posture: 'unknown', basis: 'legacy-unattributed' };
 
-export function resolveProviderRunMetadata(
-  opts: ResolveProviderRunMetadataOpts,
-): ProviderRunMetadata | undefined {
-  const { tool, normalizedEndpoint } = opts;
+function apiDescriptorMetadata(
+  providerId: keyof typeof API_PROVIDER_CATALOG,
+  normalizedEndpoint: string | undefined,
+): ProviderRunMetadata {
+  const descriptor = API_PROVIDER_CATALOG[providerId];
+  const endpointInput = normalizedEndpoint ?? defaultEndpointForApiProvider(providerId);
+  const resolvedEndpoint =
+    endpointInput.length > 0
+      ? normalizeProviderEndpoint(descriptor.endpointPolicy, endpointInput)
+      : '';
+  return {
+    service: descriptor.service,
+    offering: descriptor.offering,
+    normalizedEndpoint: resolvedEndpoint,
+    billing: descriptor.billing,
+    asOf: descriptor.asOf,
+    billingAttribution: UNATTRIBUTED_BILLING,
+  };
+}
 
-  if (isApiProviderId(tool)) {
-    const descriptor = API_PROVIDER_CATALOG[tool];
-    const endpointInput = normalizedEndpoint ?? defaultEndpointForApiProvider(tool);
-    const resolvedEndpoint =
-      endpointInput.length > 0
-        ? normalizeProviderEndpoint(descriptor.endpointPolicy, endpointInput)
-        : '';
-    return {
-      service: descriptor.service,
-      offering: descriptor.offering,
-      normalizedEndpoint: resolvedEndpoint,
-      billing: descriptor.billing,
-      asOf: descriptor.asOf,
-      billingAttribution: UNATTRIBUTED_BILLING,
-    };
-  }
+function cliDescriptorMetadata(tool: CliToolId): ProviderRunMetadata {
+  const descriptor = CLI_TOOL_CATALOG[tool];
+  return {
+    service: descriptor.id,
+    offering: cliOfferingFromBilling(descriptor.billing),
+    normalizedEndpoint: `cli:${descriptor.command}`,
+    billing: descriptor.billing,
+    asOf: descriptor.compatibility.evidence.asOf,
+    billingAttribution: UNATTRIBUTED_BILLING,
+  };
+}
 
-  if (isCliToolId(tool)) {
-    const descriptor = CLI_TOOL_CATALOG[tool];
-    return {
-      service: descriptor.id,
-      offering: cliOfferingFromBilling(descriptor.billing),
-      normalizedEndpoint: `cli:${descriptor.command}`,
-      billing: descriptor.billing,
-      asOf: descriptor.compatibility.evidence.asOf,
-      billingAttribution: UNATTRIBUTED_BILLING,
-    };
-  }
-
-  if (DESCRIPTORLESS_TOOL_IDS.has(tool)) return undefined;
-
-  // Anything left is a user-declared custom endpoint: metered per token, with no
-  // catalog descriptor to date its identity against.
+/**
+ * A user-declared custom endpoint: metered per token, with no catalog
+ * descriptor to date its identity against.
+ */
+function customEndpointMetadata(
+  tool: string,
+  normalizedEndpoint: string | undefined,
+): ProviderRunMetadata {
   return {
     service: tool,
     offering: 'payg',
@@ -129,6 +139,35 @@ export function resolveProviderRunMetadata(
     asOf: '',
     billingAttribution: UNATTRIBUTED_BILLING,
   };
+}
+
+/**
+ * The billing identity one runner resolves to. A recorded kind decides the
+ * branch before the name does: an API runner meters by model even when its name
+ * is a CLI tool id, a CLI runner is never read as a custom endpoint, and a
+ * shell or agent runner has no product descriptor at all. A runner with no
+ * recorded kind keeps the name-only resolution for records written before kinds.
+ */
+export function resolveProviderRunMetadata(
+  opts: ResolveProviderRunMetadataOpts,
+): ProviderRunMetadata | undefined {
+  const { tool, kind, normalizedEndpoint } = opts;
+
+  if (kind === 'shell' || kind === 'agent') return undefined;
+  if (kind === 'api') {
+    return isApiProviderId(tool)
+      ? apiDescriptorMetadata(tool, normalizedEndpoint)
+      : customEndpointMetadata(tool, normalizedEndpoint);
+  }
+  if (kind === 'cli') {
+    const id = cliToolIdForCommand(tool) ?? tool;
+    return isCliToolId(id) ? cliDescriptorMetadata(id) : undefined;
+  }
+
+  if (isApiProviderId(tool)) return apiDescriptorMetadata(tool, normalizedEndpoint);
+  if (isCliToolId(tool)) return cliDescriptorMetadata(tool);
+  if (DESCRIPTORLESS_TOOL_IDS.has(tool)) return undefined;
+  return customEndpointMetadata(tool, normalizedEndpoint);
 }
 
 export function describeOfferingBillingPresentation(
@@ -164,7 +203,7 @@ export function describeOfferingBillingPresentation(
 
 function collectRunMetadataTools(opts: CostBreakdownOptions): string[] {
   if (opts.callEvidence !== undefined) {
-    return [...new Set(opts.callEvidence.map(callRunnerName).filter((tool) => tool !== undefined))];
+    return [...new Set(opts.callEvidence.map(callRunnerKey).filter((tool) => tool !== undefined))];
   }
   const tools = new Set<string>([opts.plannerTool, opts.implementerTool]);
   if (opts.reviewerTool !== undefined) tools.add(opts.reviewerTool);
@@ -189,7 +228,7 @@ function collectBillingEvidence(
   const proven = new Map<string, BillingAttribution[]>();
 
   for (const call of opts.callEvidence ?? []) {
-    const tool = callRunnerName(call);
+    const tool = callRunnerKey(call);
     if (tool === undefined || !named.has(tool)) continue;
     const attribution = deriveCallBilling(call.invocationIdentity);
     const attributions = proven.get(tool) ?? [];
@@ -231,7 +270,8 @@ function buildProviderRunMetadataRecord(
   const unproven = opts.callEvidence === undefined ? LEGACY_BILLING : UNATTRIBUTED_BILLING;
 
   for (const tool of tools) {
-    const descriptor = resolveProviderRunMetadata({ tool });
+    const { kind, id } = parseRunnerIdentityKey(tool);
+    const descriptor = resolveProviderRunMetadata({ tool: id, kind });
     if (descriptor === undefined) continue;
     const attribution = billingEvidence.get(tool);
     // Proof from the run's own invocations outranks the tool's catalogued
@@ -245,7 +285,7 @@ function buildProviderRunMetadataRecord(
       ...descriptor,
       billing,
       ...(attribution !== undefined &&
-        isCliToolId(tool) && { offering: cliOfferingFromBilling(billing) }),
+        isCliRunnerIdentity(kind, id) && { offering: cliOfferingFromBilling(billing) }),
       billingAttribution: attribution ?? unproven,
     };
     providerRunMetadata[tool] = metadata;
@@ -301,7 +341,7 @@ function calculateRecordedCostBreakdown(
   let cacheReadTokens = 0;
   let cacheWriteTokens = 0;
   for (const [index, call] of pricedEvidence.entries()) {
-    const tool = callRunnerName(call);
+    const tool = callRunnerKey(call);
     const usage = call.usage;
     if (usage === null) continue;
     cacheReadTokens += usage.cacheReadTokens ?? 0;

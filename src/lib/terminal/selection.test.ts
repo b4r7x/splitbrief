@@ -24,10 +24,12 @@ function setup(copy = vi.fn<(text: string) => Promise<CopyOutcome>>().mockResolv
   stdout.on('data', (data: Buffer) => visible.write(data));
   const originalWrite = stdout.write;
   const reportError = vi.fn();
+  const onCopyKey = vi.fn();
   const selection = installTerminalSelection({
     stdout: stdout as unknown as NodeJS.WriteStream,
     copy,
     reportError,
+    onCopyKey,
   });
   const dispatch = vi.fn();
   let frame = '';
@@ -58,6 +60,7 @@ function setup(copy = vi.fn<(text: string) => Promise<CopyOutcome>>().mockResolv
     originalWrite,
     selection,
     reportError,
+    onCopyKey,
     copy,
     dispatch,
     render,
@@ -262,6 +265,58 @@ describe('fullscreen terminal selection', () => {
     expect(h.selection.filterInput('\u0003')).toBe('\u0003');
   });
 
+  it.each(['\x03', '\x1b[99;5u'])(
+    'spends one %j on copying and clears the highlight',
+    async (key) => {
+      const h = setup();
+      h.render('copy');
+      await h.settle();
+      h.mouse('press', 1);
+      h.mouse('move', 4);
+      h.mouse('release', 4);
+      await h.settle();
+      expect(h.selection.filterInput(key)).toBe('');
+      await h.settle();
+      expect(h.inverse(0)).toBe(false);
+      expect(h.onCopyKey).toHaveBeenCalledTimes(1);
+      await expect(h.onCopyKey.mock.calls[0]?.[0]).resolves.toBe('native');
+      expect(h.copy).toHaveBeenLastCalledWith('copy');
+      expect(h.selection.filterInput(key)).toBe(key);
+    },
+  );
+
+  it.each(['\x03\x03', '\x03\x03\x03'])('consumes only one Ctrl+C from %j', async (chunk) => {
+    const h = setup();
+    h.render('copy');
+    await h.settle();
+    h.mouse('press', 1);
+    h.mouse('move', 4);
+    h.mouse('release', 4);
+    await h.settle();
+    expect(h.selection.filterInput(chunk)).toBe(chunk.slice(1));
+    await h.settle();
+    expect(h.copy).toHaveBeenCalledTimes(2);
+    expect(h.inverse(0)).toBe(false);
+  });
+
+  it('keeps the selection for Super+C, then spends Ctrl+C only once', async () => {
+    const h = setup();
+    h.render('copy');
+    await h.settle();
+    h.mouse('press', 1);
+    h.mouse('move', 4);
+    h.mouse('release', 4);
+    await h.settle();
+    expect(h.selection.filterInput('\x1b[99;9u')).toBe('');
+    await h.settle();
+    expect(h.inverse(0)).toBe(true);
+    expect(h.selection.filterInput('\x03')).toBe('');
+    await h.settle();
+    expect(h.inverse(0)).toBe(false);
+    expect(h.copy).toHaveBeenCalledTimes(3);
+    expect(h.selection.filterInput('\x03')).toBe('\x03');
+  });
+
   it('keeps wheel dispatch and cancels selection on resize or lost mouse release', async () => {
     const h = setup();
     h.render('scrollable');
@@ -385,6 +440,6 @@ describe('fullscreen terminal selection', () => {
     finish?.('native');
     await h.settle();
     expect(copy).toHaveBeenCalledTimes(2);
-    expect(h.reportError).toHaveBeenCalledExactlyOnceWith('Could not copy selected text.');
+    await expect(h.onCopyKey.mock.calls[0]?.[0]).resolves.toBe('unavailable');
   });
 });

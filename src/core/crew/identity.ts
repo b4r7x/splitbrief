@@ -4,19 +4,14 @@ import {
   sanitizeTerminalDisplayText,
   truncateTerminalDisplayText,
 } from '../../utils/display-text.js';
-import {
-  getRunnerCatalogDisplayName,
-  type RunnerConfig,
-} from '../config/accessors/runner-config.js';
+import { getRunnerDisplayName, type RunnerConfig } from '../config/accessors/runner-config.js';
 import { formatModelName, peelDisplayLabel } from '../model-display.js';
-import { getProviderDisplayName } from '../providers/catalog.js';
+import { getProviderDisplayName, getRunnerIdentityDisplayName } from '../providers/catalog.js';
 import { AUTOMATIC_MODEL, normalizeConfiguredModel } from '../providers/automatic-model.js';
+import type { RunnerKind } from '../schemas/enums.js';
 import { SOFT_SEP } from '../separators.js';
-import {
-  peelAxisTokensFromModelId,
-  runnerEffortChannel,
-  seatAxisWords,
-} from '../runners/effort-channel.js';
+import { CLI_TOOL_CATALOG, isCliToolId } from '../runners/cli-tool-catalog.js';
+import { peelAxisTokensFromModelId, seatAxisWords } from '../runners/effort-channel.js';
 
 export const CREW_SEAT_IDS = ['plan', 'build', 'review'] as const;
 
@@ -44,14 +39,84 @@ export const CREW_IDENTITY_SEPARATOR = SOFT_SEP;
 const CLAUDE_BRAND = 'Claude';
 const HANGING_SEPARATOR = /[ ·]+$/u;
 
-function modelWord(runner: RunnerConfig, displayName?: string | undefined): string {
-  const configured = 'model' in runner ? runner.model : undefined;
-  const model = normalizeConfiguredModel(
-    configured,
-    runner.kind === 'cli' ? runner.tool : undefined,
-  );
+/**
+ * A seat named by ids rather than by its runner block: the tool or provider id
+ * (`getRunnerDisplayName`), the configured model, the axis words the seat
+ * carries and the backend it ran on. A run records its seats this way, and both
+ * forms below read a configured runner through the same shape, so a recorded
+ * seat is spelled exactly as the seat it was taken from.
+ */
+export type SeatIds = Readonly<{
+  tool: string;
+  model?: string | undefined;
+  axes?: readonly string[] | undefined;
+  /** The backend the seat ran on; a record written before kinds were kept has none. */
+  kind?: RunnerKind | undefined;
+}>;
+
+export function seatIdsOf(runner: RunnerConfig): SeatIds & Readonly<{ axes: readonly string[] }> {
+  return {
+    tool: getRunnerDisplayName(runner),
+    ...('model' in runner && runner.model !== undefined && { model: runner.model }),
+    axes: seatAxisWords(runner),
+    kind: runner.kind,
+  };
+}
+
+/**
+ * Recorded ids are the shape that carries axis words: `seatIdsOf` always writes
+ * them and the persisted schema requires them, while a live runner block never
+ * has any. Ids written by hand may keep neither axes nor kind, so an object
+ * without a kind is recorded ids too.
+ */
+function isSeatIds(seat: RunnerConfig | SeatIds): seat is SeatIds {
+  if ('axes' in seat) return true;
+  if (!('kind' in seat)) return true;
+  // A live cli runner and a recorded cli identity both name a tool, so only the axis
+  // words above tell those apart — and only for a catalog tool: the live schema admits
+  // catalog ids alone, so a kind-qualified cli record whose tool left the catalog is a
+  // record, never a live block whose axis lookup would dereference an absent entry.
+  // Every other kind's live block is named by its own fields (an api runner by provider,
+  // a command runner by command), never by the tool word a recorded identity keeps, so a
+  // kind-qualified record without axes is still ids.
+  return 'tool' in seat && (seat.kind !== 'cli' || !isCliToolId(seat.tool));
+}
+
+function idsOf(seat: RunnerConfig | SeatIds): SeatIds {
+  return isSeatIds(seat) ? seat : seatIdsOf(seat);
+}
+
+/**
+ * The backend kind of a seat: a live runner block names it, and a recorded
+ * identity keeps the kind it was recorded with, or the one the caller recovered.
+ */
+function runnerKindOf(seat: RunnerConfig | SeatIds): RunnerKind | undefined {
+  return seat.kind;
+}
+
+/**
+ * The tool word of a seat identity. A custom API provider keeps its literal
+ * name even when it reuses a CLI tool id; every other identity resolves through
+ * the merged catalog exactly as before.
+ */
+function toolWord(seat: SeatIds, kind: RunnerKind | undefined): string {
+  return kind === 'api'
+    ? getRunnerIdentityDisplayName(kind, seat.tool)
+    : getProviderDisplayName(seat.tool);
+}
+
+function modelWord(
+  seat: SeatIds,
+  displayName: string | undefined,
+  kind: RunnerKind | undefined,
+): string {
+  // Only a CLI seat — or an identity recorded before kinds — reads the CLI
+  // tool's model-id vocabulary; an API seat that reuses a tool id does not.
+  const tool =
+    (kind === undefined || kind === 'cli') && isCliToolId(seat.tool) ? seat.tool : undefined;
+  const model = normalizeConfiguredModel(seat.model, tool);
   if (model === undefined || model === AUTOMATIC_MODEL) return AUTO_MODEL_WORD;
-  if (runnerEffortChannel(runner) === 'model-id') {
+  if (tool !== undefined && CLI_TOOL_CATALOG[tool].effortChannel === 'model-id') {
     const peeled = displayName ? peelDisplayLabel(displayName) : '';
     if (peeled !== '') return peeled;
     return formatModelName(peelAxisTokensFromModelId(model));
@@ -60,22 +125,33 @@ function modelWord(runner: RunnerConfig, displayName?: string | undefined): stri
   return formatModelName(model);
 }
 
-export function formatSeatIdentity(runner: RunnerConfig, displayName?: string | undefined): string {
+export function formatSeatIdentity(input: {
+  seat: RunnerConfig | SeatIds;
+  displayName?: string | undefined;
+  kind?: RunnerKind | undefined;
+}): string {
+  const { seat, displayName, kind } = input;
+  const ids = idsOf(seat);
+  const resolvedKind = kind ?? runnerKindOf(seat);
   return sanitizeTerminalDisplayText(
     [
-      getRunnerCatalogDisplayName(runner),
-      modelWord(runner, displayName),
-      ...seatAxisWords(runner),
+      toolWord(ids, resolvedKind),
+      modelWord(ids, displayName, resolvedKind),
+      ...(ids.axes ?? []),
     ].join(CREW_IDENTITY_SEPARATOR),
   );
 }
 
 /** The collapsed form: the brand is implied by the seat, so it is the one word dropped. */
-export function formatShortSeatIdentity(
-  runner: RunnerConfig,
-  displayName?: string | undefined,
-): string {
-  const words = sanitizeTerminalDisplayText(modelWord(runner, displayName))
+export function formatShortSeatIdentity(input: {
+  seat: RunnerConfig | SeatIds;
+  displayName?: string | undefined;
+  kind?: RunnerKind | undefined;
+}): string {
+  const { seat, displayName, kind } = input;
+  const words = sanitizeTerminalDisplayText(
+    modelWord(idsOf(seat), displayName, kind ?? runnerKindOf(seat)),
+  )
     .split(' ')
     .filter(Boolean);
   const stripped = words[0] === CLAUDE_BRAND ? words.slice(1) : words;
@@ -85,15 +161,17 @@ export function formatShortSeatIdentity(
 
 /**
  * A tool this seat could move to, named before it is configured: the same
- * `<tool> · <model>` shape a configured seat shows, composed from ids alone
- * because a swap candidate is two strings, not a runner block. A candidate
- * that names no model is the tool's own default and says only the tool.
+ * `<tool> · <model>` shape a configured seat shows, composed from ids and the
+ * model's catalog label because a swap candidate is two strings, not a runner
+ * block. A candidate that names no model is the tool's own default and says
+ * only the tool.
  */
 export function formatSeatCandidateIdentity(
   candidate: Readonly<{ tool: string; model?: string | undefined }>,
+  displayName?: string | undefined,
 ): string {
   const words = [getProviderDisplayName(candidate.tool)];
-  if (candidate.model !== undefined) words.push(formatModelName(candidate.model));
+  if (candidate.model !== undefined) words.push(displayName ?? formatModelName(candidate.model));
   return sanitizeTerminalDisplayText(words.join(CREW_IDENTITY_SEPARATOR));
 }
 
@@ -196,10 +274,12 @@ export function formatCollapsedSeatLine(
   const buildName = input.displayNames?.build;
   const reviewerName = input.displayNames?.reviewer ?? input.displayNames?.review ?? plannerName;
   return formatCollapsedSeatLineFromIdentities({
-    plan: formatShortSeatIdentity(input.planner, plannerName),
-    build: formatShortSeatIdentity(input.build, buildName),
+    plan: formatShortSeatIdentity({ seat: input.planner, displayName: plannerName }),
+    build: formatShortSeatIdentity({ seat: input.build, displayName: buildName }),
     review:
-      input.reviewer === undefined ? null : formatShortSeatIdentity(input.reviewer, reviewerName),
+      input.reviewer === undefined
+        ? null
+        : formatShortSeatIdentity({ seat: input.reviewer, displayName: reviewerName }),
     budget: input.budget,
     notes: input.notes,
   });
@@ -270,5 +350,8 @@ function shedSegments(identity: string, budget: number): string {
 export function fitSeatIdentity(
   input: Readonly<{ runner: RunnerConfig; budget: number; displayName?: string | undefined }>,
 ): string {
-  return cutSeatIdentity(formatSeatIdentity(input.runner, input.displayName), input.budget);
+  return cutSeatIdentity(
+    formatSeatIdentity({ seat: input.runner, displayName: input.displayName }),
+    input.budget,
+  );
 }

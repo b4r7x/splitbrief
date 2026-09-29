@@ -458,17 +458,17 @@ Why: the real bus runs and the test observes the same stream a production sink w
 
 Bad:
 ```ts
-const clearSpy = vi.spyOn(abortStore, 'clear');
+const resetSpy = vi.spyOn(stopStore, 'reset');
 resetWorkflow();
-expect(clearSpy).toHaveBeenCalled();
+expect(resetSpy).toHaveBeenCalled();
 ```
 Good:
 ```ts
-abortStore.arm('exit');
+stopStore.request('stop-now');
 resetWorkflow();
-expect(abortStore.get().armed).toBe('none');
+expect(stopStore.get().phase).toBe('idle');
 ```
-Why: contract is "after reset, abort is cleared", not "reset invoked a named method".
+Why: contract is "after reset, the stop intent is back to idle", not "reset invoked a named method".
 
 **Sessions picker.**
 
@@ -624,19 +624,20 @@ Repeat `--scenario`, `--viewport`, or `--element` to select more than one value.
 
 The run directory is content-addressed from the normalized selection. Repeating the same command replaces that run atomically, so a failed or narrower rerun cannot leave stale success records in its manifest.
 
-**The run screen's own scenarios.** There is no summary screen, so the four `summary-*` scenarios are gone. Seven scenarios cover the run screen when nothing is running on it, all under the `workflow` screen with the standard viewport matrix and the elements `header` / `transcript` / `composer`:
+**The run screen's own scenarios.** There is no summary screen, so the four `summary-*` scenarios are gone. Eight scenarios cover the run screen when nothing is running on it, all under the `workflow` screen with the standard viewport matrix and the elements `header` / `transcript` / `composer`:
 
 | Scenario | What it shows |
 |---|---|
 | `workflow-at-rest-paused` | paused mid-brief; `× build` on the rail, `Paused at T003 · type a correction or ⏎ to continue` |
 | `workflow-at-rest-halted` | a quota halt; `✗ build`, `Halted · Usage limit on ollama · ⏎ to decide` |
 | `workflow-at-rest-waiting-gate` | parked at the spec gate; `Waiting at the spec gate · ⏎ to reopen it` |
+| `workflow-at-rest-quick` | a quick run paused at rest; Spec stays `○` pending, `× plan` wears the stop, `a correction or ⏎ to continue` |
 | `workflow-closed-complete-ready` | five `●`, the `Closed ─` block, `Keep it with /run accept…` |
 | `workflow-closed-complete-needs-attention` | the same block with a failing review and a dirty scope |
 | `workflow-closed-ended` | a run somebody ended inside T003; `× Ended · Build 2/5 · stopped in T003` |
 | `workflow-replayed-history` | the transcript read back from `testing/fixtures/session-log/run.jsonl` |
 
-The at-rest fixtures go through the production path: the fixture copies a real log into the session dir, calls `hydrateRun`, and inits the route at rest. Nothing is staged into the stores by hand.
+The at-rest fixtures go through the production path: the fixture copies a real log into the session dir, calls `hydrateRun`, and inits the route at rest. Nothing is staged into the stores by hand. `workflow-quick-researching` pins the live quick rail at 160x45, 120x40, 80x24 and 60x18: `Researching…` under Plan while Spec stays `○` pending, and its 160x45 frame carries the sidebar's `quick` mode.
 
 ### Artifact layout
 
@@ -698,6 +699,8 @@ The gallery test owns the frame-geometry gate: it mounts the `workflow-implement
 CI uses synthetic fixtures only. It does not read live sessions, user prompts, provider credentials, real transcripts, or the contents of a developer's current project, and no captured fixture reads the operator's `~/.claude.json` model option cache — every visual fixture pins it before the first render. The representative CI smoke captures a bounded fixture at `80x24`; the complete catalog remains a local command because it creates many raster files.
 
 The fixtures still use the production app composition. They reset stores, seed bounded data, mount one scenario, wait for its semantic checkpoint, capture it, unmount it, and only then start the next scenario. This tests real screen and overlay composition without network access.
+
+The fixture runs are dated from one instant, `VISUAL_FIXTURE_EPOCH` (`testing/visual/fixtures/common.ts`), and the capture clock stands 42 seconds after it (`FIXED_CLOCK`, `testing/visual/gallery/environment.ts`). So a live header and byline paint `0:42`, and a build block's freshness line reads `last event …` rather than the silence warning, except in `workflow-implementation-silent`, whose seat is dated past the idle watchdog's warn (`RUNNER_IDLE_WARN_MS`, five minutes) on purpose. A resumed run's saved state carries that epoch as its start, never the wall clock the module loaded at. `testing/visual/gallery.test.tsx` fails when any of these clocks paints `0:00`.
 
 The real CLI E2E suite under `testing/e2e/` has a different purpose. It checks planner and implementer protocol flows with real tools or recorded cassettes. It does not enumerate the visual catalog, render every viewport, resolve semantic crops, or publish visual artifact bundles. Passing E2E tests is not evidence that the gallery is complete, and a gallery pass is not evidence that a provider workflow works.
 

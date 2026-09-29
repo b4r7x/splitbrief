@@ -1,5 +1,6 @@
 import { MODE_UPGRADE } from '../../../core/pipeline-spec/modes.js';
 import { WORKFLOW_MODES, type WorkflowMode } from '../../../core/schemas/enums.js';
+import { taskFiles, type Task } from '../../../core/schemas/task.js';
 
 export type WorkRisk = 'trivial' | 'small' | 'normal' | 'high';
 export type ModeAdviceKind = 'none' | 'downgrade' | 'upgrade' | 'missing-context' | 'stop';
@@ -14,7 +15,9 @@ export type PlanAdvice = {
 // High-risk patterns: word-boundary matched to avoid matching auth-domain
 // *variable names* like `authClient` while still matching domain terms
 // like `auth`, `authentication`, `authorize`. Domain forms are explicitly
-// listed via the regex alternation.
+// listed via the regex alternation. They read prose only: fenced code, a code
+// span, a path and a kebab-case name are dropped first, and `\b` already
+// rejects snake_case.
 const HIGH_REGEXPS: readonly RegExp[] = [
   /\bauth(?:n|z|entication|enticate|orize|orization)?\b/,
   /\blogin\b/,
@@ -49,35 +52,42 @@ const HIGH_REGEXPS: readonly RegExp[] = [
 const HOOK_RE = /\bhook(s)?\b/;
 const WEBHOOK_RE = /\bwebhook(s)?\b/;
 
-const TRIVIAL_PATTERNS: readonly string[] = [
-  'typo',
-  'spelling mistake',
-  'fix typo',
-  'rename',
-  'dead code',
-  'unused import',
-  'remove unused',
-  'formatting',
-  'fix indent',
-  'reformat',
-  'whitespace',
-  'comment only',
-  'update comment',
-  'fix comment',
-  'add comment',
+const FENCE_LINE_RE = /^ {0,3}(?:`{3,}|~{3,})/;
+const CODE_SPAN_RE = /(`+)[^`\n]*?\1/g;
+const PATH_RE = /(?<!\S)\S*\/\S*/g;
+const KEBAB_NAME_RE = /\b\w+(?:-\w+)+/g;
+
+// Trivial and small signals are whole words of the same prose, with the inflections a prompt
+// uses spelled out: `typography` is not a typo, and `rename-session` is a name, not a rename.
+const TRIVIAL_REGEXPS: readonly RegExp[] = [
+  /\btypos?\b/,
+  /\bspelling mistakes?\b/,
+  /\bfix typos?\b/,
+  /\brename[sd]?\b/,
+  /\bdead code\b/,
+  /\bunused imports?\b/,
+  /\bremove unused\b/,
+  /\bformatting\b/,
+  /\bfix indent(?:s|ation)?\b/,
+  /\breformat(?:s|ted|ting)?\b/,
+  /\bwhitespace\b/,
+  /\bcomment only\b/,
+  /\bupdate comments?\b/,
+  /\bfix comments?\b/,
+  /\badd comments?\b/,
 ];
 
-const SMALL_PATTERNS: readonly string[] = [
-  'helper',
-  'single bug',
-  'null check',
-  'optional chain',
-  'add log',
-  'console.log',
-  'logger',
-  'bump version',
-  'import order',
-  'add missing export',
+const SMALL_REGEXPS: readonly RegExp[] = [
+  /\bhelpers?\b/,
+  /\bsingle bug\b/,
+  /\bnull checks?\b/,
+  /\boptional chain(?:s|ing)?\b/,
+  /\badd log(?:s|ging)?\b/,
+  /\bconsole\.log\b/,
+  /\bloggers?\b/,
+  /\bbump versions?\b/,
+  /\bimport order\b/,
+  /\badd missing exports?\b/,
 ];
 
 const FILE_PATH_RE = /(?:src\/|lib\/|\.ts|\.tsx|\.js|\.jsx|\.py|\.go|\.rs)\b/i;
@@ -106,18 +116,40 @@ export type AdvisorResult = {
   missing: string[];
 };
 
+// A fence that never closes runs to the end, as it renders.
+function withoutFencedCode(text: string): string {
+  const prose: string[] = [];
+  let fence: string | null = null;
+  for (const line of text.split('\n')) {
+    const marker = FENCE_LINE_RE.exec(line)?.[0].trim() ?? null;
+    if (fence === null && marker === null) {
+      prose.push(line);
+      continue;
+    }
+    if (fence === null) fence = marker;
+    else if (marker !== null && marker[0] === fence[0] && marker.length >= fence.length) {
+      fence = null;
+    }
+  }
+  return prose.join('\n');
+}
+
 function classifyRisk(
   lower: string,
   wordCount: number,
 ): { risk: WorkRisk; confidence: number; factors: string[] } {
   const factors: string[] = [];
+  const prose = withoutFencedCode(lower)
+    .replace(CODE_SPAN_RE, ' ')
+    .replace(PATH_RE, ' ')
+    .replace(KEBAB_NAME_RE, ' ');
 
   for (const re of HIGH_REGEXPS) {
-    if (re.test(lower)) {
+    if (re.test(prose)) {
       factors.push(`matched: ${re.source}`);
     }
   }
-  if (HOOK_RE.test(lower) && !WEBHOOK_RE.test(lower)) {
+  if (HOOK_RE.test(prose) && !WEBHOOK_RE.test(prose)) {
     factors.push('matched: hook');
   }
 
@@ -125,9 +157,9 @@ function classifyRisk(
     return { risk: 'high', confidence: 0.85 + Math.min(factors.length - 1, 3) * 0.04, factors };
   }
 
-  for (const p of TRIVIAL_PATTERNS) {
-    if (lower.includes(p)) {
-      factors.push(`matched: ${p}`);
+  for (const re of TRIVIAL_REGEXPS) {
+    if (re.test(prose)) {
+      factors.push(`matched: ${re.source}`);
     }
   }
   if (factors.length > 0 && wordCount <= 14) {
@@ -138,9 +170,9 @@ function classifyRisk(
     factors.length = 0;
   }
 
-  for (const p of SMALL_PATTERNS) {
-    if (lower.includes(p)) {
-      factors.push(`matched: ${p}`);
+  for (const re of SMALL_REGEXPS) {
+    if (re.test(prose)) {
+      factors.push(`matched: ${re.source}`);
     }
   }
   if (factors.length > 0) {
@@ -282,6 +314,46 @@ export function adviseMode(prompt: string, currentMode: WorkflowMode): AdvisorRe
   return { kind: 'none', risk, currentMode, suggestedMode, confidence, factors, missing };
 }
 
+/**
+ * The advice a run's saved inputs earn: its prompt's advice, or its plan's once the briefs exist
+ * and the plan gives one — the verdict a planning pass leaves standing last.
+ */
+export function adviseRun(run: {
+  feature: string;
+  plannerContext?: string | undefined;
+  mode: WorkflowMode;
+  tasks: readonly Task[];
+}): AdvisorResult {
+  const advice = adviseMode(
+    [run.feature, run.plannerContext].filter(Boolean).join('\n\n'),
+    run.mode,
+  );
+  const files = new Set(run.tasks.flatMap((task) => taskFiles(task))).size;
+  const plan = advisePlanSize({ files, briefs: run.tasks.length }, run.mode);
+  if (plan.kind === 'none') return advice;
+  return {
+    ...advice,
+    kind: plan.kind,
+    suggestedMode: plan.suggestedMode,
+    confidence: 1,
+    factors: plan.factors,
+    missing: [],
+  };
+}
+
+// Plan-size advice speaks in counts ("6 files over 5", "13 briefs over the 12 cap"); prompt
+// advice's factors are classifier signals meant for diagnostics. The factor shape is what tells
+// the plan's facts from the prompt's, since neither kind of result carries its origin.
+const PLAN_SIZE_FACTOR_RE = /^\d+ (?:files|briefs) over (?:the )?\d+(?: cap)?$/;
+
+function isPlanSizeUpgrade(result: AdvisorResult): boolean {
+  return (
+    result.kind === 'upgrade' &&
+    result.factors.length > 0 &&
+    result.factors.every((factor) => PLAN_SIZE_FACTOR_RE.test(factor))
+  );
+}
+
 export function formatAdvisoryText(result: AdvisorResult): string {
   if (result.kind === 'none') return '';
 
@@ -293,6 +365,16 @@ export function formatAdvisoryText(result: AdvisorResult): string {
   if (result.kind === 'stop') {
     return formatPlanAdviceText({
       kind: 'stop',
+      suggestedMode: result.suggestedMode,
+      factors: result.factors,
+    });
+  }
+
+  // A plan-size upgrade swaps the prompt's generic risk label for the counts that actually
+  // triggered it, so the advice never reads "standard scope" where "6 files over 5" is the reason.
+  if (isPlanSizeUpgrade(result)) {
+    return formatPlanAdviceText({
+      kind: 'upgrade',
       suggestedMode: result.suggestedMode,
       factors: result.factors,
     });

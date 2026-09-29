@@ -36,7 +36,7 @@ export function createTranscriptBuffer(opts: {
       buffer = '';
     },
     flushInterrupted(): void {
-      if (!shouldPersist || buffer.length === 0) return;
+      if (!shouldPersist) return;
       appendMessage(ref, {
         role: 'assistant',
         ...(phase !== undefined && { phase }),

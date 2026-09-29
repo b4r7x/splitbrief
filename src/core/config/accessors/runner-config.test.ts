@@ -114,6 +114,18 @@ describe('getRunnerCatalogDisplayName maps runners to catalog display names', ()
     expect(getRunnerCatalogDisplayName(config)).toBe('Ollama');
   });
 
+  it('api custom provider stays literal even when it reuses a CLI tool id', () => {
+    const config: PlannerConfig = {
+      kind: 'api',
+      provider: 'opencode',
+      service: 'opencode',
+      offering: 'payg',
+      apiBase: 'https://my-endpoint.example/v1',
+      apiKey: 'sk-inline',
+    };
+    expect(getRunnerCatalogDisplayName(config)).toBe('opencode');
+  });
+
   it('shell → Custom Shell', () => {
     const config: PlannerConfig = { kind: 'shell', command: 'my-planner' };
     expect(getRunnerCatalogDisplayName(config)).toBe('Custom Shell');

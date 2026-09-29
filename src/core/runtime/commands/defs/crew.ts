@@ -69,10 +69,13 @@ export function crewCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
           return;
         }
         if ((await ctx.setWorkflowMode(mode)).kind === 'saved') {
+          // A started run keeps the mode it saved, so the mode set here is the next run's. The
+          // result leads, so a narrow row cuts the merge notice rather than the result.
+          const message = `Workflow mode set to: ${mode} for the next run`;
           ctx.setFeedbackMessage(
             requested === RETIRED_WORKFLOW_MODE
-              ? `${RETIRED_WORKFLOW_MODE} was merged into ${mode}; workflow mode set to: ${mode}`
-              : `Workflow mode set to: ${mode}`,
+              ? `${message}; ${RETIRED_WORKFLOW_MODE} was merged into ${mode}`
+              : message,
           );
         }
       },

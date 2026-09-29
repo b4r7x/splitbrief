@@ -1,7 +1,10 @@
 import type { CLI_TOOL_CATALOG, CliToolId } from '../../../core/runners/cli-tool-catalog.js';
 import type { CliExecutableIdentity, DetectedModel } from '../../../core/discovery/detection.js';
 import type { AuthFact, ProbeOutcome } from '../../../core/discovery/runner-evidence.js';
-import type { RunnerCallTextChannel } from '../../../core/runner-call-contract.js';
+import type {
+  RunnerCallTextChannel,
+  RUNNER_CALL_WARNING_SEVERITIES,
+} from '../../../core/runner-call-contract.js';
 import type { EffortLevel } from '../../../core/schemas/enums.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import type {
@@ -65,7 +68,15 @@ export type CliProtocolEvent =
       /** `started` records the call as it begins; absent means the call is done. */
       stage?: 'started' | 'done' | undefined;
     }>
-  | Readonly<{ type: 'warning'; code: string; message: string }>
+  | Readonly<{
+      type: 'warning';
+      code: string;
+      message: string;
+      /** Severity the parser reported; absent keeps the consumer's default. */
+      severity?: (typeof RUNNER_CALL_WARNING_SEVERITIES)[number] | undefined;
+    }>
+  /** A frame with nothing to show that still proves the tool is working. */
+  | Readonly<{ type: 'heartbeat' }>
   | CliProtocolTerminalEvent;
 
 export type CliOutputContract =

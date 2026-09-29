@@ -27,7 +27,7 @@ import { configStore } from '../../../src/stores/project/config.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import type { WorkflowScreenDeps } from '../../../src/features/workflow/hooks/workflow-screen/use-model.js';
 
-const PLAN_APPROVE = 'Approve plan and compile briefs';
+const PLAN_APPROVE = 'Approve plan and review the briefs';
 const BRIEFS_APPROVE = 'Approve briefs and start the build';
 const BRIEF_TITLE = makePassingTask().title;
 

@@ -19,6 +19,7 @@ function streamParsedLine(r: StreamParseResult): ParsedLine {
     ...(r.toolUseStart !== undefined ? { toolUseStart: r.toolUseStart } : {}),
     ...(r.toolUseDelta !== undefined ? { toolUseDelta: r.toolUseDelta } : {}),
     ...(r.warning !== undefined ? { warning: r.warning } : {}),
+    ...(r.isHeartbeat !== undefined ? { isHeartbeat: r.isHeartbeat } : {}),
   };
 }
 

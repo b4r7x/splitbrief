@@ -274,7 +274,8 @@ describe('configured custom runner factory behavior', () => {
               allowRepoRunners: false,
               stateDir: fixture.stateDir,
             },
-      createStage: async (sourceProjectDir) => createStagedProject(sourceProjectDir),
+      createStage: async (sourceProjectDir) =>
+        createStagedProject({ projectDir: sourceProjectDir }),
       cleanupStaleArtifactReviews: () =>
         cleanupStaleArtifactReviews({ projectDir: fixture.projectDir, sessionId }),
       beginDeclaredArtifactReview: (input) =>
@@ -562,7 +563,7 @@ Preserve the declared-file receipt.
       legacyProgram: `require('node:fs').writeFileSync(${JSON.stringify(fixture.legacyMarker)}, 'legacy');`,
     });
     const task = makeTask({ file: 'src/factory-direct.ts' });
-    const outerStage = await createStagedProject(fixture.projectDir);
+    const outerStage = await createStagedProject({ projectDir: fixture.projectDir });
 
     try {
       const implementer = await createImplementer(config, {

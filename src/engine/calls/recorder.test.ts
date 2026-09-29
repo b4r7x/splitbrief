@@ -427,6 +427,22 @@ describe('createRunnerCallRecorder', () => {
     expect(events).toContainEqual(expect.objectContaining({ type: 'call_stall_cleared' }));
   });
 
+  it('sends the feed one heartbeat a second at most and keeps none in the result', () => {
+    const events: RunnerCallEvent[] = [];
+    const recorder = createRunnerCallRecorder({
+      context,
+      startedAt: 5,
+      onEvent: (event) => events.push(event),
+    });
+
+    for (const ts of [6, 7, 500, 1_005, 1_006, 2_500]) recorder.heartbeat({ ts });
+    const result = recorder.finishCompleted({ endedAt: 3_000 });
+
+    const heartbeats = events.filter((event) => event.type === 'call_heartbeat');
+    expect(heartbeats.map((event) => event.ts)).toEqual([6, 1_006, 2_500]);
+    expect(result).toMatchObject({ status: 'completed', warnings: [], toolUses: [] });
+  });
+
   it('emits a session id once per distinct value however often it is restated', () => {
     const events: RunnerCallEvent[] = [];
     const recorder = createRunnerCallRecorder({

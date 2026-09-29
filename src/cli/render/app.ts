@@ -136,6 +136,9 @@ export async function renderApp(
           stdout: process.stdout,
           copy: copyToClipboard,
           reportError: (message) => feedbackStore.setError(message),
+          onCopyKey: (result) => {
+            filteredStdin?.stdin.emit('selection-copy', result);
+          },
         })
       : undefined;
 

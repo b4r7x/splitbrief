@@ -10,10 +10,11 @@ import {
   costView,
   filesView,
   phaseTimings,
+  plannerSeatView,
   reviewSeatView,
   reviewView,
   scopeView,
-  seatView,
+  stoppedAtForCurrentPlan,
   tokensView,
 } from './projections.js';
 
@@ -24,6 +25,13 @@ export type SeatView =
   | Readonly<{ kind: 'named'; identity: string; short: string }>
   | Readonly<{ kind: 'inherits' }>
   | Readonly<{ kind: 'mixed'; profiles: readonly string[] }>
+  | Readonly<{
+      kind: 'moved';
+      /** Each seat the briefs ran on, in the order the plan first used it, and how many it ran. */
+      seats: readonly Readonly<{ short: string; briefs: number }>[];
+      /** Each seat ran one unbroken stretch of the plan, so the order is the order it moved in. */
+      contiguous: boolean;
+    }>
   | Readonly<{ kind: 'unset' }>;
 
 export type BriefRowState = 'local' | 'escalated' | 'failed' | 'skipped' | 'stopped' | 'pending';
@@ -88,6 +96,7 @@ export interface SummaryView {
     failed: number;
     skipped: number;
     rows: BriefRow[];
+    earlierRows: BriefRow[];
   }>;
   review: ReviewView;
   scope: ScopeView;
@@ -121,12 +130,18 @@ export interface DeriveSummaryViewInput {
 export function deriveSummaryView(input: DeriveSummaryViewInput): SummaryView | null {
   const { record } = input;
   if (record.status.kind !== 'closed') return null;
-  const summary = record.summary;
-  if (summary === null) return null;
+  if (record.summary === null) return null;
   const ledger = record.ledger;
+  const state = record.hydration.kind === 'loaded' ? record.hydration.state : null;
+  const summary = {
+    ...record.summary,
+    stoppedAt: stoppedAtForCurrentPlan({ summary: record.summary, ledger, state }),
+  };
   const outcomeKind = outcomeKindFor(summary, record.status.as);
   const phase = resolvePhase(summary, savedPhase(record));
-  const rows = briefRows(summary, ledger);
+  const mode = record.mode ?? summary.mode;
+  const tasks = state?.tasks ?? null;
+  const rows = briefRows({ summary, ledger, currentTasks: tasks });
   return {
     outcome: { kind: outcomeKind },
     run: {
@@ -136,9 +151,9 @@ export function deriveSummaryView(input: DeriveSummaryViewInput): SummaryView | 
       phase,
       sessionId: sanitizeTerminalDisplayText(record.ref.sessionId),
     },
-    rail: railFor(phase, outcomeKind),
+    rail: railFor(phase, outcomeKind, mode),
     seats: {
-      plan: seatView(summary.plannerTool, summary.plannerModel),
+      plan: plannerSeatView(summary),
       build: buildSeatView(summary),
       review: reviewSeatView(summary),
     },
@@ -149,7 +164,8 @@ export function deriveSummaryView(input: DeriveSummaryViewInput): SummaryView | 
       escalated: summary.escalatedToPlanner,
       failed: summary.failed,
       skipped: summary.skipped,
-      rows,
+      rows: rows.current,
+      earlierRows: rows.earlier,
     },
     review: reviewView(summary),
     scope: scopeView(summary),
@@ -195,9 +211,14 @@ function resolvePhase(summary: Summary, saved: Phase | null): Phase {
   return 'planning';
 }
 
-function railFor(phase: Phase, kind: SummaryOutcomeKind): RailStageState[] {
-  if (kind !== 'ended') return getRailStages('complete');
-  return getRailStages(phase, { halted: ENDED_HALT });
+function railFor(
+  phase: Phase,
+  kind: SummaryOutcomeKind,
+  mode: WorkflowMode | undefined,
+): RailStageState[] {
+  const modeOption = mode === undefined ? {} : { mode };
+  if (kind !== 'ended') return getRailStages('complete', modeOption);
+  return getRailStages(phase, { halted: ENDED_HALT, ...modeOption });
 }
 
 /** A run somebody ended is not a run that broke: the stage it stopped on wears the cancel mark. */

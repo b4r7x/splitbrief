@@ -77,7 +77,9 @@ describe('createStagedProject — failure handling', () => {
     writeFileSync(join(dir, 'src', 'app.ts'), 'export const app = true;\n');
 
     control.failLstatBasename = 'app.ts';
-    await expect(createStagedProject(dir)).rejects.toThrow(/simulated lstat failure/);
+    await expect(createStagedProject({ projectDir: dir })).rejects.toThrow(
+      /simulated lstat failure/,
+    );
   });
 
   itUnix('removes the temp staging directory when copying fails', async () => {
@@ -88,7 +90,9 @@ describe('createStagedProject — failure handling', () => {
     writeFileSync(join(dir, 'src', 'app.ts'), 'export const app = true;\n');
 
     control.failCp = true;
-    await expect(createStagedProject(dir)).rejects.toThrow(/simulated copy failure/);
+    await expect(createStagedProject({ projectDir: dir })).rejects.toThrow(
+      /simulated copy failure/,
+    );
     expect(control.lastStagedRoot).not.toBe('');
     expect(existsSync(control.lastStagedRoot)).toBe(false);
   });

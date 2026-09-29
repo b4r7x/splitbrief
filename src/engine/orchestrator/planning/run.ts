@@ -7,10 +7,12 @@ import {
 } from '../../../core/config/runtime/resolve.js';
 import { runPlanningSteps } from './steps.js';
 import { runRewindPlanning } from './rewind.js';
-import { adviseMode, advisePlanSize } from './mode-advisor.js';
+import { adviseMode, advisePlanSize, type WorkRisk } from './mode-advisor.js';
 import { runBriefQualityWithRepair } from './brief-quality-gate.js';
 import { runBriefsApprovalLoop } from './briefs-approval-loop.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult, PlanningProducerResult } from './types.js';
+import type { PlannerCallbacksContext } from '../types.js';
+import type { Planner } from '../../planners/types.js';
 import { writeAndPublishArtifacts } from '../artifact-write.js';
 import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
 import { publishWarning } from '../events.js';
@@ -18,7 +20,9 @@ import { firstBriefError } from '../../spec/brief-quality.js';
 import { buildBriefQualityUnrepairedRecoveryIssue } from '../recovery/builders/planner.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { nowIso } from '../../../utils/format-time.js';
-import { taskFiles } from '../../../core/schemas/task.js';
+import { taskFiles, type Task } from '../../../core/schemas/task.js';
+import type { ApproveLevel, WorkflowMode } from '../../../core/schemas/enums.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
 
 export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<PlanningPhaseResult> {
   const { wctx } = opts;
@@ -46,7 +50,7 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<Plan
 
   // The advisor reads what the planner reads: the sentence plus the `@file` context it carries.
   const advisory = adviseMode(
-    [opts.feature, wctx.plannerContext].filter(Boolean).join('\n\n'),
+    [opts.state.feature, wctx.plannerContext].filter(Boolean).join('\n\n'),
     mode,
   );
   if (advisory.kind !== 'none') {
@@ -118,12 +122,35 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<Plan
     : await runPlanningSteps(optsWithContext);
   if (produced.disposition === 'terminal') return produced;
 
-  const { planner } = opts;
+  return admitBriefs({
+    wctx,
+    planner: opts.planner,
+    state: produced.state,
+    tasks: produced.tasks,
+    mode,
+    approveLevel,
+    risk: advisory.risk,
+  });
+}
+
+/** Checks and repairs compiled briefs before review or automatic admission, including on resume. */
+export async function admitBriefs(opts: {
+  wctx: PlannerCallbacksContext;
+  planner: Planner;
+  state: WorkflowState;
+  tasks: readonly Task[];
+  mode: WorkflowMode;
+  approveLevel: ApproveLevel;
+  /** The feature's risk tier, which the plan-size advice carries. */
+  risk: WorkRisk;
+}): Promise<PlanningPhaseResult> {
+  const { wctx, planner, mode, approveLevel } = opts;
+  const { projectDir, config } = wctx;
   const { sessionId, callbacks, bus, metadata, signal, sinks, modelCache, detectedContextLength } =
     wctx;
   const quality = await runBriefQualityWithRepair({
-    tasks: [...produced.tasks],
-    state: produced.state,
+    tasks: [...opts.tasks],
+    state: opts.state,
     planner,
     projectDir,
     sessionId,
@@ -134,7 +161,7 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<Plan
     ...(signal === undefined ? {} : { signal }),
     ...(sinks === undefined ? {} : { sinks }),
   });
-  state = quality.state;
+  let state = { ...quality.state, tasks: quality.tasks };
   const tasks = quality.tasks;
 
   const planAdvice = advisePlanSize(
@@ -147,7 +174,7 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<Plan
       ts: Date.now(),
       phase: state.phase,
       kind: planAdvice.kind,
-      risk: advisory.risk,
+      risk: opts.risk,
       currentMode: mode,
       suggestedMode: planAdvice.suggestedMode,
       confidence: 1,
@@ -156,14 +183,18 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<Plan
     });
   }
 
-  writeAndPublishArtifacts({
-    projectDir,
-    sessionId,
-    bus,
-    phase: state.phase,
-    metadata,
-    items: [{ kind: 'task-briefs', text: formatTasks(tasks) }],
-  });
+  // The tasks step already wrote and announced the briefs it compiled. Only briefs the quality
+  // pass regenerated still need their file and their card.
+  if (quality.regenerated) {
+    writeAndPublishArtifacts({
+      projectDir,
+      sessionId,
+      bus,
+      phase: state.phase,
+      metadata,
+      items: [{ kind: 'task-briefs', text: formatTasks(tasks) }],
+    });
+  }
 
   if (blocksBriefsGate(mode, approveLevel)) {
     const loop = await runBriefsApprovalLoop({
@@ -212,7 +243,6 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<Plan
     };
   }
 
-  state = transitionAndSave({ projectDir, sessionId }, state, { type: 'BRIEF_ADMISSION_OPENED' });
   state = transitionAndSave({ projectDir, sessionId }, state, { type: 'BEGIN_IMPLEMENTATION' });
   return { disposition: 'ready-for-tasks', state, tasks };
 }

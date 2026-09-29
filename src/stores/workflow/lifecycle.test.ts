@@ -18,6 +18,7 @@ import {
   makeRunnerCallActivity,
   makeRunnerCallCompleted,
   makeRunnerCallError,
+  makeRunnerCallHeartbeat,
   makeRunnerCallStalled,
   makeRunnerCallStallCleared,
   makeRunnerCallStarted,
@@ -429,7 +430,12 @@ describe('runner call stall', () => {
     const running = lifecycleStore.get();
 
     const stalled = updateStall(running, makeRunnerCallStalled());
-    expect(stalled.stall).toEqual({ since: 2_000, silentMs: 60_000, runnerName: null });
+    expect(stalled.stall).toEqual({
+      since: 2_000,
+      silentMs: 60_000,
+      runnerName: null,
+      backendKind: 'cli',
+    });
 
     const cleared = updateStall(stalled, makeRunnerCallStallCleared());
     expect(cleared.stall).toBeNull();
@@ -443,6 +449,16 @@ describe('runner call stall', () => {
     );
 
     expect(stalled.stall?.runnerName).toBe('opencode');
+  });
+
+  it('carries the backend kind so an API call is not read as the CLI of the same name', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+    const stalled = updateStall(
+      lifecycleStore.get(),
+      makeRunnerCallStalled({ runnerName: 'opencode', backendKind: 'api' }),
+    );
+
+    expect(stalled.stall).toMatchObject({ runnerName: 'opencode', backendKind: 'api' });
   });
 
   it('call activity, completion, error, planner text, and phase changes clear stall', () => {
@@ -462,6 +478,16 @@ describe('runner call stall', () => {
     expect(lifecycleStore.get().stall).not.toBeNull();
     addEvent(makePlannerStatus({ phase: 'validating-task' }));
     expect(lifecycleStore.get().stall).toBeNull();
+  });
+
+  it('counts a heartbeat as a sign of life and a status change as none', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+    addEvent(makeRunnerCallStarted({ ts: 2_000 }));
+    addEvent(makeRunnerCallHeartbeat({ ts: 50_000 }));
+    expect(lifecycleStore.get().lastRunnerEventTs).toBe(50_000);
+
+    addEvent(makePlannerStatus({ phase: 'implementing', status: 'running', ts: 90_000 }));
+    expect(lifecycleStore.get().lastRunnerEventTs).toBe(50_000);
   });
 
   it('tracks the last runner event and the attempt start for the build-progress block', () => {

@@ -14,7 +14,7 @@ SPLITBRIEF is a CLI tool. CLI tools are loved when they respect the developer's 
 
 ### 2. Heartbeat over silence
 
-Any wait > 5 seconds must show proof of life: token count incrementing, current phase name, or truncated excerpt. The 60-second spinner is where trust dies. Users alt-tab, forget, and the session completes without them. The run-start validation probe is covered too: before the first task it publishes `validation_baseline` running rows naming the stage being probed, so a slow or red validation stage cannot sit silent behind `Implementing…`. The 60 seconds this principle names are now a threshold in the code: the Build progress block prints `last event <n>s ago` on every frame and flips to `No update from <tool> for <n>s` once the silence reaches `UI_IDLE_WARN_MS` (`src/features/workflow/display/build-progress.ts`).
+Any wait > 5 seconds must show proof of life: token count incrementing, current phase name, or truncated excerpt. The 60-second spinner is where trust dies. Users alt-tab, forget, and the session completes without them. The run-start validation probe is covered too: before the first task it publishes `validation_baseline` running rows naming the stage being probed, so a slow or red validation stage cannot sit silent behind `Implementing…`. The 60 seconds this principle names are now a threshold in the code: the Build progress block prints `last event 8s ago`, counting every second, and flips to `No update for 5m 12s` in the warning colour once the idle watchdog has warned that a seat on a call has sent nothing; the watchdog's warn is `RUNNER_IDLE_WARN_MS` (five minutes by default, tunable per runner as `idleWarnMs`), and the block never paints the warning below the 60-second floor `UI_IDLE_WARN_MS` (`src/features/workflow/display/build-progress.ts`).
 
 ### 3. One command for session continuity
 
@@ -26,7 +26,7 @@ Default output is minimal. Details expand on keypress. Config starts at 3 lines 
 
 ### 5. Streaming partial output
 
-For API implementers, stream the last N lines being written in real-time. Transforms "generating foo.ts... 28s" into watching code materialize. Users watch instead of context-switching away.
+For API implementers, stream the last N lines being written in real-time. Transforms "working on foo.ts…" into watching code materialize. Users watch instead of context-switching away.
 
 ---
 

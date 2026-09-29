@@ -1,0 +1,78 @@
+import { execFileSync } from 'node:child_process';
+import { existsSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { ensureSessionDir } from '../../core/paths-io.js';
+import { createInitialState, transition } from '../../core/state/machine.js';
+import { loadState, saveState } from '../../core/state/persistence.js';
+import { readRunRecord } from '../../core/sessions/run-record-io.js';
+import { createRecoveryBus } from '../../engine/orchestrator/recovery/bus.js';
+import { readRunEvents } from '../../engine/events/replay.js';
+import { routerStore } from '../../stores/navigation/router.js';
+import { configStore } from '../../stores/project/config.js';
+import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { resetAllStores } from '#testing/helpers/stores.js';
+import { requestEndRun } from './handlers.js';
+import { hydrateRun } from './run-history.js';
+
+describe('End run at rest', () => {
+  let projectDir = '';
+
+  afterEach(() => {
+    resetAllStores();
+    if (projectDir) cleanupTempDir(projectDir);
+    projectDir = '';
+  });
+
+  it('records one real-time closure event and advances the closed run clock to it', async () => {
+    projectDir = createTempDir('at-rest-end-event-');
+    execFileSync('git', ['init', projectDir], { stdio: 'ignore' });
+    const ref = { projectDir, sessionId: 'end-at-rest' };
+    ensureSessionDir(projectDir, ref.sessionId);
+    const startedAt = Date.now() - 60_000;
+    const state = {
+      ...transition(createInitialState('End at rest'), { type: 'START' }),
+      startedAt: new Date(startedAt).toISOString(),
+    };
+    saveState(ref, state);
+    createRecoveryBus(ref).publish({
+      type: 'workflow_started',
+      ts: startedAt,
+      phase: state.phase,
+      feature: state.feature,
+    });
+    const record = readRunRecord(ref);
+    if (record === null) throw new Error('missing run record');
+    routerStore.init({ screen: 'workflow', run: record, execution: { kind: 'at-rest' } });
+    configStore.__testReset({ config: makeConfig() });
+
+    const beforeEnd = Date.now();
+    expect(requestEndRun()).toBe(true);
+    const afterEnd = Date.now();
+    const firstClosed = loadState(ref)?.closed;
+    const events = (await readRunEvents(ref)).events;
+    const cancellation = events.filter((event) => event.type === 'workflow_cancelled');
+    expect(cancellation).toHaveLength(1);
+    expect(cancellation[0]).toMatchObject({
+      phase: state.phase,
+      reason: 'user_cancelled',
+    });
+    expect(cancellation[0]?.ts).toBeGreaterThanOrEqual(beforeEnd);
+    expect(cancellation[0]?.ts).toBeLessThanOrEqual(afterEnd);
+    expect(readRunRecord(ref)?.status).toEqual({ kind: 'closed', as: 'ended' });
+
+    const closedRecord = readRunRecord(ref);
+    if (closedRecord === null) throw new Error('missing closed run record');
+    await hydrateRun(closedRecord);
+    expect(lifecycleStore.get().durationMs).toBe((cancellation[0]?.ts ?? 0) - startedAt);
+    expect(requestEndRun()).toBe(true);
+    expect(loadState(ref)?.closed).toEqual(firstClosed);
+    expect(
+      (await readRunEvents(ref)).events.filter((event) => event.type === 'workflow_cancelled'),
+    ).toHaveLength(1);
+    expect(existsSync(join(projectDir, '.git', 'index'))).toBe(false);
+    expect(readdirSync(join(projectDir, '.git', 'objects'))).toEqual(['info', 'pack']);
+  });
+});

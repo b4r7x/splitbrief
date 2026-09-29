@@ -7,11 +7,9 @@ import { estimateTokens } from '../../../core/tokens/estimate.js';
 import { DEFAULT_UNKNOWN_CONTEXT_LENGTH } from '../../../core/tokens/context-length.js';
 import { formatImplementerSystemPreamble, formatTaskPrompt } from '../../spec/prompt-formatter.js';
 import { buildLanguageContext } from '../../spec/prompts/language-context.js';
-import { isProviderId } from '../../../core/schemas/enums.js';
-import { getEffectiveModelId } from '../../providers/model/resolution.js';
 import type { ProfileFit, RouteTaskOptions } from './types.js';
 import type { CurrentCodeContextMode, TaskContextFit } from '../../../core/schemas/enums.js';
-import { resolveProfileContextLength, profileProviderId } from './context-length.js';
+import { profileEffectiveModelId, resolveProfileContextLength } from './context-length.js';
 import { estimateFormattedTaskPromptTokens, classifyContextFit } from './estimation.js';
 import { currentCodeContextMode } from './headings.js';
 import { requiredWriteModeForTask } from './decision.js';
@@ -40,10 +38,7 @@ export function assessProfile(
     opts.modelCache,
     opts.detectedContextLength,
   );
-  const providerId = profileProviderId(profile);
-  const modelId = isProviderId(providerId)
-    ? getEffectiveModelId(providerId, profile.config.model)
-    : undefined;
+  const modelId = profileEffectiveModelId(profile);
   const languageContext = opts.languageContext ?? buildLanguageContext(undefined);
   const writesFiles = profile.capabilities.writesFiles;
   const outputContract = selectBuildOutputContract({

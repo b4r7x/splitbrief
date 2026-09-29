@@ -44,6 +44,54 @@ afterEach(() => {
 });
 
 describe('drain', () => {
+  it.each([false, true])(
+    'keeps unsaved same-revision workflow fields when draining a queue with messages: %s',
+    (queued) => {
+      const { projectDir, sessionId } = setupProject(dirs);
+      const ref = { projectDir, sessionId };
+      const saved = transitionAndSave(ref, createInitialState('feature'), { type: 'START' });
+      const head = queued
+        ? transitionAndSave(ref, saved, {
+            type: 'ENQUEUE_USER_MSG',
+            message: makeMessage('preserve context'),
+          })
+        : saved;
+      const current = {
+        ...head,
+        mode: 'speckit' as const,
+        approve: 'all' as const,
+        plannerSessionId: 'unsaved-session',
+      };
+      const { bus } = makeBusRecorder();
+      const result = drainQueue({ ...ref, state: current, bus });
+      expect(result.state).toMatchObject({
+        mode: 'speckit',
+        approve: 'all',
+        plannerSessionId: 'unsaved-session',
+      });
+      if (queued)
+        expect(loadState(ref)).toMatchObject({
+          mode: 'speckit',
+          approve: 'all',
+          plannerSessionId: 'unsaved-session',
+        });
+    },
+  );
+
+  it('keeps a newer persisted rewind when the caller has unsaved fields', () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const ref = { projectDir, sessionId };
+    const saved = transitionAndSave(ref, createInitialState('feature'), { type: 'START' });
+    transitionAndSave(ref, saved, { type: 'REWIND_TO_PLAN', comment: 'new direction' });
+    const { bus } = makeBusRecorder();
+    expect(
+      drainQueue({ ...ref, state: { ...saved, plannerSessionId: 'stale-session' }, bus }).state,
+    ).toMatchObject({
+      phase: 'planning',
+      rewindPending: { target: 'plan', comment: 'new direction' },
+    });
+  });
+
   it('can read pending messages for a prompt without marking them drained', () => {
     const { projectDir, sessionId } = setupProject(dirs);
     const state = makeStateWithQueue([

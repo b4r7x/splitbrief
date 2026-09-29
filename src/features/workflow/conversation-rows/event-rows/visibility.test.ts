@@ -60,12 +60,22 @@ describe('isTranscriptRowlessEvent', () => {
       backendKind: 'cli',
       sequence: 2,
     };
+    const runnerHeartbeat: EngineEvent = {
+      type: 'runner_call_heartbeat',
+      ts: 0,
+      phase: 'implementing',
+      callId: 'call-1',
+      role: 'implementer',
+      backendKind: 'cli',
+      sequence: 3,
+    };
 
     expect(isTranscriptRowlessEvent(heartbeat)).toBe(true);
     expect(isTranscriptRowlessEvent(status)).toBe(true);
     expect(isTranscriptRowlessEvent(tokens)).toBe(true);
     expect(isTranscriptRowlessEvent(stalled)).toBe(true);
     expect(isTranscriptRowlessEvent(stallCleared)).toBe(true);
+    expect(isTranscriptRowlessEvent(runnerHeartbeat)).toBe(true);
     expect(isTranscriptRowlessEvent(reviewFixStarted)).toBe(true);
     expect(isTranscriptRowlessEvent(text)).toBe(false);
   });

@@ -15,6 +15,7 @@ import { segmentedRow } from './rows.js';
 import { sanitizeRowDisplayText } from './text.js';
 
 const CARD_MIN_WIDTH = 10;
+const LEADING_CARD_SEPARATOR = /^·(?:\s+|$)/u;
 
 function displayWidth(text: string): number {
   return getTerminalCellWidth(text);
@@ -100,6 +101,36 @@ function fittedCardHeaderSegments(input: {
   return segments;
 }
 
+// A soft wrap can move a list separator to the next row; explicit lines keep their text.
+function wrappedCardBodyLines(text: string, width: number): string[] {
+  return text.split('\n').flatMap((sourceLine) => {
+    const wrapped = wrapPathAware(sourceLine, width).split('\n');
+    const lines: string[] = [];
+
+    for (const [index, line] of wrapped.entries()) {
+      if (index === 0) {
+        lines.push(line);
+        continue;
+      }
+
+      const continuation = line.replace(LEADING_CARD_SEPARATOR, '');
+      if (continuation === line) {
+        lines.push(line);
+        continue;
+      }
+
+      const previousIndex = lines.length - 1;
+      const previous = lines[previousIndex];
+      if (previous?.endsWith(' ')) {
+        lines[previousIndex] = previous.slice(0, -1);
+      }
+      if (continuation.length > 0) lines.push(continuation);
+    }
+
+    return lines;
+  });
+}
+
 // Segments pass through whole. Re-mapping them field by field is how a caller's href reached the
 // card and never reached a row: the artifact filename rendered as plain text and every test that
 // asserted on text and tone still passed.
@@ -167,10 +198,10 @@ export function prepareCardRows(input: CardBlockInput): PreparedCardRows {
       body,
       segments,
       // Whole words, measured in the cells the rows paint: only a word wider than the row breaks.
-      lines: wrapPathAware(
+      lines: wrappedCardBodyLines(
         sanitizeRowDisplayText(segments.map((segment) => segment.text).join('')),
         bodyWrapWidth,
-      ).split('\n'),
+      ),
     };
   });
   const rowCount = bodies.reduce((count, entry) => count + entry.lines.length, 1);

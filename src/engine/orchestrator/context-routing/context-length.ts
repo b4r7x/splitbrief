@@ -2,7 +2,7 @@ import type { ResolvedImplementerProfile } from '../../../core/config/accessors/
 import { assertNever } from '../../../utils/type-guards.js';
 import { resolveRunnerContextWindow } from '../../providers/model/context-window.js';
 import { resolveApplicationContextTokens } from '../../providers/runtime-context.js';
-import { isProviderId } from '../../../core/schemas/enums.js';
+import { isApiProviderId } from '../../../core/providers/api-provider-catalog.js';
 import { getEffectiveModelId, resolveExactRuntimeModel } from '../../providers/model/resolution.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import type { ResolvedProfileContextLength } from './types.js';
@@ -18,6 +18,29 @@ export function profileProviderId(profile: ResolvedImplementerProfile): string {
       return 'shell';
     case 'agent':
       return 'agent';
+    default:
+      return assertNever(config);
+  }
+}
+
+/**
+ * The model id a profile resolves for model-aware work, or undefined when its
+ * kind has no catalog identity. Kind decides: an `api` profile only resolves
+ * through the API catalog, so a CLI-named custom provider never borrows the
+ * tool's default model.
+ */
+export function profileEffectiveModelId(profile: ResolvedImplementerProfile): string | undefined {
+  const { config } = profile;
+  switch (config.kind) {
+    case 'api':
+      return isApiProviderId(config.provider)
+        ? getEffectiveModelId(config.provider, config.model)
+        : undefined;
+    case 'cli':
+      return getEffectiveModelId(config.tool, config.model);
+    case 'shell':
+    case 'agent':
+      return undefined;
     default:
       return assertNever(config);
   }
@@ -43,15 +66,16 @@ export function resolveProfileContextLength(
       detectedContextLength,
     );
   }
-  const { provider, model, contextLength } = profile.config;
-  const modelId = isProviderId(provider) ? getEffectiveModelId(provider, model) : undefined;
+  const { provider, contextLength } = profile.config;
+  const modelId = profileEffectiveModelId(profile);
   const observation =
-    profile.isDefault && isProviderId(provider) && modelId !== undefined && cache !== undefined
+    profile.isDefault && isApiProviderId(provider) && modelId !== undefined && cache !== undefined
       ? resolveExactRuntimeModel({
           providerId: provider,
           selectionId: modelId,
           cache,
           role: 'implementer',
+          kind: 'api',
         })
       : undefined;
   const runtime = observation?.kind === 'found' ? observation.model : undefined;
@@ -96,6 +120,7 @@ function resolveDeclaredContextLength(
 
   const resolved = resolveRunnerContextWindow({
     providerId: profileProviderId(profile),
+    kind: profile.config.kind,
     model: profile.config.model,
     ...(cache !== undefined && { cache }),
   });

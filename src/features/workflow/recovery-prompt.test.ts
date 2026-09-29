@@ -8,6 +8,7 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { PromptBody } from './components/prompt-body.js';
 import {
   formatActionRow,
+  formatMiddotList,
   formatRecoveryActionLines,
   formatRecoveryPrompt,
   isActionRowLine,
@@ -105,7 +106,7 @@ describe('recovery prompt', () => {
 
     const visible = await renderPromptBody(formatRecoveryPrompt(issue));
 
-    expect(visible).toContain('[w1]  switch BUILD to Claude Code CLI · sonnet');
+    expect(visible).toContain('[w1]  switch BUILD to Claude Code CLI · Sonnet 5');
     expect(visible).toContain('[w2]  switch BUILD to OpenCode CLI');
     expect(visible).toContain('[r]  retry same worker');
     expect(visible).toContain('[a]  end run');
@@ -282,6 +283,110 @@ describe('recovery prompt', () => {
     expect(visible).toContain('[a]  end run');
     expect(visible).not.toContain('[c]  continue');
     expect(parseRecoveryActionAnswer('c', issue)).toBeNull();
+  });
+
+  it('uses compact worker context and human conflict words without changing the evidence', async () => {
+    const details = [
+      'Conflict kind: current-task-conflict',
+      'Safe to continue: no',
+      'src/auth/session.ts: current-task-conflict affects T004',
+    ];
+    const issue: RecoveryIssue = {
+      id: 'rec_user_edit_words',
+      reason: 'user-edit-conflict',
+      phase: 'implementing',
+      status: 'awaiting-user',
+      taskId: taskId('T004'),
+      taskTitle: 'Update session store',
+      files: ['src/auth/session.ts'],
+      affectedTaskIds: [taskId('T004')],
+      message: 'User edits conflict with T004',
+      details,
+      selectedImplementerProfile: 'default',
+      facts: {
+        conflictKind: 'current-task-conflict',
+        safeToContinue: false,
+        contextLength: 32_768,
+      },
+      availableActions: ['skip-current-task', 'pause-run', 'end-run'],
+      recommendedAction: 'pause-run',
+      createdAt: '2026-04-29T12:00:00.000Z',
+    };
+
+    const visible = await renderPromptBody(formatRecoveryPrompt(issue));
+
+    expect(visible).toContain('Edit relation: conflict with T004');
+    expect(visible).toContain('Continuing is not safe');
+    expect(visible).toContain('src/auth/session.ts: conflict with T004');
+    expect(visible).toContain('Worker default · 32K context');
+    expect(visible).not.toContain('current-task-conflict');
+    expect(visible).not.toContain('Safe to continue: no');
+    expect(issue.details).toEqual(details);
+  });
+
+  it('uses the issue task when a known file conflict has no per-file task list', async () => {
+    const issue: RecoveryIssue = {
+      ...baseIssue,
+      reason: 'user-edit-conflict',
+      taskId: taskId('T003'),
+      files: ['src/a.ts'],
+      affectedTaskIds: [taskId('T003')],
+      details: ['src/a.ts: current-task-conflict'],
+      facts: { conflictKind: 'current-task-conflict' },
+      availableActions: ['pause-run', 'end-run'],
+      recommendedAction: 'pause-run',
+    };
+
+    const visible = await renderPromptBody(formatRecoveryPrompt(issue));
+
+    expect(visible).toContain('src/a.ts: conflict with T003');
+  });
+
+  it('describes a current conflict when no brief ID is available', async () => {
+    const issue: RecoveryIssue = {
+      ...baseIssue,
+      reason: 'user-edit-conflict',
+      taskId: undefined,
+      affectedTaskIds: [],
+      details: ['Conflict kind: current-task-conflict'],
+      facts: { conflictKind: 'current-task-conflict' },
+      availableActions: ['pause-run', 'end-run'],
+      recommendedAction: 'pause-run',
+    };
+
+    const visible = await renderPromptBody(formatRecoveryPrompt(issue));
+
+    expect(visible).toContain('Edit relation: conflict with the current brief');
+  });
+
+  it('keeps unknown and user-written conflict details unchanged', async () => {
+    const issue: RecoveryIssue = {
+      ...baseIssue,
+      reason: 'user-edit-conflict',
+      files: ['src/a.ts'],
+      taskId: taskId('T003'),
+      affectedTaskIds: [taskId('T003')],
+      details: [
+        'Conflict kind: legacy-conflict',
+        'Safe to continue: maybe',
+        'src/a.ts: legacy-conflict affects T003',
+        'Planner said: current-task-conflict is historical data',
+      ],
+      facts: { conflictKind: 'legacy-conflict' },
+      availableActions: ['pause-run', 'end-run'],
+      recommendedAction: 'pause-run',
+    };
+
+    const visible = await renderPromptBody(formatRecoveryPrompt(issue));
+
+    expect(visible).toContain('Conflict kind: legacy-conflict');
+    expect(visible).toContain('Safe to continue: maybe');
+    expect(visible).toContain('src/a.ts: legacy-conflict affects T003');
+    expect(visible).toContain('Planner said: current-task-conflict is historical data');
+  });
+
+  it('uses the shared truncated-list spelling', () => {
+    expect(formatMiddotList(['a', 'b', 'c', 'd'], 3)).toBe('a · b · c · +1 more');
   });
 
   it('hides legacy planner rebase actions and falls back to pause', async () => {

@@ -37,6 +37,7 @@ import { formatDrainedMessages } from './queue/prompt.js';
 import { withContinuationLoop } from './continuation.js';
 import { composeContinuation } from '../spec/prompts/continuation.js';
 import { resolveRunUniverse } from './evidence/review-packet/sections-io.js';
+import { resolveRunReviewScope, type RunReviewScope } from './evidence/review-packet/run-scope.js';
 import { buildApiReviewContext } from './api-review-context.js';
 import {
   apiContextError,
@@ -139,12 +140,18 @@ export async function runFinalReviewPhase(opts: {
   let writeStatus: 'written' | 'failed' = 'written';
   let reviewText = '';
   let verdict: ParsedFinalReview | null = null;
+  let reviewScope: RunReviewScope | undefined;
   let failure: FinalReviewResult['failure'];
   try {
     const baseline = state.changedFilesBaseline;
     if (baseline?.runStartChangedFiles === undefined) throw finalReviewError.missingRunBaseline();
     const universe = await resolveRunUniverse(projectDir, baseline);
-    const fullDiff = universe.fullDiff;
+    reviewScope = await resolveRunReviewScope({
+      ref: { projectDir, sessionId },
+      tasks: state.tasks,
+      workspaceFiles: universe.changedFiles,
+    });
+    const fullDiff = [universe.fullDiff, reviewScope.laterDiff].filter(Boolean).join('\n');
     const spec = readSpecFileOrEmpty({ projectDir, sessionId }, SPEC_FILE);
     const taskBriefs =
       readSpecFileOrEmpty({ projectDir, sessionId }, TASKS_FILE) || formatTasks(state.tasks);
@@ -164,8 +171,8 @@ export async function runFinalReviewPhase(opts: {
     try {
       const driftReport = analyzeBriefDrift({
         tasks: state.tasks,
-        changedFiles: universe.changedFiles,
-        diff: fullDiff,
+        changedFiles: reviewScope.provenance.promotedFiles,
+        diff: reviewScope.diff,
         ledger,
         briefHash: hashTaskBrief(state.tasks),
         preRunChangedFiles: baseline.runStartChangedFiles,
@@ -196,6 +203,7 @@ export async function runFinalReviewPhase(opts: {
         baseline: { head: baseline.head, runStartChangedFiles: baseline.runStartChangedFiles },
         driftSection: driftPromptSection,
         validation: { recorded: ledger !== null, evidence: validationPromptSection },
+        reviewScope,
         queueText,
         ...(seat.contextLength !== undefined && { contextLength: seat.contextLength }),
         ...(seat.model !== undefined && { model: seat.model }),
@@ -216,7 +224,9 @@ export async function runFinalReviewPhase(opts: {
       const basePrompt = buildFinalReviewPrompt({
         spec,
         taskBriefs,
-        diff: fullDiff,
+        diff: reviewScope.diff,
+        changeCoverage: reviewScope.description,
+        workspaceDiff: fullDiff,
         driftReport: driftPromptSection,
         validationEvidence: validationPromptSection,
       });
@@ -343,6 +353,7 @@ export async function runFinalReviewPhase(opts: {
       }),
       state,
       finalReviewStatus: writeStatus,
+      ...(reviewScope !== undefined && { provenance: reviewScope.provenance }),
     });
   } catch (err) {
     publishWarningFromError(

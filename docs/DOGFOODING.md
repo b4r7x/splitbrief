@@ -127,16 +127,16 @@ A deterministic failure caused by a tool prompt, adapter flag, gate, or default 
 
 ## 7. Smoke test: stop, continue, finish
 
-Zero tokens. A throwaway git repo whose planner and implementer are local node scripts (`testing/e2e/helpers/stop-continue-fixture.ts`): the planner is a `kind: shell` script that prints the one Task Brief, then the review reply, branching on the prompt's “Final Implementation Review” title; the implementer is a `kind: agent` script that writes its two declared files in two steps with a four-second hold between them. It has to be a direct writer — the brief declares two files, and an extracting runner can carry only one back — and its seat declares a `contextLength`, because routing refuses a profile whose window it cannot prove the brief fits.
+Zero tokens. A throwaway git repo whose planner and implementer are local node scripts (`testing/e2e/helpers/stop-continue-fixture.ts`): the planner is a `kind: shell` script that prints the one Task Brief, then the review reply, branching on the prompt's “Final Implementation Review” title; the implementer is a `kind: agent` script whose first invocation writes the marker file, then holds for the fixture's release file — 180 seconds is the backstop, not the pace. Every later invocation writes both declared files at once and finishes, so the same script serves the cut attempt and the resumed one. Writing directly is what the test needs: it signals the run on the marker the implementer writes into the worktree itself while the call is still open, which a reply extracted after the call returns could not carry. Its seat declares a `contextLength`, because routing refuses a profile whose window it cannot prove the brief fits.
 
-The CLI is spawned from source the way the live harness does it — `node --import tsx src/cli.ts …` through `spawnCli`, detached so one signal reaches the tool subprocess with it — so no build step stands between a fix and the smoke.
+The CLI is spawned from source the way the live harness does it — `node --import tsx src/cli.ts …` through `spawnCli`, detached so the test can signal the CLI's process group — so no build step stands between a fix and the smoke. The engine starts the implementer in a process group of its own, so the signal reaches only the CLI: a `SIGINT` reaches the implementer through the CLI's abort, a `SIGKILL` leaves it running.
 
 The brief runs in the run's isolation worktree, so the marker the test waits on appears under the fixture's own state home, not in the project: nothing reaches the project until the brief's changes are promoted.
 
 ```
-testing/e2e/scenarios/stop-continue.test.ts   (sequential e2e project, testTimeout 120 s)
+testing/e2e/scenarios/stop-continue.test.ts   (sequential e2e project, 240 s per case)
   1. spawn  node --import tsx src/cli.ts start --plain --mode quick --approve none --allow-repo-runners --project <fixture> "smoke"
-  2. wait   until src/marker.ts appears under <stateHome>/splitbrief/trees (<= 45 s)
+  2. wait   until src/marker.ts appears under <stateHome>/splitbrief/trees (<= 75 s)
   3. kill   the process group with SIGINT; expect exit 0; state.json: interruptedStep.cut === 'mid-step',
             task T001 in_progress, no pendingRecovery, and src/greet.ts not in the project
   4. spawn  node --import tsx src/cli.ts continue --plain --allow-repo-runners --project <fixture>
@@ -146,9 +146,9 @@ testing/e2e/scenarios/stop-continue.test.ts   (sequential e2e project, testTimeo
             no `own_partial_output_kept` warning and no `Discarded …` warning, and src/greet.ts holds the written code
 ```
 
-Step 7 is what a resumable park earns: the same attempt continues in the same worktree, so the marker it left stands, nothing is discarded, and nothing is mistaken for a user edit. `own_partial_output_kept` belongs to a brief whose partial reached the project, which an isolated run never produces.
+Step 7 is what a resumable park earns: the same attempt continues in the same worktree, so the marker it left stands, nothing is discarded, and nothing is mistaken for a user edit. `own_partial_output_kept` belongs to a brief whose output already reached the project, such as an attempt that promoted and then failed validation, which a first attempt parked mid-call never has.
 
-A second case sends `SIGKILL` to the group instead of `SIGINT`: the CLI reports no exit code and writes no `interruptedStep`, so the continued run starts the brief fresh, reseeds its worktree (`session.jsonl` carries `Discarded 1 unpromoted change(s) an earlier attempt left in the isolation worktree: src/marker.ts`), and still ends on `task T001: done` with `src/greet.ts` holding the written code. Both cases run inside `npm run test:e2e`; there is no live-seat tier of this smoke.
+A second case sends `SIGKILL` to the group instead of `SIGINT`: the CLI reports no exit code and writes no `interruptedStep`, and the implementer is left running inside its hold. The test reaps nothing itself — the continuation owns that cleanup, which is what this case exercises: it asserts the orphan is still alive after the kill, then that the continued run's boot has reaped it and released its ledger entry before the brief runs. The continued run then starts the brief fresh, reseeds its worktree (`session.jsonl` carries `Discarded 1 unpromoted change(s) an earlier attempt left in the isolation worktree: src/marker.ts`), and still ends on `task T001: done` with `src/greet.ts` holding the written code. Both cases run inside `npm run test:e2e`; there is no live-seat tier of this smoke.
 
 ## 8. Record of the 2026-09-21 run
 

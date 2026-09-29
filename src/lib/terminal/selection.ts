@@ -32,6 +32,7 @@ export function installTerminalSelection(options: {
   stdout: NodeJS.WriteStream;
   copy: (text: string) => Promise<CopyOutcome>;
   reportError: (message: string) => void;
+  onCopyKey?: ((result: Promise<CopyOutcome | undefined>) => void) | undefined;
 }): TerminalSelection {
   const { stdout, copy, reportError } = options;
   const terminal = new XtermHeadless.Terminal({
@@ -208,21 +209,28 @@ export function installTerminalSelection(options: {
     });
   }
 
-  function copySelection(current: SelectionGesture): void {
+  function copySelection(current: SelectionGesture): Promise<CopyOutcome | undefined> {
     const focus = current.focus;
-    copyQueue = copyQueue
+    const result = copyQueue
       .then(async () => {
         const frame = await current.frame;
         if (!frame || disposed) return;
         const text = selectionText(frame, current.anchor, focus);
         if (!text) return;
-        if ((await copy(text)) === 'unavailable' && !disposed) {
-          reportError('Could not copy selected text.');
-        }
+        return copy(text);
       })
-      .catch(() => {
-        if (!disposed) reportError('Could not copy selected text.');
-      });
+      .catch(() => 'unavailable' as const);
+    copyQueue = result.then(() => {});
+    return result;
+  }
+
+  function reportCopyError(result: CopyOutcome | undefined): void {
+    if (result === 'unavailable' && !disposed) reportError('Could not copy selected text.');
+  }
+
+  function reportCopyKey(result: Promise<CopyOutcome | undefined>): void {
+    if (options.onCopyKey) options.onCopyKey(result);
+    else void result.then(reportCopyError);
   }
 
   function handleMouse(event: MouseEvent, dispatch: MouseListener): void {
@@ -270,7 +278,7 @@ export function installTerminalSelection(options: {
     if (event.type === 'release') {
       if (current.phase === 'dragging') {
         current.phase = 'selected';
-        copySelection(current);
+        void copySelection(current).then(reportCopyError);
         redraw();
         const revision = writeRevision;
         terminal.write('', () => reconcile(current, revision));
@@ -286,12 +294,10 @@ export function installTerminalSelection(options: {
     filterInput: (text) => {
       if (!gesture || text.length === 0) return text;
       if (text.startsWith('\u0003') && gesture.phase !== 'pressed') {
-        copySelection(gesture);
-        let end = 1;
-        while (text.charCodeAt(end) === 3) end++;
-        const rest = text.slice(end);
-        if (rest) clear();
-        return rest;
+        const result = copySelection(gesture);
+        clear();
+        reportCopyKey(result);
+        return text.slice(1);
       }
       // The stdin boundary supplies complete CSI-u keys, never partial escape prefixes.
       const encoded = text.startsWith('\u001b[')
@@ -302,7 +308,9 @@ export function installTerminalSelection(options: {
       const shortcutModifiers = modifiers & ~(64 | 128);
       const copyKey = encoded?.[1] === '99' && (shortcutModifiers === 4 || shortcutModifiers === 8);
       if (copyKey && gesture.phase !== 'pressed') {
-        copySelection(gesture);
+        const result = copySelection(gesture);
+        if (shortcutModifiers === 4) clear();
+        reportCopyKey(result);
         return '';
       }
       clear();

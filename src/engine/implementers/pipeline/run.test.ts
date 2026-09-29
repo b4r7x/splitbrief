@@ -15,6 +15,7 @@ import { createChangeDetector } from '../../change-detection.js';
 import { createEventBus } from '../../events/bus.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
 import { createImplementerPublisher } from '../../orchestrator/events.js';
+import { readInterruptedPartial } from '../../orchestrator/continuation.js';
 import { readPacketEvents } from '../../orchestrator/evidence/review-packet/artifacts.js';
 import { buildEscalations } from '../../orchestrator/evidence/review-packet/sections.js';
 import { createInitialState } from '../../../core/state/machine.js';
@@ -155,6 +156,34 @@ describe('createImplementerBase — continuation', () => {
     expect(seenPrompt).toContain('the reviewer says the error is swallowed');
     expect(seenPrompt).toContain('I was half way');
     expect(seenPrompt).toContain('start from the top');
+  });
+
+  it("keeps a direct writer's cut output as the partial a continue reads back", async () => {
+    const sessionId = 'direct-writer-cut';
+    const controller = new AbortController();
+    const narration = 'I rewrote the first half of src/hello.ts.';
+    const invoke = vi.fn().mockImplementation(async (opts) => {
+      opts.onOutput(narration);
+      controller.abort();
+      return makeRunnerCallResult({
+        status: 'aborted',
+        text: narration,
+        error: { code: 'user-abort', message: 'stopped' },
+      });
+    });
+    const implementer = createImplementerBase(makeBaseConfig({ extractsCode: false, invoke }));
+
+    await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+      sessionId,
+      signal: controller.signal,
+    });
+
+    expect(await readInterruptedPartial({ projectDir, sessionId })).toBe(narration);
   });
 });
 

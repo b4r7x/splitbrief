@@ -271,13 +271,13 @@ Open `/usage` from a live or saved workflow to inspect reported counters and ava
 
 **When to use.** Automatic during any planner call. The heartbeat appears in the TUI below the status line.
 
-### Streaming partial output (API implementers)
+### Streaming partial output (extracted-code implementers)
 
-**What it does.** For `kind: api` implementers, the last N lines of generated output stream in real-time via a ring buffer. Users see code materializing instead of staring at a spinner or elapsed-time counter.
+**What it does.** For `extracted-code` implementers (`kind: api` and `kind: shell`), the last N lines of generated output stream in real-time via a ring buffer. Users see code materializing instead of staring at a spinner or elapsed-time counter. A `direct` implementer (a CLI tool or an agent) gets no preview: its narration appears in transcript rows. CLI messages with known boundaries start distinct rows.
 
-**How to use.** Always active for API implementers that support streaming. No configuration needed.
+**How to use.** Always active for `extracted-code` implementers that stream their output. No configuration needed.
 
-**When to use.** Automatic during implementation when the implementer is an API runner. The streaming lines component renders in the task card.
+**When to use.** Automatic during implementation when the implementer returns its code as text. The lines render under the brief's `working on <file>…` row.
 
 ---
 
@@ -285,7 +285,7 @@ Open `/usage` from a live or saved workflow to inspect reported counters and ava
 
 ### Stopping a run
 
-**What it does.** During a live workflow, `esc` opens compact **Stop options** above the composer. The transcript stays visible and keeps updating; the draft is preserved. Select a row to see its consequence:
+**What it does.** During a live workflow, `esc` opens compact **Stop options** above the composer. The transcript stays visible and keeps updating; the draft is preserved. Each row states its consequence:
 
 | Row | Consequence |
 |---|---|
@@ -293,7 +293,7 @@ Open `/usage` from a live or saved workflow to inspect reported counters and ava
 | `Pause after this brief` | finish `T<id>` including checks and review; do not start `T<next>` |
 | `End run` | stop execution; close this run; keep changes |
 
-The second row appears only while a brief is running, and reads `Keep running` once a pause is pending. `↑↓` selects, `Enter` executes, a second `esc` performs Stop now, and `Tab` dismisses without changing the run. No letter keys trigger an action.
+The second row appears only while a brief is running, and reads `Keep running` once a pause is pending. Before any brief has run, no row claims changes: `Stop now` reads `stop execution; keep the run open`, `End run` reads `stop execution; close this run`, and the title line promises `Draft stays.` instead of `Changes and draft stay.`. `↑↓` selects, `Enter` executes, a second `esc` performs Stop now, and `Tab` dismisses without changing the run. No letter keys trigger an action.
 
 **How to use.**
 
@@ -303,7 +303,7 @@ The second row appears only while a brief is running, and reads `Keep running` o
 - `/resume` — continue a parked run; the stopped menu also offers Resume, End run and Back to sessions. `/stop` reopens the menu. A run at rest accepts Enter to continue; typed instructions become its steer.
 - `/end` — close a parked run and keep its changes. After that nothing picks it up.
 
-**On-screen.** The byline reports the state and the legend row carries the keys: `Stopping T<id> · Waiting for processes to exit · <t>` (hint `esc back after stop · ctrl+c quit after stop`) while owned processes remain, then `Finishing cleanup and saving`; `Forcing remaining processes to exit` after the grace window; `Finishing T<id>` with `Pause requested; no next brief will start` for a boundary pause; and finally one of `Paused at T<id> · Partial changes kept` (hint `/resume · /stop options · esc back to sessions · ctrl+c quit`), `Paused after T<id> · <n> of <m> briefs complete`, or `Cancelled by you at T<id> · Changes kept`. No option reverts files: git is still the layer that reverses a run.
+**On-screen.** The byline reports the state and the legend row carries the keys: `Stopping T<id> · Waiting for processes to exit · <t>` (hint `esc back after stop · ctrl+c quit after stop`) while owned processes remain, then `Finishing cleanup and saving`; `Forcing remaining processes to exit` after the grace window; `Finishing T<id>` with `Pause requested; no next brief will start` for a boundary pause; and finally one of `Paused at T<id> · Partial changes kept` (hint `/resume · /stop options · esc back to sessions · ctrl+c quit`), `Paused after T<id> · <n> of <m> briefs complete`, or `Cancelled by you at T<id> · Changes kept`. A stop that cut no brief names the step its run record stopped at and claims no changes: `Paused at the plan gate`, `Paused at the tasks step`. An ended run reads its closed record the same way, and claims kept changes only when its summary booked some: `Cancelled by you at T<id> · Partial changes kept`, `Cancelled by you at the review · Changes kept`, `Cancelled by you at the plan gate`. No option reverts files: git is still the layer that reverses a run.
 
 ### Recovery stops
 
@@ -498,7 +498,7 @@ Start the local server yourself, configure its address, and use Retry to check t
 
 **Custom model entry.** `+ Add custom model…` offers example ids from the highlighted tool's own listing, spelled as that tool takes them: Claude Code shows the full ids its aliases resolve to (`claude-sonnet-5`), Kilo and OpenCode `provider/model`, one example per provider. A tool whose listing has not landed names the command that lists its ids instead (`an id from kilo models --verbose`).
 
-**A refused save.** A save the config refuses leaves the picker open and takes its byline in the error colour until the error clears, because the overlay hides the composer that would otherwise carry it. The line names the field and the rule the new config broke (`Failed to save config: planner.outputFormat: …`), not only the file.
+**A refused save.** A save the config refuses leaves the picker open and takes its byline in the error colour until the error clears, because the overlay hides the composer that would otherwise carry it. The line names the field and the rule the new config broke (`Failed to save config: planner.outputFormat: …`), not only the file. A second `⏎` while a save is still in flight starts no second write, so one confirm stays one save. A save refused because another writer changed the config keeps the bytes that writer put on disk and says `Config changed on disk. Reload before saving again.`; the focused row retries after a failure.
 
 ### Build progress block
 
@@ -506,28 +506,28 @@ Start the local server yourself, configure its address, and use Retry to check t
 
 ```
 3/7 briefs passed · 1 escalated · attempt 2 of 3 · ETA ~4m
-codex · implementing · last activity 3s ago
+OpenAI Codex CLI · implementing · last event 3s ago
 ```
 
-The fraction counts briefs that **passed their checks** — a started brief is not a settled one, and an escalated brief is never counted as settled. Attempts are stated as attempts (`attempt 2 of 3`, where the maximum is `1 + workflow.maxRetries`), never as retries. The ETA is an average of the briefs that finished, printed in whole minutes; with nothing to average from it reads `ETA unavailable: no brief finished yet`, and a seat swap retires it with `ETA unavailable: worker changed`. The activity line names the seat, the operation and recent activity; while a gate command runs it names the command instead (`npm test · running 41s · no output for 8s`). After 60 seconds without a runner event the freshness line becomes `No update from <tool> for <n>s`. The same five facts regroup rather than disappear as the terminal narrows: two rows at 120 columns and wider, four at 80, five below that.
+The fraction counts briefs that **passed their checks** — a started brief is not a settled one, and an escalated brief is never counted as settled. Attempts are stated as attempts (`attempt 2 of 3`, where the maximum is `1 + workflow.maxRetries`), never as retries. The ETA is an average of the briefs that finished, printed in whole minutes; with nothing to average from it reads `ETA unavailable: no brief finished yet`, and a seat swap retires it with `ETA unavailable: worker changed`. The activity line names the seat, the operation and recent activity; while a gate command runs it names the command instead (`npm test · running 41s`). The freshness line is the one place the block states silence, and it counts every second: `last event 8s ago`, and once the idle watchdog has warned that a seat on a call has sent nothing — five minutes by default (`RUNNER_IDLE_WARN_MS`, tunable per runner as `idleWarnMs`) — `No update for 5m 12s` in the warning colour. A gate command is no seat's silence, so while one runs the line keeps reading `last event …`. The same five facts regroup rather than disappear as the terminal narrows: two rows at 120 columns and wider, four at 80, five below that.
 
 ### Input footer
 
 **What it does.** One byline under the composer carrying the run's live state, and the advisor signal below it when active.
 
-**Format.** The lead is the live status — `⠙ Implementing… 1m 12s`, `⠙ Writing the plan… 0m 41s` or `⠙ Compiling briefs… 1m 03s` during planning, named from the planner call the engine says it is on and falling back to `Planning…` when it names none, `Waiting for you`, `Still working — silent 3m`, a stop state such as `Paused at T003 · Partial changes kept`, or the closing `Stopped by you` / `Build failed`. After it, in this order and dropped from the right as the width shrinks: a hint, `<n> queued`, the ETA, `git:<strategy>` (`git:branch+<strategy>` when the run created a branch), the advisor line (`advisor: consider quick · trivial edit`), `y copy` when the focused region has something to copy, and the worktree name. The elapsed time is the stage's own: the minutes the run spent waiting on you — a planner question, an approval gate — are recorded per phase and subtracted, so answering a question does not make the next brief look slow.
+**Format.** The lead is the live status — `⠙ Implementing… 1:12`, `⠙ Writing the plan… 0:41` or `⠙ Compiling briefs… 1:03` during planning, named from the planner call the engine says it is on and falling back to `Planning…` when it names none, `Waiting for you`, `Still working — silent 3m 0s` (only `Still working` while the build block is on screen, whose freshness line states the silence; where no block is painted — during planning, or while the stop menu takes its rows — the byline carries the count), a stop state such as `Paused at T003 · Partial changes kept`, or the closing `Stopped by you` / `Build failed`. After it, in this order and dropped from the right as the width shrinks: a hint, `<n> queued`, the ETA, the advisor line (`advisor: consider quick · trivial edit`), `y copy` when the focused region has something to copy, and the worktree name. The elapsed time is the step's own. During planning the step is the planner call the lead names, counted from the moment that call opened, so `Compiling briefs…` never counts the plan call before it; the first call after the run starts or resumes counts from that start, so the preparation before it stays on the clock. In the build and the final review the step is the stage. A resume starts the clock again, and the minutes the run spent waiting on you — a planner question, an approval gate — are subtracted, so answering a question does not make the next brief look slow.
 
 **Steer, queue, interrupt.** The composer means a different thing in each state, and its placeholder says which:
 
 - **Queue** — while a planning call is running, the placeholder reads `Queue a message for the planner…`; while a brief is building, it reads `Queue a message for after this brief…`; text you send waits for the next safe boundary. `/queue show` and `/queue clear` inspect and discard what is pending.
-- **Steer** — while the run is parked (`Stop now`, or an interrupted call), the hint reads `type instructions, enter to send and resume`; text you send steers the resumed run. A blank Enter never resumes.
+- **Steer** — while the run is parked (`Stop now`, or an interrupted call), text you send steers the resumed run, but a blank Enter does not resume a run parked in this process — it answers with `type instructions or /resume`. A continuable run at rest resumes on a blank Enter.
 - **Interrupt** — `ctrl+c` stops the run at once, `esc` opens the stop menu. Neither is reachable by typing.
 
 ### Run screen at rest
 
 **What it does.** The workflow screen is the run's home whether anything is running on it or not. Opening a run from `/sessions`, from the home list or from the palette replays its `session.jsonl` into the workflow stores and shows the run exactly where it stopped: the same header rail, the same transcript, the same footer. Nothing navigates to a second screen, and continuing the run flips it back to live in place. There is no summary screen.
 
-**Format (header).** The rail and the collapsed seat line, marked for a run that is not moving: stages the run cleared paint `●` in their role hue, stages it never reached `○` dim, and the stage it stopped on wears the mark its stop earned — `×` in warning tone for a run that is paused, waiting at a gate, or interrupted (a stop you can answer), `✗` in error tone for a run that halted on a recovery or died on an error. A closed, complete run shows five `●`. A closed run's seat line names the crew that actually ran it, read from its own record; an open run's names the crew it would continue on.
+**Format (header).** The rail and the collapsed seat line, marked for a run that is not moving: stages the run cleared paint `●` in their role hue, stages it never reached `○` dim, and the stage it stopped on wears the mark its stop earned — `×` in warning tone for a run that is paused, waiting at a gate, or interrupted (a stop you can answer), `✗` in error tone for a run that halted on a recovery or died on an error. A closed, complete run shows five `●`; a quick run's Spec stage never leaves `○` pending, so its complete rail shows four. A closed run's seat line names the crew that actually ran it, read from its own record; an open run's names the crew it would continue on.
 
 **Format (composer and byline).** An open run takes a correction: the placeholder reads `Type a correction, or ⏎ to continue…`, a bare `⏎` continues it, and typed text rides into the next step's own prompt as a steer. The byline says where it stopped and the one key that moves it:
 
@@ -539,14 +539,17 @@ The fraction counts briefs that **passed their checks** — a started brief is n
 
 A run nothing can pick up says why before where — `Saved state unreadable · start it again from home` — and takes `/commands` only. A run another process is driving reads `Running in another process`.
 
-**Format (closed run).** A run that was ended or completed takes `/commands` only (`/ for a command · ⏎ for home…`; a keystroke that would start the line with anything but `/` is refused as it is typed, and `⏎` on an empty line goes home) and its ledger is appended to the tail of its own transcript — one scroller, below the last event the run wrote — as a `Closed ─` rule, one outcome sentence, and three labelled sections in a fixed order:
+**Format (closed run).** A run that was ended or completed takes `/commands` only (`/ for a command · ⏎ for home…`; a keystroke that would start the line with anything but `/` is refused as it is typed, and `⏎` on an empty line goes home) and its ledger is appended to the tail of its own transcript — one scroller, below the last event the run wrote — as a `Closed ─` rule, one outcome sentence, and labelled sections in a fixed order:
 
-- One outcome sentence led by its glyph: `✓ Ready · 3/3 briefs passed · review 0 blocking, 1 advisory · scope clean · 4 files changed`, `⚠ Needs attention · …`, or `× Ended · Build 2/5 · stopped in T003 · partial changes kept`. The fraction counts briefs that passed — never one that merely started or escalated. Whole ` · ` tokens shed from the right when the line overruns; nothing is cut mid-token.
-- `Briefs` — one row per planned brief in plan order, in the transcript's grammar: `✓ T001 Add validator module  src/validate.ts · local · 84.2s`, `▲` escalated, `✗` failed, `–` skipped, `×` the brief the run stopped inside (`· stopped · 2 partial files`), `○` a brief that never started.
+- One outcome sentence led by its glyph: `✓ Ready · 3/3 briefs passed · review 0 blocking, 1 advisory · scope clean · 4 files changed`, `⚠ Needs attention · …`, or `× Ended · Build 2/5 · stopped in T003 · partial changes kept`; a run ended before its first brief reads `× Ended · Plan 0/3 · nothing built`. The fraction counts briefs that passed — never one that merely started or escalated. Whole ` · ` tokens shed from the right when the line overruns; nothing is cut mid-token.
+- `Briefs` — one row per brief in the saved current plan, including a plan ended at its approval gate before evidence was written. The rows use the transcript's grammar: `✓ T001 Add validator module  src/validate.ts · local · 84.2s`, `▲` escalated, `✗` failed, `–` skipped, `×` the brief the run stopped inside (`· stopped · 2 partial files`), `○` a brief that never started.
+- `Earlier work` — present after a rewind when ledger or spend entries cannot be joined safely to the current plan. An old T001 remains distinct from a newly compiled T001. The outcome fraction counts only current briefs; the Files section and `/usage` keep the run's earlier work and spend.
 - `Files` — the changed set, sorted, project-relative and middle-cut, with ` · partial` on a file the stopped brief left half-written.
-- `Run` — labelled facts, one home each: `Crew` (only when the header named fewer than three seats), `Review`, `Packet`, `Scope`, `Briefs` (brief quality), `Cost`, `Tokens`, `Phases`, `Session`. A fact with no value carries one absence word — `not run`, `not checked`, `not estimated` — never `—`, `n/a` or `$0.00`.
+- `Run` — labelled facts, one home each: `Crew` (only when the header named fewer than three seats), `Review`, `Packet`, `Scope`, `Briefs` (brief quality), `Phases`, `Session`. A fact with no value carries one absence word — `not run`, `not checked`, `not estimated` — never `—`, `n/a` or `$0.00`. The run's cost and token counts are not ledger facts; `/usage` keeps those counters and the spend.
 
 A closed run whose record was never written says so in one line rather than painting an empty ledger: `× Ended · no run record was written`.
+
+Saved task status and matching evidence control stopped-brief attribution, including when an older summary names a reused task ID. Earlier work with no saved file list reads `files not recorded`. Overwritten ledger evidence cannot be recovered. Identical task IDs and brief hashes can leave different plan revisions indistinguishable; the display retains the available records without inventing history.
 
 **Format (closed byline).** `Keep it with /run accept, or revert it with /run reject confirm` when the run is ready, `Read the 2 blocking findings in the packet, or revert it with /run reject confirm` when it needs attention, `esc home` on a run that was ended. `/run accept` and `/run reject confirm` re-read the record, so the byline flips to `Accepted · nothing left to do` or `Rejected · its files were restored` as soon as the command lands.
 
@@ -654,7 +657,7 @@ The map rebuilds itself on each planning run when the cache is stale; there is n
 
 In fullscreen, drag with the mouse or touchpad to select visible text in the composer, transcript or workflow panels. Releasing the drag copies that text to the clipboard. Wheel scrolling and ordinary clicks remain available. Selection does not edit the draft.
 
-`Ctrl+C` copies while a selection is active; without a selection it retains its normal stop/exit action. On macOS, `Cmd+C` is usually handled by the terminal itself. The text is already copied on release, so the usual drag, `Cmd+C`, `Cmd+V` sequence works without a custom terminal keymap. Terminals that forward `Cmd+C` using the extended keyboard protocol can also request a copy directly.
+`Ctrl+C` copies an active selection, clears its highlight, and reports the copy result. The next press stops active work or arms quit at rest/home; another press quits. Without a selection, the normal stop/quit sequence applies. On macOS, `Cmd+C` is usually handled by the terminal itself. The text is already copied on release, so the usual drag, `Cmd+C`, `Cmd+V` sequence works without a custom terminal keymap. Terminals that forward `Cmd+C` using the extended keyboard protocol can also request a copy directly.
 
 Incoming output cannot replace the text being selected: the display holds still during the drag while the workflow continues, then catches up on release. The highlight survives updates to other text and clears if the selected content changes. Typing, paste, `Esc`, scrolling or resizing clears it. `--no-mouse` leaves selection to the terminal instead.
 

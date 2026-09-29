@@ -30,6 +30,7 @@ import { nowIso } from '../../../utils/format-time.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { error } from '../../../utils/error.js';
 import { buildImplementerUnavailableRecoveryIssue } from '../recovery/builders/task.js';
+import { deriveRunStatus, NO_ARTIFACTS } from '../../../core/sessions/run-status.js';
 
 type RunTaskLoopOptions = {
   wctx: WorkflowContext;
@@ -348,9 +349,13 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     state = reconcile.state;
     changedFilesBaseline = reconcile.baseline;
     if (reconcile.stop) {
-      persistTaskBreakdowns();
+      if (
+        deriveRunStatus({ state, liveness: 'not-alive', artifacts: NO_ARTIFACTS }).kind !== 'closed'
+      ) {
+        persistTaskBreakdowns();
+      }
       setCurrentTask(undefined);
-      return { state, taskBreakdowns, status: 'stopped' };
+      return { state, taskBreakdowns, status: reconcile.cancelled ? 'cancelled' : 'stopped' };
     }
 
     persistTaskBreakdowns();

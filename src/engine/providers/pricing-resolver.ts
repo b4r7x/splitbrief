@@ -1,7 +1,12 @@
 import { META_PROVIDER_IDS, type ProviderId } from '../../core/schemas/enums.js';
 import { CLI_TOOL_IDS } from '../../core/runners/cli-tool-catalog.js';
 import { REMOVED_CLI_TOOL_IDS, REMOVED_RUNNER_KINDS } from '../../core/schemas/runner-fields.js';
-import { isProviderLocal, isProviderSubscription } from '../../core/providers/catalog.js';
+import { isApiProviderId } from '../../core/providers/api-provider-catalog.js';
+import {
+  isProviderLocal,
+  isProviderSubscription,
+  parseRunnerIdentityKey,
+} from '../../core/providers/catalog.js';
 import { isAutomaticModel } from '../../core/providers/automatic-model.js';
 import {
   NULL_CACHE,
@@ -57,7 +62,7 @@ export const LOCAL_PRICING: ResolvedPricing = {
   source: 'unpriced',
 };
 
-function makeUnpriced(providerId: string, name?: string): ResolvedPricing {
+function makeUnpriced(providerId: string, name?: string, mode?: PricingMode): ResolvedPricing {
   if (isProviderLocal(providerId)) {
     return { ...LOCAL_PRICING, provider: providerId, ...(name !== undefined && { name }) };
   }
@@ -66,7 +71,7 @@ function makeUnpriced(providerId: string, name?: string): ResolvedPricing {
     outputPer1M: 0,
     isLocal: false,
     isPriced: false,
-    pricingMode: pickUnpricedMode(providerId),
+    pricingMode: mode ?? pickUnpricedMode(providerId),
     name: name ?? providerId,
     provider: providerId,
     source: 'unpriced',
@@ -135,17 +140,48 @@ function pricingModelId(modelId?: string): string | undefined {
   return trimmed;
 }
 
+/**
+ * The rates one recorded runner's model is priced at. A kind-qualified identity
+ * decides the lane before the name does: a `cli` runner is never metered even
+ * when its name could be an API provider, and an `api` runner meters by model
+ * even when its name is a CLI tool id the merged catalog would call unpriced.
+ * A name with no kind keeps the name-only resolution for legacy records.
+ */
 export function resolvePricing(
   providerId: string,
   cache: ModelCacheAccessor = NULL_CACHE,
   modelId?: string,
 ): ResolvedPricing {
-  if (!isApiPricedProvider(providerId)) return makeUnpriced(providerId, modelId);
+  const { kind, id } = parseRunnerIdentityKey(providerId);
+  if (kind === 'cli') return makeUnpriced(id, modelId, 'unpriced-cli');
+  if (kind === 'shell' || kind === 'agent') return makeUnpriced(id, modelId, 'unpriced-meta');
+  if (kind === 'api' && !isApiProviderId(id)) {
+    return resolveMeteredPricing({
+      providerId: id,
+      cache,
+      modelId,
+      unpricedMode: 'unpriced-unknown',
+    });
+  }
+  if (!isApiPricedProvider(id)) return makeUnpriced(id, modelId);
+  return resolveMeteredPricing({ providerId: id, cache, modelId });
+}
 
+/**
+ * Rates by model id alone, for a metered runner: a catalogued provider whose
+ * endpoint policy proved local was already answered unpriced above.
+ */
+function resolveMeteredPricing(input: {
+  providerId: string;
+  cache: ModelCacheAccessor;
+  modelId: string | undefined;
+  unpricedMode?: PricingMode | undefined;
+}): ResolvedPricing {
+  const { providerId, cache, modelId, unpricedMode } = input;
   const effectiveModelId = pricingModelId(modelId);
-  if (!effectiveModelId) return makeUnpriced(providerId, modelId);
+  if (!effectiveModelId) return makeUnpriced(providerId, modelId, unpricedMode);
 
-  // Only a custom endpoint reaches here, so rates are looked up by model id alone.
+  // Only a metered runner reaches here, so rates are looked up by model id alone.
   // Prefer cache rates from the catalog that priced input/output; when that catalog omits them
   // (or for the bundled path) fall back to the bundled fallback's verified cache rates so
   // cache-aware cost math stays consistent regardless of the data source.
@@ -180,5 +216,5 @@ export function resolvePricing(
     });
   }
 
-  return makeUnpriced(providerId, effectiveModelId);
+  return makeUnpriced(providerId, effectiveModelId, unpricedMode);
 }

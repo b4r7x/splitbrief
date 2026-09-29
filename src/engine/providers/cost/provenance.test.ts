@@ -49,6 +49,7 @@ function catalogAt(inputPer1M: number, outputPer1M: number): ModelsDevCatalog {
 function makeCall(overrides: {
   callId: string;
   runnerName: string;
+  backendKind?: 'api' | 'cli';
   model?: string;
   identity?: InvocationIdentity;
   inputTokens?: number;
@@ -57,7 +58,7 @@ function makeCall(overrides: {
   return CallUsageEvidenceSchema.parse({
     callId: overrides.callId,
     role: 'implementer',
-    backendKind: 'cli',
+    backendKind: overrides.backendKind ?? 'cli',
     runnerName: overrides.runnerName,
     ...(overrides.model !== undefined && { model: overrides.model }),
     usageBoundary: 'single-request',
@@ -154,7 +155,12 @@ describe('rate provenance', () => {
   it('keeps the rates a stored run was priced at when the catalog moves', () => {
     vi.useFakeTimers();
     vi.setSystemTime(LOOKUP_TIME);
-    const call = makeCall({ callId: 'c1', runnerName: 'acme', model: 'metered-model' });
+    const call = makeCall({
+      callId: 'c1',
+      runnerName: 'acme',
+      backendKind: 'api',
+      model: 'metered-model',
+    });
     const stored = roundTrip(
       meteredBreakdown(makeModelCacheAccessor({ catalog: catalogAt(1, 10) }), [call]),
     );
@@ -190,7 +196,7 @@ describe('rate provenance', () => {
     vi.useFakeTimers();
     vi.setSystemTime(LOOKUP_TIME);
     const breakdown = meteredBreakdown(makeModelCacheAccessor({ catalog: catalogAt(1, 10) }), [
-      makeCall({ callId: 'c1', runnerName: 'acme', model: 'metered-model' }),
+      makeCall({ callId: 'c1', runnerName: 'acme', backendKind: 'api', model: 'metered-model' }),
     ]);
 
     const rates = breakdown.requestEstimate?.items[0]?.rates;
@@ -281,10 +287,10 @@ describe('billing provenance', () => {
       basis: 'enforced-channel',
       evidenceId: 'cli.claude-code.api-key',
     });
-    const metadata = breakdown.providerRunMetadata?.['claude-code'];
+    const metadata = breakdown.providerRunMetadata?.['cli:claude-code'];
     expect(metadata?.billing).toBe('api-metered');
     expect(metadata?.offering).toBe('payg');
-    expect(breakdown.offeringPresentations?.['claude-code']?.billingLabel).not.toBe(
+    expect(breakdown.offeringPresentations?.['cli:claude-code']?.billingLabel).not.toBe(
       'subscription-included',
     );
     // The same claim cannot even be recorded: the contract refuses it at the source.
@@ -305,7 +311,7 @@ describe('billing provenance', () => {
 
       expect(item?.billing).toEqual({ posture: 'unknown', basis: 'unknown' });
       // An unknown invocation cannot inherit the tool catalog billing default.
-      expect(breakdown.providerRunMetadata?.['claude-code']).toMatchObject({
+      expect(breakdown.providerRunMetadata?.['cli:claude-code']).toMatchObject({
         billing: 'unknown',
         offering: 'payg',
         billingAttribution: { posture: 'unknown', basis: 'unknown' },
@@ -349,11 +355,13 @@ describe('billing provenance', () => {
       CONFIGURED_ONLY,
     ]);
     // Two proven channels that disagree do not let either bill the tool.
-    expect(stored.providerRunMetadata?.['claude-code']).toMatchObject({
+    expect(stored.providerRunMetadata?.['cli:claude-code']).toMatchObject({
       billing: 'unknown',
       billingAttribution: { posture: 'unknown', basis: 'unknown' },
     });
-    expect(stored.providerRunMetadata?.['claude-code']?.offering).not.toBe('coding-subscription');
+    expect(stored.providerRunMetadata?.['cli:claude-code']?.offering).not.toBe(
+      'coding-subscription',
+    );
   });
 
   it('carries one agreed channel to the tool it served', () => {
@@ -362,7 +370,7 @@ describe('billing provenance', () => {
       makeCall({ callId: 'c2', runnerName: 'claude-code', identity: ENFORCED_SESSION }),
     ]);
 
-    expect(breakdown.providerRunMetadata?.['claude-code']).toMatchObject({
+    expect(breakdown.providerRunMetadata?.['cli:claude-code']).toMatchObject({
       billing: 'subscription-included',
       offering: 'coding-subscription',
       billingAttribution: {
@@ -387,7 +395,98 @@ describe('billing provenance', () => {
     expect(costAmountBasis(summary.costBreakdown)).toBe('unavailable');
     const exported = buildCost(summary, []);
     expect(
-      exported.costBreakdown?.providerRunMetadata?.['claude-code']?.billingAttribution,
+      exported.costBreakdown?.providerRunMetadata?.['cli:claude-code']?.billingAttribution,
     ).toEqual({ posture: 'unknown', basis: 'unknown' });
+  });
+});
+
+describe('kind-qualified runner identity', () => {
+  const API_KEY = InvocationIdentitySchema.parse({
+    version: 1,
+    capturedAt: LOOKUP_TIME,
+    runner: { kind: 'api', id: 'claude-code' },
+    observedChannel: { channel: 'api-key', evidenceId: 'api.claude-code.api-key' },
+    billing: {
+      posture: 'api-metered',
+      basis: 'observed-invocation',
+      evidenceId: 'api.claude-code.api-key',
+    },
+  });
+  const CLI_SESSION = InvocationIdentitySchema.parse({
+    version: 1,
+    capturedAt: LOOKUP_TIME,
+    runner: { kind: 'cli', id: 'claude-code' },
+    enforcedChannel: { channel: 'session', evidenceId: 'cli.claude-code.session' },
+    billing: {
+      posture: 'subscription-included',
+      basis: 'enforced-channel',
+      evidenceId: 'cli.claude-code.session',
+    },
+  });
+
+  it('keeps an API worker named after a CLI tool apart from the CLI itself', () => {
+    const cache = makeModelCacheAccessor({ catalog: catalogAt(1, 10) });
+    const breakdown = calculateCostBreakdown(
+      {
+        tokenUsage: makeUsage({ implementerInput: 1_000_000, implementerOutput: 1_000_000 }),
+        plannerTool: 'claude-code',
+        implementerTool: 'claude-code',
+        implementerModel: 'metered-model',
+        callEvidence: [
+          makeCall({
+            callId: 'api-1',
+            runnerName: 'claude-code',
+            backendKind: 'api',
+            model: 'metered-model',
+            identity: API_KEY,
+          }),
+          makeCall({
+            callId: 'cli-1',
+            runnerName: 'claude-code',
+            backendKind: 'cli',
+            model: 'metered-model',
+            identity: CLI_SESSION,
+          }),
+        ],
+      },
+      cache,
+    );
+
+    // Two runners, two keys: the API spend never merges into the CLI subscription.
+    expect(Object.keys(breakdown.providerCosts ?? {}).toSorted()).toEqual([
+      'api:claude-code',
+      'cli:claude-code',
+    ]);
+    expect(breakdown.providerCosts?.['api:claude-code']?.cost).toBeGreaterThan(0);
+    expect(breakdown.providerCosts?.['cli:claude-code']?.cost).toBe(0);
+
+    // The API seat is a custom endpoint; the CLI seat keeps its catalogued identity.
+    expect(breakdown.providerRunMetadata?.['api:claude-code']).toMatchObject({
+      service: 'claude-code',
+      offering: 'payg',
+      billing: 'api-metered',
+    });
+    expect(breakdown.providerRunMetadata?.['cli:claude-code']).toMatchObject({
+      service: 'claude-code',
+      offering: 'coding-subscription',
+      billing: 'subscription-included',
+    });
+    expect(breakdown.offeringPresentations?.['api:claude-code']?.costLabel).toMatch(/^\$/);
+    expect(breakdown.offeringPresentations?.['cli:claude-code']?.costLabel).toBe(
+      'subscription-included',
+    );
+
+    const items = breakdown.requestEstimate?.items ?? [];
+    expect(items).toHaveLength(2);
+    expect(items[0]?.completeness).toBe('complete');
+    expect(items[0]?.rates?.provider).toBe('claude-code');
+    expect(items[1]?.completeness).toBe('unavailable');
+    expect(items[1]?.reasons).toContain('unpriced-model');
+  });
+
+  it('keeps the legacy name-only identity for a run with no recorded calls', () => {
+    const legacy = cliBreakdown(undefined);
+    expect(legacy.providerRunMetadata?.['claude-code']?.offering).toBe('coding-subscription');
+    expect(legacy.providerRunMetadata?.['cli:claude-code']).toBeUndefined();
   });
 });

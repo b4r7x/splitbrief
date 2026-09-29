@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Box } from 'ink';
-import { act } from 'react';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { renderFeature, tick, flushEffects } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
@@ -11,10 +10,13 @@ import { PLANNER_INHERITANCE } from '../../../core/crew/identity.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { configStore } from '../../../stores/project/config.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
+import { routerStore } from '../../../stores/navigation/router.js';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import type { WorkflowTask } from '../../../stores/workflow/tasks.js';
+import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { Sidebar } from './sidebar.js';
 
 function task(
@@ -193,7 +195,7 @@ describe('Sidebar — passed count', () => {
   it('keeps the waiting clock live under reduced motion without advancing the frame', async () => {
     const previousReduceMotion = process.env.SPLITBRIEF_REDUCE_MOTION;
     process.env.SPLITBRIEF_REDUCE_MOTION = '1';
-    vi.useFakeTimers();
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
     vi.setSystemTime(0);
 
     let ui: ReturnType<typeof renderFeature> | null = null;
@@ -208,9 +210,8 @@ describe('Sidebar — passed count', () => {
       expect(firstFrame).toContain(`${firstSpinnerFrame} Spec`);
       expect(firstFrame).toContain('0:00');
 
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(1000);
-      });
+      await vi.advanceTimersByTimeAsync(1000);
+      await flushEffects();
 
       const nextFrame = stripAnsiStyles(ui.lastFrame() ?? '');
       expect(nextFrame).toContain(`${firstSpinnerFrame} Spec`);
@@ -224,6 +225,24 @@ describe('Sidebar — passed count', () => {
       }
       vi.useRealTimers();
     }
+  });
+
+  it('spells the run clock the way the header does once the run passes an hour', async () => {
+    tasksStore.__testReset({ tasks: [] });
+    lifecycleStore.__testReset({
+      phase: 'planning',
+      status: 'running',
+      startedAt: Date.now() - (75 * 60 + 3) * 1000,
+    });
+
+    const ui = renderFeature(<Sidebar width={30} />);
+    await tick();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('Plan · 1:15:0');
+    expect(frame).not.toContain('75:0');
+
+    ui.unmount();
   });
 
   it('shows only the empty note when nothing is running', async () => {
@@ -728,6 +747,55 @@ describe('Sidebar — usage lives in /usage', () => {
     expect(frame).not.toContain('1,000,000');
     expect(frame).not.toContain('2000k');
     expect(frame).not.toMatch(/\btokens?\b/i);
+    ui.unmount();
+  });
+});
+
+describe('Sidebar — the mode row', () => {
+  it('names the mode the run is on, not the one the config names today', async () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({ workflow: { mode: 'standard' } }),
+    });
+    addEvent({ type: 'mode_resolved', ts: 1, phase: 'planning', mode: 'quick', approve: 'none' });
+
+    const ui = renderFeature(<Sidebar width={40} />);
+    await tick();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('quick');
+    expect(frame).not.toContain('standard');
+
+    ui.unmount();
+  });
+
+  it('keeps a fresh run on its resolved mode when the next-run config changes', async () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({ workflow: { mode: 'standard' } }),
+    });
+    // A fresh run: the record was read before any state was saved, so it carries no mode.
+    routerStore.init({
+      screen: 'workflow',
+      run: makeRunRecord({ mode: null }),
+      execution: { kind: 'at-rest' },
+    });
+    addEvent({ type: 'mode_resolved', ts: 1, phase: 'planning', mode: 'quick', approve: 'none' });
+
+    const ui = renderFeature(<Sidebar width={40} />);
+    await tick();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('quick');
+
+    // `/mode speckit` is written for the next run and must not repaint this run's mode row.
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({ workflow: { mode: 'speckit' } }),
+    });
+    await tick();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('quick');
+    expect(frame).not.toContain('speckit');
+
     ui.unmount();
   });
 });

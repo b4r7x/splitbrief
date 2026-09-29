@@ -46,7 +46,7 @@ export function readQueueForPrompt({
   messages: QueuedMessage[];
 } {
   const ref = { projectDir, sessionId };
-  const base = rebaseOnPersistedWorkflowState(ref, state);
+  const base = rebaseOnPersistedWorkflowState(ref, state, { keepUnsaved: true });
   const messages: QueuedMessage[] = [];
   for (const message of base.messageQueue) {
     if (!isQueuedMessagePendingDelivery(message)) continue;
@@ -77,7 +77,18 @@ export function commitQueueMessagesDrained({
   const ref = { projectDir, sessionId };
   // The persisted queue, not a merge with the caller's copy: a message cleared
   // while its prompt ran must not come back as drained.
-  const base = readWorkflowStateHead(ref)?.state ?? state;
+  const persisted = readWorkflowStateHead(ref)?.state;
+  const base =
+    persisted === undefined
+      ? state
+      : {
+          ...((state.stateRevision ?? 0) > 0 &&
+          persisted.stateRevision === state.stateRevision &&
+          persisted.phase === state.phase
+            ? state
+            : persisted),
+          messageQueue: persisted.messageQueue,
+        };
   const ids = new Set(messages.map((message) => message.id));
   const drained = base.messageQueue
     .filter(

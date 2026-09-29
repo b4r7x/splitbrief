@@ -4,6 +4,8 @@ const REVIEW_INSTRUCTIONS = `Review the implementation diff against every accept
 
 Validation claims are evidence-bound. Any statement about test, typecheck, or lint results must quote the relevant line verbatim from the Recorded Validation Output section (for example the test runner's own summary line); never report counts or totals that do not appear there. If you run additional checks yourself, present them separately as reviewer observations -- they do not replace the recorded results. If no Recorded Validation Output section is present, state that validation output was not recorded instead of asserting results.`;
 
+const PROVENANCE_INSTRUCTIONS = `Use the Changed Files provenance to distinguish recorded run effects from workspace context. Do not attribute the whole workspace diff to the implementer. Independent operator or tool-fix hunks are context, including when they share a declared file with run changes; unrelated defects in those hunks alone do not fail this run. Evaluate the requested behavior in the integrated current workspace, including cross-file dependencies. A regression caused by a run effect, a broken interaction with existing code, or an unmet acceptance criterion still fails review. Keep unknown and overlapping edits explicit; if missing provenance or context prevents a required judgment, report that limit and fail that criterion rather than assuming it passed.`;
+
 const REVIEW_CHECKLIST = `1. **Acceptance Criteria**: Check each criterion from the spec and task briefs. Is it satisfied by the implementation?
 2. **Functional Requirements**: Are all inputs handled? Is processing correct? Are outputs as specified?
 3. **Error Handling**: Are error cases handled as specified?
@@ -42,6 +44,8 @@ export function buildFinalReviewPrompt(opts: {
    * files of its own is told the scope it is judging instead of inferring it.
    */
   changeCoverage?: string | undefined;
+  /** Whole current workspace diff, retained beside the separately attributed effects. */
+  workspaceDiff?: string | undefined;
 }): string {
   const sections = [
     { heading: 'Specification', body: opts.spec },
@@ -51,6 +55,9 @@ export function buildFinalReviewPrompt(opts: {
     sections.push({ heading: 'Changed Files', body: opts.changeCoverage });
   }
   sections.push({ heading: 'Implementation Diff', body: fenced(opts.diff, 'diff') });
+  if (opts.workspaceDiff !== undefined) {
+    sections.push({ heading: 'Workspace Context', body: fenced(opts.workspaceDiff, 'diff') });
+  }
   if (opts.driftReport) {
     sections.push({ heading: 'Deterministic Drift Report', body: opts.driftReport });
   }
@@ -61,7 +68,11 @@ export function buildFinalReviewPrompt(opts: {
     });
   }
   sections.push(
-    instructionsSection(REVIEW_INSTRUCTIONS),
+    instructionsSection(
+      opts.workspaceDiff === undefined
+        ? REVIEW_INSTRUCTIONS
+        : `${REVIEW_INSTRUCTIONS}\n\n${PROVENANCE_INSTRUCTIONS}`,
+    ),
     { heading: 'Review Checklist', body: REVIEW_CHECKLIST },
     { heading: 'Output Format', body: REVIEW_OUTPUT },
   );

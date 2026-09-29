@@ -61,6 +61,55 @@ describe('resolveIntermediateRunner', () => {
     });
   });
 
+  it('resolves a CLI-named custom provider as a custom API runner with the implementer key', () => {
+    const config = makeNoValidationConfig({
+      implementer: {
+        kind: 'api',
+        provider: 'custom-endpoint',
+        apiBase: 'https://my-endpoint.example/v1',
+        apiKey: 'sk-inline',
+        model: 'qwen',
+      },
+      escalation: {
+        enabled: true,
+        intermediateProvider: 'opencode',
+        intermediateModel: 'opencode/test-model',
+      },
+    });
+
+    expect(resolveIntermediateRunner(config)).toEqual({
+      runner: expect.objectContaining({
+        kind: 'api',
+        provider: 'opencode',
+        service: 'custom-endpoint',
+        offering: 'payg',
+        apiBase: 'https://my-endpoint.example/v1',
+        apiKey: 'sk-inline',
+        model: 'opencode/test-model',
+      }),
+      usedImplementerFallback: true,
+    });
+  });
+
+  it('leaves a catalogued intermediate provider on its own credential env', () => {
+    const config = makeNoValidationConfig({
+      implementer: {
+        kind: 'api',
+        provider: 'custom-endpoint',
+        apiBase: 'https://my-endpoint.example/v1',
+        apiKey: 'sk-inline',
+        model: 'qwen',
+      },
+      escalation: {
+        enabled: true,
+        intermediateProvider: 'lm-studio',
+        intermediateModel: 'deepseek-v4-flash',
+      },
+    });
+
+    expect(resolveIntermediateRunner(config)?.runner.apiKey).toBeUndefined();
+  });
+
   it('returns null when escalation is disabled or no endpoint identity can be derived', () => {
     expect(
       resolveIntermediateRunner(

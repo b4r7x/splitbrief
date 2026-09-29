@@ -18,6 +18,7 @@ import {
   ReviewVerdictSchema,
 } from './summary.js';
 import { TaskIdSchema } from './task.js';
+import { ReviewProvenanceSchema } from './review-changes.js';
 import { TaskTokenUsageSchema, TokenUsageSchema } from './tokens.js';
 import { RunSnapshotKindSchema } from './snapshot.js';
 import {
@@ -82,6 +83,7 @@ const ReviewPacketChangesSchema = z.object({
   outOfScopeFiles: z.array(z.string()),
   taskFiles: z.array(ReviewPacketTaskFileSchema),
   diffReference: z.string(),
+  provenance: ReviewProvenanceSchema.optional(),
 });
 
 const ReviewPacketCheckpointSafetySchema = z.object({

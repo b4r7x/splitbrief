@@ -412,4 +412,24 @@ describe('check-invariants', () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it('gate 50 matches retired tokens as whole words, not compound names', () => {
+    const root = mkdtempSync(join(tmpdir(), 'splitbrief-run-contract-words-'));
+    try {
+      mkdirSync(join(root, 'engine/orchestrator/isolation'), { recursive: true });
+      writeFileSync(
+        join(root, 'engine/orchestrator/isolation/retention.ts'),
+        'export function isResumableWorkspaceStop(): boolean {\n  return true;\n}\n',
+      );
+      const [gate] = getInvariantGates('50');
+      if (gate === undefined) throw new Error('gate 50 is not registered');
+      const { lines, log } = captureLog();
+      const target = { ...gate, command: gate.command.replaceAll('src', root) };
+
+      expect(runInvariantGates([target], undefined, log)).toBe(0);
+      expect(lines).toEqual([`  \u2713 [50] ${gate.description}: 0 (expected 0) PASS`]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

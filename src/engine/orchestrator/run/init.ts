@@ -1,4 +1,4 @@
-import { DEFAULT_WORKFLOW_MODE, type Config } from '../../../core/schemas/config.js';
+import type { Config } from '../../../core/schemas/config.js';
 import { isImplementerPhase, isLivePhase } from '../../../core/phases.js';
 import type { ProjectContext } from '../../../core/state/types.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
@@ -9,11 +9,14 @@ import type { Planner } from '../../planners/types.js';
 import type { Reviewer } from '../../reviewers/types.js';
 import type { Implementer } from '../../implementers/types.js';
 import type { CustomRunnerRuntimePort } from '../../runners/types.js';
-import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
+import { labelSeatChange } from '../../providers/model/display-names.js';
+import { NULL_CACHE, type ModelCacheAccessor } from '../../providers/model/resolution.js';
 import type { Attachment } from '../../../core/schemas/attachment.js';
 import type { StreamingSink } from '../task/streaming-feed.js';
 import type { RunIsolation } from '../isolation/types.js';
+import { worktreePromotionConflictIsResolved } from '../isolation/acquisition.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
+import { resolveApproveLevel, resolveMode } from '../../../core/config/runtime/resolve.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import {
   formatSeatChangeNotice,
@@ -29,6 +32,7 @@ import {
 import { readPackageJson } from '../../../core/project-meta.js';
 import type { EventBus, EventSink } from '../../events/types.js';
 import { createBranch } from '../../../lib/git/refs.js';
+import { hashTaskBrief } from '../../brief-hash.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { initLogger } from '../../../core/logger.js';
 import { slugify } from '../../../utils/slugify.js';
@@ -54,8 +58,14 @@ import {
   changedFilesSinceBaseline,
   deserializeChangedFilesBaseline,
 } from '../changed-files-baseline.js';
+import { assessChangedUserEdits } from '../user-edit/detection.js';
 import { classifyUserEditConflict } from '../user-edit/conflicts.js';
-import { transitionAndSave } from '../state-ops.js';
+import {
+  commitWorkflowState,
+  readWorkflowStateHead,
+  stateOpsError,
+  transitionAndSave,
+} from '../state-ops.js';
 import {
   createContinuationHolder,
   readInterruptedPartial,
@@ -201,7 +211,36 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
   }
 
   let savedState = newWorkflow ? undefined : (args.savedState ?? opts.savedState);
-  if (savedState) setTrackedState(savedState);
+  if (savedState) {
+    const mode = resolveMode({ config, savedMode: savedState.mode });
+    const approve = resolveApproveLevel({
+      mode,
+      configApprove: config.workflow.approve,
+      savedApprove: savedState.approve,
+    });
+    if (savedState.mode !== mode || savedState.approve !== approve) {
+      const head = readWorkflowStateHead({ projectDir, sessionId });
+      const pinned = commitWorkflowState({
+        ref: { projectDir, sessionId },
+        expected: head === null ? null : savedState,
+        next: { ...savedState, mode, approve },
+      });
+      if (pinned.kind === 'conflict') {
+        throw stateOpsError.conflict({
+          operation: 'transition',
+          expectedRevision: savedState.stateRevision ?? null,
+          observedRevision:
+            readWorkflowStateHead({ projectDir, sessionId })?.state.stateRevision ?? null,
+          attempts: 0,
+          retryLimit: 0,
+        });
+      }
+      if (pinned.kind === 'durability-uncertain') throw stateOpsError.durabilityUncertain();
+      savedState = pinned.state;
+    }
+    setTrackedState(savedState);
+    bus.publish({ type: 'mode_resolved', ts: Date.now(), phase: savedState.phase, mode, approve });
+  }
   // Every resume passes here, from the app and from the CLI alike, so this is
   // the one place the record is compared and rewritten. A moved plan seat also drops the
   // saved planner session: it belongs to the tool that left, so the notice's
@@ -211,7 +250,11 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
   if (savedState) {
     for (const change of reconcileSeatIdentities({ projectDir, sessionId }, config)) {
       if (change.seat === 'plan') planSeatChanged = true;
-      publishWarning({ bus, phase: savedState.phase, message: formatSeatChangeNotice(change) });
+      publishWarning({
+        bus,
+        phase: savedState.phase,
+        message: formatSeatChangeNotice(labelSeatChange(change, opts.modelCache ?? NULL_CACHE)),
+      });
     }
     if (planSeatChanged) {
       savedState = { ...savedState, plannerSessionId: null };
@@ -232,7 +275,11 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     setTrackedState(savedState);
   }
   const hasPendingRecovery = savedState?.pendingRecovery !== undefined;
-  const continuation = await resumeContinuation({ projectDir, sessionId }, savedState, opts.steer);
+  const continuation = await resumeContinuation({
+    ref: { projectDir, sessionId },
+    state: savedState,
+    steer: opts.steer,
+  });
   publishResumedSteer({ bus, projectDir, sessionId, state: savedState, steer: opts.steer });
 
   // Stateless backends receive priorMessages instead of plannerSessionId.
@@ -305,8 +352,17 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
   } else {
     state =
       newWorkflow && args.savedState !== undefined ? args.savedState : createInitialState(feature);
+    // Saved with the start, as planning resolves them: planning keeps them only in memory, and
+    // its first call reads the saved state back, so a run that saved none later took the config's.
+    const mode = resolveMode({ config, savedMode: state.mode });
     state = {
       ...state,
+      mode,
+      approve: resolveApproveLevel({
+        mode,
+        configApprove: config.workflow.approve,
+        savedApprove: state.approve,
+      }),
       plannerTool: summaryBase.plannerTool,
       ...(summaryBase.plannerModel !== undefined && { plannerModel: summaryBase.plannerModel }),
       implementerTool: summaryBase.implementerTool,
@@ -346,7 +402,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
   publishWorkflowConfig(
     { bus: bus, phase: state.phase },
     {
-      mode: config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
+      mode: resolveMode({ config, savedMode: state.mode }),
       plannerTool: summaryBase.plannerTool,
       plannerModel: summaryBase.plannerModel,
       implementerTool: summaryBase.implementerTool,
@@ -431,23 +487,38 @@ function publishResumedSteer(input: {
  * partial a cut attempt left reaches that step and no other; a run continued
  * without a recorded park seeds the steer at the step it picks up.
  */
-async function resumeContinuation(
-  ref: SessionRef,
-  state: WorkflowState | undefined,
-  steer: string | undefined,
-): Promise<ContinuationHolder> {
+export async function resumeContinuation(input: {
+  ref: SessionRef;
+  state: WorkflowState | undefined;
+  steer: string | undefined;
+}): Promise<ContinuationHolder> {
+  const { ref, state, steer } = input;
   if (state === undefined) return createContinuationHolder();
   const interrupted = state.interruptedStep;
+  const task = state.tasks[state.currentTaskIndex];
+  const keepWorkspace =
+    state.closed === undefined &&
+    state.rewindPending === undefined &&
+    isImplementerPhase(state.phase) &&
+    interrupted?.cut === 'mid-step' &&
+    interrupted.step.kind === 'brief' &&
+    task?.id === interrupted.step.taskId &&
+    task.status === 'in_progress' &&
+    state.attempt === interrupted.step.attempt;
   // A boundary park cut nothing, and a cold crash flushed nothing it can name.
   const partial =
-    interrupted !== undefined && interrupted.cut !== 'boundary'
+    interrupted !== undefined &&
+    interrupted.cut !== 'boundary' &&
+    (interrupted.step.kind !== 'brief' || keepWorkspace)
       ? await readInterruptedPartial(ref)
       : undefined;
-  if (partial === undefined && steer === undefined) return createContinuationHolder();
+  if (partial === undefined && steer === undefined && !keepWorkspace)
+    return createContinuationHolder();
   return createContinuationHolder({
     step: interrupted?.step ?? resumeStep(state, artifactPresence(ref)),
     ...(partial !== undefined && { partial }),
     ...(steer !== undefined && { steer }),
+    ...(keepWorkspace && { keepWorkspace: true, briefFingerprint: hashTaskBrief([task]) }),
   });
 }
 
@@ -459,11 +530,29 @@ const FILE_HALT_REASONS = new Set(['user-edit-conflict', 'approval-promotion-con
  * edit to a brief that has not started is that brief's starting point, not a conflict — so the
  * panel does not ask again either.
  */
-export async function fileHaltIsStale(projectDir: string, state: WorkflowState): Promise<boolean> {
+export async function fileHaltIsStale(input: {
+  projectDir: string;
+  state: WorkflowState;
+  sessionId: string;
+}): Promise<boolean> {
+  const { projectDir, state, sessionId } = input;
   const issue = state.pendingRecovery;
   if (issue === undefined || !FILE_HALT_REASONS.has(issue.reason)) return false;
-  if (state.changedFilesBaseline === undefined) return false;
   try {
+    if (issue.reason === 'approval-promotion-conflict') {
+      if (issue.facts?.partialPromotion === true) return false;
+      const workspacePath = issue.facts?.workspacePath;
+      if (typeof workspacePath === 'string') {
+        const resolved = await worktreePromotionConflictIsResolved({
+          projectDir,
+          sessionId,
+          files: issue.files,
+          workspacePath,
+        });
+        if (resolved !== null) return resolved;
+      }
+    }
+    if (state.changedFilesBaseline === undefined) return false;
     const changed = await changedFilesSinceBaseline(
       projectDir,
       deserializeChangedFilesBaseline(state.changedFilesBaseline),
@@ -472,10 +561,17 @@ export async function fileHaltIsStale(projectDir: string, state: WorkflowState):
     if (issue.reason !== 'user-edit-conflict') return false;
     const currentTask = state.tasks[state.currentTaskIndex];
     if (currentTask === undefined) return false;
+    const { foreignFiles, currentTaskInFlight } = await assessChangedUserEdits({
+      projectDir,
+      sessionId,
+      task: currentTask,
+      changedFiles: changed,
+    });
+    if (foreignFiles.length === 0) return true;
     return classifyUserEditConflict({
-      files: changed,
+      files: foreignFiles,
       currentTask,
-      currentTaskInFlight: currentTask.status === 'in_progress',
+      currentTaskInFlight,
       allTasks: state.tasks,
       currentTaskIndex: state.currentTaskIndex,
     }).safeToContinue;
@@ -493,7 +589,8 @@ async function resolveStaleFileHalt(args: {
 }): Promise<WorkflowState> {
   const { projectDir, sessionId, bus, state } = args;
   const issue = state.pendingRecovery;
-  if (issue === undefined || !(await fileHaltIsStale(projectDir, state))) return state;
+  if (issue === undefined || !(await fileHaltIsStale({ projectDir, state, sessionId })))
+    return state;
 
   const resolved = transitionAndSave(
     { projectDir, sessionId },
@@ -548,6 +645,8 @@ function realignPassedTaskIndex(bus: EventBus, state: WorkflowState): WorkflowSt
  * partial edits and continues with context rather than restarting clean.
  */
 function isTaskInFlight(state: WorkflowState): boolean {
+  if (state.interruptedStep?.cut === 'mid-step' && state.interruptedStep.step.kind === 'brief')
+    return false;
   if (state.phase === 'validating-task' || state.phase === 'escalating') return true;
   if (state.phase !== 'implementing' || state.interruptedStep !== undefined) return false;
   return state.tasks[state.currentTaskIndex]?.status === 'in_progress';

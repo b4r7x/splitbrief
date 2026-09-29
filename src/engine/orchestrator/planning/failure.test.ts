@@ -16,7 +16,9 @@ import { createInitialState, transition } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { deriveRunStatus, NO_ARTIFACTS } from '../../../core/sessions/run-status.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { composeAbortSignal } from '../../../utils/abort.js';
+import { abortError, composeAbortSignal } from '../../../utils/abort.js';
+import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../events/workflow-cancel.js';
+import { WORKFLOW_REWIND_ABORT_REASON } from '../../../core/phases.js';
 import { error } from '../../../utils/error.js';
 import { runnerCallInterruptedStatus } from '../../calls/status.js';
 import { createPhaseRunner, type PhaseRunnerConfig } from '../../planners/run-phase.js';
@@ -97,6 +99,82 @@ describe('handlePlanningFailure', () => {
     expect(loadState({ projectDir, sessionId })?.interruptedStep?.source).toBe('user');
   });
 
+  it('an abort records the stop in the log, naming the step it cut', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const state = { ...createInitialState('feature'), phase: 'planning' as const };
+    saveState({ projectDir, sessionId }, state);
+    const { bus, events } = makeBusRecorder();
+
+    await handlePlanningFailure({
+      err: error('operation-aborted', 'user stopped it'),
+      projectDir,
+      sessionId,
+      state,
+      wctx: makeWctx({ projectDir, sessionId, bus }),
+    });
+
+    expect(events.filter((event) => event.type === 'turn_interrupted')).toEqual([
+      {
+        type: 'turn_interrupted',
+        ts: expect.any(Number),
+        phase: 'planning',
+        source: 'user',
+        at: 'mid-step',
+        step: { kind: 'planner', call: 'plan' },
+      },
+    ]);
+  });
+
+  it('a stop that lands on a park already recorded keeps that park and adds no row', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const parked = transition(
+      { ...createInitialState('feature'), phase: 'planning' as const },
+      {
+        type: 'INTERRUPT_STEP',
+        step: { kind: 'planner', call: 'plan' },
+        source: 'watchdog',
+        cut: 'mid-step',
+      },
+    );
+    saveState({ projectDir, sessionId }, parked);
+    const { bus, events } = makeBusRecorder();
+
+    const result = await handlePlanningFailure({
+      err: error('operation-aborted', 'the operator left the parked run'),
+      projectDir,
+      sessionId,
+      state: parked,
+      wctx: makeWctx({ projectDir, sessionId, bus }),
+    });
+
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'interrupted' });
+    expect(result.state.interruptedStep).toEqual(parked.interruptedStep);
+    expect(loadState({ projectDir, sessionId })?.interruptedStep).toEqual(parked.interruptedStep);
+    expect(events.some((event) => event.type === 'turn_interrupted')).toBe(false);
+  });
+
+  it('End run during a planner call parks nothing and records no stop', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const state = { ...createInitialState('feature'), phase: 'planning' as const };
+    saveState({ projectDir, sessionId }, state);
+    const { bus, events } = makeBusRecorder();
+    const controller = new AbortController();
+    controller.abort(WORKFLOW_USER_CANCELLED_ABORT_REASON);
+
+    const result = await handlePlanningFailure({
+      err: abortError(controller.signal),
+      projectDir,
+      sessionId,
+      state,
+      wctx: makeWctx({ projectDir, sessionId, bus, signal: controller.signal }),
+    });
+
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'cancelled' });
+    expect(result.state.interruptedStep).toBeUndefined();
+    expect(loadState({ projectDir, sessionId })?.interruptedStep).toBeUndefined();
+    expect(events.some((event) => event.type === 'turn_interrupted')).toBe(false);
+  });
+
   it('preserves the persisted rewind request when planning aborts', async () => {
     const { projectDir, sessionId } = setupProject();
     const staleState = { ...createInitialState('feature'), phase: 'planning' as const };
@@ -106,7 +184,10 @@ describe('handlePlanningFailure', () => {
     };
     saveState({ projectDir, sessionId }, persistedState);
 
-    const wctx = makeWctx({ projectDir, sessionId });
+    const { bus, events } = makeBusRecorder();
+    const controller = new AbortController();
+    controller.abort(WORKFLOW_REWIND_ABORT_REASON);
+    const wctx = makeWctx({ projectDir, sessionId, bus, signal: controller.signal });
 
     const result = await handlePlanningFailure({
       err: error('operation-aborted', 'approval gate cancelled'),
@@ -126,6 +207,9 @@ describe('handlePlanningFailure', () => {
       comment: 'rewind to the plan',
     });
     expect(loadState({ projectDir, sessionId })?.phase).toBe('planning');
+    expect(result.state.interruptedStep).toBeUndefined();
+    expect(loadState({ projectDir, sessionId })?.interruptedStep).toBeUndefined();
+    expect(events.filter((event) => event.type === 'turn_interrupted')).toEqual([]);
   });
 
   it('rebases the halt after planner usage booking so the paid usage remains persisted', async () => {

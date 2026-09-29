@@ -1,6 +1,6 @@
 import type { Key } from 'ink';
 import { describe, expect, it } from 'vitest';
-import { isLoneTerminalControl, isTextEntryInput, isUnmodifiedYInput } from './text-entry.js';
+import { isTerminalControlRun, isTextEntryInput, isUnmodifiedYInput } from './text-entry.js';
 
 const BASE_KEY: Key = {
   upArrow: false,
@@ -29,7 +29,7 @@ function key(overrides: Partial<Key> = {}): Key {
   return { ...BASE_KEY, ...overrides };
 }
 
-describe('isLoneTerminalControl', () => {
+describe('isTerminalControlRun', () => {
   it.each([
     { name: 'empty input', input: '', expected: false },
     { name: 'plain text', input: 'a', expected: false },
@@ -38,8 +38,11 @@ describe('isLoneTerminalControl', () => {
     { name: 'NUL', input: '\x00', expected: true },
     { name: 'unit separator', input: '\x1f', expected: true },
     { name: 'DEL', input: '\x7f', expected: true },
+    { name: 'two Ctrl+C read together', input: '\x03\x03', expected: true },
+    { name: 'mixed chords read together', input: '\x03\x04\x1a', expected: true },
+    { name: 'text with a chord', input: 'a\x03', expected: false },
   ])('classifies $name', ({ input, expected }) => {
-    expect(isLoneTerminalControl(input)).toBe(expected);
+    expect(isTerminalControlRun(input)).toBe(expected);
   });
 });
 
@@ -52,6 +55,7 @@ describe('isTextEntryInput', () => {
     { name: 'shifted text', input: 'A', expected: true, key: { shift: true } },
     { name: 'NUL', input: '\x00', expected: false, key: {} },
     { name: 'DEL', input: '\x7f', expected: false, key: {} },
+    { name: 'two Ctrl+C read together', input: '\x03\x03', expected: false, key: {} },
   ])('classifies $name', ({ input, expected, key: keyOverrides }) => {
     expect(isTextEntryInput(input, key(keyOverrides))).toBe(expected);
   });

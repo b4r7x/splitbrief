@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { parseTasks, parseTasksStrict } from './parse.js';
 import { formatTasks } from '../formatter.js';
+import { unknownSectionHeaders } from './sections.js';
 
 describe('typeDefs and implementationSteps parsing', () => {
   it('parses Current Code and Pattern as code context for modify tasks', () => {
@@ -444,10 +445,32 @@ Remember to handle retries.
     const tasks = parseTasksStrict(input, (m) => warnings.push(m));
 
     expect(tasks).toHaveLength(1);
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain('T501');
-    expect(warnings[0]).toContain('Edge Cases');
-    expect(warnings[0]).toContain('Notes');
+    expect(warnings).toEqual([
+      'Task T501 has 2 sections not in the Task Brief grammar; they will be dropped: Edge Cases, Notes',
+    ]);
+  });
+
+  it('counts a single unknown section as one', () => {
+    const input = `---
+id: T503
+title: "Has one extra section"
+action: create
+file: src/extra.ts
+depends_on: []
+---
+
+### Description
+A brief with one section outside the canonical grammar.
+
+### Notes
+Remember to handle retries.
+`;
+    const warnings: string[] = [];
+    parseTasksStrict(input, (m) => warnings.push(m));
+
+    expect(warnings).toEqual([
+      'Task T503 has 1 section not in the Task Brief grammar; it will be dropped: Notes',
+    ]);
   });
 
   it('does not warn when every ### section is in the canonical grammar', () => {
@@ -501,5 +524,40 @@ Body documents a fenced markdown heading.
     parseTasksStrict(input, (m) => warnings.push(m));
 
     expect(warnings).toEqual([]);
+  });
+
+  it('reads sections after a closing fence that repeats the info string', () => {
+    const input = `---
+id: T504
+title: "Repeated closing fence"
+action: modify
+file: src/repeated.ts
+depends_on: []
+---
+
+### Description
+A brief whose closing fence repeats the language.
+
+### Signature
+\`\`\`ts
+export function next(): void
+\`\`\`ts
+
+### Tests
+- next returns void
+
+### Constraints
+- none
+
+### Notes
+Dropped by the grammar.
+`;
+    const tasks = parseTasksStrict(input);
+    const task = tasks[0];
+    if (!task) throw new Error('expected task');
+
+    expect(task.tests).toEqual(['next returns void']);
+    expect(task.constraints).toEqual(['none']);
+    expect(unknownSectionHeaders(input)).toEqual(['Notes']);
   });
 });

@@ -13,12 +13,13 @@ type JsonlSinkOptions = SessionRef & {
 };
 
 /**
- * The three highest-volume event kinds, none of which is read back from the
- * session log: streamed text, tool-input deltas, and planner heartbeats.
+ * The highest-volume event kinds, none of which is read back from the session
+ * log: streamed text, tool-input deltas, and planner and runner heartbeats.
  */
 function isExcludedFromSessionLog(event: EngineEvent): boolean {
   if (event.type === 'runner_call_text_delta') return true;
   if (event.type === 'planner_heartbeat') return true;
+  if (event.type === 'runner_call_heartbeat') return true;
   return event.type === 'runner_call_tool_use' && event.stage === 'delta';
 }
 

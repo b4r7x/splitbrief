@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { finishClaudeStream, createStreamHandler, interruptedError } from './stream.js';
 import type { RunnerCallContext, RunnerCallEvent } from '../../calls/types.js';
+import { projectRunnerCallEvents } from '../../calls/event-projection.js';
 import { RUNNER_CALL_OUTPUT_MAX_BYTES } from '../../calls/output-limit.js';
 import { parseHintVerdict } from '../../spec/prompts/escalation.js';
 import { parseFinalReview } from '../../parsers/final-review.js';
@@ -132,6 +133,55 @@ describe('Claude stream credential redaction', () => {
     expect(result.status).toBe('completed');
     expect(result.text).toBe('final text');
   });
+});
+
+it('keeps the frames Claude Code keeps for itself out of the reply and the activity feed', () => {
+  const output: string[] = [];
+  const events: RunnerCallEvent[] = [];
+  const { state, handleLine } = createStreamHandler({
+    context,
+    onOutput: (text) => output.push(text),
+    onCallEvent: (event) => events.push(event),
+  });
+  const frame = (subtype: string, fields: Record<string, unknown> = {}): string =>
+    JSON.stringify({ type: 'system', subtype, session_id: 'sess-frames', ...fields });
+
+  for (const line of [
+    frame('hook_started', { hook_id: 'hook-1', hook_name: 'SessionStart:startup' }),
+    frame('init'),
+    frame('status', { status: 'requesting' }),
+    frame('api_retry', {
+      attempt: 3,
+      max_retries: 10,
+      retry_delay_ms: 8000,
+      error_status: 429,
+      error: 'rate_limit',
+    }),
+    frame('thinking_tokens', { estimated_tokens: 40, estimated_tokens_delta: 40 }),
+    ...mainLoopMessage('msg-frames', 'Reading the fixture readers.', 'end_turn'),
+    frame('task_notification', { task_id: 'task-1', status: 'completed', summary: 'done' }),
+    JSON.stringify({ type: 'result', result: 'Reading the fixture readers.' }),
+  ]) {
+    handleLine(line);
+  }
+  const result = finishClaudeStream(state);
+  const activity = events
+    .flatMap((event) => projectRunnerCallEvents(event, { phase: 'planning', sequence: 0 }))
+    .flatMap((event) => (event.type === 'runner_call_activity' ? [event] : []));
+
+  expect(output.join('')).toBe('Reading the fixture readers.');
+  expect(result.text).toBe('Reading the fixture readers.');
+  expect(activity.map((event) => event.label)).not.toContain('system activity');
+  expect(activity).toContainEqual(
+    expect.objectContaining({
+      kind: 'warning',
+      label: 'warning claude_api_retry',
+      diagnosticPartial: 'rate_limit (HTTP 429): retry 3 of 10 in 8.0s',
+    }),
+  );
+  // The bookkeeping frames keep the call fresh; the retry is a warning.
+  expect(events.some((event) => event.type === 'call_heartbeat')).toBe(true);
+  expect(result.warnings.map((warning) => warning.code)).toEqual(['claude_api_retry']);
 });
 
 it('observes matching native init even when the resume ID is already seeded', () => {

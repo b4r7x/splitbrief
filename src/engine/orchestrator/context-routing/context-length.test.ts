@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ResolvedImplementerProfile } from '../../../core/config/accessors/implementer-profiles.js';
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
 import { DEFAULT_UNKNOWN_CONTEXT_LENGTH } from '../../../core/tokens/context-length.js';
+import { APPLICATION_DEFAULT_CONTEXT_TOKENS } from '../../providers/runtime-context.js';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 import { resolveProfileContextLength } from './context-length.js';
 
@@ -147,6 +148,51 @@ describe('resolveProfileContextLength', () => {
     expect(result).toEqual({
       contextLength: 400_000,
       source: 'models-dev',
+      usedConservativeContextLength: false,
+    });
+  });
+
+  it('does not budget a CLI-named API profile against the local CLI rows', () => {
+    const cache = makeModelCacheAccessor({
+      providerModels: {
+        codex: [{ id: 'codex-row', contextLength: 400_000, effectiveContextTokens: 400_000 }],
+      },
+    });
+    const apiNamedCodex: ResolvedImplementerProfile = {
+      name: 'api-codex',
+      capabilities: { writesFiles: 'extracted-code' },
+      isDefault: true,
+      config: {
+        kind: 'api',
+        provider: 'codex',
+        service: 'codex',
+        offering: 'payg',
+        apiBase: 'https://my-endpoint.example/v1',
+        model: 'codex-row',
+      },
+    };
+    const cliCodex: ResolvedImplementerProfile = {
+      name: 'cli-codex',
+      capabilities: { writesFiles: 'direct' },
+      isDefault: false,
+      config: {
+        kind: 'cli',
+        tool: 'codex',
+        model: 'codex-row',
+      },
+    };
+
+    expect(
+      resolveProfileContextLength(apiNamedCodex, DEFAULT_UNKNOWN_CONTEXT_LENGTH, cache),
+    ).toEqual({
+      contextLength: APPLICATION_DEFAULT_CONTEXT_TOKENS,
+      source: 'conservative-fallback',
+      usedConservativeContextLength: true,
+    });
+    // The same rows still answer the CLI runner of that name.
+    expect(resolveProfileContextLength(cliCodex, DEFAULT_UNKNOWN_CONTEXT_LENGTH, cache)).toEqual({
+      contextLength: 400_000,
+      source: 'runtime',
       usedConservativeContextLength: false,
     });
   });

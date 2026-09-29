@@ -23,8 +23,11 @@ import {
   type SeatSwapChoice,
 } from '../../../engine/orchestrator/run/seat-swap.js';
 import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js';
-import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
-import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../../engine/events/workflow-cancel.js';
+import { resolveMode } from '../../../core/config/runtime/resolve.js';
+import {
+  WORKFLOW_CANCEL_REASON_USER,
+  WORKFLOW_USER_CANCELLED_ABORT_REASON,
+} from '../../../engine/events/workflow-cancel.js';
 import type { OrchestratorCallbacks, WorkflowSinks } from '../../../engine/orchestrator/types.js';
 import { addTuiEvent } from '../tui-sink.js';
 import { streamingOutputStore } from '../../../stores/workflow/streaming-output.js';
@@ -49,9 +52,9 @@ import {
 } from '../handlers.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { markWorkflowPaused } from '../../../stores/workflow/actions/pause.js';
-import { transitionAndSave } from '../../../engine/orchestrator/state-ops.js';
-import { resumeStep } from '../../../core/sessions/run-status.js';
-import { artifactPresence } from '../../../core/sessions/run-record-io.js';
+import { parkStoppedRun } from '../../../engine/orchestrator/state-ops.js';
+import { closeRunIfOpen } from '../../../engine/orchestrator/run/close.js';
+import { deriveRunStatus, NO_ARTIFACTS } from '../../../core/sessions/run-status.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import {
   onProcessRegistryChange,
@@ -223,20 +226,32 @@ export function useRunLoop({
         );
       const current = hydrated.state;
       const intent = stopStore.get().intent;
+      const closure = intent === 'end-run' ? closeRunIfOpen(session.ref, current) : undefined;
+      const status = deriveRunStatus({
+        state: current,
+        liveness: 'not-alive',
+        artifacts: NO_ARTIFACTS,
+      });
       const next =
-        current.closed !== undefined || current.phase === 'complete'
-          ? current
-          : intent === 'end-run'
-            ? transitionAndSave(session.ref, current, { type: 'CLOSE_RUN' })
+        closure !== undefined
+          ? closure.state
+          : status.kind === 'closed'
+            ? current
             : current.pendingRecovery !== undefined
               ? // A halt is not a cut step: the panel owns what happens next.
                 current
-              : transitionAndSave(session.ref, current, {
-                  type: 'INTERRUPT_STEP',
-                  step: resumeStep(current, artifactPresence(session.ref)),
-                  source: 'user',
-                  cut: 'mid-step',
-                });
+              : parkStoppedRun(
+                  { ...session.ref, bus: createRecoveryBus({ ...session.ref, sink: addTuiEvent }) },
+                  current,
+                );
+      if (closure?.closedNow) {
+        createRecoveryBus({ ...session.ref, sink: addTuiEvent }).publish({
+          type: 'workflow_cancelled',
+          ts: Date.now(),
+          phase: next.phase,
+          reason: WORKFLOW_CANCEL_REASON_USER,
+        });
+      }
       finalizeEndedRun({
         ref: session.ref,
         active: preparedForRun.session.active,
@@ -282,7 +297,11 @@ export function useRunLoop({
       // Asked once — a halt this run raises later is fresh by construction.
       let staleHalt =
         stateForRun?.pendingRecovery !== undefined &&
-        (await fileHaltIsStale(session.ref.projectDir, stateForRun));
+        (await fileHaltIsStale({
+          projectDir: session.ref.projectDir,
+          state: stateForRun,
+          sessionId: session.ref.sessionId,
+        }));
       while (!isWorkflowAborted(controller, abortedRef)) {
         if (stateForRun?.pendingRecovery !== undefined && !staleHalt) {
           const promptPendingRecovery = createRecoveryDriver({
@@ -344,7 +363,7 @@ export function useRunLoop({
             bus: createRecoveryBus({ ...session.ref, sink: addTuiEvent }),
             config: preparedForRun.config,
             prepared: preparedForRun,
-            mode: preparedForRun.config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
+            mode: resolveMode({ config: preparedForRun.config, savedMode: stateForRun.mode }),
             savedState: stateForRun,
             signal: controller.signal,
             prepare: prepareExecutionFn,
@@ -541,8 +560,15 @@ export function useRunLoop({
         markWorkflowPaused();
         stopStore.park('mid-brief', null, null);
       }
-      // A queued leave/quit is delivered by the stop observer before offering actions here.
-      if (routerStore.get().screen === 'workflow' && overlayStore.get().active === 'none')
+      // A queued leave/quit is delivered by the stop observer before offering actions here. A run
+      // whose final review passed before the stop reached it is complete, not stopped: the stop then
+      // stands down, and the closed run's own byline speaks for it.
+      if (record.status.kind === 'closed' && record.status.as === 'complete') {
+        stopStore.reset();
+        // End run marks the lifecycle cancelled at the keypress, and no later event lifts that
+        // mark; the record says the run completed, and the record wins.
+        if (record.hydration.kind === 'loaded') hydrateFromState(record.hydration.state);
+      } else if (routerStore.get().screen === 'workflow' && overlayStore.get().active === 'none')
         overlayStore.open('stop-sheet');
     }
     return record;

@@ -423,19 +423,19 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
       });
     }
 
+    // Every writer's output is logged, so a stopped call leaves the partial a continue reads
+    // back. The log is the checkout's, also when a direct writer works in a copy of it.
     const implBuffer = sessionId
       ? createTranscriptBuffer({
-          projectDir,
+          projectDir: opts.fileIgnoreProjectDir ?? projectDir,
           sessionId,
           phase: 'implementing',
         })
       : null;
-    const wrappedOnOutput = baseConfig.extractsCode
-      ? (text: string) => {
-          onOutput(text);
-          implBuffer?.append(text);
-        }
-      : onOutput;
+    const wrappedOnOutput = (text: string, opts?: { messageStart?: boolean | undefined }) => {
+      onOutput(text, opts);
+      implBuffer?.append(text);
+    };
 
     // A direct writer handed its own copy of the project may not touch the one it came from.
     const checkoutDir =

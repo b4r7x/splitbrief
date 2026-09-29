@@ -130,6 +130,26 @@ describe('detectCapabilities', () => {
       expect(result.origin).toBe('fallback');
     });
 
+    it('does not resolve an API implementer named opencode from the CLI bundled rows', async () => {
+      vi.mocked(globalThis.fetch).mockRejectedValue(new TypeError('offline'));
+      const config = makeConfig({
+        implementer: {
+          kind: 'api',
+          provider: 'opencode',
+          service: 'opencode',
+          offering: 'payg',
+          apiBase: 'https://my-endpoint.example/v1',
+          apiKey: 'test-key',
+          model: 'openai/gpt-5.6-sol',
+        },
+      });
+      delete config.implementer.contextLength;
+
+      const result = await detectCapabilities(config);
+
+      expect(result).toEqual({ contextLength: 32_768, origin: 'fallback' });
+    });
+
     // This probe runs during store init, before the TUI paints. A first-run
     // user with no Ollama used to get `detectContextLength(ollama): fetch
     // failed` — an internal probe name and a bare fetch error — as the first

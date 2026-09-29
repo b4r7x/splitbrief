@@ -440,7 +440,7 @@ implementerProfiles:
 
 If `implementerProfiles.default` is omitted, SPLITBRIEF resolves the default profile deterministically from the first profile name in sorted order. If `default` is set, it must name an existing profile.
 
-Task-start rows show the concrete routing reason when a worker is selected, and the run's recorded per-task metadata carries richer routing and context data for post-run inspection.
+Task-start rows name the selected worker (`worker default`) and, when the brief is `tight` or `overflow`, its estimate against the context window (`~24,310 of 32K context tokens (tight)`). The full routing reason stays in the run log, and the run's recorded per-task metadata carries richer routing and context data for post-run inspection.
 
 When recovery offers `route-bigger-worker`, the issue names a target profile from this pool. Selecting that action resets only the current task and reruns it once with the named profile instead of the routing choice.
 
@@ -509,7 +509,7 @@ SPLITBRIEF resolves each validation stage through one ladder — `config → man
 
 1. **Project config** — `typecheckCommand`, `lintCommand`, `testCommand` override everything.
 2. **Manifest** — a `package.json` script named `typecheck` / `lint` / `test`, a `Makefile` or `justfile` target of that name, or the matching `pyproject.toml` section (`[tool.mypy]` → `mypy .`, `[tool.ruff]` → `ruff check .`, `[tool.pytest.ini_options]` → `pytest`). Deterministic, and read before any model output.
-3. **Planner-discovered** — during the research phase, the planner reads config files and reports the project's validation toolchain. Persisted to `WorkflowState.discoveredValidation`.
+3. **Planner-discovered** — during the research phase, the planner reads config files and reports the project's validation toolchain. Persisted to `WorkflowState.discoveredValidation`. A discovered command passes a safety check first. Among its rules, a package manager passes only as `<manager> test` with no path after it, `make` and `just` only as `<runner> <stage>`, `uv run` and `poetry run` only before a Python stack tool, and `node` or `python` only without a script, a module other than a Python stack tool, or inline code. A refused command becomes a `validation` warning that names the reason, and the stage uses config, the manifest or the stack default.
 4. **Stack default** — the row `detectStack` picked from `src/core/validation/stacks/` (`validation.stack` pins it): rust, go, python, typescript or javascript, in that marker order. Per-stack commands are tabulated in [FEATURES.md §Validation pipeline](./FEATURES.md#validation-pipeline--checkpoints).
 5. **None** — the stage is recorded as `skipped` with the reason `no <stage> command for an unrecognised stack`, never as passed. A run where every enabled stage is skipped that way emits a warning and prints `gates: NONE — review-only`; it still implements and still reviews, but nothing was verified by a gate. SPLITBRIEF never guesses `npm test` or `npx tsc --noEmit` on a project that is neither JavaScript nor TypeScript.
 
@@ -543,7 +543,7 @@ Mode, spec/plan document gates, retries, git strategy, and brief-review style.
 
 ```ts
 workflow: {
-  // Spec/plan document gates
+  // Document approval gates
   approve?:               'none' | 'spec' | 'plan' | 'all' | 'default';
 
   // Retries
@@ -582,7 +582,7 @@ workflow: {
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `mode` | enum | `standard` | `quick` \| `standard` \| `speckit`. The retired `instant` still loads as `quick` with a deprecation warning; any other value fails validation. |
-| `approve` | enum | `default` | Spec/plan document gates: `none` (skip spec/plan gates; briefs review still runs in standard/speckit), `spec` (gate spec only), `plan` (gate plan only), `all` (gate both), `default` (per-mode default). |
+| `approve` | enum | `default` | Document approval gates: `none` skips every approval gate; `spec`, `plan`, and `all` select spec, plan, or both and also open briefs review in standard/speckit. `default` follows the mode. Quick opens no gates. Brief quality checks still run. |
 | `maxRetries` | int >= 0 | `2` | Per-task local retries before escalation kicks in, so a brief gets `1 + maxRetries` attempts. The default is `DEFAULT_LOCAL_RETRIES` (`src/core/pipeline-spec/retries.ts`), the same constant the Build progress block reads for `attempt <a> of <max>`. |
 | `git.commitStrategy` | retired | absent | Legacy `none` is accepted with a deprecation warning and removed from the loaded config; `checkpoint` and `per-task` are rejected. Omit the field. |
 | `git.createBranch` | boolean | `false` | Auto-create `splitbrief/<slug>` branch at workflow start. |
@@ -593,7 +593,7 @@ workflow: {
 | `speckit.minCoverage` | 0..1 | `0.9` | Speckit-mode spec/plan→task traceability threshold. The analyze phase emits a `warning` event when measured `specTaskCoverage` or `planTaskCoverage` falls below this value. Not a test-coverage gate. |
 | `compactionThreshold` | int >= 10 | unset | On resume, auto-compact persisted transcript context when compacted message count exceeds this threshold and the planner supports self-summarisation. |
 | `compactionFormat` | enum | `auto` | Summary format for transcript compaction: `auto` selects structured JSON for `api` planners, freeform text for `cli`, `shell`, and `agent`; `freeform` preserves legacy markdown/text summaries; `structured` requires Zod-validated JSON and falls back to freeform text if validation fails. |
-| `showSpend` (`show_spend`) | compatibility boolean | `true` | Retained in config, with no main-screen rendered effect. The legacy `/copy cost` export returns `spend display is off` when false. Open `/usage` for usage details; there is no Show spend setting. |
+| `showSpend` (`show_spend`) | compatibility boolean | `true` | Retained in config, with no main-screen rendered effect. `/copy cost` copies the same spend text `/usage` reads rather than answering a switched-off display. Open `/usage` for usage details; there is no Show spend setting. |
 
 ### Per-mode defaults
 
@@ -686,9 +686,9 @@ escalation: {
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `enabled` | boolean | on when `intermediateProvider` is set | Toggle for the intermediate tier. The tier is active by default once `intermediateProvider` is configured; set `enabled: false` to disable it (failed tasks then escalate straight to the planner) without removing the provider config. |
-| `intermediateProvider` | string | — | Provider id for the mid-tier model (any `ProviderId`). When unset, the intermediate tier never runs. |
-| `intermediateModel` | string | — | Model id at that provider. Falls back to the implementer's model when unset. |
+| `enabled` | boolean | on when `intermediateProvider` and `intermediateModel` are both set | Toggle for the intermediate tier. The tier is active by default once `intermediateProvider` and `intermediateModel` are configured; set `enabled: false` to disable it (failed tasks then escalate straight to the planner) without removing the provider config. |
+| `intermediateProvider` | string | — | Provider id for the mid-tier model. The tier is always an `api` runner: name an API catalog provider (`ollama`, `lm-studio`, `llama-cpp`) or a custom provider; a custom name runs on the API implementer's endpoint and its inline key, and a CLI tool id here names a custom provider of that name, never the CLI tool. When unset, the intermediate tier never runs. |
+| `intermediateModel` | string | — | Model id at that provider. Required whenever `intermediateProvider` is set: the config fails to load with `intermediateModel is required when intermediateProvider is set`, and there is no fallback to the implementer's model (`enabled: false` does not lift the requirement). |
 
 YAML:
 
@@ -700,7 +700,7 @@ escalation:
 
 **Editing from the TUI.** The intermediate tier is configured in YAML only. The Crew section of Settings exposes planner, implementer, and reviewer seats; it has no escalation row or picker. Set `enabled: false` in YAML to disable the tier while retaining its provider and model configuration.
 
-**When to use:** you run a small implementer (a local model, or a small model behind your own endpoint) and want a stop that is stronger than the implementer but weaker than the planner before the task reaches the planner itself. Skip if your implementer is already frontier-class. Setting `intermediateProvider` is enough to turn the tier on; add `enabled: false` only when you want to keep the provider config but bypass the tier.
+**When to use:** you run a small implementer (a local model, or a small model behind your own endpoint) and want a stop that is stronger than the implementer but weaker than the planner before the task reaches the planner itself. Skip if your implementer is already frontier-class. Set both `intermediateProvider` and `intermediateModel` to turn the tier on; add `enabled: false` only when you want to keep the provider config but bypass the tier.
 
 **Pricing knownness.** Escalation and recovery provider calls follow the same knownness rules as every other call. Unknown provider cost is not zero. A call whose price does not resolve leaves the run's USD figure absent or unknown, never `0`, and SPLITBRIEF never invents a rate to fill the gap.
 
@@ -1019,7 +1019,7 @@ Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `cont
 
 | Flag | Purpose | Commands |
 |---|---|---|
-| `--approve <level>` | Spec/plan document gates: `none` \| `spec` \| `plan` \| `all` \| `default` | start, resume, continue |
+| `--approve <level>` | Document approval gates: `none` \| `spec` \| `plan` \| `all` \| `default` | start, resume, continue |
 | `--mode <mode>` | `quick` \| `standard` \| `speckit` | start, spec, resume, continue |
 | `--model <m>` | Alias for `--implementer-model` | start, resume, continue |
 | `--provider <p>` | Alias for `--implementer` | start, resume, continue |

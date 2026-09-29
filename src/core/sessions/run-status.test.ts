@@ -149,6 +149,49 @@ describe('deriveRunStatus', () => {
     expect(stopOf({ phase: 'implementing' })).toMatchObject({ stop: { kind: 'interrupted' } });
   });
 
+  // The briefs of a run whose steps open no plan gate once waited in reviewing-plan, so a run saved
+  // there is at its briefs call. A state that records no mode or approve level stays at the gate.
+  it.each([
+    ['quick', 'all', 'at its briefs call'],
+    ['standard', 'spec', 'at its briefs call'],
+    ['standard', 'none', 'at its briefs call'],
+    ['speckit', 'spec', 'at its briefs call'],
+    ['standard', 'plan', 'at the plan gate'],
+    ['standard', 'all', 'at the plan gate'],
+    ['speckit', 'all', 'at the plan gate'],
+    [undefined, undefined, 'at the plan gate'],
+  ] as const)(
+    'reads a run saved in reviewing-plan (mode %s, approve %s) as stopped %s',
+    (mode, approve, at) => {
+      const saved = state({
+        phase: 'reviewing-plan',
+        ...(mode !== undefined && { mode }),
+        ...(approve !== undefined && { approve }),
+      });
+      const status = deriveRunStatus({
+        state: saved,
+        liveness: 'not-alive',
+        artifacts: withArtifacts({
+          research: true,
+          spec: true,
+          clarifications: true,
+          constitution: true,
+          plan: true,
+          tasks: true,
+          analyze: true,
+        }),
+      });
+      expect(status).toMatchObject(
+        at === 'at the plan gate'
+          ? { stop: { kind: 'waiting', gate: 'plan' }, resumeAt: { kind: 'gate', gate: 'plan' } }
+          : {
+              stop: { kind: 'interrupted' },
+              resumeAt: { kind: 'planner', call: mode === 'speckit' ? 'analyze' : 'tasks' },
+            },
+      );
+    },
+  );
+
   it('carries the step the run picks up at on every open status', () => {
     const status = deriveRunStatus({
       state: state({ phase: 'reviewing-plan' }),

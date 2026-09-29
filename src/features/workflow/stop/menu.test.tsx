@@ -81,3 +81,84 @@ describe('StopMenu', () => {
     ui.unmount();
   });
 });
+
+describe('StopMenu changes copy', () => {
+  beforeEach(() => {
+    resetAllStores();
+    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
+  });
+
+  afterEach(() => {
+    stopStore.__testReset();
+  });
+
+  async function selectRow(ui: ReturnType<typeof renderFeature>, downs: number): Promise<string> {
+    await flushEffects();
+    for (let press = 0; press < downs; press += 1) {
+      ui.stdin.write('\x1b[B');
+      await tick(30);
+    }
+    return ui.lastFrame() ?? '';
+  }
+
+  it('claims no changes before a brief has run', async () => {
+    const ui = renderFeature(<StopMenu />);
+    await tick();
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('Stop options · Draft stays.');
+    expect(frame).toContain('Stop now · stop execution; keep the run open');
+    const endRun = await selectRow(ui, 1);
+    expect(endRun).toContain('End run · stop execution; close this run');
+    expect(endRun).not.toContain('keep changes');
+    ui.unmount();
+  });
+
+  it('claims the changes a running brief makes', async () => {
+    seedRunningBrief();
+    const ui = renderFeature(<StopMenu />);
+    await tick();
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('Stop options · Changes and draft stay.');
+    expect(frame).toContain('Stop now · stop execution; keep partial changes');
+    expect(await selectRow(ui, 2)).toContain(
+      'End run · stop execution; close this run; keep changes',
+    );
+    ui.unmount();
+  });
+
+  it('paints no blank row in the parked menu, whichever row is selected', async () => {
+    terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });
+    seedRunningBrief();
+    stopStore.request('stop-now');
+    stopStore.park('mid-brief', null, null);
+    const ui = renderFeature(<StopMenu />);
+    await tick();
+    const frames = [ui.lastFrame() ?? '', await selectRow(ui, 1), await selectRow(ui, 1)];
+
+    for (const frame of frames) {
+      const lines = frame.split('\n');
+      const body = lines.slice(
+        lines.findIndex((line) => line.includes('Session options')) + 1,
+        lines.findIndex((line) => line.includes('↑↓ select')),
+      );
+      expect(body.filter((line) => line.replace(/[│|]/g, '').trim() === '')).toEqual([]);
+      expect(lines.length).toBe(frames[0]?.split('\n').length);
+    }
+    ui.unmount();
+  });
+
+  it('offers to close a parked run that built nothing without claiming changes', async () => {
+    stopStore.request('stop-now');
+    stopStore.park('mid-brief', null, null);
+    const ui = renderFeature(<StopMenu />);
+    await tick();
+
+    expect(ui.lastFrame()).toContain('Session options · Draft stays.');
+    const endRun = await selectRow(ui, 1);
+    expect(endRun).toContain('End run · close this run');
+    expect(endRun).not.toContain('keep changes');
+    ui.unmount();
+  });
+});

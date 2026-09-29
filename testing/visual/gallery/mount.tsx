@@ -1,10 +1,11 @@
 import { App } from '../../../src/app/root.js';
 import type { AppProps } from '../../../src/app/root.js';
 import * as React from 'react';
+import { performance } from 'node:perf_hooks';
 import type { CheckpointDefinition, ScenarioDefinition } from '../contracts/catalog.js';
 import { ViewportSchema, type Viewport } from '../contracts/geometry.js';
 import type { TerminalProfile } from '../contracts/manifest-fields.js';
-import type { CheckpointPredicate } from '../fixtures/common.js';
+import type { CheckpointPredicate, FixtureWrite } from '../fixtures/common.js';
 import {
   flushEffects,
   renderFeature,
@@ -78,7 +79,7 @@ export async function mountGalleryScenario(
     // before Ink's useInput subscription settles is lost — the same contract
     // flushEffects documents for every other stdin.write in the suite.
     await flushEffects();
-    await session.activate((input) => rendered.stdin.write(input));
+    await session.activate(captureInput(rendered, checkpoint.timeoutMs));
     await flushEffects();
   } catch (error) {
     return unmountAfterFailure(unmount, error);
@@ -114,6 +115,35 @@ async function render(props: AppProps, viewport: Viewport): Promise<RenderFeatur
   const rendered = renderFeature(React.createElement<AppProps>(App, props), renderViewport);
   await flushEffects();
   return rendered;
+}
+
+/**
+ * The capture's stdin write plus its frame-gated form `press`: that key's promise resolves only
+ * once the renderer has painted a frame different from the one the key started on. A replay that
+ * gates every key through `press` cannot outrun the view (the archived race between a fixture's
+ * keystrokes and the catalog render), and a key that changes nothing fails the capture loudly
+ * instead of being photographed half-applied.
+ */
+function captureInput(rendered: RenderFeatureResult, timeoutMs: number): FixtureWrite {
+  const write = (input: string): void => {
+    rendered.stdin.write(input);
+  };
+  return Object.assign(write, {
+    press: async (input: string): Promise<void> => {
+      const before = rendered.lastFrame();
+      rendered.stdin.write(input);
+      const startedAt = performance.now();
+      while (true) {
+        await flushEffects();
+        if (rendered.lastFrame() !== before) return;
+        if (performance.now() - startedAt >= timeoutMs) {
+          throw new Error(
+            `Frame did not change after input ${JSON.stringify(input)} within ${timeoutMs}ms`,
+          );
+        }
+      }
+    },
+  });
 }
 
 async function unmountCapture(

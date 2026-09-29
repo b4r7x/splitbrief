@@ -162,6 +162,35 @@ describe('regenerateTasks', () => {
     expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(0);
   });
 
+  it('names the tasks call it opens, so the byline counts the regeneration as that call', async () => {
+    const { projectDir, sessionId } = setupProjectDir();
+    const { bus, events } = makeBusRecorder();
+    const planner = makePlanner({
+      review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
+    });
+
+    await regenerateTasks({
+      projectDir,
+      sessionId,
+      planner,
+      callbacks: makeCallbacks().callbacks,
+      bus,
+      state: { ...createInitialState('feat'), phase: 'reviewing-briefs' },
+      metadata: TEST_METADATA,
+      statusPhase: 'planning',
+    });
+
+    const statuses = events.flatMap((event) =>
+      event.type === 'planner_status'
+        ? [{ phase: event.phase, status: event.status, call: event.call }]
+        : [],
+    );
+    expect(statuses).toEqual([
+      { phase: 'planning', status: 'running', call: 'tasks' },
+      { phase: 'planning', status: 'done', call: undefined },
+    ]);
+  });
+
   it('parses the candidate without writing tasks.md', async () => {
     const { projectDir, sessionId } = setupProjectDir();
     const { bus, events } = makeBusRecorder();

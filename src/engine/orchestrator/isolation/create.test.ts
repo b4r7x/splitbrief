@@ -39,6 +39,7 @@ import { makeBusRecorder, makeCallbacks } from '#testing/helpers/orchestrator-fa
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { cleanupTempDir as removeTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createRunIsolation } from './create.js';
+import { workspaceOwner } from './retention.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
@@ -946,6 +947,84 @@ describe('createRunIsolation', () => {
 
       expect(retained).toEqual([]);
       expect(existsSync(isolationWorktree(dir))).toBe(false);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it('promotes a file the worker committed inside a retained worktree after continuation', {
+    timeout: 60_000,
+  }, async () => {
+    const dir = createTempDir('isolation-retained-commit');
+    try {
+      createTestGitRepo(dir, { 'src/app.ts': 'export const app = "v1";\n' });
+      // The run's session directory exists before isolation is acquired.
+      mkdirSync(join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID), { recursive: true });
+      const task = makeTask({ id: 'T001', file: 'src/app.ts' });
+      const owner = workspaceOwner({ task, attempt: 1, config });
+      const handle = createRunIsolation({
+        projectDir: dir,
+        sessionId: SESSION_ID,
+        strategy: 'worktree',
+        onFallback: () => {},
+        onRetained: () => {},
+      });
+
+      const ws = await handle.acquire({
+        role: 'implementer',
+        config,
+        writesFiles: 'direct',
+        owner,
+      });
+      await ws.retain?.();
+
+      // The worker commits inside the retained worktree before the run continues, so
+      // HEAD moves past the retained basis and the file is clean again.
+      writeFileSync(join(ws.projectDir, 'src', 'app.ts'), 'export const app = "v2";\n');
+      execFileSync('git', ['commit', '-am', 'worker output'], {
+        cwd: ws.projectDir,
+        stdio: 'pipe',
+      });
+
+      // A new process resumes the retained worktree; the worker writes nothing more.
+      const resumedHandle = createRunIsolation({
+        projectDir: dir,
+        sessionId: SESSION_ID,
+        strategy: 'worktree',
+        onFallback: () => {},
+        onRetained: () => {},
+      });
+      const resumed = await resumedHandle.acquire({
+        role: 'implementer',
+        config,
+        writesFiles: 'direct',
+        owner,
+        resume: true,
+      });
+
+      const outcome = await gateAndPromoteChangedFiles({
+        task,
+        state: makeImplState([task]),
+        projectDir: dir,
+        sessionId: SESSION_ID,
+        bus: makeBusRecorder().bus,
+        callbacks: makeCallbacks().callbacks,
+        config: makeNoValidationConfig({
+          approval: { enabled: true, feedRejectionsToPlanner: false },
+        }),
+        workspace: resumed,
+        taskStartSnapshot: await getChangedFilesSnapshot(dir),
+        dependsOnFiles: [],
+        cleanup: resumed.cleanup,
+        handleConflict: async (s) => s,
+        onApproved: () => {},
+      });
+
+      expect(outcome.outcome).toBe('allow');
+      expect(outcome.outcome === 'allow' ? outcome.changedFiles : []).toEqual(['src/app.ts']);
+      expect(readFileSync(join(dir, 'src', 'app.ts'), 'utf8')).toBe('export const app = "v2";\n');
+
+      await resumedHandle.dispose();
     } finally {
       cleanupTempDir(dir);
     }

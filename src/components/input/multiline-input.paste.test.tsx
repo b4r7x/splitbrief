@@ -111,3 +111,42 @@ describe('bracketed paste into a mounted input', () => {
     expect(ui.filtered.stdin.listenerCount('paste')).toBe(0);
   });
 });
+
+describe('input read in one chunk', () => {
+  // A late read hands Ink several key presses as one chunk: `\x03\x03` arrives as plain input with
+  // no ctrl flag. Those bytes are chords, and a saved draft would send them as a steer.
+  it.each(['\x03\x03', '\x04\x04', '\x1a\x1a', '\x03\x04\x1a'])(
+    'keeps control bytes %j out of the draft',
+    async (bytes) => {
+      const onSubmit = vi.fn();
+      const ui = renderThroughFilteredStdin(<Input onSubmit={onSubmit} />);
+      unmount = ui.unmount;
+      await flushEffects();
+      ui.pressBytes(bytes);
+      await flushEffects();
+      ui.pressBytes('X');
+      await flushEffects();
+      ui.pressBytes('\r');
+      await flushEffects();
+      expect(onSubmit).toHaveBeenCalledExactlyOnceWith('draftX');
+    },
+  );
+
+  // Text read in the same chunk as those bytes is typing: it keeps only what a paste may carry.
+  it.each([
+    { name: 'typed text', bytes: 'alpha beta', inserted: 'alpha beta' },
+    { name: 'the text read with two Ctrl+C presses', bytes: 'fix\x03\x03', inserted: 'fix' },
+    { name: 'the text read after a Ctrl+C', bytes: '\x03fix', inserted: 'fix' },
+    { name: 'the text read around a NUL', bytes: 'a\x00b', inserted: 'ab' },
+  ])('still inserts $name', async ({ bytes, inserted }) => {
+    const onSubmit = vi.fn();
+    const ui = renderThroughFilteredStdin(<Input onSubmit={onSubmit} />);
+    unmount = ui.unmount;
+    await flushEffects();
+    ui.pressBytes(bytes);
+    await flushEffects();
+    ui.pressBytes('\r');
+    await flushEffects();
+    expect(onSubmit).toHaveBeenCalledExactlyOnceWith(`draft${inserted}`);
+  });
+});

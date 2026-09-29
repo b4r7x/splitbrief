@@ -66,16 +66,18 @@ type StagePlan =
   | { kind: 'run'; resolved: ResolvedCommand; args: string[]; command: string }
   | { kind: 'skip'; reason: string };
 
-function buildStageContext(
-  projectDir: string,
-  config: Config,
-  discoveredValidation: DiscoveredValidation | undefined,
-): StageContext {
+function buildStageContext(input: {
+  projectDir: string;
+  config: Config;
+  discoveredValidation: DiscoveredValidation | undefined;
+  notices: Pick<RunValidationOptions, 'bus' | 'phase'>;
+}): StageContext {
+  const { projectDir, config, discoveredValidation, notices } = input;
   return {
     projectDir,
     config,
     manifest: readManifestCommands(projectDir),
-    discovered: sanitizeDiscoveredValidation(discoveredValidation),
+    discovered: sanitizeDiscoveredValidation(discoveredValidation, notices),
     stack: detectStack(projectDir, config.validation.stack),
   };
 }
@@ -303,7 +305,12 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
     const { task, projectDir, config, bus, phase, discoveredValidation, signal } = opts;
     const startTime = Date.now();
     publishValidationBaseline({ bus: bus, phase: phase }, { phase: 'start' });
-    const ctx = buildStageContext(projectDir, config, discoveredValidation);
+    const ctx = buildStageContext({
+      projectDir,
+      config,
+      discoveredValidation,
+      notices: { bus, phase },
+    });
     const probe = await probeBaseline(task, ctx, signal, (progress) => {
       publishValidationBaseline(
         { bus: bus, phase: phase },
@@ -346,7 +353,12 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
     const taskId = task.id;
     const startTime = Date.now();
     publishValidation({ bus: bus, phase: phase }, taskId, { phase: 'start' });
-    const ctx = buildStageContext(projectDir, config, discoveredValidation);
+    const ctx = buildStageContext({
+      projectDir,
+      config,
+      discoveredValidation,
+      notices: { bus, phase },
+    });
     const { results, skipReasons, formatWarning } = await validateTask(
       task,
       ctx,

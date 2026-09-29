@@ -220,6 +220,7 @@ describe('runRetryStep', () => {
       invokeRetry: makeImplementerRetryInvoker({
         context: defaultContext,
         kind: 'local',
+        sessionId,
         languageContext: buildLanguageContext('typescript'),
         phase: state.phase,
         onOutput: () => {},
@@ -588,6 +589,7 @@ describe('runRetryStep', () => {
         invokeRetry: makeImplementerRetryInvoker({
           context: defaultContext,
           kind: 'local',
+          sessionId,
           languageContext: buildLanguageContext('typescript'),
           phase: state.phase,
           onOutput: () => {},

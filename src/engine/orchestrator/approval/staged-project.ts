@@ -1,7 +1,7 @@
 import { rmSync, type Stats } from 'node:fs';
 import { cp, copyFile, lstat, mkdir, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, relative } from 'node:path';
 import type { Config } from '../../../core/schemas/config.js';
 import type { EvidencePromotedFile } from '../../../core/schemas/evidence.js';
 import { INTERNAL_SKIP_DIRS, SPLITBRIEF_DIR, TREES_DIR } from '../../../core/paths.js';
@@ -19,6 +19,7 @@ import {
   captureAcquisitionBaseline,
   matchesAcquisitionBaseline,
   readConfinedEntry,
+  sameFileEntry,
   writeConfinedEntry,
   type FileSnapshotEntry,
 } from './file-snapshots/entry.js';
@@ -31,7 +32,7 @@ export type PromoteStagedChangesResult = {
   promotedFiles: string[];
   conflictedFiles: string[];
   failure?: PromotionFailure;
-  /** Exact entries committed before an interrupted promotion. */
+  /** Exact entries this call wrote, including a stopped prefix. */
   appliedFiles?: EvidencePromotedFile[];
 };
 
@@ -114,11 +115,13 @@ async function copyProjectFiles(projectDir: string, stagedProjectDir: string): P
   }
 }
 
-export async function createStagedProject(
-  projectDir: string,
-  config?: Config,
-  role: IsolationRole = 'implementer',
-): Promise<IsolatedWorkspace> {
+export async function createStagedProject(input: {
+  projectDir: string;
+  config?: Config | undefined;
+  role?: IsolationRole | undefined;
+  ownedRoot?: string | undefined;
+}): Promise<IsolatedWorkspace> {
+  const { projectDir, config, role = 'implementer', ownedRoot } = input;
   // Before the copy, so an edit racing the copy lands on the worker's side of
   // the baseline and is reported as a conflict rather than silently overwritten.
   const targetBaseline = await captureAcquisitionBaseline(projectDir);
@@ -128,13 +131,21 @@ export async function createStagedProject(
   const snapshot = await getChangedFilesSnapshot(projectDir, undefined, {
     symlinkedEntriesAsAbsent: true,
   });
-  const stagedRoot = await mkdtemp(join(tmpdir(), `${SPLITBRIEF_IDENTITY.slug}-stage-`));
+  const stagedRoot =
+    ownedRoot ?? (await mkdtemp(join(tmpdir(), `${SPLITBRIEF_IDENTITY.slug}-stage-`)));
   try {
-    const stagedProjectDir = join(stagedRoot, basename(projectDir));
+    const stagedProjectDir = join(
+      stagedRoot,
+      ownedRoot === undefined ? basename(projectDir) : 'workspace',
+    );
     // Git can legitimately return no copyable entries (an empty repository or
     // a project whose files are all excluded). The hash walk still needs a
     // real staged root in that case.
+    if (ownedRoot !== undefined)
+      assertWritablePathConfined(relative(projectDir, stagedProjectDir), projectDir);
     await mkdir(stagedProjectDir, { recursive: true });
+    if (ownedRoot !== undefined)
+      assertWritablePathConfined(relative(projectDir, stagedProjectDir), projectDir);
     await copyProjectFiles(projectDir, stagedProjectDir);
     const baselineFileHashes = await captureProjectFileHashes(stagedProjectDir, {
       ignoreProjectDir: projectDir,
@@ -190,8 +201,7 @@ async function targetHoldsStagedEntry(opts: {
 }): Promise<boolean> {
   const staged = await entryToPromote(opts);
   const current = await readConfinedEntry(opts.targetProjectDir, opts.file);
-  if (staged.kind === 'absent') return current.kind === 'absent';
-  return current.kind === 'file' && current.sha256 === staged.sha256;
+  return sameFileEntry(current, staged);
 }
 
 export async function promoteStagedChanges(opts: {
@@ -237,12 +247,17 @@ export async function promoteStagedChanges(opts: {
             throw conflict;
           }
         });
+        appliedFiles.push(
+          entry.kind === 'file'
+            ? {
+                path: file,
+                sha256: entry.sha256,
+                mode: entry.mode & 0o777,
+                ...(!targetBaseline.has(file) ? { created: true as const } : {}),
+              }
+            : { path: file, sha256: null, mode: null },
+        );
       }
-      appliedFiles.push(
-        entry.kind === 'file'
-          ? { path: file, sha256: entry.sha256, mode: entry.mode & 0o777 }
-          : { path: file, sha256: null, mode: null },
-      );
     } catch (err) {
       if (err === conflict) return { promotedFiles, conflictedFiles: [file], appliedFiles };
       // A failed apply stops the promotion where it stands. Nothing is rolled
@@ -258,5 +273,5 @@ export async function promoteStagedChanges(opts: {
     promotedFiles.push(file);
   }
 
-  return { promotedFiles, conflictedFiles };
+  return { promotedFiles, conflictedFiles, appliedFiles };
 }

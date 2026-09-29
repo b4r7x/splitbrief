@@ -1,5 +1,7 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { closeSync, constants, fstatSync, openSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { isENOENT } from '../lib/process/errors.js';
+import { error } from '../utils/error.js';
 import { isRecord } from '../utils/type-guards.js';
 
 export function readPackageJson(
@@ -7,13 +9,21 @@ export function readPackageJson(
   opts: { throwOnInvalid?: boolean } = {},
 ): Record<string, unknown> | null {
   const pkgPath = join(projectDir, 'package.json');
-  if (!existsSync(pkgPath)) return null;
+  let fd: number | undefined;
   try {
-    const parsed: unknown = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+    // Nonblocking open so a FIFO cannot stall; fstat gates the read on a regular file.
+    fd = openSync(pkgPath, constants.O_RDONLY | constants.O_NONBLOCK);
+    if (!fstatSync(fd).isFile()) {
+      throw error('package-json-not-regular', `package.json is not a regular file: ${pkgPath}`);
+    }
+    const parsed: unknown = JSON.parse(readFileSync(fd, 'utf-8'));
     return isRecord(parsed) ? parsed : null;
   } catch (err) {
+    if (isENOENT(err)) return null;
     if (opts.throwOnInvalid) throw err;
     return null;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
   }
 }
 

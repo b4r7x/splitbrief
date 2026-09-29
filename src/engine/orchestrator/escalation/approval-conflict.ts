@@ -12,6 +12,7 @@ export async function handleApprovalTimeUserEditConflict(opts: {
   state: WorkflowState;
   task: Task;
   files: string[];
+  workspacePath?: string | undefined;
   setTrackedState?: ((s: WorkflowState) => void) | undefined;
 }): Promise<WorkflowState> {
   const conflict = createApprovalPromotionConflict({
@@ -25,5 +26,8 @@ export async function handleApprovalTimeUserEditConflict(opts: {
     phase: opts.state.phase,
     createdAt: nowIso(),
   });
+  if (opts.workspacePath !== undefined) {
+    issue.facts = { ...issue.facts, workspacePath: opts.workspacePath };
+  }
   return raisePendingRecovery(opts.ctx, opts.state, issue, opts.setTrackedState);
 }

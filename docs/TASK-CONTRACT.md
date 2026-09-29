@@ -14,7 +14,7 @@ state, supplies the expected revision, and refuses a stale, future, or
 malformed write. All modes (`quick`, `standard`, and `speckit`) and all callers
 (TUI and headless) consume the same v4 projection and command policy. Read-only
 integrations may observe state but never promote a local migration, retry a
-provider, or bypass the revision check. The keys `stateFence`,
+provider, or bypass the revision check. Queue reads keep unsaved workflow fields while the caller and disk share a committed revision. Once the disk revision advances, its workflow state wins, including rewinds and recovery; queue delivery state is merged separately. The keys `stateFence`,
 `authorityRevision`, `generation`, `permit`, `briefRecovery` and
 `budgetPauseAcknowledgedAtCost` are legacy (`LEGACY_STATE_KEYS`,
 `src/core/schemas/workflow.ts`): a loaded state that still carries them has them
@@ -194,7 +194,7 @@ If two tools need to coordinate, they agree on a key (e.g., `external.vcs-sync`)
 | `WorkflowState.reviewFixes` | no review fix cycle has run |
 | `WorkflowState.reviewStatus` | the final review has not resolved |
 | `WorkflowState.validationBaseline` | the run-start gate probe is re-run on resume instead of reused |
-| `WorkflowState.interruptedStep` | nothing recorded where the run was cut; `cut` says which — `mid-step` inside a call, `boundary` between two briefs — and a record written before `cut` existed falls back to the presence of a `partialRef` |
+| `WorkflowState.interruptedStep` | nothing recorded where the run was cut; `cut` says which — `mid-step` inside a call, `boundary` where it cut nothing: between two briefs, or at a gate — and a record written before `cut` existed falls back to the presence of a `partialRef` |
 | `WorkflowState.closed` | the run was never explicitly ended, so it is still continuable |
 | `WorkflowState.lastFailure` | the run recorded no failure; it stopped for some other reason |
 | evidence `skipped` / `skippedReason` | the stage ran (a skipped stage was previously indistinguishable from a pass) |
@@ -294,9 +294,13 @@ After each planning phase produces its Task Brief, the orchestrator runs a quali
   "score": 0.85,
   "issues": [
     { "taskId": "T001", "severity": "warning", "code": "missing_scope", "message": "..." }
-  ]
+  ],
+  "briefHash": "b8c1…",
+  "ruleVersion": "brief-quality-v1"
 }
 ```
+
+A report the gate writes carries `briefHash`, the hash of the briefs it measured; a report written before the field carries none, and the gate treats it as unverified for duplicate-pass suppression (it still loads and displays). `ruleVersion` names the scorer rule set that produced the report. Invalidating the briefs — a rewind, or a revised call that just rewrote them — drops the report with them.
 
 `score` ranges from 0–1: `1 - (errorCount × 0.2) - (warningCount × 0.05)`, clamped to `[0, 1]`. A score never authorizes a quality override: any error keeps the brief out of implementation.
 
@@ -319,7 +323,7 @@ Targets must be declared, confined relative paths and regular UTF-8 text files o
 
 The application captures target baselines before dispatch, parses and preflights the full response and approval set before mutation, then rechecks each baseline before writing. It preserves concurrent user edits by refusing conflicts. If a later write fails or cancellation interrupts application, earlier writes remain; there is no rollback claim. Validation runs once after the whole bundle succeeds, with aggregate diffs and line counts for actual changed paths. A partial result cannot publish successful completion or advance the brief. The ordinary isolation/promotion path, where applicable, still receives actual changed paths rather than a second promotion mechanism.
 
-The existing task evidence entry has optional `apiApply` with `callId`, `grammar: 'file-bundle-v1'`, `status`, `candidatePaths`, `applied`, `noops`, `untouched`, optional `failedPath` and `code`. Each applied entry records `path`, `action`, nullable `beforeSha256` and `afterSha256`, without storing baseline contents. Status is `applied`, `rejected`, `partial` or `failed`; a pre-dispatch refusal has a null call ID. Persisted partial effects remain available to retry and recovery. Older evidence without this field means unknown, not applied. If a process crashes before the receipt is persisted, existing task snapshots and disk state support reconciliation, but attribution may remain unknown and require recovery.
+The existing task evidence entry has optional `apiApply` with `callId`, `grammar: 'file-bundle-v1'`, `status`, `candidatePaths`, `applied`, `noops`, `untouched`, optional `failedPath` and `code`. Each applied entry records `path`, `action`, nullable `beforeSha256`, `afterSha256`, and optional `afterMode`, without storing baseline contents. Status is `applied`, `rejected`, `partial` or `failed`; a pre-dispatch refusal has a null call ID. Persisted partial effects remain available to retry and recovery. Older evidence without this field means unknown, not applied. If a process crashes before the receipt is persisted, existing task snapshots and disk state support reconciliation, but attribution may remain unknown and require recovery.
 
 ## Evidence ledger
 
@@ -327,7 +331,23 @@ Every run writes a per-session evidence ledger to `.splitbrief/sessions/<id>/evi
 (constant `EVIDENCE_FILE`, file mode `0o600`). The ledger is the durable record
 of what each task was supposed to prove and what was actually observed. It is
 written incrementally as tasks reach a terminal state and amended once the
-final review completes.
+final review completes. Successful promotions, stopped promotion prefixes, and
+direct API applications update `promotedFiles` from the writer's result before
+validation. This collection keeps only the latest receipt for each target path
+across all tasks. `promotedBriefHash` binds it to the single brief definition,
+excluding runtime status and current code. A changed brief resets its receipt
+collection. Historical promotion attempts remain available for review, but
+never authorize current ownership. Before a possible target write, the orchestrator invalidates prior ownership
+for the affected paths. If invalidation cannot persist, the writer does not run.
+A missing later receipt therefore cannot revive an earlier version. Unknown
+failed writes also invalidate earlier ownership for their path. Legacy receipts without this identity, or API results
+without a verified mode, cannot prove ownership. Direct writes without writer
+receipts stay unproved; the approval gate does not infer authorship by rereading
+the target. A target that already matches staged bytes takes no write and gains
+no new receipt. An actual promotion that creates an absent target also records
+`created: true` on its writer receipt. The ledger retains that fact separately
+in `apiCreatedPaths`, so a later API attempt can modify its own created anchor.
+Losing a receipt leaves that creation unproved.
 
 ### Shape
 
@@ -353,6 +373,8 @@ type EvidenceLedger = {
     observedEvidence: string[];   // produced by orchestrator
     escalated: boolean;
     briefHash?: string | null;  // absent on sessions written before this spec; readers must treat absent and `null` identically.
+    promotedBriefHash?: string; // hashTaskBrief([task]); independent of the whole-plan briefHash
+    promotedFiles?: Array<{ path: string; sha256: string | null; mode: number | null; created?: true }>;  // latest writer receipt per target path; null digest and mode = deleted
   }>;
   validationSummary: { passed: number; failed: number; skipped: number; escalated: number };
   finalReview?: { path: string; status: 'written' | 'failed' | 'skipped' };
@@ -397,9 +419,11 @@ The full ledger is read directly from disk by UI that needs per-task detail.
 ## Deterministic drift report
 
 Before the final review runs, the orchestrator computes a deterministic
-drift report comparing the Task Brief against the actual git diff and the
+drift report comparing the Task Brief against captured promotion diffs and the
 evidence ledger. The report is persisted as `drift-report.json` in the session
 directory and is also injected as a section into the final-review prompt.
+
+Final-review attribution comes from `review-changes.json`, which records verified before/after bytes for isolated promotions and their brief hashes. The full Git comparison remains workspace context, including unknown edits and independent changes within the same declared file. A missing expected file in the final drift report can mean that promotion provenance was not recorded, rather than that the file was unchanged. Legacy sessions and direct writes without capture keep that uncertainty visible. The review packet's optional `changes.provenance` describes this evidence without changing the version-1 packet boundary.
 
 ### Shape
 

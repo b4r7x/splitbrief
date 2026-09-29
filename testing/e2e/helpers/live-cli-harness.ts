@@ -122,8 +122,8 @@ export function spawnCli(opts: {
       cwd: REPO_ROOT,
       env: { ...process.env, XDG_STATE_HOME: opts.stateHome },
       stdio: 'pipe',
-      // Detached so the deadline can reap the CLI's own tool subprocesses with
-      // one signal to the group; a bare child.kill leaves them running.
+      // Detached so one signal to the group reaches the CLI and every child that
+      // shares its group. Runner tools start in groups of their own and outlive it.
       detached: true,
     });
     opts.onSpawn?.(child.pid);

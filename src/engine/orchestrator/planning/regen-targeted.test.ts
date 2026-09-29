@@ -38,14 +38,27 @@ describe('buildTargetedRejectionComment', () => {
 
 describe('buildBriefQualityRepairComment', () => {
   it('lists every blocking issue and demands per-brief tests even when another brief owns the test file', () => {
-    const comment = buildBriefQualityRepairComment([
-      'Task T001 has no tests',
-      'Task T003 has no tests',
-    ]);
+    const comment = buildBriefQualityRepairComment({
+      errorMessages: ['Task T001 has no tests', 'Task T003 has no tests'],
+    });
 
     expect(comment).toContain('- Task T001 has no tests');
     expect(comment).toContain('- Task T003 has no tests');
     expect(comment).toContain('even when a different brief owns the test file');
     expect(comment).toContain('Keep the feature scope, the brief ids, and the dependency links');
+  });
+
+  it('omits fence warnings by default and keeps them non-blocking when given', () => {
+    const withoutWarnings = buildBriefQualityRepairComment({
+      errorMessages: ['Task T001 has no tests'],
+    });
+    const withWarnings = buildBriefQualityRepairComment({
+      errorMessages: ['Task T001 has no tests'],
+      fenceWarnings: ['T002: unclosed code fence'],
+    });
+
+    expect(withoutWarnings).not.toContain('unclosed code fence');
+    expect(withWarnings).toContain('not blocking on their own');
+    expect(withWarnings).toContain('- T002: unclosed code fence');
   });
 });

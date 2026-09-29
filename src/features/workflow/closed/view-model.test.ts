@@ -6,9 +6,12 @@ import type { Phase } from '../../../core/schemas/enums.js';
 import type { RequestEstimate, Summary } from '../../../core/schemas/summary.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import { taskId } from '../../../core/schemas/task.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import type { RunRecord } from '../../../core/sessions/run-record.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
+import { arrowSep } from '../../../core/separators.js';
+import { crewLine } from './copy.js';
 import { deriveSummaryView, type SummaryView } from './view-model.js';
 
 function ledgerTask(overrides: Partial<EvidenceTask> & Pick<EvidenceTask, 'id'>): EvidenceTask {
@@ -209,6 +212,50 @@ describe('rail', () => {
     const view = derive(makeSummary({ phase: 'implementing' }), { status: ENDED });
     expect(view.rail[3]).toEqual({ stage: 'build', status: 'cancelled' });
   });
+
+  it('keeps quick Spec pending and marks Plan through Review done on a finished quick run', () => {
+    const view = derive(readySummary(), { mode: 'quick' });
+    expect(view.rail).toEqual([
+      { stage: 'spec', status: 'pending' },
+      { stage: 'plan', status: 'done' },
+      { stage: 'briefs', status: 'done' },
+      { stage: 'build', status: 'done' },
+      { stage: 'review', status: 'done' },
+    ]);
+  });
+
+  it('keeps quick Spec pending and folds an ended quick run stopped in research into Plan', () => {
+    const view = derive(makeSummary({ phase: 'researching' }), {
+      status: ENDED,
+      mode: 'quick',
+      ledger: makeLedger([ledgerTask({ id: taskId('T001'), status: 'pending' })]),
+    });
+    expect(view.rail).toEqual([
+      { stage: 'spec', status: 'pending' },
+      { stage: 'plan', status: 'cancelled' },
+      { stage: 'briefs', status: 'pending' },
+      { stage: 'build', status: 'pending' },
+      { stage: 'review', status: 'pending' },
+    ]);
+  });
+
+  it('keeps quick Spec pending and cancels the stage an ended quick run stopped in', () => {
+    const view = derive(makeSummary({ phase: 'implementing' }), {
+      status: ENDED,
+      mode: 'quick',
+      ledger: makeLedger([
+        ledgerTask({ id: taskId('T001') }),
+        ledgerTask({ id: taskId('T002'), status: 'in_progress' }),
+      ]),
+    });
+    expect(view.rail).toEqual([
+      { stage: 'spec', status: 'pending' },
+      { stage: 'plan', status: 'done' },
+      { stage: 'briefs', status: 'done' },
+      { stage: 'build', status: 'cancelled' },
+      { stage: 'review', status: 'pending' },
+    ]);
+  });
 });
 
 describe('seats', () => {
@@ -221,6 +268,88 @@ describe('seats', () => {
       identity: 'Claude Code CLI · claude-sonnet-4',
       short: 'claude-sonnet-4',
     });
+  });
+
+  it('names each seat and the crew line in the words the live rail uses', () => {
+    const view = derive(
+      makeSummary({
+        plannerTool: 'claude-code',
+        plannerModel: 'opus',
+        implementerTool: 'claude-code',
+        implementerModel: 'sonnet',
+      }),
+    );
+    expect(view.seats.plan).toEqual({
+      kind: 'named',
+      identity: 'Claude Code CLI · Opus 5.5',
+      short: 'Opus 5.5',
+    });
+    expect(view.seats.build).toEqual({
+      kind: 'named',
+      identity: 'Claude Code CLI · Sonnet 5',
+      short: 'Sonnet 5',
+    });
+    expect(crewLine(view, 200)).toBe('PLAN Opus 5.5 · BUILD Sonnet 5 · REVIEW = PLAN');
+  });
+
+  it('shortens each seat with the formatter the live rail uses', () => {
+    const view = derive(
+      makeSummary({
+        plannerTool: 'codex',
+        implementerTool: 'cursor',
+        implementerModel: 'gpt-5.3-codex-high',
+      }),
+    );
+    expect(crewLine(view, 200)).toBe('PLAN auto · BUILD gpt-5.3-codex · REVIEW = PLAN');
+  });
+
+  it('says the build seat moved, from what to what, when each tool ran one stretch', () => {
+    const on = (input: { id: string; tool: string; model: string }) =>
+      booked({
+        taskId: taskId(input.id),
+        implementerProfile: 'default',
+        tool: input.tool,
+        model: input.model,
+      });
+    const view = derive(
+      makeSummary({
+        implementerTool: 'opencode',
+        implementerModel: 'opencode-go/deepseek-v4.1-flash',
+        taskBreakdown: [
+          on({ id: 'T001', tool: 'antigravity', model: 'gemini-3.8-flash-high' }),
+          on({ id: 'T002', tool: 'antigravity', model: 'gemini-3.8-flash-high' }),
+          on({ id: 'T003', tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash' }),
+        ],
+      }),
+    );
+    expect(crewLine(view, 200)).toBe(
+      `PLAN not recorded · BUILD gemini-3.8-flash-high${arrowSep()}opencode-go/deepseek-v4.1-flash · REVIEW not recorded`,
+    );
+  });
+
+  it('counts the briefs on each tool when the seat went back and forth', () => {
+    const on = (input: { id: string; tool: string; model: string }) =>
+      booked({
+        taskId: taskId(input.id),
+        implementerProfile: 'default',
+        tool: input.tool,
+        model: input.model,
+      });
+    const view = derive(
+      makeSummary({
+        implementerTool: 'opencode',
+        implementerModel: 'opencode-go/deepseek-v4.1-flash',
+        taskBreakdown: [
+          on({ id: 'T001', tool: 'antigravity', model: 'gemini-3.8-flash-high' }),
+          on({ id: 'T002', tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash' }),
+          on({ id: 'T003', tool: 'antigravity', model: 'gemini-3.8-flash-high' }),
+          on({ id: 'T004', tool: 'antigravity', model: 'gemini-3.8-flash-high' }),
+        ],
+      }),
+    );
+    expect(crewLine(view, 200)).toContain(
+      'BUILD 3 briefs on gemini-3.8-flash-high, 1 on opencode-go/deepseek-v4.1-flash',
+    );
   });
 
   it('marks the review seat as inherited when only the planner was named', () => {
@@ -263,9 +392,217 @@ describe('seats', () => {
     );
     expect(view.seats.build.kind).toBe('named');
   });
+
+  it('keeps a recorded API seat literal when the cost record kept its kind', () => {
+    const view = derive(
+      makeSummary({
+        plannerTool: 'opencode',
+        plannerModel: 'gpt-5',
+        costBreakdown: makeCostBreakdown({
+          providerRunMetadata: {
+            'api:opencode': {
+              service: 'opencode',
+              offering: 'payg',
+              normalizedEndpoint: 'https://my-endpoint.example/v1',
+              billing: 'api-metered',
+              asOf: '',
+            },
+          },
+        }),
+      }),
+    );
+
+    expect(view.seats.plan).toEqual({
+      kind: 'named',
+      identity: 'opencode · gpt-5',
+      short: 'gpt-5',
+    });
+  });
+
+  it('keeps a recorded API seat literal when its model name is a CLI alias', () => {
+    const view = derive(
+      makeSummary({
+        plannerTool: 'claude-code',
+        plannerModel: 'sonnet',
+        costBreakdown: makeCostBreakdown({
+          providerRunMetadata: {
+            'api:claude-code': {
+              service: 'claude-code',
+              offering: 'payg',
+              normalizedEndpoint: 'https://my-endpoint.example/v1',
+              billing: 'api-metered',
+              asOf: '',
+            },
+          },
+        }),
+      }),
+    );
+
+    // The API twin must not borrow the CLI alias's display name for its own model.
+    expect(view.seats.plan).toEqual({
+      kind: 'named',
+      identity: 'claude-code · sonnet',
+      short: 'sonnet',
+    });
+  });
+
+  it('reads a legacy name-only record through the merged catalog as before', () => {
+    const view = derive(
+      makeSummary({
+        plannerTool: 'claude-code',
+        plannerModel: 'sonnet',
+        costBreakdown: makeCostBreakdown({
+          providerRunMetadata: {
+            'claude-code': {
+              service: 'claude-code',
+              offering: 'payg',
+              normalizedEndpoint: 'cli:claude-code',
+              billing: 'provider-dependent',
+              asOf: '',
+            },
+          },
+        }),
+      }),
+    );
+
+    expect(view.seats.plan).toEqual({
+      kind: 'named',
+      identity: 'Claude Code CLI · Sonnet 5',
+      short: 'Sonnet 5',
+    });
+  });
+
+  it('leaves a recorded name the run used under two kinds on the name-only words', () => {
+    const view = derive(
+      makeSummary({
+        plannerTool: 'opencode',
+        costBreakdown: makeCostBreakdown({
+          providerRunMetadata: {
+            'api:opencode': {
+              service: 'opencode',
+              offering: 'payg',
+              normalizedEndpoint: 'https://my-endpoint.example/v1',
+              billing: 'api-metered',
+              asOf: '',
+            },
+            'cli:opencode': {
+              service: 'opencode',
+              offering: 'payg',
+              normalizedEndpoint: 'cli:opencode',
+              billing: 'provider-dependent',
+              asOf: '',
+            },
+          },
+        }),
+      }),
+    );
+
+    expect(view.seats.plan).toEqual({
+      kind: 'named',
+      identity: 'OpenCode CLI · auto',
+      short: 'auto',
+    });
+  });
+
+  it('names a moved API seat literally when its name is a CLI tool id', () => {
+    const on = (input: { id: string; tool: string; model: string }) =>
+      booked({
+        taskId: taskId(input.id),
+        implementerProfile: 'default',
+        tool: input.tool,
+        model: input.model,
+      });
+    const view = derive(
+      makeSummary({
+        implementerTool: 'opencode',
+        costBreakdown: makeCostBreakdown({
+          providerRunMetadata: {
+            'api:opencode': {
+              service: 'opencode',
+              offering: 'payg',
+              normalizedEndpoint: 'https://my-endpoint.example/v1',
+              billing: 'api-metered',
+              asOf: '',
+            },
+            'cli:codex': {
+              service: 'codex',
+              offering: 'payg',
+              normalizedEndpoint: 'cli:codex',
+              billing: 'subscription-included',
+              asOf: '',
+            },
+          },
+        }),
+        taskBreakdown: [
+          on({ id: 'T001', tool: 'opencode', model: 'auto' }),
+          on({ id: 'T002', tool: 'codex', model: 'auto' }),
+        ],
+      }),
+    );
+
+    // Both short forms are `auto`, so each moved seat is named with its tool.
+    expect(view.seats.build).toEqual({
+      kind: 'moved',
+      seats: [
+        { short: 'opencode auto', briefs: 1 },
+        { short: 'OpenAI Codex CLI auto', briefs: 1 },
+      ],
+      contiguous: true,
+    });
+  });
 });
 
 describe('brief rows', () => {
+  it('lists all current briefs when a run ends at its plan gate before the first evidence write', () => {
+    const tasks = [
+      makeTask({ id: 'T001', title: 'First brief' }),
+      makeTask({ id: 'T002', title: 'Second brief' }),
+      makeTask({ id: 'T003', title: 'Third brief' }),
+    ];
+    const view = derive(makeSummary({ totalTasks: 3, changedFiles: [] }), {
+      status: ENDED,
+      hydration: { kind: 'loaded', state: makeWorkflowState({ phase: 'reviewing-plan', tasks }) },
+    });
+    expect(view.briefs.rows.map((row) => [row.id, row.title, row.state])).toEqual([
+      ['T001', 'First brief', 'pending'],
+      ['T002', 'Second brief', 'pending'],
+      ['T003', 'Third brief', 'pending'],
+    ]);
+    expect(view.briefs.earlierRows).toEqual([]);
+  });
+
+  it('keeps old ledger work separate from a newly defined T001 after a rewind', () => {
+    const old = ledgerTask({
+      id: taskId('T001'),
+      title: 'Old brief',
+      file: 'src/old.ts',
+      changedFiles: ['src/old.ts'],
+    });
+    const state = makeWorkflowState({
+      phase: 'reviewing-plan',
+      tasks: [makeTask({ id: 'T001', title: 'New brief', file: 'src/new.ts' })],
+    });
+    const view = derive(
+      makeSummary({
+        totalTasks: 1,
+        completedByLocal: 0,
+        changedFiles: ['src/old.ts'],
+        taskBreakdown: [booked({ taskId: taskId('T001'), taskTitle: 'Old brief' })],
+        costBreakdown: makeCostBreakdown({ totalActualCost: 0.42 }),
+      }),
+      { status: ENDED, hydration: { kind: 'loaded', state }, ledger: makeLedger([old]) },
+    );
+    expect(view.briefs.rows.map((row) => [row.id, row.title, row.state])).toEqual([
+      ['T001', 'New brief', 'pending'],
+    ]);
+    expect(view.briefs.earlierRows.map((row) => [row.id, row.title, row.state])).toEqual([
+      ['T001', 'Old brief', 'local'],
+    ]);
+    expect(view.files.changed).toEqual(['src/old.ts']);
+    expect(view.files.stoppedAt).toBeNull();
+    expect(view.cost).toEqual({ kind: 'priced', actual: 0.42, partial: false });
+  });
+
   it('follows the ledger plan order and joins the spend record by id', () => {
     const view = derive(
       makeSummary({

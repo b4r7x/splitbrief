@@ -6,6 +6,8 @@ import {
   makeView,
 } from '#testing/helpers/factories/summary-view.js';
 import { glyph } from '../../../lib/glyphs.js';
+import { taskId } from '../../../core/schemas/task.js';
+import { getRailStages } from '../../../core/rail-stages.js';
 import { outcomeLeading, outcomeLine, outcomeMarker, OUTCOME_LEADING_CELLS } from './outcome.js';
 
 describe('outcomeLine', () => {
@@ -18,7 +20,16 @@ describe('outcomeLine', () => {
   it('names the failed briefs and the failing review on a run needing attention', () => {
     const view = makeView({
       outcome: { kind: 'needs-attention' },
-      briefs: { total: 3, passed: 3, local: 3, escalated: 0, failed: 1, skipped: 0, rows: [] },
+      briefs: {
+        total: 3,
+        passed: 3,
+        local: 3,
+        escalated: 0,
+        failed: 1,
+        skipped: 0,
+        rows: [],
+        earlierRows: [],
+      },
       review: {
         kind: 'written',
         verdict: 'fail',
@@ -64,9 +75,69 @@ describe('outcomeLine', () => {
     );
   });
 
+  it('keeps recorded earlier files after a rewind before the new plan is compiled', () => {
+    const view = endedInPlanning({
+      briefs: {
+        total: 0,
+        passed: 0,
+        local: 0,
+        escalated: 0,
+        failed: 0,
+        skipped: 0,
+        rows: [],
+        earlierRows: [
+          {
+            id: taskId('T001'),
+            title: 'Old brief',
+            state: 'local',
+            method: 'local',
+            retries: 0,
+            durationMs: null,
+            file: 'src/old.ts',
+            partialFiles: 0,
+          },
+        ],
+      },
+      files: { changed: ['src/old.ts'], partial: new Set(), stoppedAt: null },
+    });
+    expect(outcomeLine(view, WIDE)).toBe('Ended · Plan · no current briefs · changes kept');
+  });
+
+  it('says nothing was built when the run ended at a gate before its first brief', () => {
+    const view = endedInPlanning({
+      run: { ...endedInPlanning().run, phase: 'reviewing-plan' },
+      rail: getRailStages('reviewing-plan', { halted: 'cancelled' }),
+      briefs: {
+        total: 3,
+        passed: 0,
+        local: 0,
+        escalated: 0,
+        failed: 0,
+        skipped: 0,
+        rows: [],
+        earlierRows: [],
+      },
+    });
+    expect(outcomeLine(view, WIDE)).toBe('Ended · Plan 0/3 · nothing built');
+  });
+
+  it('keeps an unrecorded changed set unrecorded once the build has started', () => {
+    const view = endedInBuild({ files: { changed: null, partial: new Set(), stoppedAt: null } });
+    expect(outcomeLine(view, WIDE)).toBe('Ended · Build 2/5 · files not recorded');
+  });
+
   it('names the brief the run was inside when it ended', () => {
     const view = endedInBuild({
-      briefs: { total: 5, passed: 2, local: 2, escalated: 1, failed: 0, skipped: 0, rows: [] },
+      briefs: {
+        total: 5,
+        passed: 2,
+        local: 2,
+        escalated: 1,
+        failed: 0,
+        skipped: 0,
+        rows: [],
+        earlierRows: [],
+      },
     });
     expect(outcomeLine(view, WIDE)).toContain('stopped in T003');
   });
@@ -82,7 +153,16 @@ describe('outcomeLine', () => {
     const empty = makeView({ files: { changed: [], partial: new Set(), stoppedAt: null } });
     expect(outcomeLine(empty, WIDE)).toContain('no files changed');
     const none = makeView({
-      briefs: { total: 0, passed: 0, local: 0, escalated: 0, failed: 0, skipped: 0, rows: [] },
+      briefs: {
+        total: 0,
+        passed: 0,
+        local: 0,
+        escalated: 0,
+        failed: 0,
+        skipped: 0,
+        rows: [],
+        earlierRows: [],
+      },
       files: { changed: [], partial: new Set(), stoppedAt: null },
     });
     expect(outcomeLine(none, WIDE)).toContain('no briefs · ');

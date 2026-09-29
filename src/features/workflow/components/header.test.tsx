@@ -1,10 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { act } from 'react';
 import { Box } from 'ink';
 import { render } from 'ink-testing-library';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { renderFeature, tick, flushEffects } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
+import { controlsStore } from '../../../stores/ui/controls.js';
+import {
+  approvalPromptStore,
+  closeApprovalPrompt,
+  openApprovalPrompt,
+} from '../../../stores/approval-prompt/prompt.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { markWorkflowPaused } from '../../../stores/workflow/actions/pause.js';
 import { markWorkflowResumed } from '../../../stores/workflow/actions/resume.js';
@@ -37,9 +42,16 @@ const QUOTA_HALT = makeRecoveryIssue({
   switchSeat: { seat: 'build', candidates: [{ tool: 'opencode' }] },
 });
 
+/** The clock the bar pins right, read off a rendered frame. */
+function clockText(frame: string | undefined): string | undefined {
+  return stripAnsiStyles(frame ?? '').match(/\d+:\d{2}(?::\d{2})?/)?.[0];
+}
+
 function resetStores(): void {
   recoveryNoticeStore.reset();
   terminalSizeStore.reset();
+  controlsStore.__testReset();
+  approvalPromptStore.__testReset();
   lifecycleStore.reset();
   tasksStore.__testReset();
   tokensStore.__testReset();
@@ -197,11 +209,8 @@ describe('Header — seat line', () => {
     await tick();
     expect(stripAnsiStyles(instance.lastFrame() ?? '')).toContain('resets 17:00');
 
-    act(() => {
-      recoveryNoticeStore.clear();
-    });
+    recoveryNoticeStore.clear();
     await tick();
-
     expect(stripAnsiStyles(instance.lastFrame() ?? '')).not.toContain('resets');
     instance.unmount();
   });
@@ -381,8 +390,8 @@ describe('Header — rail and elapsed', () => {
     instance.unmount();
   });
 
-  it('freezes the elapsed clock while parked and resumes on resume', () => {
-    vi.useFakeTimers();
+  it('freezes the elapsed clock while parked and resumes on resume', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
     vi.setSystemTime(5_000);
     lifecycleStore.__testReset({
       phase: 'implementing',
@@ -393,30 +402,92 @@ describe('Header — rail and elapsed', () => {
     const instance = render(<Header startedAt={STARTED_AT} />);
     expect(instance.lastFrame() ?? '').toContain('0:05');
 
-    act(() => {
-      vi.advanceTimersByTime(5_000);
-    });
+    await vi.advanceTimersByTimeAsync(5_000);
+    await flushEffects();
     expect(instance.lastFrame() ?? '').toContain('0:10');
 
-    act(() => {
-      markWorkflowPaused();
-    });
+    markWorkflowPaused();
+    await flushEffects();
     expect(instance.lastFrame() ?? '').toContain('0:10');
 
-    act(() => {
-      vi.advanceTimersByTime(20_000);
-    });
+    await vi.advanceTimersByTimeAsync(20_000);
+    await flushEffects();
     expect(instance.lastFrame() ?? '').toContain('0:10');
 
-    act(() => {
-      markWorkflowResumed();
-    });
+    markWorkflowResumed();
+    await flushEffects();
     expect(instance.lastFrame() ?? '').toContain('0:30');
 
-    act(() => {
-      vi.advanceTimersByTime(2_000);
-    });
+    await vi.advanceTimersByTimeAsync(2_000);
+    await flushEffects();
     expect(instance.lastFrame() ?? '').toContain('0:32');
     instance.unmount();
   });
+
+  // Each of these waits on the user inside a running run. The run clock counts that time, so the
+  // wait never finds it frozen and the answer never makes it jump.
+  it.each([
+    {
+      wait: 'the spec gate',
+      phase: 'reviewing-spec',
+      open: () => controlsStore.setInputMode('review'),
+      answer: () => controlsStore.clearInputMode(),
+    },
+    {
+      wait: 'the plan gate',
+      phase: 'reviewing-plan',
+      open: () => controlsStore.setInputMode('review'),
+      answer: () => controlsStore.clearInputMode(),
+    },
+    {
+      wait: 'a planner question',
+      phase: 'specifying',
+      open: () => controlsStore.setInputMode('question'),
+      answer: () => controlsStore.clearInputMode(),
+    },
+    {
+      wait: 'an approval',
+      phase: 'implementing',
+      open: () => {
+        void openApprovalPrompt({
+          tier: 'sticky',
+          actionClass: 'network',
+          actionDescription: 'push to origin',
+          phase: 'implementing',
+        });
+      },
+      answer: () => closeApprovalPrompt({ decision: 'allow', scope: 'once' }),
+    },
+    {
+      wait: 'a recovery choice',
+      phase: 'implementing',
+      open: () => recoveryNoticeStore.open({ seat: 'build', resetAt: RESET_AT, issue: QUOTA_HALT }),
+      answer: () => recoveryNoticeStore.clear(),
+    },
+  ] as const)(
+    'keeps the run clock counting while $wait waits on the user',
+    async ({ phase, open, answer }) => {
+      vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+      vi.setSystemTime(5_000);
+      lifecycleStore.__testReset({ phase, status: 'running', startedAt: 0 });
+
+      const instance = render(<Header startedAt={STARTED_AT} />);
+      expect(clockText(instance.lastFrame())).toBe('0:05');
+
+      open();
+      await flushEffects();
+      await vi.advanceTimersByTimeAsync(60_000);
+      await flushEffects();
+      const whileWaiting = clockText(instance.lastFrame());
+      answer();
+      await flushEffects();
+      const afterAnswer = clockText(instance.lastFrame());
+      expect({ whileWaiting, afterAnswer }).toEqual({ whileWaiting: '1:05', afterAnswer: '1:05' });
+
+      await vi.advanceTimersByTimeAsync(2_000);
+      await flushEffects();
+      expect(clockText(instance.lastFrame())).toBe('1:07');
+      instance.unmount();
+    },
+  );
 });

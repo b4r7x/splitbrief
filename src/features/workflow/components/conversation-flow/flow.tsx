@@ -227,7 +227,7 @@ export function ConversationFlow({
                 >
                   <TaskSummary
                     width={conversationWidth}
-                    id={`T${item.index}`}
+                    id={item.id}
                     title={item.title}
                     state={{ kind: 'settled', method: item.method }}
                     retries={item.retries}

@@ -93,6 +93,8 @@ export type Section<TEvent extends SectionableEvent = SectionableEvent> =
       startIndex: number;
       summary: {
         index: number;
+        /** The brief's own id, which every other surface names it by. */
+        id: string;
         title: string;
         method: TaskCompletionMethod;
         retries: number;
@@ -166,6 +168,7 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
           startIndex: range.startIdx,
           summary: {
             index: range.startEvent.index + 1,
+            id: range.taskId,
             title: range.startEvent.title,
             method: endEvent.method,
             retries: endEvent.retries,
@@ -180,6 +183,7 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
           startIndex: range.startIdx,
           summary: {
             index: range.startEvent.index + 1,
+            id: range.taskId,
             title: range.startEvent.title,
             method: 'skipped',
             retries: 0,
@@ -194,6 +198,7 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
           startIndex: range.startIdx,
           summary: {
             index: range.startEvent.index + 1,
+            id: range.taskId,
             title: range.startEvent.title,
             method: 'failed',
             retries: 0,
