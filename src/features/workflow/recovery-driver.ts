@@ -1,4 +1,3 @@
-import { SPLITBRIEF_IDENTITY } from '../../core/identity.js';
 import { readActiveRunner } from '../../core/config/accessors/active-runner.js';
 import type { CrewSeatId } from '../../core/crew/identity.js';
 import { CREW_SEAT_ROLES } from '../../core/crew/seats.js';
@@ -30,6 +29,9 @@ import {
   parseRecoveryActionAnswer,
   switchSeatCandidateForAnswer,
 } from './recovery-prompt.js';
+
+/** What a paused recovery says; the halted run's byline under it names the key that decides it. */
+export const RECOVERY_PAUSED_MESSAGE = 'Recovery paused.';
 
 const NO_CORRECTION_MESSAGE = 'This halt takes no typed correction. Choose one of its actions.';
 
@@ -244,9 +246,7 @@ export function createRecoveryDriver(
       if (result.status === 'paused') {
         recoveryNoticeStore.clear();
         markWorkflowPaused();
-        feedbackStore.setMessage(
-          `Recovery paused. Resume with ${SPLITBRIEF_IDENTITY.executable} resume.`,
-        );
+        feedbackStore.setMessage(RECOVERY_PAUSED_MESSAGE);
         return { shouldRun: false, state: result.state };
       }
 

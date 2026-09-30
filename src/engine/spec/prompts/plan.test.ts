@@ -1,11 +1,21 @@
 import { describe, it, expect } from 'vitest';
 import { PLAN_PROMPT_MAX_BYTES } from '../../../core/pipeline-spec/brief.js';
+import { PLANNER_DOCUMENT_SECTIONS } from '../../../core/pipeline-spec/planner-documents.js';
+import { EXACT_HEADINGS_INSTRUCTION } from './builder.js';
 import { buildLanguageContext } from './language-context.js';
 import { assertPlanPromptBound, buildPlanPrompt, buildRegeneratePrompt } from './plan.js';
 
 const spec = { content: 'feature spec', hasClarifications: false };
 
 describe('buildPlanPrompt', () => {
+  it('says once, before the first section heading, that the headings are exact', () => {
+    const prompt = buildPlanPrompt({ spec, projectContext: 'project' });
+    expect(prompt.split(EXACT_HEADINGS_INSTRUCTION)).toHaveLength(2);
+    expect(prompt.indexOf(EXACT_HEADINGS_INSTRUCTION)).toBeLessThan(
+      prompt.indexOf(`## ${PLANNER_DOCUMENT_SECTIONS.plan[0]}\n`),
+    );
+  });
+
   it('TypeScript plan prompt keeps TypeScript examples', () => {
     const prompt = buildPlanPrompt({
       spec,

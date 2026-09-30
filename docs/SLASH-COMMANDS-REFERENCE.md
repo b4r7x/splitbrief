@@ -194,7 +194,7 @@ Commands that mutate the active run: rewind to an earlier phase, re-run a task, 
 
 - **Purpose**: Continue a run — one parked by the stop sheet (`Stop now` at a brief, `Pause after this brief` at the boundary) or one left at rest on disk.
 - **Screens**: `workflow`.
-- **Phase guard**: `isLivePhase(phase)`; elsewhere the feedback line reads `"No run to resume in this phase"`.
+- **Phase guard**: `isLivePhase(phase)`, or an open run at rest on the screen in any phase — a gate it waits at included (`isOpenRunAtRest`, `src/stores/navigation/router.ts`); elsewhere the feedback line reads `"No run to resume in this phase"`.
 - **Args**: none.
 - **Example**: `/resume`
 - **Behavior**: Calls `ctx.resumeRun()`, which reaches `continueRun` (`src/engine/orchestrator/run/continue.ts`) — the one path for both cases. A park this process is holding settles in place: a brief parked mid-call re-enters that brief, a boundary park starts the next one. A run at rest is re-entered on its saved state. With nothing parked the feedback line reads `"Nothing to resume."`, and a closed run is refused with its reason rather than restarted. Typing instructions and pressing Enter continues with that text as the step's steer, composed into the step's own prompt rather than replacing it; a blank Enter resumes a continuable run at rest, while a run parked in this process answers a blank Enter with `type instructions or /resume`.
@@ -205,7 +205,7 @@ Commands that mutate the active run: rewind to an earlier phase, re-run a task, 
 
 - **Purpose**: Close the run, keeping every change on disk.
 - **Screens**: `workflow`.
-- **Phase guard**: `isLivePhase(phase)`; elsewhere the feedback line reads `"No run to end in this phase"`.
+- **Phase guard**: `isLivePhase(phase)`, or an open run at rest on the screen in any phase — a gate it waits at included (`isOpenRunAtRest`, `src/stores/navigation/router.ts`); elsewhere the feedback line reads `"No run to end in this phase"`.
 - **Args**: none.
 - **Example**: `/end`
 - **Behavior**: Calls `ctx.endRun()` — the same transition as the sheet's `End run` row. Execution stops as it does for Stop now, the state records `closed: { at, as: 'ended' }` so the run lists as `ended` and nothing resumes it, and the byline reads `Cancelled by you at T<id> · Changes kept` — `Cancelled by you at the plan gate` when no brief ran — with the hint `esc back to sessions · ctrl+c quit`. With no active run the feedback line reads `"No active run to end."`. Nothing is reverted; git is still the layer that reverses a run.

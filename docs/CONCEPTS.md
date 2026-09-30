@@ -207,7 +207,7 @@ Implementation: `src/engine/orchestrator/approval/loop.ts` via `callbacks.onAppr
 
 Every planning document step can return a conversation reply before its artifact is complete. Ordinary prose stays in the conversation. Optional `<!-- Q:{JSON} -->` markers supply up to five structured questions per turn; `src/engine/parsers/question.ts` parses them.
 
-The pending call, reply and answers are persisted in `state.pendingPlannerConversation` before waiting or continuing. An answer continues the same step, using the planner's native session when available. No placeholder document is written, and stopping leaves the question pending. Completed documents incorporate the decisions; the session log keeps the conversation. See [WORKFLOW.md](./WORKFLOW.md#clarification-questions).
+The pending call, reply and answers are persisted in `state.pendingPlannerConversation` before waiting or continuing. An answer continues the same step, using the planner's native session when available. An empty answer sends the default continuation, which asks for the complete document. A section heading may carry a qualifier after its name. No placeholder document is written, and stopping leaves the question pending. Completed documents incorporate the decisions; the session log keeps the conversation. See [WORKFLOW.md](./WORKFLOW.md#clarification-questions).
 
 ---
 

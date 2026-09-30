@@ -4,7 +4,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { taskId } from '../schemas/task.js';
 import type { WorkflowState } from '../schemas/workflow.js';
-import { createInitialState } from '../state/machine.js';
+import { createInitialState, transition } from '../state/machine.js';
 import {
   deriveRunStatus,
   NO_ARTIFACTS,
@@ -143,6 +143,24 @@ describe('deriveRunStatus', () => {
       },
     });
     expect(status).toMatchObject({ stop: { kind: 'failed', message: 'Planning failed.' } });
+  });
+
+  it('forgets a recorded failure once the run picks the step up again', () => {
+    const failed = state({
+      phase: 'specifying',
+      lastFailure: {
+        step: { kind: 'planner', call: 'spec' },
+        message: 'Planning failed.',
+        at: '2026-09-01T00:00:00.000Z',
+      },
+    });
+    const resumed = transition(failed, { type: 'RESUME_STEP' });
+
+    expect(
+      deriveRunStatus({ state: resumed, liveness: 'not-alive', artifacts: NO_ARTIFACTS }),
+    ).toMatchObject({
+      stop: { kind: 'interrupted' },
+    });
   });
 
   it('falls back to interrupted when nothing says why the run stopped', () => {

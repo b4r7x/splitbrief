@@ -97,6 +97,9 @@ describe('language helpers', () => {
   it.each([
     ['**Language**: `TypeScript`', 'typescript'],
     ['**Language**: Python', 'python'],
+    ['- **Language:** `typescript`', 'typescript'],
+    ['- **Language:** rust\n- **Linter:** `cargo clippy`', 'rust'],
+    ['- **Language**:\n  - `go`', 'go'],
     ['Some random research notes', undefined],
   ] as const)('extracts language from research', (research, expected) => {
     expect(extractLanguageFromResearch(research)).toBe(expected);

@@ -8,6 +8,7 @@ interface CommandExecutionOptions {
   screen: Screen;
   phase: Phase;
   plannerSupportsImages: boolean;
+  openRunAtRest: boolean;
   onError: (msg: string) => void;
 }
 
@@ -43,6 +44,7 @@ export async function executeRuntimeCommand(
   const blocked = cmd.guard?.({
     phase: options.phase,
     plannerSupportsImages: options.plannerSupportsImages,
+    openRunAtRest: options.openRunAtRest,
   });
   if (blocked !== undefined) {
     options.onError(blocked);

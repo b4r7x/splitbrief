@@ -1,14 +1,30 @@
 import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import { ClarificationQuestionSchema } from '../../core/schemas/question.js';
 import { warnError } from '../../lib/warn.js';
+import { isRecord } from '../../utils/type-guards.js';
 
 const MARKER_PREFIX = '<!-- Q:';
 const MARKER_SUFFIX = ' -->';
 export const MAX_PENDING_MARKER_BYTES = 16 * 1024;
 
+/**
+ * Planners write a choice default as the option's index (`"default":0`), and a marker the schema
+ * still rejects is a question the planner meant to ask, so one with an id and text is asked as
+ * free input rather than dropped.
+ */
 function narrowQuestion(raw: unknown): ClarificationQuestion | null {
-  const result = ClarificationQuestionSchema.safeParse(raw);
-  return result.success ? result.data : null;
+  if (!isRecord(raw)) return null;
+  const result = ClarificationQuestionSchema.safeParse(withOptionDefault(raw));
+  if (result.success) return result.data;
+  if (typeof raw.id !== 'string' || typeof raw.text !== 'string') return null;
+  return { id: raw.id, type: 'input', text: raw.text };
+}
+
+function withOptionDefault(raw: Record<string, unknown>): Record<string, unknown> {
+  if (raw.type !== 'choice' || typeof raw.default !== 'number') return raw;
+  const { default: index, ...rest } = raw;
+  const option = Array.isArray(raw.options) ? raw.options[index] : undefined;
+  return typeof option === 'string' ? { ...rest, default: option } : rest;
 }
 
 function findBalancedBrace(text: string, start: number): number {

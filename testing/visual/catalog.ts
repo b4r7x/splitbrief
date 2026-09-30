@@ -23,6 +23,13 @@ export const HOME_COLD_DETECTING_VIEWPORTS: readonly Viewport[] = Object.freeze(
   viewport({ cols: 80, rows: 40 }),
 ]);
 
+// The focused list spends four rows on its filter box and one on the selection error, so the two
+// heights below are the ones that still leave a session row to land the cursor on.
+const HOME_RECENT_SESSIONS_VIEWPORTS: readonly Viewport[] = Object.freeze([
+  viewport({ cols: 120, rows: 40 }),
+  viewport({ cols: 80, rows: 24 }),
+]);
+
 // The build-progress block collapses onto two rows above 120 columns, and the sidebar only paints
 // past that breakpoint. One wide capture is what proves the two share the row budget.
 export const WIDE_VIEWPORTS: readonly Viewport[] = Object.freeze([
@@ -239,6 +246,34 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'composer', title: 'Feature composer' },
         { id: 'completion', title: 'Mode completion menu' },
       ],
+    }),
+    defineScenario({
+      id: 'home-reference-completion',
+      title: 'Home · @ reference completion menu',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Reference completion open',
+        kind: 'ready',
+        marker: 'tab/⏎ fill',
+      },
+      elements: [
+        { id: 'composer', title: 'Feature composer' },
+        { id: 'completion', title: 'Reference completion menu' },
+      ],
+    }),
+    defineScenario({
+      id: 'home-recent-sessions',
+      title: 'Home · recent sessions focused',
+      surface: screenSurface('home'),
+      viewports: HOME_RECENT_SESSIONS_VIEWPORTS,
+      checkpoint: {
+        id: 'ready',
+        title: 'Recent sessions focused',
+        kind: 'ready',
+        marker: 'y copy',
+      },
+      elements: [{ id: 'composer', title: 'Feature composer' }],
     }),
   ],
   workflow: [
@@ -533,6 +568,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-approval-confirm',
+      title: 'Workflow · destructive confirm gate',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'approval-confirm',
+        title: 'Confirm gate',
+        kind: 'review',
+        marker: 'Destructive action:',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'approval-panel', title: 'Confirm panel' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-briefs-shared-file',
       title: 'Workflow · brief parser warnings',
       surface: screenSurface('workflow'),
@@ -796,6 +847,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Quick run paused at rest',
         kind: 'ready',
         marker: 'a correction or ⏎ to continue',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-paused',
+      title: 'Workflow · a recovery paused from its menu',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery-paused',
+        title: 'Paused recovery at rest',
+        kind: 'ready',
+        marker: 'Recovery paused',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

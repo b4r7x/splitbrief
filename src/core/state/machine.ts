@@ -418,6 +418,7 @@ export function transition(
             state.phase === 'escalating') && { phase: 'implementing' as const }),
         interruptedStep: undefined,
         awaitingContinue: false,
+        lastFailure: undefined,
       };
 
     case 'SET_PLANNER_CONVERSATION':

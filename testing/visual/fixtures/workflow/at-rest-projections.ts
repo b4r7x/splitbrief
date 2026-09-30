@@ -986,6 +986,16 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   atRestProjection({ id: 'workflow-at-rest-quick', route: { record: AT_REST_QUICK } }),
   atRestProjection({ id: 'workflow-at-rest-halted', route: { record: AT_REST_HALTED } }),
   atRestProjection({
+    id: 'workflow-recovery-paused',
+    route: {
+      record: {
+        ...AT_REST_LEFT_ISOLATION,
+        ref: { ...AT_REST_LEFT_ISOLATION.ref, sessionId: 'visual-recovery-paused' },
+      },
+      log: LEFT_ISOLATION_LOG,
+    },
+  }),
+  atRestProjection({
     id: 'workflow-at-rest-left-isolation',
     route: { record: AT_REST_LEFT_ISOLATION, log: LEFT_ISOLATION_LOG },
   }),

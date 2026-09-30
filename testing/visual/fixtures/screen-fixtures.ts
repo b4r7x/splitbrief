@@ -23,11 +23,13 @@ import type { Config } from '../../../src/core/schemas/config.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
 import type { SkillMeta } from '../../../src/core/skills/types.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
+import { listProjectFiles } from '../../../src/lib/file-listing.js';
 import { saveState } from '../../../src/core/state/persistence.js';
 import type { ModelsDevCatalog } from '../../../src/core/schemas/models-dev.js';
 import { scenarioId } from '../contracts/identifiers.js';
 import { makeConfig } from '../../helpers/factories/config.js';
 import { cliDetectionFor } from '../../helpers/factories/detection.js';
+import { createTestGitRepo } from '../../helpers/git.js';
 import { makeRunRecord } from '../../helpers/factories/run-record.js';
 import { resetAllStores } from '../../helpers/stores.js';
 import { prepareWorkflowExecution } from '../../helpers/workflow-screen.js';
@@ -695,6 +697,42 @@ function createModeCompletionFixture(): FixtureLifecycle {
   };
 }
 
+function createReferenceCompletionFixture(): FixtureLifecycle {
+  const home = createHomeFixture();
+  let restoreInteractionDeps: (() => void) | null = null;
+  return {
+    setup: async (context) => {
+      await home.setup(context);
+      createTestGitRepo(VISUAL_FIXTURE_PROJECT_DIR, { 'src/app.ts': 'export const app = true;\n' });
+      // The gallery answers the file lookup with an empty list; this menu needs the real one.
+      const { previewInteractionDeps } = await import('../gallery/fixture-session.js');
+      const previous = previewInteractionDeps.listProjectFiles;
+      Object.assign(previewInteractionDeps, { listProjectFiles });
+      restoreInteractionDeps = () =>
+        Object.assign(previewInteractionDeps, { listProjectFiles: previous });
+      composerDraftStore.request('@');
+    },
+    teardown: () => {
+      restoreInteractionDeps?.();
+      restoreInteractionDeps = null;
+      return home.teardown();
+    },
+  };
+}
+
+function createRecentSessionsFixture(): FixtureLifecycle {
+  const home = createHomeFixture();
+  return {
+    setup: async (context) => {
+      await home.setup(context);
+      const { seedSessions } = await import('./overlay-fixtures.js');
+      seedSessions();
+    },
+    teardown: home.teardown,
+    afterMount: (write) => write('\u0012'),
+  };
+}
+
 const HOME_REVIEWER_API_SEAT = {
   kind: 'api',
   provider: 'custom-endpoint',
@@ -722,6 +760,8 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('home-preparation-blocked'), createHomePreparationBlockedFixture],
   [scenarioId('home-skills-completion'), createSkillsCompletionFixture],
   [scenarioId('home-mode-completion'), createModeCompletionFixture],
+  [scenarioId('home-reference-completion'), createReferenceCompletionFixture],
+  [scenarioId('home-recent-sessions'), createRecentSessionsFixture],
   [scenarioId('home-draft-image'), createDraftImageFixture],
   [scenarioId('workflow-continuing'), createWorkflowContinuingFixture],
   [scenarioId('workflow-command-argument'), createCommandArgumentFixture],

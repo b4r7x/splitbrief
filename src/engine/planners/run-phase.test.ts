@@ -105,6 +105,22 @@ describe('runPhase — one call per phase', () => {
     expect(result.tasks).toBeUndefined();
   });
 
+  it('owns the document a narrated reply wraps in one md fence, without the fence', async () => {
+    const { planner } = recordingPlanner([
+      `The complete \`spec.md\` content:\n\n\`\`\`md\n${PLANNER_DOCUMENT_FIXTURES.spec}\n\`\`\`\n`,
+    ]);
+
+    const result = await callPhase(planner, {
+      call: 'spec',
+      projectDir,
+      callbacks: { onOutput: () => {} },
+    });
+
+    if (result.kind !== 'artifact') throw new Error('Expected a completed planner artifact');
+    expect(result.text).toBe(PLANNER_DOCUMENT_FIXTURES.spec);
+    expect(result.artifact.artifact.text).toBe(PLANNER_DOCUMENT_FIXTURES.spec);
+  });
+
   it('builds the prompt of the call it was asked for', async () => {
     const cases: Array<[PlannerDocumentCall, string]> = [
       ['research', 'Research Task'],

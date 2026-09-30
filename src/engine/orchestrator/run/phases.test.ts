@@ -37,6 +37,7 @@ import { loadState, saveState } from '../../../core/state/persistence.js';
 import { parseTasks } from '../../spec/tasks/parse.js';
 import { createValidator } from '../validation/run.js';
 import type { OrchestratorCallbacks, WorkflowContext, WorkflowSinks } from '../types.js';
+import { taskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { ApproveLevel, WorkflowMode } from '../../../core/schemas/enums.js';
 import type { Config } from '../../../core/schemas/config.js';
@@ -712,6 +713,49 @@ describe('runPlanningPhases', () => {
     expect(result.state.tasks.map((task) => task.id)).toEqual(['T001']);
     expect(planner.runPhase).not.toHaveBeenCalled();
     expect(implementer.implement).not.toHaveBeenCalled();
+  });
+
+  it('re-entering a failed run forgets the failure it recorded', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const ref = { projectDir, sessionId };
+    const planner = makePlanner();
+    const { callbacks } = makeCallbacks();
+    const { bus } = makeBusRecorder();
+    const savedState: WorkflowState = {
+      ...makeImplState([makePassingTask('T001')]),
+      lastFailure: {
+        step: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
+        message: 'The implementer crashed.',
+        at: '2026-09-25T08:00:00.000Z',
+      },
+    };
+    saveState(ref, savedState);
+
+    const result = await runPlanningPhases({
+      wctx: {
+        projectDir,
+        sessionId,
+        isolation: makeCopyingIsolation({ projectDir, sessionId }),
+        config: makeNoValidationConfig({ workflow: {} }),
+        callbacks,
+        bus,
+        planner,
+        reviewer: planner,
+        context: defaultContext,
+        implementer: makeImplementer(),
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+        validator: createValidator(),
+      },
+      state: savedState,
+      savedState,
+      phaseTimings: {},
+      startTime: Date.now(),
+      setTrackedState: vi.fn(),
+    });
+
+    expect(result.state.lastFailure).toBeUndefined();
+    expect(loadState(ref)?.lastFailure).toBeUndefined();
   });
 
   // A run whose steps open no plan gate once measured its briefs in reviewing-plan and now does it

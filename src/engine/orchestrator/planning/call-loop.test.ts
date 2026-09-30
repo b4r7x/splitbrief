@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import {
@@ -14,7 +14,8 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { appendMessage } from '../../../core/sessions/log-writer.js';
-import { SANDBOX_DIR } from '../../../core/paths.js';
+import { SANDBOX_DIR, SESSION_LOG_FILE, sessionDir } from '../../../core/paths.js';
+import { emptyReplyContinuation } from '../../../core/pipeline-spec/planner-documents.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import type { PhaseCallResult, PhaseInputs, PlannerCallbacks } from '../../planners/types.js';
 import { HEARTBEAT_THRESHOLD_MS, PLANNER_KEEPALIVE_INTERVAL_MS } from './heartbeat.js';
@@ -629,6 +630,77 @@ describe('runPlannerCallInContinuationLoop — question markers', () => {
       .join('');
     expect(publishedText).toContain('Partial findings.');
     expect(publishedText).toContain('Which file');
+  });
+});
+
+describe('runPlannerCallInContinuationLoop — an empty reply', () => {
+  const pendingText =
+    '## Project Overview\nA CLI.\n\n## Architecture (the parts it touches)\nModules.\n';
+
+  function pendingState() {
+    return {
+      ...planningState(),
+      plannerSessionId: 'native-1',
+      pendingPlannerConversation: {
+        call: 'research' as const,
+        text: pendingText,
+        questions: [],
+        answers: [],
+        answered: false,
+      },
+    };
+  }
+
+  it('sends the default continuation, naming the sections the reply lacks', async () => {
+    const { projectDir, sessionId } = setupSession();
+    const turns: (string | undefined)[] = [];
+    const planner = makePlanner({
+      capabilities: { ...makePlanner().capabilities, supportsSessionResume: true },
+      runPhase: vi.fn().mockImplementation(async ({ inputs }) => {
+        turns.push(inputs.continuationTurn);
+        return makePhaseCallResult({ call: 'research' });
+      }),
+    });
+    const wctx = makeWctx(projectDir, sessionId, {
+      callbacks: makeCallbacks({ onPlannerReply: async () => '' }).callbacks,
+    });
+
+    const run = await runPlannerCallInContinuationLoop({
+      wctx,
+      state: pendingState(),
+      planner,
+      call: 'research',
+      inputs: phaseInputs({ feature: 'test feature' }),
+    });
+
+    const continuation = emptyReplyContinuation('research', pendingText);
+    expect(continuation).toContain('Validation Tools');
+    expect(turns).toHaveLength(1);
+    expect(turns[0]).toContain(continuation);
+    expect(run.state.pendingPlannerConversation).toMatchObject({ answered: true });
+    const log = readFileSync(join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE), 'utf-8');
+    expect(log).toContain('"role":"user"');
+    expect(log).toContain('No further input');
+  });
+
+  it('keeps the reply a conversation when the wait was aborted', async () => {
+    const { projectDir, sessionId } = setupSession();
+    const runPhase = vi.fn();
+    const planner = makePlanner({ runPhase });
+    const wctx = makeWctx(projectDir, sessionId, {
+      callbacks: makeCallbacks({ onPlannerReply: async () => undefined }).callbacks,
+    });
+
+    const run = await runPlannerCallInContinuationLoop({
+      wctx,
+      state: pendingState(),
+      planner,
+      call: 'research',
+      inputs: phaseInputs({ feature: 'test feature' }),
+    });
+
+    expect(run.result.kind).toBe('conversation');
+    expect(runPhase).not.toHaveBeenCalled();
   });
 });
 

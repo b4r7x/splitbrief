@@ -244,10 +244,25 @@ function modeSuite(mode: WorkflowMode): void {
     expectMarkerFreePlannerText(first.events);
   });
 
-  it('an empty answer parks the run without admitting a document', async () => {
-    const answer = '';
+  it('an empty answer sends the default continuation and continues the same step', async () => {
+    const { planner, planningInputs } = makeMarkerPlanner({
+      flavor: 'conversational',
+      markers: TWO_MARKERS,
+    });
+    const onPlannerReply = vi.fn().mockResolvedValue('');
+
+    const { result, events } = await runMode({ mode, planner, onPlannerReply });
+
+    expect(onPlannerReply).toHaveBeenCalledTimes(1);
+    expect(result.disposition).toBe('ready-for-tasks');
+    expect(planningInputs[1]?.call).toBe(planningInputs[0]?.call);
+    expect(planningInputs[1]?.promptPrefix).toContain('No further input');
+    expectMarkerFreePlannerText(events);
+  });
+
+  it('a stopped reply wait parks the run without admitting a document', async () => {
     const { planner } = makeMarkerPlanner({ flavor: 'conversational', markers: TWO_MARKERS });
-    const onPlannerReply = vi.fn().mockResolvedValue(answer);
+    const onPlannerReply = vi.fn().mockResolvedValue(undefined);
 
     const { result, events } = await runMode({ mode, planner, onPlannerReply });
 

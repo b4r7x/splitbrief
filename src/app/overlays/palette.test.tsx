@@ -109,6 +109,7 @@ function renderCommandPalette(): ReturnType<typeof render> {
           screen: routerStore.get().screen,
           phase: lifecycleStore.get().phase,
           plannerSupportsImages: true,
+          openRunAtRest: false,
           onError: feedbackStore.setError,
         })
       }

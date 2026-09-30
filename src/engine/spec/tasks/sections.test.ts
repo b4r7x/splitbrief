@@ -561,3 +561,79 @@ Dropped by the grammar.
     expect(unknownSectionHeaders(input)).toEqual(['Notes']);
   });
 });
+
+describe('Task Brief sections in other planner spellings', () => {
+  const brief = (body: string) => `---
+id: T001
+title: Test task
+action: modify
+file: src/a.ts
+depends_on: []
+---
+
+${body}`;
+
+  it('reads ## and #### section headings, numbered or bold', () => {
+    const [task] = parseTasks(
+      brief(`## Description
+Do it.
+
+#### **Tests**
+- the test passes
+
+## 3. Constraints
+- keep ESM
+`),
+    );
+    expect(task?.description).toBe('Do it.');
+    expect(task?.tests).toEqual(['the test passes']);
+    expect(task?.constraints).toEqual(['keep ESM']);
+  });
+
+  it('keeps a ## or #### heading that names no section inside the section above it', () => {
+    const input = `${brief(`### Implementation Steps
+#### Parser
+1. Split the lines.
+2. Read the heading.
+`)}
+## Phase 2: Follow-up
+`;
+    const warnings: string[] = [];
+    const [task] = parseTasksStrict(input, (message) => warnings.push(message));
+    expect(task?.implementationSteps).toEqual(['Split the lines.', 'Read the heading.']);
+    expect(warnings).toEqual([]);
+  });
+
+  it('reads scope labels with the colon outside the bold, and indented or starred bullets', () => {
+    const [task] = parseTasks(
+      brief(`### Scope
+**In bounds**:
+  - src/a.ts
+**Out of bounds**:
+* src/b.ts
+`),
+    );
+    expect(task?.scope).toEqual({ inBounds: ['src/a.ts'], outOfBounds: ['src/b.ts'] });
+  });
+
+  it('reads starred bullets, keeps nested bullets inside their item, and reads 1) steps', () => {
+    const [task] = parseTasks(
+      brief(`### Tests
+* first
+  * detail of first
+* second
+
+### Implementation Steps
+1) Write it.
+2) Run it.
+`),
+    );
+    expect(task?.tests).toEqual(['first', 'second']);
+    expect(task?.implementationSteps).toEqual(['Write it.', 'Run it.']);
+  });
+
+  it('reads bulleted implementation steps when the planner did not number them', () => {
+    const [task] = parseTasks(brief('### Implementation Steps\n- Write it.\n- Run it.\n'));
+    expect(task?.implementationSteps).toEqual(['Write it.', 'Run it.']);
+  });
+});

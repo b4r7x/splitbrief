@@ -28,6 +28,7 @@ import {
   finishClaudeStream,
 } from '../../../../src/engine/runners/claude/stream.js';
 import type { ApprovalPromptState } from '../../../../src/stores/approval-prompt/prompt.js';
+import type { TieredApprovalRequest } from '../../../../src/core/approval/types.js';
 import type { StopIntent, StopParkKind, StopPhase } from '../../../../src/stores/workflow/stop.js';
 import type { ScenarioId } from '../../contracts/identifiers.js';
 import { scenarioId } from '../../contracts/identifiers.js';
@@ -128,6 +129,8 @@ interface FixtureQuestion {
 interface FixtureApproval {
   readonly actionDescription: string;
   readonly answer: string;
+  readonly tier?: TieredApprovalRequest['tier'];
+  readonly actionClass?: TieredApprovalRequest['actionClass'];
 }
 
 interface FixtureReview {
@@ -200,6 +203,7 @@ const WORKFLOW_IMPLEMENTATION_ADJACENT_NARRATION_ID = scenarioId(
 const WORKFLOW_REVIEW_ID = scenarioId('workflow-review');
 const WORKFLOW_APPROVAL_DOCUMENT_ID = scenarioId('workflow-approval-document');
 const WORKFLOW_APPROVAL_PERMISSION_ID = scenarioId('workflow-approval-permission');
+const WORKFLOW_APPROVAL_CONFIRM_ID = scenarioId('workflow-approval-confirm');
 const WORKFLOW_REVIEWING_BRIEFS_ID = scenarioId('workflow-reviewing-briefs');
 const WORKFLOW_QUESTION_ID = scenarioId('workflow-question');
 const WORKFLOW_PAUSED_MID_BRIEF_ID = scenarioId('workflow-paused-mid-brief');
@@ -1061,6 +1065,40 @@ const approvalPermissionProjection: WorkflowFixtureProjection = {
   ],
   approval: {
     actionDescription: 'src/features/workflow/panel.ts',
+    answer: WORKFLOW_FIXTURE_TEXT.reviewAnswer,
+  },
+};
+
+const approvalConfirmProjection: WorkflowFixtureProjection = {
+  scenarioId: WORKFLOW_APPROVAL_CONFIRM_ID,
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: false,
+  events: [
+    {
+      type: 'workflow_started',
+      ts: FIXED_TS,
+      phase: 'implementing',
+      feature: WORKFLOW_FEATURE,
+    },
+    {
+      type: 'task_started',
+      ts: FIXED_TS + 100,
+      phase: 'implementing',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      title: WORKFLOW_FIXTURE_TEXT.implementationTask,
+      index: 0,
+      total: 1,
+      file: WORKFLOW_FIXTURE_REVIEW_FILE,
+      action: 'modify',
+      tool: 'ollama',
+      model: FIXED_RUNNER_MODEL,
+    },
+  ],
+  approval: {
+    tier: 'confirm',
+    actionClass: 'destructive',
+    actionDescription: '.splitbrief/config.yaml',
     answer: WORKFLOW_FIXTURE_TEXT.reviewAnswer,
   },
 };
@@ -2473,6 +2511,7 @@ const projections = [
   approvalDocumentProjection,
   { ...approvalDocumentProjection, scenarioId: scenarioId('workflow-selection-copy') },
   approvalPermissionProjection,
+  approvalConfirmProjection,
   reviewingBriefsProjection,
   tasksCardProjection,
   specTasksCardsProjection,
@@ -2535,8 +2574,8 @@ export function getWorkflowFixturePromptRows(
       : {
           status: 'pending',
           request: {
-            tier: 'sticky',
-            actionClass: 'write_out_of_scope',
+            tier: projection.approval.tier ?? 'sticky',
+            actionClass: projection.approval.actionClass ?? 'write_out_of_scope',
             actionDescription: projection.approval.actionDescription,
             taskId: WORKFLOW_FIXTURE_TASK_ID,
             phase: 'reviewing-plan',

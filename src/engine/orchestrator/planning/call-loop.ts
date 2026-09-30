@@ -16,6 +16,7 @@ import { buildRejectionContext } from '../evidence/reporting.js';
 import { startPlannerHeartbeat } from './heartbeat.js';
 import { createQuestionMarkerStripper } from '../../parsers/question.js';
 import { PLAN_FILE, RESEARCH_FILE, SPEC_FILE, TASKS_FILE } from '../../../core/paths.js';
+import { emptyReplyContinuation } from '../../../core/pipeline-spec/planner-documents.js';
 import type {
   PhaseCallResult,
   PhaseInputs,
@@ -94,8 +95,8 @@ export async function runPlannerCallInContinuationLoop(
             },
           }));
         // A structured reply keeps the flat blob as its text, so every consumer below is unchanged.
-        const replyText = typeof answer === 'string' ? answer : answer?.text;
-        if (replyText === undefined || replyText.trim() === '') {
+        const typed = typeof answer === 'string' ? answer : answer?.text;
+        if (typed === undefined) {
           return {
             state,
             result: {
@@ -106,6 +107,8 @@ export async function runPlannerCallInContinuationLoop(
             },
           };
         }
+        // An empty ⏎ is "carry on", so it sends the step's default continuation as the reply.
+        const replyText = typed.trim() === '' ? emptyReplyContinuation(call, pending.text) : typed;
         const qa = typeof answer === 'string' ? undefined : answer?.qa;
         pending = {
           ...pending,

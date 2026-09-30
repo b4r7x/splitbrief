@@ -18,6 +18,7 @@ import { detectedModelFact, seatSupportsImages } from '../../core/runners/capabi
 import { COMMAND_CATEGORIES, COMMAND_CATEGORY_LABELS } from '../../core/runtime/commands/types.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
+import { isOpenRunAtRest, routerStore } from '../../stores/navigation/router.js';
 import { configStore } from '../../stores/project/config.js';
 import { controlsStore } from '../../stores/ui/controls.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
@@ -81,6 +82,7 @@ export function HelpOverlay({ currentScreen, commands }: HelpOverlayProps) {
   const inputMode = controlsStore.use((s) => s.inputMode);
   const config = configStore.use((s) => s.config);
   const phase = lifecycleStore.use((s) => s.phase);
+  const openRunAtRest = routerStore.use(isOpenRunAtRest);
 
   const commandItems = buildCommandItems({
     commands,
@@ -94,6 +96,7 @@ export function HelpOverlay({ currentScreen, commands }: HelpOverlayProps) {
           runner: config.planner,
           detected: detectedModelFact(modelCacheStore.getDetection().providers, config.planner),
         }),
+      openRunAtRest,
     },
   });
   const shortcuts = getShortcutsForScreen(currentScreen, { inputMode });

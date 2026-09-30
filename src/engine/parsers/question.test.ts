@@ -55,16 +55,46 @@ describe('extractQuestionsFromStream', () => {
     }
   });
 
-  it('skips questions missing required fields', () => {
+  it('skips questions missing an id or text, and asks the rest as input', () => {
     const text = [
       '<!-- Q:{"type":"choice","text":"No id"} -->',
       '<!-- Q:{"id":"q1","text":"No type"} -->',
       '<!-- Q:{"id":"q2","type":"choice"} -->',
       '<!-- Q:{"id":"q3","type":"input","text":"Valid"} -->',
+      '<!-- Q:{"id":"q4","type":"choice","text":"No options"} -->',
     ].join('\n');
-    const questions = extractQuestionsFromStream(text);
-    expect(questions.length).toBe(1);
-    expect(questions[0]?.id).toBe('q3');
+    expect(extractQuestionsFromStream(text)).toEqual([
+      { id: 'q1', type: 'input', text: 'No type' },
+      { id: 'q3', type: 'input', text: 'Valid' },
+      { id: 'q4', type: 'input', text: 'No options' },
+    ]);
+  });
+
+  it('reads a numeric choice default as the option at that index', () => {
+    // .splitbrief/sessions/2026-08-10-plan-fast-review-of-the-implementations-code-quali-2/research.md
+    const text =
+      '<!-- Q:{"id":"review_scope","type":"choice","text":"Which shape?","options":["New workflow mode","Flag modifying instant/quick behavior","Review-only command"],"default":1} -->';
+    expect(extractQuestionsFromStream(text)).toEqual([
+      {
+        id: 'review_scope',
+        type: 'choice',
+        text: 'Which shape?',
+        options: [
+          'New workflow mode',
+          'Flag modifying instant/quick behavior',
+          'Review-only command',
+        ],
+        default: 'Flag modifying instant/quick behavior',
+      },
+    ]);
+  });
+
+  it('drops a numeric choice default that names no option', () => {
+    const text =
+      '<!-- Q:{"id":"q","type":"choice","text":"Pick","options":["a","b"],"default":5} -->';
+    expect(extractQuestionsFromStream(text)).toEqual([
+      { id: 'q', type: 'choice', text: 'Pick', options: ['a', 'b'] },
+    ]);
   });
 
   it('accepts empty options array as valid', () => {

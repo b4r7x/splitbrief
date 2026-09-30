@@ -146,6 +146,41 @@ describe('parseHintVerdict', () => {
       reason: 'the suite',
     });
   });
+
+  it('takes only path-like words as paths and keeps the rest as the reason', () => {
+    expect(parseHintVerdict('VERDICT: widen a.ts (b consumes its export)')).toEqual({
+      kind: 'widen',
+      paths: ['a.ts'],
+      reason: 'b consumes its export',
+    });
+    expect(parseHintVerdict('VERDICT: widen src/a.ts, docs/b.md since both name the flag')).toEqual(
+      {
+        kind: 'widen',
+        paths: ['src/a.ts', 'docs/b.md'],
+        reason: 'since both name the flag',
+      },
+    );
+  });
+
+  it('keeps a lone name without an extension as the path', () => {
+    expect(parseHintVerdict('VERDICT: widen Makefile — the target moved')).toEqual({
+      kind: 'widen',
+      paths: ['Makefile'],
+      reason: 'the target moved',
+    });
+  });
+
+  it('reads a verdict line behind a heading or a bullet mark', () => {
+    expect(parseHintVerdict('## VERDICT: brief — wrong file')).toEqual({
+      kind: 'brief',
+      diagnosis: 'wrong file',
+    });
+    expect(parseHintVerdict('- VERDICT: widen a.ts — r')).toEqual({
+      kind: 'widen',
+      paths: ['a.ts'],
+      reason: 'r',
+    });
+  });
 });
 
 describe('escalation prompts', () => {

@@ -12,10 +12,27 @@ describe('/resume', () => {
   it('is offered only while a run is live', () => {
     const resume = command('/resume');
 
-    expect(resume.guard?.({ phase: 'implementing', plannerSupportsImages: true })).toBeUndefined();
-    expect(resume.guard?.({ phase: 'idle', plannerSupportsImages: true })).toBe(
-      'No run to resume in this phase',
-    );
+    expect(
+      resume.guard?.({ phase: 'implementing', plannerSupportsImages: true, openRunAtRest: false }),
+    ).toBeUndefined();
+    expect(
+      resume.guard?.({ phase: 'idle', plannerSupportsImages: true, openRunAtRest: false }),
+    ).toBe('No run to resume in this phase');
+  });
+
+  it('is offered on an open run at rest, whatever phase it stopped in', () => {
+    const resume = command('/resume');
+
+    expect(
+      resume.guard?.({ phase: 'reviewing-spec', plannerSupportsImages: true, openRunAtRest: true }),
+    ).toBeUndefined();
+    expect(
+      resume.guard?.({
+        phase: 'reviewing-spec',
+        plannerSupportsImages: true,
+        openRunAtRest: false,
+      }),
+    ).toBe('No run to resume in this phase');
   });
 
   it('continues the run through the resume port', async () => {
@@ -44,10 +61,23 @@ describe('/end', () => {
   it('is offered only while a run is live', () => {
     const end = command('/end');
 
-    expect(end.guard?.({ phase: 'implementing', plannerSupportsImages: true })).toBeUndefined();
-    expect(end.guard?.({ phase: 'complete', plannerSupportsImages: true })).toBe(
-      'No run to end in this phase',
-    );
+    expect(
+      end.guard?.({ phase: 'implementing', plannerSupportsImages: true, openRunAtRest: false }),
+    ).toBeUndefined();
+    expect(
+      end.guard?.({ phase: 'complete', plannerSupportsImages: true, openRunAtRest: false }),
+    ).toBe('No run to end in this phase');
+  });
+
+  it('is offered on an open run at rest, whatever phase it stopped in', () => {
+    const end = command('/end');
+
+    expect(
+      end.guard?.({ phase: 'reviewing-spec', plannerSupportsImages: true, openRunAtRest: true }),
+    ).toBeUndefined();
+    expect(
+      end.guard?.({ phase: 'reviewing-spec', plannerSupportsImages: true, openRunAtRest: false }),
+    ).toBe('No run to end in this phase');
   });
 
   it('ends the run through the end port', async () => {

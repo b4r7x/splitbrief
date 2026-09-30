@@ -22,8 +22,10 @@ export type RunPlanningPhasesOptions = {
 };
 
 /** A run that stopped mid-step, by the recorded step or the legacy flag. */
-function isParkedMidStep(state: WorkflowState): boolean {
-  return state.interruptedStep !== undefined || state.awaitingContinue;
+function isStopped(state: WorkflowState): boolean {
+  return (
+    state.interruptedStep !== undefined || state.awaitingContinue || state.lastFailure !== undefined
+  );
 }
 
 export async function runPlanningPhases(
@@ -40,9 +42,9 @@ export async function runPlanningPhases(
           ...(rewindFeedback !== undefined && { comment: rewindFeedback }),
         };
 
-  // Re-entering the run is the resume: the parked step is cleared here whatever
-  // phase it was in, so nothing downstream still reads the run as stopped.
-  if (isParkedMidStep(state)) {
+  // Re-entering the run is the resume: the parked step and a recorded failure are cleared here
+  // whatever phase it was in, so nothing downstream still reads the run as stopped.
+  if (isStopped(state)) {
     state = transitionAndSave({ projectDir, sessionId }, state, { type: 'RESUME_STEP' });
     setTrackedState(state);
   }

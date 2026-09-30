@@ -6,7 +6,7 @@ import { toTokenDelta } from '../calls/projection.js';
 import { formatMessagesForCli } from '../streaming/format-messages.js';
 import { createTranscriptBuffer } from '../streaming/transcript-buffer.js';
 import { admitPlanningArtifact } from '../spec/planning-artifact-admission.js';
-import { isPlannerDocument } from '../../core/pipeline-spec/planner-documents.js';
+import { plannerDocumentText } from '../../core/pipeline-spec/planner-documents.js';
 import { extractQuestionsFromStream } from '../parsers/question.js';
 import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import { error } from '../../utils/error.js';
@@ -390,24 +390,22 @@ export function createPhaseRunner(
       call === 'tasks'
         ? parseTasksStrict(text, (message) => taskWarnings.push(message))
         : undefined;
-    if (
-      questions.length > 0 ||
-      (call === 'tasks' ? tasks?.length === 0 : !isPlannerDocument(call, text))
-    ) {
+    const document = call === 'tasks' ? text : plannerDocumentText(call, text);
+    if (questions.length > 0 || document === undefined || tasks?.length === 0) {
       logStreamed();
       buffer.flush();
       return { kind: 'conversation', text, usage: toTokenDelta(result.usage), questions };
     }
     for (const warning of taskWarnings) callbacks.onWarning?.(warning);
     if (call === 'spec' || call === 'plan') {
-      admitPlanningArtifact({ phase: CALL_PHASE[call], filename: logicalName, text });
+      admitPlanningArtifact({ phase: CALL_PHASE[call], filename: logicalName, text: document });
     }
 
     return {
       kind: 'artifact',
-      text,
+      text: document,
       usage: toTokenDelta(result.usage),
-      artifact: normalizePlannerPhase({ result, callContext, logicalName, text }),
+      artifact: normalizePlannerPhase({ result, callContext, logicalName, text: document }),
       ...(tasks === undefined ? {} : { tasks }),
     };
   };

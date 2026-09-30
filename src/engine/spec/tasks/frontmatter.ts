@@ -13,14 +13,30 @@ const confinedPath = z
     message: 'task file path must be a confined relative path',
   });
 
+/** Planners write `T1` and `T01` for `T001`; the id is padded, anything else is left to the schema. */
+function padTaskId(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const digits = /^T(\d{1,3})$/.exec(value.trim())?.[1];
+  return digits === undefined ? value : `T${digits.padStart(3, '0')}`;
+}
+
+const plannerTaskId = z.preprocess(padTaskId, TaskIdSchema);
+
 export const TaskFrontmatterSchema = z.object({
-  id: TaskIdSchema,
+  id: plannerTaskId,
   title: z.string().min(1),
-  action: FileActionSchema,
+  action: z.preprocess(
+    (value) => (typeof value === 'string' ? value.trim().toLowerCase() : value),
+    FileActionSchema,
+  ),
   file: confinedPath,
   files: z.union([z.array(confinedPath).min(1), confinedPath.transform((p) => [p])]).optional(),
+  // `depends_on: T001, T002` reaches here as one YAML string.
   depends_on: z
-    .union([z.array(TaskIdSchema), TaskIdSchema.transform((s) => [s])])
+    .preprocess(
+      (value) => (typeof value === 'string' ? value.split(/[\s,]+/).filter(Boolean) : value),
+      z.array(plannerTaskId),
+    )
     .optional()
     .default([]),
 });

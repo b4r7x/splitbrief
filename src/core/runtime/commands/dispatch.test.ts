@@ -215,6 +215,7 @@ describe('executeRuntimeCommand', () => {
       screen: 'workflow',
       phase: 'planning',
       plannerSupportsImages: false,
+      openRunAtRest: false,
       onError: (msg) => {
         errorMsg = msg;
       },

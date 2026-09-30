@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { PLANNER_DOCUMENT_SECTIONS } from '../../../core/pipeline-spec/planner-documents.js';
+import { EXACT_HEADINGS_INSTRUCTION } from './builder.js';
 import { buildLanguageContext } from './language-context.js';
 import { buildSpecPrompt } from './spec.js';
 
@@ -18,5 +20,13 @@ describe('buildSpecPrompt', () => {
     const prompt = buildSpecPrompt('feature', 'findings');
     expect(prompt).toContain('## Research Findings\nfindings');
     expect(prompt).not.toContain('Active Project Skills');
+  });
+
+  it('says once, before the first section heading, that the headings are exact', () => {
+    const prompt = buildSpecPrompt('feature', 'findings');
+    expect(prompt.split(EXACT_HEADINGS_INSTRUCTION)).toHaveLength(2);
+    expect(prompt.indexOf(EXACT_HEADINGS_INSTRUCTION)).toBeLessThan(
+      prompt.indexOf(`### ${PLANNER_DOCUMENT_SECTIONS.spec[0]}`),
+    );
   });
 });

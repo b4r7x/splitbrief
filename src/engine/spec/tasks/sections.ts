@@ -1,6 +1,7 @@
 import type { TaskId } from '../../../core/schemas/task.js';
 import { extractFrontmatter } from '../../../utils/frontmatter.js';
 import { countNoun } from '../../../utils/pluralize.js';
+import { headingMatchesSection } from '../../../core/pipeline-spec/planner-documents.js';
 import { TASK_BRIEF_HEADINGS } from '../headings.js';
 import { closesOpenFence, fenceMarkerLength } from './fence-marker.js';
 
@@ -25,8 +26,10 @@ function readSection(sectionMap: Record<string, string>, ...headers: readonly st
     const exact = sectionMap[header];
     if (exact !== undefined) return exact;
 
-    const prefixed = Object.entries(sectionMap).find(([key]) => key.startsWith(`${header} (`));
-    if (prefixed) return prefixed[1];
+    const qualified = Object.entries(sectionMap).find(([key]) =>
+      headingMatchesSection(key, header),
+    );
+    if (qualified) return qualified[1];
   }
 
   return '';
@@ -37,7 +40,25 @@ const KNOWN_SECTION_KEYS: readonly string[] = Object.values(TASK_BRIEF_HEADINGS)
 );
 
 function isKnownSectionKey(header: string): boolean {
-  return KNOWN_SECTION_KEYS.some((key) => header === key || header.startsWith(`${key} (`));
+  return KNOWN_SECTION_KEYS.some((key) => headingMatchesSection(header, key));
+}
+
+/**
+ * The section a heading line opens, lowercased with its number and bold stripped. `###` is the
+ * grammar's level and always opens a section; planners also write `##` and `####`, which open one
+ * only when they name a known section, so a `## Phase 2` rule between briefs or a `#### Parser`
+ * sub-heading inside a section stays body text.
+ */
+function sectionHeader(line: string): string | undefined {
+  const match = /^(#{2,4})\s+(.+)/.exec(line);
+  if (match?.[1] === undefined || match[2] === undefined) return undefined;
+  const header = match[2]
+    .trim()
+    .replace(/^\d+[.)]\s+/, '')
+    .replace(/^\*\*(.*)\*\*$/, '$1')
+    .trim();
+  if (match[1] === '###' || isKnownSectionKey(header.toLowerCase())) return header;
+  return undefined;
 }
 
 export function unknownSectionHeaders(block: string): string[] {
@@ -60,11 +81,8 @@ export function unknownSectionHeaders(block: string): string[] {
       }
     }
 
-    const headerMatch = fenceLength > 0 ? null : line.match(/^###\s+(.+)/);
-    if (headerMatch?.[1]) {
-      const header = headerMatch[1].trim();
-      if (!isKnownSectionKey(header.toLowerCase())) unknown.push(header);
-    }
+    const header = fenceLength > 0 ? undefined : sectionHeader(line);
+    if (header !== undefined && !isKnownSectionKey(header.toLowerCase())) unknown.push(header);
   }
 
   return unknown;
@@ -105,9 +123,9 @@ export function extractSections(block: string): ParsedTaskSections {
       }
     }
 
-    const headerMatch = fenceLength > 0 ? null : line.match(/^###\s+(.+)/);
-    if (headerMatch?.[1]) {
-      currentHeader = headerMatch[1].trim().toLowerCase();
+    const header = fenceLength > 0 ? undefined : sectionHeader(line);
+    if (header !== undefined) {
+      currentHeader = header.toLowerCase();
     } else if (currentHeader) {
       sectionMap[currentHeader] = (sectionMap[currentHeader] ?? '') + line + '\n';
     }
@@ -146,12 +164,9 @@ function extractScopeBuckets(text: string): {
 
   type Bucket = 'in' | 'out' | 'approved' | null;
   let bucket: Bucket = null;
-  const inBounds: string[] = [];
-  const outOfBounds: string[] = [];
-  const approvedOutOfBounds: string[] = [];
-
+  const buckets: Record<Exclude<Bucket, null>, string[]> = { in: [], out: [], approved: [] };
   for (const line of text.split('\n')) {
-    const labelMatch = line.match(/^\s*\*\*(.+?):\*\*\s*(.*)$/);
+    const labelMatch = line.match(/^\s*\*\*(.+?)(?::\*\*|\*\*:)\s*(.*)$/);
     if (labelMatch?.[1] !== undefined) {
       const label = labelMatch[1].trim().toLowerCase();
       if (label === 'in bounds' || label === 'in-bounds' || label === 'in') bucket = 'in';
@@ -166,16 +181,14 @@ function extractScopeBuckets(text: string): {
       else bucket = null;
       continue;
     }
-    const itemMatch = line.match(/^-\s+(.*)/);
-    if (itemMatch?.[1] !== undefined && bucket) {
-      const value = itemMatch[1].trim();
-      if (bucket === 'in') inBounds.push(value);
-      else if (bucket === 'out') outOfBounds.push(value);
-      else approvedOutOfBounds.push(value);
-    }
+    if (bucket) buckets[bucket].push(line);
   }
 
-  return { inBounds, outOfBounds, approvedOutOfBounds };
+  return {
+    inBounds: topLevelItems(buckets.in.join('\n'), BULLET_RE),
+    outOfBounds: topLevelItems(buckets.out.join('\n'), BULLET_RE),
+    approvedOutOfBounds: topLevelItems(buckets.approved.join('\n'), BULLET_RE),
+  };
 }
 
 function extractCodeBlock(text: string): string {
@@ -209,20 +222,26 @@ function extractCodeBlock(text: string): string {
     .trim();
 }
 
+const BULLET_RE = /^(\s*)[-*]\s+(.*)/;
+const NUMBERED_RE = /^(\s*)\d+[.)]\s+(.*)/;
+
 function extractListItems(text: string): string[] {
-  const items: string[] = [];
-  for (const line of text.split('\n')) {
-    const m = line.match(/^-\s+(.*)/);
-    if (m?.[1] !== undefined) items.push(m[1].trim());
-  }
-  return items;
+  return topLevelItems(text, BULLET_RE);
 }
 
 function extractNumberedItems(text: string): string[] {
-  const items: string[] = [];
-  for (const line of text.split('\n')) {
-    const m = line.match(/^\d+\.\s+(.*)/);
-    if (m?.[1] !== undefined) items.push(m[1].trim());
-  }
-  return items;
+  const numbered = topLevelItems(text, NUMBERED_RE);
+  return numbered.length > 0 ? numbered : topLevelItems(text, BULLET_RE);
+}
+
+/** The items at the list's own indent; bullets nested deeper belong to the item above them. */
+function topLevelItems(text: string, item: RegExp): string[] {
+  const matches = text
+    .split('\n')
+    .map((line) => item.exec(line))
+    .filter((match) => match !== null);
+  const indent = Math.min(...matches.map((match) => match[1]?.length ?? 0));
+  return matches
+    .filter((match) => (match[1]?.length ?? 0) === indent)
+    .map((match) => (match[2] ?? '').trim());
 }

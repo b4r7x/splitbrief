@@ -62,6 +62,9 @@ export function instructionsSection(body: string): PromptSection {
   return { heading: 'Instructions', body };
 }
 
+export const EXACT_HEADINGS_INSTRUCTION =
+  'Use each section heading below exactly as written, once, as a markdown heading. Put any qualifier in the section body, not in the heading. Do not wrap the document in a code fence.';
+
 export function requiredSectionsSection(body: string): PromptSection {
-  return { heading: 'Required Sections', body };
+  return { heading: 'Required Sections', body: `${EXACT_HEADINGS_INSTRUCTION}\n\n${body}` };
 }

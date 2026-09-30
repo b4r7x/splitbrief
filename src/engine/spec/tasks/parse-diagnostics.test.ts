@@ -144,7 +144,7 @@ What to implement and why.
     expect(warnings).toEqual([]);
   });
 
-  it.each(['T1', 'T1234', 't001', 'T００１', 'T001/x', '123'])(
+  it.each(['T1234', 't001', 'T００１', 'T001/x', '123'])(
     'rejects malformed id %s as a block rejection, not a raw schema throw',
     (id) => {
       const input = metaSyntaxBlock({ id, action: 'create', dependsOn: '[]' });
@@ -161,7 +161,7 @@ What to implement and why.
     },
   );
 
-  it.each(['T9', '[T001, T9999]', '[123]', 'null'])(
+  it.each(['T9999', '[T001, T9999]', '[123]', 'null'])(
     'rejects malformed depends_on %s as a block rejection, not a raw schema throw',
     (dependsOn) => {
       const input = metaSyntaxBlock({ action: 'create', dependsOn });

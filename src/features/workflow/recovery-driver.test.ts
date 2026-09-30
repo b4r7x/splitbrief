@@ -182,7 +182,7 @@ describe('createRecoveryDriver', () => {
 
     expect(feedbackAtPrompt).toHaveLength(1);
     expect(result.shouldRun).toBe(false);
-    expect(feedbackStore.get().message).toBe('Recovery paused. Resume with splitbrief resume.');
+    expect(feedbackStore.get().message).toBe('Recovery paused.');
   });
 
   it('keeps the halt menu open when an action cannot be applied', async () => {
@@ -202,7 +202,7 @@ describe('createRecoveryDriver', () => {
     expect(feedbackAtPrompt).toHaveLength(2);
     expect(feedbackAtPrompt[1]?.isError).toBe(true);
     expect(result.shouldRun).toBe(false);
-    expect(feedbackStore.get().message).toBe('Recovery paused. Resume with splitbrief resume.');
+    expect(feedbackStore.get().message).toBe('Recovery paused.');
   });
 
   it('resumes the run on a retry and carries the selected worker as the profile override', async () => {

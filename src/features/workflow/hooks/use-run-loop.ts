@@ -174,9 +174,13 @@ export function useRunLoop({
     // A fresh run starts from an empty screen; a run this screen is continuing already has its
     // history on it, replayed at the navigation event or appended by its earlier passes, and the
     // live bus appends from here. Either way the saved state is laid over the stores, so the brief
-    // list and the spend are the run's.
+    // list and the spend are the run's. A stop that parked the run before belongs to the pass it
+    // ended; the pass starting here is live and stops afresh.
     if (stateForRun === undefined) resetWorkflow();
-    if (stateForRun !== undefined) hydrateFromState(stateForRun);
+    if (stateForRun !== undefined) {
+      stopStore.reset();
+      hydrateFromState(stateForRun);
+    }
     resetMarkdownConversationRowsCache();
     resetConversationRowsProjectionCache();
     resetEventBlockCache();

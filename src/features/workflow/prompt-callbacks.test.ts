@@ -262,3 +262,29 @@ describe('buildPromptCallbacks onContinuationNeeded', () => {
     await expect(pending).resolves.toBe('');
   });
 });
+
+describe('buildPromptCallbacks onPlannerReply', () => {
+  const reply = {
+    call: 'research' as const,
+    text: 'Which module?',
+    questions: [],
+    answers: [],
+    answered: false,
+  };
+
+  it('hands an empty submit on as an empty reply, not as no reply', async () => {
+    await expect(makeCallbacks('   ').onPlannerReply?.(reply)).resolves.toBe('');
+  });
+
+  it('returns no reply when the workflow is already unwinding', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const callbacks = buildPromptCallbacks({
+      inputMode: makeInputMode(''),
+      abortedRef: { current: false },
+      controller,
+    });
+
+    await expect(callbacks.onPlannerReply?.(reply)).resolves.toBeUndefined();
+  });
+});

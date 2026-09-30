@@ -103,6 +103,94 @@ pass with minor notes -- not a fail, but close
     expect(parsed.verdict).toBeNull();
   });
 
+  it.each([
+    ['### Verdict\n**PASS_WITH_NOTES**', 'pass_with_notes'],
+    ['### Verdict\nPass', 'pass'],
+    ['### Verdict: pass_with_notes', 'pass_with_notes'],
+    ['### Verdict — FAIL', 'fail'],
+    ['### **Verdict:** pass', 'pass'],
+    ['### Verdict\npass-with-notes', 'pass_with_notes'],
+    ['### Verdict\nPass with notes', 'pass_with_notes'],
+    ['### Verdict\nPASS — the one warning is no reason to fail it', 'pass'],
+    [
+      '### Verdict\n`pass_with_notes`: two warnings, nothing that should fail the run',
+      'pass_with_notes',
+    ],
+  ])('reads the verdict in %j as %s', (review, verdict) => {
+    expect(parseFinalReview(review).verdict).toBe(verdict);
+  });
+
+  it('reads no verdict under a heading that only starts with the word', () => {
+    expect(parseFinalReview('### Verdict rationale\npass').verdict).toBeNull();
+    expect(parseFinalReview('### Verdicts\npass').verdict).toBeNull();
+    expect(parseFinalReview('### Verdict\nPassed').verdict).toBeNull();
+  });
+
+  it('reads a review with CRLF line endings', () => {
+    const parsed = parseFinalReview(
+      [
+        '### Verdict',
+        'fail',
+        '',
+        '### Criteria Results',
+        '- **[FAIL]** The endpoint returns 500',
+        '',
+        '### Findings',
+        '- **Critical**: Unauthenticated requests return 500',
+      ].join('\r\n'),
+    );
+
+    expect(parsed.verdict).toBe('fail');
+    expect(parsed.criteria).toEqual([{ passed: false, text: 'The endpoint returns 500' }]);
+    expect(parsed.findings).toEqual([
+      { severity: 'critical', text: 'Unauthenticated requests return 500' },
+    ]);
+  });
+
+  it('reads a label behind a dash, in brackets or without bold behind a bullet', () => {
+    const parsed = parseFinalReview(
+      [
+        '### Findings',
+        '- **Critical** — an em dash label',
+        '- **Warning** – an en dash label',
+        '- **Critical** - a hyphen label',
+        '- **[Critical]** a bracketed label',
+        '- [Note] a bracketed label without bold',
+        '- Critical: a plain label',
+        '* Warning: a plain label behind a star',
+        '- **Critical**-ish is no label',
+        'Critical: a plain label without a bullet is prose',
+      ].join('\n'),
+    );
+
+    expect(parsed.findings).toEqual([
+      { severity: 'critical', text: 'an em dash label' },
+      { severity: 'warning', text: 'an en dash label' },
+      { severity: 'critical', text: 'a hyphen label' },
+      { severity: 'critical', text: 'a bracketed label' },
+      { severity: 'note', text: 'a bracketed label without bold' },
+      { severity: 'critical', text: 'a plain label' },
+      { severity: 'warning', text: 'a plain label behind a star' },
+    ]);
+  });
+
+  it('reads criteria behind a star or a numbered bullet', () => {
+    const parsed = parseFinalReview(
+      [
+        '### Criteria Results',
+        '* **[PASS]** a star bullet',
+        '1. **[FAIL]** a numbered bullet',
+        '2) [PASS] a numbered bullet with a parenthesis',
+      ].join('\n'),
+    );
+
+    expect(parsed.criteria).toEqual([
+      { passed: true, text: 'a star bullet' },
+      { passed: false, text: 'a numbered bullet' },
+      { passed: true, text: 'a numbered bullet with a parenthesis' },
+    ]);
+  });
+
   it('produces every verdict the persisted review packet accepts, and no other', () => {
     const produced = ReviewVerdictSchema.options.map(
       (verdict) => parseFinalReview(`### Verdict\n${verdict}`).verdict,

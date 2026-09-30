@@ -6,6 +6,7 @@ import { lifecycleStore } from '../../../../src/stores/workflow/lifecycle.js';
 import { feedbackStore } from '../../../../src/stores/ui/feedback.js';
 import { formatCopyResult } from '../../../../src/core/runtime/commands/types.js';
 import { stopStore } from '../../../../src/stores/workflow/stop.js';
+import { RECOVERY_PAUSED_MESSAGE } from '../../../../src/features/workflow/recovery-driver.js';
 import {
   WORKFLOW_FIXTURE_TEXT,
   workflowFixtureProjections,
@@ -33,6 +34,12 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
     return () => ({
       ...base(),
       afterMount: () => feedbackStore.setMessage(formatCopyResult('native')),
+    });
+  }
+  if (projection.scenarioId === 'workflow-recovery-paused') {
+    return () => ({
+      ...base(),
+      afterMount: () => feedbackStore.setMessage(RECOVERY_PAUSED_MESSAGE),
     });
   }
   const stop = projection.stop;
@@ -112,6 +119,7 @@ const checkpointPredicates = [
   [checkpointId('approval-document'), includesAll('End run', 'Fixture plan')],
   [checkpointId('selection-copy'), includesAll('End run', 'Fixture plan')],
   [checkpointId('approval-permission'), includesAll('allow this operation only')],
+  [checkpointId('approval-confirm'), includesAll('Confirm with a reason')],
   [checkpointId('reviewing-briefs'), includesAll('Approve briefs', 'T001 modify')],
   // The two briefs whose long headers the card once skipped, beside the first and the last.
   [checkpointId('tasks-card'), includesAll('T001', 'T004', 'T006', 'T007')],
@@ -135,6 +143,7 @@ const checkpointPredicates = [
   // byline sheds its reason and then its alternative as the terminal narrows.
   [checkpointId('at-rest-paused'), includesAll()],
   [checkpointId('at-rest-halted'), includesAll()],
+  [checkpointId('recovery-paused'), includesAll()],
   [checkpointId('retained-workspace'), includesAll('reuse')],
   [checkpointId('at-rest-waiting'), includesAll()],
   [checkpointId('closed-ready'), includesAll()],

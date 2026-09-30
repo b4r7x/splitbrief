@@ -196,6 +196,8 @@ export type SkillToggleResult =
 export interface CommandGuardContext {
   phase: Phase;
   plannerSupportsImages: boolean;
+  /** The screen shows a run read back from disk that is not closed: it can be continued or ended. */
+  openRunAtRest: boolean;
 }
 
 type CommandArgSpec =

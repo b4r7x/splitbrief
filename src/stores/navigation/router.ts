@@ -118,6 +118,15 @@ function updateRun(input: Readonly<{ run: RunRecord; execution?: WorkflowExecuti
   });
 }
 
+/** A run read back from disk that is still open: its screen can continue it or end it. */
+export function isOpenRunAtRest(route: RouteData): boolean {
+  return (
+    route.screen === 'workflow' &&
+    route.execution.kind === 'at-rest' &&
+    route.run.status.kind !== 'closed'
+  );
+}
+
 export const routerStore = {
   ...storeBase(store),
   reset: () => {

@@ -70,12 +70,14 @@ export function runCommandInTest(args: {
   raw: string;
   screen: 'home' | 'workflow' | 'setup';
   phase?: Phase;
+  openRunAtRest?: boolean;
   onError: (msg: string) => void;
 }): Promise<void> {
   return executeRuntimeCommand(args.commands, args.raw, {
     screen: args.screen,
     phase: args.phase ?? 'idle',
     plannerSupportsImages: true,
+    openRunAtRest: args.openRunAtRest ?? false,
     onError: args.onError,
   });
 }

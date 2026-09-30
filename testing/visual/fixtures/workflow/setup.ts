@@ -65,8 +65,8 @@ function applyProjection(projection: WorkflowFixtureProjection): void {
 
   if (projection.approval !== undefined) {
     void openApprovalPrompt({
-      tier: 'sticky',
-      actionClass: 'write_out_of_scope',
+      tier: projection.approval.tier ?? 'sticky',
+      actionClass: projection.approval.actionClass ?? 'write_out_of_scope',
       actionDescription: projection.approval.actionDescription,
       taskId: WORKFLOW_FIXTURE_TASK_ID,
       phase: 'reviewing-plan',

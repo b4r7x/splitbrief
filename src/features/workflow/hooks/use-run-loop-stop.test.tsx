@@ -42,6 +42,7 @@ import {
   requestQuit,
   requestSeatChangeAtBoundary,
   requestStopNow,
+  resumeParkedRun,
 } from '../handlers.js';
 import { useStopByline } from '../stop/use-stop-byline.js';
 import { useInputMode } from './use-input-mode.js';
@@ -63,6 +64,23 @@ function Harness({
 }
 
 type EngineOptions = Parameters<RunWorkflowFn>[0];
+
+/** The harness that also hands the test the input mode, so it can type what the composer would. */
+function AnsweringHarness({
+  prepared,
+  engine,
+  onInputMode,
+}: {
+  prepared: PreparedExecution;
+  engine: RunWorkflowFn;
+  onInputMode: (inputMode: ReturnType<typeof useInputMode>) => void;
+}) {
+  const inputMode = useInputMode();
+  onInputMode(inputMode);
+  const continuation = useRunContinue({ prepared, inputMode });
+  useRunLoop({ prepared, inputMode, continuation, runWorkflow: engine });
+  return <Text>{inputMode.mode}</Text>;
+}
 
 function saveInterrupted(options: EngineOptions) {
   const { ref, active } = options.prepared.session;
@@ -284,6 +302,78 @@ describe('run-loop stop completion', () => {
     );
     requestStopNow();
     await expectParked(prepared);
+  });
+
+  // Stop, then continue the run at rest in place: the re-entry is live again, so the stop is armed
+  // afresh and what the operator types answers the run rather than settling a park it no longer has.
+  it('re-arms the stop when a stopped run is continued in place', async () => {
+    const answers: unknown[] = [];
+    const engine = vi.fn<RunWorkflowFn>(async (options) => {
+      if (engine.mock.calls.length > 1) {
+        answers.push(
+          await options.callbacks.onPlannerReply?.({
+            call: 'research',
+            text: 'Which module?',
+            questions: [],
+            answers: [],
+            answered: false,
+          }),
+        );
+      }
+      await awaitAbort(options);
+      return saveInterrupted(options);
+    });
+    let inputMode: ReturnType<typeof useInputMode> | undefined;
+    const first = prepare();
+    routerStore.init({
+      screen: 'workflow',
+      run: makeRunRecord({ ref: first.session.ref }),
+      execution: { kind: 'local', prepared: first },
+    });
+    mounted = renderFeature(
+      <AnsweringHarness
+        prepared={first}
+        engine={engine}
+        onInputMode={(next) => {
+          inputMode = next;
+        }}
+      />,
+    );
+    await vi.waitFor(() => expect(engine).toHaveBeenCalledTimes(1));
+    expect(requestStopNow()).toBe(true);
+    await vi.waitFor(
+      () => expect(routerStore.get()).toMatchObject({ execution: { kind: 'at-rest' } }),
+      {
+        timeout: 3000,
+      },
+    );
+    expect(stopStore.get().phase).toBe('parked');
+
+    const stopped = loadState(first.session.ref);
+    if (stopped === null) throw new Error('missing stopped state');
+    const second = prepare(stopped);
+    routerStore.updateRun({
+      run: readRunRecord(first.session.ref),
+      execution: { kind: 'local', prepared: second },
+    });
+    mounted.rerender(
+      <AnsweringHarness
+        prepared={second}
+        engine={engine}
+        onInputMode={(next) => {
+          inputMode = next;
+        }}
+      />,
+    );
+    await vi.waitFor(() => expect(mounted?.lastFrame()).toBe('question'));
+
+    expect(stopStore.get()).toMatchObject({ intent: 'none', phase: 'idle', parked: null });
+    expect(resumeParkedRun('src/core')).toBe(false);
+    inputMode?.resolve('src/core');
+    await vi.waitFor(() => expect(answers).toEqual(['src/core']));
+    expect(requestStopNow()).toBe(true);
+    await vi.waitFor(() => expect(stopStore.get().phase).toBe('parked'), { timeout: 3000 });
+    expect(engine).toHaveBeenCalledTimes(2);
   });
 
   it('stops the recovery prompt without entering the engine', async () => {

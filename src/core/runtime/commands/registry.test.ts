@@ -88,8 +88,12 @@ describe('createRuntimeCommands registry shape', () => {
   it('offers images only while the PLAN seat can receive them', () => {
     const image = commands.find((cmd) => cmd.name === '/image');
 
-    expect(image?.guard?.({ phase: 'idle', plannerSupportsImages: false })).toBeTypeOf('string');
-    expect(image?.guard?.({ phase: 'idle', plannerSupportsImages: true })).toBeUndefined();
+    expect(
+      image?.guard?.({ phase: 'idle', plannerSupportsImages: false, openRunAtRest: false }),
+    ).toBeTypeOf('string');
+    expect(
+      image?.guard?.({ phase: 'idle', plannerSupportsImages: true, openRunAtRest: false }),
+    ).toBeUndefined();
   });
 
   it('offers no command under a name a release removed', () => {

@@ -1,8 +1,9 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeCtx, runCommandInTest } from '#testing/helpers/runtime-commands.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
@@ -10,11 +11,12 @@ import { loadState, saveState } from '../../core/state/persistence.js';
 import { readRunRecord } from '../../core/sessions/run-record-io.js';
 import { createRecoveryBus } from '../../engine/orchestrator/recovery/bus.js';
 import { readRunEvents } from '../../engine/events/replay.js';
-import { routerStore } from '../../stores/navigation/router.js';
+import { createRuntimeCommands } from '../../core/runtime/commands/registry.js';
+import { isOpenRunAtRest, routerStore } from '../../stores/navigation/router.js';
 import { configStore } from '../../stores/project/config.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { requestEndRun } from './handlers.js';
+import { clearAllHandlers, requestEndRun, requestResume, setResumeHandler } from './handlers.js';
 import { hydrateRun } from './run-history.js';
 
 describe('End run at rest', () => {
@@ -74,5 +76,65 @@ describe('End run at rest', () => {
     ).toHaveLength(1);
     expect(existsSync(join(projectDir, '.git', 'index'))).toBe(false);
     expect(readdirSync(join(projectDir, '.git', 'objects'))).toEqual(['info', 'pack']);
+  });
+});
+
+describe('/resume and /end on a run at rest at a gate', () => {
+  let projectDir = '';
+
+  afterEach(() => {
+    clearAllHandlers();
+    resetAllStores();
+    if (projectDir) cleanupTempDir(projectDir);
+    projectDir = '';
+  });
+
+  function restAtSpecGate() {
+    projectDir = createTempDir('at-rest-gate-commands-');
+    execFileSync('git', ['init', projectDir], { stdio: 'ignore' });
+    const ref = { projectDir, sessionId: 'gate-at-rest' };
+    ensureSessionDir(projectDir, ref.sessionId);
+    const started = transition(createInitialState('Gate at rest'), { type: 'START' });
+    const atGate = transition(transition(started, { type: 'RESEARCH_DONE' }), {
+      type: 'SPEC_DONE',
+    });
+    saveState(ref, atGate);
+    const record = readRunRecord(ref);
+    if (record === null) throw new Error('missing run record');
+    routerStore.init({ screen: 'workflow', run: record, execution: { kind: 'at-rest' } });
+    configStore.__testReset({ config: makeConfig() });
+    const errors: string[] = [];
+    const run = (raw: string) =>
+      runCommandInTest({
+        commands: createRuntimeCommands(
+          makeCtx({ endRun: requestEndRun, resumeRun: () => requestResume('') }),
+        ),
+        raw,
+        screen: 'workflow',
+        phase: atGate.phase,
+        openRunAtRest: isOpenRunAtRest(routerStore.get()),
+        onError: (message) => errors.push(message),
+      });
+    return { ref, errors, run };
+  }
+
+  it('/end closes it', async () => {
+    const { ref, errors, run } = restAtSpecGate();
+
+    await run('/end');
+
+    expect(errors).toEqual([]);
+    expect(readRunRecord(ref)?.status).toEqual({ kind: 'closed', as: 'ended' });
+  });
+
+  it('/resume re-enters it', async () => {
+    const { errors, run } = restAtSpecGate();
+    const resume = vi.fn();
+    setResumeHandler(resume);
+
+    await run('/resume');
+
+    expect(errors).toEqual([]);
+    expect(resume).toHaveBeenCalledWith('');
   });
 });

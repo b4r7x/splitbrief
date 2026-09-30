@@ -82,7 +82,8 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
       description: 'Continue a paused or stopped run',
       category: 'workflow',
       validScreens: ['workflow'],
-      guard: (c) => (isLivePhase(c.phase) ? undefined : 'No run to resume in this phase'),
+      guard: (c) =>
+        c.openRunAtRest || isLivePhase(c.phase) ? undefined : 'No run to resume in this phase',
       handler: () => {
         if (!ctx.resumeRun()) ctx.setFeedbackError('Nothing to resume.');
       },
@@ -94,7 +95,8 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
       description: 'Close the run, keeping every change on disk',
       category: 'workflow',
       validScreens: ['workflow'],
-      guard: (c) => (isLivePhase(c.phase) ? undefined : 'No run to end in this phase'),
+      guard: (c) =>
+        c.openRunAtRest || isLivePhase(c.phase) ? undefined : 'No run to end in this phase',
       handler: () => {
         if (!ctx.endRun()) ctx.setFeedbackError('No active run to end.');
       },

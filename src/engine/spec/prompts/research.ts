@@ -2,6 +2,7 @@ import { PLANNER_DOCUMENT_SECTIONS } from '../../../core/pipeline-spec/planner-d
 import {
   plannerConversationSection,
   buildPrompt,
+  EXACT_HEADINGS_INSTRUCTION,
   instructionsSection,
   skillsSection,
 } from './builder.js';
@@ -43,7 +44,7 @@ export function buildResearchPrompt(
    - Any technical debt or limitations that affect this feature`),
       {
         heading: 'Output Format',
-        body: `Write a structured research report in markdown with these sections:
+        body: `Write a structured research report in markdown with these sections. ${EXACT_HEADINGS_INSTRUCTION}
 
 ### ${PLANNER_DOCUMENT_SECTIONS.research[0]}
 Brief summary of what the project does and how it's built.

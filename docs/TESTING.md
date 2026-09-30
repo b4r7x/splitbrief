@@ -624,12 +624,13 @@ Repeat `--scenario`, `--viewport`, or `--element` to select more than one value.
 
 The run directory is content-addressed from the normalized selection. Repeating the same command replaces that run atomically, so a failed or narrower rerun cannot leave stale success records in its manifest.
 
-**The run screen's own scenarios.** There is no summary screen, so the four `summary-*` scenarios are gone. Eight scenarios cover the run screen when nothing is running on it, all under the `workflow` screen with the standard viewport matrix and the elements `header` / `transcript` / `composer`:
+**The run screen's own scenarios.** There is no summary screen, so the four `summary-*` scenarios are gone. Nine scenarios cover the run screen when nothing is running on it, all under the `workflow` screen with the standard viewport matrix and the elements `header` / `transcript` / `composer`:
 
 | Scenario | What it shows |
 |---|---|
 | `workflow-at-rest-paused` | paused mid-brief; `× build` on the rail, `Paused at T003 · type a correction or ⏎ to continue` |
 | `workflow-at-rest-halted` | a quota halt; `✗ build`, `Halted · Usage limit on ollama · ⏎ to decide` |
+| `workflow-recovery-paused` | a halt paused from its recovery menu; the feedback line `Recovery paused.` over the byline `Halted · T002 left the isolation directory · ⏎ to decide` |
 | `workflow-at-rest-waiting-gate` | parked at the spec gate; `Waiting at the spec gate · ⏎ to reopen it` |
 | `workflow-at-rest-quick` | a quick run paused at rest; Spec stays `○` pending, `× plan` wears the stop, `a correction or ⏎ to continue` |
 | `workflow-closed-complete-ready` | five `●`, the `Closed ─` block, `Keep it with /run accept…` |

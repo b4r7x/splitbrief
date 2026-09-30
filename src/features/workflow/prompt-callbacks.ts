@@ -97,7 +97,7 @@ export function buildPromptCallbacks(opts: BuildCallbacksOptions): OrchestratorC
       const answer = await answerPromise;
       if (controller.signal.aborted || abortedRef.current) return undefined;
       const batch = questionPromptStore.takeAnswerBatch();
-      if (answer.trim() === '') return undefined;
+      if (answer.trim() === '') return '';
       return batch ?? answer;
     },
     // A finished run is the loop returning, and the screen settles itself there from the record it

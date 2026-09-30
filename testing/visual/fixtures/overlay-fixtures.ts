@@ -260,7 +260,7 @@ function seedSkills(): void {
   skillsStore.setSelected(new Set(['terminal-layout']));
 }
 
-function seedSessions(): void {
+export function seedSessions(): void {
   const session = makeSession({
     id: 'visual-session',
     feature: 'Refine terminal navigation',

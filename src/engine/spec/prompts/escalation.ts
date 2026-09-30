@@ -26,7 +26,7 @@ export type HintVerdict =
 export type HintVerdictKind = HintVerdict['kind'];
 
 export const HINT_VERDICT_LINE =
-  /^[ \t>*_`]*VERDICT[*_`]*:[*_` \t]*(answer|widen|brief)\b[ \t]*([^\n]*)$/im;
+  /^[ \t>*_`#-]*VERDICT[*_`]*:[*_` \t]*(answer|widen|brief)\b[ \t]*([^\n]*)$/im;
 
 const VERDICT_REASON_SEPARATOR = /(?:^|\s+)[—–-](?:\s+|$)|:\s*/;
 
@@ -47,7 +47,14 @@ function verdictPath(raw: string): string {
   return normalizeProjectRelativePath(raw.replace(/^[`'"(]+/, '').replace(/[`'").,;:]+$/, ''));
 }
 
-/** The first `VERDICT:` line of a hint; no line, or a widening naming no path, reads `answer`. */
+// A path names a directory or a file extension: `src/a.ts`, `README.md`.
+const PATH_LIKE = /\/|\.[A-Za-z0-9]+$/;
+
+/**
+ * The first `VERDICT:` line of a hint; no line, or a widening naming no path, reads `answer`. A
+ * widening's paths are its path-like words — or its one word, `Makefile` — and any other words
+ * are its reason when no separator gave one.
+ */
 export function parseHintVerdict(output: string): HintVerdict {
   const match = HINT_VERDICT_LINE.exec(output);
   if (match === null) return { kind: 'answer' };
@@ -55,11 +62,18 @@ export function parseHintVerdict(output: string): HintVerdict {
   const { head, reason } = splitVerdictReason((match[2] ?? '').replace(VERDICT_DECORATION, ''));
   if (kind === 'brief') return { kind: 'brief', diagnosis: head === '' ? reason : head };
   if (kind !== 'widen') return { kind: 'answer' };
-  const paths = head
-    .split(/[,\s]+/)
+  const words = head.split(/[,\s]+/).filter((word) => word.length > 0);
+  const isPath = (word: string) => words.length === 1 || PATH_LIKE.test(verdictPath(word));
+  const paths = words
+    .filter(isPath)
     .map(verdictPath)
     .filter((path) => path.length > 0);
-  return paths.length === 0 ? { kind: 'answer' } : { kind: 'widen', paths, reason };
+  const rest = words
+    .filter((word) => !isPath(word))
+    .join(' ')
+    .replace(/^\((.*)\)$/, '$1');
+  if (paths.length === 0) return { kind: 'answer' };
+  return { kind: 'widen', paths, reason: reason === '' ? rest : reason };
 }
 
 function taskMetaSection(task: Task, ctx: LanguageContext): PromptSection {
