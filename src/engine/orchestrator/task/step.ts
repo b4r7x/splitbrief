@@ -40,27 +40,29 @@ function recordApprovalDenial(opts: {
   wctx: WorkflowContext;
   state: WorkflowState;
   task: Task;
-  decision: GateDecision;
+  denials: GateDecision[];
   message: string;
 }): void {
-  const { wctx, state, task, decision, message } = opts;
+  const { wctx, state, task, denials, message } = opts;
   publishError({ bus: wctx.bus, phase: state.phase, message: message });
-  const rejectedTier = decision.tier;
-  if (
-    rejectedTier &&
-    rejectedTier !== 'auto' &&
-    decision.actionClass &&
-    decision.actionDescription
-  ) {
-    persistRejectionEvidence({
-      wctx,
-      state,
-      reason: decision.reason ?? 'denied',
-      actionClass: decision.actionClass,
-      tier: rejectedTier,
-      actionDescription: decision.actionDescription,
-      taskId: task.id,
-    });
+  for (const decision of denials) {
+    const rejectedTier = decision.tier;
+    if (
+      rejectedTier &&
+      rejectedTier !== 'auto' &&
+      decision.actionClass &&
+      decision.actionDescription
+    ) {
+      persistRejectionEvidence({
+        wctx,
+        state,
+        reason: decision.reason ?? 'denied',
+        actionClass: decision.actionClass,
+        tier: rejectedTier,
+        actionDescription: decision.actionDescription,
+        taskId: task.id,
+      });
+    }
   }
 }
 
@@ -120,7 +122,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       wctx,
       state,
       task,
-      decision: gateResult,
+      denials: [gateResult],
       message: `Task blocked by approval gate: ${gateResult.reason ?? 'denied'}`,
     });
     if (gateResult.reason === WORKFLOW_CANCEL_REASON_USER) {
@@ -179,7 +181,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       taskStartSnapshot,
       setTrackedState,
       recordApprovalDenial: (decision, message) =>
-        recordApprovalDenial({ wctx, state, task, decision, message }),
+        recordApprovalDenial({ wctx, state, task, denials: decision.denials, message }),
       streamingSink: wctx.streamingSink,
     });
   } catch (err) {
@@ -250,7 +252,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     preApplyApprovedFiles: implState.preApplyApprovedFiles,
     taskStartSnapshot,
     recordApprovalDenial: (s, decision, message) =>
-      recordApprovalDenial({ wctx, state: s, task, decision, message }),
+      recordApprovalDenial({ wctx, state: s, task, denials: decision.denials, message }),
     handleConflict: (s, files) =>
       handleApprovalTimeUserEditConflict({
         ctx: wctx,

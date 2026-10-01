@@ -29,6 +29,7 @@ describe('confirm gate keys and legends', () => {
   it('takes y on every confirm-tier class except the irreversible one', () => {
     expect(getConfirmPrimaryKey('package_change')).toBe('y');
     expect(getConfirmPrimaryKey('write_out_of_scope')).toBe('y');
+    expect(getConfirmPrimaryKey('sensitive_change')).toBe('y');
     expect(getConfirmPrimaryKey('destructive')).toBe('');
   });
 

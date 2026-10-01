@@ -2,11 +2,12 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import { publishWarning, publishWarningFromError } from '../events.js';
 import { restoreDirtyFilesFromSnapshot } from '../approval/file-snapshots/restore.js';
-import { inferTaskAcceptedChangedFiles } from '../changed-files-baseline.js';
+import { inferTaskOwnChangedFiles } from '../changed-files-baseline.js';
 import type { WorkflowContext } from '../types.js';
 
 /** The restore path runs before a WorkflowContext exists on resume, so it asks for only what it reads. */
 type RestoreContext = Pick<WorkflowContext, 'projectDir' | 'bus'>;
+type InterruptedRestoreContext = RestoreContext & Pick<WorkflowContext, 'sessionId'>;
 
 async function restoreTaskFilesFromSnapshot(opts: {
   wctx: RestoreContext;
@@ -64,11 +65,12 @@ export function restoreDeniedPreValidationFiles(opts: {
 }
 
 /**
- * Only the brief's own declared files go back: everything else changed since the
- * task-start snapshot is the operator's, made while no run was executing.
+ * Only the brief's own writes go back — its declared files and the files the ledger records it
+ * promoted: everything else changed since the task-start snapshot is the operator's, made while
+ * no run was executing.
  */
 export async function restoreInterruptedTaskFiles(opts: {
-  wctx: RestoreContext;
+  wctx: InterruptedRestoreContext;
   phase: WorkflowState['phase'];
   task: Task;
   taskStartSnapshot: ChangedFilesSnapshot;
@@ -79,11 +81,7 @@ export async function restoreInterruptedTaskFiles(opts: {
   try {
     // A snapshot head the operator rewrote between the kill and the resume no
     // longer resolves; the run still restarts the brief.
-    taskChangedFiles = await inferTaskAcceptedChangedFiles(
-      wctx.projectDir,
-      task,
-      taskStartSnapshot.head,
-    );
+    taskChangedFiles = await inferTaskOwnChangedFiles(wctx, task, taskStartSnapshot.head);
   } catch (err) {
     publishWarningFromError({ bus: wctx.bus, phase }, failureMessage, err);
     return;

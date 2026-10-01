@@ -368,7 +368,7 @@ These names no longer exist. Typing one prints `"<name> was removed: <pointer>"`
 | `/compact-transcript` | `the transcript compacts itself as the context window fills` — compaction is automatic; the format is `workflow.compactionFormat` in [`CONFIGURATION.md`](./CONFIGURATION.md). |
 | `/export` | `a run leaves its artifacts in .splitbrief/sessions/<id>/` — there is no HTML report; read the session directory. |
 | `/handoff` | `a run leaves its artifacts in .splitbrief/sessions/<id>/` — there is no handoff pack; read the session directory. |
-| `/yolo` | `approval prompts are turned off with approval.enabled: false in the config` — see `approval` in [`CONFIGURATION.md`](./CONFIGURATION.md), or `--yolo` for one run. |
+| `/yolo` | `approval prompts are turned off with approval.enabled: false in the config; protected paths still ask` — see `approval` in [`CONFIGURATION.md`](./CONFIGURATION.md), or `--yolo` for one run. |
 
 ---
 

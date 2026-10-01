@@ -117,6 +117,7 @@ const checkpointPredicates = [
   [checkpointId('implementation-escalated'), includesAll('briefs passed')],
   [checkpointId('validation'), includesAll('validate', 'test skipped')],
   [checkpointId('planner-commands-refused'), includesAll('warning')],
+  [checkpointId('touched-not-suggested'), includesAll('also changed')],
   // The tiered gate owns this checkpoint: it takes the prompt zone from the document panel, so the
   // panel's own words are never on this frame.
   [checkpointId('review'), includesAll('allow this operation only', WORKFLOW_FIXTURE_TEXT.review)],
@@ -126,6 +127,7 @@ const checkpointPredicates = [
   [checkpointId('selection-copy'), includesAll('End run', 'Fixture plan')],
   [checkpointId('approval-permission'), includesAll('allow this operation only')],
   [checkpointId('approval-confirm'), includesAll('Confirm with a reason')],
+  [checkpointId('approval-confirm-secret'), includesAll('Confirm with a reason')],
   [checkpointId('reviewing-briefs'), includesAll('Approve briefs', 'T001 modify')],
   // The two briefs whose long headers the card once skipped, beside the first and the last.
   [checkpointId('tasks-card'), includesAll('T001', 'T004', 'T006', 'T007')],

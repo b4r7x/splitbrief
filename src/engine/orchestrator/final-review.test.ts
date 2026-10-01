@@ -782,7 +782,7 @@ describe('runFinalReviewPhase', () => {
     expect(packetStatus(projectDir, sessionId)).toBe('failed');
   });
 
-  it('fails drift for a rolling-only out-of-scope path absent at run start', async () => {
+  it('records a rolling-only unplanned path absent at run start as touched, not suggested', async () => {
     const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
     mkdirSync(join(projectDir, 'src'), { recursive: true });
@@ -841,9 +841,9 @@ describe('runFinalReviewPhase', () => {
       drift.findings.find((finding: { file?: string }) => finding.file === 'src/hook-output.ts'),
     ).toMatchObject({
       code: 'out_of_scope_file',
-      severity: 'error',
+      severity: 'info',
     });
-    expect(drift.passed).toBe(false);
+    expect(drift.passed).toBe(true);
   });
 
   it('includes untracked created-file content in the review prompt diff', async () => {

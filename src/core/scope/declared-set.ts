@@ -9,8 +9,16 @@ import { taskFiles } from '../schemas/task.js';
 /** A `WIDEN_TASK_SCOPE` bullet names its path, root-level files included; a bare backticked identifier is prose. */
 const LEADING_PATH = /^\s*`([^`\s]+)`\s*—\s*planner-approved:/;
 
+const SCOPE_PLACEHOLDERS = new Set(['none', 'none.', 'n/a', '-']);
+
+/** A Scope bullet that only says the list is empty (`- None.`), never a path. */
+export function isScopePlaceholder(entry: string): boolean {
+  return SCOPE_PLACEHOLDERS.has(entry.trim().toLowerCase());
+}
+
 /** Path tokens a Scope bullet licenses; a whitespace-free bullet is itself a pattern (`tsconfig.json`). */
 export function scopeEntryPatterns(entry: string): string[] {
+  if (isScopePlaceholder(entry)) return [];
   const leading = LEADING_PATH.exec(entry)?.[1];
   const patterns = [
     ...new Set([...scopePathPatterns(entry), ...(leading === undefined ? [] : [leading])]),

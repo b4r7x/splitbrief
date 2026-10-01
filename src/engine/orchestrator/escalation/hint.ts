@@ -18,7 +18,7 @@ import {
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import { handleApprovalTimeUserEditConflict } from './approval-conflict.js';
 import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js';
-import { persistRetryApprovalEvidence, persistRetryRejectionEvidence } from './retry-evidence.js';
+import { persistRetryApprovalEvidence, recordRetryDenial } from './retry-evidence.js';
 import { runRetryStep } from './step.js';
 import {
   failedRetry,
@@ -148,7 +148,7 @@ export async function runHintTier(input: TierStepInput): Promise<RetryStepOutcom
 
   const hintError = truncateByChars(HINT_ERROR_TEMPLATE(lastError, hint), MAX_HINT_ERROR_LENGTH);
   const outcome = await runRetryStep({
-    ctx: verdict.kind === 'widen' ? { ...ctx, undeclaredWrites: 'gate' } : ctx,
+    ctx,
     task: initialTask,
     state,
     lastError: hintError,
@@ -187,7 +187,20 @@ function handleHintTierGateOutcome(input: {
   gateResult: GateAndPromoteOutcome;
 }): RetryStepOutcome | null {
   const { ctx, task, lastError, attempts, gateResult } = input;
-  if (gateResult.outcome === 'allow') return null;
+  const subject = 'Hint-tier';
+  if (gateResult.outcome === 'allow') {
+    if (gateResult.denial !== undefined) {
+      recordRetryDenial({
+        ctx,
+        state: gateResult.state,
+        task,
+        denial: gateResult.denial,
+        subject,
+        blocked: false,
+      });
+    }
+    return null;
+  }
   if (gateResult.outcome === 'error') throw gateResult.error;
   if (gateResult.outcome === 'aborted') {
     return {
@@ -199,11 +212,14 @@ function handleHintTierGateOutcome(input: {
     };
   }
   if (gateResult.outcome === 'gate-denied') {
-    const files = gateResult.decision.changedFiles.join(', ');
-    const reason = gateResult.decision.reason ?? 'denied';
-    const message = `Hint-tier changed files blocked by approval gate: ${reason} (${files})`;
-    publishError({ bus: ctx.bus, phase: gateResult.state.phase, message });
-    persistRetryRejectionEvidence(ctx, gateResult.state, task, gateResult.decision);
+    const message = recordRetryDenial({
+      ctx,
+      state: gateResult.state,
+      task,
+      denial: gateResult.denial,
+      subject,
+      blocked: true,
+    });
     return {
       state: gateResult.state,
       task,

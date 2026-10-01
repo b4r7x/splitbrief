@@ -206,11 +206,17 @@ describe('createImplementerBase — prompt write contracts', () => {
     });
 
     expect(seenPrompt).toContain(
-      `Edit ${task.file} directly in the isolation directory. Before finishing, run the brief's typecheck command and only the tests of the files you changed, never the whole suite: the orchestrator runs the full validation after you hand back. End with a completion report stating which files you wrote and whether the brief's steps were completed.`,
+      `Edit ${task.file} directly in the isolation directory. SPLITBRIEF runs the typecheck, lint, format and test gates after you hand back, so run at most the focused test files the brief lists, once. End with a completion report naming the files you wrote, one line Also changed (not suggested): <file> — <reason> for each file the brief did not suggest, and whether the brief's steps were completed.`,
     );
     expect(seenPrompt).not.toContain('Output ONLY the complete file contents');
     expect(seenPrompt).not.toContain('Output the complete file contents');
     expect(seenPrompt).not.toContain('markdown code fences');
+    // The whole prompt, preamble through footer, gives the gates to SPLITBRIEF and fences nothing.
+    expect(seenPrompt).toContain(
+      "SPLITBRIEF runs the project's typecheck, lint, format and test gates",
+    );
+    expect(seenPrompt).not.toMatch(/run the brief's typecheck|Run the validation commands/);
+    expect(seenPrompt).not.toMatch(/Edit ONLY|out of bounds\.|outside scope/);
   });
 
   it('keeps the extracted-code complete-file output contract', async () => {

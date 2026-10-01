@@ -272,6 +272,7 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
     paths: ['src/b.ts'],
     reason: 'b consumes the export',
   },
+  task_touched_not_suggested: { phase: 'implementing', taskId: 'T001', files: ['src/b.ts'] },
   task_full_fail: { phase: 'implementing', taskId: 'T001', reason: 'retries exhausted' },
   review_fix_started: { phase: 'final-review', cycle: 1, taskIds: ['T001'] },
   task_tokens: {

@@ -5,6 +5,7 @@ import type { Task } from '../schemas/task.js';
 import { taskId } from '../schemas/task.js';
 import {
   isInDeclaredSet,
+  isScopePlaceholder,
   matchesScopeEntry,
   scopeEntryPatterns,
   taskDeclaredPatterns,
@@ -42,6 +43,23 @@ describe('matchesScopeEntry', () => {
 });
 
 describe('scopeEntryPatterns', () => {
+  it.each(['None', 'None.', ' none. ', 'n/a', 'N/A', '-'])(
+    'a placeholder entry %j licenses no path',
+    (entry) => {
+      expect(scopeEntryPatterns(entry)).toEqual([]);
+      expect(isScopePlaceholder(entry)).toBe(true);
+    },
+  );
+
+  it('a placeholder beside real paths leaves only the real paths', () => {
+    const subject = task({ scope: { approvedOutOfBounds: ['None.', 'src/shared.ts'] } });
+    expect(undeclaredFiles(['None.', 'src/shared.ts', 'src/other.ts'], subject)).toEqual([
+      'None.',
+      'src/other.ts',
+    ]);
+    expect(isScopePlaceholder('src/none.ts')).toBe(false);
+  });
+
   it('keeps a whitespace-free bullet as its own pattern and drops pathless prose', () => {
     expect(scopeEntryPatterns('tsconfig.json')).toEqual(['tsconfig.json']);
     expect(scopeEntryPatterns('the auth flow and nothing else')).toEqual([]);

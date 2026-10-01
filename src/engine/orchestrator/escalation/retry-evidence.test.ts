@@ -16,7 +16,11 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { createValidator } from '../validation/run.js';
-import { persistRetryApprovalEvidence, persistRetryRejectionEvidence } from './retry-evidence.js';
+import {
+  persistRetryApprovalEvidence,
+  persistRetryRejectionEvidence,
+  recordRetryDenial,
+} from './retry-evidence.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import type { EscalationContext } from './types.js';
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow.js';
@@ -144,5 +148,43 @@ describe('persistRetryRejectionEvidence', () => {
     persistRetryRejectionEvidence(ctx, state, task, decision);
 
     expect(readEvidenceLedger({ projectDir, sessionId })).toBeNull();
+  });
+});
+
+describe('recordRetryDenial', () => {
+  it('records one rejection per denied file', async () => {
+    const { ctx, projectDir, sessionId } = await makeRetryEvidenceCtx();
+    const state = makeImplState([]);
+    const task = makeTask({ id: 'T004', file: 'src/test.ts' });
+    const denied = (file: string) => ({
+      allow: false as const,
+      tier: 'confirm' as const,
+      actionClass: 'sensitive_change' as const,
+      actionDescription: `write ${file}`,
+      reason: 'denied',
+    });
+
+    recordRetryDenial({
+      ctx,
+      state,
+      task,
+      denial: {
+        decision: {
+          ...denied('.env'),
+          changedFiles: ['.env', '.env.local'],
+          deniedFiles: ['.env', '.env.local'],
+          denials: [denied('.env'), denied('.env.local')],
+        },
+        discardedFiles: ['.env', '.env.local'],
+      },
+      subject: 'Retry',
+      blocked: true,
+    });
+
+    const ledger = readEvidenceLedger({ projectDir, sessionId });
+    expect(ledger?.rejections?.map((r) => r.actionDescription)).toEqual([
+      'write .env',
+      'write .env.local',
+    ]);
   });
 });

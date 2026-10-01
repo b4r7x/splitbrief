@@ -8,7 +8,6 @@ import { useTheme } from '../../components/theme.js';
 import type { CrewLabVerdict } from '../../core/crew/labs.js';
 import type { CrewPreset } from '../../core/crew/presets.js';
 import { type CrewRow, crewRowKey } from '../../core/crew/rows.js';
-import { fitKeyLegend } from '../../core/key-legend.js';
 import type { Config } from '../../core/schemas/config.js';
 import { type OverlayDensity, overlayRect } from '../../core/navigation/overlay-rect.js';
 import { BOOT_MANIFEST_TITLE, REFRESHING_TOOLS_TITLE } from '../../core/discovery/copy.js';
@@ -180,8 +179,6 @@ type DiscoveryPanelProps = Readonly<{
 function DiscoveryPanel({ state, onBack, onRetry, onOpenSettings }: DiscoveryPanelProps) {
   const t = useTheme();
   const hasOverlay = overlayStore.use((snapshot) => snapshot.active !== 'none');
-  const { cols, rows } = terminalSizeStore.use((state) => state);
-  const { innerWidth } = overlayRect({ cols, rows, density: 'compact' });
 
   useInput(
     (input, key) => {
@@ -211,7 +208,7 @@ function DiscoveryPanel({ state, onBack, onRetry, onOpenSettings }: DiscoveryPan
     <OverlayPanel
       title="Tool check failed"
       density="compact"
-      hint={fitKeyLegend(`r retry${SOFT_SEP}esc quit${SOFT_SEP}s settings`, innerWidth)}
+      hint={`r retry${SOFT_SEP}esc quit${SOFT_SEP}s settings`}
     >
       <Text color={t.error}>Your configured tools could not be checked.</Text>
       <Box marginTop={1}>
@@ -287,8 +284,7 @@ function CrewStep({ note, status, inert = false, onContinue, onExit }: CrewStepP
     },
   });
   const focusedItem = list.filtered[list.selectedIndex];
-  const legend = `↑↓ select${SOFT_SEP}${crewKeysHint(focusedItem)}${SOFT_SEP}esc quit`;
-  const hint = status ?? fitKeyLegend(legend, innerWidth);
+  const hint = status ?? `↑↓ select${SOFT_SEP}${crewKeysHint(focusedItem)}${SOFT_SEP}esc quit`;
 
   return (
     <OverlayPanel title="Set up your crew" density={CREW_PANEL_DENSITY} hint={hint}>

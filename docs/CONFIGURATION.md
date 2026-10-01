@@ -817,8 +817,9 @@ approval: {
     read?:                ApprovalTier;
     write_in_scope?:      ApprovalTier;
     write_out_of_scope?:  ApprovalTier;
-    destructive?:         ApprovalTier;
-    package_change?:      ApprovalTier;
+    destructive?:         ApprovalTier;   // ignored: protected paths always confirm
+    package_change?:      ApprovalTier;   // ignored: protected paths always confirm
+    sensitive_change?:    ApprovalTier;   // ignored: protected paths always confirm
   };
   feedRejectionsToPlanner:    boolean;        // default true
 }
@@ -828,8 +829,8 @@ type ApprovalTier = 'auto' | 'sticky' | 'confirm';
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `enabled` | boolean | `true` | Master toggle for file-write tiered approval |
-| `tiers.<op>` | enum | per-op default | `auto` (no prompt), `sticky` (prompt once, remember), `confirm` (prompt every time) |
+| `enabled` | boolean | `true` | Master toggle for file-write tiered approval; a protected-path write asks even when it is `false` |
+| `tiers.<op>` | enum | per-op default | `auto` (no prompt), `sticky` (prompt once, remember), `confirm` (prompt for each path; a confirmation holds for the same path and operation for the rest of the run) |
 | `feedRejectionsToPlanner` | boolean | `true` | When the user rejects an op, send the rejection back to the planner so it can adapt. |
 
 ### approval.allowedPaths
@@ -853,7 +854,9 @@ Supported glob patterns: exact match (`src/config.ts`), recursive directory (`sr
 
 Note: `allowedPaths` only affects the action *class* (`write_in_scope` vs `write_out_of_scope`), not the *tier*. If you override `approval.tiers.write_in_scope: 'sticky'`, writes to allowed paths will still prompt once per session.
 
-**Tier keys:** `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, `package_change` — the five classes the file-write classifier emits. The block is strict: any other key fails the load. There is no tier for validation, shell commands, or network access; SPLITBRIEF does not sandbox those.
+**Tier keys:** `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, `package_change`, `sensitive_change`. The block is strict: any other key fails the load. `destructive`, `package_change` and `sensitive_change` still load, but the loader prints `approval.tiers.<key> is ignored: a write to a protected path always asks.` and the gate does not read them. There is no tier for validation, shell commands, or network access; SPLITBRIEF does not sandbox those.
+
+**Default tiers:** `read`, `write_in_scope` and `write_out_of_scope` are `auto`: a brief's files are suggestions, so an unplanned ordinary file is recorded as touched, not suggested, and does not ask. The protected classes — `destructive` (`.git`, `.splitbrief`), `sensitive_change` (CI configuration, env and key files) and `package_change` (manifests and lockfiles) — are `confirm`. A write to one of those protected paths asks whatever `enabled`, `--yolo` or `tiers` say, and a confirmation holds for the same path for the rest of the run; a `tiers` override applies to the other three classes only (see [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md)).
 
 YAML — strict:
 
@@ -865,8 +868,6 @@ approval:
     read: auto
     write_in_scope: sticky
     write_out_of_scope: confirm
-    destructive: confirm
-    package_change: confirm
 ```
 
 **When to use:** new projects, production codebases, or onboarding where you want explicit visibility into out-of-scope, control-plane, or package-file writes.
@@ -1058,7 +1059,7 @@ Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `cont
 | `--allow-unverified-auth` | Let a headless run proceed with unverified CLI authentication (no effect interactively) | start, resume, continue |
 | `--json` | Headless: NDJSON `EngineEvent`s to stdout, no TUI | start, resume, continue |
 | `--plain` | Headless: one plain line per phase, task, review and completion (`phase:`, `task T00N: done\|failed (<gates>)`, `review:`, `done:`), no TUI. Refuses to run alongside `--json` (exit `2`) | start, resume, continue |
-| `--yolo` | Skip file-write tiered approval prompts for this session | start, resume, continue |
+| `--yolo` | Skip file-write tiered approval prompts for this session; protected paths still ask | start, resume, continue |
 | `--skills <ids>` | Comma-separated skill ids to attach to every seat (unknown id → exit `2`); on resume and continue, for that continue only | start (headless), resume, continue |
 | `--action <action>` | Apply an action to the pending recovery before continuing: `skip`, `retry`, or `switch-seat:<tool>[:<model>]` | continue |
 | `--reconfigure` | Overwrite existing config | init |
@@ -1230,8 +1231,6 @@ approval:
     read: auto
     write_in_scope: sticky
     write_out_of_scope: confirm
-    destructive: confirm
-    package_change: confirm
 
 # ---------- Custom palette actions ----------
 palette:

@@ -4,6 +4,7 @@ import { countNoun } from '../../../utils/pluralize.js';
 import { headingMatchesSection } from '../../../core/pipeline-spec/planner-documents.js';
 import { TASK_BRIEF_HEADINGS } from '../headings.js';
 import { closesOpenFence, fenceMarkerLength } from './fence-marker.js';
+import { isScopePlaceholder } from '../../../core/scope/declared-set.js';
 
 export type ParsedTaskSections = {
   description: string;
@@ -184,10 +185,12 @@ function extractScopeBuckets(text: string): {
     if (bucket) buckets[bucket].push(line);
   }
 
+  const items = (lines: string[]) =>
+    topLevelItems(lines.join('\n'), BULLET_RE).filter((item) => !isScopePlaceholder(item));
   return {
-    inBounds: topLevelItems(buckets.in.join('\n'), BULLET_RE),
-    outOfBounds: topLevelItems(buckets.out.join('\n'), BULLET_RE),
-    approvedOutOfBounds: topLevelItems(buckets.approved.join('\n'), BULLET_RE),
+    inBounds: items(buckets.in),
+    outOfBounds: items(buckets.out),
+    approvedOutOfBounds: items(buckets.approved),
   };
 }
 

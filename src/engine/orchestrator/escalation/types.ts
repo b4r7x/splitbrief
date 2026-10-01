@@ -3,7 +3,7 @@ import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import type { Config } from '../../../core/schemas/config.js';
-import type { Implementer, UndeclaredWritesPolicy } from '../../implementers/types.js';
+import type { Implementer } from '../../implementers/types.js';
 import type { RunnerFailureOutcomeState } from '../../runners/errors.js';
 import type { ChangeDetectionKind } from '../../change-detection.js';
 import type { WorkflowContext } from '../types.js';
@@ -67,7 +67,7 @@ export type EscalationContext = WorkflowContext & {
   taskStartTime?: number | undefined;
   taskStartSnapshot: ChangedFilesSnapshot;
   dependsOnFiles: string[];
-} & UndeclaredWritesPolicy;
+};
 
 /** Machine outcome of the attempt that produced `lastError`, with the runner that made it. */
 export type RetryAttemptFailure = {
@@ -105,7 +105,7 @@ export type RetryInvokeArgs = {
   /** Baseline the acquired workspace declares; sniffed from the directory when absent. */
   changeDetection?: ChangeDetectionKind | undefined;
   createdByThisTask?: readonly string[] | undefined;
-} & UndeclaredWritesPolicy;
+};
 
 export type RetryInvokeResult = {
   success: boolean;

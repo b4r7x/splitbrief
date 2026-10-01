@@ -503,6 +503,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-touched-not-suggested',
+      title: 'Workflow · a brief that also changed unsuggested files',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'touched-not-suggested',
+        title: 'Touched, not suggested',
+        kind: 'implementation',
+        marker: 'also changed',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-planner-commands-refused',
       title: 'Workflow · stage commands not taken from the planner',
       surface: screenSurface('workflow'),
@@ -624,6 +640,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Confirm gate',
         kind: 'review',
         marker: 'Destructive action:',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'approval-panel', title: 'Confirm panel' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-approval-confirm-secret',
+      title: 'Workflow · CI or secret file confirm gate',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'approval-confirm-secret',
+        title: 'Secret file confirm gate',
+        kind: 'review',
+        marker: 'Change a CI or secret file:',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

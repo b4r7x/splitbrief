@@ -82,6 +82,7 @@ export const TierMapSchema = z.strictObject({
   write_out_of_scope: ApprovalTierSchema.optional(),
   destructive: ApprovalTierSchema.optional(),
   package_change: ApprovalTierSchema.optional(),
+  sensitive_change: ApprovalTierSchema.optional(),
 });
 
 export const ApprovalConfigSchema = z.strictObject({

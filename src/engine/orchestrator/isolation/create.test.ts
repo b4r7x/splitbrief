@@ -1030,7 +1030,11 @@ describe('createRunIsolation', () => {
           onTieredApproval: vi.fn().mockResolvedValue({ decision: 'deny', reason: 'test' }),
         }).callbacks,
         config: makeNoValidationConfig({
-          approval: { enabled: true, feedRejectionsToPlanner: false },
+          approval: {
+            enabled: true,
+            feedRejectionsToPlanner: false,
+            tiers: { write_out_of_scope: 'sticky' },
+          },
         }),
         workspace: ws,
         taskStartSnapshot,
@@ -1095,7 +1099,12 @@ describe('createRunIsolation', () => {
           onTieredApproval: vi.fn().mockResolvedValue({ decision: 'deny', reason: 'test' }),
         }).callbacks,
         config: makeNoValidationConfig({
-          approval: { enabled: true, feedRejectionsToPlanner: false },
+          approval: {
+            enabled: true,
+            feedRejectionsToPlanner: false,
+            // Every write asks and is denied, so the whole attempt is discarded.
+            tiers: { write_in_scope: 'sticky', write_out_of_scope: 'sticky' },
+          },
         }),
         workspace: ws,
         taskStartSnapshot,
@@ -1222,7 +1231,12 @@ describe('createRunIsolation', () => {
               onTieredApproval: vi.fn().mockResolvedValue({ decision: 'deny', reason: 'test' }),
             }).callbacks,
             config: makeNoValidationConfig({
-              approval: { enabled: approval, feedRejectionsToPlanner: false },
+              approval: {
+                enabled: approval,
+                feedRejectionsToPlanner: false,
+                // Every write asks and is denied, so the whole attempt is discarded.
+                tiers: { write_in_scope: 'sticky', write_out_of_scope: 'sticky' },
+              },
             }),
             workspace: ws,
             taskStartSnapshot,

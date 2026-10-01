@@ -12,18 +12,23 @@ The generated blocks below come from the CLI's prompt builders (`npm run skills:
     - Stay inside <project dir>: read, search, write and run shell commands only there, and never look for other copies of the project
     - Use git only to read (status, diff, log, show); never commit, branch, tag, checkout, switch, stash, reset, restore, rebase, merge, add, or change git config or hooks
     - Dependencies are already installed; never run a package-manager install, ci, add, remove or update (npm, pnpm, yarn, bun)
-    - Edit ONLY the files the Task Brief lists under Files, plus every path its Scope names under In bounds or Approved out of bounds. Every other file is out of bounds.
+    - Start from the files the Task Brief suggests. If the change needs another project file (a caller, a test, a shared component), edit it and name it in your report with the reason. Never edit dependency manifests, lockfiles, CI configuration, env or key files, .git or .splitbrief unless the brief explicitly asks for that operation.
     - Do NOT add comments unless specified in the task
     - Use ESM imports with .js extensions
     - Follow the exact function signatures provided
-    - Stop and report rather than guessing when the brief's stop conditions are met, when the target file's current content contradicts the brief, or when the change would require touching a file outside scope
-    - Run the validation commands the brief lists if they are available; the orchestrator runs them again afterwards and its verdict is the authority, so report a failure you cannot fix rather than working around it
+    - Stop and report rather than guessing when the brief's stop conditions are met, or when the target file's current content contradicts the brief
+    - The Task Brief inlines the current code, types and signatures you need. Start editing from the brief. Read a file only to see lines the brief does not show, and search only for a symbol the brief names.
+    - The orchestrator runs the project's typecheck, lint, format and test gates after you finish, and its verdict is the authority. Do not run them, and do not run the whole test suite, screenshot or render tools, or repeated git diffs.
+    - Run at most the focused test files the brief lists under Tests, once, after your edits. If one fails and you cannot fix it, stop and report the failure.
+    - When the brief's Tests or Evidence ask you to run a project-wide gate or to render screenshots, the orchestrator and the review seat do that. Implement the change and its tests, then report.
     - End with a completion report stating which files you wrote and whether the brief's steps were completed; if you changed nothing, say so explicitly
 
     Example completion report:
 
     Files written:
     - <file path>
+
+    Also changed (not suggested): <file> — <reason>
 
     Steps completed: all (or list the brief's steps you could not complete)
 <!-- /generated -->
@@ -63,8 +68,8 @@ Omit a heading whose section the brief does not have; never invent one. `### Tes
 ## 3. Closing line
 
 <!-- generated: closing-line -->
-- one file: `Edit <file> directly in the working directory. Before finishing, run the brief's typecheck command and only the tests of the files you changed, never the whole suite: the orchestrator runs the full validation after you hand back. End with a completion report stating which files you wrote and whether the brief's steps were completed.`
-- more than one file: `Edit <file>, <second file> directly in the working directory. Before finishing, run the brief's typecheck command and only the tests of the files you changed, never the whole suite: the orchestrator runs the full validation after you hand back. End with a completion report stating which files you wrote and whether the brief's steps were completed.`
+- one file: `Edit <file> directly in the working directory. The orchestrator runs the typecheck, lint, format and test gates after you hand back, so run at most the focused test files the brief lists, once. End with a completion report naming the files you wrote, one line Also changed (not suggested): <file> — <reason> for each file the brief did not suggest, and whether the brief's steps were completed.`
+- more than one file: `Edit <file>, <second file> directly in the working directory. The orchestrator runs the typecheck, lint, format and test gates after you hand back, so run at most the focused test files the brief lists, once. End with a completion report naming the files you wrote, one line Also changed (not suggested): <file> — <reason> for each file the brief did not suggest, and whether the brief's steps were completed.`
 <!-- /generated -->
 
 ## 4. Retry rendering
@@ -76,7 +81,7 @@ A retry prompt is the preamble, then the framing and the error at the top of the
     <framing>
 
     Error from previous attempt:
-    <gate tail or drift list, verbatim>
+    <gate tail, verbatim>
 
     ## Project: …
     <body as in §2>
@@ -96,7 +101,7 @@ The table is keyed on the running attempt count, exactly as the CLI keys it — 
 On the hint rung the hint is appended to the error block, not prefixed to it:
 
 <!-- generated: hint-placement -->
-    <gate tail or drift list>
+    <gate tail>
 
     ## Hints from senior reviewer:
     <hint>
@@ -104,7 +109,7 @@ On the hint rung the hint is appended to the error block, not prefixed to it:
 The composed error block is truncated to 4000 characters.
 <!-- /generated -->
 
-Drift entries are rendered as the revert instruction in references/gates.md, one per line. A `recipe-fix` re-spawn (references/tool-recipes.md) uses no framing and no error block: it is the original prompt again.
+A `recipe-fix` re-spawn (references/tool-recipes.md) uses no framing and no error block: it is the original prompt again.
 
 ## 5. Hint prompt (answered by the session — no code)
 
@@ -132,7 +137,7 @@ Drift entries are rendered as the revert instruction in references/gates.md, one
 
     ## Validation Error
     ```
-    <gate tail or drift list>
+    <gate tail>
     ```
 
     ## Instructions
@@ -191,7 +196,7 @@ Follow these instructions yourself, in the working tree:
 
     ## Validation Error
     ```
-    <gate tail or drift list>
+    <gate tail>
     ```
 
     ## Rules

@@ -1,3 +1,5 @@
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplementer, makePlanner } from '#testing/helpers/orchestrator-factories.js';
@@ -259,8 +261,8 @@ describe('runHeadless — a tiered approval refusal stops the run', () => {
     ensureSessionDir(projectDir, sessionId);
     writeActive({ projectDir, sessionId });
 
-    // A manifest edit classifies as package_change. The current headless
-    // workflow treats the unavailable confirmation as a failed run.
+    // A manifest write classifies as package_change. Headless has no one to
+    // confirm it, so the write gate denies it and the run stops for recovery.
     const task = makeTask({ id: 'T001', action: 'modify', file: 'package.json' });
     const state = {
       ...createInitialState('bump the dependency'),
@@ -280,7 +282,12 @@ describe('runHeadless — a tiered approval refusal stops the run', () => {
           resumeState: state,
         }),
         _planner: makePlanner(),
-        _implementer: makeImplementer(),
+        _implementer: makeImplementer({
+          implement: vi.fn().mockImplementation(async () => {
+            writeFileSync(join(projectDir, 'package.json'), '{ "name": "bumped" }\n');
+            return { success: true, output: '', usage: { inputTokens: 50, outputTokens: 25 } };
+          }),
+        }),
       }),
     ).rejects.toMatchObject({
       exitCode: 1,

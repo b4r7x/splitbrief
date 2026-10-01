@@ -556,10 +556,9 @@ export interface ScopeViolationRecoveryOptions extends RecoveryBuilderBase, Task
 }
 
 /**
- * A direct-write implementer touched paths the brief never declared. The run
- * stops at the operator rather than promoting writes nobody asked for; the
- * retry carries the revert instruction, so `retry-same-worker` is the
- * recommendation.
+ * The operator's tier override gates unplanned writes and an undeclared write
+ * was denied. SPLITBRIEF discarded the attempt's writes, so `retry-same-worker`
+ * starts again from the current files.
  */
 export function buildScopeViolationRecoveryIssue(
   opts: ScopeViolationRecoveryOptions,

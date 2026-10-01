@@ -13,9 +13,11 @@ const MAX_VALIDATION_COMMAND_CHARS = 240;
 
 type TestTarget = { run: true; targets: string[] } | { run: false; skipReason: string };
 
+/** The tests of the brief's declared files and of every file the attempt changed. */
 export function resolveTestTarget(opts: {
   resolved: ResolvedCommand;
   task: Task;
+  changedFiles: readonly string[];
   projectDir: string;
   config: Config;
   discovered: DiscoveredValidation | undefined;
@@ -27,7 +29,7 @@ export function resolveTestTarget(opts: {
   if (!narrows || stack === null) return { run: true, targets: [] };
   const testPattern = config.validation.testPattern ?? discovered?.testPattern;
   const targets: string[] = [];
-  for (const file of taskFiles(task)) {
+  for (const file of new Set([...taskFiles(task), ...opts.changedFiles])) {
     for (const found of findAffectedTestFiles(file, projectDir, stack, testPattern)) {
       const target = relative(projectDir, found);
       if (!targets.includes(target)) targets.push(target);

@@ -42,7 +42,7 @@ Because one row is not `preserved`, `skills/splitbrief-run/SKILL.md`'s `wait-pro
 
 ### Supervised dogfooding
 
-`skills/splitbrief-babysit/` is self-contained when copied or installed alone. It needs no other skill, private `.nuke/` files, `jq`, or fixed agent model. It uses the repository's Node.js runtime and the host's interactive terminal; tmux is optional. The configured coding tools remain prerequisites for the CLI run.
+`skills/splitbrief-babysit/` is self-contained when copied or installed alone. It needs no other skill, private `.nuke/` files, `jq`, or fixed agent model. It uses the repository's Node.js runtime. When tmux is on PATH, it always launches the run in a named tmux session and gives the owner `tmux attach -r -t <session>` to watch it live; without tmux, it uses the host's interactive terminal. The configured coding tools remain prerequisites for the CLI run.
 
 The bundled `scripts/watch-run.mjs` polls the session log once per second and preserves its byte cursor between calls. Errors, failed validation, retries, warnings, and recovery events wake the supervisor. The supervisor stops the run; the watcher does not enforce an engine-level barrier. All detected tool defects, including visual defects and false tripwire alarms, require repair before further work. Model mistakes and correctly reported provider limits retain normal CLI recovery.
 

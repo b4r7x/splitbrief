@@ -158,12 +158,14 @@ function runnerTrustBoundaryCheck(opts: {
   const approvalAutomationActive = opts.specPlanAutoApproved || opts.fileWriteApprovalDisabled;
   const automation = [
     opts.specPlanAutoApproved ? 'spec/plan approval is auto-approved' : null,
-    opts.fileWriteApprovalDisabled ? 'file-write approval prompts are disabled' : null,
+    opts.fileWriteApprovalDisabled
+      ? 'file-write approval prompts are disabled; protected paths still ask'
+      : null,
   ].filter((entry): entry is string => entry !== null);
   const details = [
     ...declaredCommandDetails(opts.runner),
     `Spec/plan approval level: ${opts.approve}.`,
-    `File-write approval prompts: ${opts.fileWriteApprovalDisabled ? 'disabled' : 'enabled'}.`,
+    `File-write approval prompts: ${opts.fileWriteApprovalDisabled ? 'disabled; protected paths still ask' : 'enabled'}.`,
     'SPLITBRIEF approval gates review spec/plan documents and declared/promoted file writes; they do not sandbox shell commands or network access inside external runners.',
   ];
   if (automation.length > 0) {

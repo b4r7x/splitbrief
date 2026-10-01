@@ -370,7 +370,9 @@ describe('WorkflowFooter', () => {
     ui.unmount();
   });
 
-  it('keeps the running legend on the row above the stop sheet', async () => {
+  // The sheet's own legend says what esc does while it is open; the running legend would say
+  // `esc stop options` for a sheet already on screen.
+  it('leaves the legend to the stop sheet while a build runs', async () => {
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
     const ui = renderFeature(
       <WorkflowFooter
@@ -387,8 +389,7 @@ describe('WorkflowFooter', () => {
     await tick();
 
     const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
-    expect(lines[0]).toContain('esc stop options');
-    expect(lines.findIndex((line) => line.includes('Stop options'))).toBe(1);
+    expect(lines.findIndex((line) => line.includes('Stop options'))).toBe(0);
     ui.unmount();
   });
 });

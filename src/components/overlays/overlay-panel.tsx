@@ -2,6 +2,8 @@ import type { ReactNode } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../theme.js';
 import { borderStyleFor } from '../../lib/glyphs.js';
+import { fitKeyLegend } from '../../core/key-legend.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import {
   OVERLAY_FRAME_ROWS,
@@ -45,12 +47,11 @@ export function OverlayPanel({
     </Box>
   );
 
-  // Hints truncate rather than wrap; callers write the key glyphs first so the surviving
-  // prefix stays actionable.
+  // A key legend sheds whole trailing keys; any other hint, such as an error or a status, truncates.
   const hintNode = hint && (
     <Box marginTop={1} width={rect.innerWidth}>
       <Text color={t.textDim} wrap="truncate-end">
-        {hint}
+        {hint.includes(SOFT_SEP) ? fitKeyLegend(hint, rect.innerWidth) : hint}
       </Text>
     </Box>
   );

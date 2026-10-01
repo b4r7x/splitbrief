@@ -85,6 +85,22 @@ describe('SessionsPicker', () => {
     instance.unmount();
   });
 
+  it('sheds whole legend keys instead of cutting one at 40 columns', async () => {
+    terminalSizeStore.__testReset({ cols: 40, rows: 24, isSmall: true });
+
+    const instance = render(<SessionsPicker />);
+    await tick(1);
+
+    const hintRow = stripAnsiStyles(instance.lastFrame() ?? '')
+      .split('\n')
+      .find((line) => line.includes('↑↓ select'))
+      ?.replace(/[│|]/gu, '')
+      .trim();
+    expect(hintRow).toBe('↑↓ select · type filter');
+
+    instance.unmount();
+  });
+
   it('shows all sessions without a false more row when they fit the terminal', async () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 32, isSmall: false });
     for (let i = 0; i < 6; i++) {

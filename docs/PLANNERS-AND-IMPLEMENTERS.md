@@ -322,10 +322,10 @@ Whichever mode ran, validation happens in the real project directory after promo
 | Workspace -- stay inside the absolute isolation directory: read, search, write and run shell commands only there, and never look for other copies of the project | n/a -- the model runs no tools | yes |
 | Git -- read-only commands only (status, diff, log, show); no commit, branch, tag, checkout, switch, stash, reset, restore, rebase, merge, add, config or hooks change | n/a | yes |
 | Dependencies -- already installed; no package-manager install, ci, add, remove or update (npm, pnpm, yarn, bun) | n/a | yes |
-| File scope -- which files it may touch and which it may not | n/a -- the single declared file is written for it | yes -- every path under Files, plus the Scope bullets |
+| File scope -- where to start and which files it may never touch | n/a -- the single declared file is written for it | yes -- start from the suggested files; edit another project file the change needs and name it with the reason; never touch dependency manifests, lockfiles, CI configuration, env or key files, `.git` or `.splitbrief` unless the brief asks |
 | Stop conditions -- when to finish and when to escalate instead of improvising | via the brief's Escalation section | yes, restated as a hard rule for an agent that can keep going |
-| Validation expectations -- which commands to run before declaring the task finished | n/a | yes |
-| Reporting format -- what to say about what it changed | n/a -- the file *is* the answer | yes |
+| Gate ownership -- SPLITBRIEF runs typecheck, lint, format and test after the call; the implementer runs at most the brief's focused test files, once, and no project-wide gate, whole suite or render tool | n/a | yes |
+| Reporting format -- what to say about what it changed, including `Also changed (not suggested): <file> — <reason>` | n/a -- the file *is* the answer | yes |
 
 The last four rows are what makes `direct` reviewable. An agent that writes files on its own can wander, keep working past the task, or finish silently; the preamble is where those are bounded. The workspace, git and dependency rows are hygiene, not a boundary: the isolation worktree shares refs, stash, hooks and config with the user's repository, its `node_modules` is a symlink into the real checkout so an install writes outside isolation, and a tool that ignores its cwd is not stopped by a prompt (ADR-4).
 

@@ -519,6 +519,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     paths: stringArray,
     reason: z.string(),
   }),
+  phaseEvent('task_touched_not_suggested').extend({ taskId: TaskIdSchema, files: stringArray }),
   phaseEvent('task_full_fail').extend({ taskId: TaskIdSchema, reason: z.string().optional() }),
   phaseEvent('review_fix_started').extend({
     cycle: z.number().int(),

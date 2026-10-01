@@ -9,7 +9,7 @@ import { gateAndPromoteChangedFiles } from '../approval/gate-and-promote.js';
 import { withPerCallAbort } from '../cancellable-call.js';
 import { publishError } from '../events.js';
 import { createRetryRuntime, stateForRetryProfile } from './retry-runtime.js';
-import { persistRetryApprovalEvidence, persistRetryRejectionEvidence } from './retry-evidence.js';
+import { persistRetryApprovalEvidence, recordRetryDenial } from './retry-evidence.js';
 import { handleApprovalTimeUserEditConflict } from './approval-conflict.js';
 import { validateAndCommit } from './validate-and-commit.js';
 import { boundedHandBack, failedRetry } from './types.js';
@@ -107,7 +107,6 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
           fileIgnoreProjectDir: ctx.projectDir,
           changeDetection: workspace.changeDetection,
           createdByThisTask: recordedApiCreatedPaths(ctx, task),
-          ...(ctx.undeclaredWrites !== undefined && { undeclaredWrites: ctx.undeclaredWrites }),
         }),
     });
   } catch (err) {
@@ -218,20 +217,24 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
     };
   }
   if (gateResult.outcome === 'gate-denied') {
-    const deniedFiles = gateResult.decision.changedFiles;
-    const reason = gateResult.decision.reason ?? 'denied';
-    const message = `Retry changed files blocked by approval gate: ${reason} (${deniedFiles.join(', ')})`;
-    publishError({ bus: ctx.bus, phase: gateResult.state.phase, message });
-    persistRetryRejectionEvidence(ctx, gateResult.state, task, gateResult.decision);
+    const { decision } = gateResult.denial;
+    const message = recordRetryDenial({
+      ctx,
+      state: gateResult.state,
+      task,
+      denial: gateResult.denial,
+      subject: 'Retry',
+      blocked: true,
+    });
     const deniedState =
-      gateResult.decision.actionClass === 'write_out_of_scope'
+      decision.actionClass === 'write_out_of_scope'
         ? raisePendingRecovery(
             ctx,
             gateResult.state,
             buildScopeViolationRecoveryIssue({
               task,
               phase: gateResult.state.phase,
-              undeclaredFiles: deniedFiles,
+              undeclaredFiles: decision.deniedFiles,
               attempts,
               maxAttempts: ctx.config.workflow.maxRetries,
               createdAt: nowIso(),
@@ -258,6 +261,16 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
     };
   }
   state = gateResult.state;
+  if (gateResult.denial !== undefined) {
+    recordRetryDenial({
+      ctx,
+      state,
+      task,
+      denial: gateResult.denial,
+      subject: 'Retry',
+      blocked: false,
+    });
+  }
   const actualChangedFiles = gateResult.changedFiles;
   const widening = opts.scopeWidening;
   if (widening !== undefined) {

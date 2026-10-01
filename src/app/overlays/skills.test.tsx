@@ -329,6 +329,37 @@ describe('SkillsPicker', () => {
     ui.unmount();
   });
 
+  it('sheds whole legend keys instead of cutting one at 40 columns', async () => {
+    terminalSizeStore.__testReset({ cols: 40, rows: 24, isSmall: true });
+    skillsStore.setAvailable([skill('alpha')]);
+
+    const ui = renderFeature(<SkillsPicker />, { cols: 40, rows: 24 });
+    await tick(20);
+
+    const hintRow = stripAnsiStyles(ui.lastFrame() ?? '')
+      .split('\n')
+      .find((line) => line.includes('↑↓ select'))
+      ?.replace(/[│|]/gu, '')
+      .trim();
+    expect(hintRow).toBe('↑↓ select · ctrl+a all');
+    ui.unmount();
+  });
+
+  it('gives the whole row to the name when the description column is hidden at 60 columns', async () => {
+    terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });
+    skillsStore.setAvailable([{ ...skill('terminal'), name: 'Terminal layout' }]);
+
+    const ui = renderFeature(<SkillsPicker />, { cols: 60, rows: 18 });
+    await tick(20);
+
+    const row = stripAnsiStyles(ui.lastFrame() ?? '')
+      .split('\n')
+      .find((line) => line.includes('Terminal'));
+    expect(row).toContain('Terminal layout');
+    expect(row).not.toContain('…');
+    ui.unmount();
+  });
+
   it('lists project skills before global skills under their section headers', async () => {
     skillsStore.setAvailable([skill('gamma', 'global'), skill('delta', 'project')]);
 

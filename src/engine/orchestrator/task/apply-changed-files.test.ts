@@ -135,8 +135,7 @@ describe('applyChangedFiles', () => {
     const state = makeImplState([task]);
     const workspace = await createStagedProject({ projectDir: projectDir });
     const stagedProjectDir = workspace.projectDir;
-    mkdirSync(join(stagedProjectDir, 'src'), { recursive: true });
-    writeFileSync(join(stagedProjectDir, 'src/other.ts'), 'out of scope');
+    writeFileSync(join(stagedProjectDir, '.env.local'), 'TOKEN=1\n');
 
     const gateError = new Error('approval gate failed');
     const cleanupError = new Error('staged cleanup failed');

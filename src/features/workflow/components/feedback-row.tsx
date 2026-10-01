@@ -32,13 +32,13 @@ function summarizeDisplayLine(text: string): string {
 export function FeedbackRow({
   inputHint = '',
   keyHint = '',
-  collapseWhenEmpty = false,
+  panelBelow = false,
 }: {
   inputHint?: string | undefined;
   /** A caller's key legend — the row's own mark grammar, not a message's. */
   keyHint?: string | undefined;
-  /** A sheet sits under the row and owns the footer; an empty row must not leave a blank line. */
-  collapseWhenEmpty?: boolean | undefined;
+  /** A sheet sits under the row and owns the footer's keys; an empty row leaves no blank line. */
+  panelBelow?: boolean | undefined;
 }) {
   const [{ message, isError }] = useStores(feedbackStore);
   const inputMode = controlsStore.use((s) => s.inputMode);
@@ -70,20 +70,23 @@ export function FeedbackRow({
   const copyReceipt = (['native', 'tmux-buffer', 'osc52'] as const).some(
     (outcome) => messageWord === formatCopyResult(outcome),
   );
+  // A sheet under the row names its own keys, so above it the row carries a message or nothing.
   if (!owned || isError || copyReceipt || messageWord === 'Press ctrl+c again to quit') {
     if (messageWord !== '') word = messageWord;
-    else if (stopHint !== '') {
-      word = stopHint;
-      isLegend = true;
-    } else if (keyHintFitted !== '') {
-      word = keyHintFitted;
-      isLegend = true;
-    } else {
-      const inputWord = summarizeDisplayLine(inputHint);
-      if (inputWord !== '') word = inputWord;
-      else if (runningHint !== '') {
-        word = runningHint;
+    else if (!panelBelow) {
+      if (stopHint !== '') {
+        word = stopHint;
         isLegend = true;
+      } else if (keyHintFitted !== '') {
+        word = keyHintFitted;
+        isLegend = true;
+      } else {
+        const inputWord = summarizeDisplayLine(inputHint);
+        if (inputWord !== '') word = inputWord;
+        else if (runningHint !== '') {
+          word = runningHint;
+          isLegend = true;
+        }
       }
     }
   }
@@ -93,7 +96,7 @@ export function FeedbackRow({
 
   // A sheet under the row is the panel that owns the footer while it is up. A row with no word
   // then has nothing to stand on, so it leaves no blank line between the sheet and the divider.
-  if (word === '' && collapseWhenEmpty) return null;
+  if (word === '' && panelBelow) return null;
 
   return (
     <Box height={1} flexShrink={0}>

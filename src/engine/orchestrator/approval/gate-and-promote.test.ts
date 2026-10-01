@@ -76,6 +76,31 @@ async function acquiredProject(name: string) {
 }
 
 describe('gateAndPromoteChangedFiles', () => {
+  it('promotes the allowed files and drops only the denied protected write', async () => {
+    const { projectDir, workspace, taskStartSnapshot } = await acquiredProject('gate-partial');
+    writeFileSync(join(workspace.projectDir, '.env.local'), 'TOKEN=1\n');
+    const task = makeTask({ id: 'T011', file: 'src/app.ts' });
+
+    const outcome = await runGate({
+      task,
+      state: makeImplState([task]),
+      projectDir,
+      workspace,
+      taskStartSnapshot,
+      callbacks: makeCallbacks({
+        onTieredApproval: vi.fn().mockResolvedValue({ decision: 'deny', reason: 'no' }),
+      }).callbacks,
+    });
+
+    expect(outcome).toMatchObject({
+      outcome: 'allow',
+      changedFiles: ['src/app.ts'],
+      denial: { discardedFiles: ['.env.local'] },
+    });
+    expect(readFileSync(join(projectDir, 'src', 'app.ts'), 'utf8')).toBe('worker\n');
+    expect(existsSync(join(projectDir, '.env.local'))).toBe(false);
+  });
+
   itUnix(
     'returns a handled error outcome and retains the workspace when promotion throws',
     async () => {

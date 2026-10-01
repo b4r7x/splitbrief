@@ -59,17 +59,17 @@ Existing codebase pattern or exact snippet the implementer should follow.
 
 ### Scope
 **In bounds:**
-- Concrete change this brief is allowed to make
+- Context the change works within
 **Out of bounds:**
-- Adjacent change the implementer must NOT make
+- Explicit exclusion the reviewer checks
 **Approved out of bounds:**
-- Intentional exception paths that tiered approval may allow
+- A further path the planner already approved
 
 ### Escalation
 - Stop and ask when the required behavior is ambiguous, when a dependency is missing, or when the brief conflicts with local code.
 
 ### Evidence
-- Reviewable proof the task completed (passing tests, typecheck, changed files, behavioral note).
+- Reviewable proof the task completed (the focused tests that pass, the changed files, the behavior a reviewer can check).
 
 ### Constraints
 - ${ctx.importConvention}

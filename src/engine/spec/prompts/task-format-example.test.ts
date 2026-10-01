@@ -52,8 +52,11 @@ describe('buildTaskFormatExample round-trip', () => {
     expect(task?.pattern).toContain('Existing codebase pattern');
     expect(task?.implementationSteps).toHaveLength(3);
     expect(task?.tests).toEqual(['Test case with concrete inputs/outputs']);
-    expect(task?.scope?.inBounds).toEqual(['Concrete change this brief is allowed to make']);
-    expect(task?.scope?.outOfBounds).toEqual(['Adjacent change the implementer must NOT make']);
+    expect(task?.scope?.inBounds).toEqual(['Context the change works within']);
+    expect(task?.scope?.outOfBounds).toEqual(['Explicit exclusion the reviewer checks']);
+    expect(task?.evidence).toEqual([
+      'Reviewable proof the task completed (the focused tests that pass, the changed files, the behavior a reviewer can check).',
+    ]);
     expect(task?.scope?.approvedOutOfBounds).toHaveLength(1);
     expect(task?.escalation).toHaveLength(1);
     expect(task?.evidence).toHaveLength(1);

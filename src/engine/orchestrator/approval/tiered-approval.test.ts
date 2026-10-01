@@ -12,6 +12,13 @@ import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { approvalsFile, SPLITBRIEF_DIR } from '../../../core/paths.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
+import { createEvidenceLedger, withAppendedApproval } from '../../../core/evidence/ledger-state.js';
+import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import type { ApprovalTier } from '../../../core/schemas/config.js';
+
+const STICKY_OUT_OF_SCOPE = { write_out_of_scope: 'sticky' as ApprovalTier };
+const CONFIRMED = async () =>
+  ({ decision: 'confirm', phrase: 'I confirm', reason: 'needed' }) as const;
 
 let dirs: string[] = [];
 
@@ -84,7 +91,7 @@ describe('gateAction', () => {
 
   it('live session approval state disables the next gate even when captured config enables approval', async () => {
     const { bus, events } = makeBusRecorder();
-    const config = makeApprovalConfig({ enabled: true });
+    const config = makeApprovalConfig({ enabled: true, tiers: STICKY_OUT_OF_SCOPE });
     const input = makeInput({
       bus,
       config,
@@ -98,6 +105,107 @@ describe('gateAction', () => {
     expect(events).toHaveLength(0);
   });
 
+  it('an unplanned ordinary write is auto by default', async () => {
+    const { bus, events } = makeBusRecorder();
+    const result = await gateAction(
+      makeInput({
+        bus,
+        config: makeApprovalConfig({ enabled: true }),
+        actionDescription: 'write src/shared/button.ts',
+        targetPath: 'src/shared/button.ts',
+      }),
+    );
+    expect(result.allow).toBe(true);
+    expect(events.filter((e) => e.type === 'approval_prompted')).toHaveLength(0);
+  });
+
+  it.each([
+    {
+      name: 'approval.enabled: false',
+      config: makeApprovalConfig({ enabled: false }),
+      targetPath: '.env.local',
+    },
+    {
+      name: 'a tier override',
+      config: makeApprovalConfig({ enabled: true, tiers: { package_change: 'auto' } }),
+      targetPath: 'package.json',
+    },
+    {
+      name: 'a session with approval off (--yolo)',
+      getApprovalEnabled: () => false,
+      targetPath: '.github/workflows/ci.yml',
+    },
+  ])(
+    'a protected write still asks under $name',
+    async ({ config, getApprovalEnabled, targetPath }) => {
+      const { bus, events } = makeBusRecorder();
+      let asked = 0;
+      const result = await gateAction(
+        makeInput({
+          bus,
+          ...(config !== undefined && { config }),
+          ...(getApprovalEnabled !== undefined && { getApprovalEnabled }),
+          actionDescription: `write ${targetPath}`,
+          targetPath,
+          onTieredApproval: async () => {
+            asked += 1;
+            return CONFIRMED();
+          },
+        }),
+      );
+      expect(asked).toBe(1);
+      expect(result.allow).toBe(true);
+      expect(events.find((e) => e.type === 'approval_prompted')?.tier).toBe('confirm');
+    },
+  );
+
+  it('a confirmation the run already granted holds for the same path and operation', async () => {
+    const projectDir = trackTempDir('splitbrief-test');
+    const task = makeTask();
+    writeEvidenceLedger(
+      { projectDir, sessionId: 'sess-001' },
+      withAppendedApproval(
+        createEvidenceLedger({ sessionId: 'sess-001', feature: 'f', tasks: [task] }),
+        {
+          ts: new Date().toISOString(),
+          tier: 'confirm',
+          actionClass: 'package_change',
+          actionDescription: 'write package.json',
+          reason: 'add a script',
+        },
+      ),
+    );
+    let asked = 0;
+    const ask = async () => {
+      asked += 1;
+      return CONFIRMED();
+    };
+    const same = await gateAction(
+      makeInput({
+        projectDir,
+        task,
+        actionDescription: 'write package.json',
+        targetPath: 'package.json',
+        onTieredApproval: ask,
+      }),
+    );
+    expect(same.allow).toBe(true);
+    expect(same.confirmApprovals).toBeUndefined();
+    expect(asked).toBe(0);
+
+    const other = await gateAction(
+      makeInput({
+        projectDir,
+        task,
+        actionDescription: 'write pnpm-lock.yaml',
+        targetPath: 'pnpm-lock.yaml',
+        onTieredApproval: ask,
+      }),
+    );
+    expect(other.allow).toBe(true);
+    expect(asked).toBe(1);
+  });
+
   it('auto tier → allow, no events emitted', async () => {
     const { bus, events } = makeBusRecorder();
     const config = makeConfig();
@@ -109,7 +217,7 @@ describe('gateAction', () => {
 
   it('sticky tier, no grant, no callback → deny APPROVAL_REQUIRED', async () => {
     const { bus, events } = makeBusRecorder();
-    const config = makeApprovalConfig({ enabled: true });
+    const config = makeApprovalConfig({ enabled: true, tiers: STICKY_OUT_OF_SCOPE });
     const input = makeInput({
       bus,
       config,
@@ -135,7 +243,7 @@ describe('gateAction', () => {
         sessionId,
       },
     ]);
-    const config = makeApprovalConfig({ enabled: true });
+    const config = makeApprovalConfig({ enabled: true, tiers: STICKY_OUT_OF_SCOPE });
     let callbackCalled = false;
     const input = makeInput({
       bus,
@@ -166,7 +274,7 @@ describe('gateAction', () => {
         sessionId: 'sess-OTHER',
       },
     ]);
-    const config = makeApprovalConfig({ enabled: true });
+    const config = makeApprovalConfig({ enabled: true, tiers: STICKY_OUT_OF_SCOPE });
     let callbackCalled = false;
     const input = makeInput({
       bus,
@@ -186,7 +294,7 @@ describe('gateAction', () => {
 
   it('sticky tier, callback allow once → allow, no persistence', async () => {
     const { bus, events } = makeBusRecorder();
-    const config = makeApprovalConfig({ enabled: true });
+    const config = makeApprovalConfig({ enabled: true, tiers: STICKY_OUT_OF_SCOPE });
     const input = makeInput({
       bus,
       config,
@@ -203,7 +311,7 @@ describe('gateAction', () => {
     const { bus, events } = makeBusRecorder();
     const projectDir = trackTempDir('splitbrief-test');
     mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
-    const config = makeApprovalConfig({ enabled: true });
+    const config = makeApprovalConfig({ enabled: true, tiers: STICKY_OUT_OF_SCOPE });
     const input = makeInput({
       bus,
       config,
@@ -223,7 +331,7 @@ describe('gateAction', () => {
 
   it('sticky tier, callback deny → deny, approval_rejected emitted', async () => {
     const { bus, events } = makeBusRecorder();
-    const config = makeApprovalConfig({ enabled: true });
+    const config = makeApprovalConfig({ enabled: true, tiers: STICKY_OUT_OF_SCOPE });
     const input = makeInput({
       bus,
       config,
@@ -359,7 +467,7 @@ describe('gateAction', () => {
     'a planner widening moves %s from write_out_of_scope to write_in_scope',
     async (path) => {
       const task = makeTask({ id: 'T001', file: 'src/main.ts' });
-      const config = makeApprovalConfig({ enabled: true });
+      const config = makeApprovalConfig({ enabled: true, tiers: STICKY_OUT_OF_SCOPE });
       const before = makeBusRecorder();
       const denied = await gateAction(
         makeInput({
@@ -408,7 +516,7 @@ describe('gateAction', () => {
 
     const { bus, events } = makeBusRecorder();
     let prompted = false;
-    const config = makeApprovalConfig({ enabled: true });
+    const config = makeApprovalConfig({ enabled: true, tiers: STICKY_OUT_OF_SCOPE });
     const input = makeInput({
       bus,
       config,
@@ -443,7 +551,7 @@ describe('gateAction', () => {
     ]);
 
     const { bus } = makeBusRecorder();
-    const config = makeApprovalConfig({ enabled: true });
+    const config = makeApprovalConfig({ enabled: true, tiers: STICKY_OUT_OF_SCOPE });
     const input = makeInput({
       bus,
       config,

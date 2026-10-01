@@ -62,10 +62,33 @@ describe('gateChangedFiles', () => {
     expect(result.changedFiles).toEqual(['src/a.ts', 'src/z.ts']);
   });
 
+  it('gates every file after a denial and names each denied path', async () => {
+    const asked: string[] = [];
+    const input = makeInput({
+      changedFiles: ['src/c.ts', 'src/a.ts', 'src/b.ts'],
+      config: makeApprovalConfig({ enabled: true, tiers: { write_out_of_scope: 'sticky' } }),
+      callbacks: {
+        onApprovalNeeded: async () => ({ approved: true }),
+        onComplete: () => {},
+        onTieredApproval: async (request): Promise<TieredApprovalResponse> => {
+          asked.push(request.actionDescription);
+          return request.actionDescription === 'write src/b.ts'
+            ? { decision: 'allow', scope: 'once' }
+            : { decision: 'deny', reason: 'no' };
+        },
+      },
+    });
+
+    const result = await gateChangedFiles(input);
+
+    expect(asked).toEqual(['write src/a.ts', 'write src/b.ts', 'write src/c.ts']);
+    expect(result).toMatchObject({ allow: false, deniedFiles: ['src/a.ts', 'src/c.ts'] });
+  });
+
   it('returns the first rejected file and action when a later write is denied', async () => {
     const input = makeInput({
       changedFiles: ['src/z.ts', 'src/a.ts', 'src/z.ts'],
-      config: makeApprovalConfig({ enabled: true }),
+      config: makeApprovalConfig({ enabled: true, tiers: { write_out_of_scope: 'sticky' } }),
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
         onComplete: () => {},
@@ -80,9 +103,8 @@ describe('gateChangedFiles', () => {
 
     const result = await gateChangedFiles(input);
 
-    expect(result.allow).toBe(false);
+    expect(result).toMatchObject({ allow: false, deniedFiles: ['src/z.ts'] });
     expect(result.changedFiles).toEqual(['src/a.ts', 'src/z.ts']);
-    expect(result.rejectedFile).toBe('src/z.ts');
     expect(result.actionDescription).toBe('write src/z.ts');
     expect(result.reason).toBe('blocked z');
   });
@@ -159,13 +181,12 @@ describe('gateChangedFiles', () => {
         task: makeTask({ file: 'src/app.ts' }),
         changedFiles: [changed],
         dependsOnFiles,
-        config: makeApprovalConfig({ enabled: true }),
+        config: makeApprovalConfig({ enabled: true, tiers: { write_out_of_scope: 'sticky' } }),
         callbacks: recordingCallbacks(requests),
       }),
     );
 
-    expect(result.allow).toBe(false);
-    expect(result.rejectedFile).toBe(changed);
+    expect(result).toMatchObject({ allow: false, deniedFiles: [changed] });
     expect(requests.map((request) => [request.tier, request.actionClass])).toEqual([
       ['sticky', 'write_out_of_scope'],
     ]);
@@ -190,7 +211,7 @@ describe('gateChangedFiles', () => {
     const requests: TieredApprovalRequest[] = [];
     const input = makeInput({
       changedFiles: ['src/app.ts'],
-      config: makeApprovalConfig({ enabled: true }),
+      config: makeApprovalConfig({ enabled: true, tiers: { write_out_of_scope: 'sticky' } }),
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
         onComplete: () => {},
@@ -207,8 +228,7 @@ describe('gateChangedFiles', () => {
     expect((await gateChangedFiles(input)).allow).toBe(true);
     const backup = await gateChangedFiles({ ...input, changedFiles: ['src/app.ts.backup'] });
 
-    expect(backup.allow).toBe(false);
-    expect(backup.rejectedFile).toBe('src/app.ts.backup');
+    expect(backup).toMatchObject({ allow: false, deniedFiles: ['src/app.ts.backup'] });
     expect(requests.map((request) => request.actionDescription)).toEqual([
       'write src/app.ts',
       'write src/app.ts.backup',

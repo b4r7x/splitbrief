@@ -4,7 +4,31 @@ import { getOrCreateLedger } from '../evidence/persistence.js';
 import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { recordApprovalEvidence, recordRejectionEvidence } from '../evidence/approval.js';
 import type { GateDecision } from '../approval/types.js';
+import { denialMessage, type GateDenial } from '../approval/gate-and-promote.js';
+import { publishError } from '../events.js';
+import { DISCARDED_WRITES_INSTRUCTION } from '../../runners/errors.js';
 import type { EscalationContext } from './types.js';
+
+/**
+ * Shows and records a denial of an escalation attempt's writes; returns the error the next
+ * attempt hears: the message it showed, and not to recover the discarded writes.
+ */
+export function recordRetryDenial(input: {
+  ctx: EscalationContext;
+  state: WorkflowState;
+  task: Task;
+  denial: GateDenial;
+  subject: string;
+  blocked: boolean;
+}): string {
+  const { ctx, state, task, denial } = input;
+  const message = denialMessage(input);
+  publishError({ bus: ctx.bus, phase: state.phase, message });
+  for (const decision of denial.decision.denials) {
+    persistRetryRejectionEvidence(ctx, state, task, decision);
+  }
+  return `${message} ${DISCARDED_WRITES_INSTRUCTION}`;
+}
 
 export function persistRetryApprovalEvidence(
   ctx: EscalationContext,

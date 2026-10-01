@@ -69,8 +69,6 @@ describe('config loading', () => {
           read: 'auto',
           write_in_scope: 'sticky',
           write_out_of_scope: 'confirm',
-          destructive: 'confirm',
-          package_change: 'confirm',
         },
         feedRejectionsToPlanner: false,
       });

@@ -79,6 +79,19 @@ describe('ReviewView', () => {
     expect(frame.split('\n').length).toBeLessThanOrEqual(8);
   });
 
+  it('advertises the keys that scroll the document, not the arrows the gate menu takes', async () => {
+    openReviewFile(
+      'plan.md',
+      Array.from({ length: 30 }, (_, index) => `Line ${index + 1}`).join('\n\n'),
+    );
+
+    ui = renderFeature(<ReviewView height={10} width={80} />);
+
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui?.lastFrame() ?? '')).toContain('shift+↑↓ scroll · home/end ends');
+    });
+  });
+
   it('clamps an oversized review offset to the rendered document window', async () => {
     openReviewFile(
       'clamp.md',

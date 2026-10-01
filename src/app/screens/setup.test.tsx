@@ -431,10 +431,11 @@ describe('SetupScreen', () => {
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('↑↓ select · ⏎ change seat · esc quit');
 
     await focusRow(ui, DOWN, 'Continue');
-    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(markedRows(ui).some((row) => row.startsWith(`${CURSOR}Continue`))).toBe(true);
-    expect(frame).toContain('↑↓ select · ⏎ continue · esc quit');
-    expect(frame).not.toContain('↑↓ navigate');
+    const legendRows = contentRows(ui)
+      .map((row) => row.replace(/[│|]/gu, '').trim())
+      .filter((row) => row.startsWith('↑↓'));
+    expect(legendRows).toEqual(['↑↓ select · ⏎ continue · esc quit']);
     ui.unmount();
   });
 

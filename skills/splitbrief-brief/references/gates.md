@@ -35,7 +35,7 @@ Append every stage to `validation.md` under `## T00N — attempt N` with each co
 
 A stage whose command resolves to nothing is skipped. The columns show the default with the language's own tooling present; the resolution order above still wins over them.
 
-The test stage runs only the tests affected by the brief's files when the resolved command comes from the stack default, or from the manifest with a recognised stack; a command pinned in config runs unnarrowed.
+The test stage runs only the tests affected by the brief's files and by every file the attempt changed when the resolved command comes from the stack default, or from the manifest with a recognised stack; a command pinned in config runs unnarrowed.
 
 | Language | test narrowing | allowed commands |
 |---|---|---|
@@ -62,9 +62,8 @@ In a git repo `git status --porcelain --untracked-files=all` lists the candidate
 ## Drift check (after every attempt)
 
 <!-- generated: scope-rule -->
-- Allowed set = the brief's `files` + every path under **In bounds** and **Approved out of bounds** + the `files` of every brief already `done`
-- Drift = the changed set minus the baseline set minus the allowed set, with the run directory excluded. Any path left over fails the attempt; the next attempt carries the revert instruction for those paths.
-- Retry error, one line per drifted path: `Revert your changes to <path>; only <files> may change`
+- Suggested set = the brief's `files` + every path under **In bounds** and **Approved out of bounds** + the `files` of every brief already `done`. It is guidance: the implementer may edit another ordinary project file when the change needs it, and names it with the reason
+- Touched, not suggested = the changed set minus the baseline set minus the suggested set, with the run directory excluded. Each such path is recorded for the reviewer and its tests run; it never fails the attempt. Only a write to a protected path (dependency manifests and lockfiles, CI configuration, env and key files, `.git`, `.splitbrief`) waits for the user to confirm it.
 <!-- /generated -->
 
 Every attempt gets a `## T00N — attempt N` entry in `drift.md`: one path per line when there is drift, or `none (changed: <files> — owned by <briefs>)` when there is not. Paths under `.splitbrief/` are never drift — the run dir, the logs and the `current-run` pointer are orchestration. A bullet licenses the paths it names: every backticked token in it, or, with no backticks, every concrete path in its prose — a token counts when it contains `/`, `\` or `*`. So `` `src/x.ts` — the union collapse `` licenses `src/x.ts`; a bullet naming no such token licenses nothing and is reviewer guidance.

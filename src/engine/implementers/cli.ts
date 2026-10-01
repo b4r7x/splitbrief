@@ -77,12 +77,12 @@ async function changedFilesSince(
 
 /**
  * REQ-016 declared-effect gate: a direct-write CLI implementer succeeds when
- * the child changed something and every changed path is in the brief's
+ * the child changed something. Nothing changed is a no-staged-change failure,
+ * except in an attempt allowed to change nothing (a brief the final review
+ * reopened, whose code is already on disk). A write outside the brief's
  * declared set — its `files` plus the paths its Scope names under In bounds or
- * Approved out of bounds. Nothing changed is a no-staged-change failure, except
- * in an attempt allowed to change nothing (a brief the final review reopened,
- * whose code is already on disk); a write outside the set is an effect failure
- * unless the caller gates those elsewhere. A child that changed nothing after
+ * Approved out of bounds — goes to the orchestrator's approval gate, unless the
+ * caller rejects it here (the conformance harness). A child that changed nothing after
  * printing a usage limit on stderr is out of quota, not idle — antigravity
  * exits 0 with "(response may be truncated)" the first time its quota trips —
  * so the limit outranks the empty effect, the allowance included, and the
@@ -257,7 +257,7 @@ export function createCliImplementer(
             changed,
             task: opts.task,
             label: runnerLabel,
-            undeclaredWrites: opts.undeclaredWrites ?? 'reject',
+            undeclaredWrites: opts.undeclaredWrites ?? 'gate',
             allowNoChange: opts.allowNoChange === true,
           });
         }

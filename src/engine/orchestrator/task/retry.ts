@@ -4,7 +4,6 @@ import type { TaskTokenUsage, TokenUsage } from '../../../core/schemas/tokens.js
 import type { ValidationResult } from '../validation/result.js';
 import type { TaskStatus, ValidationStage } from '../../../core/schemas/enums.js';
 import type { WorkflowContext } from '../types.js';
-import type { UndeclaredWritesPolicy } from '../../implementers/types.js';
 import type { RetryAttemptFailure } from '../escalation/types.js';
 
 import { toErrorMessage } from '../../../utils/format-errors.js';
@@ -47,7 +46,7 @@ export type RetryAndRecordOptions = {
   tokensBefore: TokenUsage;
   taskBreakdowns: TaskTokenUsage[];
   setTrackedState: (s: WorkflowState) => void;
-} & UndeclaredWritesPolicy;
+};
 
 /** A failure out of the retry ladder names its call: the planner's hint, else the retry itself. */
 export function retryFailureLabel(err: unknown, taskId: TaskId): string {
@@ -104,7 +103,6 @@ export async function retryAndRecord(
       taskStartSnapshot,
       dependsOnFiles: resolveDependsOnFiles(opts.state.tasks, task),
       profileOverride: retryProfileOverride,
-      ...(opts.undeclaredWrites !== undefined && { undeclaredWrites: opts.undeclaredWrites }),
       ...(retryProfileOverride !== undefined && { profileOverrideTaskId: task.id }),
       ...(opts.initialFailure !== undefined && { initialFailure: opts.initialFailure }),
     }));

@@ -46,7 +46,7 @@ describe('classifyAction — config-file writes are scope-classified, not valida
       desc: 'modify tsconfig.json',
       overrides: { taskInBounds: ['src/**'] },
       actionClass: 'write_out_of_scope',
-      tier: 'sticky',
+      tier: 'auto',
     },
     {
       desc: 'edit tsconfig.json',
@@ -58,7 +58,7 @@ describe('classifyAction — config-file writes are scope-classified, not valida
       desc: 'modify vitest.config.ts',
       overrides: { taskInBounds: ['src/**'] },
       actionClass: 'write_out_of_scope',
-      tier: 'sticky',
+      tier: 'auto',
     },
   ])('$desc → $actionClass/$tier', ({ desc, overrides, actionClass, tier }) => {
     const result = classifyAction(make(desc, overrides));
@@ -94,8 +94,8 @@ describe('classifyAction — write_in_scope', () => {
 
 describe('classifyAction — write_out_of_scope', () => {
   it.each([
-    { desc: 'edit src/unrelated/other.ts', actionClass: 'write_out_of_scope', tier: 'sticky' },
-    { desc: 'write the configuration to disk', actionClass: 'write_out_of_scope', tier: 'sticky' },
+    { desc: 'edit src/unrelated/other.ts', actionClass: 'write_out_of_scope', tier: 'auto' },
+    { desc: 'write the configuration to disk', actionClass: 'write_out_of_scope', tier: 'auto' },
   ])('$desc → $actionClass/$tier', ({ desc, actionClass, tier }) => {
     const result = classifyAction(make(desc));
     expect(result).toEqual({ actionClass, tier });
@@ -120,7 +120,7 @@ describe('classifyAction — prose scope entries', () => {
         taskInBounds: ['Concrete change this brief is allowed to make'],
       }),
     );
-    expect(result).toEqual({ actionClass: 'write_out_of_scope', tier: 'sticky' });
+    expect(result).toEqual({ actionClass: 'write_out_of_scope', tier: 'auto' });
   });
 });
 
@@ -143,6 +143,50 @@ describe('classifyAction — control plane', () => {
       }),
     );
     expect(result).toEqual({ actionClass: 'destructive', tier: 'confirm' });
+  });
+});
+
+describe('classifyAction — protected paths', () => {
+  it.each([
+    { targetPath: 'package.json', actionClass: 'package_change' },
+    { targetPath: 'pnpm-lock.yaml', actionClass: 'package_change' },
+    { targetPath: 'go.mod', actionClass: 'package_change' },
+    { targetPath: 'go.sum', actionClass: 'package_change' },
+    { targetPath: 'Cargo.toml', actionClass: 'package_change' },
+    { targetPath: 'Cargo.lock', actionClass: 'package_change' },
+    { targetPath: '.github/workflows/ci.yml', actionClass: 'sensitive_change' },
+    { targetPath: '.gitlab-ci.yml', actionClass: 'sensitive_change' },
+    { targetPath: 'Jenkinsfile', actionClass: 'sensitive_change' },
+    { targetPath: '.env.local', actionClass: 'sensitive_change' },
+    { targetPath: '.env', actionClass: 'sensitive_change' },
+    { targetPath: 'deploy.pem', actionClass: 'sensitive_change' },
+    { targetPath: 'config/server.key', actionClass: 'sensitive_change' },
+    { targetPath: '.npmrc', actionClass: 'sensitive_change' },
+    { targetPath: '.git/config', actionClass: 'destructive' },
+    { targetPath: '.splitbrief/x', actionClass: 'destructive' },
+  ])('$targetPath → $actionClass/confirm', ({ targetPath, actionClass }) => {
+    const result = classifyAction(make(`write ${targetPath}`, { targetPath }));
+    expect(result).toEqual({ actionClass, tier: 'confirm' });
+  });
+
+  it('an unplanned ordinary file is auto', () => {
+    const targetPath = 'src/shared/button.ts';
+    expect(classifyAction(make(`write ${targetPath}`, { targetPath }))).toEqual({
+      actionClass: 'write_out_of_scope',
+      tier: 'auto',
+    });
+  });
+
+  it('a task that declares a protected file does not make its ordinary writes protected', () => {
+    const targetPath = 'src/feature/foo.ts';
+    expect(
+      classifyAction(
+        make(`write ${targetPath}`, {
+          taskFiles: ['src/feature/foo.ts', '.env.example'],
+          targetPath,
+        }),
+      ),
+    ).toEqual({ actionClass: 'write_in_scope', tier: 'auto' });
   });
 });
 
@@ -173,14 +217,14 @@ describe('classifyAction — allowedPaths', () => {
     expect(result).toEqual({ actionClass: 'write_in_scope', tier: 'auto' });
   });
 
-  it('write to file NOT matching allowedPaths → write_out_of_scope/sticky', () => {
+  it('write to file NOT matching allowedPaths → write_out_of_scope/auto', () => {
     const result = classifyAction(
       make('edit scripts/deploy.sh', {
         taskInBounds: ['src/feature/**'],
         allowedPaths: ['src/**'],
       }),
     );
-    expect(result).toEqual({ actionClass: 'write_out_of_scope', tier: 'sticky' });
+    expect(result).toEqual({ actionClass: 'write_out_of_scope', tier: 'auto' });
   });
 
   it('allowedPaths empty array → existing behavior unchanged', () => {
@@ -189,7 +233,7 @@ describe('classifyAction — allowedPaths', () => {
         allowedPaths: [],
       }),
     );
-    expect(result).toEqual({ actionClass: 'write_out_of_scope', tier: 'sticky' });
+    expect(result).toEqual({ actionClass: 'write_out_of_scope', tier: 'auto' });
   });
 
   it('allowedPaths + taskInBounds union: either match = in-scope', () => {
@@ -231,13 +275,13 @@ describe('classifyAction — exact target path', () => {
     { targetPath: 'src/app.ts', actionClass: 'write_in_scope', tier: 'auto' },
     { targetPath: './src/app.ts', actionClass: 'write_in_scope', tier: 'auto' },
     { targetPath: '/project/src/app.ts', actionClass: 'write_in_scope', tier: 'auto' },
-    { targetPath: 'src/app.ts.backup', actionClass: 'write_out_of_scope', tier: 'sticky' },
-    { targetPath: 'other/src/app.ts', actionClass: 'write_out_of_scope', tier: 'sticky' },
-    { targetPath: '/elsewhere/src/app.ts', actionClass: 'write_out_of_scope', tier: 'sticky' },
+    { targetPath: 'src/app.ts.backup', actionClass: 'write_out_of_scope', tier: 'auto' },
+    { targetPath: 'other/src/app.ts', actionClass: 'write_out_of_scope', tier: 'auto' },
+    { targetPath: '/elsewhere/src/app.ts', actionClass: 'write_out_of_scope', tier: 'auto' },
     {
       targetPath: '../project/src/app.ts.backup',
       actionClass: 'write_out_of_scope',
-      tier: 'sticky',
+      tier: 'auto',
     },
   ])('$targetPath → $actionClass/$tier', ({ targetPath, actionClass, tier }) => {
     const result = classifyAction(make(`write ${targetPath}`, { ...declared, targetPath }));
@@ -302,7 +346,7 @@ describe('classifyAction — exact target path', () => {
   it('the target path, not the prose, decides the class', () => {
     expect(
       classifyAction(make('write src/feature/foo.ts', { targetPath: 'src/unrelated/other.ts' })),
-    ).toEqual({ actionClass: 'write_out_of_scope', tier: 'sticky' });
+    ).toEqual({ actionClass: 'write_out_of_scope', tier: 'auto' });
   });
 
   it('the sticky grant pattern is the exact target path', () => {
@@ -322,7 +366,7 @@ describe('classifyAction — prose paths match whole tokens only', () => {
     (desc) => {
       expect(classifyAction(make(desc, declared))).toEqual({
         actionClass: 'write_out_of_scope',
-        tier: 'sticky',
+        tier: 'auto',
       });
     },
   );
@@ -330,7 +374,7 @@ describe('classifyAction — prose paths match whole tokens only', () => {
   it('every path in the prose must be in scope', () => {
     expect(classifyAction(make('modify src/app.ts, src/unrelated/other.ts', declared))).toEqual({
       actionClass: 'write_out_of_scope',
-      tier: 'sticky',
+      tier: 'auto',
     });
     expect(
       classifyAction(
@@ -375,7 +419,7 @@ describe('classifyAction — declared scope entries', () => {
               dependsOnFiles: [],
             }),
           ),
-        ).toEqual({ actionClass: 'write_out_of_scope', tier: 'sticky' });
+        ).toEqual({ actionClass: 'write_out_of_scope', tier: 'auto' });
       }
     },
   );

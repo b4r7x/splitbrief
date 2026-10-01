@@ -95,7 +95,7 @@ export function renderReviewPacketMarkdown(packet: ReviewPacket): string {
     '## Change Summary',
     renderList(packet.changes.changedFiles),
     `- Expected files: ${packet.changes.expectedFiles.length}`,
-    `- Out-of-scope files: ${packet.changes.outOfScopeFiles.length}`,
+    `- Changed outside every brief's files: ${packet.changes.outOfScopeFiles.length}`,
     `- Diff: ${packet.changes.diffReference}`,
     ...(packet.changes.provenance === undefined
       ? []

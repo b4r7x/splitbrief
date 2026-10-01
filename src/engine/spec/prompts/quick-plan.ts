@@ -8,7 +8,12 @@ import {
 } from './builder.js';
 import { buildTaskFormatExample } from './task-format-example.js';
 import { requiredBriefSectionsProse } from './required-sections.js';
-import { SKILLS_WITH_EVERY_BRIEF } from './tasks.js';
+import {
+  EVIDENCE_PROOF,
+  GATES_ARE_SPLITBRIEFS,
+  SCOPE_MEANING,
+  SKILLS_WITH_EVERY_BRIEF,
+} from './tasks.js';
 import { sliceRuleText } from '../../../core/pipeline-spec/brief.js';
 
 export type QuickPlanPromptInput = Readonly<{
@@ -49,9 +54,10 @@ ${buildTaskFormatExample(ctx)}`),
 - Dependency-ordered. Use \`depends_on\` for sequencing.
 - No spec or plan document needed — Task Briefs are the artifact.
 - Required sections per brief: ${requiredBriefSectionsProse()}.
-- \`### Scope\` must include \`**In bounds:**\` / \`**Out of bounds:**\` bullets, even when the boundary is short.
+- \`### Scope\` must include \`**In bounds:**\` / \`**Out of bounds:**\` bullets, even when the boundary is short. ${SCOPE_MEANING}
 - \`### Escalation\` must state when the implementer should stop instead of guessing.
-- \`### Evidence\` must state the reviewable proof expected from the task (passing tests, typecheck, changed files, or equivalent).
+- \`### Evidence\` must state the reviewable proof expected from the task ${EVIDENCE_PROOF}
+- ${GATES_ARE_SPLITBRIEFS}
 - Outside fenced code blocks, lines containing only \`---\` are reserved for Task Brief frontmatter delimiters. Never use a bare \`---\` as a horizontal rule or phase-heading separator.${
           trivial
             ? '\n- Keep Scope, Escalation, and Evidence concise for trivial work, but do not omit them; every Task Brief v1 must preserve those contract sections.'

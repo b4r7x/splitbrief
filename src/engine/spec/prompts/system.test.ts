@@ -26,6 +26,14 @@ describe('buildSystemPreamble', () => {
   });
 });
 
+const DIRECT_WRITER_RULES = [
+  'Start from the files the Task Brief suggests. If the change needs another project file (a caller, a test, a shared component), edit it and name it in your report with the reason. Never edit dependency manifests, lockfiles, CI configuration, env or key files, .git or .splitbrief unless the brief explicitly asks for that operation.',
+  'The Task Brief inlines the current code, types and signatures you need. Start editing from the brief. Read a file only to see lines the brief does not show, and search only for a symbol the brief names.',
+  "SPLITBRIEF runs the project's typecheck, lint, format and test gates after you finish, and its verdict is the authority. Do not run them, and do not run the whole test suite, screenshot or render tools, or repeated git diffs.",
+  'Run at most the focused test files the brief lists under Tests, once, after your edits. If one fails and you cannot fix it, stop and report the failure.',
+  "When the brief's Tests or Evidence ask you to run a project-wide gate or to render screenshots, SPLITBRIEF and the review seat do that. Implement the change and its tests, then report.",
+];
+
 describe('buildImplementerSystemPreamble', () => {
   it('gives the direct writer a full prompt contract', () => {
     const languageContext = buildLanguageContext('python');
@@ -34,22 +42,44 @@ describe('buildImplementerSystemPreamble', () => {
     expect(prompt).toContain('SYSTEM:');
     expect(prompt).toContain('Python');
     expect(prompt).toContain('Python import statements (from/import)');
-    expect(prompt).toMatch(/edit only the file/i);
-    expect(prompt).toMatch(/out of bounds/i);
     expect(prompt).toMatch(/stop and report/i);
-    expect(prompt).toMatch(/validation commands/i);
     expect(prompt).toMatch(/completion report/i);
   });
 
-  it('licenses the brief-declared files plus the Scope bullets, nothing else', () => {
+  it('treats the suggested files as a start and names the protected paths', () => {
     const prompt = buildImplementerSystemPreamble(
       buildLanguageContext('typescript'),
       'direct',
       '/work',
     );
-    expect(prompt).toContain(
-      'Edit ONLY the files the Task Brief lists under Files, plus every path its Scope names under In bounds or Approved out of bounds',
+    for (const sentence of DIRECT_WRITER_RULES) {
+      expect(prompt.split(sentence)).toHaveLength(2);
+    }
+    expect(prompt).toContain('Also changed (not suggested): <file> — <reason>');
+    expect(prompt).not.toContain('Edit ONLY the files the Task Brief lists');
+    expect(prompt).not.toContain('Every other file is out of bounds');
+    expect(prompt).not.toContain('touching a file outside scope');
+    expect(prompt).not.toContain('Run the validation commands the brief lists');
+  });
+
+  it('leaves the file-bundle preamble without the direct-writer rules', () => {
+    const prompt = buildImplementerSystemPreamble(
+      buildLanguageContext('typescript'),
+      'extracted-code',
+      '/work',
+      'file-bundle-v1',
     );
+    expect(prompt).toContain('Answer with ONE JSON object and nothing else');
+    for (const sentence of DIRECT_WRITER_RULES) expect(prompt).not.toContain(sentence);
+  });
+
+  it('leaves the extracted-code preamble without the direct-writer rules', () => {
+    const prompt = buildImplementerSystemPreamble(
+      buildLanguageContext('typescript'),
+      'extracted-code',
+      '/work',
+    );
+    for (const sentence of DIRECT_WRITER_RULES) expect(prompt).not.toContain(sentence);
   });
 
   it('names the isolation directory and forbids git writes and package installs', () => {

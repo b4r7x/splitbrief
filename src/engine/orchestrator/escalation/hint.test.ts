@@ -89,7 +89,11 @@ async function makeCtx(
     sessionId,
     config: makeNoValidationConfig({
       workflow: {},
-      approval: { enabled: true, feedRejectionsToPlanner: false },
+      approval: {
+        enabled: true,
+        feedRejectionsToPlanner: false,
+        tiers: { write_out_of_scope: 'sticky' },
+      },
     }),
     callbacks: opts.callbacks,
     bus,
@@ -141,10 +145,11 @@ describe('runEscalationTier hint tier gate handling', () => {
       completed: false,
       method: 'failed',
       attempts: 1,
-      lastError: 'Hint-tier changed files blocked by approval gate: user denied (src/other.ts)',
+      lastError:
+        "Hint-tier changed files blocked by approval gate: user denied. SPLITBRIEF discarded this attempt's writes to src/other.ts. Retry from the current files; do not try to recover the rejected writes.",
     });
     expect(outcome.lastError).toBe(
-      'Hint-tier changed files blocked by approval gate: user denied (src/other.ts)',
+      "Hint-tier changed files blocked by approval gate: user denied. SPLITBRIEF discarded this attempt's writes to src/other.ts. Retry from the current files; do not try to recover the rejected writes.",
     );
     expect(existsSync(join(projectDir, RETRY_MARKER))).toBe(false);
     expect(events.some((e) => e.type === 'approval_rejected')).toBe(true);
@@ -375,7 +380,7 @@ describe('runEscalationTier hint tier gate handling', () => {
     expect(events.find((e) => e.type === 'escalate')).toMatchObject({ tier: 1, hint });
   });
 
-  it('a widen verdict runs the retry with the write gate open', async () => {
+  it('a widen verdict runs the retry', async () => {
     const { projectDir, sessionId } = setupProject();
     const { callbacks } = makeCallbacks();
     const { ctx } = await makeCtx(projectDir, sessionId, {
@@ -396,9 +401,6 @@ describe('runEscalationTier hint tier gate handling', () => {
     });
 
     expect(ctx.implementer.retry).toHaveBeenCalledTimes(1);
-    expect(ctx.implementer.retry).toHaveBeenCalledWith(
-      expect.objectContaining({ undeclaredWrites: 'gate' }),
-    );
     expect(outcome.plannerVerdict).toBe('widen');
   });
 

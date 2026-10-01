@@ -103,15 +103,15 @@ function SkillRow({
   width,
   showDesc,
 }: SkillRowProps) {
-  const name = truncateTerminalDisplayText(skill.name, nameColWidth);
   const desc = truncateTerminalDisplayText(skill.description, descMaxWidth);
+  // Without a description column the name takes the whole row, and the row cuts it at its edge.
   return (
     <ListRow
       state={isCursor ? 'active' : 'default'}
-      label={name}
-      labelWidth={nameColWidth}
+      label={showDesc ? truncateTerminalDisplayText(skill.name, nameColWidth) : skill.name}
       width={width}
       selected={isChecked}
+      {...(showDesc ? { labelWidth: nameColWidth } : {})}
       {...(showDesc && desc ? { metadata: desc } : {})}
     />
   );

@@ -1,7 +1,11 @@
 import type { z } from 'zod';
 import { ConfigSchema } from '../../../schemas/config.js';
 import { REMOVED_RUNNER_KINDS } from '../../../schemas/runner-fields.js';
-import { RETIRED_WORKFLOW_MODE, RETIRED_WORKFLOW_MODE_NOTICE } from '../../../schemas/enums.js';
+import {
+  PROTECTED_ACTION_CLASSES,
+  RETIRED_WORKFLOW_MODE,
+  RETIRED_WORKFLOW_MODE_NOTICE,
+} from '../../../schemas/enums.js';
 import { includes, narrowRecord } from '../../../../utils/type-guards.js';
 import { apiKeyErrors } from './credentials.js';
 import { securityWarnings } from './warnings.js';
@@ -119,6 +123,13 @@ function deprecatedModeWarnings(config: Record<string, unknown>): string[] {
   return mode === RETIRED_WORKFLOW_MODE ? [RETIRED_WORKFLOW_MODE_NOTICE] : [];
 }
 
+function ignoredTierWarnings(config: Record<string, unknown>): string[] {
+  const tiers = narrowRecord(narrowRecord(config.approval)?.tiers) ?? {};
+  return PROTECTED_ACTION_CLASSES.filter((key) => tiers[key] !== undefined).map(
+    (key) => `approval.tiers.${key} is ignored: a write to a protected path always asks.`,
+  );
+}
+
 export function validateConfig(config: Record<string, unknown>): ConfigValidation {
   const result = ConfigSchema.safeParse(config);
 
@@ -139,6 +150,7 @@ export function validateConfig(config: Record<string, unknown>): ConfigValidatio
   const warnings = [
     ...(result.success ? securityWarnings(result.data) : []),
     ...deprecatedModeWarnings(config),
+    ...ignoredTierWarnings(config),
   ];
 
   return { errors, warnings, data: result.success ? result.data : undefined };

@@ -8,6 +8,7 @@ import {
   registerCommitTestDir,
 } from '#testing/helpers/orchestrator-commit.js';
 import { createTempDir } from '#testing/helpers/temp-dir.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { validateCommitAndAdvance } from './commit.js';
 import type { ValidationAcceptance } from '../validation/acceptance.js';
@@ -50,6 +51,75 @@ afterEach(() => {
 });
 
 describe('validateCommitAndAdvance', () => {
+  it('records the changed files no brief suggested as one touched-not-suggested event', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const state = makeCommitState();
+    const task = firstCommitTask(state);
+    const { bus, events } = makeBusRecorder();
+
+    await validateCommitAndAdvance({
+      task,
+      acceptance: acceptedAcceptance,
+      projectDir,
+      sessionId,
+      config: makeConfig(),
+      state,
+      bus,
+      method: 'local',
+      transitionType: 'VALIDATION_PASS',
+      taskChangedFiles: [task.file, 'src/shared/button.ts'],
+    });
+
+    expect(events.filter((e) => e.type === 'task_touched_not_suggested')).toEqual([
+      expect.objectContaining({ taskId: task.id, files: ['src/shared/button.ts'] }),
+    ]);
+  });
+
+  it('counts the files of a brief already done as suggested', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const done = makeTask({ id: 'T001', file: 'src/shared/button.ts', status: 'done' });
+    const task = makeTask({ id: 'T002', file: 'src/page.ts', status: 'in_progress' });
+    const state = makeCommitState({ tasks: [done, task], currentTaskIndex: 1 });
+    const { bus, events } = makeBusRecorder();
+
+    await validateCommitAndAdvance({
+      task,
+      acceptance: acceptedAcceptance,
+      projectDir,
+      sessionId,
+      config: makeConfig(),
+      state,
+      bus,
+      method: 'local',
+      transitionType: 'VALIDATION_PASS',
+      taskChangedFiles: [task.file, 'src/shared/button.ts'],
+    });
+
+    expect(events.some((e) => e.type === 'task_touched_not_suggested')).toBe(false);
+  });
+
+  it('publishes no touched-not-suggested event when every change was suggested', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const state = makeCommitState();
+    const task = firstCommitTask(state);
+    const { bus, events } = makeBusRecorder();
+
+    await validateCommitAndAdvance({
+      task,
+      acceptance: acceptedAcceptance,
+      projectDir,
+      sessionId,
+      config: makeConfig(),
+      state,
+      bus,
+      method: 'local',
+      transitionType: 'VALIDATION_PASS',
+      taskChangedFiles: [task.file],
+    });
+
+    expect(events.some((e) => e.type === 'task_touched_not_suggested')).toBe(false);
+  });
+
   it('returns completed: false and leaves state unchanged when the acceptance rejects', async () => {
     const { projectDir, sessionId } = setupProject();
     const state = makeCommitState();

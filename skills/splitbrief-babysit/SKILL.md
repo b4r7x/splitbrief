@@ -12,8 +12,9 @@ metadata:
 The built CLI runs on its own repository. This skill contains the supervision and recovery procedure, including its watcher.
 
 Read the target repository's agent instructions. No other skill, private run script, handoff file, or external service is required by this skill.
-The run uses the repository's Node.js, npm, Git, dependencies, and configured coding tools. Use an interactive terminal supplied by the host.
-tmux is optional when the host cannot retain an interactive terminal. Do not install it or change the host configuration automatically.
+The run uses the repository's Node.js, npm, Git, dependencies, and configured coding tools.
+When `tmux` is on PATH, every run launches in a named tmux session so the owner can watch it live. Without tmux, use an interactive terminal supplied by the host.
+Do not install tmux or change the host configuration automatically.
 
 Resolve `SKILL_DIR` to the directory containing this installed `SKILL.md`. All helper paths are relative to that directory.
 
@@ -74,13 +75,13 @@ If the task file's first line gives the exact launch command, use it without its
 
 ## Launch
 
-Use the host's persistent interactive terminal. Redirect stderr to a run-specific file so a crash survives alternate-screen restoration.
+Redirect stderr to a run-specific file so a crash survives alternate-screen restoration.
 Create `SCR` with `mktemp -d` or the host's scratch directory. Record the terminal handle and scratch path.
 
-Launch `node dist/cli.js start --mode standard '<task>' @<task-file>` in that terminal.
+Launch `node dist/cli.js start --mode standard '<task>' @<task-file>`.
 For an existing run, use `continue <run-id>` instead. Retain the process exit status and inspect stderr on unexpected exit.
 
-Optional tmux setup, only when tmux is already available:
+When `command -v tmux` succeeds, always launch in a named tmux session:
 
 ```bash
 SCR=$(mktemp -d)
@@ -95,7 +96,24 @@ exec bash
 EOF
 chmod +x "$SCR/launch.sh"
 tmux new-session -d -s "$T" -x 140 -y 45 -e "SB_REPO=$SB_REPO" -e "SB_STDERR=$SB_STDERR" "$SCR/launch.sh" start --mode standard '<one sentence>' @.splitbrief/inbox/<run>/tasks.md
+tmux set-option -t "$T" window-size manual
 ```
+
+For `continue <run-id>`, run the whole block with two changes: set `T` to the session name recorded in that run's `babysit.md`, and pass `continue "$ID"` in place of `start …`.
+When `babysit.md` records no session, keep the new name and record it.
+If `tmux has-session -t "$T"` succeeds, wait until its pane prints `SPLITBRIEF EXIT CODE`, then replace the `new-session` and `set-option` lines with `tmux respawn-pane -k -t "$T" -e "SB_STDERR=$SB_STDERR" "$SCR/launch.sh" continue "$ID"`.
+A read-only attach never resizes the window. `window-size manual` keeps the window at 140x45 when the owner attaches without `-r` to scroll, so the TUI the babysitter reads keeps its size.
+
+Right after launch, give the owner this command once, with the session name expanded: `tmux attach -r -t "$T"`.
+A babysitter subagent passes it to the orchestrator, which relays it to the owner.
+Record the session name and the attach command in `<session-dir>/babysit.md` (`$SCR/defects.md` until the session directory exists).
+
+Read-only attach cannot scroll, because the TUI draws on the alternate screen.
+tmux copy mode shows only the current screen, for the same reason.
+To scroll, the owner attaches without `-r` and uses the TUI's own keys (`shift+↑↓`, `pgup`/`pgdn`), only when the babysitter agrees; a writable client sends keys to the run.
+Otherwise the owner reads `babysit.md`.
+
+Without tmux, launch the same command in the host's persistent interactive terminal.
 
 Never kill a terminal that holds another run. Leave other agents' terminals alone.
 
@@ -223,12 +241,12 @@ A seat taken through the panel **is** the config of record: the picker saves thr
 
 **New code needs a fresh process.** The at-rest `⏎` keeps the old build in memory.
 After a source repair, confirm the previous process exited, build, then launch `continue` in the retained terminal.
-With optional tmux, the equivalent is:
+With tmux, respawn the pane in the same session, so the owner's attach command stays valid:
 
 ```bash
 # pane: esc esc (stop resumably), then ctrl+c ctrl+c; wait until it prints SPLITBRIEF EXIT CODE
 npm run build
-tmux respawn-pane -k -t "$T" "$SCR/launch.sh" continue "$ID"
+tmux respawn-pane -k -t "$T" -e "SB_STDERR=$SB_STDERR" "$SCR/launch.sh" continue "$ID"
 ```
 
 Record each repair's files before resuming. Inspect any external-change or drift report against that record; never approve an unexplained change.

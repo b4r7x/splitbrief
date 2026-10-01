@@ -382,7 +382,12 @@ describe('buildRunnerChecks availability guidance', () => {
     );
 
     expect(check?.severity).toBe('warning');
-    expect(check?.details?.join('\n')).toContain('file-write approval prompts are disabled');
+    expect(check?.details?.join('\n')).toContain(
+      'file-write approval prompts are disabled; protected paths still ask',
+    );
+    expect(check?.details).toContain(
+      'File-write approval prompts: disabled; protected paths still ask.',
+    );
     expect(check?.metadata?.fileWriteApprovalEnabled).toBe(false);
   });
 

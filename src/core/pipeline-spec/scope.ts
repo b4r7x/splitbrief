@@ -1,8 +1,6 @@
 export const SCOPE_RULE = {
   allowedSetText:
-    "Allowed set = the brief's `files` + every path under **In bounds** and **Approved out of bounds** + the `files` of every brief already `done`",
+    "Suggested set = the brief's `files` + every path under **In bounds** and **Approved out of bounds** + the `files` of every brief already `done`. It is guidance: the implementer may edit another ordinary project file when the change needs it, and names it with the reason",
   driftText:
-    'Drift = the changed set minus the baseline set minus the allowed set, with the run directory excluded. Any path left over fails the attempt; the next attempt carries the revert instruction for those paths.',
-  revertInstruction: (paths: readonly string[], declared: readonly string[]): string =>
-    `Revert your changes to ${paths.join(', ')}; only ${declared.join(', ')} may change`,
+    'Touched, not suggested = the changed set minus the baseline set minus the suggested set, with the run directory excluded. Each such path is recorded for the reviewer and its tests run; it never fails the attempt. Only a write to a protected path (dependency manifests and lockfiles, CI configuration, env and key files, `.git`, `.splitbrief`) waits for the user to confirm it.',
 } as const;

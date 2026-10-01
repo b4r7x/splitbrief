@@ -55,9 +55,12 @@ sleep 100000
 EOF
 chmod +x "$SCR/launch.sh"
 tmux kill-session -t sb 2>/dev/null; tmux new-session -d -s sb -x 140 -y 45 "$SCR/launch.sh"
+tmux set-option -t sb window-size manual
 ```
 
 Redirecting stderr matters: the TUI runs on the alternate screen, and a fatal error printed there is gone once the screen restores.
+
+The owner watches live with `tmux attach -r -t sb`. A read-only attach never resizes the window; `window-size manual` keeps 140x45 when the owner attaches without `-r`. Read-only attach cannot scroll, because the TUI runs on the alternate screen. To scroll, the owner attaches without `-r` and uses the TUI's own keys (`shift+↑↓`, `pgup`/`pgdn`), only when the operator agrees, because a writable client sends keys to the run. Otherwise the owner reads `babysit.md`.
 
 | Moment | Read first | Then |
 |---|---|---|
@@ -108,7 +111,7 @@ What `continue` does with the saved state (`src/engine/orchestrator/run/init.ts`
 |---|---|
 | During a planner step | every step whose artifact exists on disk is skipped; the cut step is re-issued whole, on the resumed native session when the tool has one |
 | Parked mid-brief (`esc esc`, `ctrl+c`, `kill -INT`) | the brief continues at the same attempt with its partial edits and a `[Continuation]` note; the worktree is reused |
-| Crashed mid-brief (no `interruptedStep`) | the brief restarts at attempt 0 with its declared files restored |
+| Crashed mid-brief (no `interruptedStep`) | the brief restarts at attempt 0 with its own writes (declared, or recorded as promoted) restored |
 | On a recovery | nothing runs until `--action` or the panel answers it |
 
 Orphaned runner processes from a crash are reaped at the next start (`runner-pids.jsonl`). The code the run itself promotes into the tree does not reach the running orchestrator: a fix the run built for its own benefit needs the same stop → build → continue.

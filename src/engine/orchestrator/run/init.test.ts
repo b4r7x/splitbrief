@@ -793,6 +793,60 @@ describe('initializeWorkflow — a task interrupted mid-gate', () => {
       ).toContain('Restored 1 unfinished change(s) from the interrupted T001: src/two.ts');
     });
   });
+  it('restores an unplanned file the interrupted brief promoted, as well as its declared files', async () => {
+    await withTempDir('splitbrief-init-unplanned-promotion', async (projectDir) => {
+      createTestGitRepo(projectDir, { 'src/two.ts': 'original', 'src/shared.ts': 'original' });
+      writeFileSync(join(projectDir, 'src/two.ts'), 'half written by the killed run');
+      writeFileSync(join(projectDir, 'src/shared.ts'), 'promoted by the killed run');
+      const feature = 'resume a brief that touched an unplanned file';
+      const sessionId = 'session-init-unplanned-promotion';
+      const task = makeTask({ id: 'T001', status: 'in_progress', file: 'src/two.ts' });
+      ensureSessionDir(projectDir, sessionId);
+      const ledger = createEvidenceLedger({ sessionId, feature, tasks: [task] });
+      writeEvidenceLedger(
+        { projectDir, sessionId },
+        {
+          ...ledger,
+          tasks: ledger.tasks.map((entry) => ({
+            ...entry,
+            promotedBriefHash: hashTaskBrief([task]),
+            promotedFiles: [
+              {
+                path: 'src/shared.ts',
+                sha256: sha256Hex('promoted by the killed run'),
+                mode: 0o644,
+              },
+            ],
+          })),
+        },
+      );
+
+      const { init } = await initializeTestWorkflow({
+        projectDir,
+        sessionId,
+        feature,
+        savedState: {
+          ...createInitialState(feature),
+          phase: 'validating-task',
+          tasks: [task],
+          currentTaskIndex: 0,
+          changedFilesBaseline: {
+            head: null,
+            fingerprints: {},
+            activeTaskSnapshot: {
+              head: 'HEAD',
+              files: ['src/two.ts', 'src/shared.ts'],
+              dirtyFileContents: { 'src/two.ts': 'original', 'src/shared.ts': 'original' },
+            },
+          },
+        },
+      });
+
+      expect(init.ok).toBe(true);
+      expect(readFileSync(join(projectDir, 'src/two.ts'), 'utf-8')).toBe('original');
+      expect(readFileSync(join(projectDir, 'src/shared.ts'), 'utf-8')).toBe('original');
+    });
+  });
 });
 
 describe('initializeWorkflow — a brief killed while its runner was building', () => {

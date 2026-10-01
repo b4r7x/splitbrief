@@ -283,6 +283,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     const completedTask = state.tasks[i];
     changedFilesBaseline = await absorbAcceptedFiles({
       projectDir,
+      sessionId,
       baseline: changedFilesBaseline,
       completedTask,
       refreshedTask,

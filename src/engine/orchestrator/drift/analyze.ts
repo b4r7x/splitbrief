@@ -13,6 +13,7 @@ import { uniqueInOrder } from '../../../utils/collections.js';
 import { clamp01 } from '../../../utils/math.js';
 import {
   isInDeclaredSet,
+  isScopePlaceholder,
   matchesScopeEntry,
   taskDeclaredPatterns,
 } from '../../../core/scope/declared-set.js';
@@ -127,7 +128,7 @@ export function analyzeBriefDrift(input: AnalyzeBriefDriftInput): DriftReport {
   const outOfBoundsPatterns: string[] = [];
   for (const task of input.tasks) {
     for (const p of task.scope?.outOfBounds ?? []) {
-      if (p) outOfBoundsPatterns.push(p);
+      if (p && !isScopePlaceholder(p)) outOfBoundsPatterns.push(p);
     }
   }
 
@@ -177,11 +178,12 @@ export function analyzeBriefDrift(input: AnalyzeBriefDriftInput): DriftReport {
       });
       continue;
     }
+    // A brief's files are suggestions: an unplanned file is recorded for the reviewer, never failed.
     findings.push({
-      severity: 'error',
+      severity: 'info',
       code: 'out_of_scope_file',
       file,
-      message: `${file} was changed but no Task Brief targets it.`,
+      message: `${file} touched, not suggested by any task.`,
     });
   }
 

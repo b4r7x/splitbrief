@@ -21,6 +21,7 @@ const BORDER_ROWS = 2;
 export function approvalTitle(actionClass: ActionClass): string {
   if (actionClass === 'package_change') return 'Change a package manifest:';
   if (actionClass === 'destructive') return 'Destructive action:';
+  if (actionClass === 'sensitive_change') return 'Change a CI or secret file:';
   if (actionClass === 'network') return 'Network access:';
   return "Write outside the brief's declared files:";
 }
@@ -144,6 +145,7 @@ export function getReviewDocumentPromptRows(artifact: ReviewArtifact | null, col
 export function getApprovalConfirmLabel(actionClass: ActionClass): string {
   if (actionClass === 'destructive') return 'control-plane file write';
   if (actionClass === 'package_change') return 'package manifest write';
+  if (actionClass === 'sensitive_change') return 'CI or secret file write';
   return 'confirm file write';
 }
 
@@ -219,7 +221,7 @@ export function approvalOptionLabelText(input: {
 
 export const APPROVAL_OPTION_FIRST_ROW_OFFSET = 4;
 
-/** The blank rows a sticky panel paints: two above the options, one below them. */
+/** The blank rows a sticky or confirm panel paints: two above the options, one below them. */
 export const STICKY_SPACER_ROWS = 3;
 /** Of those, the ones that sit above the options, so shedding them moves the option rows up. */
 const STICKY_LEAD_SPACER_ROWS = 2;
@@ -324,6 +326,7 @@ export function getConfirmOptionZones(input: {
   promptRows: number;
   actionClass: ActionClass;
   actionDescription: string;
+  leadShed?: number;
 }): PromptOptionZone[] {
   return getApprovalOptionZones({
     boxTop: input.boxTop,
@@ -335,6 +338,7 @@ export function getConfirmOptionZones(input: {
       cols: input.cols,
     }),
     options: getConfirmOptions(input.actionClass),
+    ...(input.leadShed === undefined ? {} : { leadShed: input.leadShed }),
   });
 }
 

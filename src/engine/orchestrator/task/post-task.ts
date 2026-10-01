@@ -6,13 +6,14 @@ import type { WorkflowContext } from '../types.js';
 import type { RoutingDecision } from '../context-routing/types.js';
 import {
   type ChangedFilesBaseline,
-  inferTaskAcceptedChangedFiles,
+  inferTaskOwnChangedFiles,
   refreshChangedFilesBaseline,
 } from '../changed-files-baseline.js';
 import { checkUserEditGate } from './user-edit-gate.js';
 
 export async function absorbAcceptedFiles(opts: {
   projectDir: string;
+  sessionId: string;
   baseline: ChangedFilesBaseline;
   completedTask: Task | undefined;
   refreshedTask: Task;
@@ -25,8 +26,8 @@ export async function absorbAcceptedFiles(opts: {
     isTaskCompleted(completedTask.status) &&
     taskAcceptedFiles.size === 0
   ) {
-    for (const file of await inferTaskAcceptedChangedFiles(
-      projectDir,
+    for (const file of await inferTaskOwnChangedFiles(
+      { projectDir, sessionId: opts.sessionId },
       refreshedTask,
       opts.baseline.head,
     ))

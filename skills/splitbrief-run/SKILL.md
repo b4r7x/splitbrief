@@ -60,7 +60,7 @@ For each brief in order, while every `depends_on` is `done`:
 2. **Spawn** — the implementer recipe from references/tool-recipes.md; cwd = project root; output → `T00N/attempt-1.log`; detached, with the waiter as the deadline (Orchestration notes below). Append the command line to `evidence.md`.
 3. **Outcome** — references/implementer-prompt.md §7: exit code, terminal record, the brief's anchor file in the changed set, a completion report naming a file. A failed outcome records `gates: not run · drift: not run` and goes to step 6.
 4. **Gates** — typecheck → lint → test with narrowing; verbatim into `validation.md`.
-5. **Drift** — per references/gates.md; every attempt gets an entry in `drift.md`; any path entry fails the attempt.
+5. **Drift** — per references/gates.md; every attempt gets an entry in `drift.md`; a path entry is recorded for the reviewer and never fails the attempt.
 6. **Ladder** on failure — halt signatures first, then spawn-failure signatures (`recipe-fix`: correct the recipe, re-spawn the original prompt as the next attempt, no retry consumed), then local retries (2, or `workflow.max_retries`) → hint (`T00N/hint.md`, ≤ 500 tokens, no code, one implementer retry) → takeover (this session edits the file, then gates + drift), unless `--no-escalate`. Signatures: references/tool-recipes.md; framings and prompts: references/implementer-prompt.md.
 7. **Record** — `progress.md` row (`pending` · `running` · `retrying (n)` · `done` · `escalated` · `halted`), reprint the table.
 

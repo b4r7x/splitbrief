@@ -67,7 +67,8 @@ export function ReviewView({ height, width }: ReviewViewProps) {
 
   const remaining = Math.max(0, renderedLineCount - clampedOffset - contentHeight);
   const scrollIndicatorText = ` ↓ ${remaining} more`;
-  const scrollHint = `↑↓ scroll${SOFT_SEP}g/G ends`;
+  // Plain ↑↓ move the gate menu under the document; the shifted arrows and home/end scroll it.
+  const scrollHint = `shift+↑↓ scroll${SOFT_SEP}home/end ends`;
   const showScrollHint =
     remaining > 0 &&
     getTerminalCellWidth(scrollIndicatorText) + getTerminalCellWidth(scrollHint) + 2 <=

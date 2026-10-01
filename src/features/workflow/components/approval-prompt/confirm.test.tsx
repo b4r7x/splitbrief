@@ -327,6 +327,7 @@ describe('ApprovalPrompt confirm tier', () => {
   it.each([
     [40, 'destructive' as const, '.splitbrief/sessions/2026-08-10-a/state.json'],
     [60, 'package_change' as const, 'package.json'],
+    [80, 'sensitive_change' as const, '.env.local'],
     [120, 'destructive' as const, '.git/config'],
   ])(
     'renders both steps inside the row budget it reports at %i cols',
@@ -420,6 +421,30 @@ describe('ApprovalPrompt confirm tier', () => {
     expect(nudged).toContain(nudge);
     expect(nudged).not.toContain('esc deny');
     expect(frameRows(ui.lastFrame())).toBe(getApprovalPromptRows(approvalPromptStore.get(), 34));
+
+    ui.stdin.write(ESC);
+    await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
+    ui.unmount();
+  });
+});
+
+describe('short-viewport clamp on the confirm panel', () => {
+  afterEach(() => {
+    terminalSizeStore.reset();
+  });
+
+  it('sheds its blank rows so the clamped panel keeps its legend and bottom border', async () => {
+    terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: false });
+    const request = makeConfirmRequest('.env.local', 'sensitive_change');
+    const pending = openApprovalPrompt(request);
+    const budget = getApprovalPromptRows(approvalPromptStore.get(), 60);
+    const ui = render(<ApprovalPrompt clampedBoxRows={budget - 2} />);
+    await tick(PAST_GRACE);
+
+    const lines = stripColor(ui.lastFrame()).replace(/\n$/, '').split('\n');
+    expect(lines).toHaveLength(budget - 2);
+    // The legend sits directly above the last row, so the bottom border is painted too.
+    expect(lines.at(-2)).toContain(STICKY_HINTS);
 
     ui.stdin.write(ESC);
     await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });

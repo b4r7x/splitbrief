@@ -130,9 +130,9 @@ describe('OverlayPanel sizing', () => {
 });
 
 describe('OverlayPanel hint', () => {
-  it('truncates an over-wide hint to a single row', () => {
+  it('truncates an over-wide hint that is not a key legend to a single row', () => {
     terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });
-    const hint = `esc close · ${'x'.repeat(51)}`;
+    const hint = `Cannot open ${'x'.repeat(51)}`;
     expect(hint.length).toBe(63);
 
     const lines = renderPanelLines(
@@ -142,6 +142,23 @@ describe('OverlayPanel hint', () => {
     );
 
     expect(lines.filter((line) => line.includes('x'))).toHaveLength(1);
+    expect(lines.some((line) => line.includes('Cannot open'))).toBe(true);
     expect(lines.some((line) => line.includes(hint))).toBe(false);
+  });
+
+  it('sheds whole keys from a key legend at 40 columns instead of cutting one', () => {
+    terminalSizeStore.__testReset({ cols: 40, rows: 18, isSmall: true });
+
+    const lines = renderPanelLines(
+      <OverlayPanel hint="↑↓ select · type filter · ⏎ open · esc close" density="roomy">
+        <Text>body</Text>
+      </OverlayPanel>,
+    );
+
+    const hintRow = lines
+      .find((line) => line.includes('↑↓ select'))
+      ?.replace(/[│|]/gu, '')
+      .trim();
+    expect(hintRow).toBe('↑↓ select · type filter');
   });
 });

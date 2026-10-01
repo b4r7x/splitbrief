@@ -1,5 +1,5 @@
 import { relative, resolve } from 'node:path';
-import type { ActionClass } from '../../../core/schemas/enums.js';
+import { type ActionClass, PROTECTED_ACTION_CLASSES } from '../../../core/schemas/enums.js';
 import type { ApprovalTier } from '../../../core/schemas/config.js';
 import { SPLITBRIEF_DIR } from '../../../core/paths.js';
 import { isInDeclaredSet } from '../../../core/scope/declared-set.js';
@@ -28,10 +28,11 @@ export const DEFAULT_TIER_MAP: Record<ActionClass, ApprovalTier> = {
   read: 'auto',
   write_in_scope: 'auto',
   validation: 'auto',
-  write_out_of_scope: 'sticky',
+  write_out_of_scope: 'auto',
   destructive: 'confirm',
   network: 'confirm',
   package_change: 'confirm',
+  sensitive_change: 'confirm',
 };
 
 function resolveTier(actionClass: ActionClass, overrides?: TierMap): ApprovalTier {
@@ -41,8 +42,12 @@ function resolveTier(actionClass: ActionClass, overrides?: TierMap): ApprovalTie
 const PACKAGE_MANIFEST_FILES = new Set([
   'bun.lock',
   'bun.lockb',
+  'cargo.lock',
+  'cargo.toml',
   'deno.json',
   'deno.lock',
+  'go.mod',
+  'go.sum',
   'package-lock.json',
   'package.json',
   'pipfile',
@@ -92,6 +97,32 @@ const CONTROL_PLANE_SEGMENTS = new Set(['.git', SPLITBRIEF_DIR]);
 
 function isControlPlanePath(filePath: string): boolean {
   return CONTROL_PLANE_SEGMENTS.has(filePath.split('/')[0] ?? '');
+}
+
+const CI_ROOT_SEGMENTS = new Set(['.github', '.circleci', '.buildkite']);
+
+const SENSITIVE_FILE_NAMES = new Set([
+  '.gitlab-ci.yml',
+  'azure-pipelines.yml',
+  'jenkinsfile',
+  '.npmrc',
+  '.pypirc',
+]);
+
+const SECRET_FILE_PATTERNS = ['.env', '.env.*', '*.pem', '*.key', 'id_rsa*'];
+
+/** CI configuration and secret-bearing files. */
+function isSensitivePath(filePath: string): boolean {
+  const name = (filePath.split('/').at(-1) ?? filePath).toLowerCase();
+  return (
+    CI_ROOT_SEGMENTS.has(filePath.split('/')[0] ?? '') ||
+    SENSITIVE_FILE_NAMES.has(name) ||
+    SECRET_FILE_PATTERNS.some((pattern) => matchesGlob(name, pattern))
+  );
+}
+
+export function isProtectedClass(actionClass: ActionClass): boolean {
+  return PROTECTED_ACTION_CLASSES.includes(actionClass);
 }
 
 function isPathLikeToken(token: string): boolean {
@@ -146,13 +177,14 @@ export function classifyAction(input: ClassifyInput, tierOverrides?: TierMap): C
   const isWrite = input.targetPath !== undefined || WRITE_VERBS.some((v) => lower.includes(v));
   if (isWrite) {
     const paths = targetPaths(input);
-    if (
-      input.taskFiles.some((file) =>
-        isControlPlanePath(normalizeProjectPath(file, input.projectDir)),
-      ) ||
-      paths.some(isControlPlanePath)
-    ) {
+    if (paths.some(isControlPlanePath)) {
       return { actionClass: 'destructive', tier: resolveTier('destructive', tierOverrides) };
+    }
+    if (paths.some(isSensitivePath)) {
+      return {
+        actionClass: 'sensitive_change',
+        tier: resolveTier('sensitive_change', tierOverrides),
+      };
     }
     if (paths.some(isKnownPackagePath)) {
       return { actionClass: 'package_change', tier: resolveTier('package_change', tierOverrides) };

@@ -36,7 +36,7 @@ describe('publishDriftReport', () => {
       type: 'drift_report',
       phase: 'final-review',
       passed: false,
-      errorCount: 2,
+      errorCount: 1,
       warningCount: 0,
     });
   });
@@ -52,9 +52,9 @@ describe('formatDriftReportForPrompt', () => {
       preRunChangedFiles: [],
     });
     const out = formatDriftReportForPrompt(report);
-    expect(out).toContain('passed: false');
-    expect(out).toContain('score: 0.75');
-    expect(out).toContain('[error] out_of_scope_file');
+    expect(out).toContain('passed: true');
+    expect(out).toContain('score: 1.00');
+    expect(out).toContain('[info] out_of_scope_file');
     expect(out).toContain('src/extra.ts');
   });
 

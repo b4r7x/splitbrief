@@ -96,7 +96,9 @@ Correctness is owned by two things:
 - SPLITBRIEF's deterministic validation pipeline — typecheck → lint → test, stopping at the first failure attributable to the task, run against the user's real project directory after changes are promoted (`src/engine/orchestrator/task/step.ts`),
 - the planner's review of the finished change.
 
-An implementer that can run a typecheck or a test in its own workspace is a bonus, not a requirement. It raises first-pass rate and shortens the retry loop; it never becomes the proof. Whatever an implementer reports about its own validation lands in the evidence trail as a claim by the agent, never as a verdict.
+An implementer implements; it does not run the project gates. The direct-writer preamble (`src/engine/spec/prompts/system.ts`) tells it that SPLITBRIEF runs typecheck, lint, format and test after the call, so it runs at most the focused test files the brief lists, once, and no project-wide gate, whole suite, screenshot or render tool. The P01 run showed why: one brief spent 13% of its tool calls on edits and 87% on reads, gates and renders. Whatever an implementer reports about its own validation lands in the evidence trail as a claim by the agent, never as a verdict.
+
+The brief's files are suggestions. The implementer starts from them, edits another ordinary project file the change needs, and names it in its report as `Also changed (not suggested): <file> — <reason>`. Only a protected path (dependency manifests and lockfiles, CI configuration, env and key files, `.git`, `.splitbrief`) is off limits unless the brief asks for that operation.
 
 This is where the cross-lab advantage lands in practice: the review that decides is done by a model that did not write the code.
 

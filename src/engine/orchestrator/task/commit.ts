@@ -8,6 +8,8 @@ import type { BundleApplyResult } from '../../implementers/file-bundle.js';
 import { classifyTaskCompletionMethod } from '../../../core/task-completion.js';
 import { publishWarning, publishTaskComplete } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
+import { isInDeclaredSet, taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
+import { isTaskCompleted, taskFiles } from '../../../core/schemas/task.js';
 
 type ValidateCommitOptions = {
   task: Task;
@@ -91,6 +93,23 @@ export async function validateCommitAndAdvance(
       ...(implementerProfile !== undefined && { implementerProfile }),
     },
   );
+  // SCOPE_RULE's suggested set: this brief's declared set plus the files of every brief already done.
+  const suggested = [
+    ...taskDeclaredPatterns(task),
+    ...state.tasks.filter((t) => isTaskCompleted(t.status)).flatMap((t) => taskFiles(t)),
+  ];
+  const touchedNotSuggested = (opts.taskChangedFiles ?? []).filter(
+    (file) => !isInDeclaredSet(file, suggested),
+  );
+  if (touchedNotSuggested.length > 0) {
+    bus.publish({
+      type: 'task_touched_not_suggested',
+      ts: Date.now(),
+      phase: nextState.phase,
+      taskId: task.id,
+      files: touchedNotSuggested,
+    });
+  }
 
   return { state: nextState, completed: true };
 }

@@ -4,10 +4,14 @@ import type { WorkflowContext } from '../types.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { publishError, publishWarning, publishWarningFromError } from '../events.js';
 import type { IsolatedWorkspace } from '../isolation/types.js';
-import type { GateDecision } from '../approval/types.js';
-import { gateAndPromoteChangedFiles } from '../approval/gate-and-promote.js';
+import type { GateChangedFilesDenial } from '../approval/gate-files.js';
+import { denialMessage, gateAndPromoteChangedFiles } from '../approval/gate-and-promote.js';
 import { persistApprovalEvidence } from '../evidence/persistence.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
+import { raisePendingRecovery } from '../state-ops.js';
+import { buildApprovalDeniedRecoveryIssue } from '../recovery/builders/task.js';
+import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
+import { nowIso } from '../../../utils/format-time.js';
 
 export type ApplyChangedFilesResult =
   | { proceed: true; state: WorkflowState; taskChangedFiles: string[] }
@@ -20,7 +24,11 @@ export async function applyChangedFiles(opts: {
   workspace: IsolatedWorkspace | undefined;
   preApplyApprovedFiles: string[];
   taskStartSnapshot: ChangedFilesSnapshot;
-  recordApprovalDenial: (state: WorkflowState, decision: GateDecision, message: string) => void;
+  recordApprovalDenial: (
+    state: WorkflowState,
+    decision: GateChangedFilesDenial,
+    message: string,
+  ) => void;
   handleConflict: (state: WorkflowState, files: string[]) => Promise<WorkflowState>;
 }): Promise<ApplyChangedFilesResult> {
   const { wctx, task, workspace, preApplyApprovedFiles, taskStartSnapshot } = opts;
@@ -67,14 +75,28 @@ export async function applyChangedFiles(opts: {
     });
     return { proceed: false, state: result.state };
   }
-  if (result.outcome === 'gate-denied') {
-    const files = result.decision.changedFiles.join(', ');
+  const denial =
+    result.outcome === 'gate-denied' || result.outcome === 'allow' ? result.denial : undefined;
+  if (denial !== undefined) {
     opts.recordApprovalDenial(
       result.state,
-      result.decision,
-      `Task changed files blocked by approval gate: ${result.decision.reason ?? 'denied'} (${files})`,
+      denial.decision,
+      denialMessage({ subject: 'Task', denial, blocked: result.outcome === 'gate-denied' }),
     );
-    return { proceed: false, state: result.state };
+  }
+  if (result.outcome === 'gate-denied') {
+    // Nothing of the attempt went ahead, so the run halts and asks, as a denial before the brief does.
+    if (result.state.pendingRecovery !== undefined) return { proceed: false, state: result.state };
+    const { decision } = result.denial;
+    const issue = buildApprovalDeniedRecoveryIssue({
+      task,
+      phase: result.state.phase,
+      deniedFiles: decision.deniedFiles,
+      ...(decision.reason !== undefined && { denialReason: decision.reason }),
+      tool: getRunnerDisplayName(config.implementer),
+      createdAt: nowIso(),
+    });
+    return { proceed: false, state: raisePendingRecovery(wctx, result.state, issue) };
   }
   if (result.outcome === 'promote-conflict') {
     publishError({

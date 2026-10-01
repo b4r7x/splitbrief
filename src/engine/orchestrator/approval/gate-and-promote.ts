@@ -3,7 +3,11 @@ import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/
 import type { EventBus } from '../../events/types.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { OrchestratorCallbacks } from '../types.js';
-import { gateChangedFiles, type GateChangedFilesDecision } from './gate-files.js';
+import {
+  gateChangedFiles,
+  type GateChangedFilesDecision,
+  type GateChangedFilesDenial,
+} from './gate-files.js';
 import { getChangedFilesSinceSnapshot } from './file-snapshots/capture.js';
 import { restoreDirtyFilesFromSnapshot } from './file-snapshots/restore.js';
 import { promoteStagedChanges, stagedProjectError } from './staged-project.js';
@@ -25,9 +29,22 @@ import { isAbortError } from '../../../utils/abort.js';
 import { isResumableWorkspaceStop } from '../isolation/retention.js';
 import { error } from '../../../utils/error.js';
 
+export type GateDenial = {
+  decision: GateChangedFilesDenial;
+  /** The writes the denial actually removed; a file changed during the prompt is kept. */
+  discardedFiles: string[];
+};
+
 export type GateAndPromoteOutcome =
-  | { outcome: 'allow'; state: WorkflowState; changedFiles: string[] }
-  | { outcome: 'gate-denied'; state: WorkflowState; decision: GateChangedFilesDecision }
+  | {
+      outcome: 'allow';
+      state: WorkflowState;
+      /** The files that went ahead; a denied file is never among them. */
+      changedFiles: string[];
+      /** Set when the gate denied some files and let the rest through. */
+      denial?: GateDenial;
+    }
+  | { outcome: 'gate-denied'; state: WorkflowState; denial: GateDenial }
   | { outcome: 'promote-conflict'; state: WorkflowState; conflictedFiles: string[] }
   | { outcome: 'aborted'; state: WorkflowState }
   | {
@@ -68,6 +85,27 @@ export type GateAndPromoteOpts = {
   onRestoreError?: ((err: unknown) => void) | undefined;
   onApproved: (decision: GateChangedFilesDecision) => void;
 };
+
+/**
+ * The row a denial shows. A blocked attempt went nowhere; otherwise only the denied files were
+ * dropped and the rest went ahead. Either way it names what was actually discarded.
+ */
+export function denialMessage(input: {
+  subject: string;
+  denial: GateDenial;
+  blocked: boolean;
+}): string {
+  const { decision, discardedFiles } = input.denial;
+  const reason = decision.reason ?? 'denied';
+  const lead = input.blocked
+    ? `${input.subject} changed files blocked by approval gate: ${reason}.`
+    : `Approval gate denied ${decision.deniedFiles.join(', ')}: ${reason}.`;
+  const discarded =
+    discardedFiles.length === 0
+      ? "SPLITBRIEF discarded none of this attempt's writes."
+      : `SPLITBRIEF discarded this attempt's writes to ${discardedFiles.join(', ')}.`;
+  return `${lead} ${discarded}`;
+}
 
 const gateAndPromoteError = {
   missingFailedFile: () =>
@@ -147,6 +185,7 @@ export async function gateAndPromoteChangedFiles(
         callbacks,
         config,
         getApprovalEnabled,
+        signal,
       });
     }
 
@@ -158,26 +197,45 @@ export async function gateAndPromoteChangedFiles(
       return { outcome: 'aborted', state };
     }
 
+    let denial: GateDenial | undefined;
     if (!decision.allow) {
+      const { deniedFiles } = decision;
+      const allowedFiles = decision.changedFiles.filter((file) => !deniedFiles.includes(file));
+      let discardedFiles = workspace === undefined ? [] : deniedFiles;
+      let halted = false;
       try {
         if (workspace === undefined) {
-          const restoreResult = await restoreDirtyFilesFromSnapshot(
-            projectDir,
-            taskStartSnapshot,
-            decision.changedFiles,
-            {},
-            preApprovalEntries,
-          );
-          if (restoreResult.conflictedFiles.length > 0) {
-            state = await handleConflict(state, restoreResult.conflictedFiles);
-            onRestoreConflict?.(restoreResult.conflictedFiles);
+          const restore = (files: string[]) =>
+            restoreDirtyFilesFromSnapshot(
+              projectDir,
+              taskStartSnapshot,
+              files,
+              {},
+              preApprovalEntries,
+            );
+          const deniedResult = await restore(deniedFiles);
+          discardedFiles = deniedResult.restoredFiles;
+          if (deniedResult.conflictedFiles.length > 0) {
+            // The conflict halts the attempt, so the writes the gate allowed do not go ahead either.
+            const allowedResult = await restore(allowedFiles);
+            discardedFiles = [...discardedFiles, ...allowedResult.restoredFiles];
+            const conflictedFiles = [
+              ...deniedResult.conflictedFiles,
+              ...allowedResult.conflictedFiles,
+            ];
+            halted = true;
+            state = await handleConflict(state, conflictedFiles);
+            onRestoreConflict?.(conflictedFiles);
           }
         }
       } catch (err) {
         if (onRestoreError === undefined) throw err;
+        halted = true;
         onRestoreError(err);
       }
-      return { outcome: 'gate-denied', state, decision };
+      changedFiles = changedFiles.filter((file) => !deniedFiles.includes(file));
+      denial = { decision, discardedFiles };
+      if (halted || changedFiles.length === 0) return { outcome: 'gate-denied', state, denial };
     }
 
     if (filesNeedingApproval.length > 0) {
@@ -306,7 +364,7 @@ export async function gateAndPromoteChangedFiles(
       }
     }
 
-    return { outcome: 'allow', state, changedFiles };
+    return { outcome: 'allow', state, changedFiles, ...(denial === undefined ? {} : { denial }) };
   } catch (err) {
     if (workspace !== undefined && isAbortError(err) && isResumableWorkspaceStop(signal)) {
       retainWorkspaceOutput = true;

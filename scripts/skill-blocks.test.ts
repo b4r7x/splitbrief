@@ -17,7 +17,7 @@ const SENTINELS: Record<string, string> = {
   'brief-grouping': 'no file-count or line-count threshold decides a boundary',
   'body-order': '`### Current Code` is never sent to a direct writer',
   'closing-line': 'Edit <file>, <second file> directly in the working directory.',
-  'scope-rule': 'Revert your changes to',
+  'scope-rule': 'it never fails the attempt',
   'baseline-rule': '`baseline-sha.txt`',
   timeouts: '--deadline 1200',
   'plain-shapes': 'task T001: done (',
@@ -59,7 +59,21 @@ describe('skill-blocks', () => {
     const preamble = renderBlock('implementer-preamble') ?? '';
     expect(preamble).not.toContain('isolation directory');
     expect(preamble).not.toContain('promoted');
-    expect(preamble).toContain('the orchestrator runs them again afterwards');
+    expect(preamble).not.toContain('SPLITBRIEF');
+    expect(preamble).toContain(
+      "The orchestrator runs the project's typecheck, lint, format and test gates",
+    );
+    expect(preamble).toContain('the orchestrator and the review seat do that');
+  });
+
+  it('gives the gates to the orchestrator in the closing line', () => {
+    const closing = renderBlock('closing-line') ?? '';
+    expect(closing).not.toContain('SPLITBRIEF');
+    expect(closing).toContain('The orchestrator runs the typecheck, lint, format and test gates');
+  });
+
+  it('carries no revert instruction in the scope rule', () => {
+    expect(renderBlock('scope-rule') ?? '').not.toMatch(/revert/i);
   });
 
   it('every recipe writes its exit code and none invokes coreutils timeout', () => {

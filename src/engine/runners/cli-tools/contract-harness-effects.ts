@@ -226,6 +226,7 @@ async function runImplementerEffect(input: {
     onOutput: () => {},
     signal: options.signal,
     changeDetection: 'git-status',
+    undeclaredWrites: 'reject',
   });
 }
 

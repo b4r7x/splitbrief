@@ -36,7 +36,6 @@ type HandleRetryOptions = {
   dependsOnFiles?: string[];
   profileOverride?: string | undefined;
   profileOverrideTaskId?: TaskId | undefined;
-  undeclaredWrites?: 'reject' | 'gate' | undefined;
   /** How the first attempt ended, when it ended on a machine outcome. */
   initialFailure?: RetryAttemptFailure | undefined;
 };
@@ -197,7 +196,6 @@ export async function handleRetryAndEscalation(
     ...(opts.profileOverrideTaskId !== undefined && {
       retryProfileOverrideTaskId: opts.profileOverrideTaskId,
     }),
-    ...(opts.undeclaredWrites !== undefined && { undeclaredWrites: opts.undeclaredWrites }),
   };
 
   const hintCapable = ctx.planner.capabilities.supportsHintEscalation;

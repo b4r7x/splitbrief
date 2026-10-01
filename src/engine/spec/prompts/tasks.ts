@@ -14,18 +14,28 @@ import { TASK_BRIEF_HEADINGS } from '../headings.js';
 
 const H = TASK_BRIEF_HEADINGS;
 
+/** The gates are SPLITBRIEF's, so a brief never orders the implementer to run them. */
+export const GATES_ARE_SPLITBRIEFS =
+  'Name the focused test files and cases only. SPLITBRIEF runs typecheck, lint and the affected tests after every brief, so never tell the implementer to run a project-wide gate, the whole suite, or a screenshot/render tool.';
+
+export const EVIDENCE_PROOF =
+  "(the focused tests that pass, the changed files, the behavior a reviewer can check). Renders and project-wide gates are the review seat's and SPLITBRIEF's evidence, not the implementer's steps.";
+
+export const SCOPE_MEANING =
+  '`files` are the suggested files; **In bounds** is context; **Out of bounds** lists the explicit exclusions the reviewer checks.';
+
 export function briefContract(ctx: LanguageContext): string {
   return `Every brief must cover these nine semantic sections, even when one is brief:
 
 1. **Identity** — frontmatter \`id\`, \`title\`, \`action\`, \`file\`, optional \`files\`, \`depends_on\`.
 2. **Intent** — \`${H.description.heading}\`: what the change is and why it matters.
-3. **Scope** — \`${H.scope.heading}\` with \`**In bounds:**\`, \`**Out of bounds:**\`, and optional \`**Approved out of bounds:**\` bullet lists. REQUIRED in standard mode so the implementer cannot drift into adjacent files or features.
+3. **Scope** — \`${H.scope.heading}\` with \`**In bounds:**\`, \`**Out of bounds:**\`, and optional \`**Approved out of bounds:**\` bullet lists. REQUIRED in standard mode. ${SCOPE_MEANING}
 4. **Code Context** — \`${H.signature.heading}\`, \`${H.currentCode.heading}\`, \`${H.typeDefs.heading}\`, and \`${H.pattern.heading}\`: copied verbatim from the project when relevant. The implementer cannot look up other files.
 5. **Implementation Plan** — \`${H.implementationSteps.heading}\`: 3-5 numbered steps with concrete function calls and patterns.
 6. **Validation** — \`${H.tests.heading}\`: REQUIRED concrete test cases with specific inputs and expected outputs, in every brief. No phrases like "should work correctly", and no deferring the cases to whichever brief owns the test file.
 7. **Constraints** — \`${H.constraints.heading}\`: invariants, dependency rules, ${ctx.importConvention}, refusal conditions.
 8. **Escalation** — \`${H.escalation.heading}\`: bullets describing when the implementer must stop and ask instead of guessing. Required whenever the brief contains plausible ambiguity.
-9. **Evidence** — \`${H.evidence.heading}\`: REQUIRED bullets describing the reviewable proof that should exist when the brief is done (passing tests, validation output, changed files, behavioral note).
+9. **Evidence** — \`${H.evidence.heading}\`: REQUIRED bullets describing the reviewable proof that should exist when the brief is done ${EVIDENCE_PROOF}
 
 Every brief must also leave typecheck, lint and tests green on its own. Never plan for a failing gate: when a change would break a sibling file, widen the brief's \`files\` to include it, keep the change backward compatible with an optional property and a default, or split the work so each brief lands whole. Before a brief deletes or renames an export, its \`files\` name every consumer found by searching the whole repository — \`src/\` and \`testing/\` alike, colocated and sibling tests included.`;
 }
@@ -37,7 +47,7 @@ export function criticalRules(ctx: LanguageContext): string {
 
 3. **Dependency-ordered**: Briefs must be ordered so dependencies come first. Use \`depends_on\` to declare which briefs must complete first. Independent briefs can run in parallel.
 
-4. **Concrete validation**: Every \`${H.tests.heading}\` block must list specific test cases with concrete inputs and expected outputs, as \`-\` bullets. This holds for every brief, including one whose test file a different brief owns: list the cases that verify THIS brief's change. Never replace the bullets with prose that defers validation to another brief.
+4. **Concrete validation**: Every \`${H.tests.heading}\` block must list specific test cases with concrete inputs and expected outputs, as \`-\` bullets. This holds for every brief, including one whose test file a different brief owns: list the cases that verify THIS brief's change. Never replace the bullets with prose that defers validation to another brief. ${GATES_ARE_SPLITBRIEFS}
 
 5. **Inline type definitions**: Copy referenced ${ctx.typeAnnotationStyle} or data shape definitions verbatim into \`${H.typeDefs.heading}\`. Max ~300 tokens — prioritize definitions that appear in the function signature.
 

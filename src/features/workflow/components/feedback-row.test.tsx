@@ -223,7 +223,24 @@ describe('FeedbackRow', () => {
     const ui = renderFeature(
       <>
         <Text>above</Text>
-        <FeedbackRow collapseWhenEmpty />
+        <FeedbackRow panelBelow />
+        <Text>below</Text>
+      </>,
+    );
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+
+    expect(lines).toEqual(['above', 'below']);
+    ui.unmount();
+  });
+
+  // The stop sheet names its own keys; the run's legend above it would offer `esc stop options`
+  // for a sheet that is already open.
+  it('leaves the legend to a panel under it', () => {
+    lifecycleStore.__testReset({ status: 'running', phase: 'implementing' });
+    const ui = renderFeature(
+      <>
+        <Text>above</Text>
+        <FeedbackRow panelBelow />
         <Text>below</Text>
       </>,
     );
@@ -235,7 +252,7 @@ describe('FeedbackRow', () => {
 
   it('keeps the row when a message resolves above a panel that owns the footer', () => {
     feedbackStore.setMessage('Message queued for the next planner turn.');
-    const ui = renderFeature(<FeedbackRow collapseWhenEmpty />);
+    const ui = renderFeature(<FeedbackRow panelBelow />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     expect(frame).toContain('Message queued for the next planner turn.');

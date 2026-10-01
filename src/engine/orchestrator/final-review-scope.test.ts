@@ -55,11 +55,12 @@ function project() {
   return { ...ref, ref, task };
 }
 
-async function promote(p: ReturnType<typeof project>, text = worker) {
+async function promote(p: ReturnType<typeof project>, text = worker, extra?: string) {
   const taskStartSnapshot = await getChangedFilesSnapshot(p.projectDir);
   const workspace = await staged.createStagedProject({ projectDir: p.projectDir });
   cleanups.push(workspace.cleanup);
   writeFileSync(join(workspace.projectDir, file), text);
+  if (extra !== undefined) writeFileSync(join(workspace.projectDir, extra), 'export {};\n');
   const outcome = await gateAndPromoteChangedFiles({
     ...p,
     workspace,
@@ -229,6 +230,15 @@ describe('final review promotion provenance', () => {
     expect(readReviewChanges(p.ref)?.changes).toMatchObject([
       { kind: 'unknown', reason: 'input-unverified' },
     ]);
+  });
+
+  it('names a promoted file no brief suggested in the Changed Files section', async () => {
+    const p = project();
+    await promote(p, worker, 'src/shared.ts');
+    const scope = await resolveRunReviewScope({ ref: p.ref, tasks: [p.task], workspaceFiles: [] });
+    expect(scope.description).toContain(
+      'Files touched, not suggested by any brief: src/shared.ts.',
+    );
   });
 
   it('retains deletion and mode changes in the captured review diff', async () => {

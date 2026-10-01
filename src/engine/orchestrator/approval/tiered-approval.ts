@@ -1,7 +1,7 @@
 import type { Config } from '../../../core/schemas/config.js';
 import type { TieredApprovalRequest } from '../../../core/approval/types.js';
 import type { TierMap } from './action-classifier.js';
-import { classifyAction } from './action-classifier.js';
+import { classifyAction, isProtectedClass } from './action-classifier.js';
 import { ActionClassSchema } from '../../../core/schemas/enums.js';
 import { error } from '../../../utils/error.js';
 import { gateConfirmTier } from './confirm.js';
@@ -36,12 +36,8 @@ export async function gateAction(input: GateActionInput): Promise<GateDecision> 
     getApprovalEnabled,
   } = input;
 
-  if ((getApprovalEnabled ? getApprovalEnabled() : config.approval?.enabled !== false) === false) {
-    return { allow: true };
-  }
-
   const tierOverrides = compactTierOverrides(config.approval?.tiers);
-  const { actionClass, tier } = classifyAction(
+  const classified = classifyAction(
     {
       actionDescription,
       targetPath: input.targetPath,
@@ -53,6 +49,20 @@ export async function gateAction(input: GateActionInput): Promise<GateDecision> 
     },
     tierOverrides,
   );
+  // A write to a protected path asks whatever approval.enabled, --yolo or the tier overrides say,
+  // once, at the write gate that names the path; the pre-task description leaves it to that gate.
+  const protectedWrite = isProtectedClass(classified.actionClass);
+  if (protectedWrite && input.targetPath === undefined) {
+    return { allow: true };
+  }
+  const approvalEnabled = getApprovalEnabled
+    ? getApprovalEnabled()
+    : config.approval?.enabled !== false;
+  if (!protectedWrite && !approvalEnabled) {
+    return { allow: true };
+  }
+  const actionClass = classified.actionClass;
+  const tier = protectedWrite ? 'confirm' : classified.tier;
 
   if (tier === 'auto') {
     return { allow: true };

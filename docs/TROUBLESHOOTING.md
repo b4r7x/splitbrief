@@ -864,7 +864,7 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 **Fix:**
 1. If the session is resumable, continue it with an interactive TUI: `splitbrief continue <session-id>`.
 2. Or set the offending file-write tier to `auto` in `.splitbrief/config.yaml` under `approval.tiers.<class>: auto`.
-3. For CI runs that should never prompt, make sure every tier that the run can reach is set to `auto`. Leaving a tier at `sticky` or `confirm` is what makes a `--json` run fail closed on it — which is the right default when an unexpected write should stop the run rather than land unreviewed.
+3. For CI runs that should never prompt, make sure every tier that the run can reach is set to `auto`. Leaving a tier at `sticky` or `confirm` is what makes a `--json` run fail closed on it — which is the right default when an unexpected write should stop the run rather than land unreviewed. A write to a protected path (dependency manifests and lockfiles, `.git`, `.splitbrief`, CI configuration, env and key files) always asks: no tier setting changes that, so a `--json` or `--plain` run denies it with `APPROVAL_REQUIRED`.
 
 **Prevention:** Audit `approval.tiers` before running `--json` or unattended. Any tier left at `sticky` or `confirm` can require an approval response.
 

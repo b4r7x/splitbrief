@@ -92,9 +92,9 @@ describe('runner outcome taxonomy', () => {
     expect(runnerOutcome.success()).toEqual({ state: 'success', remediation: null });
   });
 
-  test('effect-invalid remediation names the declared files', () => {
+  test('effect-invalid remediation says the rejected writes do not count, without a revert', () => {
     expect(runnerOutcome.failure('implementer-effect-invalid').remediation).toBe(
-      "The implementer wrote outside the brief's declared files. Retry with a revert instruction or widen Scope.",
+      'The implementer wrote a file this call does not allow, so the attempt failed and its rejected writes do not count. Retry from the current files; do not try to recover the rejected writes.',
     );
   });
 

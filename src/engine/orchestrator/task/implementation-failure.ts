@@ -4,16 +4,8 @@ import type { TokenUsage, TaskTokenUsage } from '../../../core/schemas/tokens.js
 import type { WorkflowContext } from '../types.js';
 import type { runImplementation } from './run-implementation.js';
 import { nowIso } from '../../../utils/format-time.js';
-import { publishError, publishWarning } from '../events.js';
+import { publishError } from '../events.js';
 import { raisePendingRecovery } from '../state-ops.js';
-import { SCOPE_RULE } from '../../../core/pipeline-spec/scope.js';
-import {
-  scopeEntryPatterns,
-  taskDeclaredPatterns,
-  undeclaredFiles,
-} from '../../../core/scope/declared-set.js';
-import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
-import { restoreDirtyFilesFromSnapshot } from '../approval/file-snapshots/restore.js';
 import {
   buildRunnerUnauthenticatedRecoveryIssue,
   buildRunnerUsageLimitRecoveryIssue,
@@ -76,18 +68,6 @@ export async function handleFailedImplementation(opts: {
     setTrackedState(state);
     return state;
   }
-  // The undeclared writes are read where the implementer made them, before an
-  // isolated workspace's cleanup discards them.
-  const undeclared =
-    implState.implResult.outcome === 'implementer-effect-invalid'
-      ? undeclaredFiles(
-          await getChangedFilesSinceSnapshot(
-            implState.workspace?.projectDir ?? wctx.projectDir,
-            implState.workspace?.snapshot ?? taskStartSnapshot,
-          ),
-          task,
-        )
-      : [];
   implState.workspace?.cleanup();
   // A signed-out implementer never recovers by retrying, and escalating
   // would silently turn the run into planner-priced work — halt loudly
@@ -173,35 +153,6 @@ export async function handleFailedImplementation(opts: {
     });
     publishError({ bus: wctx.bus, phase: state.phase, message: issue.message });
     return raisePendingRecovery(wctx, state, issue, setTrackedState);
-  }
-  if (implState.implResult.outcome === 'implementer-effect-invalid') {
-    // An isolated workspace throws its writes away on cleanup; a run against
-    // the project directory has to put the undeclared paths back itself.
-    if (implState.workspace === undefined && undeclared.length > 0) {
-      await restoreDirtyFilesFromSnapshot(wctx.projectDir, taskStartSnapshot, undeclared);
-    }
-    publishWarning({
-      bus: wctx.bus,
-      phase: state.phase,
-      taskId: task.id,
-      message: `${task.id}: implementer wrote outside the declared files (${undeclared.join(', ')}); retrying with a revert instruction`,
-    });
-    const scopeRetry = await retryAndRecord({
-      wctx,
-      task,
-      initialError: SCOPE_RULE.revertInstruction(undeclared, [
-        ...new Set(taskDeclaredPatterns(task).flatMap(scopeEntryPatterns)),
-      ]),
-      undeclaredWrites: 'gate',
-      state,
-      taskStartTime,
-      taskStartSnapshot,
-      tokensBefore,
-      taskBreakdowns,
-      setTrackedState,
-    });
-    await runChainAnalysisSafe({ wctx, task, state: scopeRetry.state, taskStartSnapshot });
-    return scopeRetry.state;
   }
   if (isExtractedCodeApprovalRaceError(task.file, implState.implResult.error)) {
     state = await handleApprovalTimeUserEditConflict({

@@ -171,6 +171,23 @@ describe('ContractChoiceOverlay', () => {
     ui.unmount();
   });
 
+  it('sheds whole legend keys instead of cutting one at 40 columns', async () => {
+    terminalSizeStore.__testReset({ cols: 40, rows: 24, isSmall: true });
+    const ui = renderFeature(
+      <ContractChoiceOverlay role="planner" initialKind={undefined} onChoose={() => {}} />,
+      { cols: 40, rows: 24 },
+    );
+    await tick(20);
+
+    const hintRow = stripAnsiStyles(ui.lastFrame() ?? '')
+      .split('\n')
+      .find((line) => line.includes('↑↓ select'))
+      ?.replace(/[│|]/gu, '')
+      .trim();
+    expect(hintRow).toBe('↑↓ select · ⏎ continue');
+    ui.unmount();
+  });
+
   it('names the reviewer seat and takes input while the reviewer picker is open', async () => {
     overlayStore.open('reviewer-picker');
     const chosen: string[] = [];

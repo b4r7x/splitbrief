@@ -104,7 +104,7 @@ splitbrief start [feature] [--mode <mode>] [--approve <level>] \
 | `--model <model>` | string | — | Alias for `--implementer-model`. |
 | `--provider <provider>` | string | — | Alias for `--implementer`. |
 | `--skills <ids>` | string | — | Comma-separated skill ids to attach to every seat for this run, the headless equivalent of the `/skills` picker. Resolved against the same scan roots before planning starts; an id no root carries fails with `Unknown skill: <id> (scanned: <roots>)` and exit `2`. On `start` it applies to headless runs (`--json` / `--plain`); on `resume` and `continue` it applies in both modes, to that continue only — it is not saved, so a later continue without it uses the selection the run saved when it started. |
-| `--yolo` | boolean | `false` | Disable file-write tiered approval prompts for the session. Spec/plan gates still follow `--approve` / mode policy, and briefs review remains separate. This is not a shell or network sandbox setting. |
+| `--yolo` | boolean | `false` | Disable file-write tiered approval prompts for the session. A write to a protected path (dependency manifests and lockfiles, CI configuration, env and key files, `.git`, `.splitbrief`) still asks. Spec/plan gates still follow `--approve` / mode policy, and briefs review remains separate. This is not a shell or network sandbox setting. |
 | `--project <dir>` | path | cwd | Project directory. |
 | `--no-fullscreen` | boolean | fullscreen on | Disable the alternate screen buffer. Useful when piping or debugging. |
 | `--no-mouse` | boolean | mouse on | Disable Ink mouse tracking — click, hover and scroll. Tracking runs only in fullscreen, so `--no-fullscreen` disables it too and leaves this flag a no-op. |

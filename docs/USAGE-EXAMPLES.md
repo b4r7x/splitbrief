@@ -324,9 +324,7 @@ approval:
   tiers:
     read:               auto       # silent
     write_in_scope:     auto       # silent (task.file or task.scope.inBounds)
-    write_out_of_scope: confirm    # always prompt
-    destructive:        confirm    # control-plane paths
-    package_change:     confirm    # package manifests/lockfiles
+    write_out_of_scope: confirm    # prompt once per path per run
   feedRejectionsToPlanner: true
 ```
 
@@ -350,7 +348,7 @@ approval_sticky_recorded
 
 Sticky grants persist to `.splitbrief/approvals.json`; revoke with `splitbrief approval clear`.
 
-**Variations:** Set every produced file-write class to `auto` for legacy YOLO behavior, or to `confirm` for paranoid mode. A `--json` run has no reply channel, so any class left at `sticky` or `confirm` fails closed there with `APPROVAL_REQUIRED`.
+**Variations:** Set every produced file-write class to `auto` for legacy YOLO behavior, or to `confirm` for paranoid mode. A `--json` run has no reply channel, so any class left at `sticky` or `confirm` fails closed there with `APPROVAL_REQUIRED`. A write to a protected path (dependency manifests and lockfiles, `.git`, `.splitbrief`, CI configuration, env and key files) always asks whatever the tiers say, so a headless run denies it with `APPROVAL_REQUIRED`.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) §approval, recipe 10.
 
@@ -963,7 +961,7 @@ Captured on the workflow screen. Start typing to fuzzy-filter the list. Enter on
 
 ### 26. Confirm a destructive file write (confirm tier)
 
-**When:** a declared file write is classified as `destructive` (for example, a control-plane path under `.splitbrief/**`) and `approval.tiers.destructive` is set to `confirm`.
+**When:** a file write is classified as `destructive` (a control-plane path under `.git/**` or `.splitbrief/**`). A protected write always takes the confirm tier; no setting turns it off.
 
 **You'll see:**
 
@@ -987,7 +985,7 @@ Captured on the workflow screen. Start typing to fuzzy-filter the list. Enter on
 1. `↑↓` move the highlight and `⏎` takes the highlighted row; the gate opens on Confirm. Pressing `⏎` approves the write and the evidence trail records that no reason was stated.
 2. To record why instead, move to `r` first, type a reason (e.g. `repairing session metadata`), then press `⏎`.
 
-**Key assignment:** every confirm-tier gate confirms on `⏎` over the highlighted row. On the `destructive` class the Confirm row carries no key of its own — `y` does not approve a control-plane write; it moves the highlight to Confirm and answers with `⏎ confirms this write · esc deny`, which keeps the way out visible at the moment the user mis-keyed. Every other confirm-tier class — `package_change`, or any class you configure as `confirm` — also confirms on `y`.
+**Key assignment:** every confirm-tier gate confirms on `⏎` over the highlighted row. On the `destructive` class the Confirm row carries no key of its own — `y` does not approve a control-plane write; it moves the highlight to Confirm and answers with `⏎ confirms this write · esc deny`, which keeps the way out visible at the moment the user mis-keyed. Every other confirm-tier class — `package_change`, `sensitive_change` (CI configuration, env and key files, titled `Change a CI or secret file:`), or any class you configure as `confirm` — also confirms on `y`.
 
 **Rejection cases:**
 - `x`, `n`, `⏎` on the highlighted `x` row, or Escape → action denied (`user_cancelled`).

@@ -119,7 +119,7 @@ For each brief in `index.md` order, while every `depends_on` is `done`:
 2. **Spawn.** Build the implementer command from references/tool-recipes.md with the resolved model and effort; cwd = project root; output → `T00N/attempt-1.log`; detached, with the waiter as the deadline (Orchestration notes below). Append the entry to `evidence.md` as soon as the command line is known.
 3. **Outcome.** Apply references/implementer-prompt.md §7: exit code, terminal record, the brief's anchor file present in the changed set, a completion report that names a file. A failed outcome records `gates: not run · drift: not run` and goes straight to step 6.
 4. **Gates.** typecheck → lint → test with narrowing, per references/gates.md; outputs verbatim into `validation.md`. Baseline failures do not count; new ones do.
-5. **Drift.** Per references/gates.md; every attempt gets an entry in `drift.md`; any path entry fails the attempt.
+5. **Drift.** Per references/gates.md; every attempt gets an entry in `drift.md`; a path entry is recorded for the reviewer and never fails the attempt.
 6. **Ladder** on failure — halt signatures first, then spawn-failure signatures (both in references/tool-recipes.md), then:
 
 <!-- generated: ladder-table -->

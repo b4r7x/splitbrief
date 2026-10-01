@@ -217,6 +217,13 @@ export function eventRowBlock(options: {
         width: ctx.width,
         labelTone: 'textDim',
       });
+    case 'task_touched_not_suggested':
+      return wrappedTextBlock({
+        keyPrefix,
+        text: `${event.taskId} also changed ${event.files.join(', ')}`,
+        width: ctx.width,
+        tone: 'textDim',
+      });
     case 'task_full_fail':
       return cardRowsBlock({
         keyPrefix,
@@ -370,7 +377,10 @@ export function eventRowBlock(options: {
       return cardRowsBlock({
         keyPrefix,
         label: 'approval',
-        value: event.mode === 'yolo' ? 'tiered approvals disabled' : 'tiered approvals restored',
+        value:
+          event.mode === 'yolo'
+            ? 'tiered approvals off · protected paths ask'
+            : 'tiered approvals restored',
         width: ctx.width,
         labelTone: 'textDim',
         valueTone: 'textDim',

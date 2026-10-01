@@ -264,7 +264,11 @@ export function addWorkflowOptions(cmd: Command): Command {
       'Headless mode: emit one plain line per phase, task, review and completion',
       false,
     )
-    .option('--yolo', 'Skip file-write tiered approval prompts for this session', false)
+    .option(
+      '--yolo',
+      'Skip file-write tiered approval prompts for this session; protected paths still ask',
+      false,
+    )
     .option(
       '--skills <ids>',
       'Attach project/global skills to every seat (comma-separated ids)',

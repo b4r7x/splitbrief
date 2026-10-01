@@ -25,6 +25,8 @@ import {
   getConfirmOptionZones,
   getConfirmOptions,
   isIrreversibleActionClass,
+  stickyLeadShed,
+  stickySpacersShed,
 } from '../../prompt-rows/approval.js';
 import { CONFIRM_PHRASE } from '../../../../core/approval/types.js';
 import type { TieredApprovalRequest } from '../../../../core/approval/types.js';
@@ -64,6 +66,8 @@ export function ConfirmApprovalPrompt({
   const t = useTheme();
   const cols = terminalSizeStore.use((s) => s.cols);
   const rows = terminalSizeStore.use((s) => s.rows);
+  const boxRows = Math.min(promptRows, clampedBoxRows ?? promptRows);
+  const spacersShed = stickySpacersShed(promptRows, boxRows);
   const irreversible = isIrreversibleActionClass(request.actionClass);
   const options = getConfirmOptions(request.actionClass);
   const keyWidth = approvalKeyColumnWidth(options);
@@ -154,9 +158,10 @@ export function ConfirmApprovalPrompt({
     const zones = getConfirmOptionZones({
       boxTop,
       cols,
-      promptRows: clampedBoxRows ?? promptRows,
+      promptRows: boxRows,
       actionClass: request.actionClass,
       actionDescription: request.actionDescription,
+      leadShed: stickyLeadShed(spacersShed),
     });
     const cleanups = zones.map((zone) =>
       registerMouseZone({
@@ -172,7 +177,7 @@ export function ConfirmApprovalPrompt({
     return () => {
       for (const cleanup of cleanups) cleanup();
     };
-  }, [isActive, confirmStep, cols, rows, promptRows, clampedBoxRows, request]);
+  }, [isActive, confirmStep, cols, rows, boxRows, spacersShed, request]);
 
   return (
     <Box
@@ -180,13 +185,13 @@ export function ConfirmApprovalPrompt({
       borderStyle={borderStyleFor('bold')}
       borderColor={irreversible ? t.error : t.border}
       paddingX={1}
-      height={promptRows}
+      height={boxRows}
       width="100%"
       overflow="hidden"
       flexShrink={0}
     >
       <Text color={tone}>{approvalTitle(request.actionClass)}</Text>
-      <Text> </Text>
+      {spacersShed < 1 && <Text> </Text>}
       <Text>{getApprovalConfirmLabel(request.actionClass)}</Text>
       <Text bold>{approvalSubjectText(request.actionDescription, cols)}</Text>
       {/* Every gate wears the same heavy rule, so weight alone cannot tell an irreversible one apart —
@@ -200,7 +205,7 @@ export function ConfirmApprovalPrompt({
           labelColor={t.error}
         />
       ) : null}
-      <Text> </Text>
+      {spacersShed < 2 && <Text> </Text>}
       {confirmStep === 'choose' ? (
         <>
           {options.map((option, index) => {
@@ -218,7 +223,7 @@ export function ConfirmApprovalPrompt({
               </Text>
             );
           })}
-          <Box flexGrow={1} minHeight={1} />
+          <Box flexGrow={1} minHeight={spacersShed < 3 ? 1 : 0} />
           {nudged ? (
             <Text color={t.warning}>{fitKeyLegend(CONFIRM_NUDGE, approvalTextWidth(cols))}</Text>
           ) : (
@@ -234,7 +239,7 @@ export function ConfirmApprovalPrompt({
             <Text color={t.text}>{glyph('liveBar')}</Text>
           </Box>
           <Text color={t.textDim}>{CONFIRM_REASON_OPTIONAL}</Text>
-          <Box flexGrow={1} minHeight={1} />
+          <Box flexGrow={1} minHeight={spacersShed < 3 ? 1 : 0} />
           <Text color={t.textDim}>{CONFIRM_REASON_HINTS}</Text>
         </>
       )}

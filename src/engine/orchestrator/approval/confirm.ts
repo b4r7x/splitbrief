@@ -7,6 +7,18 @@ import {
 } from './events.js';
 import type { ActionClass } from '../../../core/schemas/enums.js';
 import type { GateActionInput, GateDecision } from './types.js';
+import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+
+/** A confirmation the run already granted holds for the same path and operation. */
+function confirmedEarlierInRun(input: GateActionInput, actionClass: ActionClass): boolean {
+  if (input.targetPath === undefined) return false;
+  const approvals = readEvidenceLedger(input)?.approvals ?? [];
+  return approvals.some(
+    (approval) =>
+      approval.actionClass === actionClass &&
+      approval.actionDescription === input.actionDescription,
+  );
+}
 
 export type ConfirmTierInput = {
   input: GateActionInput;
@@ -18,6 +30,11 @@ export async function gateConfirmTier(args: ConfirmTierInput): Promise<GateDecis
   const { input, request, actionClass } = args;
   const { actionDescription, phase, taskId, bus, callbacks } = input;
   const tier = 'confirm' as const;
+
+  if (confirmedEarlierInRun(input, actionClass)) {
+    publishApprovalGranted({ bus, phase, tier, actionClass, taskId, scope: 'session' });
+    return { allow: true };
+  }
 
   publishApprovalPrompted({ bus, phase, tier, actionClass, taskId });
 

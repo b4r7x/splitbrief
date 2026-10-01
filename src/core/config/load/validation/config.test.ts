@@ -160,6 +160,35 @@ describe('validateConfig', () => {
     expect(warnings.some((w) => w.includes('instant') && w.includes('quick'))).toBe(true);
   });
 
+  it('loads protected-class tier overrides with a notice that they are ignored', () => {
+    const config = makeConfig({
+      approval: {
+        enabled: true,
+        feedRejectionsToPlanner: true,
+        tiers: {
+          destructive: 'auto',
+          package_change: 'auto',
+          sensitive_change: 'auto',
+          write_out_of_scope: 'sticky',
+        },
+      },
+    });
+
+    const { errors, warnings } = validateConfig(config);
+
+    expect(errors).toEqual([]);
+    expect(warnings).toContain(
+      'approval.tiers.destructive is ignored: a write to a protected path always asks.',
+    );
+    expect(warnings).toContain(
+      'approval.tiers.package_change is ignored: a write to a protected path always asks.',
+    );
+    expect(warnings).toContain(
+      'approval.tiers.sensitive_change is ignored: a write to a protected path always asks.',
+    );
+    expect(warnings.some((w) => w.includes('write_out_of_scope'))).toBe(false);
+  });
+
   it('blocks non-default implementer profiles when required credentials are missing', () => {
     const config = makeConfig({
       implementerProfiles: {

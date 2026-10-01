@@ -33,7 +33,7 @@ import { SPLITBRIEF_IDENTITY } from '../../../../core/identity.js';
 
 export const REVIEWER_CHECKLIST = [
   'Inspect changed files against the requested scope.',
-  'Review drift findings and out-of-scope warnings.',
+  "Review drift findings and the files changed outside every brief's suggested files.",
   'Confirm validation commands passed or understand failures.',
   'Check escalated, skipped, or retried tasks.',
   'Inspect expected vs observed evidence for each completed task.',

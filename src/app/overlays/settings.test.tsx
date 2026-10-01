@@ -416,6 +416,18 @@ describe('SettingsOverlay', () => {
     ui.unmount();
   });
 
+  it('sheds whole legend keys instead of cutting one at 40 columns', async () => {
+    overlayStore.open('settings');
+    const ui = renderAt(40, 30);
+    await tick(20);
+
+    expect(panelText(lineWith(frameLines(ui), '↑↓ select') ?? '').trim()).toBe(
+      '↑↓ select · ⏎ change seat',
+    );
+
+    ui.unmount();
+  });
+
   it('reads an unset test command as auto', async () => {
     seed({ validation: { testCommand: undefined } });
     overlayStore.open('settings', 'validation.testCommand');

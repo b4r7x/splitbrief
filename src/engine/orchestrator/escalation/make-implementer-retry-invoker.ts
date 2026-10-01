@@ -27,7 +27,6 @@ export function makeImplementerRetryInvoker(opts: {
     fileIgnoreProjectDir,
     changeDetection,
     createdByThisTask,
-    undeclaredWrites,
   }) => {
     const effectiveConfig = opts.config ?? config;
     const result = await (opts.implementer ?? implementer).retry({
@@ -47,7 +46,6 @@ export function makeImplementerRetryInvoker(opts: {
       fileIgnoreProjectDir,
       changeDetection,
       ...(createdByThisTask === undefined ? {} : { createdByThisTask }),
-      ...(undeclaredWrites !== undefined && { undeclaredWrites }),
     });
     return { ...result, runner: effectiveConfig.implementer };
   };

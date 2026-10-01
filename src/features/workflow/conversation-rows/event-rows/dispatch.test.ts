@@ -124,6 +124,35 @@ function textAt(rows: ConversationRow[], index: number): string {
 }
 
 describe('event row dispatch', () => {
+  it('names the files a brief changed beyond its suggested files on one dim row', () => {
+    const rows = eventRows({
+      event: {
+        type: 'task_touched_not_suggested',
+        ts: 0,
+        phase: 'implementing',
+        taskId: taskId('T003'),
+        files: ['src/x.ts', 'src/y.ts'],
+      },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+
+    expect(rows.map(rowText)).toEqual(['T003 also changed src/x.ts, src/y.ts']);
+    expect(rows[0]?.segments.every((segment) => segment.tone === 'textDim')).toBe(true);
+  });
+
+  it('says protected paths still ask when the session turns on --yolo', () => {
+    const rows = eventRows({
+      event: { type: 'approval_mode_changed', ts: 0, mode: 'yolo' },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+
+    expect(rows.map(rowText).join('\n')).toContain('tiered approvals off · protected paths ask');
+  });
+
   it('strips OSC-52/CSI control bytes from a user prompt row now that it owns the title', () => {
     const payload = 'ZWNobyBwd25lZA==';
     const esc = String.fromCharCode(0x1b);

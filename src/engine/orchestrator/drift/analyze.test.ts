@@ -60,7 +60,7 @@ describe('analyzeBriefDrift', () => {
     expect(report.briefHash).toBeNull();
   });
 
-  it('undeclared path is error without outOfBounds', () => {
+  it('an undeclared path is info: touched, not suggested by any task', () => {
     const tasks = [makeTask({ id: 'T001', file: 'src/a.ts', status: 'done' })];
     const report = analyzeBriefDrift({
       tasks,
@@ -69,9 +69,11 @@ describe('analyzeBriefDrift', () => {
       preRunChangedFiles: [],
     });
     const finding = report.findings.find((f) => f.code === 'out_of_scope_file');
-    expect(finding?.severity).toBe('error');
+    expect(finding?.severity).toBe('info');
     expect(finding?.file).toBe('src/extra.ts');
-    expect(report.passed).toBe(false);
+    expect(finding?.message).toBe('src/extra.ts touched, not suggested by any task.');
+    expect(report.passed).toBe(true);
+    expect(report.score).toBe(1);
   });
 
   it('second declared file changed by the run is not out_of_scope_file', () => {
@@ -112,7 +114,7 @@ describe('analyzeBriefDrift', () => {
     },
   );
 
-  it('errors on extra changed file when any task declares out-of-bounds', () => {
+  it('an extra changed file stays info when a task declares out-of-bounds', () => {
     const tasks = [
       makeTask({
         id: 'T001',
@@ -128,8 +130,8 @@ describe('analyzeBriefDrift', () => {
       preRunChangedFiles: [],
     });
     const out = report.findings.find((f) => f.code === 'out_of_scope_file');
-    expect(out?.severity).toBe('error');
-    expect(report.passed).toBe(false);
+    expect(out?.severity).toBe('info');
+    expect(report.passed).toBe(true);
   });
 
   it('errors when failed task left a changed file', () => {
@@ -204,6 +206,24 @@ describe('analyzeBriefDrift', () => {
     });
     expect(report.findings.some((f) => f.code === 'out_of_bounds_text_match')).toBe(true);
     expect(report.passed).toBe(false);
+  });
+
+  it('ignores a placeholder out-of-bounds bullet a saved session still holds', () => {
+    const tasks = [
+      makeTask({
+        id: 'T001',
+        file: 'src/a.py',
+        status: 'done',
+        scope: { outOfBounds: ['None'] },
+      }),
+    ];
+    const report = analyzeBriefDrift({
+      tasks,
+      changedFiles: ['src/a.py'],
+      diff: '+    return None',
+      preRunChangedFiles: [],
+    });
+    expect(report.findings.some((f) => f.code === 'out_of_bounds_text_match')).toBe(false);
   });
 
   it('attributes a bare-directory out-of-bounds pattern to the changed file, not to diff text', () => {
@@ -613,7 +633,7 @@ describe('analyzeBriefDrift', () => {
     });
     const finding = report.findings.find((f) => f.file === 'src/unattributed.ts');
     expect(finding?.code).toBe('out_of_scope_file');
-    expect(finding?.severity).toBe('error');
+    expect(finding?.severity).toBe('info');
     expect(finding?.message).not.toContain('pre-existing');
   });
 
@@ -642,9 +662,10 @@ describe('analyzeBriefDrift', () => {
     });
     expect(report.findings.find((f) => f.file === 'src/extra.ts')).toMatchObject({
       code: 'out_of_scope_file',
-      severity: 'error',
+      severity: 'info',
+      message: 'src/extra.ts touched, not suggested by any task.',
     });
-    expect(report.passed).toBe(false);
+    expect(report.passed).toBe(true);
   });
 
   it('annotates a pre-run-dirty file as pre-existing using the run-start status baseline when no ledger is present', () => {
@@ -695,10 +716,11 @@ describe('analyzeBriefDrift', () => {
     });
     const finding = report.findings.find((f) => f.file === 'src/legacy.ts');
     expect(finding?.code).toBe('out_of_scope_file');
-    expect(finding?.severity).toBe('error');
+    expect(finding?.severity).toBe('info');
+    expect(finding?.message).not.toContain('pre-existing');
   });
 
-  it('still errors out-of-scope for a run-attributed file that no Task Brief targets', () => {
+  it('reports a run-attributed file that no Task Brief targets as touched, never as a failure', () => {
     const task = makeTask({ id: 'T001', file: 'src/a.ts', status: 'done' });
     const ledger = withUpdatedTask(
       createEvidenceLedger({ sessionId: 's1', feature: 'f', tasks: [task] }),
@@ -714,8 +736,8 @@ describe('analyzeBriefDrift', () => {
     });
     const finding = report.findings.find((f) => f.file === 'src/extra.ts');
     expect(finding?.code).toBe('out_of_scope_file');
-    expect(finding?.severity).toBe('error');
-    expect(report.passed).toBe(false);
+    expect(finding?.severity).toBe('info');
+    expect(report.passed).toBe(true);
   });
 
   it('errors when diff exists but every task is failed/skipped', () => {

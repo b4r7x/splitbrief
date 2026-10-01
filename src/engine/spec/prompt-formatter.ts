@@ -122,7 +122,7 @@ function buildTaskSections(
     outputContract === 'file-bundle-v1'
       ? `Answer with one JSON object: {"version":1,"files":[{"path":"...","action":"create"|"modify","content":"..."}]}. Carry the complete new contents of every file listed above that you change, and leave the rest out. No markdown fences. No explanations.`
       : writesFiles === 'direct'
-        ? `Edit ${files.join(', ')} directly in the isolation directory. Before finishing, run the brief's typecheck command and only the tests of the files you changed, never the whole suite: the orchestrator runs the full validation after you hand back. End with a completion report stating which files you wrote and whether the brief's steps were completed.`
+        ? `Edit ${files.join(', ')} directly in the isolation directory. SPLITBRIEF runs the typecheck, lint, format and test gates after you hand back, so run at most the focused test files the brief lists, once. End with a completion report naming the files you wrote, one line Also changed (not suggested): <file> — <reason> for each file the brief did not suggest, and whether the brief's steps were completed.`
         : `Output the complete file contents for ${task.file}. No markdown fences. No explanations.`;
   sections.push('', completionInstruction);
 

@@ -63,25 +63,37 @@ const PLACEHOLDER_TASK = TaskSchema.parse({
   status: 'pending',
 });
 
-const ERROR_PLACEHOLDER = '<gate tail or drift list>';
+const ERROR_PLACEHOLDER = '<gate tail>';
 const HINT_PLACEHOLDER = '<hint>';
 
-const WORKING_DIRECTORY_SUBSTITUTION = [
-  'directly in the isolation directory.',
-  'directly in the working directory.',
-] as const;
+type Substitutions = ReadonlyArray<readonly [string, string]>;
 
-// The skill runs in the project tree: there is no isolation directory and no promotion step.
-export const PREAMBLE_SUBSTITUTIONS: ReadonlyArray<readonly [string, string]> = [
+// The skill runs in the project tree, with this session as the orchestrator: there is no
+// isolation directory, no promotion step and no SPLITBRIEF process.
+export const PREAMBLE_SUBSTITUTIONS: Substitutions = [
   [
     "directly in the isolation directory. Your changes are promoted into the user's project afterwards.",
     'directly in the working directory.',
   ],
-  [
-    'SPLITBRIEF runs them again after promotion and its verdict is the authority',
-    'the orchestrator runs them again afterwards and its verdict is the authority',
-  ],
+  ["SPLITBRIEF runs the project's typecheck", "The orchestrator runs the project's typecheck"],
+  ['SPLITBRIEF and the review seat do that', 'the orchestrator and the review seat do that'],
 ];
+
+const CLOSING_LINE_SUBSTITUTIONS: Substitutions = [
+  ['directly in the isolation directory.', 'directly in the working directory.'],
+  ['SPLITBRIEF runs the typecheck', 'The orchestrator runs the typecheck'],
+];
+
+function substitute(text: string, substitutions: Substitutions, source: string): string {
+  let result = text;
+  for (const [from, to] of substitutions) {
+    if (!result.includes(from)) {
+      throw new Error(`${source} no longer contains "${from}"; update its substitutions`);
+    }
+    result = result.replace(from, to);
+  }
+  return result;
+}
 
 function indent(text: string): string {
   return text
@@ -166,16 +178,8 @@ function toolRecipe(toolId: string): string | null {
 }
 
 function preamble(): string {
-  let text = buildImplementerSystemPreamble(ctx, 'direct', '<project dir>');
-  for (const [from, to] of PREAMBLE_SUBSTITUTIONS) {
-    if (!text.includes(from)) {
-      throw new Error(
-        `implementer preamble no longer contains "${from}"; update PREAMBLE_SUBSTITUTIONS`,
-      );
-    }
-    text = text.replace(from, to);
-  }
-  return indent(text);
+  const text = buildImplementerSystemPreamble(ctx, 'direct', '<project dir>');
+  return indent(substitute(text, PREAMBLE_SUBSTITUTIONS, 'implementer preamble'));
 }
 
 function reviewPacket(): string {
@@ -365,13 +369,7 @@ function completionInstruction(files: readonly [string, ...string[]]): string {
     writesFiles: 'direct',
   });
   const line = prompt.split('\n').at(-1) ?? '';
-  const [isolation, working] = WORKING_DIRECTORY_SUBSTITUTION;
-  if (!line.includes(isolation)) {
-    throw new Error(
-      `closing line no longer contains "${isolation}"; update WORKING_DIRECTORY_SUBSTITUTION`,
-    );
-  }
-  return line.replace(isolation, working);
+  return substitute(line, CLOSING_LINE_SUBSTITUTIONS, 'closing line');
 }
 
 function closingLine(): string {
@@ -382,11 +380,7 @@ function closingLine(): string {
 }
 
 function scopeRule(): string {
-  return bullets([
-    SCOPE_RULE.allowedSetText,
-    SCOPE_RULE.driftText,
-    `Retry error, one line per drifted path: \`${SCOPE_RULE.revertInstruction(['<path>'], ['<files>'])}\``,
-  ]);
+  return bullets([SCOPE_RULE.allowedSetText, SCOPE_RULE.driftText]);
 }
 
 function baselineRule(): string {

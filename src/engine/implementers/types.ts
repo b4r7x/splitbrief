@@ -50,7 +50,7 @@ export interface UndeclaredWritesPolicy {
   /**
    * What a completed direct-write attempt does with files outside the brief's
    * declared set: `reject` fails the attempt, `gate` leaves the verdict to the
-   * orchestrator's approval path. Defaults to `reject`.
+   * orchestrator's approval path. Defaults to `gate`.
    */
   undeclaredWrites?: 'reject' | 'gate' | undefined;
 }

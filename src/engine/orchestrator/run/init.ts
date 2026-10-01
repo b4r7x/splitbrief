@@ -710,7 +710,7 @@ async function restartInterruptedTask(args: {
   )?.promotionAttempts?.length;
   if (snapshot !== undefined && !priorPromotion) {
     await restoreInterruptedTaskFiles({
-      wctx: { projectDir, bus },
+      wctx: { projectDir, sessionId, bus },
       phase: state.phase,
       task,
       taskStartSnapshot: snapshot,

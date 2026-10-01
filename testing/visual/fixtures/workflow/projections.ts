@@ -696,6 +696,68 @@ const validationProjection: WorkflowFixtureProjection = {
   ],
 };
 
+// A --yolo run where a brief also changed files its brief did not suggest: the gates pass, the
+// brief completes, and one dim row names the extra files for the reviewer.
+const touchedNotSuggestedProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-touched-not-suggested'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  events: [
+    { type: 'workflow_started', ts: FIXED_TS, phase: 'implementing', feature: WORKFLOW_FEATURE },
+    { type: 'approval_mode_changed', ts: FIXED_TS + 1, mode: 'yolo' },
+    FIXTURE_TASKS_PLANNED,
+    {
+      type: 'task_started',
+      ts: FIXED_TS + 100,
+      phase: 'implementing',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      title: WORKFLOW_FIXTURE_TEXT.implementationTask,
+      index: 0,
+      total: 3,
+      file: WORKFLOW_FIXTURE_REVIEW_FILE,
+      action: 'modify',
+      tool: 'ollama',
+      model: FIXED_RUNNER_MODEL,
+    },
+    {
+      type: 'validate',
+      ts: FIXED_TS + 400,
+      phase: 'validating-task',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      status: 'done',
+      passed: true,
+      stages: { typecheck: true, lint: true, test: true },
+      attempted: { typecheck: true, lint: true, test: true },
+      commands: {
+        typecheck: 'npm run typecheck',
+        lint: 'npm run lint',
+        test: 'npm test -- src/shared/format.test.ts',
+      },
+      duration: 1_800,
+    },
+    {
+      type: 'task_completed',
+      ts: FIXED_TS + 500,
+      phase: 'implementing',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      title: WORKFLOW_FIXTURE_TEXT.implementationTask,
+      method: 'local',
+      retries: 0,
+      duration: 1_900,
+      tool: 'ollama',
+      model: FIXED_RUNNER_MODEL,
+    },
+    {
+      type: 'task_touched_not_suggested',
+      ts: FIXED_TS + 501,
+      phase: 'implementing',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      files: ['src/shared/format.ts', 'src/shared/format.test.ts'],
+    },
+  ],
+};
+
 /** What production code publishes on a bus of its own, stamped in order from `ts`. */
 function publishedEvents(ts: number, publish: (bus: EventBus) => void): EngineEvent[] {
   const bus = createEventBus();
@@ -1244,6 +1306,17 @@ const approvalConfirmProjection: WorkflowFixtureProjection = {
     tier: 'confirm',
     actionClass: 'destructive',
     actionDescription: '.splitbrief/state.json',
+    answer: WORKFLOW_FIXTURE_TEXT.reviewAnswer,
+  },
+};
+
+const approvalConfirmSecretProjection: WorkflowFixtureProjection = {
+  ...approvalConfirmProjection,
+  scenarioId: scenarioId('workflow-approval-confirm-secret'),
+  approval: {
+    tier: 'confirm',
+    actionClass: 'sensitive_change',
+    actionDescription: '.env.local',
     answer: WORKFLOW_FIXTURE_TEXT.reviewAnswer,
   },
 };
@@ -2660,6 +2733,7 @@ const projections = [
   { ...approvalDocumentProjection, scenarioId: scenarioId('workflow-selection-copy') },
   approvalPermissionProjection,
   approvalConfirmProjection,
+  approvalConfirmSecretProjection,
   reviewingBriefsProjection,
   tasksCardProjection,
   specTasksCardsProjection,
@@ -2676,6 +2750,7 @@ const projections = [
   stoppedProjection,
   failureProjection,
   plannerCommandsRefusedProjection,
+  touchedNotSuggestedProjection,
   usageLimitRecoveryProjection,
   userEditRecoveryProjection,
   retryExhaustedRecoveryProjection,

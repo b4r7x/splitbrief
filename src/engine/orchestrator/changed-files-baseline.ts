@@ -17,6 +17,8 @@ import type {
   PersistedChangedFilesBaseline,
 } from '../../core/schemas/workflow.js';
 import { readProjectSymlink } from './approval/file-snapshots/entry.js';
+import { recordedTargetOutput } from './evidence/task.js';
+import type { SessionRef } from '../../core/types/session-ref.js';
 
 export type ChangedFilesBaseline = {
   head: string | null;
@@ -186,4 +188,19 @@ export async function inferTaskAcceptedChangedFiles(
   const patterns = taskDeclaredPatterns(task);
   const changedFiles = await candidateChangedFiles(projectDir, head);
   return changedFiles.filter((file) => isInDeclaredSet(file, patterns));
+}
+
+/**
+ * The brief's own writes since `head`: its declared files, plus every file the ledger records it
+ * promoted. A brief may change an unplanned file, so the declared set alone misses its writes.
+ */
+export async function inferTaskOwnChangedFiles(
+  ref: SessionRef,
+  task: Task,
+  head: string | null,
+): Promise<string[]> {
+  const recorded = new Set(recordedTargetOutput(ref, task).files.map((file) => file.path));
+  const patterns = taskDeclaredPatterns(task);
+  const changedFiles = await candidateChangedFiles(ref.projectDir, head);
+  return changedFiles.filter((file) => recorded.has(file) || isInDeclaredSet(file, patterns));
 }

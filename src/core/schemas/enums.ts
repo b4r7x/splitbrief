@@ -215,9 +215,16 @@ const ACTION_CLASSES = [
   'destructive',
   'network',
   'package_change',
+  'sensitive_change',
 ] as const;
 export const ActionClassSchema = z.enum(ACTION_CLASSES);
 export type ActionClass = z.infer<typeof ActionClassSchema>;
+/** A write in one of these classes always takes the confirm tier, whatever the config says. */
+export const PROTECTED_ACTION_CLASSES: readonly ActionClass[] = [
+  'destructive',
+  'package_change',
+  'sensitive_change',
+];
 
 export const COMMIT_STRATEGIES = ['none', 'checkpoint', 'per-task'] as const;
 export const CommitStrategySchema = z.enum(COMMIT_STRATEGIES);

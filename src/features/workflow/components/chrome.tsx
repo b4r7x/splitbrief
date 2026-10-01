@@ -138,7 +138,7 @@ export function WorkflowFooter({
       <FeedbackRow
         keyHint={feedbackHint ?? undefined}
         inputHint={inputHint}
-        collapseWhenEmpty={beforeComposer !== undefined}
+        panelBelow={beforeComposer !== undefined}
       />
       {beforeComposer}
       <Composer

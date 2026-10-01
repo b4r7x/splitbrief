@@ -4,6 +4,7 @@ import {
 } from '../../../../core/evidence/review-changes.js';
 import type { ReviewFileEntry, ReviewProvenance } from '../../../../core/schemas/review-changes.js';
 import type { Task } from '../../../../core/schemas/task.js';
+import { isInDeclaredSet, taskDeclaredPatterns } from '../../../../core/scope/declared-set.js';
 import type { SessionRef } from '../../../../core/types/session-ref.js';
 import { diffFileEntries } from '../../../../lib/git/entry-diff.js';
 import { uniqueSorted } from '../../../../utils/collections.js';
@@ -86,6 +87,8 @@ export async function resolveRunReviewScope(opts: {
   for (const path of opts.workspaceFiles) {
     if (!promotedFiles.has(path)) uncertainFiles.add(path);
   }
+  const suggested = opts.tasks.flatMap((task) => [...taskDeclaredPatterns(task)]);
+  const notSuggested = [...promotedFiles].filter((path) => !isInDeclaredSet(path, suggested));
   const provenance: ReviewProvenance = {
     path: REVIEW_CHANGES_FILE,
     status,
@@ -105,6 +108,7 @@ export async function resolveRunReviewScope(opts: {
       'Implementation Diff contains verified target transitions, in promotion order. Each compares the input accepted by the promotion with the exact bytes it wrote. Pre-existing operator edits in that input are not run changes.',
       'These are historical effects, not a claim that every effect survives in the current workspace. Check the complete Workspace Context for later edits, reversions and interactions across files.',
       `Files with recorded run effects: ${provenance.promotedFiles.join(', ') || 'none recorded'}.`,
+      `Files touched, not suggested by any brief: ${uniqueSorted(notSuggested).join(', ') || 'none'}.`,
       `Files with uncertain attribution or later edits: ${provenance.uncertainFiles.join(', ') || 'none observed'}.`,
       'Unknown attribution is not proof of either implementer or operator authorship. Missing or invalid evidence, direct writes without capture and obsolete brief records remain unknown; they are not evidence of an empty run.',
       'Deterministic drift covers the recorded promotions only. A missing expected file in that report can mean missing provenance; inspect the workspace and task evidence before judging it.',

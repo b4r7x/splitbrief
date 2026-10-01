@@ -518,6 +518,8 @@ describe('runTasksAndReview review fix instruction', { timeout: 120_000 }, () =>
     const prompt = prompts[0] ?? '';
     expect(prompt.split(REVIEW_FIX_INSTRUCTION)).toHaveLength(2);
     expect(prompt).toContain('do not search for those files, and do not leave this directory');
+    expect(prompt).toContain('may change any ordinary project file the fix needs');
+    expect(prompt).not.toContain("inside this brief's files");
     expect(prompt).toContain('src/alpha.ts drops the error');
     expect(prompt.indexOf(REVIEW_FIX_INSTRUCTION)).toBeLessThan(
       prompt.indexOf('src/alpha.ts drops the error'),

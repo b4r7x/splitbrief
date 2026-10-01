@@ -150,7 +150,12 @@ async function formatChangedFiles(opts: {
   }
 }
 
-function planStage(stage: ValidationStage, task: Task, ctx: StageContext): StagePlan {
+function planStage(
+  stage: ValidationStage,
+  task: Task,
+  ctx: StageContext,
+  changedFiles: readonly string[],
+): StagePlan {
   const resolved = resolveStageCommand({ stage, ...ctx });
   if (resolved === null) return { kind: 'skip', reason: unresolvedStackReason(stage) };
   if (stage !== 'test') {
@@ -164,6 +169,7 @@ function planStage(stage: ValidationStage, task: Task, ctx: StageContext): Stage
   const target = resolveTestTarget({
     resolved,
     task,
+    changedFiles,
     projectDir: ctx.projectDir,
     config: ctx.config,
     discovered: ctx.discovered,
@@ -199,7 +205,7 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
 
     for (const stage of GATE_ORDER) {
       if (!ctx.config.validation[stage]) continue;
-      const plan = planStage(stage, task, ctx);
+      const plan = planStage(stage, task, ctx, []);
       if (plan.kind === 'skip') continue;
       commands[stage] = plan.command;
       onProgress?.({ stages: { ...stages }, activeStage: stage, commands: { ...commands } });
@@ -246,7 +252,7 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
 
     for (const stage of GATE_ORDER) {
       if (!ctx.config.validation[stage]) continue;
-      const plan = planStage(stage, task, ctx);
+      const plan = planStage(stage, task, ctx, changedFiles ?? []);
       if (plan.kind === 'skip') {
         skipReasons[stage] = plan.reason;
         results.push(skippedStage(stage, plan.reason));

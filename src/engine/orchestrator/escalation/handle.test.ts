@@ -338,7 +338,11 @@ describe('handleRetryAndEscalation', () => {
         sessionId,
         config: makeNoValidationConfig({
           workflow: { maxRetries: 1 },
-          approval: { enabled: true, feedRejectionsToPlanner: false },
+          approval: {
+            enabled: true,
+            feedRejectionsToPlanner: false,
+            tiers: { write_out_of_scope: 'sticky' },
+          },
         }),
         planner,
         callbacks,

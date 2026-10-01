@@ -5,12 +5,11 @@ import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/
 import type { WorkflowContext } from '../types.js';
 import type { ImplementerOptions, ImplementerResult } from '../../implementers/types.js';
 import type { IsolatedWorkspace } from '../isolation/types.js';
-import type { GateDecision } from '../approval/types.js';
 import { createBusTextHandler } from '../events.js';
 import { createStreamingFeed, noopStreamingSink } from './streaming-feed.js';
 import type { StreamingSink } from './streaming-feed.js';
 import { withContinuationLoop } from '../continuation.js';
-import { gateChangedFiles } from '../approval/gate-files.js';
+import { gateChangedFiles, type GateChangedFilesDenial } from '../approval/gate-files.js';
 import {
   persistApiApplyEvidence,
   persistApprovalEvidence,
@@ -67,7 +66,7 @@ export type RunImplementationResult = {
 // A finding about evidence or run files names files outside the worktree that
 // only SPLITBRIEF and the review seat produce; chasing them trips isolation.
 const REVIEW_FIX_INSTRUCTION = [
-  "These findings come from the final review. Change code only where a finding names a defect in the code or tests inside this brief's files.",
+  'These findings come from the final review. Change code only where a finding names a defect in the code or tests; you may change any ordinary project file the fix needs, but never dependency manifests, lockfiles, CI configuration, env or key files, .git or .splitbrief unless the brief explicitly asks for that operation.',
   "Findings about evidence, renders, validation runs or run files (evidence.json, the session folder) are SPLITBRIEF's and the review seat's job: do not search for those files, and do not leave this directory.",
   'If no finding needs a code change, change nothing and report that. SPLITBRIEF validates the unchanged brief.',
 ].join('\n');
@@ -78,7 +77,7 @@ export async function runImplementation(opts: {
   state: WorkflowState;
   taskStartSnapshot: ChangedFilesSnapshot;
   setTrackedState: (s: WorkflowState) => void;
-  recordApprovalDenial: (decision: GateDecision, message: string) => void;
+  recordApprovalDenial: (decision: GateChangedFilesDenial, message: string) => void;
   streamingSink?: StreamingSink | undefined;
 }): Promise<RunImplementationResult> {
   const { wctx, task, setTrackedState } = opts;

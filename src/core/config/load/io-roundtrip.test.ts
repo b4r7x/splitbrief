@@ -178,7 +178,6 @@ describe('config roundtrip', () => {
       const tiers = approval.tiers as Record<string, unknown>;
       expect(tiers.write_in_scope).toBe('sticky');
       expect(tiers.write_out_of_scope).toBe('confirm');
-      expect(tiers.package_change).toBe('confirm');
       expect(tiers.writeInScope).toBeUndefined();
     });
 

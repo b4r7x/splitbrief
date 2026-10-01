@@ -59,7 +59,11 @@ describe('runSingleTask — user edits', () => {
         implementer,
         bus,
         config: makeConfig({
-          approval: { enabled: true, feedRejectionsToPlanner: false },
+          approval: {
+            enabled: true,
+            feedRejectionsToPlanner: false,
+            tiers: { write_out_of_scope: 'sticky' },
+          },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
           workflow: { maxRetries: 2 },
         }),
@@ -116,7 +120,11 @@ describe('runSingleTask — user edits', () => {
         implementer,
         bus,
         config: makeConfig({
-          approval: { enabled: true, feedRejectionsToPlanner: false },
+          approval: {
+            enabled: true,
+            feedRejectionsToPlanner: false,
+            tiers: { write_out_of_scope: 'sticky' },
+          },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
           workflow: { maxRetries: 2 },
         }),
@@ -170,7 +178,11 @@ describe('runSingleTask — user edits', () => {
         implementer,
         bus,
         config: makeConfig({
-          approval: { enabled: true, feedRejectionsToPlanner: false },
+          approval: {
+            enabled: true,
+            feedRejectionsToPlanner: false,
+            tiers: { write_out_of_scope: 'sticky' },
+          },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
           workflow: { maxRetries: 2 },
         }),

@@ -29,7 +29,6 @@ import { sessionsStore } from '../../stores/project/sessions.js';
 import { COMMAND_CATEGORY_LABELS } from '../../core/runtime/commands/types.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { overlayRect, type OverlayDensity } from '../../core/navigation/overlay-rect.js';
-import { fitKeyLegend } from '../../core/key-legend.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { handleSessionSelect } from '../../stores/navigation/session-select.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
@@ -168,12 +167,9 @@ export function CommandPaletteOverlay({ commands, onRuntimeCommand }: CommandPal
     (widest, skill) => Math.max(widest, getTerminalCellWidth(skill.label)),
     commandLabelWidth(commands),
   );
-  const hint = fitKeyLegend(
-    canActOnIndex(cursor)
-      ? ['↑↓ select', '⏎ run or fill in', 'esc close'].join(SOFT_SEP)
-      : ['↑↓ select', 'esc close'].join(SOFT_SEP),
-    innerWidth,
-  );
+  const hint = canActOnIndex(cursor)
+    ? ['↑↓ select', '⏎ run or fill in', 'esc close'].join(SOFT_SEP)
+    : ['↑↓ select', 'esc close'].join(SOFT_SEP);
 
   return (
     <OverlayPanel hint={hint} density={PANEL_DENSITY}>

@@ -324,6 +324,41 @@ Task with approved exceptions.
     });
   });
 
+  it.each(['None', 'None.', 'n/a', '-'])(
+    'drops the %j placeholder from every scope bucket, alone and beside real paths',
+    (placeholder) => {
+      const input = `---
+id: T106
+title: "Placeholder scope"
+action: modify
+file: src/p.ts
+depends_on: []
+---
+
+### Description
+Placeholder scope entries.
+
+### Scope
+**In bounds:**
+- ${placeholder}
+- src/p.ts
+
+**Out of bounds:**
+- ${placeholder}
+
+**Approved out of bounds:**
+- ${placeholder}
+
+### Tests
+- ok
+
+### Constraints
+- none
+`;
+      expect(parseTasks(input)[0]?.scope).toEqual({ inBounds: ['src/p.ts'] });
+    },
+  );
+
   it('round-trips approvedOutOfBounds through formatTasks', () => {
     const input = `---
 id: T104

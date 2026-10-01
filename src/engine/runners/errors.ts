@@ -35,6 +35,10 @@ export type RunnerFailureOutcome = Readonly<{
 }>;
 export type RunnerOutcome = RunnerSuccessOutcome | RunnerFailureOutcome;
 
+/** What the next attempt hears after SPLITBRIEF discarded some of its writes. */
+export const DISCARDED_WRITES_INSTRUCTION =
+  'Retry from the current files; do not try to recover the rejected writes.';
+
 function defaultRemediation(state: RunnerFailureOutcomeState): string {
   switch (state) {
     case 'spawn-not-found':
@@ -64,7 +68,7 @@ function defaultRemediation(state: RunnerFailureOutcomeState): string {
     case 'platform-limitation':
       return 'Run this CLI on a supported platform.';
     case 'implementer-effect-invalid':
-      return "The implementer wrote outside the brief's declared files. Retry with a revert instruction or widen Scope.";
+      return `The implementer wrote a file this call does not allow, so the attempt failed and its rejected writes do not count. ${DISCARDED_WRITES_INSTRUCTION}`;
     case 'implementer-recipe-invalid':
       return 'Correct the tool recipe (flags or permissions) and retry; this attempt consumed no retry.';
     case 'implementer-left-isolation':

@@ -693,6 +693,28 @@ describe('baseline probe heartbeat', () => {
     expect(capturedBaselineDone(events)?.commands?.test).toContain(join('src', 'foo.test.ts'));
   });
 
+  it('narrows the test stage by the declared files plus the files the attempt changed', async () => {
+    mkdirSync(join(tempDir, 'src', 'shared'), { recursive: true });
+    writeFileSync(join(tempDir, 'src', 'foo.test.ts'), '');
+    writeFileSync(join(tempDir, 'src', 'shared', 'button.test.ts'), '');
+    writeTsProject(tempDir);
+    const validator = createValidator({ runCommand: makeCommandRunner() });
+    const config = makeConfig({ typecheck: false, lint: false, test: true });
+
+    const results = await validator.runValidation({
+      task: mkTask('src/foo.ts'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+      changedFiles: ['src/foo.ts', 'src/shared/button.ts'],
+    });
+
+    const command = results.find((r) => r.stage === 'test')?.command ?? '';
+    expect(command).toContain(join('src', 'foo.test.ts'));
+    expect(command).toContain(join('src', 'shared', 'button.test.ts'));
+  });
+
   it('never reports a skipped stage as green, and progress agrees with done', async () => {
     mkdirSync(join(tempDir, 'src'), { recursive: true });
     writeFileSync(join(tempDir, 'src', 'foo.test.ts'), '');

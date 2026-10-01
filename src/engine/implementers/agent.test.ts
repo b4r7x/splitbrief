@@ -168,7 +168,7 @@ describe('agent implementer', () => {
     const prompt = readFileSync(outFile, 'utf-8');
     expect(prompt).toContain('test prompt content');
     expect(prompt).toContain(
-      `Edit ${task.file} directly in the isolation directory. Before finishing, run the brief's typecheck command and only the tests of the files you changed, never the whole suite: the orchestrator runs the full validation after you hand back. End with a completion report stating which files you wrote and whether the brief's steps were completed.`,
+      `Edit ${task.file} directly in the isolation directory. SPLITBRIEF runs the typecheck, lint, format and test gates after you hand back, so run at most the focused test files the brief lists, once. End with a completion report naming the files you wrote, one line Also changed (not suggested): <file> — <reason> for each file the brief did not suggest, and whether the brief's steps were completed.`,
     );
     expect(prompt).not.toContain('{prompt}');
   });

@@ -394,7 +394,7 @@ describe('createCliImplementer (claude-code)', () => {
     expect(existsSync(join(shimDir, 'argv.txt'))).toBe(false);
   });
 
-  it('undeclared src/unrelated.ts is implementer-effect-invalid naming it', async () => {
+  it('by default an undeclared src/unrelated.ts write succeeds and stays on disk', async () => {
     installRecordingClaudeShim('src/unrelated.ts');
     const config = makeClaudeConfig();
 
@@ -405,6 +405,24 @@ describe('createCliImplementer (claude-code)', () => {
       config,
       context: { ...defaultContext, dir: projectDir },
       onOutput: () => {},
+    });
+
+    expect(result.success).toBe(true);
+    expect(readFileSync(join(projectDir, 'src/unrelated.ts'), 'utf8')).toBe('generated');
+  });
+
+  it('a caller that rejects undeclared writes gets implementer-effect-invalid naming the file', async () => {
+    installRecordingClaudeShim('src/unrelated.ts');
+    const config = makeClaudeConfig();
+
+    const implementer = createCliImplementer(cliClaudeImplementer);
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config,
+      context: { ...defaultContext, dir: projectDir },
+      onOutput: () => {},
+      undeclaredWrites: 'reject',
     });
 
     expect(result.success).toBe(false);
@@ -637,6 +655,7 @@ describe('createCliImplementer (exact-effect gate fixtures)', () => {
       config,
       context: { ...defaultContext, dir: projectDir },
       onOutput: () => {},
+      undeclaredWrites: 'reject',
     });
 
     expect(result.success).toBe(false);
@@ -750,6 +769,7 @@ describe('createCliImplementer (exact-effect gate fixtures)', () => {
       config,
       context: { ...defaultContext, dir: projectDir },
       onOutput: () => {},
+      undeclaredWrites: 'reject',
     });
 
     expect(result.success).toBe(false);

@@ -56,17 +56,17 @@ The brief is the contract between the planner (this session) and the implementer
 
     ### Scope
     **In bounds:**
-    - Concrete change this brief is allowed to make
+    - Context the change works within
     **Out of bounds:**
-    - Adjacent change the implementer must NOT make
+    - Explicit exclusion the reviewer checks
     **Approved out of bounds:**
-    - Intentional exception paths that tiered approval may allow
+    - A further path the planner already approved
 
     ### Escalation
     - Stop and ask when the required behavior is ambiguous, when a dependency is missing, or when the brief conflicts with local code.
 
     ### Evidence
-    - Reviewable proof the task completed (passing tests, typecheck, changed files, behavioral note).
+    - Reviewable proof the task completed (the focused tests that pass, the changed files, the behavior a reviewer can check).
 
     ### Constraints
     - ESM imports with .js extensions
@@ -82,13 +82,13 @@ Every brief must cover these nine semantic sections, even when one is brief:
 
 1. **Identity** — frontmatter `id`, `title`, `action`, `file`, optional `files`, `depends_on`.
 2. **Intent** — `### Description`: what the change is and why it matters.
-3. **Scope** — `### Scope` with `**In bounds:**`, `**Out of bounds:**`, and optional `**Approved out of bounds:**` bullet lists. REQUIRED in standard mode so the implementer cannot drift into adjacent files or features.
+3. **Scope** — `### Scope` with `**In bounds:**`, `**Out of bounds:**`, and optional `**Approved out of bounds:**` bullet lists. REQUIRED in standard mode. `files` are the suggested files; **In bounds** is context; **Out of bounds** lists the explicit exclusions the reviewer checks.
 4. **Code Context** — `### Signature`, `### Current Code`, `### Type Definitions`, and `### Pattern`: copied verbatim from the project when relevant. The implementer cannot look up other files.
 5. **Implementation Plan** — `### Implementation Steps`: 3-5 numbered steps with concrete function calls and patterns.
 6. **Validation** — `### Tests`: REQUIRED concrete test cases with specific inputs and expected outputs, in every brief. No phrases like "should work correctly", and no deferring the cases to whichever brief owns the test file.
 7. **Constraints** — `### Constraints`: invariants, dependency rules, ESM imports with .js extensions, refusal conditions.
 8. **Escalation** — `### Escalation`: bullets describing when the implementer must stop and ask instead of guessing. Required whenever the brief contains plausible ambiguity.
-9. **Evidence** — `### Evidence`: REQUIRED bullets describing the reviewable proof that should exist when the brief is done (passing tests, validation output, changed files, behavioral note).
+9. **Evidence** — `### Evidence`: REQUIRED bullets describing the reviewable proof that should exist when the brief is done (the focused tests that pass, the changed files, the behavior a reviewer can check). Renders and project-wide gates are the review seat's and SPLITBRIEF's evidence, not the implementer's steps.
 
 Every brief must also leave typecheck, lint and tests green on its own. Never plan for a failing gate: when a change would break a sibling file, widen the brief's `files` to include it, keep the change backward compatible with an optional property and a default, or split the work so each brief lands whole. Before a brief deletes or renames an export, its `files` name every consumer found by searching the whole repository — `src/` and `testing/` alike, colocated and sibling tests included.
 <!-- /generated -->
@@ -102,7 +102,7 @@ Every brief must also leave typecheck, lint and tests green on its own. Never pl
 
 3. **Dependency-ordered**: Briefs must be ordered so dependencies come first. Use `depends_on` to declare which briefs must complete first. Independent briefs can run in parallel.
 
-4. **Concrete validation**: Every `### Tests` block must list specific test cases with concrete inputs and expected outputs, as `-` bullets. This holds for every brief, including one whose test file a different brief owns: list the cases that verify THIS brief's change. Never replace the bullets with prose that defers validation to another brief.
+4. **Concrete validation**: Every `### Tests` block must list specific test cases with concrete inputs and expected outputs, as `-` bullets. This holds for every brief, including one whose test file a different brief owns: list the cases that verify THIS brief's change. Never replace the bullets with prose that defers validation to another brief. Name the focused test files and cases only. SPLITBRIEF runs typecheck, lint and the affected tests after every brief, so never tell the implementer to run a project-wide gate, the whole suite, or a screenshot/render tool.
 
 5. **Inline type definitions**: Copy referenced TypeScript type annotations or data shape definitions verbatim into `### Type Definitions`. Max ~300 tokens — prioritize definitions that appear in the function signature.
 

@@ -688,7 +688,11 @@ describe('runRetryStep — planner-approved widening', () => {
           projectDir,
           sessionId,
           config: makeNoValidationConfig({
-            approval: { enabled: true, feedRejectionsToPlanner: false },
+            approval: {
+              enabled: true,
+              feedRejectionsToPlanner: false,
+              tiers: { write_out_of_scope: 'sticky' },
+            },
             workflow: {},
           }),
           callbacks,
@@ -696,7 +700,6 @@ describe('runRetryStep — planner-approved widening', () => {
         }),
         taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
         dependsOnFiles: [],
-        undeclaredWrites: 'gate',
       },
       task,
       state,
@@ -740,7 +743,8 @@ describe('runRetryStep — planner-approved widening', () => {
       completed: false,
       method: 'failed',
       attempts: 1,
-      lastError: 'Retry changed files blocked by approval gate: out of scope (src/other.ts)',
+      lastError:
+        "Retry changed files blocked by approval gate: out of scope. SPLITBRIEF discarded this attempt's writes to src/other.ts. Retry from the current files; do not try to recover the rejected writes.",
     });
     expect(outcome.state.tasks[0]?.scope?.approvedOutOfBounds).toBeUndefined();
     expect(events.find((event) => event.type === 'task_scope_widened')).toBeUndefined();
@@ -767,7 +771,11 @@ describe('runRetryStep — gate denial', () => {
         projectDir,
         sessionId,
         config: makeNoValidationConfig({
-          approval: { enabled: true, feedRejectionsToPlanner: false },
+          approval: {
+            enabled: true,
+            feedRejectionsToPlanner: false,
+            tiers: { write_out_of_scope: 'sticky' },
+          },
           workflow: {},
         }),
         callbacks,
@@ -802,7 +810,8 @@ describe('runRetryStep — gate denial', () => {
       completed: false,
       method: 'failed',
       attempts: 1,
-      lastError: 'Retry changed files blocked by approval gate: out of scope (src/other.ts)',
+      lastError:
+        "Retry changed files blocked by approval gate: out of scope. SPLITBRIEF discarded this attempt's writes to src/other.ts. Retry from the current files; do not try to recover the rejected writes.",
     });
     const prompted = events.find((event) => event.type === 'recovery_prompted');
     expect(prompted).toMatchObject({ reason: 'scope-violation', taskId: 'T030' });
@@ -865,7 +874,7 @@ describe('runRetryStep — gate denial', () => {
       method: 'failed',
       attempts: 1,
       lastError:
-        'Retry changed files blocked by approval gate: package change denied (package.json)',
+        "Retry changed files blocked by approval gate: package change denied. SPLITBRIEF discarded this attempt's writes to package.json. Retry from the current files; do not try to recover the rejected writes.",
     });
     expect(loadState({ projectDir, sessionId })?.pendingRecovery).toBeUndefined();
     expect(
@@ -873,7 +882,7 @@ describe('runRetryStep — gate denial', () => {
         (event) =>
           event.type === 'error' &&
           event.message ===
-            'Retry changed files blocked by approval gate: package change denied (package.json)',
+            "Retry changed files blocked by approval gate: package change denied. SPLITBRIEF discarded this attempt's writes to package.json.",
       ),
     ).toHaveLength(1);
   });

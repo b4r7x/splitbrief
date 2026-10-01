@@ -1,6 +1,23 @@
 <!--
 Sync Impact Report
-- Version change: 2.2.0 → 2.2.1 (PATCH: V gains one sentence stating that a
+- Version change: 2.2.1 → 2.3.0 (MINOR: II's last task rule changes —
+  a task's files are guidance; it carries or names every file it needs, and
+  the implementer may edit a further project file the change needs, naming
+  it in its report. The rest of II is unchanged until the planning rework)
+- Modified principles (2.3.0):
+  - II. Spec-Driven Development (the sentence "Tasks MUST NOT reference
+    external files or assume the model has access to the broader codebase"
+    is replaced; the fixed chain and the 7B/8K figures stay for now)
+- Updated sections (2.3.0): none
+- Templates requiring updates (2.3.0):
+  - .specify/templates/plan-template.md ✅ compatible
+  - .specify/templates/spec-template.md ✅ compatible
+  - .specify/templates/tasks-template.md ✅ compatible
+- Follow-up TODOs (2.3.0): amend the rest of II's mechanism text (one
+  planning session; the implementer's measured context) with the planning
+  rework
+
+Prior pass — 2.2.0 → 2.2.1 (PATCH: V gains one sentence stating that a
   run is a durable, continuable record until the user closes it — a
   clarification of the checkpoint discipline already described, not a new
   principle)
@@ -132,9 +149,10 @@ research → spec → plan → tasks → implement → validate → review.
 
 Each implementation task MUST be self-contained: all context needed
 by the implementer (function signatures, types, current code, test
-expectations, constraints) MUST be inlined in the task prompt. Tasks
-MUST NOT reference external files or assume the model has access to
-the broader codebase.
+expectations, constraints) MUST be inlined in the task prompt. Each
+task carries or names every file it needs; SPLITBRIEF attaches their
+current code, and the implementer may edit a further project file when
+the change needs it, naming it in its report.
 
 Task prompts for models under 15B parameters MUST target a single
 function per task. Total prompt size MUST stay under 8K tokens for
@@ -317,4 +335,4 @@ MUST be documented in the plan.md Complexity Tracking table with:
 the violation, why it is needed, and why the simpler alternative
 was rejected.
 
-**Version**: 2.2.1 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-09-15
+**Version**: 2.3.0 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-10-01
