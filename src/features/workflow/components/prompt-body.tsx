@@ -1,20 +1,21 @@
 import type { ReactNode } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
-import { glyph } from '../../../lib/glyphs.js';
 import { assertNever } from '../../../utils/type-guards.js';
-import { clipPromptBodyRows, promptBodyRows, type PromptBodyLine } from '../prompt-body-rows.js';
+import {
+  clipPromptBodyRows,
+  fitRecommendedText,
+  promptBodyRows,
+  type PromptBodyLine,
+} from '../prompt-body-rows.js';
 import { passHeadlinePrefix } from '../recovery-prompt.js';
 
 type Theme = ReturnType<typeof useTheme>;
 
 const MIN_PROMPT_WIDTH = 1;
-// `▌ ` and the tail each keep their own cells and the action text takes what is left, so it is the
-// part that truncates and it says so with an ellipsis. A tail left to wrap makes the panel one row
-// taller than countPromptBodyRows measured, and Ink pays for that row by squashing one above it —
-// which is how the headline lost its first cell at 80 columns and its whole row at 60.
+const ACTION_LEAD = '  ';
+const ACTION_GAP = '   ';
 const RECOMMENDED_TAIL = ' recommended';
-const RECOMMENDED_MARKER_CELLS = 2;
 
 function renderHeadline(
   row: Extract<PromptBodyLine, { kind: 'headline' }>['row'],
@@ -96,25 +97,21 @@ function renderPromptRows(rows: PromptBodyLine[], width: number, t: Theme): Reac
           </Box>,
         );
         break;
-      case 'action':
-        if (row.recommended) {
-          nodes.push(
-            <Box key={key()} flexDirection="row" width={width}>
-              <Text color={t.accent} bold>
-                {`${glyph('liveBar')} `}
-              </Text>
-              <Box width={Math.max(0, width - RECOMMENDED_MARKER_CELLS - RECOMMENDED_TAIL.length)}>
-                <Text wrap="truncate">{row.text}</Text>
-              </Box>
-              <Text color={t.textDim} wrap="truncate">
-                {RECOMMENDED_TAIL}
-              </Text>
-            </Box>,
-          );
-        } else {
-          nodes.push(<Text key={key()} wrap="truncate">{`  ${row.text}`}</Text>);
-        }
+      case 'action': {
+        const indent = ACTION_LEAD.length + row.keyWidth + ACTION_GAP.length;
+        const room = Math.max(1, width - indent);
+        const text = row.recommended ? fitRecommendedText(row.text, room) : row.text;
+        nodes.push(
+          <Text key={key()} wrap="truncate">
+            {ACTION_LEAD}
+            <Text color={t.textDim}>{row.key.padEnd(row.keyWidth)}</Text>
+            {ACTION_GAP}
+            {text}
+            {row.recommended ? <Text color={t.textDim}>{RECOMMENDED_TAIL}</Text> : null}
+          </Text>,
+        );
         break;
+      }
       case 'note':
         nodes.push(
           <Text key={key()} wrap="truncate" color={t.textDim}>

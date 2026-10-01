@@ -1,7 +1,10 @@
+import { realpathSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SANDBOX_DIR } from '../../core/paths.js';
 import { CLI_TOOL_IDS, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
 import type { RunnerRole } from '../../core/runners/seat-roles.js';
+import { sha256Hex } from '../../utils/sha256.js';
 
 type HostStateEnvKey =
   | 'HOME'
@@ -311,4 +314,27 @@ export function sandboxRoot(
   const root = join(projectDir, SANDBOX_DIR);
   if (role === undefined) return root;
   return tool === undefined ? join(root, role) : join(root, role, tool);
+}
+
+/**
+ * The temp directory a sandbox root's children get. It sits in the real system
+ * temp directory, outside every project and worktree: under a worktree's ignored
+ * `.splitbrief/` a temporary git fixture sees the enclosing repository, and a
+ * path as long as a worktree's pushes a unix socket bound in it (tsx's IPC pipe)
+ * past macOS's 104-byte limit, which fails with EADDRINUSE. The name is a hash
+ * of the root, so each root keeps its own directory and teardown can find it.
+ */
+export function sandboxTempDir(root: string): string {
+  return join(realpathSync(tmpdir()), `sb-${sha256Hex(root).slice(0, 12)}`);
+}
+
+/**
+ * Drops the temp directory of every sandbox root a project may carry. They live
+ * outside the project (`sandboxTempDir`), so removing the project directory does
+ * not remove them.
+ */
+export function removeSandboxTempDirs(projectDir: string): void {
+  for (const { role, tool } of sandboxRootCandidates()) {
+    rmSync(sandboxTempDir(sandboxRoot(projectDir, role, tool)), { recursive: true, force: true });
+  }
 }

@@ -1,5 +1,7 @@
 import { Box, Text, useInput } from 'ink';
-import { borderStyleFor, glyph } from '../../../lib/glyphs.js';
+import { borderStyleFor } from '../../../lib/glyphs.js';
+import { listRowLead } from '../../../components/list-row.js';
+import { fitKeyLegend } from '../../../core/key-legend.js';
 import { useTheme } from '../../../components/theme.js';
 import { useStaticSelector } from '../../../hooks/use-static-selector.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
@@ -16,6 +18,7 @@ import {
 import {
   STOP_SHEET_FOOTER,
   STOP_SHEET_LEGEND,
+  STOP_SHEET_PARKED_LEGEND,
   STOP_SHEET_TITLE,
   stopMenuLayout,
   type StopRow,
@@ -60,6 +63,10 @@ export function StopSheet({
   const t = useTheme();
   const cols = terminalSizeStore.use((state) => state.cols);
   const layout = stopMenuLayout(rows, cols);
+  const legend = fitKeyLegend(
+    rows.some((row) => row.id === 'leave') ? STOP_SHEET_PARKED_LEGEND : STOP_SHEET_LEGEND,
+    Math.max(1, layout.width - 4),
+  );
 
   const { selectedIndex } = useStaticSelector<StopRow>({
     items: rows,
@@ -95,18 +102,14 @@ export function StopSheet({
           <Box key={row.id} flexDirection="column">
             {lines.map((line, lineIndex) => (
               <Text key={lineIndex} color={index === selectedIndex ? t.accent : t.text}>
-                {index === selectedIndex && lineIndex === 0 ? `${glyph('liveBar')} ` : '  '}
+                {listRowLead(index === selectedIndex && lineIndex === 0 ? 'active' : 'default')}
                 {line}
               </Text>
             ))}
           </Box>
         ))}
       </Box>
-      <Text color={t.textDim}>
-        {rows.some((row) => row.id === 'leave')
-          ? '↑↓ select · enter confirm · esc back · tab write'
-          : STOP_SHEET_LEGEND}
-      </Text>
+      <Text color={t.textDim}>{legend}</Text>
     </Box>
   );
 }

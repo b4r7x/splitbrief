@@ -489,6 +489,7 @@ function verdictRules(): string {
     `Exactly one verdict word under \`### Verdict\`: ${VERDICT_RULES.words.map((word) => `\`${word}\``).join(' | ')}.`,
     `No single verdict word → ${VERDICT_RULES.unparseableReask} re-ask, verbatim: "${VERDICT_RULES.reaskSentence}" — a still-unparseable reply is \`${VERDICT_RULES.unparseableVerdict}\`.`,
     'Any Critical finding overrides a `pass`.',
+    'A Critical finding names a code, test or behavior defect; an evidence-record gap alone is at most a Note and never causes `fail`.',
     'A finding belongs to the brief whose `files` names it (path substring); an unmatched finding goes to the last brief.',
   ]);
 }

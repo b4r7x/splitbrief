@@ -555,6 +555,26 @@ describe('InputFooter', () => {
     terminalSizeStore.reset();
   });
 
+  it('quotes no estimate during the final review, where no brief is left to build', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    lifecycleStore.__testReset({ phase: 'final-review', status: 'running' });
+    tasksStore.__testReset({
+      currentTask: 2,
+      totalTasks: 2,
+      taskCompletionTimes: [120_000, 120_000],
+      tasks: [
+        { id: 'T001', title: 'T1', status: 'done' as const },
+        { id: 'T002', title: 'T2', status: 'done' as const },
+      ],
+    });
+
+    const ui = renderFeature(<InputFooter />);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('ETA');
+    ui.unmount();
+
+    terminalSizeStore.reset();
+  });
+
   it('a user-cancelled run leads with the cancelled glyph, never the stage-done pip', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     lifecycleStore.__testReset({ phase: 'implementing', cancelled: true });

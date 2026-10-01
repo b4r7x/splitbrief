@@ -273,9 +273,13 @@ describe('CLI planner to CLI implementer workflow', { timeout: 90_000 }, () => {
     expect(normalizeMacTmpPath(opencodeRun.env.HOME)).toBe(
       normalizeMacTmpPath(join(opencodeRun.cwd, SANDBOX_DIR, 'implementer', 'opencode', 'home')),
     );
-    expect(normalizeMacTmpPath(opencodeRun.env.TMPDIR)).toBe(
-      normalizeMacTmpPath(join(opencodeRun.cwd, SANDBOX_DIR, 'implementer', 'opencode', 'tmp')),
-    );
+    // Temp sits in the system temp directory, outside every worktree.
+    expect(opencodeRun.env.TMPDIR).toMatch(/\/sb-[0-9a-f]{12}$/u);
+    expect(
+      normalizeMacTmpPath(opencodeRun.env.TMPDIR)?.startsWith(
+        normalizeMacTmpPath(opencodeRun.cwd) ?? '',
+      ),
+    ).toBe(false);
     expect(normalizeMacTmpPath(opencodeRun.env.npm_config_cache)).toBe(
       normalizeMacTmpPath(
         join(opencodeRun.cwd, SANDBOX_DIR, 'implementer', 'opencode', 'npm-cache'),

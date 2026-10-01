@@ -29,9 +29,11 @@ import { sessionsStore } from '../../stores/project/sessions.js';
 import { COMMAND_CATEGORY_LABELS } from '../../core/runtime/commands/types.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { overlayRect, type OverlayDensity } from '../../core/navigation/overlay-rect.js';
+import { fitKeyLegend } from '../../core/key-legend.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { handleSessionSelect } from '../../stores/navigation/session-select.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
+import { navigateIndex } from '../../utils/indexing.js';
 import { sessionSelectDeps } from '../prepare-resume.js';
 
 const PANEL_DENSITY: OverlayDensity = 'roomy';
@@ -137,11 +139,11 @@ export function CommandPaletteOverlay({ commands, onRuntimeCommand }: CommandPal
         return;
       }
       if (key.upArrow) {
-        setCursor((c) => Math.max(0, c - 1));
+        setCursor((c) => navigateIndex('up', c, results.length));
         return;
       }
       if (key.downArrow) {
-        setCursor((c) => Math.min(results.length - 1, c + 1));
+        setCursor((c) => navigateIndex('down', c, results.length));
         return;
       }
       if (key.backspace || key.delete) {
@@ -166,9 +168,12 @@ export function CommandPaletteOverlay({ commands, onRuntimeCommand }: CommandPal
     (widest, skill) => Math.max(widest, getTerminalCellWidth(skill.label)),
     commandLabelWidth(commands),
   );
-  const hint = canActOnIndex(cursor)
-    ? ['↑↓ navigate', '⏎ run or fill in', 'esc close'].join(SOFT_SEP)
-    : ['↑↓ navigate', 'esc close'].join(SOFT_SEP);
+  const hint = fitKeyLegend(
+    canActOnIndex(cursor)
+      ? ['↑↓ select', '⏎ run or fill in', 'esc close'].join(SOFT_SEP)
+      : ['↑↓ select', 'esc close'].join(SOFT_SEP),
+    innerWidth,
+  );
 
   return (
     <OverlayPanel hint={hint} density={PANEL_DENSITY}>

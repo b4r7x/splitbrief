@@ -20,7 +20,7 @@ import { error } from '../../utils/error.js';
 import { sanitizedRuntimePath } from './resolve-cli-executable.js';
 import { SANDBOX_CREDENTIAL_VALUES, sandboxCredentialValues } from './sandbox-credential-values.js';
 import { bridgeCliState, clearBridgedStateUnder } from './sandbox-state-bridge.js';
-import { sandboxRoot, sandboxRootCandidates } from './sandbox-state-paths.js';
+import { sandboxRoot, sandboxRootCandidates, sandboxTempDir } from './sandbox-state-paths.js';
 
 type RunnerLike = PlannerConfig | ImplementerConfig;
 
@@ -290,7 +290,7 @@ export async function createSandboxEnv(options: {
     async () => {
       const root = sandboxRoot(projectDir, role, selectedCli);
       const home = join(root, 'home');
-      const tmp = join(root, 'tmp');
+      const tmp = sandboxTempDir(root);
       const cache = join(root, 'cache');
       const config = join(root, 'config');
       const data = join(root, 'data');

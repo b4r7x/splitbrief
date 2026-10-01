@@ -7,10 +7,10 @@ export interface InputHintInput {
   inputMode: InputMode;
 }
 
-// A message queued during planning leads the planner's next call, so the invitation names the
-// planner rather than a brief that is not building. Nothing to say leaves the composer's own
-// placeholder in place: the brief while one builds, the answer or comment while a prompt owns it,
-// silence while the run is being torn down.
+// A message queued during planning leads the planner's next call, and one queued during the final
+// review leads the reviewer's, so the invitation names that seat rather than a brief that is not
+// building. Nothing to say leaves the composer's own placeholder in place: the brief while one
+// builds, the answer or comment while a prompt owns it, silence while the run is being torn down.
 export function queuePlaceholder(input: {
   phase: Phase;
   inputMode: InputMode;
@@ -19,9 +19,11 @@ export function queuePlaceholder(input: {
 }): string | undefined {
   if (input.inputMode !== 'normal' || !input.running || input.stopping) return undefined;
   const stage = getActiveRailStage(input.phase);
-  return stage !== null && railStageRole(stage.stage) === 'planner'
-    ? 'Queue a message for the planner…'
-    : undefined;
+  if (stage === null) return undefined;
+  const role = railStageRole(stage.stage);
+  if (role === 'planner') return 'Queue a message for the planner…';
+  if (role === 'validator') return 'Queue a message for the reviewer…';
+  return undefined;
 }
 
 // A gate that is on screen is its own legend: the review and question panels spell out every live

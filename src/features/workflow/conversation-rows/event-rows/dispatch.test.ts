@@ -227,6 +227,27 @@ describe('event row dispatch', () => {
     expect(rows.map(rowText).join('\n')).toContain(`${outcomeLabel} via Try again`);
   });
 
+  it('does not call a brief the planner stopped early one that exhausted its retries', () => {
+    const rows = eventRows({
+      event: {
+        type: 'recovery_action_selected',
+        ts: 0,
+        phase: 'escalating',
+        issueId: 'issue-1',
+        reason: 'retry-exhausted',
+        action: 'retry-same-worker',
+        seat: 'build',
+      },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+    const text = rows.map(rowText).join('\n');
+
+    expect(text).toContain('Selected Try again for Stopped brief');
+    expect(text).not.toMatch(/exhausted/i);
+  });
+
   describe('a seat swap names the seat the halt stopped', () => {
     function swapRowsText(seat: 'plan' | 'build' | 'review' | undefined): string {
       const base = {

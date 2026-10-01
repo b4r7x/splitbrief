@@ -129,10 +129,10 @@ describe('recovery prompt', () => {
 
     const visible = await renderPromptBody(formatRecoveryPrompt(issue));
 
-    expect(visible).toContain('[w1]  switch BUILD to Claude Code CLI · Sonnet 5');
-    expect(visible).toContain('[w2]  switch BUILD to OpenCode CLI');
-    expect(visible).toContain('[r]  retry same worker');
-    expect(visible).toContain('[a]  end run');
+    expect(visible).toContain('w1      switch BUILD to Claude Code CLI · Sonnet 5');
+    expect(visible).toContain('w2      switch BUILD to OpenCode CLI');
+    expect(visible).toContain('r       retry same worker');
+    expect(visible).toContain('a       end run');
     expect(visible).not.toContain('opencode,');
   });
 
@@ -141,8 +141,8 @@ describe('recovery prompt', () => {
 
     const visible = await renderPromptBody(formatRecoveryPrompt(issue));
 
-    expect(visible).toContain('[w]  switch BUILD to OpenCode CLI');
-    expect(visible).not.toContain('[w1]');
+    expect(visible).toContain('w       switch BUILD to OpenCode CLI');
+    expect(visible).not.toContain('w1');
     expect(parseRecoveryActionAnswer('w2', issue)).toBeNull();
   });
 
@@ -157,9 +157,9 @@ describe('recovery prompt', () => {
 
     const visible = await renderPromptBody(formatRecoveryPrompt(issue));
 
-    expect(visible).toContain('[w3]  switch BUILD to Cursor Agent CLI');
+    expect(visible).toContain('w3      switch BUILD to Cursor Agent CLI');
     expect(visible).toContain('(2 more ready tools detected)');
-    expect(visible).not.toContain('[w4]');
+    expect(visible).not.toContain('w4');
   });
 
   it('reads a numbered seat key back as the candidate its row named', () => {
@@ -187,12 +187,12 @@ describe('recovery prompt', () => {
     expect(visible).toContain(
       'Last check test failed: npm test -- auth failed in src/auth/session.test.ts',
     );
-    expect(visible).toContain('[r]  retry same worker');
-    expect(visible).toContain('[b]  route to bigger worker · cheap-cloud');
-    expect(visible).toContain('[s]  skip task');
-    expect(visible).toContain('[space]  pause');
-    expect(visible).toContain('[a]  end run');
-    expect(visible).not.toContain('[c]  continue');
+    expect(visible).toContain('r       retry same worker');
+    expect(visible).toContain('b       route to bigger worker · cheap-cloud recommended');
+    expect(visible).toContain('s       skip task');
+    expect(visible).toContain('space   pause · no new brief starts, changes kept');
+    expect(visible).toContain('a       end run · closes this run, changes kept');
+    expect(visible).not.toContain('continue');
     expect(visible).not.toContain('ask planner');
   });
 
@@ -238,7 +238,7 @@ describe('recovery prompt', () => {
     const prompt = formatRecoveryPrompt(baseIssue);
     const visible = await renderPromptBody(prompt);
 
-    expect(visible).toContain(`${glyph('liveBar')} [b]  route to bigger worker · cheap-cloud`);
+    expect(visible).toContain('b       route to bigger worker · cheap-cloud recommended');
     expect(parseRecoveryActionAnswer('', baseIssue)).toBe('route-bigger-worker');
   });
 
@@ -258,7 +258,7 @@ describe('recovery prompt', () => {
 
     const visible = await renderPromptBody(formatRecoveryPrompt(issue));
 
-    expect(visible).toContain(`${glyph('liveBar')} [space]  pause`);
+    expect(visible).toContain('space   pause · no new brief starts, changes kept recommended');
     expect(parseRecoveryActionAnswer('', issue)).toBe('pause-run');
   });
 
@@ -302,9 +302,9 @@ describe('recovery prompt', () => {
 
     expect(visible).toContain('Recovery needed · Context overflowed on T004');
     expect(visible).toContain('Blocked step: before T004');
-    expect(visible).toContain('[space]  pause');
-    expect(visible).toContain('[a]  end run');
-    expect(visible).not.toContain('[c]  continue');
+    expect(visible).toContain('space   pause · no new brief starts, changes kept recommended');
+    expect(visible).toContain('a       end run · closes this run, changes kept');
+    expect(visible).not.toContain('continue');
     expect(parseRecoveryActionAnswer('c', issue)).toBeNull();
   });
 
@@ -432,7 +432,7 @@ describe('recovery prompt', () => {
 
     const visible = await renderPromptBody(formatRecoveryPrompt(issue));
 
-    expect(visible).toContain('[space]  pause');
+    expect(visible).toContain('space   pause · no new brief starts, changes kept recommended');
     expect(visible).not.toContain('ask planner');
     expect(parseRecoveryActionAnswer('p', issue)).toBeNull();
   });
@@ -529,13 +529,13 @@ describe('recovery prompt', () => {
     expect(visible).toContain(
       'Adjust the plan seat with /crew plan or Settings, then /resume and choose retry.',
     );
-    expect(visible).toContain('[r]  retry PLAN');
-    expect(visible).toContain('[space]  pause');
-    expect(visible).toContain('[a]  end run');
+    expect(visible).toContain('r       retry PLAN');
+    expect(visible).toContain('space   pause · no new brief starts, changes kept recommended');
+    expect(visible).toContain('a       end run · closes this run, changes kept');
     // The figures are the details view's; the panel states the cause and nothing numeric.
     expect(visible).not.toMatch(/148,?000|156,?000|32,?768/);
     expect(visible).not.toMatch(/blocking|0 finding/i);
-    expect(visible).not.toContain('[s]  skip task');
+    expect(visible).not.toContain('skip task');
     expect(visible).not.toContain('route to bigger worker');
     // The boundary's sentence repeats the list the detail row already carries.
     expect(visible.match(/evidence\.json/g)).toHaveLength(1);
@@ -565,7 +565,7 @@ describe('recovery prompt', () => {
     const visible = await renderPromptBody(formatRecoveryPrompt(issue));
 
     expect(visible).toContain('Nothing was sent to REVIEW · larger than the context window');
-    expect(visible).toContain('[r]  retry REVIEW');
+    expect(visible).toContain('r       retry REVIEW');
     expect(visible).toContain('/crew review');
     expect(visible).not.toMatch(/blocking/i);
     expect(visible).not.toMatch(/412,?000|32,?768/);
@@ -590,7 +590,7 @@ describe('recovery prompt', () => {
 
     // No context diagnosis, so the halt keeps the ordinary headline — only the retry is seat-level.
     expect(visible).toContain('Recovery needed · The review call did not land: socket hang up');
-    expect(visible).toContain('[r]  retry REVIEW');
+    expect(visible).toContain('r       retry REVIEW');
     expect(parseRecoveryActionAnswer('r', issue)).toBe('retry-same-worker');
     expect(parseRecoveryActionAnswer('retry', issue)).toBe('retry-same-worker');
   });
@@ -604,10 +604,10 @@ describe('recovery prompt', () => {
 
     const visible = await renderPromptBody(formatRecoveryPrompt(withBrief));
 
-    expect(visible).toContain('[r]  retry same worker');
+    expect(visible).toContain('r       retry same worker');
     expect(visible).not.toContain('retry PLAN');
     expect(await renderPromptBody(formatRecoveryPrompt(baseIssue))).toContain(
-      '[r]  retry same worker',
+      'r       retry same worker',
     );
   });
 
@@ -702,6 +702,6 @@ describe('recovery prompt', () => {
 
     expect(visible).toContain('Recovery needed · Final review failed with 2 blocking findings');
     expect(visible).not.toContain('Nothing was sent');
-    expect(visible).not.toContain('[r]  ');
+    expect(visible).not.toContain('retry');
   });
 });

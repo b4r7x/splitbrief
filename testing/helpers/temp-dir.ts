@@ -3,8 +3,17 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
+/**
+ * Every directory these helpers created in this test file. A sandbox env built
+ * in one keeps its temp directory outside it, so the setup file removes those
+ * after the file ends (`state-home.ts`).
+ */
+export const createdTempDirs = new Set<string>();
+
 export function createTempDir(prefix: string): string {
-  return mkdtempSync(join(tmpdir(), `${prefix}-`));
+  const dir = mkdtempSync(join(tmpdir(), `${prefix}-`));
+  createdTempDirs.add(dir);
+  return dir;
 }
 
 /** Normalize macOS's /private aliases when comparing temporary paths. */
@@ -20,6 +29,7 @@ export function cleanupTempDir(dir: string): void {
 
 export async function withTempDir<T>(prefix: string, fn: (dir: string) => Promise<T>): Promise<T> {
   const dir = await mkdtemp(join(tmpdir(), `${prefix}-`));
+  createdTempDirs.add(dir);
   try {
     return await fn(dir);
   } finally {

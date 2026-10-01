@@ -618,7 +618,8 @@ describe('readReviewContentHeight', () => {
     const progressRows = getProgressRows({ phase: 'final-review', cols: 80 });
     const bodyHeight = getWorkflowViewportHeight({ rows: 40, inputRows: 3, progressRows });
 
-    expect(progressRows).toBe(5);
+    // The review block states no attempt and no estimate, so it is three rows at this width.
+    expect(progressRows).toBe(3);
     // Both panes are handed the screen's one content height, so the review frame is measured
     // around the block exactly as the transcript is.
     expect(readConversationScrollSnapshot().contentRect.height).toBe(bodyHeight);

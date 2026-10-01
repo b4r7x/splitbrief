@@ -1,7 +1,7 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../../components/theme.js';
 import { borderStyleFor } from '../../../../lib/glyphs.js';
-import { NO_CURSOR, cursorGlyph } from '../../../../components/pickers/cursor-glyph.js';
+import { listRowLead } from '../../../../components/list-row.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import {
   REVIEW_COMMENT_HINTS,
@@ -53,18 +53,21 @@ export function DocumentReviewPrompt({
       overflow="hidden"
       flexShrink={0}
     >
-      {options.map((option, index) => (
-        <Text key={option.key}>
-          {showCursor && index === selectedIndex ? (
-            <Text color={t.text}>{cursorGlyph()}</Text>
-          ) : (
-            NO_CURSOR
-          )}
-          <Text color={t.textDim}>{approvalOptionKeyCell(option, keyWidth)}</Text>
-          {'   '}
-          {approvalOptionLabelText({ option, keyWidth, width })}
-        </Text>
-      ))}
+      {options.map((option, index) => {
+        const active = showCursor && index === selectedIndex;
+        return (
+          <Text key={option.key}>
+            <Text color={active ? t.accent : t.textDim}>
+              {listRowLead(active ? 'active' : 'default')}
+            </Text>
+            <Text color={t.textDim}>{approvalOptionKeyCell(option, keyWidth)}</Text>
+            {'   '}
+            <Text color={active ? t.accent : t.text}>
+              {approvalOptionLabelText({ option, keyWidth, width })}
+            </Text>
+          </Text>
+        );
+      })}
       {compact ? null : <Text> </Text>}
       {/* Stripped of its frame the legend is bare text, so it opens on the text column rather than
           in the column the option cursors above it take. */}

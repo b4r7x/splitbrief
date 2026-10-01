@@ -662,7 +662,7 @@ describe('runner row grammar', () => {
     ui.unmount();
   });
 
-  it('renders the custom-command launcher without a dot lead, and a tool row with one', async () => {
+  it('renders the custom-command launcher and a tool row with a blank lead and no middot', async () => {
     const launcher = pickerItem({
       id: 'custom-command',
       displayName: 'Custom command',
@@ -694,26 +694,19 @@ describe('runner row grammar', () => {
       currentCommandKind: undefined,
       showStatus: true,
     } as const;
-    expect(renderToolRow({ item: launcher, ...rowArgs }).props.defaultLead).toBe('blank');
-    expect(renderToolRow({ item: tool, ...rowArgs }).props.defaultLead).toBe('dot');
-    expect(
-      renderToolRow({
-        item: launcher,
-        ...rowArgs,
-        currentCommand: 'my-tool --json',
-        currentCommandKind: 'shell',
-        showStatus: true,
-      }).props.defaultLead,
-    ).toBe('dot');
 
     const launcherUi = renderFeature(renderToolRow({ item: launcher, ...rowArgs }));
     await tick(20);
-    expect(stripAnsiStyles(launcherUi.lastFrame() ?? '')).not.toContain('·');
+    const launcherLine = stripAnsiStyles(launcherUi.lastFrame() ?? '').split('\n')[0] ?? '';
+    expect(launcherLine.startsWith('  + Add custom command…')).toBe(true);
+    expect(launcherLine).not.toContain('·');
     launcherUi.unmount();
 
     const toolUi = renderFeature(renderToolRow({ item: tool, ...rowArgs }));
     await tick(20);
-    expect(stripAnsiStyles(toolUi.lastFrame() ?? '')).toContain('·');
+    const toolLine = stripAnsiStyles(toolUi.lastFrame() ?? '').split('\n')[0] ?? '';
+    expect(toolLine.startsWith('  Claude Code')).toBe(true);
+    expect(toolLine).not.toContain('·');
     toolUi.unmount();
   });
 
@@ -1348,9 +1341,10 @@ describe('runner row grammar', () => {
     await tick(20);
     const defaultFrame = defaultUi.lastFrame() ?? '';
     expect(stripAnsiStyles(defaultFrame)).not.toContain(glyph('liveBar'));
-    expect(stripAnsiStyles(defaultFrame)).toContain('·');
+    expect(stripAnsiStyles(defaultFrame)).not.toContain('·');
     expect(stripAnsiStyles(defaultFrame)).toContain(glyph('check'));
     expect(stripAnsiStyles(defaultFrame)).toContain('Claude Code');
+    expect(stripAnsiStyles(defaultFrame)).toContain('  Claude Code');
     defaultUi.unmount();
   });
 

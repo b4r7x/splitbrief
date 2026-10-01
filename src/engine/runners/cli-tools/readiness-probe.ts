@@ -44,6 +44,7 @@ import {
 } from './contract.js';
 import { isProviderOracleProbe, providerOracleCommand } from './provider-oracle.js';
 import { revalidateCliExecutableIdentity } from '../resolve-cli-executable.js';
+import { removeSandboxTempDirs } from '../sandbox-state-paths.js';
 
 export interface ProbeCliReadinessOptions {
   tool: CliToolId;
@@ -229,6 +230,7 @@ export async function probeDeclaredCliReadinessEvidence(
     });
   } finally {
     await rm(neutralDir, { recursive: true, force: true });
+    removeSandboxTempDirs(neutralDir);
   }
 }
 
@@ -295,6 +297,7 @@ export async function probeCliReadiness(
       auth = 'unknown';
     } finally {
       await rm(neutralDir, { recursive: true, force: true });
+      removeSandboxTempDirs(neutralDir);
     }
   }
   if ((await revalidateCliExecutableIdentity(options.executable)) !== 'match') {

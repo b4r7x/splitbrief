@@ -79,12 +79,14 @@ async function changedFilesSince(
  * REQ-016 declared-effect gate: a direct-write CLI implementer succeeds when
  * the child changed something and every changed path is in the brief's
  * declared set — its `files` plus the paths its Scope names under In bounds or
- * Approved out of bounds. Nothing changed is a no-staged-change failure; a
- * write outside the set is an effect failure unless the caller gates those
- * elsewhere. A child that changed nothing after printing a usage limit on
- * stderr is out of quota, not idle — antigravity exits 0 with "(response may
- * be truncated)" the first time its quota trips — so the limit outranks the
- * empty effect and the ladder halts instead of retrying into it. The failure
+ * Approved out of bounds. Nothing changed is a no-staged-change failure, except
+ * in an attempt allowed to change nothing (a brief the final review reopened,
+ * whose code is already on disk); a write outside the set is an effect failure
+ * unless the caller gates those elsewhere. A child that changed nothing after
+ * printing a usage limit on stderr is out of quota, not idle — antigravity
+ * exits 0 with "(response may be truncated)" the first time its quota trips —
+ * so the limit outranks the empty effect, the allowance included, and the
+ * ladder halts instead of retrying into it. The failure
  * keeps the completed call's evidence (text, usage, session) while carrying
  * the stable code.
  */
@@ -102,12 +104,14 @@ function assertDeclaredEffect(input: {
   task: Task;
   label: string;
   undeclaredWrites: 'reject' | 'gate';
+  allowNoChange: boolean;
 }): RunnerCallResult {
   if (input.changed.length === 0) {
     const limit = stderrUsageLimit(input.result.warnings);
     if (limit !== undefined) {
       return declaredEffectFailure(input.result, 'usage-limit', limit);
     }
+    if (input.allowNoChange) return input.result;
     return declaredEffectFailure(
       input.result,
       'no-staged-change',
@@ -254,6 +258,7 @@ export function createCliImplementer(
             task: opts.task,
             label: runnerLabel,
             undeclaredWrites: opts.undeclaredWrites ?? 'reject',
+            allowNoChange: opts.allowNoChange === true,
           });
         }
         return result;

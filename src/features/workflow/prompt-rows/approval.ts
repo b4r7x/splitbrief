@@ -1,5 +1,6 @@
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { SOFT_SEP } from '../../../core/separators.js';
+import { fitKeyLegend } from '../../../core/key-legend.js';
 import type { ActionClass, Phase } from '../../../core/schemas/enums.js';
 import type { ApprovalPromptState } from '../../../stores/approval-prompt/prompt.js';
 import { SPLITBRIEF_DIR } from '../../../core/paths.js';
@@ -39,7 +40,7 @@ export function formatKeyHints(hints: ReadonlyArray<KeyHint>): string {
 // Escape does not dismiss a gate, it answers it: every panel resolves an escape as a denial. The
 // legend says `deny` so it matches both the `Deny` option beside it and what the engine records.
 export const DENY_HINT: KeyHint = { key: 'esc', verb: 'deny' };
-export const CONFIRM_HINT: KeyHint = { key: 'enter', verb: 'confirm' };
+export const CONFIRM_HINT: KeyHint = { key: '⏎', verb: 'confirm' };
 
 // One selection grammar for both gate panels: the rows move under `↑↓` and settle on `⏎`, and the
 // letters stay live as accelerators. Only one gate panel is ever on screen, so this legend is the
@@ -53,7 +54,7 @@ export const IRREVERSIBLE_NOTE = 'this cannot be undone';
 
 // The refusal replaces the legend rather than adding a row, so it has to carry the way out with
 // it: the moment a user mis-keys on the most dangerous panel is not the moment to hide `esc`.
-export const CONFIRM_NUDGE = `enter confirms this write${SOFT_SEP}${formatKeyHints([DENY_HINT])}`;
+export const CONFIRM_NUDGE = `⏎ confirms this write${SOFT_SEP}${formatKeyHints([DENY_HINT])}`;
 
 // The engine rejects a confirm response with an empty reason, so a keyed confirm still
 // carries one — worded so the evidence trail cannot be mistaken for a stated reason.
@@ -110,18 +111,12 @@ export function reviewDocumentOptions(artifact: ReviewArtifact): ReadonlyArray<R
   ];
 }
 
-export const REVIEW_DOCUMENT_HINTS = formatKeyHints([
-  SELECT_HINT,
-  { key: '⏎', verb: 'confirm' },
-  { key: 'c', verb: 'comment' },
-  { key: 'e', verb: 'edit' },
-  { key: 'q', verb: 'end run' },
-]);
+export const REVIEW_DOCUMENT_HINTS = formatKeyHints([SELECT_HINT, { key: '⏎', verb: 'confirm' }]);
 
 // While a comment is being typed the letters are text, so the panel stops advertising them and
 // names the two keys that are still live.
 export const REVIEW_COMMENT_HINTS = formatKeyHints([
-  { key: 'enter', verb: 'send' },
+  { key: '⏎', verb: 'send' },
   { key: 'esc', verb: 'back' },
 ]);
 
@@ -156,11 +151,11 @@ export function isIrreversibleActionClass(actionClass: ActionClass): boolean {
   return actionClass === 'destructive';
 }
 
-// A control-plane write costs `enter`, everything else costs `y`. The split keeps the
-// muscle memory built on ordinary confirmations from firing an irreversible one, and the
-// word is written out rather than glyphed so it measures one column per character.
+// A control-plane write carries no key on its Confirm row: `y` is refused there, so the row
+// takes the shared ⏎ instead of an accelerator and the key column stays one cell wide. Every
+// other confirm-tier gate keeps `y` on the row.
 export function getConfirmPrimaryKey(actionClass: ActionClass): string {
-  return isIrreversibleActionClass(actionClass) ? 'enter' : 'y';
+  return isIrreversibleActionClass(actionClass) ? '' : 'y';
 }
 
 export function getConfirmOptions(actionClass: ActionClass): ReadonlyArray<ApprovalOption> {
@@ -169,15 +164,6 @@ export function getConfirmOptions(actionClass: ActionClass): ReadonlyArray<Appro
     { key: 'r', label: 'Confirm with a reason' },
     { key: 'x', label: 'Deny' },
   ];
-}
-
-// `enter` confirms on every confirm-tier gate. On an irreversible one it is already the option
-// key, so the legend stays out of its way; on a reversible one `y` owns the option row and this
-// is the only place `enter` is disclosed.
-export function getConfirmChooseHints(actionClass: ActionClass): string {
-  return isIrreversibleActionClass(actionClass)
-    ? formatKeyHints([DENY_HINT])
-    : formatKeyHints([CONFIRM_HINT, DENY_HINT]);
 }
 
 /**
@@ -197,8 +183,8 @@ export function approvalSubjectText(actionDescription: string, cols: number): st
   );
 }
 
-// `enter` is five columns wide and `r` is one, so the label column is set by the widest key in
-// the set. Without this the destructive panel's labels stagger against its own option keys.
+// The label column is set by the widest key in the set, so a row with a shorter key still aligns
+// with the rest — on a destructive gate that is `r`, one cell, because Confirm carries none.
 export function approvalKeyColumnWidth(options: ReadonlyArray<ApprovalOption>): number {
   return options.reduce((width, option) => Math.max(width, option.key.length), 0);
 }
@@ -362,7 +348,7 @@ function getStickyRows(actionClass: ActionClass, actionDescription: string, cols
     1 +
     approvalOptionRowCount(STICKY_OPTIONS, width, approvalKeyColumnWidth(STICKY_OPTIONS)) +
     1 +
-    wrappedRows(STICKY_HINTS, width)
+    wrappedRows(fitKeyLegend(STICKY_HINTS, width), width)
   );
 }
 
@@ -379,8 +365,8 @@ function getConfirmRows(actionClass: ActionClass, actionDescription: string, col
     approvalOptionRowCount(options, width, approvalKeyColumnWidth(options)) +
     1 +
     Math.max(
-      wrappedRows(getConfirmChooseHints(actionClass), width),
-      wrappedRows(CONFIRM_NUDGE, width),
+      wrappedRows(fitKeyLegend(STICKY_HINTS, width), width),
+      wrappedRows(fitKeyLegend(CONFIRM_NUDGE, width), width),
     );
   const reasonStepRows =
     subjectRows +

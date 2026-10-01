@@ -15,7 +15,13 @@ describe('queuePlaceholder', () => {
     expect(queuePlaceholder({ ...working, phase })).toBe('Queue a message for the planner…');
   });
 
-  it.each(['implementing', 'validating-task', 'escalating', 'final-review'] as const)(
+  it('invites a message for the reviewer during the final review, where no brief runs', () => {
+    expect(queuePlaceholder({ ...working, phase: 'final-review' })).toBe(
+      'Queue a message for the reviewer…',
+    );
+  });
+
+  it.each(['implementing', 'validating-task', 'escalating'] as const)(
     'leaves the composer its own brief placeholder while %s',
     (phase) => {
       expect(queuePlaceholder({ ...working, phase })).toBeUndefined();

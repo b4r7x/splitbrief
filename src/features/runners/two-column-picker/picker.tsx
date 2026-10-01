@@ -96,13 +96,19 @@ function getHint(input: {
   }
   const fitHint = (action: string, escapeHint: string, columns: boolean): string => {
     const navigation = [...(columns ? ['←→ column'] : []), '↑↓ select'];
+    const selectOnly = navigation.filter((hint) => hint !== '↑↓ select');
     const extras = [
       ...(nav.currentRightIsCustom ? ['ctrl+d delete'] : []),
       ...(hasRefresh ? ['ctrl+r refresh'] : []),
     ];
     const compose = (navigationHints: string[], extraHints: string[]) =>
       [...navigationHints, action, escapeHint, ...extraHints].filter(Boolean).join(SOFT_SEP);
-    const candidates = [compose(navigation, extras), compose([], extras), compose([], [])];
+    const candidates = [
+      compose(navigation, extras),
+      compose(navigation, []),
+      compose(selectOnly, []),
+      compose([], []),
+    ];
     return candidates.find((hint) => getTerminalCellWidth(hint) <= input.width) ?? compose([], []);
   };
   if (kind === 'terminal') {

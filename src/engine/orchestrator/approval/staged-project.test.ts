@@ -17,6 +17,7 @@ import { collectTrackedFiles } from '../../snapshots/files.js';
 import { getChangedFilesSinceSnapshot } from './file-snapshots/capture.js';
 import { captureAcquisitionBaseline } from './file-snapshots/entry.js';
 import { createStagedProject, promoteStagedChanges } from './staged-project.js';
+import { sandboxTempDir } from '../../runners/sandbox-state-paths.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -56,7 +57,7 @@ describe('createStagedProject', () => {
         expect(existsSync(join(staged.projectDir, 'node_modules'))).toBe(false);
         expect(existsSync(join(staged.projectDir, SPLITBRIEF_DIR, 'sessions'))).toBe(false);
         const sandboxHome = join(staged.projectDir, SANDBOX_DIR, 'home');
-        const sandboxTmp = join(staged.projectDir, SANDBOX_DIR, 'tmp');
+        const sandboxTmp = sandboxTempDir(join(staged.projectDir, SANDBOX_DIR));
         const sandboxCache = join(staged.projectDir, SANDBOX_DIR, 'cache');
         const sandboxNpmCache = join(staged.projectDir, SANDBOX_DIR, 'npm-cache');
         expect(existsSync(join(sandboxCache, 'file'))).toBe(false);
@@ -72,6 +73,7 @@ describe('createStagedProject', () => {
         staged.cleanup();
         cleaned = true;
         expect(existsSync(staged.projectDir)).toBe(false);
+        expect(existsSync(sandboxTmp)).toBe(false);
       } finally {
         if (!cleaned) staged.cleanup();
       }

@@ -703,14 +703,17 @@ function createReferenceCompletionFixture(): FixtureLifecycle {
   return {
     setup: async (context) => {
       await home.setup(context);
-      createTestGitRepo(VISUAL_FIXTURE_PROJECT_DIR, { 'src/app.ts': 'export const app = true;\n' });
+      createTestGitRepo(VISUAL_FIXTURE_PROJECT_DIR, {
+        'src/app.ts': 'export const app = true;\n',
+        'src/components/composer/composer.tsx': 'export const composer = true;\n',
+      });
       // The gallery answers the file lookup with an empty list; this menu needs the real one.
       const { previewInteractionDeps } = await import('../gallery/fixture-session.js');
       const previous = previewInteractionDeps.listProjectFiles;
       Object.assign(previewInteractionDeps, { listProjectFiles });
       restoreInteractionDeps = () =>
         Object.assign(previewInteractionDeps, { listProjectFiles: previous });
-      composerDraftStore.request('@');
+      composerDraftStore.request('@src');
     },
     teardown: () => {
       restoreInteractionDeps?.();

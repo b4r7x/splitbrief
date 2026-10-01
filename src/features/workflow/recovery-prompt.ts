@@ -118,6 +118,15 @@ export function getRecoveryPromptActions(issue: RecoveryIssue): RecoveryAction[]
   return ACTION_ORDER.filter((action) => allowed.has(action));
 }
 
+/**
+ * The action typed words take on this halt: a retry carries them as the steer, and a halt that
+ * offers no retry sends them with its revise. A halt that offers neither takes no words.
+ */
+export function correctionActionFor(issue: RecoveryIssue): RecoveryAction | undefined {
+  const offered: readonly RecoveryAction[] = ['retry-same-worker', 'revise', 'revise-spec'];
+  return offered.find((action) => issue.availableActions.includes(action));
+}
+
 function formatRecoveryActionText(
   action: RecoveryAction,
   context: RecoveryActionChoiceContext = {},

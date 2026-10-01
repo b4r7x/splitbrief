@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
@@ -29,6 +29,7 @@ export function ApprovalPrompt({ clampedBoxRows, review }: ApprovalPromptProps) 
   const state = approvalPromptStore.use((s) => s);
   const graceUntilRef = useRef(0);
   const promptIdentityRef = useRef<PromptIdentity>(null);
+  const [generation, setGeneration] = useState(0);
   const cols = terminalSizeStore.use((s) => s.cols);
   const hasOverlay = overlayStore.use((s) => s.active !== 'none');
 
@@ -38,7 +39,10 @@ export function ApprovalPrompt({ clampedBoxRows, review }: ApprovalPromptProps) 
 
   if (promptIdentity !== promptIdentityRef.current) {
     promptIdentityRef.current = promptIdentity;
-    if (promptIdentity) graceUntilRef.current = Date.now() + PROMPT_TYPEAHEAD_GRACE_MS;
+    if (promptIdentity) {
+      graceUntilRef.current = Date.now() + PROMPT_TYPEAHEAD_GRACE_MS;
+      setGeneration((value) => value + 1);
+    }
   }
 
   if (state.status !== 'pending') {
@@ -53,6 +57,7 @@ export function ApprovalPrompt({ clampedBoxRows, review }: ApprovalPromptProps) 
   if (request.tier === 'sticky') {
     return (
       <StickyApprovalPrompt
+        key={generation}
         request={request}
         promptRows={promptRows}
         clampedBoxRows={clampedBoxRows}
@@ -65,12 +70,12 @@ export function ApprovalPrompt({ clampedBoxRows, review }: ApprovalPromptProps) 
   if (request.tier === 'confirm') {
     return (
       <ConfirmApprovalPrompt
+        key={generation}
         request={request}
         promptRows={promptRows}
         clampedBoxRows={clampedBoxRows}
         isActive={isActive}
         graceUntil={graceUntilRef.current}
-        promptIdentity={promptIdentity}
       />
     );
   }

@@ -41,7 +41,7 @@ describe('buildValidation missingExpectedEvidence matching', () => {
       'handles concurrent writes without corrupting the ledger',
     ]);
     expect(result.missingEvidenceWarnings).toEqual([
-      'T001 missing expected evidence: handles concurrent writes without corrupting the ledger',
+      'T001 expected evidence SPLITBRIEF did not record (informational; SPLITBRIEF records only its own facts; not a failure on its own): handles concurrent writes without corrupting the ledger',
     ]);
   });
 

@@ -277,7 +277,7 @@ describe('SessionsPicker', () => {
 
       const frame = instance.lastFrame() ?? '';
       expect(stripAnsiStyles(frame)).toContain('Sessions · 1');
-      expect(frame).toContain('navigate');
+      expect(stripAnsiStyles(frame)).toContain('↑↓ select · type filter');
       if (compact) {
         expect(frame.split('\n').length).toBeLessThanOrEqual(rows);
         expect(frame).not.toContain('No matching sessions');

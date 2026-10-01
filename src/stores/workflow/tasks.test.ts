@@ -192,6 +192,32 @@ describe('tasks_planned', () => {
     ]);
   });
 
+  it('returns the briefs a review fix cycle reopened to pending', () => {
+    addEvent(makeTasksPlanned(10));
+    for (let index = 0; index < 10; index += 1) {
+      const id = taskId(`T${String(index + 1).padStart(3, '0')}`);
+      addEvent(makeTaskStart({ taskId: id, title: `Task ${index + 1}`, index, total: 10 }));
+      addEvent(makeTaskComplete({ taskId: id, title: `Task ${index + 1}` }));
+    }
+
+    addEvent({
+      type: 'review_fix_started',
+      ts: Date.now(),
+      phase: 'final-review',
+      cycle: 1,
+      taskIds: [taskId('T001'), taskId('T007'), taskId('T010')],
+    });
+
+    const view = selectTaskListView(tasksStore.get());
+    expect(view.passed).toBe(7);
+    expect(view.total).toBe(10);
+    expect(view.items.filter((task) => task.status === 'pending').map((task) => task.id)).toEqual([
+      'T001',
+      'T007',
+      'T010',
+    ]);
+  });
+
   it('reconciles a republished plan as a snapshot', () => {
     addEvent(makeTasksPlanned(3));
     addEvent(

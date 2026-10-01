@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react';
-import { Box, Text, useInput } from 'ink';
+import { useEffect } from 'react';
+import { Box, Text } from 'ink';
 import { SOFT_SEP } from '../../core/separators.js';
 import { useTheme } from '../../components/theme.js';
+import { listRowLead } from '../../components/list-row.js';
+import { useStaticSelector } from '../../hooks/use-static-selector.js';
 import type { ActiveRunnerRole } from '../../core/runners/seat-roles.js';
 import { glyph } from '../../lib/glyphs.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
@@ -50,14 +52,8 @@ function ContractCardView({
   const tier = contractForRunnerKind(card.kind);
   const color = tierColor(t, tier);
   /** The bar marks one row, so only the card's first row carries it. */
-  const lead = (first: boolean) => {
-    if (!first) return <Text color={t.textDim}>{'  '}</Text>;
-    return focused ? (
-      <Text color={color}>{`${glyph('liveBar')} `}</Text>
-    ) : (
-      <Text color={t.textDim}>{'· '}</Text>
-    );
-  };
+  const lead = (first: boolean) =>
+    first && focused ? <Text color={t.accent}>{listRowLead('active')}</Text> : <Text>{'  '}</Text>;
   return (
     <Box flexDirection="column">
       <Box height={1} overflow="hidden">
@@ -66,7 +62,7 @@ function ContractCardView({
           <ContractChip tier={tier} solid={focused} />
         </Box>
         <Box flexGrow={1} minWidth={0} overflow="hidden">
-          <Text color={t.text} wrap="truncate-end">{` ${card.title}`}</Text>
+          <Text color={focused ? t.accent : t.text} wrap="truncate-end">{` ${card.title}`}</Text>
         </Box>
         <Box flexShrink={0}>
           <Text color={t.textDim}>{` ${card.kind}`}</Text>
@@ -112,12 +108,6 @@ export function ContractChoiceOverlay({
   configuredKind,
   onChoose,
 }: ContractChoiceOverlayProps) {
-  const [index, setIndex] = useState(() =>
-    Math.max(
-      0,
-      CONTRACT_CARDS.findIndex((card) => card.kind === initialKind),
-    ),
-  );
   const focus = overlayStore.use((s) => overlayAllowsPickerKeys(s.active));
 
   useEffect(() => {
@@ -127,17 +117,15 @@ export function ContractChoiceOverlay({
     };
   }, []);
 
-  useInput(
-    (_input, key) => {
-      if (key.upArrow) setIndex((current) => Math.max(0, current - 1));
-      if (key.downArrow) setIndex((current) => Math.min(CONTRACT_CARDS.length - 1, current + 1));
-      if (key.return) {
-        const card = CONTRACT_CARDS[index];
-        if (card) onChoose(card.kind);
-      }
-    },
-    { isActive: focus },
-  );
+  const { selectedIndex: index } = useStaticSelector({
+    items: CONTRACT_CARDS,
+    initialIndex: Math.max(
+      0,
+      CONTRACT_CARDS.findIndex((card) => card.kind === initialKind),
+    ),
+    isActive: focus,
+    onSelect: (card) => onChoose(card.kind),
+  });
 
   return (
     <OverlayPanel

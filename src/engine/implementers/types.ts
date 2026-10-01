@@ -35,6 +35,7 @@ export interface ImplementerPublisher {
     linesAdded: number;
     linesRemoved: number;
     duration: number;
+    noChange?: boolean | undefined;
   }): void;
   publishFailed(opts: { phase: Phase; taskId: TaskId; model?: string | undefined }): void;
   publishWarning(opts: {
@@ -94,6 +95,12 @@ export interface ImplementerOptions extends UndeclaredWritesPolicy {
   approveWrite?:
     | ((file: string) => Promise<{ allow: boolean; reason?: string | undefined }>)
     | undefined;
+  /**
+   * A brief reopened by the final review already has its code on disk, so a
+   * direct-write attempt that verifies and changes nothing completes instead of
+   * failing `no-staged-change`. Every other attempt must change something.
+   */
+  allowNoChange?: boolean | undefined;
 }
 
 export interface RetryOptions extends ImplementerOptions {
@@ -121,6 +128,8 @@ export interface InvokeOpts extends UndeclaredWritesPolicy {
   checkoutDir?: string | undefined;
   /** The run's global skills, which the call's tool uses may read and never write. */
   skillRoots?: readonly string[] | undefined;
+  /** Carries `ImplementerOptions.allowNoChange` to the call's declared-effect gate. */
+  allowNoChange?: boolean | undefined;
 }
 
 export interface Implementer extends RunnerRuntime {

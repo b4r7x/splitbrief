@@ -3,7 +3,7 @@ import { Box, Text, useInput } from 'ink';
 import { useTheme } from '../../../../components/theme.js';
 import { RuleHeader } from '../../../../components/rule-header.js';
 import { borderStyleFor, glyph } from '../../../../lib/glyphs.js';
-import { NO_CURSOR, cursorGlyph } from '../../../../components/pickers/cursor-glyph.js';
+import { listRowLead } from '../../../../components/list-row.js';
 import { closeApprovalPrompt } from '../../../../stores/approval-prompt/prompt.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import { registerMouseZone } from '../../../../lib/terminal/mouse-zones.js';
@@ -15,27 +15,25 @@ import {
   CONFIRM_REASON_OPTIONAL,
   CONFIRM_REASON_UNSTATED,
   IRREVERSIBLE_NOTE,
+  STICKY_HINTS,
   approvalKeyColumnWidth,
   approvalOptionKeyCell,
   approvalOptionLabelText,
   approvalSubjectText,
   approvalTitle,
   getApprovalConfirmLabel,
-  getConfirmChooseHints,
   getConfirmOptionZones,
   getConfirmOptions,
   isIrreversibleActionClass,
 } from '../../prompt-rows/approval.js';
 import { CONFIRM_PHRASE } from '../../../../core/approval/types.js';
-import type {
-  TieredApprovalRequest,
-  TieredApprovalResponse,
-} from '../../../../core/approval/types.js';
+import type { TieredApprovalRequest } from '../../../../core/approval/types.js';
 import { approvalTextWidth } from '../../prompt-rows/measure.js';
 import { PROMPT_ZONE_Z } from './sticky.js';
+import { navigateIndex } from '../../../../utils/indexing.js';
+import { fitKeyLegend } from '../../../../core/key-legend.js';
 
 type ConfirmStep = 'choose' | 'reason';
-type PromptIdentity = ((response: TieredApprovalResponse) => void) | null;
 
 function confirmWith(reason: string): void {
   closeApprovalPrompt({ decision: 'confirm', phrase: CONFIRM_PHRASE, reason });
@@ -47,7 +45,6 @@ interface ConfirmApprovalPromptProps {
   clampedBoxRows?: number | undefined;
   isActive: boolean;
   graceUntil: number;
-  promptIdentity: PromptIdentity;
 }
 
 export function ConfirmApprovalPrompt({
@@ -56,14 +53,14 @@ export function ConfirmApprovalPrompt({
   clampedBoxRows,
   isActive,
   graceUntil,
-  promptIdentity,
 }: ConfirmApprovalPromptProps) {
   const [reasonInput, setReasonInput] = useState('');
   const [confirmStep, setConfirmStep] = useState<ConfirmStep>('choose');
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const [nudged, setNudged] = useState(false);
   const reasonInputRef = useRef('');
   const confirmStepRef = useRef<ConfirmStep>('choose');
-  const promptIdentityRef = useRef<PromptIdentity>(null);
+  const selectedIndexRef = useRef(0);
   const t = useTheme();
   const cols = terminalSizeStore.use((s) => s.cols);
   const rows = terminalSizeStore.use((s) => s.rows);
@@ -72,14 +69,19 @@ export function ConfirmApprovalPrompt({
   const keyWidth = approvalKeyColumnWidth(options);
   const tone = irreversible ? t.error : t.warning;
 
-  if (promptIdentity !== promptIdentityRef.current) {
-    promptIdentityRef.current = promptIdentity;
-    reasonInputRef.current = '';
-    confirmStepRef.current = 'choose';
-    setReasonInput('');
-    setConfirmStep('choose');
-    setNudged(false);
-  }
+  const takeRow = (key: string): void => {
+    if (key === 'r') {
+      confirmStepRef.current = 'reason';
+      setConfirmStep('reason');
+      setNudged(false);
+      return;
+    }
+    if (key === 'x') {
+      closeApprovalPrompt();
+      return;
+    }
+    confirmWith(CONFIRM_REASON_UNSTATED);
+  };
 
   useInput(
     (input, key) => {
@@ -106,15 +108,25 @@ export function ConfirmApprovalPrompt({
         return;
       }
 
-      if (key.return) {
-        confirmWith(CONFIRM_REASON_UNSTATED);
+      if (key.upArrow || key.downArrow) {
+        selectedIndexRef.current = navigateIndex(
+          key.upArrow ? 'up' : 'down',
+          selectedIndexRef.current,
+          options.length,
+        );
+        setSelectedIndex(selectedIndexRef.current);
+        setNudged(false);
         return;
       }
+      if (key.return) {
+        const option = options[selectedIndexRef.current];
+        if (option !== undefined) takeRow(option.key);
+        return;
+      }
+
       const letter = input.toLowerCase();
       if (letter === 'r') {
-        confirmStepRef.current = 'reason';
-        setConfirmStep('reason');
-        setNudged(false);
+        takeRow('r');
         return;
       }
       if (letter === 'x' || letter === 'n') {
@@ -122,10 +134,15 @@ export function ConfirmApprovalPrompt({
         return;
       }
       if (letter !== 'y') return;
-      // A control-plane write costs enter, so `y` here reports the miss instead of
-      // silently doing nothing.
-      if (irreversible) setNudged(true);
-      else confirmWith(CONFIRM_REASON_UNSTATED);
+      // A control-plane write costs the highlighted row, so `y` moves the highlight back to
+      // Confirm and reports the miss instead of silently doing nothing.
+      if (irreversible) {
+        selectedIndexRef.current = 0;
+        setSelectedIndex(0);
+        setNudged(true);
+      } else {
+        confirmWith(CONFIRM_REASON_UNSTATED);
+      }
     },
     { isActive },
   );
@@ -149,13 +166,7 @@ export function ConfirmApprovalPrompt({
         top: zone.top,
         bottom: zone.bottom,
         z: PROMPT_ZONE_Z,
-        onClick: () => {
-          if (zone.key === 'r') {
-            confirmStepRef.current = 'reason';
-            setConfirmStep('reason');
-          } else if (zone.key === 'x') closeApprovalPrompt();
-          else confirmWith(CONFIRM_REASON_UNSTATED);
-        },
+        onClick: () => takeRow(zone.key),
       }),
     );
     return () => {
@@ -192,19 +203,26 @@ export function ConfirmApprovalPrompt({
       <Text> </Text>
       {confirmStep === 'choose' ? (
         <>
-          {options.map((option, index) => (
-            <Text key={option.key}>
-              {index === 0 ? <Text color={t.text}>{cursorGlyph()}</Text> : NO_CURSOR}
-              <Text color={t.textDim}>{approvalOptionKeyCell(option, keyWidth)}</Text>
-              {'   '}
-              {approvalOptionLabelText({ option, keyWidth, width: approvalTextWidth(cols) })}
-            </Text>
-          ))}
+          {options.map((option, index) => {
+            const active = index === selectedIndex;
+            return (
+              <Text key={option.key}>
+                <Text color={active ? t.accent : t.textDim}>
+                  {listRowLead(active ? 'active' : 'default')}
+                </Text>
+                <Text color={t.textDim}>{approvalOptionKeyCell(option, keyWidth)}</Text>
+                {'   '}
+                <Text color={active ? t.accent : t.text}>
+                  {approvalOptionLabelText({ option, keyWidth, width: approvalTextWidth(cols) })}
+                </Text>
+              </Text>
+            );
+          })}
           <Box flexGrow={1} minHeight={1} />
           {nudged ? (
-            <Text color={t.warning}>{CONFIRM_NUDGE}</Text>
+            <Text color={t.warning}>{fitKeyLegend(CONFIRM_NUDGE, approvalTextWidth(cols))}</Text>
           ) : (
-            <Text color={t.textDim}>{getConfirmChooseHints(request.actionClass)}</Text>
+            <Text color={t.textDim}>{fitKeyLegend(STICKY_HINTS, approvalTextWidth(cols))}</Text>
           )}
         </>
       ) : (

@@ -116,7 +116,8 @@ export function publishPlannerStatus(
   },
 ): void {
   const tool = extra?.tool ?? state.plannerTool;
-  const model = extra?.model ?? state.plannerModel;
+  // A named tool brings its own model, or none: the planner's never stands in for another seat's.
+  const model = extra?.tool === undefined ? (extra?.model ?? state.plannerModel) : extra.model;
   bus.publish({
     type: 'planner_status',
     ts: Date.now(),
@@ -593,6 +594,7 @@ export function publishImplementerGenerateDone(
     linesAdded: number;
     linesRemoved: number;
     duration: number;
+    noChange?: boolean | undefined;
   },
 ): void {
   const event: EngineEvent = {
@@ -604,6 +606,7 @@ export function publishImplementerGenerateDone(
     linesAdded: opts.linesAdded,
     linesRemoved: opts.linesRemoved,
     duration: opts.duration,
+    ...(opts.noChange === true && { noChange: true }),
   };
   if (opts.diff !== undefined) event.diff = redactSecrets(opts.diff);
   ctx.bus.publish(event);

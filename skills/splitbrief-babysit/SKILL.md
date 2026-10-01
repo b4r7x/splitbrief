@@ -144,7 +144,7 @@ Every row below is keyboard work in the pane — that is the point, not a conven
 | Planner question | `↑↓` choose, `⏎` next, `tab` writes a free answer, last `⏎` sends |
 | Spec / plan / briefs gate | read the artifact in the session dir first, then `y` |
 | Inline external-edit prompt (`[c] continue`) | verify the changed files match recorded fixes or authorized user edits, then send `c` |
-| Bordered recovery panel ("letter key acts") | send the action letter through the terminal; `⏎` takes the highlighted row. `r` is Try again; `w` opens the halted seat's picker |
+| Bordered recovery panel (each row shows its key) | send the action letter through the terminal; `⏎` takes the highlighted row, `tab` types a correction when the halt takes one. `r` is Try again; `w` opens the halted seat's picker |
 | Out-of-bounds write approval | allow "this operation only" for a colocated test, a doc the brief names, or a sibling in the brief's module group; otherwise ask the owner |
 | Stop sheet | `esc` opens, `esc` again stops resumably, `ctrl+c` twice quits after the stop settles |
 

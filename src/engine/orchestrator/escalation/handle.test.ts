@@ -217,10 +217,11 @@ describe('handleRetryAndEscalation', () => {
     const escalateHint = vi.fn().mockImplementation(async (opts) => {
       expect(opts.projectDir).not.toBe(projectDir);
       expect(opts.fileIgnoreProjectDir).toBe(projectDir);
-      // The env belongs to the staged directory. TMPDIR is the invariant to
-      // assert: HOME is the host's for a channel whose credential is an OS
-      // keychain item, which is what a macOS Claude Code planner uses.
-      expect(opts.sandboxEnv?.TMPDIR?.startsWith(opts.projectDir)).toBe(true);
+      // The env belongs to the staged directory. XDG_CACHE_HOME is the invariant
+      // to assert: HOME is the host's for a channel whose credential is an OS
+      // keychain item, which is what a macOS Claude Code planner uses, and TMPDIR
+      // sits in the system temp directory outside every project.
+      expect(opts.sandboxEnv?.XDG_CACHE_HOME?.startsWith(opts.projectDir)).toBe(true);
       return { success: false, output: 'hint text', code: null, usage: null };
     });
 

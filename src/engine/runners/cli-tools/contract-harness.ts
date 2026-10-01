@@ -8,6 +8,7 @@ import type { CliExecutableResolver } from '../resolve-cli-executable.js';
 import { createBoundedOutput, type BoundedOutput } from '../../../lib/process/bounded-output.js';
 import { isFatalSignal, spawnPipe } from '../../../lib/process/spawn/lifecycle.js';
 import { createSandboxEnv } from '../sandbox-env.js';
+import { removeSandboxTempDirs } from '../sandbox-state-paths.js';
 import type { RawCliCandidateContract } from './candidate-contract.js';
 import {
   type CandidateEvidence,
@@ -235,7 +236,13 @@ export async function createProject(projectDir: string | undefined): Promise<Con
     await rm(path, { recursive: true, force: true });
     throwConformance('harness-failure', 'could not create the staged git project');
   }
-  return { path, cleanup: () => rm(path, { recursive: true, force: true }) };
+  return {
+    path,
+    cleanup: async () => {
+      await rm(path, { recursive: true, force: true });
+      removeSandboxTempDirs(path);
+    },
+  };
 }
 
 export async function sandboxEnvironment(

@@ -117,7 +117,9 @@ export function buildValidation(
     finalReviewEvidenceStatus: ledger?.finalReview?.status ?? null,
     missingEvidenceWarnings: tasks.flatMap((task) =>
       task.missingExpectedEvidence.length > 0
-        ? [`${task.taskId} missing expected evidence: ${task.missingExpectedEvidence.join(', ')}`]
+        ? [
+            `${task.taskId} expected evidence SPLITBRIEF did not record (informational; SPLITBRIEF records only its own facts; not a failure on its own): ${task.missingExpectedEvidence.join(', ')}`,
+          ]
         : [],
     ),
   };

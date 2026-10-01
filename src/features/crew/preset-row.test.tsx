@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import chalk from 'chalk';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
+import { listRowLead } from '../../components/list-row.js';
+import { getTheme, ThemeProvider } from '../../components/theme.js';
 import type { CrewPreset } from '../../core/crew/presets.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { PresetRowView } from './preset-row.js';
@@ -18,7 +21,7 @@ const PRESET: CrewPreset = {
   },
 };
 
-async function lineFor(width: number, cols: number, isCursor = true): Promise<string> {
+async function frameFor(width: number, cols: number, isCursor = true): Promise<string> {
   const ui = renderFeature(
     <PresetRowView
       preset={PRESET}
@@ -29,9 +32,31 @@ async function lineFor(width: number, cols: number, isCursor = true): Promise<st
     { cols, rows: 24 },
   );
   await flushEffects();
-  const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+  const frame = ui.lastFrame() ?? '';
   ui.unmount();
-  return frame.split('\n')[0] ?? '';
+  return frame;
+}
+
+async function lineFor(width: number, cols: number, isCursor = true): Promise<string> {
+  return stripAnsiStyles(await frameFor(width, cols, isCursor)).split('\n')[0] ?? '';
+}
+
+async function themedFrameFor(isCursor: boolean): Promise<string> {
+  const ui = renderFeature(
+    <ThemeProvider theme={{ ...getTheme(), accent: 'red' }}>
+      <PresetRowView
+        preset={PRESET}
+        isCursor={isCursor}
+        width={102}
+        labelWidth={getTerminalCellWidth(PRESET.label)}
+      />
+    </ThemeProvider>,
+    { cols: 120, rows: 24 },
+  );
+  await flushEffects();
+  const frame = ui.lastFrame() ?? '';
+  ui.unmount();
+  return frame;
 }
 
 describe('crew preset row', () => {
@@ -61,5 +86,29 @@ describe('crew preset row', () => {
     expect(getTerminalCellWidth(cursored)).toBe(getTerminalCellWidth(plain));
     // The marker gutter is the first 2 cells; everything after it is identical on both rows.
     expect(cursored.slice(2)).toBe(plain.slice(2));
+  });
+
+  it('leads the gutter with the shared list marker and never a dot', async () => {
+    const cursored = await lineFor(102, 120);
+    const plain = await lineFor(102, 120, false);
+
+    expect(cursored.startsWith(listRowLead('active'))).toBe(true);
+    expect(plain.startsWith(listRowLead('default'))).toBe(true);
+    expect(cursored).not.toContain('·');
+    expect(plain).not.toContain('·');
+  });
+
+  it('paints the label accent only under the highlight', async () => {
+    const originalLevel = chalk.level;
+    chalk.level = 1;
+    try {
+      const cursored = await themedFrameFor(true);
+      const plain = await themedFrameFor(false);
+
+      expect(cursored).toContain(`\u001B[31m${listRowLead('active')}\u001B[1m${PRESET.label}`);
+      expect(plain).toContain(`\u001B[31m${listRowLead('default')}\u001B[37m${PRESET.label}`);
+    } finally {
+      chalk.level = originalLevel;
+    }
   });
 });

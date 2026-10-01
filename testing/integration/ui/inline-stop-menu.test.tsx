@@ -11,6 +11,7 @@ import { stopStore } from '../../../src/stores/workflow/stop.js';
 import { addEvent } from '../../../src/stores/workflow/actions/event.js';
 import { clearAllHandlers } from '../../../src/features/workflow/handlers.js';
 import { cancelEscapeAction } from '../../../src/lib/terminal/escape-debounce.js';
+import { STOP_SHEET_LEGEND } from '../../../src/features/workflow/stop/options.js';
 import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
 import { saveState } from '../../../src/core/state/persistence.js';
 import { createInitialState, transition } from '../../../src/core/state/machine.js';
@@ -135,7 +136,7 @@ describe('inline stop menu in the routed workflow', () => {
     await vi.waitFor(() => expect(frame()).toContain('Stop options'));
     expect(frame()).toContain('Inspecting the authentication module.');
     expect(frame()).toContain('End run');
-    expect(frame()).toContain('tab back');
+    expect(frame()).toContain(STOP_SHEET_LEGEND);
     expect(frame().split('\n').length).toBeLessThanOrEqual(viewport.rows);
     expect(stopStore.get().intent).toBe('none');
     addEvent({

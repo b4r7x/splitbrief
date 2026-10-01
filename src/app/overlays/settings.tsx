@@ -125,8 +125,8 @@ export function SettingsOverlay() {
   const hintText = editingId
     ? `⏎ confirm${SOFT_SEP}esc cancel`
     : actionHint
-      ? `↑↓ navigate${SOFT_SEP}${actionHint}${SOFT_SEP}esc close`
-      : `↑↓ navigate${SOFT_SEP}esc close`;
+      ? `↑↓ select${SOFT_SEP}${actionHint}${SOFT_SEP}esc close`
+      : `↑↓ select${SOFT_SEP}esc close`;
 
   const verdictLine =
     verdict === undefined ? null : <CrewVerdictLine verdict={verdict} width={rect.innerWidth} />;

@@ -144,7 +144,7 @@ export function SkillsPicker() {
 
   const hintText = navigating
     ? `space toggle${SOFT_SEP}ctrl+a all${SOFT_SEP}⏎ confirm${SOFT_SEP}esc close`
-    : `↑↓ navigate${SOFT_SEP}ctrl+a all${SOFT_SEP}⏎ confirm${SOFT_SEP}esc close`;
+    : `↑↓ select${SOFT_SEP}ctrl+a all${SOFT_SEP}⏎ confirm${SOFT_SEP}esc close`;
 
   return (
     <FilterableList

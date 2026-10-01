@@ -1,5 +1,6 @@
 import type { CheckpointId } from '../../contracts/identifiers.js';
 import { checkpointId } from '../../contracts/identifiers.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import type { CheckpointPredicate, FixtureFactory, FixtureRegistry } from '../common.js';
 import { markWorkflowPaused } from '../../../../src/stores/workflow/actions/pause.js';
 import { lifecycleStore } from '../../../../src/stores/workflow/lifecycle.js';
@@ -75,8 +76,10 @@ export const workflowFixtureRegistry: FixtureRegistry = new Map(
 );
 
 function includesAll(...markers: readonly string[]): CheckpointPredicate {
-  return ({ output, checkpoint }) =>
-    output.includes(checkpoint.marker) && markers.every((marker) => output.includes(marker));
+  return ({ output, checkpoint }) => {
+    const text = stripAnsiStyles(output);
+    return text.includes(checkpoint.marker) && markers.every((marker) => text.includes(marker));
+  };
 }
 
 const checkpointPredicates = [
@@ -100,14 +103,17 @@ const checkpointPredicates = [
     includesAll(
       'input to T901',
       'src/future.ts',
-      '[c]  continue',
-      '[space]  pause',
-      '[a]  end run',
+      'c       continue',
+      'space   pause',
+      'a       end run',
     ),
   ],
   [checkpointId('implementation-narration'), includesAll('briefs passed')],
   [checkpointId('implementation-adjacent-narration'), includesAll('briefs passed')],
   [checkpointId('implementation-retry'), includesAll('briefs passed')],
+  [checkpointId('review-fix'), includesAll('2/3 briefs passed')],
+  [checkpointId('review-fix-no-change'), includesAll('no change needed')],
+  [checkpointId('final-review'), includesAll('3/3 briefs passed')],
   [checkpointId('implementation-escalated'), includesAll('briefs passed')],
   [checkpointId('validation'), includesAll('validate', 'test skipped')],
   [checkpointId('planner-commands-refused'), includesAll('warning')],
@@ -131,7 +137,10 @@ const checkpointPredicates = [
   [checkpointId('planner-reply'), includesAll('Reply to the planner…', 'Waiting for your answer')],
   // The transcript pins the tail, so the block's last row is the width-stable marker.
   [checkpointId('question-answered'), includesAll('Simplify/clean up existing code')],
-  [checkpointId('task-review'), includesAll('[c]  continue', '[r]  redo task', '[a]  abort')],
+  [
+    checkpointId('task-review'),
+    includesAll('c   continue recommended', 'r   redo task', 'a   abort'),
+  ],
   // The transcript pins the tail, so the last warning's own words are the width-stable marker.
   [checkpointId('briefs-shared-file'), includesAll()],
   [checkpointId('paused-mid-brief'), includesAll('/resume', 'Turn stopped')],

@@ -10,7 +10,8 @@ const RECOVERY_PROMPT = [
   'task t3 · add session middleware',
   'files src/auth/session.ts',
   '',
-  '▌ [r] retry same worker',
+  '▌ [space]  pause · no new brief starts, changes kept',
+  '[r] retry same worker',
   '[b] route to bigger worker · claude-sonnet',
   '[a] abort',
 ].join('\n');
@@ -52,20 +53,23 @@ describe('PromptBody', () => {
     Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
   });
 
-  it('marks the recommended recovery action with the ▌ accent bar', () => {
-    const ui = render(<PromptBody prompt={RECOVERY_PROMPT} height={20} width={70} />);
-    const frame = ui.lastFrame() ?? '';
+  it('paints the dim key column and marks the recommended row with words, without a bar', () => {
+    const ui = render(<PromptBody prompt={RECOVERY_PROMPT} height={20} width={60} />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    const pauseRow = frame.split('\n').find((line) => line.includes('pause'));
 
-    expect(frame).toContain('▌');
-    expect(frame).toContain('[r] retry same worker');
-    expect(frame).toContain('recommended');
+    expect(frame).not.toContain('▌');
+    expect(pauseRow).toBe('  space   pause recommended');
+    expect(pauseRow).not.toContain('…');
+    expect(frame).toContain('  r       retry same worker');
+    expect(frame).toContain('  a       abort');
   });
 
   it('renders the rebase tail as a separate indented continuation line', () => {
     const ui = render(<PromptBody prompt={CONFLICT_PROMPT} height={20} width={70} />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('[p] ask planner to rebase on your edits');
+    expect(frame).toContain('p   ask planner to rebase on your edits');
     expect(frame).toContain('      (approve / edit / reject the proposal)');
   });
 
@@ -74,7 +78,7 @@ describe('PromptBody', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     expect(frame).toContain('✓ t3 ready for review · add session middleware');
-    expect(frame).toContain('▌');
+    expect(frame).toContain('c   continue recommended');
   });
 
   it('keeps the failed review headline word and cause readable', () => {
@@ -82,14 +86,14 @@ describe('PromptBody', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     expect(frame).toContain('t3 failed review · add session middleware');
-    expect(frame).toContain('▌');
+    expect(frame).toContain('r   redo task recommended');
   });
 
   // The panel is sized from countPromptBodyRows, so a row that paints taller than the model
   // measured costs a row above it: at 76 columns the recommended tail used to wrap onto its own
   // line and the headline lost its first cell, at 56 it lost the whole row.
   it('paints exactly the rows the model measured, headline first, at every width', () => {
-    for (const width of [116, 76, 56, 20]) {
+    for (const width of [116, 76, 56, 32]) {
       for (const height of [countPromptBodyRows(RECOVERY_PROMPT, width), 6]) {
         const ui = render(<PromptBody prompt={RECOVERY_PROMPT} height={height} width={width} />);
         const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');

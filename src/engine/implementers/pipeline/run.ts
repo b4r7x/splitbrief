@@ -474,6 +474,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         },
         sandboxEnv: opts.sandboxEnv,
         undeclaredWrites: opts.undeclaredWrites,
+        ...(opts.allowNoChange === true && { allowNoChange: true }),
         ...(checkoutDir !== undefined && { checkoutDir }),
         ...(opts.context.skillRoots !== undefined && { skillRoots: opts.context.skillRoots }),
       });
@@ -570,6 +571,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
 
     implBuffer?.flush();
 
+    let noChange = false;
     try {
       if (outputContract === 'file-bundle-v1') {
         return await applyBundleOutput({
@@ -611,7 +613,8 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
 
       if (baseConfig.detectChanges && changeBaseline) {
         const changes = await baseConfig.detectChanges(projectDir, changeBaseline);
-        if (!changes.changed) {
+        noChange = !changes.changed;
+        if (noChange && opts.allowNoChange !== true) {
           if (phase) {
             baseConfig.publisher?.publishWarning({
               phase,
@@ -651,6 +654,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         linesAdded: 0,
         linesRemoved: 0,
         duration: Date.now() - startTime,
+        ...(noChange && { noChange: true }),
       });
     }
     return { success: true, output: outputText, ...usageField };

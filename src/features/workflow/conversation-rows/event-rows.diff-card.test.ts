@@ -215,4 +215,25 @@ describe('implementer_generate_done diff card', () => {
     expect(text).not.toContain('│ … … │');
     expect(rows.every((rowValue) => getTerminalCellWidth(rowText(rowValue)) <= width)).toBe(true);
   });
+
+  it('names a verified review fix that changed nothing instead of a +0 -0 diff', () => {
+    const event = implementerDoneEvent({
+      file: 'src/alpha.ts',
+      diff: undefined,
+      linesAdded: 0,
+      linesRemoved: 0,
+      noChange: true,
+    });
+    const lines = rowsFor(event, false, 60).map((row) => rowText(row).trim());
+
+    expect(lines).toEqual(['src/alpha.ts  1.2s', 'verified · no change needed']);
+  });
+
+  it('keeps the +0 -0 summary for a direct writer that reports no diff', () => {
+    const event = implementerDoneEvent({ diff: undefined, linesAdded: 0, linesRemoved: 0 });
+    const text = rowsFor(event, false).map(rowText).join('\n');
+
+    expect(text).toContain('README.md (+0 -0)');
+    expect(text).not.toContain('no change needed');
+  });
 });

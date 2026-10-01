@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import type { Task } from '../../../core/schemas/task.js';
 import { classifyUserEditConflict } from './conflicts.js';
 
 describe('classifyUserEditConflict', () => {
@@ -106,5 +107,75 @@ describe('classifyUserEditConflict', () => {
     expect(conflict.kind).toBe('dependency-file-conflict');
     expect(conflict.safeToContinue).toBe(false);
     expect(conflict.affectedTaskIds).toEqual(['T001']);
+  });
+
+  function dependencyEdit(opts: {
+    statuses: Task['status'][];
+    currentTaskInFlight: boolean;
+  }): ReturnType<typeof classifyUserEditConflict> {
+    const dependencies = opts.statuses.map((status, index) =>
+      makeTask({ id: `T00${index + 1}`, file: 'src/dependency.ts', status }),
+    );
+    const currentTask = makeTask({
+      id: 'T009',
+      file: 'src/current.ts',
+      dependsOn: dependencies.map((task) => task.id),
+    });
+    return classifyUserEditConflict({
+      files: ['src/dependency.ts'],
+      currentTask,
+      currentTaskInFlight: opts.currentTaskInFlight,
+      allTasks: [...dependencies, currentTask],
+      currentTaskIndex: dependencies.length,
+    });
+  }
+
+  it('takes an edit to a done dependency as stale input when the current brief has not started', () => {
+    const conflict = dependencyEdit({ statuses: ['done'], currentTaskInFlight: false });
+
+    expect(conflict.kind).toBe('future-task-stale-input');
+    expect(conflict.safeToContinue).toBe(true);
+    expect(conflict.affectedTaskIds).toEqual(['T001']);
+    expect(conflict.availableActions).toEqual(['continue-unrelated', 'pause', 'abort-workflow']);
+  });
+
+  it.each(['pending', 'in_progress', 'failed', 'escalated', 'skipped'] as const)(
+    'keeps an edit to a %s dependency blocking',
+    (status) => {
+      const conflict = dependencyEdit({ statuses: [status], currentTaskInFlight: false });
+
+      expect(conflict.kind).toBe('dependency-file-conflict');
+      expect(conflict.safeToContinue).toBe(false);
+    },
+  );
+
+  it('keeps an edit blocking when one of the dependencies it touches is not done', () => {
+    const conflict = dependencyEdit({ statuses: ['done', 'failed'], currentTaskInFlight: false });
+
+    expect(conflict.kind).toBe('dependency-file-conflict');
+    expect(conflict.safeToContinue).toBe(false);
+    expect(conflict.affectedTaskIds).toEqual(['T001', 'T002']);
+  });
+
+  it('keeps an edit to a done dependency blocking while the current brief is in flight', () => {
+    const conflict = dependencyEdit({ statuses: ['done'], currentTaskInFlight: true });
+
+    expect(conflict.kind).toBe('dependency-file-conflict');
+    expect(conflict.safeToContinue).toBe(false);
+  });
+
+  it('gives the in-flight current brief precedence over a done dependency on the same file', () => {
+    const dependencyTask = makeTask({ id: 'T001', file: 'src/shared.ts', status: 'done' });
+    const currentTask = makeTask({ id: 'T002', file: 'src/shared.ts', dependsOn: ['T001'] });
+    const conflict = classifyUserEditConflict({
+      files: ['src/shared.ts'],
+      currentTask,
+      currentTaskInFlight: true,
+      allTasks: [dependencyTask, currentTask],
+      currentTaskIndex: 1,
+    });
+
+    expect(conflict.kind).toBe('current-task-conflict');
+    expect(conflict.affectedTaskIds).toEqual(['T002']);
   });
 });

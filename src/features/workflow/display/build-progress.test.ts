@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildProgressLines,
+  buildProgressRowCount,
   deriveBuildProgress,
   UI_IDLE_WARN_MS,
   type DeriveBuildProgressInput,
@@ -29,7 +30,11 @@ function tasksState(tasks: WorkflowTask[], overrides: Partial<TasksState> = {}):
 }
 
 function lifecycleState(
-  overrides: { lastRunnerEventTs?: number | null; stall?: LifecycleState['stall'] } = {},
+  overrides: {
+    lastRunnerEventTs?: number | null;
+    stall?: LifecycleState['stall'];
+    phase?: 'implementing' | 'final-review';
+  } = {},
 ): LifecycleState {
   const state: LifecycleState = {
     phase: 'implementing',
@@ -497,5 +502,57 @@ describe('buildProgressLines', () => {
     expect(buildProgressLines(progress, 120)[0]).toContain('1/3 briefs passed');
     expect(buildProgressLines(progress, 120)[0]).toContain('1 escalated');
     expect(buildProgressLines(progress, 120)[0]).toContain('1 failed');
+  });
+});
+
+describe('the build block during the final review', () => {
+  // The review seat runs no brief: it has no attempt to count and no briefs left to estimate.
+  function review(): DeriveBuildProgressInput {
+    return input({
+      tasks: tasksState(
+        [
+          { id: 'T001', title: 'One', status: 'done' },
+          { id: 'T002', title: 'Two', status: 'done' },
+        ],
+        { currentAttempt: 1, taskCompletionTimes: [60_000, 60_000] },
+      ),
+      lifecycle: lifecycleState({ phase: 'final-review' }),
+      operations: operationsState({
+        active: runningOperation({ role: 'review', phase: 'final-review', runnerName: 'codex' }),
+        last: completedOperation({ runnerName: 'opencode' }),
+      }),
+    });
+  }
+
+  it('states no attempt and no estimate', () => {
+    const progress = deriveBuildProgress(review());
+    expect(progress.attempt).toBeNull();
+    expect(progress.eta).toBeNull();
+    for (const width of [120, 80, 60]) {
+      const block = buildProgressLines(progress, width).join('\n');
+      expect(block).toContain('2/2 briefs passed');
+      expect(block).not.toContain('attempt');
+      expect(block).not.toContain('ETA');
+    }
+  });
+
+  it('paints exactly the rows the chrome budgets for it', () => {
+    const progress = deriveBuildProgress(review());
+    for (const width of [120, 80, 60]) {
+      expect(buildProgressLines(progress, width)).toHaveLength(
+        buildProgressRowCount(width, 'final-review'),
+      );
+    }
+  });
+
+  it('keeps the attempt and the estimate while a brief builds', () => {
+    const progress = deriveBuildProgress(input());
+    for (const width of [120, 80, 60]) {
+      expect(buildProgressLines(progress, width)).toHaveLength(
+        buildProgressRowCount(width, 'implementing'),
+      );
+    }
+    expect(progress.attempt).not.toBeNull();
+    expect(progress.eta).not.toBeNull();
   });
 });

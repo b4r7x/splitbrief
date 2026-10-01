@@ -216,7 +216,7 @@ export function InputFooter({
     config,
     now: Date.now(),
   }).eta;
-  const etaLabel = buildEta.kind === 'estimate' ? etaText(buildEta) : null;
+  const etaLabel = buildEta?.kind === 'estimate' ? etaText(buildEta) : null;
 
   const byline = buildInputFooterByline({
     // Raw width in; the builder owns the framed text measure.

@@ -324,7 +324,12 @@ describe('getProgressRows', () => {
     expect(getProgressRows({ phase: 'implementing', cols: 120 })).toBe(4);
     expect(getProgressRows({ phase: 'validating-task', cols: 82 })).toBe(4);
     expect(getProgressRows({ phase: 'validating-task', cols: 80 })).toBe(5);
-    expect(getProgressRows({ phase: 'final-review', cols: 60 })).toBe(5);
+  });
+
+  it('budgets the review block without the attempt row it no longer paints', () => {
+    expect(getProgressRows({ phase: 'final-review', cols: 122 })).toBe(2);
+    expect(getProgressRows({ phase: 'final-review', cols: 82 })).toBe(3);
+    expect(getProgressRows({ phase: 'final-review', cols: 60 })).toBe(3);
   });
 
   it('stands down whenever nothing is building or something waits on an answer', () => {

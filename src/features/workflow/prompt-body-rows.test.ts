@@ -4,7 +4,13 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { PromptBody } from './components/prompt-body.js';
 import { QuestionPrompt } from './components/question-prompt.js';
-import { clipPromptBodyRows, countPromptBodyRows, promptBodyRows } from './prompt-body-rows.js';
+import {
+  clipPromptBodyRows,
+  countPromptBodyRows,
+  fitRecommendedText,
+  promptBodyRows,
+  splitActionRow,
+} from './prompt-body-rows.js';
 import {
   getQuestionPromptRows,
   QUESTION_PROMPT_HORIZONTAL_CHROME,
@@ -31,6 +37,28 @@ describe('promptBodyRows', () => {
     process.env.TERM = 'xterm-256color';
     process.env.LANG = 'en_US.UTF-8';
     Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+  });
+
+  it('splits the serialized action row into its key and text', () => {
+    expect(splitActionRow('[c]  continue')).toEqual({ key: 'c', text: 'continue' });
+    expect(splitActionRow('[space] pause')).toEqual({ key: 'space', text: 'pause' });
+    expect(splitActionRow('plain')).toEqual({ key: '', text: 'plain' });
+  });
+
+  it('fits a recommended text by dropping trailing middot parts before truncating', () => {
+    expect(fitRecommendedText('pause · no new brief starts, changes kept', 20)).toBe('pause');
+    expect(fitRecommendedText('continue', 20)).toBe('continue');
+  });
+
+  it('counts one row per action after the serialized key is split', () => {
+    const prompt = [
+      'recovery needed',
+      '',
+      '[r]  retry same worker',
+      '[space]  pause',
+      '[a]  abort',
+    ].join('\n');
+    expect(countPromptBodyRows(prompt, 80)).toBe(5);
   });
 
   it('counts a one-line prompt body plus chrome for question panel height', () => {
@@ -123,7 +151,7 @@ describe('promptBodyRows', () => {
     expect(clipped[2]?.kind).toBe('blank');
 
     const rendered = renderedPromptBodyRows(prompt, 7);
-    expect(rendered.some((row) => row.includes('[a]  abort'))).toBe(true);
+    expect(rendered.some((row) => row.includes('a    abort'))).toBe(true);
     expect(rendered.some((row) => row.includes('resets 17:00'))).toBe(true);
   });
 

@@ -124,18 +124,57 @@ describe('ListRow', () => {
     });
   });
 
-  it('renders a · middot lead for the dot default variant', () => {
-    const frame = frameOf(<ListRow label="codex" defaultLead="dot" />);
-    expect(frame).toContain('·');
-    expect(frame).toContain('codex');
-    expect(frame).not.toContain('▌');
-    expect(frame).not.toContain('▸');
+  it('leads a non-highlighted row with two blanks and no dot', () => {
+    const frame = frameOf(<ListRow label="codex" />);
+    const line = stripAnsiStyles(frame.split('\n')[0] ?? '');
+    expect(line.startsWith('  codex')).toBe(true);
+    expect(frame).not.toContain('·');
   });
 
-  it('keeps the active glyph over the dot lead when focused', () => {
-    const frame = frameOf(<ListRow label="codex" state="active" defaultLead="dot" />);
-    expect(frame).toContain('▌');
-    expect(frame).not.toContain('·');
+  it('paints an accelerator key padded to its width after the lead', () => {
+    const line = stripAnsiStyles(
+      frameOf(<ListRow label="codex" accelerator="space" acceleratorWidth={5} />).split('\n')[0] ??
+        '',
+    );
+
+    expect(line.startsWith('  space   codex')).toBe(true);
+  });
+
+  it('paints blank key cells when a row carries no accelerator, so the labels align', () => {
+    const keyed = stripAnsiStyles(
+      frameOf(<ListRow label="codex" accelerator="space" acceleratorWidth={5} />).split('\n')[0] ??
+        '',
+    );
+    const keyless = stripAnsiStyles(
+      frameOf(<ListRow label="codex" acceleratorWidth={5} />).split('\n')[0] ?? '',
+    );
+
+    expect(keyless.startsWith(`${' '.repeat(10)}codex`)).toBe(true);
+    expect(keyless.indexOf('codex')).toBe(keyed.indexOf('codex'));
+  });
+
+  it('paints the key column dim, like the metadata beside it', () => {
+    const frame = frameOf(
+      <ListRow label="codex" accelerator="space" acceleratorWidth={5} metadata="1.2" width={24} />,
+    );
+
+    expect(colorOf(frame, 'space')).toBe(colorOf(frame, '1.2'));
+  });
+
+  it('counts the key column against the row width, so the metadata keeps its edge', () => {
+    const keyed = stripAnsiStyles(
+      frameOf(
+        <ListRow label="tool" metadata="1.2" accelerator="space" acceleratorWidth={5} width={24} />,
+        24,
+      ).split('\n')[0] ?? '',
+    );
+    const plain = stripAnsiStyles(
+      frameOf(<ListRow label="tool" metadata="1.2" width={24} />, 24).split('\n')[0] ?? '',
+    );
+
+    expect(keyed).toContain('space');
+    expect(keyed.indexOf('1.2')).toBe(plain.indexOf('1.2'));
+    expect(keyed.length).toBe(plain.length);
   });
 
   it('marks an active row with the ▌ accent bar only', () => {
@@ -156,6 +195,22 @@ describe('ListRow', () => {
     const frame = frameOf(<ListRow label="sonnet 4.5" metadata="200k" />);
     expect(frame).toContain('sonnet 4.5');
     expect(frame).toContain('200k');
+  });
+
+  it('stands the metadata one cell after the label when metadataAfterLabel is set', () => {
+    const after = stripAnsiStyles(
+      frameOf(
+        <ListRow label="auto" metadata="recommended" metadataAfterLabel width={40} />,
+        40,
+      ).split('\n')[0] ?? '',
+    );
+    const right = stripAnsiStyles(
+      frameOf(<ListRow label="auto" metadata="recommended" width={40} />, 40).split('\n')[0] ?? '',
+    );
+
+    expect(after.startsWith('  auto recommended')).toBe(true);
+    expect(right).not.toContain('auto recommended');
+    expect(right.trimEnd().endsWith('recommended')).toBe(true);
   });
 
   it('reserves a blank 2-cell check column when selected is false', () => {

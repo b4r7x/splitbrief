@@ -1,12 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { useTheme } from '../../../../components/theme.js';
 import { borderStyleFor } from '../../../../lib/glyphs.js';
-import { NO_CURSOR, cursorGlyph } from '../../../../components/pickers/cursor-glyph.js';
+import { listRowLead } from '../../../../components/list-row.js';
 import { closeApprovalPrompt } from '../../../../stores/approval-prompt/prompt.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import { registerMouseZone } from '../../../../lib/terminal/mouse-zones.js';
 import { readConversationScrollSnapshot } from '../../layout/snapshot.js';
+import { useStaticSelector } from '../../../../hooks/use-static-selector.js';
+import { fitKeyLegend } from '../../../../core/key-legend.js';
 import {
   STICKY_HINTS,
   STICKY_OPTIONS,
@@ -20,7 +22,6 @@ import {
   stickySpacersShed,
 } from '../../prompt-rows/approval.js';
 import { approvalTextWidth } from '../../prompt-rows/measure.js';
-import { clamp } from '../../../../utils/math.js';
 import type { TieredApprovalRequest } from '../../../../core/approval/types.js';
 
 export const PROMPT_ZONE_Z = 50;
@@ -63,29 +64,19 @@ export function StickyApprovalPrompt({
   const rows = terminalSizeStore.use((s) => s.rows);
   const boxRows = Math.min(promptRows, clampedBoxRows ?? promptRows);
   const spacersShed = stickySpacersShed(promptRows, boxRows);
-  const [selected, setSelected] = useState(0);
+  const { selectedIndex } = useStaticSelector({
+    items: STICKY_OPTIONS,
+    isActive,
+    shouldHandleInput: () => Date.now() >= graceUntil,
+    onSelect: (option) => triggerStickyOption(option.key),
+    onCancel: () => closeApprovalPrompt(),
+  });
 
   useInput(
-    (input, key) => {
+    (input) => {
       if (Date.now() < graceUntil) return;
-      if (key.escape) {
-        closeApprovalPrompt();
-        return;
-      }
-      if (key.upArrow || key.downArrow) {
-        setSelected((index) =>
-          clamp(index + (key.downArrow ? 1 : -1), 0, STICKY_OPTIONS.length - 1),
-        );
-        return;
-      }
-      if (key.return) {
-        triggerStickyOption(STICKY_OPTIONS[selected]?.key ?? 'x');
-        return;
-      }
       const pressed = input.toLowerCase();
-      if (STICKY_OPTIONS.some((option) => option.key === pressed)) {
-        triggerStickyOption(pressed);
-      }
+      if (STICKY_OPTIONS.some((option) => option.key === pressed)) triggerStickyOption(pressed);
     },
     { isActive },
   );
@@ -132,20 +123,27 @@ export function StickyApprovalPrompt({
       {spacersShed < 1 && <Text> </Text>}
       <Text>{approvalSubjectText(request.actionDescription, cols)}</Text>
       {spacersShed < 2 && <Text> </Text>}
-      {STICKY_OPTIONS.map((option, index) => (
-        <Text key={option.key}>
-          {index === selected ? <Text color={t.text}>{cursorGlyph()}</Text> : NO_CURSOR}
-          <Text color={t.textDim}>{approvalOptionKeyCell(option, STICKY_KEY_WIDTH)}</Text>
-          {'   '}
-          {approvalOptionLabelText({
-            option,
-            keyWidth: STICKY_KEY_WIDTH,
-            width: approvalTextWidth(cols),
-          })}
-        </Text>
-      ))}
+      {STICKY_OPTIONS.map((option, index) => {
+        const active = index === selectedIndex;
+        return (
+          <Text key={option.key}>
+            <Text color={active ? t.accent : t.textDim}>
+              {listRowLead(active ? 'active' : 'default')}
+            </Text>
+            <Text color={t.textDim}>{approvalOptionKeyCell(option, STICKY_KEY_WIDTH)}</Text>
+            {'   '}
+            <Text color={active ? t.accent : t.text}>
+              {approvalOptionLabelText({
+                option,
+                keyWidth: STICKY_KEY_WIDTH,
+                width: approvalTextWidth(cols),
+              })}
+            </Text>
+          </Text>
+        );
+      })}
       {spacersShed < 3 && <Text> </Text>}
-      <Text color={t.textDim}>{STICKY_HINTS}</Text>
+      <Text color={t.textDim}>{fitKeyLegend(STICKY_HINTS, approvalTextWidth(cols))}</Text>
     </Box>
   );
 }

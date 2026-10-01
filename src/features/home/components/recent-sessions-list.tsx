@@ -14,7 +14,7 @@ import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { copyToClipboard } from '../../../lib/clipboard/clipboard.js';
 import { isUnmodifiedYInput } from '../../../lib/terminal/text-entry.js';
 
-export const RECENT_SESSIONS_HINT = `↑↓ navigate${SOFT_SEP}⏎ open${SOFT_SEP}y copy${SOFT_SEP}esc back`;
+export const RECENT_SESSIONS_HINT = `↑↓ select${SOFT_SEP}⏎ open${SOFT_SEP}y copy${SOFT_SEP}esc back`;
 
 interface RecentSessionsListProps {
   sessions: Session[];

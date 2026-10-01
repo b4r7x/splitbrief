@@ -25,6 +25,7 @@ import type { UseInputModeResult } from './hooks/use-input-mode.js';
 import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';
 import { runResumePolicy } from './resume-policy.js';
 import {
+  correctionActionFor,
   formatRecoveryPrompt,
   parseRecoveryActionAnswer,
   switchSeatCandidateForAnswer,
@@ -79,15 +80,6 @@ function openRecoveryNotice(issue: RecoveryIssue): void {
     resetAt: Number.isFinite(resetAt) ? resetAt : null,
     issue,
   });
-}
-
-/**
- * The action typed words take on this halt: a retry carries them as the steer, and a halt that
- * offers no retry sends them with its revise. A halt that offers neither takes no words.
- */
-function correctionActionFor(issue: RecoveryIssue): RecoveryAction | undefined {
-  const offered: readonly RecoveryAction[] = ['retry-same-worker', 'revise', 'revise-spec'];
-  return offered.find((action) => issue.availableActions.includes(action));
 }
 
 /** Resolves once the picker has closed, or the run is aborted while it is open. */

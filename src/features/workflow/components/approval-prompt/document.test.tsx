@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
-import { cursorGlyph } from '../../../../components/pickers/cursor-glyph.js';
+import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
+import { listRowLead } from '../../../../components/list-row.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import {
   REVIEW_COMMENT_HINTS,
@@ -22,6 +23,10 @@ function frameOf(node: React.ReactElement): string {
 }
 
 describe('DocumentReviewPrompt', () => {
+  beforeEach(() => {
+    forceUnicodeGlyphs();
+  });
+
   it.each([
     ['spec', 'Approve spec and write the plan'],
     ['plan', 'Approve plan and review the briefs'],
@@ -45,13 +50,19 @@ describe('DocumentReviewPrompt', () => {
     expect(frame.split('↑↓ select').length - 1).toBe(1);
   });
 
-  it('gates the briefs with the same cursor and legend as the plan', () => {
+  it('leads the highlighted row with the shared active lead', () => {
     const frame = frameOf(
       <DocumentReviewPrompt artifact="briefs" selectedIndex={0} commenting={false} />,
     );
 
     expect(frame).toContain(REVIEW_DOCUMENT_HINTS);
-    expect(frame).toContain(`${cursorGlyph()}y   Approve briefs and start the build`);
+    expect(frame).toContain(`${listRowLead('active')}y   Approve briefs and start the build`);
+  });
+
+  it('shows no highlight while a comment is being typed', () => {
+    const frame = frameOf(<DocumentReviewPrompt artifact="plan" selectedIndex={1} commenting />);
+
+    expect(frame).not.toContain(listRowLead('active'));
   });
 
   it('names only the live keys once a comment is being typed', () => {

@@ -64,6 +64,14 @@ export type RunImplementationResult = {
   preApplyApprovedFiles: string[];
 };
 
+// A finding about evidence or run files names files outside the worktree that
+// only SPLITBRIEF and the review seat produce; chasing them trips isolation.
+const REVIEW_FIX_INSTRUCTION = [
+  "These findings come from the final review. Change code only where a finding names a defect in the code or tests inside this brief's files.",
+  "Findings about evidence, renders, validation runs or run files (evidence.json, the session folder) are SPLITBRIEF's and the review seat's job: do not search for those files, and do not leave this directory.",
+  'If no finding needs a code change, change nothing and report that. SPLITBRIEF validates the unchanged brief.',
+].join('\n');
+
 export async function runImplementation(opts: {
   wctx: WorkflowContext;
   task: Task;
@@ -91,7 +99,8 @@ export async function runImplementation(opts: {
   );
 
   // A brief reopened by the final review already has code on disk; the fix
-  // attempt is framed as a retry carrying the reviewer's findings as the error.
+  // attempt is framed as a retry carrying the reviewer's findings as the error,
+  // and a finding that needs no code change lets it verify and change nothing.
   const reviewFindings = state.reviewFixes?.findings[task.id];
 
   let workspace: IsolatedWorkspace | undefined;
@@ -206,9 +215,10 @@ export async function runImplementation(opts: {
           ? wctx.implementer.implement(call)
           : wctx.implementer.retry({
               ...call,
-              error: reviewFindings.join('\n'),
+              error: [REVIEW_FIX_INSTRUCTION, ...reviewFindings].join('\n'),
               attempt: 1,
               kind: 'local',
+              allowNoChange: true,
             });
       },
     });

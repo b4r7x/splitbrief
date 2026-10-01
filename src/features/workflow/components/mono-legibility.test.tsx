@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { glyph } from '../../../lib/glyphs.js';
+import { listRowLead } from '../../../components/list-row.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { eventRows } from '#testing/helpers/event-rows.js';
@@ -83,17 +84,22 @@ describe('mono legibility — the tiered approval gate without colour (unicode t
     ui.unmount();
   });
 
-  it('marks the default action with the ▸ cursor, not a hue', async () => {
+  it('marks the default action with the accent lead bar, not a hue', async () => {
     const ui = renderFeature(<ApprovalPrompt />);
     void openApprovalPrompt(confirmRequest());
     await tick(1);
     await flushEffects();
     const frame = monoFrame(ui.lastFrame());
 
-    const cursor = glyph('cursor');
+    const bar = listRowLead('active');
     const confirmLine = frame.split('\n').find((row) => row.includes('Confirm')) ?? '';
-    expect(confirmLine).toContain(cursor);
-    expect(confirmLine.indexOf(cursor)).toBeLessThan(confirmLine.indexOf('Confirm'));
+    expect(confirmLine).toContain(bar);
+    expect(confirmLine.indexOf(bar)).toBeLessThan(confirmLine.indexOf('Confirm'));
+    // A destructive Confirm row carries no accelerator, so the key cell is blank; the row after
+    // it sets the column with its single letter.
+    expect(confirmLine).not.toContain('enter');
+    expect(frame).toContain('r   Confirm with a reason');
+    expect(frame).not.toContain(glyph('cursor'));
     expect(frame).toContain('Deny');
     ui.unmount();
   });

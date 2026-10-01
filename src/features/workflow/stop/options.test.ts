@@ -3,6 +3,7 @@ import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import {
   STOP_SHEET_FOOTER,
   STOP_SHEET_LEGEND,
+  STOP_SHEET_PARKED_LEGEND,
   stopMenuLayout,
   stopSheetFooter,
   stopSheetRows,
@@ -54,9 +55,10 @@ describe('stopSheetRows', () => {
     );
   });
 
-  it('promises no revert and only the three navigation keys', () => {
+  it('promises no revert and names confirm as the shared key', () => {
     expect(STOP_SHEET_FOOTER).toBe('Changes and draft stay.');
-    expect(STOP_SHEET_LEGEND).toBe('↑↓ select · enter confirm · esc stop · tab back');
+    expect(STOP_SHEET_LEGEND).toBe('↑↓ select · ⏎ confirm · esc stop · tab close');
+    expect(STOP_SHEET_PARKED_LEGEND).toBe('↑↓ select · ⏎ confirm · esc back · tab close');
   });
 
   it('promises only the draft before a brief has run', () => {

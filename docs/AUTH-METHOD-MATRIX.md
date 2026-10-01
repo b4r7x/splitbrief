@@ -79,7 +79,7 @@ One allowlist module builds the environment of every runner, readiness probe and
 
 | Child | Builder | What the child gets |
 |---|---|---|
-| Planner, reviewer and implementer of kind `cli`, `shell` or `agent`; readiness probe; catalog probe | `createRunnerSandboxEnv` / `createSandboxEnv` (`src/engine/runners/sandbox-env.ts`), over `createSanitizedChildEnv` | The runtime keys (`LANG`, `LC_*`, `TZ`, `TERM`, `COLORTERM`, `TERM_PROGRAM*`, `NO_COLOR`, `FORCE_COLOR`, `COLUMNS`, `LINES`), a `PATH` with the project's own directories removed, the staged `HOME`, `TMPDIR`, `XDG_*` and caches, and the credential variables of the runner (next table). |
+| Planner, reviewer and implementer of kind `cli`, `shell` or `agent`; readiness probe; catalog probe | `createRunnerSandboxEnv` / `createSandboxEnv` (`src/engine/runners/sandbox-env.ts`), over `createSanitizedChildEnv` | The runtime keys (`LANG`, `LC_*`, `TZ`, `TERM`, `COLORTERM`, `TERM_PROGRAM*`, `NO_COLOR`, `FORCE_COLOR`, `COLUMNS`, `LINES`), a `PATH` with the project's own directories removed, the staged `HOME`, `XDG_*` and caches, a private `TMPDIR` outside the project (`<system tmp>/sb-<hash>`), and the credential variables of the runner (next table). |
 | `customCommands` runner | `resolveCustomRunnerEnvironment` (`src/engine/runners/redaction.ts`) | The runtime keys and the names in the command's `env` list. |
 | Validation gate, the readiness probe of a gate, the `--version` availability probe | `runCommand` (`src/lib/process/spawn/run-command.ts`), no builder | The full SPLITBRIEF environment. |
 | `api` runner | none: the HTTP call runs in process | nothing |

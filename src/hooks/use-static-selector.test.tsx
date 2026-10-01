@@ -125,4 +125,50 @@ describe('useStaticSelector', () => {
 
     ui.unmount();
   });
+
+  it('ignores keys while shouldHandleInput is false and handles them once it opens', async () => {
+    let open = false;
+
+    function GatedHarness({ items }: { items: string[] }) {
+      const [chosen, setChosen] = useState('none');
+      const selector = useStaticSelector({
+        items,
+        shouldHandleInput: () => open,
+        onSelect: (item, index) => setChosen(`${item}@${index}`),
+      });
+      const current = items[selector.selectedIndex] ?? 'none';
+      return <Text>{`current:${current}|chosen:${chosen}`}</Text>;
+    }
+
+    const ui = renderFeature(<GatedHarness items={['alpha', 'beta', 'gamma']} />);
+    await tick(20);
+    expect(ui.lastFrame()).toContain('current:alpha|chosen:none');
+
+    await flushEffects();
+    ui.stdin.write(DOWN);
+    await tick(20);
+    expect(ui.lastFrame()).toContain('current:alpha|chosen:none');
+
+    await flushEffects();
+    ui.stdin.write(ENTER);
+    await tick(20);
+    expect(ui.lastFrame()).toContain('current:alpha|chosen:none');
+
+    open = true;
+    await flushEffects();
+    ui.stdin.write(DOWN);
+    await tick(20);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame()).toContain('current:beta');
+    });
+
+    await flushEffects();
+    ui.stdin.write(ENTER);
+    await tick(20);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame()).toContain('chosen:beta@1');
+    });
+
+    ui.unmount();
+  });
 });

@@ -759,7 +759,7 @@ src/
 │   ├── labeled-row.tsx
 │   ├── markdown.tsx               theme-colored markdown renderer
 │   ├── overlays/                  overlay-panel, text-input-overlay
-│   ├── pickers/                   cursor-cell, cursor-glyph,
+│   ├── pickers/
 │   │                              filtering, scroll-window,
 │   │                              list-viewport,
 │   │                              filterable-list, single-column

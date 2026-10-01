@@ -2,14 +2,15 @@ import { Box, Text, useInput } from 'ink';
 import type { RecoveryAction } from '../../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { borderStyleFor } from '../../../lib/glyphs.js';
-import { SOFT_SEP } from '../../../core/separators.js';
-import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { fitKeyLegend } from '../../../core/key-legend.js';
 import { useTheme } from '../../../components/theme.js';
 import { ListRow } from '../../../components/list-row.js';
 import { ListViewport } from '../../../components/pickers/list-viewport.js';
 import { useStaticSelector } from '../../../hooks/use-static-selector.js';
+import { formatKeyHints, SELECT_HINT } from '../prompt-rows/approval.js';
 import { PromptBody } from './prompt-body.js';
 import {
+  correctionActionFor,
   formatRecoveryPromptSummary,
   getRecoveryPromptActions,
   recoveryActionKey,
@@ -20,6 +21,7 @@ import { countPromptBodyRows } from '../prompt-body-rows.js';
 
 interface ActionItem {
   action: RecoveryAction;
+  key: string;
   label: string;
 }
 
@@ -35,27 +37,27 @@ interface RecoveryMenuProps {
 function actionItems(issue: RecoveryIssue): ActionItem[] {
   return getRecoveryPromptActions(issue).map((action) => ({
     action,
+    key: recoveryActionKey(action),
     label: recoveryMenuLabel(action, issue),
   }));
 }
 
-// The keys are the only instructions the panel gives, so a legend wider than the panel drops the
-// clause it can spare whole — truncation would cut the last key, which is the way out, in half.
-const LEGEND_SPARE_INDEX = 2;
-
-function fitLegend(clauses: readonly string[], width: number): string {
-  const full = clauses.join(SOFT_SEP);
-  if (getTerminalCellWidth(full) <= width) return full;
-  return clauses.filter((_, index) => index !== LEGEND_SPARE_INDEX).join(SOFT_SEP);
-}
-
-function renderAction(item: ActionItem, selected: boolean, recommended: boolean, width: number) {
+function renderAction(
+  item: ActionItem,
+  selected: boolean,
+  recommended: boolean,
+  width: number,
+  keyWidth: number,
+) {
   return (
     <ListRow
       label={item.label}
       width={width}
       state={selected ? 'active' : 'default'}
+      accelerator={item.key}
+      acceleratorWidth={keyWidth}
       metadata={recommended ? 'recommended' : undefined}
+      metadataAfterLabel
       keepWhole="label"
     />
   );
@@ -72,6 +74,7 @@ export function RecoveryMenu({
   const t = useTheme();
   const actions = actionItems(issue);
   const recommended = recommendedRecoveryAction(issue);
+  const keyWidth = actions.reduce((width, item) => Math.max(width, item.key.length), 0);
   const initialAction = Math.max(
     0,
     actions.findIndex((item) => item.action === recommended),
@@ -120,8 +123,14 @@ export function RecoveryMenu({
     { isActive: focused },
   );
 
-  const legend = fitLegend(
-    ['↑↓ select', '⏎ choose', 'letter key acts', 'tab type a reply'],
+  const legend = fitKeyLegend(
+    formatKeyHints([
+      SELECT_HINT,
+      { key: '⏎', verb: 'confirm' },
+      ...(correctionActionFor(issue) === undefined
+        ? []
+        : [{ key: 'tab', verb: 'type a correction' }]),
+    ]),
     innerWidth,
   );
   return (
@@ -149,6 +158,7 @@ export function RecoveryMenu({
           actions={actions}
           selectedIndex={actionSelection.selectedIndex}
           recommended={recommended}
+          keyWidth={keyWidth}
           width={innerWidth}
           rowBudget={listBudget}
           focused={focused}
@@ -165,6 +175,7 @@ function ActionList({
   actions,
   selectedIndex,
   recommended,
+  keyWidth,
   width,
   rowBudget,
   focused,
@@ -172,6 +183,7 @@ function ActionList({
   actions: ActionItem[];
   selectedIndex: number;
   recommended: RecoveryAction | undefined;
+  keyWidth: number;
   width: number;
   rowBudget: number;
   focused: boolean;
@@ -184,7 +196,13 @@ function ActionList({
       rowBudget={rowBudget}
       width={width}
       renderItem={(item, ctx) =>
-        renderAction(item, ctx.isCursor && focused, item.action === recommended, ctx.contentWidth)
+        renderAction(
+          item,
+          ctx.isCursor && focused,
+          item.action === recommended,
+          ctx.contentWidth,
+          keyWidth,
+        )
       }
     />
   );

@@ -26,6 +26,15 @@ describe('buildFinalReviewPrompt', () => {
     expect(parseFinalReview('### Findings\n- **Critical**: None.').findings).toEqual([]);
   });
 
+  it('keeps evidence-record gaps out of Critical findings, stated once', () => {
+    const result = buildFinalReviewPrompt({ spec: SPEC, taskBriefs: TASK_BRIEFS, diff: DIFF });
+    const rule =
+      'A **Critical** finding must name a defect in the code, the tests, or the behavior the diff produces.';
+
+    expect(result.split(rule)).toHaveLength(2);
+    expect(result).toContain('an evidence gap alone never causes `fail`');
+  });
+
   it('includes a drift section heading and content when driftReport is provided', () => {
     const driftSection = 'DRIFT: missing export in src/foo.ts';
     const result = buildFinalReviewPrompt({

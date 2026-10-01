@@ -60,7 +60,12 @@ export function implementerDoneRowBlock(
       header,
       wrappedTextBlock({
         keyPrefix: `${keyPrefix}-summary-1`,
-        text: `${event.file} (+${event.linesAdded} -${event.linesRemoved})`,
+        // A review fix that verified the brief and edited nothing never reads as a code change;
+        // the header above already names the file, so the verdict stands alone and never wraps.
+        text:
+          event.noChange === true
+            ? 'verified · no change needed'
+            : `${event.file} (+${event.linesAdded} -${event.linesRemoved})`,
         width: ctx.width,
         tone: 'textDim',
       }),

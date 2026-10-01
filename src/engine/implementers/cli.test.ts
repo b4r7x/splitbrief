@@ -258,6 +258,92 @@ describe('createCliImplementer (claude-code)', () => {
     expect(result.error).toContain('without changing any files');
   });
 
+  it('a review-fix attempt that changed nothing completes and names the no-op on its done row', async () => {
+    const shimPath = join(shimDir, 'claude');
+    const script = [
+      '#!/bin/bash',
+      'cat > /dev/null',
+      `printf '%s\\n' '{"type":"result","result":"already done"}'`,
+    ].join('\n');
+    writeFileSync(shimPath, `${script}\n`, 'utf8');
+    chmodSync(shimPath, 0o755);
+    const publishDone = vi.fn();
+    const publisher = {
+      publishRunning: vi.fn(),
+      publishCallEvent: vi.fn(),
+      publishDone,
+      publishFailed: vi.fn(),
+      publishWarning: vi.fn(),
+    };
+
+    const implementer = createCliImplementer(cliClaudeImplementer, { publisher });
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config: makeClaudeConfig(),
+      context: { ...defaultContext, dir: projectDir },
+      onOutput: () => {},
+      phase: 'implementing',
+      allowNoChange: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.outcome).toBeUndefined();
+    expect(publishDone).toHaveBeenCalledWith(
+      expect.objectContaining({ linesAdded: 0, linesRemoved: 0, noChange: true }),
+    );
+    expect(publisher.publishWarning).not.toHaveBeenCalled();
+  });
+
+  it('allowNoChange false keeps nothing changed a no-staged-change failure', async () => {
+    const shimPath = join(shimDir, 'claude');
+    const script = [
+      '#!/bin/bash',
+      'cat > /dev/null',
+      `printf '%s\\n' '{"type":"result","result":"nothing to do"}'`,
+    ].join('\n');
+    writeFileSync(shimPath, `${script}\n`, 'utf8');
+    chmodSync(shimPath, 0o755);
+
+    const implementer = createCliImplementer(cliClaudeImplementer);
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config: makeClaudeConfig(),
+      context: { ...defaultContext, dir: projectDir },
+      onOutput: () => {},
+      allowNoChange: false,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.outcome).toBe('no-staged-change');
+  });
+
+  it('a review-fix attempt that changed nothing after a usage limit on stderr is still usage-limit', async () => {
+    const shimPath = join(shimDir, 'claude');
+    const script = [
+      '#!/bin/bash',
+      'cat > /dev/null',
+      `printf '%s\\n' 'error: Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 2h6m30s. (response may be truncated)' >&2`,
+      `printf '%s\\n' '{"type":"result","result":"nothing to do"}'`,
+    ].join('\n');
+    writeFileSync(shimPath, `${script}\n`, 'utf8');
+    chmodSync(shimPath, 0o755);
+
+    const implementer = createCliImplementer(cliClaudeImplementer);
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config: makeClaudeConfig(),
+      context: { ...defaultContext, dir: projectDir },
+      onOutput: () => {},
+      allowNoChange: true,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.outcome).toBe('usage-limit');
+  });
+
   it('a child that changed nothing after a usage limit on stderr is usage-limit', async () => {
     const shimPath = join(shimDir, 'claude');
     // Captured live from `agy -p` on 2026-09-21: the first limit hit exits 0.

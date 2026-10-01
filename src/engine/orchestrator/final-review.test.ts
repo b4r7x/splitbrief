@@ -599,6 +599,42 @@ describe('runFinalReviewPhase', () => {
     expect(failure?.message).toContain(REVIEWER_IDENTITY);
   });
 
+  it('names the review seat, not the planner, on every status it publishes', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+    const reviewer = makePlanner({
+      review: async () => ({ text: 'VERDICT: pass\n', usage: { inputTokens: 1, outputTokens: 1 } }),
+    });
+    const state = {
+      ...allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+      plannerTool: 'claude-code',
+      plannerModel: 'claude-opus-5-5',
+    };
+
+    await runFinalReviewPhase({
+      projectDir,
+      sessionId,
+      config: makeNoValidationConfig({
+        reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-6-astra' },
+      }),
+      callbacks,
+      bus,
+      state,
+      reviewer,
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+    });
+
+    const statuses = events.filter((event) => event.type === 'planner_status');
+    expect(statuses.map((event) => event.status)).toEqual(['running', 'done']);
+    for (const status of statuses) {
+      expect(status).toMatchObject({ tool: 'codex', model: 'gpt-6-astra' });
+    }
+  });
+
   it('does not emit workflow completion when final review is aborted', async () => {
     const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);

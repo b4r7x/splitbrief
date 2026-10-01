@@ -81,6 +81,20 @@ describe('publishPlannerStatus', () => {
     });
   });
 
+  it("never lends the planner's model to another seat's tool", () => {
+    const { bus, events } = makeBusRecorder();
+    const state = {
+      ...createInitialState('test'),
+      plannerTool: 'claude-code',
+      plannerModel: 'opus-4',
+    };
+
+    publishPlannerStatus(bus, state, 'done', { tool: 'codex' });
+
+    expect(events[0]).toMatchObject({ type: 'planner_status', tool: 'codex' });
+    expect(events[0]).not.toHaveProperty('model');
+  });
+
   it('omits tool and model when neither state nor extra provides them', () => {
     const { bus, events } = makeBusRecorder();
 

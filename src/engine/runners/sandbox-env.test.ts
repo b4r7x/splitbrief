@@ -14,8 +14,8 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { userInfo } from 'node:os';
-import { delimiter, dirname, join } from 'node:path';
+import { tmpdir, userInfo } from 'node:os';
+import { basename, delimiter, dirname, join } from 'node:path';
 import { SANDBOX_DIR } from '../../core/paths.js';
 import {
   cliAuthChannelHostStateAccess,
@@ -35,6 +35,7 @@ import {
 } from './sandbox-env.js';
 import { sandboxCredentialValues } from './sandbox-credential-values.js';
 import { bridgedCliStatePresent, clearBridgedCliState } from './sandbox-state-bridge.js';
+import { removeSandboxTempDirs } from './sandbox-state-paths.js';
 import { createRunnerCallCredentialRedactor } from '../calls/status.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
@@ -163,6 +164,74 @@ describe('createSandboxEnv', () => {
     expect(existsSync(join(root, 'home'))).toBe(true);
   });
 
+  itUnix(
+    'puts the temp directory outside the project, short enough for a unix socket',
+    async () => {
+      const projectDir = createTempDir('sandbox-env-tmp');
+      dirs.push(projectDir);
+
+      const env = await createSandboxEnv({ projectDir });
+
+      const tmp = env.TMPDIR as string;
+      expect(env.TMP).toBe(tmp);
+      expect(env.TEMP).toBe(tmp);
+      expect(dirname(tmp)).toBe(realpathSync(tmpdir()));
+      expect(basename(tmp)).toMatch(/^sb-[0-9a-f]{12}$/u);
+      expect(tmp.startsWith(projectDir)).toBe(false);
+      expect(tmp.startsWith(realpathSync(projectDir))).toBe(false);
+      expect(existsSync(join(projectDir, SANDBOX_DIR, 'tmp'))).toBe(false);
+      // tsx binds `<TMPDIR>/tsx-<uid>/<pid>.pipe`, and macOS refuses a unix
+      // socket path over 104 bytes with EADDRINUSE.
+      expect(`${tmp}/tsx-4294967295/4194304.pipe`.length).toBeLessThanOrEqual(104);
+      expect(statSync(tmp).isDirectory()).toBe(true);
+      expect(statSync(tmp).mode & 0o777).toBe(0o700);
+    },
+  );
+
+  it('gives each sandbox root its own temp directory', async () => {
+    const projectDir = createTempDir('sandbox-env-tmp-roots');
+    const otherProjectDir = createTempDir('sandbox-env-tmp-roots-other');
+    dirs.push(projectDir, otherProjectDir);
+
+    const planner = await createSandboxEnv({ projectDir, role: 'planner' });
+    const implementer = await createSandboxEnv({ projectDir, role: 'implementer' });
+    const opencode = await createSandboxEnv({
+      projectDir,
+      role: 'implementer',
+      selectedCli: 'opencode',
+      hostState: 'none',
+    });
+    const otherProject = await createSandboxEnv({ projectDir: otherProjectDir, role: 'planner' });
+
+    const temps = [planner, implementer, opencode, otherProject].map((env) => env.TMPDIR);
+    expect(new Set(temps).size).toBe(4);
+    expect(await createSandboxEnv({ projectDir, role: 'planner' })).toMatchObject({
+      TMPDIR: planner.TMPDIR,
+    });
+  });
+
+  it('removes every temp directory a project sandbox created on teardown', async () => {
+    const projectDir = createTempDir('sandbox-env-tmp-teardown');
+    const otherProjectDir = createTempDir('sandbox-env-tmp-teardown-other');
+    dirs.push(projectDir, otherProjectDir);
+    const unscoped = await createSandboxEnv({ projectDir });
+    const implementer = await createSandboxEnv({
+      projectDir,
+      role: 'implementer',
+      selectedCli: 'opencode',
+      hostState: 'none',
+    });
+    const other = await createSandboxEnv({ projectDir: otherProjectDir, role: 'implementer' });
+    writeFileSync(join(implementer.TMPDIR as string, 'scratch'), 'x');
+
+    removeSandboxTempDirs(projectDir);
+
+    expect(existsSync(unscoped.TMPDIR as string)).toBe(false);
+    expect(existsSync(implementer.TMPDIR as string)).toBe(false);
+    expect(existsSync(other.TMPDIR as string)).toBe(true);
+    expect(existsSync(join(projectDir, SANDBOX_DIR, 'home'))).toBe(true);
+  });
+
   itUnix('does not symlink tool credential dirs into the sandbox HOME', async () => {
     const fakeHome = createTempDir('sandbox-real-home');
     const projectDir = createTempDir('sandbox-env-creds');
@@ -253,9 +322,9 @@ describe('createSandboxEnv', () => {
     expect(env.HOME).toBe(hostHome);
     expect(env.USERPROFILE).toBe(hostHome);
     expect(env.USER).toBe(userInfo().username);
-    // Only the account is real. Everything the sandbox redirects for cache and
-    // temp isolation still points inside the project.
-    expect(env.TMPDIR).toBe(join(root, 'tmp'));
+    // Only the account is real. Everything the sandbox redirects for cache
+    // isolation still points inside the project; temp sits outside every project.
+    expect(env.TMPDIR?.startsWith(projectDir)).toBe(false);
     expect(env.XDG_CONFIG_HOME).toBe(join(root, 'config'));
     expect(env.XDG_DATA_HOME).toBe(join(root, 'data'));
     expect(env.XDG_CACHE_HOME).toBe(join(root, 'cache'));

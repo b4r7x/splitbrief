@@ -1,11 +1,10 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../theme.js';
+import { listRowLead } from '../../../list-row.js';
 import {
   AlignedOptionRow,
   getAlignedOptionLabelWidth,
 } from '../../../pickers/aligned-option-row.js';
-import { CursorCell } from '../../../pickers/cursor-cell.js';
-import { NO_CURSOR } from '../../../pickers/cursor-glyph.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import { CompletionPanel } from '../completion-panel.js';
@@ -55,12 +54,16 @@ export function CommandCompletionMenu({
       renderEmpty={(panelBg) => {
         if (filtered.length > 0) return null;
         if (!fuzzyMatch) {
-          return <Text color={t.textDim}>{`${NO_CURSOR}no matching commands`}</Text>;
+          return <Text color={t.textDim}>{`${listRowLead('default')}no matching commands`}</Text>;
         }
         const labelWidth = getCommandNameWidth([fuzzyMatch.name]);
         return (
           <AlignedOptionRow
-            lead={<CursorCell isCursor={false} dimWhenInactive />}
+            lead={
+              <Box width={2} flexShrink={0}>
+                <Text color={t.accent}>{listRowLead('default')}</Text>
+              </Box>
+            }
             label={fuzzyMatch.name}
             labelWidth={labelWidth}
             labelGap={COMMAND_NAME_GAP}
@@ -94,7 +97,9 @@ function CommandRow({
 
   return (
     <Box width="100%" height={1} overflow="hidden" backgroundColor={rowBg}>
-      <CursorCell isCursor={isSelected} dimWhenInactive />
+      <Box width={2} flexShrink={0}>
+        <Text color={t.accent}>{listRowLead(isSelected ? 'active' : 'default')}</Text>
+      </Box>
       <Box width={nameWidth} flexShrink={0} overflow="hidden" backgroundColor={rowBg}>
         <Text color={isSelected ? t.accent : t.text} bold={isSelected} wrap="truncate-end">
           {cmd.name}

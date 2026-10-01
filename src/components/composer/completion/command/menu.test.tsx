@@ -113,8 +113,8 @@ describe('CommandCompletionMenu', () => {
     expect(commandLines(lines).length).toBeLessThanOrEqual(3);
 
     const helpRow = rowContaining(lines, '/help');
-    expect(helpRow).toContain(glyph('cursor'));
-    expect(helpRow).not.toContain('▌');
+    expect(helpRow).toContain(glyph('liveBar'));
+    expect(helpRow).not.toContain(glyph('cursor'));
     expect(helpRow).toContain('Show help overlay');
 
     expect(
@@ -140,8 +140,8 @@ describe('CommandCompletionMenu', () => {
     expect(commandRows.some((line) => line.includes('/run'))).toBe(true);
 
     const testRow = rowContaining(commandRows, '/test');
-    expect(testRow).toContain(glyph('cursor'));
-    expect(testRow).not.toContain('▌');
+    expect(testRow).toContain(glyph('liveBar'));
+    expect(testRow).not.toContain(glyph('cursor'));
     expect(testRow).toContain('Ctrl+T');
     expect(testRow).not.toContain('[Ctrl+T]');
     expect(lines.filter((line) => line.includes('Ctrl+T'))).toHaveLength(1);

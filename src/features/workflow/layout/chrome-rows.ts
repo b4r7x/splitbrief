@@ -98,7 +98,7 @@ export function getProgressRows(input: {
     return 0;
   if ((input.promptRows ?? 0) > 0) return 0;
   if (!isImplementerPhase(input.phase) && input.phase !== 'final-review') return 0;
-  return buildProgressRowCount(getChromeContentWidth(input.cols));
+  return buildProgressRowCount(getChromeContentWidth(input.cols), input.phase);
 }
 
 // The one measure for chrome rows: the terminal minus the gutter on both sides — the width the rail

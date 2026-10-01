@@ -2,22 +2,19 @@ import { useEffect, useState } from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
 import { ListViewport } from '../../components/pickers/list-viewport.js';
+import { listRowLead } from '../../components/list-row.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { useTheme } from '../../components/theme.js';
-import { glyph } from '../../lib/glyphs.js';
 import type { CrewLabVerdict } from '../../core/crew/labs.js';
 import type { CrewPreset } from '../../core/crew/presets.js';
 import { type CrewRow, crewRowKey } from '../../core/crew/rows.js';
+import { fitKeyLegend } from '../../core/key-legend.js';
 import type { Config } from '../../core/schemas/config.js';
 import { type OverlayDensity, overlayRect } from '../../core/navigation/overlay-rect.js';
 import { BOOT_MANIFEST_TITLE, REFRESHING_TOOLS_TITLE } from '../../core/discovery/copy.js';
 import { BootManifest } from '../../features/runners/boot-manifest.js';
 import { prepareExecution } from '../../engine/runners/prepare-execution/prepare-execution.js';
-import {
-  CREW_MARKER_GUTTER,
-  planSeatBlock,
-  type SeatBlockLayout,
-} from '../../features/crew/format.js';
+import { planSeatBlock, type SeatBlockLayout } from '../../features/crew/format.js';
 import { crewActivate } from '../../features/crew/rows.js';
 import { PresetRowView } from '../../features/crew/preset-row.js';
 import { CrewRowView, CrewVerdictLine } from '../../features/crew/row-view.js';
@@ -52,7 +49,6 @@ const PANEL_CHROME_ROWS = 4;
 /** The note line and the blank line under it. */
 const NOTE_BLOCK_ROWS = 2;
 export const PRESET_SECTION = 'Ready-made crews';
-const CREW_KEYS_HINT = `↑↓ navigate${SOFT_SEP}⏎ change seat${SOFT_SEP}esc quit`;
 const CREW_SECTION = 'Crew';
 const CONTINUE_SECTION = '';
 
@@ -134,9 +130,23 @@ function sectionOf(item: SetupItem): string {
   }
 }
 
+function crewKeysHint(item: SetupItem | undefined): string {
+  if (item === undefined) return '⏎ change seat';
+  switch (item.kind) {
+    case 'preset':
+      return '⏎ use this crew';
+    case 'crew':
+      return '⏎ change seat';
+    case 'continue':
+      return '⏎ continue';
+    default:
+      return assertNever(item);
+  }
+}
+
 /** Continue sits on the same left column as the preset and seat labels. */
 function continueText(isCursor: boolean): string {
-  const gutter = isCursor ? `${glyph('liveBar')} ` : ' '.repeat(CREW_MARKER_GUTTER);
+  const gutter = listRowLead(isCursor ? 'active' : 'default');
   return `${gutter}Continue`;
 }
 
@@ -170,6 +180,8 @@ type DiscoveryPanelProps = Readonly<{
 function DiscoveryPanel({ state, onBack, onRetry, onOpenSettings }: DiscoveryPanelProps) {
   const t = useTheme();
   const hasOverlay = overlayStore.use((snapshot) => snapshot.active !== 'none');
+  const { cols, rows } = terminalSizeStore.use((state) => state);
+  const { innerWidth } = overlayRect({ cols, rows, density: 'compact' });
 
   useInput(
     (input, key) => {
@@ -199,7 +211,7 @@ function DiscoveryPanel({ state, onBack, onRetry, onOpenSettings }: DiscoveryPan
     <OverlayPanel
       title="Tool check failed"
       density="compact"
-      hint={`r retry${SOFT_SEP}esc quit${SOFT_SEP}s settings`}
+      hint={fitKeyLegend(`r retry${SOFT_SEP}esc quit${SOFT_SEP}s settings`, innerWidth)}
     >
       <Text color={t.error}>Your configured tools could not be checked.</Text>
       <Box marginTop={1}>
@@ -209,17 +221,17 @@ function DiscoveryPanel({ state, onBack, onRetry, onOpenSettings }: DiscoveryPan
   );
 }
 
-type CrewStepProps = Readonly<{
+interface CrewStepProps {
   note?: string | undefined;
-  /** The panel's fixed bottom row: the keys at rest, the preparation status while one runs. */
-  hint: string;
+  /** The preparation status while one runs; without one the panel names the focused row's keys. */
+  status?: string | undefined;
   /** While the crew is being prepared the list takes no keys, so esc means cancel that attempt. */
-  inert?: boolean | undefined;
+  inert?: boolean;
   onContinue: (config: Config) => void;
   onExit: () => void;
-}>;
+}
 
-function CrewStep({ note, hint, inert = false, onContinue, onExit }: CrewStepProps) {
+function CrewStep({ note, status, inert = false, onContinue, onExit }: CrewStepProps) {
   const t = useTheme();
   const config = configStore.useConfig();
   const { rows: crewRows, verdict, presets } = useCrew();
@@ -274,6 +286,9 @@ function CrewStep({ note, hint, inert = false, onContinue, onExit }: CrewStepPro
       crewActivate({ target: item, config });
     },
   });
+  const focusedItem = list.filtered[list.selectedIndex];
+  const legend = `↑↓ select${SOFT_SEP}${crewKeysHint(focusedItem)}${SOFT_SEP}esc quit`;
+  const hint = status ?? fitKeyLegend(legend, innerWidth);
 
   return (
     <OverlayPanel title="Set up your crew" density={CREW_PANEL_DENSITY} hint={hint}>
@@ -509,14 +524,15 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
     rememberedStepLabel = `Refresh failed${SOFT_SEP}remembered results`;
   }
 
+  const preparationStatus =
+    checkingStage === null
+      ? undefined
+      : `${preparationFrame} ${checkingStage}${preparing ? `${SOFT_SEP}esc cancel` : ''}`;
+
   return (
     <CrewStep
       {...(rememberedStepLabel !== undefined && { note: rememberedStepLabel })}
-      hint={
-        checkingStage === null
-          ? CREW_KEYS_HINT
-          : `${preparationFrame} ${checkingStage}${preparing ? `${SOFT_SEP}esc cancel` : ''}`
-      }
+      status={preparationStatus}
       inert={checkingStage !== null}
       onContinue={(current) => void finalize(current)}
       onExit={exit}

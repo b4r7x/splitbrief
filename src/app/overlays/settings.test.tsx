@@ -411,7 +411,7 @@ describe('SettingsOverlay', () => {
     const ui = renderAt(100, 40);
     await tick(20);
 
-    expect(stripAnsiStyles(ui.lastFrame())).toContain(`↑↓ navigate · ${hint} · esc close`);
+    expect(stripAnsiStyles(ui.lastFrame())).toContain(`↑↓ select · ${hint} · esc close`);
 
     ui.unmount();
   });
@@ -504,7 +504,7 @@ describe('SettingsOverlay', () => {
 
     expect(speckit).toBeGreaterThan(indexOfLine(lines, 'quick'));
     expect(panelText(lines[speckit + 1] ?? '')).toBe('');
-    expect(lines[speckit + 2]).toContain('↑↓ navigate');
+    expect(lines[speckit + 2]).toContain('↑↓ select');
 
     ui.unmount();
   });

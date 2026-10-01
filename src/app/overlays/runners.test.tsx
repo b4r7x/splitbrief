@@ -293,16 +293,19 @@ function frameText(ui: ReturnType<typeof renderFeature>): string {
 
 const CHECK = glyph('check', 'unicode');
 
-/** The model rows live in the panel cell the Models header opens. */
+/**
+ * The model rows live in the panel cell the Models header opens, under its filter (`›`) and
+ * add-custom (`+`) rows.
+ */
 function modelColumnLines(frame: string): string[] {
   const cellRows = frame.split('\n').map((line) => line.split('│'));
-  const column = cellRows
-    .find((cells) => cells.some((cell) => cell.trim() === 'Models'))
-    ?.findIndex((cell) => cell.trim() === 'Models');
-  if (column === undefined || column < 0) return [];
+  const header = cellRows.findIndex((cells) => cells.some((cell) => cell.trim() === 'Models'));
+  if (header < 0) return [];
+  const column = cellRows[header]?.findIndex((cell) => cell.trim() === 'Models') ?? -1;
   return cellRows
+    .slice(header + 1)
     .map((cells) => cells[column] ?? '')
-    .filter((cell) => cell.trimStart().startsWith('· '));
+    .filter((cell) => cell.trim() !== '' && !/^\s*[›+]/u.test(cell));
 }
 
 function checkedModelLines(frame: string): string[] {

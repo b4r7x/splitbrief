@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ACTIVE_OVERLAYS, ALL_SCREENS } from '../../src/core/navigation/types.js';
 import { configStore } from '../../src/stores/project/config.js';
 import { routerStore } from '../../src/stores/navigation/router.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import {
   listVisualScenarios,
   findVisualScenario,
@@ -70,11 +71,11 @@ describe('visual catalog', () => {
     for (const viewport of REQUIRED_VIEWPORTS) {
       const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
       try {
-        const frame = await handle.waitForCheckpoint();
+        const frame = stripAnsiStyles(await handle.waitForCheckpoint());
         expect(frame).toContain('ready for review');
-        expect(frame).toContain('[c]  continue');
-        expect(frame).toContain('[r]  redo task');
-        expect(frame).toContain('[a]  abort');
+        expect(frame).toContain('c   continue recommended');
+        expect(frame).toContain('r   redo task');
+        expect(frame).toContain('a   abort');
         if (viewport.rows > 18) {
           expect(frame).toContain('worker ollama / qwen');
           expect(frame).toContain('route tight');

@@ -53,7 +53,7 @@ const ESC = '\u001b';
 const ENTER = '\r';
 const DEFAULT_HOME_HINT = '/help · /crew · /settings · /skills · ctrl+k commands';
 const HOME_HINT = '/help · /crew · /settings · /skills · ctrl+r recent · ctrl+k commands';
-const RECENT_SESSIONS_HINT = '↑↓ navigate · ⏎ open · y copy · esc back';
+const RECENT_SESSIONS_HINT = '↑↓ select · ⏎ open · y copy · esc back';
 const CHECKING_STATUS = 'Checking tools · esc cancel';
 const FOCUS_BAR = '▌';
 // Real session-file I/O (saveSummary + load/loadAll) can outlive vi.waitFor's 1s default

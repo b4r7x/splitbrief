@@ -196,6 +196,15 @@ export function updateTaskMap(
     next.set(event.taskId, { ...existing, status: 'pending' });
     return next;
   }
+  // The final review reopened these briefs: until their fix attempts pass, none of them has.
+  if (event.type === 'review_fix_started') {
+    const next = new Map(taskMap);
+    for (const id of event.taskIds) {
+      const existing = next.get(id);
+      if (existing !== undefined) next.set(id, { ...existing, status: 'pending' });
+    }
+    return next;
+  }
   return taskMap;
 }
 

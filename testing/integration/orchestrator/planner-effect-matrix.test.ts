@@ -172,9 +172,12 @@ describe('planner effect matrix — production factories under hostile config', 
       const envLine = readFileSync(marker, 'utf8').split('\n')[0] ?? '';
       const [home, tmpdir, xdgConfig, xdgCache] = envLine.split('|');
       const projectReal = normalizeMacTmpPath(realpathSync(scenario.projectDir)) ?? '';
-      for (const value of [home ?? '', tmpdir ?? '', xdgConfig ?? '', xdgCache ?? '']) {
+      for (const value of [home ?? '', xdgConfig ?? '', xdgCache ?? '']) {
         expect(normalizeMacTmpPath(value)?.startsWith(projectReal)).toBe(true);
       }
+      // The temp dir sits outside every project so a unix socket path under it fits the OS limit.
+      expect(normalizeMacTmpPath(tmpdir ?? '')?.startsWith(projectReal)).toBe(false);
+      expect(tmpdir).toMatch(/\/sb-[0-9a-f]{12}$/);
       expect(normalizeMacTmpPath(home ?? '')).not.toBe(normalizeMacTmpPath(hostileHome));
       expect(await gitStatus(scenario.projectDir)).toEqual([]);
       expect(await readFile(join(siblingDir, 'marker.txt'), 'utf8')).toBe('sibling-marker\n');

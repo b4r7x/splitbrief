@@ -201,6 +201,9 @@ const WORKFLOW_IMPLEMENTATION_ADJACENT_NARRATION_ID = scenarioId(
   'workflow-implementation-adjacent-narration',
 );
 const WORKFLOW_REVIEW_ID = scenarioId('workflow-review');
+const WORKFLOW_REVIEW_FIX_ID = scenarioId('workflow-review-fix');
+const WORKFLOW_REVIEW_FIX_NO_CHANGE_ID = scenarioId('workflow-review-fix-no-change');
+const WORKFLOW_FINAL_REVIEW_ID = scenarioId('workflow-final-review');
 const WORKFLOW_APPROVAL_DOCUMENT_ID = scenarioId('workflow-approval-document');
 const WORKFLOW_APPROVAL_PERMISSION_ID = scenarioId('workflow-approval-permission');
 const WORKFLOW_APPROVAL_CONFIRM_ID = scenarioId('workflow-approval-confirm');
@@ -793,6 +796,148 @@ const implementationRetryProjection: WorkflowFixtureProjection = {
   ],
 };
 
+const FIXTURE_PLANNED_BRIEFS = [
+  { id: WORKFLOW_FIXTURE_TASK_ID, title: WORKFLOW_FIXTURE_TEXT.implementationTask, index: 0 },
+  { id: WORKFLOW_FIXTURE_TASK_ID_2, title: 'Register the bounded fixture projection', index: 1 },
+  { id: WORKFLOW_FIXTURE_TASK_ID_3, title: 'Capture the bounded fixture frame', index: 2 },
+] as const;
+
+// The plan announced each brief, so a completion alone marks it passed and times it.
+function fixtureBriefPassed(
+  brief: (typeof FIXTURE_PLANNED_BRIEFS)[number],
+  ts: number,
+): EngineEvent {
+  return {
+    type: 'task_completed',
+    ts,
+    phase: 'implementing',
+    taskId: brief.id,
+    title: brief.title,
+    method: 'local',
+    retries: 0,
+    duration: 120_000,
+    tool: 'ollama',
+    model: FIXED_RUNNER_MODEL,
+  };
+}
+
+function everyBriefPassed(): EngineEvent[] {
+  return [
+    { type: 'workflow_started', ts: FIXED_TS, phase: 'implementing', feature: WORKFLOW_FEATURE },
+    FIXTURE_TASKS_PLANNED,
+    ...FIXTURE_PLANNED_BRIEFS.map((brief, index) =>
+      fixtureBriefPassed(brief, FIXED_TS + 100 * (index + 1)),
+    ),
+  ];
+}
+
+/** Every brief passed once; the final review reopened the second, and its fix attempt is building. */
+const reviewFixProjection: WorkflowFixtureProjection = {
+  scenarioId: WORKFLOW_REVIEW_FIX_ID,
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  get events(): EngineEvent[] {
+    const second = FIXTURE_PLANNED_BRIEFS[1];
+    return [
+      ...everyBriefPassed(),
+      {
+        type: 'review_fix_started',
+        ts: FIXED_TS + 400,
+        phase: 'implementing',
+        cycle: 1,
+        taskIds: [second.id],
+      },
+      {
+        type: 'task_started',
+        ts: FIXED_TS + 410,
+        phase: 'implementing',
+        taskId: second.id,
+        title: second.title,
+        index: second.index,
+        total: 3,
+        file: WORKFLOW_FIXTURE_SECOND_FILE,
+        action: 'modify',
+        tool: 'ollama',
+        model: FIXED_RUNNER_MODEL,
+      },
+    ];
+  },
+};
+
+/** The reopened brief's fix attempt verified the finding and edited nothing, then passed its gates. */
+const reviewFixNoChangeProjection: WorkflowFixtureProjection = {
+  scenarioId: WORKFLOW_REVIEW_FIX_NO_CHANGE_ID,
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  get events(): EngineEvent[] {
+    const second = FIXTURE_PLANNED_BRIEFS[1];
+    return [
+      ...everyBriefPassed(),
+      {
+        type: 'review_fix_started',
+        ts: FIXED_TS + 400,
+        phase: 'implementing',
+        cycle: 1,
+        taskIds: [second.id],
+      },
+      {
+        type: 'implementer_generate_done',
+        ts: FIXED_TS + 420,
+        phase: 'implementing',
+        taskId: second.id,
+        file: WORKFLOW_FIXTURE_SECOND_FILE,
+        linesAdded: 0,
+        linesRemoved: 0,
+        duration: 48_000,
+        noChange: true,
+      },
+      fixtureBriefPassed(second, FIXED_TS + 430),
+    ];
+  },
+};
+
+/** Every brief passed; the review seat, on another tool than the build, judges the run. */
+const finalReviewProjection: WorkflowFixtureProjection = {
+  scenarioId: WORKFLOW_FINAL_REVIEW_ID,
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  config: { reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-6-astra' } },
+  get events(): EngineEvent[] {
+    return [
+      ...everyBriefPassed(),
+      {
+        type: 'planner_status',
+        ts: FIXED_TS + 500,
+        phase: 'final-review',
+        status: 'running',
+        tool: 'codex',
+        model: 'gpt-6-astra',
+      },
+      {
+        type: 'runner_call_started',
+        ts: FIXED_TS + 520,
+        phase: 'final-review',
+        callId: 'visual-review-call-001',
+        role: 'review',
+        backendKind: 'cli',
+        runnerName: 'codex',
+        model: 'gpt-6-astra',
+        attempt: 1,
+        sequence: 0,
+      },
+      {
+        type: 'planner_text',
+        ts: FIXED_TS + 540,
+        phase: 'final-review',
+        text: 'Reading the run diff against the spec before the verdict.',
+      },
+    ];
+  },
+};
+
 const implementationEscalatedProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_IMPLEMENTATION_ESCALATED_ID,
   feature: WORKFLOW_FEATURE,
@@ -1098,7 +1243,7 @@ const approvalConfirmProjection: WorkflowFixtureProjection = {
   approval: {
     tier: 'confirm',
     actionClass: 'destructive',
-    actionDescription: '.splitbrief/config.yaml',
+    actionDescription: '.splitbrief/state.json',
     answer: WORKFLOW_FIXTURE_TEXT.reviewAnswer,
   },
 };
@@ -2501,6 +2646,9 @@ const projections = [
   briefsApprovedProjection,
   implementationProjection,
   implementationRetryProjection,
+  reviewFixProjection,
+  reviewFixNoChangeProjection,
+  finalReviewProjection,
   implementationEscalatedProjection,
   implementationNarrationProjection,
   implementationAdjacentNarrationProjection,

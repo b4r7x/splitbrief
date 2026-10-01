@@ -37,7 +37,7 @@ describe('StopSheet', () => {
     stopStore.__testReset();
   });
 
-  it('prints every row, the no-revert promise and the three navigation keys', async () => {
+  it('prints every row, the no-revert promise and the shared navigation keys', async () => {
     const ui = renderSheet();
     await tick();
     const frame = ui.lastFrame() ?? '';
@@ -47,7 +47,39 @@ describe('StopSheet', () => {
     expect(frame).toContain('Pause after this brief');
     expect(frame).toContain('End run');
     expect(frame).toContain('Changes and draft stay.');
-    expect(frame).toContain('↑↓ select · enter confirm · esc stop · tab back');
+    expect(frame).toContain('↑↓ select · ⏎ confirm · esc stop · tab close');
+    ui.unmount();
+  });
+
+  it('names esc back to sessions while the parked rows include the way home', async () => {
+    const ui = renderSheet([
+      {
+        id: 'resume',
+        label: 'Resume',
+        consequence: 'continue this run; keep the unsent draft',
+      },
+      {
+        id: 'leave',
+        label: 'Back to sessions',
+        consequence: 'return home; keep the run and draft',
+      },
+    ]);
+    await tick();
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('↑↓ select · ⏎ confirm · esc back · tab close');
+    expect(frame).not.toContain('esc stop');
+    ui.unmount();
+  });
+
+  it('drops whole legend keys instead of wrapping them on a narrow terminal', async () => {
+    terminalSizeStore.__testReset({ cols: 48, rows: 24, isSmall: true });
+    const ui = renderSheet();
+    await tick();
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('↑↓ select · ⏎ confirm · esc stop');
+    expect(frame).not.toContain('tab close');
     ui.unmount();
   });
 

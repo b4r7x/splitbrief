@@ -539,4 +539,105 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       ),
     ).toBeUndefined();
   }, 60_000);
+
+  it('absorbs an edit to a done dependency on continue, so a restart on the same bytes asks nothing', async () => {
+    const { projectDir, sessionId } = setupProject();
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(join(projectDir, 'src/dependency.ts'), 'original\n');
+    const dependency = makeTask({ id: 'T001', file: 'src/dependency.ts', status: 'done' });
+    const current = makeTask({ id: 'T002', file: 'src/current.ts', dependsOn: ['T001'] });
+    const baseline = serializeChangedFilesBaseline(await captureChangedFilesBaseline(projectDir));
+    writeFileSync(join(projectDir, 'src/dependency.ts'), 'user edit\n');
+
+    let stateAtBrief: WorkflowState | null = null;
+    const implementer = makeImplementer({
+      capabilities: { writesFiles: 'direct' },
+      implement: vi
+        .fn()
+        .mockImplementation(async ({ projectDir: runDir }: { projectDir: string }) => {
+          stateAtBrief ??= loadState({ projectDir, sessionId });
+          mkdirSync(join(runDir, 'src'), { recursive: true });
+          writeFileSync(join(runDir, 'src/current.ts'), 'implementation for T002\n');
+          return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
+        }),
+    });
+    const onUserEditConflict = vi.fn().mockResolvedValue('continue-unrelated');
+    const { callbacks } = makeCallbacks({ onUserEditConflict });
+    const { bus } = makeBusRecorder();
+    const initialState: WorkflowState = {
+      ...makeImplState([dependency, current]),
+      currentTaskIndex: 1,
+      changedFilesBaseline: baseline,
+    };
+    saveState({ projectDir, sessionId }, initialState);
+
+    const result = await runTaskLoop({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        callbacks,
+        implementer,
+        bus,
+      }),
+      initialState,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(onUserEditConflict).toHaveBeenCalledTimes(1);
+    expect(onUserEditConflict).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'future-task-stale-input',
+        files: ['src/dependency.ts'],
+        affectedTaskIds: ['T001'],
+        currentTaskId: 'T002',
+        safeToContinue: true,
+      }),
+    );
+    expect(result.state.pendingRecovery).toBeUndefined();
+    expect(result.state.currentTaskIndex).toBe(2);
+    expect(stateAtBrief).not.toBeNull();
+    if (!stateAtBrief) return;
+    const absorbed = (stateAtBrief as WorkflowState).changedFilesBaseline?.fingerprints[
+      'src/dependency.ts'
+    ];
+    expect(absorbed).toBeDefined();
+    expect(absorbed).not.toEqual(baseline.fingerprints['src/dependency.ts']);
+
+    const secondAsk = vi.fn().mockResolvedValue('continue-unrelated');
+    const { callbacks: secondCallbacks } = makeCallbacks({ onUserEditConflict: secondAsk });
+    const { bus: secondBus, events } = makeBusRecorder();
+    saveState({ projectDir, sessionId }, stateAtBrief);
+
+    const resumed = await runTaskLoop({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        callbacks: secondCallbacks,
+        implementer: makeImplementer({
+          capabilities: { writesFiles: 'direct' },
+          implement: vi
+            .fn()
+            .mockImplementation(async ({ projectDir: runDir }: { projectDir: string }) => {
+              writeFileSync(join(runDir, 'src/current.ts'), 'implementation for T002\n');
+              return {
+                success: true,
+                output: 'code',
+                usage: { inputTokens: 10, outputTokens: 5 },
+              };
+            }),
+        }),
+        bus: secondBus,
+      }),
+      initialState: stateAtBrief,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(secondAsk).not.toHaveBeenCalled();
+    expect(resumed.state.pendingRecovery).toBeUndefined();
+    expect(events.find((event) => event.type === 'paused_external_changes')).toBeUndefined();
+  }, 60_000);
 });

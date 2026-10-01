@@ -55,11 +55,14 @@ import { reviewKeysStore } from '../../stores/ui/review-keys.js';
 import { composerDraftStore } from '../../stores/ui/composer-draft.js';
 import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';
 import { questionOptions, questionPromptStore } from '../../stores/question-prompt/prompt.js';
-import { formatRecoveryPrompt } from '../../features/workflow/recovery-prompt.js';
+import {
+  correctionActionFor,
+  formatRecoveryPrompt,
+} from '../../features/workflow/recovery-prompt.js';
 import { queuePlaceholder } from '../../features/workflow/input-hints.js';
 import { REVIEW_COMMENT_DRAFT } from '../../core/keybindings/review.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../lib/terminal/typeahead-grace.js';
-import { clamp } from '../../utils/math.js';
+import { navigateIndex } from '../../utils/indexing.js';
 import { sessionSelectDeps } from '../prepare-resume.js';
 import type { readClipboardImage } from '../../core/attachments/clipboard-image.js';
 import type { listProjectFiles } from '../../lib/file-listing.js';
@@ -130,8 +133,8 @@ export function WorkflowScreen({
     // which is the only thing every document gate has to move.
     if (briefListReview && model.navigateBriefReview(direction)) return true;
     if (reviewArtifact === null) return false;
-    const lastRow = reviewDocumentOptions(reviewArtifact).length - 1;
-    setReviewSelected((index) => clamp(index + (direction === 'down' ? 1 : -1), 0, lastRow));
+    const optionCount = reviewDocumentOptions(reviewArtifact).length;
+    setReviewSelected((index) => navigateIndex(direction, index, optionCount));
     return true;
   };
 
@@ -323,8 +326,10 @@ export function WorkflowScreen({
             commands={commands}
             mode={model.inputMode.mode}
             inputHint={
-              recoveryPromptOpen
-                ? 'Type a correction, or tab to choose an action…'
+              recoveryPromptOpen && recoveryIssue !== null
+                ? correctionActionFor(recoveryIssue) === undefined
+                  ? 'Tab to choose an action…'
+                  : 'Type a correction, or tab to choose an action…'
                 : structuredQuestion
                   ? 'New instruction — replaces these questions…'
                   : plannerQuestions !== undefined

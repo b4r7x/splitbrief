@@ -220,6 +220,42 @@ describe('WorkflowScreen chrome calibration', () => {
     ui.unmount();
   });
 
+  it('wraps the document cursor from the first row up to the end-run row', async () => {
+    const reviewPath = join(projectDir, 'wrapped-review.md');
+    writeFileSync(reviewPath, '# Wrapped review\n\nReview body.', 'utf8');
+    let outcome: ApprovalReviewResult | undefined;
+    configStore.__testReset({ config: makeConfig(), projectDir });
+    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
+    navigatePreparedWorkflow(projectDir, 'wrapped review');
+    runWorkflow.mockImplementation(async (opts) => {
+      publishEvent(opts, {
+        type: 'workflow_started',
+        ts: FIXED_TS,
+        phase: 'reviewing-plan',
+        feature: 'wrapped review',
+      });
+      outcome = await opts.callbacks.onApprovalNeeded('plan', reviewPath);
+      return pendingWorkflow();
+    });
+
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+    );
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Wrapped review');
+    });
+
+    await flushEffects();
+    ui.stdin.write('\x1b[A');
+    await flushEffects();
+    ui.stdin.write('\r');
+
+    await vi.waitFor(() => {
+      expect(outcome).toEqual({ approved: false, action: 'end-run' });
+    });
+    ui.unmount();
+  });
+
   it('keeps multiline review arrows in the draft without loading command history', async () => {
     const reviewPath = join(projectDir, 'multiline-review.md');
     writeFileSync(reviewPath, '# Multiline review\n\nReview body.', 'utf8');
@@ -301,8 +337,6 @@ describe('WorkflowScreen chrome calibration', () => {
     await tick();
     expect(outcome).toBeUndefined();
 
-    await flushEffects();
-    ui.stdin.write('\x1b[B');
     await flushEffects();
     ui.stdin.write('\x1b[B');
     await flushEffects();
@@ -667,6 +701,64 @@ describe('WorkflowScreen showing a run at rest', () => {
       'Operator correction: log the error, then rethrow it',
     );
     expect(feedbackStore.get().isError).toBe(false);
+    ui.unmount();
+  });
+
+  it('hints at the panel alone on a halt that takes no typed correction', async () => {
+    const issue = makeRecoveryIssue({
+      reason: 'user-edit-conflict',
+      phase: 'implementing',
+      availableActions: ['pause-run', 'end-run'],
+      recommendedAction: 'pause-run',
+    });
+    const halted = makeWorkflowState({
+      phase: 'implementing',
+      tasks: [makeTask({ status: 'in_progress' })],
+      pendingRecovery: issue,
+    });
+    const record = openRun({
+      status: {
+        kind: 'open',
+        stop: { kind: 'halted', issue },
+        resumeAt: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
+      },
+      hydration: { kind: 'loaded', state: halted },
+    });
+    saveState(record.ref, halted);
+    const base = preparedExecution(projectDir, 'continued run');
+    const prepareResume = vi.fn(async () => ({
+      kind: 'prepared' as const,
+      execution: {
+        ...base,
+        purpose: 'resume' as const,
+        session: { ...base.session, ref: record.ref },
+        runtime: { ...base.runtime, resumeState: halted },
+      },
+    }));
+
+    const ui = renderFeature(
+      <WorkflowScreen
+        commands={[]}
+        onRuntimeCommand={vi.fn()}
+        deps={{
+          runWorkflow,
+          sessionSelect: {
+            loadResumeState: hydrateResume,
+            prepareResume,
+            hydrateRun: async () => {},
+          },
+        }}
+      />,
+    );
+    await flushEffects();
+
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Pause run');
+    });
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Tab to choose an action…');
+    expect(frame).not.toContain('Type a correction, or tab to choose an action…');
     ui.unmount();
   });
 

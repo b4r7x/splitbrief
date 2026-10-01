@@ -282,9 +282,10 @@ describe('runner capability and session matrix — exact tuples, fresh scopes, z
         const envLine = readFileSync(envMarker, 'utf8').split('\n')[0] ?? '';
         const [home, tmp, xdgConfig, xdgCache] = envLine.split('|');
         const projectReal = normalizeMacTmpPath(realpathSync(scenario.projectDir)) ?? '';
-        for (const value of [home ?? '', tmp ?? '', xdgConfig ?? '', xdgCache ?? '']) {
+        for (const value of [home ?? '', xdgConfig ?? '', xdgCache ?? '']) {
           expect(normalizeMacTmpPath(value)?.startsWith(projectReal)).toBe(true);
         }
+        expect(normalizeMacTmpPath(tmp ?? '')?.startsWith(projectReal)).toBe(false);
         expect(await readFile(join(siblingDir, 'marker.txt'), 'utf8')).toBe('sibling-marker\n');
         expect(await gitStatus(scenario.projectDir)).toEqual([]);
       } finally {

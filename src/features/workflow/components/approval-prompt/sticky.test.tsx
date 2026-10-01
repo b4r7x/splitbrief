@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'ink-testing-library';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import { listRowLead } from '../../../../components/list-row.js';
+import { glyph } from '../../../../lib/glyphs.js';
 import { ApprovalPrompt, PROMPT_ZONE_Z } from '../approval-prompt.js';
 import {
   openApprovalPrompt,
@@ -23,17 +25,29 @@ import {
   approvalKeyColumnWidth,
   approvalOptionLabelLines,
   approvalTitle,
+  getApprovalPromptRows,
   getStickyOptionZones,
 } from '../../prompt-rows/approval.js';
 import { approvalTextWidth } from '../../prompt-rows/measure.js';
+import { fitKeyLegend } from '../../../../core/key-legend.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../../lib/terminal/typeahead-grace.js';
 import type { TieredApprovalRequest } from '../../../../core/approval/types.js';
 
+const ENTER = '\r';
 const ESC = '\u001b';
+const UP = '\u001b[A';
+const DOWN = '\u001b[B';
 const PAST_GRACE = PROMPT_TYPEAHEAD_GRACE_MS + 30;
+const bar = listRowLead('active');
 
 function stripColor(frame: string | undefined): string {
   return stripAnsiStyles(frame ?? '');
+}
+
+function frameRows(frame: string | undefined): number {
+  return stripAnsiStyles(frame ?? '')
+    .replace(/\n$/, '')
+    .split('\n').length;
 }
 
 const STICKY_KEY_WIDTH = approvalKeyColumnWidth(STICKY_OPTIONS);
@@ -114,7 +128,30 @@ describe('ApprovalPrompt sticky tier', () => {
     expect(frame).not.toContain('\u0000');
     // The redaction must not cost the panel its answers: every option and the legend still show.
     for (const option of STICKY_OPTIONS) expect(frame).toContain(optionLeadLine(option, 34));
-    expect(frame).toContain(STICKY_HINTS);
+    // 34 columns cannot hold the whole legend, so it sheds the whole tail token rather than
+    // wrapping one of the keys in half.
+    const legend = fitKeyLegend(STICKY_HINTS, approvalTextWidth(34));
+    expect(legend).toBe('↑↓ select · ⏎ confirm');
+    expect(frame).toContain(legend);
+    expect(frame).not.toContain('esc deny');
+
+    await flushEffects();
+    ui.stdin.write(ESC);
+    await expect(decision).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
+    ui.unmount();
+  });
+
+  it('fits the legend to the row budget instead of letting its tail wrap onto another row', async () => {
+    terminalSizeStore.__testReset({ cols: 34, rows: 40, isSmall: true });
+    const ui = renderFeature(<ApprovalPrompt />, { cols: 34, rows: 40 });
+    const decision = openApprovalPrompt(makeStickyRequest('write src/secret.ts'));
+    await tick(PAST_GRACE);
+    await flushEffects();
+
+    const frame = stripColor(ui.lastFrame());
+    expect(frame).toContain(fitKeyLegend(STICKY_HINTS, approvalTextWidth(34)));
+    expect(frame).not.toContain('esc deny');
+    expect(frameRows(ui.lastFrame())).toBe(getApprovalPromptRows(approvalPromptStore.get(), 34));
 
     await flushEffects();
     ui.stdin.write(ESC);
@@ -141,6 +178,101 @@ describe('ApprovalPrompt sticky tier', () => {
     await flushEffects();
     ui.stdin.write('a');
     await expect(decision).resolves.toEqual({ decision: 'allow', scope: 'once' });
+    ui.unmount();
+  });
+
+  it('wraps the highlight through the rows and takes the highlighted one on ⏎', async () => {
+    const ui = render(<ApprovalPrompt />);
+    const decision = openApprovalPrompt(makeStickyRequest('write outside scope'));
+    await tick(PAST_GRACE);
+    await flushEffects();
+
+    expect(stripColor(ui.lastFrame())).toContain(`${bar}a   allow this operation only`);
+
+    // Up from the first row wraps to the last; down from the last wraps back.
+    ui.stdin.write(UP);
+    await tick(20);
+    expect(stripColor(ui.lastFrame())).toContain(`${bar}x   deny`);
+    ui.stdin.write(DOWN);
+    await tick(20);
+    expect(stripColor(ui.lastFrame())).toContain(`${bar}a   allow this operation only`);
+    ui.stdin.write(DOWN);
+    await tick(20);
+    expect(stripColor(ui.lastFrame())).toContain(`${bar}s   allow for this session`);
+
+    ui.stdin.write(ENTER);
+    await expect(decision).resolves.toEqual({ decision: 'allow', scope: 'session' });
+    ui.unmount();
+  });
+
+  it('takes the row a same-render ↓ planted, not the row before it', async () => {
+    const ui = render(<ApprovalPrompt />);
+    const decision = openApprovalPrompt(makeStickyRequest('write outside scope'));
+    await tick(PAST_GRACE);
+    await flushEffects();
+
+    ui.stdin.write(DOWN);
+    ui.stdin.write(ENTER);
+    await expect(decision).resolves.toEqual({ decision: 'allow', scope: 'session' });
+    ui.unmount();
+  });
+
+  it('ignores arrows and ⏎ inside the typeahead grace window, honours them after', async () => {
+    const ui = render(<ApprovalPrompt />);
+    const decision = openApprovalPrompt(makeStickyRequest('write outside scope'));
+    await flushEffects();
+
+    ui.stdin.write(DOWN);
+    ui.stdin.write(ENTER);
+    await tick(20);
+    expect(approvalPromptStore.get().status).toBe('pending');
+    expect(stripColor(ui.lastFrame())).toContain(`${bar}a   allow this operation only`);
+
+    await tick(PAST_GRACE);
+    await flushEffects();
+    ui.stdin.write(DOWN);
+    await tick(20);
+    expect(stripColor(ui.lastFrame())).toContain(`${bar}s   allow for this session`);
+    ui.stdin.write(ENTER);
+    await expect(decision).resolves.toEqual({ decision: 'allow', scope: 'session' });
+    ui.unmount();
+  });
+
+  it('leads the highlighted row with the shared accent bar, never the cursor glyph', async () => {
+    const ui = render(<ApprovalPrompt />);
+    const decision = openApprovalPrompt(makeStickyRequest('write outside scope'));
+    await tick(PAST_GRACE);
+
+    const frame = stripColor(ui.lastFrame());
+    expect(frame).toContain(`${bar}a   allow this operation only`);
+    // Only the highlighted row carries the bar; the others blank the same two cells.
+    expect(frame).toContain('  s   allow for this session');
+    expect(frame).not.toContain(glyph('cursor'));
+
+    await flushEffects();
+    ui.stdin.write(ESC);
+    await expect(decision).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
+    ui.unmount();
+  });
+
+  it('starts a superseding request on the first row again', async () => {
+    const ui = render(<ApprovalPrompt />);
+    const first = openApprovalPrompt(makeStickyRequest('write first.ts'));
+    await tick(PAST_GRACE);
+    await flushEffects();
+
+    ui.stdin.write(DOWN);
+    await tick(20);
+    expect(stripColor(ui.lastFrame())).toContain(`${bar}s   allow for this session`);
+
+    const second = openApprovalPrompt(makeStickyRequest('write second.ts'));
+    await expect(first).resolves.toEqual({ decision: 'deny', reason: 'superseded' });
+    await tick(PAST_GRACE);
+    await flushEffects();
+
+    expect(stripColor(ui.lastFrame())).toContain(`${bar}a   allow this operation only`);
+    ui.stdin.write(ENTER);
+    await expect(second).resolves.toEqual({ decision: 'allow', scope: 'once' });
     ui.unmount();
   });
 

@@ -601,7 +601,7 @@ Stop options · Changes and draft stay.
 ▌ Stop now · stop execution; keep partial changes
   Pause after this brief
   End run
-↑↓ select · enter confirm · esc stop · tab back
+↑↓ select · ⏎ confirm · esc stop · tab close
 ```
 
 **You'll see** the byline report the stop while it happens, then the park:
@@ -942,7 +942,7 @@ Press `Ctrl+K` from any screen.
 │    /refresh            Re-detect available tools                         │
 │   ↓ 15 more                                                              │
 │                                                                          │
-│  ↑↓ navigate · ⏎ run or fill in · esc close                              │
+│  ↑↓ select · ⏎ run or fill in · esc close                                │
 │                                                                          │
 ╰──────────────────────────────────────────────────────────────────────────╯
 ```
@@ -975,22 +975,22 @@ Captured on the workflow screen. Start typing to fuzzy-filter the list. Enter on
 ┃ .splitbrief/state.json                                 ┃
 ┃ this cannot be undone ──────────────────────────────── ┃
 ┃                                                        ┃
-┃ ▸ enter   Confirm                                      ┃
-┃   r       Confirm with a reason                        ┃
-┃   x       Deny                                         ┃
+┃ ▌     Confirm                                          ┃
+┃   r   Confirm with a reason                            ┃
+┃   x   Deny                                             ┃
 ┃                                                        ┃
-┃ esc deny                                               ┃
+┃ ↑↓ select · ⏎ confirm · esc deny                       ┃
 ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 ```
 
 **Steps:**
-1. Press Enter. The write is approved and the evidence trail records that no reason was stated.
-2. To record why instead, press `r` first, type a reason (e.g. `repairing session metadata`), then press Enter.
+1. `↑↓` move the highlight and `⏎` takes the highlighted row; the gate opens on Confirm. Pressing `⏎` approves the write and the evidence trail records that no reason was stated.
+2. To record why instead, move to `r` first, type a reason (e.g. `repairing session metadata`), then press `⏎`.
 
-**Key assignment:** the primary key is Enter only for the `destructive` class. Every other confirm-tier class — `package_change`, or any class you configure as `confirm` — takes `y`. Pressing `y` on a destructive prompt does not confirm it; the prompt answers with `enter confirms this write · esc deny`, which keeps the way out visible at the moment the user mis-keyed.
+**Key assignment:** every confirm-tier gate confirms on `⏎` over the highlighted row. On the `destructive` class the Confirm row carries no key of its own — `y` does not approve a control-plane write; it moves the highlight to Confirm and answers with `⏎ confirms this write · esc deny`, which keeps the way out visible at the moment the user mis-keyed. Every other confirm-tier class — `package_change`, or any class you configure as `confirm` — also confirms on `y`.
 
 **Rejection cases:**
-- `x`, `n`, or Escape → action denied (`user_cancelled`).
+- `x`, `n`, `⏎` on the highlighted `x` row, or Escape → action denied (`user_cancelled`).
 - Keystrokes buffered before the prompt appeared are discarded for 150 ms, so typeahead cannot confirm a write.
 
 **Notes:**

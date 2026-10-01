@@ -14,7 +14,7 @@ import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import type { Session } from '../../../core/schemas/session.js';
 import { _resetMouseZones } from '../../../lib/terminal/mouse-zones.js';
-import { RecentSessionsList } from './recent-sessions-list.js';
+import { RECENT_SESSIONS_HINT, RecentSessionsList } from './recent-sessions-list.js';
 
 const originalPlatform = process.platform;
 
@@ -100,12 +100,16 @@ describe('RecentSessionsList', () => {
     expect(frame).toContain('alpha');
     expect(frame).toContain('bravo');
     expect(frame).toContain('charlie');
-    expect(frame).not.toContain('navigate');
+    expect(frame).not.toContain('↑↓ select');
     expect(frame).not.toContain('Enter resume');
     expect(frame).not.toContain('Esc back');
     expect(frame).toContain(FOCUS_BAR);
     expect(lineIndexContaining(frame, FOCUS_BAR)).toBe(lineIndexContaining(frame, 'alpha'));
     ui.unmount();
+  });
+
+  it('names the select grammar and keys in the recent sessions hint', () => {
+    expect(RECENT_SESSIONS_HINT).toBe('↑↓ select · ⏎ open · y copy · esc back');
   });
 
   it('keeps each focused row on a single line inside a body-width container (no wrap)', async () => {

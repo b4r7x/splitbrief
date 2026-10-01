@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { render } from 'ink-testing-library';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import { listRowLead } from '../../../../components/list-row.js';
+import { glyph } from '../../../../lib/glyphs.js';
 import { ApprovalPrompt } from '../approval-prompt.js';
 import {
   openApprovalPrompt,
@@ -10,21 +12,27 @@ import {
 import { overlayStore } from '../../../../stores/ui/overlay.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../../lib/terminal/typeahead-grace.js';
 import {
+  CONFIRM_NUDGE,
   CONFIRM_QUESTION,
   CONFIRM_REASON_HINTS,
   CONFIRM_REASON_OPTIONAL,
   CONFIRM_REASON_UNSTATED,
+  STICKY_HINTS,
   approvalTitle,
   getApprovalPromptRows,
-  getConfirmChooseHints,
 } from '../../prompt-rows/approval.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
+import { approvalTextWidth } from '../../prompt-rows/measure.js';
+import { fitKeyLegend } from '../../../../core/key-legend.js';
 import { CONFIRM_PHRASE } from '../../../../core/approval/types.js';
 import type { TieredApprovalRequest } from '../../../../core/approval/types.js';
 
 const ENTER = '\r';
 const ESC = '\u001b';
+const UP = '\u001b[A';
+const DOWN = '\u001b[B';
 const PAST_GRACE = PROMPT_TYPEAHEAD_GRACE_MS + 30;
+const bar = listRowLead('active');
 
 function frameRows(frame: string | undefined): number {
   return stripAnsiStyles(frame ?? '')
@@ -95,11 +103,14 @@ describe('ApprovalPrompt confirm tier', () => {
     const frame = stripColor(ui.lastFrame());
     expect(frame).not.toContain(CONFIRM_PHRASE);
     expect(frame).not.toContain('to proceed');
-    expect(frame).toContain('enter   Confirm');
-    // `enter` is five columns and `r` is one, so the label column is padded to the widest key.
-    expect(frame).toContain('r       Confirm with a reason');
-    expect(frame).toContain('x       Deny');
+    // A destructive Confirm row carries no accelerator key, so its key cell is blank and the
+    // label column is set by `r` and `x`.
+    expect(frame).toContain(`${bar}    Confirm`);
+    expect(frame).toContain('r   Confirm with a reason');
+    expect(frame).toContain('x   Deny');
     expect(frame).toContain('this cannot be undone');
+    expect(frame).toContain(STICKY_HINTS);
+    expect(frame).not.toContain(glyph('cursor'));
 
     await flushEffects();
     ui.stdin.write(ESC);
@@ -107,11 +118,13 @@ describe('ApprovalPrompt confirm tier', () => {
     ui.unmount();
   });
 
-  it('confirms an irreversible write on enter and records that no reason was stated', async () => {
+  it('starts on Confirm and confirms an irreversible write on ⏎', async () => {
     const ui = render(<ApprovalPrompt />);
     const pending = openApprovalPrompt(makeConfirmRequest('.git/config', 'destructive'));
     await tick(PAST_GRACE);
     await flushEffects();
+
+    expect(stripColor(ui.lastFrame())).toContain(`${bar}    Confirm`);
 
     ui.stdin.write(ENTER);
     await expect(pending).resolves.toEqual({
@@ -122,16 +135,82 @@ describe('ApprovalPrompt confirm tier', () => {
     ui.unmount();
   });
 
-  it('refuses a bare y on an irreversible write and points at enter', async () => {
+  it('moves the highlight with ↑↓, wraps it, and takes the highlighted row on ⏎', async () => {
+    const ui = render(<ApprovalPrompt />);
+    const pending = openApprovalPrompt(makeConfirmRequest('package.json', 'package_change'));
+    await tick(PAST_GRACE);
+    await flushEffects();
+
+    expect(stripColor(ui.lastFrame())).toContain(`${bar}y   Confirm`);
+
+    // Up from the first row wraps to the last; ⏎ then takes Deny.
+    ui.stdin.write(UP);
+    await tick(20);
+    expect(stripColor(ui.lastFrame())).toContain(`${bar}x   Deny`);
+
+    await flushEffects();
+    ui.stdin.write(ENTER);
+    await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
+    ui.unmount();
+  });
+
+  it('takes the r row on ⏎ into the reason step, and that ⏎ does not also submit it', async () => {
     const ui = render(<ApprovalPrompt />);
     const pending = openApprovalPrompt(makeConfirmRequest('.git/config', 'destructive'));
     await tick(PAST_GRACE);
     await flushEffects();
 
+    ui.stdin.write(DOWN);
+    await tick(20);
+    expect(stripColor(ui.lastFrame())).toContain(`${bar}r   Confirm with a reason`);
+
+    ui.stdin.write(ENTER);
+    await tick(20);
+    expect(stripColor(ui.lastFrame())).toContain(CONFIRM_QUESTION);
+    expect(approvalPromptStore.get().status).toBe('pending');
+
+    ui.stdin.write(ESC);
+    await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
+    ui.unmount();
+  });
+
+  it('reads ↑↓ delivered in the same render as ⏎ through the mirrored index', async () => {
+    const ui = render(<ApprovalPrompt />);
+    const pending = openApprovalPrompt(makeConfirmRequest('package.json', 'package_change'));
+    await tick(PAST_GRACE);
+    await flushEffects();
+
+    ui.stdin.write(DOWN);
+    ui.stdin.write(DOWN);
+    ui.stdin.write(ENTER);
+    await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
+    ui.unmount();
+  });
+
+  it('answers a bare y on an irreversible write with the nudge and moves the highlight to Confirm', async () => {
+    const ui = render(<ApprovalPrompt />);
+    const pending = openApprovalPrompt(makeConfirmRequest('.git/config', 'destructive'));
+    await tick(PAST_GRACE);
+    await flushEffects();
+
+    ui.stdin.write(DOWN);
+    await tick(20);
+    expect(stripColor(ui.lastFrame())).toContain(`${bar}r   Confirm with a reason`);
+
     ui.stdin.write('y');
     await tick(20);
     expect(approvalPromptStore.get().status).toBe('pending');
-    expect(stripColor(ui.lastFrame())).toContain('enter confirms this write');
+    const nudged = stripColor(ui.lastFrame());
+    expect(nudged).toContain(CONFIRM_NUDGE);
+    expect(nudged).toContain(`${bar}    Confirm`);
+
+    // Any arrow clears the nudge and moves the highlight.
+    ui.stdin.write(DOWN);
+    await tick(20);
+    const cleared = stripColor(ui.lastFrame());
+    expect(cleared).not.toContain(CONFIRM_NUDGE);
+    expect(cleared).toContain(STICKY_HINTS);
+    expect(cleared).toContain(`${bar}r   Confirm with a reason`);
 
     ui.stdin.write(ESC);
     await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
@@ -143,7 +222,7 @@ describe('ApprovalPrompt confirm tier', () => {
     const pending = openApprovalPrompt(makeConfirmRequest('package.json', 'package_change'));
     await tick(PAST_GRACE);
 
-    expect(stripColor(ui.lastFrame())).toContain('y   Confirm');
+    expect(stripColor(ui.lastFrame())).toContain(`${bar}y   Confirm`);
     await flushEffects();
 
     ui.stdin.write('y');
@@ -194,6 +273,29 @@ describe('ApprovalPrompt confirm tier', () => {
     ui.unmount();
   });
 
+  it('leaves the reason step alone for arrows', async () => {
+    const ui = render(<ApprovalPrompt />);
+    const pending = openApprovalPrompt(makeConfirmRequest('.git/config', 'destructive'));
+    await tick(PAST_GRACE);
+    await flushEffects();
+
+    ui.stdin.write('r');
+    await tick(20);
+    ui.stdin.write(UP);
+    ui.stdin.write(DOWN);
+    await tick(20);
+
+    ui.stdin.write('kept');
+    await tick(20);
+    ui.stdin.write(ENTER);
+    await expect(pending).resolves.toEqual({
+      decision: 'confirm',
+      phrase: CONFIRM_PHRASE,
+      reason: 'kept',
+    });
+    ui.unmount();
+  });
+
   it('denies on x', async () => {
     const ui = render(<ApprovalPrompt />);
     const pending = openApprovalPrompt(makeConfirmRequest('.git/config', 'destructive'));
@@ -211,6 +313,8 @@ describe('ApprovalPrompt confirm tier', () => {
     await flushEffects();
 
     ui.stdin.write('y');
+    ui.stdin.write(DOWN);
+    ui.stdin.write(ENTER);
     await tick(20);
     expect(approvalPromptStore.get().status).toBe('pending');
 
@@ -237,14 +341,14 @@ describe('ApprovalPrompt confirm tier', () => {
       expect(frameRows(ui.lastFrame())).toBe(budget);
 
       // A row count cannot see a clipped line, so the choose step is judged on what it shows: the
-      // title, every option with its padded key cell, and a legend that ends in a whole token.
+      // title, every option with its padded key cell, and the legend its own row.
       const chooseStep = stripColor(ui.lastFrame());
-      const keyCell = actionClass === 'destructive' ? 'enter  ' : 'y  ';
+      const confirmRow = actionClass === 'destructive' ? `${bar}    Confirm` : `${bar}y   Confirm`;
       expect(chooseStep).toContain(approvalTitle(actionClass));
-      expect(chooseStep).toContain(`${keyCell} Confirm`);
+      expect(chooseStep).toContain(confirmRow);
       expect(chooseStep).toContain('Confirm with a reason');
       expect(chooseStep).toContain('Deny');
-      expect(chooseStep).toContain(getConfirmChooseHints(actionClass));
+      expect(chooseStep).toContain(STICKY_HINTS);
       expect(chooseStep).not.toContain('…');
 
       ui.stdin.write('r');
@@ -268,6 +372,9 @@ describe('ApprovalPrompt confirm tier', () => {
     await tick(PAST_GRACE);
     await flushEffects();
 
+    ui.stdin.write(DOWN);
+    await tick(20);
+    expect(stripColor(ui.lastFrame())).toContain(`${bar}r   Confirm with a reason`);
     ui.stdin.write('r');
     await tick(20);
     ui.stdin.write('half a reason');
@@ -280,13 +387,42 @@ describe('ApprovalPrompt confirm tier', () => {
 
     const frame = stripColor(ui.lastFrame());
     expect(frame).toContain('reset repository');
-    expect(frame).toContain('enter   Confirm');
+    expect(frame).toContain(`${bar}    Confirm`);
     expect(frame).not.toContain('half a reason');
     expect(frame).not.toContain('Why are you making this change?');
 
     await flushEffects();
     ui.stdin.write(ESC);
     await expect(second).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
+    ui.unmount();
+  });
+
+  it('fits the choose-step legend and the nudge, shedding whole tail tokens when narrow', async () => {
+    terminalSizeStore.__testReset({ cols: 34, rows: 40 });
+    const ui = renderFeature(<ApprovalPrompt />, { cols: 34, rows: 40 });
+    const pending = openApprovalPrompt(makeConfirmRequest('.git/config', 'destructive'));
+    await tick(PAST_GRACE);
+    await flushEffects();
+
+    const width = approvalTextWidth(34);
+    const legend = fitKeyLegend(STICKY_HINTS, width);
+    expect(legend).toBe('↑↓ select · ⏎ confirm');
+    const chooseStep = stripColor(ui.lastFrame());
+    expect(chooseStep).toContain(legend);
+    expect(chooseStep).not.toContain('esc deny');
+    expect(chooseStep).not.toContain('…');
+
+    ui.stdin.write('y');
+    await tick(20);
+    const nudge = fitKeyLegend(CONFIRM_NUDGE, width);
+    expect(nudge).toBe('⏎ confirms this write');
+    const nudged = stripColor(ui.lastFrame());
+    expect(nudged).toContain(nudge);
+    expect(nudged).not.toContain('esc deny');
+    expect(frameRows(ui.lastFrame())).toBe(getApprovalPromptRows(approvalPromptStore.get(), 34));
+
+    ui.stdin.write(ESC);
+    await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
     ui.unmount();
   });
 });

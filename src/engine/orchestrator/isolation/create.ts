@@ -26,6 +26,7 @@ import {
   withPrependedPathDirectory,
 } from '../../runners/sandbox-env.js';
 import { clearBridgedCliState } from '../../runners/sandbox-state-bridge.js';
+import { removeSandboxTempDirs } from '../../runners/sandbox-state-paths.js';
 import { removeWorktree } from './remove-worktree.js';
 import {
   getChangedFilesSinceSnapshot,
@@ -670,6 +671,7 @@ export function createRunIsolation(opts: {
       // roots, whatever isolation strategy the run ended up on. The worktree's
       // own cache goes with the worktree below.
       await pruneSandboxNpmCache(projectDir);
+      removeSandboxTempDirs(projectDir);
       if (pendingRetirement !== undefined) {
         // A retirement public cleanup could not finish must not be reported as
         // completed; disposal retries it and reports a remaining failure.
@@ -709,6 +711,7 @@ export function createRunIsolation(opts: {
       const dir = worktreeDir;
       if (dir === null || worktreeGit === null) return;
       await clearBridgedCliState(dir);
+      removeSandboxTempDirs(dir);
       // A worktree the run fell back from was created before the fallback and was
       // never handed to an implementer, so it holds nothing to salvage and is
       // removed outright rather than scanned for unpromoted work.
@@ -749,6 +752,7 @@ export function createRunIsolation(opts: {
       // entry is what keeps the dependency link out of it.
       for (const root of resumedSandboxRoots) {
         await rm(root, { recursive: true, force: true });
+        removeSandboxTempDirs(root);
       }
       resumedSandboxRoots.length = 0;
       if (nodeModulesExcludeFile !== null) {

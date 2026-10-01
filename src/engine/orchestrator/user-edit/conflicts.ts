@@ -33,14 +33,16 @@ function classifyFile(opts: {
 
   const dependencyTaskIds = new Set(currentTask.dependsOn);
   const dependencyTasks = allTasks.filter((task) => dependencyTaskIds.has(task.id));
-  const affectedDependencies = dependencyTasks
-    .filter((task) => fileMatchesTask(file, task))
-    .map((task) => task.id);
+  const affectedDependencies = dependencyTasks.filter((task) => fileMatchesTask(file, task));
   if (affectedDependencies.length > 0) {
+    // A dependency that finished hands the edited bytes on as input, the same as a later brief;
+    // one that has not, or a brief already running on the old bytes, still conflicts.
+    const inputOnly =
+      !currentTaskInFlight && affectedDependencies.every((task) => task.status === 'done');
     return {
       file,
-      kind: 'dependency-file-conflict',
-      affectedTaskIds: uniqueSortedIds(affectedDependencies),
+      kind: inputOnly ? 'future-task-stale-input' : 'dependency-file-conflict',
+      affectedTaskIds: uniqueSortedIds(affectedDependencies.map((task) => task.id)),
     };
   }
 

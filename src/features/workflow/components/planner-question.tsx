@@ -4,7 +4,10 @@ import { questionOptions, questionPromptStore } from '../../../stores/question-p
 import { questionMenu, questionRows, QUESTION_ANSWER_ROWS } from '../prompt-rows/question.js';
 import { MultilineInput } from '../../../components/input/multiline-input.js';
 import { useTheme } from '../../../components/theme.js';
-import { borderStyleFor, glyph } from '../../../lib/glyphs.js';
+import { borderStyleFor } from '../../../lib/glyphs.js';
+import { listRowLead } from '../../../components/list-row.js';
+import { formatKeyHints, SELECT_HINT } from '../prompt-rows/approval.js';
+import { fitKeyLegend } from '../../../core/key-legend.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../lib/terminal/typeahead-grace.js';
 import { useFieldSessionOwned } from '../../editor/use-field-session-owned.js';
 import { clamp } from '../../../utils/math.js';
@@ -95,10 +98,26 @@ export function PlannerQuestion({
 
   if (!question) return null;
   const finalQuestion = state.index === (state.questions?.length ?? 0) - 1;
+  const next = finalQuestion ? 'send answers' : 'next';
+  const composerOnly = !(choices.length > 0 || state.index > 0);
   const legend = focused
-    ? `↑↓ choose · enter ${finalQuestion ? 'send answers' : 'next'} · tab write`
+    ? fitKeyLegend(
+        formatKeyHints([SELECT_HINT, { key: '⏎', verb: next }, { key: 'tab', verb: 'write' }]),
+        innerWidth,
+      )
     : writing
-      ? `enter ${finalQuestion ? 'send answers' : 'next'} · ↓ instruction · tab ${choices.length > 0 || state.index > 0 ? 'options' : 'instruction'}`
+      ? fitKeyLegend(
+          formatKeyHints([
+            { key: '⏎', verb: next },
+            ...(composerOnly
+              ? [{ key: '↓/tab', verb: 'instruction' }]
+              : [
+                  { key: '↓', verb: 'instruction' },
+                  { key: 'tab', verb: 'options' },
+                ]),
+          ]),
+          innerWidth,
+        )
       : 'Questions paused · tab to return';
   return (
     <Box
@@ -118,18 +137,19 @@ export function PlannerQuestion({
         {rows.slice(visibleOffset, visibleOffset + bodyHeight).map((row, index) => (
           <Text
             key={visibleOffset + index}
-            color={row.option === selected && focused ? t.accent : t.text}
+            color={
+              row.option === selected && focused ? t.accent : row.navigation ? t.textDim : t.text
+            }
             bold={row.option === undefined && row.text !== ''}
             wrap="truncate-end"
           >
             {row.option === undefined
               ? ''
-              : focused && row.first && row.option === selected
-                ? `${glyph('liveBar')} `
-                : '  '}
+              : listRowLead(focused && row.first && row.option === selected ? 'active' : 'default')}
             {row.text || (row.defaultLabel ? '' : ' ')}
             {row.defaultLabel && (
               <Text color={t.textDim} bold={false}>
+                {' '}
                 {row.defaultLabel}
               </Text>
             )}

@@ -1,4 +1,6 @@
 import type { Config } from '../../../core/schemas/config.js';
+import type { Phase } from '../../../core/schemas/enums.js';
+import { isImplementerPhase } from '../../../core/phases.js';
 import { isApiProviderId } from '../../../core/providers/api-provider-catalog.js';
 import { getProviderDisplayName } from '../../../core/providers/catalog.js';
 import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
@@ -29,8 +31,10 @@ export interface BuildProgress {
   total: number;
   escalated: number;
   failed: number;
-  attempt: { current: number; max: number };
-  eta: BuildProgressEta;
+  /** `null` outside the build: the review seat runs no brief, so there is no attempt to count. */
+  attempt: { current: number; max: number } | null;
+  /** `null` outside the build, where no brief is left to estimate. */
+  eta: BuildProgressEta | null;
   /** What the run is doing: the seat and its operation, or the gate command it is inside. */
   activity: string;
   /** How long ago it last said so. */
@@ -161,16 +165,16 @@ function freshnessOf(input: DeriveBuildProgressInput): Pick<BuildProgress, 'fres
 
 export function deriveBuildProgress(input: DeriveBuildProgressInput): BuildProgress {
   const view = selectTaskListView(input.tasks);
+  const building = isImplementerPhase(input.lifecycle.phase);
   return {
     passed: view.passed,
     total: view.total,
     escalated: view.escalated,
     failed: view.failed,
-    attempt: {
-      current: input.tasks.currentAttempt,
-      max: 1 + (input.config?.workflow.maxRetries ?? 0),
-    },
-    eta: etaFor(input, view.total - view.finished - view.failed),
+    attempt: building
+      ? { current: input.tasks.currentAttempt, max: 1 + (input.config?.workflow.maxRetries ?? 0) }
+      : null,
+    eta: building ? etaFor(input, view.total - view.finished - view.failed) : null,
     activity: activityLine(input),
     ...freshnessOf(input),
   };
@@ -191,30 +195,40 @@ function countsText(progress: BuildProgress): string {
   return parts.join(SOFT_SEP);
 }
 
-/**
- * How many rows the block occupies at a width. The chrome budgets from this without knowing the
- * run's state, so the block never paints over the body it was measured around.
- */
-export function buildProgressRowCount(width: number): number {
+function rowCount(width: number, building: boolean): number {
   if (width >= 120) return 2;
+  if (!building) return 3;
   if (width >= 80) return 4;
   return 5;
 }
 
-/** The same five facts at every width, regrouped rather than dropped. */
+/**
+ * How many rows the block occupies at a width in a phase. The chrome budgets from this without
+ * knowing the rest of the run's state, so the block never paints over the body it was measured
+ * around.
+ */
+export function buildProgressRowCount(width: number, phase: Phase): number {
+  return rowCount(width, isImplementerPhase(phase));
+}
+
+/** The same facts at every width, regrouped rather than dropped. */
 export function buildProgressLines(progress: BuildProgress, width: number): string[] {
   const counts = countsText(progress);
-  const attempt = `attempt ${progress.attempt.current} of ${progress.attempt.max}`;
-  const eta = etaText(progress.eta);
-  switch (buildProgressRowCount(width)) {
+  const perAttempt =
+    progress.attempt === null || progress.eta === null
+      ? []
+      : [`attempt ${progress.attempt.current} of ${progress.attempt.max}`, etaText(progress.eta)];
+  switch (rowCount(width, perAttempt.length > 0)) {
     case 2:
       return [
-        [counts, attempt, eta].join(SOFT_SEP),
+        [counts, ...perAttempt].join(SOFT_SEP),
         [progress.activity, progress.freshness].join(SOFT_SEP),
       ];
+    case 3:
+      return [counts, progress.activity, progress.freshness];
     case 4:
-      return [counts, [attempt, eta].join(SOFT_SEP), progress.activity, progress.freshness];
+      return [counts, perAttempt.join(SOFT_SEP), progress.activity, progress.freshness];
     default:
-      return [counts, attempt, eta, progress.activity, progress.freshness];
+      return [counts, ...perAttempt, progress.activity, progress.freshness];
   }
 }

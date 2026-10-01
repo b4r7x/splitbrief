@@ -91,6 +91,37 @@ describe('TwoColumnPicker', () => {
     },
   );
 
+  it('keeps the column and select keys at 60 columns, dropping refresh first', async () => {
+    terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });
+    const ui = renderFeature(
+      <TwoColumnPicker<Tool, Model>
+        title="Picker"
+        leftProps={{
+          items: TOOLS,
+          getKey: (t) => t.id,
+          renderRow: (t) => <Text>{t.displayName}</Text>,
+        }}
+        rightProps={{
+          items: MODELS_BY_TOOL.alpha ?? [],
+          getKey: (m) => m.id,
+          renderRow: (m) => <Text>{m.displayName}</Text>,
+        }}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+        onRefresh={() => {}}
+      />,
+      { cols: 60, rows: 18 },
+    );
+    await tick(20);
+
+    const hint =
+      (ui.lastFrame() ?? '').split('\n').find((line) => line.includes('⏎ confirm')) ?? '';
+    expect(hint).toContain('←→ column');
+    expect(hint).toContain('↑↓ select');
+    expect(hint).not.toContain('ctrl+r refresh');
+    ui.unmount();
+  });
+
   it('arrow nav emits onLeftChange; Enter on a disabled left is a no-op', async () => {
     const leftChanges: string[] = [];
     const confirms: string[] = [];
@@ -581,11 +612,7 @@ describe('TwoColumnPicker', () => {
           items: TOOLS,
           getKey: (t) => t.id,
           renderRow: (t, { isCursor }) => (
-            <ListRow
-              label={t.displayName}
-              state={isCursor ? 'active' : 'default'}
-              defaultLead="dot"
-            />
+            <ListRow label={t.displayName} state={isCursor ? 'active' : 'default'} />
           ),
         }}
         rightProps={{
@@ -628,7 +655,7 @@ describe('TwoColumnPicker', () => {
               // stops forwarding the flag.
               const state = isCursor ? 'active' : isContext === true ? 'context' : 'default';
               leftCalls.push({ id: t.id, isCursor, isSelected, state });
-              return <ListRow label={t.displayName} state={state} defaultLead="dot" />;
+              return <ListRow label={t.displayName} state={state} />;
             },
           }}
           rightProps={{
@@ -637,7 +664,7 @@ describe('TwoColumnPicker', () => {
             renderRow: (m, { isCursor }) => {
               const state = isCursor ? 'active' : 'default';
               rightCalls.push({ id: m.id, isCursor, state });
-              return <ListRow label={m.displayName} state={state} defaultLead="dot" />;
+              return <ListRow label={m.displayName} state={state} />;
             },
             onLeftChange: (t) => {
               setLeftId(t.id);
@@ -656,7 +683,7 @@ describe('TwoColumnPicker', () => {
     // Initial state: left column is active, 'Alpha' has active liveBar, 'alpha-1' is default
     let frame = ui.lastFrame() ?? '';
     expect(frame).toContain(`${liveBar} Alpha`);
-    expect(frame).toContain('· alpha-1');
+    expect(frame).toContain('alpha-1');
     expect(frame).not.toContain(`${liveBar} alpha-1`);
     expect(leftCalls.findLast((call) => call.id === 'alpha')).toEqual({
       id: 'alpha',
@@ -681,7 +708,6 @@ describe('TwoColumnPicker', () => {
 
     // Right column shows its active cursor
     expect(frame).toContain(`${liveBar} alpha-1`);
-    expect(frame).not.toContain('· alpha-1');
 
     // Press left arrow to return to the tools column
     ui.stdin.write('\u001B[D');
@@ -690,7 +716,7 @@ describe('TwoColumnPicker', () => {
     frame = ui.lastFrame() ?? '';
     // Left row returns to active-bar state and right row drops its cursor
     expect(frame).toContain(`${liveBar} Alpha`);
-    expect(frame).toContain('· alpha-1');
+    expect(frame).toContain('alpha-1');
     expect(frame).not.toContain(`${liveBar} alpha-1`);
     expect(leftCalls.findLast((call) => call.id === 'alpha')).toEqual({
       id: 'alpha',
@@ -1274,8 +1300,7 @@ describe('TwoColumnPicker', () => {
     expect(display.map((slot) => slot.kind)).toEqual(['header', 'row', 'row', 'row', 'row']);
   });
 
-  it('renders launcher without dot lead while non-cursor model row has dot lead', async () => {
-    const DOT_LEAD = '· ';
+  it('renders launcher and non-cursor model rows with a blank lead and no middot', async () => {
     const ui = renderFeature(
       <TwoColumnPicker<Tool, Model>
         title="Picker"
@@ -1289,11 +1314,7 @@ describe('TwoColumnPicker', () => {
           items: MODELS_BY_TOOL.alpha ?? [],
           getKey: (m) => m.id,
           renderRow: (m, { isCursor }) => (
-            <ListRow
-              label={m.displayName}
-              state={isCursor ? 'active' : 'default'}
-              defaultLead="dot"
-            />
+            <ListRow label={m.displayName} state={isCursor ? 'active' : 'default'} />
           ),
           customRow: { onSelect: () => {} },
         }}
@@ -1307,9 +1328,11 @@ describe('TwoColumnPicker', () => {
     const launcherLine = lines.find((line) => line.includes('+ Add custom model…')) ?? '';
     const realModelLine = lines.find((line) => line.includes('alpha-2')) ?? '';
 
-    const rightCell = (line: string) => line.split('│')[3]?.trimStart() ?? '';
-    expect(rightCell(launcherLine).startsWith(DOT_LEAD)).toBe(false);
-    expect(rightCell(realModelLine).startsWith(DOT_LEAD)).toBe(true);
+    const rightCell = (line: string) => line.split('│')[3] ?? '';
+    expect(rightCell(launcherLine)).toMatch(/^\s{3}\+ Add custom model…/);
+    expect(rightCell(realModelLine)).toMatch(/^\s{3}alpha-2/);
+    expect(rightCell(launcherLine)).not.toContain('·');
+    expect(rightCell(realModelLine)).not.toContain('·');
     ui.unmount();
   });
 });

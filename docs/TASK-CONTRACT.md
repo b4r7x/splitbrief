@@ -386,6 +386,8 @@ type EvidenceLedger = {
 
 Strings appended to `observedEvidence` are stable. UI and tests may match on them.
 
+Only the orchestrator appends to `observedEvidence`; no seat can add render or process evidence to it. An `expectedEvidence` entry with no matching observed string is therefore informational. The review packet labels it that way, and the final review files it as a Note at most, never as a Critical finding.
+
 | String | When it is appended |
 |---|---|
 | `task reached done` | Task transitions to `done` (local implementation or escalation success) |

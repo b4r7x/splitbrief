@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { useInput } from 'ink';
+import { useInput, type Key } from 'ink';
 import { clampIndex, navigateIndex } from '../utils/indexing.js';
 
 interface UseStaticSelectorOptions<T> {
@@ -11,6 +11,7 @@ interface UseStaticSelectorOptions<T> {
   isIndexActionable?: ((index: number) => boolean) | undefined;
   /** Row identity for lists re-derived from live state, so the cursor holds a row, not a slot. */
   keyOf?: ((item: T) => string) | undefined;
+  shouldHandleInput?: ((input: string, key: Key) => boolean) | undefined;
 }
 
 interface UseStaticSelectorResult {
@@ -25,6 +26,7 @@ export function useStaticSelector<T>({
   initialIndex = 0,
   isIndexActionable,
   keyOf,
+  shouldHandleInput,
 }: UseStaticSelectorOptions<T>): UseStaticSelectorResult {
   const keyAt = (index: number): string | undefined => {
     const item = items[index];
@@ -52,7 +54,8 @@ export function useStaticSelector<T>({
   };
 
   useInput(
-    (_input, key) => {
+    (input, key) => {
+      if (shouldHandleInput !== undefined && !shouldHandleInput(input, key)) return;
       if (key.upArrow) {
         moveTo(navigateIndex('up', selectedRef.current, items.length));
         return;

@@ -43,7 +43,7 @@ async function waitForReviewPrompt(ui: { lastFrame: () => string | undefined }, 
     // The document gate is its own legend: the panel names the keys, the composer takes a comment.
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('Approve');
-    expect(frame).toContain('e edit');
+    expect(frame).toContain(REVIEW_DOCUMENT_HINTS);
   }, timeout);
   await tick(20);
 }

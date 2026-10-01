@@ -7,6 +7,7 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { configStore } from '../../../src/stores/project/config.js';
+import { escapeRegExp } from '../../../src/utils/regexp.js';
 import { COMMANDS, renderDockedComposer } from '#testing/helpers/composer.js';
 
 const DOWN = '\u001b[B';
@@ -167,7 +168,7 @@ describe('composer integration: completions', () => {
         expect(ui.lastFrame()).toContain('src/app.ts');
         expect(ui.lastFrame()).toContain('src/components/composer/composer.tsx');
         expect(stripAnsiStyles(ui.lastFrame() ?? '')).toMatch(
-          new RegExp(`${glyph('cursor')}\\s+src/app\\.ts`),
+          new RegExp(`${escapeRegExp(glyph('liveBar'))}\\s+src/app\\.ts`),
         );
       }, FILE_SCAN_WAIT_MS);
       await flushEffects();
@@ -176,7 +177,7 @@ describe('composer integration: completions', () => {
       await flushEffects();
       await vi.waitFor(() => {
         expect(stripAnsiStyles(ui.lastFrame() ?? '')).toMatch(
-          new RegExp(`${glyph('cursor')}\\s+src/components/composer/composer\\.tsx`),
+          new RegExp(`${escapeRegExp(glyph('liveBar'))}\\s+src/components/composer/composer\\.tsx`),
         );
       });
       await flushEffects();

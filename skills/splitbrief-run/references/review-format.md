@@ -56,6 +56,7 @@ The review seat is one stateless, read-only call. Lifted from the SPLITBRIEF CLI
     - **Critical**: Breaks functionality or violates a requirement (causes `fail` verdict)
     - **Warning**: Works but has potential issues (allowed in `pass_with_notes`)
     - **Note**: Minor observations, suggestions for improvement (informational only)
+    A **Critical** finding must name a defect in the code, the tests, or the behavior the diff produces. A missing entry in the evidence ledger (expected versus observed evidence), missing renders, screenshots or critiques, and missing process records are at most **Note**s: SPLITBRIEF records only its own validation facts and no seat can add render evidence to the ledger, so an evidence gap alone never causes `fail`.
     Write `None.` after the label of a category with no findings, or leave the label out.
 
     ### Summary
@@ -68,6 +69,7 @@ The review seat is one stateless, read-only call. Lifted from the SPLITBRIEF CLI
 - Exactly one verdict word under `### Verdict`: `pass` | `pass_with_notes` | `fail`.
 - No single verdict word → 1 re-ask, verbatim: "Your reply had no single verdict. Repeat the full review with exactly one verdict word under ### Verdict." — a still-unparseable reply is `fail`.
 - Any Critical finding overrides a `pass`.
+- A Critical finding names a code, test or behavior defect; an evidence-record gap alone is at most a Note and never causes `fail`.
 - A finding belongs to the brief whose `files` names it (path substring); an unmatched finding goes to the last brief.
 <!-- /generated -->
 

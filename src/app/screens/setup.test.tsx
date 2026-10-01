@@ -402,6 +402,92 @@ describe('SetupScreen', () => {
     ui.unmount();
   });
 
+  it('names what ⏎ does on the focused row in the keys legend', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
+    const request = beginDiscovery();
+    freshDiscovery(request, 1);
+
+    const ui = renderFeature(<SetupScreen prepare={async (input) => preparedOutcome(input)} />, {
+      cols: 120,
+      rows: 40,
+    });
+    await flushEffects();
+
+    const [preset] = computeCrewPresets({
+      config: makeConfig(),
+      readyTools: ['claude-code', 'codex'],
+    });
+    if (preset === undefined)
+      throw new Error('Expected a ready-made crew for the installed tools.');
+
+    expect(markedRows(ui)).toEqual([expect.stringContaining(preset.label)]);
+    const continueRow = contentRows(ui).find((row) => row.includes('Continue'));
+    expect(continueRow?.startsWith('  Continue')).toBe(true);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(
+      '↑↓ select · ⏎ use this crew · esc quit',
+    );
+
+    await focusRow(ui, DOWN, 'PLAN');
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('↑↓ select · ⏎ change seat · esc quit');
+
+    await focusRow(ui, DOWN, 'Continue');
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(markedRows(ui).some((row) => row.startsWith(`${CURSOR}Continue`))).toBe(true);
+    expect(frame).toContain('↑↓ select · ⏎ continue · esc quit');
+    expect(frame).not.toContain('↑↓ navigate');
+    ui.unmount();
+  });
+
+  it('sheds whole legend tokens instead of cutting a key at 40 columns', async () => {
+    terminalSizeStore.__testReset({ cols: 40, rows: 20 });
+    const request = beginDiscovery();
+    freshDiscovery(request, 1);
+
+    const ui = renderFeature(<SetupScreen prepare={async (input) => preparedOutcome(input)} />, {
+      cols: 40,
+      rows: 20,
+    });
+    await flushEffects();
+
+    const hintRow = () =>
+      contentRows(ui)
+        .find((row) => row.includes('↑↓ select'))
+        ?.replace(/[│|]/gu, '')
+        .trimEnd();
+    expect(hintRow()).toBe('↑↓ select · ⏎ use this crew');
+    expect(hintRow()).not.toContain('…');
+    expect(hintRow()).not.toContain('esc quit');
+
+    await focusRow(ui, DOWN, 'PLAN');
+    expect(hintRow()).toBe('↑↓ select · ⏎ change seat');
+
+    await focusRow(ui, DOWN, 'Continue');
+    expect(hintRow()).toBe('↑↓ select · ⏎ continue');
+    expect(hintRow()).not.toContain('…');
+    ui.unmount();
+  });
+
+  it('sheds whole failed-discovery keys instead of cutting a word at 40 columns', async () => {
+    terminalSizeStore.__testReset({ cols: 40, rows: 24 });
+    const request = beginDiscovery();
+    failedDiscovery(request, 1);
+
+    const ui = renderFeature(<SetupScreen prepare={async (input) => preparedOutcome(input)} />, {
+      cols: 40,
+      rows: 24,
+    });
+    await flushEffects();
+
+    const hintRow = () =>
+      contentRows(ui)
+        .find((row) => row.includes('r retry'))
+        ?.replace(/[│|]/gu, '')
+        .trimEnd();
+    expect(hintRow()).toBe('r retry · esc quit');
+    expect(hintRow()).not.toContain('…');
+    ui.unmount();
+  });
+
   it('keeps the cursor where it is when backspace arrives on the unfilterable list', async () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 24 });
     const request = beginDiscovery();

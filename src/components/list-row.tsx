@@ -10,12 +10,13 @@ import {
 } from '../utils/display-text.js';
 
 export type ListRowState = 'default' | 'active' | 'context';
-export type ListRowDefaultLead = 'blank' | 'dot';
 
 interface ListRowProps {
   label: string;
   state?: ListRowState | undefined;
-  defaultLead?: ListRowDefaultLead | undefined;
+  accelerator?: string | undefined;
+  acceleratorWidth?: number | undefined;
+  metadataAfterLabel?: boolean | undefined;
   /** The connector drawn between the lead gutter and the label, in the border hue. */
   treeLead?: string | undefined;
   metadata?: string | undefined;
@@ -149,7 +150,9 @@ export function listRowLead(state: ListRowState): string {
 export function ListRow({
   label,
   state = 'default',
-  defaultLead = 'blank',
+  accelerator,
+  acceleratorWidth,
+  metadataAfterLabel,
   treeLead,
   metadata,
   metadataColor,
@@ -165,7 +168,6 @@ export function ListRow({
   const t = useTheme();
   const accentRow = state === 'active';
   const leadColor = accentRow ? t.accent : t.textDim;
-  const lead = state === 'default' && defaultLead === 'dot' ? '· ' : listRowLead(state);
   const labelColor = accentRow ? t.accent : t.text;
   const backgroundColor = hover ? t.selectionBg : undefined;
   const labelWrap = labelTruncate === 'end' ? 'truncate-end' : 'truncate-start';
@@ -177,6 +179,7 @@ export function ListRow({
   const hasTrailing = cleanTrailing !== undefined && cleanTrailing !== '';
   const hasTree = cleanTree !== undefined && cleanTree !== '';
   const leadW = 2;
+  const accelW = acceleratorWidth === undefined ? 0 : acceleratorWidth + 3;
   const checkW = typeof selected === 'boolean' ? 2 : 0;
   const trailW = hasTrailing ? getTerminalCellWidth(cleanTrailing) + 1 : 0;
   const treeW = hasTree ? getTerminalCellWidth(cleanTree) : 0;
@@ -188,7 +191,7 @@ export function ListRow({
       : fitWholeWords({
           label: cleanLabel,
           metadata: hasMetadata ? cleanMeta : undefined,
-          room: width - leadW - treeW - checkW - trailW,
+          room: width - leadW - accelW - treeW - checkW - trailW,
           spares: [...new Set([0, trailSpare, trailSpare + checkSpare])],
           keep: keepWhole,
         });
@@ -199,11 +202,14 @@ export function ListRow({
   const metaRoom =
     width === undefined
       ? undefined
-      : Math.max(0, width - leadW - treeW - checkW - trailW - LIST_ROW_LABEL_FLOOR);
+      : Math.max(0, width - leadW - accelW - treeW - checkW - trailW - LIST_ROW_LABEL_FLOOR);
   const metaFloor =
     width === undefined || !hasTree
       ? 0
-      : Math.min(TREE_METADATA_FLOOR, Math.max(0, width - leadW - treeW - checkW - trailW - 1));
+      : Math.min(
+          TREE_METADATA_FLOOR,
+          Math.max(0, width - leadW - accelW - treeW - checkW - trailW - 1),
+        );
   const metaW =
     whole !== undefined
       ? whole.metadata === undefined
@@ -231,6 +237,7 @@ export function ListRow({
           whole === undefined ? 1 : 0,
           width -
             leadW -
+            accelW -
             treeW -
             (metaW ?? 0) -
             (showTrailing ? trailW : 0) -
@@ -243,19 +250,28 @@ export function ListRow({
       : labelTruncate === 'path' && labelW !== undefined
         ? elidePathLabel(cleanLabel, labelW)
         : cleanLabel;
+  const labelBoxW =
+    metadataAfterLabel === true
+      ? Math.min(getTerminalCellWidth(displayLabel), labelW ?? getTerminalCellWidth(displayLabel))
+      : labelW;
 
   return (
     <Box width={width} height={1} overflow="hidden" backgroundColor={backgroundColor}>
-      <Text color={leadColor}>{lead}</Text>
+      <Text color={leadColor}>{listRowLead(state)}</Text>
+      {acceleratorWidth !== undefined ? (
+        <Box width={accelW} flexShrink={0} backgroundColor={backgroundColor}>
+          <Text color={t.textDim}>{`${(accelerator ?? '').padEnd(acceleratorWidth)}   `}</Text>
+        </Box>
+      ) : null}
       {hasTree ? (
         <Box width={treeW} flexShrink={0} backgroundColor={backgroundColor}>
           <Text color={t.border}>{cleanTree}</Text>
         </Box>
       ) : null}
       <Box
-        {...(labelW === undefined
+        {...(labelBoxW === undefined
           ? { flexGrow: 1, flexShrink: 1 }
-          : { width: labelW, flexShrink: 0 })}
+          : { width: labelBoxW, flexShrink: 0 })}
         minWidth={0}
         overflow="hidden"
         backgroundColor={backgroundColor}

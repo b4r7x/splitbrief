@@ -2,6 +2,7 @@ import { expect, it, vi } from 'vitest';
 import { renderFeature, flushEffects } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import { listRowLead } from '../../../components/list-row.js';
 import { RecoveryMenu } from './recovery-menu.js';
 
 function mount(onResolve: (answer: string) => void, width = 80, issue = makeRecoveryIssue()) {
@@ -28,7 +29,7 @@ function seatSwapIssue() {
   });
 }
 
-it('a letter key acts as the offered row it names', async () => {
+it('a letter key presses the offered row it names', async () => {
   const onResolve = vi.fn();
   const ui = mount(onResolve);
   await flushEffects();
@@ -45,7 +46,7 @@ it('a letter that names no offered row does nothing', async () => {
   ui.stdin.write('x');
   await flushEffects();
   expect(onResolve).not.toHaveBeenCalled();
-  expect(stripAnsiStyles(ui.lastFrame())).toContain('letter key acts');
+  expect(stripAnsiStyles(ui.lastFrame())).toContain('↑↓ select');
   ui.unmount();
 });
 
@@ -116,12 +117,12 @@ it.each([
   const retryRow = stripAnsiStyles(ui.lastFrame())
     .split('\n')
     .find((line) => line.includes('Try again'));
-  expect(retryRow?.replace(/[|│▌]/g, '').replace('recommended', '').trim()).toBe(label);
+  expect(retryRow).toContain(label);
   ui.unmount();
 });
 
 // A panel too narrow for a row's words and its marker keeps the words whole and drops the marker.
-it('keeps every action label whole on a 50-column panel', async () => {
+it('keeps every action label whole on a 56-column panel', async () => {
   const issue = makeRecoveryIssue({
     reason: 'runner-usage-limit',
     seat: 'review',
@@ -131,7 +132,7 @@ it('keeps every action label whole on a 50-column panel', async () => {
     recommendedAction: 'switch-seat',
     switchSeat: { seat: 'plan', candidates: [{ tool: 'claude-code' }] },
   });
-  const ui = mount(vi.fn(), 50, issue);
+  const ui = mount(vi.fn(), 56, issue);
   await flushEffects();
   const frame = stripAnsiStyles(ui.lastFrame());
   const rows = frame
@@ -143,11 +144,65 @@ it('keeps every action label whole on a 50-column panel', async () => {
   ui.unmount();
 });
 
-it('drops a legend clause whole rather than cutting the last key in half', async () => {
-  const ui = mount(vi.fn(), 60);
+it('drops a legend token whole rather than cutting the last key in half', async () => {
+  const ui = mount(vi.fn(), 30);
+  await flushEffects();
+  const legendRow = stripAnsiStyles(ui.lastFrame())
+    .split('\n')
+    .find((line) => line.includes('↑↓ select'));
+  expect(legendRow).toContain('⏎ confirm');
+  expect(legendRow).not.toContain('tab type a correction');
+  expect(legendRow).not.toContain('…');
+  ui.unmount();
+});
+
+it('shows each row its key, padded to the widest offered key', async () => {
+  const issue = makeRecoveryIssue({
+    availableActions: ['skip-current-task', 'pause-run', 'end-run'],
+    recommendedAction: 'pause-run',
+  });
+  const ui = mount(vi.fn(), 80, issue);
   await flushEffects();
   const frame = stripAnsiStyles(ui.lastFrame());
-  expect(frame).toContain('tab type a reply');
-  expect(frame).not.toContain('letter key acts');
+  expect(frame).toContain('s       Skip task');
+  expect(frame).toContain('space   Pause run');
   ui.unmount();
+});
+
+it('stands the recommended marker one cell after the label and highlights that row', async () => {
+  const issue = makeRecoveryIssue({
+    availableActions: ['skip-current-task', 'pause-run', 'end-run'],
+    recommendedAction: 'pause-run',
+  });
+  const ui = mount(vi.fn(), 80, issue);
+  await flushEffects();
+  const row = stripAnsiStyles(ui.lastFrame())
+    .split('\n')
+    .find((line) => line.includes('Pause run'));
+  expect(row).toContain(`${listRowLead('active')}space   Pause run recommended`);
+  ui.unmount();
+});
+
+it('offers the correction key only on a halt that takes typed words', async () => {
+  const accepting = mount(vi.fn());
+  await flushEffects();
+  expect(stripAnsiStyles(accepting.lastFrame())).toContain(
+    '↑↓ select · ⏎ confirm · tab type a correction',
+  );
+  accepting.unmount();
+
+  const refusing = mount(
+    vi.fn(),
+    80,
+    makeRecoveryIssue({
+      reason: 'user-edit-conflict',
+      availableActions: ['pause-run', 'end-run'],
+      recommendedAction: 'pause-run',
+    }),
+  );
+  await flushEffects();
+  const frame = stripAnsiStyles(refusing.lastFrame());
+  expect(frame).toContain('↑↓ select · ⏎ confirm');
+  expect(frame).not.toContain('tab type a correction');
+  refusing.unmount();
 });

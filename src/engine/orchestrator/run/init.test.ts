@@ -1314,4 +1314,59 @@ describe('initializeWorkflow — a halt about files the operator put back', () =
       });
     });
   });
+
+  it.each([
+    { status: 'done', resolved: true },
+    { status: 'failed', resolved: false },
+  ] as const)(
+    're-reads a parked dependency-file halt on a $status dependency as resolved: $resolved',
+    async ({ status, resolved }) => {
+      await withTempDir('splitbrief-init-dependency-halt', async (projectDir) => {
+        createTestGitRepo(projectDir, { 'src/edited.ts': 'original' });
+        const sessionId = 'session-init-dependency-halt';
+        const feature = 'continue past a halt on a finished dependency';
+        const baseline = serializeChangedFilesBaseline(
+          await captureChangedFilesBaseline(projectDir),
+        );
+        const dependency = makeTask({ id: 'T001', status, file: 'src/edited.ts' });
+        const current = makeTask({ id: 'T002', file: 'src/current.ts', dependsOn: ['T001'] });
+        writeFileSync(join(projectDir, 'src/edited.ts'), 'still edited');
+        const events: EngineEvent[] = [];
+
+        const { init, tracked } = await initializeTestWorkflow({
+          projectDir,
+          sessionId,
+          feature,
+          eventSink: (event) => events.push(event),
+          savedState: {
+            ...createInitialState(feature),
+            phase: 'implementing',
+            tasks: [dependency, current],
+            currentTaskIndex: 1,
+            changedFilesBaseline: baseline,
+            pendingRecovery: makeRecoveryIssue({
+              reason: 'user-edit-conflict',
+              phase: 'implementing',
+              taskId: taskId('T002'),
+              files: ['src/edited.ts'],
+              availableActions: ['skip-current-task', 'pause-run', 'end-run'],
+              recommendedAction: 'pause-run',
+            }),
+          },
+        });
+
+        expect(init.ok).toBe(true);
+        if (resolved) {
+          expect(tracked.current?.pendingRecovery).toBeUndefined();
+          expect(events.find((event) => event.type === 'recovery_resolved')).toMatchObject({
+            action: 'continue',
+            outcome: 'continued',
+          });
+        } else {
+          expect(tracked.current?.pendingRecovery).toMatchObject({ reason: 'user-edit-conflict' });
+          expect(events.find((event) => event.type === 'recovery_resolved')).toBeUndefined();
+        }
+      });
+    },
+  );
 });

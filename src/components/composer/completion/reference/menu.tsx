@@ -1,6 +1,6 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../theme.js';
-import { CursorCell } from '../../../pickers/cursor-cell.js';
+import { listRowLead } from '../../../list-row.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import { CompletionPanel } from '../completion-panel.js';
@@ -33,7 +33,9 @@ export function ReferenceCompletionMenu({
       itemKey={(file) => file}
       renderRow={({ item: file, isSelected, rowBg }) => (
         <Box width="100%" height={1} overflow="hidden" backgroundColor={rowBg}>
-          <CursorCell isCursor={isSelected} dimWhenInactive />
+          <Box width={2} flexShrink={0}>
+            <Text color={t.accent}>{listRowLead(isSelected ? 'active' : 'default')}</Text>
+          </Box>
           <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden" backgroundColor={rowBg}>
             <Text
               color={isSelected ? t.accent : t.textDim}

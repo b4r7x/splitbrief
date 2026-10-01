@@ -16,6 +16,7 @@ import { isENOENT } from '../../../lib/process/errors.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { error } from '../../../utils/error.js';
 import { createRunnerSandboxEnv, createSandboxEnv } from '../../runners/sandbox-env.js';
+import { removeSandboxTempDirs } from '../../runners/sandbox-state-paths.js';
 import { captureProjectFileHashes, getChangedFilesSnapshot } from './file-snapshots/capture.js';
 import { readCurrentFileContent } from './file-snapshots/contents.js';
 import {
@@ -185,6 +186,7 @@ export async function createStagedProject(input: {
       targetBaseline,
       cleanup: () => {
         rmSync(stagedRoot, { recursive: true, force: true });
+        removeSandboxTempDirs(stagedProjectDir);
       },
     };
   } catch (err) {

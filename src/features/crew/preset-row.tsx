@@ -1,7 +1,7 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../components/theme.js';
+import { listRowLead } from '../../components/list-row.js';
 import type { CrewPreset } from '../../core/crew/presets.js';
-import { glyph } from '../../lib/glyphs.js';
 import {
   getTerminalCellWidth,
   padTerminalDisplayTextEnd,
@@ -21,7 +21,7 @@ export type PresetRowViewProps = Readonly<{
 
 export function PresetRowView({ preset, isCursor, width, labelWidth }: PresetRowViewProps) {
   const t = useTheme();
-  const gutter = isCursor ? `${glyph('liveBar')} ` : ' '.repeat(CREW_MARKER_GUTTER);
+  const gutter = listRowLead(isCursor ? 'active' : 'default');
 
   const description = truncateTerminalDisplayText(
     preset.description,
@@ -31,7 +31,7 @@ export function PresetRowView({ preset, isCursor, width, labelWidth }: PresetRow
   return (
     <Box>
       <Text color={t.accent}>{gutter}</Text>
-      <Text color={t.accent} bold={isCursor}>
+      <Text color={isCursor ? t.accent : t.text} bold={isCursor}>
         {padTerminalDisplayTextEnd(preset.label, labelWidth)}
       </Text>
       <Text color={t.textDim}>{`${CREW_COLUMN_GAP}${description}`}</Text>

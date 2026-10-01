@@ -1,11 +1,57 @@
 import { describe, expect, it } from 'vitest';
 import { plannerStepsFor } from '../../../core/pipeline-spec/steps.js';
 import {
+  CONFIRM_HINT,
+  CONFIRM_NUDGE,
+  CONFIRM_REASON_HINTS,
+  REVIEW_COMMENT_HINTS,
   REVIEW_DOCUMENT_HINTS,
+  STICKY_HINTS,
+  approvalKeyColumnWidth,
+  getConfirmOptions,
+  getConfirmPrimaryKey,
   getReviewDocumentPromptRows,
   reviewArtifactForPhase,
   reviewDocumentOptions,
 } from './approval.js';
+
+describe('review gate legends', () => {
+  it('keeps the document legend to the keys its option rows do not spell out', () => {
+    expect(REVIEW_DOCUMENT_HINTS).toBe('↑↓ select · ⏎ confirm');
+  });
+
+  it('names only the keys live while a comment is being typed', () => {
+    expect(REVIEW_COMMENT_HINTS).toBe('⏎ send · esc back');
+  });
+});
+
+describe('confirm gate keys and legends', () => {
+  it('takes y on every confirm-tier class except the irreversible one', () => {
+    expect(getConfirmPrimaryKey('package_change')).toBe('y');
+    expect(getConfirmPrimaryKey('write_out_of_scope')).toBe('y');
+    expect(getConfirmPrimaryKey('destructive')).toBe('');
+  });
+
+  it('leaves the Confirm row without a key on a destructive gate, so r sets the column', () => {
+    expect(getConfirmOptions('destructive').map((option) => option.key)).toEqual(['', 'r', 'x']);
+    expect(approvalKeyColumnWidth(getConfirmOptions('destructive'))).toBe(1);
+    expect(getConfirmOptions('package_change').map((option) => option.key)).toEqual([
+      'y',
+      'r',
+      'x',
+    ]);
+  });
+
+  it('teaches ⏎ as confirm and esc as deny on both steps', () => {
+    expect(CONFIRM_HINT).toEqual({ key: '⏎', verb: 'confirm' });
+    expect(CONFIRM_REASON_HINTS).toBe('⏎ confirm · esc deny');
+    expect(STICKY_HINTS).toBe('↑↓ select · ⏎ confirm · esc deny');
+  });
+
+  it('keeps the way out on the refusal a stray y earns', () => {
+    expect(CONFIRM_NUDGE).toBe('⏎ confirms this write · esc deny');
+  });
+});
 
 describe('reviewArtifactForPhase', () => {
   it.each([

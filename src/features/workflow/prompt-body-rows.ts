@@ -1,4 +1,9 @@
-import { sanitizeTerminalDisplayText } from '../../utils/display-text.js';
+import { SOFT_SEP } from '../../core/separators.js';
+import {
+  getTerminalCellWidth,
+  sanitizeTerminalDisplayText,
+  truncateTerminalDisplayText,
+} from '../../utils/display-text.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { wrapHard } from '../../utils/wrap.js';
 import {
@@ -11,6 +16,8 @@ import {
 
 const MIN_PROMPT_WIDTH = 1;
 const GRID_MIN_WIDTH = 52;
+const RECOMMENDED_TAIL = ' recommended';
+const ACTION_ROW_PREFIX = /^\[(.+?)\]\s*/;
 
 export type PromptBodyLine =
   | { kind: 'blank' }
@@ -18,7 +25,7 @@ export type PromptBodyLine =
   | { kind: 'headline'; row: Extract<PromptRow, { kind: 'headline' }> }
   | { kind: 'facts-line'; text: string }
   | { kind: 'facts-grid-pair'; left: string; right: string }
-  | { kind: 'action'; text: string; recommended: boolean }
+  | { kind: 'action'; key: string; keyWidth: number; text: string; recommended: boolean }
   | { kind: 'note'; text: string };
 
 const BLANK_ROW: PromptBodyLine = { kind: 'blank' };
@@ -26,6 +33,19 @@ const FACT_INDENT = '  ';
 
 function clean(text: string, multiline = false): string {
   return sanitizeTerminalDisplayText(text, { preserveLineBreaks: multiline });
+}
+
+export function splitActionRow(text: string): { key: string; text: string } {
+  const match = ACTION_ROW_PREFIX.exec(text);
+  if (match === null) return { key: '', text };
+  return { key: match[1] ?? '', text: text.slice(match[0].length) };
+}
+
+export function fitRecommendedText(text: string, room: number): string {
+  const tailWidth = getTerminalCellWidth(RECOMMENDED_TAIL);
+  if (getTerminalCellWidth(text) + tailWidth <= room) return text;
+  const head = text.split(SOFT_SEP)[0] ?? '';
+  return truncateTerminalDisplayText(head, Math.max(0, room - tailWidth));
 }
 
 // Prompts cross the question-mode UI channel as flat strings (the channel is typed
@@ -132,7 +152,7 @@ function factRows(row: Extract<PromptRow, { kind: 'facts' }>, width: number): Pr
   return rows;
 }
 
-function promptBodyLinesForRow(row: PromptRow, width: number): PromptBodyLine[] {
+function promptBodyLinesForRow(row: PromptRow, width: number, keyWidth: number): PromptBodyLine[] {
   switch (row.kind) {
     case 'blank':
       return [{ kind: 'blank' }];
@@ -142,8 +162,10 @@ function promptBodyLinesForRow(row: PromptRow, width: number): PromptBodyLine[] 
       return [{ kind: 'headline', row }];
     case 'facts':
       return factRows(row, width);
-    case 'action':
-      return [{ kind: 'action', text: row.text, recommended: row.recommended }];
+    case 'action': {
+      const { key, text } = splitActionRow(row.text);
+      return [{ kind: 'action', key, keyWidth, text, recommended: row.recommended }];
+    }
     case 'note':
       return [{ kind: 'note', text: row.text }];
     default:
@@ -153,7 +175,15 @@ function promptBodyLinesForRow(row: PromptRow, width: number): PromptBodyLine[] 
 
 export function promptBodyRows(prompt: string, width: number): PromptBodyLine[] {
   const promptWidth = Math.max(MIN_PROMPT_WIDTH, width);
-  return parsePromptRows(prompt).flatMap((row) => promptBodyLinesForRow(row, promptWidth));
+  const rows = parsePromptRows(prompt);
+  const keyWidth = rows.reduce(
+    (widest, row) =>
+      row.kind === 'action'
+        ? Math.max(widest, getTerminalCellWidth(splitActionRow(row.text).key))
+        : widest,
+    0,
+  );
+  return rows.flatMap((row) => promptBodyLinesForRow(row, promptWidth, keyWidth));
 }
 
 /**

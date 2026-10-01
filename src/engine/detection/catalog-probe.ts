@@ -34,6 +34,7 @@ import {
   createSandboxEnv,
   prependCliExecutableDirectory,
 } from '../runners/sandbox-env.js';
+import { removeSandboxTempDirs } from '../runners/sandbox-state-paths.js';
 import { bridgedCliStatePresent } from '../runners/sandbox-state-bridge.js';
 import {
   authChannelRequiresCredential,
@@ -531,5 +532,6 @@ export async function probeContextCatalog(
     return after.kind === 'resolved' ? outcome : { kind: 'cancelled' };
   } finally {
     await rm(neutralDir, { recursive: true, force: true });
+    removeSandboxTempDirs(neutralDir);
   }
 }

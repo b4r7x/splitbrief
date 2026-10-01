@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
-import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
+import { makeConfig, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import {
   makeBusRecorder,
   makeCallbacks,
@@ -15,14 +15,24 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
+import type { Config } from '../../../core/schemas/config.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { OrchestratorCallbacks, WorkflowSinks } from '../types.js';
+import type { Validator } from '../validation/types.js';
+import type {
+  Implementer,
+  ImplementerOptions,
+  ImplementerResult,
+  RetryOptions,
+} from '../../implementers/types.js';
 import type { ContinuationHolder } from '../continuation.js';
 import { deriveRunStatus, NO_ARTIFACTS } from '../../../core/sessions/run-status.js';
 import { createStdoutTextSink } from '../../events/sinks/stdout-text.js';
 import { runTasksAndReview } from './task-execution.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
+import { createValidator } from '../validation/run.js';
+import { formatRetryPrompt } from '../../spec/prompt-formatter.js';
 
 /** The sink the TUI installs, with the boundary pause pending exactly once. */
 function pauseOnceSinks(): WorkflowSinks {
@@ -94,6 +104,9 @@ function runOptions(opts: {
   onContinuationNeeded?: OrchestratorCallbacks['onContinuationNeeded'] | undefined;
   continuation?: ContinuationHolder | undefined;
   skillsContext?: string | undefined;
+  implementer?: Implementer | undefined;
+  config?: Config | undefined;
+  validator?: Validator | undefined;
 }) {
   const { bus, events } = makeBusRecorder();
   let calls = 0;
@@ -106,20 +119,22 @@ function runOptions(opts: {
       return { text, usage: null };
     },
   });
-  const implementer = makeImplementer({
-    // Each brief writes the file it declared, so a run with more than one brief
-    // does not read as an undeclared write.
-    implement: vi.fn().mockImplementation(async (call: { task: Task }) => {
-      const file = call.task.file ?? 'src/alpha.ts';
-      mkdirSync(join(opts.projectDir, dirname(file)), { recursive: true });
-      writeFileSync(join(opts.projectDir, file), `export const value = ${Date.now()};\n`);
-      return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
-    }),
-  });
+  const implementer =
+    opts.implementer ??
+    makeImplementer({
+      // Each brief writes the file it declared, so a run with more than one brief
+      // does not read as an undeclared write.
+      implement: vi.fn().mockImplementation(async (call: { task: Task }) => {
+        const file = call.task.file ?? 'src/alpha.ts';
+        mkdirSync(join(opts.projectDir, dirname(file)), { recursive: true });
+        writeFileSync(join(opts.projectDir, file), `export const value = ${Date.now()};\n`);
+        return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
+      }),
+    });
   const wctx = makeWctx({
     projectDir: opts.projectDir,
     sessionId: opts.sessionId,
-    config: makeNoValidationConfig({ workflow: {} }),
+    config: opts.config ?? makeNoValidationConfig({ workflow: {} }),
     callbacks: makeCallbacks({
       onComplete: opts.onComplete,
       ...(opts.onContinuationNeeded !== undefined && {
@@ -133,6 +148,7 @@ function runOptions(opts: {
     ...(opts.sinks !== undefined && { sinks: opts.sinks }),
     ...(opts.signal !== undefined && { signal: opts.signal }),
     ...(opts.continuation !== undefined && { continuation: opts.continuation }),
+    ...(opts.validator !== undefined && { validator: opts.validator }),
     ...(opts.skillsContext !== undefined && {
       context: { name: 'demo', dir: opts.projectDir, skillsContext: opts.skillsContext },
     }),
@@ -310,6 +326,243 @@ const CRITICAL_FAIL =
 
 const TWO_CRITICAL_FAIL =
   '### Verdict\nfail\n\n### Findings\n- **Critical**: src/alpha.ts drops the error\n- **Critical**: src/beta.ts drops the error\n';
+
+/**
+ * A direct writer that edits nothing, held to the CLI implementer's zero-change
+ * rule: only an attempt allowed to change nothing may complete that way.
+ */
+function noChangeImplementer(): Implementer {
+  const attempt = async (call: ImplementerOptions): Promise<ImplementerResult> =>
+    call.allowNoChange === true
+      ? { success: true, output: 'already done' }
+      : {
+          success: false,
+          output: 'nothing to do',
+          error: 'Tool implementer (claude-code) exited without changing any files',
+          outcome: 'no-staged-change',
+        };
+  return makeImplementer({
+    implement: vi.fn().mockImplementation(attempt),
+    retry: vi.fn().mockImplementation(attempt),
+  });
+}
+
+describe('runTasksAndReview review fix with nothing to change', { timeout: 120_000 }, () => {
+  it('completes each reopened brief that needs no change and runs the final review again', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [
+      makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' }),
+      makeTask({ id: 'T002', file: 'src/beta.ts', status: 'done' }),
+    ];
+    const implementer = noChangeImplementer();
+    const onComplete = vi.fn();
+    const { events, reviewPrompts, options } = runOptions({
+      projectDir,
+      sessionId,
+      state: reviewedState(tasks, head, tasks.length),
+      reviewText: (call) => (call === 1 ? TWO_CRITICAL_FAIL : '### Verdict\npass\n'),
+      onComplete,
+      implementer,
+    });
+
+    const result = await runTasksAndReview(options);
+
+    expect(events.find((e) => e.type === 'review_fix_started')).toMatchObject({
+      taskIds: ['T001', 'T002'],
+    });
+    expect(vi.mocked(implementer.retry).mock.calls.map(([call]) => call.task.id)).toEqual([
+      'T001',
+      'T002',
+    ]);
+    expect(
+      vi.mocked(implementer.retry).mock.calls.every(([call]) => call.allowNoChange === true),
+    ).toBe(true);
+    expect(
+      events.filter((e) => e.type === 'task_completed').map((e) => 'taskId' in e && e.taskId),
+    ).toEqual(['T001', 'T002']);
+    expect(events.find((e) => e.type === 'task_escalating')).toBeUndefined();
+    expect(result.state.tasks.map((t) => t.status)).toEqual(['done', 'done']);
+    expect(reviewPrompts).toHaveLength(2);
+    expect(result.completed).toBe(true);
+    expect(result.state.reviewStatus).toBe('passed');
+    expect(result.state.pendingRecovery).toBeUndefined();
+    expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it('Try again on a fix attempt parked by the old zero-change rule completes the brief', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' })];
+    const refusing = makeImplementer({
+      retry: vi.fn().mockResolvedValue({
+        success: false,
+        output: 'nothing to do',
+        error: 'Tool implementer (claude-code) exited without changing any files',
+        outcome: 'no-staged-change',
+      }),
+    });
+    const parked = runOptions({
+      projectDir,
+      sessionId,
+      state: reviewedState(tasks, head, tasks.length),
+      reviewText: CRITICAL_FAIL,
+      onComplete: vi.fn(),
+      implementer: refusing,
+    });
+    const halted = await runTasksAndReview(parked.options);
+    expect(halted.state.pendingRecovery?.availableActions).toContain('retry-same-worker');
+
+    const { bus } = makeBusRecorder();
+    const retried = applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state: halted.state,
+      action: 'retry-same-worker',
+      bus,
+    });
+    expect(retried.ok).toBe(true);
+
+    const implementer = noChangeImplementer();
+    const { events, options } = runOptions({
+      projectDir,
+      sessionId,
+      state: retried.state,
+      reviewText: '### Verdict\npass\n',
+      onComplete: vi.fn(),
+      implementer,
+    });
+    const result = await runTasksAndReview(options);
+
+    expect(implementer.retry).toHaveBeenCalledWith(
+      expect.objectContaining({ allowNoChange: true }),
+    );
+    expect(events.find((e) => e.type === 'task_completed')).toMatchObject({ taskId: 'T001' });
+    expect(events.find((e) => e.type === 'task_escalating')).toBeUndefined();
+    expect(result.state.tasks[0]?.status).toBe('done');
+    expect(result.completed).toBe(true);
+    expect(result.state.reviewStatus).toBe('passed');
+  });
+
+  it('still escalates a brief that is not reopened when it changes nothing', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [
+      makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' }),
+      makeTask({ id: 'T002', file: 'src/beta.ts' }),
+    ];
+    const implementer = noChangeImplementer();
+    const { events, options } = runOptions({
+      projectDir,
+      sessionId,
+      state: reviewedState(tasks, head, 1),
+      reviewText: '### Verdict\npass\n',
+      onComplete: vi.fn(),
+      implementer,
+    });
+
+    const result = await runTasksAndReview(options);
+
+    expect(vi.mocked(implementer.implement).mock.calls[0]?.[0].allowNoChange).not.toBe(true);
+    expect(events.find((e) => e.type === 'task_escalating')).toMatchObject({ taskId: 'T002' });
+    expect(events.find((e) => e.type === 'task_completed')).toBeUndefined();
+    expect(result.completed).toBe(false);
+    expect(result.state.tasks[1]?.status).not.toBe('done');
+  });
+});
+
+const REVIEW_FIX_INSTRUCTION = 'These findings come from the final review.';
+
+/** A direct writer that writes its brief's file and records every retry prompt it is given. */
+function promptRecordingImplementer(projectDir: string, prompts: string[]): Implementer {
+  const write = (task: Task): void => {
+    const file = task.file ?? 'src/alpha.ts';
+    mkdirSync(join(projectDir, dirname(file)), { recursive: true });
+    writeFileSync(join(projectDir, file), `export const value = ${Date.now()};\n`);
+  };
+  return makeImplementer({
+    implement: vi.fn().mockImplementation(async (call: ImplementerOptions) => {
+      write(call.task);
+      return { success: true, output: 'code' };
+    }),
+    retry: vi.fn().mockImplementation(async (call: RetryOptions) => {
+      prompts.push(
+        formatRetryPrompt({
+          task: call.task,
+          context: call.context,
+          error: call.error,
+          attempt: call.attempt,
+          writesFiles: 'direct',
+        }),
+      );
+      write(call.task);
+      return { success: true, output: 'fixed' };
+    }),
+  });
+}
+
+describe('runTasksAndReview review fix instruction', { timeout: 120_000 }, () => {
+  it('puts the fixed instruction once, before the findings, in a reopened brief prompt', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' })];
+    const prompts: string[] = [];
+    const { options } = runOptions({
+      projectDir,
+      sessionId,
+      state: reviewedState(tasks, head, tasks.length),
+      reviewText: (call) => (call === 1 ? CRITICAL_FAIL : '### Verdict\npass\n'),
+      onComplete: vi.fn(),
+      implementer: promptRecordingImplementer(projectDir, prompts),
+    });
+
+    await runTasksAndReview(options);
+
+    expect(prompts).toHaveLength(1);
+    const prompt = prompts[0] ?? '';
+    expect(prompt.split(REVIEW_FIX_INSTRUCTION)).toHaveLength(2);
+    expect(prompt).toContain('do not search for those files, and do not leave this directory');
+    expect(prompt).toContain('src/alpha.ts drops the error');
+    expect(prompt.indexOf(REVIEW_FIX_INSTRUCTION)).toBeLessThan(
+      prompt.indexOf('src/alpha.ts drops the error'),
+    );
+  });
+
+  it('leaves the instruction out of a retry after a validation failure', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [makeTask({ id: 'T001', file: 'src/alpha.ts' })];
+    const prompts: string[] = [];
+    let validations = 0;
+    const { options } = runOptions({
+      projectDir,
+      sessionId,
+      state: reviewedState(tasks, head, 0),
+      reviewText: '### Verdict\npass\n',
+      onComplete: vi.fn(),
+      implementer: promptRecordingImplementer(projectDir, prompts),
+      config: makeConfig({
+        validation: { typecheck: true, lint: false, test: false, typecheckCommand: 'noop' },
+        workflow: { maxRetries: 1 },
+      }),
+      validator: {
+        ...createValidator(),
+        runValidation: vi.fn().mockImplementation(async () => {
+          validations += 1;
+          return [
+            {
+              stage: 'typecheck' as const,
+              passed: validations > 1,
+              error: validations > 1 ? undefined : 'TS2322 in src/alpha.ts',
+              failureFiles: validations > 1 ? [] : ['src/alpha.ts'],
+            },
+          ];
+        }),
+      },
+    });
+
+    await runTasksAndReview(options);
+
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain('TS2322 in src/alpha.ts');
+    expect(prompts[0]).not.toContain(REVIEW_FIX_INSTRUCTION);
+  });
+});
 
 describe('runTasksAndReview repair budget', { timeout: 120_000 }, () => {
   it('resumes a persisted cycle 1 with only cycle 2 left, and completes when the re-review passes', async () => {

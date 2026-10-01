@@ -7,7 +7,11 @@ import type { Config } from '../../core/schemas/config.js';
 import { readSpecFileOrEmpty, type SpecMetadata } from '../../core/paths-io.js';
 import { SPEC_FILE, TASKS_FILE } from '../../core/paths.js';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
-import { getRunnerCatalogDisplayName } from '../../core/config/accessors/runner-config.js';
+import {
+  getRunnerCatalogDisplayName,
+  getRunnerDisplayName,
+  getRunnerModelName,
+} from '../../core/config/accessors/runner-config.js';
 import { error } from '../../utils/error.js';
 import { labelError } from '../../utils/format-errors.js';
 import { warnError } from '../../lib/warn.js';
@@ -131,17 +135,27 @@ export async function runFinalReviewPhase(opts: {
     opts.setTrackedState?.(state);
   }
 
+  // The status names the seat that runs the review, which is the planner's only when no reviewer
+  // is configured.
+  const reviewRunner = resolveReviewerRunner(config).runner;
+  const reviewModel = getRunnerModelName(reviewRunner);
+  const reviewSeat = {
+    tool: getRunnerDisplayName(reviewRunner),
+    ...(reviewModel !== undefined && { model: reviewModel }),
+  };
+
   const finalReviewStart = Date.now();
   const interrupted = (): FinalReviewResult => {
     if (phaseTimings) phaseTimings.review = Date.now() - finalReviewStart;
     publishPlannerStatus(bus, state, 'done', {
+      ...reviewSeat,
       duration: Date.now() - finalReviewStart,
       summary: 'Final review aborted',
     });
     return { state, summaryBase, verdict: null, reviewText: '', reviewStatus: 'failed' };
   };
   if (opts.signal?.aborted) return interrupted();
-  publishPlannerStatus(bus, state, 'running');
+  publishPlannerStatus(bus, state, 'running', reviewSeat);
   bus.publish({ type: 'all_tasks_done', ts: Date.now(), phase: state.phase });
 
   let writeStatus: 'written' | 'failed' = 'written';
@@ -197,9 +211,8 @@ export async function runFinalReviewPhase(opts: {
 
     // An API seat reads no file of its own, so it is dispatched only once the
     // packet it is handed carries every required source, whole and untruncated.
-    const seat = resolveReviewerRunner(config).runner;
     let fullPrompt: string;
-    if (seat.kind === 'api') {
+    if (reviewRunner.kind === 'api') {
       const packet = buildApiReviewContext({
         mode: resolveMode({ config, savedMode: state.mode }),
         feature: state.feature,
@@ -213,8 +226,10 @@ export async function runFinalReviewPhase(opts: {
         reviewScope,
         queueText,
         ...(opts.skillsContext !== undefined && { skillsContext: opts.skillsContext }),
-        ...(seat.contextLength !== undefined && { contextLength: seat.contextLength }),
-        ...(seat.model !== undefined && { model: seat.model }),
+        ...(reviewRunner.contextLength !== undefined && {
+          contextLength: reviewRunner.contextLength,
+        }),
+        ...(reviewRunner.model !== undefined && { model: reviewRunner.model }),
       });
       if (packet.kind === 'insufficient-context') {
         throw apiContextError({
@@ -222,7 +237,7 @@ export async function runFinalReviewPhase(opts: {
           seat: 'review',
           cause: packet.cause,
           missingSections: [...packet.missingSections],
-          ...(seat.model !== undefined && { model: seat.model }),
+          ...(reviewRunner.model !== undefined && { model: reviewRunner.model }),
           requiredTokens: packet.requiredTokens,
           availableTokens: packet.availableTokens,
         });
@@ -358,6 +373,7 @@ export async function runFinalReviewPhase(opts: {
   if (phaseTimings) phaseTimings.review = Date.now() - finalReviewStart;
 
   publishPlannerStatus(bus, state, 'done', {
+    ...reviewSeat,
     duration: Date.now() - finalReviewStart,
     ...(writeStatus === 'failed' && { summary: 'Final review failed' }),
   });

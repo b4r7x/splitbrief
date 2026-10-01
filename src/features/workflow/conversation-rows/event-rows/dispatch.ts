@@ -39,6 +39,12 @@ function sentenceCaseIdentifier(value: string): string {
   return words.length === 0 ? words : `${words[0]?.toUpperCase() ?? ''}${words.slice(1)}`;
 }
 
+// The event records the halt's reason and not the escalation verdict, and a planner verdict can
+// stop a brief after one attempt: "retry exhausted" would then claim retries that never ran.
+function recoveryReasonLabel(reason: string): string {
+  return reason === 'retry-exhausted' ? 'Stopped brief' : sentenceCaseIdentifier(reason);
+}
+
 function recoveryOutcomeLabel(value: string): string {
   switch (value) {
     case 'continued':
@@ -101,7 +107,7 @@ export function eventRowBlock(options: {
       return borderedCardRowsBlock({
         keyPrefix,
         label: 'Recovery',
-        value: `Selected ${recoveryActionLabel(event.action, { seat: event.seat })} for ${sentenceCaseIdentifier(event.reason)}`,
+        value: `Selected ${recoveryActionLabel(event.action, { seat: event.seat })} for ${recoveryReasonLabel(event.reason)}`,
         width: ctx.width,
         labelTone: 'textDim',
       });

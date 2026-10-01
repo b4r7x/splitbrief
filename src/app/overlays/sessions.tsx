@@ -15,7 +15,7 @@ import {
 import { filterSession } from '../../core/sessions/search.js';
 import { sessionSelectDeps } from '../prepare-resume.js';
 
-const SESSION_PICKER_HINT = `\u2191\u2193 navigate${SOFT_SEP}type filter${SOFT_SEP}\u23ce open${SOFT_SEP}esc close`;
+const SESSION_PICKER_HINT = `\u2191\u2193 select${SOFT_SEP}type filter${SOFT_SEP}\u23ce open${SOFT_SEP}esc close`;
 
 export function SessionsPicker({ deps = sessionSelectDeps }: { deps?: SessionSelectDeps } = {}) {
   const t = useTheme();

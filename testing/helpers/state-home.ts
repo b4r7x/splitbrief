@@ -1,5 +1,5 @@
 import { afterAll } from 'vitest';
-import { cleanupTempDir, createTempDir } from './temp-dir.js';
+import { cleanupTempDir, createdTempDirs, createTempDir } from './temp-dir.js';
 
 // Run isolation resolves its worktrees under the user state directory
 // ($XDG_STATE_HOME, else ~/.local/state), so any suite reaching runWorkflow
@@ -10,6 +10,10 @@ import { cleanupTempDir, createTempDir } from './temp-dir.js';
 const stateHome = createTempDir('splitbrief-test-state');
 process.env.XDG_STATE_HOME = stateHome;
 
-afterAll(() => {
+afterAll(async () => {
   cleanupTempDir(stateHome);
+  // Imported only now: a static import here would load the module graph before
+  // a test file's `vi.mock` of `node:fs` applies.
+  const { removeSandboxTempDirs } = await import('../../src/engine/runners/sandbox-state-paths.js');
+  for (const dir of createdTempDirs) removeSandboxTempDirs(dir);
 });

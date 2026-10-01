@@ -423,6 +423,54 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-review-fix',
+      title: 'Workflow · a brief the final review reopened',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-fix',
+        title: 'Review fix cycle',
+        kind: 'implementation',
+        marker: '2/3 briefs passed',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-review-fix-no-change',
+      title: 'Workflow · a reopened brief that needed no change',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-fix-no-change',
+        title: 'Review fix verified without a change',
+        kind: 'implementation',
+        marker: 'no change needed',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-final-review',
+      title: 'Workflow · final review running',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'final-review',
+        title: 'Final review',
+        kind: 'implementation',
+        marker: '3/3 briefs passed',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Review transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-implementation-retry',
       title: 'Workflow · brief on its second attempt',
       surface: screenSurface('workflow'),

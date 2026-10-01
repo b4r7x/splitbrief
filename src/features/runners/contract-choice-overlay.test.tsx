@@ -1,13 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import chalk from 'chalk';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import { listRowLead } from '../../components/list-row.js';
+import { getTheme, ThemeProvider } from '../../components/theme.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { glyph } from '../../lib/glyphs.js';
 import { ContractChoiceOverlay } from './contract-choice-overlay.js';
 
 const ARROW_DOWN = '\u001B[B';
+const ARROW_UP = '\u001B[A';
 
 describe('ContractChoiceOverlay', () => {
   beforeEach(() => {
@@ -70,6 +75,62 @@ describe('ContractChoiceOverlay', () => {
     ui.stdin.write('\r');
     await vi.waitFor(() => expect(chosen).toEqual(['agent']));
     ui.unmount();
+  });
+
+  it('wraps up from the first card to the agent contract', async () => {
+    const chosen: string[] = [];
+    const ui = renderFeature(
+      <ContractChoiceOverlay
+        role="planner"
+        initialKind={undefined}
+        onChoose={(kind) => chosen.push(kind)}
+      />,
+    );
+    await flushEffects();
+
+    ui.stdin.write(ARROW_UP);
+    await flushEffects();
+    ui.stdin.write('\r');
+    await vi.waitFor(() => expect(chosen).toEqual(['agent']));
+    ui.unmount();
+  });
+
+  it('leads only the focused card with the accent marker and never a dot', async () => {
+    const originalLevel = chalk.level;
+    chalk.level = 1;
+    try {
+      const ui = renderFeature(
+        <ThemeProvider theme={{ ...getTheme(), accent: 'red' }}>
+          <ContractChoiceOverlay role="planner" initialKind={undefined} onChoose={() => {}} />
+        </ThemeProvider>,
+        { cols: 100, rows: 30 },
+      );
+      await tick(20);
+
+      const frame = ui.lastFrame() ?? '';
+      const text = stripAnsiStyles(frame);
+      const lines = text.split('\n');
+      const rawLines = frame.split('\n');
+      const shellRow = lines.find((line) => line.includes('Output command'));
+      const agentRow = lines.find((line) => line.includes('Direct-write agent'));
+      const rawShellRow = rawLines.find((line) => line.includes('Output command')) ?? '';
+      const rawAgentRow = rawLines.find((line) => line.includes('Direct-write agent')) ?? '';
+
+      expect(shellRow).toContain(`${listRowLead('active')} OUTPUT`);
+      expect(agentRow).toContain('   DIRECT');
+      expect(agentRow).not.toContain(glyph('liveBar'));
+      expect(shellRow).not.toContain('·');
+      expect(agentRow).not.toContain('·');
+      expect(text.split(glyph('liveBar')).length - 1).toBe(1);
+
+      expect(rawShellRow).toContain(`\u001B[31m${listRowLead('active')}`);
+      expect(rawShellRow).toContain('\u001B[31m Output command');
+      expect(rawAgentRow).toContain('\u001B[37m Direct-write agent');
+      expect(rawAgentRow).not.toContain('\u001B[31m');
+      ui.unmount();
+    } finally {
+      chalk.level = originalLevel;
+    }
   });
 
   it('marks the configured contract with a check', async () => {

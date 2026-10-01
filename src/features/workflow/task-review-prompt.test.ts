@@ -74,12 +74,12 @@ describe('task review prompt', () => {
     expect(visible).toContain('evidence task reached done; test passed');
     expect(visible).toContain('worker ollama / qwen / local-small');
     expect(visible).toContain('route fits');
-    expect(visible).toContain('[c]  continue');
-    expect(visible).toContain('[r]  redo task');
-    expect(visible).toContain('[p]  revise-plan <notes>');
-    expect(visible).toContain('[a]  abort');
+    expect(visible).toContain('c   continue recommended');
+    expect(visible).toContain('r   redo task');
+    expect(visible).toContain('p   revise-plan <notes>');
+    expect(visible).toContain('a   abort');
     expect(visible).toContain('notes <text>');
-    expect(visible).toContain(`${glyph('liveBar')} [c]  continue`);
+    expect(visible).not.toContain(glyph('liveBar'));
   });
 
   it('keeps numeric usage and routing diagnostics out of the automatic prompt', async () => {
@@ -180,7 +180,7 @@ describe('task review prompt', () => {
 
   it('does not expose notes as a blank shortcut action key', async () => {
     const visible = await renderPromptBody(formatTaskReviewPrompt(request));
-    expect(visible).not.toContain('[ ]');
+    expect(visible).not.toContain('[');
     expect(visible).toContain('notes <text>');
   });
 });

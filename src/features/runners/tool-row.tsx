@@ -81,7 +81,6 @@ export function renderToolRow({
     <ListRow
       label={label}
       state={state}
-      defaultLead={isCommandBased && !showConfiguredCommand ? 'blank' : 'dot'}
       metadata={metadata}
       metadataColor={statusLabel === undefined ? undefined : getTheme().warning}
       selected={isSelected || !!item.isCurrent}
@@ -123,7 +122,6 @@ export function renderModelRow({
       <ListRow
         label={row.text}
         state={isCursor ? 'active' : 'default'}
-        defaultLead="blank"
         width={maxWidth}
         keepWhole="label"
       />
@@ -136,7 +134,6 @@ export function renderModelRow({
         treeLead={treeLead(row.tree, row.last)}
         label={sanitizeTerminalDisplayText(row.variant.tag)}
         state={isCursor ? 'active' : 'default'}
-        defaultLead="blank"
         metadata={word}
         metadataColor={dim ? undefined : getTheme().text}
         trailing={' '}
@@ -156,7 +153,6 @@ export function renderModelRow({
         treeLead={treeLead(row.tree, row.last)}
         label={`${AUTH_ROW_LABEL} ${row.unproven ? AUTH_UNPROVEN_WORD : word}`}
         state={isCursor ? 'active' : 'default'}
-        defaultLead="blank"
         width={maxWidth}
       />
     );
@@ -168,7 +164,6 @@ export function renderModelRow({
         treeLead={treeLead(row.tree, row.last)}
         label={row.axis}
         state={isCursor ? 'active' : 'default'}
-        defaultLead="blank"
         metadata={row.value}
         trailing={' '}
         selected={false}
@@ -185,7 +180,6 @@ export function renderModelRow({
     <ListRow
       label={label}
       state={isCursor ? 'active' : 'default'}
-      defaultLead="dot"
       // A namespaced id (`anthropic/claude-opus-4.5`) is named by its tail, and a cut inside a
       // segment names nothing: it gives up whole leading segments instead.
       labelTruncate={planned?.path === true ? 'path' : 'end'}

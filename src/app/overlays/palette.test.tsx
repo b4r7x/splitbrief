@@ -165,7 +165,7 @@ function paletteResultRows(frame: string): string[] {
     if (text === '') return false;
     if (/^[+-]+$/.test(text)) return false;
     if (text.startsWith(`${glyph('prompt')} `)) return false;
-    if (text.includes('navigate')) return false;
+    if (text.startsWith('↑↓ select')) return false;
     if (text === 'No matching commands') return false;
     if (/^[↑↓] (?:\d+ )?more$/.test(text)) return false;
     if (GROUP_HEADERS.includes(text)) return false;
@@ -257,10 +257,25 @@ describe('CommandPaletteOverlay', () => {
     const raw = instance.lastFrame() ?? '';
     const frame = stripAnsiStyles(raw);
     expect(promptLine(raw)).toContain('Type a command…');
-    expect(frame).toContain('↑↓ navigate');
+    expect(frame).toContain('↑↓ select');
     expect(frame).toContain('run or fill in');
     expect(frame).toContain('esc close');
     expect(commandRows(raw).length).toBeGreaterThan(0);
+    instance.unmount();
+  });
+
+  it('sheds whole hint tokens instead of cutting a word at 40 columns', async () => {
+    terminalSizeStore.__testReset({ cols: 40, rows: 24 });
+    const instance = renderCommandPalette();
+    await tick(1);
+    await tick(1);
+
+    const hintRow = stripAnsiStyles(instance.lastFrame() ?? '')
+      .split('\n')
+      .map(innerText)
+      .find((line) => line.startsWith('↑↓ select'));
+    expect(hintRow).toBe('↑↓ select · ⏎ run or fill in');
+    expect(hintRow).not.toContain('…');
     instance.unmount();
   });
 
@@ -353,6 +368,79 @@ describe('CommandPaletteOverlay', () => {
 
     expect(afterDown).not.toBe(initial);
     expect(afterUp).toBe(initial);
+    instance.unmount();
+  });
+
+  it('wraps up from the first result to the last and runs it on Enter', async () => {
+    const commands: RuntimeCommandDef[] = [
+      {
+        kind: 'noarg',
+        name: '/wrap-one',
+        label: 'Wrap one',
+        description: 'first row of the wrap case',
+        category: 'navigate',
+        validScreens: ['home'],
+        handler: () => {},
+      },
+      {
+        kind: 'noarg',
+        name: '/wrap-two',
+        label: 'Wrap two',
+        description: 'middle row of the wrap case',
+        category: 'navigate',
+        validScreens: ['home'],
+        handler: () => {},
+      },
+      {
+        kind: 'noarg',
+        name: '/wrap-three',
+        label: 'Wrap three',
+        description: 'last row of the wrap case',
+        category: 'navigate',
+        validScreens: ['home'],
+        handler: () => {
+          overlayStore.open('settings');
+        },
+      },
+    ];
+    const instance = render(
+      <CommandPaletteOverlay
+        commands={commands}
+        onRuntimeCommand={(raw) =>
+          executeRuntimeCommand(commands, raw, {
+            screen: routerStore.get().screen,
+            phase: lifecycleStore.get().phase,
+            plannerSupportsImages: true,
+            openRunAtRest: false,
+            onError: feedbackStore.setError,
+          })
+        }
+      />,
+    );
+    await tick(1);
+    await tick(1);
+
+    const initialRows = paletteResultRows(instance.lastFrame() ?? '');
+    expect(initialRows).toHaveLength(3);
+    expect(innerText(initialRows[0] ?? '')).toContain('/wrap-one');
+    expect(innerText(initialRows[0] ?? '').startsWith(glyph('liveBar'))).toBe(true);
+
+    await write(instance, UP);
+    await tick(1);
+    await tick(1);
+
+    const wrappedRows = paletteResultRows(instance.lastFrame() ?? '');
+    const firstRow = wrappedRows.find((row) => innerText(row).includes('/wrap-one')) ?? '';
+    const lastRow = wrappedRows.find((row) => innerText(row).includes('/wrap-three')) ?? '';
+    expect(innerText(firstRow).startsWith(glyph('liveBar'))).toBe(false);
+    expect(innerText(lastRow).startsWith(glyph('liveBar'))).toBe(true);
+
+    await write(instance, ENTER);
+    await tick(1);
+    await tick(1);
+
+    expect(overlayStore.get().active).toBe('settings');
+    expect(commandPaletteMruStore.get().ids).toEqual(['command:/wrap-three']);
     instance.unmount();
   });
 
@@ -565,7 +653,7 @@ describe('CommandPaletteOverlay', () => {
 
     const frame = instance.lastFrame() ?? '';
     expect(frame).toContain(glyph('prompt'));
-    expect(frame).toContain('navigate');
+    expect(frame).toContain('↑↓ select');
     expect(frame).toContain('esc close');
     expect(frame).toMatch(/↓ \d+ more/);
     expect(frame).not.toMatch(/\d+\/\d+\s*↓/);
