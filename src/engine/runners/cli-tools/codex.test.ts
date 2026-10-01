@@ -267,6 +267,86 @@ describe('Codex role adapters', () => {
     });
   });
 
+  it('adds --output-schema after --json on the resume vector, ahead of the session id', () => {
+    const args = codexPlannerAdapter.buildArgs({
+      prompt: PROMPT,
+      sessionId: 'session-1',
+      mode: 'plan',
+      effort: 'high',
+      model: 'gpt-5',
+      configuredArgs: [],
+      projectDir: '/project',
+      schema: { json: {}, path: '/tmp/s/schema.json' },
+    });
+    expect(args).toEqual([
+      '-c',
+      'model_reasoning_effort=high',
+      '--sandbox',
+      'read-only',
+      '--ask-for-approval',
+      'never',
+      'exec',
+      'resume',
+      '--model',
+      'gpt-5',
+      '--ignore-user-config',
+      '--ignore-rules',
+      '--json',
+      '--output-schema',
+      '/tmp/s/schema.json',
+      'session-1',
+      '-',
+    ]);
+  });
+
+  it('adds --output-schema after --json on the fresh one-shot read-only vector', () => {
+    const args = codexPlannerAdapter.buildArgs({
+      prompt: PROMPT,
+      sessionId: null,
+      oneShot: true,
+      mode: 'plan',
+      model: undefined,
+      effort: undefined,
+      configuredArgs: [],
+      projectDir: '/project',
+      schema: { json: {}, path: '/tmp/s/schema.json' },
+    });
+    expect(args).toEqual([
+      '--sandbox',
+      'read-only',
+      '--ask-for-approval',
+      'never',
+      'exec',
+      '--ignore-user-config',
+      '--ignore-rules',
+      '--ephemeral',
+      '--json',
+      '--output-schema',
+      '/tmp/s/schema.json',
+      '--cd',
+      '/project',
+      '-',
+    ]);
+  });
+
+  it('refuses a configured --output-schema that would override the adapter schema', () => {
+    const base = codexPlannerAdapter.buildArgs({
+      prompt: PROMPT,
+      model: undefined,
+      projectDir: '/project',
+      configuredArgs: [],
+      mode: 'plan',
+      sessionId: null,
+      effort: undefined,
+    });
+    expect(
+      codexPlannerAdapter.validateArgs({
+        invocationArgs: [...base, '--output-schema', 'x'],
+        baseArgs: base,
+      }),
+    ).toEqual({ valid: false, conflicts: ['--output-schema'] });
+  });
+
   it.each([
     ['--sandbox', 'danger'],
     ['--ask-for-approval', 'full-auto'],

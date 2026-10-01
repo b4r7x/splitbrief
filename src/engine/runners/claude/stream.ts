@@ -28,6 +28,7 @@ interface StreamHandlerState {
   sawResult: boolean;
   sawResultText: boolean;
   isError: boolean;
+  structured?: unknown;
   recorder: RunnerCallRecorder;
   credentialValues: readonly string[];
   redactCredential: RunnerCallCredentialRedactor;
@@ -292,6 +293,7 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
 
     if (parsed.isResult) {
       state.sawResult = true;
+      if (parsed.structured !== undefined) state.structured = parsed.structured;
       if (parsed.text) {
         applyResultText(parsed.text);
       } else if (!parsed.isError) {
@@ -412,6 +414,7 @@ export function finishClaudeStream(state: ClaudeStreamState): RunnerCallResult {
     state.recorder.finishCompleted({
       usage: state.usage,
       nativeSessionId: state.sessionId,
+      ...(state.structured !== undefined && { structured: state.structured }),
     });
   }
 

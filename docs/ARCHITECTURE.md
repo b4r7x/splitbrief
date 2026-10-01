@@ -261,6 +261,12 @@ type PlannerCapabilities = {
 | `shell` (default) | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | `agent` (default) | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 
+One more per-seat property sits outside this struct: typed output. The tool facts carry it as `typedOutput`. A `native` seat sends the JSON Schema on the tool's own channel: a CLI flag, or the `response_format` request field for the `api` kind. A `strict-native` seat does the same only for a schema that OpenAI strict mode accepts, and asks in the prompt for any other. A `fallback` seat asks for the JSON object in the prompt:
+
+| Capability | `cli` claude-code | `cli` codex | `cli` antigravity | `api` | other `cli` tools | `shell` / `agent` |
+|---|---|---|---|---|---|---|
+| Typed output | native (`--json-schema`, from 2.1.287) | strict-native (`--output-schema`, from 0.157.1) | native (`--json-schema`, from 1.2.14) | native (`response_format`) | fallback | fallback |
+
 Claude Code resumes via `claude --resume <id>`. Codex resumes via `codex exec resume … --json <id> -`, with the prompt on stdin and the id captured from the `thread.started` JSONL event. Only a planning call resumes: a planning step or a spec or plan revision. The review and the hint are one shot on every seat. A resumed run falls back to a transcript rebuild (`src/engine/orchestrator/transcript/rebuild.ts`) when its planner cannot resume a session, when the PLAN seat moved to another tool, or when the state holds no `plannerSessionId` because the tool reported none or its thread expired. A planning call whose thread expires mid-run, a step or a revision, is issued again once, on a fresh session with the same rebuilt transcript (`withExpiredSessionReissue`, `src/engine/orchestrator/resume-context.ts`).
 
 `shell` and `agent` defaults are all-false but can be narrowed or partially declared per project. The schema rejects `supportsSessionResume`, `supportsEffort`, and `supportsImages` when set to `true` because command-based adapters have no session-handle, effort, or image-attachment channel.
@@ -630,7 +636,8 @@ src/
 │   │                              registry, types
 │   ├── runners/                   command-based, errors, factory
 │   │                              (createPlanner, createReviewer,
-│   │                              createImplementer), types,
+│   │                              createImplementer), typed-output,
+│   │                              schema-file, types,
 │   │                              claude/ (Claude-Code CLI
 │   │                              subprocess: invoke, stream), cli-tools (CLI-tool
 │   │                              spawn helpers), sandbox-env (HOME/XDG/cache

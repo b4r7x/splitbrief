@@ -2,7 +2,7 @@ import type { Attachment } from '../../core/schemas/attachment.js';
 import type { EffortLevel } from '../../core/schemas/enums.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
 import { streamCompletion } from './openai-stream/completion.js';
-import type { StreamClient } from './openai-stream/request.js';
+import type { OpenAIResponseFormat, StreamClient } from './openai-stream/request.js';
 import type { StreamMessage } from './types.js';
 import type { ApiInvocationEvidence } from '../runners/invocation-identity.js';
 import type { ApiRuntimeObservation } from './api-runtime-status.js';
@@ -22,6 +22,7 @@ interface StreamDispatchOpts {
   signal?: AbortSignal | undefined;
   timeoutMs?: number | undefined;
   effort?: EffortLevel | undefined;
+  responseFormat?: OpenAIResponseFormat | undefined;
   images?: Attachment[] | undefined;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   callContext?: RunnerCallContext | undefined;
@@ -45,6 +46,7 @@ export async function dispatchStreamCompletion(
     signal,
     timeoutMs,
     effort,
+    responseFormat,
     images,
     onCallEvent,
     callContext,
@@ -64,6 +66,7 @@ export async function dispatchStreamCompletion(
     ...(signal !== undefined && { signal }),
     ...(timeoutMs !== undefined && { timeoutMs }),
     ...(effort !== undefined && { effort }),
+    ...(responseFormat !== undefined && { responseFormat }),
     ...(images && images.length > 0 ? { images } : {}),
     ...(onCallEvent !== undefined && { onCallEvent }),
     ...(callContext !== undefined && { callContext }),

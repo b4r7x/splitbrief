@@ -21,7 +21,8 @@ import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
 
 export const PAUSED_LIVE_STATUS_VERB = `Paused — resume with /resume or \`${SPLITBRIEF_IDENTITY.executable} resume\``;
 
-// Review gates use the waiting byline while their document replaces the transcript.
+// Review gates use the waiting byline while their document replaces the transcript. A change
+// request sent from a gate rewrites the document inside that gate, and that call is live work.
 const RAIL_GATE_PHASES: ReadonlySet<Phase> = new Set([
   'reviewing-spec',
   'reviewing-plan',
@@ -90,7 +91,7 @@ export function deriveLiveStatus(input: {
 }): LiveStatus | null {
   if (input.status !== 'running') return null;
   if (input.cancelled) return null;
-  if (RAIL_GATE_PHASES.has(input.phase)) return null;
+  if (RAIL_GATE_PHASES.has(input.phase) && input.plannerCall === null) return null;
   const mode = input.mode ?? 'standard';
   const activeIndex = getRailActiveIndex(input.phase, mode);
   const activeStage = getActiveRailStage(input.phase, mode);

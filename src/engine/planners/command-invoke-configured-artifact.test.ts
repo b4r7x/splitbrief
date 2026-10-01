@@ -18,6 +18,8 @@ import {
   runtimeFor,
 } from '#testing/helpers/planner-command-invoke.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { z } from 'zod';
+import { requestTyped } from '../runners/typed-output.js';
 
 const { testProject } = createCommandInvokeTestFixtures();
 
@@ -45,6 +47,31 @@ async function createConfiguredCustomPlanner(
 }
 
 describe('createConfiguredCustomPlanner direct artifact behavior', () => {
+  it('serves a typed planner answer from the declared artifact', async () => {
+    const { projectDir, stateDir } = testProject('configured-direct-typed');
+    const planner = await createConfiguredCustomPlanner(
+      configuredPlanner({
+        contract: 'direct',
+        script: [
+          "const fs = require('node:fs');",
+          "if (fs.readFileSync(0, 'utf8').includes('No prose after it.'))",
+          ' fs.writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, \'{"answer":"g","count":5}\');',
+        ].join(''),
+      }),
+      runtimeFor({ projectDir, stateDir }),
+    );
+
+    const result = await requestTyped({
+      prompt: 'q',
+      schema: z.object({ answer: z.string(), count: z.number() }),
+      jsonSchema: { type: 'object' },
+      schemaName: 'probe',
+      call: planner.typedCall({ projectDir, callbacks: { onOutput: vi.fn() }, seat: 'planner' }),
+    });
+
+    expect(result).toMatchObject({ value: { answer: 'g', count: 5 } });
+  });
+
   it('returns only an approved declared artifact for normal direct planner calls', async () => {
     const { projectDir, stateDir } = testProject('configured-direct-approve');
     const output: string[] = [];

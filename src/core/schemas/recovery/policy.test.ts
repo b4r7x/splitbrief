@@ -61,6 +61,15 @@ describe('allowedActionsForReason', () => {
     ]);
   });
 
+  it('seat-protocol-error shares the planner-call-failed action set', () => {
+    expect(allowedActionsForReason('seat-protocol-error')).toEqual([
+      'retry-same-worker',
+      'switch-seat',
+      'pause-run',
+      'end-run',
+    ]);
+  });
+
   it.each(['planner-returned-no-briefs', 'brief-quality-unrepaired'] as const)(
     '%s offers a re-issue, a correction or an end',
     (reason) => {

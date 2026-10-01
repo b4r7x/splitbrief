@@ -50,6 +50,9 @@ export function redactRunnerCallEventInput(
       return {
         ...input,
         nativeSessionId: input.nativeSessionId === null ? null : redact(input.nativeSessionId),
+        ...(input.structured !== undefined && {
+          structured: redactRunnerCallUnknown(input.structured, redact, new WeakSet<object>()),
+        }),
       };
     case 'call_unknown_upstream':
       return {

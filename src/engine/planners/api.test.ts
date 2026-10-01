@@ -219,6 +219,27 @@ describe('createApiPlanner', () => {
     expect(receivedBodies[0]!.messages[0]).toMatchObject({ role: 'user', content: 'the prompt' });
   });
 
+  it('sends a typed call schema as response_format and a schema-less call without it', async () => {
+    const planner = createApiPlanner(makeApiPlannerConfig('ollama'));
+    const call = planner.typedCall({
+      projectDir,
+      callbacks: { onOutput: () => {} },
+      seat: 'reviewer',
+    });
+
+    await call.invoke({ prompt: 'q', schema: { json: { type: 'object' }, name: 'probe' } });
+    await call.invoke({ prompt: 'q' });
+
+    expect(receivedBodies).toHaveLength(2);
+    expect(receivedBodies[0]).toMatchObject({
+      response_format: {
+        type: 'json_schema',
+        json_schema: { name: 'probe', schema: { type: 'object' } },
+      },
+    });
+    expect(receivedBodies[1]).not.toHaveProperty('response_format');
+  });
+
   it.each([['custom-endpoint'], ['ollama']] as const)(
     'omits max_tokens when the catalog reports no output ceiling for the %s api kind',
     async (provider) => {

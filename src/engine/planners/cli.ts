@@ -13,7 +13,10 @@ import {
 } from '../runners/invoke-cli-adapter.js';
 import { CLI_PROMPT_SENTINEL } from '../runners/cli-tools/candidate-contract.js';
 import { lookupCliPlannerAdapter } from '../runners/cli-tools/registry.js';
-import type { CliPlannerAdapter } from '../runners/cli-tools/contract.js';
+import { typedOutputCapability } from '../../core/runners/cli-tool-catalog.js';
+import type { CliPlannerAdapter, CliSchemaInput } from '../runners/cli-tools/contract.js';
+import type { TypedSchemaInput } from '../runners/typed-output.js';
+import { withSchemaFile } from '../runners/schema-file.js';
 import { resolveCliModel } from '../../core/providers/automatic-model.js';
 import { assertPlannerKind } from '../config-assertions.js';
 import {
@@ -102,6 +105,7 @@ export function createCliPlanner(
     resumeId: string | null;
     signal?: AbortSignal | undefined;
     sandboxEnv?: NodeJS.ProcessEnv | undefined;
+    schema?: CliSchemaInput | undefined;
   }): Promise<RunnerCallResult> {
     const {
       prompt,
@@ -145,6 +149,7 @@ export function createCliPlanner(
       effort: supportsEffort ? effort : undefined,
       variant,
       installedVersion: trustedCli?.installedVersion,
+      schema: opts.schema,
     });
     const result = await invokeCliAdapter({
       adapter,
@@ -206,8 +211,10 @@ export function createCliPlanner(
     accessMode: 'planning' | 'read-only' | 'write-files';
     signal?: AbortSignal | undefined;
     sandboxEnv?: NodeJS.ProcessEnv | undefined;
+    schema?: TypedSchemaInput | undefined;
   }): Promise<RunnerCallResult> {
-    const { prompt, projectDir, callbacks, callContext, accessMode, signal, sandboxEnv } = opts;
+    const { prompt, projectDir, callbacks, callContext, accessMode, signal, sandboxEnv, schema } =
+      opts;
     const shouldGuardMutations =
       accessMode === 'read-only' ||
       (accessMode === 'planning' && callbacks.sessionId !== undefined);
@@ -237,9 +244,17 @@ export function createCliPlanner(
     // are one stateless call each, as Claude Code's are, and leave no session behind.
     const threaded = supportsSessionResume && accessMode === 'planning';
     const resumeId = threaded ? nativeSession.getResumeId() : null;
+    const run = (o: Parameters<typeof runOnce>[0]): Promise<RunnerCallResult> =>
+      schema === undefined
+        ? runOnce(o)
+        : adapter.schemaFile
+          ? withSchemaFile(schema.json, (path) =>
+              runOnce({ ...o, schema: { json: schema.json, path } }),
+            )
+          : runOnce({ ...o, schema: { json: schema.json } });
     try {
       return await finish(
-        await runOnce({
+        await run({
           prompt,
           projectDir,
           callbacks,
@@ -261,7 +276,7 @@ export function createCliPlanner(
   }
 
   return createPlannerBase({
-    invokePlan: ({ prompt, projectDir, callbacks, callContext, signal }) =>
+    invokePlan: ({ prompt, projectDir, callbacks, callContext, signal, schema }) =>
       invoke({
         prompt,
         projectDir,
@@ -269,6 +284,7 @@ export function createCliPlanner(
         callContext,
         accessMode: 'planning',
         signal,
+        ...(schema !== undefined && { schema }),
       }),
     invokeEscalate: ({
       prompt,
@@ -278,11 +294,23 @@ export function createCliPlanner(
       accessMode,
       signal,
       sandboxEnv,
-    }) => invoke({ prompt, projectDir, callbacks, callContext, accessMode, signal, sandboxEnv }),
+      schema,
+    }) =>
+      invoke({
+        prompt,
+        projectDir,
+        callbacks,
+        callContext,
+        accessMode,
+        signal,
+        sandboxEnv,
+        ...(schema !== undefined && { schema }),
+      }),
     runnerName: plannerCfg.tool,
     ...(resolvedModel !== undefined && { model: resolvedModel }),
     hintSuccessMode: 'text',
     escalateFullMode: 'files',
+    typedOutput: typedOutputCapability(plannerCfg.tool, trustedCli?.installedVersion),
 
     ...createCommandAvailability(adapter.descriptor.executableAliases, {
       timeout: adapter.probe.version.timeoutMs,

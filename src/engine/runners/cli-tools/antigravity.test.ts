@@ -7,6 +7,7 @@ import {
   CLI_TOOL_CATALOG,
 } from '../../../core/runners/cli-tool-catalog.js';
 import { CLI_PROJECT_DIR_SENTINEL, CLI_PROMPT_SENTINEL } from './candidate-contract.js';
+import type { CliSchemaInput } from './contract.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
 import {
   CLI_CONFORMANCE_CANDIDATES,
@@ -39,6 +40,7 @@ function plannerArgs(
     model?: string | undefined;
     configuredArgs?: readonly string[];
     effort?: EffortLevel | undefined;
+    schema?: CliSchemaInput | undefined;
   } = {},
 ) {
   return antigravityPlannerAdapter.buildArgs({
@@ -49,6 +51,7 @@ function plannerArgs(
     mode: 'plan',
     sessionId: null,
     effort: options.effort,
+    schema: options.schema,
   });
 }
 
@@ -111,6 +114,42 @@ describe('Antigravity role adapters', () => {
       '--output-format',
       'stream-json',
     ]);
+  });
+
+  it('appends the inline schema after the planner generation args, and nothing without one', () => {
+    const schema = { json: { type: 'object' } };
+    expect(plannerArgs({ schema })).toEqual([
+      '-p',
+      PROMPT,
+      '--mode',
+      'plan',
+      '--add-dir',
+      '/project',
+      '--output-format',
+      'stream-json',
+      '--json-schema',
+      '{"type":"object"}',
+    ]);
+    expect(plannerArgs()).toEqual([
+      '-p',
+      PROMPT,
+      '--mode',
+      'plan',
+      '--add-dir',
+      '/project',
+      '--output-format',
+      'stream-json',
+    ]);
+  });
+
+  it('refuses a configured --json-schema that would override the adapter schema', () => {
+    const baseArgs = plannerArgs();
+    expect(
+      antigravityPlannerAdapter.validateArgs({
+        invocationArgs: [...baseArgs, '--json-schema', '{}'],
+        baseArgs,
+      }),
+    ).toEqual({ valid: false, conflicts: ['--json-schema'] });
   });
 
   // `agy -p` does not make its cwd a workspace, so the model is told it has none and runs

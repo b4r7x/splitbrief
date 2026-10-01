@@ -23,6 +23,8 @@ import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
 import type { PhaseCallResult, PlannerFactoryOptions } from './types.js';
 import { callPhase } from '#testing/helpers/planner-call.js';
 import { writeSpecFile } from '../../core/paths-io.js';
+import { z } from 'zod';
+import { requestTyped } from '../runners/typed-output.js';
 
 const invokeCliAdapterDeadlines = vi.hoisted(() => [] as number[]);
 
@@ -33,6 +35,18 @@ vi.mock('../runners/invoke-cli-adapter.js', async (importOriginal) => {
     invokeCliAdapter: (opts: Parameters<typeof actual.invokeCliAdapter>[0]) => {
       invokeCliAdapterDeadlines.push(opts.invocation.timeoutMs);
       return actual.invokeCliAdapter(opts);
+    },
+  };
+});
+
+const schemaFileWrites = vi.hoisted(() => ({ count: 0 }));
+
+vi.mock('../runners/schema-file.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../runners/schema-file.js')>();
+  return {
+    withSchemaFile: (...args: Parameters<typeof actual.withSchemaFile>) => {
+      schemaFileWrites.count++;
+      return actual.withSchemaFile(...args);
     },
   };
 });
@@ -1561,4 +1575,177 @@ describe('seat deadlines', () => {
       expect(invokeCliAdapterDeadlines).toEqual([CLI_NO_DEADLINE_MS]);
     },
   );
+});
+
+describe('createCliPlanner — typed calls', () => {
+  itUnix('passes a private schema file to codex for a typed call and removes it', async () => {
+    const argvFile = join(shimDir, 'argv.txt');
+    const schemaCopy = join(shimDir, 'schema-copy.json');
+    const modeFile = join(shimDir, 'mode.txt');
+    const shimPath = join(shimDir, 'codex');
+    writeFileSync(
+      shimPath,
+      [
+        '#!/bin/bash',
+        `printf '%s\\n' "$@" > '${argvFile}'`,
+        'schema=""',
+        'previous=""',
+        'for arg in "$@"; do',
+        '  if [[ "$previous" == "--output-schema" ]]; then schema="$arg"; fi',
+        '  previous="$arg"',
+        'done',
+        `cp "$schema" '${schemaCopy}'`,
+        `ls -l "$schema" > '${modeFile}'`,
+        `printf '%s\\n' '${JSON.stringify({ type: 'thread.started', thread_id: 'sess-typed-schema' })}'`,
+        `printf '%s\\n' '${JSON.stringify({
+          type: 'item.completed',
+          item: { type: 'agent_message', text: '{"answer":"x","count":1}' },
+        }).replace(/'/g, "'\\''")}'`,
+        `printf '%s\\n' '${CODEX_TURN_COMPLETED}'`,
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    chmodSync(shimPath, 0o755);
+
+    const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'codex' } }));
+    const result = await planner
+      .typedCall({ projectDir, callbacks: { onOutput: () => {} }, seat: 'reviewer' })
+      .invoke({
+        prompt: 'q',
+        schema: {
+          json: { type: 'object', properties: {}, required: [], additionalProperties: false },
+          name: 'probe',
+        },
+      });
+
+    expect(result.status).toBe('completed');
+    const argv = readArgv(argvFile);
+    expect(argv).toContain('--output-schema');
+    const schemaPath = argv[argv.indexOf('--output-schema') + 1];
+    if (schemaPath === undefined) throw new Error('codex argv recorded no schema path');
+    expect(readFileSync(schemaCopy, 'utf8')).toBe(
+      '{"type":"object","properties":{},"required":[],"additionalProperties":false}',
+    );
+    expect(readFileSync(modeFile, 'utf8')).toMatch(/^-rw-------/);
+    expect(existsSync(schemaPath)).toBe(false);
+  });
+
+  itUnix('gives antigravity its schema inline and writes no schema file', async () => {
+    const fixture = readFileSync(
+      join(process.cwd(), 'testing/fixtures/typed-output/antigravity-1.2.14.jsonl'),
+      'utf8',
+    );
+    const { argvFile } = installRecordingShim('agy', fixture.trimEnd().split('\n'));
+    const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'antigravity' } }));
+    schemaFileWrites.count = 0;
+
+    const result = await planner
+      .typedCall({ projectDir, callbacks: { onOutput: () => {} }, seat: 'reviewer' })
+      .invoke({ prompt: 'q', schema: { json: { type: 'object' }, name: 'probe' } });
+
+    expect(result.status).toBe('completed');
+    const argv = readArgv(argvFile);
+    expect(argv).toContain('--json-schema');
+    expect(argv[argv.indexOf('--json-schema') + 1]).toBe('{"type":"object"}');
+    expect(schemaFileWrites.count).toBe(0);
+  });
+
+  it('reports how each tool reaches a typed answer', () => {
+    const strict = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'codex' } }));
+    const fallback = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }));
+
+    expect(
+      strict.typedCall({ projectDir, callbacks: { onOutput: () => {} }, seat: 'planner' })
+        .typedOutput,
+    ).toBe('strict-native');
+    expect(
+      fallback.typedCall({ projectDir, callbacks: { onOutput: () => {} }, seat: 'reviewer' })
+        .typedOutput,
+    ).toBe('fallback');
+  });
+
+  it('asks a codex release older than the proven one for the prompt fallback', () => {
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'codex' } });
+    const older = createCliPlanner(config, null, {
+      trustedCli: {
+        ...trustedShimGate({ dir: shimDir, tool: 'codex' }),
+        installedVersion: '0.40.0',
+      },
+    });
+
+    expect(
+      older.typedCall({ projectDir, callbacks: { onOutput: () => {} }, seat: 'planner' })
+        .typedOutput,
+    ).toBe('fallback');
+  });
+
+  it('leaves a schema-less typed call on the same opencode argv as a review', async () => {
+    const { argvFile } = installRecordingShim('opencode', [
+      JSON.stringify({
+        type: 'text',
+        sessionID: 'ses-open',
+        part: { type: 'text', text: 'response' },
+      }),
+    ]);
+    const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }));
+
+    const typed = await planner
+      .typedCall({ projectDir, callbacks: { onOutput: () => {} }, seat: 'reviewer' })
+      .invoke({ prompt: 'q' });
+    const typedArgv = readArgv(argvFile);
+
+    await planner.review('q', projectDir, { onOutput: () => {} });
+    const reviewArgv = readArgv(argvFile);
+
+    expect(typed.status).toBe('completed');
+    expect(typedArgv).toEqual(reviewArgv);
+  });
+
+  itUnix('repairs a planner answer on the codex thread that gave it', async () => {
+    const countFile = join(shimDir, 'count.txt');
+    const shimPath = join(shimDir, 'codex');
+    const reply = (text: string) =>
+      JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text } });
+    writeFileSync(
+      shimPath,
+      [
+        '#!/bin/bash',
+        'cat > /dev/null',
+        `n=$(( $(cat '${countFile}' 2>/dev/null || echo 0) + 1 ))`,
+        `echo "$n" > '${countFile}'`,
+        `printf '%s\\n' "$@" > '${shimDir}/argv-'"$n"'.txt'`,
+        `printf '%s\\n' '${JSON.stringify({ type: 'thread.started', thread_id: 'codex-typed-thread' })}'`,
+        'if [[ "$n" == 1 ]]; then',
+        `  printf '%s\\n' '${reply('{"answer":1}')}'`,
+        'else',
+        `  printf '%s\\n' '${reply('{"answer":"ok","count":3}')}'`,
+        'fi',
+        `printf '%s\\n' '${CODEX_TURN_COMPLETED}'`,
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    chmodSync(shimPath, 0o755);
+    const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'codex' } }));
+
+    const result = await requestTyped({
+      prompt: 'q',
+      schema: z.object({ answer: z.string(), count: z.number() }),
+      jsonSchema: { type: 'object', properties: {}, required: [], additionalProperties: false },
+      schemaName: 'probe',
+      call: planner.typedCall({ projectDir, callbacks: { onOutput: () => {} }, seat: 'planner' }),
+    });
+
+    expect(result).toMatchObject({
+      value: { answer: 'ok', count: 3 },
+      nativeSessionId: 'codex-typed-thread',
+    });
+    const firstArgv = readArgv(join(shimDir, 'argv-1.txt'));
+    const repairArgv = readArgv(join(shimDir, 'argv-2.txt'));
+    expect(firstArgv).not.toContain('--ephemeral');
+    expect(firstArgv).not.toContain('resume');
+    expect(repairArgv).toContain('resume');
+    expect(repairArgv).toContain('codex-typed-thread');
+  });
 });

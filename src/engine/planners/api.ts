@@ -3,6 +3,7 @@ import type { Planner, PriorMessage } from './types.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
 import { ONE_SHOT_API_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';
+import { createPlannerCallContext } from './call-context.js';
 import { getProvider } from '../providers/registry.js';
 import { createProviderAvailability } from '../providers/client/availability.js';
 import { createClientFromProvider } from '../providers/client/connection.js';
@@ -18,15 +19,65 @@ import {
   type PreparedApiSeat,
 } from '../providers/api-budget.js';
 import { toStreamClient } from '../providers/openai-stream/client.js';
-import type { StreamClient } from '../providers/openai-stream/request.js';
+import type { OpenAIResponseFormat, StreamClient } from '../providers/openai-stream/request.js';
 import {
   apiInvocationEvidence,
   type ApiInvocationEvidence,
 } from '../runners/invocation-identity.js';
+import { fallbackInstruction, type TypedSchemaInput } from '../runners/typed-output.js';
+import { matches } from '../../utils/error.js';
+import { isRecord } from '../../utils/type-guards.js';
 
 import type { ApiRuntimeContext } from '../providers/runtime-context.js';
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
+
+const isHttpStatus = matches('stream-http-status');
+
+/**
+ * An endpoint that does not accept `response_format` names the parameter in a
+ * 400. That rejection is the only one this seat recovers from; every other
+ * error propagates unchanged.
+ */
+export function isResponseFormatRejection(err: unknown): boolean {
+  if (!isHttpStatus(err) || !isRecord(err.data)) return false;
+  return (
+    err.data.status === 400 &&
+    typeof err.data.detail === 'string' &&
+    err.data.detail.includes('response_format')
+  );
+}
+
+/**
+ * Sends the schema natively and, when the endpoint rejects the field, sends
+ * the prompt once more without it and with the fallback instruction appended.
+ * The second send is its own physical call, so it carries a fresh call id.
+ */
+export async function withResponseFormatFallback(input: {
+  prompt: string;
+  schema: TypedSchemaInput;
+  callContext: RunnerCallContext;
+  send: (
+    prompt: string,
+    responseFormat: OpenAIResponseFormat | undefined,
+    callContext: RunnerCallContext,
+  ) => Promise<RunnerCallResult>;
+}): Promise<RunnerCallResult> {
+  try {
+    return await input.send(
+      input.prompt,
+      { type: 'json_schema', json_schema: { name: input.schema.name, schema: input.schema.json } },
+      input.callContext,
+    );
+  } catch (err) {
+    if (!isResponseFormatRejection(err)) throw err;
+    return await input.send(
+      input.prompt + fallbackInstruction(input.schema.json),
+      undefined,
+      createPlannerCallContext(input.callContext, input.callContext.role),
+    );
+  }
+}
 
 function buildMessages(prompt: string, priorMessages?: PriorMessage[] | undefined): ChatMessage[] {
   const history: ChatMessage[] = (priorMessages ?? []).map((m) => ({
@@ -52,6 +103,7 @@ export async function invokeApiTransport(opts: {
   onOutput: (text: string) => void;
   priorMessages?: PriorMessage[] | undefined;
   signal?: AbortSignal | undefined;
+  responseFormat?: OpenAIResponseFormat | undefined;
   /** The total budget this call is bounded by, resolved from the seat's role. */
   totalDeadlineMs: number;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
@@ -95,6 +147,7 @@ export async function invokeApiTransport(opts: {
     onCallEvent: opts.onCallEvent,
     callContext: opts.callContext,
     invocationEvidence: opts.invocationEvidence,
+    ...(opts.responseFormat !== undefined && { responseFormat: opts.responseFormat }),
   });
 }
 
@@ -133,6 +186,7 @@ export function createApiPlanner(config: Config, seat: ApiSeatRole = 'planner'):
     priorMessages,
     signal,
     callContext,
+    schema,
   }: {
     prompt: string;
     apiContext?: ApiRuntimeContext | undefined;
@@ -143,6 +197,7 @@ export function createApiPlanner(config: Config, seat: ApiSeatRole = 'planner'):
       onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
     };
     priorMessages?: PriorMessage[] | undefined;
+    schema?: TypedSchemaInput | undefined;
     signal?: AbortSignal | undefined;
   }) => {
     // The seat timeout is the application's total budget, enforced as a
@@ -157,26 +212,35 @@ export function createApiPlanner(config: Config, seat: ApiSeatRole = 'planner'):
     const client: StreamClient = toStreamClient(
       createClientFromProvider(resolved, { timeoutMs: totalDeadlineMs }),
     );
-    return invokeApiTransport({
-      client,
-      model,
-      apiContext,
-      prepared,
-      planner: {
-        provider,
-        apiBase: resolved.baseURL,
-        apiKey: resolved.apiKey(),
-        temperature: plannerCfg.temperature,
-      },
-      prompt,
-      onOutput: callbacks.onOutput,
-      priorMessages,
-      signal,
-      totalDeadlineMs,
-      onCallEvent: callbacks.onCallEvent,
-      callContext,
-      invocationEvidence: apiInvocationEvidence(resolved, model),
-    });
+    const send = (
+      p: string,
+      responseFormat: OpenAIResponseFormat | undefined,
+      sendContext: RunnerCallContext,
+    ) =>
+      invokeApiTransport({
+        client,
+        model,
+        apiContext,
+        prepared,
+        planner: {
+          provider,
+          apiBase: resolved.baseURL,
+          apiKey: resolved.apiKey(),
+          temperature: plannerCfg.temperature,
+        },
+        prompt: p,
+        onOutput: callbacks.onOutput,
+        priorMessages,
+        signal,
+        totalDeadlineMs,
+        onCallEvent: callbacks.onCallEvent,
+        callContext: sendContext,
+        invocationEvidence: apiInvocationEvidence(resolved, model),
+        ...(responseFormat !== undefined && { responseFormat }),
+      });
+    return schema === undefined
+      ? send(prompt, undefined, callContext)
+      : withResponseFormatFallback({ prompt, schema, callContext, send });
   };
 
   return createPlannerBase({
@@ -186,6 +250,7 @@ export function createApiPlanner(config: Config, seat: ApiSeatRole = 'planner'):
     runnerName: provider,
     model,
     consumesPriorMessages: true,
+    typedOutput: 'native',
     // An API seat reads no files of its own, so every planning call is given an
     // explicit evidence packet assembled to this allocation.
     resolvePlanningContext: async (signal) => {

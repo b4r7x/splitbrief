@@ -118,6 +118,11 @@ export function withPlannerCallPublishing(
       }),
     review: (prompt, projectDir, callbacks) =>
       review(prompt, projectDir, withPlannerOutputCallbacks(callbacks, ctx)),
+    typedCall: (typedCtx) =>
+      planner.typedCall({
+        ...typedCtx,
+        callbacks: withPlannerOutputCallbacks(typedCtx.callbacks, ctx),
+      }),
     summarize: (messages, opts) =>
       planner.summarize(messages, withPlannerSummaryOptions(opts, ctx)),
   };

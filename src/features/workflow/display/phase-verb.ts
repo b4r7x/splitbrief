@@ -4,7 +4,8 @@ import { assertNever } from '../../../utils/type-guards.js';
 
 // One vocabulary for what the run is doing right now: the byline says it as a heading, the build
 // block says it inside a sentence. Both read it here. The plan stage holds two planner calls, so
-// its verb names the call the engine said it is on.
+// its verb names the call the engine said it is on. A gate that rewrites its document from a
+// change request names that call with the verb it has outside the gate.
 export function activeVerb(
   phase: Phase,
   reviewerLabel: string | null,
@@ -16,6 +17,7 @@ export function activeVerb(
     case 'specifying':
       return 'Specifying…';
     case 'reviewing-spec':
+      if (plannerCall !== null) return activeVerb('specifying', reviewerLabel, plannerCall);
       return 'Reviewing spec…';
     case 'clarifying':
       return 'Clarifying…';
@@ -26,8 +28,10 @@ export function activeVerb(
       if (plannerCall === 'tasks') return 'Compiling briefs…';
       return 'Planning…';
     case 'reviewing-plan':
+      if (plannerCall !== null) return activeVerb('planning', reviewerLabel, plannerCall);
       return 'Reviewing plan…';
     case 'reviewing-briefs':
+      if (plannerCall !== null) return activeVerb('planning', reviewerLabel, plannerCall);
       return 'Reviewing briefs…';
     case 'analyzing':
       return 'Analyzing…';

@@ -118,6 +118,7 @@ export const RECOVERY_REASONS = [
   'constitution-check-failed',
   'brief-review-no-progress',
   'brief-quality-unrepaired',
+  'seat-protocol-error',
 ] as const;
 export const RecoveryReasonSchema = z.enum(RECOVERY_REASONS);
 export type RecoveryReason = z.infer<typeof RecoveryReasonSchema>;

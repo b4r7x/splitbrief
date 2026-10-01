@@ -163,7 +163,7 @@ Every row below is keyboard work in the pane — that is the point, not a conven
 | Spec / plan / briefs gate | read the artifact in the session dir first, then `y` |
 | Inline external-edit prompt (`[c] continue`) | verify the changed files match recorded fixes or authorized user edits, then send `c` |
 | Bordered recovery panel (each row shows its key) | send the action letter through the terminal; `⏎` takes the highlighted row, `tab` types a correction when the halt takes one. `r` is Try again; `w` opens the halted seat's picker |
-| Out-of-bounds write approval | allow "this operation only" for a colocated test, a doc the brief names, or a sibling in the brief's module group; otherwise ask the owner |
+| Protected-path write approval (manifest, lockfile, CI config, env or key file, `.git`, `.splitbrief`) | allow only when the task explicitly asks for that operation; otherwise deny — a denial is normal. A write prompt for an ordinary project file is a tool defect: stop |
 | Stop sheet | `esc` opens, `esc` again stops resumably, `ctrl+c` twice quits after the stop settles |
 
 Send a letter and Enter as separate terminal actions. Inspect the result of the letter before sending Enter.

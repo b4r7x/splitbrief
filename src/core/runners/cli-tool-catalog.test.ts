@@ -21,6 +21,7 @@ import {
   getCliModelPolicy,
   hasNativeCliCatalog,
   selectCliAuthChannel,
+  typedOutputCapability,
   type CliModelPolicy,
 } from './cli-tool-catalog.js';
 import { classifyCliAdmittedVersion } from './cli-version.js';
@@ -568,5 +569,34 @@ describe('effort support', () => {
         supportsEffort: CLI_TOOL_CATALOG[tool].supportsEffort,
       });
     }
+  });
+});
+
+describe('typed output support', () => {
+  it('declares the typed-output channel of every tool', () => {
+    const typedOutput = Object.fromEntries(
+      CLI_TOOL_IDS.map((id) => [id, CLI_TOOL_CATALOG[id].typedOutput]),
+    );
+
+    expect(typedOutput).toEqual({
+      'claude-code': { kind: 'native', since: '2.1.287' },
+      codex: { kind: 'strict-native', since: '0.157.1' },
+      opencode: { kind: 'fallback' },
+      copilot: { kind: 'fallback' },
+      'kilo-code': { kind: 'fallback' },
+      cursor: { kind: 'fallback' },
+      'command-code': { kind: 'fallback' },
+      antigravity: { kind: 'native', since: '1.2.14' },
+    });
+  });
+
+  it('uses the native channel only from the release that proved it', () => {
+    expect(typedOutputCapability('claude-code', '2.1.287')).toBe('native');
+    expect(typedOutputCapability('codex', '0.158.0')).toBe('strict-native');
+    expect(typedOutputCapability('claude-code', '2.0.0')).toBe('fallback');
+    expect(typedOutputCapability('antigravity', '1.2.9')).toBe('fallback');
+    expect(typedOutputCapability('codex', undefined)).toBe('strict-native');
+    expect(typedOutputCapability('codex', 'nightly')).toBe('strict-native');
+    expect(typedOutputCapability('opencode', '9.9.9')).toBe('fallback');
   });
 });

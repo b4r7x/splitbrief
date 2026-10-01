@@ -37,6 +37,8 @@ export interface StreamParseResult {
   stopReason?: string | undefined;
   /** A frame that says nothing to the operator and only proves the CLI is still working. */
   isHeartbeat?: boolean | undefined;
+  /** The result record's `structured_output`, when the call ran with `--json-schema`. */
+  structured?: unknown;
 }
 
 export const EMPTY_RESULT: StreamParseResult = Object.freeze({});
@@ -127,6 +129,7 @@ const ResultEvent = z.object({
   is_error: z.boolean().optional(),
   session_id: z.string().optional(),
   usage: z.unknown().optional(),
+  structured_output: z.unknown().optional(),
 });
 
 const SessionEvent = z.object({
@@ -463,6 +466,9 @@ function parseLine(line: string, collectUsage?: CollectMessageUsage): StreamPars
         isResult: true,
         ...(result.data.is_error !== undefined && { isError: result.data.is_error }),
         ...(usage !== undefined && { usage, usageSemantics: 'final' }),
+        ...(result.data.structured_output !== undefined && {
+          structured: result.data.structured_output,
+        }),
       };
     }
 

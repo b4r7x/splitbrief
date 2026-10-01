@@ -4,10 +4,12 @@ import {
   effortField,
   extraBodyFields,
   reasoningField,
+  responseFormatField,
   temperatureField,
   toOpenAIRequest,
   tokenLimitFields,
   usageField,
+  type OpenAIResponseFormat,
   type StreamClient,
 } from './request.js';
 import {
@@ -221,5 +223,45 @@ describe('policy-driven request fields', () => {
       stream: true,
       max_tokens: 512,
     });
+  });
+});
+
+describe('response_format request field', () => {
+  const format: OpenAIResponseFormat = {
+    type: 'json_schema',
+    json_schema: {
+      name: 'probe',
+      schema: { type: 'object' },
+    },
+  };
+
+  it('emits the json_schema response_format carried on the body', () => {
+    expect(
+      toOpenAIRequest({
+        model: 'm',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: true,
+        response_format: {
+          type: 'json_schema',
+          json_schema: { name: 'probe', schema: { type: 'object' } },
+        },
+      }).response_format,
+    ).toEqual(format);
+  });
+
+  it('leaves the body without a response_format key when none is given', () => {
+    expect(
+      'response_format' in
+        toOpenAIRequest({
+          model: 'm',
+          messages: [{ role: 'user', content: 'hi' }],
+          stream: true,
+        }),
+    ).toBe(false);
+  });
+
+  it('builds the field only when a format exists', () => {
+    expect(responseFormatField(undefined)).toEqual({});
+    expect(responseFormatField(format)).toEqual({ response_format: format });
   });
 });

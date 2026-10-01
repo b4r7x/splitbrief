@@ -840,3 +840,59 @@ const wait = setInterval(() => {
     },
   );
 });
+
+describe('createClaudeCodePlanner typed calls', () => {
+  // A planner call runs on its planning stream; a review call is the one-shot path.
+  it.each(['planner', 'reviewer'] as const)(
+    'passes an inline JSON schema to a typed %s call and returns the structured answer',
+    async (seat) => {
+      const argvFile = join(shimDir, 'argv.txt');
+      const shimPath = join(shimDir, 'claude');
+      writeFileSync(
+        shimPath,
+        [
+          '#!/bin/bash',
+          `printf '%s\\n' "$@" > '${argvFile}'`,
+          `printf '%s\\n' '${JSON.stringify({
+            type: 'result',
+            is_error: false,
+            result: '',
+            session_id: 's-9',
+            structured_output: { answer: 'y', count: 2 },
+          })}'`,
+          '',
+        ].join('\n'),
+        'utf8',
+      );
+      chmodSync(shimPath, 0o755);
+      process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
+
+      const planner = await createTrustedClaudeCodePlanner({ authChannel: undefined });
+      const result = await planner
+        .typedCall({ projectDir, callbacks: { onOutput: () => {} }, seat })
+        .invoke({ prompt: 'q', schema: { json: { type: 'object' }, name: 'probe' } });
+
+      const argv = readFileSync(argvFile, 'utf8').split('\n').slice(0, -1);
+      expect(argv).toContain('--json-schema');
+      const schemaIndex = argv.indexOf('--json-schema');
+      expect(argv.slice(schemaIndex, schemaIndex + 2)).toEqual([
+        '--json-schema',
+        '{"type":"object"}',
+      ]);
+      if (result.status !== 'completed') throw new Error('expected a completed typed call');
+      expect(result.structured).toEqual({ answer: 'y', count: 2 });
+    },
+  );
+
+  it('reports native typed output for the Claude Code planner', async () => {
+    writeCommandShim({ dir: shimDir, command: 'claude', lines: [] });
+    process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
+
+    const planner = await createTrustedClaudeCodePlanner({ authChannel: undefined });
+
+    expect(
+      planner.typedCall({ projectDir, callbacks: { onOutput: () => {} }, seat: 'planner' })
+        .typedOutput,
+    ).toBe('native');
+  });
+});

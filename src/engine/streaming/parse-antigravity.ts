@@ -113,6 +113,7 @@ function parseResult(result: Record<string, unknown>): AntigravityTerminalEvent 
       nativeSessionId,
       error: null,
       partial: false,
+      ...(result.structured_output !== undefined && { structured: result.structured_output }),
     };
   }
   const message =

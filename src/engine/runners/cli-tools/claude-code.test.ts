@@ -172,6 +172,76 @@ describe('Claude Code role adapters', () => {
     ]);
   });
 
+  it('adds --json-schema after --effort only when a schema is given, byte-identical otherwise', () => {
+    const schema = { json: { type: 'object' } };
+    const withSchema = claudeCodePlannerAdapter.buildArgs({
+      prompt: '<brief>',
+      model: undefined,
+      projectDir: '/project',
+      configuredArgs: [],
+      mode: 'plan',
+      sessionId: null,
+      effort: 'high',
+      schema,
+    });
+    expect(withSchema).toEqual([
+      '-p',
+      '--output-format',
+      'stream-json',
+      '--verbose',
+      '--include-partial-messages',
+      '--effort',
+      'high',
+      '--json-schema',
+      '{"type":"object"}',
+      '--permission-mode',
+      'plan',
+      '--disallowedTools',
+      'AskUserQuestion',
+    ]);
+
+    const withoutSchema = claudeCodePlannerAdapter.buildArgs({
+      prompt: '<brief>',
+      model: undefined,
+      projectDir: '/project',
+      configuredArgs: [],
+      mode: 'plan',
+      sessionId: null,
+      effort: 'high',
+    });
+    expect(withoutSchema).toEqual([
+      '-p',
+      '--output-format',
+      'stream-json',
+      '--verbose',
+      '--include-partial-messages',
+      '--effort',
+      'high',
+      '--permission-mode',
+      'plan',
+      '--disallowedTools',
+      'AskUserQuestion',
+    ]);
+  });
+
+  it('refuses a configured --json-schema that would override the adapter schema', () => {
+    const base = claudeCodePlannerAdapter.buildArgs({
+      prompt: '<brief>',
+      model: undefined,
+      projectDir: '/project',
+      configuredArgs: [],
+      mode: 'plan',
+      sessionId: null,
+      effort: undefined,
+    });
+    expect(
+      claudeCodePlannerAdapter.validateArgs({
+        invocationArgs: [...base, '--json-schema', '{}'],
+        baseArgs: base,
+      }),
+    ).toEqual({ valid: false, conflicts: ['--json-schema'] });
+  });
+
   it('never re-sends a consumed session id: fresh calls carry no session flag, continuations resume', () => {
     const common = {
       prompt: '<brief>',
@@ -510,6 +580,27 @@ describe('Claude Code stream protocol adapter', () => {
       },
       semantics: 'final',
     });
+  });
+
+  it('carries structured_output from a schema-constrained result record to the terminal', () => {
+    const terminal = claudeProtocolEvents(
+      '{"type":"result","subtype":"success","is_error":false,"result":"","session_id":"s-1","structured_output":{"answer":"ok","count":2}}',
+    ).findLast((event) => event.type === 'result');
+
+    expect(terminal).toMatchObject({
+      type: 'result',
+      status: 'completed',
+      structured: { answer: 'ok', count: 2 },
+    });
+  });
+
+  it('leaves the completed terminal without a structured key when the result carries none', () => {
+    const terminal = claudeProtocolEvents(
+      JSON.stringify({ type: 'result', subtype: 'success', result: 'plain', session_id: 's-1' }),
+    ).findLast((event) => event.type === 'result');
+
+    expect(terminal).toBeDefined();
+    expect(terminal !== undefined && 'structured' in terminal).toBe(false);
   });
 
   it('streams a partial message once: the assistant record restates it, never appends again', () => {

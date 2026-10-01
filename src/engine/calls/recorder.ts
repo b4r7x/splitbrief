@@ -22,6 +22,7 @@ import {
   runnerCallLimitWarning,
   sanitizeRunnerCallRawPreview,
   RUNNER_CALL_ARTIFACT_MAX_ITEMS,
+  RUNNER_CALL_OUTPUT_MAX_BYTES,
   RUNNER_CALL_STDERR_MAX_BYTES,
   RUNNER_CALL_TOOL_USE_MAX_ITEMS,
   RUNNER_CALL_UNKNOWN_UPSTREAM_MAX_ITEMS,
@@ -103,6 +104,7 @@ export interface RunnerCallRecorder {
     usage?: RunnerCallUsage | null | undefined;
     nativeSessionId?: string | null | undefined;
     endedAt?: number | undefined;
+    structured?: unknown;
   }) => RunnerCallResult;
   finishFailed: (opts: {
     status: RunnerCallFailureStatus;
@@ -187,10 +189,25 @@ export function createRunnerCallRecorder(opts: {
       usage?: RunnerCallUsage | null | undefined;
       nativeSessionId?: string | null | undefined;
       endedAt?: number | undefined;
+      structured?: unknown;
     } = {},
   ): RunnerCallResult {
     if (hasTerminalEvent) return snapshot();
     const defaults = currentTerminalDefaults(finishOpts);
+    if (finishOpts.structured !== undefined) {
+      const structuredBytes = Buffer.byteLength(JSON.stringify(finishOpts.structured), 'utf8');
+      if (structuredBytes > RUNNER_CALL_OUTPUT_MAX_BYTES) {
+        noteLimit(
+          {
+            code: 'runner_call_structured_limit',
+            message: `runner call structured answer exceeded ${RUNNER_CALL_OUTPUT_MAX_BYTES} bytes`,
+            bytesSeen: structuredBytes,
+            maxBytes: RUNNER_CALL_OUTPUT_MAX_BYTES,
+          },
+          'truncates-result',
+        );
+      }
+    }
     if (resultLimit !== null) {
       return finishFailed({
         status: 'truncated',
@@ -207,6 +224,7 @@ export function createRunnerCallRecorder(opts: {
         endedAt: finishOpts.endedAt ?? Date.now(),
         usage: defaults.usage,
         nativeSessionId: defaults.nativeSessionId,
+        ...(finishOpts.structured !== undefined && { structured: finishOpts.structured }),
       }),
     );
     return snapshot();

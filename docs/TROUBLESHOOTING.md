@@ -752,7 +752,7 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 
 ### Symptom: continuing a run re-opens the planner halt instead of building
 
-**Likely cause:** The run stopped on a planner-seat recovery — `planner-call-failed`, `planner-returned-no-briefs`, `constitution-check-failed`, `brief-review-no-progress`, `brief-quality-unrepaired`, or a seat-blocked `runner-unauthenticated` / `runner-usage-limit` on the **plan** seat. A halt is answered before any work runs, so continuing shows the panel first. That is the design: the run is waiting on a decision, not stuck.
+**Likely cause:** The run stopped on a planner-seat recovery — `planner-call-failed`, `planner-returned-no-briefs`, `constitution-check-failed`, `brief-review-no-progress`, `brief-quality-unrepaired`, a planner `seat-protocol-error`, or a seat-blocked `runner-unauthenticated` / `runner-usage-limit` on the **plan** seat. A halt is answered before any work runs, so continuing shows the panel first. That is the design: the run is waiting on a decision, not stuck.
 
 **Fix:**
 1. In the TUI, answer the panel. The issue carries its own `seat`, so a swap offer names the seat that is actually blocked.

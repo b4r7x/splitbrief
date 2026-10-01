@@ -4,7 +4,12 @@ import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import { classifyCliAdmittedVersion } from '../../../core/runners/cli-version.js';
 import type { EffortLevel } from '../../../core/schemas/enums.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
-import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';
+import type {
+  CliImplementerAdapter,
+  CliPlannerAdapter,
+  CliProtocolEvent,
+  CliSchemaInput,
+} from './contract.js';
 import { validateCliArgs } from './validate-args.js';
 import {
   createStreamParser,
@@ -30,6 +35,7 @@ const CLAUDE_PROTECTED_FLAGS = new Set([
   '--include-partial-messages',
   '--model',
   '--effort',
+  '--json-schema',
   '--permission-mode',
   '--session-id',
   '--resume',
@@ -50,6 +56,7 @@ type ClaudeBuildCommon = Readonly<{
 
 type ClaudePlannerBuild = ClaudeBuildCommon &
   Readonly<{
+    schema?: CliSchemaInput | undefined;
     prompt: string;
     projectDir: string;
     configuredArgs: readonly string[];
@@ -67,6 +74,10 @@ type ClaudeImplementerBuild = Readonly<{
   installedVersion?: string | undefined;
   skillRoots?: readonly string[] | undefined;
 }>;
+
+function schemaArgs(schema: CliSchemaInput | undefined): string[] {
+  return schema === undefined ? [] : ['--json-schema', JSON.stringify(schema.json)];
+}
 
 function buildBaseArgs(opts: ClaudeBuildCommon): string[] {
   const args: string[] = [...CLAUDE_BASE_ARGS];
@@ -88,7 +99,7 @@ function skillRootPermissions(skillRoots: readonly string[]) {
 }
 
 function plannerBaseArgs(opts: ClaudePlannerBuild): string[] {
-  const args = buildBaseArgs(opts);
+  const args = [...buildBaseArgs(opts), ...schemaArgs(opts.schema)];
   // SPLITBRIEF collects planner answers after the CLI turn finishes.
   if (opts.mode === 'plan')
     args.push('--permission-mode', 'plan', '--disallowedTools', 'AskUserQuestion');
@@ -261,6 +272,7 @@ function protocolEvents(parsed: StreamParseResult): readonly CliProtocolEvent[] 
         nativeSessionId: parsed.sessionId ?? null,
         error: null,
         partial: false,
+        ...(parsed.structured !== undefined && { structured: parsed.structured }),
       });
     }
   }

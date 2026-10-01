@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createPlannerBase } from './base.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
@@ -299,6 +299,104 @@ describe('createPlannerBase — regenerate', () => {
     expect(prompts[0]).toContain('<!-- prior conversation -->');
     expect(prompts[0]).toContain('[user] The export must be named PERIWINKLE-42.');
     expect(prompts[0]?.endsWith('Regenerate the spec.')).toBe(true);
+  });
+});
+
+describe('createPlannerBase — typedCall', () => {
+  it('defaults typedOutput to fallback and canResume to the resume capability', () => {
+    const planner = createPlannerBase({
+      invokePlan: async () => completedRunnerCall(''),
+      invokeEscalate: async () => completedRunnerCall(''),
+      isAvailable: async () => true,
+      capabilities: { ...defaultCapabilities, supportsSessionResume: true },
+    });
+
+    const call = planner.typedCall({
+      projectDir: '/p',
+      callbacks: { onOutput: () => {} },
+      seat: 'reviewer',
+    });
+
+    expect(call.seat).toBe('reviewer');
+    expect(call.typedOutput).toBe('fallback');
+    expect(call.canResume).toBe(true);
+  });
+
+  it('reports the configured typedOutput capability', () => {
+    const planner = createPlannerBase({
+      invokePlan: async () => completedRunnerCall(''),
+      invokeEscalate: async () => completedRunnerCall(''),
+      isAvailable: async () => true,
+      capabilities: defaultCapabilities,
+      typedOutput: 'native',
+    });
+
+    const call = planner.typedCall({
+      projectDir: '/p',
+      callbacks: { onOutput: () => {} },
+      seat: 'planner',
+    });
+
+    expect(call.typedOutput).toBe('native');
+  });
+
+  it('routes a review schema call to a one-shot read-only escalation', async () => {
+    const invokePlan = vi.fn(async () => completedRunnerCall(''));
+    const invokeEscalate = vi.fn(async () => completedRunnerCall(''));
+    const planner = createPlannerBase({
+      invokePlan,
+      invokeEscalate,
+      isAvailable: async () => true,
+      capabilities: defaultCapabilities,
+    });
+    const schema = { json: { type: 'object' }, name: 'probe' };
+
+    await planner
+      .typedCall({ projectDir: '/p', callbacks: { onOutput: () => {} }, seat: 'reviewer' })
+      .invoke({ prompt: 'q', schema });
+
+    expect(invokeEscalate).toHaveBeenCalledTimes(1);
+    expect(invokeEscalate).toHaveBeenCalledWith(
+      expect.objectContaining({ accessMode: 'read-only', prompt: 'q', schema }),
+    );
+    expect(invokePlan).not.toHaveBeenCalled();
+  });
+
+  it('routes a first planner schema call to the planner thread', async () => {
+    const invokePlan = vi.fn(async () => completedRunnerCall(''));
+    const invokeEscalate = vi.fn(async () => completedRunnerCall(''));
+    const planner = createPlannerBase({
+      invokePlan,
+      invokeEscalate,
+      isAvailable: async () => true,
+      capabilities: defaultCapabilities,
+    });
+    const schema = { json: { type: 'object' }, name: 'probe' };
+
+    await planner
+      .typedCall({ projectDir: '/p', callbacks: { onOutput: () => {} }, seat: 'planner' })
+      .invoke({ prompt: 'q', schema });
+
+    expect(invokePlan).toHaveBeenCalledWith(expect.objectContaining({ prompt: 'q', schema }));
+    expect(invokeEscalate).not.toHaveBeenCalled();
+  });
+
+  it('carries the typed call role into the escalation context', async () => {
+    const invokeEscalate = vi.fn(async () => completedRunnerCall(''));
+    const planner = createPlannerBase({
+      invokePlan: async () => completedRunnerCall(''),
+      invokeEscalate,
+      isAvailable: async () => true,
+      capabilities: defaultCapabilities,
+    });
+
+    await planner
+      .typedCall({ projectDir: '/p', callbacks: { onOutput: () => {} }, seat: 'reviewer' })
+      .invoke({ prompt: 'q' });
+
+    expect(invokeEscalate).toHaveBeenCalledWith(
+      expect.objectContaining({ callContext: expect.objectContaining({ role: 'review' }) }),
+    );
   });
 });
 

@@ -7,7 +7,8 @@ export function requireCompletedCall(result: RunnerCallResult): RunnerCallResult
   if (result.status === 'completed') {
     // Nothing produced beside a usage limit on stderr is a call out of quota, the way the BUILD
     // seat's effect gate reads the same shape, so it fails with the limit's words, not silence.
-    const produced = result.text.trim() !== '' || result.artifacts.length > 0;
+    const produced =
+      result.text.trim() !== '' || result.artifacts.length > 0 || result.structured !== undefined;
     const limit = produced ? undefined : stderrUsageLimit(result.warnings);
     if (limit === undefined) return result;
     failed = {

@@ -118,6 +118,24 @@ describe('parseAntigravityLine', () => {
     });
   });
 
+  it('carries a json-schema call structured_output on the completed terminal', () => {
+    expect(
+      parseAntigravityLine(
+        JSON.stringify({
+          event: 'result',
+          result: {
+            conversation_id: 'conv-1',
+            status: 'SUCCESS',
+            response: 'ok',
+            structured_output: { answer: 'ok', count: 3 },
+          },
+        }),
+      ),
+    ).toMatchObject([
+      { type: 'result', status: 'completed', text: 'ok', structured: { answer: 'ok', count: 3 } },
+    ]);
+  });
+
   it('maps a non-SUCCESS result to a failed terminal (shape unverified against a live failure)', () => {
     expect(
       parseAntigravityLine(

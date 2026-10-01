@@ -3,7 +3,12 @@ import { parseAntigravityLine } from '../../streaming/parse-antigravity.js';
 import { error } from '../../../utils/error.js';
 import { CLI_PROJECT_DIR_SENTINEL, CLI_PROMPT_SENTINEL } from './candidate-contract.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
-import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';
+import type {
+  CliImplementerAdapter,
+  CliPlannerAdapter,
+  CliProtocolEvent,
+  CliSchemaInput,
+} from './contract.js';
 import { validateCliArgs } from './validate-args.js';
 
 const ANTIGRAVITY_ID = 'antigravity' as const;
@@ -25,6 +30,7 @@ const ANTIGRAVITY_PROTECTED_FLAGS = new Set([
   '--model',
   '--effort',
   '--mode',
+  '--json-schema',
 ]);
 const ANTIGRAVITY_PROTECTED_SHORT_VALUE_FLAGS = new Set(['-p']);
 
@@ -52,6 +58,10 @@ function generationArgs(
   ];
 }
 
+function schemaArgs(schema: CliSchemaInput | undefined): string[] {
+  return schema === undefined ? [] : ['--json-schema', JSON.stringify(schema.json)];
+}
+
 // `agy -p` does not make its cwd a workspace: the model is told it has none and runs its
 // commands in `~/.gemini/antigravity-cli/scratch`. `--add-dir` names the seat's directory.
 function plannerBaseArgs(input: AntigravityPlannerBuildInput): string[] {
@@ -64,6 +74,7 @@ function plannerBaseArgs(input: AntigravityPlannerBuildInput): string[] {
     input.projectDir,
     ...ANTIGRAVITY_OUTPUT_ARGS,
     ...generationArgs(input),
+    ...schemaArgs(input.schema),
   ];
 }
 

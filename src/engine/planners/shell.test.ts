@@ -6,6 +6,8 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { join } from 'node:path';
 import type { RunnerCallEvent } from '../calls/types.js';
+import { z } from 'zod';
+import { requestTyped } from '../runners/typed-output.js';
 
 let projectDir: string;
 
@@ -46,6 +48,30 @@ describe('createShellPlanner', () => {
     });
     expect(result.success).toBe(true);
     expect(result.code).toBe(null);
+  });
+
+  it('serves a typed planner answer from stdout', async () => {
+    const config = makeConfig({
+      planner: {
+        kind: 'shell',
+        command: 'bash',
+        args: [
+          '-c',
+          'case "$(cat)" in *"No prose after it.") echo \'Result: {"answer":"s","count":4}\';; esac',
+        ],
+      },
+    });
+    const planner = createShellPlanner(config);
+
+    const result = await requestTyped({
+      prompt: 'q',
+      schema: z.object({ answer: z.string(), count: z.number() }),
+      jsonSchema: { type: 'object' },
+      schemaName: 'probe',
+      call: planner.typedCall({ projectDir, callbacks: { onOutput: vi.fn() }, seat: 'planner' }),
+    });
+
+    expect(result).toMatchObject({ value: { answer: 's', count: 4 } });
   });
 
   it('threads a configured idleWarnMs override into the spawn', async () => {

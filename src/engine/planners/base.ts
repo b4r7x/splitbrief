@@ -1,5 +1,7 @@
 import type { Task } from '../../core/schemas/task.js';
 import type { InvokeResult } from '../runners/types.js';
+import type { TypedSchemaInput } from '../runners/typed-output.js';
+import type { TypedOutputCapability } from '../../core/runners/cli-tool-catalog.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { StructuredSummary } from '../../core/schemas/compaction.js';
@@ -41,6 +43,7 @@ type InternalInvokeOptions = {
   >;
   priorMessages?: PriorMessage[] | undefined;
   images?: Attachment[] | undefined;
+  schema?: TypedSchemaInput | undefined;
   signal?: AbortSignal | undefined;
   sandboxEnv?: NodeJS.ProcessEnv | undefined;
 };
@@ -65,6 +68,8 @@ export interface PlannerBaseConfig {
   unavailabilityReason?: () => string | undefined;
   getVersion?: () => Promise<string | null>;
   capabilities: PlannerCapabilities;
+  /** How a typed call reaches this backend; defaults to 'fallback'. */
+  typedOutput?: TypedOutputCapability | undefined;
   /**
    * How to determine whether escalateHint succeeded.
    * - 'text': non-empty stdout (API/streaming planners)
@@ -155,6 +160,39 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       );
       return { text: result.text, usage: toTokenDelta(result.usage) };
     },
+
+    typedCall: (ctx) => ({
+      seat: ctx.seat,
+      typedOutput: config.typedOutput ?? 'fallback',
+      canResume: capabilities.supportsSessionResume,
+      invoke: ({ prompt, schema }) => {
+        const callContext = createPlannerCallContext(
+          config,
+          ctx.seat === 'planner' ? 'planner' : 'review',
+        );
+        // A planner answer is a turn on the planning thread the backend holds, so a repair
+        // continues the thread that gave it; a review holds no session.
+        if (ctx.seat === 'planner') {
+          return config.invokePlan({
+            prompt,
+            projectDir: ctx.projectDir,
+            callContext,
+            callbacks: ctx.callbacks,
+            signal: ctx.callbacks.signal,
+            ...(schema !== undefined && { schema }),
+          });
+        }
+        return config.invokeEscalate({
+          prompt,
+          projectDir: ctx.projectDir,
+          callContext,
+          accessMode: 'read-only',
+          callbacks: ctx.callbacks,
+          signal: ctx.callbacks.signal,
+          ...(schema !== undefined && { schema }),
+        });
+      },
+    }),
 
     async summarize(
       messages: PlannerSummaryMessage[],

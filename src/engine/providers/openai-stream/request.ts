@@ -26,6 +26,11 @@ export type OpenAIRequestMessage = {
   content: string | OpenAIContentPart[];
 };
 
+export type OpenAIResponseFormat = Readonly<{
+  type: 'json_schema';
+  json_schema: Readonly<{ name: string; schema: Readonly<Record<string, unknown>> }>;
+}>;
+
 export type StreamRequestBody = {
   model: string;
   messages: OpenAIRequestMessage[];
@@ -36,6 +41,7 @@ export type StreamRequestBody = {
   max_tokens?: number | undefined;
   max_completion_tokens?: number | undefined;
   reasoning_effort?: EffortLevel | undefined;
+  response_format?: OpenAIResponseFormat | undefined;
 };
 
 export interface StreamClient {
@@ -123,6 +129,7 @@ export function toOpenAIRequest(
     ...(includeUsage ? { stream_options: { include_usage: true } } : {}),
     ...tokenFields,
     ...(reasoningEffort !== undefined ? { reasoning_effort: reasoningEffort } : {}),
+    ...(body.response_format !== undefined ? { response_format: body.response_format } : {}),
   };
 }
 
@@ -158,6 +165,12 @@ export function effortField(
     return { reasoning_effort: effort === 'medium' ? 'high' : effort };
   }
   return { reasoning_effort: effort };
+}
+
+export function responseFormatField(
+  format: OpenAIResponseFormat | undefined,
+): Pick<StreamRequestBody, 'response_format'> {
+  return format === undefined ? {} : { response_format: format };
 }
 
 export function usageField(

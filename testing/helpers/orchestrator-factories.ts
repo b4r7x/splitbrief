@@ -112,6 +112,9 @@ export function makePlanner(overrides?: Partial<Planner>): Planner {
     getVersion: vi.fn().mockResolvedValue('1.0'),
     review: vi.fn().mockResolvedValue({ text: '### Verdict\npass\n', usage: null }),
     summarize: vi.fn().mockResolvedValue({ text: '', usage: null }),
+    typedCall: () => {
+      throw new Error('typedCall is not stubbed');
+    },
     capabilities: {
       supportsConversationalPlanning: false,
       supportsHintEscalation: true,

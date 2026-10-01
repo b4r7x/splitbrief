@@ -18,11 +18,18 @@ import {
 import { composeAbortSignal } from '../../utils/abort.js';
 import type { RunnerCallContext } from '../calls/types.js';
 import { createRunnerAttemptCallbackBuffer } from '../calls/callback-buffer.js';
-import type { CliAuthChannelId } from '../../core/runners/cli-tool-catalog.js';
+import type { TypedSchemaInput } from '../runners/typed-output.js';
+import {
+  type CliAuthChannelId,
+  typedOutputCapability,
+} from '../../core/runners/cli-tool-catalog.js';
 import { createRunnerSandboxEnv, resolveCliRunnerAuth } from '../runners/sandbox-env.js';
 import type { CliExecutableIdentity } from '../../core/discovery/detection.js';
 
-type ClaudeStartGate = Readonly<{ executable: CliExecutableIdentity }>;
+type ClaudeStartGate = Readonly<{
+  executable: CliExecutableIdentity;
+  installedVersion?: string | undefined;
+}>;
 
 const CLAUDE_TOOL = 'claude-code' as const;
 
@@ -116,6 +123,7 @@ export function createClaudeCodePlanner(opts: {
     callContext: RunnerCallContext,
     images?: Attachment[] | undefined,
     signal?: AbortSignal | undefined,
+    schema?: TypedSchemaInput | undefined,
   ) {
     const resumeId = session.getResumeId() ?? undefined;
     const effectiveSignal = composeAbortSignal(signal, timeout);
@@ -157,6 +165,7 @@ export function createClaudeCodePlanner(opts: {
         callContext,
         ...claudeRunnerPrep({ env, signal: effectiveSignal }),
         ...(images && images.length > 0 ? { images } : {}),
+        ...(schema !== undefined && { schema: { json: schema.json } }),
       });
       const returnedSessionId = mismatchedId ?? result.sessionId ?? result.nativeSessionId;
       if (resumeId !== undefined && returnedSessionId !== null && returnedSessionId !== resumeId) {
@@ -191,8 +200,8 @@ export function createClaudeCodePlanner(opts: {
   return createPlannerBase({
     backendKind: 'cli',
 
-    async invokePlan({ prompt, projectDir, callbacks, callContext, images, signal }) {
-      return invokeOnSession(prompt, projectDir, callbacks, callContext, images, signal);
+    async invokePlan({ prompt, projectDir, callbacks, callContext, images, signal, schema }) {
+      return invokeOnSession(prompt, projectDir, callbacks, callContext, images, signal, schema);
     },
 
     async invokeEscalate({
@@ -203,6 +212,7 @@ export function createClaudeCodePlanner(opts: {
       accessMode,
       signal,
       sandboxEnv,
+      schema,
     }) {
       const effectiveSignal = composeAbortSignal(signal, timeout);
       const env = sandboxEnv ?? (await createRunnerSandboxEnv(projectDir, runnerConfig, 'planner'));
@@ -214,12 +224,14 @@ export function createClaudeCodePlanner(opts: {
         onCallEvent: callbacks.onCallEvent,
         callContext,
         ...claudeRunnerPrep({ env, signal: effectiveSignal }),
+        ...(schema !== undefined && { schema: { json: schema.json } }),
       });
     },
 
     ...createCommandAvailability('claude'),
     runnerName: 'claude',
     ...(resolvedModel !== undefined && { model: resolvedModel }),
+    typedOutput: typedOutputCapability(CLAUDE_TOOL, trustedCli?.installedVersion),
 
     async injectUserTurn(injection): Promise<PlannerUserTurnResult> {
       const sessionId = session.getResumeId();

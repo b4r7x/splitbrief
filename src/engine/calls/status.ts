@@ -102,6 +102,7 @@ export function runnerCallCompletedEvent(
     endedAt: number;
     usage: RunnerCallUsage | null;
     nativeSessionId: string | null;
+    structured?: unknown;
   },
 ): RunnerCallEvent {
   return {
@@ -116,6 +117,7 @@ export function runnerCallCompletedEvent(
     partial: false,
     usage: opts.usage,
     nativeSessionId: opts.nativeSessionId,
+    ...(opts.structured !== undefined && { structured: opts.structured }),
   };
 }
 

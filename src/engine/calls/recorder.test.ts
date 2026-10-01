@@ -238,6 +238,48 @@ describe('createRunnerCallRecorder', () => {
     expect(events.filter((event) => event.type === 'call_text_delta')).toHaveLength(1);
   });
 
+  it('redacts a credential inside a structured answer', () => {
+    const credential = 'opaque-cli-credential-canary-7d93c612';
+    const events: RunnerCallEvent[] = [];
+    const recorder = createRunnerCallRecorder({
+      context,
+      startedAt: 1,
+      credentialValues: [credential],
+      onEvent: (event) => events.push(event),
+    });
+
+    const result = recorder.finishCompleted({
+      endedAt: 20,
+      structured: { note: `token ${credential}`, nested: [{ key: credential }], count: 2 },
+    });
+
+    expect(result.status).toBe('completed');
+    if (result.status !== 'completed') throw new Error('expected a completed call');
+    expect(result.structured).toMatchObject({ count: 2 });
+    expect(JSON.stringify(result.structured)).not.toContain(credential);
+    expect(JSON.stringify(events)).not.toContain(credential);
+  });
+
+  it('fails a structured answer past the output bound as truncated', () => {
+    const events: RunnerCallEvent[] = [];
+    const recorder = createRunnerCallRecorder({
+      context,
+      startedAt: 1,
+      onEvent: (event) => events.push(event),
+    });
+
+    const result = recorder.finishCompleted({
+      endedAt: 20,
+      structured: { answer: 'x'.repeat(RUNNER_CALL_OUTPUT_MAX_BYTES) },
+    });
+
+    expect(result).toMatchObject({
+      status: 'truncated',
+      error: { code: 'runner_call_structured_limit' },
+    });
+    expect(JSON.stringify(events).length).toBeLessThan(RUNNER_CALL_OUTPUT_MAX_BYTES);
+  });
+
   it('replaces a full-size draft with final result text', () => {
     const recorder = createRunnerCallRecorder({ context, startedAt: 1 });
 

@@ -1,6 +1,7 @@
 import type { EffortLevel } from '../../../core/schemas/enums.js';
 import type { Attachment } from '../../../core/schemas/attachment.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
+import type { CliSchemaInput } from '../cli-tools/contract.js';
 import { spawnWithStdin } from '../../../lib/process/spawn/line-stream.js';
 import type { CliAuthChannelId } from '../../../core/runners/cli-tool-catalog.js';
 import { resolveCliExecutable } from '../resolve-cli-executable.js';
@@ -192,6 +193,7 @@ export interface ClaudePlannerStreamOpts {
   callContext?: RunnerCallContext | undefined;
   idleWarnMs?: number | undefined;
   idleKillMs?: number | undefined;
+  schema?: CliSchemaInput | undefined;
 }
 
 export async function runClaudePlannerStream(
@@ -205,6 +207,7 @@ export async function runClaudePlannerStream(
     effort: opts.effort,
     configuredArgs: opts.configuredArgs,
     skillRoots: opts.skillRoots,
+    schema: opts.schema,
   });
   const spawnEnv = opts.env ?? (await defaultClaudeEnv(opts.projectDir, opts.authChannel));
 
@@ -255,6 +258,7 @@ export interface ClaudeOneShotOpts {
   env?: NodeJS.ProcessEnv | undefined;
   idleWarnMs?: number | undefined;
   idleKillMs?: number | undefined;
+  schema?: CliSchemaInput | undefined;
 }
 
 export async function runClaudeOneShot(opts: ClaudeOneShotOpts): Promise<RunnerCallResult> {
@@ -265,6 +269,7 @@ export async function runClaudeOneShot(opts: ClaudeOneShotOpts): Promise<RunnerC
     effort: opts.effort,
     configuredArgs: opts.configuredArgs,
     skillRoots: opts.skillRoots,
+    schema: opts.schema,
   });
   const spawnEnv = opts.env ?? (await defaultClaudeEnv(opts.projectDir, opts.authChannel));
 

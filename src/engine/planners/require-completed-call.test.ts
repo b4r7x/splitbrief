@@ -100,4 +100,15 @@ describe('requireCompletedCall', () => {
 
     expect(requireCompletedCall(wrote)).toBe(wrote);
   });
+
+  it('returns a call that answered natively, whatever its stderr said', () => {
+    const structured = makeRunnerCallResult({
+      status: 'completed',
+      text: '',
+      structured: { answer: 'ok' },
+      warnings: [stderrWarning(AGY_LIMIT)],
+    });
+
+    expect(requireCompletedCall(structured)).toBe(structured);
+  });
 });

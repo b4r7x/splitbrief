@@ -115,6 +115,21 @@ describe('Claude stream credential redaction', () => {
     expect(JSON.stringify(interrupted)).not.toContain(credential);
   });
 
+  it('carries structured_output from a schema-constrained result record to the completed call', () => {
+    const { state, handleLine } = createStreamHandler({
+      context,
+      onOutput: () => {},
+    });
+
+    handleLine(
+      '{"type":"result","subtype":"success","is_error":false,"result":"","session_id":"s-1","structured_output":{"answer":"ok","count":2}}',
+    );
+
+    const result = finishClaudeStream(state);
+    if (result.status !== 'completed') throw new Error('expected a completed result');
+    expect(result.structured).toEqual({ answer: 'ok', count: 2 });
+  });
+
   it('keeps only the divergent final response as content, never concatenating partials', () => {
     const { state, handleLine } = createStreamHandler({
       context,

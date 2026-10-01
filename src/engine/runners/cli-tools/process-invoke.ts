@@ -471,6 +471,7 @@ export async function invokeProcessCli(
       return recorder.finishCompleted({
         usage: terminal.usage,
         nativeSessionId: terminal.nativeSessionId,
+        ...(terminal.structured !== undefined && { structured: terminal.structured }),
       });
     }
     // A failed terminal that names no halt of its own leaves the diagnosis to stderr.

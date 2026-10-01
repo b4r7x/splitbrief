@@ -1,6 +1,6 @@
 import { AUTOMATIC_MODEL, normalizeConfiguredModel } from '../providers/automatic-model.js';
 import { typedEntries } from '../../utils/type-guards.js';
-import type { CliVersionScheme } from './cli-version.js';
+import { classifyCliAdmittedVersion, type CliVersionScheme } from './cli-version.js';
 import type { CliEffortChannel } from './effort-channel.js';
 import type { RunnerBillingPosture } from './runner-billing.js';
 import type { RunnerRole } from './seat-roles.js';
@@ -178,6 +178,23 @@ type ExistingCliToolId =
 
 export type CliToolId = ExistingCliToolId;
 
+/** How one call asks for a typed answer: the tool's own JSON Schema channel, or the prompt. */
+export type TypedOutputTransport = 'native' | 'fallback';
+
+/**
+ * How a seat can take a typed answer. `strict-native` is a native channel that takes only a
+ * schema OpenAI strict mode accepts; every other schema goes through the prompt.
+ */
+export type TypedOutputCapability = TypedOutputTransport | 'strict-native';
+
+/**
+ * Whether the tool takes a JSON Schema for its final answer on its own command line. `since` is
+ * the release whose `--help` and live probe recorded the flag; no older release is proven.
+ */
+export type TypedOutputSupport =
+  | Readonly<{ kind: 'native' | 'strict-native'; since: string }>
+  | Readonly<{ kind: 'fallback' }>;
+
 export type CliToolDeclarationBase<Id extends string = string> = Readonly<{
   id: Id;
   displayName: string;
@@ -190,6 +207,7 @@ export type CliToolDeclarationBase<Id extends string = string> = Readonly<{
   supportsEffort: boolean;
   /** How the tool's effort intent reaches it, when it has a channel at all. */
   effortChannel: CliEffortChannel;
+  typedOutput: TypedOutputSupport;
   auth: CliAuthPolicy;
   billing: RunnerBillingPosture;
   isSubscription: boolean;
@@ -372,6 +390,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     modelPolicy: rolePolicy({ planner: 'optional', implementer: 'optional' }),
     supportsEffort: true,
     effortChannel: 'effort-flag',
+    typedOutput: { kind: 'native', since: '2.1.287' },
     auth: authPolicy('api-key-or-session', [
       authChannel({
         id: 'session',
@@ -412,6 +431,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     modelPolicy: rolePolicy({ planner: 'optional', implementer: 'optional' }),
     supportsEffort: true,
     effortChannel: 'effort-flag',
+    typedOutput: { kind: 'strict-native', since: '0.157.1' },
     auth: authPolicy('api-key-or-session', [
       authChannel({
         id: 'session',
@@ -451,6 +471,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     modelPolicy: rolePolicy({ planner: 'optional', implementer: 'optional' }),
     supportsEffort: false,
     effortChannel: 'variant',
+    typedOutput: { kind: 'fallback' },
     auth: authPolicy('provider-dependent', [
       authChannel({
         id: 'provider-dependent',
@@ -488,6 +509,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     modelPolicy: rolePolicy({ planner: 'optional', implementer: 'optional' }),
     supportsEffort: true,
     effortChannel: 'effort-flag',
+    typedOutput: { kind: 'fallback' },
     auth: authPolicy('session', [
       authChannel({
         id: 'session',
@@ -521,6 +543,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     modelPolicy: rolePolicy({ planner: 'optional', implementer: 'optional' }),
     supportsEffort: false,
     effortChannel: 'variant',
+    typedOutput: { kind: 'fallback' },
     auth: authPolicy('provider-dependent', [
       authChannel({
         id: 'provider-dependent',
@@ -554,6 +577,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     modelPolicy: rolePolicy({ planner: 'optional', implementer: 'optional' }),
     supportsEffort: false,
     effortChannel: 'model-id',
+    typedOutput: { kind: 'fallback' },
     auth: authPolicy('api-key-or-session', [
       authChannel({
         id: 'session',
@@ -594,6 +618,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     modelPolicy: rolePolicy({ planner: 'optional', implementer: 'optional' }),
     supportsEffort: true,
     effortChannel: 'effort-flag',
+    typedOutput: { kind: 'fallback' },
     // `cmd --help` names no API-key environment variable — only `CMD_LOCAL_ONLY`,
     // a BYOK routing switch and not a credential — so declaring an api-key
     // channel would fabricate a credential channel that does not exist.
@@ -639,6 +664,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     modelPolicy: rolePolicy({ planner: 'optional', implementer: 'optional' }),
     supportsEffort: true,
     effortChannel: 'effort-flag',
+    typedOutput: { kind: 'native', since: '1.2.14' },
     auth: authPolicy('session', [
       authChannel({
         id: 'session',
@@ -865,6 +891,23 @@ export function cliModelPolicyViolations(
   }
 
   return violations;
+}
+
+// A release older than the proven one gets the prompt fallback; an unknown release keeps the
+// native flag, as every other release-gated flag of an adapter does.
+export function typedOutputCapability(
+  id: CliToolId,
+  installedVersion: string | undefined,
+): TypedOutputCapability {
+  const { typedOutput, compatibility } = CLI_TOOL_CATALOG[id];
+  if (typedOutput.kind === 'fallback') return 'fallback';
+  if (installedVersion === undefined) return typedOutput.kind;
+  const proven = classifyCliAdmittedVersion({
+    installedVersion,
+    minimumAdmittedVersion: typedOutput.since,
+    versionScheme: compatibility.versionScheme,
+  });
+  return proven === 'incompatible' ? 'fallback' : typedOutput.kind;
 }
 
 export function cliToolSupportsRole(id: CliToolId, role: RunnerRole): boolean {

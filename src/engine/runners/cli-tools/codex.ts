@@ -1,7 +1,12 @@
 import { toTokenDelta } from '../../calls/usage.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
-import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';
+import type {
+  CliImplementerAdapter,
+  CliPlannerAdapter,
+  CliProtocolEvent,
+  CliSchemaInput,
+} from './contract.js';
 import { lastMessageGroupText } from './final-group.js';
 import { validateCliArgs } from './validate-args.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
@@ -41,6 +46,7 @@ const CODEX_PROTECTED_FLAGS = new Set([
   '--json',
   '--model',
   '--output-last-message',
+  '--output-schema',
   '--sandbox',
   '--skip-git-repo-check',
   '--yolo',
@@ -65,6 +71,12 @@ function validateArgs(input: { invocationArgs: readonly string[]; baseArgs: read
     protectedShortValueFlags: CODEX_PROTECTED_SHORT_VALUE_FLAGS,
     promptTransport: 'stdin',
   });
+}
+
+// Codex reads the schema only from a file; the adapter declares `schemaFile`, so the planner writes one.
+function schemaArgs(schema: CliSchemaInput | undefined): string[] {
+  if (schema?.path === undefined) return [];
+  return ['--output-schema', schema.path];
 }
 
 /**
@@ -92,6 +104,7 @@ function plannerBaseArgs(input: CodexPlannerBuildInput): string[] {
       '--ignore-user-config',
       '--ignore-rules',
       '--json',
+      ...schemaArgs(input.schema),
       input.sessionId,
       CODEX_STDIN_PROMPT,
     ];
@@ -110,6 +123,7 @@ function plannerBaseArgs(input: CodexPlannerBuildInput): string[] {
     ...(escalate ? [] : ['--ignore-rules']),
     ...(input.oneShot === true ? ['--ephemeral'] : []),
     '--json',
+    ...schemaArgs(input.schema),
     ...(escalate ? ['--skip-git-repo-check'] : []),
     '--cd',
     input.projectDir,
@@ -146,6 +160,7 @@ function createCodexPlannerAdapter(): CliPlannerAdapter<'codex'> {
     role: 'planner',
     supportsSessionResume: true,
     supportsEffort: CLI_TOOL_CATALOG.codex.supportsEffort,
+    schemaFile: true,
     promptTransport: CODEX_PROMPT_TRANSPORT,
     baseArgs: plannerBaseArgs,
     buildArgs: (input) => [...plannerBaseArgs(input), ...input.configuredArgs],

@@ -36,6 +36,7 @@ interface RunnerCallCollectionState {
   text: string;
   usage: RunnerCallUsage | null;
   nativeSessionId: string | null;
+  structured?: unknown;
   toolUses: RunnerCallResult['toolUses'];
   artifacts: RunnerCallResult['artifacts'];
   warnings: RunnerCallWarning[];
@@ -164,6 +165,7 @@ export function collectRunnerCallResult(events: Iterable<RunnerCallEvent>): Runn
       status,
       error: null,
       partial: false,
+      ...(state.structured !== undefined && { structured: state.structured }),
     };
   }
 
@@ -353,6 +355,7 @@ function applyRunnerCallEvent(state: RunnerCallCollectionState, event: RunnerCal
         });
       }
       state.nativeSessionId = event.nativeSessionId;
+      state.structured = event.structured;
       return;
     case 'call_unknown_upstream':
       if (state.unknownUpstreamCount >= RUNNER_CALL_UNKNOWN_UPSTREAM_MAX_ITEMS) {

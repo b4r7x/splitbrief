@@ -125,6 +125,8 @@ const checkpointPredicates = [
   // its own document too — otherwise the frame captures a gate over an empty box.
   [checkpointId('approval-document'), includesAll('End run', 'Fixture plan')],
   [checkpointId('selection-copy'), includesAll('End run', 'Fixture plan')],
+  [checkpointId('gate-regenerating'), includesAll('Regenerating plan with feedback')],
+  [checkpointId('briefs-gate-regenerating'), includesAll('Applying Task Brief revision feedback')],
   [checkpointId('approval-permission'), includesAll('allow this operation only')],
   [checkpointId('approval-confirm'), includesAll('Confirm with a reason')],
   [checkpointId('approval-confirm-secret'), includesAll('Confirm with a reason')],
@@ -134,6 +136,7 @@ const checkpointPredicates = [
   // The subsections the spec card does not nest, and the briefs after T001's unclosed sample.
   [checkpointId('spec-tasks-cards'), includesAll('+ 12 more sections', 'T002', 'T003')],
   [checkpointId('question'), includesAll(WORKFLOW_FIXTURE_TEXT.question)],
+  [checkpointId('gate-question'), includesAll('Which call should the live probe make')],
   [checkpointId('question-overflow'), includesAll('Question 2 of 3')],
   [checkpointId('question-input'), includesAll('Question 1 of 2', 'New instruction')],
   [checkpointId('planner-reply'), includesAll('Reply to the planner…', 'Waiting for your answer')],

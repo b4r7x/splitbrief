@@ -457,20 +457,36 @@ When you adjust a tool's adapter to track an upstream CLI change, bump that tool
 
 ##### Admitted support summary
 
-| `tool` | command | roles | tested version | version scheme | evidence as-of | model policy (planner / implementer) | model discovery | billing |
-|---|---|---|---|---|---|---|---|---|
-| `claude-code` | `claude` | planner, implementer | 2.0.0 | `semver` | 2026-07-31 | optional / optional | `native-aliases-and-custom` | subscription-included |
-| `codex` | `codex` | planner, implementer | 0.40.0 | `semver` | 2026-07-31 | optional / optional | `capability-gated-native` | subscription-included |
-| `opencode` | `opencode` | planner, implementer | 2.0.14 | `semver` | 2026-09-22 | optional / optional | `native-cli` (`opencode api GET /api/model`; `opencode models --verbose` below 2.0.0) | provider-dependent |
-| `copilot` | `copilot` | planner, implementer | 1.0.77 | `semver` | 2026-09-02 | optional / optional | `native-cli` (`copilot help config`) | subscription-included |
-| `kilo-code` | `kilo` | planner, implementer | 0.1.0 | `semver` | 2026-07-31 | optional / optional | `native-cli` | provider-dependent |
-| `cursor` | `cursor-agent` | planner, implementer | 2026.08.25-3e8eec8 | `calver` | 2026-08-27 | optional / optional | `native-cli` (`--list-models`) | subscription-included |
-| `command-code` | `cmd` | planner, implementer | 1.39.2 | `semver` | 2026-09-01 | optional / optional | `native-cli` (`--list-models`) | subscription-included |
-| `antigravity` | `agy` | planner, implementer | 1.2.9 | `semver` | 2026-09-23 | optional / optional | `native-cli` (`agy models`) | subscription-included |
+| `tool` | command | roles | tested version | version scheme | evidence as-of | model policy (planner / implementer) | model discovery | billing | typed output |
+|---|---|---|---|---|---|---|---|---|---|
+| `claude-code` | `claude` | planner, implementer | 2.0.0 | `semver` | 2026-07-31 | optional / optional | `native-aliases-and-custom` | subscription-included | native from 2.1.287 |
+| `codex` | `codex` | planner, implementer | 0.40.0 | `semver` | 2026-07-31 | optional / optional | `capability-gated-native` | subscription-included | strict-native from 0.157.1 |
+| `opencode` | `opencode` | planner, implementer | 2.0.14 | `semver` | 2026-09-22 | optional / optional | `native-cli` (`opencode api GET /api/model`; `opencode models --verbose` below 2.0.0) | provider-dependent | fallback |
+| `copilot` | `copilot` | planner, implementer | 1.0.77 | `semver` | 2026-09-02 | optional / optional | `native-cli` (`copilot help config`) | subscription-included | fallback |
+| `kilo-code` | `kilo` | planner, implementer | 0.1.0 | `semver` | 2026-07-31 | optional / optional | `native-cli` | provider-dependent | fallback |
+| `cursor` | `cursor-agent` | planner, implementer | 2026.08.25-3e8eec8 | `calver` | 2026-08-27 | optional / optional | `native-cli` (`--list-models`) | subscription-included | fallback |
+| `command-code` | `cmd` | planner, implementer | 1.39.2 | `semver` | 2026-09-01 | optional / optional | `native-cli` (`--list-models`) | subscription-included | fallback |
+| `antigravity` | `agy` | planner, implementer | 1.2.9 | `semver` | 2026-09-23 | optional / optional | `native-cli` (`agy models`) | subscription-included | native from 1.2.14 |
 
 **Command Code's row was captured from the real binary on 2026-09-01 against `cmd` 1.39.2**, replacing the hand-authored fixtures that stood in for it. The raw `cli-conformance` leg passes; the production leg records `OMIT` because the conformance sandbox gives the child a fresh `HOME` and never bridges host CLI session state, so a `session`-auth tool reaches the CLI unauthenticated. That gap is the harness's, not the adapter's — the adapter's own argv was replayed against the authenticated binary and its terminal `result` frame parses. See `testing/fixtures/command-code/README.md` for the recorded evidence and the remaining gap.
 
 `cursor` executable aliases are `cursor-agent` / `agent`. Command Code's binary is `cmd` with no alternate alias, and its credentials come from `cmd login`; there is no API-key environment channel. Every `cmd` start checks for a new release and installs it in the background unless the argv names `--no-auto-update`, so both of its probes, `cmd status --json` and `cmd --list-models`, carry that flag. Antigravity's binary is `agy`, `agy --version` prints a bare semver (`1.2.9`, captured 2026-09-23 — `agy --help` prints no version at all), and `agy models` is both its auth probe and its model listing: one `<id>\t<display name>` row per effort variant (`gemini-3.8-flash-high`), merged into one picker row per model. Both runs of `agy models` have a 10-second budget instead of the shared 5-second probe budget: `agy` waits on Google's `loadCodeAssist` and `fetchAvailableModels` calls before it lists, and its own logs show 6 of 394 listings above 5 seconds. The seat spends its effort on `--effort` (`effortChannel: 'effort-flag'`), not through the id suffix. The reviewer seat uses planner backends (the same admission set).
+
+##### Typed seat output
+
+`requestTyped` (`src/engine/runners/typed-output.ts`) asks one seat for one JSON answer. SPLITBRIEF validates the answer with its own Zod schema, never with the tool's claim.
+
+- `claude-code` and `antigravity` get `--json-schema <inline JSON>`.
+- `codex` gets `--output-schema <file>`: a private 0600 file that is removed after the call.
+- Codex sends that schema in OpenAI strict mode. A live probe on 0.157.1 showed a 400 (`invalid_json_schema`) for a key missing from `required`. An object with no `properties` got a 400 too. So codex is `strict-native`: it gets the schema natively only when the root is an object, every object declares `properties`, lists each key in `required` and sets `additionalProperties: false`, an optional value is a `null` union, and no `oneOf`, `allOf` or `not` appears (`isStrictJsonSchema`, `src/engine/runners/strict-json-schema.ts`). Any other schema gets the prompt fallback on the codex seat. So a contract with an optional key or a union at the root takes the fallback on codex.
+- A native tool uses its flag only from the release whose `--help` and live probe recorded it, the `typed output` column above. An older release gets the prompt fallback. A release that readiness did not read keeps the flag.
+- The `api` kind gets `response_format: json_schema`, without `strict`: the contracts have optional keys, which strict mode rejects.
+- Every other tool, and the `shell` and `agent` kinds, gets the sentence "Reply with exactly one JSON object that matches this schema: … No prose after it." on the end of the prompt.
+- The answer is the object that parses and ends last: a fenced block that opens an object, or an object outside every fence. A later brace span that does not parse is skipped when it reads as prose, such as `{above}`. A later span that opens like JSON (`{"` or `{}`) and does not parse makes the answer invalid, so it gets the repair call. Two bare objects at the end are ambiguous.
+- A planner typed call is a turn on its planning thread. A reviewer typed call is one read-only call with no session. The call binding carries the seat as `ActiveRunnerRole` (`planner`, `reviewer`, `implementer`), and the helper and the recovery issue read it from there. The binding in `src/engine/planners/base.ts` maps `reviewer` to the `review` call role, and the recovery builder maps the seat to its crew id.
+- A planner or reviewer answer that fails gets one repair call. A planner on a resumable tool continues its planning thread, the session that the planner itself holds and that gave the answer; a reviewer always starts a new call; an implementer gets no repair.
+- An `api` endpoint that rejects `response_format` with HTTP 400, with a detail that names `response_format`, gets one more request with the sentence instead. That retry has its own call id and is not the repair call. Another status, or a 400 that does not name the field, fails as a planner call. An endpoint that accepts `response_format` but rejects the schema itself with a 400 that names the field also gets the sentence, so that schema defect does not surface. SPLITBRIEF does not remember the rejection, so every typed call to that endpoint, the repair included, sends the rejected request first.
+- A second invalid answer is the recovery reason `seat-protocol-error`.
 
 ##### Posture, trust, and auth
 

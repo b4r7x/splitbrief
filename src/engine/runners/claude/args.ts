@@ -1,4 +1,5 @@
 import type { EffortLevel } from '../../../core/schemas/enums.js';
+import type { CliSchemaInput } from '../cli-tools/contract.js';
 import { CLI_PROMPT_SENTINEL } from '../cli-tools/candidate-contract.js';
 import { claudeCodePlannerAdapter } from '../cli-tools/claude-code.js';
 import { error } from '../../../utils/error.js';
@@ -11,6 +12,7 @@ export interface BuildArgsOpts {
   effort?: EffortLevel | undefined;
   configuredArgs?: readonly string[] | undefined;
   skillRoots?: readonly string[] | undefined;
+  schema?: CliSchemaInput | undefined;
 }
 
 /**
@@ -31,6 +33,7 @@ export function buildClaudeArgs(opts: BuildArgsOpts): string[] {
       sessionId: opts.sessionId ?? null,
       effort: opts.effort,
       skillRoots: opts.skillRoots,
+      schema: opts.schema,
     }),
   ];
   const args = [...baseArgs, ...configuredArgs];

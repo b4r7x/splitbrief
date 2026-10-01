@@ -142,6 +142,7 @@ export function allowedActionsForReason(reason: RecoveryReason): RecoveryAction[
     case 'review-failed':
       return copyActions(REVIEW_FAILED_ACTIONS);
     case 'planner-call-failed':
+    case 'seat-protocol-error':
       return copyActions(PLANNER_CALL_ACTIONS);
     case 'planner-returned-no-briefs':
     case 'brief-quality-unrepaired':

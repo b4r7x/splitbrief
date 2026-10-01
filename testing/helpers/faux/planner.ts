@@ -92,6 +92,10 @@ export function fauxPlanner(opts?: {
       return { text: '', usage: null };
     },
 
+    typedCall: () => {
+      throw new Error('typedCall is not stubbed');
+    },
+
     async injectUserTurn() {
       return { status: 'delivered', usage: null };
     },

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { PHASES } from '../../../core/schemas/enums.js';
 import { deriveLiveStatus, stallRunnerHint } from './live-activity.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { addEvent } from '../../../stores/workflow/actions/event.js';
+import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
+import { makePlannerHeartbeat, makePlannerStatus } from '#testing/helpers/events/planner.js';
+import { makeRunnerCallStarted } from '#testing/helpers/events/runner-call.js';
 
 const base = {
   status: 'running' as const,
@@ -173,6 +178,52 @@ describe('deriveLiveStatus', () => {
         resumedAt: 90_000,
       })?.stageStart,
     ).toBe(90_000);
+  });
+
+  it('stays live while the planner rewrites a gate document from a change request', () => {
+    const liveNow = () => {
+      const lifecycle = lifecycleStore.get();
+      return deriveLiveStatus({
+        ...base,
+        phase: lifecycle.phase,
+        status: lifecycle.status,
+        startedAt: lifecycle.startedAt,
+        phaseFirstSeenTs: lifecycle.phaseFirstSeenTs,
+        plannerCall: lifecycle.plannerCall ?? null,
+        plannerCallStartedTs: lifecycle.plannerCallStartedTs ?? null,
+      });
+    };
+    const regenerate = (
+      gate: 'reviewing-spec' | 'reviewing-plan' | 'reviewing-briefs',
+      call: 'spec' | 'plan' | 'tasks',
+    ) => {
+      const statusPhase = call === 'spec' ? 'specifying' : 'planning';
+      resetWorkflow();
+      addEvent({ type: 'workflow_started', ts: 1_000, phase: 'researching', feature: 'test' });
+      addEvent(makePlannerStatus({ phase: statusPhase, ts: 2_000, call }));
+      addEvent(makePlannerStatus({ phase: gate, ts: 3_000 }));
+      addEvent(makePlannerStatus({ phase: statusPhase, ts: 50_000, call }));
+      addEvent(makePlannerHeartbeat({ phase: statusPhase, ts: 50_000 }));
+      addEvent(makeRunnerCallStarted({ phase: gate, ts: 50_010 }));
+    };
+
+    regenerate('reviewing-plan', 'plan');
+    expect(lifecycleStore.get().phase).toBe('reviewing-plan');
+    expect(liveNow()).toMatchObject({
+      verb: 'Writing the plan…',
+      stageStart: 50_000,
+      tone: 'planner',
+    });
+    addEvent(makePlannerStatus({ phase: 'planning', ts: 60_000, status: 'done', call: 'plan' }));
+    addEvent(makePlannerStatus({ phase: 'reviewing-plan', ts: 60_001 }));
+    expect(liveNow()).toBeNull();
+
+    regenerate('reviewing-spec', 'spec');
+    expect(liveNow()).toMatchObject({ verb: 'Specifying…', stageStart: 50_000 });
+
+    regenerate('reviewing-briefs', 'tasks');
+    expect(lifecycleStore.get().phase).toBe('reviewing-briefs');
+    expect(liveNow()).toMatchObject({ verb: 'Compiling briefs…', stageStart: 50_000 });
   });
 
   it('names the reviewer seat during final review and keeps the seatless wording without one', () => {

@@ -67,6 +67,8 @@ export function formatRecoveryHeadline(issue: RecoveryIssue, now: number = Date.
       return `Two timeouts in a row on ${taskName(issue)}`;
     case 'planner-call-failed':
       return 'Planner call failed';
+    case 'seat-protocol-error':
+      return 'Seat answer did not match its contract';
     case 'planner-returned-no-briefs':
       return 'Planner returned no briefs';
     case 'constitution-check-failed':

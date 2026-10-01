@@ -193,6 +193,7 @@ export const RunnerCallEventSchema = z.discriminatedUnion('type', [
     error: z.null(),
     partial: z.literal(false),
     ...runnerCallTerminalFields,
+    structured: z.unknown().optional(),
   }),
   callEvent('call_unknown_upstream', {
     rawPreview: z.string().max(UNKNOWN_UPSTREAM_RAW_PREVIEW_MAX_LENGTH),
@@ -224,6 +225,7 @@ const RunnerCallCompletedResultSchema = z.strictObject({
   status: z.literal('completed'),
   error: z.null(),
   partial: z.literal(false),
+  structured: z.unknown().optional(),
 });
 
 const RunnerCallFailureResultSchema = z.strictObject({

@@ -51,6 +51,7 @@ describe('formatRecoveryHeadline', () => {
       [{ reason: 'constitution-check-failed' }, 'Constitution check failed'],
       [{ reason: 'brief-review-no-progress' }, 'Brief review is not making progress'],
       [{ reason: 'brief-quality-unrepaired' }, 'Task Briefs still fail the quality gate'],
+      [{ reason: 'seat-protocol-error' }, 'Seat answer did not match its contract'],
     ];
     for (const [overrides, expected] of cases) {
       expect(formatRecoveryHeadline(makeRecoveryIssue(overrides))).toBe(expected);

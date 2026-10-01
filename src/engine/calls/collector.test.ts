@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { collectRunnerCallResult } from './collector.js';
-import { RUNNER_CALL_MESSAGE_MAX_LENGTH } from './schema.js';
+import { createRunnerCallRecorder } from './recorder.js';
+import { RUNNER_CALL_MESSAGE_MAX_LENGTH, RunnerCallResultSchema } from './schema.js';
 import {
   RUNNER_CALL_OUTPUT_MAX_BYTES,
   RUNNER_CALL_TOOL_USE_MAX_ITEMS,
@@ -517,6 +518,51 @@ describe('collectRunnerCallResult', () => {
     expect(JSON.stringify(result.toolUses[0]?.input).length).toBeLessThan(
       JSON.stringify(rawInput).length,
     );
+  });
+
+  it('carries a native structured value through a completed call', () => {
+    const structured = { answer: 'a', count: 1 };
+    const result = collectRunnerCallResult([
+      { type: 'call_started', ...base },
+      {
+        type: 'call_completed',
+        ...base,
+        status: 'completed',
+        ...completedTerminal,
+        structured,
+      },
+    ]);
+
+    if (result.status !== 'completed') throw new Error('expected a completed result');
+    expect(result.structured).toEqual(structured);
+    expect(RunnerCallResultSchema.parse(result)).toMatchObject({ structured });
+  });
+
+  it('adds no structured key when a completed call carries none', () => {
+    const result = collectRunnerCallResult([
+      { type: 'call_started', ...base },
+      {
+        type: 'call_completed',
+        ...base,
+        status: 'completed',
+        ...completedTerminal,
+      },
+    ]);
+
+    expect('structured' in result).toBe(false);
+    expect(RunnerCallResultSchema.safeParse(result).success).toBe(true);
+  });
+
+  it('lets the recorder finish a completed call with a structured value', () => {
+    const recorder = createRunnerCallRecorder({
+      context: { callId: 'call-1', role: 'planner', backendKind: 'cli' },
+      startedAt: 1,
+    });
+
+    const result = recorder.finishCompleted({ structured: [1, 2], endedAt: 20 });
+
+    if (result.status !== 'completed') throw new Error('expected a completed result');
+    expect(result.structured).toEqual([1, 2]);
   });
 
   it('rejects mixed call events', () => {

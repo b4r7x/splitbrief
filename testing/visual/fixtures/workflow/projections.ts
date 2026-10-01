@@ -205,6 +205,8 @@ const WORKFLOW_REVIEW_FIX_ID = scenarioId('workflow-review-fix');
 const WORKFLOW_REVIEW_FIX_NO_CHANGE_ID = scenarioId('workflow-review-fix-no-change');
 const WORKFLOW_FINAL_REVIEW_ID = scenarioId('workflow-final-review');
 const WORKFLOW_APPROVAL_DOCUMENT_ID = scenarioId('workflow-approval-document');
+const WORKFLOW_GATE_REGENERATING_ID = scenarioId('workflow-gate-regenerating');
+const WORKFLOW_BRIEFS_GATE_REGENERATING_ID = scenarioId('workflow-briefs-gate-regenerating');
 const WORKFLOW_APPROVAL_PERMISSION_ID = scenarioId('workflow-approval-permission');
 const WORKFLOW_APPROVAL_CONFIRM_ID = scenarioId('workflow-approval-confirm');
 const WORKFLOW_REVIEWING_BRIEFS_ID = scenarioId('workflow-reviewing-briefs');
@@ -1211,6 +1213,83 @@ const approvalDocumentProjection: WorkflowFixtureProjection = {
   },
 };
 
+// A change request sent from the plan gate: the engine names the planner call on the planning
+// phase, and the call's runner events carry the gate phase the run still stands in. The byline
+// stays live across that flip.
+const gateRegeneratingProjection: WorkflowFixtureProjection = {
+  scenarioId: WORKFLOW_GATE_REGENERATING_ID,
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: false,
+  events: [
+    { type: 'workflow_started', ts: FIXED_TS, phase: 'reviewing-plan', feature: WORKFLOW_FEATURE },
+    {
+      type: 'planner_text',
+      ts: FIXED_TS + 100,
+      phase: 'reviewing-plan',
+      text: '\n[Regenerating plan with feedback: add one brief for the live probe]\n',
+    },
+    {
+      type: 'planner_status',
+      ts: FIXED_TS + 100,
+      phase: 'planning',
+      status: 'running',
+      tool: 'claude-code',
+      model: 'fixture-planner-v1',
+      call: 'plan',
+    },
+    {
+      type: 'runner_call_started',
+      ts: FIXED_TS + 110,
+      phase: 'reviewing-plan',
+      callId: 'gate-regenerate',
+      role: 'planner',
+      backendKind: 'cli',
+      sequence: 0,
+    },
+  ],
+};
+
+// The same change request sent from the briefs gate: the planner recompiles the briefs.
+const briefsGateRegeneratingProjection: WorkflowFixtureProjection = {
+  scenarioId: WORKFLOW_BRIEFS_GATE_REGENERATING_ID,
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: false,
+  events: [
+    {
+      type: 'workflow_started',
+      ts: FIXED_TS,
+      phase: 'reviewing-briefs',
+      feature: WORKFLOW_FEATURE,
+    },
+    {
+      type: 'planner_text',
+      ts: FIXED_TS + 100,
+      phase: 'reviewing-briefs',
+      text: '\n[Applying Task Brief revision feedback]\n',
+    },
+    {
+      type: 'planner_status',
+      ts: FIXED_TS + 100,
+      phase: 'planning',
+      status: 'running',
+      tool: 'claude-code',
+      model: 'fixture-planner-v1',
+      call: 'tasks',
+    },
+    {
+      type: 'runner_call_started',
+      ts: FIXED_TS + 110,
+      phase: 'reviewing-briefs',
+      callId: 'briefs-gate-regenerate',
+      role: 'planner',
+      backendKind: 'cli',
+      sequence: 0,
+    },
+  ],
+};
+
 // The warnings the brief parser raises when briefs share a file, two briefs and then three, and when
 // a brief carries sections the grammar drops.
 const briefsSharedFileProjection: WorkflowFixtureProjection = {
@@ -1398,6 +1477,59 @@ const questionProjection: WorkflowFixtureProjection = {
           'All of the above, sharing one core',
         ],
         default: 'New option on the existing review CLI command',
+      },
+    ],
+  },
+};
+
+// A 'Request changes' at the plan gate whose revision reply asks a question: the planner call has
+// ended, so the question waits inside the gate before the gate reopens.
+const gateQuestionProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-gate-question'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  events: [
+    { type: 'workflow_started', ts: FIXED_TS, phase: 'reviewing-plan', feature: WORKFLOW_FEATURE },
+    {
+      type: 'planner_text',
+      ts: FIXED_TS + 100,
+      phase: 'reviewing-plan',
+      text: '\n[Regenerating plan with feedback: add one brief for the live probe]\n',
+    },
+    {
+      type: 'planner_status',
+      ts: FIXED_TS + 100,
+      phase: 'planning',
+      status: 'running',
+      tool: 'claude-code',
+      model: 'fixture-planner-v1',
+      call: 'plan',
+    },
+    {
+      type: 'planner_status',
+      ts: FIXED_TS + 200,
+      phase: 'planning',
+      status: 'done',
+      tool: 'claude-code',
+      model: 'fixture-planner-v1',
+      call: 'plan',
+    },
+  ],
+  question: {
+    prompt: 'Which call should the live probe make on each tool?',
+    answer: '',
+    questions: [
+      {
+        id: 'probe-role',
+        type: 'choice',
+        text: 'Which call should the live probe make on each tool?',
+        options: [
+          'One-shot read-only call (role: review), so codex runs with --ephemeral and no session is left behind',
+          'Planning-thread call (role: planner, with resume), which also tests resuming but leaves a session behind',
+        ],
+        default:
+          'One-shot read-only call (role: review), so codex runs with --ephemeral and no session is left behind',
       },
     ],
   },
@@ -2731,6 +2863,8 @@ const projections = [
   reviewProjection,
   approvalDocumentProjection,
   { ...approvalDocumentProjection, scenarioId: scenarioId('workflow-selection-copy') },
+  gateRegeneratingProjection,
+  briefsGateRegeneratingProjection,
   approvalPermissionProjection,
   approvalConfirmProjection,
   approvalConfirmSecretProjection,
@@ -2738,6 +2872,7 @@ const projections = [
   tasksCardProjection,
   specTasksCardsProjection,
   questionProjection,
+  gateQuestionProjection,
   questionOverflowProjection,
   questionInputProjection,
   plannerReplyProjection,

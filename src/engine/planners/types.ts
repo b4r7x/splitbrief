@@ -14,6 +14,8 @@ import type {
   RunnerRuntime,
 } from '../runners/types.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
+import type { TypedSeatCall } from '../runners/typed-output.js';
+import type { PlannerTierRole } from '../../core/runners/seat-roles.js';
 import type { CliStartGate } from '../runners/start-gate.js';
 import {
   OwnedPlannerArtifactSchema,
@@ -146,6 +148,13 @@ export interface PlannerOutputCallbacks {
   signal?: AbortSignal | undefined;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
 }
+
+/** Everything `requestTyped` hands a seat's typed-call binding. */
+export type TypedCallContext = Readonly<{
+  projectDir: string;
+  callbacks: PlannerOutputCallbacks;
+  seat: PlannerTierRole;
+}>;
 
 /** Result from a single planning phase, owned by its current physical call. */
 export type PhaseResult = Readonly<{
@@ -336,6 +345,9 @@ export interface Planner extends RunnerRuntime {
     projectDir: string,
     callbacks: PlannerOutputCallbacks,
   ): Promise<{ text: string; usage: TokenDelta | null }>;
+
+  /** The binding `requestTyped` calls this seat through. */
+  typedCall(ctx: TypedCallContext): TypedSeatCall;
 
   summarize(
     messages: PlannerSummaryMessage[],

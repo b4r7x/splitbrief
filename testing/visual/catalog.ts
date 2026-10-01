@@ -616,6 +616,38 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-gate-regenerating',
+      title: 'Workflow · plan rewritten from a gate change request',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'gate-regenerating',
+        title: 'Gate regeneration in progress',
+        kind: 'planning',
+        marker: 'Regenerating plan with feedback',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Planning transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-briefs-gate-regenerating',
+      title: 'Workflow · briefs rewritten from a gate change request',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'briefs-gate-regenerating',
+        title: 'Briefs gate regeneration in progress',
+        kind: 'planning',
+        marker: 'Applying Task Brief revision feedback',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Planning transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-approval-permission',
       title: 'Workflow · out-of-scope write gate',
       surface: screenSurface('workflow'),
@@ -745,6 +777,23 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Question transcript' },
+        { id: 'question-panel', title: 'Question panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-gate-question',
+      title: 'Workflow · question in a plan revision at the gate',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'gate-question',
+        title: 'Plan revision question',
+        kind: 'question',
+        marker: 'Which call should the live probe make',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Gate revision transcript' },
         { id: 'question-panel', title: 'Question panel' },
         { id: 'composer', title: 'Workflow composer' },
       ],

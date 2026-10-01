@@ -10,6 +10,9 @@ import {
   collectArgVectorPreflightChecks,
   semanticConfiguredArgViolations,
 } from './arg-vector-preflight.js';
+import { antigravityPlannerAdapter } from './cli-tools/antigravity.js';
+import { buildClaudeArgs } from './claude/args.js';
+import { codexPlannerAdapter } from './cli-tools/codex.js';
 
 const CLI_HELP_FIXTURES = join(import.meta.dirname, '../../../testing/fixtures/cli-help');
 
@@ -80,6 +83,76 @@ describe('checkRunnerArgVector', () => {
         '  --sandbox <SANDBOX_MODE>      Sandbox policy',
         '  --skip-git-repo-check         Allow running outside a git repo',
       ].join('\n'),
+    });
+    expect(outcome).toEqual({ ok: true });
+  });
+
+  it('accepts the schema-bearing Claude Code vector against its installed help', () => {
+    const outcome = checkRunnerArgVector({
+      argv: buildClaudeArgs({
+        projectDir: '/p',
+        mode: 'plan',
+        schema: { json: { type: 'object' } },
+      }),
+      helpText: readFileSync(join(CLI_HELP_FIXTURES, 'claude-help.txt'), 'utf8'),
+    });
+    expect(outcome).toEqual({ ok: true });
+  });
+
+  it('accepts the schema-bearing Antigravity planner vector against its installed help', () => {
+    const outcome = checkRunnerArgVector({
+      argv: antigravityPlannerAdapter.baseArgs({
+        prompt: 'x',
+        model: undefined,
+        projectDir: '/p',
+        configuredArgs: [],
+        mode: 'plan',
+        sessionId: null,
+        effort: undefined,
+        schema: { json: { type: 'object' } },
+      }),
+      helpText: readFileSync(join(CLI_HELP_FIXTURES, 'agy-help.txt'), 'utf8'),
+    });
+    expect(outcome).toEqual({ ok: true });
+  });
+
+  it('accepts the schema-bearing codex planner fresh vector against its installed help', () => {
+    const outcome = checkRunnerArgVector({
+      argv: codexPlannerAdapter.baseArgs({
+        prompt: 'x',
+        model: undefined,
+        projectDir: '/project',
+        configuredArgs: [],
+        mode: 'plan',
+        sessionId: null,
+        oneShot: true,
+        effort: undefined,
+        schema: { json: {}, path: '/tmp/s/schema.json' },
+      }),
+      helpText:
+        readFileSync(join(CLI_HELP_FIXTURES, 'codex-help.txt'), 'utf8') +
+        '\n' +
+        readFileSync(join(CLI_HELP_FIXTURES, 'codex-exec-help.txt'), 'utf8'),
+    });
+    expect(outcome).toEqual({ ok: true });
+  });
+
+  it('accepts the schema-bearing codex planner resume vector against its installed help', () => {
+    const outcome = checkRunnerArgVector({
+      argv: codexPlannerAdapter.baseArgs({
+        prompt: 'x',
+        model: 'gpt-5',
+        projectDir: '/project',
+        configuredArgs: [],
+        mode: 'plan',
+        sessionId: 'session-1',
+        effort: 'high',
+        schema: { json: {}, path: '/tmp/s/schema.json' },
+      }),
+      helpText:
+        readFileSync(join(CLI_HELP_FIXTURES, 'codex-help.txt'), 'utf8') +
+        '\n' +
+        readFileSync(join(CLI_HELP_FIXTURES, 'codex-exec-resume-help.txt'), 'utf8'),
     });
     expect(outcome).toEqual({ ok: true });
   });

@@ -48,9 +48,11 @@ import {
   type ChatMessage,
   type OpenAIContentPart,
   type OpenAIImagePart,
+  type OpenAIResponseFormat,
   type StreamClient,
   type StreamCompletionEndpoint,
   effortField,
+  responseFormatField,
   usageField,
   temperatureField,
   tokenLimitFields,
@@ -69,6 +71,7 @@ interface StreamCompletionOptions {
   maxTokens?: number | undefined;
   signal?: AbortSignal | undefined;
   effort?: EffortLevel | undefined;
+  responseFormat?: OpenAIResponseFormat | undefined;
   images?: Attachment[] | undefined;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   callContext?: RunnerCallContext | undefined;
@@ -411,6 +414,7 @@ export async function streamCompletion(
             ...usageField(policy),
             ...tokenLimitFields(policy, maxTokens),
             ...effortField(policy, effort),
+            ...responseFormatField(opts.responseFormat),
           },
           { signal: deadlineSignal },
         );

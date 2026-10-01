@@ -38,6 +38,7 @@ type CliProtocolTerminalEvent =
       nativeSessionId: string | null;
       error: null;
       partial: false;
+      structured?: unknown;
     }>
   | Readonly<{
       type: 'result';
@@ -258,6 +259,13 @@ type CliAdapterContract<
   roleAllowlist?: CliRoleAllowlist<Role> | undefined;
 }>;
 
+export type CliSchemaInput = Readonly<{
+  /** The JSON Schema object, sent inline by tools that take a string. */
+  json: Readonly<Record<string, unknown>>;
+  /** A 0600 file holding the same schema, for tools that take a path (codex). */
+  path?: string | undefined;
+}>;
+
 export type CliPlannerBuildArgsInput = Readonly<{
   prompt: string;
   model: string | undefined;
@@ -273,6 +281,8 @@ export type CliPlannerBuildArgsInput = Readonly<{
   installedVersion?: string | undefined;
   /** The run's global skills, which the call may read and never write. */
   skillRoots?: readonly string[] | undefined;
+  /** The JSON Schema the final answer must match; absent for a text call. */
+  schema?: CliSchemaInput | undefined;
 }>;
 
 export type CliImplementerBuildArgsInput = Readonly<{
@@ -292,7 +302,12 @@ export type CliPlannerAdapter<Tool extends CliToolId = CliToolId> = CliAdapterCo
   'planner',
   CliPlannerBuildArgsInput
 > &
-  Readonly<{ supportsSessionResume: boolean; supportsEffort: boolean }>;
+  Readonly<{
+    supportsSessionResume: boolean;
+    supportsEffort: boolean;
+    /** The tool reads its schema only from a file, so each typed call writes one (codex). */
+    schemaFile?: true | undefined;
+  }>;
 
 export type CliImplementerAdapter<Tool extends CliToolId = CliToolId> = CliAdapterContract<
   Tool,

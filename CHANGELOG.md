@@ -8,6 +8,7 @@
 
 ### Added
 
+- Typed seat output: `requestTyped`, in the new engine `typed-output` module, asks any seat for one JSON answer, validated by Zod, with one repair request; claude-code and antigravity get `--json-schema`, codex gets `--output-schema <file>` only for a schema its strict mode accepts and the prompt fallback for any other, the `api` kind gets `response_format: json_schema` (falling back to the JSON prompt when the endpoint rejects it), and every other tool or kind is asked for one final JSON object; a second invalid answer is the new `seat-protocol-error` recovery reason; each CLI tool now records `typedOutput`, native from the release that its `--help` and a live probe proved (claude-code 2.1.287, codex 0.157.1, antigravity 1.2.14) or fallback, and an older release gets the fallback. No run flow uses it yet.
 - `npm run test:e2e:publish`, the one-row pre-publish smoke (`testing/e2e/scenarios/live/publish-smoke.test.ts`): the shipped crew pinned in code — `claude-code` · `opus` plans and reviews, `claude-code` · `sonnet` builds — through the release-matrix harness on the `quick` task, passing only when the artifact validates, `summary.json` is `complete` and `review.md` carries a passing verdict. Its switch is `SPLITBRIEF_PUBLISH_LIVE=1`, which the script sets; unset, the file skips and exits `0`.
 - Cursor Agent CLI (`cursor`) is an admitted `kind: cli` tool.
 - Command Code (`command-code`) is an admitted `kind: cli` tool.
