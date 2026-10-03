@@ -93,15 +93,6 @@ describe('attemptDetails', () => {
     expect(attemptDetails(2, 3)).toEqual(['Attempts: 2/3']);
   });
 
-  it('spells the breakdown when the hint rung ran', () => {
-    expect(attemptDetails(1, 3, { hintRungRan: true })).toEqual([
-      'Attempts: 1 (with planner hints)',
-    ]);
-    expect(attemptDetails(4, 3, { hintRungRan: true })).toEqual([
-      'Attempts: 4 (3 local, then 1 with planner hints)',
-    ]);
-  });
-
   it('keeps the two-argument forms unchanged', () => {
     expect(attemptDetails(undefined, 3)).toEqual(['Max attempts: 3']);
     expect(attemptDetails(2, undefined)).toEqual(['Attempts: 2']);

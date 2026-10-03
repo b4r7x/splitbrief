@@ -1,19 +1,36 @@
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
+import type { ConsultReason } from '../../../core/schemas/consult.js';
 import type { WorkflowContext } from '../types.js';
 import type { EngineEvent } from '../../events/types.js';
-import { runLocalRetries } from './local-retries.js';
-import { HINT_TIER, INTERMEDIATE_TIER, runEscalationTier } from './tier.js';
-import type {
-  EscalationContext,
-  RetryAttemptFailure,
-  RetryResult,
-  RetryStepOutcome,
-} from './types.js';
-import { failedRetry } from './types.js';
-import { runPreHooks } from '../../hooks/run-pre.js';
-import { publishError, publishWarning, publishWarningFromError } from '../events.js';
-import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
+import type { SeatProtocolError } from '../../runners/typed-output.js';
+import type { ValidationAcceptance } from '../validation/acceptance.js';
+import { recordNoProgressCut, runLocalRetries } from './local-retries.js';
+import { runRetryStep, type BlockedReport } from './step.js';
+import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js';
+import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
+import { DEFAULT_LOCAL_RETRIES } from '../../../core/pipeline-spec/retries.js';
+import {
+  createBusTextHandler,
+  publishConsultBoundSpent,
+  publishError,
+  publishWarning,
+  publishWarningFromError,
+} from '../events.js';
+import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
+import { requestConsult } from '../consult/request.js';
+import { applyConsultAnswer } from '../consult/apply.js';
+import {
+  getChangedFilesSinceSnapshot,
+  getChangedFilesSnapshot,
+} from '../approval/file-snapshots/capture.js';
+import { buildSeatProtocolErrorRecoveryIssue } from '../recovery/builders/seat-protocol.js';
+import {
+  buildConsultBoundRecoveryIssue,
+  consultBoundSpent,
+  attemptBoundSpent,
+  type ConsultBoundSpent,
+} from '../recovery/builders/consult.js';
 import {
   buildRetryExhaustedRecoveryIssue,
   buildRunnerUnauthenticatedRecoveryIssue,
@@ -22,9 +39,17 @@ import {
   routeBiggerProfileFromDecision,
   runnerHaltRow,
 } from '../recovery/builders/task.js';
-import { raisePendingRecovery } from '../state-ops.js';
 import { loadSeatSwapContext } from '../recovery/seat-swap-context.js';
+import { runPreHooks } from '../../hooks/run-pre.js';
 import { nowIso } from '../../../utils/format-time.js';
+import { consultAttemptError, guidanceInstructions } from './consult-guidance.js';
+import type {
+  EscalationContext,
+  RetryAttemptFailure,
+  RetryResult,
+  RetryStepOutcome,
+} from './types.js';
+import { failedRetry } from './types.js';
 
 type HandleRetryOptions = {
   wctx: WorkflowContext;
@@ -38,6 +63,15 @@ type HandleRetryOptions = {
   profileOverrideTaskId?: TaskId | undefined;
   /** How the first attempt ended, when it ended on a machine outcome. */
   initialFailure?: RetryAttemptFailure | undefined;
+  /** The first attempt's blocked report, when it stopped asking for a decision. */
+  initialBlocked?: BlockedReport | undefined;
+};
+
+/** A consult-run verify already committed the task; the run records a plain accepted completion. */
+const CONSULT_COMPLETION_ACCEPTANCE: ValidationAcceptance = {
+  accepted: true,
+  exemptStages: [],
+  blockingStages: [],
 };
 
 function handBackOf(outcome: RetryStepOutcome): string | undefined {
@@ -63,7 +97,7 @@ function unauthenticatedHalt(
     runner: failure.runner,
     toolMessage: stepOutcome.lastError,
     attempts: stepOutcome.attempts,
-    maxAttempts: ctx.config.workflow.maxRetries,
+    maxAttempts: DEFAULT_LOCAL_RETRIES,
     ...(failingProfile !== undefined && { selectedImplementerProfile: failingProfile }),
     createdAt: nowIso(),
   });
@@ -102,7 +136,7 @@ async function usageLimitHalt(
     runner: failure.runner,
     toolMessage: stepOutcome.lastError,
     attempts: stepOutcome.attempts,
-    maxAttempts: ctx.config.workflow.maxRetries,
+    maxAttempts: DEFAULT_LOCAL_RETRIES,
     ...(failingProfile !== undefined && { selectedImplementerProfile: failingProfile }),
     ...(routeBiggerProfile !== undefined && { routeBiggerProfile }),
     ...(seatSwap !== undefined && { seatSwap }),
@@ -145,7 +179,7 @@ async function runnerDefectHalt(
     runner: failure.runner,
     toolMessage: stepOutcome.lastError,
     attempts: stepOutcome.attempts,
-    maxAttempts: ctx.config.workflow.maxRetries,
+    maxAttempts: DEFAULT_LOCAL_RETRIES,
     ...(failingProfile !== undefined && { selectedImplementerProfile: failingProfile }),
     ...(routeBiggerProfile !== undefined && { routeBiggerProfile }),
     ...(seatSwap !== undefined && { seatSwap }),
@@ -170,10 +204,101 @@ async function runnerHalt(
   return usageLimitHalt(ctx, task, stepOutcome);
 }
 
+/** The files this attempt changed since its snapshot; a diff the consult cannot render is empty. */
+async function attemptChangedFiles(
+  projectDir: string,
+  snapshot: ChangedFilesSnapshot,
+): Promise<string[]> {
+  try {
+    return await getChangedFilesSinceSnapshot(projectDir, snapshot);
+  } catch {
+    return [];
+  }
+}
+
+/** The planner could not be reached; the seat is the halt, not the brief. */
+async function seatProtocolHalt(
+  ctx: EscalationContext,
+  state: WorkflowState,
+  error: SeatProtocolError,
+  attempts: number,
+  handBack: string | undefined,
+): Promise<{ state: WorkflowState; result: RetryResult }> {
+  const seatSwap = await loadSeatSwapContext({
+    projectDir: ctx.projectDir,
+    seat: 'plan',
+    runner: ctx.config.planner,
+  });
+  const issue = buildSeatProtocolErrorRecoveryIssue({
+    error,
+    phase: state.phase,
+    ...(seatSwap !== undefined && { seatSwap }),
+    createdAt: nowIso(),
+  });
+  publishError({ bus: ctx.bus, phase: state.phase, message: issue.message });
+  return {
+    state: raisePendingRecovery(ctx, state, issue),
+    result: failedRetry(attempts, {
+      lastError: error.message,
+      ...(handBack !== undefined && { handBack }),
+    }),
+  };
+}
+
+/** The lineage or the run is out of the budget a consult needs; the operator decides the grant. */
+function consultBoundHalt(
+  ctx: EscalationContext,
+  task: Task,
+  state: WorkflowState,
+  lastDiagnosis: string,
+  attempts: number,
+  handBack: string | undefined,
+  spent: ConsultBoundSpent,
+): { state: WorkflowState; result: RetryResult } {
+  const issue = buildConsultBoundRecoveryIssue({
+    reason: spent.reason,
+    phase: state.phase,
+    task,
+    lastDiagnosis,
+    consults: spent.consults,
+    consultAllowance: spent.consultAllowance,
+    attempts: spent.attempts,
+    attemptAllowance: spent.attemptAllowance,
+    plannerCalls: spent.plannerCalls,
+    plannerCallAllowance: spent.plannerCallAllowance,
+    createdAt: nowIso(),
+  });
+  publishConsultBoundSpent({ bus: ctx.bus, phase: state.phase });
+  publishError({
+    bus: ctx.bus,
+    phase: state.phase,
+    message: issue.message,
+    safety: {
+      category: 'recovery',
+      code: spent.reason === 'planner-calls-spent' ? 'planner_calls_spent' : 'consult_bound_spent',
+    },
+  });
+  return {
+    state: raisePendingRecovery(ctx, state, issue),
+    result: failedRetry(attempts, {
+      lastError: lastDiagnosis,
+      ...(handBack !== undefined && { handBack }),
+    }),
+  };
+}
+
+/**
+ * The ladder: one local rung with the exact errors, then the consult loop. A
+ * guidance or ask-user answer spends one more implementer attempt with the
+ * planner's instructions in its error block; a rewrite or a split replaces the
+ * brief and hands back to the task loop; verify completes in place. Every
+ * consult and attempt is counted against the lineage and the run's planner
+ * calls, and a spent bound halts for the operator's grant.
+ */
 export async function handleRetryAndEscalation(
   opts: HandleRetryOptions,
 ): Promise<{ state: WorkflowState; result: RetryResult }> {
-  const { wctx, task, initialError, currentState, taskStartTime } = opts;
+  const { wctx, initialError, currentState, taskStartTime } = opts;
   let taskStartSnapshot = opts.taskStartSnapshot;
   if (!taskStartSnapshot) {
     try {
@@ -198,40 +323,45 @@ export async function handleRetryAndEscalation(
     }),
   };
 
-  const hintCapable = ctx.planner.capabilities.supportsHintEscalation;
-  // A first attempt that stopped and said why is adjudicated by the planner, not
-  // answered with the same retry; without a planner that can hint, the local
-  // rung keeps its one turn.
-  const initialFailure = opts.initialFailure;
-  const stopForPlanner =
-    hintCapable &&
-    initialFailure?.outcome === 'no-staged-change' &&
-    initialFailure.handBack !== undefined;
-  const retries: RetryStepOutcome = stopForPlanner
-    ? {
-        state: currentState,
-        task,
-        lastError: initialError,
-        attempts: 0,
-        lastFailure: initialFailure,
-      }
-    : await runLocalRetries({ ctx, task, state: currentState, lastError: initialError });
-  if (retries.result) return { state: retries.state, result: retries.result };
+  let task = opts.task;
+  let state = currentState;
+  let lastError = initialError;
+  let attempts = 0;
+  let handBack: string | undefined;
+  let blocked: BlockedReport | undefined = opts.initialBlocked;
+  let attemptSnapshot: ChangedFilesSnapshot = taskStartSnapshot;
+  let lastDiagnosis = initialError;
 
-  if (ctx.signal?.aborted)
-    return {
-      state: retries.state,
-      result: failedRetry(retries.attempts),
-    };
+  if (ctx.signal?.aborted) return { state, result: failedRetry(attempts) };
 
-  const retriesHalt = await runnerHalt(ctx, retries.task, retries);
-  if (retriesHalt) return retriesHalt;
+  // An implementation that stopped to ask for a decision is not retried with
+  // the same brief: the planner answers the question.
+  if (blocked === undefined) {
+    const retries = await runLocalRetries({
+      ctx,
+      task,
+      state,
+      lastError,
+      ...(opts.initialFailure !== undefined && { initialFailure: opts.initialFailure }),
+    });
+    state = retries.state;
+    task = retries.task;
+    lastError = retries.lastError;
+    attempts = retries.attempts;
+    handBack = handBackOf(retries) ?? handBack;
+    attemptSnapshot = retries.attemptSnapshot ?? attemptSnapshot;
+    blocked = retries.blocked;
+    if (retries.result) return { state, result: retries.result };
+    if (ctx.signal?.aborted) return { state, result: failedRetry(attempts) };
+    const retriesHalt = await runnerHalt(ctx, retries.task, retries);
+    if (retriesHalt) return retriesHalt;
+  }
 
   if (ctx.config.hooks) {
     const preEscalationPayload: EngineEvent = {
       type: 'task_escalating',
       ts: Date.now(),
-      phase: retries.state.phase,
+      phase: state.phase,
       taskId: task.id,
     };
     const pre = await runPreHooks(ctx.config.hooks, 'pre_escalation', preEscalationPayload, {
@@ -242,87 +372,178 @@ export async function handleRetryAndEscalation(
       const reason = pre.reason ?? 'hook denied';
       publishWarning({
         bus: ctx.bus,
-        phase: retries.state.phase,
+        phase: state.phase,
         message: `pre_escalation blocked: ${reason}`,
       });
       const issue = buildRetryExhaustedRecoveryIssue({
         task,
-        phase: retries.state.phase,
+        phase: state.phase,
         escalationBlockedBy: reason,
-        validationSummary: retries.lastError,
-        attempts: retries.attempts,
-        maxAttempts: ctx.config.workflow.maxRetries,
+        validationSummary: lastError,
+        attempts,
+        maxAttempts: DEFAULT_LOCAL_RETRIES,
         allowRetryOverride: true,
         ...(ctx.implementerProfile !== undefined && {
           selectedImplementerProfile: ctx.implementerProfile,
         }),
         createdAt: nowIso(),
       });
-      const nextState = raisePendingRecovery(ctx, retries.state, issue);
-      return {
-        state: nextState,
-        result: failedRetry(retries.attempts),
-      };
+      const nextState = raisePendingRecovery(ctx, state, issue);
+      return { state: nextState, result: failedRetry(attempts) };
     }
   }
 
-  const tier0 = stopForPlanner
-    ? retries
-    : await runEscalationTier(INTERMEDIATE_TIER, {
+  // The local rung is over: the brief is escalating, and every answer from here
+  // is the planner's or the operator's.
+  wctx.bus.publish({
+    type: 'task_escalating',
+    ts: Date.now(),
+    phase: state.phase,
+    taskId: task.id,
+  });
+
+  for (;;) {
+    if (ctx.signal?.aborted) return { state, result: failedRetry(attempts) };
+
+    const spent = consultBoundSpent(state, task);
+    if (spent !== undefined) {
+      return consultBoundHalt(ctx, task, state, lastDiagnosis, attempts, handBack, spent);
+    }
+
+    const snapshot = attemptSnapshot ?? taskStartSnapshot;
+    const changedFiles = await attemptChangedFiles(ctx.projectDir, snapshot);
+    const reason: ConsultReason = blocked !== undefined ? 'blocked' : 'failed';
+    const consult = await requestConsult(
+      {
+        projectDir: ctx.projectDir,
+        sessionId: ctx.sessionId,
+        bus: ctx.bus,
+        planner: ctx.planner,
+        state,
+        ...(ctx.signal !== undefined && { signal: ctx.signal }),
+        onStateChange: (next) => {
+          state = next;
+        },
+      },
+      {
+        task,
+        reason,
+        failingOutput: lastError,
+        report: blocked ?? null,
+        snapshot,
+        changedFiles,
+      },
+    );
+    if ('error' in consult) {
+      return seatProtocolHalt(ctx, state, consult.error, attempts, handBack);
+    }
+    lastDiagnosis = consult.answer.answer.diagnosis;
+
+    const applied = await applyConsultAnswer(
+      {
+        projectDir: ctx.projectDir,
+        sessionId: ctx.sessionId,
+        bus: ctx.bus,
+        config: ctx.config,
+        validator: ctx.validator,
+        callbacks: ctx.callbacks,
+        sinks: ctx.sinks,
+        state,
+        ...(ctx.signal !== undefined && { signal: ctx.signal }),
+        changedFiles,
+        onStateChange: (next) => {
+          state = next;
+        },
+      },
+      task,
+      consult.answer,
+      snapshot,
+    );
+
+    // The consult replaced or split the brief; the task loop dispatches the new current task.
+    if (applied.action === 'rewrite-task' || applied.action === 'split-task') {
+      return {
+        state,
+        result: failedRetry(attempts, { lastError, ...(handBack !== undefined && { handBack }) }),
+      };
+    }
+    if (applied.action === 'completed') {
+      return {
+        state,
+        result: {
+          completed: true,
+          method: 'consulted',
+          attempts,
+          acceptance: CONSULT_COMPLETION_ACCEPTANCE,
+          ...(changedFiles.length > 0 && { changedFiles: [...changedFiles] }),
+        },
+      };
+    }
+    if (applied.action === 'failed') {
+      lastError = applied.reason;
+      blocked = undefined;
+      lastDiagnosis = applied.reason;
+      continue;
+    }
+
+    const instructions =
+      applied.action === 'guidance'
+        ? guidanceInstructions(applied.instructions, applied.context)
+        : `${applied.question}\n\nWhy only you can answer: ${applied.whyOnlyUserCanAnswer}`;
+    if (ctx.signal?.aborted) return { state, result: failedRetry(attempts) };
+    const spentBeforeAttempt = attemptBoundSpent(state, task);
+    if (spentBeforeAttempt !== undefined) {
+      return consultBoundHalt(
         ctx,
-        task: retries.task,
-        state: retries.state,
-        lastError: retries.lastError,
-        priorAttempts: retries.attempts,
-      });
-  if (tier0.result) return { state: tier0.state, result: tier0.result };
+        task,
+        state,
+        lastDiagnosis,
+        attempts,
+        handBack,
+        spentBeforeAttempt,
+      );
+    }
 
-  if (ctx.signal?.aborted)
-    return {
-      state: tier0.state,
-      result: failedRetry(tier0.attempts),
-    };
-
-  const tier0Halt = await runnerHalt(ctx, tier0.task, tier0);
-  if (tier0Halt) return tier0Halt;
-
-  // A skipped tier 0 returns a fresh outcome with no failure of its own, so the
-  // surviving hand-back is the local rung's.
-  const tier0HandBack = handBackOf(tier0) ?? handBackOf(retries);
-  const tier1 = hintCapable
-    ? await runEscalationTier(HINT_TIER, {
-        ctx,
-        task: tier0.task,
-        state: tier0.state,
-        lastError: tier0.lastError,
-        priorAttempts: tier0.attempts,
-        ...(tier0HandBack !== undefined && { handBack: tier0HandBack }),
-      })
-    : tier0;
-  if (tier1.result) return { state: tier1.state, result: tier1.result };
-
-  if (ctx.signal?.aborted)
-    return {
-      state: tier1.state,
-      result: failedRetry(tier1.attempts),
-    };
-
-  const tier1Halt = await runnerHalt(ctx, tier1.task, tier1);
-  if (tier1Halt) return tier1Halt;
-
-  // The hint rung is the last one: the planner advises, it never takes the
-  // brief over and writes the code itself. Exhaustion hands the brief to the
-  // retry-exhausted recovery with the attempts the implementer actually spent
-  // and the last rung's error, hand-back and planner answer.
-  const handBack = handBackOf(tier1) ?? tier0HandBack;
-  return {
-    state: tier1.state,
-    result: failedRetry(tier1.attempts, {
-      lastError: tier1.lastError,
-      ...(handBack !== undefined && { handBack }),
-      ...(tier1.plannerHint !== undefined && { plannerHint: tier1.plannerHint }),
-      ...(tier1.attempts > tier0.attempts && { hintRungRan: true }),
-      ...(tier1.plannerVerdict !== undefined && { plannerVerdict: tier1.plannerVerdict }),
-    }),
-  };
+    const nextAttempts = attempts + 1;
+    const outcome = await runRetryStep({
+      ctx,
+      task,
+      state,
+      lastError: consultAttemptError(lastError, instructions),
+      attempts: nextAttempts,
+      method: 'consulted',
+      transitionType: 'VALIDATION_PASS',
+      commitSuffix: 'after consult',
+      usageCategory: 'implementer',
+      retryFailureFallback: 'Consult-guided retry failed to produce valid code',
+      profileOverride: ctx.retryProfileOverride,
+      invokeRetry: makeImplementerRetryInvoker({
+        context: ctx.context,
+        kind: 'consult',
+        sessionId: ctx.sessionId,
+        languageContext: buildProjectLanguageContext(
+          ctx.projectDir,
+          state.discoveredValidation?.language,
+        ),
+        phase: state.phase,
+        onOutput: createBusTextHandler(
+          { bus: ctx.bus, phase: state.phase },
+          { role: 'implementer' },
+        ),
+      }),
+    });
+    state = outcome.state;
+    task = outcome.task;
+    lastError = outcome.lastError;
+    attempts = outcome.attempts;
+    handBack = handBackOf(outcome) ?? handBack;
+    attemptSnapshot = outcome.attemptSnapshot ?? attemptSnapshot;
+    blocked = outcome.blocked;
+    state = transitionAndSave(ctx, state, { type: 'COUNT_ATTEMPT', taskId: task.id });
+    recordNoProgressCut(ctx, task, state, outcome.lastFailure);
+    if (outcome.result) return { state, result: outcome.result };
+    if (ctx.signal?.aborted) return { state, result: failedRetry(attempts) };
+    const attemptHalt = await runnerHalt(ctx, outcome.task, outcome);
+    if (attemptHalt) return attemptHalt;
+  }
 }

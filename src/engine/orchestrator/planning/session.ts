@@ -38,11 +38,7 @@ import { countNoun } from '../../../utils/pluralize.js';
 import { buildRepoMap } from '../../codebase/repomap.js';
 import { buildProjectContextMarkdown } from '../../planners/context.js';
 import type { Planner, PriorMessage } from '../../planners/types.js';
-import {
-  fallbackInstruction,
-  requestTyped,
-  type RequestTypedResult,
-} from '../../runners/typed-output.js';
+import { fallbackInstruction, type RequestTypedResult } from '../../runners/typed-output.js';
 import { formatTasks } from '../../spec/formatter.js';
 import { checkPlan, type PlanCheckError } from '../../spec/plan-checks.js';
 import { formatPlanMarkdown } from '../../spec/plan-markdown.js';
@@ -73,10 +69,10 @@ import {
   publishUserMessage,
   publishWarning,
 } from '../events.js';
+import { askPlannerSession } from '../planner-session.js';
 import { buildPlanSessionHaltRecoveryIssue } from '../recovery/builders/planner.js';
 import { buildSeatProtocolErrorRecoveryIssue } from '../recovery/builders/seat-protocol.js';
 import { loadSeatSwapContext } from '../recovery/seat-swap-context.js';
-import { withExpiredSessionReissue } from '../resume-context.js';
 import { addUsageAndSave, raisePendingRecovery, transitionAndSave } from '../state-ops.js';
 import type { PlannerCallbacksContext } from '../types.js';
 import { plannerRejectionContext, waitForPlannerReply } from './call-loop.js';
@@ -301,12 +297,10 @@ export async function runPlanningSession(
 
     const compose = async (
       turn: PlanTurn,
-      fresh: boolean,
+      onSession: boolean,
       interruptSteer: string | undefined,
       prior: readonly PriorMessage[] | undefined,
     ): Promise<string> => {
-      const onSession =
-        !fresh && planner.capabilities.supportsSessionResume && Boolean(state.plannerSessionId);
       const sessionBody = !onSession
         ? undefined
         : turn.kind === 'answers'
@@ -367,63 +361,46 @@ export async function runPlanningSession(
         body: async ({ signal, steer: interruptSteer }) => {
           const heartbeat = startPlannerHeartbeat(bus, state.phase, Date.now());
           try {
-            return await withExpiredSessionReissue({
-              projectDir,
-              sessionId,
-              bus,
-              planner,
-              state,
-              signal,
-              issue: async (rebuilt) => {
-                const fresh = rebuilt !== undefined;
-                const prior = rebuilt ?? priorMessages;
-                if (fresh) {
-                  state = transitionAndSave(ref, state, {
-                    type: 'SET_PLANNER_SESSION_ID',
-                    sessionId: null,
-                  });
-                }
-                return requestTyped({
-                  prompt: await compose(turn, fresh, interruptSteer, prior),
-                  schema: PlanAnswerSchema,
-                  jsonSchema: PLAN_ANSWER_JSON_SCHEMA,
-                  schemaName: 'plan_result',
-                  call: planner.typedCall({
-                    projectDir,
-                    seat: 'planner',
-                    callbacks: {
-                      onOutput: () => {},
-                      onCallEvent: (event) => {
-                        if (event.type === 'call_started') heartbeat.updateCallId(event.callId);
-                        publishRunnerCallEvent({ bus, phase: state.phase }, event);
-                      },
-                      signal,
-                    },
-                    ...(images !== undefined && { images }),
-                    ...(prior !== undefined && prior.length > 0 && { priorMessages: prior }),
-                  }),
-                });
+            const asked = await askPlannerSession(
+              {
+                projectDir,
+                sessionId,
+                bus,
+                planner,
+                state,
+                signal,
+                onStateChange: (next) => {
+                  state = next;
+                },
               },
-            });
+              {
+                schema: PlanAnswerSchema,
+                jsonSchema: PLAN_ANSWER_JSON_SCHEMA,
+                schemaName: 'plan_result',
+                ...(images !== undefined && { images }),
+                ...(priorMessages !== undefined && { priorMessages }),
+                compose: ({ onSession, priorMessages: prior }) =>
+                  compose(turn, onSession, interruptSteer, prior),
+                onCallEvent: (event) => {
+                  if (event.type === 'call_started') heartbeat.updateCallId(event.callId);
+                  publishRunnerCallEvent({ bus, phase: state.phase }, event);
+                },
+              },
+            );
+            return asked.result;
           } finally {
             heartbeat.stop();
           }
         },
       });
       // `onStateChange` already moved `state` with the loop, and the call may have moved it since:
-      // an expired thread resets the session it names.
+      // an expired thread resets the session it names, and an answer saves the handle it returned.
       note = '';
       standingHeard = true;
       images = undefined;
       priorMessages = undefined;
       const answered = loop.value;
       state = addUsageAndSave(wctx, state, 'planner', answered.usage);
-      if ('value' in answered && answered.nativeSessionId !== null) {
-        state = transitionAndSave(ref, state, {
-          type: 'SET_PLANNER_SESSION_ID',
-          sessionId: answered.nativeSessionId,
-        });
-      }
       return answered;
     };
 

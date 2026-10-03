@@ -333,18 +333,9 @@ describe('projectRunnerDiscoveryContext', () => {
 });
 
 describe('resolveRunnerConfigContext', () => {
-  it('keeps planner named implementer and intermediate sources in distinct slots', () => {
+  it('keeps planner named implementer sources in distinct slots', () => {
     const planner = { kind: 'cli', tool: 'claude-code' } as const;
     const implementer = { kind: 'cli', tool: 'codex' } as const;
-    const intermediate = {
-      kind: 'api',
-      provider: 'custom-endpoint',
-      service: 'custom-endpoint',
-      offering: 'payg',
-      apiBase: 'https://api.example.test/v1',
-      apiKey: 'test-key',
-      model: 'custom-model',
-    } as const;
 
     expect(resolveRunnerConfigContext({ role: 'planner', runner: planner })).toEqual({
       slot: { role: 'planner' },
@@ -355,10 +346,6 @@ describe('resolveRunnerConfigContext', () => {
     ).toEqual({
       slot: { role: 'implementer', profile: 'fast' },
       runner: implementer,
-    });
-    expect(resolveRunnerConfigContext({ role: 'intermediate', runner: intermediate })).toEqual({
-      slot: { role: 'intermediate' },
-      runner: intermediate,
     });
   });
 });

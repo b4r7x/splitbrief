@@ -17,7 +17,7 @@ import { configStore } from '../../../stores/project/config.js';
 import { sessionsStore } from '../../../stores/project/sessions.js';
 import { attachmentsStore } from '../../../stores/workflow/attachments.js';
 import { runWorkflow } from '../../../engine/orchestrator/run/workflow.js';
-import { fileHaltIsStale } from '../../../engine/orchestrator/run/init.js';
+import { refreshFileHalt } from '../../../engine/orchestrator/run/init.js';
 import {
   applyOfferedSeatSwap,
   type SeatSwapChoice,
@@ -293,15 +293,21 @@ export function useRunLoop({
       let retryProfileOverrideTaskId: TaskId | undefined;
       let switchSeat: SeatSwapChoice | undefined;
       // A halt about files the operator has since put back is not a question any more: on this
-      // re-entry it travels into the engine, which resolves it and says so in the transcript.
-      // Asked once — a halt this run raises later is fresh by construction.
-      let staleHalt =
-        stateForRun?.pendingRecovery !== undefined &&
-        (await fileHaltIsStale({
+      // re-entry it travels into the engine, which resolves it and says so in the transcript. One
+      // that still stands is asked as the files read now, and a re-raised halt published its own
+      // prompt. Asked once — a halt this run raises later is fresh by construction.
+      let staleHalt = false;
+      if (stateForRun?.pendingRecovery !== undefined) {
+        const halt = await refreshFileHalt({
           projectDir: session.ref.projectDir,
-          state: stateForRun,
           sessionId: session.ref.sessionId,
-        }));
+          bus: createRecoveryBus({ ...session.ref, sink: addTuiEvent }),
+          state: stateForRun,
+        });
+        staleHalt = halt.stale;
+        recoveryPromptAlreadyPublished = halt.state !== stateForRun;
+        stateForRun = halt.state;
+      }
       while (!isWorkflowAborted(controller, abortedRef)) {
         if (stateForRun?.pendingRecovery !== undefined && !staleHalt) {
           const promptPendingRecovery = createRecoveryDriver({

@@ -43,7 +43,24 @@ describe('buildImplementerSystemPreamble', () => {
     expect(prompt).toContain('Python');
     expect(prompt).toContain('Python import statements (from/import)');
     expect(prompt).toMatch(/stop and report/i);
-    expect(prompt).toMatch(/completion report/i);
+    expect(prompt).toMatch(/ONE JSON object/);
+  });
+
+  it('ends the direct writer with one ImplementerReport JSON object', () => {
+    const prompt = buildImplementerSystemPreamble(
+      buildLanguageContext('typescript'),
+      'direct',
+      '/work',
+    );
+
+    expect(prompt).toContain(
+      '{"status":"done","filesChanged":["<file>"],"touchedNotSuggested":[{"file":"<file>","reason":"<reason>"}],"notes":null}',
+    );
+    expect(prompt).toContain(
+      '{"status":"blocked","question":"<question>","filesNeeded":["<file>"]}',
+    );
+    expect(prompt).not.toMatch(/completion report/i);
+    expect(prompt).not.toContain('Files written:');
   });
 
   it('treats the suggested files as a start and names the protected paths', () => {
@@ -55,11 +72,21 @@ describe('buildImplementerSystemPreamble', () => {
     for (const sentence of DIRECT_WRITER_RULES) {
       expect(prompt.split(sentence)).toHaveLength(2);
     }
-    expect(prompt).toContain('Also changed (not suggested): <file> — <reason>');
+    expect(prompt).toContain('"status":"done"');
     expect(prompt).not.toContain('Edit ONLY the files the Task Brief lists');
     expect(prompt).not.toContain('Every other file is out of bounds');
     expect(prompt).not.toContain('touching a file outside scope');
     expect(prompt).not.toContain('Run the validation commands the brief lists');
+  });
+
+  it('offers the blocked form in the file-bundle preamble', () => {
+    const prompt = buildImplementerSystemPreamble(
+      buildLanguageContext('typescript'),
+      'extracted-code',
+      '/work',
+      'file-bundle-v1',
+    );
+    expect(prompt).toContain('{"version":1,"blocked":{"question":"...","filesNeeded":["..."]}}');
   });
 
   it('leaves the file-bundle preamble without the direct-writer rules', () => {

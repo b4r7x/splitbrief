@@ -446,7 +446,7 @@ export function markFailedClaudeStream(state: ClaudeStreamState, err: unknown): 
   if (state.recorder.hasTerminal()) return;
   state.recorder.finishFailed({
     status: 'failed',
-    // Idle kills report through the shared runner_idle_timeout contract
+    // Idle kills report through the shared no-progress-cut contract
     // (calls/status.ts), matching every other backend; runnerCallErrorFromUnknown
     // would leak the raw 'command-idle-timeout' kind as the event code.
     error: processError.isIdleTimeout(err)

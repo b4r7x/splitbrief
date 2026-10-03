@@ -29,16 +29,13 @@ ${workspaceRules(isolationDir)}
 - SPLITBRIEF runs the project's typecheck, lint, format and test gates after you finish, and its verdict is the authority. Do not run them, and do not run the whole test suite, screenshot or render tools, or repeated git diffs.
 - Run at most the focused test files the brief lists under Tests, once, after your edits. If one fails and you cannot fix it, stop and report the failure.
 - When the brief's Tests or Evidence ask you to run a project-wide gate or to render screenshots, SPLITBRIEF and the review seat do that. Implement the change and its tests, then report.
-- End with a completion report stating which files you wrote and whether the brief's steps were completed; if you changed nothing, say so explicitly
+- End your reply with ONE JSON object and nothing after it: {"status":"done","filesChanged":["<file>"],"touchedNotSuggested":[{"file":"<file>","reason":"<reason>"}],"notes":null}. If the brief cannot be completed without a file it does not provide, end with {"status":"blocked","question":"<question>","filesNeeded":["<file>"]} instead. Prose before the object is fine; text after it is not.
 
-Example completion report:
+Example final answer:
 
-Files written:
-- <file path>
+I added the loader and its test.
 
-Also changed (not suggested): <file> — <reason>
-
-Steps completed: all (or list the brief's steps you could not complete)`;
+{"status":"done","filesChanged":["src/hello.ts"],"touchedNotSuggested":[{"file":"src/hello.test.ts","reason":"the loader had no test"}],"notes":null}`;
 }
 
 function preambleIntro(ctx: LanguageContext): string {
@@ -48,14 +45,16 @@ function preambleIntro(ctx: LanguageContext): string {
 }
 
 /**
- * The `file-bundle-v1` grammar: one JSON object carrying the complete contents
- * of every declared file the answer changes. The brief's own files are the only
- * paths it may name, and the response text never picks the grammar.
+ * The `file-bundle-v1` grammar: one JSON object carrying either the complete
+ * contents of every declared file the answer changes or a blocked request for
+ * the files the brief does not provide. The brief's own files are the only
+ * paths the files form may name, and the response text never picks the grammar.
  */
 function buildFileBundlePreamble(ctx: LanguageContext): string {
   return `${preambleIntro(ctx)}
 Rules:
 - Answer with ONE JSON object and nothing else: {"version":1,"files":[{"path":"...","action":"create"|"modify","content":"..."}]}
+- When the brief cannot be completed without a file it does not provide, answer with {"version":1,"blocked":{"question":"...","filesNeeded":["..."]}} instead of the files form; the two forms never mix
 - Do NOT include prose, explanations or markdown code fences
 - "path" is one of the files the Task Brief declares, spelled exactly as the brief spells it; never another file
 - "action" is "modify" for a file the brief shows under Current Code, "create" for one that does not exist yet

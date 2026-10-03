@@ -389,7 +389,7 @@ describe('prepared runner gates', () => {
       },
       {
         kind: 'agent',
-        slot: { role: 'intermediate' },
+        slot: { role: 'implementer', profile: 'agent' },
         preparationId,
         command: { kind: 'configured-custom', invocation: customInvocation },
       },
@@ -411,7 +411,7 @@ describe('prepared runner gates', () => {
       },
       {
         kind: 'agent',
-        slot: { role: 'intermediate' },
+        slot: { role: 'implementer', profile: 'agent' },
         preparationId,
         command: { kind: 'configured-custom', definitionId: 'review' },
       },

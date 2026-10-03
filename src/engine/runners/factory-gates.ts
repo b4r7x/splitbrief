@@ -22,7 +22,6 @@ import type {
 } from './prepared-execution.js';
 import { runnerRoleForSlot, type RunnerConfig } from '../../core/config/accessors/runner-config.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
-import { resolveIntermediateRunner } from '../../core/config/accessors/intermediate-runner.js';
 
 export type RunnerFactoryAuthority = Readonly<{
   preparedConfig: PreparedConfig;
@@ -32,9 +31,8 @@ export type RunnerFactoryAuthority = Readonly<{
 }>;
 
 /**
- * The implementer factory also fills the escalation seat, so it accepts both
- * implementer slots. The planner and reviewer seats are exact: a context
- * admitted for one never constructs the other.
+ * The planner and reviewer seats are exact: a context admitted for one never
+ * constructs the other.
  */
 function slotServesFactoryRole(slot: RunnerSlot, role: ActiveRunnerRole): boolean {
   if (role === 'implementer') return runnerRoleForSlot(slot) === 'implementer';
@@ -64,26 +62,11 @@ export function requireFactoryAuthority(
 export function implementerConfigForAuthority(
   authority: RunnerFactoryAuthority &
     Readonly<{
-      slot: Extract<RunnerSlot, { role: 'implementer' | 'intermediate' }>;
-      intermediateContextLength?: number | undefined;
+      slot: Extract<RunnerSlot, { role: 'implementer' }>;
     }>,
 ): Config {
   const config = authority.preparedConfig;
   const slot = authority.slot;
-  if (slot.role === 'intermediate') {
-    const resolved = resolveIntermediateRunner(config, {
-      ...(authority.intermediateContextLength !== undefined && {
-        contextLength: authority.intermediateContextLength,
-      }),
-    });
-    if (resolved === null) {
-      throw error('runner-gate-mismatch', 'Prepared intermediate runner is unavailable.');
-    }
-    const intermediateConfig = { ...config, implementer: resolved.runner };
-    delete intermediateConfig.implementerProfiles;
-    return intermediateConfig;
-  }
-
   const profile = resolveImplementerProfiles(config).profiles.find(
     (candidate) => candidate.name === slot.profile,
   );

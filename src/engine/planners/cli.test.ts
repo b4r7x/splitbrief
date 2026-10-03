@@ -293,11 +293,9 @@ describe('createCliPlanner', () => {
 
   it('capabilities: supportsSessionResume mirrors the tool config (codex yes, opencode no)', () => {
     const withResume = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'codex' } }));
-    expect(withResume.capabilities.supportsHintEscalation).toBe(true);
     expect(withResume.capabilities.supportsSessionResume).toBe(true);
 
     const noResume = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }));
-    expect(noResume.capabilities.supportsHintEscalation).toBe(true);
     expect(noResume.capabilities.supportsSessionResume).toBe(false);
   });
 
@@ -391,7 +389,7 @@ describe('createCliPlanner', () => {
     }
   });
 
-  it('runs hint and review calls one-shot and ephemeral, and keeps the planner thread for planning', async () => {
+  it('runs review calls one-shot and ephemeral, and keeps the planner thread for planning', async () => {
     const spawnLog = join(shimDir, 'codex-spawns.txt');
     const shimPath = join(shimDir, 'codex');
     writeFileSync(
@@ -421,13 +419,6 @@ describe('createCliPlanner', () => {
       'sess-planning',
     );
 
-    await planner.escalateHint({
-      task: makeTask(),
-      error: 'tests failed',
-      projectDir,
-      callbacks: { onOutput: vi.fn() },
-      sandboxEnv: { ...process.env, HOME: join(shimDir, 'worktree-home') },
-    });
     await planner.review('review the run', projectDir, { onOutput: vi.fn() });
     await planner.review('review the run again', projectDir, { onOutput: vi.fn() });
     await callPlanner(planner, {
@@ -440,7 +431,6 @@ describe('createCliPlanner', () => {
     await callPlanner(threadless, { projectDir, callbacks: { onOutput: vi.fn() } });
 
     expect(readFileSync(spawnLog, 'utf8').trim().split('\n')).toEqual([
-      'fresh ephemeral',
       'fresh ephemeral',
       'fresh ephemeral',
       'resume sess-planning',
@@ -738,33 +728,7 @@ Create the mismatch fallback file.
     },
   );
 
-  it('keeps a successful OpenCode hint read-only and accepts its text response', async () => {
-    const output = JSON.stringify({
-      type: 'text',
-      sessionID: 'ses-open',
-      part: { type: 'text', text: 'Check the failing assertion before changing the parser.' },
-    });
-    const { argvFile } = installRecordingShim('opencode', [output]);
-    const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }));
-
-    const result = await planner.escalateHint({
-      task: makeTask(),
-      error: 'the parser assertion failed',
-      projectDir,
-      callbacks: { onOutput: vi.fn() },
-    });
-
-    expect(result).toMatchObject({
-      success: true,
-      output: 'Check the failing assertion before changing the parser.',
-      code: null,
-    });
-    expect(readArgv(argvFile)).toEqual(
-      expect.arrayContaining(['run', '--format', 'json', '--agent', 'plan']),
-    );
-  });
-
-  it.each(['hint', 'review', 'summarize', 'summarizeStructured'] as const)(
+  it.each(['review', 'summarize', 'summarizeStructured'] as const)(
     'keeps OpenCode %s read-only and rejects source mutations',
     async (operation) => {
       const output = JSON.stringify({
@@ -777,14 +741,6 @@ Create the mismatch fallback file.
 
       let invocation: Promise<unknown>;
       switch (operation) {
-        case 'hint':
-          invocation = planner.escalateHint({
-            task: makeTask(),
-            error: 'the implementation failed',
-            projectDir,
-            callbacks: { onOutput: vi.fn() },
-          });
-          break;
         case 'review':
           invocation = planner.review('review the change', projectDir, { onOutput: vi.fn() });
           break;

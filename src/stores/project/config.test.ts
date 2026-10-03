@@ -12,6 +12,7 @@ import { loadConfig } from '../../core/config/load/io.js';
 import { createDefaultConfig } from '../../core/config/load/defaults.js';
 import type { Config } from '../../core/schemas/config.js';
 import { deriveConfigEdits, editsForSave } from './config-persistence.js';
+import { narrowRecord } from '../../utils/type-guards.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
@@ -45,6 +46,11 @@ function loadedConfig() {
   const config = configStore.get().config;
   if (!config) throw new Error('Expected config to be loaded');
   return config;
+}
+
+// The retired escalation block loads as `unknown`; its marker is read through one narrowing.
+function escalationEnabled(config: Config): boolean {
+  return narrowRecord(config.escalation)?.enabled === true;
 }
 
 function configWithApproval(enabled: boolean) {
@@ -113,8 +119,10 @@ describe('configStore.load', () => {
     configStore.load(tmpDir);
 
     const retired = stderrChunks.filter((chunk) => chunk.includes('was retired'));
-    expect(retired).toHaveLength(3);
+    expect(retired).toHaveLength(5);
     expect(retired.filter((chunk) => chunk.includes('workflow.approve "all"'))).toHaveLength(1);
+    expect(retired.filter((chunk) => chunk.includes('workflow.max_retries'))).toHaveLength(1);
+    expect(retired.filter((chunk) => chunk.includes('escalation was retired'))).toHaveLength(1);
     vi.restoreAllMocks();
   });
 
@@ -218,7 +226,7 @@ describe('configStore.save', () => {
 
     expect(result.ok).toBe(true);
     expect(result.kind).toBe('saved');
-    expect(loadedConfig().escalation?.enabled).toBe(true);
+    expect(escalationEnabled(loadedConfig())).toBe(true);
     const written = YAML.parse(readFileSync(join(tmpDir, SPLITBRIEF_DIR, 'config.yaml'), 'utf-8'));
     expect(written.escalation.enabled).toBe(true);
   });
@@ -250,7 +258,7 @@ describe('configStore.save', () => {
     expect(result.ok).toBe(true);
     expect(loadedConfig().implementer.model).toBe('cli-override');
     const { config: diskConfig } = loadConfig(tmpDir);
-    expect(diskConfig.escalation?.enabled).toBe(true);
+    expect(escalationEnabled(diskConfig)).toBe(true);
     expect(diskConfig.implementer.model).toBe('qwen2.5-coder:7b');
   });
 
@@ -304,7 +312,7 @@ describe('configStore.save', () => {
     expect(result.ok).toBe(true);
     expect(loadedConfig().implementer.contextLength).toBe(16384);
     const { config: diskConfig } = loadConfig(tmpDir);
-    expect(diskConfig.escalation?.enabled).toBe(true);
+    expect(escalationEnabled(diskConfig)).toBe(true);
     expect(diskConfig.implementer.contextLength).toBe(8192);
   });
 
@@ -359,7 +367,7 @@ describe('configStore.save', () => {
     expect(written.escalation.enabled).toBe(true);
     expect(written.version).toBe(3);
     const { config: diskConfig, warnings } = loadConfig(tmpDir);
-    expect(diskConfig.escalation?.enabled).toBe(true);
+    expect(escalationEnabled(diskConfig)).toBe(true);
     expect(diskConfig.version).toBe(3);
     expect(warnings.some((w) => w.includes('config.version is missing'))).toBe(false);
   });
@@ -370,11 +378,11 @@ describe('configStore.save', () => {
     const beforeRaw = readFileSync(join(tmpDir, SPLITBRIEF_DIR, CONFIG_FILE), 'utf8');
     const save = configStore.save({ ...loadedConfig(), escalation: { enabled: true } });
 
-    expect(loadedConfig().escalation?.enabled).toBe(false);
+    expect(escalationEnabled(loadedConfig())).toBe(false);
     expect(readFileSync(join(tmpDir, SPLITBRIEF_DIR, CONFIG_FILE), 'utf8')).toBe(beforeRaw);
 
     await expect(save).resolves.toMatchObject({ kind: 'saved', ok: true });
-    expect(loadedConfig().escalation?.enabled).toBe(true);
+    expect(escalationEnabled(loadedConfig())).toBe(true);
   });
 
   it('returns conflict without publishing stale attempted config or replacing external bytes', async () => {
@@ -387,7 +395,7 @@ describe('configStore.save', () => {
     const result = await configStore.save({ ...loadedConfig(), escalation: { enabled: true } });
 
     expect(result).toMatchObject({ kind: 'conflict', ok: false });
-    expect(loadedConfig().escalation?.enabled).toBe(false);
+    expect(escalationEnabled(loadedConfig())).toBe(false);
     expect(readFileSync(path, 'utf8')).toBe(external);
   });
 
@@ -399,15 +407,15 @@ describe('configStore.save', () => {
     const first = configStore.save({ ...initial, escalation: { enabled: true } });
     const second = configStore.save({
       ...initial,
-      workflow: { ...initial.workflow, maxRetries: 9 },
+      workflow: { ...initial.workflow, compactionFormat: 'structured' },
     });
     const [firstResult, secondResult] = await Promise.all([first, second]);
 
     expect(firstResult.kind).toBe('saved');
     expect(secondResult.kind).toBe('conflict');
     const disk = loadConfig(tmpDir).config;
-    expect(disk.escalation?.enabled).toBe(true);
-    expect(disk.workflow.maxRetries).toBe(3);
+    expect(escalationEnabled(disk)).toBe(true);
+    expect(disk.workflow.compactionFormat).toBe('auto');
   });
 });
 
@@ -536,7 +544,7 @@ my_custom_key: "keep: this # exactly"
         .replace('enabled: true', 'enabled: false'),
     ).toBe(beforeRaw);
     const reloaded = loadConfig(tmpDir).config;
-    expect(reloaded.escalation?.enabled).toBe(true);
+    expect(escalationEnabled(reloaded)).toBe(true);
     expect(reloaded.implementerProfiles?.profiles.fast?.label).toBe('Fast');
     expect(reloaded.implementerProfiles?.profiles.fast?.model).toBe('gpt-5.4-mini');
   });
@@ -600,14 +608,14 @@ my_custom_key: "keep: this # exactly"
     const before = loadedConfig();
     const updated = {
       ...before,
-      workflow: { ...before.workflow, maxRetries: 5 },
+      workflow: { ...before.workflow, compactionFormat: 'structured' as const },
     };
     await configStore.save(updated);
 
     const parsed = YAML.parse(readRawConfig()) as Record<string, unknown>;
-    expect((parsed.workflow as Record<string, unknown>).max_retries).toBe(5);
+    expect((parsed.workflow as Record<string, unknown>).compaction_format).toBe('structured');
     const { config: reloaded } = loadConfig(tmpDir);
-    expect(reloaded.workflow.maxRetries).toBe(5);
+    expect(reloaded.workflow.compactionFormat).toBe('structured');
     expect(reloaded.implementer.model).toBe('qwen2.5-coder:7b');
   });
 

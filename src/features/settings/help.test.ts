@@ -35,8 +35,8 @@ describe('settingsHelpLines', () => {
   });
 
   it('keeps a bounded number range on the line that names it', () => {
-    expect(linesFor('workflow.maxRetries')).toEqual([
-      { text: 'Max retry attempts per task · 0–10' },
+    expect(linesFor('implementer.temperature')).toEqual([
+      { text: '0 = precise, 0.3 = balanced, 1+ = creative · 0–2' },
     ]);
   });
 

@@ -129,7 +129,7 @@ describe('prepared execution', () => {
     expect(Reflect.set(prepared.workflow, 'maxRetries', 99)).toBe(false);
   });
 
-  it('provides frozen planner profile and intermediate runners to the shared resolver', () => {
+  it('provides frozen planner and profile runners to the shared resolver', () => {
     const config = parsePreparedConfig({
       ...createDefaultConfig(),
       implementerProfiles: {
@@ -155,12 +155,6 @@ describe('prepared execution', () => {
     ).toEqual({
       slot: { role: 'implementer', profile: 'fast' },
       runner: fast,
-    });
-    expect(
-      resolveRunnerConfigContext({ role: 'intermediate', runner: config.implementer }),
-    ).toEqual({
-      slot: { role: 'intermediate' },
-      runner: config.implementer,
     });
   });
 

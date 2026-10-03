@@ -39,6 +39,7 @@ import { eventsStore } from '../../../stores/workflow/events.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
+import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { configStore } from '../../../stores/project/config.js';
 import {
   abortTurn,
@@ -1172,6 +1173,58 @@ describe('useRunLoop', () => {
     expect(runWorkflowStub).toHaveBeenCalledTimes(1);
     expect(controlsStore.get().inputMode).not.toBe('question');
     expect(runWorkflowStub.mock.calls[0]?.[0]?.savedState?.pendingRecovery).toBeDefined();
+
+    inst.unmount();
+  });
+
+  it('asks a standing file halt as the files read now, not as it was saved', async () => {
+    const sessionId = '2026-10-03-standing-file-halt';
+    ensureSessionDir(projectDir, sessionId);
+    recoveryNoticeStore.clear();
+    writeFileSync(join(projectDir, 'edited.ts'), 'original');
+    const baseline = serializeChangedFilesBaseline(await captureChangedFilesBaseline(projectDir));
+    writeFileSync(join(projectDir, 'edited.ts'), 'operator');
+    const halted = makeImplState(
+      [
+        makeTask({ id: 'T001', status: 'failed', file: 'edited.ts' }),
+        makeTask({ id: 'T002', status: 'pending', file: 'other.ts', dependsOn: ['T001'] }),
+      ],
+      {
+        currentTaskIndex: 1,
+        changedFilesBaseline: baseline,
+        pendingRecovery: makeRecoveryIssue({
+          reason: 'user-edit-conflict',
+          phase: 'implementing',
+          files: ['edited.ts'],
+          availableActions: ['continue', 'pause-run', 'end-run'],
+          recommendedAction: 'continue',
+        }),
+      },
+    );
+    saveState({ projectDir, sessionId }, halted);
+    const prepared = preparedExecution({
+      projectDir,
+      feature: 'add auth',
+      sessionId,
+      resumeState: halted,
+    });
+    const runWorkflowStub = vi.fn<RunWorkflowFn>(async () => makeSummary());
+
+    const inst = renderHarness({ prepared, runWorkflow: runWorkflowStub });
+    await vi.waitFor(() => {
+      expect(recoveryNoticeStore.get().issue?.id).toBe(
+        loadState({ projectDir, sessionId })?.pendingRecovery?.id,
+      );
+    });
+
+    const shown = recoveryNoticeStore.get().issue;
+    expect(shown?.facts).toMatchObject({
+      conflictKind: 'dependency-file-conflict',
+      safeToContinue: false,
+    });
+    expect(shown?.availableActions).not.toContain('continue');
+    expect(loadState({ projectDir, sessionId })?.pendingRecovery?.id).toBe(shown?.id);
+    expect(runWorkflowStub).not.toHaveBeenCalled();
 
     inst.unmount();
   });

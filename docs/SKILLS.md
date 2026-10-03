@@ -75,7 +75,7 @@ Examples:
 
 The CLI has no modes: it plans every run in one planning session and builds in an isolation worktree. These skills default to `quick` in the working tree — the one documented divergence between the two sides, and the only `intentional` row of `DIVERGENCE_TABLE` (`src/core/pipeline-spec/divergences.ts`). Everything else countable is rendered from the same spec, so it cannot drift silently.
 
-`plan` prints the plan block and the briefs, writes nothing. `--ask` gates at the plan block (default: print and run); `--yes` alongside it keeps that one pause but applies gate-tooling fixes without asking. `--no-escalate` stops the ladder at the hint rung so the session never implements a brief itself.
+`plan` prints the plan block and the briefs, writes nothing. `--ask` gates at the plan block (default: print and run); `--yes` alongside it keeps that one pause but applies gate-tooling fixes without asking. `--no-escalate` stops the ladder at the consult rung so the session never implements a brief itself.
 
 ## What maps to what
 
@@ -83,9 +83,9 @@ The CLI has no modes: it plans every run in one planning session and builds in a
 |---|---|
 | brief template, contract, critical rules | `src/engine/spec/prompts/task-format-example.ts`, `tasks.ts` |
 | implementer preamble and body rendering | `src/engine/spec/prompts/system.ts`, `src/engine/spec/prompt-formatter.ts` |
-| hint and takeover prompts | `src/engine/spec/prompts/escalation.ts` |
+| consult contract and takeover prompt | `src/engine/spec/prompts/consult.ts`, `src/engine/spec/prompts/escalation.ts` |
 | reviewer prompt and review packet | `src/engine/spec/prompts/review.ts` |
-| retry ladder, framings, hint placement | `src/core/pipeline-spec/ladder.ts` |
+| retry ladder and framings | `src/core/pipeline-spec/ladder.ts` |
 | verdict rules and fix cycle | `src/core/pipeline-spec/review.ts` |
 | gate order, capture limits, narrowing | `src/core/pipeline-spec/gates.ts`, `src/core/validation/stacks/` |
 | allowed set, drift, baseline fingerprint | `src/core/pipeline-spec/scope.ts`, `baseline.ts` |
@@ -101,7 +101,7 @@ The CLI has no modes: it plans every run in one planning session and builds in a
       events.log                         (one line per waiter verdict)
       spec.md · plan-notes.md            (standard)
       briefs/index.md · briefs/T001.md …
-      T001/attempt-1.prompt.md · T001/attempt-1.log · T001/attempt-N.pid · T001/attempt-N.done · T001/hint.md · T001/attempt-N.takeover.md …
+      T001/attempt-1.prompt.md · T001/attempt-1.log · T001/attempt-N.pid · T001/attempt-N.done · T001/attempt-N.takeover.md …
       validation.md · drift.md
       review-packet.md · review/attempt-1.log · review.md
 
@@ -115,9 +115,9 @@ Every block the skills share with the CLI lives between `<!-- generated: <id> --
 
 | Source | Blocks |
 |---|---|
-| `src/core/pipeline-spec/` | `ladder-table`, `retry-framings`, `hint-placement`, `halt-signatures` and its shell form `halt-signatures-sh`, `gate-rules`, `brief-grouping`, `body-order`, `closing-constraints`, `scope-rule`, `baseline-rule`, `timeouts`, `verdict-rules`, `fix-cycle`, `wait-protocol` |
+| `src/core/pipeline-spec/` | `ladder-table`, `retry-framings`, `halt-signatures` and its shell form `halt-signatures-sh`, `gate-rules`, `brief-grouping`, `body-order`, `closing-constraints`, `scope-rule`, `baseline-rule`, `timeouts`, `verdict-rules`, `fix-cycle`, `wait-protocol` |
 | `src/core/validation/stacks/` | `gates` — the per-stack coverage, narrowing and allowed-command tables |
-| `src/engine/spec/prompts/*`, `prompt-formatter.ts` | `brief-template`, `brief-contract`, `critical-rules`, `implementer-preamble`, `closing-line`, `hint-prompt`, `takeover-prompt`, `review-packet` |
+| `src/engine/spec/prompts/*`, `prompt-formatter.ts` | `brief-template`, `brief-contract`, `critical-rules`, `implementer-preamble`, `closing-line`, `consult-contract`, `takeover-prompt`, `review-packet` |
 | `src/engine/events/sinks/stdout-text.ts` | `plain-shapes` |
 | `src/engine/runners/cli-tools/` | one `recipe:<tool>` per CLI adapter |
 

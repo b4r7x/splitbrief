@@ -1,5 +1,7 @@
 import { formatScoreSummary } from '../../../../core/formatting.js';
+import { CREW_SEAT_LABELS } from '../../../../core/crew/identity.js';
 import { formatModelName } from '../../../../core/model-display.js';
+import { arrowSep, SOFT_SEP } from '../../../../core/separators.js';
 import type { EngineEvent, EngineEventOf } from '../../../../engine/events/types.js';
 import { glyph } from '../../../../lib/glyphs.js';
 import { assertNever } from '../../../../utils/type-guards.js';
@@ -251,6 +253,13 @@ export function eventRowBlock(options: {
         width: ctx.width,
         labelTone: 'textDim',
       });
+    case 'consult_answered':
+      return wrappedTextBlock({
+        keyPrefix,
+        text: consultAnsweredText(event),
+        width: ctx.width,
+        tone: 'textDim',
+      });
     case 'implementer_generate_running':
       return runningImplementerRowBlock(keyPrefix, event, ctx);
     case 'implementer_generate_done':
@@ -420,6 +429,34 @@ function queuedMessageHeader(origin: EngineEventOf<'message_queued'>['origin']):
   return origin === 'clarification'
     ? { label: 'answered', value: 'recorded — applied at the next planner call', tone: 'success' }
     : { label: 'Queued', value: 'applies at the next planner prompt', tone: 'info' };
+}
+
+function consultAnsweredText(event: EngineEventOf<'consult_answered'>): string {
+  return `${CREW_SEAT_LABELS.plan}${arrowSep()}${event.taskId}: ${consultAnsweredAction(event)}`;
+}
+
+function consultAnsweredAction(event: EngineEventOf<'consult_answered'>): string {
+  switch (event.action) {
+    case 'guidance':
+      return `guidance${SOFT_SEP}${event.diagnosis}`;
+    case 'rewrite-task':
+      return event.revision === undefined
+        ? `rewrote ${event.taskId}`
+        : `rewrote ${event.taskId} (rev ${event.revision})`;
+    case 'split-task': {
+      const ids = event.newTaskIds;
+      const summary = ids === null || ids.length === 0 ? 'split' : `split into ${ids.join(', ')}`;
+      return `${summary}${SOFT_SEP}${event.diagnosis}`;
+    }
+    case 'verify':
+      return event.checkIds === undefined || event.checkIds.length === 0
+        ? 'verify'
+        : `verify ${event.checkIds.join(', ')}`;
+    case 'ask-user':
+      return 'asks you';
+    default:
+      return assertNever(event.action);
+  }
 }
 
 function recoveryResolvedTone(

@@ -86,9 +86,9 @@ const frozenFileSha256: Record<FrozenFilePath, string> = {
     'd1033d22e11beef6c803338186d69ff364849c38aef783832dcec630ca1b105f',
 };
 
-const expectedInputHash = '35766e3b927d18e0fba44c23aa4105e3a178155532576342a5d1d9502afa1b60';
-const expectedSettingsHash = 'b840b1f87c82b91e814975a83cf235bd416b4e53c673194667e828d944faea9a';
-const expectedRunnerHash = '38195d15c681fc9abae3f429e45da6f788345301fc8af9395f97791dda42f379';
+const expectedInputHash = 'ed0a8fe275b2f1a7b0761589cc34ef35bb85d76821366b278ea90f53f4a879ae';
+const expectedSettingsHash = '54bba5345211836a61b6f045e47b62d5d593c10447eb6d26e3be280f2bb33fd9';
+const expectedRunnerHash = '2027d53aa1cd9d219c2fc2e2003f4c5d0be2626f826264945c43cb47286f27ff';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);

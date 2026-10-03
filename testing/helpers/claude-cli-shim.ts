@@ -56,7 +56,9 @@ export function installClaudeSlowShim(shimDir: string, bodyLines: string[]): str
   const body = bodyLines
     .map((line) => `printf '%s\\n' '${line.replace(/'/g, "'\\''")}'`)
     .join('\n');
-  writeFileSync(shimPath, `#!/bin/bash\n${body}\nsleep 5\n`, 'utf8');
+  // `exec` keeps the shim itself the only process: it stands for a CLI that
+  // speaks and then hangs, not for a CLI that spawned a child to hang for it.
+  writeFileSync(shimPath, `#!/bin/bash\n${body}\nexec sleep 5\n`, 'utf8');
   chmodSync(shimPath, 0o755);
   return shimPath;
 }

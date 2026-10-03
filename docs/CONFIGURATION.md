@@ -30,9 +30,9 @@ implementerProfiles:
   default: local-qwen
   profiles: { local-qwen: { kind: api, ... }, cheap-cloud: { kind: api, ... } }
 validation:     { typecheck, lint, test, testCommand }
-workflow:       { approve, maxRetries, git, isolation, ... }
+workflow:       { approve, git, isolation, ... }
 sessions:       { scope: project }
-escalation:     { enabled, intermediateProvider, intermediateModel }
+# escalation:   retired; loads with one notice and is ignored (§16)
 codebase:       { enabled, tokenBudget, include, exclude }
 hooks:          { pre_task, post_task, ... }
 palette:        { customActions: [...] }
@@ -40,7 +40,7 @@ approval:       { enabled, feedRejectionsToPlanner, allowedPaths }
 customCommands: { <id>: { label, contract, executable, argv, ... } }
 ```
 
-Top-level keys are **not** strict at the root — an unknown key is ignored — except the five keys this release removed (`otel`, `snapshots`, `trust`, `plannerEstimateReview`, `autoSplitOverflow`), which are named as load errors like any other removed key (§16). Most nested objects (`workflow` and its `git` block, `hooks`, `codebase`, `approval`, every runner config) are strict and will reject unknown fields. The retired keys `workflow.mode`, `workflow.speckit`, `workflow.brief_review`, `workflow.task_review` and `approval.tiers` still load, with one notice each, and are ignored (§16).
+Top-level keys are **not** strict at the root — an unknown key is ignored — except the five keys this release removed (`otel`, `snapshots`, `trust`, `plannerEstimateReview`, `autoSplitOverflow`), which are named as load errors like any other removed key (§16). Most nested objects (`workflow` and its `git` block, `hooks`, `codebase`, `approval`, every runner config) are strict and will reject unknown fields. The retired keys `workflow.mode`, `workflow.speckit`, `workflow.brief_review`, `workflow.task_review`, `workflow.max_retries` and the `escalation` block, and `approval.tiers` still load, with one notice each, and are ignored (§16).
 
 ---
 
@@ -75,7 +75,7 @@ Every variant is `.strict()` — unknown fields fail validation with a `ConfigEr
 | `temperature` | 0..2 | provider default | Sampling temperature. Honored only by the `api` kind (planner, reviewer, and implementer); the `cli`, `shell`, and `agent` kinds cannot pass it to their backend and drop it with a stderr warning. Implementers usually want `0.2`-`0.4`; planners can run hotter. |
 | `timeout` | ms (≤ 1200000) | API BUILD: 20 min; API PLAN/REVIEW: 10 min. CLI BUILD: 20 min; CLI REVIEW: 10 min; other CLI planning calls have no total-call default. | Total wall-clock budget for a call. API first-response and stream-idle deadlines also apply, each bounded by this total. Defaults come from `TIMEOUTS.implementerMs` / `TIMEOUTS.reviewerMs` (`src/core/pipeline-spec/timeouts.ts`). Two consecutive brief timeouts enter recovery. |
 | `idleWarnMs` | ms (≤ 3600000) | `300000` | Inactivity watchdog warn threshold: after this much output silence on a running call, the byline shows a "still working" warning; any stdout/stderr output clears it and resets the timer. |
-| `idleKillMs` | ms (≤ 3600000) | `1800000` | Inactivity watchdog kill threshold: at this much output silence the runner's process group is terminated (SIGTERM, then SIGKILL after a grace window) and the call is marked failed. For planner calls a retry prompt is offered; a failed implementer call feeds the task's retry/escalation ladder instead, whose retry prompts rebuild the full Task Brief per attempt. |
+| `idleKillMs` | ms (≤ 3600000) | `1200000` (`BOUNDS.noProgressCutMs`) | Inactivity watchdog kill threshold: at this much output silence the runner's process group is terminated (SIGTERM, then SIGKILL after a grace window) and the call is marked failed. A call with a running child process (a test, build or other command) is never cut; the cut counts as one attempt on the lineage and publishes `no_progress_cut`. For planner calls a retry prompt is offered; a failed implementer call feeds the task's retry/consult ladder instead, whose retry prompts rebuild the full Task Brief per attempt. |
 | `effort` | `none\|minimal\|low\|medium\|high\|xhigh\|max` | unset | Reasoning-effort hint. The union above is what config accepts; the levels a seat may actually use are the selected model's own ladder, not a fixed list per tool — the seat's tool accepts a subset and reports what it rejects. How a seat's effort intent reaches its tool is the seat's channel — `CliEffortChannel` (`src/core/runners/effort-channel.ts`), resolved by `seatEffortChannel` (`src/core/runners/capabilities.ts`) — and only one of the four channels carries this field. `cli` `claude-code`, `codex`, `copilot` and `command-code` are channel `effort-flag`: they deliver this `EffortLevel` verbatim on the tool's own effort argument, on the planner, reviewer, and implementer seats — `claude-code`, `copilot` and `command-code` emit `--effort <level>`, `codex` emits `-c model_reasoning_effort=<level>`. `cli` `opencode` and `kilo-code` are channel `variant`: they have a real effort channel, but it is a named preset delivered through the separate `variant` field — kilo's `--variant`, opencode's model suffix from 2.0.0 on — not through `effort`. `cli` `cursor` is channel `model-id`: effort is encoded in the selected model id's suffix, so there is no separate field to set — choose it in the model picker. Only the `api`, `shell`, and `agent` kinds are channel `none`. `seatSupportsEffort` is now `seatEffortChannel(...) !== 'none'`; a caller that means "takes the `effort` field" tests for `effort-flag`. An undeliverable value is not sent: changing a seat in the TUI clears it and says so (`Effort <level> cleared: <tool> has no effort channel`) on every seat whose channel is not `effort-flag`, and a headless run drops it, with a `planner-effort`/`reviewer-effort: dropped` stderr warning on the planner and review seats, silently on the implementer seat. The same clearing and dropping applies to `variant` on a seat whose channel is not `variant`. |
 | `variant` | string | unset | The named execution preset of the `variant` channel — today `cli` `opencode` and `kilo-code`, delivered on `kilo run --variant <name>` and, for opencode, on the model itself: `opencode run --model <provider/model>#<name>` from 2.0.0 on, which rejects `--variant`, and `opencode run --variant <name>` below 2.0.0. The release the start gate admitted picks the form, and the arg-vector preflight checks the same one. Free-form and persisted verbatim, because an opencode user can declare custom variants in `opencode.json` that no static enum could know. The presets are per model, not per provider: the picker offers the ladder the model itself publishes (`opencode api GET /api/model`, or `opencode models --verbose` below 2.0.0, and `kilo models --verbose` for a detected route), so `openai/gpt-5.6-luna` offers `none\|low\|medium\|high\|xhigh\|max` and a model that publishes none offers no presets, though a hand-written value is still sent. `--variant` is a protected flag: configuring it through `args` is refused before spawn. |
 
@@ -201,7 +201,7 @@ Arbitrary `stdin → stdout` command. SPLITBRIEF writes the prompt to stdin and 
 | `args` | string[] | no | Argv |
 | `outputFormat` | enum | no | Same values as `cli` |
 | `env` | string[] | no | Uppercase names of the environment variables the command needs, for example `['MY_AGENT_TOKEN']`. The command runs in its staged runner environment: a private `HOME` and `TMPDIR`, your `PATH` without the project's own directories, the locale and terminal keys, and these names. No other variable of your shell reaches it ([AUTH-METHOD-MATRIX.md](./AUTH-METHOD-MATRIX.md#child-environment)). |
-| `capabilities` | partial object | no | **Planner and reviewer only.** Declares optional planner features such as `supportsConversationalPlanning`, `supportsHintEscalation`, `supportsSessionResume`, and `supportsSelfSummarisation` so the orchestrator skips features the wrapper cannot provide. `supportsEffort: true` and `supportsImages: true` are rejected on `shell`/`agent` planners and reviewers — the command-based adapter has no channel to deliver an effort hint or image attachments to the subprocess (use a `cli`/`api` planner or reviewer instead). Ignored (and rejected) on `implementer` — implementer write behavior is set via profile `capabilities.writesFiles`. |
+| `capabilities` | partial object | no | **Planner and reviewer only.** Declares optional planner features such as `supportsConversationalPlanning`, `supportsSessionResume`, and `supportsSelfSummarisation` so the orchestrator skips features the wrapper cannot provide. `supportsEffort: true` and `supportsImages: true` are rejected on `shell`/`agent` planners and reviewers — the command-based adapter has no channel to deliver an effort hint or image attachments to the subprocess (use a `cli`/`api` planner or reviewer instead). Ignored (and rejected) on `implementer` — implementer write behavior is set via profile `capabilities.writesFiles`. |
 
 ```yaml
 planner:
@@ -211,7 +211,6 @@ planner:
   outputFormat: text
   capabilities:
     supportsConversationalPlanning: false
-    supportsHintEscalation: true
     supportsSessionResume: false
 ```
 
@@ -276,7 +275,7 @@ Custom OpenAI-compatible API providers are allowed when `service`, `offering`, a
 
 Optional. `reviewer` names the runner that performs the final review of the run diff. Leave it out and the planner holds that seat, exactly as it did before the seat became assignable (`resolveReviewerRunner`, `src/core/config/accessors/reviewer-runner.ts`). Set it when you want the diff read by a model other than the one that planned it.
 
-The reviewer only reviews. Planning, Task Brief compilation, escalation and summarization stay on the planner whatever this block says.
+The reviewer only reviews. Planning, Task Brief compilation, the consult and summarization stay on the planner whatever this block says.
 
 ### Schema
 
@@ -352,7 +351,7 @@ implementer:
   model: gpt-5-codex
 ```
 
-That is the `direct` path: the tool edits files itself inside the run's isolation directory and SPLITBRIEF promotes the result. It is not a side door — the same Task Brief, validation pipeline, retry ladder, escalation, and drift accounting apply as for an `api` implementer.
+That is the `direct` path: the tool edits files itself inside the run's isolation directory and SPLITBRIEF promotes the result. It is not a side door — the same Task Brief, validation pipeline, retry ladder, consult, and drift accounting apply as for an `api` implementer.
 
 YAML — full (a hosted model behind your own OpenAI-compatible endpoint):
 
@@ -384,7 +383,7 @@ The first-response deadline defaults to 120000 ms and stream-idle to 60000 ms. `
 - *Mid-tier API* — a below-frontier model behind your own custom endpoint.
 - *Frontier* — the same model class as the planner when you want its quality for the implementer step too.
 
-**See also:** §2 `planner`, §6 `escalation` (for mid-tier fallback), [REPOMAP.md](./REPOMAP.md) (codebase context the implementer never sees, only the planner).
+**See also:** §2 `planner`, §16 (retired keys), [REPOMAP.md](./REPOMAP.md) (codebase context the implementer never sees, only the planner).
 
 ### Optional `implementerProfiles`
 
@@ -543,9 +542,6 @@ workflow: {
   // Plan approval
   approve?:               'plan' | 'none'; // default plan
 
-  // Retries
-  maxRetries:             number; // int >= 0 — REQUIRED
-
   // Git
   git?: {
     commitStrategy?:      'none'; // deprecated input, stripped on load
@@ -569,6 +565,7 @@ workflow: {
   speckit?:               unknown;
   briefReview?:           unknown;
   taskReview?:            unknown;
+  maxRetries?:            unknown;
 }
 ```
 
@@ -577,7 +574,7 @@ workflow: {
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `approve` | enum | `plan` | `plan`: the plan card waits for your approval before the build starts. `none`: the plan goes straight to the build. The retired values `all`, `spec` and `default` load as `plan` with one notice (§16). Approving the plan never overrides a failed plan check, and a write to a protected path still asks during the build under either value. |
-| `maxRetries` | int >= 0 | `2` | Per-task local retries before escalation kicks in, so a brief gets `1 + maxRetries` attempts. The default is `DEFAULT_LOCAL_RETRIES` (`src/core/pipeline-spec/retries.ts`), the same constant the Build progress block reads for `attempt <a> of <max>`. |
+| `maxRetries` (`max_retries`) | retired | absent | Loads with one notice and changes nothing: `workflow.max_retries was retired and is ignored: the lineage attempt allowance bounds the ladder now. Delete workflow.max_retries.` The ladder is one local retry then the planner's consult; the lineage's bounds and grant live in `BOUNDS` (`src/core/pipeline-spec/bounds.ts`). |
 | `git.commitStrategy` | retired | absent | Legacy `none` is accepted with a deprecation warning and removed from the loaded config; `checkpoint` and `per-task` are rejected. Omit the field. |
 | `git.createBranch` | boolean | `false` | Auto-create `splitbrief/<slug>` branch at workflow start. |
 | `isolation` | enum | `worktree` | Where an implementer that writes files itself does its work before changes are promoted into the project: `worktree` (one linked git worktree per run) or `staged-copy` (a temporary copy of the project per task). Unused when the implementer returns file contents (`writesFiles: extracted-code`) — SPLITBRIEF writes those files into the project itself. |
@@ -585,7 +582,7 @@ workflow: {
 | `compactionThreshold` | int >= 10 | unset | On resume, auto-compact persisted transcript context when compacted message count exceeds this threshold and the planner supports self-summarisation. |
 | `compactionFormat` | enum | `auto` | Summary format for transcript compaction: `auto` selects structured JSON for `api` planners, freeform text for `cli`, `shell`, and `agent`; `freeform` preserves legacy markdown/text summaries; `structured` requires Zod-validated JSON and falls back to freeform text if validation fails. |
 | `showSpend` (`show_spend`) | compatibility boolean | `true` | Retained in config, with no main-screen rendered effect. `/copy cost` copies the same spend text `/usage` reads rather than answering a switched-off display. Open `/usage` for usage details; there is no Show spend setting. |
-| `mode`, `speckit`, `brief_review`, `task_review` | retired | absent | Each loads with one notice and changes nothing (§16). Delete them. |
+| `mode`, `speckit`, `brief_review`, `task_review`, `max_retries` | retired | absent | Each loads with one notice and changes nothing (§16). Delete them. |
 
 `resolveApproveLevel()` (`src/core/config/runtime/resolve.ts`) picks the level from the config, else `plan`; a run saves the level it ran with in `state.approve` only as a record. There is no CLI flag for it: `--approve` was removed. A headless run (`--json`, `--plain`) approves the plan card unattended; set `approve: none` to skip the card.
 
@@ -615,7 +612,7 @@ Minimal (the plan waits for your approval):
 
 ```yaml
 workflow:
-  maxRetries: 2
+  approve: plan
 ```
 
 Plan approval with drift tuning:
@@ -623,7 +620,6 @@ Plan approval with drift tuning:
 ```yaml
 workflow:
   approve: plan
-  maxRetries: 2
   driftChainThreshold: 0.6
   git:
     createBranch: false
@@ -634,7 +630,6 @@ Headless CI:
 ```yaml
 workflow:
   approve: none
-  maxRetries: 2
 ```
 
 **When to use what:**
@@ -645,39 +640,13 @@ workflow:
 
 ---
 
-## 6. `escalation`
+## 6. `escalation` (retired)
 
-After `maxRetries`, the optional tier 0 intermediate worker retries, then tier 1 asks the planner for a hint and retries with the implementer. Exhaustion enters explicit recovery. The planner never automatically takes over code-writing implementation.
+The `escalation` block is retired. The planner's consult replaces the intermediate tier: when a brief fails after its one local retry, reports `blocked`, or is stale, SPLITBRIEF asks the planner for one typed answer — `guidance`, `rewrite-task`, `split-task`, `verify` or `ask-user` — instead of running a fixed tier chain. The lineage's 2 consults and 8 attempts and the run's 10 planner calls bound the ladder; `continue` on a spent bound grants the extra allowance ([APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#escalation)).
 
-### Schema
+A config that still carries the block loads with one notice and changes nothing: `escalation was retired and is ignored: the planner's consult replaces the intermediate tier. Delete escalation.` Delete the block. There is no intermediate provider or model to configure, and the Crew section of Settings never had a row for it.
 
-```ts
-escalation: {
-  enabled?:               boolean;
-  intermediateProvider?:  string;
-  intermediateModel?:     string;
-}
-```
-
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `enabled` | boolean | on when `intermediateProvider` and `intermediateModel` are both set | Toggle for the intermediate tier. The tier is active by default once `intermediateProvider` and `intermediateModel` are configured; set `enabled: false` to disable it (failed tasks then escalate straight to the planner) without removing the provider config. |
-| `intermediateProvider` | string | — | Provider id for the mid-tier model. The tier is always an `api` runner: name an API catalog provider (`ollama`, `lm-studio`, `llama-cpp`) or a custom provider; a custom name runs on the API implementer's endpoint and its inline key, and a CLI tool id here names a custom provider of that name, never the CLI tool. When unset, the intermediate tier never runs. |
-| `intermediateModel` | string | — | Model id at that provider. Required whenever `intermediateProvider` is set: the config fails to load with `intermediateModel is required when intermediateProvider is set`, and there is no fallback to the implementer's model (`enabled: false` does not lift the requirement). |
-
-YAML:
-
-```yaml
-escalation:
-  intermediateProvider: ollama
-  intermediateModel: qwen3-coder:30b
-```
-
-**Editing from the TUI.** The intermediate tier is configured in YAML only. The Crew section of Settings exposes planner, implementer, and reviewer seats; it has no escalation row or picker. Set `enabled: false` in YAML to disable the tier while retaining its provider and model configuration.
-
-**When to use:** you run a small implementer (a local model, or a small model behind your own endpoint) and want a stop that is stronger than the implementer but weaker than the planner before the task reaches the planner itself. Skip if your implementer is already frontier-class. Set both `intermediateProvider` and `intermediateModel` to turn the tier on; add `enabled: false` only when you want to keep the provider config but bypass the tier.
-
-**Pricing knownness.** Escalation and recovery provider calls follow the same knownness rules as every other call. Unknown provider cost is not zero. A call whose price does not resolve leaves the run's USD figure absent or unknown, never `0`, and SPLITBRIEF never invents a rate to fill the gap.
+**Pricing knownness.** Provider calls follow the same knownness rules as every other call. Unknown provider cost is not zero. A call whose price does not resolve leaves the run's USD figure absent or unknown, never `0`, and SPLITBRIEF never invents a rate to fill the gap.
 
 ---
 
@@ -1057,6 +1026,8 @@ The one-planning-session release retired the workflow modes, the extra gates and
 | `workflow.brief_review` (`briefReview`, any value, including `rich`) | `workflow.brief_review was retired and is ignored: you review the briefs on the plan card. Delete workflow.brief_review.` | Delete the key. |
 | `workflow.speckit` (the whole block) | `workflow.speckit was retired and is ignored: every run plans in one session. Delete workflow.speckit.` | Delete the block. |
 | `approval.tiers` (the whole block, any key) | `approval.tiers was retired and is ignored: a write to a protected path always asks, and no other write does. Delete approval.tiers.` | Delete the block. |
+| `workflow.max_retries` (`maxRetries`) | `workflow.max_retries was retired and is ignored: the lineage attempt allowance bounds the ladder now. Delete workflow.max_retries.` | Delete the key. The ladder is one local retry then the planner's consult, bounded per lineage. |
+| `escalation` (the whole block, any key) | `escalation was retired and is ignored: the planner's consult replaces the intermediate tier. Delete escalation.` | Delete the block. |
 
 The readiness report shows the plan approval level in its **Workflow** section, as the check `approval.resolved` (`Plan approval: plan.`). Readiness checks one context floor for every run: 32,000 tokens.
 
@@ -1108,7 +1079,7 @@ key.
 
 ## 17. Full production example
 
-A representative config: Claude Code subscription as planner, a small local LM Studio model as implementer, mid-tier escalation to a larger local Ollama model, hooks, and plan approval. Use it as a starting point, then adjust credentials, hooks, and approval for your environment.
+A representative config: Claude Code subscription as planner, a small local LM Studio model as implementer, hooks, and plan approval. Use it as a starting point, then adjust credentials, hooks, and approval for your environment.
 
 <!-- config-example: full-production -->
 ```yaml
@@ -1147,17 +1118,10 @@ validation:
 # ---------- Workflow: plan approval, manual commits ----------
 workflow:
   approve: plan
-  maxRetries: 2
   driftChainThreshold: 0.6
   git:
     createBranch: false
   isolation: worktree
-
-# ---------- Mid-tier escalation to a larger local model (cheap stop before Opus) ----------
-escalation:
-  enabled: true
-  intermediateProvider: ollama
-  intermediateModel: qwen3-coder:30b
 
 # ---------- Repo-map: 6k tokens, src + lib only ----------
 codebase:
@@ -1212,7 +1176,7 @@ sessions:
 ```
 
 What this run needs locally (never commit credential values):
-- A running LM Studio daemon on `localhost:1234` (implementer) and a running Ollama daemon on `localhost:11434` (escalation) — neither takes a credential
+- A running LM Studio daemon on `localhost:1234` for the implementer — it takes no credential
 - CLI credentials according to the host tool’s configuration; explicit unproven method selection is refused
 
 Then:

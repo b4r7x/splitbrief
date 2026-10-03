@@ -163,7 +163,7 @@ const checkpointPredicates = [
   [checkpointId('recovery-plan-swapped'), includesAll('Continued via Change PLAN tool')],
   [checkpointId('plan-activity'), includesAll('src/core/crew/identity.ts')],
   [checkpointId('retry-exhausted'), includesAll(WORKFLOW_FIXTURE_TEXT.retryExhausted)],
-  [checkpointId('brief-verdict'), includesAll(WORKFLOW_FIXTURE_TEXT.briefVerdict)],
+  [checkpointId('consult-bound'), includesAll(WORKFLOW_FIXTURE_TEXT.consultBound)],
   [checkpointId('review-failed'), includesAll(WORKFLOW_FIXTURE_TEXT.reviewFailed)],
   [checkpointId('left-isolation'), includesAll(WORKFLOW_FIXTURE_TEXT.leftIsolation)],
   [checkpointId('checkout-changed'), includesAll(WORKFLOW_FIXTURE_TEXT.checkoutChanged)],

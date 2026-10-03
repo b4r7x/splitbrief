@@ -8,6 +8,7 @@ const SENTINELS: Record<string, string> = {
   'implementer-preamble': 'directly in the working directory.',
   'closing-constraints': 'Do NOT import packages not listed in the project dependencies',
   'retry-framings': 'Try a completely different approach:',
+  'consult-contract': 'Answer with exactly one JSON object',
   'ladder-table': '| `takeover` | planner |',
   'halt-signatures': '`credit balance is too low`',
   'halt-signatures-sh': "*'sandbox required but unavailable'*) halt=spawn ;;",
@@ -21,10 +22,8 @@ const SENTINELS: Record<string, string> = {
   timeouts: '--deadline 1200',
   'plain-shapes': 'task T001: done (',
   'wait-protocol': 'never in the same tool call as the spawn',
-  'hint-placement': '## Hints from senior reviewer:',
   'verdict-rules': 'exactly one verdict word under ### Verdict',
   'fix-cycle': 'At most 2 review cycles',
-  'hint-prompt': '# Diagnose Implementation Failure',
   'takeover-prompt': '# Escalation: Implement Fix',
   'review-packet': '`pass` | `pass_with_notes` | `fail`',
   'recipe:claude-code': `"blockReadsOutsideWorkingDirectories":true}}'\\'' < $P`,
@@ -81,6 +80,38 @@ describe('skill-blocks', () => {
 
   it('carries no revert instruction in the scope rule', () => {
     expect(renderBlock('scope-rule') ?? '').not.toMatch(/revert/i);
+  });
+
+  it('replaces the hint blocks with the consult contract', () => {
+    const contract = renderBlock('consult-contract') ?? '';
+    for (const action of ['guidance', 'rewrite-task', 'split-task', 'verify', 'ask-user']) {
+      expect(contract, action).toContain(`\`${action}\``);
+    }
+    expect(contract).toContain('a rewrite or a split never drops a criterion id');
+    expect(contract).toContain('This call is read-only');
+    expect(contract).toContain('## Guidance from the planner:');
+    expect(renderBlock('hint-prompt')).toBeNull();
+    expect(renderBlock('hint-placement')).toBeNull();
+  });
+
+  it('renders the consult-contract block with the CLI fallback schema', () => {
+    const contract = renderBlock('consult-contract') ?? '';
+    expect(contract).toContain('matches this schema:');
+    expect(contract).toContain('"split-task"');
+  });
+
+  it('renders the consult bounds from BOUNDS, not by hand', () => {
+    const contract = renderBlock('consult-contract') ?? '';
+    expect(contract).toContain('2 consults and 8 attempts');
+    expect(contract).toContain('10 planner calls');
+    expect(contract).toContain('4 more attempts');
+    expect(contract).toContain('5 more planner calls');
+  });
+
+  it('renders the ladder with the consult rung in place of the hint', () => {
+    const ladder = renderBlock('ladder-table') ?? '';
+    expect(ladder).toContain('| `consult` | planner-then-implementer |');
+    expect(ladder).not.toMatch(/hint/iu);
   });
 
   it('every recipe writes its exit code and none invokes coreutils timeout', () => {

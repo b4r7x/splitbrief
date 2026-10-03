@@ -102,7 +102,7 @@ Here is what happens, step by step:
 1. `splitbrief init` opens the Crew screen — PLAN, BUILD and REVIEW on one surface, plus ready-made crews when the tools they need are installed and authenticated. Apply a crew, or press Enter on a seat to set it yourself, then Continue. It writes `.splitbrief/config.yaml`.
 2. `splitbrief start` opens a fullscreen TUI. The planner thinks for a few seconds, looks at your repo, and writes a Task Brief to `.splitbrief/sessions/<date>-fix-the-typo/tasks.md`.
 3. The brief is **scored for quality** automatically. Weak briefs (missing scope, missing validation, vague tests) are blocked before any code is written.
-4. The implementer picks up the first task, generates code, and the orchestrator runs the resolved validation pipeline from config, planner discovery, or project heuristics. On failure, it retries twice by default, then escalates back to the planner.
+4. The implementer picks up the first task, generates code, and the orchestrator runs the resolved validation pipeline from config, planner discovery, or project heuristics. On failure, it retries once, then consults the planner for one typed answer.
 5. Each successful task records evidence without changing Git staging or commits. Review the changes and commit them manually.
 6. After all tasks complete, the review seat does a final review — the planner unless you assigned a reviewer: it diffs the actual changes against the brief and writes `review.md`. A deterministic drift report flags anything the agent touched outside the planned scope.
 
@@ -209,10 +209,10 @@ validation:
   testCommand: npm test
 
 workflow:
-  maxRetries: 2
+  approve: plan
 ```
 
-After each implementer task, the orchestrator runs the resolved typecheck, lint, and test pipeline — this config first, then a `package.json` script or `Makefile`/`justfile` target of that name, then planner discovery, then the detected stack's own defaults. On failure it retries up to `maxRetries` (default 2), then escalates to the planner.
+After each implementer task, the orchestrator runs the resolved typecheck, lint, and test pipeline — this config first, then a `package.json` script or `Makefile`/`justfile` target of that name, then planner discovery, then the detected stack's own defaults. On failure it retries once, then consults the planner for one typed answer (guidance, a rewritten or split brief, a check re-run, or one question for you).
 
 **3. Subscription CLI implementer (optional).** To type through the same admitted CLI instead of an API, set `implementer.kind: cli` with `tool: claude-code`. The child CLI may auto-edit SPLITBRIEF's disposable staged copy; SPLITBRIEF detects changes and asks before promoting approved paths into your checkout. Posture and auth channels: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md#posture-trust-and-auth).
 

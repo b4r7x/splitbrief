@@ -16,7 +16,7 @@ export type ValidateAndCommitOptions = {
   task: Task;
   state: WorkflowState;
   method: TaskCompletionMethod;
-  transitionType: 'VALIDATION_PASS' | 'HINT_SUCCESS' | 'FULL_SUCCESS';
+  transitionType: 'VALIDATION_PASS';
   retryCount: number;
   commitSuffix?: string | undefined;
   preApprovedChangedFiles: string[];

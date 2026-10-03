@@ -2,7 +2,7 @@ import type { Task } from '../../core/schemas/task.js';
 import type { InvokeResult } from '../runners/types.js';
 import { captureChangeDetectorBaseline, createChangeDetector } from '../change-detection.js';
 import { extractCode } from '../parsers/response-extractor.js';
-import { buildEscalationPrompt, buildHintPrompt } from '../spec/prompts/escalation.js';
+import { buildEscalationPrompt } from '../spec/prompts/escalation.js';
 import { buildProjectLanguageContext } from '../spec/prompts/language-context.js';
 import type { EscalateOptions, EscalationResult, PlannerOutputCallbacks } from './types.js';
 import { toInvokeResult, toTokenDelta } from '../calls/projection.js';
@@ -22,8 +22,6 @@ type PlannerEscalationConfig = {
   backendKind?: RunnerCallContext['backendKind'];
   runnerName?: string | undefined;
   model?: string | undefined;
-  capabilities: { supportsHintEscalation: boolean };
-  hintSuccessMode?: 'text' | 'files';
   escalateFullMode?: 'text' | 'files';
   escalateFullPostProcess?: (
     task: Task,
@@ -45,46 +43,6 @@ function createEscalationCallContext(config: PlannerEscalationConfig): RunnerCal
     ...(config.runnerName !== undefined && { runnerName: config.runnerName }),
     ...(config.model !== undefined && { model: config.model }),
   };
-}
-
-export async function escalateHint(
-  config: PlannerEscalationConfig,
-  opts: EscalateOptions,
-): Promise<EscalationResult> {
-  const { task, error, projectDir, callbacks, languageContext } = opts;
-  if (config.capabilities.supportsHintEscalation === false) {
-    return { success: false, output: '', code: null, usage: null };
-  }
-  const hintPrompt = buildHintPrompt(
-    task,
-    error,
-    languageContext ?? buildProjectLanguageContext(projectDir, undefined),
-    opts.handBack,
-    opts.skillsContext,
-  );
-  const useFiles = config.hintSuccessMode === 'files';
-  const detect = useFiles ? createChangeDetector('Hint escalation') : null;
-  const baseline = useFiles
-    ? await captureChangeDetectorBaseline(projectDir, {
-        kind: opts.changeDetection,
-        ignoreProjectDir: opts.fileIgnoreProjectDir,
-      })
-    : null;
-  const callContext = createEscalationCallContext(config);
-  const result = requireCompletedCall(
-    await config.invokeEscalate({
-      prompt: hintPrompt,
-      projectDir,
-      callContext,
-      accessMode: 'read-only',
-      callbacks,
-      signal: callbacks.signal,
-      sandboxEnv: opts.sandboxEnv,
-    }),
-  );
-  const success =
-    detect && baseline ? (await detect(projectDir, baseline)).changed : result.text.length > 0;
-  return { success, output: result.text, code: null, usage: toTokenDelta(result.usage) };
 }
 
 export async function escalateFull(

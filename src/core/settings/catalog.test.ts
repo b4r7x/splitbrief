@@ -68,7 +68,7 @@ describe('SETTINGS_DEFS dead settings', () => {
   // SPLITBRIEF no longer stages or commits, so a commit strategy is not a choice the config even
   // accepts any more — offering the row would hand the user a value that fails on save. Spend is
   // read in `/usage` on request, not toggled for a main screen that no longer shows a figure.
-  it.each(['workflow.git.commitStrategy', 'workflow.showSpend'])(
+  it.each(['workflow.git.commitStrategy', 'workflow.showSpend', 'workflow.maxRetries'])(
     'offers no row for the retired %s',
     (id) => {
       expect(SETTINGS_DEFS.some((def) => def.id === id)).toBe(false);
@@ -82,7 +82,6 @@ describe('SETTINGS_DEFS dead settings', () => {
 
     expect(workflowIds).toEqual([
       'workflow.approve',
-      'workflow.maxRetries',
       'workflow.compactionFormat',
       'workflow.git.createBranch',
     ]);

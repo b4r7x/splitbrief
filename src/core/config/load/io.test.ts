@@ -2,7 +2,6 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadConfig } from './io.js';
-import { DEFAULT_LOCAL_RETRIES } from '../../pipeline-spec/retries.js';
 import { SPLITBRIEF_DIR } from '../../paths.js';
 import { expectCli } from '#testing/helpers/config-narrowing.js';
 import {
@@ -76,6 +75,7 @@ describe('config loading', () => {
         'workflow.mode was retired and is ignored: every run plans in one session. Delete workflow.mode.',
         'workflow.approve "all" was retired; using "plan": the plan waits for your approval before the build. Set approve to plan or none.',
         'workflow.task_review was retired and is ignored: the build no longer stops for your review after each brief. Delete workflow.task_review.',
+        'workflow.max_retries was retired and is ignored: the lineage attempt allowance bounds the ladder now. Delete workflow.max_retries.',
       ]);
     });
 
@@ -282,7 +282,6 @@ describe('config loading', () => {
       writeConfigYaml(dir, {
         workflow: {
           approve: 'plan',
-          max_retries: 2,
           git: { create_branch: true },
           drift_chain_threshold: 0.4,
           compaction_threshold: 50,
@@ -292,7 +291,6 @@ describe('config loading', () => {
 
       expect(loadConfig(dir).config.workflow).toEqual({
         approve: 'plan',
-        maxRetries: 2,
         git: { createBranch: true },
         isolation: 'worktree',
         driftChainThreshold: 0.4,
@@ -317,7 +315,7 @@ describe('config loading', () => {
       expect(config.validation.lint).toBe(false);
       expect(config.validation.typecheck).toBe(true);
       expect(config.workflow.approve).toBe('none');
-      expect(config.workflow.maxRetries).toBe(DEFAULT_LOCAL_RETRIES);
+      expect(config.workflow.isolation).toBe('worktree');
     });
 
     it.each([
@@ -366,7 +364,6 @@ describe('config loading', () => {
           '  model: qwen2.5-coder:7b',
           'workflow:',
           '  approve: plan',
-          '  max_retries: 3',
         ].join('\n'),
         'utf-8',
       );

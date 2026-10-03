@@ -43,6 +43,12 @@ export const CheckSchema = z.object({
 });
 export type Check = z.infer<typeof CheckSchema>;
 
+export const CheckResultSchema = z.object({
+  id: z.string(),
+  passed: z.boolean(),
+});
+export type CheckResult = z.infer<typeof CheckResultSchema>;
+
 /** `write` only: the protected-path confirmation matches `write <path>` (`gateChangedFiles`). */
 export const ProtectedOperationSchema = z.object({
   path: z.string(),
@@ -52,6 +58,7 @@ export const ProtectedOperationSchema = z.object({
 export const TaskSchema = z.object({
   /** Branded string ID in `TNNN` format. Stable for the lifetime of the session. @see docs/TASK-CONTRACT.md */
   id: TaskIdSchema,
+  parentId: TaskIdSchema.optional(),
   /** Short human-readable label. */
   title: z.string(),
   /** `create` if the file does not yet exist; `modify` if it does. */
@@ -107,6 +114,7 @@ export const TaskSchema = z.object({
   criteria: z.array(z.string()).optional(),
   /** Focused checks that verify this task. */
   checks: z.array(CheckSchema).optional(),
+  checkResults: z.array(CheckResultSchema).optional(),
   /** Files the planner suggests the task writes; guidance, mapped onto `files`. */
   suggestedFiles: z.array(z.string()).optional(),
   /** Read-only context; SPLITBRIEF attaches their current code at dispatch. */

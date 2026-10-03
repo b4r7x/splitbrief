@@ -6,7 +6,7 @@ import {
   UI_IDLE_WARN_MS,
   type DeriveBuildProgressInput,
 } from './build-progress.js';
-import { createDefaultConfig } from '../../../core/config/load/defaults.js';
+import { BOUNDS } from '../../../core/pipeline-spec/bounds.js';
 import type { LifecycleState } from '../../../stores/workflow/lifecycle.js';
 import type {
   OperationsState,
@@ -96,7 +96,6 @@ function input(overrides: Partial<DeriveBuildProgressInput> = {}): DeriveBuildPr
     ]),
     lifecycle: lifecycleState(),
     operations: operationsState(),
-    config: createDefaultConfig(),
     now: NOW,
     ...overrides,
   };
@@ -151,19 +150,19 @@ describe('deriveBuildProgress', () => {
     expect(progress.eta).toEqual({ kind: 'unavailable', reason: 'no brief finished yet' });
   });
 
-  it('attempt 2 of 3 with maxRetries 2', () => {
-    const config = createDefaultConfig();
+  it('states the attempt against the lineage attempt allowance', () => {
     const progress = deriveBuildProgress(
       input({
         tasks: tasksState([{ id: 'T001', title: 'One', status: 'in_progress' }], {
           currentAttempt: 2,
         }),
-        config: { ...config, workflow: { ...config.workflow, maxRetries: 2 } },
       }),
     );
 
-    expect(progress.attempt).toEqual({ current: 2, max: 3 });
-    expect(buildProgressLines(progress, 120)[0]).toContain('attempt 2 of 3');
+    expect(progress.attempt).toEqual({ current: 2, max: BOUNDS.attemptsPerLineage });
+    expect(buildProgressLines(progress, 120)[0]).toContain(
+      `attempt 2 of ${BOUNDS.attemptsPerLineage}`,
+    );
   });
 
   it('states the estimate in minutes and says so when it is under one', () => {

@@ -9,7 +9,6 @@ import type { PreparedExecution } from '../../runners/prepared-execution.js';
 import { createPlanner, createImplementer, createReviewer } from '../../runners/factory.js';
 import type { EventBus } from '../../events/types.js';
 import { createImplementerPublisher } from '../events.js';
-import { configForProfile } from '../task/routing.js';
 
 type SeatBase = {
   config: Config;
@@ -70,10 +69,7 @@ export type ImplementerSeatInput = SeatBase & {
 
 export type ImplementerSeat = {
   implementer: Implementer;
-  createPreparedImplementer: (
-    runnerConfig: Config,
-    factoryOptions?: ImplementerFactoryOptions,
-  ) => Promise<Implementer>;
+  createPreparedImplementer: (factoryOptions?: ImplementerFactoryOptions) => Promise<Implementer>;
 };
 
 /** Builds the default implementer seat plus the factory the workflow uses for per-profile implementers. */
@@ -82,7 +78,6 @@ export async function createImplementerSeat(input: ImplementerSeatInput): Promis
   const resolvedDefaultProfile = resolveImplementerProfiles(config).defaultProfile;
   const defaultProfile = resolvedDefaultProfile.name;
   const createPreparedImplementer = async (
-    runnerConfig: Config,
     factoryOptions: ImplementerFactoryOptions = {},
   ): Promise<Implementer> => {
     const slot = factoryOptions.slot ?? { role: 'implementer', profile: defaultProfile };
@@ -93,15 +88,11 @@ export async function createImplementerSeat(input: ImplementerSeatInput): Promis
       preparationId: prepared.preparationId,
       gates: prepared.gates,
       slot,
-      ...(slot.role === 'intermediate' &&
-        runnerConfig.implementer.contextLength !== undefined && {
-          intermediateContextLength: runnerConfig.implementer.contextLength,
-        }),
     });
   };
   const implementer =
     input.injectedImplementer ??
-    (await createPreparedImplementer(configForProfile(config, resolvedDefaultProfile), {
+    (await createPreparedImplementer({
       publisher: createImplementerPublisher(input.bus),
       allowRepoRunners: input.allowRepoRunners,
       slot: { role: 'implementer', profile: defaultProfile },

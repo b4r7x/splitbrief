@@ -67,7 +67,6 @@ describe('runSingleTask — baseline-exempt validation', () => {
         bus,
         config: makeConfig({
           validation: { typecheck: true, lint: false, test: false, typecheckCommand: 'noop' },
-          workflow: { maxRetries: 1 },
         }),
         validator: {
           ...createValidator(),
@@ -137,7 +136,6 @@ describe('runSingleTask — baseline-exempt validation', () => {
         bus,
         config: makeConfig({
           validation: { typecheck: true, lint: false, test: false, typecheckCommand: 'noop' },
-          workflow: { maxRetries: 1 },
         }),
         validator: {
           ...createValidator(),

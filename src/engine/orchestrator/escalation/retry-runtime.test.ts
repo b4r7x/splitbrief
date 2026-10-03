@@ -18,6 +18,7 @@ import { ensureSessionDir } from '../../../core/paths-io.js';
 import { ConfigSchema, type Config } from '../../../core/schemas/config.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { createImplementer } from '../../runners/factory.js';
+import type { ImplementerFactoryOptions } from '../../implementers/types.js';
 import type { CustomRunnerRuntimePort } from '../../runners/types.js';
 import type { RunnerGate } from '../../runners/prepared-execution.js';
 import { resolveConfiguredCustomRunner } from '../../runners/configured-custom.js';
@@ -254,18 +255,14 @@ async function configuredRetryContext(
   }
   return {
     ...(await makeRetryCtx({ ...input, contextName: 'retry configured runner' })),
-    createImplementer: (runnerConfig, factoryOptions) =>
+    createImplementer: (factoryOptions: ImplementerFactoryOptions = {}) =>
       createImplementer(input.config, {
         ...factoryOptions,
         customRuntime: input.runtime,
         preparedConfig: input.config,
         preparationId,
         gates,
-        slot: factoryOptions?.slot ?? { role: 'implementer', profile: 'default' },
-        ...(factoryOptions?.slot?.role === 'intermediate' &&
-          runnerConfig.implementer.contextLength !== undefined && {
-            intermediateContextLength: runnerConfig.implementer.contextLength,
-          }),
+        slot: factoryOptions.slot ?? { role: 'implementer', profile: 'default' },
       }),
   };
 }

@@ -388,14 +388,14 @@ describe('invokeCliAdapter streaming a Claude Code capture', () => {
     expect(events.filter((event) => event.type === 'call_stalled')).toEqual([]);
   });
 
-  itUnix('warns then times out a runner that produces no output at all', async () => {
+  itUnix('warns then cuts a runner that produces no output at all', async () => {
     const { result, events } = await run({
       script: 'setInterval(() => {}, 1000);',
       lines: [],
       idle: { warnMs: 100, killMs: 400 },
     });
 
-    expect(result).toMatchObject({ status: 'timeout', error: { code: 'timeout' } });
+    expect(result).toMatchObject({ status: 'failed', error: { code: 'no-progress-cut' } });
     expect(events.filter((event) => event.type === 'call_stalled')).toHaveLength(1);
   });
 

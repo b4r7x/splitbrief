@@ -203,7 +203,6 @@ export function InputFooter({
     tasks,
     lifecycle,
     operations,
-    config,
     now: Date.now(),
   }).eta;
   const etaLabel = buildEta?.kind === 'estimate' ? etaText(buildEta) : null;

@@ -30,7 +30,7 @@ Phase 2 of the splitbrief pipeline (map: references/family-map.md). Input: a bri
 
 1. **Gates decide, not the implementer.** Every attempt is followed by the gates and the drift check (references/gates.md).
 2. **One brief, one outcome, one process at a time.** Dependency order from `index.md`; never two implementers at once.
-3. **The ladder is bounded and halts are hard.** Local retries → hint → takeover per brief; auth, usage, missing binary, or two consecutive timeouts halt the run with the fix printed.
+3. **The ladder is bounded and halts are hard.** One local retry → consult → takeover per brief; auth, usage, missing binary, or two consecutive timeouts halt the run with the fix printed.
 4. **Nothing touches git.** Not this session, not the implementer.
 5. **Never substitute a seat.** Unlisted model or missing tool → halt, never a swap.
 
@@ -46,11 +46,11 @@ Phase 2 of the splitbrief pipeline (map: references/family-map.md). Input: a bri
     crew: impl cmd:deepseek/deepseek-v4-flash@high (auth ok, model listed)
     gates: typecheck `npx tsc --noEmit` (manifest) · lint none · test `npm test` (default)
     baseline: typecheck PASS · test PASS (12 passed)
-    ladder: 2 local retries → hint → takeover (session)
+    ladder: 1 local retry → consult → takeover (session)
     run dir: <the briefs' run dir, or the new .splitbrief/runs/<stamp>-<slug>/>
     gitignore: .splitbrief/ ignored   (or: NOT ignored — add it to .gitignore or expect the run dir in git status)
 
-5. `--ask` → wait. Otherwise write `plan.md` (append a `## run` section when the run dir already has one), `progress.md` (every brief `pending`; Status `pending` · `running` · `retrying (n)` · `done` · `escalated` · `halted`; Rung `—` · `retry` · `recipe-fix` · `hint` · `takeover`), `evidence.md` (one entry per attempt: command, exit + terminal record, completion report, gates + drift, outcome), and `.splitbrief/current-run` with the run dir path; then continue. **Resume:** when the run dir already has a `progress.md`, keep it — rows `done` stay done, every other row is re-run from the first one that is not `done`, attempt numbers continue, and the `## run` section records the new crew. This is how a halted run continues on another seat: `splitbrief-run impl=<next seat> <run dir>`.
+5. `--ask` → wait. Otherwise write `plan.md` (append a `## run` section when the run dir already has one), `progress.md` (every brief `pending`; Status `pending` · `running` · `retrying (n)` · `done` · `escalated` · `halted`; Rung `—` · `retry` · `recipe-fix` · `consult` · `takeover`), `evidence.md` (one entry per attempt: command, exit + terminal record, completion report, gates + drift, outcome), and `.splitbrief/current-run` with the run dir path; then continue. **Resume:** when the run dir already has a `progress.md`, keep it — rows `done` stay done, every other row is re-run from the first one that is not `done`, attempt numbers continue, and the `## run` section records the new crew. This is how a halted run continues on another seat: `splitbrief-run impl=<next seat> <run dir>`.
 
 ## Phase 2 — Run
 
@@ -58,10 +58,10 @@ For each brief in order, while every `depends_on` is `done`:
 
 1. **Prompt** — `T00N/attempt-1.prompt.md` per references/implementer-prompt.md (preamble, body, closing line). Refuse a prompt starting with `-`.
 2. **Spawn** — the implementer recipe from references/tool-recipes.md; cwd = project root; output → `T00N/attempt-1.log`; detached, with the waiter as the deadline (Orchestration notes below). Append the command line to `evidence.md`.
-3. **Outcome** — references/implementer-prompt.md §7: exit code, terminal record, the brief's anchor file in the changed set, a completion report naming a file. A failed outcome records `gates: not run · drift: not run` and goes to step 6.
+3. **Outcome** — references/implementer-prompt.md §7: exit code, terminal record, the brief's anchor file in the changed set, no `done` report that names no file (a missing report is advisory). A failed outcome records `gates: not run · drift: not run` and goes to step 6.
 4. **Gates** — typecheck → lint → test with narrowing; verbatim into `validation.md`.
 5. **Drift** — per references/gates.md; every attempt gets an entry in `drift.md`; a path entry is recorded for the reviewer and never fails the attempt.
-6. **Ladder** on failure — halt signatures first, then spawn-failure signatures (`recipe-fix`: correct the recipe, re-spawn the original prompt as the next attempt, no retry consumed), then local retries (2, or `workflow.max_retries`) → hint (`T00N/hint.md`, ≤ 500 tokens, no code, one implementer retry) → takeover (this session edits the file, then gates + drift), unless `--no-escalate`. Signatures: references/tool-recipes.md; framings and prompts: references/implementer-prompt.md.
+6. **Ladder** on failure — halt signatures first, then spawn-failure signatures (`recipe-fix`: correct the recipe, re-spawn the original prompt as the next attempt, no retry consumed), then one local retry → the consult (references/implementer-prompt.md §5: the session answers the consult prompt read-only and acts on the answer) → takeover (this session edits the file, then gates + drift), unless `--no-escalate`. Signatures: references/tool-recipes.md; framings and prompts: references/implementer-prompt.md.
 7. **Record** — `progress.md` row (`pending` · `running` · `retrying (n)` · `done` · `escalated` · `halted`), reprint the table.
 
 ## Hand-back

@@ -58,7 +58,7 @@ export async function createRetryRuntime(
   }
   return {
     config,
-    implementer: await factory(config, {
+    implementer: await factory({
       publisher: createImplementerPublisher(ctx.bus),
       slot: { role: 'implementer', profile: profile.name },
     }),

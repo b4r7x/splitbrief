@@ -203,32 +203,28 @@ describe('createTaskImplementer configured profile admission', () => {
       const slot: RunnerSlot = { role: 'implementer', profile: profileName };
       const preparationId = `routing-${runner.kind}`;
       const gates = [makeRunnerGate(runner, slot, preparationId)];
-      const preparedFactory = vi.fn(
-        (runnerConfig: Config, options: ImplementerFactoryOptions = {}) => {
-          expect(runnerConfig.implementer).toEqual(runner);
-          expect(options).toMatchObject({ slot });
-          runnerGateFor(gates, {
-            slot,
-            preparationId,
-            ...(runner.kind === 'cli'
-              ? { kind: 'cli' as const, tool: runner.tool }
-              : runner.kind === 'api'
-                ? {
-                    kind: 'api' as const,
-                    provider: runner.provider,
-                    endpointOrigin: new URL(runner.apiBase).origin,
-                  }
-                : { kind: runner.kind, command: { kind: 'validated-config' as const } }),
-          });
-          return existingImplementer;
-        },
-      );
+      const preparedFactory = vi.fn((options: ImplementerFactoryOptions = {}) => {
+        expect(options).toMatchObject({ slot });
+        runnerGateFor(gates, {
+          slot,
+          preparationId,
+          ...(runner.kind === 'cli'
+            ? { kind: 'cli' as const, tool: runner.tool }
+            : runner.kind === 'api'
+              ? {
+                  kind: 'api' as const,
+                  provider: runner.provider,
+                  endpointOrigin: new URL(runner.apiBase).origin,
+                }
+              : { kind: runner.kind, command: { kind: 'validated-config' as const } }),
+        });
+        return existingImplementer;
+      });
 
       await expect(
         createTaskImplementer({
           wctx: makeWctx({ ...wctxIdentity, config, createImplementer: preparedFactory }),
           profile,
-          taskConfig: config,
           singleImplementerMode: false,
         }),
       ).resolves.toBe(existingImplementer);
@@ -242,7 +238,6 @@ describe('createTaskImplementer configured profile admission', () => {
       (profile) => profile.name === 'selected-profile',
     );
     if (selected === undefined) throw new Error('Expected selected profile fixture');
-    const taskConfig = configForProfile(config, selected);
 
     await expect(
       createTaskImplementer({
@@ -250,7 +245,7 @@ describe('createTaskImplementer configured profile admission', () => {
           projectDir: defaultContext.dir,
           sessionId: 'routing-test-session',
           config,
-          createImplementer: (_runnerConfig, factoryOptions) =>
+          createImplementer: (factoryOptions: ImplementerFactoryOptions = {}) =>
             createImplementer(config, {
               ...factoryOptions,
               preparedConfig: config,
@@ -260,7 +255,6 @@ describe('createTaskImplementer configured profile admission', () => {
             }),
         }),
         profile: selected,
-        taskConfig,
         singleImplementerMode: false,
       }),
     ).rejects.toMatchObject({ kind: 'runner-gate-mismatch' });

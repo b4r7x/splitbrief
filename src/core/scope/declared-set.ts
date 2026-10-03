@@ -6,7 +6,7 @@ import {
 import type { Task } from '../schemas/task.js';
 import { taskFiles } from '../schemas/task.js';
 
-/** A `WIDEN_TASK_SCOPE` bullet names its path, root-level files included; a bare backticked identifier is prose. */
+/** A planner-approved scope bullet names its path, root-level files included; a bare backticked identifier is prose. */
 const LEADING_PATH = /^\s*`([^`\s]+)`\s*—\s*planner-approved:/;
 
 const SCOPE_PLACEHOLDERS = new Set(['none', 'none.', 'n/a', '-']);

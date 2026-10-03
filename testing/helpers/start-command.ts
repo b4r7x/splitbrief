@@ -211,7 +211,7 @@ export function writeReadyReadinessFixtures(
       '  testCommand: node -e ""',
     );
   }
-  lines.push('workflow:', `  approve: ${options.approve ?? 'plan'}`, '  maxRetries: 3');
+  lines.push('workflow:', `  approve: ${options.approve ?? 'plan'}`);
   if (options.codebase === false) {
     lines.push('codebase:', '  enabled: false');
   }

@@ -98,6 +98,20 @@ describe('allowedActionsForReason', () => {
     ]);
   });
 
+  it('a spent consult bound continues, skips the task or ends the run', () => {
+    expect(allowedActionsForReason('consult-bound-spent')).toEqual([
+      'continue',
+      'skip-current-task',
+      'end-run',
+    ]);
+  });
+
+  it('planner-calls-spent shares the consult-bound action set', () => {
+    expect(allowedActionsForReason('planner-calls-spent')).toEqual(
+      allowedActionsForReason('consult-bound-spent'),
+    );
+  });
+
   it('review-failed revises, pauses, ends, or re-issues a review that reached no verdict', () => {
     expect(allowedActionsForReason('review-failed')).toEqual([
       'retry-same-worker',

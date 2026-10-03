@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';
+import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeImplementer } from '#testing/helpers/orchestrator-factories.js';
+import { createEventBus } from '../../events/bus.js';
 import { buildLanguageContext } from '../../spec/prompts/language-context.js';
 import type { RetryOptions } from '../../implementers/types.js';
 import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js';
@@ -27,7 +29,7 @@ describe('makeImplementerRetryInvoker', () => {
 
     const invoker = makeImplementerRetryInvoker({
       context: defaultContext,
-      kind: 'hint',
+      kind: 'consult',
       sessionId: 'sess-retry',
       languageContext,
       phase: 'implementing',
@@ -46,6 +48,11 @@ describe('makeImplementerRetryInvoker', () => {
       fileIgnoreProjectDir: '/project',
       changeDetection: 'file-hashes',
       createdByThisTask: ['src/owned.ts'],
+      seat: {
+        ref: { projectDir: '/staged', sessionId: 'sess-retry', bus: createEventBus() },
+        state: makeImplState([task]),
+        usageCategory: 'implementer',
+      },
     });
 
     expect(result).toEqual({
@@ -64,7 +71,7 @@ describe('makeImplementerRetryInvoker', () => {
       languageContext,
       error: 'boom',
       attempt: 3,
-      kind: 'hint',
+      kind: 'consult',
       sessionId: 'sess-retry',
       phase: 'implementing',
       signal,
@@ -99,6 +106,11 @@ describe('makeImplementerRetryInvoker', () => {
       config: makeConfig({ implementer: { model: 'arg-model' } }),
       implementer: argImpl.implementer,
       fileIgnoreProjectDir: '/project',
+      seat: {
+        ref: { projectDir: '/staged', sessionId: 'sess-retry', bus: createEventBus() },
+        state: makeImplState([makeTask()]),
+        usageCategory: 'implementer',
+      },
     });
 
     expect(result.runner).toEqual(overrideConfig.implementer);

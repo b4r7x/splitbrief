@@ -244,7 +244,6 @@ Every `Planner` implementation exposes a `capabilities` struct (`src/engine/plan
 ```ts
 type PlannerCapabilities = {
   supportsConversationalPlanning: boolean;
-  supportsHintEscalation: boolean;
   supportsSessionResume: boolean;
   supportsEffort: boolean;
   supportsImages: boolean;
@@ -252,15 +251,15 @@ type PlannerCapabilities = {
 };
 ```
 
-| Backend | Conv. planning | Hint escalation | Session resume | Effort | Images | Self-summary |
-|---------|:---:|:---:|:---:|:---:|:---:|:---:|
-| `cli` claude-code | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ |
-| `cli` codex | ✗ | ✓ | ✓ | ✗ | ✗ | ✓ |
-| `cli` opencode / copilot / kilo-code / cursor | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ |
-| `cli` command-code | ✗ | ✓ | ✗ | ✓ | ✗ | ✓ |
-| `api` (any OAI-compat) | ✗ | ✓ | ✗ | ✗ | ✗ | ✓ |
-| `shell` (default) | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-| `agent` (default) | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| Backend | Conv. planning | Session resume | Effort | Images | Self-summary |
+|---------|:---:|:---:|:---:|:---:|:---:|
+| `cli` claude-code | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `cli` codex | ✗ | ✓ | ✗ | ✗ | ✓ |
+| `cli` opencode / copilot / kilo-code / cursor | ✗ | ✗ | ✗ | ✗ | ✓ |
+| `cli` command-code | ✗ | ✗ | ✓ | ✗ | ✓ |
+| `api` (any OAI-compat) | ✗ | ✗ | ✗ | ✗ | ✓ |
+| `shell` (default) | ✗ | ✗ | ✗ | ✗ | ✗ |
+| `agent` (default) | ✗ | ✗ | ✗ | ✗ | ✗ |
 
 One more per-seat property sits outside this struct: typed output. The tool facts carry it as `typedOutput`. A `native` seat sends the JSON Schema on the tool's own channel: a CLI flag, or the `response_format` request field for the `api` kind. A `strict-native` seat does the same only for a schema that OpenAI strict mode accepts, and asks in the prompt for any other. A `fallback` seat asks for the JSON object in the prompt:
 
@@ -268,7 +267,7 @@ One more per-seat property sits outside this struct: typed output. The tool fact
 |---|---|---|---|---|---|---|
 | Typed output | native (`--json-schema`, from 2.1.287) | strict-native (`--output-schema`, from 0.157.1) | native (`--json-schema`, from 1.2.14) | native (`response_format`) | fallback | fallback |
 
-Claude Code resumes via `claude --resume <id>`. Codex resumes via `codex exec resume … --json <id> -`, with the prompt on stdin and the id captured from the `thread.started` JSONL event. Only a planning call resumes: a planning step or a spec or plan revision. The review and the hint are one shot on every seat. A resumed run falls back to a transcript rebuild (`src/engine/orchestrator/transcript/rebuild.ts`) when its planner cannot resume a session, when the PLAN seat moved to another tool, or when the state holds no `plannerSessionId` because the tool reported none or its thread expired. A planning call whose thread expires mid-run, a step or a revision, is issued again once, on a fresh session with the same rebuilt transcript (`withExpiredSessionReissue`, `src/engine/orchestrator/resume-context.ts`).
+Claude Code resumes via `claude --resume <id>`. Codex resumes via `codex exec resume … --json <id> -`, with the prompt on stdin and the id captured from the `thread.started` JSONL event. The planning session and the consult resume the saved thread; the review is one shot on every seat. A resumed run falls back to a transcript rebuild (`src/engine/orchestrator/transcript/rebuild.ts`) when its planner cannot resume a session, when the PLAN seat moved to another tool, or when the state holds no `plannerSessionId` because the tool reported none or its thread expired. A planning call whose thread expires mid-run, a step or a revision, is issued again once, on a fresh session with the same rebuilt transcript (`withExpiredSessionReissue`, `src/engine/orchestrator/resume-context.ts`).
 
 `shell` and `agent` defaults are all-false but can be narrowed or partially declared per project. The schema rejects `supportsSessionResume`, `supportsEffort`, and `supportsImages` when set to `true` because command-based adapters have no session-handle, effort, or image-attachment channel.
 
@@ -280,7 +279,6 @@ planner:
   outputFormat: stream-json
   capabilities:
     supportsConversationalPlanning: true
-    supportsHintEscalation: true
     supportsSelfSummarisation: false
 ```
 
@@ -291,7 +289,6 @@ When a capability is missing, the orchestrator falls back:
 - **No session resume?** → Rebuild context from `session.jsonl` messages on resume. See `src/engine/orchestrator/transcript/rebuild.ts` — for api-kind backends the messages are injected as a `messages[]` array; for CLI backends without native resume, as a `<!-- prior conversation -->` prompt prefix.
 - **No `injectUserTurn`?** → Queue user messages, drain at next phase boundary (backends that implement `injectUserTurn` get them dispatched immediately as native user turns).
 - **No conversational planning?** → No fallback: the planning session's questions are part of its typed answer (`PlanResultSchema`), so every planner can ask them, and the orchestrator does not read this flag.
-- **No hint escalation?** → Skip the hint tier: after local retries and the optional tier 0 intermediate model, enter explicit recovery on failure.
 
 Adding a new capability means extending `PlannerCapabilities`, setting it per backend, and adding the fallback branch in the orchestrator. No backend-identity `if` chains.
 
@@ -425,7 +422,7 @@ A snapshot of the codebase as it actually stands today, generated for an AI agen
 
 ## 1. System overview
 
-SPLITBRIEF is an orchestrator of two coding tools: one plans and reviews, the other executes, and SPLITBRIEF holds the contract, the isolation, the validation, the retry, the escalation, and the evidence between them. It composes two roles around a strict workflow:
+SPLITBRIEF is an orchestrator of two coding tools: one plans and reviews, the other executes, and SPLITBRIEF holds the contract, the isolation, the validation, the retry, the consult, and the evidence between them. It composes two roles around a strict workflow:
 
 1. **Planner** — an expensive, capable model (Claude / GPT / Codex / Claude-Code CLI / etc.) that ingests the feature request, explores the repo, and compiles a Task Brief: a structured list of `Task` objects, one per slice, each naming the files it writes plus scope, validation, and evidence.
 2. **Implementer** — the weaker model of the pair, carried either by a tool CLI configured with a cheap model or by a model behind an OpenAI-compatible API. Both transports are first-class. It executes one task at a time against its self-contained brief; the typecheck / lint / test gates that judge the result are SPLITBRIEF's, resolved from config, planner-discovered validation, heuristic fallback, or defaults.
@@ -476,7 +473,7 @@ src/
 ├── core/                          SPLITBRIEF-domain (no React, no engine)
 │   ├── approval/                  Approval tier and action-class types
 │   ├── config/
-│   │   ├── accessors/             runner-config, escalation, state accessors
+│   │   ├── accessors/             runner-config, state accessors
 │   │   ├── load/                  load, transform, validate
 │   │   ├── runtime/               build-runner, overrides, resolve
 │   │   └── errors.ts              ConfigError types
@@ -586,10 +583,12 @@ src/
 │   │   │                          file-snapshots, the write gate
 │   │   │                          (`tiered-approval`, `types`,
 │   │   │                          `confirm`, `events`)
+│   │   ├── consult/               request (typed consult on the planner
+│   │   │                          session) + apply (the five answers)
 │   │   ├── continuation.ts        withContinuationLoop (pause/resume gate)
 │   │   ├── drift/                 per-task drift and chained drift state
-│   │   ├── escalation/            retry runtime, tiered escalation, evidence,
-│   │   │                          approval-conflict handling
+│   │   ├── escalation/            local retries, retry step, seat wait,
+│   │   │                          evidence, approval-conflict handling
 │   │   ├── events.ts              publish* helpers for typed events
 │   │   ├── evidence/              ledger, persistence, reporting,
 │   │   │                          task/approval evidence, review packets
@@ -605,14 +604,15 @@ src/
 │   │   ├── state-ops.ts           transitionAndSave, addUsageAndSave,
 │   │   │                          refreshAndPersistCode
 │   │   ├── summary/               buildSummary (build.ts), artifact rollups, task metrics
-│   │   ├── task/                  loop, step, retry, commit, routing,
-│   │   │                          pre-task helpers
+│   │   ├── task/                  loop, step, retry, stale-inputs,
+│   │   │                          rollback, commit, routing, pre-task helpers
 │   │   ├── tokens.ts              Token-usage accumulation
 │   │   ├── transcript/            Fallback resume context + compaction
 │   │   │                          without native session resume
 │   │   ├── types.ts               WorkflowContext, OrchestratorCallbacks,
 │   │   │                          WorkflowSinks
-│   │   └── validation/            Validator pipeline (typecheck / lint / test)
+│   │   └── validation/            Validator pipeline (typecheck / lint / test),
+│   │                              run-checks (a consult's verify selection)
 │   ├── parsers/                   code-detection, code-patterns,
 │   │                              question, response-extractor,
 │   │                              scope-extractor
@@ -664,9 +664,10 @@ src/
 │   │   ├── headings.ts            Task-Brief headings + required sections
 │   │   ├── prompt-formatter.ts    Implementer task/retry prompt assembly
 │   │   │                          (write-mode aware)
-│   │   ├── prompts/               builder, continuation,
-│   │   │                          escalation (incl. few-shot examples
-│   │   │                          via escalation-examples.ts),
+│   │   ├── prompts/               builder, consult, continuation,
+│   │   │                          escalation (legacy escalateFull prompt;
+│   │   │                          few-shot examples via
+│   │   │                          escalation-examples.ts),
 │   │   │                          language-context, plan-session, review,
 │   │   │                          system (implementer system
 │   │   │                          preamble per write mode),
@@ -871,13 +872,16 @@ Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orch
 `spec_approved`, `spec_rejected`, `spec_regenerated`, `plan_approved`, `plan_rejected`, `plan_regenerated`, `briefs_approved`, `briefs_rejected`, `rewind_to_spec`, `rewind_to_plan`, `all_tasks_done`, `brief_quality_passed`, `brief_quality_failed`, `brief_readiness_passed`, `brief_readiness_blocked`, `drift_report`, `drift_chain_detected`, `snapshot_created`, `snapshot_restored`, `snapshot_restore_conflict`, `mode_resolved`, `mode_advice`, `instant_plan_received`. The plan card publishes `plan_approved` when it is approved, `plan_regenerated` when it sends a correction back to the planner, and `plan_rejected` when End run closes the run there (`runPlanApproval`, `planning/session.ts`). Replay only: `spec_*`, `briefs_*`, `rewind_to_*`, `brief_quality_*`, `brief_readiness_*`, `mode_resolved`, `mode_advice` and `instant_plan_received` have no producer now and stay so older logs replay.
 
 **Task lifecycle:**
-`task_started`, `task_completed`, `task_skipped`, `task_retry`, `task_escalating`, `task_scope_widened`, `task_touched_not_suggested` (the files a completed brief changed that no brief suggested), `task_full_fail`, `task_reset`, `task_tokens`, `task_review_needed` (replay only: the per-task review gate is deleted), `hint_failed`, `review_fix_started`
+`task_started`, `task_completed`, `task_skipped`, `task_retry`, `task_escalating`, `task_replaced`, `tasks_inserted`, `task_touched_not_suggested` (the files a completed brief changed that no brief suggested), `task_reset`, `task_tokens`, `task_review_needed` (replay only: the per-task review gate is deleted), `review_fix_started`. Replay only: `task_scope_widened`, `hint_failed`, `task_full_fail`
+
+**Consult / seat:**
+`consult_answered` (one row per answer: the task, reason, action, diagnosis and any new ids, revision or check ids), `consult_bound_spent`, `seat_retry`, `seat_wait_started`, `no_progress_cut`
 
 **Implementer (3):**
 `implementer_generate_running`, `implementer_generate_done`, `implementer_generate_failed`
 
 **Validation / escalation / git (6):**
-`validate`, `validation_baseline`, `escalate`, `git_branch_created`. Historical `git_commit` and `git_checkpoint` events remain readable; current execution never publishes them
+`validate`, `validation_baseline`, `checks_run` (a consult `verify` answer's per-check results), `git_branch_created`. Replay only: `escalate`; historical `git_commit` and `git_checkpoint` events remain readable, and current execution never publishes them
 
 **Clarifications / queue / messages (7):**
 `clarifications_collected`, `clarification_answered` (replay only: no producer now), `message_queued`, `message_injected_native`, `queue_drained`, `queue_cleared`, `user_message`
@@ -1214,7 +1218,7 @@ palette:
       command: /usage          # runtime command to invoke (must start with '/')
 ```
 
-All sections are optional; absence means the documented default is used. The `palette.customActions` array is empty by default. Existing config sections (`planner`, `implementer`, `validation`, `workflow.{maxRetries,approve,...}`, `escalation`, `codebase`, `hooks`, `approval`) are unchanged in shape.
+All sections are optional; absence means the documented default is used. The `palette.customActions` array is empty by default. Existing config sections (`planner`, `implementer`, `validation`, `workflow.{approve,git,isolation,...}`, `codebase`, `hooks`, `approval`) are unchanged in shape. The retired `workflow.max_retries` and `escalation` keys still load with one notice each and are ignored.
 
 ---
 
@@ -1234,7 +1238,7 @@ Enforced by hooks, type system, exhaustive switches, or pre-merge greps. Breakin
 2. **`.git/`, `.splitbrief/`, `node_modules/`, `.trees/` MUST be excluded from snapshots / drift / file collection, at any depth, and a directory the project ignores is never entered.** `INTERNAL_SKIP_DIRS` (`core/paths.ts`), re-exported as `ALWAYS_EXCLUDED` from `engine/snapshots/files.ts` and honoured by `collectTrackedFiles`. Including `.splitbrief/` causes exponential snapshot growth (snapshots-of-snapshots); including `.trees/` pulls any user-created worktree checkout into the project's snapshots and diffs. The run's own isolation worktree needs no exclusion entry at all: it lives outside the project root entirely, under `$XDG_STATE_HOME/splitbrief/trees/<hash>/<slug>/` (default `~/.local/state/splitbrief/trees/...`), where a project-rooted walker never reaches it.
 3. **`briefHash` must propagate** from `createEvidenceLedger` (or the existing-ledger fallback) to every `record*` call in the per-task path. Lost propagation produces `briefHash: null` entries that break post-hoc evidence audits.
 4. **`TaskStatus` value is `'done'` NOT `'completed'`.** The enum is `['pending', 'in_progress', 'done', 'failed', 'escalated', 'skipped']` (`core/schemas/enums.ts`). `task_completed` is the *event* name; the *status* string is `'done'`.
-5. **Every terminal point in `runSingleTask` must call `runChainAnalysisSafe`** (drift chain analysis) — otherwise chain state desyncs from per-task drift. There are five+ such points (success, fail, escalate-success, escalate-fail, skip).
+5. **Every terminal point in `runSingleTask` must call `runChainAnalysisSafe`** (drift chain analysis) — otherwise chain state desyncs from per-task drift. There are such points on every exit (success, fail, a consult rewrite or split, a verify completion, skip).
 6. **Engine MUST NOT import React, Ink, or anything from `src/features/`, `src/components/`, `src/hooks/`.** This is what makes the workflow runnable headlessly under Vitest.
 7. **Zero runtime classes.** Production source uses functions and module-scoped state; test fixtures may contain class syntax when that is the behavior under test.
 8. **Zero barrels.** No re-export-only `index.ts` anywhere in `src/`; currently there are no `index.ts` or `index.tsx` files in `src/`.

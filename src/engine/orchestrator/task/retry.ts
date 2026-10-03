@@ -6,6 +6,7 @@ import type { TaskStatus, ValidationStage } from '../../../core/schemas/enums.js
 import type { WorkflowContext } from '../types.js';
 import type { RetryAttemptFailure } from '../escalation/types.js';
 
+import { DEFAULT_LOCAL_RETRIES } from '../../../core/pipeline-spec/retries.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { runnerCallRole } from '../../implementers/pipeline/call-result.js';
 import { retentionError } from '../isolation/retention.js';
@@ -13,7 +14,8 @@ import { isAbortError } from '../../../utils/abort.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { publishError } from '../events.js';
 import { handleRetryAndEscalation } from '../escalation/handle.js';
-import { raisePendingRecovery } from '../state-ops.js';
+import type { BlockedReport } from '../escalation/step.js';
+import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { recordTaskUsage } from '../tokens.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
@@ -26,10 +28,12 @@ import {
   diagnosePlannerCallFailure,
   plannerCallHaltIssue,
 } from '../recovery/planner-call-failure.js';
-import { hintHaltDetails } from '../recovery/builders/details.js';
+import { consultHaltDetails } from '../recovery/builders/details.js';
 import { loadState } from '../../../core/state/persistence.js';
+import { classifyTaskCompletionMethod } from '../../../core/task-completion.js';
 import { persistTaskEvidence } from '../evidence/persistence.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
+import { lineageIdOf } from '../../../core/state/task-insert.js';
 
 export type RetryAndRecordOptions = {
   wctx: WorkflowContext;
@@ -43,16 +47,31 @@ export type RetryAndRecordOptions = {
   initialExemptStages?: readonly ValidationStage[] | undefined;
   /** How the first attempt ended, when it ended on a machine outcome. */
   initialFailure?: RetryAttemptFailure | undefined;
+  /** The first attempt's blocked report, when it stopped asking for a decision. */
+  initialBlocked?: BlockedReport | undefined;
   tokensBefore: TokenUsage;
   taskBreakdowns: TaskTokenUsage[];
   setTrackedState: (s: WorkflowState) => void;
 };
 
-/** A failure out of the retry ladder names its call: the planner's hint, else the retry itself. */
+/** A failure out of the retry ladder names its call: the planner's consult, else the retry itself. */
 export function retryFailureLabel(err: unknown, taskId: TaskId): string {
   return runnerCallRole(err) === 'escalation'
-    ? `Planner hint for ${taskId} failed`
+    ? `Planner consult for ${taskId} failed`
     : `Retrying ${taskId} failed`;
+}
+
+/**
+ * True when the consult replaced or split the brief: the current task is the
+ * replacement's new revision or the first child of its split. The ladder hands
+ * back with no recovery, and the task loop dispatches the new current task.
+ */
+export function consultHandedBackToLoop(state: WorkflowState, task: Task): boolean {
+  if (state.pendingRecovery !== undefined) return false;
+  const current = state.tasks[state.currentTaskIndex];
+  if (current === undefined || current.status !== 'pending') return false;
+  if (current.id === task.id) return (current.revision ?? 1) > (task.revision ?? 1);
+  return current.parentId !== undefined && current.parentId === lineageIdOf(task);
 }
 
 export async function retryAndRecord(
@@ -78,6 +97,13 @@ export async function retryAndRecord(
     });
   };
   let taskStartSnapshot = opts.taskStartSnapshot;
+  // The attempt that reached the ladder counts on the lineage before the retry it
+  // earned: one implementer call, one attempt, whether it failed on validation or
+  // on its own output.
+  let state: WorkflowState =
+    wctx.signal?.aborted === true
+      ? opts.state
+      : transitionAndSave(wctx, opts.state, { type: 'COUNT_ATTEMPT', taskId: task.id });
   if (!taskStartSnapshot) {
     try {
       taskStartSnapshot = await getChangedFilesSnapshot(wctx.projectDir);
@@ -87,10 +113,9 @@ export async function retryAndRecord(
         phase: opts.state.phase,
         message: `Retry blocked by approval gate: ${toErrorMessage(err)}`,
       });
-      return { state: opts.state, completed: false };
+      return { state, completed: false };
     }
   }
-  let state: WorkflowState;
   let result: Awaited<ReturnType<typeof handleRetryAndEscalation>>['result'];
   const retryProfileOverride = retryProfileOverrideForTask(wctx, task);
   try {
@@ -98,22 +123,23 @@ export async function retryAndRecord(
       wctx,
       task,
       initialError,
-      currentState: opts.state,
+      currentState: state,
       taskStartTime,
       taskStartSnapshot,
       dependsOnFiles: resolveDependsOnFiles(opts.state.tasks, task),
       profileOverride: retryProfileOverride,
       ...(retryProfileOverride !== undefined && { profileOverrideTaskId: task.id }),
       ...(opts.initialFailure !== undefined && { initialFailure: opts.initialFailure }),
+      ...(opts.initialBlocked !== undefined && { initialBlocked: opts.initialBlocked }),
     }));
   } catch (err) {
     if (retentionError.isFailed(err) || retentionError.isUnavailable(err)) throw err;
     if (isAbortError(err) || wctx.signal?.aborted) {
-      const stoppedState = loadState(wctx) ?? opts.state;
+      const stoppedState = loadState(wctx) ?? state;
       setTrackedState(stoppedState);
       return { state: stoppedState, completed: false };
     }
-    // Only the planner's hint call throws a runner's own words out of the ladder:
+    // Only the planner's consult call throws a runner's own words out of the ladder:
     // the implementer pipeline turns every limit and sign-out into an outcome
     // the ladder halts on itself.
     const diagnosis = diagnosePlannerCallFailure({
@@ -128,12 +154,12 @@ export async function retryAndRecord(
       message: diagnosis.message,
       resetAt: diagnosis.resetsAt?.toISOString(),
     });
-    const recoveryBaseState = loadState(wctx) ?? opts.state;
+    const recoveryBaseState = loadState(wctx) ?? state;
     if (recoveryBaseState.pendingRecovery) {
       setTrackedState(recoveryBaseState);
       return { state: recoveryBaseState, completed: false };
     }
-    // A planner out of quota or signed out on the hint halts on the plan seat, not
+    // A planner out of quota or signed out on the consult halts on the plan seat, not
     // as a brief that exhausted its retries. The halt names the brief, so retrying
     // it or moving the plan seat replays that brief from its start.
     const issue =
@@ -144,7 +170,7 @@ export async function retryAndRecord(
             validationResults: opts.initialValidation,
             validationSummary: diagnosis.message,
             attempts: recoveryBaseState.attempt,
-            maxAttempts: wctx.config.workflow.maxRetries,
+            maxAttempts: DEFAULT_LOCAL_RETRIES,
             allowRetryOverride: true,
             selectedImplementerProfile: wctx.implementerProfile,
             routeBiggerProfile: routeBiggerProfileFromDecision(wctx.routingDecision),
@@ -156,7 +182,7 @@ export async function retryAndRecord(
             task,
             phase: recoveryBaseState.phase,
             swap: { seat: 'plan', runner: wctx.config.planner },
-            details: hintHaltDetails(task.id),
+            details: consultHaltDetails(task.id),
           });
     const nextState = raisePendingRecovery(wctx, recoveryBaseState, issue, setTrackedState);
     recordFailedTask(nextState, recoveryBaseState.attempt);
@@ -167,6 +193,19 @@ export async function retryAndRecord(
   const retryImplementerProfile = retryProfileOverride ?? wctx.implementerProfile;
   if (!result.completed) {
     if (wctx.signal?.aborted) {
+      return { state: nextState, completed: false };
+    }
+    // The consult replaced or split the brief: no recovery is raised, and the
+    // task loop dispatches the new current task off the reset state.
+    if (consultHandedBackToLoop(nextState, task)) {
+      const current = nextState.tasks[nextState.currentTaskIndex];
+      if (current !== undefined) {
+        nextState = transitionAndSave(wctx, nextState, {
+          type: 'RESET_TASK',
+          taskId: current.id,
+        });
+        setTrackedState(nextState);
+      }
       return { state: nextState, completed: false };
     }
     if (!nextState.pendingRecovery) {
@@ -180,14 +219,11 @@ export async function retryAndRecord(
             }
           : { validationSummary: result.lastError }),
         attempts: result.attempts,
-        maxAttempts: wctx.config.workflow.maxRetries,
+        maxAttempts: DEFAULT_LOCAL_RETRIES,
         allowRetryOverride: true,
         selectedImplementerProfile: retryImplementerProfile,
         routeBiggerProfile: routeBiggerProfileFromDecision(wctx.routingDecision),
         ...(result.handBack !== undefined && { handBack: result.handBack }),
-        ...(result.plannerHint !== undefined && { plannerHint: result.plannerHint }),
-        ...(result.hintRungRan !== undefined && { hintRungRan: result.hintRungRan }),
-        ...(result.plannerVerdict !== undefined && { plannerVerdict: result.plannerVerdict }),
         createdAt: nowIso(),
       });
       publishError({
@@ -216,7 +252,7 @@ export async function retryAndRecord(
     ...(retryImplementerProfile !== undefined && { implementerProfile: retryImplementerProfile }),
     ...(wctx.routingDecision !== undefined && { routingDecision: wctx.routingDecision }),
   });
-  const escalated = result.method !== 'local';
+  const escalated = classifyTaskCompletionMethod(result.method) === 'escalated';
   const status: TaskStatus = escalated ? 'escalated' : 'done';
   persistTaskEvidence({
     wctx,

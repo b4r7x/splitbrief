@@ -18,16 +18,16 @@ function fileMatchesTask(file: string, task: Task): boolean {
 function classifyFile(opts: {
   file: string;
   currentTask: Task;
-  currentTaskInFlight: boolean;
+  briefHoldsOutput: (file: string) => boolean;
   allTasks: Task[];
   currentTaskIndex: number;
 }): UserEditConflictFile {
-  const { file, currentTask, currentTaskInFlight, allTasks, currentTaskIndex } = opts;
+  const { file, currentTask, briefHoldsOutput, allTasks, currentTaskIndex } = opts;
 
   if (fileMatchesTask(file, currentTask)) {
-    // A brief in flight has output to lose; a brief that has not started takes the edit as its
-    // starting point, the same stale compiled input as for any later brief.
-    const kind = currentTaskInFlight ? 'current-task-conflict' : 'future-task-stale-input';
+    // A brief that holds output on the file has output to lose; one that has not started takes the
+    // edit as its starting point, the same stale compiled input as for any later brief.
+    const kind = briefHoldsOutput(file) ? 'current-task-conflict' : 'future-task-stale-input';
     return { file, kind, affectedTaskIds: [currentTask.id] };
   }
 
@@ -38,7 +38,7 @@ function classifyFile(opts: {
     // A dependency that finished hands the edited bytes on as input, the same as a later brief;
     // one that has not, or a brief already running on the old bytes, still conflicts.
     const inputOnly =
-      !currentTaskInFlight && affectedDependencies.every((task) => task.status === 'done');
+      !briefHoldsOutput(file) && affectedDependencies.every((task) => task.status === 'done');
     return {
       file,
       kind: inputOnly ? 'future-task-stale-input' : 'dependency-file-conflict',
@@ -79,13 +79,13 @@ function actionsFor(kind: UserEditConflictKind): UserEditConflictAction[] {
 }
 
 /**
- * `currentTaskInFlight` is the caller's own answer, never read off `currentTask.status`: the task
+ * `briefHoldsOutput` is the caller's own per-file answer, never read off `currentTask.status`: the task
  * object a caller holds mid-brief is a copy taken before `START_TASK` and still says `pending`.
  */
 export function classifyUserEditConflict(opts: {
   files: string[];
   currentTask: Task;
-  currentTaskInFlight: boolean;
+  briefHoldsOutput: (file: string) => boolean;
   allTasks: Task[];
   currentTaskIndex: number;
 }): UserEditConflict {

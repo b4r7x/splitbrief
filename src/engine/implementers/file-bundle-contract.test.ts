@@ -46,6 +46,7 @@ describe('FileBundleSchema', () => {
       version: 1,
       files: [{ path: 'src/empty.ts', action: 'create', content: '' }],
     });
+    if (!('files' in parsed)) throw new Error('expected the files form of file-bundle-v1');
     expect(parsed.files[0]?.content).toBe('');
   });
 

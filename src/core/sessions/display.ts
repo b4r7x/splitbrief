@@ -30,6 +30,8 @@ export function getMethodDisplay(
   switch (method) {
     case 'local':
       return { text: 'local', color: theme.success };
+    case 'consulted':
+      return { text: 'consulted', color: theme.success };
     case 'escalated-intermediate':
       return { text: 'intermediate', color: theme.warning };
     case 'escalated-hint':

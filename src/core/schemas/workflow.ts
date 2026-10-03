@@ -8,11 +8,13 @@ import {
   ValidationStageSchema,
   type Phase,
 } from './enums.js';
-import { TaskSchema } from './task.js';
+import { TaskSchema, TaskIdSchema } from './task.js';
 import { PlanSchema } from './plan.js';
+import { CONSULT_REASONS, ConsultAnswerSchema } from './consult.js';
 import { TokenUsageSchema, TaskTokenUsageSchema } from './tokens.js';
 import { RecoveryIssueSchema } from './recovery/schemas.js';
 import { StepCutSchema, StepRefSchema } from './run-step.js';
+import { CREW_SEAT_IDS } from '../crew/identity.js';
 import { topoSort } from '../state/topo-sort.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { ClarificationQuestionSchema } from './question.js';
@@ -96,6 +98,48 @@ export const ChangedFilesBaselineSchema = z.object({
 
 const TASK_ACTIVE_PHASES = new Set<Phase>(['validating-task', 'escalating']);
 
+const CONSULT_ACTION_KINDS = [
+  'guidance',
+  'rewrite-task',
+  'split-task',
+  'verify',
+  'ask-user',
+] as const;
+
+export const ConsultRecordSchema = z.object({
+  reason: z.enum(CONSULT_REASONS),
+  action: z.enum(CONSULT_ACTION_KINDS),
+  diagnosis: z.string(),
+  at: z.string(),
+  taskId: TaskIdSchema,
+  revision: z.number().int(),
+  answer: ConsultAnswerSchema,
+});
+export type ConsultRecord = z.infer<typeof ConsultRecordSchema>;
+
+export const LineageRecordSchema = z.object({
+  consults: nonnegativeInteger,
+  attempts: nonnegativeInteger,
+  consultAllowance: nonnegativeInteger,
+  attemptAllowance: nonnegativeInteger,
+  staleConsultedRevision: z.record(z.string(), z.number().int()).default({}),
+  consultRecords: z.array(ConsultRecordSchema).default([]),
+  replacedParents: z.array(TaskSchema).default([]),
+  notes: z.array(z.string()).default([]),
+});
+export type LineageRecord = z.infer<typeof LineageRecordSchema>;
+
+export const PlannerCallsSchema = z.object({
+  used: nonnegativeInteger,
+  allowance: nonnegativeInteger,
+});
+export type PlannerCalls = z.infer<typeof PlannerCallsSchema>;
+
+export const SeatWaitSchema = z.object({
+  seat: z.enum(CREW_SEAT_IDS),
+  resetAt: z.string(),
+});
+
 const WorkflowStateFields = {
   stateVersion: z.literal(WORKFLOW_STATE_VERSION),
   stateRevision: nonnegativeInteger,
@@ -126,6 +170,9 @@ const WorkflowStateFields = {
   selectedSkills: z.array(z.string()).optional(),
   awaitingContinue: z.boolean().default(false),
   messageQueue: z.array(QueuedMessageSchema).default([]),
+  lineages: z.record(z.string(), LineageRecordSchema).optional(),
+  plannerCalls: PlannerCallsSchema.optional(),
+  seatWait: SeatWaitSchema.optional(),
   rewindPending: z
     .object({
       target: z.enum(['spec', 'plan']),

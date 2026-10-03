@@ -6,13 +6,12 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { Implementer } from '../../implementers/types.js';
 import type { RunnerFailureOutcomeState } from '../../runners/errors.js';
 import type { ChangeDetectionKind } from '../../change-detection.js';
-import type { WorkflowContext } from '../types.js';
+import type { WorkflowContext, WorkflowPersistenceContext } from '../types.js';
 import type { UsageCategory } from '../tokens.js';
 import type { IsolationRole } from '../isolation/types.js';
 import type { ValidationResult } from '../validation/result.js';
 import type { ValidationAcceptance } from '../validation/acceptance.js';
 import type { BundleApplyResult } from '../../implementers/file-bundle.js';
-import type { HintVerdictKind } from '../../spec/prompts/escalation.js';
 import { HAND_BACK_MAX_CHARS } from '../../../core/pipeline-spec/ladder.js';
 
 export type RetryFailureDetail = Readonly<{
@@ -20,12 +19,6 @@ export type RetryFailureDetail = Readonly<{
   lastError?: string | undefined;
   /** Bounded tail of the last failing attempt's own account of its stop. */
   handBack?: string | undefined;
-  /** What the planner answered on the hint rung, when it produced text. */
-  plannerHint?: string | undefined;
-  /** True when the hint rung spent an implementer attempt. */
-  hintRungRan?: boolean | undefined;
-  /** The planner's verdict on the implementer's stop. */
-  plannerVerdict?: HintVerdictKind | undefined;
 }>;
 
 export type RetryResult =
@@ -48,9 +41,6 @@ export function failedRetry(attempts: number, detail?: RetryFailureDetail): Retr
     attempts,
     ...(detail?.lastError !== undefined && { lastError: detail.lastError }),
     ...(detail?.handBack !== undefined && { handBack: detail.handBack }),
-    ...(detail?.plannerHint !== undefined && { plannerHint: detail.plannerHint }),
-    ...(detail?.hintRungRan !== undefined && { hintRungRan: detail.hintRungRan }),
-    ...(detail?.plannerVerdict !== undefined && { plannerVerdict: detail.plannerVerdict }),
   };
 }
 
@@ -84,12 +74,19 @@ export type RetryStepOutcome = {
   attempts: number;
   result?: RetryResult;
   lastFailure?: RetryAttemptFailure | undefined;
-  /** Set by the hint rung when the planner produced text. */
-  plannerHint?: string | undefined;
-  plannerVerdict?: HintVerdictKind | undefined;
+  /** This attempt's start snapshot: the rollback baseline a consult applies against. */
+  attemptSnapshot?: ChangedFilesSnapshot | undefined;
 };
 
 export type SuccessMethod = Exclude<TaskCompletionMethod, 'failed' | 'skipped'>;
+
+/** Where the seat-trouble wrapper parks a wait: the live state and the seat's call site. */
+export type RetrySeatTarget = Readonly<{
+  ref: WorkflowPersistenceContext;
+  state: WorkflowState;
+  /** The usage category the tokens of a discarded attempt are recorded under. */
+  usageCategory: UsageCategory;
+}>;
 
 export type RetryInvokeArgs = {
   task: Task;
@@ -105,6 +102,8 @@ export type RetryInvokeArgs = {
   /** Baseline the acquired workspace declares; sniffed from the directory when absent. */
   changeDetection?: ChangeDetectionKind | undefined;
   createdByThisTask?: readonly string[] | undefined;
+  /** The seat-trouble wrapper's target; the step supplies the live state and usage category. */
+  seat: RetrySeatTarget;
 };
 
 export type RetryInvokeResult = {
@@ -119,15 +118,6 @@ export type RetryInvokeResult = {
   runner?: Config['implementer'] | undefined;
 };
 
-export type TierStepInput = {
-  ctx: EscalationContext;
-  task: Task;
-  state: WorkflowState;
-  lastError: string;
-  priorAttempts: number;
-  handBack?: string | undefined;
-};
-
 export type RetryStepOpts = {
   ctx: EscalationContext;
   task: Task;
@@ -135,7 +125,7 @@ export type RetryStepOpts = {
   lastError: string;
   attempts: number;
   method: SuccessMethod;
-  transitionType: 'VALIDATION_PASS' | 'HINT_SUCCESS' | 'FULL_SUCCESS';
+  transitionType: 'VALIDATION_PASS';
   commitSuffix?: string | undefined;
   usageCategory: UsageCategory;
   retryFailureFallback: string;
@@ -143,8 +133,6 @@ export type RetryStepOpts = {
   isolationRole?: IsolationRole | undefined;
   resultTool?: string | undefined;
   resultModel?: string | undefined;
-  /** Paths the planner licensed for this retry; recorded on the brief once the gate allows them. */
-  scopeWidening?: Readonly<{ paths: readonly string[]; reason: string }> | undefined;
   invokeRetry: (args: RetryInvokeArgs) => Promise<RetryInvokeResult>;
   onValidationAfterRetryFail?: ((validationError: string) => void) | undefined;
 };

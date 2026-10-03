@@ -20,7 +20,7 @@ import type {
   PlannerUserTurnResult,
 } from './types.js';
 import { DEFAULT_AVAILABILITY } from '../availability.js';
-import { escalateFull, escalateHint } from './escalation.js';
+import { escalateFull } from './escalation.js';
 import { formatMessagesForCli } from '../streaming/format-messages.js';
 import { createPlannerCallContext } from './call-context.js';
 import { summarize, summarizeStructured } from './summary.js';
@@ -85,13 +85,6 @@ export interface PlannerBaseConfig {
   /** How a typed call reaches this backend; defaults to 'fallback'. */
   typedOutput?: TypedOutputCapability | undefined;
   /**
-   * How to determine whether escalateHint succeeded.
-   * - 'text': non-empty stdout (API/streaming planners)
-   * - 'files': git changed files (CLI/agent planners that write files directly)
-   * Default: 'text'
-   */
-  hintSuccessMode?: 'text' | 'files';
-  /**
    * How to determine whether escalateFull succeeded.
    * - 'text': extract code block from stdout (API/streaming planners)
    * - 'files': git changed files (agent planners that write files directly)
@@ -117,10 +110,6 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
   const capabilities = config.capabilities;
 
   const planner: Planner = {
-    async escalateHint(opts: EscalateOptions): Promise<EscalationResult> {
-      return escalateHint(config, opts);
-    },
-
     async escalateFull(opts: EscalateOptions): Promise<EscalationResult> {
       return escalateFull(config, opts);
     },

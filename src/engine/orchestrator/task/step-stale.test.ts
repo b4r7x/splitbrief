@@ -1,0 +1,342 @@
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  makeBusRecorder,
+  makeCallbacks,
+  makeImplementer,
+  makePlanner,
+} from '#testing/helpers/orchestrator-factories.js';
+import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeImplStateWithMetadata as implementingState } from '#testing/helpers/factories/workflow-state.js';
+import { consultCallAnswering } from '#testing/helpers/typed-planner.js';
+import {
+  cleanupTaskProjects,
+  makeTaskWorkflowContext as makeWorkflowContext,
+  setupTaskProject as setupProject,
+} from '#testing/helpers/orchestrator-task-context.js';
+import type { ConsultAnswer } from '../../../core/schemas/consult.js';
+import type { Task } from '../../../core/schemas/task.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { EventBus } from '../../events/types.js';
+import type { Planner } from '../../planners/types.js';
+import { inputHashesNow, specInputFiles } from './stale-inputs.js';
+import { runSingleTask } from './step.js';
+
+afterEach(cleanupTaskProjects);
+
+const SHARED = 'export const shared = 1;\n';
+const EDITED_SHARED = 'export const shared = 2;\n';
+const OTHER = 'export const other = 1;\n';
+const EDITED_OTHER = 'export const other = 2;\n';
+
+function guidanceAnswer(instructions: string): ConsultAnswer {
+  return {
+    answer: {
+      diagnosis: 'The inputs moved under the brief.',
+      action: 'guidance',
+      instructions,
+      context: null,
+    },
+  };
+}
+
+function staleRewriteAnswer(criteria: string[] = ['C1']): ConsultAnswer {
+  return {
+    answer: {
+      diagnosis: 'The brief should read the new context.',
+      action: 'rewrite-task',
+      task: makeTaskSpec({
+        id: 'T002',
+        criteria,
+        suggestedFiles: ['src/b.ts'],
+        contextFiles: ['src/shared.ts'],
+      }),
+    },
+  };
+}
+
+function staleTask(projectDir: string): Task {
+  const task = makeTask({
+    id: 'T002',
+    action: 'create',
+    file: 'src/b.ts',
+    files: ['src/b.ts'],
+    suggestedFiles: ['src/b.ts'],
+    contextFiles: ['src/shared.ts'],
+    criteria: ['C1'],
+  });
+  const suggestedFiles = task.suggestedFiles ?? [task.file];
+  const contextFiles = task.contextFiles ?? [];
+  return {
+    ...task,
+    inputHashes: inputHashesNow(projectDir, specInputFiles({ suggestedFiles, contextFiles })),
+  };
+}
+
+/** A second pending brief, so a completed T002 is not the loop-boundary state. */
+function trailingTask(): Task {
+  return makeTask({
+    id: 'T003',
+    action: 'create',
+    file: 'src/c.ts',
+    files: ['src/c.ts'],
+    criteria: ['C1'],
+  });
+}
+
+/** An implementer that fails its attempt without writing, so the task stays pending. */
+function failingImplementer(): ReturnType<typeof makeImplementer> {
+  return makeImplementer({
+    implement: async () => ({ success: false, output: '', error: 'the attempt failed' }),
+  });
+}
+
+function runForTask(opts: {
+  projectDir: string;
+  sessionId: string;
+  task: Task;
+  state: WorkflowState;
+  planner: Planner;
+  implementer?: ReturnType<typeof makeImplementer>;
+  bus?: EventBus;
+}): Promise<WorkflowState> {
+  return runSingleTask({
+    wctx: makeWorkflowContext({
+      projectDir: opts.projectDir,
+      sessionId: opts.sessionId,
+      planner: opts.planner,
+      implementer: opts.implementer ?? failingImplementer(),
+      callbacks: makeCallbacks().callbacks,
+      ...(opts.bus !== undefined && { bus: opts.bus }),
+    }),
+    task: opts.task,
+    index: opts.state.currentTaskIndex,
+    totalTasks: opts.state.tasks.length,
+    state: opts.state,
+    taskBreakdowns: [],
+    setTrackedState: () => {},
+    setCurrentTask: () => {},
+  });
+}
+
+function taskIn(state: WorkflowState, id: string): Task {
+  const found = state.tasks.find((task) => task.id === id);
+  if (found === undefined) throw new Error(`task ${id} left the run`);
+  return found;
+}
+
+/** The run's state again at the top of the same brief: the halt cleared, the task pending. */
+function redispatchState(state: WorkflowState, taskId: string): WorkflowState {
+  return {
+    ...state,
+    pendingRecovery: undefined,
+    phase: 'implementing',
+    currentTaskIndex: 0,
+    tasks: state.tasks.map((task) => (task.id === taskId ? { ...task, status: 'pending' } : task)),
+  };
+}
+
+function staleConsultsOf(state: WorkflowState): { revision: number; action: string }[] {
+  return (
+    state.lineages?.T002?.consultRecords
+      ?.filter((record) => record.reason === 'stale')
+      .map((record) => ({ revision: record.revision, action: record.action })) ?? []
+  );
+}
+
+describe('runSingleTask — stale refresh', () => {
+  it('consults once when a task’s inputs moved and records the fresh hashes', async () => {
+    const { projectDir, sessionId } = setupProject({ 'src/shared.ts': SHARED });
+    const task = staleTask(projectDir);
+    const state = implementingState([task, trailingTask()]);
+    const typed = consultCallAnswering(() => guidanceAnswer('Read the new shared file first.'));
+    const planner = makePlanner({ typedCall: typed });
+
+    // The earlier task moved T002's context under it before dispatch.
+    writeFileSync(join(projectDir, 'src/shared.ts'), EDITED_SHARED);
+
+    const first = await runForTask({ projectDir, sessionId, task, state, planner });
+
+    const staleConsults = staleConsultsOf(first);
+    expect(staleConsults).toHaveLength(1);
+    expect(first.lineages?.T002?.staleConsultedRevision).toEqual({ T002: 1 });
+    expect(taskIn(first, 'T002').inputHashes?.['src/shared.ts']).toBe(
+      inputHashesNow(projectDir, ['src/shared.ts'])['src/shared.ts'],
+    );
+
+    // The refresh recorded the fresh hashes, so dispatching the same revision again is not stale.
+    const before = typed.mock.calls.length;
+    await runForTask({
+      projectDir,
+      sessionId,
+      task: taskIn(first, 'T002'),
+      state: redispatchState(first, 'T002'),
+      planner,
+    });
+    const after = typed.mock.calls.length;
+
+    expect(after).toBe(before);
+  });
+
+  it('does not consult the same revision twice after guidance refreshed its hashes', async () => {
+    const { projectDir, sessionId } = setupProject({ 'src/shared.ts': SHARED });
+    const task = staleTask(projectDir);
+    const state = implementingState([task, trailingTask()]);
+    const typed = consultCallAnswering(() => guidanceAnswer('Read the new shared file first.'));
+    const planner = makePlanner({ typedCall: typed });
+    writeFileSync(join(projectDir, 'src/shared.ts'), EDITED_SHARED);
+
+    const first = await runForTask({ projectDir, sessionId, task, state, planner });
+    expect(staleConsultsOf(first)).toHaveLength(1);
+
+    // The same revision is moved again; the once-per-revision guard means no second consult.
+    writeFileSync(join(projectDir, 'src/shared.ts'), `${EDITED_SHARED}// moved again\n`);
+    const before = typed.mock.calls.length;
+    await runForTask({
+      projectDir,
+      sessionId,
+      task: taskIn(first, 'T002'),
+      state: redispatchState(first, 'T002'),
+      planner,
+    });
+
+    expect(typed.mock.calls.length).toBe(before);
+  });
+
+  it('consults again on the new revision after a rewrite, and only once per revision', async () => {
+    const { projectDir, sessionId } = setupProject({ 'src/shared.ts': SHARED });
+    const task = staleTask(projectDir);
+    const state = implementingState([task, trailingTask()]);
+    const typed = consultCallAnswering(() => staleRewriteAnswer());
+    const planner = makePlanner({ typedCall: typed });
+    const implementer = makeImplementer();
+    writeFileSync(join(projectDir, 'src/shared.ts'), EDITED_SHARED);
+
+    const first = await runForTask({ projectDir, sessionId, task, state, planner, implementer });
+    expect(taskIn(first, 'T002').revision).toBe(2);
+    expect(staleConsultsOf(first)).toEqual([{ revision: 1, action: 'rewrite-task' }]);
+
+    writeFileSync(join(projectDir, 'src/shared.ts'), `${EDITED_SHARED}// moved again\n`);
+    const second = await runForTask({
+      projectDir,
+      sessionId,
+      task: taskIn(first, 'T002'),
+      state: redispatchState(first, 'T002'),
+      planner,
+      implementer,
+    });
+
+    expect(staleConsultsOf(second)).toEqual([
+      { revision: 1, action: 'rewrite-task' },
+      { revision: 2, action: 'rewrite-task' },
+    ]);
+    expect(taskIn(second, 'T002').revision).toBe(3);
+  });
+
+  it('never consults a task whose recorded inputs are untouched', async () => {
+    const { projectDir, sessionId } = setupProject({ 'src/shared.ts': SHARED });
+    const task = staleTask(projectDir);
+    const state = implementingState([task, trailingTask()]);
+    const typed = consultCallAnswering(() => guidanceAnswer('Never sent.'));
+    const planner = makePlanner({ typedCall: typed });
+
+    await runForTask({ projectDir, sessionId, task, state, planner });
+
+    expect(typed).not.toHaveBeenCalled();
+  });
+
+  it('applies a stale rewrite without a rollback and dispatches the new revision once', async () => {
+    const { projectDir, sessionId } = setupProject({
+      'src/shared.ts': SHARED,
+      'src/other.ts': OTHER,
+    });
+    const task = staleTask(projectDir);
+    const state = implementingState([task, trailingTask()]);
+    const typed = consultCallAnswering(() => staleRewriteAnswer());
+    const planner = makePlanner({ typedCall: typed });
+    const implementer = makeImplementer();
+    const { bus, events } = makeBusRecorder();
+    writeFileSync(join(projectDir, 'src/shared.ts'), EDITED_SHARED);
+    writeFileSync(join(projectDir, 'src/other.ts'), EDITED_OTHER);
+
+    const result = await runForTask({
+      projectDir,
+      sessionId,
+      task,
+      state,
+      planner,
+      implementer,
+      bus,
+    });
+
+    const rewritten = taskIn(result, 'T002');
+    expect(rewritten.revision).toBe(2);
+    expect(rewritten.description).toBe(
+      makeTaskSpec({ suggestedFiles: ['src/b.ts'], contextFiles: ['src/shared.ts'] }).intent,
+    );
+    expect(rewritten.inputHashes?.['src/shared.ts']).toBe(
+      inputHashesNow(projectDir, ['src/shared.ts'])['src/shared.ts'],
+    );
+    expect(staleConsultsOf(result)).toEqual([{ revision: 1, action: 'rewrite-task' }]);
+
+    // No attempt ran, so the rewrite rolls nothing back: an unrelated dirty file
+    // keeps its contents, and no rollback warning is published.
+    expect(readFileSync(join(projectDir, 'src/other.ts'), 'utf8')).toBe(EDITED_OTHER);
+    expect(events.filter((event) => event.type === 'warning')).toHaveLength(0);
+
+    // The replacement is dispatched exactly once, on revision 2; T003 is untouched.
+    expect(implementer.implement).toHaveBeenCalledTimes(1);
+    const dispatched = vi.mocked(implementer.implement).mock.calls[0]?.[0];
+    expect(dispatched?.task.id).toBe('T002');
+    expect(dispatched?.task.revision).toBe(2);
+    expect(taskIn(result, 'T003').status).toBe('pending');
+  });
+
+  it('frames the first attempt with the stale guidance', async () => {
+    const { projectDir, sessionId } = setupProject({ 'src/shared.ts': SHARED });
+    const task = staleTask(projectDir);
+    const state = implementingState([task, trailingTask()]);
+    const typed = consultCallAnswering(() => guidanceAnswer('Read the new shared file first.'));
+    const planner = makePlanner({ typedCall: typed });
+    const implementer = makeImplementer();
+    writeFileSync(join(projectDir, 'src/shared.ts'), EDITED_SHARED);
+
+    await runForTask({ projectDir, sessionId, task, state, planner, implementer });
+
+    expect(implementer.implement).not.toHaveBeenCalled();
+    expect(implementer.retry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attempt: 1,
+        error: expect.stringContaining('## Guidance from the planner:'),
+      }),
+    );
+    expect(implementer.retry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: expect.stringContaining('Read the new shared file first.'),
+      }),
+    );
+  });
+
+  it("dispatches with the guard's question attached when a rewrite changes the criteria", async () => {
+    const { projectDir, sessionId } = setupProject({ 'src/shared.ts': SHARED });
+    const task = staleTask(projectDir);
+    const state = implementingState([task, trailingTask()]);
+    const typed = consultCallAnswering(() => staleRewriteAnswer(['C1', 'C2']));
+    const planner = makePlanner({ typedCall: typed });
+    const implementer = makeImplementer();
+    writeFileSync(join(projectDir, 'src/shared.ts'), EDITED_SHARED);
+
+    const result = await runForTask({ projectDir, sessionId, task, state, planner, implementer });
+
+    expect(taskIn(result, 'T002').revision).toBeUndefined();
+    expect(implementer.implement).not.toHaveBeenCalled();
+    expect(implementer.retry).toHaveBeenCalledWith(
+      expect.objectContaining({ error: expect.stringContaining('How should T002 proceed?') }),
+    );
+    expect(implementer.retry).toHaveBeenCalledWith(
+      expect.objectContaining({ error: expect.stringContaining('Why only you can answer:') }),
+    );
+  });
+});

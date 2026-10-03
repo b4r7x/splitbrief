@@ -6,9 +6,9 @@ Read this first. It explains what SPLITBRIEF does, how it thinks, and why it's b
 
 ## The core idea
 
-SPLITBRIEF orchestrates two coding tools. One plans and reviews, the other executes, and SPLITBRIEF holds everything in between: the contract, the isolation, the validation, the retries, the escalation, and the evidence.
+SPLITBRIEF orchestrates two coding tools. One plans and reviews, the other executes, and SPLITBRIEF holds everything in between: the contract, the isolation, the validation, the retries, the consult, and the evidence.
 
-**Planner** — the stronger of the two. It understands the feature request, explores the codebase, writes a detailed plan broken into slices — one verifiable change each — answers escalations, and reviews the finished work.
+**Planner** — the stronger of the two. It understands the feature request, explores the codebase, writes a detailed plan broken into slices — one verifiable change each — answers the build's consults, and reviews the finished work.
 
 **Implementer** — a weaker model, reached over one of two transports that are supported equally:
 
@@ -48,8 +48,8 @@ A typical run, step by step:
 4. SPLITBRIEF checks the plan deterministically (every criterion has a check and a task, the dependencies make sense, every task fits the implementer's context); a failing plan goes back to the planner once
 5. User reviews the plan on one plan card: approve, request changes, edit `plan.json`, or end the run. Approving also confirms the protected writes the plan lists
 6. For each task: the implementer writes code in isolation, SPLITBRIEF promotes the approved changes into the project, then validates (typecheck → lint → test)
-7. If validation fails: retry (twice by default), then escalate to bigger models
-8. If escalation fails: enter recovery — user picks next action (retry same worker, route to a bigger worker, skip, pause, end the run)
+7. If validation fails: the implementer retries once, then the planner is consulted for one typed answer — guidance, a rewritten or split brief, a re-run of the checks, or one question for the user
+8. If the ladder cannot go on (a spent bound, a failed consult call, a runner halt): enter recovery — for a spent bound the user can continue with a note, skip the task or end the run; other halts offer retry same worker, route to a bigger worker, skip, pause or end the run
 9. The review seat reviews the final result against the briefs and the request — the planner, unless a `reviewer` is configured
 10. Session summary written to disk, workflow done
 
@@ -132,17 +132,19 @@ A worktree isolates files, not runtime and not trust. It shares the ports, the d
 
 ---
 
-## Validation and escalation
+## Validation and consult
 
 Correctness is not the implementer's to judge — it is the weaker of the two models. SPLITBRIEF owns it: a deterministic pipeline of typecheck → lint → test, run in the real project after promotion, stopping at the first failure attributable to the task. A stage already red at baseline does not stop the pipeline: a task that introduces no new failure is accepted even when the tree was already red, and the planner owns the second opinion at final review. An implementer that can also run checks where it works is a bonus — it raises the first-pass rate, it does not decide the outcome.
 
-If validation fails, the implementer retries with the error message (up to 3 attempts by default). If those local retries are exhausted, escalation kicks in:
+If validation fails, the implementer retries once with the error message. Then SPLITBRIEF asks the planner, read-only, for one typed answer:
 
-- **Tier 0** — Intermediate model: a paid mid-tier API model (configured via `escalation.intermediateProvider`) retries the task. Runs only when an intermediate provider is set
-- **Tier 1** — Hint escalation: the planner reads the error and writes a short hint, then the implementer retries once with that hint
-- **Tier 2** — Full escalation: the planner takes over and writes the code itself
+- **Guidance** — the implementer retries once more with the planner's instructions in its error block
+- **Rewrite-task** — the brief is replaced at the same id, one revision further, and the failing attempt's own edits are rolled back first
+- **Split-task** — the brief becomes 2–4 subtasks at the next free ids, with every pending dependent re-pointed to them
+- **Verify** — no implementer call: the validation pipeline and the named checks run again, and a clean run completes the task
+- **Ask-user** — the one question the ladder asks you, with a default; the answer continues as guidance
 
-If all tiers fail, the recovery system takes over: the user sees the failure and picks an action — retry the same worker, route to a bigger worker, skip the task, pause, or abort.
+The planner never writes the implementation itself, and each task's lineage is bounded (2 consults, 8 attempts; 10 planner calls per run). If the ladder cannot go on (a spent bound, a failed consult call, a runner halt), the recovery system takes over: for a spent bound the user can continue with a note to grant the extra allowance, skip the task or end the run; other halts offer retry same worker, route to a bigger worker, skip, pause or end the run.
 
 ---
 

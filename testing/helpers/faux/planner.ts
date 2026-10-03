@@ -21,7 +21,6 @@ export type FauxEscalationScript = {
 
 export type FauxPlannerState = {
   planCallCount: number;
-  escalateHintCallCount: number;
   escalateFullCallCount: number;
   receivedPrompts: string[];
   receivedErrors: string[];
@@ -36,26 +35,12 @@ export function fauxPlanner(opts?: {
 
   const state: FauxPlannerState = {
     planCallCount: 0,
-    escalateHintCallCount: 0,
     escalateFullCallCount: 0,
     receivedPrompts: [],
     receivedErrors: [],
   };
 
   const planner: Planner = {
-    async escalateHint({ error }) {
-      state.escalateHintCallCount++;
-      state.receivedErrors.push(error);
-      const script = escalations[(state.escalateHintCallCount - 1) % escalations.length];
-      if (script?.throws) throw script.throws;
-      return {
-        success: script?.success ?? false,
-        output: script?.output ?? '',
-        code: script?.code ?? null,
-        usage: script?.usage ?? null,
-      };
-    },
-
     async escalateFull({ error }) {
       state.escalateFullCallCount++;
       state.receivedErrors.push(error);

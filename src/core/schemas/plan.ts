@@ -84,7 +84,9 @@ export type PlanResult = z.infer<typeof PlanResultSchema>;
 /** Strict mode takes only an object at the root, so the union travels under `result`. */
 export const PlanAnswerSchema = z.object({ result: PlanResultSchema });
 export type PlanAnswer = z.infer<typeof PlanAnswerSchema>;
-export const PLAN_ANSWER_JSON_SCHEMA = z.toJSONSchema(PlanAnswerSchema);
+/** Without the draft `$schema` ref: the claude `--json-schema` validator rejects the 2020-12 URI. */
+const { $schema: _draftRef, ...planAnswerJsonSchema } = z.toJSONSchema(PlanAnswerSchema);
+export const PLAN_ANSWER_JSON_SCHEMA = planAnswerJsonSchema;
 
 export const PlanSchema = PlanProposalSchema.pick({
   summary: true,

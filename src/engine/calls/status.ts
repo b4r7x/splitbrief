@@ -85,12 +85,13 @@ export function runnerCallErrorFromUnknown(
 
 // The one place that owns the code+message contract for idle-killed calls;
 // every backend that catches a 'command-idle-timeout' error reports through it.
+// The code keeps the cut an ordinary failed attempt on the ladder.
 export function runnerCallIdleTimeoutError(
   err: unknown,
   credentialValues: readonly string[] = [],
 ): RunnerCallError {
   return {
-    code: 'runner_idle_timeout',
+    code: 'no-progress-cut',
     message: boundedRunnerCallMessage(toErrorMessage(err), credentialValues),
   };
 }

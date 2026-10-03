@@ -57,11 +57,10 @@ stateDiagram-v2
     implementing --> final_review : ALL_DONE
 
     validating_task --> implementing : VALIDATION_PASS
-    validating_task --> implementing : VALIDATION_FAIL (attempt < max)
-    validating_task --> escalating : VALIDATION_FAIL (attempt >= max)
+    validating_task --> implementing : VALIDATION_FAIL (one retry)
+    validating_task --> escalating : VALIDATION_FAIL (retry spent)
 
-    implementing --> implementing : HINT_SUCCESS (intermediate retry)
-    escalating --> implementing : HINT_SUCCESS / FULL_SUCCESS
+    escalating --> implementing : RESET_TASK (rewrite or split handed back)
 
     final_review --> implementing : REVIEW_FIX_START
     complete --> implementing : REVIEW_FIX_START (revise after a failed review)
@@ -96,13 +95,9 @@ Verified against the `transition()` reducer in `src/core/state/machine.ts` and t
 | `implementing` | `START_TASK` | `implementing` | Sets task to `in_progress`, resets `attempt` to 0 |
 | `implementing` | `TASK_SENT` | `validating-task` | — |
 | `validating-task` | `VALIDATION_PASS` | `implementing` | Marks task `done`, advances `currentTaskIndex`, resets `attempt` |
-| `validating-task` | `VALIDATION_FAIL` (attempt < maxRetries) | `implementing` | Increments `attempt` |
-| `validating-task` | `VALIDATION_FAIL` (attempt >= maxRetries) | `escalating` | — |
+| `validating-task` | `VALIDATION_FAIL` (retry available) | `implementing` | Increments `attempt`. One retry: `DEFAULT_LOCAL_RETRIES` is 1 |
+| `validating-task` | `VALIDATION_FAIL` (retry spent) | `escalating` | The ladder moves to the consult |
 | `validating-task` | `ESCALATE` | `escalating` | — |
-| `implementing` | `HINT_SUCCESS` | `implementing` | Advances a supported intermediate-worker success; legacy full-planner transitions remain readable. Used by successful intermediate-model retry while still in the implementing phase. |
-| `escalating` | `HINT_SUCCESS` | `implementing` | Advances a supported intermediate-worker success; legacy full-planner transitions remain readable |
-| `escalating` | `HINT_FAIL` | `escalating` | Exhausts the supported help path and enters recovery |
-| `escalating` | `FULL_SUCCESS` | `implementing` | Advances a supported intermediate-worker success; legacy full-planner transitions remain readable |
 | `implementing` / `validating-task` / `escalating` | `SKIP_TASK` | *(same)* | Marks task `skipped`, advances `currentTaskIndex` |
 | `implementing` / `validating-task` / `escalating` | `RESET_TASK` | `implementing` | Sets task to `pending`, rewinds `currentTaskIndex` to that task's index, resets `attempt`. Tasks after it keep their status. |
 | `implementing` | `ALL_DONE` | `final-review` | — |
@@ -110,7 +105,7 @@ Verified against the `transition()` reducer in `src/core/state/machine.ts` and t
 | `final-review` | `REVIEW_DONE` | `complete` | Records `reviewStatus: 'passed' \| 'failed'` |
 | `complete` (review `failed`) | `REVIEW_FIX_START` | `implementing` | The `revise` recovery action after a failed review: same effect as above, and clears `reviewStatus` and `completedAt`. Refused after a passed review |
 
-`maxRetries` defaults to 2 (configurable via `workflow.maxRetries`).
+`DEFAULT_LOCAL_RETRIES` is 1 (`src/core/pipeline-spec/retries.ts`); `workflow.max_retries` is retired and loads with one notice. The old `HINT_SUCCESS`, `HINT_FAIL` and `FULL_SUCCESS` transitions are gone from the reducer; old `escalated-hint`, `escalated-intermediate` and `escalated-full` completion values and the old `escalate`, `hint_failed` and `task_scope_widened` events stay parseable so a saved `state.json` and `session.jsonl` still load.
 
 **Review fix cycles.** A final review that reports blocking findings does not end the run at `complete`: `REVIEW_FIX_START` carries the per-task findings back into `implementing` and the task loop re-runs only the named tasks (`review_fix_started` publishes the cycle and the task ids). A fix attempt is a retry whose error is the reviewer's findings, word for word, after one fixed instruction (`REVIEW_FIX_INSTRUCTION`, `src/engine/orchestrator/task/run-implementation.ts`): change code only where a finding names a code or test defect, in any ordinary project file the fix needs, never a protected path (dependency manifests, lockfiles, CI configuration, env or key files, `.git`, `.splitbrief`) unless the brief explicitly asks for that operation; leave findings about evidence, renders, validation runs or run files (`evidence.json`, the session folder) to SPLITBRIEF and the review seat — do not search for those files or leave the directory; change nothing and say so when no finding needs a code change. A validation-failure retry does not carry the instruction. A reopened brief's code is already on disk, so its fix attempt may change nothing: a finding that asks only for evidence is answered by an attempt that verifies and edits no file. That attempt passes the declared-effect gate (`allowNoChange`, set by `runImplementation`), promotes nothing, and runs the brief's normal validation — green completes the brief, red enters the normal retry ladder. Its `implementer_generate_done` event carries `noChange: true`, and its done row reads `verified · no change needed` under the file name. Every other attempt, the ladder's retries included, still fails `no-staged-change` when it changes nothing. `VALIDATION_PASS` drops a completed task from `reviewFixes.findings`. The cycle count is capped at `REVIEW_CYCLE_CAP` (2, `src/core/pipeline-spec/review.ts`); when the cap is spent the review is recorded as `REVIEW_DONE { reviewStatus: 'failed' }`, a `review-failed` recovery is raised, and the run fails rather than completing. The operator's `revise` on that halt opens one more cycle with the correction beside the findings ([APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md)).
 
@@ -125,6 +120,7 @@ These fire from any phase. They modify sub-state without changing `phase`.
 | `CLOSE_RUN` | Records `closed: { at, as: 'ended' }`, clears `interruptedStep` and `pendingRecovery`, leaves `phase` alone. The only terminal action besides passing the final review. Repeating it preserves the first closure and timestamp. A failed review stays open until explicitly ended. |
 | `INTERRUPT_STEP` | Records `interruptedStep: { step, source, cut, partialRef?, at }` and sets `awaitingContinue: true`. `cut` is where the stop landed — `mid-step` inside a call, `boundary` where it cut nothing: between two briefs, or at a gate — and `deriveRunStatus` reads it for `paused.at`. The run stays open and resumes at that step. |
 | `RESUME_STEP` | Clears `interruptedStep` and sets `awaitingContinue: false`. The run is picking the step up again. |
+| `RESTORE_BRIEF_PARK` | Puts a cut brief's park back on resume: the task `in_progress`, `attempt` the cut attempt, `phase: 'implementing'`, `interruptedStep` with `cut: 'mid-step'`, `awaitingContinue: true`. Dispatched only by `initializeWorkflow`, when the state has no park and the session log's last brief cut has not run again. |
 | `SET_PLANNER_SESSION_ID` | Stores backend session handle for resume. |
 | `ENQUEUE_USER_MSG` | Appends message to `messageQueue`. |
 | `MARK_INJECTING_NATIVE` | Marks a queued message as currently being delivered to the live native session. |
@@ -138,6 +134,15 @@ These fire from any phase. They modify sub-state without changing `phase`.
 | `RESOLVE_PENDING_RECOVERY` | Removes `pendingRecovery` after the selected recovery path is handled. |
 | `REWIND_TO_SPEC` | No producer; a dead reducer case that waits for deletion. Sets `phase: 'specifying'`, clears `tasks`, resets `currentTaskIndex` and `attempt` to 0, clears `awaitingContinue`, sets `rewindPending: { target: 'spec', comment? }`. |
 | `REWIND_TO_PLAN` | No producer; a dead reducer case that waits for deletion. Sets `phase: 'planning'`, clears `tasks`, resets `currentTaskIndex` and `attempt` to 0, clears `awaitingContinue`, sets `rewindPending: { target: 'plan', comment? }`. |
+| `REPLACE_TASK` | A consult's `rewrite-task` answer: replaces a task in place at the same id, keeps its criteria and `parentId`, sets `status: 'pending'`, raises `revision` by one and resets `attempt` to 0 |
+| `INSERT_TASKS` | A consult's `split-task` answer: removes the parent from `state.tasks`, appends it to its lineage's `replacedParents`, inserts the subtasks at the parent's position with `parentId` set to the lineage root, re-points every pending `dependsOn` that named the parent to all subtasks and adjusts `currentTaskIndex` |
+| `RECORD_CONSULT` | Appends the answer to the task's lineage with its reason, action and diagnosis, raises the lineage's consult count, and remembers the revision a stale consult saw |
+| `COUNT_ATTEMPT` | Raises the lineage's attempt count. Never reset by a split or a resume |
+| `COUNT_PLANNER_CALL` | Raises the run's planner-call count after planning; a stale consult does not spend one |
+| `GRANT_ALLOWANCE` | `continue` on a spent consult bound: +1 consult and +4 attempts for the lineage, or +5 planner calls for the run, with the operator's note recorded on the lineage |
+| `SET_TASK_INPUT_HASHES` | Records the current content hashes of a revision's suggested and context files, which the stale refresh compares before dispatch |
+| `RECORD_CHECK_RESULTS` | Merges a `verify` answer's check results into the task |
+| `SET_SEAT_WAIT` / `CLEAR_SEAT_WAIT` | Persists and releases the rate-limit reset deadline a seat is waiting for |
 
 One task-scoped action also applies in `implementing` and `escalating`: `UPDATE_TASK_CODE` replaces the current code captured on a task (anchor, sibling targets and read-only context files); a field it omits is removed.
 
@@ -366,23 +371,23 @@ If state has `pendingRecovery`, resume shows that recovery issue before dispatch
 
 An unresolved recovery also makes the stop audible: when the task loop re-enters a state that still carries `pendingRecovery`, it publishes a transcript-safe `warning` with `code: 'recovery_pending_unresolved'` naming the reason, the recovery status (`awaiting-user`, `paused`, or `applying`) and the available actions, then stops without running any task. The issue is neither cleared nor re-entered. In headless `--json` mode the same state fails the command with exit code 1 for **every** status — a paused or applying recovery no longer exits 0 having done nothing.
 
-In-flight briefs: a brief the operator parked keeps its partial edits and continues with them, at the same attempt. A brief the process died inside — `implementing`, task `in_progress`, no `interruptedStep` — is a crash: the brief's own writes (its declared files and the files the evidence ledger records it promoted) are restored from the snapshot and it restarts from `attempt: 0`.
+In-flight briefs: a brief the operator parked keeps its partial edits and continues with them, at the same attempt. A brief the process died inside — `implementing`, task `in_progress`, no `interruptedStep` — is a crash: the brief's own writes (its declared files and the files the evidence ledger records it promoted) are restored from the snapshot and it restarts from `attempt: 0`. Re-entry clears a park before its brief runs again, so a halt in that gap followed by a stop also leaves the brief `in_progress` with no `interruptedStep`; when the session log's last brief cut names it with no `runner_call_started`, redo of that brief (`task_reset`), or retrying, skipping or ending recovery after it, the next continue restores the park (`RESTORE_BRIEF_PARK`) instead of restarting the brief.
 
 ---
 
 ## 7. Escalation and recovery
 
-When a task fails validation `maxRetries` times:
+When a task fails validation after its attempt and its one retry (`DEFAULT_LOCAL_RETRIES`), or its implementer reports `blocked`, or its recorded inputs moved since it was compiled, SPLITBRIEF consults the planner: one read-only typed call on the planner's own session (`requestConsult`, `src/engine/orchestrator/consult/request.ts`). The planner answers a `ConsultAnswer` (`src/core/schemas/consult.ts`) with exactly one action — `guidance`, `rewrite-task`, `split-task`, `verify` or `ask-user` — and the run acts on it: one more implementer attempt carrying the guidance in its error block, a replacement at the same id with `revision` raised by one, a split whose subtasks take the next free ids and share the lineage, a validation-and-checks run that can complete the task as `consulted`, or the one question the ladder asks the user. An answer that would drop a criterion becomes that question. The planner never writes the implementation, and a `blocked` report is answered by the planner, not by you. Each answer is one transcript row, `PLAN → T003: split into T011, T012 · <diagnosis>`. Planner questions about requirements still come to you.
 
-0. **Intermediate tier** — only when `escalation.intermediateProvider` is set and `escalation.enabled` is not `false`: a paid mid-tier API model retries the task. Success → task `done`.
-1. **Hint escalation** — present only when the planner has `supportsHintEscalation`; for a planner without it the rung is absent rather than skipped, and the ladder ends at the rung below. The planner sends a short hint, the implementer retries once. An empty hint ends the rung there — no implementer retry, no attempt charged. Success → task `done`.
-2. **Recovery** follows exhausted worker retries and hints: `pendingRecovery` is set and the phase stays where the stop occurred. The planner never automatically writes the implementation. Historical full-tier outcomes remain readable.
+A lineage is bounded at 2 consults and 8 attempts, and the run at 10 planner calls after planning (`src/core/pipeline-spec/bounds.ts`). A spent bound halts with `consult-bound-spent` or `planner-calls-spent`, carrying the planner's last diagnosis; continuing it grants one more consult and four more attempts, or five more planner calls. A stale consult spends no planner call and runs once per revision.
 
-An implementer that stops on one of its brief's Escalation bullets is answered by the planner, not by you. Its hand-back goes to the planner in one read-only call, and the planner replies with a verdict: an answer the implementer retries with once, a widening of the brief's Approved out of bounds to named files, or a finding that the brief itself is wrong. A widening passes the same protected-path confirmation as any other write and is recorded on the brief with the planner's reason. Only a brief-is-wrong verdict, a denied write, or a planner that cannot be reached stops the run for you, with the implementer's words and the planner's diagnosis on the panel, where the correction you type at that halt retries the brief with it. Planner questions about requirements still come to you.
+Seat trouble is bounded before a halt: a transient failure on a seat call retries up to 3 times with backoff, and a reported rate-limit reset no more than 10 minutes away is waited for, its deadline persisted as `state.seatWait` (`src/engine/orchestrator/escalation/seat-wait.ts`). A longer or unreported reset halts as `runner-usage-limit` with the seat picker; there is no automatic seat switch. The idle watchdog cuts a call that emitted nothing for 20 minutes and has no running child process; the cut counts as one attempt and the ladder continues.
+
+Recovery follows a spent bound, a ladder that cannot continue — a consult call that failed, a `pre_escalation` hook that denied it — or a run-level failure: `pendingRecovery` is set and the phase stays where the stop occurred. Historical full-tier outcomes remain readable.
 
 Recovery is not only the task loop's. A planner-seat turn that cannot decide alone raises one too, and the issue carries a `seat` (`plan` | `build` | `review`) so the panel and the swap offer name the seat that is actually stuck: `planner-call-failed` (the call died and the diagnosis is already on the bus), `plan-questions-exhausted` (the planner asked a third round of questions), `plan-checks-failed` (the plan failed its checks again after one repair) and `seat-protocol-error` (the seat's typed answer did not parse after its repair). `planner-returned-no-briefs`, `constitution-check-failed`, `brief-review-no-progress` and `brief-quality-unrepaired` have no producer now; they stay so that an older `state.json` still loads, and their halts still offer their actions. `runner-unauthenticated` and `runner-usage-limit` are seat-blocked halts and can fire on the plan seat as readily as the build seat.
 
-Recovery reasons: `implementation-error`, `validation-failed`, `retry-exhausted`, `runner-unauthenticated`, `runner-usage-limit`, `context-overflow`, `user-edit-conflict`, `approval-promotion-conflict`, `dependency-blocked`, `scope-violation`, `implementer-recipe-invalid`, `implementer-left-isolation`, `checkout-changed`, `runner-timeout-repeated`, `review-failed`, `approval-denied`, `snapshot-failed`, `planner-call-failed`, `planner-returned-no-briefs`, `constitution-check-failed`, `brief-review-no-progress`, `brief-quality-unrepaired`, `seat-protocol-error`, `plan-questions-exhausted`, `plan-checks-failed` (`RECOVERY_REASONS`, `src/core/schemas/enums.ts`; the table in [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md) gives each one its actions).
+Recovery reasons: `implementation-error`, `validation-failed`, `retry-exhausted`, `consult-bound-spent`, `planner-calls-spent`, `runner-unauthenticated`, `runner-usage-limit`, `context-overflow`, `user-edit-conflict`, `approval-promotion-conflict`, `dependency-blocked`, `scope-violation`, `implementer-recipe-invalid`, `implementer-left-isolation`, `checkout-changed`, `runner-timeout-repeated`, `review-failed`, `approval-denied`, `snapshot-failed`, `planner-call-failed`, `planner-returned-no-briefs`, `constitution-check-failed`, `brief-review-no-progress`, `brief-quality-unrepaired`, `seat-protocol-error`, `plan-questions-exhausted`, `plan-checks-failed` (`RECOVERY_REASONS`, `src/core/schemas/enums.ts`; the table in [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md) gives each one its actions).
 
 Recovery actions:
 
@@ -448,6 +453,8 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
 11. Per task:
       implementing → START_TASK (task in_progress, attempt 0)
       The task's code and its read-only context files are refreshed from disk.
+      The recorded input hashes are compared with the workspace; a task whose
+      inputs moved is consulted once for this revision (reason stale) first.
       implementer.implement(taskPrompt) → code written to disk
       A direct-writing implementer edits the run's isolation directory instead of
       the project — where it works is set by `workflow.isolation`
@@ -456,9 +463,14 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
       implementing → TASK_SENT → validating-task
       typecheck → lint → tests (stops at the first failure attributable to the task)
         pass → VALIDATION_PASS → implementing (next task)
-        fail → VALIDATION_FAIL → implementing (attempt++, retry)
-        fail (attempt >= maxRetries) → VALIDATION_FAIL → escalating
-          HINT_SUCCESS / HINT_FAIL / FULL_SUCCESS → implementing
+        fail → VALIDATION_FAIL → implementing (attempt++, one retry)
+        fail (retry spent) → escalating, where the planner is consulted:
+          guidance → one more implementer attempt with the guidance attached
+          rewrite-task → REPLACE_TASK (same id, revision+1) → implementing
+          split-task → INSERT_TASKS (next free ids, parentId) → implementing
+          verify → validation + checks → done as consulted
+          ask-user → one question; the answer continues as guidance
+        consult bound spent → recovery (continue grants +1 consult / +4 attempts)
 
 12. implementing (last task) → ALL_DONE → final-review
     Drift report computed. The review seat reads the diff against the briefs

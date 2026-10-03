@@ -23,8 +23,6 @@ export interface PlannerFactoryOptions {
 export type PlannerCapabilities = {
   /** Planner can emit inline clarification questions during planning. */
   supportsConversationalPlanning: boolean;
-  /** Planner can produce a short hint before escalating to full fix. */
-  supportsHintEscalation: boolean;
   /** Backend exposes a session handle that can be reused on resume (e.g. Claude Code --resume). */
   supportsSessionResume: boolean;
   /** Backend honours an effort/reasoning hint (Claude Code prefix, Codex flag, Anthropic thinking, OpenAI reasoning_effort). */
@@ -38,7 +36,6 @@ export type PlannerCapabilities = {
 /** Preset for session-based conversational planners (Claude Code). */
 export const CONVERSATIONAL_CAPS: PlannerCapabilities = {
   supportsConversationalPlanning: true,
-  supportsHintEscalation: true,
   supportsSessionResume: true,
   supportsEffort: true,
   supportsImages: true,
@@ -48,7 +45,6 @@ export const CONVERSATIONAL_CAPS: PlannerCapabilities = {
 /** Preset for one-shot API planners (OpenAI-compatible endpoints). */
 export const ONE_SHOT_API_CAPS: PlannerCapabilities = {
   supportsConversationalPlanning: false,
-  supportsHintEscalation: true,
   supportsSessionResume: false,
   supportsEffort: false,
   supportsImages: false,
@@ -140,15 +136,9 @@ export interface EscalateOptions {
   fileIgnoreProjectDir?: string | undefined;
   /** Baseline the caller's workspace declares; sniffed from the directory when absent. */
   changeDetection?: ChangeDetectionKind | undefined;
-  /** The implementer's own account of why it stopped, when it gave one. */
-  handBack?: string | undefined;
-  /** The run's skills block, which the hint prompt carries like every other seat call. */
-  skillsContext?: string | undefined;
 }
 
 export interface Planner extends RunnerRuntime {
-  escalateHint(opts: EscalateOptions): Promise<EscalationResult>;
-
   escalateFull(opts: EscalateOptions): Promise<EscalationResult>;
 
   review(

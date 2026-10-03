@@ -9,6 +9,7 @@ import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplStateWithMetadata } from '#testing/helpers/factories/workflow-state.js';
 import { makeImplementer, makePlanner, makeWctx } from '#testing/helpers/orchestrator-factories.js';
+import { consultCallAnswering, guidanceConsult } from '#testing/helpers/typed-planner.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
 import { loadState } from '../../../src/core/state/persistence.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../../src/engine/events/workflow-cancel.js';
@@ -91,7 +92,7 @@ it.each(['returned', 'thrown', 'success'] as const)(
   },
 );
 
-it.each(['initial', 'local', 'hint'] as const)(
+it.each(['initial', 'local', 'consult'] as const)(
   'keeps a successful %s writer when Stop arrives during pre-promotion approval',
   async (route) => {
     const f = fixture();
@@ -114,22 +115,18 @@ it.each(['initial', 'local', 'hint'] as const)(
       config,
       signal: stop.signal,
       planner: makePlanner({
-        escalateHint: async () => ({
-          success: true,
-          output: 'Use the existing module.',
-          code: null,
-          usage: null,
-        }),
+        typedCall: consultCallAnswering(() => guidanceConsult('Write the protected file.')),
       }),
       implementer: makeImplementer({
         capabilities: { writesFiles: 'direct' },
         implement: async (opts) =>
           route === 'initial'
             ? writeResult(opts)
-            : route === 'hint'
-              ? { success: false, output: 'Need advice', outcome: 'no-staged-change' }
-              : { success: false, output: '', error: 'initial failure' },
-        retry: writeResult,
+            : { success: false, output: '', error: 'initial failure' },
+        retry: async (opts) =>
+          route === 'consult' && opts.kind === 'local'
+            ? { success: false, output: '', error: 'the local retry needs the planner' }
+            : writeResult(opts),
       }),
     });
     wctx.callbacks.onTieredApproval = async () => {
@@ -201,7 +198,7 @@ it.each(['returned', 'thrown', 'success'] as const)(
 );
 
 it.each(['returned', 'thrown', 'success'] as const)(
-  'retains the stopped planner-hint retry and its attempt: %s',
+  'retains the stopped consult retry and its attempt: %s',
   async (kind) => {
     const f = fixture();
     const stop = new AbortController();
@@ -211,24 +208,22 @@ it.each(['returned', 'thrown', 'success'] as const)(
       ...f,
       signal: stop.signal,
       planner: makePlanner({
-        escalateHint: async () => ({
-          success: true,
-          output: 'Use the existing module.',
-          code: null,
-          usage: null,
-        }),
+        typedCall: consultCallAnswering(() => guidanceConsult('Write the partial file.')),
       }),
       implementer: makeImplementer({
         capabilities: { writesFiles: 'direct' },
         implement: async () => ({
           success: false,
-          output: 'Need advice',
-          outcome: 'no-staged-change',
+          output: '',
+          error: 'first call failed',
         }),
         retry: async (opts) => {
+          if (opts.kind === 'local') {
+            return { success: false, output: '', error: 'the local retry needs the planner' };
+          }
           workspace = opts.projectDir;
           attempt = opts.attempt;
-          writeFileSync(join(workspace, 'partial.ts'), 'hint retry work');
+          writeFileSync(join(workspace, 'partial.ts'), 'consult retry work');
           stop.abort();
           if (kind === 'thrown') throw new DOMException('Stopped', 'AbortError');
           return { success: kind === 'success', output: '', outcome: 'user-abort' };
@@ -246,7 +241,7 @@ it.each(['returned', 'thrown', 'success'] as const)(
       setCurrentTask: () => {},
     });
     await wctx.isolation.dispose();
-    expect(readFileSync(join(workspace, 'partial.ts'), 'utf8')).toBe('hint retry work');
+    expect(readFileSync(join(workspace, 'partial.ts'), 'utf8')).toBe('consult retry work');
     expect(state.attempt).toBe(attempt);
     expect(loadState(f)?.attempt).toBe(attempt);
     expect(existsSync(join(f.projectDir, 'partial.ts'))).toBe(false);

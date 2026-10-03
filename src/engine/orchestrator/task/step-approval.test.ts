@@ -54,7 +54,6 @@ describe('runSingleTask — approval gates', () => {
         config: makeConfig({
           approval: { enabled: true, feedRejectionsToPlanner: true },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-          workflow: { maxRetries: 2 },
         }),
         validator: { ...createValidator(), runValidation },
       }),
@@ -110,7 +109,6 @@ describe('runSingleTask — approval gates', () => {
         config: makeConfig({
           approval: { enabled: false, feedRejectionsToPlanner: true },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-          workflow: { maxRetries: 2 },
         }),
       }),
       task,
@@ -171,7 +169,6 @@ describe('runSingleTask — approval gates', () => {
         config: makeConfig({
           approval: { enabled: true, feedRejectionsToPlanner: true },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-          workflow: { maxRetries: 2 },
         }),
       }),
       task,
@@ -220,7 +217,6 @@ describe('runSingleTask — approval gates', () => {
         config: makeConfig({
           approval: { enabled: true, feedRejectionsToPlanner: true },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-          workflow: { maxRetries: 2 },
         }),
       }),
       task,
@@ -267,7 +263,6 @@ describe('runSingleTask — approval gates', () => {
         config: makeConfig({
           approval: { enabled: true, feedRejectionsToPlanner: true },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-          workflow: { maxRetries: 2 },
         }),
       }),
       task,
@@ -329,7 +324,6 @@ describe('runSingleTask — approval gates', () => {
         config: makeConfig({
           approval: { enabled: true, feedRejectionsToPlanner: false },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-          workflow: { maxRetries: 2 },
         }),
         ...(opts.runValidation === undefined
           ? {}

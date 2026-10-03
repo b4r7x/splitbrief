@@ -80,7 +80,6 @@ describe('enqueue', () => {
     const planner = makePlanner({
       capabilities: {
         supportsConversationalPlanning: true,
-        supportsHintEscalation: false,
         supportsSessionResume: true,
         supportsEffort: false,
         supportsImages: false,
@@ -120,7 +119,6 @@ describe('enqueue', () => {
     const planner = makePlanner({
       capabilities: {
         supportsConversationalPlanning: false,
-        supportsHintEscalation: false,
         supportsSessionResume: false,
         supportsEffort: false,
         supportsImages: false,
@@ -234,7 +232,6 @@ describe('enqueue', () => {
     const planner = makePlanner({
       capabilities: {
         supportsConversationalPlanning: true,
-        supportsHintEscalation: false,
         supportsSessionResume: true,
         supportsEffort: false,
         supportsImages: false,

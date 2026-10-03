@@ -47,13 +47,13 @@ describe('invokeCommandBasedRunner with timeout', () => {
     expect(JSON.stringify(result.callResult)).not.toContain(credential);
   });
 
-  it('marks an idle kill on the timeout branch with the runner_idle_timeout code', async () => {
+  it('marks an idle kill on the timeout branch with the no-progress-cut code', async () => {
     const events: RunnerCallEvent[] = [];
 
     await expect(
       invokeCommandBasedRunner({
-        command: 'sh',
-        args: ['-c', 'sleep 1'],
+        command: 'sleep',
+        args: ['1'],
         timeout: 30_000,
         idleWarnMs: 10,
         idleKillMs: 20,
@@ -66,7 +66,7 @@ describe('invokeCommandBasedRunner with timeout', () => {
     const errorEvent = events.find((event) => event.type === 'call_error');
     expect(errorEvent).toMatchObject({
       type: 'call_error',
-      error: { code: 'runner_idle_timeout' },
+      error: { code: 'no-progress-cut' },
     });
   });
 

@@ -66,7 +66,7 @@ type StagePlan =
   | { kind: 'run'; resolved: ResolvedCommand; args: string[]; command: string }
   | { kind: 'skip'; reason: string };
 
-function buildStageContext(input: {
+export function buildStageContext(input: {
   projectDir: string;
   config: Config;
   discoveredValidation: DiscoveredValidation | undefined;
@@ -150,7 +150,7 @@ async function formatChangedFiles(opts: {
   }
 }
 
-function planStage(
+export function planStage(
   stage: ValidationStage,
   task: Task,
   ctx: StageContext,

@@ -195,6 +195,18 @@ function jsonAuthFact(output: CliProbeOutput): ReturnType<typeof authFactFromTex
   }
 }
 
+/**
+ * The words a runner uses when it could not reach the network at all. Shared
+ * with the seat-trouble classifier: an unreachable endpoint is a fact about the
+ * machine and is retried, so it must never be read as an auth fact either.
+ */
+const OFFLINE_TEXT_MARKERS: readonly string[] = ['offline', 'network', 'connection refused', 'dns'];
+
+export function looksOfflineDiagnostic(value: string): boolean {
+  const text = value.trim().toLowerCase();
+  return OFFLINE_TEXT_MARKERS.some((marker) => text.includes(marker));
+}
+
 function authFactFromText(value: string) {
   const text = value.trim().toLowerCase();
   if (text.length === 0) return undefined;
@@ -230,14 +242,7 @@ function authFactFromText(value: string) {
   if (text.includes('policy') || text.includes('forbidden') || text.includes('access denied')) {
     return 'policy-denied' as const;
   }
-  if (
-    text.includes('offline') ||
-    text.includes('network') ||
-    text.includes('connection refused') ||
-    text.includes('dns')
-  ) {
-    return 'offline' as const;
-  }
+  if (looksOfflineDiagnostic(text)) return 'offline' as const;
   return undefined;
 }
 

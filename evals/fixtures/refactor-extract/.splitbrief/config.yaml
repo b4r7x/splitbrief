@@ -13,6 +13,5 @@ validation:
   testCommand: npm test
 workflow:
   approve: none
-  maxRetries: 1
   git:
     commitStrategy: none

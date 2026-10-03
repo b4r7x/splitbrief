@@ -540,7 +540,6 @@ describe('runTasksAndReview review fix instruction', { timeout: 120_000 }, () =>
       implementer: promptRecordingImplementer(projectDir, prompts),
       config: makeConfig({
         validation: { typecheck: true, lint: false, test: false, typecheckCommand: 'noop' },
-        workflow: { maxRetries: 1 },
       }),
       validator: {
         ...createValidator(),

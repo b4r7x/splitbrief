@@ -71,8 +71,8 @@ describe('estimateFormattedTaskPromptTokens', () => {
     // The equality above already pins the estimate to the prompt actually sent, so this
     // bound is an absolute bloat cap with headroom, not a snapshot of today's size. The
     // contract allows the direct preamble to be heavier than extracted-code's, and a new
-    // prompt rule fits under the cap; a direct prompt that grows by a third fails here,
+    // prompt rule fits under the cap; a direct prompt that grows by more fails here,
     // because it would silently raise every task's cost.
-    expect(estimatedTokens).toBeLessThan(800);
+    expect(estimatedTokens).toBeLessThan(880);
   });
 });

@@ -327,6 +327,14 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     case 'task_full_fail':
     case 'task_review_needed':
     case 'hint_failed':
+    case 'consult_answered':
+    case 'task_replaced':
+    case 'tasks_inserted':
+    case 'checks_run':
+    case 'seat_wait_started':
+    case 'seat_retry':
+    case 'no_progress_cut':
+    case 'consult_bound_spent':
     case 'implementer_generate_running':
     case 'implementer_generate_done':
     case 'implementer_generate_failed':

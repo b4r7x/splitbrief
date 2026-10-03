@@ -7,10 +7,16 @@ import {
   getFailedTaskIds,
   getSkippedTaskIds,
 } from './selectors.js';
-import type { QueuedMessage, WorkflowState } from '../schemas/workflow.js';
-import { taskId } from '../schemas/task.js';
+import {
+  WorkflowStateSchema,
+  type LineageRecord,
+  type QueuedMessage,
+  type WorkflowState,
+} from '../schemas/workflow.js';
+import { taskId, type Task } from '../schemas/task.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import { DEFAULT_LOCAL_RETRIES } from '../pipeline-spec/retries.js';
 
 function makeQueuedMessage(overrides: Partial<QueuedMessage> = {}): QueuedMessage {
   return {
@@ -172,13 +178,12 @@ describe('transition', () => {
   });
 
   it.each([
-    [1, undefined, 'implementing', 2],
-    [3, undefined, 'escalating', 3],
-    [4, 5, 'implementing', 5],
-    [5, 5, 'escalating', 5],
+    [0, 'implementing', 1],
+    [1, 'escalating', 1],
+    [2, 'escalating', 2],
   ] as const)(
-    'VALIDATION_FAIL at attempt %i of max %s -> %s',
-    (attempt, maxRetries, phase, nextAttempt) => {
+    'VALIDATION_FAIL at attempt %i -> %s at attempt %i under DEFAULT_LOCAL_RETRIES',
+    (attempt, phase, nextAttempt) => {
       const state: WorkflowState = {
         ...createInitialState('feat'),
         phase: 'validating-task',
@@ -187,7 +192,7 @@ describe('transition', () => {
         attempt,
       };
 
-      const next = transition(state, { type: 'VALIDATION_FAIL' }, { maxRetries });
+      const next = transition(state, { type: 'VALIDATION_FAIL' });
 
       expect(next.phase).toBe(phase);
       expect(next.attempt).toBe(nextAttempt);
@@ -203,38 +208,14 @@ describe('transition', () => {
     expect(next.phase).toBe('escalating');
   });
 
-  it('HINT_SUCCESS -> implementing with index advanced', () => {
-    const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'escalating',
-      tasks,
-      currentTaskIndex: 0,
-      attempt: 3,
-    };
-    const next = transition(state, { type: 'HINT_SUCCESS' });
-    expect(next.phase).toBe('implementing');
-    expect(next.currentTaskIndex).toBe(1);
-    expect(next.attempt).toBe(0);
-    expect(getCompletedTaskIds(next)).toEqual([]);
-    expect(getEscalatedTaskIds(next)).toEqual(['T001']);
-  });
+  it.each(['HINT_SUCCESS', 'HINT_FAIL', 'FULL_SUCCESS'] as const)(
+    'no longer accepts the retired %s hint action from any phase',
+    (type) => {
+      const state: WorkflowState = { ...createInitialState('feat'), phase: 'escalating' };
 
-  it('HINT_SUCCESS is accepted from implementing for escalated retry completions', () => {
-    const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'implementing',
-      tasks,
-      currentTaskIndex: 0,
-    };
-    const next = transition(state, { type: 'HINT_SUCCESS' });
-
-    expect(next.phase).toBe('implementing');
-    expect(next.currentTaskIndex).toBe(1);
-    expect(getCompletedTaskIds(next)).toEqual([]);
-    expect(getEscalatedTaskIds(next)).toEqual(['T001']);
-  });
+      expect(() => transition(state, { type } as never)).toThrow(`Cannot apply ${type}`);
+    },
+  );
 
   it('CLOSE_RUN keeps the tasks and the feature it closed over', () => {
     const tasks = [makeTask({ id: 'T000', status: 'done' }), makeTask({ id: 'T001' })];
@@ -381,31 +362,6 @@ describe('transition', () => {
     ]);
   });
 
-  it('HINT_FAIL -> stays in escalating', () => {
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'escalating',
-    };
-    const next = transition(state, { type: 'HINT_FAIL' });
-    expect(next.phase).toBe('escalating');
-  });
-
-  it('FULL_SUCCESS -> implementing with index advanced, task in escalatedTasks, attempt reset', () => {
-    const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'escalating',
-      tasks,
-      currentTaskIndex: 0,
-      attempt: 3,
-    };
-    const next = transition(state, { type: 'FULL_SUCCESS' });
-    expect(next.phase).toBe('implementing');
-    expect(next.currentTaskIndex).toBe(1);
-    expect(getEscalatedTaskIds(next)).toEqual(['T001']);
-    expect(next.attempt).toBe(0);
-  });
-
   it('SET_PLANNER_SESSION_ID overwrites existing plannerSessionId', () => {
     let state = createInitialState('feat');
     state = transition(state, { type: 'SET_PLANNER_SESSION_ID', sessionId: 'first' });
@@ -413,27 +369,23 @@ describe('transition', () => {
     expect(state.plannerSessionId).toBe('second');
   });
 
-  it('a re-entered task at attempt 2 of maxRetries 3 escalates after one local VALIDATION_FAIL', () => {
+  it('a re-entered task at the local retry limit escalates on its next VALIDATION_FAIL', () => {
     const tasks = [makeTask({ id: 'T001' })];
     const resumed: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'implementing',
       tasks,
       currentTaskIndex: 0,
-      attempt: 2,
+      attempt: DEFAULT_LOCAL_RETRIES,
     };
     const started = transition(resumed, { type: 'START_TASK', taskId: tasks[0]!.id });
-    expect(started.attempt).toBe(2);
+    expect(started.attempt).toBe(DEFAULT_LOCAL_RETRIES);
     expect(started.tasks[0]?.status).toBe('in_progress');
 
     const sent = transition(started, { type: 'TASK_SENT' });
-    const failed = transition(sent, { type: 'VALIDATION_FAIL' }, { maxRetries: 3 });
-    expect(failed.phase).toBe('implementing');
-    expect(failed.attempt).toBe(3);
-
-    const sentAgain = transition(failed, { type: 'TASK_SENT' });
-    const exhausted = transition(sentAgain, { type: 'VALIDATION_FAIL' }, { maxRetries: 3 });
+    const exhausted = transition(sent, { type: 'VALIDATION_FAIL' });
     expect(exhausted.phase).toBe('escalating');
+    expect(exhausted.attempt).toBe(DEFAULT_LOCAL_RETRIES);
   });
 
   it('UPDATE_TASK_CODE without code removes stale currentCode from the selected task only', () => {
@@ -587,103 +539,21 @@ describe('transition', () => {
     expect(next.rewindPending?.comment).toBeUndefined();
   });
 
-  it('WIDEN_TASK_SCOPE appends planner-approved paths to the task scope and nothing else', () => {
-    const tasks = [
-      makeTask({ id: 'T001', file: 'src/a.ts', scope: { inBounds: ['`src/a.ts`'] } }),
-      makeTask({ id: 'T002', file: 'src/b.ts' }),
-    ];
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'escalating',
-      tasks,
-      currentTaskIndex: 0,
-      attempt: 2,
-    };
-    const next = transition(state, {
-      type: 'WIDEN_TASK_SCOPE',
-      taskId: taskId('T001'),
-      paths: ['src/consumer.ts'],
-      reason: 'consumer of the export',
-    });
-    expect(next.tasks[0]?.scope).toEqual({
-      inBounds: ['`src/a.ts`'],
-      approvedOutOfBounds: ['`src/consumer.ts` — planner-approved: consumer of the export'],
-    });
-    expect(next.tasks[1]).toBe(tasks[1]);
-    expect(next.phase).toBe('escalating');
-    expect(next.attempt).toBe(2);
-    expect(next.currentTaskIndex).toBe(0);
-  });
-
-  it('WIDEN_TASK_SCOPE skips paths the brief already licenses and unknown tasks', () => {
-    const tasks = [makeTask({ id: 'T001', file: 'src/a.ts', scope: { inBounds: ['`src/b.ts`'] } })];
-    const state: WorkflowState = { ...createInitialState('feat'), phase: 'implementing', tasks };
-    const once = transition(state, {
-      type: 'WIDEN_TASK_SCOPE',
-      taskId: taskId('T001'),
-      paths: ['src/a.ts', 'src/b.ts', 'src/c.ts', 'src/c.ts'],
-      reason: 'consumer',
-    });
-    expect(once.tasks[0]?.scope?.approvedOutOfBounds).toEqual([
-      '`src/c.ts` — planner-approved: consumer',
-    ]);
-    const twice = transition(once, {
-      type: 'WIDEN_TASK_SCOPE',
-      taskId: taskId('T001'),
-      paths: ['src/c.ts'],
-      reason: 'again',
-    });
-    expect(twice).toBe(once);
-    expect(
-      transition(state, {
-        type: 'WIDEN_TASK_SCOPE',
-        taskId: taskId('T999'),
-        paths: ['src/c.ts'],
-        reason: 'consumer',
-      }),
-    ).toBe(state);
-  });
-
-  it('WIDEN_TASK_SCOPE records a root-level file once', () => {
+  it('no longer accepts WIDEN_TASK_SCOPE from any phase', () => {
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'escalating',
       tasks: [makeTask({ id: 'T001', file: 'src/a.ts' })],
     };
-    const once = transition(state, {
-      type: 'WIDEN_TASK_SCOPE',
-      taskId: taskId('T001'),
-      paths: ['README.md'],
-      reason: 'consumer',
-    });
-    expect(once.tasks[0]?.scope?.approvedOutOfBounds).toEqual([
-      '`README.md` — planner-approved: consumer',
-    ]);
-    expect(
-      transition(once, {
-        type: 'WIDEN_TASK_SCOPE',
-        taskId: taskId('T001'),
-        paths: ['README.md'],
-        reason: 'consumer',
-      }),
-    ).toBe(once);
-  });
 
-  it('WIDEN_TASK_SCOPE is refused on a closed run', () => {
-    const closed: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'implementing',
-      tasks: [makeTask({ id: 'T001' })],
-      closed: { at: '2026-05-01T10:00:00.000Z', as: 'ended' },
-    };
     expect(() =>
-      transition(closed, {
+      transition(state, {
         type: 'WIDEN_TASK_SCOPE',
         taskId: taskId('T001'),
-        paths: ['src/c.ts'],
-        reason: 'consumer',
-      }),
-    ).toThrow('Cannot apply WIDEN_TASK_SCOPE: this run is closed.');
+        paths: ['src/consumer.ts'],
+        reason: 'consumer of the export',
+      } as never),
+    ).toThrow('Cannot apply WIDEN_TASK_SCOPE');
   });
 
   it('RESET_TASK does NOT set rewindPending', () => {
@@ -961,22 +831,6 @@ describe('transition', () => {
     expect(getSkippedTaskIds(next)).toEqual(['T001']);
   });
 
-  it('FULL_SUCCESS strips currentCode from the escalated task', () => {
-    const tasks = [
-      makeTask({ id: 'T001', currentCode: 'source code here' }),
-      makeTask({ id: 'T002' }),
-    ];
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'escalating',
-      tasks,
-      currentTaskIndex: 0,
-    };
-    const next = transition(state, { type: 'FULL_SUCCESS' });
-    expect(next.tasks[0]?.currentCode).toBeUndefined();
-    expect(next.tasks[0]?.status).toBe('escalated');
-  });
-
   it('UPDATE_TASK_CODE replaces the anchor, sibling and context code together', () => {
     const tasks = [makeTask({ id: 'T001' })];
     const state: WorkflowState = {
@@ -1120,5 +974,277 @@ describe('transition', () => {
     const next = transition(state, { type: 'VALIDATION_PASS' });
 
     expect(next.reviewFixes?.findings).toEqual({ T002: ['fix me too'] });
+  });
+});
+
+describe('consult and split state operations', () => {
+  function implementationState(
+    tasks: Task[],
+    overrides: Partial<WorkflowState> = {},
+  ): WorkflowState {
+    return { ...createInitialState('feat'), phase: 'implementing', tasks, ...overrides };
+  }
+
+  function lineage(overrides: Partial<LineageRecord> = {}): LineageRecord {
+    return {
+      consults: 0,
+      attempts: 0,
+      consultAllowance: 2,
+      attemptAllowance: 8,
+      staleConsultedRevision: {},
+      consultRecords: [],
+      replacedParents: [],
+      notes: [],
+      ...overrides,
+    };
+  }
+
+  it('REPLACE_TASK keeps the id, criteria and position and records the new revision', () => {
+    const tasks = [
+      makeTask({ id: 'T001', status: 'done' }),
+      makeTask({ id: 'T002', status: 'failed', criteria: ['C1'], revision: 2 }),
+      makeTask({ id: 'T003' }),
+    ];
+    const state = implementationState(tasks, { currentTaskIndex: 2, attempt: 3 });
+    const replacement = makeTask({
+      id: 'T099',
+      title: 'Rewritten brief',
+      criteria: ['C9'],
+      files: ['src/rewritten.ts'],
+      inputHashes: { 'src/rewritten.ts': 'hash' },
+    });
+
+    const next = transition(state, {
+      type: 'REPLACE_TASK',
+      taskId: taskId('T002'),
+      task: replacement,
+    });
+
+    const rewritten = next.tasks[1];
+    expect(rewritten?.id).toBe('T002');
+    expect(rewritten?.criteria).toEqual(['C1']);
+    expect(rewritten?.title).toBe('Rewritten brief');
+    expect(rewritten?.status).toBe('pending');
+    expect(rewritten?.revision).toBe(3);
+    expect(rewritten?.inputHashes).toEqual({ 'src/rewritten.ts': 'hash' });
+    expect(next.currentTaskIndex).toBe(2);
+    expect(next.attempt).toBe(0);
+    expect(next.tasks[0]).toBe(tasks[0]);
+    expect(next.tasks[2]).toBe(tasks[2]);
+  });
+
+  it('INSERT_TASKS replaces the parent with its subtasks and re-points pending dependents', () => {
+    const tasks = [
+      makeTask({ id: 'T001', status: 'done' }),
+      makeTask({ id: 'T002', status: 'failed' }),
+      makeTask({ id: 'T003', dependsOn: ['T002'] }),
+      makeTask({ id: 'T004', status: 'done', dependsOn: ['T002'] }),
+    ];
+    const state = implementationState(tasks, { currentTaskIndex: 1 });
+    const children = [
+      makeTask({ id: 'T011', file: 'src/split-a.ts' }),
+      makeTask({ id: 'T012', file: 'src/split-b.ts', dependsOn: ['T011'] }),
+    ];
+
+    const next = transition(state, {
+      type: 'INSERT_TASKS',
+      parentId: taskId('T002'),
+      tasks: children,
+    });
+
+    expect(next.tasks.map((task) => task.id)).toEqual(['T001', 'T011', 'T012', 'T003', 'T004']);
+    expect(next.tasks.find((task) => task.id === 'T011')?.parentId).toBe('T002');
+    expect(next.tasks.find((task) => task.id === 'T012')?.parentId).toBe('T002');
+    expect(next.tasks.find((task) => task.id === 'T012')?.dependsOn).toEqual(['T011']);
+    expect(next.tasks.find((task) => task.id === 'T003')?.dependsOn).toEqual(['T011', 'T012']);
+    expect(next.tasks.find((task) => task.id === 'T004')?.dependsOn).toEqual(['T002']);
+    expect(next.currentTaskIndex).toBe(1);
+  });
+
+  it('keeps lineage counters across a split and a JSON round trip through the state schema', () => {
+    const state = implementationState([makeTask({ id: 'T001', status: 'failed' })], {
+      currentTaskIndex: 0,
+      lineages: {
+        T001: lineage({
+          consults: 2,
+          attempts: 5,
+          consultAllowance: 3,
+          attemptAllowance: 12,
+          staleConsultedRevision: { T001: 2 },
+          notes: ['granted by the user'],
+        }),
+      },
+    });
+
+    const split = transition(state, {
+      type: 'INSERT_TASKS',
+      parentId: taskId('T001'),
+      tasks: [makeTask({ id: 'T011' }), makeTask({ id: 'T012' })],
+    });
+
+    expect(split.lineages?.T001).toMatchObject({
+      consults: 2,
+      attempts: 5,
+      consultAllowance: 3,
+      attemptAllowance: 12,
+      staleConsultedRevision: { T001: 2 },
+      notes: ['granted by the user'],
+    });
+    expect(split.lineages?.T001?.replacedParents.map((task) => task.id)).toEqual(['T001']);
+
+    const roundTripped = WorkflowStateSchema.parse(JSON.parse(JSON.stringify(split)));
+    expect(roundTripped.lineages?.T001).toEqual(split.lineages?.T001);
+  });
+
+  it('RESET_TASK leaves the lineage counters alone', () => {
+    const state = implementationState([makeTask({ id: 'T002', status: 'failed' })], {
+      currentTaskIndex: 0,
+      lineages: { T002: lineage({ consults: 2, attempts: 5 }) },
+    });
+
+    const next = transition(state, { type: 'RESET_TASK', taskId: taskId('T002') });
+
+    expect(next.tasks[0]?.status).toBe('pending');
+    expect(next.lineages?.T002?.consults).toBe(2);
+    expect(next.lineages?.T002?.attempts).toBe(5);
+  });
+
+  it('GRANT_ALLOWANCE raises the lineage allowance and records the note', () => {
+    const state = implementationState([makeTask({ id: 'T002' })], {
+      lineages: { T002: lineage({ consults: 1, attempts: 2 }) },
+    });
+
+    const next = transition(state, {
+      type: 'GRANT_ALLOWANCE',
+      target: 'lineage',
+      taskId: taskId('T002'),
+      note: 'The user granted one more consult.',
+    });
+
+    expect(next.lineages?.T002).toMatchObject({
+      consultAllowance: 3,
+      attemptAllowance: 12,
+      notes: ['The user granted one more consult.'],
+    });
+  });
+
+  it('GRANT_ALLOWANCE for the planner adds calls and records the note on the lineage', () => {
+    const state = implementationState([makeTask({ id: 'T002' })], {
+      plannerCalls: { used: 3, allowance: 10 },
+    });
+
+    const next = transition(state, {
+      type: 'GRANT_ALLOWANCE',
+      target: 'planner',
+      taskId: taskId('T002'),
+      note: 'five more planner calls',
+    });
+
+    expect(next.plannerCalls).toEqual({ used: 3, allowance: 15 });
+    expect(next.lineages?.T002?.notes).toEqual(['five more planner calls']);
+  });
+
+  it('RECORD_CONSULT appends the answer, counts the consult, and remembers a stale revision', () => {
+    const state = implementationState([makeTask({ id: 'T002' })]);
+
+    const next = transition(
+      state,
+      {
+        type: 'RECORD_CONSULT',
+        taskId: taskId('T002'),
+        revision: 2,
+        reason: 'stale',
+        answer: {
+          answer: {
+            action: 'guidance',
+            diagnosis: 'The captured code is from an older revision.',
+            instructions: 'Re-read the file.',
+            context: null,
+          },
+        },
+      },
+      { now: new Date('2026-05-01T10:00:00Z') },
+    );
+
+    expect(next.lineages?.T002).toMatchObject({
+      consults: 1,
+      staleConsultedRevision: { T002: 2 },
+    });
+    expect(next.lineages?.T002?.consultRecords[0]).toEqual({
+      reason: 'stale',
+      action: 'guidance',
+      diagnosis: 'The captured code is from an older revision.',
+      at: '2026-05-01T10:00:00.000Z',
+      taskId: 'T002',
+      revision: 2,
+      answer: {
+        answer: {
+          action: 'guidance',
+          diagnosis: 'The captured code is from an older revision.',
+          instructions: 'Re-read the file.',
+          context: null,
+        },
+      },
+    });
+  });
+
+  it('COUNT_ATTEMPT and COUNT_PLANNER_CALL raise the lineage counters', () => {
+    let state = implementationState([makeTask({ id: 'T002' })], {
+      plannerCalls: { used: 0, allowance: 10 },
+    });
+
+    state = transition(state, { type: 'COUNT_ATTEMPT', taskId: taskId('T002') });
+    state = transition(state, { type: 'COUNT_ATTEMPT', taskId: taskId('T002') });
+    state = transition(state, { type: 'COUNT_PLANNER_CALL' });
+
+    expect(state.lineages?.T002?.attempts).toBe(2);
+    expect(state.plannerCalls).toEqual({ used: 1, allowance: 10 });
+  });
+
+  it('SET_TASK_INPUT_HASHES and RECORD_CHECK_RESULTS update the task', () => {
+    const state = implementationState([makeTask({ id: 'T002' })]);
+
+    const hashed = transition(state, {
+      type: 'SET_TASK_INPUT_HASHES',
+      taskId: taskId('T002'),
+      inputHashes: { 'src/a.ts': 'sha' },
+    });
+    expect(hashed.tasks[0]?.inputHashes).toEqual({ 'src/a.ts': 'sha' });
+
+    const recorded = transition(hashed, {
+      type: 'RECORD_CHECK_RESULTS',
+      taskId: taskId('T002'),
+      results: [
+        { id: 'K1', passed: true },
+        { id: 'K2', passed: false },
+      ],
+    });
+    expect(recorded.tasks[0]?.checkResults).toEqual([
+      { id: 'K1', passed: true },
+      { id: 'K2', passed: false },
+    ]);
+
+    const rerun = transition(recorded, {
+      type: 'RECORD_CHECK_RESULTS',
+      taskId: taskId('T002'),
+      results: [{ id: 'K2', passed: true }],
+    });
+    expect(rerun.tasks[0]?.checkResults).toEqual([
+      { id: 'K1', passed: true },
+      { id: 'K2', passed: true },
+    ]);
+  });
+
+  it('SET_SEAT_WAIT parks the seat and CLEAR_SEAT_WAIT releases it', () => {
+    const state = implementationState([makeTask({ id: 'T002' })]);
+
+    const waiting = transition(state, {
+      type: 'SET_SEAT_WAIT',
+      seat: 'plan',
+      resetAt: '2026-05-01T10:00:00.000Z',
+    });
+    expect(waiting.seatWait).toEqual({ seat: 'plan', resetAt: '2026-05-01T10:00:00.000Z' });
+
+    expect(transition(waiting, { type: 'CLEAR_SEAT_WAIT' }).seatWait).toBeUndefined();
   });
 });

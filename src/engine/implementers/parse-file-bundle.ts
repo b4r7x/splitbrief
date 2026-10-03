@@ -30,6 +30,11 @@ export type ParseFileBundleResult =
       untouched: string[];
     }
   | {
+      kind: 'blocked';
+      question: string;
+      filesNeeded: string[];
+    }
+  | {
       kind: 'rejected';
       code: 'invalid-bundle' | 'unsafe-target' | 'output-limit' | 'no-changes';
       error: string;
@@ -133,7 +138,8 @@ function validateEntry(
  * targets and the brief's scope. Every entry is validated before any candidate
  * is returned, so one bad entry leaves nothing applicable. An omitted target is
  * untouched, never deleted; a modify entry equal to its baseline is a no-op,
- * and a bundle of nothing but no-ops is the existing no-change failure.
+ * and a bundle of nothing but no-ops is the existing no-change failure. A
+ * blocked response asks for files and applies nothing.
  */
 export function parseFileBundle(input: ParseFileBundleInput): ParseFileBundleResult {
   if (input.status !== 'completed') {
@@ -165,6 +171,13 @@ export function parseFileBundle(input: ParseFileBundleInput): ParseFileBundleRes
       'invalid-bundle',
       `response does not match file-bundle-v1: ${bundle.error.message}`,
     );
+  }
+  if ('blocked' in bundle.data) {
+    return {
+      kind: 'blocked',
+      question: bundle.data.blocked.question,
+      filesNeeded: bundle.data.blocked.filesNeeded,
+    };
   }
 
   const targets = new Map(input.targets.map((target) => [target.path, target]));

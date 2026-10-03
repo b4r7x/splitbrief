@@ -1,6 +1,8 @@
-import type { Task, TaskId } from '../schemas/task.js';
+import type { CheckResult, Task, TaskId } from '../schemas/task.js';
 import type { QueuedMessage, WorkflowState, PlannerConversation } from '../schemas/workflow.js';
 import type { RecoveryAction, ReviewStatus } from '../schemas/enums.js';
+import type { ConsultAnswer, ConsultReason } from '../schemas/consult.js';
+import type { CrewSeatId } from '../crew/identity.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
 import type { Plan } from '../schemas/plan.js';
 import type { StepCut, StepRef } from '../schemas/run-step.js';
@@ -36,9 +38,6 @@ export type StateAction =
   | { type: 'VALIDATION_PASS' }
   | { type: 'VALIDATION_FAIL' }
   | { type: 'ESCALATE' }
-  | { type: 'HINT_SUCCESS' }
-  | { type: 'HINT_FAIL' }
-  | { type: 'FULL_SUCCESS' }
   | { type: 'SKIP_TASK'; taskId: TaskId }
   | {
       type: 'UPDATE_TASK_CODE';
@@ -48,7 +47,6 @@ export type StateAction =
       codeByFile?: Record<string, string>;
       contextCodeByFile?: Record<string, string>;
     }
-  | { type: 'WIDEN_TASK_SCOPE'; taskId: TaskId; paths: string[]; reason: string }
   | { type: 'ALL_DONE' }
   | { type: 'REVIEW_DONE'; reviewStatus: ReviewStatus }
   | { type: 'REVIEW_FIX_START'; fixes: Record<string, string[]>; cycle: number }
@@ -62,12 +60,34 @@ export type StateAction =
       partialRef?: { kind: 'session-log'; index: number };
     }
   | { type: 'RESUME_STEP' }
+  | {
+      type: 'RESTORE_BRIEF_PARK';
+      step: Extract<StepRef, { kind: 'brief' }>;
+      source: 'user' | 'watchdog';
+      at: string;
+    }
   | { type: 'SET_PLANNER_CONVERSATION'; conversation: PlannerConversation }
   | { type: 'CLEAR_PLANNER_CONVERSATION' }
   | { type: 'SET_PLANNER_SESSION_ID'; sessionId: string | null }
   | { type: 'REWIND_TO_SPEC'; comment?: string }
   | { type: 'REWIND_TO_PLAN'; comment?: string }
   | { type: 'RESET_TASK'; taskId: TaskId }
+  | { type: 'REPLACE_TASK'; taskId: TaskId; task: Task }
+  | { type: 'INSERT_TASKS'; parentId: TaskId; tasks: Task[] }
+  | {
+      type: 'RECORD_CONSULT';
+      taskId: TaskId;
+      revision: number;
+      reason: ConsultReason;
+      answer: ConsultAnswer;
+    }
+  | { type: 'COUNT_ATTEMPT'; taskId: TaskId }
+  | { type: 'COUNT_PLANNER_CALL' }
+  | { type: 'GRANT_ALLOWANCE'; target: 'lineage' | 'planner'; taskId: TaskId; note: string }
+  | { type: 'SET_TASK_INPUT_HASHES'; taskId: TaskId; inputHashes: Record<string, string> }
+  | { type: 'RECORD_CHECK_RESULTS'; taskId: TaskId; results: CheckResult[] }
+  | { type: 'SET_SEAT_WAIT'; seat: CrewSeatId; resetAt: string }
+  | { type: 'CLEAR_SEAT_WAIT' }
   | { type: 'CORRECT_PLAN'; comment: string }
   | { type: 'ENQUEUE_USER_MSG'; message: QueuedMessage }
   | { type: 'MARK_INJECTING_NATIVE'; id: string; attempt?: number }

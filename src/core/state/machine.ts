@@ -1,7 +1,13 @@
 import { deriveRunStatus } from '../sessions/run-status.js';
 import type { MachineAction, StateAction } from './types.js';
-import { WORKFLOW_STATE_VERSION, type WorkflowState } from '../schemas/workflow.js';
-import { isTaskCompleted, type TaskId } from '../schemas/task.js';
+import {
+  WORKFLOW_STATE_VERSION,
+  type ConsultRecord,
+  type LineageRecord,
+  type PlannerCalls,
+  type WorkflowState,
+} from '../schemas/workflow.js';
+import { isTaskCompleted, type Task, type TaskId } from '../schemas/task.js';
 import type { Phase, TaskStatus } from '../schemas/enums.js';
 import { ZERO_TOKEN_USAGE } from '../schemas/tokens.js';
 import { isQueuedMessageClearable, isQueuedMessagePendingDelivery } from '../queue-state.js';
@@ -9,19 +15,20 @@ import { taskStatusForCompletionMethod } from '../task-completion.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { includes } from '../../utils/type-guards.js';
 import { DEFAULT_LOCAL_RETRIES } from '../pipeline-spec/retries.js';
-import { isInDeclaredSet, taskDeclaredPatterns } from '../scope/declared-set.js';
+import { BOUNDS } from '../pipeline-spec/bounds.js';
+import { lineageIdOf } from './task-insert.js';
 import { transitionError } from './errors.js';
 
 const anytimeActions = [
   'CLOSE_RUN',
   'INTERRUPT_STEP',
   'RESUME_STEP',
+  'RESTORE_BRIEF_PARK',
   'SET_PLANNER_CONVERSATION',
   'CLEAR_PLANNER_CONVERSATION',
   'SET_PLANNER_SESSION_ID',
   'REWIND_TO_SPEC',
   'REWIND_TO_PLAN',
-  'WIDEN_TASK_SCOPE',
   'ENQUEUE_USER_MSG',
   'MARK_INJECTING_NATIVE',
   'MARK_DELIVERED_NATIVE',
@@ -32,12 +39,20 @@ const anytimeActions = [
   'PAUSE_PENDING_RECOVERY',
   'MARK_RECOVERY_APPLYING',
   'RESOLVE_PENDING_RECOVERY',
+  'REPLACE_TASK',
+  'INSERT_TASKS',
+  'RECORD_CONSULT',
+  'COUNT_ATTEMPT',
+  'COUNT_PLANNER_CALL',
+  'GRANT_ALLOWANCE',
+  'SET_TASK_INPUT_HASHES',
+  'RECORD_CHECK_RESULTS',
+  'SET_SEAT_WAIT',
+  'CLEAR_SEAT_WAIT',
 ] as const satisfies readonly MachineAction['type'][];
 
 const VALIDATION_OR_ESCALATION_SHARED_ACTIONS = [
   'VALIDATION_PASS',
-  'HINT_SUCCESS',
-  'FULL_SUCCESS',
   'SKIP_TASK',
   'RESET_TASK',
 ] as const satisfies readonly MachineAction['type'][];
@@ -76,14 +91,13 @@ const phaseActions = {
     'UPDATE_TASK_CODE',
     'TASK_SENT',
     'VALIDATION_PASS',
-    'HINT_SUCCESS',
     'SKIP_TASK',
     'RESET_TASK',
     'ANALYZE_START',
     'ALL_DONE',
   ],
   'validating-task': [...VALIDATION_OR_ESCALATION_SHARED_ACTIONS, 'VALIDATION_FAIL', 'ESCALATE'],
-  escalating: [...VALIDATION_OR_ESCALATION_SHARED_ACTIONS, 'UPDATE_TASK_CODE', 'HINT_FAIL'],
+  escalating: [...VALIDATION_OR_ESCALATION_SHARED_ACTIONS, 'UPDATE_TASK_CODE'],
   'final-review': ['REVIEW_DONE', 'REVIEW_FIX_START'],
   complete: ['REVIEW_FIX_START'],
 } as const satisfies Record<Phase, readonly MachineAction['type'][]>;
@@ -116,6 +130,38 @@ function setTaskStatus(state: WorkflowState, taskId: TaskId, status: TaskStatus)
   };
 }
 
+const EMPTY_LINEAGE: LineageRecord = {
+  consults: 0,
+  attempts: 0,
+  consultAllowance: BOUNDS.consultsPerLineage,
+  attemptAllowance: BOUNDS.attemptsPerLineage,
+  staleConsultedRevision: {},
+  consultRecords: [],
+  replacedParents: [],
+  notes: [],
+};
+
+function lineageKeyFor(state: WorkflowState, taskId: TaskId): TaskId {
+  const task = state.tasks.find((t) => t.id === taskId);
+  return task === undefined ? taskId : lineageIdOf(task);
+}
+
+function withLineage(
+  state: WorkflowState,
+  key: TaskId,
+  update: (lineage: LineageRecord) => LineageRecord,
+): WorkflowState {
+  const lineages = state.lineages ?? {};
+  return {
+    ...state,
+    lineages: { ...lineages, [key]: update(lineages[key] ?? EMPTY_LINEAGE) },
+  };
+}
+
+function plannerCallsOf(state: WorkflowState): PlannerCalls {
+  return state.plannerCalls ?? { used: 0, allowance: BOUNDS.plannerCallsPerRun };
+}
+
 function stripCurrentCode(state: WorkflowState, taskId: TaskId): WorkflowState {
   return {
     ...state,
@@ -129,33 +175,6 @@ function stripCurrentCode(state: WorkflowState, taskId: TaskId): WorkflowState {
       } = t;
       return rest;
     }),
-  };
-}
-
-function widenTaskScope(
-  state: WorkflowState,
-  action: Extract<StateAction, { type: 'WIDEN_TASK_SCOPE' }>,
-): WorkflowState {
-  const task = state.tasks.find((t) => t.id === action.taskId);
-  if (task === undefined) return state;
-  const declared = taskDeclaredPatterns(task);
-  const added = [...new Set(action.paths)]
-    .filter((path) => !isInDeclaredSet(path, declared))
-    .map((path) => `\`${path}\` — planner-approved: ${action.reason}`);
-  if (added.length === 0) return state;
-  return {
-    ...state,
-    tasks: state.tasks.map((t) =>
-      t.id === action.taskId
-        ? {
-            ...t,
-            scope: {
-              ...t.scope,
-              approvedOutOfBounds: [...(t.scope?.approvedOutOfBounds ?? []), ...added],
-            },
-          }
-        : t,
-    ),
   };
 }
 
@@ -222,9 +241,8 @@ function rewindReset(
 export function transition(
   state: WorkflowState,
   action: MachineAction,
-  opts: { maxRetries?: number | undefined; now?: Date | undefined } = {},
+  opts: { now?: Date | undefined } = {},
 ): WorkflowState {
-  const maxRetries = opts.maxRetries ?? DEFAULT_LOCAL_RETRIES;
   const now = opts.now ?? new Date();
   // A closed run is the one terminal state: nothing reopens it, so every action
   // but the close itself is refused rather than silently mutating a finished run.
@@ -311,22 +329,13 @@ export function transition(
       return advanceTask(state, taskStatusForCompletionMethod('local'));
 
     case 'VALIDATION_FAIL':
-      if (state.attempt < maxRetries) {
+      if (state.attempt < DEFAULT_LOCAL_RETRIES) {
         return { ...state, phase: 'implementing', attempt: state.attempt + 1 };
       }
       return { ...state, phase: 'escalating' };
 
     case 'ESCALATE':
       return { ...state, phase: 'escalating' };
-
-    case 'HINT_SUCCESS':
-      return advanceTask(state, taskStatusForCompletionMethod('escalated-hint'));
-
-    case 'HINT_FAIL':
-      return { ...state, phase: 'escalating' };
-
-    case 'FULL_SUCCESS':
-      return advanceTask(state, taskStatusForCompletionMethod('escalated-full'));
 
     case 'SKIP_TASK': {
       const withStatus = setTaskStatus(state, action.taskId, 'skipped');
@@ -357,9 +366,6 @@ export function transition(
         ),
       };
     }
-
-    case 'WIDEN_TASK_SCOPE':
-      return widenTaskScope(state, action);
 
     case 'ALL_DONE':
       return { ...state, phase: 'final-review' };
@@ -430,6 +436,24 @@ export function transition(
         lastFailure: undefined,
       };
 
+    case 'RESTORE_BRIEF_PARK': {
+      const idx = state.tasks.findIndex((t) => t.id === action.step.taskId);
+      if (idx < 0) return state;
+      return {
+        ...setTaskStatus(state, action.step.taskId, 'in_progress'),
+        currentTaskIndex: idx,
+        attempt: action.step.attempt,
+        phase: 'implementing',
+        interruptedStep: {
+          step: action.step,
+          source: action.source,
+          cut: 'mid-step',
+          at: action.at,
+        },
+        awaitingContinue: true,
+      };
+    }
+
     case 'SET_PLANNER_CONVERSATION':
       return {
         ...state,
@@ -471,6 +495,138 @@ export function transition(
         ...(state.pendingRecovery?.taskId === action.taskId ? { pendingRecovery: undefined } : {}),
       };
     }
+
+    case 'REPLACE_TASK': {
+      const index = state.tasks.findIndex((t) => t.id === action.taskId);
+      const previous = index < 0 ? undefined : state.tasks[index];
+      if (previous === undefined) return state;
+      const replacement: Task = {
+        ...action.task,
+        id: previous.id,
+        ...(previous.parentId !== undefined && { parentId: previous.parentId }),
+        criteria: previous.criteria,
+        status: 'pending',
+        revision: (previous.revision ?? 1) + 1,
+      };
+      return {
+        ...state,
+        tasks: state.tasks.map((task, i) => (i === index ? replacement : task)),
+        attempt: 0,
+      };
+    }
+
+    case 'INSERT_TASKS': {
+      const parentIndex = state.tasks.findIndex((t) => t.id === action.parentId);
+      const parent = parentIndex < 0 ? undefined : state.tasks[parentIndex];
+      if (parent === undefined) return state;
+      const lineageKey = lineageIdOf(parent);
+      const children = action.tasks.map((task) => ({ ...task, parentId: lineageKey }));
+      const childIds = children.map((task) => task.id);
+      const remaining = state.tasks
+        .filter((task) => task.id !== parent.id)
+        .map((task) => {
+          if (isTaskCompleted(task.status) || !task.dependsOn.includes(parent.id)) return task;
+          return {
+            ...task,
+            dependsOn: [
+              ...new Set(task.dependsOn.flatMap((dep) => (dep === parent.id ? childIds : [dep]))),
+            ],
+          };
+        });
+      const tasks = [
+        ...remaining.slice(0, parentIndex),
+        ...children,
+        ...remaining.slice(parentIndex),
+      ];
+      const shift = parentIndex < state.currentTaskIndex ? children.length - 1 : 0;
+      return {
+        ...withLineage(state, lineageKey, (lineage) => ({
+          ...lineage,
+          replacedParents: [...lineage.replacedParents, parent],
+        })),
+        tasks,
+        currentTaskIndex: state.currentTaskIndex + shift,
+      };
+    }
+
+    case 'RECORD_CONSULT': {
+      const record: ConsultRecord = {
+        reason: action.reason,
+        action: action.answer.answer.action,
+        diagnosis: action.answer.answer.diagnosis,
+        at: now.toISOString(),
+        taskId: action.taskId,
+        revision: action.revision,
+        answer: action.answer,
+      };
+      return withLineage(state, lineageKeyFor(state, action.taskId), (lineage) => ({
+        ...lineage,
+        consults: lineage.consults + 1,
+        consultRecords: [...lineage.consultRecords, record],
+        ...(action.reason === 'stale' && {
+          staleConsultedRevision: {
+            ...lineage.staleConsultedRevision,
+            [action.taskId]: action.revision,
+          },
+        }),
+      }));
+    }
+
+    case 'COUNT_ATTEMPT':
+      return withLineage(state, lineageKeyFor(state, action.taskId), (lineage) => ({
+        ...lineage,
+        attempts: lineage.attempts + 1,
+      }));
+
+    case 'COUNT_PLANNER_CALL': {
+      const plannerCalls = plannerCallsOf(state);
+      return { ...state, plannerCalls: { ...plannerCalls, used: plannerCalls.used + 1 } };
+    }
+
+    case 'GRANT_ALLOWANCE': {
+      const granted = withLineage(state, lineageKeyFor(state, action.taskId), (lineage) => ({
+        ...lineage,
+        ...(action.target === 'lineage' && {
+          consultAllowance: lineage.consultAllowance + BOUNDS.extraConsultsPerLineage,
+          attemptAllowance: lineage.attemptAllowance + BOUNDS.extraAttemptsPerLineage,
+        }),
+        notes: [...lineage.notes, action.note],
+      }));
+      if (action.target !== 'planner') return granted;
+      const plannerCalls = plannerCallsOf(granted);
+      return {
+        ...granted,
+        plannerCalls: {
+          ...plannerCalls,
+          allowance: plannerCalls.allowance + BOUNDS.extraPlannerCallsPerRun,
+        },
+      };
+    }
+
+    case 'SET_TASK_INPUT_HASHES':
+      return {
+        ...state,
+        tasks: state.tasks.map((task) =>
+          task.id === action.taskId ? { ...task, inputHashes: action.inputHashes } : task,
+        ),
+      };
+
+    case 'RECORD_CHECK_RESULTS':
+      return {
+        ...state,
+        tasks: state.tasks.map((task) => {
+          if (task.id !== action.taskId) return task;
+          const results = new Map((task.checkResults ?? []).map((result) => [result.id, result]));
+          for (const result of action.results) results.set(result.id, result);
+          return { ...task, checkResults: [...results.values()] };
+        }),
+      };
+
+    case 'SET_SEAT_WAIT':
+      return { ...state, seatWait: { seat: action.seat, resetAt: action.resetAt } };
+
+    case 'CLEAR_SEAT_WAIT':
+      return { ...state, seatWait: undefined };
 
     case 'ENQUEUE_USER_MSG':
       return { ...state, messageQueue: [...state.messageQueue, action.message] };

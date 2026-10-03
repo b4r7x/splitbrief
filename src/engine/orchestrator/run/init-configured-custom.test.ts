@@ -281,7 +281,7 @@ describe('configured custom workflow runtime', () => {
           if (createDynamicImplementer === undefined) {
             throw new Error('expected a dynamic implementer factory');
           }
-          const dynamicImplementer = await createDynamicImplementer(config, {
+          const dynamicImplementer = await createDynamicImplementer({
             slot: { role: 'implementer', profile: 'configured-output' },
           });
           const result = await dynamicImplementer.implement({
@@ -407,7 +407,7 @@ describe('configured custom workflow runtime', () => {
       expect(init.wctx.implementer.capabilities).toEqual({ writesFiles: 'extracted-code' });
       expect(
         (
-          await init.wctx.createImplementer?.(preparedConfig, {
+          await init.wctx.createImplementer?.({
             slot: { role: 'implementer', profile: 'configured-custom' },
           })
         )?.capabilities,

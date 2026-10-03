@@ -1,5 +1,5 @@
-import type { WorkflowState } from '../../core/schemas/workflow.js';
-import type { TaskId } from '../../core/schemas/task.js';
+import type { ConsultRecord, WorkflowState } from '../../core/schemas/workflow.js';
+import type { CheckResult, TaskId } from '../../core/schemas/task.js';
 import type {
   RecoveryAction,
   TaskCompletionMethod,
@@ -9,8 +9,10 @@ import type {
   Phase,
 } from '../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
+import type { ConsultReason } from '../../core/schemas/consult.js';
 import type { AnsweredQuestion } from '../../core/schemas/question.js';
 import type { PlannerCall } from '../../core/schemas/run-step.js';
+import type { CrewSeatId } from '../../core/crew/identity.js';
 import type {
   EngineEvent,
   EngineEventOf,
@@ -366,25 +368,84 @@ export function publishRetry(
   });
 }
 
-export function publishEscalate(
-  opts: BusContext & {
+export function publishConsultAnswered(
+  ctx: BusContext,
+  opts: {
     taskId: TaskId;
-    tier: 0 | 1 | 2;
-    hint?: string | undefined;
-    tool?: string | undefined;
-    model?: string | undefined;
+    reason: ConsultReason;
+    action: ConsultRecord['action'];
+    diagnosis: string;
+    newTaskIds: readonly TaskId[] | null;
+    revision?: number | undefined;
+    checkIds?: readonly string[] | undefined;
   },
 ): void {
-  opts.bus.publish({
-    type: 'escalate',
+  ctx.bus.publish({
+    type: 'consult_answered',
     ts: Date.now(),
-    phase: opts.phase,
+    phase: ctx.phase,
     taskId: opts.taskId,
-    tier: opts.tier,
-    ...(opts.hint !== undefined && { hint: opts.hint }),
-    ...(opts.tool !== undefined && { tool: opts.tool }),
-    ...(opts.model !== undefined && { model: opts.model }),
+    reason: opts.reason,
+    action: opts.action,
+    diagnosis: opts.diagnosis,
+    newTaskIds: opts.newTaskIds === null ? null : [...opts.newTaskIds],
+    ...(opts.revision !== undefined && { revision: opts.revision }),
+    ...(opts.checkIds !== undefined && { checkIds: [...opts.checkIds] }),
   });
+}
+
+export function publishTaskReplaced(ctx: BusContext, taskId: TaskId, revision: number): void {
+  ctx.bus.publish({ type: 'task_replaced', ts: Date.now(), phase: ctx.phase, taskId, revision });
+}
+
+export function publishTasksInserted(
+  ctx: BusContext,
+  parentId: TaskId,
+  taskIds: readonly TaskId[],
+): void {
+  ctx.bus.publish({
+    type: 'tasks_inserted',
+    ts: Date.now(),
+    phase: ctx.phase,
+    parentId,
+    taskIds: [...taskIds],
+  });
+}
+
+export function publishChecksRun(
+  ctx: BusContext,
+  taskId: TaskId,
+  results: readonly CheckResult[],
+): void {
+  ctx.bus.publish({
+    type: 'checks_run',
+    ts: Date.now(),
+    phase: ctx.phase,
+    taskId,
+    results: [...results],
+  });
+}
+
+export function publishSeatWaitStarted(ctx: BusContext, seat: CrewSeatId, resetAt: string): void {
+  ctx.bus.publish({ type: 'seat_wait_started', ts: Date.now(), phase: ctx.phase, seat, resetAt });
+}
+
+export function publishSeatRetry(
+  ctx: BusContext,
+  opts: { seat: CrewSeatId; attempt: number; delayMs: number },
+): void {
+  ctx.bus.publish({ type: 'seat_retry', ts: Date.now(), phase: ctx.phase, ...opts });
+}
+
+export function publishNoProgressCut(
+  ctx: BusContext,
+  opts: { taskId: TaskId | null; seat: CrewSeatId; silentMs: number },
+): void {
+  ctx.bus.publish({ type: 'no_progress_cut', ts: Date.now(), phase: ctx.phase, ...opts });
+}
+
+export function publishConsultBoundSpent(ctx: BusContext): void {
+  ctx.bus.publish({ type: 'consult_bound_spent', ts: Date.now(), phase: ctx.phase });
 }
 
 export function publishCostUpdate(ctx: BusContext, tokenUsage: TokenUsage): void {

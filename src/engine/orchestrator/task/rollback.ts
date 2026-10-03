@@ -1,13 +1,14 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import { publishWarning, publishWarningFromError } from '../events.js';
+import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import { restoreDirtyFilesFromSnapshot } from '../approval/file-snapshots/restore.js';
 import { inferTaskOwnChangedFiles } from '../changed-files-baseline.js';
+import { recordTargetRestore } from '../isolation/acquisition.js';
 import type { WorkflowContext } from '../types.js';
 
 /** The restore path runs before a WorkflowContext exists on resume, so it asks for only what it reads. */
-type RestoreContext = Pick<WorkflowContext, 'projectDir' | 'bus'>;
-type InterruptedRestoreContext = RestoreContext & Pick<WorkflowContext, 'sessionId'>;
+type RestoreContext = Pick<WorkflowContext, 'projectDir' | 'sessionId' | 'bus'>;
 
 async function restoreTaskFilesFromSnapshot(opts: {
   wctx: RestoreContext;
@@ -31,6 +32,11 @@ async function restoreTaskFilesFromSnapshot(opts: {
         message: opts.restoredMessage(restoredFiles),
       });
     }
+    await recordTargetRestore({
+      projectDir: opts.wctx.projectDir,
+      sessionId: opts.wctx.sessionId,
+      files: restoredFiles,
+    });
   } catch (err) {
     publishWarningFromError({ bus: opts.wctx.bus, phase: opts.phase }, opts.failureMessage, err);
   }
@@ -65,12 +71,47 @@ export function restoreDeniedPreValidationFiles(opts: {
 }
 
 /**
+ * The current attempt's own writes go back: every file changed since the attempt's own start
+ * snapshot returns to what it held then, so earlier attempts and earlier briefs keep their
+ * results.
+ */
+export async function restoreAttemptFiles(opts: {
+  wctx: RestoreContext;
+  phase: WorkflowState['phase'];
+  attemptSnapshot: ChangedFilesSnapshot;
+}): Promise<void> {
+  let attemptChangedFiles: string[];
+  try {
+    attemptChangedFiles = await getChangedFilesSinceSnapshot(
+      opts.wctx.projectDir,
+      opts.attemptSnapshot,
+    );
+  } catch (err) {
+    publishWarningFromError(
+      { bus: opts.wctx.bus, phase: opts.phase },
+      'Failed to list the attempt changes for rollback',
+      err,
+    );
+    return;
+  }
+  await restoreTaskFilesFromSnapshot({
+    wctx: opts.wctx,
+    phase: opts.phase,
+    taskChangedFiles: attemptChangedFiles,
+    taskStartSnapshot: opts.attemptSnapshot,
+    restoredMessage: (restoredFiles) =>
+      `Restored ${restoredFiles.length} change(s) from the failed attempt: ${restoredFiles.join(', ')}`,
+    failureMessage: 'Failed to restore the failed attempt changes from its start snapshot',
+  });
+}
+
+/**
  * Only the brief's own writes go back — its declared files and the files the ledger records it
  * promoted: everything else changed since the task-start snapshot is the operator's, made while
  * no run was executing.
  */
 export async function restoreInterruptedTaskFiles(opts: {
-  wctx: InterruptedRestoreContext;
+  wctx: RestoreContext;
   phase: WorkflowState['phase'];
   task: Task;
   taskStartSnapshot: ChangedFilesSnapshot;

@@ -36,6 +36,7 @@ import type { StreamingSink } from './streaming-feed.js';
 const directories: string[] = [];
 
 afterEach(() => {
+  vi.useRealTimers();
   for (const directory of directories.splice(0)) cleanupTempDir(directory);
 });
 
@@ -385,6 +386,63 @@ describe('runImplementation worktree freshness', () => {
     // The park left a partial at attempt 2; the ladder reset the brief to attempt
     // 0, so the stale partial does not resume it and the worktree reseeds clean.
     expect(await capturedFresh({ partial: 'half a brief', attempt: 2 })).toBe(true);
+  });
+});
+
+describe('runImplementation seat trouble', () => {
+  it('retries a transient failure without counting an attempt and keeps the discarded usage', async () => {
+    const { projectDir } = setupProject('seat-retry');
+    const sessionId = 'seat-retry-session';
+    ensureSessionDir(projectDir, sessionId);
+    const task = makeTask({ id: 'T060', file: 'src/retry.ts', action: 'create' });
+    const state = makeImplState([task]);
+    const firstUsage = { inputTokens: 7, outputTokens: 3 };
+    const secondUsage = { inputTokens: 2, outputTokens: 1 };
+    const implement = vi
+      .fn()
+      .mockResolvedValueOnce({
+        success: false,
+        output: 'busy',
+        error: 'HTTP 503 Service Unavailable',
+        outcome: 'non-zero-exit',
+        usage: firstUsage,
+      })
+      .mockResolvedValueOnce({ success: true, output: '', usage: secondUsage });
+    const implementer = makeImplementer({ implement });
+    const tracked: WorkflowState[] = [];
+    const wctx = makeWctx({ projectDir, sessionId, implementer });
+    const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
+
+    vi.useFakeTimers();
+    const pending = runImplementation({
+      wctx,
+      task,
+      state,
+      taskStartSnapshot,
+      setTrackedState: (next) => tracked.push(next),
+      recordApprovalDenial: vi.fn(),
+    });
+    let settled = false;
+    void pending.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    while (!settled) {
+      await vi.advanceTimersByTimeAsync(vi.getTimerCount() === 0 ? 1 : 2_000);
+    }
+    const result = await pending;
+
+    expect(implement).toHaveBeenCalledTimes(2);
+    expect(result.state.attempt).toBe(state.attempt);
+    // The attempt a retry replaces keeps its usage with the run.
+    expect(tracked.at(-1)?.tokenUsage.implementerInput).toBe(firstUsage.inputTokens);
+    expect(tracked.at(-1)?.tokenUsage.implementerOutput).toBe(firstUsage.outputTokens);
+    // The surviving attempt's own usage comes back on the result.
+    expect(result.implResult.usage).toEqual(secondUsage);
   });
 });
 

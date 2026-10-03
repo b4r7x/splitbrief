@@ -43,7 +43,6 @@ export function selectedProfileFromDecision(
 export async function createTaskImplementer(opts: {
   wctx: WorkflowContext;
   profile: ResolvedImplementerProfile;
-  taskConfig: WorkflowContext['config'];
   singleImplementerMode: boolean;
 }): Promise<Implementer> {
   if (opts.singleImplementerMode && opts.profile.isDefault) return opts.wctx.implementer;
@@ -51,7 +50,7 @@ export async function createTaskImplementer(opts: {
   if (factory === undefined) {
     throw error('runner-gate-mismatch', 'Prepared implementer factory is unavailable.');
   }
-  return factory(opts.taskConfig, {
+  return factory({
     publisher: createImplementerPublisher(opts.wctx.bus),
     allowRepoRunners: opts.wctx.allowRepoRunners ?? false,
     slot: { role: 'implementer', profile: opts.profile.name },

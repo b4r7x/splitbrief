@@ -22,7 +22,7 @@ Read these to learn how SPLITBRIEF works. Each doc builds on the previous one.
 | [ENGINE.md](./ENGINE.md) | The orchestrator, EventBus, sinks, callbacks vs events, abort handling, message queue. |
 | [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) | Four runner kinds, planner/implementer interfaces, Task Brief structure, token accounting. |
 | [STORES-AND-UI.md](./STORES-AND-UI.md) | Store factory, store groups, how events reach React, screens, overlays. |
-| [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md) | The plan card, protected-path confirmation, escalation tiers, recovery system, drift detection. |
+| [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md) | The plan card, protected-path confirmation, the retry-and-consult ladder, recovery system, drift detection. |
 | [SUBSYSTEMS.md](./SUBSYSTEMS.md) | Hooks, snapshots, repo-map, runtime commands, detection, compaction, evidence ledger, session lifecycle. |
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | How the code is organized: design rationale plus a verified inventory of events, commands, paths, and public API surface. |
 

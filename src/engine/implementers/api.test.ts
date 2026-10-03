@@ -326,7 +326,7 @@ describe('api implementer — OpenAI-compatible path', () => {
     expect(localBody.temperature).toBeUndefined();
 
     fetchMock.mockClear();
-    // The local retry created the file, so the hint retry rewrites what this
+    // The local retry created the file, so the consult retry rewrites what this
     // same task left on disk.
     fetchMock.mockResolvedValue(
       makeOpenAiSseResponse([
@@ -335,12 +335,12 @@ describe('api implementer — OpenAI-compatible path', () => {
       ]),
     );
 
-    const hintResult = await implementer.retry({ ...baseRetry, kind: 'hint' });
-    expect(hintResult.success).toBe(true);
-    const hintBody = JSON.parse(
+    const consultResult = await implementer.retry({ ...baseRetry, kind: 'consult' });
+    expect(consultResult.success).toBe(true);
+    const consultBody = JSON.parse(
       String((fetchMock.mock.calls.at(-1)?.[1] as { body?: string } | undefined)?.body),
     ) as { temperature?: number };
-    expect(hintBody.temperature).toBeUndefined();
+    expect(consultBody.temperature).toBeUndefined();
   });
 
   // The schema rejects this config at load (a custom provider has no catalog

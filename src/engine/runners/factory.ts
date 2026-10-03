@@ -24,9 +24,7 @@ export type PlannerCreationOptions = PlannerFactoryOptions &
     projectDir?: string | undefined;
   }>;
 type ReviewerCreationOptions = PlannerFactoryOptions & RunnerFactoryAuthority;
-export type ImplementerCreationOptions = ImplementerFactoryOptions &
-  RunnerFactoryAuthority &
-  Readonly<{ intermediateContextLength?: number | undefined }>;
+export type ImplementerCreationOptions = ImplementerFactoryOptions & RunnerFactoryAuthority;
 
 function lazy<T>(load: () => Promise<T>): () => Promise<T> {
   let p: Promise<T> | undefined;

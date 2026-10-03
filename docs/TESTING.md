@@ -309,7 +309,7 @@ it('workflow screen shows an escalation card when escalate event arrives', async
 **Planner (`fauxPlanner`):**
 
 - `plans` — each typed planning call consumes the next entry (`tasks`, optional `usage`, or `throws`).
-- `escalations` — entries for `escalateHint()` and `escalateFull()` (`success`, `output`, `code`, `usage`, or `throws`).
+- `escalations` — entries for the legacy `escalateFull()` (`success`, `output`, `code`, `usage`, or `throws`).
 
 **Implementer (`fauxImplementer`):**
 

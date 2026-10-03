@@ -1,6 +1,7 @@
 import { vi, type Mock } from 'vitest';
 import type { PlanProposal, PlanResult } from '../../src/core/schemas/plan.js';
 import type { ClarificationQuestion } from '../../src/core/schemas/question.js';
+import type { ConsultAnswer } from '../../src/core/schemas/consult.js';
 import { taskFiles, type Task } from '../../src/core/schemas/task.js';
 import type { Planner, TypedCallContext } from '../../src/engine/planners/types.js';
 import type { TypedSeatCall } from '../../src/engine/runners/typed-output.js';
@@ -130,4 +131,64 @@ export function typedCallFromTasks(
   usage?: Readonly<{ inputTokens: number; outputTokens: number }> | undefined,
 ): Mock<Planner['typedCall']> {
   return typedCallAnswering(() => planFromTasks(tasks), usage);
+}
+
+/**
+ * A planner seat whose typed consult calls answer with what `answer` returns,
+ * sent as the `{ answer }` object. What `answer` throws, the call throws.
+ */
+export function consultCallAnswering(
+  answer: (prompt: string, ctx: TypedCallContext) => ConsultAnswer,
+  usage?: Readonly<{ inputTokens: number; outputTokens: number }> | undefined,
+): Mock<Planner['typedCall']> {
+  return vi.fn((ctx: TypedCallContext) => ({
+    seat: ctx.seat,
+    typedOutput: 'fallback' as const,
+    canResume: false,
+    invoke: async ({ prompt }: { prompt: string }) =>
+      makeRunnerCallResult({
+        status: 'completed',
+        text: JSON.stringify(answer(prompt, ctx)),
+        usage: usage ?? null,
+      }),
+  }));
+}
+
+/** A guidance consult answer; the default answer for a ladder that consults but never lands. */
+export function guidanceConsult(instructions = 'Try a different approach.'): ConsultAnswer {
+  return {
+    answer: {
+      diagnosis: 'The attempt failed',
+      action: 'guidance',
+      instructions,
+      context: null,
+    },
+  };
+}
+
+/**
+ * A planner seat that answers both kinds of typed call: the plan session gets `plan` as
+ * its `{ result }` object, and a consult call — recognized by the consult prompt's title —
+ * gets `consult` through `consultCallAnswering` as its raw answer object.
+ */
+export function typedCallPlanAndConsult(
+  plan: () => PlanResult,
+  consult: () => ConsultAnswer,
+  usage?: Readonly<{ inputTokens: number; outputTokens: number }> | undefined,
+): Mock<Planner['typedCall']> {
+  const consultCall = consultCallAnswering(() => consult(), usage);
+  return vi.fn((ctx: TypedCallContext) => {
+    const call = consultCall(ctx);
+    return {
+      ...call,
+      invoke: async ({ prompt }: { prompt: string }) =>
+        prompt.includes('# Consult')
+          ? call.invoke({ prompt })
+          : makeRunnerCallResult({
+              status: 'completed',
+              text: JSON.stringify({ result: plan() }),
+              usage: usage ?? null,
+            }),
+    };
+  });
 }

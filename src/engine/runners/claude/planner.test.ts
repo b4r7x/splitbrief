@@ -335,7 +335,7 @@ process.stdout.write(JSON.stringify({ type: 'result', result: 'unexpected' }) + 
     });
   });
 
-  it('an idle-killed call finishes failed with code runner_idle_timeout', async () => {
+  it('an idle-killed call finishes failed with code no-progress-cut', async () => {
     installClaudeSlowShim(shimDir, ['{"type":"system","session_id":"sess-idle"}']);
 
     const events: RunnerCallEvent[] = [];
@@ -355,7 +355,7 @@ process.stdout.write(JSON.stringify({ type: 'result', result: 'unexpected' }) + 
     expect(errors).toHaveLength(1);
     expect(errors[0]).toMatchObject({
       status: 'failed',
-      error: { code: 'runner_idle_timeout' },
+      error: { code: 'no-progress-cut' },
     });
   });
 

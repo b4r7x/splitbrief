@@ -14,7 +14,7 @@ import {
   serializeChangedFilesBaseline,
 } from '../changed-files-baseline.js';
 import { createRecoveryIssue } from '../recovery/builders/issue.js';
-import { fileHaltIsStale } from './init.js';
+import { reassessFileHalt } from './init.js';
 
 const roots: string[] = [];
 afterEach(() => {
@@ -72,7 +72,7 @@ it('keeps a cold unresolved overlap parked even when the general file baseline a
   state.changedFilesBaseline = serializeChangedFilesBaseline(
     await captureChangedFilesBaseline(projectDir),
   );
-  expect(await fileHaltIsStale({ projectDir, state, sessionId })).toBe(false);
+  expect(await reassessFileHalt({ projectDir, state, sessionId })).toBeDefined();
 });
 
 it('continues only after every guarded copy agrees and leaves unrelated or partial halts parked', async () => {
@@ -83,22 +83,22 @@ it('continues only after every guarded copy agrees and leaves unrelated or parti
   }
   await writeFile(join(projectDir, 'a.ts'), 'merged a\n');
   await writeFile(join(worktreeDir, 'a.ts'), 'merged a\n');
-  expect(await fileHaltIsStale({ projectDir, state, sessionId })).toBe(false);
+  expect(await reassessFileHalt({ projectDir, state, sessionId })).toBeDefined();
   await writeFile(join(projectDir, 'b.ts'), 'merged b\n');
   await writeFile(join(worktreeDir, 'b.ts'), 'merged b\n');
-  expect(await fileHaltIsStale({ projectDir, state, sessionId })).toBe(true);
+  expect(await reassessFileHalt({ projectDir, state, sessionId })).toBeUndefined();
 
   const issue = state.pendingRecovery;
   if (issue === undefined) throw new Error('Fixture requires a recovery issue');
   state.pendingRecovery = { ...issue, facts: { partialPromotion: true } };
-  expect(await fileHaltIsStale({ projectDir, state, sessionId })).toBe(false);
+  expect(await reassessFileHalt({ projectDir, state, sessionId })).toBeDefined();
   state.pendingRecovery = {
     ...issue,
     facts: { workspacePath: join(projectDir, 'unrelated-copy') },
   };
-  expect(await fileHaltIsStale({ projectDir, state, sessionId })).toBe(false);
+  expect(await reassessFileHalt({ projectDir, state, sessionId })).toBeDefined();
   state.pendingRecovery = { ...issue, reason: 'runner-usage-limit' };
-  expect(await fileHaltIsStale({ projectDir, state, sessionId })).toBe(false);
+  expect(await reassessFileHalt({ projectDir, state, sessionId })).toBeDefined();
 });
 
 it('clears a symlink promotion conflict once both copies hold the same project link', async () => {
@@ -108,11 +108,11 @@ it('clears a symlink promotion conflict once both copies hold the same project l
   const issue = state.pendingRecovery;
   if (issue === undefined) throw new Error('Fixture requires a recovery issue');
   state.pendingRecovery = { ...issue, files: ['link.ts'] };
-  expect(await fileHaltIsStale({ projectDir, state, sessionId })).toBe(false);
+  expect(await reassessFileHalt({ projectDir, state, sessionId })).toBeDefined();
 
   await rm(join(worktreeDir, 'link.ts'));
   await symlink('a.ts', join(worktreeDir, 'link.ts'));
-  expect(await fileHaltIsStale({ projectDir, state, sessionId })).toBe(true);
+  expect(await reassessFileHalt({ projectDir, state, sessionId })).toBeUndefined();
 });
 
 it('lets a legacy worktree continue after both conflicting copies are reconciled', async () => {
@@ -128,10 +128,10 @@ it('lets a legacy worktree continue after both conflicting copies are reconciled
     fresh: true,
     initialTargetBaseline: undefined,
   });
-  expect(await fileHaltIsStale({ projectDir, state, sessionId })).toBe(false);
+  expect(await reassessFileHalt({ projectDir, state, sessionId })).toBeDefined();
   await writeFile(join(projectDir, 'a.ts'), 'merged\n');
   await writeFile(join(worktreeDir, 'a.ts'), 'merged\n');
-  expect(await fileHaltIsStale({ projectDir, state, sessionId })).toBe(true);
+  expect(await reassessFileHalt({ projectDir, state, sessionId })).toBeUndefined();
 });
 
 it('persists the conflicting acquisition directory so cold recovery cannot use another workspace', async () => {

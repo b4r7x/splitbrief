@@ -290,11 +290,6 @@ describe('prepareExecution', () => {
           agent: { kind: 'agent', command: 'node', model: 'local-agent' },
         },
       },
-      escalation: {
-        enabled: true,
-        intermediateProvider: 'ollama',
-        intermediateModel: 'qwen2.5-coder:14b',
-      },
     });
     const prepareSession = vi.fn(() => preparedSession(project, 'prepared-session'));
     const collectReadiness = vi.fn(async () => ({ report: readyReport(project), config }));
@@ -325,19 +320,18 @@ describe('prepareExecution', () => {
     expect(collectReadiness).toHaveBeenCalledWith(
       expect.objectContaining({ interaction: 'headless' }),
     );
-    expect(outcome.execution.gates).toHaveLength(5);
+    expect(outcome.execution.gates).toHaveLength(4);
     expect(outcome.execution.gates.map((gate) => [gate.slot, gate.kind])).toEqual([
       [{ role: 'planner' }, 'cli'],
       [{ role: 'implementer', profile: 'agent' }, 'agent'],
       [{ role: 'implementer', profile: 'api' }, 'api'],
       [{ role: 'implementer', profile: 'shell' }, 'shell'],
-      [{ role: 'intermediate' }, 'api'],
     ]);
     expect(
       outcome.execution.report.sections
         .find((section) => section.id === 'runners')
         ?.checks.filter((check) => check.id.startsWith('runners.preparation.')),
-    ).toHaveLength(5);
+    ).toHaveLength(4);
     expect(
       outcome.execution.gates.every(
         (gate) => gate.preparationId === outcome.execution.preparationId,

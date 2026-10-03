@@ -269,7 +269,6 @@ function fixtureConfig(): Config {
       outputFormat: 'text',
       capabilities: {
         supportsConversationalPlanning: false,
-        supportsHintEscalation: false,
         supportsSessionResume: false,
       },
     },

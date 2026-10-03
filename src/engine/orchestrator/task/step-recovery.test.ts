@@ -16,6 +16,7 @@ import {
   setupTaskProject as setupProject,
 } from '#testing/helpers/orchestrator-task-context.js';
 import { loadState } from '../../../core/state/persistence.js';
+import { consultCallAnswering, guidanceConsult } from '#testing/helpers/typed-planner.js';
 import type { ImplementerOptions } from '../../implementers/types.js';
 import type { EngineEvent } from '../../events/types.js';
 import { createValidator } from '../validation/run.js';
@@ -59,7 +60,6 @@ describe('runSingleTask — recovery', () => {
         bus,
         config: makeConfig({
           validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
-          workflow: { maxRetries: 2 },
         }),
         validator: { ...createValidator(), runValidation },
       }),
@@ -126,8 +126,8 @@ describe('runSingleTask — recovery', () => {
         bus,
         config: makeConfig({
           validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
-          workflow: { maxRetries: 1 },
         }),
+        planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
         validator: { ...createValidator(), runValidation },
       }),
       task,
@@ -139,7 +139,7 @@ describe('runSingleTask — recovery', () => {
       setCurrentTask: vi.fn(),
     });
 
-    expect(result.pendingRecovery?.reason).toBe('retry-exhausted');
+    expect(result.pendingRecovery?.reason).toBe('consult-bound-spent');
     expect(readFileSync(join(projectDir, 'src/main.ts'), 'utf-8')).toBe('export const main = 0;\n');
   });
 
@@ -201,8 +201,8 @@ describe('runSingleTask — recovery', () => {
       bus,
       config: makeConfig({
         validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
-        workflow: { maxRetries: 1 },
       }),
+      planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
       validator: { ...createValidator(), runValidation },
     });
 
@@ -218,7 +218,7 @@ describe('runSingleTask — recovery', () => {
     });
 
     // Task 1 exhausts the ladder and its broken change is restored to the pre-task state.
-    expect(afterTaskOne.pendingRecovery?.reason).toBe('retry-exhausted');
+    expect(afterTaskOne.pendingRecovery?.reason).toBe('consult-bound-spent');
     expect(readFileSync(join(projectDir, 'src/one.ts'), 'utf-8')).toBe('export const one = 0;\n');
 
     // Skip the exhausted task via the real recovery action, then run task 2.
@@ -292,7 +292,6 @@ describe('runSingleTask — signed-out runner', () => {
         config: makeConfig({
           implementer: { kind: 'cli', tool: 'codex' },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-          workflow: { maxRetries: 2 },
         }),
       }),
       task,
@@ -315,7 +314,6 @@ describe('runSingleTask — signed-out runner', () => {
     expect(result.pendingRecovery?.availableActions).toContain('retry-same-worker');
 
     expect(implementer.retry).not.toHaveBeenCalled();
-    expect(planner.escalateHint).not.toHaveBeenCalled();
     expect(planner.escalateFull).not.toHaveBeenCalled();
 
     const errorEvent = events.find(
@@ -382,7 +380,6 @@ describe('runSingleTask — signed-out runner', () => {
         config: makeConfig({
           implementer: { kind: 'cli', tool: 'codex' },
           validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
-          workflow: { maxRetries: 2 },
         }),
         validator: { ...createValidator(), runValidation },
       }),
@@ -401,7 +398,6 @@ describe('runSingleTask — signed-out runner', () => {
     });
     // One attempt proved the login is dead; further retries and planner tiers never ran.
     expect(implementer.retry).toHaveBeenCalledTimes(1);
-    expect(planner.escalateHint).not.toHaveBeenCalled();
     expect(planner.escalateFull).not.toHaveBeenCalled();
     expect(
       events.find((event) => event.type === 'error' && event.message.includes('codex login')),
@@ -463,7 +459,6 @@ describe('runSingleTask — usage-limited runner', () => {
         config: makeConfig({
           implementer: { kind: 'cli', tool: 'codex' },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-          workflow: { maxRetries: 2 },
         }),
       }),
       task,
@@ -487,7 +482,6 @@ describe('runSingleTask — usage-limited runner', () => {
     expect(result.pendingRecovery?.availableActions).toContain('pause-run');
 
     expect(implementer.retry).not.toHaveBeenCalled();
-    expect(planner.escalateHint).not.toHaveBeenCalled();
     expect(planner.escalateFull).not.toHaveBeenCalled();
 
     expect(events.find((event) => event.type === 'recovery_prompted')).toMatchObject({
@@ -551,7 +545,6 @@ describe('runSingleTask — usage-limited runner', () => {
         config: makeConfig({
           implementer: { kind: 'cli', tool: 'codex' },
           validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
-          workflow: { maxRetries: 2 },
         }),
         validator: { ...createValidator(), runValidation },
       }),
@@ -570,7 +563,6 @@ describe('runSingleTask — usage-limited runner', () => {
     });
     // One attempt proved the quota is gone; further retries and planner tiers never ran.
     expect(implementer.retry).toHaveBeenCalledTimes(1);
-    expect(planner.escalateHint).not.toHaveBeenCalled();
     expect(planner.escalateFull).not.toHaveBeenCalled();
     expectResetNamedOnce(events);
     // The failing attempt's changes were rolled back like any exhausted task.

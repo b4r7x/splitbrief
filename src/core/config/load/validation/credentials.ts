@@ -1,5 +1,3 @@
-import { PROVIDER_CATALOG } from '../../../providers/catalog.js';
-import { isApiProviderId } from '../../../providers/api-provider-catalog.js';
 import type { Config } from '../../../schemas/config.js';
 import { configuredReviewerRunner } from '../../accessors/reviewer-runner.js';
 import { missingRunnerCredential } from '../../accessors/runner-credentials.js';
@@ -68,25 +66,6 @@ function runnerBoundaryErrors(opts: {
   return errors;
 }
 
-function intermediateProviderCredentialErrors(config: Config): ConfigError[] {
-  const escalation = config.escalation;
-  const provider = escalation?.intermediateProvider;
-  if (!provider || escalation.enabled === false) return [];
-  // The intermediate tier is always an `api` runner, so a CLI tool id here is a
-  // custom API provider name — never a CLI identity to look up in the catalog.
-  if (!isApiProviderId(provider)) return [];
-
-  const info = PROVIDER_CATALOG[provider];
-  if (info.isLocal || !info.apiKeyEnv || process.env[info.apiKeyEnv]) return [];
-
-  return [
-    {
-      path: 'escalation.intermediateProvider',
-      message: `${info.displayName} intermediate provider requires ${info.apiKeyEnv} env var`,
-    },
-  ];
-}
-
 export function apiKeyErrors(config: Config): ConfigError[] {
   const errors: ConfigError[] = [];
   errors.push(
@@ -96,7 +75,6 @@ export function apiKeyErrors(config: Config): ConfigError[] {
   if (reviewer !== undefined) {
     errors.push(...runnerBoundaryErrors({ role: 'reviewer', path: 'reviewer', config: reviewer }));
   }
-  errors.push(...intermediateProviderCredentialErrors(config));
 
   if (!config.implementerProfiles) {
     errors.push(

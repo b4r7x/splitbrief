@@ -93,7 +93,7 @@ export interface WorkflowContext {
   context: ProjectContext;
   implementer: Implementer;
   createImplementer?:
-    | ((config: Config, options?: ImplementerFactoryOptions) => Implementer | Promise<Implementer>)
+    | ((options?: ImplementerFactoryOptions) => Implementer | Promise<Implementer>)
     | undefined;
   allowRepoRunners?: boolean | undefined;
   implementerProfile?: string | undefined;

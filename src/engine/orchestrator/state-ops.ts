@@ -29,7 +29,6 @@ export type StateOperationExpectedRevision = number | ConfigRevision | null;
 type StateMutationOptions = Readonly<{
   expectedRevision?: StateOperationExpectedRevision | undefined;
   conflictRetries?: number | undefined;
-  maxRetries?: number | undefined;
 }>;
 
 export type StateOperationContext = WorkflowPersistenceContext &
@@ -280,7 +279,7 @@ function expectedConflicts(expected: ExpectedIdentity, head: StateHead | null): 
 
 function retryLimit(options: StateMutationOptions | undefined, rederivable: boolean): number {
   if (!rederivable) return 0;
-  const requested = options?.conflictRetries ?? options?.maxRetries;
+  const requested = options?.conflictRetries;
   if (options?.expectedRevision !== undefined && requested === undefined) {
     return 0;
   }
@@ -488,7 +487,7 @@ export function transitionAndSave(
       ) {
         return base;
       }
-      return transition(base, action, { maxRetries: options?.maxRetries });
+      return transition(base, action);
     },
   });
 }

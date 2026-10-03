@@ -8,79 +8,7 @@ import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js'
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { buildLanguageContext } from '../spec/prompts/language-context.js';
-import { escalateFull, escalateHint } from './escalation.js';
-import { CONVERSATIONAL_CAPS } from './types.js';
-
-describe('escalateHint', () => {
-  const opts = {
-    task: makeTask(),
-    error: 'validation failed',
-    projectDir: '/tmp/never-read',
-    callbacks: { onOutput: () => {} },
-    languageContext: buildLanguageContext('typescript'),
-  };
-
-  it('declines without calling the backend when the planner cannot hint', async () => {
-    const invokeEscalate = vi.fn();
-
-    const result = await escalateHint(
-      { invokeEscalate, capabilities: { supportsHintEscalation: false } },
-      opts,
-    );
-
-    expect(result).toEqual({ success: false, output: '', code: null, usage: null });
-    expect(invokeEscalate).not.toHaveBeenCalled();
-  });
-
-  it('asks the backend once, read-only, and returns its text', async () => {
-    const invokeEscalate = vi
-      .fn()
-      .mockResolvedValue(makeRunnerCallResult({ status: 'completed', text: 'use a default' }));
-
-    const result = await escalateHint(
-      { invokeEscalate, capabilities: { supportsHintEscalation: true } },
-      opts,
-    );
-
-    expect(result.success).toBe(true);
-    expect(result.output).toBe('use a default');
-    expect(invokeEscalate).toHaveBeenCalledTimes(1);
-    expect(invokeEscalate).toHaveBeenCalledWith(
-      expect.objectContaining({ accessMode: 'read-only' }),
-    );
-  });
-
-  it('puts the implementer hand-back in the prompt', async () => {
-    const invokeEscalate = vi
-      .fn()
-      .mockResolvedValue(makeRunnerCallResult({ status: 'completed', text: 'use a default' }));
-
-    await escalateHint(
-      { invokeEscalate, capabilities: { supportsHintEscalation: true } },
-      { ...opts, handBack: 'I could not find the prop.' },
-    );
-
-    expect(invokeEscalate.mock.calls[0]?.[0]?.prompt).toContain('I could not find the prop.');
-  });
-
-  it("puts the run's skills context in the prompt", async () => {
-    const invokeEscalate = vi
-      .fn()
-      .mockResolvedValue(makeRunnerCallResult({ status: 'completed', text: 'use a default' }));
-
-    await escalateHint(
-      { invokeEscalate, capabilities: { supportsHintEscalation: true } },
-      { ...opts, skillsContext: '## Active Project Skills\n\n### AuthSkill\nHINT-SKILL-BODY' },
-    );
-
-    expect(invokeEscalate.mock.calls[0]?.[0]?.prompt).toContain('HINT-SKILL-BODY');
-  });
-
-  it('the Claude Code preset can hint', () => {
-    expect(CONVERSATIONAL_CAPS.supportsHintEscalation).toBe(true);
-    expect(CONVERSATIONAL_CAPS.supportsConversationalPlanning).toBe(true);
-  });
-});
+import { escalateFull } from './escalation.js';
 
 let dirs: string[] = [];
 
@@ -91,7 +19,6 @@ afterEach(() => {
 
 const TARGET = 'src/app.ts';
 const FIRST_ATTEMPT = 'export const app = "written by the attempt that failed";\n';
-const REWRITTEN = 'export const app = "rewritten by the hint escalation";\n';
 
 function makeDirtyWorktree(prefix: string): string {
   const projectDir = createTempDir(prefix);
@@ -108,55 +35,6 @@ function makeDirtyWorktree(prefix: string): string {
   return worktree;
 }
 
-describe('escalateHint with hintSuccessMode: "files"', () => {
-  it('reports success when the declared baseline sees a rewrite of an already-dirty file', async () => {
-    const worktree = makeDirtyWorktree('escalate-hint-declared');
-
-    const result = await escalateHint(
-      {
-        invokeEscalate: async ({ projectDir }) => {
-          writeFileSync(join(projectDir, TARGET), REWRITTEN);
-          return makeRunnerCallResult({ status: 'completed', text: '' });
-        },
-        capabilities: { supportsHintEscalation: true },
-        hintSuccessMode: 'files',
-      },
-      {
-        task: makeTask({ file: TARGET }),
-        error: 'validation failed',
-        projectDir: worktree,
-        callbacks: { onOutput: () => {} },
-        languageContext: buildLanguageContext('typescript'),
-        changeDetection: 'file-hashes',
-      },
-    );
-
-    expect(result.success).toBe(true);
-  });
-
-  it('reports no success when the escalation writes nothing', async () => {
-    const worktree = makeDirtyWorktree('escalate-hint-no-write');
-
-    const result = await escalateHint(
-      {
-        invokeEscalate: async () => makeRunnerCallResult({ status: 'completed', text: '' }),
-        capabilities: { supportsHintEscalation: true },
-        hintSuccessMode: 'files',
-      },
-      {
-        task: makeTask({ file: TARGET }),
-        error: 'validation failed',
-        projectDir: worktree,
-        callbacks: { onOutput: () => {} },
-        languageContext: buildLanguageContext('typescript'),
-        changeDetection: 'file-hashes',
-      },
-    );
-
-    expect(result.success).toBe(false);
-  });
-});
-
 describe('escalateFull with escalateFullMode: "files"', () => {
   it("names the call's own directory in the prompt it sends", async () => {
     const worktree = makeDirtyWorktree('escalate-full-rules');
@@ -165,7 +43,7 @@ describe('escalateFull with escalateFullMode: "files"', () => {
       .mockResolvedValue(makeRunnerCallResult({ status: 'completed', text: '' }));
 
     await escalateFull(
-      { invokeEscalate, capabilities: { supportsHintEscalation: true }, escalateFullMode: 'files' },
+      { invokeEscalate, escalateFullMode: 'files' },
       {
         task: makeTask({ file: TARGET }),
         error: 'validation failed',

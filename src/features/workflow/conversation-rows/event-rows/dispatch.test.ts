@@ -1358,3 +1358,158 @@ describe('validate failure output', () => {
     expect(stopped).not.toContain('Build failed');
   });
 });
+
+describe('consult answer rows', () => {
+  const arrow = glyph('connectorHandoff');
+
+  function rowsFor(event: EngineEventOf<'consult_answered'>): ConversationRow[] {
+    return eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 120, viewportRows: 20, streaming },
+    });
+  }
+
+  it('splits one row naming the new briefs and the diagnosis, never a panel', () => {
+    const rows = rowsFor({
+      type: 'consult_answered',
+      ts: 0,
+      phase: 'implementing',
+      taskId: taskId('T003'),
+      reason: 'failed',
+      action: 'split-task',
+      diagnosis: 'Two independent changes share one brief.',
+      newTaskIds: [taskId('T011'), taskId('T012')],
+    });
+
+    expect(rows.map(rowText)).toEqual([
+      `PLAN ${arrow} T003: split into T011, T012 · Two independent changes share one brief.`,
+    ]);
+    expect(rows[0]?.kind).toBe('message');
+    expect(rows.some((rowValue) => rowValue.kind === 'card-top')).toBe(false);
+  });
+
+  it('renders guidance with its diagnosis', () => {
+    const rows = rowsFor({
+      type: 'consult_answered',
+      ts: 0,
+      phase: 'implementing',
+      taskId: taskId('T003'),
+      reason: 'blocked',
+      action: 'guidance',
+      diagnosis: 'The export is missing.',
+      newTaskIds: null,
+    });
+
+    expect(rows.map(rowText)).toEqual([`PLAN ${arrow} T003: guidance · The export is missing.`]);
+  });
+
+  it('renders a rewritten brief with its new revision', () => {
+    const rows = rowsFor({
+      type: 'consult_answered',
+      ts: 0,
+      phase: 'implementing',
+      taskId: taskId('T003'),
+      reason: 'failed',
+      action: 'rewrite-task',
+      diagnosis: 'The brief asked for the wrong module.',
+      newTaskIds: null,
+      revision: 2,
+    });
+
+    expect(rows.map(rowText)).toEqual([`PLAN ${arrow} T003: rewrote T003 (rev 2)`]);
+  });
+
+  it('renders a verification request with the checks it named', () => {
+    const rows = rowsFor({
+      type: 'consult_answered',
+      ts: 0,
+      phase: 'implementing',
+      taskId: taskId('T003'),
+      reason: 'stale',
+      action: 'verify',
+      diagnosis: 'The failure may predate the rewrite.',
+      newTaskIds: null,
+      checkIds: ['C1', 'C2'],
+    });
+
+    expect(rows.map(rowText)).toEqual([`PLAN ${arrow} T003: verify C1, C2`]);
+  });
+
+  it('renders an ask-user answer as the one row pointing at the user', () => {
+    const rows = rowsFor({
+      type: 'consult_answered',
+      ts: 0,
+      phase: 'implementing',
+      taskId: taskId('T003'),
+      reason: 'blocked',
+      action: 'ask-user',
+      diagnosis: 'Only you know which account to use.',
+      newTaskIds: null,
+    });
+
+    expect(rows.map(rowText)).toEqual([`PLAN ${arrow} T003: asks you`]);
+  });
+
+  it('keeps the consult consequence events out of the transcript', () => {
+    const events: EngineEvent[] = [
+      {
+        type: 'task_replaced',
+        ts: 0,
+        phase: 'implementing',
+        taskId: taskId('T003'),
+        revision: 2,
+      },
+      {
+        type: 'tasks_inserted',
+        ts: 0,
+        phase: 'implementing',
+        parentId: taskId('T003'),
+        taskIds: [taskId('T011'), taskId('T012')],
+      },
+      {
+        type: 'checks_run',
+        ts: 0,
+        phase: 'implementing',
+        taskId: taskId('T003'),
+        results: [{ id: 'C1', passed: true }],
+      },
+      {
+        type: 'seat_wait_started',
+        ts: 0,
+        phase: 'implementing',
+        seat: 'plan',
+        resetAt: '2026-05-01T10:00:00.000Z',
+      },
+      {
+        type: 'seat_retry',
+        ts: 0,
+        phase: 'implementing',
+        seat: 'plan',
+        attempt: 2,
+        delayMs: 500,
+      },
+      {
+        type: 'no_progress_cut',
+        ts: 0,
+        phase: 'implementing',
+        taskId: null,
+        seat: 'build',
+        silentMs: 600_000,
+      },
+      { type: 'consult_bound_spent', ts: 0, phase: 'implementing' },
+    ];
+
+    for (const event of events) {
+      expect(
+        eventRows({
+          event,
+          globalIndex: 0,
+          expanded: false,
+          ctx: { width: 120, viewportRows: 20, streaming },
+        }),
+      ).toEqual([]);
+    }
+  });
+});

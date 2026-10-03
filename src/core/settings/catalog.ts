@@ -4,8 +4,6 @@ import { CompactionFormatSchema } from '../schemas/compaction.js';
 import { resolveImplementerProfiles } from '../config/accessors/implementer-profiles.js';
 import { RUNNER_IDLE_KILL_MS } from '../schemas/runner-fields.js';
 
-const MAX_RETRIES_LIMIT = 10;
-
 const isApiImplementer = (config: Config): boolean =>
   resolveImplementerProfiles(config).defaultProfile.config.kind === 'api';
 
@@ -80,16 +78,6 @@ export const SETTINGS_DEFS: SettingDef[] = [
     kind: 'enum',
     options: [...APPROVE_LEVELS],
     unsetLabel: 'plan',
-  },
-  {
-    id: 'workflow.maxRetries',
-    label: 'Max retries',
-    section: 'Workflow',
-    description: 'Max retry attempts per task',
-    kind: 'number',
-    min: 0,
-    integer: true,
-    max: MAX_RETRIES_LIMIT,
   },
   {
     id: 'workflow.compactionFormat',

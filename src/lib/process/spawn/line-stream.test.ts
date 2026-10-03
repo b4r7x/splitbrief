@@ -368,28 +368,27 @@ async function measureNodeStartupMs(): Promise<number> {
 }
 
 describe('idle watchdog', () => {
-  it('idle kill terminates the process group and surfaces command-idle-timeout', {
+  it('idle kill surfaces command-idle-timeout and leaves no process behind', {
     timeout: 60_000,
   }, async () => {
     const controller = new AbortController();
-    let resolveGrandchild: (pid: number) => void = () => {};
-    const grandchildPid = new Promise<number>((resolve) => {
-      resolveGrandchild = resolve;
+    let childPid = 0;
+    let resolveReady: () => void = () => {};
+    const readySeen = new Promise<void>((resolve) => {
+      resolveReady = resolve;
     });
 
-    // The child detaches a long-lived grandchild and prints its PID, then goes
-    // silent; the idle kill must take down the entire group, not just the child.
+    // The child speaks once, then goes silent with no child of its own, so the
+    // no-progress cut takes it down.
     const childProgram = [
-      "const { spawn } = require('node:child_process');",
-      "const gc = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60_000)'], { stdio: 'ignore' });",
-      'process.stdout.write(String(gc.pid) + "\\n");',
+      "process.stdout.write('ready:' + process.pid + '\\n');",
       'setTimeout(() => {}, 60_000);',
     ].join('');
 
-    // The child pays for two interpreter startups before it can speak, so the
-    // window is four measured startups wide, never below the 5s floor.
+    // The idle window arms at spawn, so any fixed `killMs` is really a fixed
+    // budget for interpreter startup — the one thing a saturated box inflates.
     const startupMs = await measureNodeStartupMs();
-    const killMs = Math.max(5000, startupMs * 4);
+    const killMs = Math.max(2000, startupMs * 4);
 
     const run = track(
       controller,
@@ -398,35 +397,22 @@ describe('idle watchdog', () => {
         args: ['-e', childProgram],
         cwd: '.',
         onLine: (line) => {
-          const pid = Number.parseInt(line.trim(), 10);
-          if (Number.isInteger(pid)) resolveGrandchild(pid);
+          if (!line.startsWith('ready:')) return;
+          const pid = Number.parseInt(line.slice(6), 10);
+          if (Number.isInteger(pid)) {
+            childPid = pid;
+            resolveReady();
+          }
         },
         signal: controller.signal,
         idle: { warnMs: 250, killMs },
       }),
     );
 
-    // Racing the PID against the run keeps the one unbounded wait out of the
-    // test: a run that settles first means the kill beat the child's first
-    // line, and that reports itself instead of blocking on a PID that can no
-    // longer arrive.
-    const settledFirst = Symbol('run settled before the grandchild PID');
-    const pid = await Promise.race<number | symbol>([
-      grandchildPid,
-      run.then(
-        () => settledFirst,
-        () => settledFirst,
-      ),
-    ]);
-    if (typeof pid !== 'number') {
-      throw new Error(
-        `the run settled before the child printed its grandchild PID (killMs=${killMs}, measured startup=${startupMs}ms)`,
-      );
-    }
-
+    await readySeen;
     await expect(run).rejects.toMatchObject({ kind: 'command-idle-timeout' });
 
-    expect(isProcessAlive(pid)).toBe(false);
+    expect(isProcessAlive(childPid)).toBe(false);
   });
 
   it('output chunks reset the idle timers', { timeout: 60_000 }, async () => {

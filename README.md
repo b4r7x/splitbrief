@@ -2,21 +2,21 @@
 
 An orchestrator for two AI coding tools: one plans and reviews, the other executes.
 
-> **Maturity.** Early software, pre-1.0. The orchestration loop — brief, validation, retry, escalation, review, evidence — is covered end to end by the test suite. What is thin is mileage against live models: no evaluation run has been recorded yet, so nothing below is a claim about output quality on your repo (see [Measurement](#measurement)). Config keys and CLI surfaces can still change between versions.
+> **Maturity.** Early software, pre-1.0. The orchestration loop — brief, validation, retry, consult, review, evidence — is covered end to end by the test suite. What is thin is mileage against live models: no evaluation run has been recorded yet, so nothing below is a claim about output quality on your repo (see [Measurement](#measurement)). Config keys and CLI surfaces can still change between versions.
 
 ## What is SPLITBRIEF?
 
 An open-source CLI that runs two coding tools against one job. The stronger tool researches your repo and compiles Task Briefs. The weaker one executes them, one brief at a time, in fresh context. The stronger one then reviews what came back.
 
-Everything between the two belongs to SPLITBRIEF: the [Task Brief contract](./docs/TASK-CONTRACT.md), the isolated directory the implementer writes in, promotion of those changes into your project, validation, retry, escalation, and the evidence trail that records what actually happened.
+Everything between the two belongs to SPLITBRIEF: the [Task Brief contract](./docs/TASK-CONTRACT.md), the isolated directory the implementer writes in, promotion of those changes into your project, validation, retry, the planner consult, and the evidence trail that records what actually happened.
 
 ## Why two tools instead of one
 
-A model reviewing its own output repeats its own blind spots — the assumptions that produced the bug are the same ones reading the diff. Put the planner and the implementer on models from different labs and the reviewer no longer shares the author's failure modes. That is the reason to run two tools, and SPLITBRIEF is arranged so the tool that wrote the code is not the tool that signs it off. When retries and planner hints are exhausted, explicit recovery asks the user how to proceed. The planner never automatically takes over code-writing implementation; bounded repairs after review use the selected implementer.
+A model reviewing its own output repeats its own blind spots — the assumptions that produced the bug are the same ones reading the diff. Put the planner and the implementer on models from different labs and the reviewer no longer shares the author's failure modes. That is the reason to run two tools, and SPLITBRIEF is arranged so the tool that wrote the code is not the tool that signs it off. When the retry and consult bounds are spent, explicit recovery asks the user how to proceed. The planner never automatically takes over code-writing implementation; bounded repairs after review use the selected implementer.
 
 Same-lab still works — two instances of one tool are a valid configuration. You give up the blind-spot argument, not the pipeline.
 
-The split follows capability: the stronger tool spends its tokens on research, brief compilation, review, and escalation; the weaker one spends its tokens typing. See [Spend](#spend) for what the run reports.
+The split follows capability: the stronger tool spends its tokens on research, brief compilation, review, and the build's consults; the weaker one spends its tokens typing. See [Spend](#spend) for what the run reports.
 
 ## How it works
 
@@ -48,20 +48,19 @@ You: "add user authentication with JWT"
     │           │
   pass        fail
     │           │
-  next task   retry (max 2)
+  next task   one retry
                 │
-                fail again
+                still failing
                 │
-            escalate, in order:
-              mid-tier model (if configured)
-              planner hint, implementer retries
-              explicit recovery asks you what to do
+            the planner is consulted, read-only:
+              guidance · rewrite-task · split-task
+              verify · ask-user
+              a spent bound asks you to continue
                 │
                 ▼
 ┌──────────────────────┐
 │  REVIEWER             │  Reads the result against the brief and the
-│  (planner by default) │  evidence — code it did not write, unless it
-│                       │  took a task over at the last tier
+│  (planner by default) │  evidence — code it did not write
 └──────────────────────┘
 ```
 
@@ -199,7 +198,6 @@ validation:
   testCommand: npm test
 
 workflow:
-  maxRetries: 2
   approve: plan
 ```
 
@@ -251,7 +249,7 @@ reviewer:
   model: auto
 ```
 
-The reviewer only reviews: planning, Task Brief compilation, and escalation stay on the planner whatever this block says. Without it, review tokens are priced at the planner's rates and folded into the planner line. Full reference in [docs/CONFIGURATION.md](./docs/CONFIGURATION.md).
+The reviewer only reviews: planning, Task Brief compilation, and the consult stay on the planner whatever this block says. Without it, review tokens are priced at the planner's rates and folded into the planner line. Full reference in [docs/CONFIGURATION.md](./docs/CONFIGURATION.md).
 
 ### Implementer providers
 
@@ -348,7 +346,7 @@ The figure is a fact about the run, not a target. You can hide it in Settings.
 
 ## Measurement
 
-Two numbers decide whether this design earns its complexity: **first-pass rate** — how often the implementer satisfies a Task Brief without escalation — and **cross-lab review effectiveness** — how much the planner's review catches that validation did not. Those are what will be published here.
+Two numbers decide whether this design earns its complexity: **first-pass rate** — how often the implementer satisfies a Task Brief without a retry or a consult — and **cross-lab review effectiveness** — how much the planner's review catches that validation did not. Those are what will be published here.
 
 Neither is measured yet. The `evals/` harness can be driven from a cassette alone — `--replay` needs no API key and no base URL, because the endpoint and a placeholder credential are resolved from the provider catalog — but it has never produced a recorded run, which is also why every model in the bundled catalog is marked `compatible-only` — `recommended` is reserved for models with recorded evaluation metrics, and none exist. Until those numbers appear in this section, nothing in this README is a performance claim. Spend is reported as a fact: a run that recorded no priced usage reports that explicitly instead of a fabricated zero.
 

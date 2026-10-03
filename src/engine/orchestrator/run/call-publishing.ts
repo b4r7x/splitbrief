@@ -84,11 +84,6 @@ export function withPlannerCallPublishing(
     isAvailable: () => planner.isAvailable(),
     getVersion: () => planner.getVersion(),
     capabilities: planner.capabilities,
-    escalateHint: (opts) =>
-      planner.escalateHint({
-        ...opts,
-        callbacks: withPlannerOutputCallbacks(opts.callbacks, ctx),
-      }),
     escalateFull: (opts) =>
       planner.escalateFull({
         ...opts,

@@ -13,7 +13,6 @@ import { applyRebuiltContext, autoCompactResumeContext } from './resume-context.
 
 function workflowConfig(compactionThreshold?: number) {
   return {
-    maxRetries: 3,
     compactionFormat: 'auto' as const,
     ...(compactionThreshold !== undefined && { compactionThreshold }),
   };
@@ -30,7 +29,6 @@ function summarizingPlanner({
   return {
     capabilities: {
       supportsConversationalPlanning: false,
-      supportsHintEscalation: true,
       supportsSessionResume: false,
       supportsEffort: false,
       supportsImages: false,

@@ -187,7 +187,7 @@ describe('invokeCustomCommandBasedRunner safety', () => {
       expect.objectContaining({
         type: 'call_error',
         status: 'failed',
-        error: expect.objectContaining({ code: 'runner_idle_timeout' }),
+        error: expect.objectContaining({ code: 'no-progress-cut' }),
       }),
     );
     expectNoDeclaredValues(observation, [canary]);

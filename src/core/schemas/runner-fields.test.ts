@@ -451,7 +451,7 @@ describe('createRunnerConfigSchema', () => {
         kind: 'shell',
         command: './run',
         model: 'local-shell',
-        capabilities: { supportsHintEscalation: true },
+        capabilities: { supportsConversationalPlanning: true },
       }).success,
     ).toBe(true);
     expect(
@@ -459,7 +459,7 @@ describe('createRunnerConfigSchema', () => {
         kind: 'agent',
         command: 'my-agent',
         model: 'agent-default',
-        capabilities: { supportsHintEscalation: true },
+        capabilities: { supportsConversationalPlanning: true },
       }).success,
     ).toBe(true);
   });

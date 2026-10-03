@@ -87,6 +87,7 @@ function failureStateFromCode(code: string): RunnerFailureOutcomeState | null {
     case 'unauthenticated':
     case 'usage-limit':
     case 'timeout':
+    case 'no-progress-cut':
     case 'user-abort':
     case 'signal-exit':
     case 'non-zero-exit':

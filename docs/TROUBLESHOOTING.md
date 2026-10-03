@@ -206,7 +206,7 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 
 ### Symptom: Anthropic / OpenAI bill spiked after a single run
 
-**Likely cause:** The planner is configured with a frontier model (commonly Opus) and the implementer uses the same model. Every planner turn — each question round, the plan, its one repair, every escalation and the review — is billed at the planner's price, and Opus pricing multiplies that fast.
+**Likely cause:** The planner is configured with a frontier model (commonly Opus) and the implementer uses the same model. Every planner turn — each question round, the plan, its one repair, every consult and the review — is billed at the planner's price, and Opus pricing multiplies that fast.
 
 **Fix:**
 1. Open `.splitbrief/config.yaml` and inspect `planner.kind` and `planner.model`.
@@ -311,7 +311,7 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 
 ### Symptom: Planner times out before producing a brief
 
-**Likely cause:** There is no default total-call timeout. What you are hitting is the fixed 60-second **stream-idle** guard: an `api`-kind planner aborts when no token (including the first one) arrives for 60s. A cold-loading local model (Ollama/LM Studio pulling a model into memory) easily exceeds that time-to-first-token window. Non-`api` planners (`cli`, `shell`, `agent`) are covered by the **inactivity watchdog** instead: after 5 minutes of output silence the byline shows a "still working" warning, and at 30 minutes of silence the runner process group is auto-interrupted and a retry prompt appears (type instructions to steer, or press Enter to retry). Both thresholds are tunable per runner via `idleWarnMs` / `idleKillMs`; `planner.timeout` remains the optional wall-clock cap on the whole call.
+**Likely cause:** There is no default total-call timeout. What you are hitting is the fixed 60-second **stream-idle** guard: an `api`-kind planner aborts when no token (including the first one) arrives for 60s. A cold-loading local model (Ollama/LM Studio pulling a model into memory) easily exceeds that time-to-first-token window. Non-`api` planners (`cli`, `shell`, `agent`) are covered by the **inactivity watchdog** instead: after 5 minutes of output silence the byline shows a "still working" warning, and at 20 minutes of silence, with no child process running, the runner process group is auto-interrupted and a retry prompt appears (type instructions to steer, or press Enter to retry). Both thresholds are tunable per runner via `idleWarnMs` / `idleKillMs`; `planner.timeout` remains the optional wall-clock cap on the whole call.
 
 **Fix:**
 1. Warm the model before the run so the first token arrives within 60s — e.g. issue one throwaway request to your local server, or pre-pull the model so it is resident.
@@ -480,15 +480,16 @@ A changed file does not halt the brief, because an editor save changes files too
 
 ### Symptom: Implementer keeps failing the same task in a loop
 
-**Likely cause:** The task is genuinely too hard for the implementer model, or the brief contains contradictory constraints. The orchestrator escalates after a configured retry count, but until escalation kicks in you see the same failure repeat.
+**Likely cause:** The task is genuinely too hard for the implementer model, or the brief contains contradictory constraints. The orchestrator retries once and then asks the planner, so you may see the same failure repeat before the consult lands.
 
 **Fix:**
-1. Watch the escalation counter in the TUI status line — escalation triggers automatically after N retries.
+1. Watch the attempt counter in the build block — it reads `attempt <a> of 8` and the consult runs after the first retry.
 2. Inspect `evidence.json` and the task log to see whether failures are typecheck, test, or runtime.
-3. If escalation triggered and produced no improvement, answer the `retry-exhausted` recovery: type a correction to retry the brief with it as the implementer's steer, or take `route-bigger-worker` to retry on a stronger profile.
-4. As a last resort, take `skip-current-task` and plan the remaining work in a new run.
+3. Read the consult row (`PLAN → T00N: … · <diagnosis>`). Guidance retries the brief; a `rewrite-task` or `split-task` answer changes the brief itself; `ask-user` is the one question that asks you.
+4. If a bound was spent, answer the `consult-bound-spent` recovery: **continue** with a note grants +1 consult and +4 attempts, or take `skip-current-task` or `end-run`.
+5. As a last resort, take `skip-current-task` and plan the remaining work in a new run.
 
-**Prevention:** Configure `workflow.maxRetries` and `escalation.intermediateProvider` + `escalation.intermediateModel` so escalation lands on a model strictly stronger than the default.
+**Prevention:** Give the implementer a model that matches the brief's difficulty. There is no retry count or intermediate model to configure: `workflow.max_retries` and the `escalation` block are retired.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md), `src/engine/orchestrator/task/loop.ts`.
 
@@ -496,7 +497,7 @@ A changed file does not halt the brief, because an editor save changes files too
 
 ### Symptom: Implementer fails repeatedly against a local model that is not running
 
-**Likely cause:** An `api`-kind implementer probes its provider's model list instead of assuming a local endpoint is up (`createProviderAvailability`, `src/engine/providers/client/availability.ts`). A dead daemon fails the probe, and the availability gate raises the unavailable-implementer recovery immediately — no local retries and no paid escalation tiers are burned against the dead endpoint. The hint tier is never invoked, so a stopped Ollama/LM Studio cannot cost you a planner call.
+**Likely cause:** An `api`-kind implementer probes its provider's model list instead of assuming a local endpoint is up (`createProviderAvailability`, `src/engine/providers/client/availability.ts`). A dead daemon fails the probe, and the availability gate raises the unavailable-implementer recovery immediately — no local retry and no consult is burned against the dead endpoint, so a stopped Ollama/LM Studio cannot cost you a planner call.
 
 **Fix:**
 1. Read the recovery issue's detail — it carries the runner's own reason (e.g. "the endpoint is unreachable") when one exists.
@@ -579,12 +580,12 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 
 **Fix:**
 1. `esc` opens the **Stop options** sheet, with or without a draft: `Stop now` (stop execution, keep partial changes while a brief runs), `Pause after this brief` (finish `T<id>` including its checks and review, start no next brief), `End run` (stop and close the run, keep changes once a brief has run). `↑↓ · ⏎ · esc`, no letter keys. `esc` from the sheet is Stop now — it goes back to sessions once the run is parked or at rest — and `Tab` dismisses the sheet without stopping. No option reverts files.
-2. `ctrl+c` is Stop now, immediately, one press. It aborts the in-flight call along with any retry, escalation or per-task review call, and parks the run as `Paused at T<id> · Partial changes kept`.
+2. `ctrl+c` is Stop now, immediately, one press. It aborts the in-flight call along with any retry, consult or per-task review call, and parks the run as `Paused at T<id> · Partial changes kept`.
 3. `ctrl+q` or `/quit` stops safely, saves the session, then exits.
 4. With text in the composer, `esc` opens the same sheet and leaves the draft in place — the composer swallows no part of the key.
 5. Restart with `/resume` (type instructions first if you want to steer) or from the shell with `splitbrief continue <session-id>`; a continuable run at rest continues on a bare `⏎`, while a run parked in this process answers a blank `⏎` with `type instructions or /resume`. `/end` closes a parked run; after that nothing picks it up.
 
-**Prevention:** None needed — the legend row states the live keys (`esc stop options · ctrl+c stop now · ctrl+k commands · /help`), and a cancelled call still never spends retries or escalation attempts: an aborted implementer call stops the retry loop instead of consuming `workflow.maxRetries`.
+**Prevention:** None needed — the legend row states the live keys (`esc stop options · ctrl+c stop now · ctrl+k commands · /help`), and a cancelled call still never spends an attempt or a consult: an aborted implementer call stops the retry loop, and the attempt counter rolls back to the value it had before it.
 
 **See also:** [docs/FEATURES.md](./FEATURES.md#stopping-a-run), [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md) (retry arithmetic), `src/engine/orchestrator/escalation/local-retries.ts`.
 
@@ -592,7 +593,7 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 
 ### Symptom: two consecutive timeouts halted my run
 
-**Likely cause:** The implementer hit its wall clock twice in a row on the same brief. Each `cli` implementer attempt gets 20 minutes (`TIMEOUTS.implementerMs`, overridable per seat with `implementer.timeout`, capped at the same 20 minutes); a review call gets 10. A second consecutive `timeout` outcome on one brief raises the recovery issue `runner-timeout-repeated` — `<tool> timed out twice in a row on T00N` — instead of retrying or escalating, because handing an unfinishable brief to the planner only spends planner money on the same defect.
+**Likely cause:** The implementer hit its wall clock twice in a row on the same brief. Each `cli` implementer attempt gets 20 minutes (`TIMEOUTS.implementerMs`, overridable per seat with `implementer.timeout`, capped at the same 20 minutes); a review call gets 10. A second consecutive `timeout` outcome on one brief raises the recovery issue `runner-timeout-repeated` — `<tool> timed out twice in a row on T00N` — instead of retrying or consulting the planner, because handing an unfinishable brief to the planner only spends planner money on the same defect.
 
 **Fix:**
 1. Read the issue's details: they carry the tool's own last message, the attempt count, and the implementer profile that was selected.
@@ -644,7 +645,7 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 
 **Fix:**
 1. Check the baseline probe row at the start of the run — it names the stages that were already failing before the first task.
-2. If the failing stage was red at baseline and its evidence names none of the task's changed files, the task is accepted; retry and escalation do not fire for pre-existing failures.
+2. If the failing stage was red at baseline and its evidence names none of the task's changed files, the task is accepted; retry and consult do not fire for pre-existing failures.
 3. A task that introduces a **new** failure in a stage already red at baseline is still rejected — the evidence names one of the task's changed files.
 4. Fix the pre-existing failure itself to turn the whole tree green; until then, tasks that do not touch the failing files keep completing with the exemption noted.
 
@@ -695,7 +696,7 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 
 **Fix:**
 1. Wait. The byline appends `· tools report when done` when the silent runner is one that only reports finished tools, which is the signal that this silence is expected rather than a hang. How long the runner has been silent is stated once: in the build block's freshness line (`No update for 5m 12s`) while the block is on screen, and on the byline itself (`Still working — silent 5m 12s`) whenever no block is painted — during planning, or while the stop menu takes its rows.
-2. If you want to confirm liveness, the watchdog is still armed underneath: a genuinely dead process is killed at `RUNNER_IDLE_KILL_MS` (30 minutes), and the stall clears on the next activity, completion, or error event.
+2. If you want to confirm liveness, the watchdog is still armed underneath: a genuinely dead process is killed at `RUNNER_IDLE_KILL_MS` (20 minutes, and only when no child process is running), and the stall clears on the next activity, completion, or error event.
 3. To see what the tool actually did, read the run tree after the call completes — the tool uses land there in one batch.
 
 **Prevention:** Use a runner that streams tool use live (Claude Code's `stream-json`) for the role where you want per-tool progress, and keep OpenCode for the role where a batched report is acceptable.
@@ -994,7 +995,7 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 
 ### Symptom: A run-isolation worktree is left behind after an interrupted run
 
-**Likely cause:** Run isolation retained the worktree on purpose. When a run ends with work that was never promoted — an interrupted task, an escalation that never landed — SPLITBRIEF keeps the worktree and its `splitbrief/<session-id>` branch so that work can be recovered. It also keeps the worktree when the worktree strategy could not prove the worktree clean, so a retained directory does not always mean a failed run. The checkout lives under `$XDG_STATE_HOME/splitbrief/trees/<hash>/<session-id>/` (default `~/.local/state/splitbrief/trees/...`), outside both `.git/` and the project root.
+**Likely cause:** Run isolation retained the worktree on purpose. When a run ends with work that was never promoted — an interrupted task, a retry that never landed — SPLITBRIEF keeps the worktree and its `splitbrief/<session-id>` branch so that work can be recovered. It also keeps the worktree when the worktree strategy could not prove the worktree clean, so a retained directory does not always mean a failed run. The checkout lives under `$XDG_STATE_HOME/splitbrief/trees/<hash>/<session-id>/` (default `~/.local/state/splitbrief/trees/...`), outside both `.git/` and the project root.
 
 **Fix:**
 1. Find the path: `git worktree list` (look for `splitbrief/<session-id>`).

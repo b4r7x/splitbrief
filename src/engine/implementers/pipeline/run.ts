@@ -53,6 +53,8 @@ import {
 import { processImplementerOutput, readTaskFileContent } from './extracted-code.js';
 import { usageLimitDetailFromError } from '../../runners/usage-limit.js';
 import { isAuthFailureDiagnostic, runnerAuthDisplayName } from '../../runners/auth-failure.js';
+import { extractLastJsonObject } from '../../runners/typed-output.js';
+import { ImplementerReportSchema, type ImplementerReport } from '../../../core/schemas/consult.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import {
@@ -142,6 +144,18 @@ function aggregateApplied(applied: readonly AppliedFile[]): {
     linesAdded: applied.reduce((total, file) => total + file.linesAdded, 0),
     linesRemoved: applied.reduce((total, file) => total + file.linesRemoved, 0),
   };
+}
+
+/**
+ * The direct writer's closing report: the last JSON object of the reply, taken
+ * as it is. A report that is missing or does not match the contract changes
+ * nothing, and there is no repair call.
+ */
+function parseImplementerReport(text: string): ImplementerReport | undefined {
+  const extracted = extractLastJsonObject(text);
+  if (extracted.kind !== 'ok') return undefined;
+  const parsed = ImplementerReportSchema.safeParse(extracted.value);
+  return parsed.success ? parsed.data : undefined;
 }
 
 export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implementer {
@@ -279,6 +293,15 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
       targets: baselines,
       scope: taskDeclaredPatterns(opts.task),
     });
+    if (parsed.kind === 'blocked') {
+      return {
+        success: false,
+        output: text,
+        error: `Implementer is blocked: ${parsed.question}`,
+        blocked: { question: parsed.question, filesNeeded: parsed.filesNeeded },
+        ...(usage !== null && { usage }),
+      };
+    }
     if (parsed.kind === 'rejected') {
       return bundleFailure(opts, text, usage, {
         callId,
@@ -571,6 +594,18 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
 
     implBuffer?.flush();
 
+    const report = outputContract === 'direct' ? parseImplementerReport(outputText) : undefined;
+    if (report?.status === 'blocked') {
+      return {
+        success: false,
+        output: outputText,
+        error: `Implementer is blocked: ${report.question}`,
+        report,
+        blocked: { question: report.question, filesNeeded: report.filesNeeded },
+        ...usageField,
+      };
+    }
+
     let noChange = false;
     try {
       if (outputContract === 'file-bundle-v1') {
@@ -657,7 +692,12 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         ...(noChange && { noChange: true }),
       });
     }
-    return { success: true, output: outputText, ...usageField };
+    return {
+      success: true,
+      output: outputText,
+      ...(report !== undefined && { report }),
+      ...usageField,
+    };
   }
 
   return {
@@ -684,7 +724,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
           ? base
           : composeContinuation({ basePrompt: base, ...retryOpts.continuation });
       const temperature =
-        retryOpts.kind === 'hint'
+        retryOpts.kind === 'consult'
           ? retryOpts.config.implementer.temperature
           : retryTemperature(
               retryOpts.config.implementer.temperature,

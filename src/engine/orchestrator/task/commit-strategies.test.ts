@@ -79,7 +79,7 @@ describe('validateCommitAndAdvance — legacy commit strategies', () => {
           state,
           bus,
           method,
-          transitionType: method === 'local' ? 'VALIDATION_PASS' : 'HINT_SUCCESS',
+          transitionType: 'VALIDATION_PASS',
           commitSuffix: 'with hints',
           taskChangedFiles: [task.file],
         });

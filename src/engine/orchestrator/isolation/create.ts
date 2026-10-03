@@ -9,7 +9,7 @@ import type {
   RetainedWorkspace,
   WorkspaceOwner,
 } from '../../../core/schemas/retained-workspace.js';
-import { assertPathConfined } from '../../../lib/path-confinement.js';
+import { assertPathConfined, pathConfinementError } from '../../../lib/path-confinement.js';
 import { relative } from 'node:path';
 import { canonicalJSON } from '../../../utils/canonical-json.js';
 import type { IsolationStrategy } from '../../../core/schemas/enums.js';
@@ -37,6 +37,9 @@ import {
   captureAcquisitionBaseline,
   type AcquisitionBaseline,
   entriesMatch,
+  type FileSnapshotEntry,
+  readConfinedEntry,
+  readProjectSymlink,
   removeConfinedSymlink,
 } from '../approval/file-snapshots/entry.js';
 import { restoreDirtyFilesFromSnapshot } from '../approval/file-snapshots/restore.js';
@@ -592,6 +595,32 @@ export function createRunIsolation(opts: {
       );
     }
     const snapshot = await getChangedFilesSnapshot(dir);
+    // What the worktree holds and the project never received is output, never
+    // input: its entry is the project's, so it reads as changed and is promoted
+    // with this attempt's writes or raised as a promotion conflict.
+    if (snapshot.dirtyFileEntries !== undefined) {
+      for (const file of Object.keys(snapshot.dirtyFileEntries)) {
+        if (!(await isUnpromoted(dir, file))) continue;
+        const link = await readProjectSymlink(projectDir, file);
+        if (link !== null) {
+          delete snapshot.dirtyFileEntries[file];
+          snapshot.symlinks = { ...snapshot.symlinks, [file]: link };
+          continue;
+        }
+        let target: FileSnapshotEntry;
+        try {
+          target = await readConfinedEntry(projectDir, file);
+        } catch (err) {
+          if (!pathConfinementError.isSymlinkRead(err)) throw err;
+          snapshot.dirtyFileEntries[file] = null;
+          continue;
+        }
+        snapshot.dirtyFileEntries[file] =
+          target.kind === 'file'
+            ? { base64: target.bytes.toString('base64'), mode: target.mode }
+            : null;
+      }
+    }
     // The retained snapshot is the comparison basis this continuation resumes on.
     // A file that was clean at acquisition and committed inside the worktree
     // since then reaches no dirty set, so only the retained HEAD still names it

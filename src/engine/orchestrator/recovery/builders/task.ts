@@ -24,11 +24,6 @@ import type { ValidationResult } from '../../validation/result.js';
 import type { RoutingDecision } from '../../context-routing/types.js';
 import { runnerAuthDisplayName, runnerLoginInstruction } from '../../../runners/auth-failure.js';
 import { parseUsageLimitReset, usageLimitAdvice } from '../../../runners/usage-limit.js';
-import {
-  HINT_VERDICT_LINE,
-  parseHintVerdict,
-  type HintVerdictKind,
-} from '../../../spec/prompts/escalation.js';
 import { finalReviewFailedCause, retryExhaustedCause } from '../../../../core/recovery/headline.js';
 import { stripRecoveryResetClause } from '../../../../core/recovery/reset-clock.js';
 import { HAND_BACK_PANEL_CHARS } from '../../../../core/pipeline-spec/ladder.js';
@@ -60,9 +55,6 @@ export interface RetryExhaustedRecoveryOptions extends ValidationRecoveryOptions
   /** The `pre_escalation` hook's reason when the hook stopped the ladder before its tiers. */
   escalationBlockedBy?: string | undefined;
   handBack?: string | undefined;
-  plannerHint?: string | undefined;
-  hintRungRan?: boolean | undefined;
-  plannerVerdict?: HintVerdictKind | undefined;
 }
 
 export interface ContextOverflowRecoveryOptions extends RecoveryBuilderBase {
@@ -313,16 +305,11 @@ export function buildRetryExhaustedRecoveryIssue(
     'pause-run',
     'end-run',
   ]);
-  // A planner that found the brief wrong said no retry can land it, on this worker or a bigger one.
-  const recommendedAction = chooseRecommended(
-    actions,
-    opts.plannerVerdict === 'brief'
-      ? ['pause-run']
-      : ['route-bigger-worker', 'retry-same-worker', 'pause-run'],
-  );
-  const plannerWords = opts.plannerHint?.replace(HINT_VERDICT_LINE, '').trim() ?? '';
-  const verdict = opts.plannerHint === undefined ? undefined : parseHintVerdict(opts.plannerHint);
-  const diagnosis = verdict?.kind === 'brief' ? verdict.diagnosis : (opts.plannerHint ?? '');
+  const recommendedAction = chooseRecommended(actions, [
+    'route-bigger-worker',
+    'retry-same-worker',
+    'pause-run',
+  ]);
 
   return createRecoveryIssue({
     id: opts.id,
@@ -334,25 +321,14 @@ export function buildRetryExhaustedRecoveryIssue(
     affectedTaskIds: [opts.task.id],
     message: retryExhaustedCause({
       task: opts.task.id,
-      plannerVerdict: opts.plannerVerdict,
       hookReason: opts.escalationBlockedBy,
     }),
     details: [
       lastErrorDetail(validation),
-      ...(opts.attempts === 0
-        ? []
-        : attemptDetails(opts.attempts, opts.maxAttempts, { hintRungRan: opts.hintRungRan })),
+      ...(opts.attempts === 0 ? [] : attemptDetails(opts.attempts, opts.maxAttempts)),
       ...implementerDetails(opts.selectedImplementerProfile),
       ...routeBiggerDetails(opts),
       ...(opts.handBack ? [`Implementer said: ${handBackQuote(opts.handBack)}`] : []),
-      ...(plannerWords !== '' ? [`Planner said: ${plannerWords}`] : []),
-      ...(opts.plannerVerdict === 'brief'
-        ? [
-            diagnosis === ''
-              ? 'Planner verdict: the brief itself is wrong'
-              : `Planner verdict: the brief itself is wrong — ${diagnosis}`,
-          ]
-        : []),
     ],
     attempts: opts.attempts,
     maxAttempts: opts.maxAttempts,
@@ -363,8 +339,6 @@ export function buildRetryExhaustedRecoveryIssue(
       allowRetryOverride: opts.allowRetryOverride,
       canRouteBigger: hasRouteBigger(opts),
       routeBiggerProfile: opts.routeBiggerProfile,
-      hintRungRan: opts.hintRungRan,
-      plannerVerdict: opts.plannerVerdict,
       escalationBlockedBy: opts.escalationBlockedBy,
     }),
     availableActions: actions,

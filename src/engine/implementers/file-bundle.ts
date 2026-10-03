@@ -9,15 +9,27 @@ export const FileBundleEntrySchema = z.strictObject({
   content: z.string(),
 });
 
+const FileBundleBlockedSchema = z.strictObject({
+  version: z.literal(1),
+  blocked: z.strictObject({
+    question: z.string(),
+    filesNeeded: z.array(z.string()),
+  }),
+});
+
 /**
  * The BUILD response grammar `file-bundle-v1`: complete file contents for
- * declared targets only. Path spelling, target membership and byte limits are
- * checked by the parser against the captured targets, not by this shape.
+ * declared targets only, or a blocked request for the files the brief did not
+ * provide. Path spelling, target membership and byte limits are checked by the
+ * parser against the captured targets, not by this shape.
  */
-export const FileBundleSchema = z.strictObject({
-  version: z.literal(1),
-  files: z.array(FileBundleEntrySchema).min(1).max(FILE_BUNDLE_MAX_FILES),
-});
+export const FileBundleSchema = z.union([
+  z.strictObject({
+    version: z.literal(1),
+    files: z.array(FileBundleEntrySchema).min(1).max(FILE_BUNDLE_MAX_FILES),
+  }),
+  FileBundleBlockedSchema,
+]);
 
 /** @public */
 export type FileBundleEntry = z.infer<typeof FileBundleEntrySchema>;

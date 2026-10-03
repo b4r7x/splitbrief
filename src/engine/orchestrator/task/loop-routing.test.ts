@@ -27,11 +27,9 @@ function setupProject(): { projectDir: string; sessionId: string } {
   return { projectDir, sessionId };
 }
 
-const defaultWorkflow = { maxRetries: 2 };
-
 function profilesConfig(windows: { largeWindow: number; smallWindow: number }): Config {
   return {
-    ...makeNoValidationConfig({ workflow: defaultWorkflow }),
+    ...makeNoValidationConfig(),
     implementerProfiles: {
       default: 'local-small',
       profiles: {
@@ -94,22 +92,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
 
     expect(defaultImplementer.implement).not.toHaveBeenCalled();
     expect(selectedImplementer.implement).toHaveBeenCalledTimes(1);
-    const cheapLarge = config.implementerProfiles!.profiles['cheap-large']!;
-    if (cheapLarge.kind !== 'api') {
-      throw new Error('expected api implementer profile');
-    }
     expect(createProfileImplementer).toHaveBeenCalledWith(
-      expect.objectContaining({
-        implementer: {
-          kind: cheapLarge.kind,
-          provider: cheapLarge.provider,
-          service: cheapLarge.service,
-          offering: cheapLarge.offering,
-          apiBase: cheapLarge.apiBase,
-          model: cheapLarge.model,
-          contextLength: cheapLarge.contextLength,
-        },
-      }),
       expect.objectContaining({ publisher: expect.any(Object), allowRepoRunners: true }),
     );
     expect(events.find((event) => event.type === 'task_started')).toMatchObject({
@@ -189,9 +172,6 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     expect(defaultImplementer.implement).not.toHaveBeenCalled();
     expect(selectedImplementer.implement).toHaveBeenCalledTimes(1);
     expect(createProfileImplementer).toHaveBeenCalledWith(
-      expect.objectContaining({
-        implementer: expect.objectContaining({ model: 'qwen-large' }),
-      }),
       expect.objectContaining({ publisher: expect.any(Object) }),
     );
     expect(events.find((event) => event.type === 'task_started')).toMatchObject({
@@ -247,9 +227,6 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     expect(defaultImplementer.implement).not.toHaveBeenCalled();
     expect(selectedImplementer.implement).toHaveBeenCalledTimes(1);
     expect(createProfileImplementer).toHaveBeenCalledWith(
-      expect.objectContaining({
-        implementer: expect.objectContaining({ model: 'qwen-large' }),
-      }),
       expect.objectContaining({ publisher: expect.any(Object) }),
     );
     expect(events.find((event) => event.type === 'task_started')).toMatchObject({
@@ -270,7 +247,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     });
     const state = makeImplState([task]);
     const config: Config = {
-      ...makeNoValidationConfig({ workflow: defaultWorkflow }),
+      ...makeNoValidationConfig(),
       implementerProfiles: {
         default: 'local-small',
         profiles: {
@@ -391,7 +368,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        config: makeNoValidationConfig(),
         callbacks,
         implementer,
         bus,

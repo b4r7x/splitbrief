@@ -16,10 +16,14 @@ import {
   invalidateTargetWriteEvidence,
 } from '../evidence/persistence.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
+import { taskInputFiles } from './stale-inputs.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import { inferTaskAcceptedChangedFiles } from '../changed-files-baseline.js';
 import { hashTaskBrief } from '../../brief-hash.js';
 import { isAbortError } from '../../../utils/abort.js';
+import { consultAttemptError } from '../escalation/consult-guidance.js';
+import { implementerSeatAttempt, runSeatCall } from '../escalation/seat-wait.js';
+import { addUsageAndSave } from '../state-ops.js';
 import {
   isResumableWorkspaceStop,
   retentionError,
@@ -79,6 +83,8 @@ export async function runImplementation(opts: {
   setTrackedState: (s: WorkflowState) => void;
   recordApprovalDenial: (decision: GateChangedFilesDenial, message: string) => void;
   streamingSink?: StreamingSink | undefined;
+  /** The stale refresh's instructions: the first attempt is framed as a retry carrying them. */
+  staleGuidance?: string | undefined;
 }): Promise<RunImplementationResult> {
   const { wctx, task, setTrackedState } = opts;
   const { projectDir, sessionId, config, callbacks, context } = wctx;
@@ -210,15 +216,52 @@ export async function runImplementation(opts: {
             return { allow: true };
           },
         };
-        return reviewFindings === undefined
-          ? wctx.implementer.implement(call)
-          : wctx.implementer.retry({
-              ...call,
-              error: [REVIEW_FIX_INSTRUCTION, ...reviewFindings].join('\n'),
-              attempt: 1,
-              kind: 'local',
-              allowNoChange: true,
-            });
+        const produce = async (attemptSignal: AbortSignal): Promise<ImplementerResult> =>
+          reviewFindings !== undefined
+            ? wctx.implementer.retry({
+                ...call,
+                signal: attemptSignal,
+                error: [REVIEW_FIX_INSTRUCTION, ...reviewFindings].join('\n'),
+                attempt: 1,
+                kind: 'local',
+                allowNoChange: true,
+              })
+            : opts.staleGuidance === undefined
+              ? wctx.implementer.implement({ ...call, signal: attemptSignal })
+              : wctx.implementer.retry({
+                  ...call,
+                  signal: attemptSignal,
+                  error: consultAttemptError(
+                    `The task's inputs changed since the brief was compiled: ${taskInputFiles(task).join(', ')}`,
+                    opts.staleGuidance,
+                  ),
+                  attempt: 1,
+                  kind: 'local',
+                });
+
+        const seatRef = { projectDir, sessionId, bus: wctx.bus };
+        const attempt = await runSeatCall(
+          {
+            ref: seatRef,
+            state,
+            seat: 'build',
+            signal,
+            onStateChange: (next) => {
+              state = next;
+              setTrackedState(next);
+            },
+          },
+          async (attemptSignal) =>
+            implementerSeatAttempt(
+              await produce(attemptSignal),
+              `Implementer call for ${task.id} failed`,
+            ),
+          (discarded) => {
+            state = addUsageAndSave(seatRef, state, 'implementer', discarded.usage);
+            setTrackedState(state);
+          },
+        );
+        return attempt.value;
       },
     });
   } catch (err) {

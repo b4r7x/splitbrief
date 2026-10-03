@@ -41,8 +41,6 @@ function setupSessionOnly(): { projectDir: string; sessionId: string } {
   return { projectDir, sessionId };
 }
 
-const defaultWorkflow = { maxRetries: 2 };
-
 describe('runTaskLoop', { timeout: 90_000 }, () => {
   it('task with failed dependency creates dependency-blocked recovery instead of auto-skipping', async () => {
     const { projectDir, sessionId } = setupProject();
@@ -63,7 +61,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        config: makeNoValidationConfig(),
         callbacks,
         implementer,
         bus,
@@ -129,7 +127,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        config: makeNoValidationConfig(),
         callbacks,
         implementer,
         bus,
@@ -149,7 +147,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     const task = makeTask({ id: 'T001' });
     const state = makeImplState([task]);
     const config: Config = {
-      ...makeNoValidationConfig({ workflow: defaultWorkflow }),
+      ...makeNoValidationConfig(),
       implementerProfiles: {
         default: 'tiny-local',
         profiles: {
@@ -238,7 +236,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        config: makeNoValidationConfig(),
         implementer,
         bus,
       }),
@@ -270,7 +268,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        config: makeNoValidationConfig(),
         implementer,
         bus,
       }),
@@ -312,7 +310,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
         wctx: makeWctx({
           projectDir,
           sessionId,
-          config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+          config: makeNoValidationConfig(),
           implementer,
           bus,
         }),

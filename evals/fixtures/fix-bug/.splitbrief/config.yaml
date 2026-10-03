@@ -12,5 +12,4 @@ validation:
   test: true
   testCommand: npm test
 workflow:
-  maxRetries: 1
   approve: none

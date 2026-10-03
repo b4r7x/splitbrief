@@ -1,6 +1,6 @@
 # Implementer Prompt
 
-Everything the implementer ever sees. Lifted from the SPLITBRIEF CLI (`src/engine/spec/prompts/system.ts`, `src/engine/spec/prompt-formatter.ts`, `src/engine/spec/prompts/escalation.ts`). The implementer has no access to this session, the spec, or sibling briefs: if it is not in this rendering, the implementer does not know it.
+Everything the implementer ever sees. Lifted from the SPLITBRIEF CLI (`src/engine/spec/prompts/system.ts`, `src/engine/spec/prompt-formatter.ts`, `src/engine/spec/prompts/consult.ts`, `src/engine/spec/prompts/escalation.ts`). The implementer has no access to this session, the spec, or sibling briefs: if it is not in this rendering, the implementer does not know it.
 
 The generated blocks below come from the CLI's prompt builders (`npm run skills:sync`, guarded by `npm run skills:check`), rendered with the TypeScript language context. The generator applies two substitutions because the skill has no isolation directory or promotion step: `isolation directory` → `working directory` (and the sentence `Your changes are promoted into the user's project afterwards.` is dropped), and `SPLITBRIEF runs them again after promotion` → `the orchestrator runs them again afterwards`. The CLI's `## Similar Issues` section (retrieved escalation examples) is omitted.
 
@@ -21,16 +21,13 @@ The generated blocks below come from the CLI's prompt builders (`npm run skills:
     - The orchestrator runs the project's typecheck, lint, format and test gates after you finish, and its verdict is the authority. Do not run them, and do not run the whole test suite, screenshot or render tools, or repeated git diffs.
     - Run at most the focused test files the brief lists under Tests, once, after your edits. If one fails and you cannot fix it, stop and report the failure.
     - When the brief's Tests or Evidence ask you to run a project-wide gate or to render screenshots, the orchestrator and the review seat do that. Implement the change and its tests, then report.
-    - End with a completion report stating which files you wrote and whether the brief's steps were completed; if you changed nothing, say so explicitly
+    - End your reply with ONE JSON object and nothing after it: {"status":"done","filesChanged":["<file>"],"touchedNotSuggested":[{"file":"<file>","reason":"<reason>"}],"notes":null}. If the brief cannot be completed without a file it does not provide, end with {"status":"blocked","question":"<question>","filesNeeded":["<file>"]} instead. Prose before the object is fine; text after it is not.
 
-    Example completion report:
+    Example final answer:
 
-    Files written:
-    - <file path>
+    I added the loader and its test.
 
-    Also changed (not suggested): <file> — <reason>
-
-    Steps completed: all (or list the brief's steps you could not complete)
+    {"status":"done","filesChanged":["src/hello.ts"],"touchedNotSuggested":[{"file":"src/hello.test.ts","reason":"the loader had no test"}],"notes":null}
 <!-- /generated -->
 
 `TypeScript` and the ESM line are the TypeScript rendering; for another language use its name and the import convention from the project's instruction files, exactly as the CLI substitutes per language.
@@ -69,8 +66,8 @@ Omit a heading whose section the brief does not have; never invent one. `### Tes
 ## 3. Closing line
 
 <!-- generated: closing-line -->
-- one file: `Edit <file> directly in the working directory. The orchestrator runs the typecheck, lint, format and test gates after you hand back, so run at most the focused test files the brief lists, once. End with a completion report naming the files you wrote, one line Also changed (not suggested): <file> — <reason> for each file the brief did not suggest, and whether the brief's steps were completed.`
-- more than one file: `Edit <file>, <second file> directly in the working directory. The orchestrator runs the typecheck, lint, format and test gates after you hand back, so run at most the focused test files the brief lists, once. End with a completion report naming the files you wrote, one line Also changed (not suggested): <file> — <reason> for each file the brief did not suggest, and whether the brief's steps were completed.`
+- one file: `Edit <file> directly in the working directory. The orchestrator runs the typecheck, lint, format and test gates after you hand back, so run at most the focused test files the brief lists, once. End your reply with the one JSON report object the rules describe: status done with the files you changed, or status blocked with your question and the files you need.`
+- more than one file: `Edit <file>, <second file> directly in the working directory. The orchestrator runs the typecheck, lint, format and test gates after you hand back, so run at most the focused test files the brief lists, once. End your reply with the one JSON report object the rules describe: status done with the files you changed, or status blocked with your question and the files you need.`
 <!-- /generated -->
 
 ## 4. Retry rendering
@@ -99,67 +96,96 @@ A retry prompt is the preamble, then the framing and the error at the top of the
 
 The table is keyed on the running attempt count, exactly as the CLI keys it — a review fix cycle continues the numbering, so a fix attempt after four earlier ones takes the attempt 3+ framing. On the attempt-2 framing, rephrase `### Description` in different words; every other section stays verbatim.
 
-On the hint rung the hint is appended to the error block, not prefixed to it:
-
-<!-- generated: hint-placement -->
-    <gate tail>
-
-    ## Hints from senior reviewer:
-    <hint>
-
-The composed error block is truncated to 4000 characters.
-<!-- /generated -->
-
 A `recipe-fix` re-spawn (references/tool-recipes.md) uses no framing and no error block: it is the original prompt again.
 
-## 5. Hint prompt (answered by the session — no code)
+## 5. Consult contract (answered by the session — no code)
 
-<!-- generated: hint-prompt -->
-    # Diagnose Implementation Failure
+After the one local retry, a task that still fails is consulted; so is one whose implementer reported `blocked` (at once, without a retry) and one whose inputs changed under it (before its first attempt). The consult is read-only and the session answers it as the planner; it renders as one transcript row, `PLAN → T003: <action> · <diagnosis>`. A post-consult attempt that fails consults again, until a bound is spent.
 
-    An implementer model attempted to implement the task below but the result failed validation. Provide a concise diagnosis and approach hint -- do NOT write code.
+<!-- generated: consult-contract -->
+    # Consult on a failing task
 
-    ## Task
-    **ID**: T001
+    One task of this run did not land, and SPLITBRIEF asks you to decide T001's next step from the evidence below.
+
+    ## Plan
+    ### Criteria
+    - **<C1>**: <what the criterion verifies> — checks: <K1>
+
+    ### Checks
+    - `<K1>` (test `<the check file or command>`)
+
+    ## Task T001 (revision 1)
     **Title**: <title>
     **Action**: create
-    **File**: <file>
+    **Files**: `<file>`
+    **Depends on**: nothing
+    **Criteria**: none recorded
 
     ### Description
     <the brief's Description>
-
-    ### Expected Signature
-    ```typescript
-    <the brief's Signature, when it has one>
-    ```
-
-    ## Constraints
+    **Tests:**
+    - <the brief's Tests bullets>
+    **Constraints:**
     - <the brief's Constraints bullets>
 
-    ## Validation Error
+    ## Reason
+    failed — The task failed: its last attempt or one of its checks did not pass.
+
+    ## Attempt Diff
+
+    ```diff
+    <the diff from the attempt's start snapshot to now>
+    ```
+
+    ## Failing Output
+
     ```
     <gate tail>
     ```
 
+    ## Implementer Report
+
+    ```
+    Files changed: <file>
+    Touched not suggested: none
+    Notes: none
+    ```
+
     ## Instructions
-    In ~500 tokens or less, provide:
+    You are the run's planner. SPLITBRIEF asks you, not the user, for the decision that unblocks this task. This call is read-only: do not write, edit or delete any file, and do not run commands that change the project.
 
-    1. **Root cause**: What specifically went wrong? Parse the error message and identify the exact issue.
-    2. **Fix approach**: Describe the approach to fix it in plain language. Be specific -- mention exact function names, TypeScript type annotations, or patterns to use.
-    3. **Common pitfall**: If this is a common mistake (e.g., missing .js extension, wrong import path, incorrect type), say so explicitly.
+    Answer with exactly one JSON object `{ "answer": { "diagnosis": …, "action": … } }`. `answer.diagnosis` states what actually went wrong, in one or two sentences, and is always present. Exactly one action follows it:
+    - `guidance` — `instructions` the implementer retries with, and `context`: the project file or fact the retry needs attached, or null. The brief is kept.
+    - `rewrite-task` — `task`: one complete replacement TaskSpec that fixes the brief itself.
+    - `split-task` — `tasks`: 2 to 4 complete TaskSpecs that together replace the task.
+    - `verify` — `checkIds` and `reason`: re-run exactly those checks before any retry, for when the failure may predate this task's own edits.
+    - `ask-user` — `question`, `whyOnlyUserCanAnswer`, `choices` (or null) and `default` (or null): only when no other action can unblock the task and the user alone holds the missing decision.
 
-    Begin your reply with exactly one line: `VERDICT: answer` when the implementer should retry with your diagnosis below; `VERDICT: widen <path>[, <path>…] — <reason>` when the brief must also be allowed to edit the named files (paths outside its declared set); `VERDICT: brief — <diagnosis>` when the brief itself is wrong and no retry can land it. When the implementer stopped with a question, decide whether the brief or the implementer is at fault and answer it.
+    The criteria rule: a rewrite or a split never drops a criterion id; a split never splits a subtask. Every criterion id the task serves stays with its replacement, or with the union of the split tasks, and each replacement keeps a complete, verifiable brief.
 
-    Do NOT write code. Only explain the diagnosis and approach.
+    Reply with exactly one JSON object that matches this schema: {"type":"object","properties":{"answer":{"allOf":[{"type":"object","properties":{"diagnosis":{"type":"string"}},"required":["diagnosis"],"additionalProperties":false},{"oneOf":[{"type":"object","properties":{"action":{"type":"string","const":"guidance"},"instructions":{"type":"string"},"context":{"anyOf":[{"type":"string"},{"type":"null"}]}},"required":["action","instructions","context"],"additionalProperties":false},{"type":"object","properties":{"action":{"type":"string","const":"rewrite-task"},"task":{"type":"object","properties":{"id":{"type":"string","pattern":"^T\\d{3}$"},"title":{"type":"string"},"intent":{"type":"string"},"criteria":{"type":"array","items":{"type":"string"}},"checks":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"kind":{"type":"string","enum":["test","cmd","render"]},"value":{"type":"string"},"required":{"type":"boolean"}},"required":["id","kind","value","required"],"additionalProperties":false}},"suggestedFiles":{"minItems":1,"type":"array","items":{"type":"string"}},"contextFiles":{"type":"array","items":{"type":"string"}},"exclusions":{"type":"array","items":{"type":"string"}},"protectedOperations":{"anyOf":[{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"operation":{"type":"string","const":"write"}},"required":["path","operation"],"additionalProperties":false}},{"type":"null"}]},"steps":{"anyOf":[{"type":"array","items":{"type":"string"}},{"type":"null"}]},"dependsOn":{"type":"array","items":{"type":"string","pattern":"^T\\d{3}$"}},"batch":{"type":"integer","minimum":1,"maximum":9007199254740991}},"required":["id","title","intent","criteria","checks","suggestedFiles","contextFiles","exclusions","protectedOperations","steps","dependsOn","batch"],"additionalProperties":false}},"required":["action","task"],"additionalProperties":false},{"type":"object","properties":{"action":{"type":"string","const":"split-task"},"tasks":{"minItems":2,"maxItems":4,"type":"array","items":{"type":"object","properties":{"id":{"type":"string","pattern":"^T\\d{3}$"},"title":{"type":"string"},"intent":{"type":"string"},"criteria":{"type":"array","items":{"type":"string"}},"checks":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"kind":{"type":"string","enum":["test","cmd","render"]},"value":{"type":"string"},"required":{"type":"boolean"}},"required":["id","kind","value","required"],"additionalProperties":false}},"suggestedFiles":{"minItems":1,"type":"array","items":{"type":"string"}},"contextFiles":{"type":"array","items":{"type":"string"}},"exclusions":{"type":"array","items":{"type":"string"}},"protectedOperations":{"anyOf":[{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"operation":{"type":"string","const":"write"}},"required":["path","operation"],"additionalProperties":false}},{"type":"null"}]},"steps":{"anyOf":[{"type":"array","items":{"type":"string"}},{"type":"null"}]},"dependsOn":{"type":"array","items":{"type":"string","pattern":"^T\\d{3}$"}},"batch":{"type":"integer","minimum":1,"maximum":9007199254740991}},"required":["id","title","intent","criteria","checks","suggestedFiles","contextFiles","exclusions","protectedOperations","steps","dependsOn","batch"],"additionalProperties":false}}},"required":["action","tasks"],"additionalProperties":false},{"type":"object","properties":{"action":{"type":"string","const":"verify"},"checkIds":{"type":"array","items":{"type":"string"}},"reason":{"type":"string"}},"required":["action","checkIds","reason"],"additionalProperties":false},{"type":"object","properties":{"action":{"type":"string","const":"ask-user"},"question":{"type":"string"},"whyOnlyUserCanAnswer":{"type":"string"},"choices":{"anyOf":[{"type":"array","items":{"type":"string"}},{"type":"null"}]},"default":{"anyOf":[{"type":"string"},{"type":"null"}]}},"required":["action","question","whyOnlyUserCanAnswer","choices","default"],"additionalProperties":false}]}]}},"required":["answer"],"additionalProperties":false}. No prose after it.
+
+The guidance of a `guidance` or `ask-user` answer is appended to the failed attempt's error block, not prefixed to it:
+
+    <gate tail>
+
+    ## Guidance from the planner:
+    <the instructions and context>
+
+The composed error block is truncated to 4000 characters.
+
+A lineage is bounded at 2 consults and 8 attempts, and a run at 10 planner calls; a spent bound halts with the planner's last diagnosis and offers continue (with a note), skip the brief, or end the run. Continuing grants 1 more consult and 4 more attempts, or 5 more planner calls.
 <!-- /generated -->
 
-Generated from the CLI with its TypeScript language context; for a non-JavaScript project the CLI's pitfall line reads `If this is a common <Language> mistake (e.g., wrong import path, incorrect type usage, invalid module/package reference), say so explicitly.` The CLI's optional `## Similar Issues` section (retrieved escalation examples) is not portable and is omitted. Write the answer to `<run dir>/T00N/hint.md`.
+The criteria rule is binding: a rewrite or a split never drops a criterion id, a split never splits a subtask, and every replacement is a complete brief. Act on the answer:
 
-Read the reply's first `VERDICT:` line; backticks or bold around it do not matter, and a reply without one reads as `answer`:
+- `guidance` — one more attempt, the answer's instructions and attached context appended to the failed attempt's error block under `## Guidance from the planner:`.
+- `rewrite-task` — roll the current attempt's own changed files back, replace the brief with the answer's task at the same id and one revision further, and run it again.
+- `split-task` — roll the current attempt's own changed files back, insert the answer's 2–4 tasks at the next free `T###` ids with `parentId` recorded, re-point every pending `depends_on` that named the parent to all of them, and run them in order.
+- `verify` — re-run exactly the named checks, the gates plus the registered checks, with no implementer call; a clean run completes the brief as `consulted`, anything else consults again.
+- `ask-user` — the only question the ladder asks: put the planner's question, its choices and default to the user, and hand the answer back as guidance.
 
-- `answer` — retry the brief once with the reply under `## Hints from senior reviewer:` in its error block.
-- `widen <path>[, <path>…] — <reason>` — retry once and let the attempt write the named paths too; a write to a protected path still waits for the user to confirm it, and an allowed path is added to the brief's Approved out of bounds as `` `<path>` — planner-approved: <reason> ``.
-- `brief — <diagnosis>` — the brief is wrong: do not retry and do not take over; mark the brief `escalated` and report the implementer's hand-back and the diagnosis.
+An answer that would drop a criterion or split a subtask becomes that ask-user question instead. A stale consult accepts only `guidance` or `rewrite-task` and spends no planner call.
 
 ## 6. Takeover prompt (the session implements)
 
@@ -218,12 +244,12 @@ A takeover attempt is logged as `T00N/attempt-N.takeover.md` (your own completio
 
 ## 7. Outcome of an attempt
 
-From the final text of the log (structured tools: the terminal record's text field; text tools: everything after the last tool event), copy the `Files written:` list and the `Steps completed:` line into `evidence.md` under the attempt.
+From the final text of the log (structured tools: the terminal record's text field; text tools: everything after the last tool event), read the last JSON object as the attempt's report and copy it into `evidence.md`: `{"status":"done","filesChanged":[…],"touchedNotSuggested":[…],"notes":…}`, or the blocked form `{"status":"blocked","question":"…","filesNeeded":[…]}`. A report that is missing or does not match changes nothing; a blocked report consults at once, without a retry.
 
 The attempt has FAILED before any gate runs — record `gates: not run · drift: not run` and go to the ladder — when any of these holds:
 
 - the exit code or terminal record fails per references/tool-recipes.md;
 - the brief's anchor `file` is not in the changed set (the baseline fingerprints in references/gates.md), reason `brief file unchanged`;
-- the final text says `changed nothing`, `no changes`, `Files written: none`, or lists no file, reason `implementer reported no change`.
+- the report ends as `{"status":"done","filesChanged":[]}` and names no file, reason `implementer reported no change`.
 
 Only an attempt that passes these checks runs the gates and the drift check.

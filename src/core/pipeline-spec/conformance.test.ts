@@ -10,7 +10,12 @@ import {
   makeWctx,
 } from '#testing/helpers/orchestrator-factories.js';
 import { runOwnedPlanningPhase } from '#testing/helpers/planning-phase.js';
-import { planFromTasks, typedCallAnswering } from '#testing/helpers/typed-planner.js';
+import {
+  consultCallAnswering,
+  guidanceConsult,
+  planFromTasks,
+  typedCallAnswering,
+} from '#testing/helpers/typed-planner.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { renderBlock } from '../../../scripts/skill-blocks.js';
 import { handleRetryAndEscalation } from '../../engine/orchestrator/escalation/handle.js';
@@ -24,16 +29,16 @@ import { isAuthFailureDiagnostic } from '../../engine/runners/auth-failure.js';
 import { isUsageLimitDiagnostic } from '../../engine/runners/usage-limit.js';
 import { formatRetryPrompt } from '../../engine/spec/prompt-formatter.js';
 import { SIGKILL_DELAY_MS } from '../../lib/process/registry.js';
-import { createDefaultConfig } from '../config/load/defaults.js';
 import { VALIDATION_STAGES } from '../schemas/enums.js';
 import { GenerationCommonFields } from '../schemas/runner-fields.js';
 import { ReviewVerdictSchema } from '../schemas/summary.js';
 import { transition } from '../state/machine.js';
+import { BOUNDS } from './bounds.js';
 import { sliceRuleText } from './brief.js';
 import { DIVERGENCE_TABLE } from './divergences.js';
 import { CAPTURE_LIMITS, GATE_ORDER } from './gates.js';
 import { HALT_SIGNATURES } from './halts.js';
-import { LADDER, MAX_HINT_ERROR_LENGTH, RETRY_FRAMINGS, type LadderRungId } from './ladder.js';
+import { LADDER, RETRY_FRAMINGS } from './ladder.js';
 import { DEFAULT_LOCAL_RETRIES } from './retries.js';
 import { VERDICT_RULES } from './review.js';
 import { TIMEOUTS } from './timeouts.js';
@@ -46,8 +51,9 @@ afterEach(() => {
 });
 
 describe('retry budget', () => {
-  it('the shipped default config spends the pipeline spec retry count', () => {
-    expect(createDefaultConfig().workflow.maxRetries).toBe(DEFAULT_LOCAL_RETRIES);
+  it('the ladder spends one local retry from the pipeline spec', () => {
+    expect(DEFAULT_LOCAL_RETRIES).toBe(1);
+    expect(LADDER.filter((rung) => rung.count === 'DEFAULT_LOCAL_RETRIES')).toHaveLength(1);
   });
 });
 
@@ -62,14 +68,8 @@ describe('gates', () => {
   });
 });
 
-// The `takeover` rung has no entry: the planner advises the implementer, it
-// never takes the brief over as a code writer, so no escalating tier answers
-// for that rung.
-const ESCALATION_TIERS: Partial<Record<LadderRungId, number>> = {
-  intermediate: 0,
-  hint: 1,
-};
-
+// The retired intermediate and hint rungs publish no `escalate` rows; the
+// consult rung answers through the planner's typed session instead.
 describe('retry ladder', () => {
   it('a retry past the last framing opens with the final framing', () => {
     const prompt = formatRetryPrompt({
@@ -81,11 +81,11 @@ describe('retry ladder', () => {
     expect(prompt.split('\n')[0]).toBe(RETRY_FRAMINGS[3]);
   });
 
-  it('the hint composition is budgeted at 4000 characters', () => {
-    expect(MAX_HINT_ERROR_LENGTH).toBe(4000);
+  it('the consult composition is budgeted at 4000 characters', () => {
+    expect(BOUNDS.consultFailingOutputChars).toBe(4000);
   });
 
-  it('a brief that never passes spends the local retries then escalates in ladder order', async () => {
+  it('a brief that never passes spends the local retries then consults the planner', async () => {
     const { projectDir, sessionId } = setupGitSessionProject({
       prefix: 'conformance-ladder',
       sessionId: 'sess-conformance',
@@ -98,20 +98,11 @@ describe('retry ladder', () => {
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: { maxRetries: DEFAULT_LOCAL_RETRIES } }),
+        config: makeNoValidationConfig(),
         implementer: makeImplementer({
           retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'still broken' }),
         }),
-        // A planner that says nothing ends the hint rung before it spends an
-        // attempt, so the rung only shows up in the ladder when it answers.
-        planner: makePlanner({
-          escalateHint: vi.fn().mockResolvedValue({
-            success: true,
-            output: 'Narrow the type at the call site.',
-            code: 0,
-            usage: null,
-          }),
-        }),
+        planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
         bus,
       }),
       task,
@@ -120,13 +111,9 @@ describe('retry ladder', () => {
     });
 
     expect(events.filter((e) => e.type === 'task_retry')).toHaveLength(DEFAULT_LOCAL_RETRIES);
-    // No intermediate profile is configured, so the optional rung is skipped.
-    const expected = LADDER.filter((rung) => rung.optional !== true).flatMap((rung) => {
-      const tier = ESCALATION_TIERS[rung.id];
-      return tier === undefined ? [] : [tier];
-    });
-    expect(events.filter((e) => e.type === 'escalate').map((e) => e.tier)).toEqual(expected);
     expect(events.filter((e) => e.type === 'task_escalating')).toHaveLength(1);
+    expect(events.filter((e) => e.type === 'consult_answered').length).toBeGreaterThanOrEqual(1);
+    expect(events.filter((e) => e.type === 'escalate')).toEqual([]);
   }, 60_000);
 });
 

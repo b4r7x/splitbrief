@@ -53,15 +53,8 @@ export function summarizeValidation(opts: {
 export function attemptDetails(
   attempts: number | undefined,
   maxAttempts: number | undefined,
-  opts: Readonly<{ hintRungRan?: boolean | undefined }> = {},
 ): string[] {
   if (attempts === undefined && maxAttempts === undefined) return [];
-  if (attempts !== undefined && opts.hintRungRan === true) {
-    if (attempts === 1) return ['Attempts: 1 (with planner hints)'];
-    if (attempts >= 2) {
-      return [`Attempts: ${attempts} (${attempts - 1} local, then 1 with planner hints)`];
-    }
-  }
   if (attempts !== undefined && maxAttempts !== undefined && attempts <= maxAttempts) {
     return [`Attempts: ${attempts}/${maxAttempts}`];
   }
@@ -80,9 +73,9 @@ export function reviewSeatDetails(followsPlan: boolean): string[] {
     : [];
 }
 
-/** A hint halt names the brief whose hint the planner could not write. */
-export function hintHaltDetails(taskId: TaskId): string[] {
-  return [`The planner could not write the hint for ${taskId}.`];
+/** A consult halt names the brief whose consult the planner could not answer. */
+export function consultHaltDetails(taskId: TaskId): string[] {
+  return [`The planner could not answer the consult for ${taskId}.`];
 }
 
 export function routeBiggerDetails(opts: {

@@ -29,12 +29,12 @@ Core principle — the brief is the contract. The implementer sees nothing but t
 `review=<seat>` — the reviewer seat, same grammar. Absent → `review: session`.
 `--ask` — pause at the plan block for confirmation. Default: print and run.
 `--yes` — only with `--ask`: keep the plan-block pause but apply gate-blocker fixes (references/gates.md, Baseline) without asking.
-`--no-escalate` — the ladder stops at the hint rung; this session never implements a brief.
+`--no-escalate` — the ladder stops at the consult rung; this session never implements a brief.
 `<task | file>` — task text, or a path that exists on disk (notes, a spec, an issue export) read as the task.
 
 Natural phrasing is accepted ("implementer is opencode with kimi-k3, reviewer is cursor"). Normalize it to the grammar and print the normalized crew in the plan block — the plan block is the record of what was parsed.
 
-Crew fallback, per seat, first match wins: inline → `.splitbrief/config.yaml` (`implementer:` / `reviewer:` blocks with `kind: cli`: `tool`, `model`, `effort` or `variant`; `workflow.max_retries` replaces the default 2 local retries) → no implementer: run `command -v` over all eight binaries, ask one question listing the ones found with their auth status, and wait → no reviewer: this session.
+Crew fallback, per seat, first match wins: inline → `.splitbrief/config.yaml` (`implementer:` / `reviewer:` blocks with `kind: cli`: `tool`, `model`, `effort` or `variant`) → no implementer: run `command -v` over all eight binaries, ask one question listing the ones found with their auth status, and wait → no reviewer: this session.
 
 ## Modes
 
@@ -45,7 +45,7 @@ Crew fallback, per seat, first match wins: inline → `.splitbrief/config.yaml` 
 1. **The brief stands alone.** Nothing from this session's context reaches the implementer unless it is written into the brief. Code context is copied verbatim (references/brief-format.md), never summarized.
 2. **Gates decide, not the implementer.** Every attempt that changed the brief's files is followed by the resolved gates and the drift check (references/gates.md). An implementer's "tests pass" is a claim; the recorded output is the fact.
 3. **One brief, one outcome, one process at a time.** Briefs run sequentially in dependency order. Never spawn two implementers at once.
-4. **The ladder is bounded and halts are hard.** Local retries → hint → takeover, per brief. An auth error, a usage limit, a missing binary, or two consecutive timeouts stop the whole run and are reported with the fix — the next rung would silently hand the work back to this session.
+4. **The ladder is bounded and halts are hard.** One local retry → consult → takeover, per brief. An auth error, a usage limit, a missing binary, or two consecutive timeouts stop the whole run and are reported with the fix — the next rung would silently hand the work back to this session.
 5. **Review is evidence-bound.** The reviewer quotes the Recorded Validation Output or says validation was not recorded. A reviewer that asserts green tests from nowhere is wrong by construction.
 6. **Nothing touches git.** No `git add`, `git commit`, `git stash`, no `.bak` files — not by this session, not by the implementer (the rule is in every brief's Constraints). The working tree is left for the human.
 7. **Materialize before you move.** The run dir, `plan.md`, `progress.md`, and `evidence.md` exist on disk before the first spawn. `plan` mode is the only path that leaves nothing behind.
@@ -68,7 +68,7 @@ Crew fallback, per seat, first match wins: inline → `.splitbrief/config.yaml` 
     gates: typecheck `npx tsc --noEmit` (manifest) · lint `biome check .` (manifest) · test `vitest run` (manifest)
     baseline: typecheck PASS · lint PASS · test PASS (42 passed)
     briefs: 2 → T001 src/health.ts (create) · T002 src/router.ts +1 (modify, after T001)
-    ladder: 2 local retries → hint → takeover (session)
+    ladder: 1 local retry → consult → takeover (session)
     run dir: .splitbrief/runs/2026-09-08-153000-health-endpoint/
     gitignore: .splitbrief/ ignored   (or: NOT ignored — add it to .gitignore or expect the run dir in git status)
 
@@ -84,7 +84,7 @@ Crew fallback, per seat, first match wins: inline → `.splitbrief/config.yaml` 
     | T001 | src/health.ts | pending | 0 | — | — | — |
     | T002 | src/router.ts +1 | pending | 0 | — | — | — |
 
-Status: `pending` · `running` · `retrying (n)` · `done` · `escalated` · `halted`. Rung: `—` · `retry` · `recipe-fix` · `hint` · `takeover`. Updated after every attempt, reprinted to the user after every brief.
+Status: `pending` · `running` · `retrying (n)` · `done` · `escalated` · `halted`. Rung: `—` · `retry` · `recipe-fix` · `consult` · `takeover`. Updated after every attempt, reprinted to the user after every brief.
 
 ### `evidence.md`
 
@@ -93,7 +93,7 @@ One entry per attempt, appended in order:
     ## T001 — attempt 1
     command: <the exact spawn command line>
     exit: 0 · terminal record: result · duration: 40s
-    completion report: Files written: src/health.ts · Steps completed: all
+    report: {"status":"done","filesChanged":["src/health.ts"],"touchedNotSuggested":[],"notes":null}
     gates: PASS (test `# pass 5`) · drift: none
     outcome: done   (or: failed — <reason> · retrying (1) / halted — <signature> / escalated)
 
@@ -107,7 +107,7 @@ For each brief in `index.md` order, while every `depends_on` is `done`:
 
 1. **Prompt.** Render `T00N/attempt-1.prompt.md` per references/implementer-prompt.md: preamble, body, closing line. Refuse a prompt whose first character is `-`.
 2. **Spawn.** Build the implementer command from references/tool-recipes.md with the resolved model and effort; cwd = project root; output → `T00N/attempt-1.log`; detached, with the waiter as the deadline (Orchestration notes below). Append the entry to `evidence.md` as soon as the command line is known.
-3. **Outcome.** Apply references/implementer-prompt.md §7: exit code, terminal record, the brief's anchor file present in the changed set, a completion report that names a file. A failed outcome records `gates: not run · drift: not run` and goes straight to step 6.
+3. **Outcome.** Apply references/implementer-prompt.md §7: exit code, terminal record, the brief's anchor file present in the changed set, no `done` report that names no file (a missing report is advisory). A failed outcome records `gates: not run · drift: not run` and goes straight to step 6.
 4. **Gates.** typecheck → lint → test with narrowing, per references/gates.md; outputs verbatim into `validation.md`. Baseline failures do not count; new ones do.
 5. **Drift.** Per references/gates.md; every attempt gets an entry in `drift.md`; a path entry is recorded for the reviewer and never fails the attempt.
 6. **Ladder** on failure — halt signatures first, then spawn-failure signatures (both in references/tool-recipes.md), then:
@@ -116,11 +116,12 @@ For each brief in `index.md` order, while every `depends_on` is `done`:
 | Rung | Who runs it | Attempts | Consumes a local retry |
 |---|---|---|---|
 | `recipe-fix` | implementer | 1 | no |
-| `local` | implementer | 2 | yes |
-| `intermediate` | intermediate-implementer | 1 | yes (optional rung) |
-| `hint` | planner-then-implementer | 1 | yes |
+| `local` | implementer | 1 | yes |
+| `consult` | planner-then-implementer | 1 | yes |
 | `takeover` | planner | 1 | yes |
 <!-- /generated -->
+
+After the local rung, references/implementer-prompt.md §5: one read-only consult, its answer (`guidance`, `rewrite-task`, `split-task`, `verify` or `ask-user`) decides the next step — a retry with the guidance, a replaced or split brief, a re-run of the named checks, or the ladder's one user question. The bounds are in references/implementer-prompt.md §5; a spent bound halts with the planner's last diagnosis and offers continue (with a note), skip the brief, or end the run.
 
 Exhausted → `escalated`; the run stops; later briefs stay `pending`. Halt → `halted`; the run stops.
 
@@ -141,7 +142,7 @@ Exhausted → `escalated`; the run stops; later briefs stay `pending`. Halt → 
     | Brief | Files | Attempts | Rung | Gates | Drift | Status |
     |---|---|---|---|---|---|---|
     | T001 | src/health.ts | 1 | — | PASS | none | done |
-    | T002 | src/router.ts +1 | 3 | hint | PASS | none | done |
+    | T002 | src/router.ts +1 | 3 | consult | PASS | none | done |
 
     ### Recorded validation output (final attempts)
     <verbatim — never summarized>

@@ -75,6 +75,7 @@ const TASK_COMPLETION_METHODS = [
   'escalated-intermediate',
   'escalated-hint',
   'escalated-full',
+  'consulted',
   'failed',
   'skipped',
 ] as const;
@@ -99,6 +100,8 @@ export const RECOVERY_REASONS = [
   'implementation-error',
   'validation-failed',
   'retry-exhausted',
+  'consult-bound-spent',
+  'planner-calls-spent',
   'runner-unauthenticated',
   'runner-usage-limit',
   'context-overflow',

@@ -261,35 +261,13 @@ describe('validateCommitAndAdvance', () => {
       config: makeConfig(),
       state,
       bus,
-      method: 'escalated-hint',
-      transitionType: 'HINT_SUCCESS',
+      method: 'local',
+      transitionType: 'VALIDATION_PASS',
       retryCount: 3,
     });
 
     const taskEvent = events.find((e) => e.type === 'task_completed');
     expect(taskEvent).toMatchObject({ type: 'task_completed', retries: 3 });
-  });
-
-  it('stores escalated-intermediate completion as an escalated task', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const state = makeCommitState();
-    const { bus } = makeBusRecorder();
-
-    const result = await validateCommitAndAdvance({
-      task: firstCommitTask(state),
-      acceptance: acceptedAcceptance,
-      projectDir,
-      sessionId,
-      config: makeConfig(),
-      state,
-      bus,
-      method: 'escalated-intermediate',
-      transitionType: 'VALIDATION_PASS',
-      retryCount: 1,
-    });
-
-    expect(result.state.tasks[0]?.status).toBe('escalated');
-    expect(result.state.currentTaskIndex).toBe(1);
   });
 
   it('falls back to state.attempt when retryCount is not provided', async () => {

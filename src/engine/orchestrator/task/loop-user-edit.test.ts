@@ -37,8 +37,6 @@ function setupProject(): { projectDir: string; sessionId: string } {
   return { projectDir, sessionId };
 }
 
-const defaultWorkflow = { maxRetries: 2 };
-
 function futureEditScenario(projectDir: string): {
   state: ReturnType<typeof makeImplState>;
   implementer: ReturnType<typeof makeImplementer>;
@@ -94,7 +92,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        config: makeNoValidationConfig(),
         callbacks,
         implementer,
         bus,
@@ -129,7 +127,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
           wctx: makeWctx({
             projectDir,
             sessionId,
-            config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+            config: makeNoValidationConfig(),
             callbacks,
             implementer,
             bus,
@@ -176,7 +174,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        config: makeNoValidationConfig(),
         callbacks,
         implementer,
         bus,
@@ -213,7 +211,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        config: makeNoValidationConfig(),
         callbacks,
         implementer,
         bus,
@@ -249,7 +247,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        config: makeNoValidationConfig(),
         callbacks,
         implementer,
         bus,
@@ -275,7 +273,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        config: makeNoValidationConfig(),
         callbacks,
         implementer,
         bus,
@@ -326,7 +324,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        config: makeNoValidationConfig(),
         callbacks: firstCallbacks,
         implementer: firstImplementer,
         bus: firstBus,
@@ -361,7 +359,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        config: makeNoValidationConfig(),
         callbacks: resumeCallbacks,
         implementer: resumeImplementer,
         bus: resumeBus,
@@ -396,7 +394,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        config: makeNoValidationConfig(),
         callbacks,
         implementer,
         bus,
@@ -473,7 +471,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        config: makeNoValidationConfig(),
         callbacks,
         implementer,
         bus,
@@ -499,7 +497,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        config: makeNoValidationConfig(),
         callbacks: secondCallbacks,
         implementer: makeImplementer({
           capabilities: { writesFiles: 'direct' },
@@ -575,7 +573,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        config: makeNoValidationConfig(),
         callbacks,
         implementer,
         bus,
@@ -614,7 +612,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        config: makeNoValidationConfig(),
         callbacks: secondCallbacks,
         implementer: makeImplementer({
           capabilities: { writesFiles: 'direct' },

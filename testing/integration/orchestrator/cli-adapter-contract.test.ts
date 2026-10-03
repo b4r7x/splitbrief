@@ -935,6 +935,7 @@ describe('T-017 stable CLI outcome taxonomy', () => {
       'checkout-changed',
       'runner-timeout-repeated',
       'missing-model',
+      'no-progress-cut',
     ]);
     expect([...RUNNER_OUTCOME_STATES].sort()).toEqual([...covered].sort());
   });

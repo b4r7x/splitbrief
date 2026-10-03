@@ -20,29 +20,6 @@ const PaletteConfigSchema = z.object({
   customActions: z.array(PaletteCustomActionSchema).optional(),
 });
 
-const EscalationConfigSchema = z
-  .object({
-    /**
-     * The mid-tier worker, always an `api` runner. It names an API catalog provider
-     * (`ollama`, `lm-studio`, `llama-cpp`) or a custom API provider; a custom name
-     * reuses the API implementer's endpoint and inline key, with the configured name
-     * as its identity. A CLI tool id here (`opencode`) is a custom provider of that
-     * name, never the CLI tool.
-     */
-    intermediateProvider: z.string().optional(),
-    intermediateModel: z.string().optional(),
-    enabled: z.boolean().optional(),
-  })
-  .superRefine((escalation, ctx) => {
-    if (escalation.intermediateProvider && !escalation.intermediateModel) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'intermediateModel is required when intermediateProvider is set',
-        path: ['intermediateModel'],
-      });
-    }
-  });
-
 const GitWorkflowFieldsSchema = z.strictObject({
   commitStrategy: CommitStrategySchema.optional(),
   createBranch: z.boolean().optional(),
@@ -95,7 +72,8 @@ export const ConfigSchema = z.object({
   }),
   workflow: z.strictObject({
     approve: ApproveLevelSchema.optional(),
-    maxRetries: z.number().int().min(0),
+    /** Retired: loads with one notice and changes nothing. */
+    maxRetries: z.unknown().optional(),
     git: GitWorkflowConfigSchema.optional(),
     isolation: IsolationStrategySchema.optional(),
     /** Retired: loads with one notice and changes nothing. */
@@ -116,7 +94,8 @@ export const ConfigSchema = z.object({
       scope: z.enum(['project']).optional(),
     })
     .optional(),
-  escalation: EscalationConfigSchema.optional(),
+  /** Retired: loads with one notice and changes nothing. */
+  escalation: z.unknown().optional(),
   codebase: CodebaseConfigSchema.optional(),
   hooks: HooksConfigSchema.optional(),
   palette: PaletteConfigSchema.optional(),

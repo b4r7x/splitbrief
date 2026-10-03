@@ -1,11 +1,10 @@
-export type LadderRungId = 'recipe-fix' | 'local' | 'intermediate' | 'hint' | 'takeover';
+export type LadderRungId = 'recipe-fix' | 'local' | 'consult' | 'takeover';
 
 export type LadderRung = Readonly<{
   id: LadderRungId;
-  who: 'implementer' | 'intermediate-implementer' | 'planner-then-implementer' | 'planner';
+  who: 'implementer' | 'planner-then-implementer' | 'planner';
   consumesRetry?: boolean;
   count?: 'DEFAULT_LOCAL_RETRIES';
-  optional?: boolean;
   /** False for a rung the skill runs but the engine has no call site for. */
   engine?: boolean;
 }>;
@@ -13,8 +12,7 @@ export type LadderRung = Readonly<{
 export const LADDER: readonly LadderRung[] = [
   { id: 'recipe-fix', who: 'implementer', consumesRetry: false },
   { id: 'local', who: 'implementer', count: 'DEFAULT_LOCAL_RETRIES' },
-  { id: 'intermediate', who: 'intermediate-implementer', optional: true },
-  { id: 'hint', who: 'planner-then-implementer' },
+  { id: 'consult', who: 'planner-then-implementer' },
   { id: 'takeover', who: 'planner', engine: false },
 ];
 
@@ -29,12 +27,6 @@ export const RETRY_FRAMINGS: Readonly<Record<number, string>> = {
 export function framingForAttempt(attempt: number): string {
   return RETRY_FRAMINGS[attempt] ?? FINAL_FRAMING;
 }
-
-export function HINT_ERROR_TEMPLATE(error: string, hint: string): string {
-  return `${error}\n\n## Hints from senior reviewer:\n${hint}`;
-}
-
-export const MAX_HINT_ERROR_LENGTH = 4000;
 
 /** How much of an implementer's terminal text the hint prompt carries; the panel quotes only its last `HAND_BACK_PANEL_CHARS`. */
 export const HAND_BACK_MAX_CHARS = 2000;

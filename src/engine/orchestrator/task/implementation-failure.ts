@@ -3,6 +3,7 @@ import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/
 import type { TokenUsage, TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { WorkflowContext } from '../types.js';
 import type { runImplementation } from './run-implementation.js';
+import { DEFAULT_LOCAL_RETRIES } from '../../../core/pipeline-spec/retries.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { publishError } from '../events.js';
 import { raisePendingRecovery } from '../state-ops.js';
@@ -80,7 +81,7 @@ export async function handleFailedImplementation(opts: {
       runner: wctx.config.implementer,
       toolMessage,
       attempts: 1,
-      maxAttempts: wctx.config.workflow.maxRetries,
+      maxAttempts: DEFAULT_LOCAL_RETRIES,
       ...(wctx.implementerProfile !== undefined && {
         selectedImplementerProfile: wctx.implementerProfile,
       }),
@@ -110,7 +111,7 @@ export async function handleFailedImplementation(opts: {
       runner: wctx.config.implementer,
       toolMessage,
       attempts: 1,
-      maxAttempts: wctx.config.workflow.maxRetries,
+      maxAttempts: DEFAULT_LOCAL_RETRIES,
       ...(wctx.implementerProfile !== undefined && {
         selectedImplementerProfile: wctx.implementerProfile,
       }),
@@ -144,7 +145,7 @@ export async function handleFailedImplementation(opts: {
       runner: wctx.config.implementer,
       toolMessage: implState.implResult.error ?? 'The runner refused the invocation',
       attempts: 0,
-      maxAttempts: wctx.config.workflow.maxRetries,
+      maxAttempts: DEFAULT_LOCAL_RETRIES,
       ...(wctx.implementerProfile !== undefined && {
         selectedImplementerProfile: wctx.implementerProfile,
       }),
@@ -166,6 +167,7 @@ export async function handleFailedImplementation(opts: {
   }
   const outcome = implState.implResult.outcome;
   const handBack = boundedHandBack(implState.implResult.output);
+  const blocked = implState.implResult.blocked;
   const retry = await retryAndRecord({
     wctx,
     task,
@@ -175,6 +177,13 @@ export async function handleFailedImplementation(opts: {
         outcome,
         runner: wctx.config.implementer,
         ...(handBack !== undefined && { handBack }),
+      },
+    }),
+    ...(blocked !== undefined && {
+      initialBlocked: {
+        status: 'blocked' as const,
+        question: blocked.question,
+        filesNeeded: blocked.filesNeeded,
       },
     }),
     state,

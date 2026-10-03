@@ -121,7 +121,6 @@ function validConfigYaml(): string {
     '  testCommand: npm test',
     'workflow:',
     '  approve: plan',
-    '  maxRetries: 3',
   ].join('\n');
 }
 

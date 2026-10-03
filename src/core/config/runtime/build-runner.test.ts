@@ -517,7 +517,6 @@ describe('buildRunnerConfig', () => {
     it('does not carry planner capability state to a different command target', () => {
       const capabilities = {
         supportsConversationalPlanning: true,
-        supportsHintEscalation: true,
       };
       const commandSource = {
         kind: 'shell' as const,

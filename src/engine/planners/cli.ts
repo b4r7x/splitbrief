@@ -306,7 +306,6 @@ export function createCliPlanner(
       }),
     runnerName: plannerCfg.tool,
     ...(resolvedModel !== undefined && { model: resolvedModel }),
-    hintSuccessMode: 'text',
     escalateFullMode: 'files',
     typedOutput: typedOutputCapability(plannerCfg.tool, trustedCli?.installedVersion),
 

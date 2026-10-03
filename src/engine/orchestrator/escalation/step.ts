@@ -1,17 +1,20 @@
 import { loadState } from '../../../core/state/persistence.js';
 import { defaultImplementerWriteMode } from '../../../core/schemas/implementer-config.js';
+import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow.js';
+import type { ImplementerReport } from '../../../core/schemas/consult.js';
 import { formatValidationError } from '../validation/format-error.js';
-import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
+import { addUsageAndSave } from '../state-ops.js';
 import { refreshAndPersistCode } from '../task/refresh-code.js';
 import { gateAndPromoteChangedFiles } from '../approval/gate-and-promote.js';
+import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { withPerCallAbort } from '../cancellable-call.js';
-import { publishError } from '../events.js';
+import { publishError, publishWarningFromError } from '../events.js';
 import { createRetryRuntime, stateForRetryProfile } from './retry-runtime.js';
 import { persistRetryApprovalEvidence, recordRetryDenial } from './retry-evidence.js';
 import { handleApprovalTimeUserEditConflict } from './approval-conflict.js';
 import { validateAndCommit } from './validate-and-commit.js';
 import { boundedHandBack, failedRetry } from './types.js';
-import type { RetryStepOpts, RetryStepOutcome } from './types.js';
+import type { RetryInvokeResult, RetryStepOpts, RetryStepOutcome } from './types.js';
 import { recordedApiCreatedPaths } from '../evidence/task.js';
 import {
   persistApiApplyEvidence,
@@ -19,12 +22,53 @@ import {
   invalidateTargetWriteEvidence,
 } from '../evidence/persistence.js';
 import { isAbortError } from '../../../utils/abort.js';
+import { isRecord } from '../../../utils/type-guards.js';
 import { isResumableWorkspaceStop, workspaceOwner } from '../isolation/retention.js';
 import { commitWorkflowState } from '../state-ops.js';
 import { error } from '../../../utils/error.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 
-export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcome> {
+/** The direct writer's blocked report: the attempt stopped asking for a decision. */
+export type BlockedReport = Extract<ImplementerReport, { status: 'blocked' }>;
+
+/** A retry outcome, with the blocked report an attempt handed back when it stopped to ask. */
+export type RetryStepResult = RetryStepOutcome & {
+  blocked?: BlockedReport | undefined;
+};
+
+/**
+ * The blocked report behind a result, read from the pipeline's own verdict. A
+ * result that does not carry one — every successful attempt, every failure with
+ * a machine outcome — changes nothing.
+ */
+function blockedReportOf(result: RetryInvokeResult): BlockedReport | undefined {
+  if (!('blocked' in result)) return undefined;
+  const blocked: unknown = result.blocked;
+  if (!isRecord(blocked)) return undefined;
+  const question = blocked.question;
+  if (typeof question !== 'string') return undefined;
+  const filesNeeded = Array.isArray(blocked.filesNeeded)
+    ? blocked.filesNeeded.filter((file): file is string => typeof file === 'string')
+    : [];
+  return { status: 'blocked', question, filesNeeded };
+}
+
+export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepResult> {
+  let attemptSnapshot: ChangedFilesSnapshot | undefined;
+  try {
+    attemptSnapshot = await getChangedFilesSnapshot(opts.ctx.projectDir);
+  } catch (err) {
+    publishWarningFromError(
+      { bus: opts.ctx.bus, phase: opts.state.phase },
+      'retry attempt snapshot failed',
+      err,
+    );
+  }
+  const outcome = await runRetryStepAttempt(opts);
+  return attemptSnapshot === undefined ? outcome : { ...outcome, attemptSnapshot };
+}
+
+async function runRetryStepAttempt(opts: RetryStepOpts): Promise<RetryStepResult> {
   const {
     ctx,
     state: initialState,
@@ -105,6 +149,7 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
           fileIgnoreProjectDir: ctx.projectDir,
           changeDetection: workspace.changeDetection,
           createdByThisTask: recordedApiCreatedPaths(ctx, task),
+          seat: { ref: ctx, state, usageCategory },
         }),
     });
   } catch (err) {
@@ -140,6 +185,7 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
   if (!retryResult.success) {
     workspace.cleanup();
     const handBack = boundedHandBack(retryResult.output);
+    const blocked = blockedReportOf(retryResult);
     return {
       state,
       task,
@@ -156,6 +202,7 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
           ...(handBack !== undefined && { handBack }),
         },
       }),
+      ...(blocked !== undefined && { blocked }),
     };
   }
   if (ctx.signal?.aborted) {
@@ -254,27 +301,6 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
     });
   }
   const actualChangedFiles = gateResult.changedFiles;
-  const widening = opts.scopeWidening;
-  if (widening !== undefined) {
-    const widened = actualChangedFiles.filter((file) => widening.paths.includes(file));
-    if (widened.length > 0) {
-      state = transitionAndSave(ctx, state, {
-        type: 'WIDEN_TASK_SCOPE',
-        taskId: task.id,
-        paths: widened,
-        reason: widening.reason,
-      });
-      task = state.tasks.find((entry) => entry.id === task.id) ?? task;
-      ctx.bus.publish({
-        type: 'task_scope_widened',
-        ts: Date.now(),
-        phase: state.phase,
-        taskId: task.id,
-        paths: widened,
-        reason: widening.reason,
-      });
-    }
-  }
   const commitResult = await validateAndCommit({
     ctx: retryCtx,
     task,

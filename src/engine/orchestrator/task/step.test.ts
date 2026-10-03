@@ -135,7 +135,6 @@ describe('runSingleTask — completion, abort and approval evidence', { timeout:
         signal: controller.signal,
         config: makeConfig({
           validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
-          workflow: { maxRetries: 2 },
         }),
         validator: { ...createValidator(), runValidation },
       }),
@@ -191,7 +190,6 @@ describe('runSingleTask — completion, abort and approval evidence', { timeout:
         signal: controller.signal,
         config: makeConfig({
           validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
-          workflow: { maxRetries: 2 },
         }),
         validator: { ...createValidator(), runValidation },
       }),
@@ -251,7 +249,6 @@ describe('runSingleTask — completion, abort and approval evidence', { timeout:
             feedRejectionsToPlanner: false,
           },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-          workflow: { maxRetries: 2 },
         }),
       }),
       task,

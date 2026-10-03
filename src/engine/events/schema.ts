@@ -14,9 +14,10 @@ import {
   UserEditConflictKindSchema,
   WorkflowModeSchema,
 } from '../../core/schemas/enums.js';
-import { TaskIdSchema } from '../../core/schemas/task.js';
+import { CheckResultSchema, TaskIdSchema } from '../../core/schemas/task.js';
 import { AnsweredQuestionSchema } from '../../core/schemas/question.js';
 import { PlannerCallSchema, StepCutSchema, StepRefSchema } from '../../core/schemas/run-step.js';
+import { ConsultRecordSchema } from '../../core/schemas/workflow.js';
 import { TaskReviewRecoverySchema } from '../../core/schemas/recovery/schemas.js';
 import { CREW_SEAT_IDS } from '../../core/crew/identity.js';
 import { TaskTokenUsageSchema, TokenUsageSchema } from '../../core/schemas/tokens.js';
@@ -556,6 +557,42 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   }),
   phaseEvent('task_review_needed').extend(taskReviewRequestFields),
   phaseEvent('hint_failed').extend({ taskId: TaskIdSchema }),
+  phaseEvent('consult_answered').extend({
+    taskId: TaskIdSchema,
+    reason: ConsultRecordSchema.shape.reason,
+    action: ConsultRecordSchema.shape.action,
+    diagnosis: z.string(),
+    newTaskIds: taskIdArray.nullable(),
+    revision: z.number().int().optional(),
+    checkIds: z.array(z.string()).optional(),
+  }),
+  phaseEvent('task_replaced').extend({
+    taskId: TaskIdSchema,
+    revision: z.number().int(),
+  }),
+  phaseEvent('tasks_inserted').extend({
+    parentId: TaskIdSchema,
+    taskIds: taskIdArray,
+  }),
+  phaseEvent('checks_run').extend({
+    taskId: TaskIdSchema,
+    results: z.array(CheckResultSchema),
+  }),
+  phaseEvent('seat_wait_started').extend({
+    seat: z.enum(CREW_SEAT_IDS),
+    resetAt: z.string(),
+  }),
+  phaseEvent('seat_retry').extend({
+    seat: z.enum(CREW_SEAT_IDS),
+    attempt: z.number().int().nonnegative(),
+    delayMs: z.number().int().nonnegative(),
+  }),
+  phaseEvent('no_progress_cut').extend({
+    taskId: TaskIdSchema.nullable(),
+    seat: z.enum(CREW_SEAT_IDS),
+    silentMs: z.number().int().nonnegative(),
+  }),
+  phaseEvent('consult_bound_spent'),
   phaseEvent('implementer_generate_running').extend({
     taskId: TaskIdSchema,
     file: z.string().optional(),

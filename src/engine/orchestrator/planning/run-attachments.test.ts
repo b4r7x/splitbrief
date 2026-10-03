@@ -17,7 +17,6 @@ import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 const defaultCapabilities: PlannerCapabilities = {
   supportsConversationalPlanning: false,
-  supportsHintEscalation: true,
   supportsSessionResume: false,
   supportsEffort: false,
   supportsImages: false,

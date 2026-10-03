@@ -27,6 +27,7 @@ import { createRecoveryIssue } from '../recovery/builders/issue.js';
 import { raisePendingRecovery } from '../state-ops.js';
 import { isAbortError } from '../../../utils/abort.js';
 import { isResumableWorkspaceStop } from '../isolation/retention.js';
+import { recordWorktreePromotion } from '../isolation/acquisition.js';
 import { error } from '../../../utils/error.js';
 
 export type GateDenial = {
@@ -260,6 +261,12 @@ export async function gateAndPromoteChangedFiles(
         retainWorkspaceOutput = true;
         return { outcome: 'error', state, error: err };
       }
+      await recordWorktreePromotion({
+        projectDir,
+        sessionId,
+        workspacePath: workspace.projectDir,
+        files: promoteResult.appliedFiles ?? [],
+      });
       await capturePromotedReviewChanges({
         ref: { projectDir, sessionId },
         task,

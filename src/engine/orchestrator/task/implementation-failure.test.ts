@@ -9,6 +9,7 @@ import {
   makeImplementer,
   makePlanner,
 } from '#testing/helpers/orchestrator-factories.js';
+import { consultCallAnswering, guidanceConsult } from '#testing/helpers/typed-planner.js';
 import {
   cleanupTaskProjects,
   makeTaskWorkflowContext as makeWorkflowContext,
@@ -200,17 +201,27 @@ describe('handleFailedImplementation — runner defects halt before the ladder',
   });
 });
 
-describe('handleFailedImplementation — a stop with a hand-back goes to the planner first', () => {
-  it('forwards the tail of the implementer output and skips the local rung', async () => {
+describe('handleFailedImplementation — a stop with a hand-back is consulted', () => {
+  it('ends the local rung on a no-change retry and asks the planner', async () => {
+    const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001' });
     const state = implementingState([task]);
-    const implementer = makeImplementer({ retry: vi.fn() });
-    const hint = 'VERDICT: brief — the prop was removed in T000';
-    const escalateHint = vi
-      .fn()
-      .mockResolvedValue({ success: true, output: hint, code: null, usage: null });
+    const implementer = makeImplementer({
+      retry: vi.fn().mockResolvedValue({
+        success: false,
+        output: 'I could not find the prop.',
+        outcome: 'no-staged-change',
+        error: 'exited without changing any files',
+      }),
+    });
     const { bus, events } = makeBusRecorder();
-    const wctx = makeWorkflowContext({ implementer, planner: makePlanner({ escalateHint }), bus });
+    const wctx = makeWorkflowContext({
+      projectDir,
+      sessionId,
+      implementer,
+      planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
+      bus,
+    });
 
     const next = await handleFailedImplementation({
       wctx,
@@ -229,18 +240,12 @@ describe('handleFailedImplementation — a stop with a hand-back goes to the pla
       setTrackedState: vi.fn(),
     });
 
-    expect(implementer.retry).not.toHaveBeenCalled();
-    expect(events.find((e) => e.type === 'task_retry')).toBeUndefined();
-    const handBack = escalateHint.mock.calls[0]?.[0]?.handBack;
-    expect(handBack).toHaveLength(2000);
-    expect(handBack?.endsWith('I could not find the prop.')).toBe(true);
-    expect(next.pendingRecovery).toMatchObject({ reason: 'retry-exhausted', taskId: 'T001' });
-    expect(next.pendingRecovery?.details).toContain(
-      'Planner verdict: the brief itself is wrong — the prop was removed in T000',
-    );
-    expect(next.pendingRecovery?.details.some((row) => row.startsWith('Implementer said:'))).toBe(
-      true,
-    );
+    // One local retry stopped on the no-change outcome; the two consult answers
+    // each spent one attempt before the lineage bound halted the ladder.
+    expect(implementer.retry).toHaveBeenCalledTimes(3);
+    expect(events.filter((e) => e.type === 'task_retry')).toHaveLength(1);
+    expect(events.filter((e) => e.type === 'consult_answered')).toHaveLength(2);
+    expect(next.pendingRecovery).toMatchObject({ reason: 'consult-bound-spent', taskId: 'T001' });
   });
 });
 
@@ -261,7 +266,6 @@ describe('handleFailedImplementation — an effect failure is no scope fence', (
       bus,
       config: makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: { maxRetries: 1 },
       }),
     });
     const error = "Tool implementer wrote outside the brief's declared files: src/other.ts";

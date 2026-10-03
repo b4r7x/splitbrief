@@ -235,6 +235,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   trustHome.restore();
 });
 
@@ -741,6 +742,54 @@ describe('initializeWorkflow', () => {
           (event) => event.type === 'user_message' && event.text === 'use the registry',
         ),
       ).toHaveLength(1);
+    });
+  });
+
+  it('waits for a persisted seat reset before the task continues', async () => {
+    await withTempDir('splitbrief-init-seat-wait', async (tempDir) => {
+      const projectDir = realpathSync(tempDir);
+      const feature = 'resume during a seat wait';
+      const sessionId = 'session-init-seat-wait';
+      ensureSessionDir(projectDir, sessionId);
+      const events: EngineEvent[] = [];
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+
+      const pending = initializeTestWorkflow({
+        projectDir,
+        sessionId,
+        feature,
+        eventSink: (event) => events.push(event),
+        savedState: {
+          ...createInitialState(feature),
+          phase: 'implementing',
+          tasks: [makeTask({ id: 'T001', status: 'pending', file: 'src/banner.ts' })],
+          currentTaskIndex: 0,
+          seatWait: { seat: 'build', resetAt: '2026-01-01T00:02:00.000Z' },
+        },
+      });
+      let settled = false;
+      void pending.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+      // Let init reach the persisted wait without moving the clock past it.
+      while (!settled && !events.some((event) => event.type === 'seat_wait_started')) {
+        await vi.advanceTimersByTimeAsync(1);
+      }
+      expect(events.filter((event) => event.type === 'seat_wait_started')).toHaveLength(1);
+
+      while (!settled) {
+        await vi.advanceTimersByTimeAsync(vi.getTimerCount() === 0 ? 1 : 120_000);
+      }
+      const { init } = await pending;
+
+      expect(init.ok).toBe(true);
+      expect(loadState({ projectDir, sessionId })?.seatWait).toBeUndefined();
     });
   });
 });

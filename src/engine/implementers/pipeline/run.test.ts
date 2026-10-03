@@ -206,7 +206,7 @@ describe('createImplementerBase — prompt write contracts', () => {
     });
 
     expect(seenPrompt).toContain(
-      `Edit ${task.file} directly in the isolation directory. SPLITBRIEF runs the typecheck, lint, format and test gates after you hand back, so run at most the focused test files the brief lists, once. End with a completion report naming the files you wrote, one line Also changed (not suggested): <file> — <reason> for each file the brief did not suggest, and whether the brief's steps were completed.`,
+      `Edit ${task.file} directly in the isolation directory. SPLITBRIEF runs the typecheck, lint, format and test gates after you hand back, so run at most the focused test files the brief lists, once. End your reply with the one JSON report object the rules describe: status done with the files you changed, or status blocked with your question and the files you need.`,
     );
     expect(seenPrompt).not.toContain('Output ONLY the complete file contents');
     expect(seenPrompt).not.toContain('Output the complete file contents');
@@ -289,6 +289,155 @@ describe('createImplementerBase — prompt write contracts', () => {
     });
 
     expect(invoke).toHaveBeenCalledWith(expect.objectContaining({ skillRoots }));
+  });
+});
+
+describe('createImplementerBase — typed implementer report', () => {
+  const doneReport = {
+    status: 'done',
+    filesChanged: ['src/hello.ts'],
+    touchedNotSuggested: [],
+    notes: null,
+  } as const;
+  const blockedReport = {
+    status: 'blocked',
+    question: 'Which store should the cache use?',
+    filesNeeded: ['src/store.ts'],
+  } as const;
+
+  it('carries the report a direct reply ends with on a successful attempt', async () => {
+    const invoke = vi.fn().mockResolvedValue(
+      makeRunnerCallResult({
+        status: 'completed',
+        text: `I wrote the module.\n${JSON.stringify(doneReport)}`,
+        usage: null,
+      }),
+    );
+    const implementer = createImplementerBase(makeBaseConfig({ extractsCode: false, invoke }));
+
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.report).toEqual(doneReport);
+    expect(result.blocked).toBeUndefined();
+  });
+
+  it('returns a blocked report as blocked before the workspace is checked for changes', async () => {
+    const detectChanges = vi.fn().mockResolvedValue({ changed: false, output: 'no changes' });
+    const invoke = vi.fn().mockResolvedValue(
+      makeRunnerCallResult({
+        status: 'completed',
+        text: `I need the store before I can continue.\n${JSON.stringify(blockedReport)}`,
+        usage: null,
+      }),
+    );
+    const implementer = createImplementerBase(
+      makeBaseConfig({ extractsCode: false, detectChanges, invoke }),
+    );
+
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.blocked).toEqual({
+      question: blockedReport.question,
+      filesNeeded: blockedReport.filesNeeded,
+    });
+    expect(result.report).toEqual(blockedReport);
+    expect(detectChanges).not.toHaveBeenCalled();
+  });
+
+  it('takes the last JSON object, so a blocked report after a done-shaped one wins', async () => {
+    const invoke = vi.fn().mockResolvedValue(
+      makeRunnerCallResult({
+        status: 'completed',
+        text: `${JSON.stringify(doneReport)}\nActually, I am blocked.\n${JSON.stringify(blockedReport)}`,
+        usage: null,
+      }),
+    );
+    const implementer = createImplementerBase(makeBaseConfig({ extractsCode: false, invoke }));
+
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+
+    expect(result.blocked).toEqual({
+      question: blockedReport.question,
+      filesNeeded: blockedReport.filesNeeded,
+    });
+  });
+
+  it('leaves the result unchanged when the reply carries no valid report', async () => {
+    for (const text of [
+      'done, no report',
+      '{"status":"done"}',
+      '{"status":"other","question":"q","filesNeeded":[]}',
+    ]) {
+      const invoke = vi
+        .fn()
+        .mockResolvedValue(makeRunnerCallResult({ status: 'completed', text, usage: null }));
+      const implementer = createImplementerBase(makeBaseConfig({ extractsCode: false, invoke }));
+
+      const result = await implementer.implement({
+        task: makeTask(),
+        projectDir,
+        config: makeConfig(),
+        context: defaultContext,
+        onOutput: vi.fn(),
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.report).toBeUndefined();
+      expect(result.blocked).toBeUndefined();
+    }
+  });
+
+  it('surfaces a blocked file-bundle as blocked and writes nothing', async () => {
+    const blockedBundle = {
+      version: 1,
+      blocked: { question: 'Which store should the cache use?', filesNeeded: ['src/store.ts'] },
+    };
+    const invoke = vi.fn().mockResolvedValue(
+      makeRunnerCallResult({
+        status: 'completed',
+        text: JSON.stringify(blockedBundle),
+        usage: null,
+      }),
+    );
+    const implementer = createImplementerBase(
+      makeBaseConfig({ extractsCode: true, outputContract: 'file-bundle-v1', invoke }),
+    );
+
+    const result = await implementer.implement({
+      task: makeTask({ file: 'src/hello.ts', action: 'create' }),
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.blocked).toEqual({
+      question: 'Which store should the cache use?',
+      filesNeeded: ['src/store.ts'],
+    });
+    expect(result.applyResult).toBeUndefined();
+    expect(existsSync(join(projectDir, 'src/hello.ts'))).toBe(false);
   });
 });
 
@@ -513,7 +662,7 @@ describe('createImplementerBase — wrote-nothing warning', () => {
 describe('createImplementerBase — retry', () => {
   it.each([
     ['local', 2, 'tsc failed', 0.4, 'Previous attempts failed.'],
-    ['hint', 1, 'lint failed', 0.2, 'Your previous attempt had an error.'],
+    ['consult', 1, 'lint failed', 0.2, 'Your previous attempt had an error.'],
   ] as const)(
     'succeeds on retry for kind "%s" at attempt %i, prompting with the error and setting the temperature',
     async (kind, attempt, error, expectedTemperature, framing) => {

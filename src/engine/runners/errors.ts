@@ -8,6 +8,7 @@ export const RUNNER_OUTCOME_STATES = [
   'unauthenticated',
   'usage-limit',
   'timeout',
+  'no-progress-cut',
   'user-abort',
   'signal-exit',
   'non-zero-exit',
@@ -51,6 +52,8 @@ function defaultRemediation(state: RunnerFailureOutcomeState): string {
       return 'Wait for the usage limit to reset, switch the seat to another tool, or end the run.';
     case 'timeout':
       return 'Retry the command or increase its configured timeout.';
+    case 'no-progress-cut':
+      return 'The runner produced no output past its idle limit with no child process running and was stopped; the task is retried.';
     case 'user-abort':
       return 'Retry the command when you are ready to continue.';
     case 'signal-exit':

@@ -33,13 +33,12 @@ function Harness({
 }
 
 const numberDef: SettingDef = {
-  id: 'workflow.maxRetries',
-  label: 'Max Retries',
-  section: 'Workflow',
+  id: 'implementer.contextLength',
+  label: 'Context length',
+  section: 'Tuning',
   description: '',
   kind: 'number',
-  min: 0,
-  max: 10,
+  min: 1024,
   integer: true,
 };
 
@@ -73,7 +72,7 @@ describe('useEditBuffer commit on invalid input', () => {
     expect(committed).toHaveLength(0);
     expect(ui.lastFrame() ?? '').toContain('active=true');
     expect(feedbackStore.get().isError).toBe(true);
-    expect(feedbackStore.get().message).toContain('Max retries');
+    expect(feedbackStore.get().message).toContain('Context length');
 
     ui.unmount();
   });

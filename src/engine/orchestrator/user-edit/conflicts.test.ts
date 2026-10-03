@@ -9,7 +9,7 @@ describe('classifyUserEditConflict', () => {
     const conflict = classifyUserEditConflict({
       files: ['README.md'],
       currentTask,
-      currentTaskInFlight: false,
+      briefHoldsOutput: () => false,
       allTasks: [currentTask],
       currentTaskIndex: 0,
     });
@@ -26,7 +26,7 @@ describe('classifyUserEditConflict', () => {
     const conflict = classifyUserEditConflict({
       files: ['src/current.ts'],
       currentTask,
-      currentTaskInFlight: true,
+      briefHoldsOutput: () => true,
       allTasks: [currentTask],
       currentTaskIndex: 0,
     });
@@ -42,7 +42,7 @@ describe('classifyUserEditConflict', () => {
     const conflict = classifyUserEditConflict({
       files: ['src/current.ts'],
       currentTask,
-      currentTaskInFlight: false,
+      briefHoldsOutput: () => false,
       allTasks: [currentTask],
       currentTaskIndex: 0,
     });
@@ -63,7 +63,7 @@ describe('classifyUserEditConflict', () => {
     const conflict = classifyUserEditConflict({
       files: ['src/current.test.ts', 'src/x.ts'],
       currentTask,
-      currentTaskInFlight: true,
+      briefHoldsOutput: () => true,
       allTasks: [currentTask],
       currentTaskIndex: 0,
     });
@@ -78,7 +78,7 @@ describe('classifyUserEditConflict', () => {
     const conflict = classifyUserEditConflict({
       files: ['src/future.ts'],
       currentTask,
-      currentTaskInFlight: false,
+      briefHoldsOutput: () => false,
       allTasks: [currentTask, futureTask],
       currentTaskIndex: 0,
     });
@@ -99,7 +99,7 @@ describe('classifyUserEditConflict', () => {
     const conflict = classifyUserEditConflict({
       files: ['src/dependency.ts'],
       currentTask,
-      currentTaskInFlight: false,
+      briefHoldsOutput: () => false,
       allTasks: [dependencyTask, currentTask],
       currentTaskIndex: 1,
     });
@@ -111,7 +111,7 @@ describe('classifyUserEditConflict', () => {
 
   function dependencyEdit(opts: {
     statuses: Task['status'][];
-    currentTaskInFlight: boolean;
+    briefHoldsOutput: boolean;
   }): ReturnType<typeof classifyUserEditConflict> {
     const dependencies = opts.statuses.map((status, index) =>
       makeTask({ id: `T00${index + 1}`, file: 'src/dependency.ts', status }),
@@ -124,14 +124,14 @@ describe('classifyUserEditConflict', () => {
     return classifyUserEditConflict({
       files: ['src/dependency.ts'],
       currentTask,
-      currentTaskInFlight: opts.currentTaskInFlight,
+      briefHoldsOutput: () => opts.briefHoldsOutput,
       allTasks: [...dependencies, currentTask],
       currentTaskIndex: dependencies.length,
     });
   }
 
   it('takes an edit to a done dependency as stale input when the current brief has not started', () => {
-    const conflict = dependencyEdit({ statuses: ['done'], currentTaskInFlight: false });
+    const conflict = dependencyEdit({ statuses: ['done'], briefHoldsOutput: false });
 
     expect(conflict.kind).toBe('future-task-stale-input');
     expect(conflict.safeToContinue).toBe(true);
@@ -142,7 +142,7 @@ describe('classifyUserEditConflict', () => {
   it.each(['pending', 'in_progress', 'failed', 'escalated', 'skipped'] as const)(
     'keeps an edit to a %s dependency blocking',
     (status) => {
-      const conflict = dependencyEdit({ statuses: [status], currentTaskInFlight: false });
+      const conflict = dependencyEdit({ statuses: [status], briefHoldsOutput: false });
 
       expect(conflict.kind).toBe('dependency-file-conflict');
       expect(conflict.safeToContinue).toBe(false);
@@ -150,15 +150,15 @@ describe('classifyUserEditConflict', () => {
   );
 
   it('keeps an edit blocking when one of the dependencies it touches is not done', () => {
-    const conflict = dependencyEdit({ statuses: ['done', 'failed'], currentTaskInFlight: false });
+    const conflict = dependencyEdit({ statuses: ['done', 'failed'], briefHoldsOutput: false });
 
     expect(conflict.kind).toBe('dependency-file-conflict');
     expect(conflict.safeToContinue).toBe(false);
     expect(conflict.affectedTaskIds).toEqual(['T001', 'T002']);
   });
 
-  it('keeps an edit to a done dependency blocking while the current brief is in flight', () => {
-    const conflict = dependencyEdit({ statuses: ['done'], currentTaskInFlight: true });
+  it('keeps an edit to a done dependency blocking while the brief holds output on that file', () => {
+    const conflict = dependencyEdit({ statuses: ['done'], briefHoldsOutput: true });
 
     expect(conflict.kind).toBe('dependency-file-conflict');
     expect(conflict.safeToContinue).toBe(false);
@@ -170,7 +170,7 @@ describe('classifyUserEditConflict', () => {
     const conflict = classifyUserEditConflict({
       files: ['src/shared.ts'],
       currentTask,
-      currentTaskInFlight: true,
+      briefHoldsOutput: () => true,
       allTasks: [dependencyTask, currentTask],
       currentTaskIndex: 1,
     });

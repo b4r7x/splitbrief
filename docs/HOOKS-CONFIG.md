@@ -34,7 +34,7 @@ Lifecycle events fire during a workflow. Each can have multiple hooks declared.
 | `post_task`      | After each implementer task succeeds        | `taskId`, `title`, `method`, `file`, `retries`, `duration`           |
 | `pre_validation` | Before tsc/lint/test runs                   | `taskId`                                                            |
 | `post_validation`| After validation finishes                   | `taskId`, `passed`, `stages` (`{typecheck,lint,test}`), `error?`     |
-| `pre_escalation` | Before planner escalation runs              | `taskId`                                                             |
+| `pre_escalation` | Before the planner's consult runs           | `taskId`                                                             |
 | `on_error`       | Any unrecoverable engine error              | `message`                                                            |
 | `on_halt`        | `recovery_prompted` event — the run stopped and is waiting for a decision | `reason`, `taskId`, `headline`, `recommendedAction`, `resumeCommand` (`sessionId` rides in `context`) |
 | `on_complete`    | `workflow_complete` event                   | (none)                                                               |
@@ -92,14 +92,14 @@ args: ["${event.file}", "--task=${event.taskId}"]
 |----------------------|----------------------------------------|------------------------------------------|
 | `${event.file}`      | task_*                     | Project-relative anchor path string      |
 | `${event.files}`     | pre_task                   | JSON-stringified array of the brief's declared paths |
-| `${event.taskId}`    | task_*, validate, escalate | Branded TaskId string                    |
+| `${event.taskId}`    | task_*, validate, consult_answered | Branded TaskId string                    |
 | `${event.title}`     | task_started, task_completed           | Task description                         |
 | `${event.action}`    | task_started                           | `'create'` or `'modify'`                 |
 | `${event.message}`   | error, warning             | String                                   |
 | `${event.stages}`    | validate                               | JSON-stringified `{typecheck, lint, test}` |
 | `${event.feature}`   | workflow_started                       | The user's feature prompt                |
 | `${event.duration}`  | task_completed, validate               | Number (ms)                              |
-| `${event.method}`    | task_completed, task_tokens            | One of `'local'`, `'escalated-intermediate'`, `'escalated-hint'`, `'escalated-full'`, `'failed'`, `'skipped'` |
+| `${event.method}`    | task_completed, task_tokens            | One of `'local'`, `'consulted'`, `'escalated-intermediate'`, `'escalated-hint'`, `'escalated-full'` (older runs), `'failed'`, `'skipped'` |
 | `${event.reason}`    | recovery_prompted                      | The halt's `RecoveryReason`, e.g. `'retry-exhausted'` |
 | `${event.headline}`  | recovery_prompted                      | The operator-facing sentence, e.g. `T003 exhausted its retries` |
 | `${event.recommendedAction}` | recovery_prompted              | The `RecoveryAction` the halt recommends |

@@ -101,6 +101,16 @@ const SNAPSHOT_FAILED_ACTIONS = [
   'pause-run',
   'end-run',
 ] as const satisfies readonly RecoveryAction[];
+/**
+ * A lineage out of consults or attempts, or a run out of planner calls, can
+ * continue once the operator grants more, skip the brief it stopped, or end.
+ * The continue carries the operator's note into the grant.
+ */
+const CONSULT_BOUND_ACTIONS = [
+  'continue',
+  'skip-current-task',
+  'end-run',
+] as const satisfies readonly RecoveryAction[];
 const DEPENDENCY_BLOCKED_ACTIONS = [
   'skip-current-task',
   'pause-run',
@@ -120,6 +130,9 @@ export function allowedActionsForReason(reason: RecoveryReason): RecoveryAction[
     case 'validation-failed':
     case 'retry-exhausted':
       return copyActions(TASK_RECOVERY_ACTIONS);
+    case 'consult-bound-spent':
+    case 'planner-calls-spent':
+      return copyActions(CONSULT_BOUND_ACTIONS);
     case 'runner-unauthenticated':
     case 'runner-usage-limit':
       return copyActions(SEAT_BLOCKED_ACTIONS);

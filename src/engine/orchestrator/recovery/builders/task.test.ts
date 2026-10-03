@@ -104,35 +104,28 @@ describe('buildRetryExhaustedRecoveryIssue', () => {
     allowRetryOverride: true,
   };
 
-  it('quotes both voices and spells the hinted attempt', () => {
+  it('quotes the implementer hand-back', () => {
     const issue = buildRetryExhaustedRecoveryIssue({
       ...bothVoices,
-      hintRungRan: true,
       handBack: 'I could not find the prop.',
-      plannerHint: 'Add a default instead.',
     });
 
-    expect(issue.details).toContain('Attempts: 4 (3 local, then 1 with planner hints)');
+    expect(issue.details).toContain('Attempts: 4');
     expect(issue.details).toContain('Implementer said: I could not find the prop.');
-    expect(issue.details).toContain('Planner said: Add a default instead.');
-    expect(issue.facts?.hintRungRan).toBe(true);
-    expect(issue.facts?.plannerVerdict).toBeUndefined();
     expectValidRecoveryIssue(issue);
   });
 
-  it('adds no voice rows when neither party spoke', () => {
-    const issue = buildRetryExhaustedRecoveryIssue({ ...bothVoices, hintRungRan: true });
+  it('adds no hand-back row when the implementer did not speak', () => {
+    const issue = buildRetryExhaustedRecoveryIssue(bothVoices);
 
     expect(issue.details.some((row) => row.startsWith('Implementer said:'))).toBe(false);
-    expect(issue.details.some((row) => row.startsWith('Planner said:'))).toBe(false);
   });
 
-  it('states a bare count and no hint-rung fact when the hint rung did not run', () => {
+  it('states a bare count over the max attempts', () => {
     const issue = buildRetryExhaustedRecoveryIssue(bothVoices);
 
     expect(issue.details).toContain('Attempts: 4');
     expect(issue.details.some((row) => row.includes('4/3'))).toBe(false);
-    expect(issue.facts?.hintRungRan).toBeUndefined();
   });
 
   it('names the last error and drops any Validation detail', () => {
@@ -172,69 +165,26 @@ describe('buildRetryExhaustedRecoveryIssue', () => {
     expect(row?.length).toBeLessThanOrEqual(320);
   });
 
-  it('names the brief-is-wrong verdict with the planner diagnosis', () => {
-    const issue = buildRetryExhaustedRecoveryIssue({
-      ...bothVoices,
-      attempts: 1,
-      handBack: 'May I edit src/consumer.ts?',
-      plannerHint: 'VERDICT: brief — the export was already deleted\nNothing to retry.',
-      plannerVerdict: 'brief',
-    });
-
-    expect(issue.details).toContain('Planner said: Nothing to retry.');
-    expect(issue.details).toContain(
-      'Planner verdict: the brief itself is wrong — the export was already deleted',
-    );
-    expect(issue.details.some((row) => row.includes('VERDICT:'))).toBe(false);
-    expect(issue.facts?.plannerVerdict).toBe('brief');
-    expectValidRecoveryIssue(issue);
-  });
-
-  it('recommends no retry when the planner found the brief wrong', () => {
-    const issue = buildRetryExhaustedRecoveryIssue({
-      ...bothVoices,
-      routeBiggerProfile: 'agent-cli',
-      plannerHint:
-        'VERDICT: brief — no retry can produce a change. The deliverable is already in place and correct.',
-      plannerVerdict: 'brief',
-    });
-
-    expect(issue.availableActions).toContain('retry-same-worker');
-    expect(issue.recommendedAction).toBe('pause-run');
-    expectValidRecoveryIssue(issue);
-  });
-
-  it('omits Planner said row when nothing is left after stripping the verdict line', () => {
-    const issue = buildRetryExhaustedRecoveryIssue({
-      ...bothVoices,
-      plannerHint: 'VERDICT: answer',
-    });
-
-    expect(issue.details.some((row) => row.startsWith('Planner said:'))).toBe(false);
-  });
-
   it('omits attempts row at zero attempts and formats other attempt counts', () => {
     const zeroAttempts = buildRetryExhaustedRecoveryIssue({
       ...bothVoices,
-      plannerVerdict: 'brief',
       attempts: 0,
       maxAttempts: 3,
     });
     expect(zeroAttempts.details.some((row) => row.startsWith('Attempts'))).toBe(false);
 
-    const oneWithHint = buildRetryExhaustedRecoveryIssue({
+    const one = buildRetryExhaustedRecoveryIssue({
       ...bothVoices,
       attempts: 1,
-      hintRungRan: true,
     });
-    expect(oneWithHint.details).toContain('Attempts: 1 (with planner hints)');
+    expect(one.details).toContain('Attempts: 1/3');
 
-    const fiveNoHint = buildRetryExhaustedRecoveryIssue({
+    const five = buildRetryExhaustedRecoveryIssue({
       ...bothVoices,
       attempts: 5,
       maxAttempts: 3,
     });
-    expect(fiveNoHint.details).toContain('Attempts: 5');
+    expect(five.details).toContain('Attempts: 5');
   });
 
   it('defaults to task exhausted its retries when neither verdict nor hook reason is set', () => {
@@ -243,15 +193,6 @@ describe('buildRetryExhaustedRecoveryIssue', () => {
       createdAt,
     });
     expect(issue.message).toBe('T012 exhausted its retries');
-  });
-
-  it('sets message when plannerVerdict is brief', () => {
-    const issue = buildRetryExhaustedRecoveryIssue({
-      task: makeTask({ id: 'T012' }),
-      createdAt,
-      plannerVerdict: 'brief',
-    });
-    expect(issue.message).toBe('T012: the planner found the brief wrong');
   });
 
   it('sets message and fact when escalationBlockedBy is provided', () => {

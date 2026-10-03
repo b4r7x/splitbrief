@@ -33,8 +33,6 @@ function setupProject(): { projectDir: string; sessionId: string } {
   return { projectDir, sessionId };
 }
 
-const defaultWorkflow = { maxRetries: 2 };
-
 describe('runTaskLoop', { timeout: 90_000 }, () => {
   it('happy path completes a task after implementation and validation pass', async () => {
     const { projectDir, sessionId } = setupProject();
@@ -100,7 +98,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        config: makeNoValidationConfig(),
         callbacks,
         implementer,
         bus: makeBusRecorder().bus,
@@ -132,7 +130,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        config: makeNoValidationConfig(),
         callbacks,
         implementer,
         bus: makeBusRecorder().bus,
@@ -152,7 +150,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        config: makeNoValidationConfig(),
         callbacks,
         implementer: makeImplementer({ implement: vi.fn() }),
         bus: makeBusRecorder().bus,
@@ -183,7 +181,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        config: makeNoValidationConfig(),
         callbacks,
         implementer,
         bus: makeBusRecorder().bus,
@@ -232,7 +230,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        config: makeNoValidationConfig(),
         callbacks: makeCallbacks().callbacks,
         implementer,
         bus: makeBusRecorder().bus,

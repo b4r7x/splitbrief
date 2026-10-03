@@ -7,7 +7,7 @@ import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { SettingsOverlay } from '../../../src/app/overlays/settings.js';
 import { loadConfig } from '../../../src/core/config/load/io.js';
-import { DEFAULT_LOCAL_RETRIES } from '../../../src/core/pipeline-spec/retries.js';
+import { writeConfigYaml } from '#testing/helpers/config-io.js';
 import { configStore } from '../../../src/stores/project/config.js';
 import { overlayStore } from '../../../src/stores/ui/overlay.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
@@ -19,7 +19,7 @@ const ARROW_DOWN = '\u001b[B';
 const CURSOR_GLYPH = '▌';
 const KITTY_SUPER_SPACE = '\u001b[32;9u';
 const KITTY_HYPER_SPACE = '\u001b[32;17u';
-const SEEDED_RETRIES = String(DEFAULT_LOCAL_RETRIES);
+const SEEDED_TIMEOUT_MS = 240_000;
 
 function lineContaining(frame: string, text: string): string {
   const line = frame.split('\n').find((candidate) => candidate.includes(text));
@@ -146,11 +146,13 @@ describe('settings overlay integration', () => {
   });
 
   it('typing edits a number, Enter commits via validation', async () => {
+    writeConfigYaml(dir, { implementer: { timeout: SEEDED_TIMEOUT_MS } });
+    configStore.load(dir);
     terminalSizeStore.__testReset({ cols: 100, rows: 60, isSmall: false });
-    overlayStore.open('settings', 'workflow.maxRetries');
+    overlayStore.open('settings', 'implementer.timeout');
     const ui = renderFeature(<SettingsOverlay />);
     await flushEffects();
-    expect(ui.lastFrame()).toContain('Max retries');
+    expect(ui.lastFrame()).toContain('Timeout');
 
     ui.stdin.write('\r'); // Enter edit mode on the numeric field.
     await vi.waitFor(() => {
@@ -158,24 +160,24 @@ describe('settings overlay integration', () => {
     });
     await flushEffects();
 
-    ui.stdin.write('\x7f'); // backspace — clear the seeded default
+    for (let i = 0; i < String(SEEDED_TIMEOUT_MS).length; i++) ui.stdin.write('\x7f');
     await vi.waitFor(() => {
       const clearedFrame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(lineContaining(clearedFrame, 'Max retries')).not.toContain(SEEDED_RETRIES);
+      expect(lineContaining(clearedFrame, 'Timeout')).not.toContain(String(SEEDED_TIMEOUT_MS));
     });
     await flushEffects();
 
     ui.stdin.write('5');
     await vi.waitFor(() => {
       const typedFrame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(lineContaining(typedFrame, 'Max retries')).toContain('5');
+      expect(lineContaining(typedFrame, 'Timeout')).toContain('5');
     });
     await flushEffects();
 
     ui.stdin.write('\r'); // commit
 
     await vi.waitFor(() => {
-      expect(loadConfig(dir).config.workflow.maxRetries).toBe(5);
+      expect(loadConfig(dir).config.implementer).toMatchObject({ timeout: 5 });
     });
 
     await vi.waitFor(() => {
@@ -187,45 +189,40 @@ describe('settings overlay integration', () => {
   });
 
   it('keeps edit mode open and surfaces an error when committing invalid input', async () => {
+    writeConfigYaml(dir, { implementer: { timeout: SEEDED_TIMEOUT_MS } });
+    configStore.load(dir);
     terminalSizeStore.__testReset({ cols: 100, rows: 60, isSmall: false });
-    overlayStore.open('settings', 'workflow.maxRetries');
+    overlayStore.open('settings', 'implementer.timeout');
     const ui = renderFeature(<SettingsOverlay />);
     await flushEffects();
 
-    ui.stdin.write('\r'); // enter edit mode (seeded with the default)
+    ui.stdin.write('\r'); // enter edit mode (seeded with the configured timeout)
     await vi.waitFor(() => {
       expect(overlayStore.get().exclusive).toBe(true);
     });
 
     await flushEffects();
-    ui.stdin.write('\x7f');
+    for (let i = 0; i < String(SEEDED_TIMEOUT_MS).length; i++) ui.stdin.write('\x7f');
     await vi.waitFor(() => {
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(lineContaining(frame, 'Max retries')).not.toContain(SEEDED_RETRIES);
+      expect(lineContaining(frame, 'Timeout')).not.toContain(String(SEEDED_TIMEOUT_MS));
     });
     await flushEffects();
 
-    ui.stdin.write('9');
+    ui.stdin.write('0'); // below min (1)
     await vi.waitFor(() => {
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(lineContaining(frame, 'Max retries')).toContain('9');
-    });
-    await flushEffects();
-
-    ui.stdin.write('9'); // "99" is above max (10)
-    await vi.waitFor(() => {
-      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(lineContaining(frame, 'Max retries')).toContain('99');
+      expect(lineContaining(frame, 'Timeout')).toContain('0');
     });
     await flushEffects();
 
     ui.stdin.write('\r'); // attempt commit of out-of-range value
 
     await vi.waitFor(() => {
-      expect(loadConfig(dir).config.workflow.maxRetries).toBe(DEFAULT_LOCAL_RETRIES);
+      expect(loadConfig(dir).config.implementer).toMatchObject({ timeout: SEEDED_TIMEOUT_MS });
       const feedback = feedbackStore.get();
       expect(feedback.isError).toBe(true);
-      expect(feedback.message).toContain('Max retries');
+      expect(feedback.message).toContain('Timeout');
       expect(overlayStore.get().exclusive).toBe(true);
     });
     await flushEffects();
@@ -233,16 +230,21 @@ describe('settings overlay integration', () => {
     ui.stdin.write('\x7f');
     await vi.waitFor(() => {
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      const maxRetriesLine = lineContaining(frame, 'Max retries');
-      expect(maxRetriesLine).toContain('9');
-      expect(maxRetriesLine).not.toContain('99');
+      expect(lineContaining(frame, 'Timeout')).not.toContain('0');
+    });
+    await flushEffects();
+
+    ui.stdin.write('5');
+    await vi.waitFor(() => {
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(lineContaining(frame, 'Timeout')).toContain('5');
     });
     await flushEffects();
 
     ui.stdin.write('\r');
 
     await vi.waitFor(() => {
-      expect(loadConfig(dir).config.workflow.maxRetries).toBe(9);
+      expect(loadConfig(dir).config.implementer).toMatchObject({ timeout: 5 });
       expect(overlayStore.get().exclusive).toBe(false);
       expect(feedbackStore.get().isError).toBe(false);
     });
@@ -251,21 +253,23 @@ describe('settings overlay integration', () => {
   });
 
   it('Esc cancels an active edit without saving', async () => {
-    overlayStore.open('settings', 'workflow.maxRetries');
+    writeConfigYaml(dir, { implementer: { timeout: SEEDED_TIMEOUT_MS } });
+    configStore.load(dir);
+    overlayStore.open('settings', 'implementer.timeout');
     const ui = renderFeature(<SettingsOverlay />);
     await flushEffects();
-    expect(ui.lastFrame()).toContain('Max retries');
+    expect(ui.lastFrame()).toContain('Timeout');
 
     ui.stdin.write('\r');
     await flushEffects();
-    ui.stdin.write('\x7f');
+    for (let i = 0; i < String(SEEDED_TIMEOUT_MS).length; i++) ui.stdin.write('\x7f');
     await flushEffects();
-    ui.stdin.write('9');
+    ui.stdin.write('5');
     await flushEffects();
     ui.stdin.write('\x1b'); // escape
 
     await vi.waitFor(() => {
-      expect(loadConfig(dir).config.workflow.maxRetries).toBe(DEFAULT_LOCAL_RETRIES);
+      expect(loadConfig(dir).config.implementer).toMatchObject({ timeout: SEEDED_TIMEOUT_MS });
     });
     ui.unmount();
   });
@@ -283,7 +287,7 @@ describe('settings overlay integration', () => {
     ui.stdin.write(PAGE_DOWN);
     await vi.waitFor(() => {
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(lineContaining(frame, CURSOR_GLYPH)).toContain('Type check');
+      expect(lineContaining(frame, CURSOR_GLYPH)).toContain('Lint');
       // The page steps over the Workflow section and lands with the whole of it on screen — its
       // first row included — so no row was stepped over unseen.
       expect(frame).toContain('Plan approval');

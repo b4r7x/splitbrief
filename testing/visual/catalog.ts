@@ -1196,15 +1196,15 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
-      id: 'workflow-recovery-brief-verdict',
-      title: 'Workflow · a brief the planner found wrong',
+      id: 'workflow-recovery-consult-bound',
+      title: 'Workflow · a brief that used its consult allowance',
       surface: screenSurface('workflow'),
       checkpoint: {
-        id: 'brief-verdict',
-        title: 'Brief-verdict recovery menu',
+        id: 'consult-bound',
+        title: 'Consult-bound recovery menu',
         kind: 'question',
         // The headline is the one line the panel keeps at 60x18.
-        marker: 'Recovery needed · T901: the planner found the brief',
+        marker: 'Recovery needed · T901 used its consult allowance',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

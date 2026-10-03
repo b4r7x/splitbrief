@@ -1,7 +1,6 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
 import { useSharedClock } from '../../../hooks/use-shared-clock.js';
-import { configStore } from '../../../stores/project/config.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { operationsStore } from '../../../stores/workflow/operations/state.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
@@ -13,13 +12,12 @@ import { getChromeContentWidth } from '../layout/chrome-rows.js';
 export function BuildProgressBlock({ cols }: { cols: number }) {
   const t = useTheme();
   const [tasks, lifecycle, operations] = useStores(tasksStore, lifecycleStore, operationsStore);
-  const config = configStore.use((state) => state.config);
   const running = lifecycle.status === 'running';
   // Freshness counts the seconds since the seat last spoke, so it has to move while the seat says
   // nothing: the shared run clock repaints the block when nothing else does.
   const now = useSharedClock({ active: running });
   const width = getChromeContentWidth(cols);
-  const progress = deriveBuildProgress({ tasks, lifecycle, operations, config, now });
+  const progress = deriveBuildProgress({ tasks, lifecycle, operations, now });
   const lines = buildProgressLines(progress, width);
   return (
     <Box flexDirection="column" flexShrink={0}>

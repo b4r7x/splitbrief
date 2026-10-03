@@ -7,7 +7,6 @@ import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
 import { formatRetryPrompt, formatTaskPrompt } from '../../spec/prompt-formatter.js';
-import { buildHintPrompt } from '../../spec/prompts/escalation.js';
 import { buildFinalReviewPrompt } from '../../spec/prompts/review.js';
 import { buildLanguageContext } from '../../spec/prompts/language-context.js';
 import { buildPlanSessionPrompt } from '../../spec/prompts/plan-session.js';
@@ -156,18 +155,6 @@ describe('buildSkillsContext', () => {
     }
   });
 
-  it('reaches the hint call', async () => {
-    const prompt = buildHintPrompt(
-      makeTask(),
-      'tsc failed',
-      undefined,
-      undefined,
-      await savedSkills(),
-    );
-
-    for (const part of SKILL_PARTS) expect(prompt).toContain(part);
-  });
-
   it('reaches the final review', async () => {
     const prompt = buildFinalReviewPrompt({
       spec: '# Spec',
@@ -207,7 +194,6 @@ describe('buildSkillsContext', () => {
       brief: formatTaskPrompt({ task, context, writesFiles: 'direct' }),
       retry: formatRetryPrompt({ task, context, error: 'x', attempt: 1, writesFiles: 'direct' }),
       bundle: formatTaskPrompt({ task, context, outputContract: 'file-bundle-v1' }),
-      hint: buildHintPrompt(task, 'tsc failed', undefined, undefined, skillsContext),
       review: buildFinalReviewPrompt({
         spec: '# Spec',
         taskBriefs: '## T001',

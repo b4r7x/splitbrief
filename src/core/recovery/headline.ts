@@ -55,6 +55,10 @@ export function formatRecoveryHeadline(issue: RecoveryIssue, now: number = Date.
         plannerVerdict: recoveryFactString(issue.facts, 'plannerVerdict'),
         hookReason: recoveryFactString(issue.facts, 'escalationBlockedBy'),
       });
+    case 'consult-bound-spent':
+      return `${taskName(issue)} used its consult allowance`;
+    case 'planner-calls-spent':
+      return 'The run used its planner-call allowance';
     case 'scope-violation':
       return `${taskName(issue)} wrote outside its declared files`;
     case 'implementer-recipe-invalid':

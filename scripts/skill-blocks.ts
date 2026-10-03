@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { BASELINE_RULE } from '../src/core/pipeline-spec/baseline.js';
+import { BOUNDS } from '../src/core/pipeline-spec/bounds.js';
 import {
   BRIEF_SECTION_ORDER,
   CLOSING_CONSTRAINTS,
@@ -10,23 +11,21 @@ import {
 } from '../src/core/pipeline-spec/brief.js';
 import { CAPTURE_LIMITS, GATE_ORDER, NARROWING_RULE } from '../src/core/pipeline-spec/gates.js';
 import { HALT_SIGNATURES } from '../src/core/pipeline-spec/halts.js';
-import {
-  HINT_ERROR_TEMPLATE,
-  LADDER,
-  MAX_HINT_ERROR_LENGTH,
-  RETRY_FRAMINGS,
-} from '../src/core/pipeline-spec/ladder.js';
+import { LADDER, RETRY_FRAMINGS } from '../src/core/pipeline-spec/ladder.js';
 import { DEFAULT_LOCAL_RETRIES } from '../src/core/pipeline-spec/retries.js';
 import { REVIEW_CYCLE_CAP, VERDICT_RULES } from '../src/core/pipeline-spec/review.js';
 import { SCOPE_RULE } from '../src/core/pipeline-spec/scope.js';
 import { TIMEOUTS } from '../src/core/pipeline-spec/timeouts.js';
 import type { CliEffortChannel } from '../src/core/runners/effort-channel.js';
+import { CONSULT_ANSWER_JSON_SCHEMA } from '../src/core/schemas/consult.js';
 import type { EffortLevel } from '../src/core/schemas/enums.js';
+import type { Plan } from '../src/core/schemas/plan.js';
 import { taskId, TaskSchema } from '../src/core/schemas/task.js';
 import { STACKS } from '../src/core/validation/stacks/registry.js';
 import type { Stack, TestNarrowing } from '../src/core/validation/stacks/types.js';
 import { createStdoutTextSink } from '../src/engine/events/sinks/stdout-text.js';
 import type { EngineEvent } from '../src/engine/events/types.js';
+import { consultAttemptError } from '../src/engine/orchestrator/escalation/consult-guidance.js';
 import { CLI_PROMPT_SENTINEL } from '../src/engine/runners/cli-tools/candidate-contract.js';
 import type {
   CliImplementerAdapter,
@@ -36,9 +35,11 @@ import {
   CLI_IMPLEMENTER_ADAPTERS,
   CLI_PLANNER_ADAPTERS,
 } from '../src/engine/runners/cli-tools/registry.js';
+import { fallbackInstruction } from '../src/engine/runners/typed-output.js';
 import { READ_ONLY_CONTEXT_HEADING, TASK_BRIEF_HEADINGS } from '../src/engine/spec/headings.js';
 import { formatTaskPrompt } from '../src/engine/spec/prompt-formatter.js';
-import { buildEscalationPrompt, buildHintPrompt } from '../src/engine/spec/prompts/escalation.js';
+import { buildConsultPrompt } from '../src/engine/spec/prompts/consult.js';
+import { buildEscalationPrompt } from '../src/engine/spec/prompts/escalation.js';
 import { buildLanguageContext } from '../src/engine/spec/prompts/language-context.js';
 import { buildFinalReviewPrompt } from '../src/engine/spec/prompts/review.js';
 import { buildImplementerSystemPreamble } from '../src/engine/spec/prompts/system.js';
@@ -62,8 +63,15 @@ const PLACEHOLDER_TASK = TaskSchema.parse({
   status: 'pending',
 });
 
+const PLACEHOLDER_PLAN: Plan = {
+  summary: '<the plan summary>',
+  decisions: [],
+  criteria: [{ id: '<C1>', text: '<what the criterion verifies>', checkIds: ['<K1>'] }],
+  checks: [{ id: '<K1>', kind: 'test', value: '<the check file or command>', required: true }],
+  validation: null,
+};
+
 const ERROR_PLACEHOLDER = '<gate tail>';
-const HINT_PLACEHOLDER = '<hint>';
 
 type Substitutions = ReadonlyArray<readonly [string, string]>;
 
@@ -194,6 +202,40 @@ function reviewPacket(): string {
   );
 }
 
+/**
+ * The consult contract: the prompt the planner answers, rendered with placeholders, and
+ * the error block the one post-consult attempt retries with.
+ */
+function consultContract(): string {
+  const prompt = buildConsultPrompt({
+    reason: 'failed',
+    plan: PLACEHOLDER_PLAN,
+    task: PLACEHOLDER_TASK,
+    revisions: [],
+    diff: "<the diff from the attempt's start snapshot to now>",
+    failingOutput: ERROR_PLACEHOLDER,
+    report: {
+      status: 'done',
+      filesChanged: ['<file>'],
+      touchedNotSuggested: [],
+      notes: null,
+    },
+    earlierConsults: [],
+    otherTasks: [],
+  });
+  return [
+    indent(prompt + fallbackInstruction(CONSULT_ANSWER_JSON_SCHEMA)),
+    '',
+    "The guidance of a `guidance` or `ask-user` answer is appended to the failed attempt's error block, not prefixed to it:",
+    '',
+    indent(consultAttemptError(ERROR_PLACEHOLDER, '<the instructions and context>')),
+    '',
+    `The composed error block is truncated to ${BOUNDS.consultFailingOutputChars} characters.`,
+    '',
+    `A lineage is bounded at ${BOUNDS.consultsPerLineage} consults and ${BOUNDS.attemptsPerLineage} attempts, and a run at ${BOUNDS.plannerCallsPerRun} planner calls; a spent bound halts with the planner's last diagnosis and offers continue (with a note), skip the brief, or end the run. Continuing grants ${BOUNDS.extraConsultsPerLineage} more consult and ${BOUNDS.extraAttemptsPerLineage} more attempts, or ${BOUNDS.extraPlannerCallsPerRun} more planner calls.`,
+  ].join('\n');
+}
+
 function bullets(lines: readonly string[]): string {
   return lines.map((line) => `- ${line}`).join('\n');
 }
@@ -213,7 +255,7 @@ function ladderTable(): string {
       `\`${rung.id}\``,
       rung.who,
       rung.count === 'DEFAULT_LOCAL_RETRIES' ? String(DEFAULT_LOCAL_RETRIES) : '1',
-      `${rung.consumesRetry === false ? 'no' : 'yes'}${rung.optional === true ? ' (optional rung)' : ''}`,
+      rung.consumesRetry === false ? 'no' : 'yes',
     ]),
   );
 }
@@ -457,14 +499,6 @@ function waitProtocol(): string {
   ].join('\n');
 }
 
-function hintPlacement(): string {
-  return [
-    indent(HINT_ERROR_TEMPLATE(ERROR_PLACEHOLDER, HINT_PLACEHOLDER)),
-    '',
-    `The composed error block is truncated to ${MAX_HINT_ERROR_LENGTH} characters.`,
-  ].join('\n');
-}
-
 function verdictRules(): string {
   return bullets([
     `Exactly one verdict word under \`### Verdict\`: ${VERDICT_RULES.words.map((word) => `\`${word}\``).join(' | ')}.`,
@@ -495,7 +529,7 @@ const BLOCKS: Record<string, () => string> = {
           `| attempt ${attempt}${attempt === String(Object.keys(RETRY_FRAMINGS).length) ? '+' : ''} | \`${framing}\` |`,
       )
       .join('\n'),
-  'hint-prompt': () => indent(buildHintPrompt(PLACEHOLDER_TASK, ERROR_PLACEHOLDER, ctx)),
+  'consult-contract': consultContract,
   'takeover-prompt': () =>
     indent(
       buildEscalationPrompt({
@@ -523,7 +557,6 @@ const BLOCKS: Record<string, () => string> = {
   timeouts,
   'plain-shapes': plainShapes,
   'wait-protocol': waitProtocol,
-  'hint-placement': hintPlacement,
 };
 
 export const GENERATED_BLOCK_IDS: readonly string[] = [

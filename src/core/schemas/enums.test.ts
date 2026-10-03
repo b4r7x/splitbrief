@@ -254,6 +254,7 @@ describe('TaskCompletionMethodSchema', () => {
     'escalated-intermediate',
     'escalated-hint',
     'escalated-full',
+    'consulted',
     'failed',
     'skipped',
   ])('accepts "%s"', (input) => {

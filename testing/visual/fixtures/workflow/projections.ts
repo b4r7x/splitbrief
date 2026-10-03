@@ -11,6 +11,9 @@ import { makeTask } from '../../../helpers/factories/task.js';
 import { makePlanProposal, makeTaskSpec } from '../../../helpers/factories/plan.js';
 import { formatPlanMarkdown } from '../../../../src/engine/spec/plan-markdown.js';
 import { MAX_QUESTION_ROUNDS } from '../../../../src/engine/spec/prompts/plan-session.js';
+import { DEFAULT_LOCAL_RETRIES } from '../../../../src/core/pipeline-spec/retries.js';
+import { BOUNDS } from '../../../../src/core/pipeline-spec/bounds.js';
+import { buildConsultBoundRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/consult.js';
 import { taskFromSpec } from '../../../../src/engine/spec/plan-tasks.js';
 import { planConfirmations } from '../../../../src/engine/orchestrator/approval/confirm.js';
 import { makeImplState, makeWorkflowState } from '../../../helpers/factories/workflow-state.js';
@@ -41,7 +44,7 @@ import {
   type SeatSwapContext,
 } from '../../../../src/engine/orchestrator/recovery/builders/task.js';
 import {
-  hintHaltDetails,
+  consultHaltDetails,
   reviewSeatDetails,
 } from '../../../../src/engine/orchestrator/recovery/builders/details.js';
 import {
@@ -118,7 +121,7 @@ export const WORKFLOW_FIXTURE_TEXT = Object.freeze({
   recoveryUserEdits: 'Recovery needed · User edits conflict with T901',
   recoveryPlan: 'Change PLAN tool',
   retryExhausted: 'exhausted its retries',
-  briefVerdict: 'the planner found the brief',
+  consultBound: 'used its consult allowance',
   reviewFailed: 'Send a correction',
   leftIsolation: 'Recovery needed · T901 left the isolation directory',
   checkoutChanged: 'Recovery needed · Your checkout changed under T901',
@@ -217,7 +220,7 @@ const WORKFLOW_FAILURE_ID = scenarioId('workflow-failure');
 const WORKFLOW_RECOVERY_USAGE_LIMIT_ID = scenarioId('workflow-recovery-usage-limit');
 const WORKFLOW_RECOVERY_USER_EDIT_ID = scenarioId('workflow-recovery-user-edits');
 const WORKFLOW_RECOVERY_RETRY_EXHAUSTED_ID = scenarioId('workflow-recovery-retry-exhausted');
-const WORKFLOW_RECOVERY_BRIEF_VERDICT_ID = scenarioId('workflow-recovery-brief-verdict');
+const WORKFLOW_RECOVERY_CONSULT_BOUND_ID = scenarioId('workflow-recovery-consult-bound');
 const WORKFLOW_RECOVERY_REVIEW_FAILED_ID = scenarioId('workflow-recovery-review-failed');
 const WORKFLOW_RECOVERY_LEFT_ISOLATION_ID = scenarioId('workflow-recovery-left-isolation');
 const WORKFLOW_RECOVERY_CHECKOUT_CHANGED_ID = scenarioId('workflow-recovery-checkout-changed');
@@ -1364,7 +1367,7 @@ function usageLimitRecoveryIssue(): RecoveryIssue {
     runner: config.implementer,
     toolMessage: OLLAMA_LIMIT_WORDS,
     attempts: 1,
-    maxAttempts: config.workflow.maxRetries,
+    maxAttempts: DEFAULT_LOCAL_RETRIES,
     selectedImplementerProfile: 'local-fixture',
     seatSwap: {
       seat: 'build',
@@ -1475,7 +1478,7 @@ const FIXTURE_TYPECHECK_ERROR =
 
 /**
  * Two local retries fail on one typecheck error; the third changes nothing and says why, which
- * ends the local rung on the same error. The planner answers, and the hinted retry fails on it too.
+ * ends the local rung on the same error. The planner answers, and the guided retry fails on it.
  */
 const retryExhaustedRecoveryIssue = buildRetryExhaustedRecoveryIssue({
   id: 'rec_visual_retry_exhausted',
@@ -1484,32 +1487,27 @@ const retryExhaustedRecoveryIssue = buildRetryExhaustedRecoveryIssue({
   validationSummary: FIXTURE_TYPECHECK_ERROR,
   attempts: 4,
   maxAttempts: 3,
-  hintRungRan: true,
   allowRetryOverride: true,
   selectedImplementerProfile: 'default',
   handBack:
     'activity.ts reads projection.stop, but Projection has no stop field. I did not know its type, so I changed nothing.',
-  plannerHint:
-    'VERDICT: answer\nDeclare stop?: boolean on Projection in projections.ts. activity.ts then typechecks without a change.',
-  plannerVerdict: 'answer',
   createdAt: new Date(FIXED_TS).toISOString(),
 });
 
-/** The first attempt changed nothing and asked; the planner found the brief wrong, so no retry ran. */
-const briefVerdictRecoveryIssue = buildRetryExhaustedRecoveryIssue({
-  id: 'rec_visual_brief_verdict',
+/** Two consults on one brief did not land it; the halt carries the planner's last diagnosis. */
+const consultBoundRecoveryIssue = buildConsultBoundRecoveryIssue({
+  id: 'rec_visual_consult_bound',
+  reason: 'consult-bound-spent',
   task: HALTED_TASK,
   phase: 'escalating',
-  validationSummary: 'Tool implementer (antigravity) exited without changing any files',
-  attempts: 0,
-  maxAttempts: 3,
-  allowRetryOverride: true,
-  selectedImplementerProfile: 'default',
-  handBack:
-    'Projection is declared in src/core/projection.ts, which this brief does not list. May I edit that file?',
-  plannerHint:
-    'VERDICT: brief — the brief puts stop on a type that projections.ts does not declare\nProjection is declared in src/core/projection.ts. Add stop there in its own brief, then run this brief again.',
-  plannerVerdict: 'brief',
+  lastDiagnosis:
+    'Projection is declared in src/core/projection.ts, which this brief does not list. Add stop there in its own brief.',
+  consults: BOUNDS.consultsPerLineage,
+  consultAllowance: BOUNDS.consultsPerLineage,
+  attempts: 5,
+  attemptAllowance: BOUNDS.attemptsPerLineage,
+  plannerCalls: 2,
+  plannerCallAllowance: BOUNDS.plannerCallsPerRun,
   createdAt: new Date(FIXED_TS).toISOString(),
 });
 
@@ -1523,14 +1521,14 @@ const retryExhaustedRecoveryProjection: WorkflowFixtureProjection = {
   resumeState: haltedResumeState(retryExhaustedRecoveryIssue),
 };
 
-const briefVerdictRecoveryProjection: WorkflowFixtureProjection = {
-  scenarioId: WORKFLOW_RECOVERY_BRIEF_VERDICT_ID,
+const consultBoundRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: WORKFLOW_RECOVERY_CONSULT_BOUND_ID,
   feature: WORKFLOW_FEATURE,
   inputMode: 'question',
   sidebarVisible: false,
   events: [],
   config: AGY_LADDER_CREW,
-  resumeState: haltedResumeState(briefVerdictRecoveryIssue),
+  resumeState: haltedResumeState(consultBoundRecoveryIssue),
 };
 
 /** The final review still failed once its repair cycles ran out; every brief had landed. */
@@ -1743,10 +1741,10 @@ function reviewSeatRecoveryIssue(): RecoveryIssue {
 }
 
 /**
- * The planner out of quota on a brief's hint: the halt is the plan seat's, and it names the brief,
- * so taking the swap replays that brief from its first attempt.
+ * The planner out of quota on a brief's consult: the halt is the plan seat's, and it names the
+ * brief, so taking the swap replays that brief from its first attempt.
  */
-function hintSeatRecoveryIssue(): RecoveryIssue {
+function consultSeatRecoveryIssue(): RecoveryIssue {
   const err = plannerCallFailed('escalation', CODEX_LIMIT_WORDS);
   return buildPlannerCallFailedRecoveryIssue({
     id: 'rec_visual_hint_usage_limit',
@@ -1757,7 +1755,7 @@ function hintSeatRecoveryIssue(): RecoveryIssue {
     }),
     task: HALTED_TASK,
     phase: 'escalating',
-    details: hintHaltDetails(WORKFLOW_FIXTURE_TASK_ID),
+    details: consultHaltDetails(WORKFLOW_FIXTURE_TASK_ID),
     seatSwap: planSeatSwap('codex', ['codex', 'claude-code', 'opencode']),
     createdAt: new Date(FIXED_TS).toISOString(),
   });
@@ -1906,11 +1904,11 @@ const hintSeatRecoveryProjection: WorkflowFixtureProjection = {
   inputMode: 'question',
   sidebarVisible: false,
   get events() {
-    return haltErrorEvents(hintSeatRecoveryIssue());
+    return haltErrorEvents(consultSeatRecoveryIssue());
   },
   config: CODEX_PLAN_CREW,
   get resumeState() {
-    return haltedResumeState(hintSeatRecoveryIssue());
+    return haltedResumeState(consultSeatRecoveryIssue());
   },
 };
 
@@ -2562,7 +2560,7 @@ const projections = [
   usageLimitRecoveryProjection,
   userEditRecoveryProjection,
   retryExhaustedRecoveryProjection,
-  briefVerdictRecoveryProjection,
+  consultBoundRecoveryProjection,
   reviewFailedRecoveryProjection,
   leftIsolationRecoveryProjection,
   checkoutChangedRecoveryProjection,
@@ -2645,7 +2643,7 @@ function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
     usageLimitRecoveryIssue(),
     planSeatRecoveryIssue(),
     reviewSeatRecoveryIssue(),
-    hintSeatRecoveryIssue(),
+    consultSeatRecoveryIssue(),
     planSwappedRecoveryIssue(),
   ];
   const engineHaltText = [

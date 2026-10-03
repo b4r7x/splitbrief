@@ -251,7 +251,6 @@ function wrapMinimalApiConfig(runnerYaml: string): unknown {
     validation: { typecheck: true, lint: true, test: true },
     workflow: {
       approve: 'plan',
-      maxRetries: 3,
       compactionFormat: 'auto',
     },
     theme: 'terminal',

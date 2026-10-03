@@ -16,6 +16,6 @@ implementer:
   tool: codex
   model: gpt-5.3-codex
 workflow:
-  maxRetries: 3
+  compactionFormat: auto
 unknownTop:
   preserved: true

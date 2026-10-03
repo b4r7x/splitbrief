@@ -8,7 +8,9 @@ import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js'
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { readMessages } from '../../../src/core/sessions/log-reader.js';
+import { createInitialState } from '../../../src/core/state/machine.js';
 import { readInterruptedPartial } from '../../../src/engine/orchestrator/continuation.js';
+import { createEventBus } from '../../../src/engine/events/bus.js';
 import { makeImplementerRetryInvoker } from '../../../src/engine/orchestrator/escalation/make-implementer-retry-invoker.js';
 import { createImplementerBase } from '../../../src/engine/implementers/pipeline/run.js';
 import { buildLanguageContext } from '../../../src/engine/spec/prompts/language-context.js';
@@ -56,7 +58,7 @@ function setup() {
 }
 
 describe('a stopped production implementer call', () => {
-  for (const kind of ['normal', 'local', 'hint'] as const) {
+  for (const kind of ['normal', 'local', 'consult'] as const) {
     it(`keeps ${kind} narration in the authoritative log for continuation`, async () => {
       const fixture = setup();
       const ref = { projectDir: fixture.projectDir, sessionId: fixture.sessionId };
@@ -90,6 +92,11 @@ describe('a stopped production implementer call', () => {
           config: fixture.config,
           implementer: fixture.implementer,
           signal: fixture.controller.signal,
+          seat: {
+            ref: { ...ref, bus: createEventBus() },
+            state: createInitialState('continuation residue'),
+            usageCategory: 'implementer',
+          },
         });
       }
 

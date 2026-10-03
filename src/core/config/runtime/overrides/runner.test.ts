@@ -20,7 +20,6 @@ const commonGeneration = {
 
 const plannerCapabilities = {
   supportsConversationalPlanning: true,
-  supportsHintEscalation: true,
   supportsSessionResume: false,
   supportsEffort: false,
   supportsImages: false,

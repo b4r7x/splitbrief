@@ -9,6 +9,7 @@ import {
   claudeProtocolEvents,
 } from './claude-code.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
+import { PLAN_ANSWER_JSON_SCHEMA } from '../../../core/schemas/plan.js';
 
 const IMPLEMENTER_SANDBOX = {
   sandbox: { enabled: true, failIfUnavailable: false, allowUnsandboxedCommands: false },
@@ -222,6 +223,22 @@ describe('Claude Code role adapters', () => {
       '--disallowedTools',
       'AskUserQuestion',
     ]);
+  });
+
+  it('passes the plan schema to --json-schema without a $schema draft ref, which claude rejects', () => {
+    const args = claudeCodePlannerAdapter.buildArgs({
+      prompt: '<brief>',
+      model: undefined,
+      projectDir: '/project',
+      configuredArgs: [],
+      mode: 'plan',
+      sessionId: null,
+      effort: undefined,
+      schema: { json: PLAN_ANSWER_JSON_SCHEMA },
+    });
+    const sent = JSON.parse(args[args.indexOf('--json-schema') + 1] ?? '');
+    expect(sent).not.toHaveProperty('$schema');
+    expect(sent).toMatchObject({ type: 'object', required: ['result'] });
   });
 
   it('carries the implementer schema directly before the acceptEdits permission', () => {

@@ -5,13 +5,13 @@ import type { OrchestratorCallbacks } from '../types.js';
 import type { EventBus } from '../../events/types.js';
 import { changedFilesSinceBaseline, type ChangedFilesBaseline } from '../changed-files-baseline.js';
 import { classifyUserEditConflict, normalizeUserEditConflictAction } from './conflicts.js';
-import { isInDeclaredSet, taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
 import { publishUserEditConflict, publishWarning, publishWarningFromError } from '../events.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { raisePendingRecovery } from '../state-ops.js';
 import { buildUserEditConflictRecoveryIssue } from '../recovery/builders/workflow.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
-import { readConfinedEntry } from '../approval/file-snapshots/entry.js';
+import { matchesAcquisitionBaseline, readConfinedEntry } from '../approval/file-snapshots/entry.js';
+import { readWorktreeAcquisitionBaseline } from '../isolation/acquisition.js';
 import { recordedTargetOutput } from '../evidence/task.js';
 import type { EvidencePromotedFile } from '../../../core/schemas/evidence.js';
 import { closeRunIfOpen } from '../run/close.js';
@@ -35,7 +35,12 @@ async function holdsRecordedWrite(input: {
   }
 }
 
-/** The pre-task gate and resume lookup must agree on current target ownership. */
+/**
+ * The pre-task gate and resume lookup must agree on current target ownership. The in-flight brief
+ * holds output on a foreign file when its worktree changed that file from its input, or still holds
+ * the brief's recorded write for it; without a worktree record, its run-level answer stands for
+ * every file.
+ */
 export async function assessChangedUserEdits(opts: {
   projectDir: string;
   sessionId: string;
@@ -44,23 +49,36 @@ export async function assessChangedUserEdits(opts: {
 }): Promise<{
   ownFiles: string[];
   foreignFiles: string[];
-  currentTaskInFlight: boolean;
+  briefHoldsOutput: (file: string) => boolean;
 }> {
   const { projectDir, sessionId, task, changedFiles } = opts;
   const output = recordedTargetOutput({ projectDir, sessionId }, task);
-  const declared =
-    task.status === 'in_progress'
-      ? changedFiles.filter((file) => isInDeclaredSet(file, taskDeclaredPatterns(task)))
-      : [];
   const ownFiles: string[] = [];
-  for (const file of declared) {
+  for (const file of task.status === 'in_progress' ? changedFiles : []) {
     if (await holdsRecordedWrite({ projectDir, file, writes: output.files })) ownFiles.push(file);
   }
   const foreignFiles = changedFiles.filter((file) => !ownFiles.includes(file));
+  const acquisition = await readWorktreeAcquisitionBaseline({ projectDir, sessionId });
+  const holdsOutput = new Set<string>();
+  if (acquisition !== null) {
+    for (const file of foreignFiles) {
+      if (
+        !(await matchesAcquisitionBaseline(acquisition.worktreeDir, file, acquisition.worktree)) ||
+        (await holdsRecordedWrite({
+          projectDir: acquisition.worktreeDir,
+          file,
+          writes: output.files,
+        }))
+      ) {
+        holdsOutput.add(file);
+      }
+    }
+  }
+  const inFlight = task.status === 'in_progress' && output.hasOutput;
   return {
     ownFiles,
     foreignFiles,
-    currentTaskInFlight: task.status === 'in_progress' && output.hasOutput,
+    briefHoldsOutput: acquisition === null ? () => inFlight : (file) => holdsOutput.has(file),
   };
 }
 
@@ -109,7 +127,7 @@ export async function checkUserEditConflicts(opts: {
   if (changedFiles.length === 0)
     return { state, stopped: false, cancelled: false, absorbedFiles: [] };
 
-  const { ownFiles, foreignFiles, currentTaskInFlight } = await assessChangedUserEdits({
+  const { ownFiles, foreignFiles, briefHoldsOutput } = await assessChangedUserEdits({
     projectDir,
     sessionId,
     task,
@@ -131,7 +149,7 @@ export async function checkUserEditConflicts(opts: {
   const conflict = classifyUserEditConflict({
     files: foreignFiles,
     currentTask: task,
-    currentTaskInFlight,
+    briefHoldsOutput,
     allTasks: state.tasks,
     currentTaskIndex: taskIndex,
   });
@@ -238,7 +256,7 @@ export async function detectValidationFailureUserEdit(opts: {
   const conflict = classifyUserEditConflict({
     files: foreignFiles,
     currentTask: task,
-    currentTaskInFlight: true,
+    briefHoldsOutput: () => true,
     allTasks: state.tasks,
     currentTaskIndex: taskIndex,
   });

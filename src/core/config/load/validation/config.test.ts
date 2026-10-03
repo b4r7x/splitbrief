@@ -294,29 +294,39 @@ describe('validateConfig', () => {
     ).toBe(false);
   });
 
-  it('does not require credentials for local or disabled intermediate providers', () => {
-    const local = makeConfig({
+  it('loads a retired escalation block with exactly one notice', () => {
+    const config = makeConfig({
       escalation: {
         intermediateProvider: 'ollama',
         intermediateModel: 'qwen2.5-coder:7b',
         enabled: true,
       },
     });
-    const disabled = makeConfig({
-      escalation: {
-        intermediateProvider: 'cheap-gateway',
-        intermediateModel: 'cheap-gateway/model',
-        enabled: false,
-      },
-    });
 
-    expect(
-      validateConfig(local).errors.find((e) => e.path === 'escalation.intermediateProvider'),
-    ).toBeUndefined();
-    expect(
-      validateConfig(disabled).errors.find((e) => e.path === 'escalation.intermediateProvider'),
-    ).toBeUndefined();
+    const { errors } = validateConfig(config);
+    const warnings = retiredValueNotices(config);
+
+    expect(errors).toEqual([]);
+    expect(warnings.filter((w) => w.includes('escalation'))).toEqual([
+      "escalation was retired and is ignored: the planner's consult replaces the intermediate tier. Delete escalation.",
+    ]);
   });
+
+  it.each([0, 3, 99])(
+    'loads a retired workflow.max_retries %i with exactly one notice',
+    (maxRetries) => {
+      const base = makeConfig();
+      const config = { ...base, workflow: { ...base.workflow, maxRetries } };
+
+      const { errors } = validateConfig(config);
+      const warnings = retiredValueNotices(config);
+
+      expect(errors).toEqual([]);
+      expect(warnings.filter((w) => w.includes('max_retries'))).toEqual([
+        'workflow.max_retries was retired and is ignored: the lineage attempt allowance bounds the ladder now. Delete workflow.max_retries.',
+      ]);
+    },
+  );
 
   it('requires explicit credentials for custom remote providers', () => {
     const config = makeConfig({

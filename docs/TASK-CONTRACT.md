@@ -3,7 +3,7 @@
 > **Status:** stable (state/config v4).
 > **Audience:** implementer runners, reviewers, and advanced read-only integrations inspecting Task Brief state.
 
-Historical full-planner escalation values remain readable; new execution does not dispatch that rung.
+A brief that fails after its one retry, reports `blocked`, or is stale goes to the planner's consult, not to a fixed tier chain. The old `escalated-hint` / `escalated-intermediate` / `escalated-full` completion values and the old `escalate`, `hint_failed` and `task_scope_widened` events stay parseable so a saved `state.json` and `session.jsonl` still load; S9 removes those readers.
 
 ## v4 contract boundary
 
@@ -117,11 +117,11 @@ Every Task Brief v1 covers nine semantic sections, even when a section is brief.
 
 **How the Scope section is interpreted.** Scope is guidance, not a fence. The brief's `files` are the suggested files, **In bounds** is context, and **Out of bounds** lists the explicit exclusions the reviewer checks. An implementer may edit another ordinary project file when the change needs it; SPLITBRIEF records it as touched, not suggested, runs its tests, and shows it to the reviewer. Only a protected path (dependency manifests and lockfiles, CI configuration, env and key files, `.git`, `.splitbrief`) asks the user (see [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md)). A placeholder bullet — `None`, `None.`, `n/a` or `-` — is no entry at all: the parser drops it and `scopeEntryPatterns` licenses nothing for it (`isScopePlaceholder`). Scope bullets are prose, not a file list. A brief's **declared set** is `files` plus every `scope.inBounds` and `scope.approvedOutOfBounds` bullet, and one module resolves it for every consumer — `taskDeclaredPatterns` / `isInDeclaredSet` in `src/core/scope/declared-set.ts`. When deciding whether a brief widens the write scope beyond its `files`, SPLITBRIEF extracts path tokens from each `scope.inBounds` / `scope.approvedOutOfBounds` bullet (`scopePathPatterns` in `src/utils/path-patterns.ts`): backtick-quoted tokens first, then — when the bullet has no backticks — the whole bullet if it contains no whitespace, otherwise concrete path patterns matched out of the prose. A token only counts as a path when it carries a directory separator or a glob; a bare filename with no directory cannot denote a file other than one of the task's own `files` in any recorded plan, so it never widens the write scope. A bullet that names a file the brief already declares does not widen it either.
 
-**Approved out of bounds is also written by the run.** The planner authors the bullets it knows about, but the ladder can add one: when the hint rung returns `VERDICT: widen <paths> — <reason>` and the retry's write to a named path clears the write gate, `WIDEN_TASK_SCOPE` appends `` `<path>` — planner-approved: <reason> `` to that brief's `scope.approvedOutOfBounds` and publishes `task_scope_widened`. The entry is an ordinary Scope bullet with its provenance attached: `scopePathPatterns` reads the backticked path exactly as it reads a planner-written one, so the declared set, the write gate, the classifier, the preamble and drift all widen together. Entries the run wrote are visible in `state.json` and in the brief as rendered.
+**Approved out of bounds is planner-authored.** The run no longer appends to it: the hint rung's `widen` verdict and `WIDEN_TASK_SCOPE` are gone. When the consult decides a brief's scope was wrong, it answers `rewrite-task` or `split-task` and the replacement carries the scope the planner wrote; the entry is then an ordinary Scope bullet, read by `scopePathPatterns` exactly as any other, so the declared set, the write gate, the classifier, the preamble and drift widen together. `scope.approvedOutOfBounds` is visible in `state.json` and in the brief as rendered; old `task_scope_widened` events stay replayable.
 
 **Create-then-modify chains are legal.** A brief may declare `action: modify` on a file an earlier brief in the same plan creates. Because the task loop runs in array order, the routing preview reports such a target as `pending-earlier-task` rather than `missing-current-code`: the file is expected to exist by the time the modifying task runs, and the missing current code is a non-event, not a stale estimate.
 
-**What a direct-write implementer is told about scope and stopping.** Beyond the brief itself, a `direct` implementer receives a system preamble (`src/engine/spec/prompts/system.ts`) that restates the contract as hard rules: read, search, write and run shell commands only inside the isolation directory, which it names by absolute path, and never look for other copies of the project; use git only to read (status, diff, log, show), because the worktree shares refs, stash, hooks and config with the user's repository; never run a package-manager install, ci, add, remove or update (npm, pnpm, yarn, bun), because dependencies are already installed and the worktree's `node_modules` is a symlink into the real checkout; start from the files the brief suggests, edit another project file only when the change needs it and name it with the reason, and never edit dependency manifests, lockfiles, CI configuration, env or key files, `.git` or `.splitbrief` unless the brief asks for that operation; stop and report instead of guessing when the brief's stop conditions are met, or when a declared file's current content contradicts the brief; start editing from the brief and read a file only for lines the brief does not show; leave the typecheck, lint, format and test gates, the whole suite and render tools to SPLITBRIEF, and run at most the focused test files the brief lists, once; and end with a completion report naming the files written, one `Also changed (not suggested): <file> — <reason>` line for each file the brief did not suggest, and whether the steps were completed. The same rules are mirrored in the task's closing instruction (`src/engine/spec/prompt-formatter.ts`).
+**What a direct-write implementer is told about scope and stopping.** Beyond the brief itself, a `direct` implementer receives a system preamble (`src/engine/spec/prompts/system.ts`) that restates the contract as hard rules: read, search, write and run shell commands only inside the isolation directory, which it names by absolute path, and never look for other copies of the project; use git only to read (status, diff, log, show), because the worktree shares refs, stash, hooks and config with the user's repository; never run a package-manager install, ci, add, remove or update (npm, pnpm, yarn, bun), because dependencies are already installed and the worktree's `node_modules` is a symlink into the real checkout; start from the files the brief suggests, edit another project file only when the change needs it and name it with the reason, and never edit dependency manifests, lockfiles, CI configuration, env or key files, `.git` or `.splitbrief` unless the brief asks for that operation; stop and report instead of guessing when the brief's stop conditions are met, or when a declared file's current content contradicts the brief; start editing from the brief and read a file only for lines the brief does not show; leave the typecheck, lint, format and test gates, the whole suite and render tools to SPLITBRIEF, and run at most the focused test files the brief lists, once; and end the reply with one `ImplementerReport` JSON object and nothing after it — `{"status":"done","filesChanged":["<file>"],"touchedNotSuggested":[{"file":"<file>","reason":"<reason>"}],"notes":null}`, with one `touchedNotSuggested` entry per file the brief did not suggest, or the blocked form `{"status":"blocked","question":"<question>","filesNeeded":["<file>"]}` when the brief cannot be completed without a file it does not provide. The report is advisory: a missing or invalid one changes nothing and the checks decide, while a blocked one starts a consult at once. The same rules are mirrored in the task's closing instruction (`src/engine/spec/prompt-formatter.ts`).
 
 ## Where tasks live on disk
 
@@ -132,6 +132,7 @@ Every Task Brief v1 covers nine semantic sections, even when a section is brief.
 ```ts
 type Task = {
   id: TaskId;                        // branded string, e.g. "T001"
+  parentId?: TaskId;                 // set on a split's subtask: the lineage's root task id
   title: string;                     // short human label
   file: string;                      // project-relative anchor path (e.g. "src/foo.ts")
   files?: string[];                  // optional: the whole slice; defaults to [file], and file is a member
@@ -163,8 +164,9 @@ type Task = {
   exclusions?: string[];             // explicit "do not" notes
   batch?: number;                    // the plan's batch, 1-based
   protectedOperations?: Array<{ path: string; operation: 'write' }>;  // confirmed when the plan card is approved
-  revision?: number;
-  inputHashes?: Record<string, string>;  // content hashes of the revision's input files
+  revision?: number;                 // 1 at compile; raised by each consult rewrite
+  inputHashes?: Record<string, string>;  // content hashes of this revision's suggested + context files
+  checkResults?: Array<{ id: string; passed: boolean }>;  // a consult's verify answer, merged per check id
 };
 ```
 
@@ -180,9 +182,9 @@ A branded string. Format: `TNNN` where `NNN` is zero-padded sequential starting 
 type TaskStatus =
   | 'pending'        // not yet attempted
   | 'in_progress'    // implementer is generating code
-  | 'done'           // validation passed
-  | 'escalated'      // supported worker/help path succeeded
-  | 'failed'         // all retry / escalation tiers exhausted
+  | 'done'           // validation passed: the attempt, a consult-guided attempt, or a consult verify
+  | 'escalated'      // no producer now; kept so an older state.json still loads
+  | 'failed'         // the ladder halted with a pending recovery
   | 'skipped';       // task denied by a pre_task hook or programmatic skip
 ```
 
@@ -191,13 +193,19 @@ Transitions (simplified; full state-machine in `src/core/state/machine.ts`):
 ```
 pending --[START_TASK]--> in_progress
 in_progress --[VALIDATION_PASS]--> done
-in_progress --[VALIDATION_FAIL (attempt < maxRetries)]--> in_progress  (state.attempt++)
-in_progress --[VALIDATION_FAIL (attempt ≥ maxRetries)]--> escalated or failed (see escalation tiers)
+in_progress --[VALIDATION_FAIL (retry available)]--> in_progress  (state.attempt++)
+in_progress --[VALIDATION_FAIL (retry spent)]--> phase escalating; the consult's answer decides:
+                                                    guidance → one more attempt → done
+                                                    rewrite-task → REPLACE_TASK (revision+1)
+                                                    split-task → INSERT_TASKS (parentId, next free ids)
+                                                    verify → validation + checks → done
+                                                    ask-user → the user's answer continues as guidance
+in_progress --[a ladder halt with a pending recovery]--> failed
 any --[SKIP_TASK]--> skipped
 any --[RESET_TASK]--> pending
 ```
 
-The retry counter lives at **`state.attempt`** (top-level on `WorkflowState`), not on the individual task.
+The retry counter lives at **`state.attempt`** (top-level on `WorkflowState`), not on the individual task. The ladder's own counters live per lineage in `state.lineages` — `consults`, `attempts`, `consultAllowance`, `attemptAllowance`, `consultRecords`, `replacedParents` — and the run's planner-call count in `state.plannerCalls`.
 
 ### Lifecycle guarantees
 
@@ -345,7 +353,7 @@ A run planned before the typed plan session ran a brief-quality pass over `tasks
 
 API file bundles support at most 32 declared text targets, 1 MiB UTF-8 per file, and 4 MiB of raw response.
 
-The backend selects `file-bundle-v1` before every API BUILD call, including one-file tasks, retries and continuation. The entire completed response must parse as strict JSON with `version: 1` and a nonempty `files` array. Each entry has exactly `path`, `action` (`create` or `modify`) and complete `content`. A single enclosing JSON code fence is accepted by the parser; surrounding prose, mixed fragments, duplicate paths and unknown fields are refused. Other extracted-output backends keep their legacy grammar.
+The backend selects `file-bundle-v1` before every API BUILD call, including one-file tasks, retries and continuation. The entire completed response must parse as strict JSON with `version: 1` and either a nonempty `files` array or a `blocked` object. Each entry has exactly `path`, `action` (`create` or `modify`) and complete `content`. A single enclosing JSON code fence is accepted by the parser; surrounding prose, mixed fragments, duplicate paths and unknown fields are refused. Other extracted-output backends keep their legacy grammar.
 
 ```json
 {
@@ -355,6 +363,12 @@ The backend selects `file-bundle-v1` before every API BUILD call, including one-
   ]
 }
 ```
+
+```json
+{"version":1,"blocked":{"question":"<question>","filesNeeded":["<file>"]}}
+```
+
+A blocked bundle applies nothing and starts a consult with reason `blocked` and no local retry.
 
 Targets must be declared, confined relative paths and regular UTF-8 text files or explicitly new files. API bundles do not support delete, rename, chmod or binary operations. Omitted declared targets stay untouched; unchanged entries are no-ops. An empty effective change is not successful implementation.
 
@@ -400,7 +414,7 @@ type EvidenceLedger = {
     title: string;
     file: string;
     status: 'pending' | 'in_progress' | 'done' | 'escalated' | 'failed' | 'skipped';
-    method?: 'local' | 'escalated-hint' | 'escalated-intermediate' | 'escalated-full' | 'failed' | 'skipped';
+    method?: 'local' | 'consulted' | 'escalated-hint' | 'escalated-intermediate' | 'escalated-full' | 'failed' | 'skipped';
     retries: number;
     durationMs?: number;
     changedFiles: string[];
@@ -427,8 +441,8 @@ Only the orchestrator appends to `observedEvidence`; no seat can add render or p
 
 | String | When it is appended |
 |---|---|
-| `task reached done` | Task transitions to `done` (local implementation or escalation success) |
-| `task reached escalated` | Task transitions to `escalated` |
+| `task reached done` | Task transitions to `done` (a local attempt, a consult-guided attempt, or a consult `verify`) |
+| `task reached escalated` | Task transitions to `escalated` (older runs only) |
 | `typecheck passed` / `lint passed` / `test passed` | Validation stage reported `passed: true` |
 | `diff written for <file>` | Task produced exactly one changed file |
 | `diff written for <n> files` | Task produced more than one changed file |

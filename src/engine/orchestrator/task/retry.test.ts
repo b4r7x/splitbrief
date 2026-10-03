@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -8,7 +8,6 @@ import {
   makeCallbacks,
   makeBusRecorder,
   makeImplementer,
-  makePreparedImplementerFactory,
   makePlanner,
 } from '#testing/helpers/orchestrator-factories.js';
 import {
@@ -16,8 +15,11 @@ import {
   makeTaskWorkflowContext as makeWorkflowContext,
   setupTaskProject as setupProject,
 } from '#testing/helpers/orchestrator-task-context.js';
-import { makeOpenAiSseResponse } from '#testing/helpers/faux/openai-sse.js';
-import { withLocalCatalog } from '#testing/helpers/faux/local-catalog.js';
+import {
+  consultCallAnswering,
+  guidanceConsult,
+  scriptedTypedCall,
+} from '#testing/helpers/typed-planner.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { transition } from '../../../core/state/machine.js';
@@ -33,6 +35,7 @@ import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factor
 import { defaultCliAuthChannel } from '../../../core/runners/cli-tool-catalog.js';
 import { error } from '../../../utils/error.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
+import { DEFAULT_LOCAL_RETRIES } from '../../../core/pipeline-spec/retries.js';
 import { retryAndRecord } from './retry.js';
 
 vi.mock('../escalation/handle.js', async (importOriginal) => {
@@ -44,20 +47,6 @@ vi.mock('../escalation/handle.js', async (importOriginal) => {
 // full-suite load that staged-copy IO can push these cases past the 10s default,
 // so widen the timeout for this file (cases pass in seconds in isolation).
 vi.setConfig({ testTimeout: 30_000 });
-
-const preparedIntermediateFactory = makePreparedImplementerFactory({
-  preparationId: 'retry-intermediate-preparation',
-  slot: { role: 'intermediate' },
-  gates: [
-    {
-      kind: 'api',
-      slot: { role: 'intermediate' },
-      preparationId: 'retry-intermediate-preparation',
-      provider: 'ollama',
-      endpointOrigin: 'http://localhost:11434',
-    },
-  ],
-});
 
 afterEach(() => {
   cleanupTaskProjects();
@@ -241,7 +230,7 @@ describe('retryAndRecord — retry budget', () => {
     expect(ledger?.tasks[0]?.observedEvidence).toContain('test failed (pre-existing)');
   });
 
-  it('exhausts the retry budget and persists recovery without handing the brief to the planner', async () => {
+  it('spends the local retries then the consult budget, persisting the bound halt', async () => {
     const task = makeTask({ id: 'T001' });
     let state = implementingState([task]);
     state = transition(state, { type: 'START_TASK', taskId: task.id });
@@ -255,13 +244,7 @@ describe('retryAndRecord — retry budget', () => {
       error: 'tsc failed again',
       usage: { inputTokens: 20, outputTokens: 10 },
     });
-    const escalateFull = vi.fn();
-    const planner = makePlanner({
-      escalateHint: vi
-        .fn()
-        .mockResolvedValue({ success: false, output: '', code: null, usage: null }),
-      escalateFull,
-    });
+    const planner = makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) });
     const implementer = makeImplementer({ retry });
 
     const wctx = makeWorkflowContext({
@@ -271,7 +254,6 @@ describe('retryAndRecord — retry budget', () => {
       bus,
       config: makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: { maxRetries: 2 },
       }),
     });
 
@@ -290,22 +272,21 @@ describe('retryAndRecord — retry budget', () => {
     expect(res.state.tasks[0]?.status).toBe('in_progress');
     expect(res.state.currentTaskIndex).toBe(0);
     expect(res.state.pendingRecovery).toMatchObject({
-      reason: 'retry-exhausted',
+      reason: 'consult-bound-spent',
       taskId: 'T001',
-      // 2 local retries; the empty hint made no implementer call and spent no attempt.
-      attempts: 2,
-      availableActions: ['retry-same-worker', 'skip-current-task', 'pause-run', 'end-run'],
+      // The first attempt, one local retry and the guidance attempt each consult answered with.
+      attempts: 4,
+      availableActions: ['continue', 'skip-current-task', 'end-run'],
     });
-    expect(escalateFull).not.toHaveBeenCalled();
     expect(loadState(wctx)?.pendingRecovery).toMatchObject({
-      reason: 'retry-exhausted',
+      reason: 'consult-bound-spent',
       taskId: 'T001',
     });
 
     const complete = busEvents.find((e) => e.type === 'task_completed');
     expect(complete).toBeUndefined();
     const retryEvents = busEvents.filter((e) => e.type === 'task_retry');
-    expect(retryEvents.length).toBeGreaterThanOrEqual(2);
+    expect(retryEvents.length).toBe(DEFAULT_LOCAL_RETRIES);
   });
 
   it('error event on exhaustion', async () => {
@@ -318,11 +299,7 @@ describe('retryAndRecord — retry budget', () => {
     const implementer = makeImplementer({
       retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'still broken' }),
     });
-    const planner = makePlanner({
-      escalateHint: vi
-        .fn()
-        .mockResolvedValue({ success: false, output: '', code: null, usage: null }),
-    });
+    const planner = makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) });
 
     const wctx = makeWorkflowContext({
       implementer,
@@ -330,7 +307,6 @@ describe('retryAndRecord — retry budget', () => {
       bus,
       config: makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: { maxRetries: 2 },
       }),
     });
 
@@ -347,7 +323,7 @@ describe('retryAndRecord — retry budget', () => {
 
     expect(res.completed).toBe(false);
     const errorIndex = busEvents.findIndex(
-      (e) => e.type === 'error' && e.code === 'retry_exhausted' && e.category === 'recovery',
+      (e) => e.type === 'error' && e.code === 'consult_bound_spent' && e.category === 'recovery',
     );
     const promptedIndex = busEvents.findIndex((e) => e.type === 'recovery_prompted');
     expect(errorIndex).toBeGreaterThanOrEqual(0);
@@ -419,18 +395,14 @@ describe('retryAndRecord — the exhaustion issue', () => {
     expect(res.state.pendingRecovery?.facts?.validationStage).toBe('lint');
   });
 
-  it('hands the builder both voices and the hint-rung flag', async () => {
-    const { res } = await exhaust(
-      failedRetry(4, { lastError: 'E', handBack: 'H', plannerHint: 'P', hintRungRan: true }),
-    );
+  it('hands the builder the implementer voice', async () => {
+    const { res } = await exhaust(failedRetry(4, { lastError: 'E', handBack: 'H' }));
 
     expect(res.state.pendingRecovery?.details).toEqual([
       'Last error: E',
-      'Attempts: 4 (3 local, then 1 with planner hints)',
+      'Attempts: 4',
       'Implementer said: H',
-      'Planner said: P',
     ]);
-    expect(res.state.pendingRecovery?.facts?.hintRungRan).toBe(true);
   });
 
   it('leaves a recovery the ladder already raised untouched', async () => {
@@ -453,9 +425,11 @@ describe('retryAndRecord — recovery stop points', () => {
 
     const { bus, events } = makeBusRecorder();
     const planner = makePlanner({
-      escalateHint: vi.fn().mockRejectedValueOnce(new Error('planner crashed')),
+      typedCall: scriptedTypedCall([new Error('planner crashed')]).typedCall,
     });
-    const implementer = makeImplementer({ retry: vi.fn() });
+    const implementer = makeImplementer({
+      retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'still broken' }),
+    });
     const wctx = makeWorkflowContext({
       projectDir,
       sessionId,
@@ -464,7 +438,6 @@ describe('retryAndRecord — recovery stop points', () => {
       implementer,
       config: makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: { maxRetries: 0 },
       }),
     });
 
@@ -509,9 +482,11 @@ describe('retryAndRecord — recovery stop points', () => {
     state = transition(state, { type: 'TASK_SENT' });
 
     const planner = makePlanner({
-      escalateHint: vi.fn().mockRejectedValueOnce(new Error('planner crashed')),
+      typedCall: scriptedTypedCall([new Error('planner crashed')]).typedCall,
     });
-    const implementer = makeImplementer({ retry: vi.fn() });
+    const implementer = makeImplementer({
+      retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'still broken' }),
+    });
     const wctx = makeWorkflowContext({
       projectDir,
       sessionId,
@@ -520,7 +495,6 @@ describe('retryAndRecord — recovery stop points', () => {
       implementer,
       config: makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: { maxRetries: 0 },
       }),
     });
 
@@ -554,9 +528,11 @@ describe('retryAndRecord — recovery stop points', () => {
     const abortError = new Error('aborted');
     abortError.name = 'AbortError';
     const planner = makePlanner({
-      escalateHint: vi.fn().mockRejectedValueOnce(abortError),
+      typedCall: scriptedTypedCall([abortError]).typedCall,
     });
-    const implementer = makeImplementer({ retry: vi.fn() });
+    const implementer = makeImplementer({
+      retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'still broken' }),
+    });
     const wctx = makeWorkflowContext({
       projectDir,
       sessionId,
@@ -565,7 +541,6 @@ describe('retryAndRecord — recovery stop points', () => {
       implementer,
       config: makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: { maxRetries: 0 },
       }),
     });
 
@@ -604,7 +579,7 @@ describe('retryAndRecord — recovery stop points', () => {
       }),
     });
     const planner = makePlanner({
-      escalateHint: vi.fn().mockRejectedValueOnce(new Error('hint planner crashed')),
+      typedCall: scriptedTypedCall([new Error('hint planner crashed')]).typedCall,
     });
     const wctx = makeWorkflowContext({
       bus,
@@ -614,7 +589,6 @@ describe('retryAndRecord — recovery stop points', () => {
       sessionId,
       config: makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: { maxRetries: 1 },
       }),
     });
 
@@ -666,14 +640,13 @@ const CODEX_LIMIT =
 const CODEX_SIGNED_OUT =
   'Your access token could not be refreshed because your refresh token was already used. Please log out and sign in again.';
 
-describe('retryAndRecord — a planner out of quota on the hint', () => {
+describe('retryAndRecord — a planner out of quota on the consult', () => {
   const config = makeConfig({
     planner: { kind: 'cli', tool: 'codex', authChannel: defaultCliAuthChannel('codex').id },
     validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-    workflow: { maxRetries: 0 },
   });
 
-  async function hintHalted(words = CODEX_LIMIT) {
+  async function consultHalted(words = CODEX_LIMIT) {
     const { projectDir, sessionId } = setupProject();
     await rememberDetectedTools(projectDir, cliDetectionsFor('ready', ['codex', 'claude-code']));
     const task = makeTask({ id: 'T001', file: 'src/alpha.ts' });
@@ -682,13 +655,13 @@ describe('retryAndRecord — a planner out of quota on the hint', () => {
     state = transition(state, { type: 'TASK_SENT' });
     const { bus, events } = makeBusRecorder();
     const planner = makePlanner({
-      escalateHint: vi.fn().mockRejectedValueOnce(
+      typedCall: scriptedTypedCall([
         error('runner-call-failed', 'Planner escalation call failed', {
           role: 'escalation',
           status: 'failed',
           error: { code: 'codex-turn-failed', message: words },
         }),
-      ),
+      ]).typedCall,
     });
     const result = await retryAndRecord({
       wctx: makeWorkflowContext({
@@ -696,7 +669,9 @@ describe('retryAndRecord — a planner out of quota on the hint', () => {
         sessionId,
         bus,
         planner,
-        implementer: makeImplementer({ retry: vi.fn() }),
+        implementer: makeImplementer({
+          retry: vi.fn().mockResolvedValue({ success: false, output: '', error: 'still broken' }),
+        }),
         config,
       }),
       task,
@@ -712,7 +687,7 @@ describe('retryAndRecord — a planner out of quota on the hint', () => {
   }
 
   it('halts on the plan seat with the reset, naming the brief, instead of exhausting it', async () => {
-    const { projectDir, sessionId, result, events } = await hintHalted();
+    const { projectDir, sessionId, result, events } = await consultHalted();
 
     const issue = result.state.pendingRecovery;
     expect(result.completed).toBe(false);
@@ -736,7 +711,7 @@ describe('retryAndRecord — a planner out of quota on the hint', () => {
     expect(new Date(issue?.resetAt ?? '')).toEqual(new Date(2026, 9, 3, 13, 2));
     expect(issue?.details).toEqual([
       `OpenAI Codex CLI reported: ${CODEX_LIMIT}`,
-      'The planner could not write the hint for T001.',
+      'The planner could not answer the consult for T001.',
     ]);
     expect(issue?.message).toContain('hit its usage limit');
     expect(loadState({ projectDir, sessionId })?.pendingRecovery?.reason).toBe(
@@ -747,7 +722,7 @@ describe('retryAndRecord — a planner out of quota on the hint', () => {
     const published = events.find((event) => event.type === 'error');
     expect(published?.type === 'error' && published.resetAt).toBe(issue?.resetAt);
     const row = published?.type === 'error' ? published.message : '';
-    expect(row).toMatch(/^Planner hint for T001 failed: You've hit your usage limit\./);
+    expect(row).toMatch(/^Planner consult for T001 failed: You've hit your usage limit\./);
     expect(row).not.toMatch(/13:02|1:02 PM|try again/);
     expect(
       readEvidenceLedger({ projectDir, sessionId })?.tasks.find((t) => t.id === 'T001'),
@@ -755,7 +730,7 @@ describe('retryAndRecord — a planner out of quota on the hint', () => {
   });
 
   it('moves the planner block and replays the brief on the new tool', async () => {
-    const { projectDir, sessionId, result } = await hintHalted();
+    const { projectDir, sessionId, result } = await consultHalted();
     const { bus, events } = makeBusRecorder();
 
     const moved = applyRecoveryAction({
@@ -777,7 +752,7 @@ describe('retryAndRecord — a planner out of quota on the hint', () => {
   });
 
   it('halts a signed-out planner on the plan seat with the login, naming the brief', async () => {
-    const { result, events } = await hintHalted(CODEX_SIGNED_OUT);
+    const { result, events } = await consultHalted(CODEX_SIGNED_OUT);
 
     const issue = result.state.pendingRecovery;
     expect(issue).toMatchObject({
@@ -792,82 +767,5 @@ describe('retryAndRecord — a planner out of quota on the hint', () => {
     expect(issue?.details).toContain(`OpenAI Codex CLI reported: ${CODEX_SIGNED_OUT}`);
     const published = events.find((event) => event.type === 'error');
     expect(published?.type === 'error' && published.message).toContain('codex login');
-  });
-});
-
-describe('retryAndRecord — escalated-intermediate booking identity', () => {
-  beforeEach(() => {
-    vi.stubGlobal('fetch', vi.fn());
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it('books the per-task record under the intermediate provider/model, not the primary implementer', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', file: 'src/intermediate.ts', action: 'create' });
-    let state = implementingState([task]);
-    state = transition(state, { type: 'START_TASK', taskId: task.id });
-    state = transition(state, { type: 'TASK_SENT' });
-
-    const code = JSON.stringify({
-      version: 1,
-      files: [
-        { path: 'src/intermediate.ts', action: 'create', content: 'export const fixed = true;\n' },
-      ],
-    });
-    (globalThis.fetch as ReturnType<typeof vi.fn>).mockImplementation(
-      withLocalCatalog(['x-ai/grok-4-fast'], () =>
-        makeOpenAiSseResponse([
-          { content: code },
-          { usage: { prompt_tokens: 400, completion_tokens: 200 } },
-        ]),
-      ),
-    );
-
-    // Local retries all fail so escalation reaches the intermediate tier.
-    const implementer = makeImplementer({
-      retry: vi.fn().mockResolvedValue({
-        success: false,
-        output: '',
-        error: 'still broken',
-        usage: { inputTokens: 10, outputTokens: 5 },
-      }),
-    });
-    const wctx = makeWorkflowContext({
-      projectDir,
-      sessionId,
-      implementer,
-      createImplementer: preparedIntermediateFactory,
-      config: makeConfig({
-        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: { maxRetries: 1 },
-        escalation: {
-          intermediateProvider: 'ollama',
-          intermediateModel: 'x-ai/grok-4-fast',
-          enabled: true,
-        },
-      }),
-    });
-    const taskBreakdowns: TaskTokenUsage[] = [];
-
-    const res = await retryAndRecord({
-      wctx,
-      task,
-      initialError: 'type error',
-      state,
-      taskStartTime: Date.now(),
-      tokensBefore: { ...state.tokenUsage },
-      taskBreakdowns,
-      setTrackedState: vi.fn(),
-    });
-
-    expect(res.completed).toBe(true);
-    const record = taskBreakdowns[0];
-    expect(record?.method).toBe('escalated-intermediate');
-    expect(record?.tool).toBe('ollama');
-    expect(record?.model).toBe('x-ai/grok-4-fast');
-    expect(record?.implementerTokens).toBeGreaterThanOrEqual(600);
   });
 });

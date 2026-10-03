@@ -2,20 +2,14 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createPlannerBase } from './base.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
-import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import type { Planner, PlannerCapabilities } from './types.js';
+import type { PlannerCapabilities } from './types.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 
 let projectDir: string;
 
-const minimalTask = makeTask();
-
 const defaultCapabilities: PlannerCapabilities = {
   supportsConversationalPlanning: false,
-  supportsHintEscalation: true,
   supportsSessionResume: false,
   supportsEffort: false,
   supportsImages: false,
@@ -33,153 +27,6 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanupTempDir(projectDir);
-});
-
-describe('createPlannerBase — hintSuccessMode', () => {
-  it('hintSuccessMode: "files" — succeeds when files are written', async () => {
-    const outFile = join(projectDir, 'hint-out.ts');
-    const planner = createPlannerBase({
-      invokePlan: async () => completedRunnerCall(''),
-      invokeEscalate: async () => {
-        writeFileSync(outFile, '// written by escalation');
-        return completedRunnerCall('');
-      },
-      isAvailable: async () => true,
-      capabilities: defaultCapabilities,
-      hintSuccessMode: 'files',
-    });
-
-    const result = await planner.escalateHint({
-      task: minimalTask,
-      error: 'error',
-      projectDir,
-      callbacks: { onOutput: () => {} },
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it('hintSuccessMode: "files" — fails when no files are written', async () => {
-    const planner = createPlannerBase({
-      invokePlan: async () => completedRunnerCall(''),
-      invokeEscalate: async () => completedRunnerCall(''),
-      isAvailable: async () => true,
-      capabilities: defaultCapabilities,
-      hintSuccessMode: 'files',
-    });
-
-    const result = await planner.escalateHint({
-      task: minimalTask,
-      error: 'error',
-      projectDir,
-      callbacks: { onOutput: () => {} },
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('hintSuccessMode: "text" (default) — succeeds when text is non-empty', async () => {
-    const planner = createPlannerBase({
-      invokePlan: async () => completedRunnerCall(''),
-      invokeEscalate: async () => completedRunnerCall('some hint output'),
-      isAvailable: async () => true,
-      capabilities: defaultCapabilities,
-    });
-
-    const result = await planner.escalateHint({
-      task: minimalTask,
-      error: 'error',
-      projectDir,
-      callbacks: { onOutput: () => {} },
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it('hintSuccessMode: "text" (default) — fails when text is empty', async () => {
-    const planner = createPlannerBase({
-      invokePlan: async () => completedRunnerCall(''),
-      invokeEscalate: async () => completedRunnerCall(''),
-      isAvailable: async () => true,
-      capabilities: defaultCapabilities,
-    });
-
-    const result = await planner.escalateHint({
-      task: minimalTask,
-      error: 'error',
-      projectDir,
-      callbacks: { onOutput: () => {} },
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('capabilities.supportsHintEscalation: false — always returns success: false', async () => {
-    const planner = createPlannerBase({
-      invokePlan: async () => completedRunnerCall(''),
-      invokeEscalate: async () => completedRunnerCall('lots of output'),
-      isAvailable: async () => true,
-      capabilities: {
-        supportsConversationalPlanning: false,
-        supportsHintEscalation: false,
-        supportsSessionResume: false,
-        supportsEffort: false,
-        supportsImages: false,
-        supportsSelfSummarisation: false,
-      },
-    });
-
-    const result = await planner.escalateHint({
-      task: minimalTask,
-      error: 'error',
-      projectDir,
-      callbacks: { onOutput: () => {} },
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('hintSuccessMode: "files" — ignores pre-existing dirty files (before/after snapshot)', async () => {
-    const preExisting = join(projectDir, 'pre-existing.ts');
-    writeFileSync(preExisting, '// dirty before escalation');
-
-    const newFile = join(projectDir, 'new-from-hint.ts');
-    const planner = createPlannerBase({
-      invokePlan: async () => completedRunnerCall(''),
-      invokeEscalate: async () => {
-        writeFileSync(newFile, '// written by hint');
-        return completedRunnerCall('');
-      },
-      isAvailable: async () => true,
-      capabilities: defaultCapabilities,
-      hintSuccessMode: 'files',
-    });
-
-    const result = await planner.escalateHint({
-      task: minimalTask,
-      error: 'error',
-      projectDir,
-      callbacks: { onOutput: () => {} },
-    });
-    // The new file is what triggered success — pre-existing dirty file is baseline, not a signal
-    expect(result.success).toBe(true);
-  });
-
-  it('hintSuccessMode: "files" — not success when only pre-existing dirty files remain', async () => {
-    const preExisting = join(projectDir, 'pre-existing-only.ts');
-    writeFileSync(preExisting, '// dirty before escalation');
-
-    const planner = createPlannerBase({
-      invokePlan: async () => completedRunnerCall(''),
-      invokeEscalate: async () => completedRunnerCall(''),
-      isAvailable: async () => true,
-      capabilities: defaultCapabilities,
-      hintSuccessMode: 'files',
-    });
-
-    const result = await planner.escalateHint({
-      task: minimalTask,
-      error: 'error',
-      projectDir,
-      callbacks: { onOutput: () => {} },
-    });
-    expect(result.success).toBe(false);
-  });
 });
 
 describe('createPlannerBase — structured summarization', () => {
@@ -422,23 +269,7 @@ describe('createPlannerBase — a seat out of quota', () => {
   const AGY_LIMIT =
     'error: Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 2h6m30s. (response may be truncated)';
 
-  it.each([
-    [
-      'hint',
-      (planner: Planner) =>
-        planner.escalateHint({
-          task: minimalTask,
-          error: 'error',
-          projectDir,
-          callbacks: { onOutput: () => {} },
-        }),
-    ],
-    [
-      'summary',
-      (planner: Planner) =>
-        planner.summarize([{ role: 'user', text: 'compact this' }], { projectDir }),
-    ],
-  ])('fails the %s call with the limit instead of reading it as silence', async (_call, run) => {
+  it('fails the summary call with the limit instead of reading it as silence', async () => {
     const planner = createPlannerBase({
       invokePlan: async () => completedRunnerCall(''),
       invokeEscalate: async () =>
@@ -461,7 +292,9 @@ describe('createPlannerBase — a seat out of quota', () => {
       capabilities: defaultCapabilities,
     });
 
-    await expect(run(planner)).rejects.toMatchObject({
+    await expect(
+      planner.summarize([{ role: 'user', text: 'compact this' }], { projectDir }),
+    ).rejects.toMatchObject({
       kind: 'runner-call-failed',
       data: { status: 'failed', error: { code: 'usage-limit', message: AGY_LIMIT } },
     });

@@ -493,9 +493,6 @@ describe('collectReadiness config loader warnings', () => {
         apiBase: 'http://localhost:11434/v1',
         model: 'qwen2.5-coder:7b',
       },
-      workflow: {
-        maxRetries: 3,
-      },
     });
 
     const { report } = await collectReadiness({ projectDir: tempDir });

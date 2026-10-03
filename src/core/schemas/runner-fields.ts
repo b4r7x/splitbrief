@@ -15,6 +15,7 @@ import {
   type RunnerRole,
 } from '../runners/seat-roles.js';
 import { includes, narrowRecord } from '../../utils/type-guards.js';
+import { BOUNDS } from '../pipeline-spec/bounds.js';
 import { isAutomaticModel, normalizeConfiguredModel } from '../providers/automatic-model.js';
 import { hasAutomaticModelDefault } from '../providers/model-selection.js';
 import { isOllamaLocalCredentialReference } from '../providers/ollama-credential.js';
@@ -77,7 +78,6 @@ const CommandFieldSchema = z
 
 const PlannerCapabilitiesSchema = z.strictObject({
   supportsConversationalPlanning: z.boolean(),
-  supportsHintEscalation: z.boolean(),
   supportsSessionResume: z.boolean(),
   supportsEffort: z.boolean(),
   supportsImages: z.boolean(),
@@ -85,7 +85,9 @@ const PlannerCapabilitiesSchema = z.strictObject({
 });
 
 export const RUNNER_IDLE_WARN_MS = 300_000;
-export const RUNNER_IDLE_KILL_MS = 1_800_000;
+// The idle kill is the no-progress cut: 20 minutes with no output and no live
+// descendant, after a 5-minute warning.
+export const RUNNER_IDLE_KILL_MS = BOUNDS.noProgressCutMs;
 export const DEFAULT_IMPLEMENTER_TEMPERATURE = 0.3;
 
 const WatchdogFields = {

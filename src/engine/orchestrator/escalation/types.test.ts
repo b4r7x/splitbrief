@@ -15,16 +15,6 @@ describe('failedRetry', () => {
       lastError: 'typecheck failed',
     });
     expect('handBack' in result).toBe(false);
-    expect('plannerHint' in result).toBe(false);
-    expect('hintRungRan' in result).toBe(false);
-  });
-
-  it('carries the planner hint and the hint-rung flag', () => {
-    expect(failedRetry(4, { hintRungRan: true, plannerHint: 'use a default' })).toMatchObject({
-      attempts: 4,
-      hintRungRan: true,
-      plannerHint: 'use a default',
-    });
   });
 });
 

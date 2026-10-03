@@ -28,30 +28,6 @@ describe('createAgentPlanner', () => {
     expect(() => createAgentPlanner(config)).toThrow('Expected agent planner config');
   });
 
-  it('supports escalateHint — success when agent writes files', async () => {
-    const outFile = join(projectDir, 'hint-out.ts');
-    const config = makeConfig({
-      planner: {
-        kind: 'agent',
-        command: 'bash',
-        args: ['-c', `echo "// hint" > ${outFile}`],
-        capabilities: { supportsHintEscalation: true },
-      },
-    });
-    const planner = createAgentPlanner(config);
-    const task = makeTask();
-    const callbacks = { onOutput: vi.fn() };
-
-    const result = await planner.escalateHint({
-      task,
-      error: 'error message',
-      projectDir,
-      callbacks,
-    });
-    expect(result.success).toBe(true);
-    expect(result.code).toBe(null);
-  });
-
   it('supports review', async () => {
     const config = defaultAgentConfig();
     const planner = createAgentPlanner(config);

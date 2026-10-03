@@ -40,15 +40,19 @@ import {
   workspaceOwner,
 } from '../../../src/engine/orchestrator/isolation/retention.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
-import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
+import {
+  guidanceConsult,
+  planFromTasks,
+  typedCallPlanAndConsult,
+} from '#testing/helpers/typed-planner.js';
 
 // Cold-process proof harness. The host runs this file once per matrix cell:
-//   F2B_PROOF_DIR=<fixture> F2B_PROOF_ENTRY=<n> F2B_PROOF_ROUTE=<initial|local|hint>
+//   F2B_PROOF_DIR=<fixture> F2B_PROOF_ENTRY=<n> F2B_PROOF_ROUTE=<initial|local|consult>
 // Each cell is one independent process over the fixture; entries 0..2 keep the
 // same retained stage, bytes, attempt, and canonical session log. Retirement is
 // common to MAIN and CLONE; the End composition runs only when the host sets
 // F2B_PROOF_MAIN_END=1, so CLONE skips exactly that one case.
-type ColdRoute = 'initial' | 'local' | 'hint';
+type ColdRoute = 'initial' | 'local' | 'consult';
 
 type ColdObservation = {
   attempt: number;
@@ -76,7 +80,7 @@ afterEach(() => {
 
 function coldRouteFromEnv(): ColdRoute {
   const raw = (process.env.F2B_PROOF_ROUTE ?? process.env.F2B_ROUTE ?? 'initial').toLowerCase();
-  return raw === 'local' || raw === 'hint' ? raw : 'initial';
+  return raw === 'local' || raw === 'consult' ? raw : 'initial';
 }
 
 function makeColdTask() {
@@ -139,17 +143,10 @@ async function runColdEntry(input: {
       fallback = true;
   });
   const planner = makePlanner({
-    ...(route === 'hint'
-      ? {
-          escalateHint: async () => ({
-            success: true,
-            output: 'Use the existing module.',
-            code: null,
-            usage: null,
-          }),
-        }
-      : {}),
-    typedCall: typedCallFromTasks([task]),
+    typedCall: typedCallPlanAndConsult(
+      () => planFromTasks([task]),
+      () => guidanceConsult('Try the other marker.'),
+    ),
   });
   const writeAndStop = async (opts: ImplementerOptions) => {
     assertUnborn(projectDir);
@@ -189,11 +186,12 @@ async function runColdEntry(input: {
       capabilities: { writesFiles: 'direct' },
       implement: async (opts) =>
         entryNumber === 0 && route !== 'initial'
-          ? route === 'hint'
-            ? { success: false, output: 'Need advice', outcome: 'no-staged-change' as const }
-            : { success: false, output: '', error: 'initial failure' }
+          ? { success: false, output: '', error: `${route} initial failure` }
           : writeAndStop(opts),
-      retry: writeAndStop,
+      retry: async (opts) =>
+        route === 'consult' && opts.kind === 'local'
+          ? { success: false, output: '', error: 'the local retry needs the planner' }
+          : writeAndStop(opts),
     }),
   });
   assertUnborn(projectDir);
@@ -249,9 +247,9 @@ it.skipIf(!matrixActive)(
       entryNumber: proofEntry,
       route: proofRoute,
     });
-    const expectedAttempt = proofRoute === 'initial' ? 0 : 1;
+    const expectedAttempt = proofRoute === 'consult' ? 2 : proofRoute === 'initial' ? 0 : 1;
     expect(state).toMatchObject({
-      phase: proofRoute === 'hint' && proofEntry === 0 ? 'escalating' : 'implementing',
+      phase: 'implementing',
       attempt: expectedAttempt,
       awaitingContinue: true,
       interruptedStep: {
@@ -502,7 +500,10 @@ it.skipIf(!proofMainEnd)(
       sinks: TEST_SINKS,
       eventBus: bus,
       _planner: makePlanner({
-        typedCall: typedCallFromTasks([makeColdTask()]),
+        typedCall: typedCallPlanAndConsult(
+          () => planFromTasks([makeColdTask()]),
+          () => guidanceConsult('Try the other marker.'),
+        ),
       }),
       _implementer: makeImplementer({
         capabilities: { writesFiles: 'direct' },

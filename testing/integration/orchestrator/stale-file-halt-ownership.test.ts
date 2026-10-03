@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -20,6 +20,7 @@ import { resolveImplementerProfiles } from '../../../src/core/config/accessors/i
 import { createEvidenceLedger } from '../../../src/core/evidence/ledger-state.js';
 import { writeEvidenceLedger } from '../../../src/core/evidence/ledger-storage.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
+import { appendEngineEvent } from '../../../src/core/sessions/log-writer.js';
 import { reactivateExistingSession } from '../../../src/core/sessions/active-pointer.js';
 import type { Task } from '../../../src/core/schemas/task.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
@@ -29,8 +30,17 @@ import {
   captureChangedFilesBaseline,
   serializeChangedFilesBaseline,
 } from '../../../src/engine/orchestrator/changed-files-baseline.js';
+import { captureAcquisitionBaseline } from '../../../src/engine/orchestrator/approval/file-snapshots/entry.js';
+import {
+  prepareWorktreeAcquisition,
+  recordWorktreePromotion,
+} from '../../../src/engine/orchestrator/isolation/acquisition.js';
 import { checkUserEditConflicts } from '../../../src/engine/orchestrator/user-edit/detection.js';
-import { fileHaltIsStale, initializeWorkflow } from '../../../src/engine/orchestrator/run/init.js';
+import {
+  initializeWorkflow,
+  reassessFileHalt,
+  refreshFileHalt,
+} from '../../../src/engine/orchestrator/run/init.js';
 import type { SummaryBase } from '../../../src/engine/orchestrator/summary/build.js';
 import { parsePreparedConfig } from '../../../src/engine/runners/prepared-execution.js';
 import { sha256Hex } from '../../../src/utils/sha256.js';
@@ -71,6 +81,7 @@ function recordOutput(
   projectDir: string,
   task: Task,
   kind: 'current' | 'legacy' | 'unknown' = 'current',
+  promotedPaths: readonly string[] = [file],
 ): void {
   const ledger = createEvidenceLedger({ sessionId, feature: 'feat', tasks: [task] });
   writeEvidenceLedger(
@@ -82,7 +93,11 @@ function recordOutput(
         ...(kind === 'current'
           ? {
               promotedBriefHash: hashTaskBrief([task]),
-              promotedFiles: [{ path: file, sha256: sha256Hex('worker'), mode: 0o644 }],
+              promotedFiles: promotedPaths.map((path) => ({
+                path,
+                sha256: sha256Hex('worker'),
+                mode: 0o644,
+              })),
             }
           : kind === 'legacy'
             ? {
@@ -205,7 +220,7 @@ describe('parked file-halt ownership', () => {
         conflict: expect.objectContaining({ kind: 'future-task-stale-input', files: [file] }),
       }),
     );
-    expect(await fileHaltIsStale({ projectDir, state, sessionId })).toBe(true);
+    expect(await reassessFileHalt({ projectDir, state, sessionId })).toBeUndefined();
     const { result, events } = await resume(projectDir, state);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -223,11 +238,21 @@ describe('parked file-halt ownership', () => {
         conflict: expect.objectContaining({ kind: 'current-task-conflict', files: [file] }),
       }),
     );
-    expect(await fileHaltIsStale({ projectDir, state, sessionId })).toBe(false);
+    expect(await reassessFileHalt({ projectDir, state, sessionId })).toBeDefined();
     const continued = await resume(projectDir, state);
     expect(continued.result.ok).toBe(true);
     if (!continued.result.ok) return;
     expect(continued.result.state.pendingRecovery?.reason).toBe('user-edit-conflict');
+    // The saved halt offered `continue`; the files now read as a conflict with the brief in flight.
+    const shown = continued.result.state.pendingRecovery;
+    expect(shown?.facts).toMatchObject({
+      conflictKind: 'current-task-conflict',
+      safeToContinue: false,
+    });
+    expect(shown?.availableActions).not.toContain('continue');
+    expect(shown?.recommendedAction).toBe('pause-run');
+    expect(shown?.files).toEqual([file]);
+    expect(continued.events).toContainEqual(expect.objectContaining({ type: 'recovery_prompted' }));
     expect(continued.events.find((event) => event.type === 'recovery_resolved')).toBeUndefined();
 
     writeFileSync(join(projectDir, file), 'worker');
@@ -237,7 +262,25 @@ describe('parked file-halt ownership', () => {
         code: 'own_partial_output_kept',
       }),
     );
-    expect(await fileHaltIsStale({ projectDir, state, sessionId })).toBe(true);
+    expect(await reassessFileHalt({ projectDir, state, sessionId })).toBeUndefined();
+  });
+
+  it('re-raises a standing halt from the fresh reading once, then leaves it alone', async () => {
+    const { projectDir, task, state } = await scenario();
+    recordOutput(projectDir, task);
+    writeFileSync(join(projectDir, file), 'operator over worker');
+    const { bus, events } = makeBusRecorder();
+
+    const first = await refreshFileHalt({ projectDir, sessionId, bus, state });
+    expect(first.stale).toBe(false);
+    expect(first.state.pendingRecovery?.facts).toMatchObject({
+      conflictKind: 'current-task-conflict',
+    });
+    expect(first.state.pendingRecovery?.availableActions).not.toContain('continue');
+
+    const second = await refreshFileHalt({ projectDir, sessionId, bus, state: first.state });
+    expect(second.state).toBe(first.state);
+    expect(events.filter((event) => event.type === 'recovery_prompted')).toHaveLength(1);
   });
 
   it('does not lend a revised brief or another attempt the old receipt', async () => {
@@ -247,15 +290,15 @@ describe('parked file-halt ownership', () => {
     const revised = { ...task, title: 'Revised requirement' };
     const revisedState = { ...state, tasks: [revised] };
     expect((await gateResult(projectDir, revised, baseline)).result.stopped).toBe(true);
-    expect(await fileHaltIsStale({ projectDir, state: revisedState, sessionId })).toBe(false);
+    expect(await reassessFileHalt({ projectDir, state: revisedState, sessionId })).toBeDefined();
 
     writeFileSync(join(projectDir, file), 'operator after retry');
-    expect(await fileHaltIsStale({ projectDir, state: { ...state, attempt: 1 }, sessionId })).toBe(
-      false,
-    );
-    expect(await fileHaltIsStale({ projectDir, state: { ...state, attempt: 0 }, sessionId })).toBe(
-      false,
-    );
+    expect(
+      await reassessFileHalt({ projectDir, state: { ...state, attempt: 1 }, sessionId }),
+    ).toBeDefined();
+    expect(
+      await reassessFileHalt({ projectDir, state: { ...state, attempt: 0 }, sessionId }),
+    ).toBeDefined();
   });
 
   it.each(['legacy', 'unknown'] as const)(
@@ -265,7 +308,236 @@ describe('parked file-halt ownership', () => {
       recordOutput(projectDir, task, kind);
       writeFileSync(join(projectDir, file), 'operator');
       expect((await gateResult(projectDir, task, baseline)).result.stopped).toBe(true);
-      expect(await fileHaltIsStale({ projectDir, state, sessionId })).toBe(false);
+      expect(await reassessFileHalt({ projectDir, state, sessionId })).toBeDefined();
     },
   );
+});
+
+describe('a cut brief halted before it ran again', () => {
+  const cut = (task: Task) => ({
+    type: 'turn_interrupted' as const,
+    ts: Date.now(),
+    phase: 'implementing' as const,
+    source: 'user' as const,
+    at: 'mid-step' as const,
+    step: { kind: 'brief' as const, taskId: task.id, attempt: 1 },
+  });
+
+  it.each([
+    ['still in progress', 'in_progress', 1],
+    ['already reset by an earlier continue', 'pending', 0],
+  ] as const)(
+    'continues the brief at its cut attempt when it is %s',
+    async (_label, status, attempt) => {
+      const { projectDir, task, state } = await scenario();
+      appendEngineEvent({ projectDir, sessionId }, cut(task));
+      writeFileSync(join(projectDir, file), 'operator');
+
+      const { result } = await resume(projectDir, {
+        ...state,
+        attempt,
+        tasks: [{ ...task, status }],
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const step = { kind: 'brief' as const, taskId: task.id, attempt: 1 };
+      expect(result.state.tasks[0]?.status).toBe('in_progress');
+      expect(result.state.attempt).toBe(1);
+      expect(result.state.pendingRecovery).toBeUndefined();
+      expect(result.state.interruptedStep?.step).toEqual(step);
+      expect(result.wctx.continuation?.take(step, hashTaskBrief([task]))).toMatchObject({
+        keepWorkspace: true,
+      });
+    },
+  );
+
+  it.each([
+    [
+      'a call started after the cut',
+      { type: 'runner_call_started', ts: Date.now(), phase: 'implementing' },
+    ],
+    [
+      'the operator retried the brief after the cut',
+      {
+        type: 'recovery_resolved',
+        ts: Date.now(),
+        phase: 'implementing',
+        issueId: 'rec_retry',
+        reason: 'user-edit-conflict',
+        action: 'retry-same-worker',
+        outcome: 'retry-current-task',
+      },
+    ],
+    [
+      'the operator redid the brief after the cut',
+      { type: 'task_reset', ts: Date.now(), phase: 'implementing', taskId: 'T001' },
+    ],
+  ] as const)('restarts a brief in flight when %s', async (_label, later) => {
+    const { projectDir, task, state } = await scenario();
+    appendEngineEvent({ projectDir, sessionId }, cut(task));
+    appendEngineEvent({ projectDir, sessionId }, later);
+    const { pendingRecovery: _halt, ...unhalted } = state;
+
+    const { result } = await resume(projectDir, { ...unhalted, attempt: 1 });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.tasks[0]?.status).toBe('pending');
+    expect(result.state.attempt).toBe(0);
+    expect(result.state.interruptedStep).toBeUndefined();
+  });
+
+  it('leaves a brief the run already moved past', async () => {
+    const { projectDir, task, state } = await scenario();
+    const next = makeTask({ id: 'T002', status: 'pending', file: 'src/next.ts' });
+    appendEngineEvent({ projectDir, sessionId }, cut(task));
+    const { pendingRecovery: _halt, ...unhalted } = state;
+
+    const { result } = await resume(projectDir, {
+      ...unhalted,
+      tasks: [{ ...task, status: 'skipped' }, next],
+      currentTaskIndex: 1,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.currentTaskIndex).toBe(1);
+    expect(result.state.tasks[0]?.status).toBe('skipped');
+    expect(result.state.interruptedStep).toBeUndefined();
+  });
+});
+
+describe('a declared file the in-flight brief never wrote', () => {
+  const other = 'src/other.ts';
+
+  const cut = (task: Task) => ({
+    type: 'turn_interrupted' as const,
+    ts: Date.now(),
+    phase: 'implementing' as const,
+    source: 'user' as const,
+    at: 'mid-step' as const,
+    step: { kind: 'brief' as const, taskId: task.id, attempt: 1 },
+  });
+
+  /** A task that declares `file` and `other`, with `other` untouched in both trees. */
+  async function scenarioWithWorktree() {
+    const task = makeTask({
+      id: 'T001',
+      status: 'in_progress',
+      file,
+      files: [file, other],
+    });
+    const { projectDir, baseline, state } = await scenario(task);
+    const worktreeDir = createTempDir('stale-halt-owner-worktree');
+    dirs.push(worktreeDir);
+    execFileSync('git', ['init', '--quiet'], { cwd: worktreeDir });
+    mkdirSync(join(worktreeDir, 'src'));
+    writeFileSync(join(projectDir, other), 'other original');
+    writeFileSync(join(worktreeDir, file), 'original');
+    writeFileSync(join(worktreeDir, other), 'other original');
+    await prepareWorktreeAcquisition({
+      projectDir,
+      sessionId,
+      worktreeDir,
+      seedSnapshot: null,
+      initialTargetBaseline: await captureAcquisitionBaseline(projectDir),
+      fresh: false,
+    });
+    const halted = {
+      ...state,
+      attempt: 1,
+      pendingRecovery: makeRecoveryIssue({
+        reason: 'user-edit-conflict',
+        phase: 'implementing',
+        taskId: task.id,
+        files: [other],
+        availableActions: ['continue', 'pause-run', 'end-run'],
+        recommendedAction: 'continue',
+      }),
+    };
+    return { projectDir, baseline, task, state: halted, worktreeDir };
+  }
+
+  it('absorbs an edit to a declared file the worktree never changed and resumes', async () => {
+    const { projectDir, baseline, task, state } = await scenarioWithWorktree();
+    recordOutput(projectDir, task);
+    appendEngineEvent({ projectDir, sessionId }, cut(task));
+    writeFileSync(join(projectDir, other), 'operator');
+
+    expect((await gateResult(projectDir, task, baseline)).events).toContainEqual(
+      expect.objectContaining({
+        type: 'paused_external_changes',
+        conflict: expect.objectContaining({
+          kind: 'future-task-stale-input',
+          safeToContinue: true,
+          files: [other],
+        }),
+      }),
+    );
+    expect(await reassessFileHalt({ projectDir, state, sessionId })).toBeUndefined();
+
+    const { result, events } = await resume(projectDir, state);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.pendingRecovery).toBeUndefined();
+    expect(result.state.tasks[0]).toMatchObject({ id: task.id, status: 'in_progress' });
+    expect(result.state.attempt).toBe(1);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'recovery_resolved' }));
+    expect(events.find((event) => event.type === 'task_reset')).toBeUndefined();
+  });
+
+  it('keeps the conflict when the worktree diverged from its input', async () => {
+    const { projectDir, baseline, task, state, worktreeDir } = await scenarioWithWorktree();
+    recordOutput(projectDir, task);
+    writeFileSync(join(worktreeDir, other), 'worker partial');
+    writeFileSync(join(projectDir, other), 'operator');
+
+    expect((await gateResult(projectDir, task, baseline)).events).toContainEqual(
+      expect.objectContaining({
+        type: 'paused_external_changes',
+        conflict: expect.objectContaining({ kind: 'current-task-conflict', files: [other] }),
+      }),
+    );
+    expect(await reassessFileHalt({ projectDir, state, sessionId })).toBeDefined();
+  });
+
+  it('keeps the conflict when the worktree still holds the recorded write', async () => {
+    const { projectDir, baseline, task, state, worktreeDir } = await scenarioWithWorktree();
+    recordOutput(projectDir, task, 'current', [file, other]);
+    writeFileSync(join(worktreeDir, other), 'worker');
+    await recordWorktreePromotion({
+      projectDir,
+      sessionId,
+      workspacePath: worktreeDir,
+      files: [{ path: other, sha256: sha256Hex('worker'), mode: 0o644 }],
+    });
+    writeFileSync(join(projectDir, other), 'operator over worker');
+
+    expect((await gateResult(projectDir, task, baseline)).events).toContainEqual(
+      expect.objectContaining({
+        type: 'paused_external_changes',
+        conflict: expect.objectContaining({ kind: 'current-task-conflict', files: [other] }),
+      }),
+    );
+    expect(await reassessFileHalt({ projectDir, state, sessionId })).toBeDefined();
+  });
+
+  it('falls back to the run-level reading when the baseline worktree is gone', async () => {
+    const { projectDir, baseline, task, state, worktreeDir } = await scenarioWithWorktree();
+    rmSync(worktreeDir, { recursive: true, force: true });
+    writeFileSync(join(projectDir, other), 'operator');
+
+    expect((await gateResult(projectDir, task, baseline)).events).toContainEqual(
+      expect.objectContaining({
+        type: 'paused_external_changes',
+        conflict: expect.objectContaining({
+          kind: 'future-task-stale-input',
+          safeToContinue: true,
+          files: [other],
+        }),
+      }),
+    );
+    expect(await reassessFileHalt({ projectDir, state, sessionId })).toBeUndefined();
+  });
 });

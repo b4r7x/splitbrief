@@ -54,7 +54,6 @@ splitbrief init
 ```yaml
 workflow:
   approve: none
-  maxRetries: 2
 ```
 
 **Run:**
@@ -548,7 +547,6 @@ task_completed T003
 ```yaml
 workflow:
   approve: none
-  maxRetries: 2
 ```
 
 **Run:**
@@ -782,7 +780,7 @@ splitbrief start --plain \
   "add a POST /invoices endpoint"
 ```
 
-**You'll see:** the ids are resolved against the same scan roots the `/skills` picker uses — project `./.splitbrief/skills/`, `./.claude/skills/`, `./.agents/skills/`, `./.github/skills/`, `./.commandcode/skills/`, `./.kilo/skills/`, `./.kilocode/skills/`, `./.cursor/skills/`, then the global forms of the same — and their text reaches every seat — each planning step, each implementer brief and its retries, the hint call and the final review — under one `## Active Project Skills` section. Nothing prints for a successful attach; the run simply works with them.
+**You'll see:** the ids are resolved against the same scan roots the `/skills` picker uses — project `./.splitbrief/skills/`, `./.claude/skills/`, `./.agents/skills/`, `./.github/skills/`, `./.commandcode/skills/`, `./.kilo/skills/`, `./.kilocode/skills/`, `./.cursor/skills/`, then the global forms of the same — and their text reaches every seat — each planning step, each implementer brief and its retries, the consult and the final review — under one `## Active Project Skills` section. Nothing prints for a successful attach; the run simply works with them.
 
 An id no root carries fails before planning, so a typo costs no tokens:
 

@@ -1,3 +1,4 @@
+import type { PackageScriptsReadinessInput } from '../../../core/readiness/checks/validation.js';
 import {
   VALIDATION_STAGES,
   type Phase,
@@ -53,6 +54,16 @@ const STAGE_TARGETS = new Set<string>(VALIDATION_STAGES);
 const RUN_FRONT_ENDS = new Set(['uv', 'poetry']);
 
 const PYTHON_TOOLS = new Set(pythonStack.allowedCommands);
+
+const NPX_STACK_TOOLS = new Set(
+  STACKS.flatMap((stack) => stack.allowedCommands).filter(
+    (tool) =>
+      !PACKAGE_MANAGERS.includes(tool) &&
+      !INTERPRETERS.has(tool) &&
+      !NPX_CODE_LOAD_PACKAGES.has(tool) &&
+      !RUN_FRONT_ENDS.has(tool),
+  ),
+);
 
 const TEST_CONFIG_FLAGS = new Set(['--config', '-c']);
 
@@ -173,7 +184,7 @@ function loadsTestRunnerConfig(tokens: string[]): boolean {
   return false;
 }
 
-function unsafeCommandReason(raw: string): string | null {
+export function unsafeCommandReason(raw: string): string | null {
   const tokens = parseShellCommand(raw);
   const cmd = tokens[0];
   if (!cmd) return 'names no program';
@@ -191,6 +202,40 @@ function unsafeCommandReason(raw: string): string | null {
     if (SHELL_OPERATORS.test(token)) return 'contains a shell operator';
   }
   return null;
+}
+
+export function checkCommandRefusal(
+  command: string,
+  {
+    planApproved,
+    packageScripts,
+  }: { planApproved: boolean; packageScripts: PackageScriptsReadinessInput },
+): string | null {
+  const tokens = parseShellCommand(command);
+  const cmd = tokens[0];
+  if (!cmd) return 'names no program';
+  if (!planApproved) return 'runs before the plan is approved';
+  const family = commandFamily(cmd);
+  if (family === 'npx') {
+    const tool = tokens[1] === '--no-install' ? tokens[2] : undefined;
+    if (tool === undefined) return 'runs npx without --no-install';
+    return NPX_STACK_TOOLS.has(commandFamily(tool))
+      ? null
+      : 'runs a program outside the stack tools through npx';
+  }
+  if (family === 'npm' && tokens[1] === 'run') {
+    const script = tokens[2];
+    if (script === undefined) return 'runs npm run without a script name';
+    if (tokens.some((token) => SHELL_OPERATORS.test(token))) return 'contains a shell operator';
+    if (!packageScripts.packageJsonExists) {
+      return 'runs an npm script, but package.json was not found';
+    }
+    if (!Object.hasOwn(packageScripts.scripts, script)) {
+      return `runs the npm script ${script}, which package.json does not define`;
+    }
+    return null;
+  }
+  return unsafeCommandReason(command);
 }
 
 type CommandField = 'typecheckCommand' | 'lintCommand' | 'testCommand';

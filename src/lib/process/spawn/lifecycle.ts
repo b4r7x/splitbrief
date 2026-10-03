@@ -3,6 +3,7 @@ import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text.js';
 import { error, matches } from '../../../utils/error.js';
 import { createBoundedOutput, type BoundedOutputMetadata } from '../bounded-output.js';
 import { spawnError, processError } from '../errors.js';
+import { hasLiveDescendants } from '../liveness.js';
 import {
   registerProcess,
   unregisterProcess,
@@ -270,6 +271,27 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
         return undefined;
       });
 
+    const armIdleKillTimer = () => {
+      if (idle === undefined) return;
+      idleKillTimer = setTimeout(() => {
+        // A running child process is progress: it may be the test, build or
+        // command the runner launched and is still doing the work. Only a call
+        // that emitted no event and has no live descendant is cut.
+        if (proc.pid !== undefined && hasLiveDescendants(proc.pid)) {
+          armIdleKillTimer();
+          return;
+        }
+        terminate({
+          kind: 'error',
+          error: processError.idleTimeout({
+            command: opts.command,
+            label: idle.label,
+            idleMs: idle.killMs,
+          }),
+        });
+      }, idle.killMs);
+      idleKillTimer.unref?.();
+    };
     const armIdleTimers = () => {
       if (idle === undefined) return;
       clearIdleTimers();
@@ -281,17 +303,7 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
         }
       }, idle.warnMs);
       idleWarnTimer.unref?.();
-      idleKillTimer = setTimeout(() => {
-        terminate({
-          kind: 'error',
-          error: processError.idleTimeout({
-            command: opts.command,
-            label: idle.label,
-            idleMs: idle.killMs,
-          }),
-        });
-      }, idle.killMs);
-      idleKillTimer.unref?.();
+      armIdleKillTimer();
     };
     const noteIdleOutput = () => {
       if (idle === undefined || phase !== 'active') return phase === 'active';

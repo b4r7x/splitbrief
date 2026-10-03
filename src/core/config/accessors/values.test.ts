@@ -11,7 +11,7 @@ const mockConfig = makeConfig({
 describe('getConfigValue', () => {
   it('reads nested dot-path values', () => {
     expect(getConfigValue(mockConfig, 'planner.tool')).toBe('claude-code');
-    expect(getConfigValue(mockConfig, 'workflow.maxRetries')).toBe(3);
+    expect(getConfigValue(mockConfig, 'workflow.compactionFormat')).toBe('auto');
     expect(getConfigValue(mockConfig, 'implementer.temperature')).toBe(0.3);
   });
 

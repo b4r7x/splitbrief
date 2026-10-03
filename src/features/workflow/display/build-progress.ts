@@ -1,4 +1,4 @@
-import type { Config } from '../../../core/schemas/config.js';
+import { BOUNDS } from '../../../core/pipeline-spec/bounds.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import { isImplementerPhase } from '../../../core/phases.js';
 import { isApiProviderId } from '../../../core/providers/api-provider-catalog.js';
@@ -47,7 +47,6 @@ export interface DeriveBuildProgressInput {
   tasks: TasksState;
   lifecycle: LifecycleState;
   operations: OperationsState;
-  config: Config | null;
   now: number;
 }
 
@@ -172,7 +171,7 @@ export function deriveBuildProgress(input: DeriveBuildProgressInput): BuildProgr
     escalated: view.escalated,
     failed: view.failed,
     attempt: building
-      ? { current: input.tasks.currentAttempt, max: 1 + (input.config?.workflow.maxRetries ?? 0) }
+      ? { current: input.tasks.currentAttempt, max: BOUNDS.attemptsPerLineage }
       : null,
     eta: building ? etaFor(input, view.total - view.finished - view.failed) : null,
     activity: activityLine(input),

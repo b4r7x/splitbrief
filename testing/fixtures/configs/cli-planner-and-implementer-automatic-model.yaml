@@ -13,7 +13,6 @@ validation:
   test: true
 workflow:
   approve: plan
-  max_retries: 3
   git:
     commit_strategy: none
   compaction_format: auto

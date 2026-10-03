@@ -44,7 +44,7 @@ describe('displayValue', () => {
   });
 
   it('unsetLabel fallbacks for timeout, contextLength and testCommand', () => {
-    expect(displayValue(getDef('implementer.timeout'), null)).toBe('auto (idle kill 30m)');
+    expect(displayValue(getDef('implementer.timeout'), null)).toBe('auto (idle kill 20m)');
     expect(displayValue(getDef('implementer.contextLength'), undefined)).toBe('auto');
     expect(displayValue(getDef('validation.testCommand'), undefined)).toBe('auto');
   });
@@ -80,29 +80,29 @@ describe('matchesFilter', () => {
 
 describe('validateNumber', () => {
   it('rejects non-numeric', () => {
-    const def = getDef('workflow.maxRetries');
+    const def = getDef('implementer.timeout');
     expect(validateNumber('abc', def)).toBeNull();
   });
 
   it('rejects out of range', () => {
-    const def = getDef('workflow.maxRetries');
+    const def = getDef('implementer.timeout');
     expect(validateNumber('-1', def)).toBeNull();
-    expect(validateNumber('99', def)).toBeNull();
+    expect(validateNumber('0', def)).toBeNull();
   });
 
   it('rejects empty numeric buffers', () => {
-    const def = getDef('workflow.maxRetries');
+    const def = getDef('implementer.timeout');
     expect(validateNumber('', def)).toBeNull();
     expect(validateNumber('   ', def)).toBeNull();
   });
 
   it('accepts valid integer', () => {
-    const def = getDef('workflow.maxRetries');
+    const def = getDef('implementer.timeout');
     expect(validateNumber('5', def)).toBe(5);
   });
 
   it('rejects non-integer for integer fields', () => {
-    const def = getDef('workflow.maxRetries');
+    const def = getDef('implementer.timeout');
     expect(validateNumber('3.5', def)).toBeNull();
   });
 

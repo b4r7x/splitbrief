@@ -156,25 +156,6 @@ describe('ConfigSchema user config contracts', () => {
     ).toBe(true);
   });
 
-  it('requires escalation.intermediateModel when intermediateProvider is set', () => {
-    expect(
-      ConfigSchema.safeParse({
-        ...validConfig,
-        escalation: { intermediateProvider: 'ollama', intermediateModel: 'llama3.1' },
-      }).success,
-    ).toBe(true);
-
-    expect(
-      hasIssueAtPath(
-        issuesFor({
-          ...validConfig,
-          escalation: { intermediateProvider: 'ollama' },
-        }),
-        'escalation.intermediateModel',
-      ),
-    ).toBe(true);
-  });
-
   it('validates implementer profile names and default profile references', () => {
     expect(
       hasIssueAtPath(

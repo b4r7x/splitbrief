@@ -12,6 +12,7 @@ import type { Phase } from '../../core/schemas/enums.js';
 import type * as ImplementerConfig from '../../core/schemas/implementer-config.js';
 import type { RunnerSlot } from '../runners/prepared-execution.js';
 import type { BundleApplyResult } from './file-bundle.js';
+import type { ImplementerReport } from '../../core/schemas/consult.js';
 
 export interface ImplementerResult {
   success: boolean;
@@ -22,6 +23,10 @@ export interface ImplementerResult {
   usage?: TokenDelta | undefined;
   /** What a `file-bundle-v1` response actually did on disk; absent for every other grammar. */
   applyResult?: BundleApplyResult | undefined;
+  /** The direct writer's closing report, when its reply ended with a valid one. */
+  report?: ImplementerReport | undefined;
+  /** The files or the decision the attempt asked for instead of finishing. */
+  blocked?: { question: string; filesNeeded: string[] } | undefined;
 }
 
 export interface ImplementerPublisher {
@@ -61,7 +66,7 @@ export interface ImplementerFactoryOptions {
   /** Canonical CLI identity admitted by the start-readiness gate. */
   trustedCli?: CliStartGate | undefined;
   customRuntime?: CustomRunnerRuntimePort | undefined;
-  slot?: Extract<RunnerSlot, { role: 'implementer' | 'intermediate' }> | undefined;
+  slot?: Extract<RunnerSlot, { role: 'implementer' }> | undefined;
 }
 
 export interface ImplementerOptions extends UndeclaredWritesPolicy {
@@ -106,7 +111,7 @@ export interface ImplementerOptions extends UndeclaredWritesPolicy {
 export interface RetryOptions extends ImplementerOptions {
   error: string;
   attempt: number;
-  kind: 'local' | 'hint';
+  kind: 'local' | 'consult';
 }
 
 export interface InvokeOpts extends UndeclaredWritesPolicy {

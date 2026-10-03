@@ -7,10 +7,12 @@ import {
   SPLITBRIEF_DIR,
   TREES_DIR,
 } from '../../../core/paths.js';
+import type { EvidencePromotedFile } from '../../../core/schemas/evidence.js';
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow.js';
 import { writeConfinedSecureFileAsync } from '../../../lib/fs.js';
 import { getCurrentChangedFiles } from '../../../lib/git/files.js';
 import { assertPathConfined } from '../../../lib/path-confinement.js';
+import { isENOENT } from '../../../lib/process/errors.js';
 import { error } from '../../../utils/error.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
@@ -96,6 +98,52 @@ function baselinePathFor(projectDir: string, sessionId: string): string {
   return relative(projectDir, join(sessionDir(projectDir, sessionId), 'isolation-baseline.json'));
 }
 
+/**
+ * The known acquisition baseline of the session's worktree, for readers that judge a file by what the
+ * worker started from. Null without a record, with an `unknown` one, or when its worktree is gone.
+ */
+export async function readWorktreeAcquisitionBaseline(input: {
+  projectDir: string;
+  sessionId: string;
+}): Promise<{ worktreeDir: string; worktree: AcquisitionBaseline } | null> {
+  const baseline = await readBaseline({
+    projectDir: input.projectDir,
+    baselinePath: baselinePathFor(input.projectDir, input.sessionId),
+  });
+  if (baseline === null || baseline.kind === 'unknown') return null;
+  // A record that outlives its worktree must not read as output: disposal removes
+  // only worktrees with no unpromoted work, so the run-level fallback applies.
+  let worktreeIsDirectory: boolean;
+  try {
+    worktreeIsDirectory = (await lstat(baseline.worktreeDir)).isDirectory();
+  } catch (err) {
+    if (isENOENT(err)) return null;
+    throw err;
+  }
+  if (!worktreeIsDirectory) return null;
+  return { worktreeDir: baseline.worktreeDir, worktree: baseline.worktree };
+}
+
+async function writeKnownBaseline(opts: {
+  projectDir: string;
+  baselinePath: string;
+  worktreeDir: string;
+  baseline: WorktreeBaseline;
+}): Promise<void> {
+  const { projectDir, baselinePath, worktreeDir, baseline } = opts;
+  await writeConfinedSecureFileAsync(
+    projectDir,
+    baselinePath,
+    `${JSON.stringify({
+      version: 1,
+      kind: 'known',
+      worktreeDir,
+      targetFiles: Object.fromEntries(baseline.target),
+      worktreeFiles: Object.fromEntries(baseline.worktree),
+    })}\n`,
+  );
+}
+
 /** Null leaves a halt with no worktree record to its existing recovery check. */
 export async function worktreePromotionConflictIsResolved(input: {
   projectDir: string;
@@ -134,6 +182,85 @@ function setFingerprint(
 ): void {
   if (value === undefined) baseline.delete(file);
   else baseline.set(file, value);
+}
+
+/**
+ * A promoted entry is what the target now holds and what the worker copy
+ * started from, so the next acquisition weighs later edits on either side
+ * against it instead of against the input of the attempt that promoted it.
+ */
+export async function recordWorktreePromotion(input: {
+  projectDir: string;
+  sessionId: string;
+  workspacePath: string;
+  files: readonly EvidencePromotedFile[];
+}): Promise<void> {
+  const { projectDir, sessionId, workspacePath, files } = input;
+  if (files.length === 0) return;
+  const baselinePath = baselinePathFor(projectDir, sessionId);
+  const baseline = await readBaseline({ projectDir, baselinePath });
+  // A staged copy and a legacy worktree keep no known baseline to advance.
+  if (baseline === null || baseline.kind === 'unknown' || baseline.worktreeDir !== workspacePath)
+    return;
+  const target = new Map(baseline.target);
+  const worktree = new Map(baseline.worktree);
+  for (const file of files) {
+    setFingerprint(
+      target,
+      file.path,
+      file.sha256 === null || file.mode === null
+        ? undefined
+        : { sha256: file.sha256, mode: file.mode },
+    );
+    const entry = await readConfinedEntry(workspacePath, file.path);
+    setFingerprint(
+      worktree,
+      file.path,
+      entry.kind === 'file' ? { sha256: entry.sha256, mode: entry.mode } : undefined,
+    );
+  }
+  await writeKnownBaseline({
+    projectDir,
+    baselinePath,
+    worktreeDir: workspacePath,
+    baseline: { target, worktree },
+  });
+}
+
+/**
+ * A restore is the tool's own write to the target, so the next acquisition
+ * weighs a later worker edit against what the target now holds instead of
+ * reading the restore as an operator edit.
+ */
+export async function recordTargetRestore(input: {
+  projectDir: string;
+  sessionId: string;
+  files: readonly string[];
+}): Promise<void> {
+  const { projectDir, sessionId, files } = input;
+  if (files.length === 0) return;
+  const baselinePath = baselinePathFor(projectDir, sessionId);
+  const baseline = await readBaseline({ projectDir, baselinePath });
+  if (baseline === null || baseline.kind === 'unknown') return;
+  const target = new Map(baseline.target);
+  for (const file of files) {
+    // The baseline fingerprints regular files only, so a restored project symlink leaves it.
+    const entry =
+      (await readProjectSymlink(projectDir, file)) === null
+        ? await readConfinedEntry(projectDir, file)
+        : null;
+    setFingerprint(
+      target,
+      file,
+      entry?.kind === 'file' ? { sha256: entry.sha256, mode: entry.mode } : undefined,
+    );
+  }
+  await writeKnownBaseline({
+    projectDir,
+    baselinePath,
+    worktreeDir: baseline.worktreeDir,
+    baseline: { target, worktree: baseline.worktree },
+  });
 }
 
 function worktreeInput(file: string, target: FileSnapshotEntry): FileSnapshotEntry {
@@ -243,17 +370,7 @@ export async function prepareWorktreeAcquisition(opts: {
     );
   } else {
     const synchronized = await synchronizeWorktree({ projectDir, worktreeDir, baseline: previous });
-    await writeConfinedSecureFileAsync(
-      projectDir,
-      baselinePath,
-      `${JSON.stringify({
-        version: 1,
-        kind: 'known',
-        worktreeDir,
-        targetFiles: Object.fromEntries(synchronized.target),
-        worktreeFiles: Object.fromEntries(synchronized.worktree),
-      })}\n`,
-    );
+    await writeKnownBaseline({ projectDir, baselinePath, worktreeDir, baseline: synchronized });
     targetBaseline = synchronized.target;
   }
   const discarded: string[] = [];

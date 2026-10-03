@@ -258,6 +258,34 @@ describe('checkUserEditConflicts', () => {
     expect(acknowledgedUserEditFiles.has('src/current.ts')).toBe(true);
   });
 
+  it("keeps a parked brief's own output in a file it did not declare", async () => {
+    createTestGitRepo(projectDir, { 'src/current.ts': 'v1', 'src/dep.ts': 'v1' });
+    const dependency = makeTask({ id: 'T001', status: 'done', file: 'src/dep.ts' });
+    const task = makeTask({
+      id: 'T002',
+      status: 'in_progress',
+      file: 'src/current.ts',
+      dependsOn: ['T001'],
+    });
+    const baseline = await captureChangedFilesBaseline(projectDir);
+    recordPromotion({ task, file: 'src/dep.ts', content: 'promoted by the parked attempt' });
+    writeFileSync(join(projectDir, 'src/dep.ts'), 'promoted by the parked attempt');
+
+    const { result, events, acknowledgedUserEditFiles } = await runCheck({
+      tasks: [task, dependency],
+      baseline,
+    });
+
+    expect(result.stopped).toBe(false);
+    expect(result.state.pendingRecovery).toBeUndefined();
+    expect(acknowledgedUserEditFiles.has('src/dep.ts')).toBe(true);
+    expect(events.find((event) => event.type === 'warning')).toMatchObject({
+      code: 'own_partial_output_kept',
+      message: expect.stringContaining('src/dep.ts'),
+    });
+    expect(events.find((event) => event.type === 'paused_external_changes')).toBeUndefined();
+  });
+
   it('halts on an edit made over what a parked brief wrote', async () => {
     createTestGitRepo(projectDir, { 'src/current.ts': 'v1' });
     const task = makeTask({ id: 'T001', status: 'in_progress', file: 'src/current.ts' });

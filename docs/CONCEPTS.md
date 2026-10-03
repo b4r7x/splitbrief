@@ -11,11 +11,11 @@ SPLITBRIEF is a CLI that splits AI coding work across two roles:
 - A **planner** — an expensive, high-quality model (Claude Code, Codex, GPT-4-class, …) does the *thinking*: researches the codebase and answers one typed plan, whose tasks become the Task Briefs.
 - An **implementer** — a weaker **model**, reached either as a CLI tool running a cheap model or as an API model (Ollama, LM Studio, a custom endpoint) — does the *typing*: turns each task from the list into code, one task at a time. Both transports are first-class; SPLITBRIEF favours neither.
 
-The orchestrator in the middle owns the workflow: it runs the planner, persists the plan and the Task Brief transport, walks through tasks, validates each one (`typecheck → lint → tests`), records evidence and checkpoint boundaries, and escalates back to the planner when the implementer gets stuck. Git staging and commits belong to the user.
+The orchestrator in the middle owns the workflow: it runs the planner, persists the plan and the Task Brief transport, walks through tasks, validates each one (`typecheck → lint → tests`), records evidence and checkpoint boundaries, and consults the planner when the implementer gets stuck. Git staging and commits belong to the user.
 
 The goal is a change that holds up: the tool that wrote the code never signs it off, and a deterministic pipeline — not the implementer's own opinion — decides whether the task passed. Lower total cost follows from the split; it is a reported outcome, not the promise.
 
-The **pipeline spec** (`src/core/pipeline-spec/`) is where that pipeline's countable rules live — the brief grouping rule, the retry count, the escalation ladder, the timeouts, the gate order, the halt signatures, the review cycle cap. The orchestrator imports them and the portable agent skills are rendered from them, so the two cannot drift; `npm run skills:check` fails when they do.
+The **pipeline spec** (`src/core/pipeline-spec/`) is where that pipeline's countable rules live — the brief grouping rule, the retry count, the ladder, the bounds, the timeouts, the gate order, the halt signatures, the review cycle cap. The orchestrator imports them and the portable agent skills are rendered from them, so the two cannot drift; `npm run skills:check` fails when they do.
 
 ---
 
@@ -28,7 +28,7 @@ The "smart" side. Its responsibilities, in order:
 1. **Research** the project (read files, understand existing patterns).
 2. **Answer one typed plan** (`PlanAnswerSchema`) — acceptance criteria, checks, validation commands and tasks. SPLITBRIEF validates it, writes `plan.json`, and renders `plan.md` and `tasks.md` from it; each task is one Task Brief, the durable execution contract for its part of the change.
 3. **Review** the entire diff at the end against the plan and its Task Briefs (when no reviewer is configured, the planner holds the review seat).
-4. **Escalate** — when the implementer fails a task 3× in a row, escalation runs through an optional paid intermediate model, then a planner hint helps the implementer retry. Exhaustion enters explicit recovery.
+4. **Consult** — when the implementer fails a task's attempt and its one retry (or reports `blocked`, or its inputs turn stale), the planner answers one read-only typed consult: guidance, a rewritten brief, a split into subtasks, a re-run of the named checks, or one question for the user. A spent bound enters explicit recovery.
 
 The planner also supports **clarifying questions**: it can ask the user questions before it answers the plan. The questions are part of the typed answer (`PlanResultSchema`), so every planner can ask them.
 
@@ -89,7 +89,7 @@ idle
  │   └─► reviewing-plan   (the plan card waits for the user; skipped with approve: none)
  ├─► implementing      (implementer is working on current task)
  │   └─► validating-task  (typecheck → lint → tests running)
- │       └─► escalating   (retries exhausted → worker/help path, then recovery)
+ │       └─► escalating   (retry spent → the planner's consult, then recovery)
  ├─► final-review      (review seat reads the whole diff against the briefs and the request)
  └─► complete
 ```
@@ -154,21 +154,20 @@ A stage that resolves to no command is recorded as *skipped* (not a pass). When 
 
 A failing stage that was already red at baseline is a third outcome: *failed but pre-existing*. It is recorded separately from skipped — a missing linter and a broken linter do not read the same — and it does not fail the task when the failure names none of the task's changed files. The evidence ledger marks such entries `baselineExempt` and records a `failed (pre-existing)` observed-evidence line so the exemption stays reviewable after the run.
 
-Each step stops at the first failure *attributable to the task* and reports it back to the orchestrator, which either retries or escalates. A stage that was already red at baseline continues the pipeline so the stages behind it still get a verdict, and never produces a retry prompt.
+Each step stops at the first failure *attributable to the task* and reports it back to the orchestrator, which either retries or consults the planner. A stage that was already red at baseline continues the pipeline so the stages behind it still get a verdict, and never produces a retry prompt.
 
 ---
 
-## Retry & escalation
+## Retry & consult
 
 On validation failure:
 
-- **Local retries**: the implementer retries with the same entire context with configured retry temperature changes only where the transport supports them, up to `workflow.maxRetries` times (default 2). No planner involvement. The rung ends early on the first attempt that read the feedback and still changed nothing; a first attempt that changed nothing and handed back text skips it and tier 0 and goes to tier 1 when the planner supports hint escalation.
-- **After the last retry**: escalate through the tiers in order.
-  - **Tier 0 — intermediate model** (only when `escalation.intermediateProvider` is configured and `escalation.enabled` is not `false`): a paid mid-tier API model retries the task before the planner is involved.
-  - **Tier 1 — hint escalation** (if the planner supports it — see `supportsHintEscalation`): the planner reads the error and the implementer's hand-back and replies with a verdict — `answer` (the implementer retries once with the hint), `widen` (that retry may also write the named files, through tiered approval) or `brief` (no retry; the run stops for you). An empty hint ends the rung without an implementer call.
-  - **Recovery** follows the exhausted worker/help path. Historical full-tier outcomes remain readable; the planner never automatically takes over code-writing implementation.
+- **One local retry**: the implementer retries once with the exact error message appended to its context. No planner involvement. The rung ends early on the first attempt that read the feedback and still changed nothing; the consult is asked instead. `DEFAULT_LOCAL_RETRIES` is 1 (`src/core/pipeline-spec/retries.ts`), and `workflow.max_retries` is retired with one notice.
+- **The consult**: one read-only typed call on the planner's own session (`requestConsult`, `src/engine/orchestrator/consult/request.ts`; schema `src/core/schemas/consult.ts`). The planner answers exactly one action — `guidance` (one more implementer attempt carrying the instructions), `rewrite-task` (the brief replaced at the same id, `revision` +1, the current attempt rolled back), `split-task` (2–4 subtasks at the next free ids, dependents re-pointed), `verify` (validation and the named checks run with no implementer call; a clean run completes the task as `consulted`) or `ask-user` (the only question the ladder asks). A `blocked` report or a stale input goes to the consult without the local retry.
+- **The bounds** (`src/core/pipeline-spec/bounds.ts`): 2 consults and 8 attempts per lineage, 10 planner calls per run. A spent bound halts with `consult-bound-spent` or `planner-calls-spent`; `continue` grants +1 consult and +4 attempts, or +5 planner calls.
+- **Recovery** follows a spent bound or a ladder that cannot continue. The planner never automatically takes over code-writing implementation.
 
-Escalation logic: `src/engine/orchestrator/escalation/handle.ts`.
+Ladder logic: `src/engine/orchestrator/escalation/handle.ts`; seat trouble (transient retries, a ≤10-minute reset wait, the 20-minute no-progress cut) in `src/engine/runners/transient.ts` and `src/engine/orchestrator/escalation/seat-wait.ts`.
 
 ---
 
@@ -193,7 +192,7 @@ The questions are persisted in `state.pendingPlannerConversation` before waiting
 
 ## Skills
 
-Optional markdown files that provide extra context to every seat — planner, implementer and reviewer (coding standards, domain knowledge, architectural notes). `src/engine/skill-discovery.ts` scans one fixed union of roots, regardless of which tool holds the PLAN seat: eight project roots — `./.splitbrief/skills/`, `./.claude/skills/`, `./.agents/skills/`, `./.github/skills/`, `./.commandcode/skills/`, `./.kilo/skills/`, `./.kilocode/skills/`, `./.cursor/skills/` — then nine global ones — `~/.splitbrief/skills/`, `~/.claude/skills/`, `~/.agents/skills/`, `~/.codex/skills/`, `~/.config/opencode/skills/`, `~/.commandcode/skills/`, `~/.kilo/skills/`, `~/.config/kilo/skills/`, `~/.cursor/skills/` (the list lives in `src/core/skills/scan-paths.ts`). That order is the precedence order — a skill id found in an earlier root wins, so project skills always outrank global ones. `<project>/AGENTS.md` is added as the `agents-root` entry when it exists. User picks which skills to include for a given run; the run renders them once into one `## Active Project Skills` block — each skill's base directory, its `SKILL.md` body and its `references/*.md` under a 16 000-character budget — and every seat call carries it: the planning steps, each implementer brief and its retries, the hint call and the final review.
+Optional markdown files that provide extra context to every seat — planner, implementer and reviewer (coding standards, domain knowledge, architectural notes). `src/engine/skill-discovery.ts` scans one fixed union of roots, regardless of which tool holds the PLAN seat: eight project roots — `./.splitbrief/skills/`, `./.claude/skills/`, `./.agents/skills/`, `./.github/skills/`, `./.commandcode/skills/`, `./.kilo/skills/`, `./.kilocode/skills/`, `./.cursor/skills/` — then nine global ones — `~/.splitbrief/skills/`, `~/.claude/skills/`, `~/.agents/skills/`, `~/.codex/skills/`, `~/.config/opencode/skills/`, `~/.commandcode/skills/`, `~/.kilo/skills/`, `~/.config/kilo/skills/`, `~/.cursor/skills/` (the list lives in `src/core/skills/scan-paths.ts`). That order is the precedence order — a skill id found in an earlier root wins, so project skills always outrank global ones. `<project>/AGENTS.md` is added as the `agents-root` entry when it exists. User picks which skills to include for a given run; the run renders them once into one `## Active Project Skills` block — each skill's base directory, its `SKILL.md` body and its `references/*.md` under a 16 000-character budget — and every seat call carries it: the planning steps, each implementer brief and its retries, the consult and the final review.
 
 The implementer still never sees the planner's prompt: it gets the skills through its own brief prompt, beside the resolved Task Brief.
 
@@ -243,7 +242,6 @@ Each `Planner` implementation exposes a `capabilities` struct declaring what it 
 ```ts
 type PlannerCapabilities = {
   supportsConversationalPlanning: boolean;  // declared; the planning session does not read it
-  supportsHintEscalation: boolean;          // hint-before-direct escalation (existing)
   supportsSessionResume: boolean;           // --session-id reuse on resume
   supportsEffort: boolean;                  // effort/reasoning hint support
   supportsImages: boolean;                  // image attachment support
@@ -336,7 +334,7 @@ Entries come in three **kinds**, distinguished by the `kind` field:
 {"ts":"2026-04-14T10:36:00.000Z","kind":"event","type":"plan_approved","phase":"reviewing-plan","data":{}}
 ```
 
-- `kind: "event"` — operational metadata. Workflow lifecycle, phase transitions, validation results, escalation triggers, artifact writes, errors. Small, always logged.
+- `kind: "event"` — operational metadata. Workflow lifecycle, phase transitions, validation results, consult answers, artifact writes, errors. Small, always logged.
 - `kind: "message"` — conversation content. User prompts, planner text chunks, clarification Q&A, approval comments, planner reviews. Text-heavy.
 - `kind: "summary"` — compaction output. Contains `text`, `summarizedUpTo`, optional `tokenEstimate`, and optional `structured` data. Resume uses the latest summary as a synthetic message, then loads later messages.
 

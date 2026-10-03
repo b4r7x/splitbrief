@@ -31,7 +31,6 @@ export function resolveCapabilities(
 ): PlannerCapabilities {
   return {
     supportsConversationalPlanning: override?.supportsConversationalPlanning ?? false,
-    supportsHintEscalation: override?.supportsHintEscalation ?? false,
     supportsSessionResume: override?.supportsSessionResume ?? false,
     supportsEffort: override?.supportsEffort ?? false,
     supportsImages: override?.supportsImages ?? false,
@@ -103,7 +102,6 @@ export function createCommandBasedPlanner(
     invokeEscalate: invoke,
     backendKind: 'cli',
     runnerName: config.command,
-    hintSuccessMode: 'files',
     capabilities: resolveCapabilities(overrides?.capabilities),
     ...(overrides?.escalateFullMode && { escalateFullMode: overrides.escalateFullMode }),
     ...createCommandExistsAvailability(config.command),

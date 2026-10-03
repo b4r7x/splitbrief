@@ -1,22 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import {
-  framingForAttempt,
-  HAND_BACK_MAX_CHARS,
-  HINT_ERROR_TEMPLATE,
-  LADDER,
-  MAX_HINT_ERROR_LENGTH,
-  RETRY_FRAMINGS,
-} from './ladder.js';
+import { framingForAttempt, HAND_BACK_MAX_CHARS, LADDER, RETRY_FRAMINGS } from './ladder.js';
 
 describe('LADDER', () => {
   it('lists the rungs in escalation order', () => {
-    expect(LADDER.map((rung) => rung.id)).toEqual([
-      'recipe-fix',
-      'local',
-      'intermediate',
-      'hint',
-      'takeover',
-    ]);
+    expect(LADDER.map((rung) => rung.id)).toEqual(['recipe-fix', 'local', 'consult', 'takeover']);
   });
 
   it('spends no retry on the recipe-fix rung and counts the local rung', () => {
@@ -28,10 +15,8 @@ describe('LADDER', () => {
     });
   });
 
-  it('marks only the intermediate rung optional', () => {
-    expect(LADDER.filter((rung) => rung.optional === true).map((rung) => rung.id)).toEqual([
-      'intermediate',
-    ]);
+  it('runs the consult rung with the planner before the implementer', () => {
+    expect(LADDER[2]).toEqual({ id: 'consult', who: 'planner-then-implementer' });
   });
 
   it('marks takeover as the only rung the engine does not run', () => {
@@ -53,14 +38,7 @@ describe('framingForAttempt', () => {
   });
 });
 
-describe('HINT_ERROR_TEMPLATE', () => {
-  it('places the hint under a senior reviewer heading after the error', () => {
-    expect(HINT_ERROR_TEMPLATE('boom', 'try x')).toBe(
-      'boom\n\n## Hints from senior reviewer:\ntry x',
-    );
-    expect(MAX_HINT_ERROR_LENGTH).toBe(4000);
-  });
-
+describe('HAND_BACK_MAX_CHARS', () => {
   it('bounds the implementer hand-back at 2000 characters', () => {
     expect(HAND_BACK_MAX_CHARS).toBe(2000);
   });

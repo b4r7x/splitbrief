@@ -192,6 +192,10 @@ function applyContinueRecoveryAction(
     });
   }
 
+  if (issue.reason === 'consult-bound-spent' || issue.reason === 'planner-calls-spent') {
+    return applyConsultGrantRecoveryAction(opts, issue);
+  }
+
   let state = markRecoveryApplying(opts, issue);
   state = transitionAndSave(
     opts,
@@ -210,6 +214,86 @@ function applyContinueRecoveryAction(
   });
 
   return { ok: true, action: opts.action, issue, state, status: 'continued' };
+}
+
+/**
+ * A consult-bound halt continues by granting the budget it stopped on, with the
+ * operator's note recorded on the lineage, and resetting the brief the grant is
+ * for so the run replays it. A planner-call halt raises the run's call
+ * allowance; a lineage halt raises the consult and attempt allowances.
+ */
+function applyConsultGrantRecoveryAction(
+  opts: ApplyRecoveryActionOptions,
+  issue: RecoveryIssue,
+): ApplyRecoveryActionResult {
+  const taskId = issue.taskId ?? opts.state.tasks[opts.state.currentTaskIndex]?.id;
+  if (taskId === undefined) {
+    return blockRecoveryAction({
+      ...opts,
+      issue,
+      code: 'missing-current-task',
+      message: 'Granting a consult bound requires the task the halt names.',
+      publishSelected: true,
+    });
+  }
+
+  let state = markRecoveryApplying(opts, issue);
+  state = transitionAndSave(
+    opts,
+    state,
+    {
+      type: 'GRANT_ALLOWANCE',
+      target: issue.reason === 'planner-calls-spent' ? 'planner' : 'lineage',
+      taskId,
+      note: opts.comment?.trim() || 'continued',
+    },
+    { expectedRevision: state.stateRevision ?? 0 },
+  );
+
+  const target = currentRecoveryTask(state, issue);
+  if (!target) {
+    return blockRecoveryAction({
+      ...opts,
+      issue,
+      code: 'missing-current-task',
+      message:
+        'Continuing a consult bound requires the pending recovery task to match the current task index.',
+      publishSelected: true,
+    });
+  }
+
+  state = transitionAndSave(
+    opts,
+    state,
+    {
+      type: 'RESET_TASK',
+      taskId: target.id,
+    },
+    { expectedRevision: state.stateRevision ?? 0 },
+  );
+  opts.bus.publish({
+    type: 'task_reset',
+    ts: Date.now(),
+    phase: state.phase,
+    taskId: target.id,
+  });
+  state = transitionAndSave(
+    opts,
+    state,
+    {
+      type: 'RESOLVE_PENDING_RECOVERY',
+    },
+    { expectedRevision: state.stateRevision ?? 0 },
+  );
+  publishRecoveryResolved({
+    bus: opts.bus,
+    phase: state.phase,
+    issue,
+    action: opts.action,
+    outcome: 'retry-current-task',
+  });
+
+  return { ok: true, action: opts.action, issue, state, status: 'retry-current-task' };
 }
 
 function applyPauseRecoveryAction(
@@ -818,5 +902,7 @@ function isSafeContinue(issue: RecoveryIssue): boolean {
   if (issue.reason === 'user-edit-conflict') {
     return recoveryFactBoolean(issue.facts, 'safeToContinue') === true;
   }
-  return false;
+  // A consult-bound halt continues by a grant the operator chose; it resolves
+  // the halt itself, so there is no state the run must first come back to.
+  return issue.reason === 'consult-bound-spent' || issue.reason === 'planner-calls-spent';
 }

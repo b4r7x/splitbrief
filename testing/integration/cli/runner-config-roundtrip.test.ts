@@ -457,7 +457,7 @@ describe('runner config roundtrip integration', () => {
           model: 'existing-model',
           customModels: ['existing-model'],
         },
-        extra: { escalation: { enabled: false } },
+        extra: { approval: { enabled: false, feedRejectionsToPlanner: false } },
       });
 
       configStore.load(dir);
@@ -467,7 +467,7 @@ describe('runner config roundtrip integration', () => {
 
       const updated: Config = {
         ...before,
-        escalation: { enabled: true },
+        approval: { enabled: true, feedRejectionsToPlanner: false },
         implementer: {
           kind: 'api',
           provider: 'lm-studio',
@@ -498,7 +498,7 @@ describe('runner config roundtrip integration', () => {
       };
 
       const reloaded = await saveAndReload(dir, updated);
-      expect(reloaded.escalation?.enabled).toBe(true);
+      expect(reloaded.approval?.enabled).toBe(true);
       expect(resolvedDefaultProfile(reloaded)).toMatchObject({
         provider: 'lm-studio',
         apiBase: 'http://localhost:1234/v1',

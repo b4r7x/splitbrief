@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createDefaultConfig } from './load/defaults.js';
 import { ConfigSchema } from '../schemas/config.js';
+import { RUNNER_IDLE_KILL_MS } from '../schemas/runner-fields.js';
 import {
   CustomCommandDefinitionSchema,
   CustomCommandsConfigSchema,
@@ -119,7 +120,7 @@ describe('custom command catalog schema', () => {
         argv: [],
         outputFormat: 'text',
         idleWarnMs: 300_000,
-        idleKillMs: 1_800_000,
+        idleKillMs: RUNNER_IDLE_KILL_MS,
         env: [],
       }),
     );

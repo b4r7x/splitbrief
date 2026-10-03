@@ -97,6 +97,56 @@ describe('parseFileBundle accepts', () => {
   });
 });
 
+describe('parseFileBundle accepts a blocked response', () => {
+  const blockedText = (question: string, filesNeeded: string[]): string =>
+    JSON.stringify({ version: 1, blocked: { question, filesNeeded } });
+
+  it('returns the question and the files it needs, with no candidates', () => {
+    const result = parse(blockedText('Which store should the cache use?', ['src/store.ts']));
+    expect(result).toEqual({
+      kind: 'blocked',
+      question: 'Which store should the cache use?',
+      filesNeeded: ['src/store.ts'],
+    });
+  });
+
+  it('does not validate the needed files against the declared targets', () => {
+    const needed = ['tests/fixtures/missing.json'];
+    const result = parse(blockedText('May I read the fixture?', needed));
+    expect(result.kind === 'blocked' && result.filesNeeded).toEqual(needed);
+  });
+
+  it('rejects unknown or missing blocked fields, a wrong version and a mixed two-form object', () => {
+    expectRejected(
+      parse(JSON.stringify({ version: 1, blocked: { question: 'q' } })),
+      'invalid-bundle',
+    );
+    expectRejected(
+      parse(JSON.stringify({ version: 1, blocked: { question: 'q', filesNeeded: [], note: 'x' } })),
+      'invalid-bundle',
+    );
+    expectRejected(
+      parse(JSON.stringify({ version: 2, blocked: { question: 'q', filesNeeded: [] } })),
+      'invalid-bundle',
+    );
+    expectRejected(
+      parse(
+        JSON.stringify({
+          version: 1,
+          files: [{ path: A, action: 'modify', content: 'x\n' }],
+          blocked: { question: 'q', filesNeeded: [] },
+        }),
+      ),
+      'invalid-bundle',
+    );
+  });
+
+  it('still checks the frame and the transport status first', () => {
+    expectRejected(parse(`Here is my answer:\n${blockedText('q', [])}`), 'invalid-bundle');
+    expectRejected(parse(blockedText('q', []), { status: 'aborted' }), 'invalid-bundle');
+  });
+});
+
 describe('parseFileBundle rejects the response frame', () => {
   it('incomplete JSON, without repairing it', () => {
     expectRejected(

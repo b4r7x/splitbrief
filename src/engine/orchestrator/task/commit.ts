@@ -5,7 +5,6 @@ import type { ValidationAcceptance } from '../validation/acceptance.js';
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import type { EventBus } from '../../events/types.js';
 import type { BundleApplyResult } from '../../implementers/file-bundle.js';
-import { classifyTaskCompletionMethod } from '../../../core/task-completion.js';
 import { publishWarning, publishTaskComplete } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { isInDeclaredSet, taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
@@ -20,7 +19,7 @@ type ValidateCommitOptions = {
   state: WorkflowState;
   bus: EventBus;
   method: TaskCompletionMethod;
-  transitionType: 'VALIDATION_PASS' | 'HINT_SUCCESS' | 'FULL_SUCCESS';
+  transitionType: 'VALIDATION_PASS';
   commitSuffix?: string | undefined;
   taskStartTime?: number | undefined;
   retryCount?: number | undefined;
@@ -29,15 +28,6 @@ type ValidateCommitOptions = {
   /** What a `file-bundle-v1` response put on disk; absent for every other grammar. */
   applyResult?: BundleApplyResult | undefined;
 };
-
-function transitionTypeForCompletionMethod(
-  method: TaskCompletionMethod,
-  fallback: ValidateCommitOptions['transitionType'],
-): ValidateCommitOptions['transitionType'] {
-  const completionClass = classifyTaskCompletionMethod(method);
-  if (completionClass !== 'escalated') return fallback;
-  return method === 'escalated-full' ? 'FULL_SUCCESS' : 'HINT_SUCCESS';
-}
 
 export async function validateCommitAndAdvance(
   opts: ValidateCommitOptions,
@@ -55,7 +45,6 @@ export async function validateCommitAndAdvance(
     retryCount,
     implementerProfile,
   } = opts;
-  const completionTransitionType = transitionTypeForCompletionMethod(method, transitionType);
   // An application that did not finish is never this brief's completion, and no
   // validation verdict over the files that did land can make it one.
   if (opts.applyResult !== undefined && opts.applyResult.status !== 'applied') {
@@ -78,7 +67,7 @@ export async function validateCommitAndAdvance(
   }
 
   const nextState = transitionAndSave({ projectDir, sessionId }, state, {
-    type: completionTransitionType,
+    type: transitionType,
   });
   publishTaskComplete(
     { bus: bus, phase: nextState.phase },

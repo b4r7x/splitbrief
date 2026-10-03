@@ -69,7 +69,7 @@ describe('scopeEntryPatterns', () => {
     expect(scopeEntryPatterns('`README.md` — planner-approved: consumer')).toEqual(['README.md']);
     expect(scopeEntryPatterns('Keep the public API stable')).toEqual([]);
     expect(scopeEntryPatterns('Keep `runWorkflow` stable')).toEqual([]);
-    expect(scopeEntryPatterns('`parseHintVerdict` — the escalation verdict parser')).toEqual([]);
+    expect(scopeEntryPatterns('`applyConsultAnswer` — the consult applier')).toEqual([]);
     expect(scopeEntryPatterns('`src/x.ts` — the union collapse')).toEqual(['src/x.ts']);
   });
 });
@@ -77,7 +77,7 @@ describe('scopeEntryPatterns', () => {
 describe('write-mode routing', () => {
   it('a bullet that opens on a backticked identifier never routes an API implementer to direct writes', () => {
     const subject = task({
-      scope: { inBounds: ['`parseHintVerdict` — the escalation verdict parser'] },
+      scope: { inBounds: ['`applyConsultAnswer` — the consult applier'] },
     });
     expect(requiredWriteModeForTask(subject)).toBe('extracted-code');
   });

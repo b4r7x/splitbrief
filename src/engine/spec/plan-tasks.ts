@@ -3,6 +3,7 @@ import type { TaskSpec } from '../../core/schemas/plan.js';
 import { confinedExists } from '../../lib/confined-fs.js';
 import { isPathConfined } from '../../lib/path-confinement.js';
 import { error } from '../../utils/error.js';
+import { inputHashesNow, specInputFiles } from '../orchestrator/task/stale-inputs.js';
 
 const planTaskError = {
   noSuggestedFile: (id: string) =>
@@ -42,6 +43,7 @@ export function taskFromSpec(spec: TaskSpec, projectDir: string): Task {
     suggestedFiles: spec.suggestedFiles,
     contextFiles: spec.contextFiles,
     exclusions: spec.exclusions,
+    inputHashes: inputHashesNow(projectDir, specInputFiles(spec)),
     ...(spec.protectedOperations !== null && { protectedOperations: spec.protectedOperations }),
     batch: spec.batch,
   };

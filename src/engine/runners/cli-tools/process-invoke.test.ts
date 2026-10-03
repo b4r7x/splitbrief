@@ -1194,7 +1194,7 @@ describe('invokeProcessCli', () => {
       idle: { warnMs: 10, killMs: 40 },
     });
 
-    expect(result).toMatchObject({ status: 'timeout', error: { code: 'timeout' } });
+    expect(result).toMatchObject({ status: 'failed', error: { code: 'no-progress-cut' } });
     expect(result.error?.message).toContain(CLI_TOOL_CATALOG.codex.id);
     expect(result.error?.message).not.toContain(realpathSync(process.execPath));
   });

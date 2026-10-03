@@ -121,7 +121,6 @@ export function makeConfig(overrides?: ConfigOverrides): Config {
       ...overrides?.validation,
     },
     workflow: {
-      maxRetries: 3,
       ...overrides?.workflow,
       compactionFormat: overrides?.workflow?.compactionFormat ?? 'auto',
     },

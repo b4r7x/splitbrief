@@ -17,7 +17,11 @@ import { createEventBus } from '../../../src/engine/events/bus.js';
 import { loadState } from '../../../src/core/state/persistence.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
-import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
+import {
+  guidanceConsult,
+  planFromTasks,
+  typedCallPlanAndConsult,
+} from '#testing/helpers/typed-planner.js';
 
 const roots: string[] = [];
 afterEach(() => {
@@ -30,7 +34,7 @@ function assertUnborn(dir: string) {
   expect(readdirSync(join(dir, '.git/objects')).sort()).toEqual(['info', 'pack']);
   expect(readdirSync(join(dir, '.git/objects/pack'))).toEqual([]);
 }
-it.each(['initial', 'local', 'hint'] as const)(
+it.each(['initial', 'local', 'consult'] as const)(
   'repeated workflow resume preserves %s output and the stopped attempt',
   async (route) => {
     const projectDir = mkdtempSync(join(tmpdir(), 'validator-cold-workflow-'));
@@ -49,6 +53,7 @@ it.each(['initial', 'local', 'hint'] as const)(
       approval: { enabled: false, feedRejectionsToPlanner: false },
     });
     const ref = { projectDir, sessionId };
+    const expectedAttempt = route === 'consult' ? 2 : route === 'initial' ? 0 : 1;
     let saved: WorkflowState | undefined;
     const observed: Array<{
       attempt: number;
@@ -71,13 +76,10 @@ it.each(['initial', 'local', 'hint'] as const)(
           fallback = true;
       });
       const planner = makePlanner({
-        escalateHint: async () => ({
-          success: true,
-          output: 'Use the existing module.',
-          code: null,
-          usage: null,
-        }),
-        typedCall: typedCallFromTasks([task]),
+        typedCall: typedCallPlanAndConsult(
+          () => planFromTasks([task]),
+          () => guidanceConsult('Try the other marker.'),
+        ),
       });
       const writeAndStop = async (opts: ImplementerOptions) => {
         roots.push(dirname(opts.projectDir));
@@ -112,23 +114,24 @@ it.each(['initial', 'local', 'hint'] as const)(
           capabilities: { writesFiles: 'direct' },
           implement: async (opts) =>
             entry === 0 && route !== 'initial'
-              ? route === 'hint'
-                ? { success: false, output: 'Need advice', outcome: 'no-staged-change' }
-                : { success: false, output: '', error: 'initial failure' }
+              ? { success: false, output: '', error: `${route} initial failure` }
               : writeAndStop(opts),
-          retry: writeAndStop,
+          retry: async (opts) =>
+            route === 'consult' && opts.kind === 'local'
+              ? { success: false, output: '', error: 'the local retry needs the planner' }
+              : writeAndStop(opts),
         }),
       });
       assertUnborn(projectDir);
       const state = loadState(ref);
       if (state === null) throw new Error('missing saved workflow');
       expect(state).toMatchObject({
-        phase: route === 'hint' && entry === 0 ? 'escalating' : 'implementing',
-        attempt: route === 'initial' ? 0 : 1,
+        phase: 'implementing',
+        attempt: expectedAttempt,
         awaitingContinue: true,
         interruptedStep: {
           cut: 'mid-step',
-          step: { kind: 'brief', taskId: task.id, attempt: route === 'initial' ? 0 : 1 },
+          step: { kind: 'brief', taskId: task.id, attempt: expectedAttempt },
         },
         tasks: [{ status: 'in_progress' }],
       });
@@ -141,7 +144,7 @@ it.each(['initial', 'local', 'hint'] as const)(
     expect.soft(observed[1]?.previous).toBe('entry-0\n');
     expect.soft(observed[2]?.previous).toBe('entry-0\nentry-1\n');
     for (const entry of observed) {
-      expect(entry.attempt).toBe(route === 'initial' ? 0 : 1);
+      expect(entry.attempt).toBe(expectedAttempt);
       expect(entry).toMatchObject({ fallback: true, gitAbsent: true });
     }
     for (const entry of observed.slice(1)) {

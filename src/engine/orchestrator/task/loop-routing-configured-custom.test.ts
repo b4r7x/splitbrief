@@ -40,8 +40,6 @@ function setupProject(): { projectDir: string; sessionId: string } {
   return { projectDir, sessionId };
 }
 
-const defaultWorkflow = { maxRetries: 2 };
-
 type CustomContract = 'output' | 'direct';
 
 type RoutedRunner = Readonly<{
@@ -154,7 +152,6 @@ function configuredProfileConfig(
 
   return ConfigSchema.parse({
     ...makeNoValidationConfig({
-      workflow: { ...defaultWorkflow },
       approval: { enabled: false, feedRejectionsToPlanner: true },
     }),
     implementer: fallbackImplementer,
@@ -306,8 +303,8 @@ describe('runTaskLoop configured custom routing', { timeout: 90_000 }, () => {
           callbacks,
           bus,
           allowRepoRunners: true,
-          createImplementer: async (_profileConfig, options) => {
-            if (options?.slot === undefined) throw new Error('Expected a named implementer slot.');
+          createImplementer: async (options = {}) => {
+            if (options.slot === undefined) throw new Error('Expected a named implementer slot.');
             dynamicImplementer = await createImplementer(config, {
               ...options,
               customRuntime: runtime,

@@ -124,7 +124,7 @@ afterEach(() => {
 });
 
 describe('createRunIsolation', () => {
-  it('hands two acquisitions in one run the same working directory, each with its own baseline', {
+  it('hands two acquisitions in one run the same working directory, carrying unpromoted work as output', {
     timeout: 60_000,
   }, async () => {
     const dir = createTempDir('isolation-two-acq');
@@ -151,6 +151,7 @@ describe('createRunIsolation', () => {
         'b.txt',
       ]);
       expect(await getChangedFilesSinceSnapshot(second.projectDir, second.snapshot)).toEqual([
+        'a.txt',
         'b.txt',
       ]);
     } finally {
@@ -1327,6 +1328,156 @@ describe('createRunIsolation', () => {
       cleanupTempDir(dir);
     }
   });
+
+  it('names a kept worker edit the project never received as a conflict instead of skipping it', {
+    timeout: 60_000,
+  }, async () => {
+    const dir = createTempDir('isolation-kept-edit');
+    try {
+      createTestGitRepo(dir, { 'docs/guide.md': 'v1\n' });
+      mkdirSync(join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID), { recursive: true });
+      const task = makeTask({ id: 'T001', file: 'docs/guide.md' });
+      const owner = workspaceOwner({ task, attempt: 0, config });
+      const handle = createRunIsolation({
+        projectDir: dir,
+        sessionId: SESSION_ID,
+        strategy: 'worktree',
+        onFallback: () => {},
+        onRetained: () => {},
+      });
+      const cut = await handle.acquire({
+        role: 'implementer',
+        config,
+        writesFiles: 'direct',
+        fresh: true,
+        owner,
+      });
+      writeFileSync(join(cut.projectDir, 'docs', 'guide.md'), 'worker\n');
+      // The run stops with the worker's edit unpromoted, and the operator edits
+      // the same file before the run comes back.
+      await handle.dispose();
+      writeFileSync(join(dir, 'docs', 'guide.md'), 'operator\n');
+
+      // A new process starts the brief over. The fresh cleanup keeps the
+      // conflicting worker copy, so it is in the worktree this attempt works on.
+      const nextHandle = createRunIsolation({
+        projectDir: dir,
+        sessionId: SESSION_ID,
+        strategy: 'worktree',
+        onFallback: () => {},
+        onRetained: () => {},
+      });
+      const next = await nextHandle.acquire({
+        role: 'implementer',
+        config,
+        writesFiles: 'direct',
+        fresh: true,
+        owner,
+      });
+      expect(readFileSync(join(next.projectDir, 'docs', 'guide.md'), 'utf8')).toBe('worker\n');
+      expect(await getChangedFilesSinceSnapshot(next.projectDir, next.snapshot)).toEqual([
+        'docs/guide.md',
+      ]);
+
+      const outcome = await gateAndPromoteChangedFiles({
+        task,
+        state: makeImplState([task]),
+        projectDir: dir,
+        sessionId: SESSION_ID,
+        bus: makeBusRecorder().bus,
+        callbacks: makeCallbacks().callbacks,
+        config: makeNoValidationConfig({
+          approval: { enabled: false, feedRejectionsToPlanner: false },
+        }),
+        workspace: next,
+        taskStartSnapshot: await getChangedFilesSnapshot(dir),
+        dependsOnFiles: [],
+        cleanup: next.cleanup,
+        handleConflict: async (s) => s,
+        onApproved: () => {},
+      });
+      expect(outcome.outcome).toBe('promote-conflict');
+      expect(outcome.outcome === 'promote-conflict' ? outcome.conflictedFiles : []).toEqual([
+        'docs/guide.md',
+      ]);
+      expect(readFileSync(join(dir, 'docs', 'guide.md'), 'utf8')).toBe('operator\n');
+      await nextHandle.dispose();
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  itUnix(
+    'names a worker file that replaced a project symlink as changed and puts the link back',
+    {
+      timeout: 60_000,
+    },
+    async () => {
+      const dir = createTempDir('isolation-kept-link');
+      try {
+        createTestGitRepo(dir, { 'real.md': 'real\n' });
+        symlinkSync('real.md', join(dir, 'alias.md'));
+        execFileSync('git', ['add', 'alias.md'], { cwd: dir, stdio: 'pipe' });
+        execFileSync('git', ['commit', '-m', 'alias'], { cwd: dir, stdio: 'pipe' });
+        const handle = createRunIsolation({
+          projectDir: dir,
+          sessionId: SESSION_ID,
+          strategy: 'worktree',
+          onFallback: () => {},
+          onRetained: () => {},
+        });
+
+        const first = await acquireDirect(handle);
+        rmSync(join(first.projectDir, 'alias.md'));
+        writeFileSync(join(first.projectDir, 'alias.md'), 'worker\n');
+        const second = await acquireDirect(handle);
+        expect(await getChangedFilesSinceSnapshot(second.projectDir, second.snapshot)).toEqual([
+          'alias.md',
+        ]);
+
+        second.cleanup();
+        const third = await acquireDirect(handle);
+        expect(readlinkSync(join(third.projectDir, 'alias.md'))).toBe('real.md');
+        await handle.dispose();
+      } finally {
+        cleanupTempDir(dir);
+      }
+    },
+  );
+
+  itUnix(
+    'names a worker file that replaced an absolute-target project symlink as changed',
+    {
+      timeout: 60_000,
+    },
+    async () => {
+      const dir = createTempDir('isolation-kept-abs-link');
+      try {
+        createTestGitRepo(dir, { 'README.md': '# test\n' });
+        symlinkSync('/etc/hosts', join(dir, 'alias.md'));
+        execFileSync('git', ['add', 'alias.md'], { cwd: dir, stdio: 'pipe' });
+        execFileSync('git', ['commit', '-m', 'alias'], { cwd: dir, stdio: 'pipe' });
+        const handle = createRunIsolation({
+          projectDir: dir,
+          sessionId: SESSION_ID,
+          strategy: 'worktree',
+          onFallback: () => {},
+          onRetained: () => {},
+        });
+
+        const first = await acquireDirect(handle);
+        rmSync(join(first.projectDir, 'alias.md'));
+        writeFileSync(join(first.projectDir, 'alias.md'), 'worker\n');
+        const second = await acquireDirect(handle);
+        expect(await getChangedFilesSinceSnapshot(second.projectDir, second.snapshot)).toEqual([
+          'alias.md',
+        ]);
+        await handle.dispose();
+      } finally {
+        cleanupTempDir(dir);
+      }
+    },
+  );
 
   it('discards one task cleanup without touching the work an earlier task promoted', {
     timeout: 60_000,

@@ -41,7 +41,8 @@ export function settingsItemSection(item: SettingsItem): SettingsSection {
 
 /**
  * The crew key carries the seat word, so `plan` reaches the PLAN seat row. Descriptions are
- * left out: prose matches drag unrelated rows in (`temp` would hit "Max retry attempts per task").
+ * left out: prose matches drag unrelated rows in (`format` would hit "Summary format for
+ * transcript compaction").
  */
 export function settingsItemFilterText(item: SettingsItem): string {
   if (item.kind === 'crew') return `${item.key} ${crewRowFilterText(item.row)}`.toLowerCase();

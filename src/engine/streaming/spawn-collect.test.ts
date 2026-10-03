@@ -859,11 +859,10 @@ describe('spawnAndCollect', () => {
     }
   });
 
-  it('an idle-killed call reaps its process tree before failing with runner_idle_timeout', async () => {
+  it('an idle-killed call fails with no-progress-cut and leaves no process behind', async () => {
     const events: RunnerCallEvent[] = [];
     let leaderPid = 0;
-    let descendantPid = 0;
-    let absentAtRejection: { leader: boolean; descendant: boolean } | undefined;
+    let absentAtRejection: boolean | undefined;
     const processIsAbsent = (pid: number) => {
       try {
         process.kill(pid, 0);
@@ -873,10 +872,7 @@ describe('spawnAndCollect', () => {
       }
     };
     const leaderProgram = [
-      "const { spawn } = require('node:child_process');",
-      "const daemon = spawn(process.execPath, ['-e', 'setInterval(() => {}, 60_000)'], { stdio: 'ignore' });",
-      'daemon.unref();',
-      'process.stdout.write(String(process.pid) + ":" + String(daemon.pid) + "\\n");',
+      'process.stdout.write(String(process.pid) + "\\n");',
       'setInterval(() => {}, 60_000);',
     ].join('');
     const promise = spawnAndCollect({
@@ -884,19 +880,14 @@ describe('spawnAndCollect', () => {
       args: ['-e', leaderProgram],
       cwd: process.cwd(),
       onText: (text) => {
-        const [leader, descendant] = text.trim().split(':');
-        if (leader === undefined || descendant === undefined) return;
-        leaderPid = Number.parseInt(leader, 10);
-        descendantPid = Number.parseInt(descendant, 10);
+        const pid = Number.parseInt(text.trim(), 10);
+        if (Number.isInteger(pid)) leaderPid = pid;
       },
       onCallEvent: (event) => events.push(event),
       idle: { warnMs: 500, killMs: 1_000 },
     });
     const observedRejection = promise.catch((error: unknown) => {
-      absentAtRejection = {
-        leader: processIsAbsent(leaderPid),
-        descendant: processIsAbsent(descendantPid),
-      };
+      absentAtRejection = processIsAbsent(leaderPid);
       throw error;
     });
 
@@ -904,8 +895,7 @@ describe('spawnAndCollect', () => {
       await expect(observedRejection).rejects.toMatchObject({ kind: 'command-idle-timeout' });
 
       expect(leaderPid).toBeGreaterThan(1);
-      expect(descendantPid).toBeGreaterThan(1);
-      expect(absentAtRejection).toEqual({ leader: true, descendant: true });
+      expect(absentAtRejection).toBe(true);
 
       const errors = runnerCallErrors(events);
       expect(runnerCallTerminals(events)).toHaveLength(1);
@@ -913,15 +903,12 @@ describe('spawnAndCollect', () => {
       expect(errors[0]).toMatchObject({
         status: 'failed',
         error: {
-          code: 'runner_idle_timeout',
+          code: 'no-progress-cut',
           message: expect.stringContaining('produced no output for 1s'),
         },
       });
     } finally {
-      for (const pid of [leaderPid, descendantPid]) {
-        if (pid <= 1 || processIsAbsent(pid)) continue;
-        process.kill(pid, 'SIGKILL');
-      }
+      if (leaderPid > 1 && !processIsAbsent(leaderPid)) process.kill(leaderPid, 'SIGKILL');
     }
   });
 

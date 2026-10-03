@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { processError } from '../errors.js';
 import { killAllProcesses, SIGKILL_DELAY_MS } from '../registry.js';
 import {
@@ -132,7 +132,7 @@ describe('spawnPipe lifecycle termination', () => {
   });
 
   itUnix(
-    'kills an idle child at the configured bound with the idle timeout as the first cause',
+    'kills a silent leader with no running child at the configured bound with the idle timeout as the first cause',
     async () => {
       let pid = 0;
       await expect(
@@ -148,6 +148,58 @@ describe('spawnPipe lifecycle termination', () => {
       expect(pid).toBeGreaterThan(1);
       expect(processIsAbsent(pid)).toBe(true);
     },
+  );
+
+  itUnix(
+    'does not cut a silent leader while its child process is still running',
+    async () => {
+      const dir = markerDir();
+      const pidFile = join(dir, 'child.pid');
+      const controller = new AbortController();
+      let leaderPid = 0;
+      let settled = false;
+      const pending = pipe({
+        script: [
+          "const {spawn}=require('node:child_process')",
+          "const child=spawn('sleep',['30'],{stdio:'ignore'})",
+          `require('node:fs').writeFileSync(${JSON.stringify(pidFile)},String(child.pid))`,
+          'setInterval(()=>{},1000)',
+        ].join(';'),
+        // The first window also covers the leader's own Node start-up, which a
+        // loaded machine stretches past a few hundred milliseconds.
+        idle: { warnMs: 100, killMs: 1_000 },
+        signal: controller.signal,
+        onSpawned: (spawnedPid) => {
+          leaderPid = spawnedPid;
+        },
+      });
+      pending.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+
+      for (let waited = 0; waited < 5_000 && !existsSync(pidFile); waited += 20) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      // Several kill windows pass with no output; the running child keeps the
+      // call alive each time.
+      await new Promise((resolve) => setTimeout(resolve, 2_500));
+      expect(settled).toBe(false);
+
+      controller.abort(new DOMException('test finished', 'AbortError'));
+      await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+
+      const childPid = Number.parseInt(readFileSync(pidFile, 'utf8'), 10);
+      expect(leaderPid).toBeGreaterThan(1);
+      expect(childPid).toBeGreaterThan(1);
+      expect(processIsAbsent(leaderPid)).toBe(true);
+      expect(processIsAbsent(childPid)).toBe(true);
+    },
+    15_000,
   );
 
   itUnix(

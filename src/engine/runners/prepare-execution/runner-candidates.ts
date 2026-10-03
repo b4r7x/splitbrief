@@ -4,7 +4,6 @@ import {
   type RunnerConfigSlot,
 } from '../../../core/config/accessors/runner-config.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
-import { resolveIntermediateRunner } from '../../../core/config/accessors/intermediate-runner.js';
 import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import type { ReadinessCheck } from '../../../core/readiness/types.js';
 import type { Config } from '../../../core/schemas/config.js';
@@ -28,8 +27,6 @@ function slotId(slot: RunnerConfigSlot): string {
       return 'planner';
     case 'implementer':
       return `implementer.${slot.profile}`;
-    case 'intermediate':
-      return 'intermediate';
     case 'reviewer':
       return 'reviewer';
     default:
@@ -43,8 +40,6 @@ function slotLabel(slot: RunnerConfigSlot): string {
       return 'Planner';
     case 'implementer':
       return `Implementer profile ${slot.profile}`;
-    case 'intermediate':
-      return 'Intermediate runner';
     case 'reviewer':
       return 'Reviewer';
     default:
@@ -106,9 +101,8 @@ export function runnerCandidates(
   purpose: PreparationPolicy['purpose'],
 ): CandidateEnumeration {
   // A one-shot review calls the review seat and nothing else, so a missing
-  // implementer or an unresolvable escalation provider cannot gate it. The seat
-  // itself is whatever `resolveReviewerRunner` decides — the configured block,
-  // or the planner holding the seat.
+  // implementer cannot gate it. The seat itself is whatever `resolveReviewerRunner`
+  // decides — the configured block, or the planner holding the seat.
   if (purpose === 'review') {
     const runner = resolveReviewerRunner(config).runner;
     const context = resolveRunnerConfigContext({ role: 'reviewer', runner });
@@ -138,30 +132,6 @@ export function runnerCandidates(
           ? 'implementer'
           : `implementer profile ${profile.name}`,
     });
-  }
-
-  if (
-    config.escalation?.enabled !== false &&
-    config.escalation?.intermediateProvider !== undefined
-  ) {
-    const resolved = resolveIntermediateRunner(config);
-    if (resolved === null) {
-      return {
-        candidates,
-        checks: [
-          {
-            id: 'runners.preparation.intermediate',
-            severity: 'blocker',
-            summary: 'Intermediate runner could not be resolved.',
-            fix: 'Fix escalation.intermediateProvider and intermediateModel, then retry.',
-            nextAction: 'fix-config',
-            metadata: { role: 'intermediate', kind: 'api' },
-          },
-        ],
-      };
-    }
-    const context = resolveRunnerConfigContext({ role: 'intermediate', runner: resolved.runner });
-    candidates.push({ slot: context.slot, runner: resolved.runner, trustLabel: 'intermediate' });
   }
 
   const reviewer = resolveReviewerRunner(config);

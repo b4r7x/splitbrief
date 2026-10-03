@@ -63,7 +63,7 @@ type PlannerAuthority = RunnerFactoryAuthority & {
   slot: Extract<RunnerSlot, { role: 'planner' }>;
 };
 type ImplementerAuthority = RunnerFactoryAuthority & {
-  slot: Extract<RunnerSlot, { role: 'implementer' | 'intermediate' }>;
+  slot: Extract<RunnerSlot, { role: 'implementer' }>;
 };
 
 function authorityFor(
@@ -250,7 +250,6 @@ describe('createPlanner', () => {
     expect(planner).toBeDefined();
     expect(planner.capabilities).toMatchObject({
       supportsConversationalPlanning: expect.any(Boolean),
-      supportsHintEscalation: expect.any(Boolean),
       supportsSessionResume: expect.any(Boolean),
       supportsEffort: expect.any(Boolean),
       supportsImages: expect.any(Boolean),

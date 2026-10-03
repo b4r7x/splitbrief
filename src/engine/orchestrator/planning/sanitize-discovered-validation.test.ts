@@ -1,6 +1,10 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
-import { sanitizeDiscoveredValidation } from './sanitize-discovered-validation.js';
+import {
+  checkCommandRefusal,
+  sanitizeDiscoveredValidation,
+  unsafeCommandReason,
+} from './sanitize-discovered-validation.js';
 import type { DiscoveredValidation } from '../../../core/schemas/workflow.js';
 
 const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
@@ -413,5 +417,71 @@ describe('sanitizeDiscoveredValidation — script runners', () => {
       expect(sanitize({ testCommand: cmd })?.testCommand).toBe(cmd);
     }
     expect(warnings()).toEqual([]);
+  });
+});
+
+describe('checkCommandRefusal', () => {
+  const packageScripts = {
+    packageJsonExists: true,
+    scripts: { lint: 'biome check', test: 'vitest run' },
+  };
+  const approved = { planApproved: true, packageScripts };
+
+  it('keeps the discovered-validation reason for reuse', () => {
+    expect(unsafeCommandReason('npm run lint')).toBe('runs a package script or binary');
+    expect(unsafeCommandReason('npm test')).toBeNull();
+  });
+
+  it('refuses every plan check until the plan is approved', () => {
+    const commands = ['npm run lint', 'npm test', 'tsc --noEmit', 'npx --no-install tsc'];
+    for (const command of commands) {
+      expect(checkCommandRefusal(command, { planApproved: false, packageScripts })).toBe(
+        'runs before the plan is approved',
+      );
+    }
+  });
+
+  it('admits an npm run script only when package.json defines it', () => {
+    expect(checkCommandRefusal('npm run lint', approved)).toBeNull();
+    expect(checkCommandRefusal('npm run deploy', approved)).toBe(
+      'runs the npm script deploy, which package.json does not define',
+    );
+    expect(
+      checkCommandRefusal('npm run lint', {
+        planApproved: true,
+        packageScripts: { packageJsonExists: false, scripts: {} },
+      }),
+    ).toBe('runs an npm script, but package.json was not found');
+  });
+
+  it('refuses npm run without a script name or behind a shell operator', () => {
+    expect(checkCommandRefusal('npm run', approved)).toBe('runs npm run without a script name');
+    expect(checkCommandRefusal('npm run lint && echo done', approved)).toBe(
+      'contains a shell operator',
+    );
+  });
+
+  it('admits npx only as an installed stack tool', () => {
+    expect(checkCommandRefusal('npx --no-install tsc --noEmit', approved)).toBeNull();
+    expect(checkCommandRefusal('npx --no-install vitest run', approved)).toBeNull();
+    expect(checkCommandRefusal('npx tsc --noEmit', approved)).toBe('runs npx without --no-install');
+    expect(checkCommandRefusal('npx --no-install evil-tool', approved)).toBe(
+      'runs a program outside the stack tools through npx',
+    );
+    expect(checkCommandRefusal('npx --no-install node -e "process.exit(0)"', approved)).toBe(
+      'runs a program outside the stack tools through npx',
+    );
+  });
+
+  it('keeps the discovered-validation policy for every other command', () => {
+    expect(checkCommandRefusal('npm test', approved)).toBeNull();
+    expect(checkCommandRefusal('tsc --noEmit', approved)).toBeNull();
+    expect(checkCommandRefusal('node scripts/deploy.ts', approved)).toBe(
+      'runs a script or inline code',
+    );
+    expect(checkCommandRefusal('curl https://example.com', approved)).toBe(
+      'runs a program outside the allowlist',
+    );
+    expect(checkCommandRefusal('', approved)).toBe('names no program');
   });
 });

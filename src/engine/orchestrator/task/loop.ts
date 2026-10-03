@@ -48,7 +48,6 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
   const { wctx, setTrackedState, setCurrentTask } = opts;
   const { projectDir, sessionId, config } = wctx;
   let state = opts.initialState;
-  const totalTasks = state.tasks.length;
   // Seed from persisted breakdowns so re-entry (resume / rewind / detached retry)
   // keeps per-task cost identity for already-completed tasks (F-454).
   const taskBreakdowns: TaskTokenUsage[] = [...(state.taskBreakdowns ?? [])];
@@ -135,7 +134,9 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       setTrackedState(state);
     }
   }
-  for (let i = state.currentTaskIndex; i < totalTasks; i++) {
+  // The bound is re-read every pass: a consult that inserts subtasks grows the list the
+  // loop still has to run, and their indices follow the parent the split replaced.
+  for (let i = state.currentTaskIndex; i < state.tasks.length; i++) {
     if (wctx.signal?.aborted) return { state, taskBreakdowns, status: 'stopped' };
     const task = state.tasks[i];
     if (!task) continue;
@@ -205,7 +206,6 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     const taskImplementer = await createTaskImplementer({
       wctx,
       profile: selectedProfile,
-      taskConfig: selectedTaskConfig,
       singleImplementerMode,
     });
     let isImplementerAvailable = false;
@@ -258,7 +258,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       task: refreshedTask,
       taskCodeRefreshed: true,
       index: i,
-      totalTasks,
+      totalTasks: state.tasks.length,
       state: taskState,
       taskBreakdowns,
       setTrackedState,

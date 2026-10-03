@@ -1,0 +1,12 @@
+export const BOUNDS = {
+  consultsPerLineage: 2,
+  attemptsPerLineage: 8,
+  plannerCallsPerRun: 10,
+  extraConsultsPerLineage: 1,
+  extraAttemptsPerLineage: 4,
+  extraPlannerCallsPerRun: 5,
+  consultFailingOutputChars: 4000,
+  rateLimitResetWaitMs: 600_000,
+  transientRetries: 3,
+  noProgressCutMs: 1_200_000,
+} as const;

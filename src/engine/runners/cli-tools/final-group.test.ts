@@ -3,7 +3,6 @@ import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 import type { RunnerCallContext } from '../../calls/types.js';
 import { parseFinalReview } from '../../parsers/final-review.js';
-import { parseHintVerdict } from '../../spec/prompts/escalation.js';
 import { codexPlannerAdapter } from './codex.js';
 import type { CliPlannerAdapter } from './contract.js';
 import { cursorPlannerAdapter } from './cursor.js';
@@ -122,7 +121,7 @@ const VERDICT = 'VERDICT: widen a.ts — r';
 const REVIEW = '### Verdict\npass';
 
 describe.each(Object.keys(RUNNERS))('%s final text', (runner) => {
-  it('hands the hint reader a verdict line that the narration before it does not prefix', async () => {
+  it('hands the reader a final message that the narration before it does not prefix', async () => {
     const steps: Step[] = [
       { message: 'Reading the failing test.' },
       'tool',
@@ -132,7 +131,6 @@ describe.each(Object.keys(RUNNERS))('%s final text', (runner) => {
     const { text, live } = await call(runner, steps);
 
     expect(text).toBe(`The test pins the path, so widening is right.\n\n${VERDICT}`);
-    expect(parseHintVerdict(text)).toEqual({ kind: 'widen', paths: ['a.ts'], reason: 'r' });
     expectEachShownOnce(live, steps);
   });
 
@@ -154,7 +152,6 @@ describe.each(Object.keys(RUNNERS))('%s final text', (runner) => {
     const { text, live } = await call(runner, steps);
 
     expect(text).toBe(VERDICT);
-    expect(parseHintVerdict(text)).toEqual({ kind: 'widen', paths: ['a.ts'], reason: 'r' });
     expectEachShownOnce(live, steps);
   });
 });

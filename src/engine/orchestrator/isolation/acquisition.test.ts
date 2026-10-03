@@ -2,9 +2,20 @@ import { execFileSync } from 'node:child_process';
 import { chmod, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
+import {
+  makeBusRecorder,
+  makeCallbacks,
+  makeWctx,
+} from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { captureAcquisitionBaseline } from '../approval/file-snapshots/entry.js';
+import { gateAndPromoteChangedFiles } from '../approval/gate-and-promote.js';
 import { promoteStagedChanges } from '../approval/staged-project.js';
+import { restoreExhaustedTaskFiles } from '../task/rollback.js';
 import { prepareWorktreeAcquisition } from './acquisition.js';
 
 const roots: string[] = [];
@@ -52,7 +63,37 @@ async function fixture(initialize = true) {
       files,
       targetBaseline: (await acquire(fresh)).targetBaseline,
     });
-  return { projectDir, worktreeDir, acquire, promote };
+  // One brief attempt through the promotion chokepoint every caller uses.
+  const attempt = async (write: string) => {
+    const { targetBaseline } = await acquire(true);
+    const snapshot = await getChangedFilesSnapshot(worktreeDir);
+    await writeFile(join(worktreeDir, 'app.ts'), write);
+    const task = makeTask({ id: 'T010', file: 'app.ts' });
+    return gateAndPromoteChangedFiles({
+      task,
+      state: makeImplState([task]),
+      projectDir,
+      sessionId: 'parked-run',
+      workspace: {
+        projectDir: worktreeDir,
+        sandboxEnv: {},
+        snapshot,
+        targetBaseline,
+        changeDetection: 'file-hashes',
+        cleanup: () => {},
+      },
+      taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
+      bus: makeBusRecorder().bus,
+      callbacks: makeCallbacks().callbacks,
+      config: makeNoValidationConfig({
+        approval: { enabled: false, feedRejectionsToPlanner: true },
+      }),
+      dependsOnFiles: [],
+      handleConflict: async (s) => s,
+      onApproved: () => {},
+    });
+  };
+  return { projectDir, worktreeDir, acquire, promote, attempt };
 }
 
 describe('retained worktree acquisition', () => {
@@ -153,6 +194,38 @@ describe('retained worktree acquisition', () => {
     expect(await readFile(join(worktreeDir, 'keep.ts'), 'utf8')).toBe('worker partial\n');
     expect((await promote(['keep.ts'])).conflictedFiles).toEqual([]);
     expect(await readFile(join(projectDir, 'keep.ts'), 'utf8')).toBe('worker partial\n');
+  });
+
+  it('lets a retry promote over the target rewrite of a file the first attempt promoted', async () => {
+    const { projectDir, attempt } = await fixture();
+    expect((await attempt('attempt one\n')).outcome).toBe('allow');
+    // The lint stage formats the promoted file in the target after promotion.
+    await writeFile(join(projectDir, 'app.ts'), 'attempt one, formatted\n');
+
+    const retry = await attempt('attempt two\n');
+
+    expect(retry.outcome).toBe('allow');
+    expect(await readFile(join(projectDir, 'app.ts'), 'utf8')).toBe('attempt two\n');
+  });
+
+  it('lets a restarted brief promote after recovery restored its earlier promotion', async () => {
+    const { projectDir, worktreeDir, attempt } = await fixture();
+    const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
+    expect((await attempt('attempt one\n')).outcome).toBe('allow');
+    // The paused attempt's output never reached the target and stays in the worktree.
+    await writeFile(join(worktreeDir, 'app.ts'), 'attempt two, paused\n');
+    await restoreExhaustedTaskFiles({
+      wctx: makeWctx({ projectDir, sessionId: 'parked-run' }),
+      phase: 'implementing',
+      taskChangedFiles: ['app.ts'],
+      taskStartSnapshot,
+    });
+    expect(await readFile(join(projectDir, 'app.ts'), 'utf8')).toBe('original\n');
+
+    const restarted = await attempt('attempt two\n');
+
+    expect(restarted.outcome).toBe('allow');
+    expect(await readFile(join(projectDir, 'app.ts'), 'utf8')).toBe('attempt two\n');
   });
 
   it('preserves ambiguous legacy partials without manufacturing a fresh target baseline', async () => {

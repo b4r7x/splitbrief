@@ -8,7 +8,6 @@ import { createImplementerBase } from '../../implementers/pipeline/run.js';
 import { createChangeDetector } from '../../change-detection.js';
 import { buildLanguageContext } from '../../spec/prompts/language-context.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
-import { CONFIRM_PHRASE } from '../../../core/approval/types.js';
 import { createRunIsolation } from '../isolation/create.js';
 import { createValidator } from '../validation/run.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
@@ -53,6 +52,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   try {
     for (const dir of dirs) cleanupTempDir(dir);
     dirs = [];
@@ -155,6 +155,89 @@ describe('runRetryStep', () => {
     expect(retrySignal?.aborted).toBe(false);
     controller.abort();
     expect(retrySignal?.aborted).toBe(true);
+  });
+
+  it('records the usage of a transient attempt a retry replaced', async () => {
+    vi.useFakeTimers();
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T007', file: 'src/transient.ts' });
+    const state = makeImplState([task]);
+    const config = configWithProfiles();
+    const { callbacks } = makeCallbacks();
+    const { bus } = makeBusRecorder();
+    const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
+    let calls = 0;
+    const implementer = makeImplementer({
+      retry: vi.fn(async () => {
+        calls += 1;
+        return calls === 1
+          ? {
+              success: false,
+              output: 'busy',
+              error: 'HTTP 503 Service Unavailable',
+              outcome: 'non-zero-exit' as const,
+              usage: { inputTokens: 7, outputTokens: 3 },
+            }
+          : { success: true, output: 'fixed', usage: { inputTokens: 2, outputTokens: 1 } };
+      }),
+    });
+
+    const pending = runRetryStep({
+      ctx: {
+        projectDir,
+        sessionId,
+        config,
+        callbacks,
+        bus,
+        planner: makePlanner(),
+        reviewer: makePlanner(),
+        context: defaultContext,
+        implementer: makeImplementer(),
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+        validator: createValidator(),
+        isolation: makeCopyingIsolation({ projectDir, sessionId }),
+        taskStartSnapshot,
+        dependsOnFiles: [],
+      },
+      task,
+      state,
+      lastError: 'validation failed',
+      attempts: 1,
+      method: 'local',
+      transitionType: 'VALIDATION_PASS',
+      usageCategory: 'implementer',
+      retryFailureFallback: 'retry failed',
+      invokeRetry: makeImplementerRetryInvoker({
+        context: defaultContext,
+        kind: 'local',
+        sessionId,
+        languageContext: buildLanguageContext('typescript'),
+        phase: state.phase,
+        onOutput: () => {},
+        implementer,
+        config,
+      }),
+    });
+    let settled = false;
+    void pending.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    while (!settled) {
+      await vi.advanceTimersByTimeAsync(vi.getTimerCount() === 0 ? 1 : 2_000);
+    }
+    const outcome = await pending;
+
+    expect(outcome.result).toMatchObject({ completed: true, method: 'local' });
+    // The replaced attempt's tokens persist beside the surviving attempt's own.
+    const saved = loadState({ projectDir, sessionId });
+    expect(saved?.tokenUsage.implementerInput).toBe(9);
+    expect(saved?.tokenUsage.implementerOutput).toBe(4);
   });
 
   it('intermediate-tier usage-limit failure records the intermediate runner in lastFailure.runner', async () => {
@@ -665,89 +748,6 @@ describe('runRetryStep — a failed attempt keeps its story', () => {
 
     expect(outcome.lastFailure?.handBack?.length).toBe(2000);
     expect(outcome.lastFailure?.handBack).toBe(output.slice(-2000));
-  });
-});
-
-describe('runRetryStep — planner-approved widening', () => {
-  async function runWidenedRetry(decision: 'allow' | 'deny') {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T031', file: 'src/main.ts' });
-    const state = makeImplState([task]);
-    const { callbacks } = makeCallbacks({
-      onTieredApproval: vi
-        .fn()
-        .mockResolvedValue(
-          decision === 'allow'
-            ? { decision: 'confirm', phrase: CONFIRM_PHRASE, reason: 'ok' }
-            : { decision: 'deny', reason: 'out of scope' },
-        ),
-    });
-    const { bus, events } = makeBusRecorder();
-    const outcome = await runRetryStep({
-      ctx: {
-        ...makeWctx({
-          projectDir,
-          sessionId,
-          config: makeNoValidationConfig({
-            approval: {
-              enabled: true,
-              feedRejectionsToPlanner: false,
-            },
-            workflow: {},
-          }),
-          callbacks,
-          bus,
-        }),
-        taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
-        dependsOnFiles: [],
-      },
-      task,
-      state,
-      lastError: 'validation failed',
-      attempts: 1,
-      method: 'escalated-hint',
-      transitionType: 'HINT_SUCCESS',
-      usageCategory: 'implementer',
-      retryFailureFallback: 'retry failed',
-      scopeWidening: { paths: ['.env.local'], reason: 'consumer' },
-      invokeRetry: async ({ projectDir: runDir }) => {
-        writeFileSync(join(runDir, '.env.local'), 'export const other = 1;\n');
-        return { success: true };
-      },
-    });
-    return { outcome, events, projectDir, sessionId };
-  }
-
-  it('records an allowed widening on the brief with the planner reason', async () => {
-    const { outcome, events, projectDir, sessionId } = await runWidenedRetry('allow');
-
-    const provenance = '`.env.local` — planner-approved: consumer';
-    expect(outcome.task.scope?.approvedOutOfBounds).toEqual([provenance]);
-    expect(outcome.state.tasks[0]?.scope?.approvedOutOfBounds).toEqual([provenance]);
-    expect(loadState({ projectDir, sessionId })?.tasks[0]?.scope?.approvedOutOfBounds).toEqual([
-      provenance,
-    ]);
-    expect(events.find((event) => event.type === 'task_scope_widened')).toMatchObject({
-      taskId: 'T031',
-      paths: ['.env.local'],
-      reason: 'consumer',
-    });
-    expect(outcome.result).toMatchObject({ completed: true, method: 'escalated-hint' });
-  });
-
-  it('records nothing on a denied write', async () => {
-    const { outcome, events } = await runWidenedRetry('deny');
-
-    expect(outcome.result).toEqual({
-      completed: false,
-      method: 'failed',
-      attempts: 1,
-      lastError:
-        "Retry changed files blocked by approval gate: out of scope. SPLITBRIEF discarded this attempt's writes to .env.local. Retry from the current files; do not try to recover the rejected writes.",
-    });
-    expect(outcome.state.tasks[0]?.scope?.approvedOutOfBounds).toBeUndefined();
-    expect(events.find((event) => event.type === 'task_scope_widened')).toBeUndefined();
-    expect(events.find((event) => event.type === 'recovery_prompted')).toBeUndefined();
   });
 });
 

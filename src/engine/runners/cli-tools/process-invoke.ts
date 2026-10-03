@@ -5,7 +5,11 @@ import {
   runnerCallLimitWarning,
   runnerCallLineOutputLimit,
 } from '../../calls/output-limit.js';
-import { runnerCallErrorFromUnknown, runnerCallInterruptedStatus } from '../../calls/status.js';
+import {
+  runnerCallErrorFromUnknown,
+  runnerCallIdleTimeoutError,
+  runnerCallInterruptedStatus,
+} from '../../calls/status.js';
 import {
   classifyHaltSignature,
   HALT_SIGNATURES,
@@ -510,17 +514,15 @@ export async function invokeProcessCli(
       });
     }
     if (processError.isIdleTimeout(cause)) {
-      // A silent runner is a timeout, not a protocol failure: the `timeout`
-      // code is what the implementer pipeline classifies as retryable.
+      // A call the watchdog cut made no progress. The code keeps it an ordinary
+      // failed attempt on the ladder (retry, then consult), never the
+      // consecutive-timeouts halt.
       return finishFailureSafely({
         recorder,
         context: context.callContext,
         credentialValues,
-        status: 'timeout',
-        error: {
-          code: 'timeout',
-          message: runnerCallErrorFromUnknown(cause, 'timeout', credentialValues).message,
-        },
+        status: 'failed',
+        error: runnerCallIdleTimeoutError(cause, credentialValues),
       });
     }
     if (spawnPipeError.isStdinIncomplete(cause)) {

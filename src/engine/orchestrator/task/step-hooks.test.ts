@@ -81,7 +81,6 @@ describe('runSingleTask — pre_validation hooks', () => {
         config: makeConfig({
           hooks,
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-          workflow: { maxRetries: 2 },
         }),
         validator: { ...createValidator(), runValidation },
       }),

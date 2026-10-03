@@ -119,7 +119,7 @@ function removedTopLevelKeyErrors(config: Record<string, unknown>): ConfigError[
  * its key whatever it holds.
  */
 const RETIRED_CONFIG_VALUES: readonly {
-  path: readonly [block: string, key: string];
+  path: readonly [block: string] | readonly [block: string, key: string];
   value?: string;
   notice: string;
 }[] = [
@@ -153,11 +153,23 @@ const RETIRED_CONFIG_VALUES: readonly {
     notice:
       'approval.tiers was retired and is ignored: a write to a protected path always asks, and no other write does. Delete approval.tiers.',
   },
+  {
+    path: ['workflow', 'maxRetries'],
+    notice:
+      'workflow.max_retries was retired and is ignored: the lineage attempt allowance bounds the ladder now. Delete workflow.max_retries.',
+  },
+  {
+    path: ['escalation'],
+    notice:
+      "escalation was retired and is ignored: the planner's consult replaces the intermediate tier. Delete escalation.",
+  },
 ];
 
 /** One notice per retired value the raw config names; the load reports them, once. */
 export function retiredValueNotices(config: Record<string, unknown>): string[] {
-  return RETIRED_CONFIG_VALUES.filter(({ path: [block, key], value }) => {
+  return RETIRED_CONFIG_VALUES.filter(({ path, value }) => {
+    if (path.length === 1) return config[path[0]] !== undefined;
+    const [block, key] = path;
     const loaded = narrowRecord(config[block])?.[key];
     return value === undefined ? loaded !== undefined : loaded === value;
   }).map(({ notice }) => notice);

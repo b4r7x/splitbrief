@@ -17,7 +17,8 @@ const restoreError = {
     error('approval-restore-conflict', `File changed before restoration: ${file}`, { file }),
 } as const;
 
-async function entryToRestore(
+/** The entry a file held when the snapshot was taken: its own capture, or the commit it names. */
+export async function entryToRestore(
   projectDir: string,
   snapshot: ChangedFilesSnapshot,
   file: string,

@@ -3,6 +3,7 @@ import { isImplementerPhase, isLivePhase } from '../../../core/phases.js';
 import type { ProjectContext } from '../../../core/state/types.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Summary } from '../../../core/schemas/summary.js';
+import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { isTaskCompleted, type TaskId } from '../../../core/schemas/task.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import type { Planner } from '../../planners/types.js';
@@ -36,6 +37,7 @@ import { hashTaskBrief } from '../../brief-hash.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { initLogger } from '../../../core/logger.js';
 import { slugify } from '../../../utils/slugify.js';
+import { nowIso } from '../../../utils/format-time.js';
 import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
 import type {
   OrchestratorCallbacks,
@@ -60,8 +62,10 @@ import {
 } from '../changed-files-baseline.js';
 import { assessChangedUserEdits } from '../user-edit/detection.js';
 import { classifyUserEditConflict } from '../user-edit/conflicts.js';
+import { buildUserEditConflictRecoveryIssue } from '../recovery/builders/workflow.js';
 import {
   commitWorkflowState,
+  raisePendingRecovery,
   readWorkflowStateHead,
   stateOpsError,
   transitionAndSave,
@@ -69,6 +73,7 @@ import {
 import {
   createContinuationHolder,
   readInterruptedPartial,
+  readUnresumedBriefCut,
   type ContinuationHolder,
 } from '../continuation.js';
 import { resumeStep } from '../../../core/sessions/run-status.js';
@@ -82,6 +87,7 @@ import type { PreparedExecution } from '../../runners/prepared-execution.js';
 import { attachRunSinks } from './init-sinks.js';
 import { createPlannerSeat, createImplementerSeat } from './init-seats.js';
 import { buildSkillsContext } from './skills-context.js';
+import { resumeSeatWait } from '../escalation/seat-wait.js';
 
 function plannerUnavailableMessage(plannerConfig: Config['planner'], planner: Planner): string {
   const name = getRunnerDisplayName(plannerConfig);
@@ -257,7 +263,8 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
   }
   if (savedState !== undefined) {
     savedState = realignPassedTaskIndex(bus, savedState);
-    savedState = await resolveStaleFileHalt({ projectDir, sessionId, bus, state: savedState });
+    savedState = await restoreUnresumedBriefCut({ projectDir, sessionId, bus, state: savedState });
+    savedState = await settleFileHalt({ projectDir, sessionId, bus, state: savedState });
     setTrackedState(savedState);
   }
   if (
@@ -269,6 +276,17 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     setTrackedState(savedState);
   }
   const hasPendingRecovery = savedState?.pendingRecovery !== undefined;
+  // A rate-limit wait the run persisted before it stopped is honored first: a
+  // deadline still in the future is waited for, one already past is released,
+  // and only then does the task continue.
+  if (savedState !== undefined && !hasPendingRecovery && savedState.seatWait !== undefined) {
+    savedState = await resumeSeatWait({
+      ref: { projectDir, sessionId, bus },
+      state: savedState,
+      ...(opts.signal !== undefined && { signal: opts.signal }),
+    });
+    setTrackedState(savedState);
+  }
   const continuation = await resumeContinuation({
     ref: { projectDir, sessionId },
     state: savedState,
@@ -534,22 +552,23 @@ export async function resumeContinuation(input: {
 const FILE_HALT_REASONS = new Set(['user-edit-conflict', 'approval-promotion-conflict']);
 
 /**
- * A halt about files is only true while those files still differ from the baseline and the gate
- * would still raise it. The operator who reverted them answered the question by reverting, and an
- * edit to a brief that has not started is that brief's starting point, not a conflict — so the
- * panel does not ask again either.
+ * A halt about files, read against the files as they stand now. It no longer stands while none of
+ * its files still differ from the baseline or the gate would not raise it again: the operator who
+ * reverted them answered the question by reverting, and an edit to a brief that has not started is
+ * that brief's starting point. A user-edit halt the gate would still raise is the halt the gate
+ * raises now, never an older reading of the files.
  */
-export async function fileHaltIsStale(input: {
+export async function reassessFileHalt(input: {
   projectDir: string;
   state: WorkflowState;
   sessionId: string;
-}): Promise<boolean> {
+}): Promise<RecoveryIssue | undefined> {
   const { projectDir, state, sessionId } = input;
   const issue = state.pendingRecovery;
-  if (issue === undefined || !FILE_HALT_REASONS.has(issue.reason)) return false;
+  if (issue === undefined || !FILE_HALT_REASONS.has(issue.reason)) return issue;
   try {
     if (issue.reason === 'approval-promotion-conflict') {
-      if (issue.facts?.partialPromotion === true) return false;
+      if (issue.facts?.partialPromotion === true) return issue;
       const workspacePath = issue.facts?.workspacePath;
       if (typeof workspacePath === 'string') {
         const resolved = await worktreePromotionConflictIsResolved({
@@ -558,48 +577,91 @@ export async function fileHaltIsStale(input: {
           files: issue.files,
           workspacePath,
         });
-        if (resolved !== null) return resolved;
+        if (resolved !== null) return resolved ? undefined : issue;
       }
     }
-    if (state.changedFilesBaseline === undefined) return false;
+    if (state.changedFilesBaseline === undefined) return issue;
     const changed = await changedFilesSinceBaseline(
       projectDir,
       deserializeChangedFilesBaseline(state.changedFilesBaseline),
     );
-    if (!changed.some((file) => issue.files.includes(file))) return true;
-    if (issue.reason !== 'user-edit-conflict') return false;
+    if (!changed.some((file) => issue.files.includes(file))) return undefined;
+    if (issue.reason !== 'user-edit-conflict') return issue;
     const currentTask = state.tasks[state.currentTaskIndex];
-    if (currentTask === undefined) return false;
-    const { foreignFiles, currentTaskInFlight } = await assessChangedUserEdits({
+    if (currentTask === undefined) return issue;
+    const { foreignFiles, briefHoldsOutput } = await assessChangedUserEdits({
       projectDir,
       sessionId,
       task: currentTask,
       changedFiles: changed,
     });
-    if (foreignFiles.length === 0) return true;
-    return classifyUserEditConflict({
+    if (foreignFiles.length === 0) return undefined;
+    const conflict = classifyUserEditConflict({
       files: foreignFiles,
       currentTask,
-      currentTaskInFlight,
+      briefHoldsOutput,
       allTasks: state.tasks,
       currentTaskIndex: state.currentTaskIndex,
-    }).safeToContinue;
+    });
+    if (conflict.safeToContinue) return undefined;
+    return buildUserEditConflictRecoveryIssue({
+      conflict,
+      currentTask,
+      phase: state.phase,
+      createdAt: nowIso(),
+    });
   } catch {
-    return false;
+    return issue;
   }
 }
 
-/** The entry that acts on it: the run says the halt is over and continues. */
-async function resolveStaleFileHalt(args: {
+/** The parts of a halt the panel shows; a fresh id and timestamp alone are the same reading. */
+function sameHaltReading(a: RecoveryIssue, b: RecoveryIssue): boolean {
+  const reading = (issue: RecoveryIssue) =>
+    JSON.stringify([
+      issue.message,
+      issue.files,
+      issue.details,
+      issue.availableActions,
+      issue.recommendedAction,
+    ]);
+  return reading(a) === reading(b);
+}
+
+/**
+ * A pending file halt on re-entry. A stale one is reported back and left for the entry to resolve; one
+ * that still stands replaces the saved halt when the files now read differently, and publishes it.
+ * The state comes back unchanged (the same object) when nothing was replaced.
+ */
+export async function refreshFileHalt(args: {
+  projectDir: string;
+  sessionId: string;
+  bus: EventBus;
+  state: WorkflowState;
+}): Promise<{ stale: boolean; state: WorkflowState }> {
+  const { projectDir, sessionId, bus, state } = args;
+  const saved = state.pendingRecovery;
+  if (saved === undefined) return { stale: false, state };
+  const standing = await reassessFileHalt({ projectDir, state, sessionId });
+  if (standing === undefined) return { stale: true, state };
+  if (sameHaltReading(saved, standing)) return { stale: false, state };
+  return {
+    stale: false,
+    state: raisePendingRecovery({ projectDir, sessionId, bus }, state, standing),
+  };
+}
+
+/** The entry that acts on it: a stale halt is over and the run continues; one that stands is shown as it reads now. */
+async function settleFileHalt(args: {
   projectDir: string;
   sessionId: string;
   bus: EventBus;
   state: WorkflowState;
 }): Promise<WorkflowState> {
-  const { projectDir, sessionId, bus, state } = args;
-  const issue = state.pendingRecovery;
-  if (issue === undefined || !(await fileHaltIsStale({ projectDir, state, sessionId })))
-    return state;
+  const { projectDir, sessionId, bus } = args;
+  const issue = args.state.pendingRecovery;
+  const { stale, state } = await refreshFileHalt(args);
+  if (issue === undefined || !stale) return state;
 
   const resolved = transitionAndSave(
     { projectDir, sessionId },
@@ -651,6 +713,46 @@ function realignPassedTaskIndex(bus: EventBus, state: WorkflowState): WorkflowSt
         interruptedStep: { ...cut, step: { ...cut.step, taskId: task.id } },
       }),
   };
+}
+
+/**
+ * Re-entry clears a cut brief's park before the brief runs again (`runPlanningPhases`). A halt
+ * raised in between, then a stop, leaves the brief `in_progress` with no park, which the crash check
+ * below would restart at attempt 0. The log still holds the cut and no call has started since, so
+ * the park is put back: the brief continues at its cut attempt, in its kept workspace, and its
+ * recorded writes stay its own.
+ */
+async function restoreUnresumedBriefCut(args: {
+  projectDir: string;
+  sessionId: string;
+  bus: EventBus;
+  state: WorkflowState;
+}): Promise<WorkflowState> {
+  const { projectDir, sessionId, bus, state } = args;
+  if (
+    state.interruptedStep !== undefined ||
+    state.closed !== undefined ||
+    state.rewindPending !== undefined ||
+    !isImplementerPhase(state.phase)
+  )
+    return state;
+  const cut = await readUnresumedBriefCut({ projectDir, sessionId });
+  if (cut === undefined || state.tasks[state.currentTaskIndex]?.id !== cut.step.taskId)
+    return state;
+  const restored = transitionAndSave(
+    { projectDir, sessionId },
+    state,
+    { type: 'RESTORE_BRIEF_PARK', ...cut },
+    { expectedRevision: state.stateRevision },
+  );
+  publishWarning({
+    bus,
+    phase: restored.phase,
+    taskId: cut.step.taskId,
+    message: `${cut.step.taskId} was stopped mid-attempt and has not run since; it continues where it stopped.`,
+    safety: { category: 'recovery', code: 'cut_brief_park_restored' },
+  });
+  return restored;
 }
 
 /**

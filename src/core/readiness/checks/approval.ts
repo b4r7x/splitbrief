@@ -1,4 +1,5 @@
 import { resolveApproveLevel, resolveEffortLevel } from '../../config/runtime/resolve.js';
+import { DEFAULT_LOCAL_RETRIES } from '../../pipeline-spec/retries.js';
 import type { Config } from '../../schemas/config.js';
 import type { ReadinessCheck } from '../types.js';
 
@@ -17,12 +18,12 @@ export function buildApprovalChecks(
           ? 'Plan approval: plan; a headless run approves the plan card unattended.'
           : `Plan approval: ${approve}.`,
       details: [
-        `Retries: ${config.workflow.maxRetries}`,
+        `Retries: ${DEFAULT_LOCAL_RETRIES}`,
         `Planner effort: ${effort ?? 'provider default'}`,
       ],
       metadata: {
         approve,
-        maxRetries: config.workflow.maxRetries,
+        maxRetries: DEFAULT_LOCAL_RETRIES,
         effort: effort ?? null,
       },
     },

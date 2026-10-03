@@ -19,7 +19,6 @@ export type DeepReadonly<T> = T extends object
 export type RunnerConfigSlot =
   | Readonly<{ role: 'planner' }>
   | Readonly<{ role: 'implementer'; profile: string }>
-  | Readonly<{ role: 'intermediate' }>
   | Readonly<{ role: 'reviewer' }>;
 
 export type RunnerConfigSource =
@@ -29,7 +28,6 @@ export type RunnerConfigSource =
       profile: string;
       runner: DeepReadonly<ImplementerConfig>;
     }>
-  | Readonly<{ role: 'intermediate'; runner: DeepReadonly<ImplementerConfig> }>
   | Readonly<{ role: 'reviewer'; runner: DeepReadonly<ReviewerConfig> }>;
 
 export type RunnerConfigContext = Readonly<{
@@ -46,8 +44,6 @@ export function resolveRunnerConfigContext(source: RunnerConfigSource): RunnerCo
         slot: { role: 'implementer', profile: source.profile },
         runner: source.runner,
       };
-    case 'intermediate':
-      return { slot: { role: 'intermediate' }, runner: source.runner };
     case 'reviewer':
       return { slot: { role: 'reviewer' }, runner: source.runner };
     default:
@@ -56,7 +52,7 @@ export function resolveRunnerConfigContext(source: RunnerConfigSource): RunnerCo
 }
 
 export function runnerRoleForSlot(slot: RunnerConfigSlot): RunnerRole {
-  return slot.role === 'intermediate' ? 'implementer' : runnerRoleForActiveRole(slot.role);
+  return runnerRoleForActiveRole(slot.role);
 }
 
 export function getRunnerDisplayName(runner: DeepReadonly<RunnerConfig>): string {

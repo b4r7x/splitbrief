@@ -17,7 +17,6 @@ function freshness(now: number): string {
     tasks: tasksStore.get(),
     lifecycle: lifecycleStore.get(),
     operations: operationsStore.get(),
-    config: null,
     now,
   }).freshness;
 }

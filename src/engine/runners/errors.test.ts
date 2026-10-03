@@ -50,6 +50,7 @@ describe('runner outcome taxonomy', () => {
       'unauthenticated',
       'usage-limit',
       'timeout',
+      'no-progress-cut',
       'user-abort',
       'signal-exit',
       'non-zero-exit',

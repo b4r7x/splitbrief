@@ -5,7 +5,6 @@ import { finishClaudeStream, createStreamHandler, interruptedError } from './str
 import type { RunnerCallContext, RunnerCallEvent } from '../../calls/types.js';
 import { projectRunnerCallEvents } from '../../calls/event-projection.js';
 import { RUNNER_CALL_OUTPUT_MAX_BYTES } from '../../calls/output-limit.js';
-import { parseHintVerdict } from '../../spec/prompts/escalation.js';
 import { parseFinalReview } from '../../parsers/final-review.js';
 
 const context: RunnerCallContext = {
@@ -296,7 +295,7 @@ describe('Claude stream final text', () => {
     expect(output).toBe('Hel [first] lo [second]');
   });
 
-  it('hands the hint reader a verdict line that narration does not prefix', () => {
+  it('keeps narration out of the final verdict line', () => {
     const verdict = 'VERDICT: widen a.ts — r';
     const { text } = replay([
       ...mainLoopMessage('msg_narration', 'Reading the failing test before deciding.', 'tool_use'),
@@ -304,7 +303,7 @@ describe('Claude stream final text', () => {
       JSON.stringify({ type: 'result', result: verdict }),
     ]);
 
-    expect(parseHintVerdict(text)).toEqual({ kind: 'widen', paths: ['a.ts'], reason: 'r' });
+    expect(text).toBe(verdict);
   });
 
   it('hands the final-review reader a verdict heading that narration does not prefix', () => {
@@ -330,7 +329,6 @@ describe('Claude stream final text', () => {
     ]);
 
     expect(text).toBe(verdict);
-    expect(parseHintVerdict(text)).toEqual({ kind: 'widen', paths: ['a.ts'], reason: 'r' });
     expect(output).toContain('Reading the failing test before deciding.');
   });
 

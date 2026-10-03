@@ -7,10 +7,7 @@ import { createStdoutTextSink } from '../../../src/engine/events/sinks/stdout-te
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import type { ImplementerOptions, RetryOptions } from '../../../src/engine/implementers/types.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
-import type {
-  EscalateOptions,
-  PlannerOutputCallbacks,
-} from '../../../src/engine/planners/types.js';
+import type { PlannerOutputCallbacks } from '../../../src/engine/planners/types.js';
 import { addEvent } from '../../../src/stores/workflow/actions/event.js';
 import { lifecycleStore } from '../../../src/stores/workflow/lifecycle.js';
 import {
@@ -26,7 +23,11 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import { seedValidationProject } from '#testing/helpers/validation-project.js';
-import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
+import {
+  guidanceConsult,
+  planFromTasks,
+  typedCallPlanAndConsult,
+} from '#testing/helpers/typed-planner.js';
 
 const dirs: string[] = [];
 
@@ -50,10 +51,11 @@ function plannerCall(callbacks: PlannerOutputCallbacks, callId: string, text: st
 }
 
 /**
- * The canary's escalated brief: validation fails, the local retry fails, the planner's hint call
- * answers, and the hinted retry lands. Every event it publishes names the phase the run is in.
+ * The canary's consulted brief: validation fails, the local retry fails, the planner's consult call
+ * answers with guidance, and the guided retry lands. Every event it publishes names the phase the
+ * run is in.
  */
-async function runEscalatedBrief(): Promise<EngineEvent[]> {
+async function runConsultedBrief(): Promise<EngineEvent[]> {
   const projectDir = createTempDir('orch-int-phase-stamps');
   dirs.push(projectDir);
   createTestGitRepo(projectDir);
@@ -64,11 +66,11 @@ async function runEscalatedBrief(): Promise<EngineEvent[]> {
     action: 'create',
     file: targetFile,
     title: 'Create the retry-validated module',
-    description: 'Create a module that needs planner hint escalation before validation passes.',
+    description: 'Create a module that needs a planner consult before validation passes.',
     implementationSteps: ['Create src/loop.ts with the retry marker export.'],
-    tests: ['node validate.mjs passes after hint escalation'],
+    tests: ['node validate.mjs passes after the consult'],
     scope: { inBounds: [targetFile], outOfBounds: ['unrelated files'] },
-    evidence: ['tier-1 escalation event appears before workflow_complete'],
+    evidence: ['the consult answer appears before workflow_complete'],
     typeDefs: 'export const loop: string',
   });
   const writeLoop = (dir: string, marker: string): void => {
@@ -91,12 +93,10 @@ async function runEscalatedBrief(): Promise<EngineEvent[]> {
     callbacks: makeCallbacks().callbacks,
     sinks: TEST_WORKFLOW_SINKS,
     _planner: makePlanner({
-      typedCall: typedCallFromTasks([task]),
-      escalateHint: vi.fn(async (opts: EscalateOptions) => {
-        const hint = 'VERDICT: answer\nUse the from-retry marker validate.mjs expects.';
-        plannerCall(opts.callbacks, 'escalation-1', hint);
-        return { success: true, output: hint, code: null, usage: null };
-      }),
+      typedCall: typedCallPlanAndConsult(
+        () => planFromTasks([task]),
+        () => guidanceConsult('Use the from-retry marker from validate.mjs.'),
+      ),
       review: vi.fn(async (_prompt: string, _dir: string, callbacks: PlannerOutputCallbacks) => {
         const review = '### Verdict\npass\n\n### Findings\n- **Critical**: None.';
         plannerCall(callbacks, 'review-1', review);
@@ -123,14 +123,13 @@ async function runEscalatedBrief(): Promise<EngineEvent[]> {
   return events;
 }
 
-// The state machine's own path for this brief: the local retry runs in implementing, the hint
-// call, the hinted retry and its validation in escalating, and the brief passes into implementing.
+// The state machine's own path for this brief: the attempt's validation runs in validating-task,
+// and the local retry, the consult and the guided retry all run in implementing before the brief
+// passes and the review opens.
 const PHASES = [
   'planning',
   'implementing',
   'validating-task',
-  'implementing',
-  'escalating',
   'implementing',
   'final-review',
   'complete',
@@ -138,7 +137,7 @@ const PHASES = [
 
 describe('the phase an escalated brief publishes', { timeout: 90_000 }, () => {
   it('prints one plain phase line per transition', async () => {
-    const events = await runEscalatedBrief();
+    const events = await runConsultedBrief();
     const output = new PassThrough();
     const chunks: string[] = [];
     output.on('data', (chunk: Buffer) => chunks.push(chunk.toString('utf8')));
@@ -154,7 +153,7 @@ describe('the phase an escalated brief publishes', { timeout: 90_000 }, () => {
   });
 
   it('moves the TUI lifecycle phase once per transition', async () => {
-    const events = await runEscalatedBrief();
+    const events = await runConsultedBrief();
     const trace: string[] = [];
     for (const event of events) {
       addEvent(event);
