@@ -14,7 +14,6 @@ import {
   UserEditConflictKindSchema,
   WorkflowModeSchema,
 } from '../../core/schemas/enums.js';
-import { ApprovalTierSchema } from '../../core/schemas/config.js';
 import { TaskIdSchema } from '../../core/schemas/task.js';
 import { AnsweredQuestionSchema } from '../../core/schemas/question.js';
 import { PlannerCallSchema, StepCutSchema, StepRefSchema } from '../../core/schemas/run-step.js';
@@ -47,6 +46,9 @@ const stringArray = z.array(z.string());
 const taskIdArray = z.array(TaskIdSchema);
 /** The seat a recovery event is about; absent on logs written before the field existed. */
 const recoverySeat = z.enum(CREW_SEAT_IDS).optional();
+
+// Live gates only ask at `confirm`; `sticky` stays so session logs from before its removal replay.
+const ApprovalTierSchema = z.enum(['auto', 'sticky', 'confirm']);
 
 function phaseEvent<T extends string>(type: T) {
   return z.looseObject({
@@ -259,7 +261,8 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     step: StepRefSchema.optional(),
   }),
   phaseEvent('workflow_config').extend({
-    mode: WorkflowModeSchema,
+    /** Written by runs before modes were retired; read only to replay them. */
+    mode: WorkflowModeSchema.optional(),
     plannerTool: z.string(),
     plannerModel: z.string().optional(),
     implementerTool: z.string(),
@@ -324,7 +327,6 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     elapsedMs: z.number(),
     accumulatedTokens: z.number(),
     callId: CallIdSchema.optional(),
-    phaseHint: z.string().optional(),
   }),
   strictCallPhaseEvent('runner_call_started'),
   strictCallPhaseEvent('runner_call_runtime_status').extend({

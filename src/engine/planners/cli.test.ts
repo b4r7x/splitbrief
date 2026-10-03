@@ -1,16 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import {
-  writeFileSync,
-  chmodSync,
-  symlinkSync,
-  readFileSync,
-  existsSync,
-  unlinkSync,
-} from 'node:fs';
+import { writeFileSync, chmodSync, readFileSync, existsSync, unlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { createCliPlanner as createCliPlannerImpl } from './cli.js';
 import { makeConfig as makeBaseConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makePlanProposal } from '#testing/helpers/factories/plan.js';
 import { prependPath, trustedShimGate, writeCommandShim } from '#testing/helpers/command-shim.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
@@ -20,11 +14,20 @@ import type { RunnerCallEvent } from '../calls/types.js';
 import { CLI_RAW_OUTPUT_MAX_BYTES } from '../runners/cli-tools/process-invoke.js';
 import { CLI_NO_DEADLINE_MS } from '../runners/invoke-cli-adapter.js';
 import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
-import type { PhaseCallResult, PlannerFactoryOptions } from './types.js';
-import { callPhase } from '#testing/helpers/planner-call.js';
-import { writeSpecFile } from '../../core/paths-io.js';
+import type { PlannerFactoryOptions } from './types.js';
+import { callPlanner } from '#testing/helpers/planner-call.js';
 import { z } from 'zod';
 import { requestTyped } from '../runners/typed-output.js';
+import {
+  makeBusRecorder,
+  makeCallbacks,
+  TEST_METADATA,
+  TEST_SINKS,
+} from '#testing/helpers/orchestrator-factories.js';
+import { ensureSessionDir } from '../../core/paths-io.js';
+import { saveState } from '../../core/state/persistence.js';
+import { createInitialState, transition } from '../../core/state/machine.js';
+import { runPlanningPhase } from '../orchestrator/planning/run.js';
 
 const invokeCliAdapterDeadlines = vi.hoisted(() => [] as number[]);
 
@@ -228,8 +231,8 @@ describe('createCliPlanner', () => {
     const onOutput = vi.fn();
     const onQuestion = vi.fn();
 
-    await callPhase(planner, {
-      feature: 'prompt',
+    await callPlanner(planner, {
+      prompt: 'prompt',
       projectDir,
       callbacks: { onOutput, onQuestion },
     });
@@ -253,8 +256,8 @@ describe('createCliPlanner', () => {
     const onOutput = vi.fn();
     const onQuestion = vi.fn();
 
-    await callPhase(planner, {
-      feature: 'prompt',
+    await callPlanner(planner, {
+      prompt: 'prompt',
       projectDir,
       callbacks: { onOutput, onQuestion },
     });
@@ -278,8 +281,8 @@ describe('createCliPlanner', () => {
     const onOutput = vi.fn();
     const onQuestion = vi.fn();
 
-    await callPhase(planner, {
-      feature: 'prompt',
+    await callPlanner(planner, {
+      prompt: 'prompt',
       projectDir,
       callbacks: { onOutput, onQuestion },
     });
@@ -313,9 +316,8 @@ describe('createCliPlanner', () => {
     const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'codex' } }));
     const onSessionId = vi.fn();
 
-    await callPhase(planner, {
-      call: 'research',
-      feature: 'add auth',
+    await callPlanner(planner, {
+      prompt: 'add auth',
       projectDir,
       callbacks: { onOutput: vi.fn(), onSessionId },
     });
@@ -332,14 +334,14 @@ describe('createCliPlanner', () => {
       }),
     ]);
     const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'codex' } }));
-    const callbacks = { onOutput: vi.fn(), sessionId: 'splitbrief-session' };
+    const callbacks = { onOutput: vi.fn() };
 
-    await callPhase(planner, { call: 'research', projectDir, callbacks });
+    await callPlanner(planner, { projectDir, callbacks });
     const firstArgv = readArgv(argvFile);
     expect(firstArgv).not.toContain('codex-thread-1');
     expect(firstArgv).not.toContain('splitbrief-session');
 
-    await callPhase(planner, { call: 'spec', projectDir, callbacks });
+    await callPlanner(planner, { projectDir, callbacks });
     const secondArgv = readArgv(argvFile);
     expect(secondArgv).toContain('codex-thread-1');
     expect(secondArgv).not.toContain('splitbrief-session');
@@ -377,11 +379,11 @@ describe('createCliPlanner', () => {
     );
     chmodSync(shimPath, 0o755);
     const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'codex' } }));
-    const callbacks = { onOutput: vi.fn(), sessionId: 'splitbrief-session' };
+    const callbacks = { onOutput: vi.fn() };
 
     try {
-      await callPhase(planner, { call: 'research', projectDir, callbacks });
-      const resumed = await callPhase(planner, { call: 'spec', projectDir, callbacks });
+      await callPlanner(planner, { projectDir, callbacks });
+      const resumed = await callPlanner(planner, { projectDir, callbacks });
 
       expect(resumed.text).toBe('# Spec\nbody');
     } finally {
@@ -428,14 +430,14 @@ describe('createCliPlanner', () => {
     });
     await planner.review('review the run', projectDir, { onOutput: vi.fn() });
     await planner.review('review the run again', projectDir, { onOutput: vi.fn() });
-    await planner.regenerate({
+    await callPlanner(planner, {
       prompt: 'revise the spec',
       projectDir,
       callbacks: { onOutput: vi.fn() },
     });
-    await callPhase(planner, { call: 'spec', projectDir, callbacks: { onOutput: vi.fn() } });
+    await callPlanner(planner, { projectDir, callbacks: { onOutput: vi.fn() } });
     const threadless = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'codex' } }));
-    await callPhase(threadless, { call: 'research', projectDir, callbacks: { onOutput: vi.fn() } });
+    await callPlanner(threadless, { projectDir, callbacks: { onOutput: vi.fn() } });
 
     expect(readFileSync(spawnLog, 'utf8').trim().split('\n')).toEqual([
       'fresh ephemeral',
@@ -476,8 +478,8 @@ describe('createCliPlanner', () => {
     );
 
     await expect(
-      callPhase(planner, {
-        feature: 'fallback',
+      callPlanner(planner, {
+        prompt: 'fallback',
         projectDir,
         callbacks: {
           onOutput: vi.fn(),
@@ -527,13 +529,13 @@ describe('createCliPlanner', () => {
       onCallEvent: (event: RunnerCallEvent) => events.push(event),
     };
 
-    await expect(callPhase(planner, { call: 'spec', projectDir, callbacks })).rejects.toMatchObject(
-      { kind: 'session-resume-expired' },
-    );
+    await expect(callPlanner(planner, { projectDir, callbacks })).rejects.toMatchObject({
+      kind: 'session-resume-expired',
+    });
     expect(onSessionExpired).toHaveBeenCalledWith('codex-thread-gone');
     expect(events.filter((event) => event.type === 'call_started')).toHaveLength(1);
 
-    const rerun = await callPhase(planner, { call: 'spec', projectDir, callbacks });
+    const rerun = await callPlanner(planner, { projectDir, callbacks });
 
     expect(rerun.text).toBe('# Spec\nbody');
     const [expired, fresh] = readFileSync(argvLog, 'utf8').trim().split('\n');
@@ -587,8 +589,8 @@ Create the mismatch fallback file.
     );
 
     await expect(
-      callPhase(planner, {
-        feature: 'fallback',
+      callPlanner(planner, {
+        prompt: 'fallback',
         projectDir,
         callbacks: {
           onOutput: vi.fn(),
@@ -665,7 +667,7 @@ Create the mismatch fallback file.
     expect(readArgv(writerArgvFile)).not.toContain('sess-planning');
     expect(readArgv(writerArgvFile)).toContain('--ephemeral');
 
-    await callPhase(planner, { call: 'spec', projectDir, callbacks: { onOutput: () => {} } });
+    await callPlanner(planner, { projectDir, callbacks: { onOutput: () => {} } });
 
     expect(readFileSync(spawnLog, 'utf8').trim().split('\n')).toEqual([
       'writer',
@@ -762,7 +764,7 @@ Create the mismatch fallback file.
     );
   });
 
-  it.each(['hint', 'review', 'regenerate', 'summarize', 'summarizeStructured'] as const)(
+  it.each(['hint', 'review', 'summarize', 'summarizeStructured'] as const)(
     'keeps OpenCode %s read-only and rejects source mutations',
     async (operation) => {
       const output = JSON.stringify({
@@ -785,13 +787,6 @@ Create the mismatch fallback file.
           break;
         case 'review':
           invocation = planner.review('review the change', projectDir, { onOutput: vi.fn() });
-          break;
-        case 'regenerate':
-          invocation = planner.regenerate({
-            prompt: 'regenerate the plan',
-            projectDir,
-            callbacks: { onOutput: vi.fn(), sessionId: 'workflow-session' },
-          });
           break;
         case 'summarize':
           invocation = planner.summarize([{ role: 'user', text: 'summarize this' }], {
@@ -818,163 +813,96 @@ Create the mismatch fallback file.
     },
   );
 
-  it.each(['normal', 'quick'] as const)(
-    'returns %s planning output for session persistence without project mutation',
-    async (operation) => {
-      const tasksMarkdown = `---
-id: T001
-title: Session-output task
-action: create
-file: src/session-output.ts
-depends_on: []
----
-
-### Description
-Create the session-output file.
-
-### Tests
-- verifies the returned task
-`;
-      const output = JSON.stringify({
-        type: 'text',
-        sessionID: 'ses-open',
-        part: { type: 'text', text: tasksMarkdown },
-      });
-      const { argvFile } = installRecordingShim('opencode', [output]);
-      const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }));
-      const callbacks = { onOutput: () => {}, sessionId: 'workflow-session' };
-
-      const result: PhaseCallResult = await callPhase(planner, {
-        feature: 'plan a change',
-        projectDir,
-        callbacks,
-        ...(operation === 'normal' ? { quickPlan: undefined } : {}),
-      });
-
-      if (result.kind !== 'artifact') throw new Error('Expected a completed planner artifact');
-      expect(result.tasks).toHaveLength(1);
-      expect(result.tasks?.[0]?.id).toBe('T001');
-      expect(result.artifact.artifact).toMatchObject({
-        logicalName: TASKS_FILE,
-        text: tasksMarkdown,
-      });
-      expect(existsSync(join(projectDir, TASKS_FILE))).toBe(false);
-      const promptArg = readArgv(argvFile).find((arg) =>
-        arg.includes('Return the complete tasks.md'),
-      );
-      expect(promptArg).toContain('Do not write tasks.md or any other project file yourself');
-      expect(promptArg).not.toContain('project root');
-    },
-  );
-
-  it.each(['normal', 'quick'] as const)(
-    'keeps %s planning read-only and rejects source mutations',
-    async (operation) => {
-      const output = JSON.stringify({
-        type: 'text',
-        sessionID: 'ses-open',
-        part: { type: 'text', text: 'Planning response.' },
-      });
-      const { argvFile } = installDirectWriteRecordingShim('opencode', [output]);
-      const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }));
-      const callbacks = { onOutput: () => {}, sessionId: 'workflow-session' };
-
-      const invocation: Promise<unknown> = callPhase(planner, {
-        feature: 'plan a change',
-        projectDir,
-        callbacks,
-        ...(operation === 'normal' ? { quickPlan: undefined } : {}),
-      });
-
-      await expect(invocation).rejects.toMatchObject({
-        kind: 'planning-unexpected-mutations',
-        data: { files: ['src/hello.ts'] },
-      });
-      expect(readArgv(argvFile)).toEqual(
-        expect.arrayContaining(['run', '--format', 'json', '--agent', 'plan']),
-      );
-    },
-  );
-
-  it('sends the narrow-brief instruction only when the plan options mark the work trivial', async () => {
-    const tasksMarkdown = `---
-id: T001
-title: Trivial-hint task
-action: create
-file: src/trivial-hint.ts
-depends_on: []
----
-
-### Description
-Create the trivial-hint file.
-
-### Tests
-- verifies the returned task
-`;
-    const { argvFile } = installRecordingShim('opencode', [
-      JSON.stringify({
-        type: 'text',
-        sessionID: 'ses-open',
-        part: { type: 'text', text: tasksMarkdown },
-      }),
-    ]);
-    const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }));
-    const callbacks = { onOutput: () => {} };
-    const plannerPrompt = (): string => {
-      const argv = readArgv(argvFile).join('\n');
-      if (!argv.includes('Return the complete tasks.md')) {
-        throw new Error('planner prompt was not captured');
-      }
-      return argv;
-    };
-
-    await callPhase(planner, {
-      feature: 'rename foo to bar',
-      projectDir,
-      callbacks,
-      quickPlan: { trivial: true },
-    });
-    const trivialPrompt = plannerPrompt();
-
-    await callPhase(planner, { feature: 'rename foo to bar', projectDir, callbacks });
-    const ordinaryPrompt = plannerPrompt();
-
-    expect(trivialPrompt).toContain('A single Task Brief is fine; do not over-engineer.');
-    expect(trivialPrompt).not.toContain('briefs max');
-    expect(trivialPrompt).not.toContain('Briefly review the codebase structure');
-    expect(ordinaryPrompt).toContain('Briefly review the codebase structure');
-    expect(ordinaryPrompt).not.toContain('A single Task Brief is fine');
-  });
-
-  it('completes planning when OpenCode regenerates its own .opencode plugin state', async () => {
-    const tasksMarkdown = `---
-id: T001
-title: Internal-state task
-action: create
-file: src/internal-state.ts
-depends_on: []
----
-
-### Description
-Create the internal-state file.
-
-### Tests
-- verifies the returned task
-`;
+  it('keeps planning read-only and rejects source mutations', async () => {
     const output = JSON.stringify({
       type: 'text',
       sessionID: 'ses-open',
-      part: { type: 'text', text: tasksMarkdown },
+      part: { type: 'text', text: 'Planning response.' },
+    });
+    const { argvFile } = installDirectWriteRecordingShim('opencode', [output]);
+    const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }));
+    const callbacks = { onOutput: () => {} };
+
+    await expect(
+      callPlanner(planner, { prompt: 'plan a change', projectDir, callbacks }),
+    ).rejects.toMatchObject({
+      kind: 'planning-unexpected-mutations',
+      data: { files: ['src/hello.ts'] },
+    });
+    expect(readArgv(argvFile)).toEqual(
+      expect.arrayContaining(['run', '--format', 'json', '--agent', 'plan']),
+    );
+  });
+
+  it('halts the planning session when the CLI planner writes the project', async () => {
+    const output = JSON.stringify({
+      type: 'text',
+      sessionID: 'ses-open',
+      part: { type: 'text', text: 'Planning response.' },
+    });
+    installDirectWriteRecordingShim('opencode', [output]);
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'opencode' },
+      codebase: { enabled: false, tokenBudget: 4000 },
+    });
+    const sessionId = 'mutating-planner';
+    ensureSessionDir(projectDir, sessionId);
+    const state = transition(createInitialState('greet people'), { type: 'START' });
+    saveState({ projectDir, sessionId }, state);
+
+    const result = await runPlanningPhase({
+      wctx: {
+        projectDir,
+        sessionId,
+        config,
+        callbacks: makeCallbacks().callbacks,
+        bus: makeBusRecorder().bus,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+      },
+      planner: createCliPlanner(config),
+      state,
+      feature: 'greet people',
+    });
+
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'halted' });
+    expect(JSON.stringify(result.state.pendingRecovery)).toContain('src/hello.ts');
+  });
+
+  it('completes planning when OpenCode regenerates its own .opencode plugin state', async () => {
+    const output = JSON.stringify({
+      type: 'text',
+      sessionID: 'ses-open',
+      part: { type: 'text', text: JSON.stringify({ result: makePlanProposal() }) },
     });
     installDirectWriteRecordingShim('opencode', [output], '.opencode/package-lock.json');
-    const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }));
-    const callbacks = { onOutput: () => {}, sessionId: 'workflow-session' };
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'opencode' },
+      codebase: { enabled: false, tokenBudget: 4000 },
+      workflow: { approve: 'none' },
+    });
+    const sessionId = 'opencode-internal-state';
+    ensureSessionDir(projectDir, sessionId);
+    const state = transition(createInitialState('greet people'), { type: 'START' });
+    saveState({ projectDir, sessionId }, state);
 
-    const result = await callPhase(planner, { feature: 'plan a change', projectDir, callbacks });
+    const result = await runPlanningPhase({
+      wctx: {
+        projectDir,
+        sessionId,
+        config,
+        callbacks: makeCallbacks().callbacks,
+        bus: makeBusRecorder().bus,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+      },
+      planner: createCliPlanner(config),
+      state,
+      feature: 'greet people',
+    });
 
-    if (result.kind !== 'artifact') throw new Error('Expected a completed planner artifact');
-    expect(result.tasks).toHaveLength(1);
-    expect(result.tasks?.[0]?.id).toBe('T001');
+    expect(result.disposition).toBe('ready-for-tasks');
+    expect(result.state.pendingRecovery).toBeUndefined();
   });
 
   it('rejects OpenCode writes to user-authored .opencode config despite the internal-state exemption', async () => {
@@ -985,10 +913,10 @@ Create the internal-state file.
     });
     installDirectWriteRecordingShim('opencode', [output], '.opencode/plugin/injected.js');
     const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }));
-    const callbacks = { onOutput: () => {}, sessionId: 'workflow-session' };
+    const callbacks = { onOutput: () => {} };
 
     await expect(
-      callPhase(planner, { feature: 'plan a change', projectDir, callbacks }),
+      callPlanner(planner, { prompt: 'plan a change', projectDir, callbacks }),
     ).rejects.toMatchObject({
       kind: 'planning-unexpected-mutations',
       data: { files: ['.opencode/plugin/injected.js'] },
@@ -1049,54 +977,6 @@ Create the internal-state file.
       expect(pid).toBeGreaterThan(1);
       expect(() => process.kill(pid, 0)).toThrow();
     }
-  });
-
-  it('ignores a CLI-written tasks.md even when stdout reports the file path', async () => {
-    const tasksMarkdown = `---
-id: T001
-title: CLI-written task
-action: create
-file: src/cli-written.ts
-depends_on: []
----
-
-### Description
-Create the CLI-written file.
-
-### Tests
-- creates the file
-
-### Constraints
-- no extra files
-`;
-    const artifactPath = join(projectDir, TASKS_FILE);
-    const shimPath = join(shimDir, 'codex');
-    writeFileSync(
-      shimPath,
-      [
-        '#!/bin/bash',
-        `cat > '${artifactPath}' <<'EOF'`,
-        tasksMarkdown,
-        'EOF',
-        `printf '%s\\n' '${JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: `Wrote [${TASKS_FILE}](${artifactPath}).` } }).replace(/'/g, "'\\''")}'`,
-        `printf '%s\\n' '${CODEX_TURN_COMPLETED.replace(/'/g, "'\\''")}'`,
-        '',
-      ].join('\n'),
-      'utf8',
-    );
-    chmodSync(shimPath, 0o755);
-
-    const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'codex' } }));
-
-    const result = await callPhase(planner, {
-      feature: 'make it better',
-      projectDir,
-      callbacks: { onOutput: vi.fn() },
-    });
-
-    expect(result.kind).toBe('conversation');
-    expect(result.text).toContain(`Wrote [${TASKS_FILE}]`);
-    expect(result).not.toHaveProperty('artifact');
   });
 
   it('does not ingest a root tasks.md that an agentic CLI only described in prose', async () => {
@@ -1164,106 +1044,16 @@ Create \`src/text.test.ts\` with vitest tests for the \`titleCase\` function cre
     const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'codex' } }));
 
     await expect(
-      callPhase(planner, {
-        feature: 'add a titleCase function',
+      callPlanner(planner, {
+        prompt: 'add a titleCase function',
         projectDir,
-        callbacks: {
-          onOutput: vi.fn(),
-          sessionId: '2026-08-06-add-a-titlecase-function',
-        },
+        callbacks: { onOutput: vi.fn() },
       }),
     ).rejects.toMatchObject({
       kind: 'planning-unexpected-mutations',
       data: { files: [TASKS_FILE] },
     });
   });
-
-  it('does not recover a tasks.md written to a subdirectory path named in backticks', async () => {
-    const tasksMarkdown = `---
-id: T001
-title: Subdirectory task
-action: create
-file: src/subdir.ts
-depends_on: []
----
-
-### Description
-Create the subdirectory file.
-
-### Tests
-- recovers from a named relative path
-`;
-    const shimPath = join(shimDir, 'codex');
-    writeFileSync(
-      shimPath,
-      [
-        '#!/bin/bash',
-        'mkdir -p "$PWD/docs"',
-        `cat > "$PWD/docs/${TASKS_FILE}" <<'TASKS_EOF'`,
-        tasksMarkdown,
-        'TASKS_EOF',
-        `printf '%s\\n' '${JSON.stringify({
-          type: 'item.completed',
-          item: { type: 'agent_message', text: 'Created `docs/tasks.md` with one brief.' },
-        }).replace(/'/g, "'\\''")}'`,
-        `printf '%s\\n' '${CODEX_TURN_COMPLETED.replace(/'/g, "'\\''")}'`,
-        '',
-      ].join('\n'),
-      'utf8',
-    );
-    chmodSync(shimPath, 0o755);
-
-    const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'codex' } }));
-
-    const result = await callPhase(planner, {
-      feature: 'subdirectory recovery',
-      projectDir,
-      callbacks: { onOutput: vi.fn() },
-    });
-
-    expect(result.kind).toBe('conversation');
-    expect(result.text).toBe('Created `docs/tasks.md` with one brief.');
-    expect(result).not.toHaveProperty('artifact');
-  });
-
-  itUnix('does not read root tasks.md through a final symlink', async () => {
-    const outside = createTempDir('cli-planner-outside');
-    try {
-      const secretTasks = `---
-id: T999
-title: Symlinked secret task
-action: create
-file: src/secret.ts
-depends_on: []
----
-
-### Description
-Outside task content.
-`;
-      writeFileSync(join(outside, TASKS_FILE), secretTasks);
-      symlinkSync(join(outside, TASKS_FILE), join(projectDir, TASKS_FILE));
-
-      installShim('codex', [
-        JSON.stringify({
-          type: 'item.completed',
-          item: { type: 'agent_message', text: `Wrote [${TASKS_FILE}](${TASKS_FILE}).` },
-        }),
-      ]);
-
-      const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'codex' } }));
-      const result = await callPhase(planner, {
-        feature: 'make it better',
-        projectDir,
-        callbacks: { onOutput: vi.fn() },
-      });
-
-      expect(result.kind).toBe('conversation');
-      expect(result.text).not.toContain('Symlinked secret task');
-    } finally {
-      cleanupTempDir(outside);
-    }
-  });
-
   it('rejects with a not-found error when the CLI binary is missing from PATH', async () => {
     // Admit the actual shim identity, then remove the executable before the
     // launch. The start gate must not fall back to an ambient PATH entry.
@@ -1507,46 +1297,6 @@ Outside task content.
   });
 });
 
-describe('CLI phase reads are terminal-only', () => {
-  it('ignores pre-seeded session artifacts and uses the terminal result text', async () => {
-    const sessionId = 'terminal-only-session';
-    const sessionTasks = `---
-id: T001
-title: Session task
-action: create
-file: src/session.ts
-depends_on: []
----
-
-### Description
-Session artifact must be ignored.
-`;
-    writeSpecFile({ projectDir, sessionId }, TASKS_FILE, sessionTasks);
-
-    const stdoutText = 'Created `docs/tasks.md` with one brief.';
-    installShim('opencode', [
-      JSON.stringify({
-        type: 'text',
-        sessionID: 'ses-open',
-        part: { type: 'text', text: stdoutText },
-      }),
-    ]);
-
-    const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }));
-
-    const result = await callPhase(planner, {
-      feature: 'plan a change',
-      projectDir,
-      callbacks: { onOutput: vi.fn(), sessionId },
-    });
-
-    expect(result.kind).toBe('conversation');
-    expect(result.text).toBe(stdoutText);
-    expect(result.text).not.toContain('Session artifact must be ignored');
-    expect(result).not.toHaveProperty('artifact');
-  });
-});
-
 describe('seat deadlines', () => {
   itUnix(
     'reviewer seat defaults its deadline to 600000 ms; planner seat keeps no deadline',
@@ -1566,8 +1316,8 @@ describe('seat deadlines', () => {
       expect(invokeCliAdapterDeadlines).toEqual([600_000]);
 
       invokeCliAdapterDeadlines.length = 0;
-      await callPhase(planner, {
-        feature: 'plan a change',
+      await callPlanner(planner, {
+        prompt: 'plan a change',
         projectDir,
         callbacks: { onOutput: vi.fn() },
       });

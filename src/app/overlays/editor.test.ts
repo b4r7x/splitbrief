@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
-import { SPEC_FILE } from '../../core/paths.js';
+import { PLAN_JSON_FILE, SPEC_FILE } from '../../core/paths.js';
+import { makePlanProposal } from '#testing/helpers/factories/plan.js';
 import { readSpecFile } from '../../core/paths-io.js';
 import type { EditorLayout } from '../../core/editor/editor-state.js';
 import { configStore } from '../../stores/project/config.js';
@@ -61,11 +62,10 @@ describe('raw editor overlay CAS write-gate', () => {
   it('is a no-op when the review owner token has advanced past the captured token', async () => {
     const projectDir = tempDir();
     configStore.__testReset({ projectDir });
-    const filePath = join(projectDir, SESSION_ID, SPEC_FILE);
-    const captured = reviewStore.setReviewFile(filePath);
+    const captured = reviewStore.setReviewFile(join(projectDir, SESSION_ID, 'plan.md'));
     editorStore.openRaw({
-      filePath,
-      value: 'stale edited body',
+      filePath: join(projectDir, SESSION_ID, PLAN_JSON_FILE),
+      value: JSON.stringify(makePlanProposal()),
       ownerToken: captured,
       layout: LAYOUT,
     });
@@ -80,33 +80,74 @@ describe('raw editor overlay CAS write-gate', () => {
     stdin.write(CTRL_S);
     await tick(20);
 
-    // Stale save never writes the captured file and never reloads the review buffer.
-    expect(readSpecFile({ projectDir, sessionId: SESSION_ID }, SPEC_FILE)).toBeNull();
-    expect(reviewStore.get().revision).toBe(0);
+    // Stale save never writes the captured file and never asks the card to apply it.
+    expect(readSpecFile({ projectDir, sessionId: SESSION_ID }, PLAN_JSON_FILE)).toBeNull();
+    expect(externalEditRequestStore.get()).toEqual({ status: 'idle' });
   });
+});
 
-  it('writes the captured session file and reloads the review buffer on a fresh-token save', async () => {
+describe('raw editor overlay plan.json save', () => {
+  function openPlanJson(value: string): { projectDir: string; owner: number } {
     const projectDir = tempDir();
     configStore.__testReset({ projectDir });
-    const filePath = join(projectDir, SESSION_ID, SPEC_FILE);
-    const owner = reviewStore.setReviewFile(filePath);
+    const owner = reviewStore.setReviewFile(join(projectDir, SESSION_ID, 'plan.md'));
     editorStore.openRaw({
-      filePath,
-      value: 'fresh edited body',
+      filePath: join(projectDir, SESSION_ID, PLAN_JSON_FILE),
+      value,
       ownerToken: owner,
       layout: LAYOUT,
     });
     overlayStore.open('editor');
+    return { projectDir, owner };
+  }
+
+  it('refuses a plan that fails its checks and stays open with the reason', async () => {
+    const plan = makePlanProposal({
+      criteria: [{ id: 'C1', text: 'A name gets a greeting', checkIds: [] }],
+    });
+    const { projectDir } = openPlanJson(JSON.stringify(plan));
+
+    const { stdin, lastFrame } = renderOverlay();
+    await flushEffects();
+    stdin.write(CTRL_S);
+    await tick(20);
+
+    expect(lastFrame()).toContain('Not saved: Criterion C1 names no check that verifies it.');
+    expect(lastFrame()).not.toContain('criterion-without-check');
+    expect(readSpecFile({ projectDir, sessionId: SESSION_ID }, PLAN_JSON_FILE)).toBeNull();
+    expect(overlayStore.get().active).toBe('editor');
+    expect(externalEditRequestStore.get()).toEqual({ status: 'idle' });
+  });
+
+  it('refuses text that is not JSON', async () => {
+    openPlanJson('{ not json');
+
+    const { stdin, lastFrame } = renderOverlay();
+    await flushEffects();
+    stdin.write(CTRL_S);
+    await tick(20);
+
+    expect(lastFrame()).toContain('Not saved: plan.json is not valid JSON');
+    expect(overlayStore.get().active).toBe('editor');
+  });
+
+  it('writes a valid plan and asks the review prompt to apply the edit', async () => {
+    const text = JSON.stringify(makePlanProposal(), null, 2);
+    const { projectDir, owner } = openPlanJson(text);
 
     const { stdin } = renderOverlay();
     await flushEffects();
     stdin.write(CTRL_S);
     await tick(20);
 
-    expect(readSpecFile({ projectDir, sessionId: SESSION_ID }, SPEC_FILE)).toBe(
-      'fresh edited body',
-    );
-    expect(reviewStore.get().revision).toBe(1);
+    expect(readSpecFile({ projectDir, sessionId: SESSION_ID }, PLAN_JSON_FILE)).toBe(text);
+    expect(externalEditRequestStore.get()).toEqual({
+      status: 'requested',
+      ownerToken: owner,
+      action: 'apply-edit',
+    });
+    expect(editorStore.get().status).toBe('closed');
+    expect(overlayStore.get().active).toBe('none');
   });
 });
 
@@ -134,7 +175,12 @@ describe('raw editor overlay Ctrl+O external escape hatch', () => {
       'external edited body',
     );
     const request = externalEditRequestStore.get();
-    expect(request).toEqual({ status: 'requested', ownerToken: owner });
+    expect(request).toEqual({
+      status: 'requested',
+      ownerToken: owner,
+      action: 'open-external',
+      baseline: 'external edited body',
+    });
     expect(editorStore.get().status).toBe('closed');
     expect(overlayStore.get().active).toBe('none');
   });
@@ -164,7 +210,12 @@ describe('raw editor overlay Ctrl+O external escape hatch', () => {
     // Stale token: the pre-save CAS gates the write, but the neutral intent still fires.
     expect(readSpecFile({ projectDir, sessionId: SESSION_ID }, SPEC_FILE)).toBeNull();
     const request = externalEditRequestStore.get();
-    expect(request).toEqual({ status: 'requested', ownerToken: captured });
+    expect(request).toEqual({
+      status: 'requested',
+      ownerToken: captured,
+      action: 'open-external',
+      baseline: 'stale edited body',
+    });
   });
 });
 

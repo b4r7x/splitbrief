@@ -3,7 +3,6 @@ import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR } from '../core/paths.js';
-import { RETIRED_WORKFLOW_MODE_NOTICE } from '../core/schemas/enums.js';
 import { resolveRunConfigWithBase } from './build-overrides.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
@@ -61,15 +60,14 @@ describe('resolveRunConfigWithBase', () => {
     expect(permissionWarnings).toHaveLength(1);
   });
 
-  it('prints the retired-mode notice for a config file that still sets mode: instant', () => {
+  it('prints the retired workflow.mode notice once for a config file that still sets a mode', () => {
     writeMinimalV3Config(tempDir, ['workflow:', '  mode: instant']);
     const stderrChunks = captureStderr();
 
-    const resolved = resolveRunConfigWithBase({ projectDir: tempDir, opts: {} });
+    resolveRunConfigWithBase({ projectDir: tempDir, opts: {} });
 
-    expect(resolved.config.workflow.mode).toBe('quick');
     expect(
-      stderrChunks.filter((chunk) => chunk.includes(RETIRED_WORKFLOW_MODE_NOTICE)),
+      stderrChunks.filter((chunk) => chunk.includes('workflow.mode was retired')),
     ).toHaveLength(1);
   });
 
@@ -79,35 +77,20 @@ describe('resolveRunConfigWithBase', () => {
 
     const resolved = resolveRunConfigWithBase({ projectDir: tempDir, opts: {} });
 
-    expect(resolved.persistedConfig.workflow.mode).toBe('standard');
     expect(resolved.persistenceSnapshot.rawYaml).toBe(rawYaml);
     expect(resolved.persistenceSnapshot.rawBytes).toEqual(Buffer.from(rawYaml));
     expect(resolved.persistenceSnapshot.revision).not.toBeNull();
   });
 
-  it('merges CLI overrides over the persisted config and falls back to defaultApprove', () => {
+  it('merges CLI overrides over the persisted config', () => {
     writeMinimalV3Config(tempDir);
 
     const resolved = resolveRunConfigWithBase({
       projectDir: tempDir,
-      opts: { mode: 'quick' },
-      defaultApprove: 'all',
+      opts: { implementerModel: 'qwen3-coder:30b' },
     });
 
-    expect(resolved.config.workflow.mode).toBe('quick');
-    expect(resolved.config.workflow.approve).toBe('all');
-    expect(resolved.persistedConfig.workflow.mode).toBe('standard');
-  });
-
-  it('prefers an explicit approve option over defaultApprove', () => {
-    writeMinimalV3Config(tempDir);
-
-    const resolved = resolveRunConfigWithBase({
-      projectDir: tempDir,
-      opts: { approve: 'none' },
-      defaultApprove: 'all',
-    });
-
-    expect(resolved.config.workflow.approve).toBe('none');
+    expect(resolved.config.implementer).toMatchObject({ model: 'qwen3-coder:30b' });
+    expect(resolved.persistedConfig.implementer).toMatchObject({ model: 'qwen2.5-coder:7b' });
   });
 });

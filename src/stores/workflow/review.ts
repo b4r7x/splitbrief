@@ -13,9 +13,10 @@ export interface ReviewState {
   renderedLineCount: number;
   briefSources: readonly string[];
   briefPaths: readonly string[];
+  /** The protected operations approving the plan card confirms in advance. */
+  confirms: readonly string[];
   visibleBriefCount: number;
   loadError: string | null;
-  revision: number;
   ownerToken: number;
 }
 
@@ -26,9 +27,9 @@ const initial: ReviewState = {
   renderedLineCount: 0,
   briefSources: [],
   briefPaths: [],
+  confirms: [],
   visibleBriefCount: 0,
   loadError: null,
-  revision: 0,
   ownerToken: 0,
 };
 
@@ -60,9 +61,9 @@ function setReviewSource(source: ReviewSource | null, renderedLineCount?: number
           renderedLineCount: renderedLineCount ?? 0,
           briefSources: [],
           briefPaths: [],
+          confirms: [],
           visibleBriefCount: 0,
           loadError: null,
-          revision: 0,
           ownerToken,
         },
   );
@@ -132,29 +133,16 @@ function setBriefPaths(paths: readonly string[]) {
   store.set((s) => (s.briefPaths === paths ? s : { ...s, briefPaths: paths }));
 }
 
+function setConfirms(confirms: readonly string[]) {
+  store.set((s) => ({ ...s, confirms }));
+}
+
 function setVisibleBriefCount(count: number) {
   store.set((s) => (s.visibleBriefCount === count ? s : { ...s, visibleBriefCount: count }));
 }
 
 function setLoadError(loadError: string | null) {
   store.set((s) => (s.loadError === loadError ? s : { ...s, loadError }));
-}
-
-function reloadReviewFile() {
-  store.set((s) =>
-    s.source?.kind !== 'file'
-      ? s
-      : {
-          ...s,
-          revision: s.revision + 1,
-          scrollOffset: 0,
-          renderedLineCount: 0,
-          briefSources: [],
-          briefPaths: [],
-          visibleBriefCount: 0,
-          loadError: null,
-        },
-  );
 }
 
 function clearReview() {
@@ -175,9 +163,9 @@ export const reviewStore = {
   setRenderedLineCount,
   setBriefSources,
   setBriefPaths,
+  setConfirms,
   setVisibleBriefCount,
   setLoadError,
-  reloadReviewFile,
   clearReview,
   clearReviewIfOwner,
 };

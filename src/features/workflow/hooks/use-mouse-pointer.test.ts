@@ -334,7 +334,7 @@ describe('workflow pointer handling', () => {
       renderableCountAtScroll: 1,
       heightAtScroll: 9,
     });
-    const buildZone = readRailSnapshot().zones.find((zone) => zone.index === 3);
+    const buildZone = readRailSnapshot().zones.find((zone) => zone.index === 1);
     if (!buildZone) throw new Error('expected a build rail zone');
     dispatchWorkflowPointer(pointerEvent('press', buildZone.left, buildZone.top));
 
@@ -347,7 +347,7 @@ describe('workflow pointer handling', () => {
   it('routes distinct rail stages to distinct transcript scroll destinations', () => {
     routerStore.init(WORKFLOW_ROUTE);
     terminalSizeStore.__testReset({ cols: 120, rows: 40 });
-    lifecycleStore.__testReset({ phase: 'analyzing', status: 'running', startedAt: 0 });
+    lifecycleStore.__testReset({ phase: 'final-review', status: 'running', startedAt: 0 });
     seedTallTranscript();
     const maxOffset = readConversationScrollSnapshot().maxOffset;
     expect(maxOffset).toBeGreaterThanOrEqual(2);
@@ -365,16 +365,16 @@ describe('workflow pointer handling', () => {
       return conversationScrollStore.get().scrollOffset;
     };
 
-    // analyzing → active stage is `briefs` (index 2): the earliest stage anchors to the top
+    // final-review → active stage is `review` (index 2): the earliest stage anchors to the top
     // (maxOffset), an in-between stage lands proportionally, and the active stage sits at the bottom.
-    const spec = clickStage(0);
-    const plan = clickStage(1);
-    const briefs = clickStage(2);
+    const plan = clickStage(0);
+    const build = clickStage(1);
+    const review = clickStage(2);
 
-    expect(spec).toBe(maxOffset);
-    expect(plan).toBe(Math.round(maxOffset / 2));
-    expect(briefs).toBe(0);
-    expect(new Set([spec, plan, briefs]).size).toBe(3);
+    expect(plan).toBe(maxOffset);
+    expect(build).toBe(Math.round(maxOffset / 2));
+    expect(review).toBe(0);
+    expect(new Set([plan, build, review]).size).toBe(3);
     expect(focusStore.get()).toBeNull();
   });
 

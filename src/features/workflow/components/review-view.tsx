@@ -68,7 +68,8 @@ export function ReviewView({ height, width }: ReviewViewProps) {
   const remaining = Math.max(0, renderedLineCount - clampedOffset - contentHeight);
   const scrollIndicatorText = ` ↓ ${remaining} more`;
   // Plain ↑↓ move the gate menu under the document; the shifted arrows and home/end scroll it.
-  const scrollHint = `shift+↑↓ scroll${SOFT_SEP}home/end ends`;
+  const scrollKeys = 'shift+↑↓ scroll';
+  const scrollHint = `${scrollKeys}${SOFT_SEP}home/end ends`;
   const showScrollHint =
     remaining > 0 &&
     getTerminalCellWidth(scrollIndicatorText) + getTerminalCellWidth(scrollHint) + 2 <=
@@ -83,7 +84,15 @@ export function ReviewView({ height, width }: ReviewViewProps) {
       paddingLeft={WORKFLOW_GUTTER_X}
       overflow="hidden"
     >
-      <FramePanel filePath={reviewLabel} width={documentWidth} height={containerHeight}>
+      <FramePanel
+        filePath={reviewLabel}
+        // A document too short for its footer still says what is below it and how to get there.
+        aside={
+          !showFooter && remaining > 0 ? `↓ ${remaining} more${SOFT_SEP}${scrollKeys}` : undefined
+        }
+        width={documentWidth}
+        height={containerHeight}
+      >
         {contentHeight > 0 && (
           <ScrollableDocument
             rows={rows}

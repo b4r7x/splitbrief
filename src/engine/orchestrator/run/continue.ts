@@ -1,7 +1,7 @@
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { OwnedResumeState } from '../../../core/state/resume-hydration.js';
-import { deriveRunStatus, NO_ARTIFACTS } from '../../../core/sessions/run-status.js';
+import { deriveRunStatus } from '../../../core/sessions/run-status.js';
 import { sanitizePasteBody } from '../../../lib/terminal/filtered-stdin/paste.js';
 
 export type ContinueRunOutcome =
@@ -54,7 +54,6 @@ export function continueRun(
   const status = deriveRunStatus({
     state: hydrated.state,
     liveness: 'not-alive',
-    artifacts: NO_ARTIFACTS,
   });
   if (status.kind === 'closed') {
     return {

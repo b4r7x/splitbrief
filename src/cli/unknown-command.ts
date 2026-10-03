@@ -19,6 +19,13 @@ const RETIRED_COMMANDS: Readonly<Record<string, string>> = {
   stats: 'run usage and cost details are available with `/usage`',
   snapshot: 'use the `/run accept` and `/run reject` runtime commands',
   worktree: 'runs isolate themselves; there is no worktree command',
+  approval: 'a protected write asks once per run; there are no grants to list or clear',
+};
+
+/** Flags that were removed, with where their job went. */
+const RETIRED_FLAGS: Readonly<Record<string, string>> = {
+  '--mode': 'every run plans in one session',
+  '--approve': 'set workflow.approve (plan or none) in the config',
 };
 
 /**
@@ -35,6 +42,7 @@ export function assertNotMistypedCommand(
   commandNames: readonly string[],
   valueFlags: ReadonlySet<string>,
 ): void {
+  assertNoRetiredFlag(argv, valueFlags);
   const operands = leadingOperands(argv, valueFlags);
   assertNotRetiredCommand(operands, commandNames);
 
@@ -66,6 +74,22 @@ function assertNotRetiredCommand(
   if (replacement === undefined) return;
   const shown = stripTerminalControls(first);
   throw cliError(`unknown command '${shown}' — ${replacement}\n${startEscapeHatch(shown)}`, 1);
+}
+
+/**
+ * A flag's value is skipped, so `--planner-args --mode` still reaches the planner's own CLI, and
+ * nothing after `--` is a flag.
+ */
+function assertNoRetiredFlag(argv: readonly string[], valueFlags: ReadonlySet<string>): void {
+  for (let index = 0; index < argv.length; index++) {
+    const arg = argv[index];
+    if (arg === '--') return;
+    if (arg === undefined || !arg.startsWith('-')) continue;
+    const name = arg.split('=', 1)[0] ?? arg;
+    const replacement = Object.hasOwn(RETIRED_FLAGS, name) ? RETIRED_FLAGS[name] : undefined;
+    if (replacement !== undefined) throw cliError(`${name} was removed: ${replacement}`, 1);
+    if (!arg.includes('=') && valueFlags.has(arg)) index++;
+  }
 }
 
 /**

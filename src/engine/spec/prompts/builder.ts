@@ -3,18 +3,6 @@ export type PromptSection = {
   body: string;
 };
 
-export const plannerInteractionInstructions = `SPLITBRIEF handles all interaction with the user. When you need a decision to complete this step, return the question in your final response and end this turn. SPLITBRIEF will collect the answer and continue the same step.
-Do not invoke or search for native user-question tools, including AskUserQuestion. Do not wait for input inside this invocation. Do not invent requirements or present an unfinished document as complete.`;
-
-export const plannerConversationSection: PromptSection = {
-  heading: 'Clarifications',
-  body: `${plannerInteractionInstructions}
-You may optionally provide up to five interactive questions as markers:
-<!-- Q:{"id":"scope","type":"input","text":"Which module should change?"} -->
-<!-- Q:{"id":"approach","type":"choice","text":"Which approach?","options":["Option 1","Option 2"],"default":"Option 1"} -->
-Use type "confirm" with a boolean default for yes/no questions. Input and choice defaults are strings. Ordinary questions are also accepted.`,
-};
-
 /** A section the caller rendered whole, heading included: the run's skills block. */
 export type PromptPart = PromptSection | string;
 
@@ -60,11 +48,4 @@ export function skillsSection(skillsContext: string | undefined): PromptPart[] {
 
 export function instructionsSection(body: string): PromptSection {
   return { heading: 'Instructions', body };
-}
-
-export const EXACT_HEADINGS_INSTRUCTION =
-  'Use each section heading below exactly as written, once, as a markdown heading. Put any qualifier in the section body, not in the heading. Do not wrap the document in a code fence.';
-
-export function requiredSectionsSection(body: string): PromptSection {
-  return { heading: 'Required Sections', body: `${EXACT_HEADINGS_INSTRUCTION}\n\n${body}` };
 }

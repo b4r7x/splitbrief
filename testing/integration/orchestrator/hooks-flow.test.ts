@@ -91,7 +91,7 @@ function preparedExecution(
       tasks: [
         makeTask({
           scope: {
-            inBounds: ['Modify only `src/hello.ts`.'],
+            inBounds: ['src/hello.ts'],
             outOfBounds: ['Do not touch anything outside the task file.'],
           },
           evidence: ['brief-quality.json confirms the task brief is complete'],

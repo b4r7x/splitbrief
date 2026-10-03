@@ -250,11 +250,9 @@ function wrapMinimalApiConfig(runnerYaml: string): unknown {
     implementer,
     validation: { typecheck: true, lint: true, test: true },
     workflow: {
-      approve: 'default',
+      approve: 'plan',
       maxRetries: 3,
       compactionFormat: 'auto',
-      mode: 'standard',
-      taskReview: 'none',
     },
     theme: 'terminal',
   };

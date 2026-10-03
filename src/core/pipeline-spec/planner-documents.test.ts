@@ -1,11 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-  emptyReplyContinuation,
   headingMatchesSection,
   isPlannerDocument,
-  missingPlannerDocumentSections,
   PLANNER_DOCUMENT_SECTIONS,
-  plannerDocumentText,
 } from './planner-documents.js';
 
 function document(headings: readonly string[]): string {
@@ -46,15 +43,14 @@ describe('headingMatchesSection', () => {
   });
 });
 
-describe('missingPlannerDocumentSections', () => {
+describe('isPlannerDocument', () => {
   it('accepts the parked research reply whose headings carry qualifiers', () => {
-    expect(missingPlannerDocumentSections('research', parkedResearch)).toEqual([]);
     expect(isPlannerDocument('research', parkedResearch)).toBe(true);
   });
 
   it('names a section whose only heading adds a word', () => {
     const text = research({ Architecture: '## Architecture Decisions' });
-    expect(missingPlannerDocumentSections('research', text)).toEqual(['Architecture']);
+    expect(isPlannerDocument('research', text)).toBe(false);
   });
 
   it('does not read Dependencies & Constraints as the plan Dependencies section', () => {
@@ -63,7 +59,7 @@ describe('missingPlannerDocumentSections', () => {
         name === 'Dependencies' ? '## Dependencies & Constraints' : `## ${name}`,
       ),
     );
-    expect(missingPlannerDocumentSections('plan', text)).toEqual(['Dependencies']);
+    expect(isPlannerDocument('plan', text)).toBe(false);
   });
 
   it('counts a heading with no body line as missing', () => {
@@ -71,12 +67,12 @@ describe('missingPlannerDocumentSections', () => {
       '## Validation Tools\nBody line.\n',
       '## Validation Tools\n',
     );
-    expect(missingPlannerDocumentSections('research', text)).toEqual(['Validation Tools']);
+    expect(isPlannerDocument('research', text)).toBe(false);
   });
 
   it('does not count a heading inside a fenced block', () => {
     const text = research({ 'Validation Tools': '```md\n## Validation Tools' }).concat('\n```\n');
-    expect(missingPlannerDocumentSections('research', text)).toContain('Validation Tools');
+    expect(isPlannerDocument('research', text)).toBe(false);
   });
 
   it('keeps a reply whose only heading is Questions a conversation', () => {
@@ -84,56 +80,24 @@ describe('missingPlannerDocumentSections', () => {
   });
 });
 
-describe('plannerDocumentText', () => {
+describe('isPlannerDocument on a fenced reply', () => {
   // The shape of .splitbrief/sessions/2026-08-10-review-the-ollama-cloud-integration-with-tool/spec.md.
   const spec = document(PLANNER_DOCUMENT_SECTIONS.spec.map((name) => `## ${name}`));
   const narrated = `I'll inspect the repository.The complete \`spec.md\` content:\n\n\`\`\`md\n# Ollama Cloud Integration\n\n${spec}\n\`\`\`ts\nconst a = 1;\n\`\`\`\n\n\`\`\`\n`;
 
-  it('returns a bare document unchanged', () => {
-    expect(plannerDocumentText('spec', spec)).toBe(spec);
-  });
-
-  it('unwraps a document the planner put inside one md fence after narration', () => {
-    const text = plannerDocumentText('spec', narrated);
-    expect(text).toBe(`# Ollama Cloud Integration\n\n${spec}\n\`\`\`ts\nconst a = 1;\n\`\`\`\n`);
+  it('reads a document the planner put inside one md fence after narration', () => {
     expect(isPlannerDocument('spec', narrated)).toBe(true);
   });
 
-  it('unwraps a markdown fence', () => {
-    expect(plannerDocumentText('spec', `\`\`\`markdown\n${spec}\n\`\`\``)).toBe(spec);
+  it('reads a markdown fence', () => {
+    expect(isPlannerDocument('spec', `\`\`\`markdown\n${spec}\n\`\`\``)).toBe(true);
   });
 
-  it('does not unwrap a fence of another language', () => {
-    expect(plannerDocumentText('spec', `\`\`\`text\n${spec}\`\`\``)).toBeUndefined();
+  it('does not read a fence of another language', () => {
+    expect(isPlannerDocument('spec', `\`\`\`text\n${spec}\`\`\``)).toBe(false);
   });
 
-  it('returns nothing for a conversation', () => {
-    expect(plannerDocumentText('spec', 'Which module should change?')).toBeUndefined();
-  });
-});
-
-describe('emptyReplyContinuation', () => {
-  it('asks for the whole document and names the sections the reply lacks', () => {
-    const text = emptyReplyContinuation('research', research({ 'Validation Tools': '## Tools' }));
-    expect(text).toBe(
-      `No further input: proceed with your best judgement. Return the complete research document as your whole reply, with these exact section headings: ${PLANNER_DOCUMENT_SECTIONS.research.join(', ')}. Missing or unrecognised: Validation Tools.`,
-    );
-  });
-
-  it('omits the missing list when every section is there', () => {
-    expect(emptyReplyContinuation('plan', 'x')).toContain('Missing or unrecognised: Summary');
-    expect(emptyReplyContinuation('research', parkedResearch)).not.toContain('Missing');
-  });
-
-  it('asks for tasks.md on the tasks step', () => {
-    expect(emptyReplyContinuation('tasks', 'x')).toBe(
-      'No further input: proceed with your best judgement and return the complete tasks.md content as your whole reply.',
-    );
-  });
-
-  it('names any other call without throwing', () => {
-    expect(emptyReplyContinuation('clarify', 'x')).toBe(
-      'No further input: proceed with your best judgement and return the complete clarify content as your whole reply.',
-    );
+  it('does not read a conversation as a document', () => {
+    expect(isPlannerDocument('spec', 'Which module should change?')).toBe(false);
   });
 });

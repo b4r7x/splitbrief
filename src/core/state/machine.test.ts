@@ -33,13 +33,42 @@ describe('createInitialState', () => {
   });
 });
 describe('transition', () => {
+  it.each(['quick', 'standard', 'speckit'] as const)(
+    'START enters the one planning session for %s',
+    (mode) => {
+      const state: WorkflowState = { ...createInitialState('feat'), mode };
+      expect(transition(state, { type: 'START' }).phase).toBe('planning');
+    },
+  );
+
+  it.each(['planning', 'reviewing-plan'] as const)(
+    'PLAN_COMPILED keeps the plan and its tasks in %s',
+    (phase) => {
+      const tasks = [makeTask({ id: 'T001' })];
+      const plan = {
+        summary: 'One task.',
+        decisions: [],
+        criteria: [{ id: 'C1', text: 'Works.', checkIds: ['K1'] }],
+        checks: [{ id: 'K1', kind: 'cmd' as const, value: 'npm test', required: true }],
+        validation: null,
+      };
+      const state: WorkflowState = { ...createInitialState('feat'), phase };
+      const next = transition(state, { type: 'PLAN_COMPILED', plan, tasks });
+      expect(next.phase).toBe(phase);
+      expect(next.plan).toEqual(plan);
+      expect(next.tasks).toEqual(tasks);
+    },
+  );
+
   it.each([
-    ['quick', 'planning'],
-    ['standard', 'researching'],
-    ['speckit', 'researching'],
-  ] as const)('START enters the first planner phase for %s', (mode, phase) => {
-    const state: WorkflowState = { ...createInitialState('feat'), mode };
-    expect(transition(state, { type: 'START' }).phase).toBe(phase);
+    'reviewing-spec',
+    'clarifying',
+    'constitution-check',
+    'analyzing',
+    'reviewing-briefs',
+  ] as const)('BEGIN_PLANNING moves an old run parked in %s into the planning session', (phase) => {
+    const state: WorkflowState = { ...createInitialState('feat'), phase };
+    expect(transition(state, { type: 'BEGIN_PLANNING' }).phase).toBe('planning');
   });
 
   it.each([
@@ -407,7 +436,7 @@ describe('transition', () => {
     expect(exhausted.phase).toBe('escalating');
   });
 
-  it('CLEAR_TASK_CODE removes stale currentCode from the selected task only', () => {
+  it('UPDATE_TASK_CODE without code removes stale currentCode from the selected task only', () => {
     const tasks = [
       makeTask({ id: 'T001', currentCode: 'stale code' }),
       makeTask({ id: 'T002', currentCode: 'keep code' }),
@@ -418,7 +447,11 @@ describe('transition', () => {
       tasks,
     };
 
-    const next = transition(state, { type: 'CLEAR_TASK_CODE', taskId: tasks[0]!.id });
+    const next = transition(state, {
+      type: 'UPDATE_TASK_CODE',
+      taskId: tasks[0]!.id,
+      action: 'modify',
+    });
 
     expect(next.tasks[0]?.currentCode).toBeUndefined();
     expect(next.tasks[1]?.currentCode).toBe('keep code');
@@ -431,7 +464,7 @@ describe('transition', () => {
     expect(s.phase).toBe('idle');
 
     s = transition(s, { type: 'START' });
-    expect(s.phase).toBe('researching');
+    expect(s.phase).toBe('planning');
 
     s = transition(s, { type: 'RESEARCH_DONE' });
     expect(s.phase).toBe('specifying');
@@ -665,15 +698,18 @@ describe('transition', () => {
     expect(next.rewindPending).toBeUndefined();
   });
 
-  it('CLEAR_REWIND_PENDING clears the field', () => {
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'specifying',
-      rewindPending: { target: 'spec', comment: 'foo' },
-    };
-    const next = transition(state, { type: 'CLEAR_REWIND_PENDING' });
-    expect(next.rewindPending).toBeUndefined();
-    expect(next.phase).toBe('specifying');
+  it('CORRECT_PLAN keeps the card correction as the pending rewind until a plan compiles', () => {
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'reviewing-plan' };
+    const corrected = transition(state, { type: 'CORRECT_PLAN', comment: 'Greet in Polish' });
+    expect(corrected.rewindPending).toEqual({ target: 'plan', comment: 'Greet in Polish' });
+    expect(corrected.phase).toBe('reviewing-plan');
+    const planning = transition(corrected, { type: 'BEGIN_PLANNING' });
+    const compiled = transition(planning, {
+      type: 'PLAN_COMPILED',
+      plan: { summary: 's', decisions: [], criteria: [], checks: [], validation: null },
+      tasks: [],
+    });
+    expect(compiled.rewindPending).toBeUndefined();
   });
 
   it('SPEC_CLARIFY_START -> clarifying', () => {
@@ -941,7 +977,7 @@ describe('transition', () => {
     expect(next.tasks[0]?.status).toBe('escalated');
   });
 
-  it('UPDATE_TASK_CODE stores codeByFile and CLEAR_TASK_CODE clears both', () => {
+  it('UPDATE_TASK_CODE replaces the anchor, sibling and context code together', () => {
     const tasks = [makeTask({ id: 'T001' })];
     const state: WorkflowState = {
       ...createInitialState('feat'),
@@ -952,6 +988,7 @@ describe('transition', () => {
     const updated = transition(state, {
       type: 'UPDATE_TASK_CODE',
       taskId: tasks[0]!.id,
+      action: 'modify',
       code: 'anchor code',
       codeByFile: { 'src/a.ts': 'anchor code', 'src/b.ts': 'sibling code' },
     });
@@ -961,9 +998,26 @@ describe('transition', () => {
       'src/b.ts': 'sibling code',
     });
 
-    const cleared = transition(updated, { type: 'CLEAR_TASK_CODE', taskId: tasks[0]!.id });
-    expect(cleared.tasks[0]?.currentCode).toBeUndefined();
+    const created = transition(updated, {
+      type: 'UPDATE_TASK_CODE',
+      taskId: tasks[0]!.id,
+      action: 'create',
+      codeByFile: { 'src/b.ts': 'sibling code' },
+      contextCodeByFile: { 'src/types.ts': 'context code' },
+    });
+    expect(created.tasks[0]?.currentCode).toBeUndefined();
+    expect(created.tasks[0]?.currentCodeByFile).toEqual({ 'src/b.ts': 'sibling code' });
+    expect(created.tasks[0]?.contextCodeByFile).toEqual({ 'src/types.ts': 'context code' });
+
+    expect(created.tasks[0]?.action).toBe('create');
+
+    const cleared = transition(created, {
+      type: 'UPDATE_TASK_CODE',
+      taskId: tasks[0]!.id,
+      action: 'create',
+    });
     expect(cleared.tasks[0]?.currentCodeByFile).toBeUndefined();
+    expect(cleared.tasks[0]?.contextCodeByFile).toBeUndefined();
   });
 
   it('REVIEW_DONE records reviewStatus', () => {

@@ -94,7 +94,6 @@ export function makeShellRunnerConfig(overrides?: Parameters<typeof makeConfig>[
       ...overrides?.validation,
     },
     workflow: {
-      mode: 'quick',
       maxRetries: 1,
       ...overrides?.workflow,
     },

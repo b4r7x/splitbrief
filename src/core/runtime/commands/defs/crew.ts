@@ -1,11 +1,5 @@
 import { ALL_SCREENS, seatPickerOverlayFor } from '../../../navigation/types.js';
 import { CREW_SEAT_ROLES } from '../../../crew/seats.js';
-import { describeModeShape } from '../../../pipeline-spec/mode-shape.js';
-import {
-  RETIRED_WORKFLOW_MODE,
-  WORKFLOW_MODES,
-  normalizeWorkflowMode,
-} from '../../../schemas/enums.js';
 import {
   CREW_COMMAND_SEATS,
   formatDiscoveryRefreshFeedback,
@@ -36,48 +30,6 @@ export function crewCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
           return;
         }
         ctx.openOverlay(seatPickerOverlayFor(CREW_SEAT_ROLES[seat]));
-      },
-    },
-    {
-      kind: 'arg',
-      name: '/mode',
-      label: 'mode',
-      description: 'Workflow mode',
-      category: 'crew',
-      args: {
-        kind: 'closed',
-        options: WORKFLOW_MODES,
-        optionDescriptions: Object.fromEntries(
-          WORKFLOW_MODES.map((mode) => [mode, describeModeShape(mode, { gateNames: true })]),
-        ),
-        optionHints: { [ctx.getWorkflowMode()]: 'current' },
-        optional: true,
-      },
-      validScreens: ALL_SCREENS,
-      handler: async (args) => {
-        if (!args) {
-          // Bare `/mode` stays in the composer: the option rows are the picker.
-          ctx.prefillComposer('/mode ');
-          return;
-        }
-        const requested = args.trim().toLowerCase();
-        const mode = normalizeWorkflowMode(requested);
-        if (!mode) {
-          ctx.setFeedbackError(
-            `Invalid mode: ${requested}. Valid modes: ${WORKFLOW_MODES.join(', ')}`,
-          );
-          return;
-        }
-        if ((await ctx.setWorkflowMode(mode)).kind === 'saved') {
-          // A started run keeps the mode it saved, so the mode set here is the next run's. The
-          // result leads, so a narrow row cuts the merge notice rather than the result.
-          const message = `Workflow mode set to: ${mode} for the next run`;
-          ctx.setFeedbackMessage(
-            requested === RETIRED_WORKFLOW_MODE
-              ? `${message}; ${RETIRED_WORKFLOW_MODE} was merged into ${mode}`
-              : message,
-          );
-        }
       },
     },
     {

@@ -206,7 +206,7 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 
 ### Symptom: Anthropic / OpenAI bill spiked after a single run
 
-**Likely cause:** The planner is configured with a frontier model (commonly Opus) and the implementer uses the same model. Standard and speckit modes call the planner 4 and 6–7 times respectively per task; multiplying that by Opus pricing escalates fast.
+**Likely cause:** The planner is configured with a frontier model (commonly Opus) and the implementer uses the same model. Every planner turn — each question round, the plan, its one repair, every escalation and the review — is billed at the planner's price, and Opus pricing multiplies that fast.
 
 **Fix:**
 1. Open `.splitbrief/config.yaml` and inspect `planner.kind` and `planner.model`.
@@ -295,15 +295,15 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 
 ### Symptom: Planner returns vague briefs — generic acceptance criteria, no file references, hand-wavy steps
 
-**Likely cause:** The current workflow mode is too light for the task (`quick` skips the iterative refinement passes), or the planner model is undersized for the codebase.
+**Likely cause:** The task text leaves the planner too much to guess, or the planner model is undersized for the codebase.
 
 **Fix:**
-1. Re-run with a higher mode: `npm run dev -- start --mode standard "..."` or `--mode speckit` for risky / cross-cutting work.
-2. Add concrete guidance in the review comment, or rerun with `--mode speckit` when the task needs an explicit clarification/specification pass.
+1. At the plan card, choose **Request changes** and say what the plan must name: the files, the acceptance criteria, the checks. The planner revises the plan in the same session.
+2. Put the constraints in the task text up front, so the planner asks fewer questions and guesses less.
 3. Confirm the planner is large enough — Sonnet 4.6 minimum, Opus for unfamiliar codebases.
 4. Tune the codebase config (`codebase.tokenBudget`) so the planner sees enough of the codebase to ground its references.
 
-**Prevention:** Default to `standard` mode for ordinary feature work and reserve `quick` for trivial edits that genuinely do not need ceremony.
+**Prevention:** Keep `workflow.approve: plan` (the default) for real feature work, so you read the plan before any code is written.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md), [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md), [docs/REPOMAP.md](./REPOMAP.md).
 
@@ -316,8 +316,8 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 **Fix:**
 1. Warm the model before the run so the first token arrives within 60s — e.g. issue one throwaway request to your local server, or pre-pull the model so it is resident.
 2. Set `planner.timeout` (milliseconds) in `.splitbrief/config.yaml` to put a total wall-clock budget on each planner call (Opus planning passes can take several minutes). This caps the whole call; it does not extend the 60s idle guard.
-4. If the planner is genuinely stuck (no token activity), check provider status pages and your network; restart the run.
-5. Reduce `codebase.tokenBudget` so the prompt is smaller and the call returns sooner.
+3. If the planner is genuinely stuck (no token activity), check provider status pages and your network; restart the run.
+4. Reduce `codebase.tokenBudget` so the prompt is smaller and the call returns sooner.
 
 **Prevention:** Keep local models warm so time-to-first-token stays under the 60s idle guard, and set `planner.timeout` as a total-call ceiling for high-latency planners.
 
@@ -341,33 +341,17 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 
 ---
 
-### Symptom: the run halted with "the planner returned no briefs"
+### Symptom: the run halted with "Plan still fails its checks after one repair"
 
-**Likely cause:** The `tasks` call returned no parsable Task Briefs. The call is never repeated automatically — there is no zero-task retry and no repair pass. A coded, transcript-safe warning (`planner_returned_zero_tasks`) is published, no `tasks.md` is written, and the run halts on a `planner-returned-no-briefs` recovery rather than entering implementation with nothing to build. This is the same in every mode, not just `quick`.
-
-**Fix:**
-1. Answer the recovery panel. `retry-same-worker` re-issues the `tasks` call — the step is un-memoized because no artifact landed, so nothing else is re-run. `revise` sends the planner a correction first. `end-run` closes the run and keeps whatever is on disk.
-2. Headlessly, the same halt prints the `continue --action …` line and exits 1: `splitbrief continue <session-id> --action retry`, or `--action end-run` to close it.
-3. If the planner's output was prose with no briefs, the model may be too weak to emit Task Briefs: raise the planner model or switch to `--mode standard`.
-4. If the planner produced nothing at all, check the runner diagnostics (`planner.timeout`, stream-idle guard, provider health) before retrying.
-
-**Prevention:** Keep `quick` for trivial edits and reserve the multi-call modes for anything where brief quality matters — a zero-brief outcome is usually a mode/model mismatch.
-
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md) §3 (the step table), [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md), `src/engine/orchestrator/planning/steps.ts`.
-
----
-
-### Symptom: Briefs lack file references, tests, or constraints — quality gate complains
-
-**Likely cause:** The brief quality gate is rejecting the planner's draft because required fields are empty. Smaller planners often skip these in initial passes.
+**Likely cause:** SPLITBRIEF checks every plan before the build: each criterion needs a check, each task needs a suggested file inside the project, the dependencies must not form a cycle, and each task must fit the implementer's context. A failing plan goes back to the planner once with the failed checks. When the repaired plan still fails, the run halts on a `plan-checks-failed` recovery rather than building a plan that cannot be verified. A planner that still asks questions after 2 rounds halts the same way, on `plan-questions-exhausted`.
 
 **Fix:**
-1. Read the gate's rejection message — it lists the missing sections.
-2. Bump the planner model up a tier; Sonnet handles the contract reliably, smaller models often do not.
-3. Switch to `--mode speckit` so the planner runs the iterative refinement passes that backfill missing sections.
-4. If a specific section is consistently missing, use `/revise-spec <comment>` or `/revise-plan <comment>` to force a targeted regeneration.
+1. Read the halt's details: they list each failed check in plain words.
+2. Answer the recovery panel. `revise` (recommended) sends the planner your correction in the same session. `retry-same-worker` asks again without a correction. `end-run` closes the run and keeps whatever is on disk.
+3. Headlessly, the halt prints the `continue --action …` line and exits 1: `splitbrief continue <session-id> --action retry`, or `--action end-run` to close it.
+4. If the same check fails again and again, the planner model may be too small for the typed plan: raise the planner model.
 
-**Prevention:** Treat the brief quality gate output as a smoke test for planner model fitness — repeated rejections mean the model is too small.
+**Prevention:** Name the files and the expected behaviour in the task text; a plan whose criteria the planner can tie to concrete checks passes on the first try.
 
 **See also:** [docs/TASK-CONTRACT.md](./TASK-CONTRACT.md), [docs/WORKFLOW.md](./WORKFLOW.md).
 
@@ -435,7 +419,7 @@ SPLITBRIEF tries to fix it before it tells you. Each Critical finding is mapped 
 
 **Fix:**
 1. Inspect `.splitbrief/sessions/<id>/drift-report.json` for in-bounds and out-of-bounds touched paths.
-2. If the changes are legitimate (the brief was incomplete), add the paths to `scope.approvedOutOfBounds` in the brief and re-run the final review.
+2. If the changes are legitimate (the brief was incomplete), keep them. A brief's files are suggestions: an ordinary write outside them is recorded as `write_out_of_scope`, not refused ([APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#protected-path-confirmation)).
 3. If the changes are wrong, revert them with git — the run leaves them unstaged, and no pre-run snapshot exists for `/run reject confirm` to restore.
 4. For repeat offenders, raise the implementer model or tighten the brief's scope language.
 
@@ -501,8 +485,8 @@ A changed file does not halt the brief, because an editor save changes files too
 **Fix:**
 1. Watch the escalation counter in the TUI status line — escalation triggers automatically after N retries.
 2. Inspect `evidence.json` and the task log to see whether failures are typecheck, test, or runtime.
-3. If escalation triggered and produced no improvement, manually edit the brief: tighten scope, split into subtasks, or pin the implementer to a stronger model for that task only.
-4. As a last resort, mark the task `skipped` and re-plan with `--mode speckit`.
+3. If escalation triggered and produced no improvement, answer the `retry-exhausted` recovery: type a correction to retry the brief with it as the implementer's steer, or take `route-bigger-worker` to retry on a stronger profile.
+4. As a last resort, take `skip-current-task` and plan the remaining work in a new run.
 
 **Prevention:** Configure `workflow.maxRetries` and `escalation.intermediateProvider` + `escalation.intermediateModel` so escalation lands on a model strictly stronger than the default.
 
@@ -613,7 +597,7 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 **Fix:**
 1. Read the issue's details: they carry the tool's own last message, the attempt count, and the implementer profile that was selected.
 2. The offered actions are retry, route to a bigger worker, switch seat, skip the brief, pause, or end the run. Headless, the stderr block prints the exact line to paste — for example `splitbrief continue <session> --action retry`.
-3. If the brief is simply too large for this seat, the durable fix is to split it in the briefs editor (`Ctrl+E` at the briefs gate) along its independent outcomes, so each brief is one coherent change the seat can finish.
+3. If the brief is simply too large for this seat, the durable fix is to split it in a new plan along its independent outcomes, so each brief is one coherent change the seat can finish.
 4. If the tool is genuinely slow rather than stuck, raise its seat's `timeout` toward the 1 200 000 ms cap, or move the seat to a faster model.
 5. Distinguish it from silence: `idleWarnMs` / `idleKillMs` watch for *no output*, while this halt is about total wall clock. A run producing output steadily for 20 minutes still times out.
 
@@ -742,7 +726,7 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 **Fix:**
 1. `splitbrief status` names the session; check `.splitbrief/sessions/<id>/state.json` exists and parses (`node -e "JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'))" <path>`).
 2. A state written by a newer SPLITBRIEF cannot be read by an older one. Upgrade, or start a fresh run.
-3. The session's artifacts are independent of its state: `tasks.md`, `spec.md`, `plan.md` and `review.md` are still readable and can seed a new run.
+3. The session's artifacts are independent of its state: `plan.json`, `plan.md`, `tasks.md` and `review.md` (and `spec.md` on older runs) are still readable and can seed a new run.
 
 **Prevention:** Do not hand-edit `state.json`. Every legitimate mutation goes through the compare-and-swap in `state-ops.ts`; an edited file loses that guarantee.
 
@@ -752,7 +736,7 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 
 ### Symptom: continuing a run re-opens the planner halt instead of building
 
-**Likely cause:** The run stopped on a planner-seat recovery — `planner-call-failed`, `planner-returned-no-briefs`, `constitution-check-failed`, `brief-review-no-progress`, `brief-quality-unrepaired`, a planner `seat-protocol-error`, or a seat-blocked `runner-unauthenticated` / `runner-usage-limit` on the **plan** seat. A halt is answered before any work runs, so continuing shows the panel first. That is the design: the run is waiting on a decision, not stuck.
+**Likely cause:** The run stopped on a planner-seat recovery — `planner-call-failed`, `plan-questions-exhausted`, `plan-checks-failed`, a planner `seat-protocol-error`, or a seat-blocked `runner-unauthenticated` / `runner-usage-limit` on the **plan** seat. A halt is answered before any work runs, so continuing shows the panel first. That is the design: the run is waiting on a decision, not stuck.
 
 **Fix:**
 1. In the TUI, answer the panel. The issue carries its own `seat`, so a swap offer names the seat that is actually blocked.
@@ -800,8 +784,8 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 
 **Fix:**
 1. In the TUI, focus the composer (Tab if focus is elsewhere) and press `y` / `c` / `q`, or submit `approve` / `comment ...` / `reject`.
-2. If you ran with `--json`, the NDJSON stream cannot accept replies. Workflow review gates are auto-approved in headless JSON mode; file-write tiered approvals fail closed with `APPROVAL_REQUIRED` unless their tiers allow the write. Resume the session interactively with `splitbrief continue <session-id>` to answer the gate, or for unattended runs use `--mode quick` or configure approval tiers so file writes do not prompt.
-3. Check `workflow.approve` in config; `workflow.approve: none` skips the spec and plan approval gates but not the standard/speckit brief-review gate, `workflow.approve: spec` (default) blocks only on the spec, `workflow.approve: all` blocks on both spec and plan. For file-write tiered approval, see the `approval.tiers` config block.
+2. If you ran with `--json`, the NDJSON stream cannot accept replies. The plan card is approved unattended in headless JSON mode; a write to a protected path fails closed with `APPROVAL_REQUIRED`. Resume the session interactively with `splitbrief continue <session-id>` to answer it.
+3. Check `workflow.approve` in config: `plan` (the default) opens the plan card before the build, and `none` skips it. A write to a protected path asks either way, unless the approved plan lists it.
 
 **Prevention:** Decide up front whether a run is interactive or `--json`; configure approval policy to match.
 
@@ -809,17 +793,17 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 
 ---
 
-### Symptom: Brief review keeps showing the same brief after I requested changes
+### Symptom: the plan card shows the same plan after I requested changes
 
-**Likely cause:** The comment-driven regen path was not triggered — usually because the comment was attached to the wrong artifact or the planner returned the same content unchanged (cache hit, identical prompt).
+**Likely cause:** The planner returned the same plan, usually because the correction was too vague to act on.
 
 **Fix:**
-1. Confirm the comment was attached to the brief (not the spec) and that you submitted `comment "<text>"` rather than `approve`.
-2. Inspect `planner.review` activity in the session log; it should record a new planner call after your comment.
-3. If the planner returned identical output, your comment may have been too vague — restate it as a concrete, falsifiable change.
-4. As a workaround, use `/revise-spec <comment>` or `/revise-plan <comment>` to force a clearer regeneration prompt.
+1. Confirm that you chose **Request changes** and typed the correction, rather than approving.
+2. Inspect the session log; it should record a new planner call after your correction.
+3. Restate the correction as a concrete, falsifiable change ("add a test check for the empty input", "drop T003").
+4. To make the change yourself, choose **Edit plan.json**. SPLITBRIEF re-validates the edited plan and keeps the old one when the edit fails a check.
 
-**Prevention:** Write review comments as imperatives ("rename `foo` to `bar`", "remove constraint about X"), not impressions ("seems off").
+**Prevention:** Write corrections as imperatives ("rename `foo` to `bar`", "remove the constraint about X"), not impressions ("seems off").
 
 **See also:** [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md), [docs/TASK-CONTRACT.md](./TASK-CONTRACT.md).
 
@@ -842,47 +826,46 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 
 ## Approval gates
 
-### Symptom: the briefs prompt keeps coming back
+### Symptom: the run halts with `plan-checks-failed` instead of opening the plan card
 
-**Likely cause:** The brief readiness gate (`runBriefReadinessGateAndReport()`, `src/engine/orchestrator/planning/brief-readiness-gate.ts`) ran over the Task Briefs and reported blocks — tasks that overflow the worker context window, have no capable worker, or carry stale routing context. The block is advisory, not a permanent stop: the review header shows `readiness N blocked` and the override instruction `approve again overrides`.
+**Likely cause:** The planner's plan failed `checkPlan` (`src/engine/spec/plan-checks.ts`) or the context fit (`estimatePlanContextFits`) — for example a criterion with no check, a task with no check, a dependency cycle, or a task that does not fit the implementer's context window. A failing plan goes back to the planner once with the failed checks; a second failure halts the run with `plan-checks-failed` and the plan card never opens.
 
 **Fix:**
-1. Read the block kinds in the warning (`overflow`, `no-capable-worker`, `stale-conflict`) and the task ids — the review header counts them, and the transcript warning names each block with its next best action.
-2. Either revise `tasks.md` to resolve the blocks (split oversized tasks, widen the worker, refresh routing), or approve again without editing `tasks.md` — the second identical approval records the override in `brief-readiness.json` and proceeds.
-3. Editing or revising `tasks.md` between the two approvals cancels the pending override, so a confirmation is never granted against stale briefs.
+1. Read the failed checks: the recovery panel lists each one.
+2. Type a correction at the halt (`revise`, the recommended action) that tells the planner how to fix them — split an oversized task, add the missing check.
+3. Or take `retry-same-worker` to ask the same session again, or `end-run` to close the run.
 
-**Prevention:** None needed — a blocked report never permanently blocks approval; the loop also terminates after `MAX_UNPRODUCTIVE_BRIEF_REVIEW_ATTEMPTS` (20) unchanged failures instead of re-prompting forever.
+**Prevention:** Set `contextLength` on implementer profiles outside a known catalog, so the context fit measures against the real window.
 
-**See also:** [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md), [docs/WORKFLOW.md](./WORKFLOW.md).
+**See also:** [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md), [docs/TASK-CONTRACT.md](./TASK-CONTRACT.md).
 
 ---
 
-### Symptom: `APPROVAL_REQUIRED` (headless run paused, or stuck on a sticky/confirm tier)
+### Symptom: `APPROVAL_REQUIRED` (headless run paused on a protected write)
 
-**Likely cause:** A file-write tiered approval reached a run with no reply channel. The gate prompts whenever there is somebody to prompt and denies with `APPROVAL_REQUIRED` when there is not, so this is a `--json` run hitting a `sticky` or `confirm` tier.
+**Likely cause:** A write to a protected path (dependency manifests and lockfiles, `.git`, `.splitbrief`, CI configuration, env and key files) reached a run with no reply channel. The gate prompts whenever there is somebody to prompt and denies with `APPROVAL_REQUIRED` when there is not, so this is a `--json` or `--plain` run. No setting turns this confirmation off; the retired `approval.tiers` key loads with one notice and is ignored.
 
 **Fix:**
 1. If the session is resumable, continue it with an interactive TUI: `splitbrief continue <session-id>`.
-2. Or set the offending file-write tier to `auto` in `.splitbrief/config.yaml` under `approval.tiers.<class>: auto`.
-3. For CI runs that should never prompt, make sure every tier that the run can reach is set to `auto`. Leaving a tier at `sticky` or `confirm` is what makes a `--json` run fail closed on it — which is the right default when an unexpected write should stop the run rather than land unreviewed. A write to a protected path (dependency manifests and lockfiles, `.git`, `.splitbrief`, CI configuration, env and key files) always asks: no tier setting changes that, so a `--json` or `--plain` run denies it with `APPROVAL_REQUIRED`.
+2. For a write you expect, let the plan list it as a protected operation and approve the plan card interactively. The approval confirms the write for the whole run, so you can stop the run and `continue` it headlessly without a prompt. An unattended approval confirms nothing.
 
-**Prevention:** Audit `approval.tiers` before running `--json` or unattended. Any tier left at `sticky` or `confirm` can require an approval response.
+**Prevention:** Run work that changes manifests, lockfiles or CI configuration interactively.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) §approval, [docs/WORKFLOW.md](./WORKFLOW.md).
 
 ---
 
-### Symptom: `invalid_confirm_phrase` — confirm tier rejected my input
+### Symptom: `invalid_confirm_phrase` — the confirmation rejected my input
 
-**Likely cause:** The engine requires every confirm-tier response to carry the literal phrase `I confirm` (capital I, space, lowercase confirm) and a non-empty reason. The TUI supplies both for you once you make the keyed gesture, so this error means the response came from somewhere else: the configured-runner trust prompt, or a custom `onTieredApproval` callback that sent a different phrase or an empty reason.
+**Likely cause:** The engine requires every confirmation response to carry the literal phrase `I confirm` (capital I, space, lowercase confirm) and a non-empty reason. The TUI supplies both for you once you make the keyed gesture, so this error means the response came from somewhere else: the configured-runner trust prompt, or a custom `onTieredApproval` callback that sent a different phrase or an empty reason.
 
 **Fix:**
-1. In the TUI, press Enter (destructive class) or `y` (every other confirm-tier class). Press `r` first if you want to record a reason. Escape denies.
+1. In the TUI, press Enter (destructive class) or `y` (every other protected class). Press `r` first if you want to record a reason. Escape denies.
 2. In a custom callback, return `{ decision: 'confirm', phrase: CONFIRM_PHRASE, reason }` with `reason` non-empty.
 
 **Prevention:** Import `CONFIRM_PHRASE` from `src/core/approval/types.ts` rather than retyping the literal.
 
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) §approval.tiers.
+**See also:** [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md).
 
 ---
 
@@ -1096,11 +1079,11 @@ Copied images remain in `~/.splitbrief/clipboard/` so history and runs retain re
 
 ---
 
-### Symptom: `Failed to open editor: …` or `Editor exited with …` (when editing at a review gate)
+### Symptom: `Failed to open editor: …` or `Editor exited with …` (when editing `plan.json` at the plan card)
 
-**Likely cause:** Spec, plan, and brief review edits use the external editor resolver and then spawn the resolved command. Resolution uses explicit `VISUAL` first, then non-terminal `EDITOR`, then detected GUI editors (`cursor`, `code`, `zed`, `subl`, `mate`, `bbedit`) with wait flags from safe absolute `PATH` segments, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`; Windows detection honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims. The failure is in launching or running that resolved command, not a missing variable:
+**Likely cause:** `plan.json` edits at the plan card use the external editor resolver and then spawn the resolved command. Resolution uses explicit `VISUAL` first, then non-terminal `EDITOR`, then detected GUI editors (`cursor`, `code`, `zed`, `subl`, `mate`, `bbedit`) with wait flags from safe absolute `PATH` segments, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`; Windows detection honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims. The failure is in launching or running that resolved command, not a missing variable:
 - The resolved binary is not on `PATH` (e.g. `VISUAL=code` or `EDITOR=code` on a machine without VS Code) — the spawn errors and you get `Failed to open editor: …`.
-- The editor exits non-zero or is killed by a signal — if it saved the file first, the saved content is kept and applied (`Editor exited with status … but saved spec.md — content reloaded`); if the file is unchanged you get `Editor exited with status … — edit not applied` or `Editor failed: … terminated by …`.
+- The editor exits non-zero or is killed by a signal — if it saved the file first, the saved content is kept and applied (`Editor exited with status … (<editor>) but saved plan.json`); if the file is unchanged you get `Editor exited with status … — edit not applied` or `Editor failed: … terminated by …`.
 - You press Ctrl+C in the editor — that is a cancel, not a failure: `Edit cancelled — vim closed by ctrl+c`. A save that landed before the interrupt is still detected and applied.
 - A GUI editor returns immediately without blocking (e.g. `code` without `--wait`), so the edit is treated as cancelled.
 
@@ -1109,9 +1092,9 @@ Copied images remain in `~/.splitbrief/clipboard/` so history and runs retain re
 2. For an explicit GUI editor, use the blocking flag so SPLITBRIEF waits for you to save and close: `export VISUAL='code --wait'`.
 3. For a one-off run with a known terminal editor: `VISUAL=vi splitbrief start "..."`.
 
-**Prevention:** Point `VISUAL` at the editor you want, for example `cursor --wait` or `code --wait`. If `VISUAL` is empty and `EDITOR` is a terminal editor (`vi`, `vim`, `nano`), SPLITBRIEF will try safely detected GUI editors first so Task Brief editing does not stay inside the TUI terminal when a GUI editor is available.
+**Prevention:** Point `VISUAL` at the editor you want, for example `cursor --wait` or `code --wait`. If `VISUAL` is empty and `EDITOR` is a terminal editor (`vi`, `vim`, `nano`), SPLITBRIEF will try safely detected GUI editors first so plan editing does not stay inside the TUI terminal when a GUI editor is available.
 
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md) §Review gates.
+**See also:** [docs/WORKFLOW.md](./WORKFLOW.md#approval-the-plan-card) §Approval: the plan card.
 
 ---
 
@@ -1297,7 +1280,7 @@ Copied images remain in `~/.splitbrief/clipboard/` so history and runs retain re
 
 **Fix:**
 1. Inspect `.splitbrief/config.yaml` for persistent values.
-2. Check the command line for one-shot overrides such as `--planner`, `--implementer`, `--model`, or `--mode`.
+2. Check the command line for one-shot overrides such as `--planner`, `--implementer` or `--model`.
 3. Check the documented environment variables in `docs/CONFIGURATION.md`, especially provider API keys and `SPLITBRIEF_CONTEXT_LENGTH`.
 
 **Prevention:** Put durable settings in `.splitbrief/config.yaml`. Keep CLI flags for one-off runs and environment variables for secrets or process-level behavior.

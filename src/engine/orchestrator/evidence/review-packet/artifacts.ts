@@ -74,11 +74,9 @@ export function readBriefQuality(
   missing: string[],
 ): BriefQualityArtifact | null {
   const target = join(sessionDir(projectDir, sessionId), BRIEF_QUALITY_FILE);
+  // Only a run from before the planning session wrote the file: its absence is not missing evidence.
   const raw = readJsonSafe(target);
-  if (raw === null) {
-    addMissing(missing, BRIEF_QUALITY_FILE);
-    return null;
-  }
+  if (raw === null) return null;
 
   const record = narrowRecord(raw);
   if (

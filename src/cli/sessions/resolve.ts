@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { sessionDir } from '../../core/paths.js';
-import { deriveRunStatus, NO_ARTIFACTS } from '../../core/sessions/run-status.js';
+import { deriveRunStatus } from '../../core/sessions/run-status.js';
 import { WORKFLOW_STATE_VERSION, type WorkflowState } from '../../core/schemas/workflow.js';
 import { cliError } from '../errors.js';
 
@@ -18,7 +18,7 @@ export function assertResumableState(state: WorkflowState, sessionId: string): v
     );
   }
 
-  const status = deriveRunStatus({ state, liveness: 'not-alive', artifacts: NO_ARTIFACTS });
+  const status = deriveRunStatus({ state, liveness: 'not-alive' });
   if (status.kind === 'closed') {
     throw cliError(`Run ${sessionId} is closed (${status.as}); nothing to resume.`, 1);
   }

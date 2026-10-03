@@ -1,6 +1,4 @@
 import { DRIFT_REPORT_FILE, EVIDENCE_FILE, SPEC_FILE, TASKS_FILE } from '../../core/paths.js';
-import { plannerStepsFor } from '../../core/pipeline-spec/steps.js';
-import type { WorkflowMode } from '../../core/schemas/enums.js';
 import { estimateTokens } from '../../core/tokens/estimate.js';
 import { apiPlanningInputBudget, type ApiContextManifestEntry } from '../planners/api-context.js';
 import { buildFinalReviewPrompt } from '../spec/prompts/review.js';
@@ -15,9 +13,9 @@ const SKILLS = 'skills';
 const NO_TOOLS_NOTICE =
   'Everything SPLITBRIEF read for this review is reproduced in this prompt: the whole run diff, untruncated, every planning artifact and the recorded validation output. You have no filesystem, shell or search tool on this call — a file whose diff is not below was not read, and nothing about its contents may be assumed or claimed.';
 
-/** What stands in for a specification in a mode that writes none. */
+/** What stands in for a specification in a run that wrote none. */
 const SUBSTITUTED_REQUEST =
-  'This run’s mode writes no specification. The original feature request below is the requirement this implementation is measured against.';
+  'This run wrote no specification. The original feature request below is the requirement this implementation is measured against.';
 
 /** The ledger's own record that nothing ran, which is evidence, not absence. */
 const NO_VALIDATION_RECORDED =
@@ -57,9 +55,7 @@ export type ApiReviewContext =
     }>;
 
 export type ApiReviewContextInput = Readonly<{
-  /** The run's own mode, which decides whether a spec is a required artifact. */
-  mode: WorkflowMode;
-  /** The original request, which quick mode reviews in place of a spec. */
+  /** The original request, which a run without a spec is reviewed against. */
   feature: string;
   spec: string;
   taskBriefs: string;
@@ -142,7 +138,7 @@ function overflowing(parts: readonly Part[], availableTokens: number, model?: st
 
 /**
  * The §4 REVIEW input packet: the whole run diff with the coverage that bounds
- * it, the spec (or, in a mode that writes none, the original request), every
+ * it, the spec (or, in a run that wrote none, the original request), every
  * task brief, this review's own drift and the recorded validation output. Every
  * one of them is required, so the packet either carries all of them whole or
  * refuses — it is never a success packet with a source missing from it, and no
@@ -166,13 +162,10 @@ export function buildApiReviewContext(input: ApiReviewContextInput): ApiReviewCo
     return body;
   };
 
-  // A mode that writes no spec is reviewed against the request it was given;
-  // one that writes a spec is not reviewable without it.
-  const specRequired = plannerStepsFor(input.mode, 'all').some(
-    (step) => step.artifact === SPEC_FILE,
-  );
+  // A run that wrote a spec is reviewed against it; one that wrote none, against the request it
+  // was given.
   let spec = '';
-  if (specRequired || input.spec.trim() !== '') {
+  if (input.spec.trim() !== '') {
     spec = required(SPEC_FILE, input.spec);
   } else {
     manifest.push({ path: SPEC_FILE, kind: 'optional', state: 'missing' });

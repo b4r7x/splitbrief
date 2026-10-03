@@ -1,0 +1,238 @@
+{
+  "stateVersion": 4,
+  "stateRevision": 261,
+  "phase": "implementing",
+  "feature": "Use one list grammar across the TUI. Base the briefs on the B0-B11 items of the P01 reference; merge items that share code.",
+  "currentTaskIndex": 1,
+  "attempt": 1,
+  "tasks": [
+    {
+      "id": "T001",
+      "title": "Add gallery scenarios for the confirm gate, the @ menu and recent sessions",
+      "action": "modify",
+      "file": "testing/visual/catalog.ts",
+      "files": [
+        "testing/visual/catalog.ts",
+        "testing/visual/catalog.test.ts",
+        "testing/visual/fixtures/screen-fixtures.ts"
+      ],
+      "dependsOn": [],
+      "description": "Requirement P01 B0. Three TUI surfaces that later briefs change have no gallery scenario, so nobody can render them:\n\n- The destructive **confirm-tier** appr...",
+      "signature": "// testing/visual/fixtures/screen-fixtures.ts (module-private)\nfunction createReferenceCompletionFixture(): FixtureLifecycle\nfunction createRecentSessionsFix...",
+      "tests": [
+        "`npx vitest run testing/visual` passes. `catalog.test.ts` checks the viewport matrix and that every scenario pairs with exactly one fixture.",
+        "`npm run tui-shots -- --list` output contains `workflow-approval-confirm`, `home-reference-completion` and `home-recent-sessions`.",
+        "`npm run tui-shots -- --scenario workflow-approval-confirm` produces a PNG that shows `Destructive action:` and the rows `Confirm`, `Confirm with a reason` a..."
+      ],
+      "constraints": [
+        "ESM imports with `.js` extensions.",
+        "No `useMemo`/`useCallback`/`React.memo`, no classes, no incidental `!` or broad `as`, no `index.ts` barrels, no decorative comments.",
+        "Never run `git add`, `git commit`, `git stash` or `git reset`."
+      ],
+      "pattern": "Catalog entry shape (`catalog.ts`, the `home-mode-completion` and `workflow-approval-permission` entries):\n```typescript\n    defineScenario({\n      id: 'work...",
+      "typeDefs": "// testing/visual/fixtures/common.ts (existing)\nexport interface FixtureWrite { (input: string): void; press(input: string): Promise<void>; }\nexport interfac...",
+      "implementationSteps": [
+        "**`projections.ts`**",
+        "**`setup.ts`**: apply the same `?? 'sticky'` and `?? 'write_out_of_scope'` fallbacks.",
+        "**`registry.ts`**: add `[checkpointId('approval-confirm'), includesAll('Confirm with a reason')],` beside the other approval predicates."
+      ],
+      "scope": {
+        "inBounds": ["The seven listed fixture and catalog files."],
+        "outOfBounds": [
+          "Any file under `src/`.",
+          "Changing any existing scenario's projection, marker or viewport.",
+          "Changing `testing/helpers/git.ts`."
+        ],
+        "approvedOutOfBounds": ["None."]
+      },
+      "escalation": ["Stop and ask in these cases:"],
+      "evidence": [
+        "`npx vitest run testing/visual` output is green.",
+        "The `tui-shots --list` output shows the three new ids.",
+        "The PNG paths under `.test-artifacts/ui/` for the four renders, each with a written critique. The critique confirms the surface is visible and that `workflow..."
+      ],
+      "status": "done"
+    },
+    {
+      "id": "T008",
+      "title": "Setup presets, Continue row and contract cards follow the grammar",
+      "action": "modify",
+      "file": "src/app/screens/setup.tsx",
+      "files": [
+        "src/app/screens/setup.tsx",
+        "src/app/screens/setup.test.tsx",
+        "src/features/crew/preset-row.tsx"
+      ],
+      "dependsOn": ["T001"],
+      "description": "Requirements P01 B8 and G2.\n\n**Contract-choice cards** (custom command: shell or agent). Today the cards clamp at the ends and lead the unfocused card with a...",
+      "signature": "// setup.tsx (module-private)\nfunction crewKeysHint(item: SetupItem | undefined): string\ninterface CrewStepProps { note?: string | undefined; status?: string...",
+      "tests": [
+        "`contract-choice-overlay.test.tsx`:",
+        "`preset-row.test.tsx`:",
+        "`setup.test.tsx`:"
+      ],
+      "constraints": [
+        "ESM imports with `.js` extensions.",
+        "No `useMemo`/`useCallback`/`React.memo`, no classes, no incidental `!` or broad `as`, no barrels, no decorative comments.",
+        "Gate 31: no standalone word `cursor` in these `.tsx` files."
+      ],
+      "pattern": "Settings builds its legend from the focused row (`hintFor`, `src/features/settings/hooks/editor.ts:40-46`). `CREW_MARKER_GUTTER` is 2, the same width as `lis...",
+      "typeDefs": "// setup.tsx existing SetupItem union: { kind: 'preset'; preset; key } | { kind: 'crew'; row; key } | { kind: 'continue'; key: 'continue' }\n// useStaticSelec...",
+      "implementationSteps": [
+        "**`contract-choice-overlay.tsx`**",
+        "**`preset-row.tsx`**: `const gutter = listRowLead(isCursor ? 'active' : 'default');`. Paint the label with `color={isCursor ? t.accent : t.text}`. Remove the...",
+        "**`setup.tsx` rows**"
+      ],
+      "scope": {
+        "inBounds": ["The listed files."],
+        "outOfBounds": [
+          "`src/features/crew/row-view.tsx` (it already paints the lead).",
+          "The crew seat label hues.",
+          "The tier chip colours."
+        ],
+        "approvedOutOfBounds": ["None."]
+      },
+      "escalation": ["Stop and ask in these cases:"],
+      "evidence": [
+        "`npx vitest run src/app src/features/crew src/features/runners` passes.",
+        "`npm run typecheck`, `npm run lint` and `npm run format:check` pass.",
+        "`npm run check:invariants` shows gate 31 at 0."
+      ],
+      "status": "in_progress"
+    },
+    {
+      "id": "T009",
+      "title": "Every pick-one legend says \u2191\u2193 select, the palette wraps, the picker legend keeps its keys",
+      "action": "modify",
+      "file": "src/features/runners/two-column-picker/picker.tsx",
+      "files": [
+        "src/features/runners/two-column-picker/picker.tsx",
+        "src/features/runners/two-column-picker/picker.test.tsx",
+        "src/app/overlays/settings.tsx"
+      ],
+      "dependsOn": ["T008"],
+      "description": "Requirements P01 B11 and G31.\n\n- **Legends.** Pick-one legends say `\u2191\u2193 navigate`; they must say `\u2191\u2193 select`. Change the word in legend strings only:\n  - `set...",
+      "signature": "export const navigateIndex = (direction: 'up' | 'down', current: number, length: number): number; // src/utils/indexing.ts",
+      "tests": [
+        "`palette.test.tsx`: with several results, \u2191 on the first result highlights the last result, and \u23ce runs that last result.",
+        "`picker.test.tsx` (the :50-92 group): at 60 columns with refresh available, the planner picker legend contains `\u2190\u2192 column` and `\u2191\u2193 select`, and it does not c...",
+        "`picker.test.tsx`: the cases at :86 and :1045-1082 pass."
+      ],
+      "constraints": [
+        "ESM imports with `.js` extensions.",
+        "No `useMemo`/`useCallback`/`React.memo`, no classes, no incidental `!` or broad `as`, no barrels, no decorative comments.",
+        "Gate 31: `settings.tsx` is in its path. Add no standalone word `cursor`."
+      ],
+      "pattern": "Other lists wrap with `navigateIndex` (`src/hooks/use-static-selector.ts`). Legend tokens are `<key> <verb>` joined by `SOFT_SEP`.",
+      "typeDefs": "// picker.tsx local: compose(navigationHints: string[], extraHints: string[]) => string\n// SOFT_SEP = ' \u00b7 '",
+      "implementationSteps": [
+        "**Legend strings.**",
+        "**Palette wrap.** Use `setCursor((c) => navigateIndex('up', c, results.length))` and `setCursor((c) => navigateIndex('down', c, results.length))`. Import `na...",
+        "**Picker ladder.** In `fitHint`, set `const selectOnly = navigation.filter((hint) => hint !== '\u2191\u2193 select');` and `const candidates = [compose(navigation, ext..."
+      ],
+      "scope": {
+        "inBounds": [
+          "The listed files.",
+          "In source files, only the legend strings, the palette arrow handlers and `fitHint`."
+        ],
+        "outOfBounds": [
+          "The command category `navigate` (`src/core/runtime/commands/types.ts`) and `routerStore.navigate`.",
+          "The skills overlay's `space` key and its empty-state legend.",
+          "`src/app/screens/setup.tsx` (T008)."
+        ],
+        "approvedOutOfBounds": ["None."]
+      },
+      "escalation": ["Stop and ask in these cases:"],
+      "evidence": [
+        "`npx vitest run src/app src/features/runners src/features/home` passes.",
+        "`npm run typecheck`, `npm run lint` and `npm run format:check` pass.",
+        "Renders:"
+      ],
+      "status": "pending"
+    }
+  ],
+  "plannerSessionId": "e5f21f9b-bda7-4a67-b55e-b119821dfdbe",
+  "startedAt": "2026-09-29T20:07:40.171Z",
+  "tokenUsage": {
+    "plannerInput": 64,
+    "plannerOutput": 113127,
+    "implementerInput": 6646368,
+    "implementerOutput": 306200,
+    "escalationInput": 6,
+    "escalationOutput": 1777,
+    "reviewerInput": 1039676,
+    "reviewerOutput": 15504,
+    "plannerCacheRead": 5239132,
+    "plannerCacheCreate": 426606,
+    "implementerCacheRead": 206578048,
+    "implementerCacheCreate": 0,
+    "reviewerCacheRead": 7805568,
+    "reviewerCacheCreate": 0,
+    "escalationCacheRead": 114256,
+    "escalationCacheCreate": 43116,
+    "implementerReasoning": 774903,
+    "plannerCoverage": {
+      "input": "reported",
+      "output": "partial",
+      "cacheRead": "reported",
+      "cacheCreate": "reported",
+      "reasoning": "missing"
+    },
+    "escalationCoverage": {
+      "input": "reported",
+      "output": "partial",
+      "cacheRead": "reported",
+      "cacheCreate": "reported",
+      "reasoning": "missing"
+    },
+    "reviewerCoverage": {
+      "input": "reported",
+      "output": "partial",
+      "cacheRead": "reported",
+      "cacheCreate": "reported",
+      "reasoning": "missing"
+    }
+  },
+  "plannerTool": "claude-code",
+  "plannerModel": "claude-opus-5-5",
+  "plannerKind": "cli",
+  "implementerTool": "opencode",
+  "implementerModel": "opencode-go/deepseek-v4.1-flash",
+  "implementerKind": "cli",
+  "reviewerTool": "codex",
+  "reviewerModel": "gpt-6-astra",
+  "reviewerKind": "cli",
+  "mode": "standard",
+  "approve": "all",
+  "awaitingContinue": false,
+  "messageQueue": [],
+  "discoveredValidation": {
+    "testCommand": "npm test",
+    "language": "typescript"
+  },
+  "validationBaseline": {
+    "failingStages": [],
+    "commands": {
+      "typecheck": "npm run typecheck",
+      "lint": "npm run lint",
+      "test": "npm test -- testing/visual/catalog.test.ts"
+    },
+    "failures": {}
+  },
+  "reviewFixes": {
+    "cycle": 4,
+    "findings": {
+      "T008": [
+        "Operator correction: Fix the whole class in one place: OverlayPanel (src/components/overlays/overlay-panel.tsx:52) must fit its legend with fitKeyLegend for ..."
+      ],
+      "T009": [
+        "**Narrow legends still truncate mid-token and display an ellipsis.** [SessionsPicker](src/app/overlays/sessions.tsx:30) passe...",
+        "Operator correction: Fix the whole class in one place: OverlayPanel (src/components/overlays/overlay-panel.tsx:52) must fit its legend with fitKeyLegend for ..."
+      ]
+    }
+  },
+  "closed": {
+    "at": "2026-10-01T09:29:53.753Z",
+    "as": "ended"
+  }
+}

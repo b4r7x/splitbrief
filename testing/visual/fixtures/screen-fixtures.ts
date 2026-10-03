@@ -18,7 +18,6 @@ import type { CliToolDetection } from '../../../src/core/discovery/detection.js'
 import type { ClaudeCodeModelOption } from '../../../src/core/providers/claude-code-options.js';
 import type { ScopedCliCatalogAttempt } from '../../../src/engine/detection/cli-catalog-outcomes.js';
 import type { ModelsDevRefreshOutcome } from '../../../src/engine/detection/models-dev-lane.js';
-import { resolveMode } from '../../../src/core/config/runtime/resolve.js';
 import type { Config } from '../../../src/core/schemas/config.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
 import type { SkillMeta } from '../../../src/core/skills/types.js';
@@ -88,14 +87,13 @@ const BASE_IMPLEMENTER = {
 } as const;
 
 const BASE_WORKFLOW = {
-  mode: 'standard',
   maxRetries: 2,
 } as const;
 
 /**
  * A seat override replaces the whole seat — `planner`, `implementer` and
  * `reviewer` overrides must be complete. `workflow` is merged, so a scenario can
- * change the mode without losing the pinned transcript and retry settings.
+ * change one setting without losing the pinned transcript and retry settings.
  */
 /** The session every workflow fixture runs as. */
 export const VISUAL_WORKFLOW_SESSION_ID = 'visual-workflow';
@@ -213,10 +211,6 @@ export function createWorkflowBaseFixture(
       run: makeRunRecord({
         ref: prepared.session.ref,
         feature,
-        // The rail trusts the record's saved mode, so the fixture stamps the mode a real
-        // start or continuation would have resolved: the saved resume state's mode first,
-        // else the effective project config's.
-        mode: resolveMode({ config, savedMode: resumeState?.mode }),
       }),
       execution: { kind: 'local', prepared },
     };
@@ -515,9 +509,9 @@ const TRUST_BOUNDARY_CHECK: ReadinessCheck = {
   severity: 'warning',
   summary: 'Planner claude-code can execute commands on this machine.',
   details: [
-    'Spec/plan approval level: gates.',
-    'File-write approval prompts: enabled.',
-    'SPLITBRIEF approval gates review spec/plan documents and declared/promoted file writes; they do not sandbox shell commands or network access inside external runners.',
+    'Plan approval: plan.',
+    'Only a write to a protected path asks.',
+    'SPLITBRIEF approval gates review the plan and declared/promoted file writes; they do not sandbox shell commands or network access inside external runners.',
   ],
 };
 
@@ -619,13 +613,13 @@ function createCommandArgumentFixture(): FixtureLifecycle {
   };
 }
 
-// `/mode` typed on a run's screen: the run keeps the mode it saved, so the answer names the next run.
-function createModeNextRunFixture(): FixtureLifecycle {
+// A retired command typed on a run's screen: the answer names what replaced it.
+function createRemovedCommandFixture(): FixtureLifecycle {
   const workflow = createWorkflowBaseFixture();
   return {
     setup: async (context) => {
       await workflow.setup(context);
-      composerDraftStore.request('/mode quick');
+      composerDraftStore.request('/revise-plan split the brief');
     },
     teardown: workflow.teardown,
     afterMount: (write) => write('\r'),
@@ -681,17 +675,6 @@ function createDraftImageFixture(): FixtureLifecycle {
           { kind: 'text', text: ' — keep the ticks, move the legend.' },
         ],
       });
-    },
-    teardown: home.teardown,
-  };
-}
-
-function createModeCompletionFixture(): FixtureLifecycle {
-  const home = createHomeFixture();
-  return {
-    setup: async (context) => {
-      await home.setup(context);
-      composerDraftStore.request('/mode ');
     },
     teardown: home.teardown,
   };
@@ -762,12 +745,11 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('home-preparation-failed'), createHomePreparationFailedFixture],
   [scenarioId('home-preparation-blocked'), createHomePreparationBlockedFixture],
   [scenarioId('home-skills-completion'), createSkillsCompletionFixture],
-  [scenarioId('home-mode-completion'), createModeCompletionFixture],
   [scenarioId('home-reference-completion'), createReferenceCompletionFixture],
   [scenarioId('home-recent-sessions'), createRecentSessionsFixture],
   [scenarioId('home-draft-image'), createDraftImageFixture],
   [scenarioId('workflow-continuing'), createWorkflowContinuingFixture],
   [scenarioId('workflow-command-argument'), createCommandArgumentFixture],
-  [scenarioId('workflow-mode-next-run'), createModeNextRunFixture],
+  [scenarioId('workflow-removed-command'), createRemovedCommandFixture],
   [scenarioId('setup-initial'), createSetupFixture],
 ]);

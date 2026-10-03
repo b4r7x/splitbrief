@@ -977,8 +977,8 @@ describe('runner row grammar', () => {
 
       // The axis row spends its trailing cell on nothing, so the value column stops one
       // cell short of the parent's disclosure and both axes end in the same column.
-      expect(effortLine).not.toContain(glyph('connectorSame'));
-      expect(fastLine).not.toContain(glyph('connectorSame'));
+      expect(effortLine).not.toContain('›');
+      expect(fastLine).not.toContain('›');
       expect(effortLine.indexOf('high') + 'high'.length).toBe(
         fastLine.indexOf('off') + 'off'.length,
       );
@@ -1003,7 +1003,7 @@ describe('runner row grammar', () => {
 
       expect(line).toContain('off');
       expect(line).toContain(glyph('treeLast'));
-      expect(line).not.toContain(glyph('connectorSame'));
+      expect(line).not.toContain('›');
     });
 
     it('renders the same cells whether or not the ladder can step', async () => {
@@ -1021,8 +1021,8 @@ describe('runner row grammar', () => {
       const dead = await lineFor(false);
       const live = await lineFor(true);
 
-      expect(dead).not.toContain(glyph('connectorSame'));
-      expect(live).not.toContain(glyph('connectorSame'));
+      expect(dead).not.toContain('›');
+      expect(live).not.toContain('›');
       // The trailing cell is blank either way, so the value column does not slide right.
       expect(dead.indexOf('off')).toBe(live.indexOf('off'));
     });

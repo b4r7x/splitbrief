@@ -56,6 +56,8 @@ describe('settingsItemFilterText', () => {
 
     expect(seatText.startsWith('seat:plan ')).toBe(true);
     expect(seatText).toBe(seatText.toLowerCase());
-    expect(settingsItemFilterText(itemAt(items, 'workflow.mode'))).toBe('mode workflow');
+    expect(settingsItemFilterText(itemAt(items, 'workflow.approve'))).toBe(
+      'plan approval workflow',
+    );
   });
 });

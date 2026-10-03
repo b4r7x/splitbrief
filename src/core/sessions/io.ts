@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Phase, WorkflowMode } from '../schemas/enums.js';
+import type { Phase } from '../schemas/enums.js';
 import type { Session } from '../schemas/session.js';
 import type { Summary } from '../schemas/summary.js';
 import type { SessionRef } from '../types/session-ref.js';
@@ -22,7 +22,6 @@ type SessionRowBase = Readonly<{
   completedAt: number | null;
   stateVersion: number;
   phase?: Phase | undefined;
-  mode?: WorkflowMode | undefined;
 }>;
 
 function readSummaryFile(filePath: string, sessionId: string): Session | null {
@@ -89,7 +88,7 @@ function rowFor(base: SessionRowBase, status: RunStatus, summary: Summary | null
   return { ...base, status: 'open', summary, stop: status.stop.kind };
 }
 
-// The listing shows a status, a phase and a mode; the evidence ledger and the run
+// The listing shows a status and a phase; the evidence ledger and the run
 // ledger are not on the row, so a listing never pays to read them.
 const LISTING_DEPS: RunRecordDeps = {
   ...defaultRunRecordDeps(),
@@ -116,7 +115,6 @@ function sessionRow(ref: SessionRef): Session | null {
       completedAt: persisted?.completedAt ?? null,
       stateVersion: persisted?.stateVersion ?? state.stateVersion,
       phase: state.phase,
-      ...(record.mode !== null && { mode: record.mode }),
     },
     record.status,
     persisted?.summary ?? record.summary,

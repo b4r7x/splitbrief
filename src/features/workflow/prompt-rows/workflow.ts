@@ -9,11 +9,19 @@ import { getRecoveryPromptRows } from './recovery.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 
+export interface WorkflowReviewPanelInput {
+  artifact: ReviewArtifact | null;
+  /** What approving the plan card confirms; the panel spells it above its rows. */
+  confirms: readonly string[];
+  /** The rows the panel may take and leave the document its rows (`getReviewPanelBudget`). */
+  budgetRows: number;
+}
+
 export interface WorkflowPromptRowsInput {
   approvalState: ApprovalPromptState;
   questionHint: string | null;
   /** Omitted by callers that measure a zone the document review panel never renders into. */
-  reviewArtifact?: ReviewArtifact | null | undefined;
+  review?: WorkflowReviewPanelInput | undefined;
   recoveryIssue?: RecoveryIssue | null | undefined;
   questions?: readonly ClarificationQuestion[] | undefined;
   questionIndex?: number | undefined;
@@ -22,10 +30,12 @@ export interface WorkflowPromptRowsInput {
 }
 
 export function getWorkflowPromptRows(input: WorkflowPromptRowsInput): number {
-  const { approvalState, questionHint, reviewArtifact, recoveryIssue, questions, cols } = input;
+  const { approvalState, questionHint, review, recoveryIssue, questions, cols } = input;
   return (
     getApprovalPromptRows(approvalState, cols) +
-    getReviewDocumentPromptRows(reviewArtifact ?? null, cols) +
+    (review === undefined
+      ? 0
+      : getReviewDocumentPromptRows(review.artifact, review.confirms, cols, review.budgetRows)) +
     (recoveryIssue !== null && recoveryIssue !== undefined
       ? getRecoveryPromptRows(recoveryIssue, cols)
       : questionHint === null || questions?.length === 0

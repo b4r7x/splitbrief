@@ -13,7 +13,7 @@ import { admitApiCall, type PreparedApiSeat } from './api-budget.js';
 import type { ProviderDef } from './types.js';
 import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { callPhase } from '#testing/helpers/planner-call.js';
+import { callPlanner } from '#testing/helpers/planner-call.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 
 type WireRequest = {
@@ -251,7 +251,7 @@ describe('three-seat identity and budget', () => {
       ...authority(cfg, { role: 'planner' }, cfg.planner),
       initialSessionId: null,
     });
-    await callPhase(planner, { projectDir, callbacks: { onOutput: () => {} } });
+    await callPlanner(planner, { projectDir, callbacks: { onOutput: () => {} } });
 
     expect(catalogRequests).toEqual(['4321/api/v1/models', '1234/api/v1/models']);
     expect(dispatches.at(-1)?.baseURL).toBe('http://127.0.0.1:1234/v1');
@@ -286,7 +286,7 @@ describe('three-seat identity and budget', () => {
       ...authority(cfg, { role: 'planner' }, cfg.planner),
       initialSessionId: null,
     });
-    const plan = () => callPhase(planner, { projectDir, callbacks: { onOutput: () => {} } });
+    const plan = () => callPlanner(planner, { projectDir, callbacks: { onOutput: () => {} } });
 
     catalogs.set('1234', [{ key: 'plan-model', activeContextTokens: 8_000 }]);
     await plan();
@@ -313,7 +313,7 @@ describe('three-seat identity and budget', () => {
       ...authority(cfg, { role: 'planner' }, cfg.planner),
       initialSessionId: null,
     });
-    await callPhase(planner, { projectDir, callbacks: { onOutput: () => {} } });
+    await callPlanner(planner, { projectDir, callbacks: { onOutput: () => {} } });
     expect(dispatches.at(-1)?.clientTimeoutMs).toBe(TIMEOUTS.reviewerMs);
 
     await createApiImplementer(cfg).implement({

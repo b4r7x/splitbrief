@@ -28,12 +28,10 @@ export function createDefaultConfig(): Config {
       test: true,
     },
     workflow: {
-      approve: 'default',
+      approve: 'plan',
       maxRetries: DEFAULT_LOCAL_RETRIES,
       isolation: 'worktree',
       compactionFormat: 'auto',
-      mode: 'standard',
-      taskReview: 'none',
     },
   };
 }

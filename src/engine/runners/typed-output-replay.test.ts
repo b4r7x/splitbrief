@@ -12,7 +12,7 @@ import { codexPlannerAdapter, codexProtocolEvents } from './cli-tools/codex.js';
 import { extractLastJsonObject, requestTyped, type TypedSeatCall } from './typed-output.js';
 
 const FIXTURE_DIR = join(import.meta.dirname, '../../../testing/fixtures/typed-output');
-const CLAUDE_FIXTURE = 'claude-code-2.1.287.jsonl';
+const CLAUDE_FIXTURE = 'claude-code-2.1.286.jsonl';
 const CODEX_FIXTURE = 'codex-0.157.1.jsonl';
 const ANTIGRAVITY_FIXTURE = 'antigravity-1.2.14.jsonl';
 

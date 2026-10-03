@@ -92,6 +92,22 @@ describe('ReviewView', () => {
     });
   });
 
+  it('names what is below a one-row document and how to scroll to it in its title row', async () => {
+    openReviewFile(
+      'plan.md',
+      Array.from({ length: 30 }, (_, index) => `Line ${index + 1}`).join('\n\n'),
+    );
+
+    ui = renderFeature(<ReviewView height={5} width={80} />);
+
+    await vi.waitFor(() => {
+      const lines = stripAnsiStyles(ui?.lastFrame() ?? '').split('\n');
+      expect(lines).toHaveLength(5);
+      expect(lines[1]).toContain('plan.md');
+      expect(lines[1]).toMatch(/↓ \d+ more · shift\+↑↓ scroll/);
+    });
+  });
+
   it('clamps an oversized review offset to the rendered document window', async () => {
     openReviewFile(
       'clamp.md',

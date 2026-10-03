@@ -34,6 +34,21 @@ export function formatTaskId(n: number): TaskId {
   return taskId(`T${String(n).padStart(3, '0')}`);
 }
 
+/** test: a test file or pattern; cmd: a command; render: a gallery scenario id. */
+export const CheckSchema = z.object({
+  id: z.string(),
+  kind: z.enum(['test', 'cmd', 'render']),
+  value: z.string(),
+  required: z.boolean(),
+});
+export type Check = z.infer<typeof CheckSchema>;
+
+/** `write` only: the protected-path confirmation matches `write <path>` (`gateChangedFiles`). */
+export const ProtectedOperationSchema = z.object({
+  path: z.string(),
+  operation: z.literal('write'),
+});
+
 export const TaskSchema = z.object({
   /** Branded string ID in `TNNN` format. Stable for the lifetime of the session. @see docs/TASK-CONTRACT.md */
   id: TaskIdSchema,
@@ -88,6 +103,25 @@ export const TaskSchema = z.object({
   evidence: z.array(z.string()).optional(),
   /** Current task status. @see docs/TASK-CONTRACT.md §TaskStatus */
   status: TaskStatusSchema,
+  /** Ids of the plan criteria this task serves. */
+  criteria: z.array(z.string()).optional(),
+  /** Focused checks that verify this task. */
+  checks: z.array(CheckSchema).optional(),
+  /** Files the planner suggests the task writes; guidance, mapped onto `files`. */
+  suggestedFiles: z.array(z.string()).optional(),
+  /** Read-only context; SPLITBRIEF attaches their current code at dispatch. */
+  contextFiles: z.array(z.string()).optional(),
+  /** Captured current code of `contextFiles`, keyed by path. Never a write target. */
+  contextCodeByFile: z.record(z.string(), z.string()).optional(),
+  /** Explicit "do not" notes. */
+  exclusions: z.array(z.string()).optional(),
+  /** Absent means batch 1. */
+  batch: z.number().int().min(1).optional(),
+  /** Protected writes the approved plan confirms in advance. */
+  protectedOperations: z.array(ProtectedOperationSchema).optional(),
+  revision: z.number().int().min(1).optional(),
+  /** Content hashes of the input files of this revision, keyed by path. */
+  inputHashes: z.record(z.string(), z.string()).optional(),
 });
 
 export type Task = z.infer<typeof TaskSchema>;

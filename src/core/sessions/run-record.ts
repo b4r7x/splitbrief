@@ -1,9 +1,8 @@
-import type { WorkflowMode } from '../schemas/enums.js';
 import type { EvidenceLedger } from '../schemas/evidence.js';
 import type { Summary } from '../schemas/summary.js';
 import type { SessionRef } from '../types/session-ref.js';
 import type { OwnedResumeState } from '../state/resume-hydration.js';
-import { deriveRunStatus, type ArtifactPresence, type RunStatus } from './run-status.js';
+import { deriveRunStatus, type RunStatus } from './run-status.js';
 
 /** The accept/reject decision the run ledger records; the loader maps it out of engine shapes. */
 export type RunCheckpoint = Readonly<{ kind: 'accepted' | 'rejected' }>;
@@ -11,7 +10,6 @@ export type RunCheckpoint = Readonly<{ kind: 'accepted' | 'rejected' }>;
 export interface RunRecord {
   ref: SessionRef;
   feature: string;
-  mode: WorkflowMode | null;
   startedAt: string | null;
   hydration: OwnedResumeState;
   status: RunStatus;
@@ -25,7 +23,6 @@ export interface RunRecordDeps {
   liveness: (ref: SessionRef) => 'alive' | 'not-alive';
   readSummary: (ref: SessionRef) => Summary | null;
   readLedger: (ref: SessionRef) => EvidenceLedger | null;
-  artifacts: (ref: SessionRef) => ArtifactPresence;
   readCheckpoint: (ref: SessionRef) => RunCheckpoint | null;
 }
 
@@ -37,7 +34,7 @@ function unreadableState(hydration: OwnedResumeState): RunStatus {
   return {
     kind: 'open',
     stop: { kind: 'failed', message },
-    resumeAt: { kind: 'planner', call: 'research' },
+    resumeAt: { kind: 'planner', call: 'plan' },
   };
 }
 
@@ -49,7 +46,6 @@ export function loadRunRecord(ref: SessionRef, deps: RunRecordDeps): RunRecord {
   return {
     ref,
     feature: state?.feature ?? summary?.feature ?? '',
-    mode: state?.mode ?? summary?.mode ?? null,
     startedAt: state?.startedAt ?? null,
     hydration,
     status:
@@ -58,7 +54,6 @@ export function loadRunRecord(ref: SessionRef, deps: RunRecordDeps): RunRecord {
         : deriveRunStatus({
             state,
             liveness: deps.liveness(ref),
-            artifacts: deps.artifacts(ref),
           }),
     summary,
     ledger: deps.readLedger(ref),

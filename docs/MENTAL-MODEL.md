@@ -32,9 +32,9 @@ The Task Brief is the contract between planner and implementer. Each brief descr
 - What's in scope and out of scope
 - When to stop and ask instead of guessing
 
-The implementer sees only its own brief. It has no access to the spec, the plan, or other tasks. This is deliberate — small models lose coherence when given too much context. A self-contained brief keeps them focused.
+The implementer sees only its own brief. It has no access to the plan or other tasks. This is deliberate — small models lose coherence when given too much context. A self-contained brief keeps them focused.
 
-Task Briefs are the durable contract. The spec and plan are supporting documents for the human to review; the briefs are what actually drives implementation.
+Task Briefs are the durable contract. The planner writes them as one typed plan: acceptance criteria, checks, and the tasks that serve them. SPLITBRIEF checks that plan before anyone approves it, and the briefs compiled from it are what actually drives implementation.
 
 ---
 
@@ -43,18 +43,17 @@ Task Briefs are the durable contract. The spec and plan are supporting documents
 A typical run, step by step:
 
 1. User types `splitbrief start "add email validation"`
-2. Planner researches the codebase — reads files, maps imports, understands patterns
-3. Planner writes a specification — what the feature should do, how it fits
-4. User reviews and approves the spec (or comments, or rejects)
-5. Planner writes Task Briefs — one per slice, ordered by dependency
-6. User reviews the briefs
-7. For each task: the implementer writes code in isolation, SPLITBRIEF promotes the approved changes into the project, then validates (typecheck → lint → test)
-8. If validation fails: retry (twice by default), then escalate to bigger models
-9. If escalation fails: enter recovery — user picks next action (retry same worker, route to a bigger worker, skip, pause, abort)
-10. The review seat reviews the final result against the spec — the planner, unless a `reviewer` is configured
-11. Session summary written to disk, workflow done
+2. The planner reads the codebase and may ask up to 3 questions, each with a default, for at most 2 rounds
+3. The planner answers one typed plan — criteria, checks, and Task Briefs, one per slice, ordered by dependency and grouped in batches
+4. SPLITBRIEF checks the plan deterministically (every criterion has a check and a task, the dependencies make sense, every task fits the implementer's context); a failing plan goes back to the planner once
+5. User reviews the plan on one plan card: approve, request changes, edit `plan.json`, or end the run. Approving also confirms the protected writes the plan lists
+6. For each task: the implementer writes code in isolation, SPLITBRIEF promotes the approved changes into the project, then validates (typecheck → lint → test)
+7. If validation fails: retry (twice by default), then escalate to bigger models
+8. If escalation fails: enter recovery — user picks next action (retry same worker, route to a bigger worker, skip, pause, end the run)
+9. The review seat reviews the final result against the briefs and the request — the planner, unless a `reviewer` is configured
+10. Session summary written to disk, workflow done
 
-The user can stop a run at any time — `esc` opens the stop options, `ctrl+c` stops now, and no option reverts files — queue messages while the planner is working, rewind to re-plan a spec or plan, or skip individual tasks.
+The user can stop a run at any time — `esc` opens the stop options, `ctrl+c` stops now, and no option reverts files — queue messages while the planner is working, request changes on the plan, or skip individual tasks.
 
 ---
 
@@ -74,21 +73,13 @@ The code is organized in four layers with strict import boundaries:
 
 The engine publishes events (like `task_completed` or `planner_status`) through the EventBus. The TUI sink forwards each event into workflow actions, which update split workflow stores. React components subscribe to store slices and re-render.
 
-When the workflow needs a human decision — approve a spec, answer a question, confirm a costly action — the engine awaits a callback. The UI fulfills the callback by switching input mode and resolving the promise when the user answers. These gating callbacks are separate from the EventBus: events are fire-and-forget broadcasts, callbacks are blocking request/response pairs.
+When the workflow needs a human decision — approve the plan, answer a question, confirm a protected write — the engine awaits a callback. The UI fulfills the callback by switching input mode and resolving the promise when the user answers. These gating callbacks are separate from the EventBus: events are fire-and-forget broadcasts, callbacks are blocking request/response pairs.
 
 ---
 
-## Modes
+## One planning session
 
-Three modes trade speed for thoroughness:
-
-**quick** — One planner call. Tasks only, no supporting documents, no approval gates. For renaming a variable, fixing a typo, or any small, well-understood change.
-
-**standard** — Four planner calls: research → spec → plan → tasks. Spec approval gate before planning. The default for most work.
-
-**speckit** — Six to seven calls: adds clarification questions, constitution check, and post-plan analysis. Spec, plan, and briefs gates are active by default. For large, risky, or externally visible work.
-
-All three modes produce the same output: a list of Task Briefs. The difference is how much the planner thinks before writing them.
+There are no modes. Every run plans in one typed session, and the same plan card guards every run unless `workflow.approve: none` skips it. A small change gets a small plan; a large one gets more criteria, checks and batches. Older configs that name a `workflow.mode` still load, with one notice.
 
 ---
 
@@ -98,7 +89,7 @@ Every run is a durable record, kept in a folder on disk under `.splitbrief/sessi
 
 - **state.json** — Current phase, task progress, and how the run stopped. Overwritten on every phase transition. This is the source of truth for continuing it.
 - **session.jsonl** — Every event and message, append-only. The full audit log.
-- **research.md / spec.md / plan.md / tasks.md** — Planning artifacts, written once per planning phase when the selected mode produces them. Speckit can also write clarification, constitution-check, and analysis artifacts.
+- **plan.json / plan.md / tasks.md** — The typed plan the planner answered and SPLITBRIEF checked, and its two renderings. A run planned by an older engine also holds `research.md` and `spec.md`.
 - **summary.json** — Final cost, timing, outcomes. Written once at the end.
 - **snapshots/** — Content-addressed working-tree snapshots for undo.
 
@@ -125,7 +116,7 @@ Both planner and implementer are pluggable. The same four backend kinds work for
 **agent** — Subprocess that writes files directly to disk (no code extraction from response); no shell/network sandbox.
 
 
-The orchestrator never branches on backend type. It calls `planner.runPhase()` and `implementer.implement()`. The factory dispatches to the right backend based on `config.planner.kind` and `config.implementer.kind`. Each backend exposes a capabilities struct — the orchestrator reads capabilities, not backend identity, to decide what's possible.
+The orchestrator never branches on backend type. It calls the planner's typed call (`requestTyped`) and `implementer.implement()`. The factory dispatches to the right backend based on `config.planner.kind` and `config.implementer.kind`. Each backend exposes a capabilities struct — the orchestrator reads capabilities, not backend identity, to decide what's possible.
 
 ---
 
@@ -157,14 +148,10 @@ If all tiers fail, the recovery system takes over: the user sees the failure and
 
 ## Approval gates
 
-The workflow pauses at defined points for human review:
+The workflow pauses at two kinds of point for human review:
 
-- **Spec gate** — After the planner writes the spec. Approve, comment (planner regenerates), or reject.
-- **Plan gate** — After the planner writes the plan (speckit mode by default).
-- **Briefs gate** — After Task Briefs pass the quality gate. The user reviews tasks.md before any code is written.
-- **Tiered approval** — During implementation, declared/promoted file-write requests are classified as `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, `sensitive_change`, or `package_change` and gated at three tiers: `auto` (allow silently), `sticky` (remember the user's choice), `confirm` (ask; a protected path asks even under `--yolo`, once per path per run).
-
-`--approve none` skips spec/plan document gates. Briefs review is separate and still runs in modes that produce reviewable briefs. `--approve all` enables spec and plan gates. The mode sets the default: quick skips spec/plan gates, standard gates on spec, speckit gates on spec and plan.
+- **Plan card** — After the plan passes its checks, before any code is written. Approve, request changes (the planner revises the plan), edit `plan.json` (re-checked before it is applied), or end the run. Approving confirms the protected writes the plan lists. `workflow.approve: none` skips the card.
+- **Protected-path confirmation** — During implementation, each written path is classified as `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, `sensitive_change`, or `package_change`. A write to a protected path (`destructive`, `sensitive_change`, `package_change`) asks, even under `--yolo`, once per path per run; no other write asks.
 
 ---
 

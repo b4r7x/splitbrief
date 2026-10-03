@@ -10,11 +10,8 @@ Examples:
     $ splitbrief "implement the auth flow" @design.md @screenshot.png
     $ splitbrief "fix this bug" @error-log.txt @repro-steps.md
 
-  Workflow modes:
-    $ splitbrief "rename variable" --mode quick
-    $ splitbrief "add caching layer" --mode standard
-    $ splitbrief "rebuild auth system" --mode speckit
-    $ splitbrief spec "planning only" --mode quick
+  Planning only:
+    $ splitbrief spec "add caching layer"
 
   Provider overrides:
     $ splitbrief "add tests" --planner anthropic --implementer ollama
@@ -25,7 +22,7 @@ Examples:
     $ splitbrief "run migration" --json | jq .
 
   Explicit start (equivalent to shorthand):
-    $ splitbrief start "add feature" --mode standard --approve none
+    $ splitbrief start "add feature"
 
   Other commands:
     $ splitbrief status

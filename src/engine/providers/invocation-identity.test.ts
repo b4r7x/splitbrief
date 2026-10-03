@@ -15,7 +15,7 @@ import { dispatchStreamCompletion } from './dispatch-stream.js';
 import type { StreamClient } from './openai-stream/request.js';
 import { getProvider } from './registry.js';
 import type { ProviderDef } from './types.js';
-import { callPhase } from '#testing/helpers/planner-call.js';
+import { callPlanner } from '#testing/helpers/planner-call.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 
 const requests: { baseURL: string; model: string }[] = [];
@@ -129,8 +129,7 @@ afterEach(() => {
 
 async function planOnce(config: Config): Promise<RunnerCallEvent[]> {
   const events: RunnerCallEvent[] = [];
-  await callPhase(createApiPlanner(config), {
-    call: 'research',
+  await callPlanner(createApiPlanner(config), {
     projectDir,
     callbacks: { onOutput: () => {}, onCallEvent: (event) => events.push(event) },
   });

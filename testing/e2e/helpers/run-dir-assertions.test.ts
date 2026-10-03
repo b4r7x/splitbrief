@@ -53,8 +53,6 @@ Add a node:test case for the route.
 - Use node:test.
 `;
 
-const PLANNER_PHASES = ['researching', 'specifying', 'planning', 'reviewing-briefs'];
-
 function plainStdout(): string {
   return [
     'phase: planning',
@@ -81,8 +79,8 @@ function logLine(type: string, phase: string, data: unknown, taskId?: string): s
 
 function sessionLog(extra: readonly string[] = []): string {
   return [
-    ...PLANNER_PHASES.map((phase) => logLine('runner_call_started', phase, { role: 'planner' })),
-    // A planner-role call outside the planning phases is not part of the mode's budget.
+    logLine('runner_call_started', 'planning', { role: 'planner' }),
+    // A planner-role call outside the planning phases is not part of the planning session.
     logLine('runner_call_started', 'implementing', { role: 'planner' }),
     logLine('runner_call_started', 'implementing', { role: 'implementer' }),
     logLine('runner_call_started', 'implementing', { role: 'implementer' }),
@@ -99,7 +97,6 @@ function writeSessionDir(dir: string, overrides: Readonly<Record<string, string>
     'tasks.md': TASKS_MD,
     'spec.md': '# Spec\n\nAdd a health endpoint.\n',
     'plan.md': '# Plan\n\nOne route, one test.\n',
-    'brief-quality.json': JSON.stringify({ version: 1, passed: true, score: 1, issues: [] }),
     'evidence.json': JSON.stringify({
       version: 1,
       sessionId: 'sess-1',
@@ -219,17 +216,16 @@ describe('assertPlainStdout', () => {
 });
 
 describe('assertSessionDir', () => {
-  it('reports the runner-call counts and per-brief durations of a clean standard run', () => {
+  it('reports the runner-call counts and per-brief durations of a clean run', () => {
     const dir = tempDir('run-dir-assertions-ok');
     writeSessionDir(dir);
 
     const facts = assertSessionDir(dir, {
-      mode: 'standard',
       expectedBriefs: { min: 1, max: 3 },
       completed: 2,
     });
 
-    expect(facts.calls).toEqual({ planner: 4, implementer: 2, review: 1 });
+    expect(facts.calls).toEqual({ planner: 1, implementer: 2, review: 1 });
     expect(facts.perBrief).toEqual([
       { id: 'T001', durationMs: 4200 },
       { id: 'T002', durationMs: 1300 },
@@ -242,16 +238,20 @@ describe('assertSessionDir', () => {
     writeSessionDir(dir);
 
     expect(() =>
-      assertSessionDir(dir, { mode: 'standard', expectedBriefs: { min: 1, max: 3 }, completed: 3 }),
+      assertSessionDir(dir, { expectedBriefs: { min: 1, max: 3 }, completed: 3 }),
     ).toThrow('stdout `done:` count');
   });
 
-  it('rejects a planner-call count the mode does not budget for', () => {
+  it('rejects a second planner call in the planning phases', () => {
     const dir = tempDir('run-dir-assertions-calls');
-    writeSessionDir(dir);
+    writeSessionDir(dir, {
+      'session.jsonl': sessionLog([
+        logLine('runner_call_started', 'planning', { role: 'planner' }),
+      ]),
+    });
 
     expect(() =>
-      assertSessionDir(dir, { mode: 'quick', expectedBriefs: { min: 1, max: 3 }, completed: 2 }),
+      assertSessionDir(dir, { expectedBriefs: { min: 1, max: 3 }, completed: 2 }),
     ).toThrow();
   });
 
@@ -274,7 +274,7 @@ describe('assertSessionDir', () => {
     });
 
     expect(() =>
-      assertSessionDir(dir, { mode: 'standard', expectedBriefs: { min: 1, max: 3 }, completed: 2 }),
+      assertSessionDir(dir, { expectedBriefs: { min: 1, max: 3 }, completed: 2 }),
     ).toThrow();
   });
 
@@ -299,7 +299,7 @@ describe('assertSessionDir', () => {
     });
 
     expect(() =>
-      assertSessionDir(dir, { mode: 'standard', expectedBriefs: { min: 1, max: 3 }, completed: 2 }),
+      assertSessionDir(dir, { expectedBriefs: { min: 1, max: 3 }, completed: 2 }),
     ).toThrow();
   });
 });

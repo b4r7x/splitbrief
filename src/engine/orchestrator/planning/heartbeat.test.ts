@@ -50,12 +50,10 @@ describe('startPlannerHeartbeat', () => {
     expect(bus.published).toHaveLength(3);
   });
 
-  it('includes the latest token and phase hint metadata in heartbeat events', () => {
+  it('includes the runner call id in heartbeat events', () => {
     const bus = createMockBus();
     const handle = startPlannerHeartbeat(bus, 'planning', Date.now());
     handle.updateCallId('planner-call-1');
-    handle.updateTokens(750);
-    handle.updatePhaseHint('analyzing repo map');
 
     vi.advanceTimersByTime(HEARTBEAT_THRESHOLD_MS);
     expect(bus.published).toHaveLength(1);
@@ -63,18 +61,14 @@ describe('startPlannerHeartbeat', () => {
     expect(event.type).toBe('planner_heartbeat');
     if (event.type === 'planner_heartbeat') {
       expect(event.callId).toBe('planner-call-1');
-      expect(event.accumulatedTokens).toBe(750);
-      expect(event.phaseHint).toBe('analyzing repo map');
     }
 
-    handle.updateTokens(1200);
     vi.advanceTimersByTime(PLANNER_KEEPALIVE_INTERVAL_MS);
 
     const second = bus.published[1]!;
     expect(second.type).toBe('planner_heartbeat');
     if (second.type === 'planner_heartbeat') {
-      expect(second.accumulatedTokens).toBe(1200);
-      expect(second.phaseHint).toBe('analyzing repo map');
+      expect(second.callId).toBe('planner-call-1');
     }
   });
 

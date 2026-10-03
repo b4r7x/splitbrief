@@ -169,6 +169,48 @@ describe('readiness checks', () => {
     );
   });
 
+  it('reports the plan approval and no workflow mode, whatever mode the config still names', () => {
+    const base = makeConfig({ workflow: { approve: 'none' } });
+    const report = buildReadinessReport(
+      baseInput({ config: { ...base, workflow: { ...base.workflow, mode: 'speckit' } } }),
+    );
+
+    const section = report.sections.find((candidate) => candidate.id === 'workflow');
+    expect(section?.title).toBe('Workflow');
+    expect(section?.checks.map((check) => check.summary)).toEqual(['Plan approval: none.']);
+    expect(report.sections.some((candidate) => candidate.id === 'mode')).toBe(false);
+    expect(report.metadata).toEqual(expect.objectContaining({ approve: 'none' }));
+    expect(report.metadata).not.toHaveProperty('mode');
+  });
+
+  it('says a headless run approves the plan card unattended, at the default approve level', () => {
+    const report = buildReadinessReport(
+      baseInput({ config: makeConfig({ workflow: { approve: 'plan' } }), interaction: 'headless' }),
+    );
+    const checks = report.sections.flatMap((section) => section.checks);
+
+    expect(checks.find((check) => check.id === 'approval.resolved')?.summary).toBe(
+      'Plan approval: plan; a headless run approves the plan card unattended.',
+    );
+    expect(
+      checks.find((check) => check.id === 'runners.planner.trust-boundary')?.details,
+    ).toContain('Approval automation: plan approval is auto-approved.');
+  });
+
+  it('asks every config for the same 32000-token context floor', () => {
+    const base = makeConfig({
+      planner: { kind: 'cli', tool: 'claude-code', contextLength: 24_000 },
+    });
+    const report = buildReadinessReport(
+      baseInput({ config: { ...base, workflow: { ...base.workflow, mode: 'quick' } } }),
+    );
+
+    const planner = report.sections
+      .flatMap((section) => section.checks)
+      .find((check) => check.id === 'context.planner.tight');
+    expect(planner?.metadata).toMatchObject({ recommendedMinimum: 32_000 });
+  });
+
   it('reports missing profile cost tier and inferred write mode as non-blocking info', () => {
     const config: Config = {
       ...makeConfig({

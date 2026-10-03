@@ -1,20 +1,17 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import type { Planner } from '../../planners/types.js';
-import type { Config } from '../../../core/schemas/config.js';
-import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
+import { makePlanProposal } from '#testing/helpers/factories/plan.js';
+import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import {
   createTestSinks,
-  REAL_TASKS_MD,
-  makePassingTask,
   makePassingPlanner,
   auto,
-  manual,
-  runPlanningTurn as runPhaseHelper,
+  runPlanningTurn,
   type RunOpts,
 } from '#testing/helpers/planning-phase.js';
+import { typedCallAnswering } from '#testing/helpers/typed-planner.js';
 
 let dirs: string[] = [];
 afterEach(() => {
@@ -22,86 +19,59 @@ afterEach(() => {
   dirs = [];
 });
 
-function runPhase(opts: RunOpts = {}) {
-  return runPhaseHelper(dirs, opts);
+function runTurn(opts: RunOpts = {}) {
+  return runPlanningTurn(dirs, opts);
 }
 
 describe('runPlanningPhase — abort + continuation', () => {
-  const abortCases: Array<{
-    name: string;
-    workflow: Partial<Config['workflow']>;
-    partialText: string;
-    continuationText: string;
-  }> = [
-    {
-      name: 'standard mode: an aborted call continues with the partial + user text',
-      workflow: auto(),
-      partialText: 'partially generated spec...',
-      continuationText: 'also use PostgreSQL 15',
-    },
-    {
-      name: 'quick mode: an aborted call continues with the partial + user text',
-      workflow: manual('quick'),
-      partialText: 'quick plan partial output',
-      continuationText: 'add more detail',
-    },
-  ];
-
-  it.each(abortCases)('$name', async ({ workflow, partialText, continuationText }) => {
+  it('runs a cut planning call again with what the user typed', async () => {
     const sinks = createTestSinks();
-    let callCount = 0;
-    const continuedPhase: Planner['runPhase'] = async ({ call, inputs, callbacks: plannerCbs }) => {
-      callCount++;
-      if (callCount === 1) {
-        plannerCbs.onOutput(partialText);
-        sinks.abortTurn();
-        throw new DOMException('The user aborted a request.', 'AbortError');
-      }
-      if (callCount === 2) {
-        // The step's own prompt is rebuilt; the continuation trails it.
-        expect(inputs.continuationTurn).toBeUndefined();
-        expect(inputs.promptSuffix).toContain(partialText);
-        expect(inputs.promptSuffix).toContain(continuationText);
-      }
-      return makePhaseCallResult({
-        call,
-        usage: { inputTokens: 100, outputTokens: 50 },
-        ...(call === 'tasks' ? { text: REAL_TASKS_MD, tasks: [makePassingTask()] } : {}),
-      });
-    };
+    const prompts: string[] = [];
+    const planner = makePassingPlanner({
+      typedCall: (ctx) => ({
+        seat: ctx.seat,
+        typedOutput: 'fallback',
+        canResume: false,
+        invoke: async ({ prompt }) => {
+          prompts.push(prompt);
+          if (prompts.length === 1) {
+            sinks.abortTurn();
+            throw new DOMException('The user aborted a request.', 'AbortError');
+          }
+          return makeRunnerCallResult({
+            status: 'completed',
+            text: JSON.stringify({ result: makePlanProposal() }),
+          });
+        },
+      }),
+    });
+    const onContinuationNeeded = vi.fn(async () => 'also use PostgreSQL 15');
 
-    const continuationPrompts: string[] = [];
-    const onContinuationNeeded = async (partial: string) => {
-      continuationPrompts.push(partial);
-      return continuationText;
-    };
-    const { callbacks } = makeCallbacks({ onContinuationNeeded });
-    const planner = makePassingPlanner({ runPhase: continuedPhase });
-
-    const { result } = await runPhase({
+    const { result } = await runTurn({
       planner,
-      callbacks,
-      config: makeConfig({ workflow }),
+      callbacks: makeCallbacks({ onContinuationNeeded }).callbacks,
+      config: makeConfig({ workflow: auto() }),
       sinks,
     });
 
     expect(result.disposition).toBe('ready-for-tasks');
-    expect(continuationPrompts).toEqual([partialText]);
-    expect(callCount).toBeGreaterThanOrEqual(2);
+    expect(onContinuationNeeded).toHaveBeenCalledTimes(1);
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain('The user says: also use PostgreSQL 15');
   });
 
   it('abort without onContinuationNeeded falls through to planning failure', async () => {
     const sinks = createTestSinks();
     let planCalls = 0;
-    const abortingPhase: Planner['runPhase'] = async () => {
+    const aborting = typedCallAnswering(() => {
       planCalls++;
       sinks.abortTurn();
       throw new DOMException('The user aborted a request.', 'AbortError');
-    };
+    });
     const { callbacks } = makeCallbacks({ onContinuationNeeded: undefined });
 
-    const { result } = await runPhase({
-      planner: makePassingPlanner({ runPhase: abortingPhase }),
+    const { result } = await runTurn({
+      planner: makePassingPlanner({ typedCall: aborting }),
       callbacks,
       config: makeConfig({ workflow: auto() }),
       sinks,

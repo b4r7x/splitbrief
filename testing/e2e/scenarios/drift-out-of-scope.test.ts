@@ -13,8 +13,7 @@ const scenario = {
   name: 'drift detection - out of scope writes',
   cassetteName: 'drift-out-of-scope',
   feature: 'update config parser',
-  mode: 'quick' as const,
-  config: makeE2eScenarioConfig('quick', {
+  config: makeE2eScenarioConfig({
     workflow: { driftChainThreshold: 0.01 },
     hooks: {
       pre_validation: [

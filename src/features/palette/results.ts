@@ -193,8 +193,8 @@ export function buildPaletteResults(inputs: PaletteInputs): PaletteResult[] {
   const scored: RankedPaletteResult[] = [];
 
   for (const [candidateOrder, candidate] of candidates.entries()) {
-    // The grammar is part of the target even though it is a cell of its own: typing `speckit`
-    // still has to find `/mode`.
+    // The grammar is part of the target even though it is a cell of its own: typing `review`
+    // still has to find `/crew`.
     const target = [candidate.label, candidate.description, candidate.hint ?? '', candidate.source]
       .filter((part) => part !== '')
       .join(' ');

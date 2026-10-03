@@ -10,7 +10,6 @@ export function makeView(overrides: Partial<SummaryView> = {}): SummaryView {
     outcome: { kind: 'ready' },
     run: {
       feature: 'Add email validation with tests',
-      mode: 'standard',
       totalMs: 727_000,
       phase: 'complete',
       sessionId: '2026-09-14-add-email-validation-with-tests',

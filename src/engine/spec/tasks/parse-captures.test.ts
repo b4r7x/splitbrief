@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { dependencyTaskBlock } from '#testing/helpers/factories/task.js';
-import { evaluateBriefQuality } from '../brief-quality.js';
 import { parseTasks, parseTaskSourceBlocks, parseTasksStrict } from './parse.js';
 
 describe('parseTasks — real planner captures', () => {
@@ -161,13 +160,6 @@ describe('parseTasks — fenced planner replies', () => {
     expect(task?.evidence?.length).toBeGreaterThan(0);
     expect(task?.scope?.inBounds?.length).toBeGreaterThan(0);
     expect(task?.scope?.outOfBounds?.length).toBeGreaterThan(0);
-  });
-
-  it('carries the same-length fenced reply past the brief quality gate', () => {
-    const report = evaluateBriefQuality(parseTasks(sameLengthReply));
-
-    expect(report.issues.filter((issue) => issue.severity === 'error')).toEqual([]);
-    expect(report.passed).toBe(true);
   });
 
   it('drops the trailing narration after a same-length wrapper fence', () => {

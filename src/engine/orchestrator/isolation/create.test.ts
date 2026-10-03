@@ -1004,7 +1004,7 @@ describe('createRunIsolation', () => {
   }, async () => {
     const dir = createTempDir('isolation-gate-denied');
     try {
-      createTestGitRepo(dir, { 'src/app.ts': 'export const app = true;\n' });
+      createTestGitRepo(dir, { 'package.json': '{}\n' });
       const retained: string[] = [];
       const handle = createRunIsolation({
         projectDir: dir,
@@ -1016,8 +1016,8 @@ describe('createRunIsolation', () => {
 
       const taskStartSnapshot = await getChangedFilesSnapshot(dir);
       const ws = await acquireDirect(handle);
-      writeFileSync(join(ws.projectDir, 'src', 'app.ts'), 'export const app = "denied";\n');
-      writeFileSync(join(ws.projectDir, 'src', 'extra.ts'), 'export const extra = true;\n');
+      writeFileSync(join(ws.projectDir, 'package.json'), '{"denied":true}\n');
+      writeFileSync(join(ws.projectDir, '.env.local'), 'EXTRA=1\n');
 
       const task = makeTask({ id: 'T001', file: 'src/main.ts' });
       const outcome = await gateAndPromoteChangedFiles({
@@ -1033,7 +1033,6 @@ describe('createRunIsolation', () => {
           approval: {
             enabled: true,
             feedRejectionsToPlanner: false,
-            tiers: { write_out_of_scope: 'sticky' },
           },
         }),
         workspace: ws,
@@ -1047,82 +1046,13 @@ describe('createRunIsolation', () => {
 
       // The next acquisition observes the worktree the denial left behind.
       const next = await acquireDirect(handle);
-      expect(readFileSync(join(next.projectDir, 'src', 'app.ts'), 'utf8')).toBe(
-        'export const app = true;\n',
-      );
-      expect(existsSync(join(next.projectDir, 'src', 'extra.ts'))).toBe(false);
+      expect(readFileSync(join(next.projectDir, 'package.json'), 'utf8')).toBe('{}\n');
+      expect(existsSync(join(next.projectDir, '.env.local'))).toBe(false);
 
       await handle.dispose();
 
       expect(retained).toEqual([]);
       expect(existsSync(isolationWorktree(dir))).toBe(false);
-    } finally {
-      cleanupTempDir(dir);
-    }
-  });
-
-  it('discards a gate-denied task that retargeted a seeded project symlink, restoring the link', {
-    timeout: 60_000,
-  }, async () => {
-    const dir = createTempDir('isolation-gate-denied-link');
-    try {
-      createTestGitRepo(dir, {
-        'src/app.ts': 'export const app = true;\n',
-        'skills/a/SKILL.md': '# a\n',
-        'skills/b/SKILL.md': '# b\n',
-      });
-      mkdirSync(join(dir, '.claude', 'skills'), { recursive: true });
-      symlinkSync('../../skills/a', join(dir, '.claude', 'skills', 'current'), 'dir');
-      const handle = createRunIsolation({
-        projectDir: dir,
-        sessionId: SESSION_ID,
-        strategy: 'worktree',
-        onFallback: () => {},
-        onRetained: () => {},
-      });
-
-      const taskStartSnapshot = await getChangedFilesSnapshot(dir);
-      const ws = await acquireDirect(handle);
-      const link = join(ws.projectDir, '.claude', 'skills', 'current');
-      rmSync(link);
-      symlinkSync('../../skills/b', link, 'dir');
-      writeFileSync(join(ws.projectDir, 'src', 'app.ts'), 'export const app = "denied";\n');
-
-      const task = makeTask({ id: 'T001', file: 'src/app.ts' });
-      const outcome = await gateAndPromoteChangedFiles({
-        task,
-        state: makeImplState([task]),
-        projectDir: dir,
-        sessionId: SESSION_ID,
-        bus: makeBusRecorder().bus,
-        callbacks: makeCallbacks({
-          onTieredApproval: vi.fn().mockResolvedValue({ decision: 'deny', reason: 'test' }),
-        }).callbacks,
-        config: makeNoValidationConfig({
-          approval: {
-            enabled: true,
-            feedRejectionsToPlanner: false,
-            // Every write asks and is denied, so the whole attempt is discarded.
-            tiers: { write_in_scope: 'sticky', write_out_of_scope: 'sticky' },
-          },
-        }),
-        workspace: ws,
-        taskStartSnapshot,
-        dependsOnFiles: [],
-        cleanup: ws.cleanup,
-        handleConflict: async (s) => s,
-        onApproved: () => {},
-      });
-      expect(outcome.outcome).toBe('gate-denied');
-
-      const next = await acquireDirect(handle);
-      expect(readlinkSync(join(next.projectDir, '.claude', 'skills', 'current'))).toBe(
-        '../../skills/a',
-      );
-      expect(readFileSync(join(next.projectDir, 'src', 'app.ts'), 'utf8')).toBe(
-        'export const app = true;\n',
-      );
-      await handle.dispose();
     } finally {
       cleanupTempDir(dir);
     }
@@ -1190,10 +1120,7 @@ describe('createRunIsolation', () => {
     expect(readFileSync(join(root, 'src', 'app.ts'), 'utf8')).toBe('export const app = true;\n');
   }
 
-  it.each([
-    { outcome: 'gate-denied', approval: true, fresh: false },
-    { outcome: 'promote-conflict', approval: false, fresh: true },
-  ])(
+  it.each([{ outcome: 'promote-conflict', approval: false, fresh: true }])(
     'keeps worker symlinks of a $outcome task out of the checkout and out of the next attempt',
     { timeout: 60_000 },
     async ({ outcome, approval, fresh }) => {
@@ -1234,8 +1161,6 @@ describe('createRunIsolation', () => {
               approval: {
                 enabled: approval,
                 feedRejectionsToPlanner: false,
-                // Every write asks and is denied, so the whole attempt is discarded.
-                tiers: { write_in_scope: 'sticky', write_out_of_scope: 'sticky' },
               },
             }),
             workspace: ws,

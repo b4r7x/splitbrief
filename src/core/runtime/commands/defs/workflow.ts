@@ -1,12 +1,11 @@
 import {
-  APPROVAL_ACTIONS,
   QUEUE_ACTIONS,
   RUN_ACTIONS,
   type RuntimeCommandDef,
   type RuntimeCommandContext,
 } from '../types.js';
 import { includes } from '../../../../utils/type-guards.js';
-import { canRedoTask, canRevisePlan, canReviseSpec, isLivePhase } from '../../../phases.js';
+import { canRedoTask, isLivePhase } from '../../../phases.js';
 import { toErrorMessage } from '../../../../utils/format-errors.js';
 import { countNoun, pluralize } from '../../../../utils/pluralize.js';
 import { formatRejectRunMessage } from '../messages.js';
@@ -21,38 +20,6 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
       category: 'workflow',
       validScreens: ['workflow'],
       handler: () => ctx.openOverlay('stop-sheet'),
-    },
-    {
-      kind: 'arg',
-      name: '/revise-spec',
-      label: 'revise spec',
-      description: 'Rewind to spec phase with optional feedback',
-      category: 'workflow',
-      args: { kind: 'free', hint: '[feedback]' },
-      validScreens: ['workflow'],
-      guard: (c) => (canReviseSpec(c.phase) ? undefined : 'No spec to revise in this phase'),
-      handler: (args) => {
-        const comment = args?.trim() || undefined;
-        if (!ctx.requestRewind('spec', comment)) {
-          ctx.setFeedbackError('Cannot rewind: no active workflow.');
-        }
-      },
-    },
-    {
-      kind: 'arg',
-      name: '/revise-plan',
-      label: 'revise plan',
-      description: 'Rewind to plan phase with optional feedback',
-      category: 'workflow',
-      args: { kind: 'free', hint: '[feedback]' },
-      validScreens: ['workflow'],
-      guard: (c) => (canRevisePlan(c.phase) ? undefined : 'No plan to revise in this phase'),
-      handler: (args) => {
-        const comment = args?.trim() || undefined;
-        if (!ctx.requestRewind('plan', comment)) {
-          ctx.setFeedbackError('Cannot rewind: no active workflow.');
-        }
-      },
     },
     {
       kind: 'arg',
@@ -136,36 +103,6 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
           return;
         }
         ctx.setFeedbackError(`Unknown queue command: ${sub}. Use: /queue show or /queue clear`);
-      },
-    },
-    {
-      kind: 'arg',
-      name: '/approval',
-      label: 'approval',
-      description: 'List or clear sticky approval grants',
-      category: 'workflow',
-      args: { kind: 'closed', options: APPROVAL_ACTIONS, optional: true },
-      validScreens: ['workflow'],
-      handler: (args) => {
-        const sub = args?.trim().toLowerCase();
-        if (!sub || sub === 'list') {
-          const grants = ctx.listApprovals();
-          if (grants.length === 0) {
-            ctx.setFeedbackMessage('No sticky approvals on record.');
-          } else {
-            const summary = grants.map((g) => `${g.pattern} (${g.class}, ${g.scope})`).join(', ');
-            ctx.setFeedbackMessage(`Approvals: ${summary}`);
-          }
-          return;
-        }
-        if (sub === 'clear') {
-          const count = ctx.clearApprovals();
-          ctx.setFeedbackMessage(`Cleared ${count} approval grant(s).`);
-          return;
-        }
-        ctx.setFeedbackError(
-          `Unknown approval command: ${sub}. Use: /approval list or /approval clear`,
-        );
       },
     },
     {

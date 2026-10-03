@@ -6,14 +6,13 @@ import { makeE2eScenarioConfig } from '../helpers/config.js';
 import { runE2eWorkflow, setupE2eScenario } from '../helpers/harness.js';
 
 const scenario = {
-  name: 'standard mode - multi-task feature',
+  name: 'planning session - multi-task feature',
   cassetteName: 'standard-multi-task',
   feature: 'add user profile page with API and tests',
-  mode: 'standard' as const,
-  config: makeE2eScenarioConfig('standard', { workflow: { approve: 'none' } }),
+  config: makeE2eScenarioConfig({ workflow: { approve: 'none' } }),
 };
 
-describe('e2e: standard mode multi-task', () => {
+describe('e2e: two-task plan builds in order', () => {
   const ctx = setupE2eScenario(scenario);
 
   it('plans multiple tasks, completes them sequentially, and emits cost updates', async () => {

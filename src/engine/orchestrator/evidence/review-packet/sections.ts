@@ -282,12 +282,7 @@ export function buildCost(summary: Summary, events: PacketEvent[]): ReviewPacket
     amountBasis: costAmountBasis(summary.costBreakdown),
     taskRouting: summary.taskBreakdown ?? [],
     routingWarnings: events
-      .filter(
-        (event) =>
-          event.type === 'mode_advice' ||
-          event.type === 'task_started' ||
-          event.type === 'task_tokens',
-      )
+      .filter((event) => event.type === 'task_started' || event.type === 'task_tokens')
       .filter(
         (event) =>
           event.message !== undefined || event.outcome === 'tight' || event.outcome === 'overflow',
@@ -324,7 +319,7 @@ export function buildRun(
   return {
     sessionId: opts.sessionId,
     feature: opts.summary.feature,
-    mode: opts.summary.mode ?? null,
+    mode: null,
     phase: opts.state.phase,
     planner: packetSeat(
       {

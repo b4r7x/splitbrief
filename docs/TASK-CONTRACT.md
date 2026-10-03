@@ -11,7 +11,7 @@ Historical full-planner escalation values remain readable; new execution does no
 `4`, and `stateRevision` identifies the state head. Only the
 state-operations/controller path may mutate it. Every mutation rebases complete
 state, supplies the expected revision, and refuses a stale, future, or
-malformed write. All modes (`quick`, `standard`, and `speckit`) and all callers
+malformed write. All callers
 (TUI and headless) consume the same v4 projection and command policy. Read-only
 integrations may observe state but never promote a local migration, retry a
 provider, or bypass the revision check. Queue reads keep unsaved workflow fields while the caller and disk share a committed revision. Once the disk revision advances, its workflow state wins, including rewinds and recovery; queue delivery state is merged separately. The keys `stateFence`,
@@ -22,13 +22,82 @@ stripped, so a state written before those subsystems were removed still loads.
 The version number itself has one home, `WORKFLOW_STATE_VERSION`; no reader and
 no writer spells `4`.
 
-A Task Brief may enter implementation only when the current deterministic Brief Quality report has zero errors.
-Warnings remain non-blocking, and an invalid brief must never be advanced through an approval override.
-The report is written to the session folder as `brief-quality.json`.
+A Task Brief may enter implementation only when the plan it was compiled from passed `checkPlan` and the context fit.
+A plan that fails `checkPlan` never reaches the plan card, and an edited `plan.json` that fails its checks is not applied.
+Approving the plan card never overrides a failed check.
+
+## The plan contract
+
+The planning session's answer is typed. Its schemas live in `src/core/schemas/plan.ts`; the checked plan is written to the session folder as `plan.json` (`PLAN_JSON_FILE`, `src/core/paths.ts`; read and written by `src/core/sessions/plan-file.ts`, whose reader validates with the schema). `plan.md` and `tasks.md` are renderings of it (`formatPlanMarkdown`, `formatTasks`). `stateVersion` did not change for the plan: `state.plan` is an optional field, and a state without it still parses.
+
+**The answer.** The planner answers `{ result: PlanResult }` (`PlanAnswerSchema`). `PlanResult` is either `{ kind: 'questions', questions }` (1 to 3 questions, each `{ id, text, choices, default }`) or `{ kind: 'plan', summary, decisions, criteria, checks, validation, tasks }` (`PlanProposalSchema`). OpenAI strict mode takes only an object at the root, so the union travels under `result`, and every optional value is `nullable` with its key required. This differs from the type in the design note, which had optional keys and a bare union. `PLAN_ANSWER_JSON_SCHEMA` passes strict mode, so `claude-code`, `codex` and the `api` kind use their native schema flag.
+
+| Plan field | Type | Meaning |
+|---|---|---|
+| `summary` | string | One paragraph the plan card shows first |
+| `decisions` | string[] | Choices the planner made |
+| `criteria` | `{ id, text, checkIds }[]` | Acceptance criteria, each served by named checks |
+| `checks` | `{ id, kind: 'test' \| 'cmd' \| 'render', value, required }[]` | The checks the criteria and tasks name |
+| `validation` | `{ language, typecheck, lint, test, testPattern }` or null | Becomes `state.discoveredValidation` (`typecheckCommand`, `lintCommand`, `testCommand`, `testPattern`, `language`) |
+| `tasks` | `TaskSpec[]` | The tasks |
+
+`state.plan` (`PlanSchema`) keeps the plan without its tasks; the tasks live in `state.tasks`.
+
+**`TaskSpec`.**
+
+| Field | Type | Maps to `Task` |
+|---|---|---|
+| `id` | `TNNN` | `id` |
+| `title` | string | `title` |
+| `intent` | string | `description` |
+| `criteria` | string[] (criterion ids) | `criteria` |
+| `checks` | `Check[]` | `checks`; `tests` = the values of the `test` checks; `evidence` = one line per check (`<id> <kind>[ (optional)]: <value>`) |
+| `suggestedFiles` | string[], at least one | `suggestedFiles`; `files` = all of them; `file` = the first |
+| `contextFiles` | string[] | `contextFiles` (read-only: never in `scope`, never a write target) |
+| `exclusions` | string[] | `exclusions`; `scope.outOfBounds` |
+| `protectedOperations` | `{ path, operation: 'write' }[]` or null | `protectedOperations` (absent when null) |
+| `steps` | string[] or null | `implementationSteps` (empty when null) |
+| `dependsOn` | `TNNN[]` | `dependsOn` |
+| `batch` | integer ≥ 1 | `batch` |
+
+`taskFromSpec` (`src/engine/spec/plan-tasks.ts`) fills every older required `Task` field from that table, so every engine path reads a plan task as a brief. `action` is `modify` when the first suggested file exists inside the project, otherwise `create`. `constraints` is empty and `typeDefs` is `''`. `taskFromSpec` throws when a task names no suggested file, so it runs only after the checks pass. `protectedOperations.operation` accepts only `write`, because the protected-path confirmation matches `write <path>`. The schema spells every `suggestedFiles`, `contextFiles` and `protectedOperations` path as the write gate names a changed file (`./src/a.ts` and `src/../src/a.ts` are `src/a.ts`), so every check and every engine path compares one spelling. A question's `default` is non-empty, and one of its `choices` when it has choices.
+
+### Plan checks
+
+`checkPlan(plan, projectDir, taskFits)` (`src/engine/spec/plan-checks.ts`) is pure. It returns `{ code, message }` errors, which go back to the planner for its one repair. The operator sees the messages only, never the codes.
+
+| Code | Rule |
+|---|---|
+| `empty-plan` | The plan has at least one task and at least one criterion |
+| `duplicate-task-id` | Task ids are unique |
+| `duplicate-check-id` | Check ids are unique |
+| `duplicate-criterion-id` | Criterion ids are unique |
+| `criterion-without-check` | Every criterion names at least one check |
+| `unknown-check` | A criterion names only checks the plan defines |
+| `uncovered-criterion` | Every criterion is served by at least one task |
+| `unknown-criterion` | A task names only criteria the plan defines |
+| `task-without-check` | Every task carries at least one check |
+| `path-outside-project` | No suggested or context file resolves outside the project; these paths come from the model |
+| `path-not-file` | A suggested or context file that exists is a regular file, not a directory or a symlink (`lstat`); `estimatePlanContextFits` skips the same tasks (`pathsNotFiles`) |
+| `missing-context-file` | A context file exists, or this task or an earlier listed task names it as a suggested file; a suggested file may not exist yet |
+| `protected-path-not-file` | Each `protectedOperations` path is one exact file: no glob, no trailing `/`, not an existing directory, and spelled in the case the checkout spells it |
+| `unprotected-operation` | Each `protectedOperations` path is a write the protected-path confirmation asks about (`protectedWriteClass`) |
+| `unlisted-protected-operation` | Each suggested file whose write the protected-path confirmation asks about (`protectedWriteClass`) is listed in the task's `protectedOperations` |
+| `unknown-dependency` | `dependsOn` names only tasks of the plan |
+| `dependency-later-batch` | A task depends only on tasks in an earlier or the same batch |
+| `batch-out-of-order` | The tasks are listed in batch order |
+| `dependency-later-task` | A task in the same batch as its dependency is listed after it |
+| `dependency-cycle` | The dependencies have no cycle (`topoSort`) |
+| `context-overflow` | The task fits the implementer's context (`estimatePlanContextFits`, which refreshes each task's code and reuses the routing preview); the message names the task's context files and their sizes |
+| `no-capable-worker` | Some implementer can take the task (credentials, write mode, single-file contract); the message carries the routing reason |
+
+A task with no suggested file is refused by the schema, not by `checkPlan`. `checkFullPlan` (`src/engine/orchestrator/planning/session.ts`) runs `checkPlan` with the context fit; the session and the plan card's edit path both call it. The in-app editor's save check runs `checkPlan` without the context fit (`planSaveErrors`), and the engine checks the fit after the save.
 
 ## Task Brief v1: the semantic contract
 
 A `Task` is the persisted, transport-stable form of a **Product Task Brief v1** — the durable contract the planner writes for the implementer. The brief is the meaning; `tasks.md` is the markdown rendering used to hand work between phases; `state.json` is the stable JSON that SPLITBRIEF and advanced read-only integrations consume.
+
+A new run's planner does not write `tasks.md`: it answers a typed `TaskSpec` in `plan.json`, and `taskFromSpec` maps it onto these sections (see [The plan contract](#the-plan-contract)). `tasks.md` is rendered from the mapped tasks. The skills keep writing a Markdown brief rendered from the same `TaskSpec` fields.
 
 Every Task Brief v1 covers nine semantic sections, even when a section is brief. Each section maps onto existing `Task` schema fields so external tools do not need a new shape:
 
@@ -48,7 +117,7 @@ Every Task Brief v1 covers nine semantic sections, even when a section is brief.
 
 **How the Scope section is interpreted.** Scope is guidance, not a fence. The brief's `files` are the suggested files, **In bounds** is context, and **Out of bounds** lists the explicit exclusions the reviewer checks. An implementer may edit another ordinary project file when the change needs it; SPLITBRIEF records it as touched, not suggested, runs its tests, and shows it to the reviewer. Only a protected path (dependency manifests and lockfiles, CI configuration, env and key files, `.git`, `.splitbrief`) asks the user (see [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md)). A placeholder bullet — `None`, `None.`, `n/a` or `-` — is no entry at all: the parser drops it and `scopeEntryPatterns` licenses nothing for it (`isScopePlaceholder`). Scope bullets are prose, not a file list. A brief's **declared set** is `files` plus every `scope.inBounds` and `scope.approvedOutOfBounds` bullet, and one module resolves it for every consumer — `taskDeclaredPatterns` / `isInDeclaredSet` in `src/core/scope/declared-set.ts`. When deciding whether a brief widens the write scope beyond its `files`, SPLITBRIEF extracts path tokens from each `scope.inBounds` / `scope.approvedOutOfBounds` bullet (`scopePathPatterns` in `src/utils/path-patterns.ts`): backtick-quoted tokens first, then — when the bullet has no backticks — the whole bullet if it contains no whitespace, otherwise concrete path patterns matched out of the prose. A token only counts as a path when it carries a directory separator or a glob; a bare filename with no directory cannot denote a file other than one of the task's own `files` in any recorded plan, so it never widens the write scope. A bullet that names a file the brief already declares does not widen it either.
 
-**Approved out of bounds is also written by the run.** The planner authors the bullets it knows about, but the ladder can add one: when the hint rung returns `VERDICT: widen <paths> — <reason>` and the retry's write to a named path clears tiered approval, `WIDEN_TASK_SCOPE` appends `` `<path>` — planner-approved: <reason> `` to that brief's `scope.approvedOutOfBounds` and publishes `task_scope_widened`. The entry is an ordinary Scope bullet with its provenance attached: `scopePathPatterns` reads the backticked path exactly as it reads a planner-written one, so the declared set, the write gate, the classifier, the preamble and drift all widen together. Entries the run wrote are visible in `state.json` and in the brief as rendered.
+**Approved out of bounds is also written by the run.** The planner authors the bullets it knows about, but the ladder can add one: when the hint rung returns `VERDICT: widen <paths> — <reason>` and the retry's write to a named path clears the write gate, `WIDEN_TASK_SCOPE` appends `` `<path>` — planner-approved: <reason> `` to that brief's `scope.approvedOutOfBounds` and publishes `task_scope_widened`. The entry is an ordinary Scope bullet with its provenance attached: `scopePathPatterns` reads the backticked path exactly as it reads a planner-written one, so the declared set, the write gate, the classifier, the preamble and drift all widen together. Entries the run wrote are visible in `state.json` and in the brief as rendered.
 
 **Create-then-modify chains are legal.** A brief may declare `action: modify` on a file an earlier brief in the same plan creates. Because the task loop runs in array order, the routing preview reports such a target as `pending-earlier-task` rather than `missing-current-code`: the file is expected to exist by the time the modifying task runs, and the missing current code is a non-event, not a stale estimate.
 
@@ -85,8 +154,21 @@ type Task = {
   escalation?: string[];             // optional: Task Brief v1 §Escalation
   evidence?: string[];               // optional: Task Brief v1 §Evidence
   status: TaskStatus;
+  // Plan fields: set by taskFromSpec on a task compiled from plan.json; absent on older briefs
+  criteria?: string[];               // criterion ids the task serves
+  checks?: Check[];                  // { id, kind: 'test' | 'cmd' | 'render', value, required }
+  suggestedFiles?: string[];         // guidance; mapped onto files
+  contextFiles?: string[];           // read-only context; never a write target
+  contextCodeByFile?: Record<string, string>;  // captured current code of contextFiles, keyed by path
+  exclusions?: string[];             // explicit "do not" notes
+  batch?: number;                    // the plan's batch, 1-based
+  protectedOperations?: Array<{ path: string; operation: 'write' }>;  // confirmed when the plan card is approved
+  revision?: number;
+  inputHashes?: Record<string, string>;  // content hashes of the revision's input files
 };
 ```
+
+**Fresh code and read-only context.** Before each attempt the task's code is refreshed from disk (`src/engine/orchestrator/task/refresh-code.ts`). `UPDATE_TASK_CODE` replaces all three code fields — `currentCode`, `currentCodeByFile` and `contextCodeByFile` — so a stop and a resume never keep stale code. The code of `contextFiles` goes into `contextCodeByFile`, kept apart from the write targets. Context files share a budget of 40,000 characters per task (`CONTEXT_CODE_BUDGET_CHARS`, about 10K tokens); the file that crosses it is cut and ends with `…truncated`, and the context files after it are left out. Context files are read-only: they are not in the brief's Scope and never count as a write target. The prompt formatter adds each context file under `### Read-only context (do not modify) — <path>`. A prompt measured against a context length gives every target file and every context file an equal share of the code budget, so a large context file never crowds out the code the brief edits; the context-fit estimate counts what is sent. A task over BUILD's context fails the plan checks with its context files and their sizes named. The brief hash (`brief-hash.ts`) ignores captured code. A direct writer gets the read-only context code but not the code of the files it edits: it reads those in place.
 
 ### `TaskId`
 
@@ -119,7 +201,7 @@ The retry counter lives at **`state.attempt`** (top-level on `WorkflowState`), n
 
 ### Lifecycle guarantees
 
-- **ID stability**: a task's `id` never changes once assigned. Subsequent regenerations keep the same ID if the title/file match, or drop the old ID and emit a fresh one.
+- **ID stability**: a task's `id` is the one the plan gives it (`T001`, `T002`, …). A revision before approval compiles the tasks again from the revised `plan.json`; once the plan is approved, an id never changes and is never reused within the session.
 - **Terminal states**: `done | escalated | failed | skipped` — once set, the status does not move backwards within a session. `RESET_TASK` explicitly transitions to `pending` and is the only way out of a terminal state.
 
 ## Advanced read-only consumer examples
@@ -255,54 +337,9 @@ The output must match the shape above.
 - `docs/WORKFLOW.md` §1.1 — full phase-transition table.
 - `docs/CONCEPTS.md` — session folder structure.
 
-## Brief quality gate
+## Older runs: `brief-quality.json`
 
-After each planning phase produces its Task Brief, the orchestrator runs a quality gate before transitioning to `implementing`. The gate is implemented in `src/engine/spec/brief-quality.ts` and produces `brief-quality.json` in the session directory. The gate is a binary contract decision; its score and issue list are diagnostic evidence only.
-
-### Errors (gate blocks when any error is present)
-
-| Code | Condition |
-|---|---|
-| `missing_validation` | `task.tests` is empty |
-| `empty_task_list` | The planner returned zero parseable Task Briefs |
-| `vague_validation` | every test matches a known vague pattern ("works", "validate", …) |
-| `missing_implementation_steps` | `task.implementationSteps` is empty |
-| `write_outside_declared_files` | description/steps direct a write to a path outside the brief's declared set |
-| `anchor_not_in_files` | `files` is present and `file` is not one of its entries |
-| `missing_code_context` | `action === 'modify'` with no `currentCode`, `signature`, or `pattern` |
-| `missing_escalation` | description/steps contain risk keywords (auth, token, secret, …) and `escalation` is absent |
-| `missing_scope` | `task.scope` absent or empty |
-| `missing_evidence` | `task.evidence` absent or empty |
-
-### Warnings (reported but do not block)
-
-| Code | Condition |
-|---|---|
-| `missing_type_definitions` | `task.typeDefs` is empty |
-| `test_without_code` | the brief only creates a test for a sibling another brief creates; fold it into that brief's slice |
-
-`write_outside_declared_files` counts write targets, not mentions: a path governed by a write verb ("update `src/api.ts`", "create `src/utils/helpers.ts`") that the declared set does not cover. Referenced paths do not count: a pattern exemplar to follow, an import or type source ("importing `titleCase` from `src/text.ts`"), a negated verb ("do not modify `src/slug.ts`"), or a bare mention. A brief whose steps write three paths, all of them listed under `files`, produces no error — the slice is the unit, not the file.
-
-### Artifact
-
-`brief-quality.json` shape (written with mode 0o600):
-
-```json
-{
-  "version": 1,
-  "passed": true,
-  "score": 0.85,
-  "issues": [
-    { "taskId": "T001", "severity": "warning", "code": "missing_scope", "message": "..." }
-  ],
-  "briefHash": "b8c1…",
-  "ruleVersion": "brief-quality-v1"
-}
-```
-
-A report the gate writes carries `briefHash`, the hash of the briefs it measured; a report written before the field carries none, and the gate treats it as unverified for duplicate-pass suppression (it still loads and displays). `ruleVersion` names the scorer rule set that produced the report. Invalidating the briefs — a rewind, or a revised call that just rewrote them — drops the report with them.
-
-`score` ranges from 0–1: `1 - (errorCount × 0.2) - (warningCount × 0.05)`, clamped to `[0, 1]`. A score never authorizes a quality override: any error keeps the brief out of implementation.
+A run planned before the typed plan session ran a brief-quality pass over `tasks.md` and wrote `brief-quality.json`. A new run writes no such file: its briefs are compiled from a plan that passed `checkPlan`. `BriefQualityReport` and `isBriefQualityReport` (`src/engine/spec/brief-quality.ts`) stay so that an older session folder still reads, and the `brief_quality_*` and `brief_readiness_*` events stay in the event schema for replay. The scorer itself is deleted.
 
 ## API BUILD file bundles
 
@@ -356,7 +393,7 @@ type EvidenceLedger = {
   version: 1;
   sessionId: string;
   feature: string;
-  mode?: 'quick' | 'standard' | 'speckit';
+  mode?: 'quick' | 'standard' | 'speckit';   // older runs only; a new run writes none
   generatedAt: string;
   tasks: Array<{
     id: string;

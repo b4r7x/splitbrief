@@ -3,7 +3,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { SETTINGS_DEFS } from '../../core/settings/catalog.js';
 import { REMOVED_COMMANDS } from '../../core/runtime/commands/types.js';
 import { buildSettingsItems, type SettingsItem } from './items.js';
-import { CURRENT_MARKER, currentLineBody, settingsHelpLines } from './help.js';
+import { settingsHelpLines } from './help.js';
 
 function itemAt(items: readonly SettingsItem[], key: string): SettingsItem {
   const item = items.find((candidate) => candidate.key === key);
@@ -13,8 +13,8 @@ function itemAt(items: readonly SettingsItem[], key: string): SettingsItem {
 
 const items = buildSettingsItems({ config: makeConfig(), defs: SETTINGS_DEFS });
 
-function linesFor(key: string, value?: unknown) {
-  return settingsHelpLines({ item: itemAt(items, key), value });
+function linesFor(key: string) {
+  return settingsHelpLines(itemAt(items, key));
 }
 
 describe('settingsHelpLines', () => {
@@ -53,41 +53,13 @@ describe('settingsHelpLines', () => {
     ]);
   });
 
-  it('prices every mode and marks only the one the config is on', () => {
-    expect(linesFor('workflow.mode', 'standard')).toEqual([
-      { text: 'quick     1 planning call · 0 gates', current: false },
-      { text: 'standard  4 planning calls · 2 gates', current: true },
-      { text: 'speckit   6-7 planning calls · 3 gates', current: false },
-    ]);
-  });
-
-  it('marks no mode when the config is on none of them', () => {
-    expect(linesFor('workflow.mode', undefined).some((line) => line.current)).toBe(false);
-  });
-
   it('never points a help line at a command the merge deleted', () => {
     for (const item of items) {
-      for (const line of settingsHelpLines({ item, value: undefined })) {
+      for (const line of settingsHelpLines(item)) {
         for (const removed of Object.keys(REMOVED_COMMANDS)) {
           expect(line.text).not.toContain(removed);
         }
       }
     }
-  });
-});
-
-describe('currentLineBody', () => {
-  it('pads the body so the marker lands on the right edge', () => {
-    const body = currentLineBody('quick', 20);
-
-    expect(body).toHaveLength(20 - CURRENT_MARKER.length - 1);
-    expect(`${body} ${CURRENT_MARKER}`).toHaveLength(20);
-  });
-
-  it('gives up the tail of a body too long for its row', () => {
-    const body = currentLineBody('a'.repeat(40), 20);
-
-    expect(body).toHaveLength(12);
-    expect(body.endsWith('…')).toBe(true);
   });
 });

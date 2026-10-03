@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { REVIEW_STATUSES } from './enums.js';
 import { ChangedFilesSnapshotSchema, WorkflowStateSchema } from './workflow.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
+import { makePlanProposal } from '#testing/helpers/factories/plan.js';
+import { PlanSchema } from './plan.js';
 
 const tokenUsage = makeUsage();
 
@@ -65,6 +67,23 @@ describe('WorkflowStateSchema v4', () => {
     );
 
     expect(persisted).toMatchObject({ validationBaseline });
+  });
+
+  it('keeps the run-level plan through v4 persistence', () => {
+    const plan = PlanSchema.parse(makePlanProposal());
+    const persisted = WorkflowStateSchema.parse(JSON.parse(JSON.stringify({ ...state(), plan })));
+
+    expect(persisted.plan).toEqual(plan);
+  });
+
+  it.each([
+    ['all', 'plan'],
+    ['spec', 'plan'],
+    ['default', 'plan'],
+    ['plan', 'plan'],
+    ['none', 'none'],
+  ])('loads a saved approve %s as %s', (saved, loaded) => {
+    expect(WorkflowStateSchema.parse({ ...state(), approve: saved }).approve).toBe(loaded);
   });
 
   it('requires v4 persistence identity and rejects v3 or future state versions', () => {

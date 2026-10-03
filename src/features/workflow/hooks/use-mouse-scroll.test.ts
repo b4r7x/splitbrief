@@ -130,7 +130,7 @@ describe('handleWorkflowMouseWheel', () => {
 
   it('a pending tiered approval owns both presses and the wheel', () => {
     const pending = openApprovalPrompt({
-      tier: 'sticky',
+      tier: 'confirm',
       actionClass: 'network',
       actionDescription: 'push to origin',
       phase: 'implementing',

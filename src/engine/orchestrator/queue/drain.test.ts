@@ -59,20 +59,20 @@ describe('drain', () => {
       const current = {
         ...head,
         mode: 'speckit' as const,
-        approve: 'all' as const,
+        approve: 'plan' as const,
         plannerSessionId: 'unsaved-session',
       };
       const { bus } = makeBusRecorder();
       const result = drainQueue({ ...ref, state: current, bus });
       expect(result.state).toMatchObject({
         mode: 'speckit',
-        approve: 'all',
+        approve: 'plan',
         plannerSessionId: 'unsaved-session',
       });
       if (queued)
         expect(loadState(ref)).toMatchObject({
           mode: 'speckit',
-          approve: 'all',
+          approve: 'plan',
           plannerSessionId: 'unsaved-session',
         });
     },

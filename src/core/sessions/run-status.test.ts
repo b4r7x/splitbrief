@@ -5,14 +5,7 @@ import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { taskId } from '../schemas/task.js';
 import type { WorkflowState } from '../schemas/workflow.js';
 import { createInitialState, transition } from '../state/machine.js';
-import {
-  deriveRunStatus,
-  NO_ARTIFACTS,
-  resumeStep,
-  type ArtifactPresence,
-  type RunStatus,
-} from './run-status.js';
-import { plannerStepsFor } from '../pipeline-spec/steps.js';
+import { deriveRunStatus, resumeStep, type RunStatus } from './run-status.js';
 
 function state(overrides: Partial<WorkflowState> = {}): WorkflowState {
   return { ...createInitialState('feat'), ...overrides };
@@ -22,15 +15,11 @@ function statusOf(
   overrides: Partial<WorkflowState>,
   liveness: 'alive' | 'not-alive' = 'not-alive',
 ) {
-  return deriveRunStatus({ state: state(overrides), liveness, artifacts: NO_ARTIFACTS });
+  return deriveRunStatus({ state: state(overrides), liveness });
 }
 
 function stopOf(overrides: Partial<WorkflowState>): RunStatus {
   return statusOf(overrides);
-}
-
-function withArtifacts(present: Partial<ArtifactPresence>): ArtifactPresence {
-  return { ...NO_ARTIFACTS, ...present };
 }
 
 describe('deriveRunStatus', () => {
@@ -130,7 +119,7 @@ describe('deriveRunStatus', () => {
     ['reviewing-plan', 'plan'],
     ['reviewing-briefs', 'briefs'],
   ] as const)('reports %s as waiting on the %s gate', (phase, gate) => {
-    expect(stopOf({ phase })).toMatchObject({ stop: { kind: 'waiting', gate } });
+    expect(stopOf({ phase })).toMatchObject({ stop: { kind: 'waiting', gate, reopens: false } });
   });
 
   it('reports a recorded failure with its message', () => {
@@ -156,9 +145,7 @@ describe('deriveRunStatus', () => {
     });
     const resumed = transition(failed, { type: 'RESUME_STEP' });
 
-    expect(
-      deriveRunStatus({ state: resumed, liveness: 'not-alive', artifacts: NO_ARTIFACTS }),
-    ).toMatchObject({
+    expect(deriveRunStatus({ state: resumed, liveness: 'not-alive' })).toMatchObject({
       stop: { kind: 'interrupted' },
     });
   });
@@ -169,14 +156,13 @@ describe('deriveRunStatus', () => {
 
   // The briefs of a run whose steps open no plan gate once waited in reviewing-plan, so a run saved
   // there is at its briefs call. A state that records no mode or approve level stays at the gate.
+  // A saved `spec` or `all` loads as `plan`, so such a run now reads as waiting at the plan gate.
   it.each([
-    ['quick', 'all', 'at its briefs call'],
-    ['standard', 'spec', 'at its briefs call'],
+    ['quick', 'plan', 'at its briefs call'],
     ['standard', 'none', 'at its briefs call'],
-    ['speckit', 'spec', 'at its briefs call'],
+    ['speckit', 'none', 'at its briefs call'],
     ['standard', 'plan', 'at the plan gate'],
-    ['standard', 'all', 'at the plan gate'],
-    ['speckit', 'all', 'at the plan gate'],
+    ['speckit', 'plan', 'at the plan gate'],
     [undefined, undefined, 'at the plan gate'],
   ] as const)(
     'reads a run saved in reviewing-plan (mode %s, approve %s) as stopped %s',
@@ -189,32 +175,46 @@ describe('deriveRunStatus', () => {
       const status = deriveRunStatus({
         state: saved,
         liveness: 'not-alive',
-        artifacts: withArtifacts({
-          research: true,
-          spec: true,
-          clarifications: true,
-          constitution: true,
-          plan: true,
-          tasks: true,
-          analyze: true,
-        }),
       });
       expect(status).toMatchObject(
         at === 'at the plan gate'
           ? { stop: { kind: 'waiting', gate: 'plan' }, resumeAt: { kind: 'gate', gate: 'plan' } }
           : {
               stop: { kind: 'interrupted' },
-              resumeAt: { kind: 'planner', call: mode === 'speckit' ? 'analyze' : 'tasks' },
+              resumeAt: { kind: 'planner', call: 'plan' },
             },
       );
     },
   );
 
+  // A planning session's plan only reaches reviewing-plan when its approval opens, so it waits
+  // there whatever level the run records.
+  it('reads a planning session parked in reviewing-plan as waiting at the plan gate', () => {
+    const status = deriveRunStatus({
+      state: state({
+        phase: 'reviewing-plan',
+        mode: 'standard',
+        approve: 'none',
+        plan: {
+          summary: 'One task.',
+          decisions: [],
+          criteria: [{ id: 'C1', text: 'Works.', checkIds: ['K1'] }],
+          checks: [],
+          validation: null,
+        },
+      }),
+      liveness: 'not-alive',
+    });
+    expect(status).toMatchObject({
+      stop: { kind: 'waiting', gate: 'plan', reopens: true },
+      resumeAt: { kind: 'gate', gate: 'plan' },
+    });
+  });
+
   it('carries the step the run picks up at on every open status', () => {
     const status = deriveRunStatus({
       state: state({ phase: 'reviewing-plan' }),
       liveness: 'not-alive',
-      artifacts: NO_ARTIFACTS,
     });
     expect(status).toMatchObject({ resumeAt: { kind: 'gate', gate: 'plan' } });
   });
@@ -226,7 +226,7 @@ describe('resumeStep', () => {
     ['reviewing-plan', 'plan'],
     ['reviewing-briefs', 'briefs'],
   ] as const)('resumes %s at its gate', (phase, gate) => {
-    expect(resumeStep(state({ phase }), NO_ARTIFACTS)).toEqual({ kind: 'gate', gate });
+    expect(resumeStep(state({ phase }))).toEqual({ kind: 'gate', gate });
   });
 
   it.each(['implementing', 'validating-task', 'escalating'] as const)(
@@ -238,7 +238,7 @@ describe('resumeStep', () => {
         currentTaskIndex: 1,
         attempt: 2,
       });
-      expect(resumeStep(implementing, NO_ARTIFACTS)).toEqual({
+      expect(resumeStep(implementing)).toEqual({
         kind: 'brief',
         taskId: taskId('T002'),
         attempt: 2,
@@ -251,7 +251,7 @@ describe('resumeStep', () => {
       phase: 'implementing',
       currentTaskIndex: 1,
     });
-    expect(resumeStep(past, NO_ARTIFACTS)).toEqual({ kind: 'review', cycle: 0 });
+    expect(resumeStep(past)).toEqual({ kind: 'review', cycle: 0 });
   });
 
   it('resumes final review at the fix cycle it reached', () => {
@@ -259,133 +259,39 @@ describe('resumeStep', () => {
       phase: 'final-review',
       reviewFixes: { cycle: 2, findings: {} },
     });
-    expect(resumeStep(reviewing, NO_ARTIFACTS)).toEqual({ kind: 'review', cycle: 2 });
+    expect(resumeStep(reviewing)).toEqual({ kind: 'review', cycle: 2 });
   });
 
   it('resumes a run parked at complete on a failed review at the review', () => {
-    expect(resumeStep(state({ phase: 'complete', reviewStatus: 'failed' }), NO_ARTIFACTS)).toEqual({
+    expect(resumeStep(state({ phase: 'complete', reviewStatus: 'failed' }))).toEqual({
       kind: 'review',
       cycle: 0,
     });
   });
 
-  it('starts standard mode at research and walks past every artifact already written', () => {
-    const idle = state({ phase: 'idle', mode: 'standard' });
-    expect(resumeStep(idle, NO_ARTIFACTS)).toEqual({ kind: 'planner', call: 'research' });
-    expect(resumeStep(idle, withArtifacts({ research: true }))).toEqual({
-      kind: 'planner',
-      call: 'spec',
-    });
-    expect(resumeStep(idle, withArtifacts({ research: true, spec: true }))).toEqual({
-      kind: 'planner',
-      call: 'plan',
-    });
-    expect(resumeStep(idle, withArtifacts({ research: true, spec: true, plan: true }))).toEqual({
-      kind: 'planner',
-      call: 'tasks',
-    });
+  it.each([
+    ['idle', 'standard'],
+    ['idle', 'quick'],
+    ['researching', 'standard'],
+    ['specifying', 'speckit'],
+    ['clarifying', 'speckit'],
+    ['planning', 'standard'],
+    ['analyzing', 'speckit'],
+  ] as const)('resumes a run in %s (mode %s) at its planning session', (phase, mode) => {
+    expect(resumeStep(state({ phase, mode }))).toEqual({ kind: 'planner', call: 'plan' });
   });
 
-  it('treats an absent mode as standard', () => {
-    expect(resumeStep(state({ phase: 'idle' }), NO_ARTIFACTS)).toEqual({
-      kind: 'planner',
-      call: 'research',
+  it('resumes a run with planner questions at its planning session, whatever call asked them', () => {
+    const asked = state({
+      phase: 'researching',
+      pendingPlannerConversation: {
+        call: 'research',
+        text: 'Which DB?',
+        questions: [],
+        answers: [],
+        answered: false,
+      },
     });
-  });
-
-  it('gives quick mode only its briefs call', () => {
-    const quick = state({ phase: 'idle', mode: 'quick' });
-    expect(resumeStep(quick, NO_ARTIFACTS)).toEqual({ kind: 'planner', call: 'tasks' });
-    expect(resumeStep(quick, withArtifacts({ tasks: true }))).toEqual({
-      kind: 'planner',
-      call: 'tasks',
-    });
-  });
-
-  it('walks the speckit order through clarify, constitution and analyze', () => {
-    const speckit = state({ phase: 'idle', mode: 'speckit' });
-    expect(resumeStep(speckit, withArtifacts({ research: true, spec: true }))).toEqual({
-      kind: 'planner',
-      call: 'clarify',
-    });
-    expect(
-      resumeStep(speckit, withArtifacts({ research: true, spec: true, clarifications: true })),
-    ).toEqual({ kind: 'planner', call: 'constitution' });
-    expect(
-      resumeStep(
-        speckit,
-        withArtifacts({ research: true, spec: true, clarifications: true, constitution: true }),
-      ),
-    ).toEqual({ kind: 'planner', call: 'plan' });
-    expect(
-      resumeStep(
-        speckit,
-        withArtifacts({
-          research: true,
-          spec: true,
-          clarifications: true,
-          constitution: true,
-          plan: true,
-        }),
-      ),
-    ).toEqual({ kind: 'planner', call: 'tasks' });
-    expect(
-      resumeStep(
-        speckit,
-        withArtifacts({
-          research: true,
-          spec: true,
-          clarifications: true,
-          constitution: true,
-          plan: true,
-          tasks: true,
-        }),
-      ),
-    ).toEqual({ kind: 'planner', call: 'analyze' });
-  });
-
-  it('resumes a planner phase at its own call, or the next one it has not written', () => {
-    expect(resumeStep(state({ phase: 'specifying', mode: 'standard' }), NO_ARTIFACTS)).toEqual({
-      kind: 'planner',
-      call: 'spec',
-    });
-    expect(
-      resumeStep(state({ phase: 'specifying', mode: 'standard' }), withArtifacts({ spec: true })),
-    ).toEqual({ kind: 'planner', call: 'plan' });
-    expect(
-      resumeStep(state({ phase: 'planning', mode: 'speckit' }), withArtifacts({ plan: true })),
-    ).toEqual({ kind: 'planner', call: 'tasks' });
-  });
-
-  it('reads its call order from the pipeline step table', () => {
-    const speckit = state({ phase: 'idle', mode: 'speckit' });
-    const order = plannerStepsFor('speckit', 'all').map((step) => step.call);
-    expect(order).toEqual([
-      'research',
-      'spec',
-      'clarify',
-      'constitution',
-      'plan',
-      'tasks',
-      'analyze',
-    ]);
-    expect(resumeStep(speckit, NO_ARTIFACTS)).toEqual({ kind: 'planner', call: order[0] });
-  });
-
-  it('stops at the last call of the mode when every artifact is already on disk', () => {
-    const all: ArtifactPresence = {
-      research: true,
-      spec: true,
-      plan: true,
-      tasks: true,
-      clarifications: true,
-      constitution: true,
-      analyze: true,
-      review: true,
-    };
-    expect(resumeStep(state({ phase: 'idle', mode: 'standard' }), all)).toEqual({
-      kind: 'planner',
-      call: 'tasks',
-    });
+    expect(resumeStep(asked)).toEqual({ kind: 'planner', call: 'plan' });
   });
 });

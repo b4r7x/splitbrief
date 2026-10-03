@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { dependencyTaskBlock, makeTask } from '#testing/helpers/factories/task.js';
 import { formatTasks } from '../formatter.js';
-import { evaluateBriefQuality } from '../brief-quality.js';
 import { parseTasks, parseTaskSourceBlocks, parseTasksStrict } from './parse.js';
 
 describe('parseTasksStrict — block and fence recovery', () => {
@@ -258,12 +257,6 @@ describe('parseTasksStrict — block and fence recovery', () => {
         outOfBounds: ['other modules'],
       });
       expect(outer?.evidence).toEqual(['the focused check passes']);
-
-      const report = evaluateBriefQuality(strict);
-      const qualityTaskIds = report.issues.map((issue) => String(issue.taskId));
-      expect([...new Set(qualityTaskIds)].sort()).toEqual(['T001', 'T002']);
-      expect(qualityTaskIds).not.toContain('T900');
-      expect(qualityTaskIds).not.toContain('T901');
     }
   });
 

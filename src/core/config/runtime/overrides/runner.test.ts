@@ -8,7 +8,7 @@ import type { ImplementerConfig } from '../../../schemas/implementer-config.js';
 import { resolveImplementerProfiles } from '../../accessors/implementer-profiles.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 
-const baseConfig: Config = makeConfig({ workflow: { approve: 'default' } });
+const baseConfig: Config = makeConfig({ workflow: { approve: 'plan' } });
 
 const commonGeneration = {
   customModels: ['model-primary', 'model-fallback'],

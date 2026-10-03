@@ -24,20 +24,18 @@ export function recordPhase(record: RunRecord): Phase {
 }
 
 /**
- * The header rail of a run nothing is running: a finished run shows every stage done except quick's
- * Spec, which never leaves pending, and every other run marks the stage it stopped on with the mark
- * its own stop earned. Mode decides where the phases land, so quick never marks Spec done.
+ * The header rail of a run nothing is running: a finished run shows every stage done, and every
+ * other run marks the stage it stopped on with the mark its own stop earned.
  */
 export function atRestRailStages(record: RunRecord): RailStageState[] {
   const status = record.status;
-  const mode = record.mode ?? 'standard';
-  if (status.kind === 'running') return getRailStages(recordPhase(record), { mode });
+  if (status.kind === 'running') return getRailStages(recordPhase(record));
   if (status.kind === 'closed') {
     return status.as === 'complete'
-      ? getRailStages('complete', { mode })
-      : getRailStages(recordPhase(record), { halted: 'cancelled', mode });
+      ? getRailStages('complete')
+      : getRailStages(recordPhase(record), { halted: 'cancelled' });
   }
-  return getRailStages(recordPhase(record), { halted: STOP_HALT[status.stop.kind], mode });
+  return getRailStages(recordPhase(record), { halted: STOP_HALT[status.stop.kind] });
 }
 
 export interface AtRestComposer {

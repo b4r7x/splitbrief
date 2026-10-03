@@ -19,6 +19,21 @@ function legacyMessage(id: string, overrides: Partial<QueuedMessage> = {}): Queu
   };
 }
 
+describe('v3 approve level', () => {
+  it.each([
+    ['all', 'plan'],
+    ['spec', 'plan'],
+    ['default', 'plan'],
+    ['none', 'none'],
+  ])('loads a v3 approve %s as %s', (saved, loaded) => {
+    const legacy = parseLegacyWorkflowState({
+      ...makeLegacyV3State('legacy-approve'),
+      approve: saved,
+    });
+    expect(legacy?.approve).toBe(loaded);
+  });
+});
+
 describe('v3 queue migration', () => {
   it('v3 reviewing-briefs state migrates without a recovery map', () => {
     const messageQueue = [legacyMessage('pending')];

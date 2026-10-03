@@ -115,14 +115,14 @@ describe('settings overlay integration', () => {
   });
 
   it('advances an enum twice from the latest saved value', async () => {
-    overlayStore.open('settings', 'workflow.mode');
+    overlayStore.open('settings', 'workflow.compactionFormat');
     const ui = renderFeature(<SettingsOverlay />);
     await flushEffects();
 
     ui.stdin.write(' ');
     ui.stdin.write(' ');
     await vi.waitFor(() => {
-      expect(loadConfig(dir).config.workflow.mode).toBe('quick');
+      expect(loadConfig(dir).config.workflow.compactionFormat).toBe('structured');
     });
 
     ui.unmount();
@@ -271,7 +271,7 @@ describe('settings overlay integration', () => {
   });
 
   it('PageDown moves by visible selectable settings without skipping a section', async () => {
-    // Tall enough to seat the whole Workflow section, which is what the page has to land inside.
+    // Tall enough to seat the whole Workflow section, which the page has to bring on screen.
     terminalSizeStore.__testReset({ cols: 100, rows: 26, isSmall: false });
     overlayStore.open('settings', 'implementer.temperature');
     const ui = renderFeature(<SettingsOverlay />);
@@ -283,11 +283,11 @@ describe('settings overlay integration', () => {
     ui.stdin.write(PAGE_DOWN);
     await vi.waitFor(() => {
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(lineContaining(frame, CURSOR_GLYPH)).toContain('Create branch');
-      // The page lands inside the next section with the whole of it on screen — its first row
-      // included — so no row was stepped over unseen.
-      expect(frame).toContain('Mode');
-      expect(frame).toContain('Compaction format');
+      expect(lineContaining(frame, CURSOR_GLYPH)).toContain('Type check');
+      // The page steps over the Workflow section and lands with the whole of it on screen — its
+      // first row included — so no row was stepped over unseen.
+      expect(frame).toContain('Plan approval');
+      expect(frame).toContain('Create branch');
     });
     ui.unmount();
   });

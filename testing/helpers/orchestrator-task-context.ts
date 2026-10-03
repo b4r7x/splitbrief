@@ -52,7 +52,7 @@ export function makeTaskWorkflowContext(overrides?: Partial<WorkflowContext>): W
     reviewer: planner,
     implementer: makeImplementer(),
     context: { ...defaultContext, dir: proj.projectDir },
-    metadata: makeWorkflowMetadata('standard'),
+    metadata: makeWorkflowMetadata(),
     sinks: TEST_WORKFLOW_SINKS,
     validator: createValidator(),
   };

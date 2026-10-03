@@ -24,7 +24,7 @@ Core principle — the brief is the contract. The implementer sees nothing but t
 
 ## Arguments
 
-`[mode]` — `quick` (default) | `standard` | `plan`. Tokens match exactly in first position; anything else is the task. The CLI defaults to `standard` in an isolation worktree; this skill defaults to `quick` in the working tree — the one documented divergence.
+`[mode]` — `quick` (default) | `standard` | `plan`. Tokens match exactly in first position; anything else is the task. The CLI has no modes: it plans every run in one session and builds in an isolation worktree. This skill defaults to `quick` in the working tree — the one documented divergence.
 `impl=<tool>[:<model>][@<effort>]` — the implementer seat. Tools: `claude`, `codex`, `opencode`, `copilot`, `kilo`, `cursor`, `cmd`, `agy` (aliases `claude-code`, `command-code`, `antigravity`, `cursor-agent`, `kilo-code`, `github-copilot`). Split on the first `:` and the last `@`, so `impl=opencode:opencode-go/kimi-k3@high` is tool `opencode`, model `opencode-go/kimi-k3`, effort `high`.
 `review=<seat>` — the reviewer seat, same grammar. Absent → `review: session`.
 `--ask` — pause at the plan block for confirmation. Default: print and run.
@@ -37,16 +37,6 @@ Natural phrasing is accepted ("implementer is opencode with kimi-k3, reviewer is
 Crew fallback, per seat, first match wins: inline → `.splitbrief/config.yaml` (`implementer:` / `reviewer:` blocks with `kind: cli`: `tool`, `model`, `effort` or `variant`; `workflow.max_retries` replaces the default 2 local retries) → no implementer: run `command -v` over all eight binaries, ask one question listing the ones found with their auth status, and wait → no reviewer: this session.
 
 ## Modes
-
-<!-- generated: modes-table -->
-| Mode | Planner calls | Approval gates |
-|---|---|---|
-| `quick` | 1 | none |
-| `standard` | 4 | spec, briefs |
-| `speckit` | 6-7 | spec, plan, briefs |
-
-Default: `quick`.
-<!-- /generated -->
 
 `plan` runs Phase 0 and Phase 1, prints the plan block and the briefs, removes the run dir it created, and stops. Nothing remains on disk, nothing is spawned.
 
@@ -109,7 +99,7 @@ One entry per attempt, appended in order:
 
 ## Phase 1 — Briefs
 
-`standard` first writes `spec.md` (Overview, Acceptance Criteria — each verifiable, Functional Requirements, Out of Scope) and `plan-notes.md` (Summary, `### New Files` / `### Modified Files` as path lines with an indented purpose line each, Key Implementation Details, Testing Strategy). Both modes then write `briefs/T001.md` … and `briefs/index.md` exactly per references/brief-format.md: template, the nine-section contract, the critical rules, and the skill additions (validation commands inside Tests, the four closing constraints, instruction-file rules). Read every file a brief names before writing its Current Code and Signature sections; never write them from memory.
+`standard` first writes `spec.md` (Overview, Acceptance Criteria — each verifiable, Functional Requirements, Out of Scope) and `plan-notes.md` (Summary, `### New Files` / `### Modified Files` as path lines with an indented purpose line each, Key Implementation Details, Testing Strategy). Both modes then write `briefs/T001.md` … and `briefs/index.md` exactly per references/brief-format.md: template, the nine-section contract, the critical rules, and the skill additions (validation commands inside Tests, the four closing constraints, instruction-file rules). Read every file a brief names before writing its read-only context and Signature sections; never write them from memory.
 
 ## Phase 2 — Run
 

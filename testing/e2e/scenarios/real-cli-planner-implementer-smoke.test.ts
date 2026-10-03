@@ -65,7 +65,6 @@ describe('real CLI smoke: planner to implementer', () => {
             testCommand: 'node validate.mjs',
           },
           workflow: {
-            mode: 'quick',
             approve: 'none',
             maxRetries: 1,
           },

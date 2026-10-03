@@ -125,7 +125,7 @@ async function gateResult(
 async function resume(projectDir: string, state: WorkflowState) {
   const config = parsePreparedConfig(
     makeConfig({
-      workflow: { mode: 'quick' },
+      workflow: { approve: 'none' },
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       approval: { enabled: false, feedRejectionsToPlanner: true },
       codebase: { enabled: false, tokenBudget: 4000 },
@@ -168,7 +168,6 @@ async function resume(projectDir: string, state: WorkflowState) {
     startTime: Date.now(),
     plannerTool: 'test-planner',
     implementerTool: 'test-implementer',
-    mode: 'quick',
     projectDir,
     sessionId,
   };
@@ -186,7 +185,7 @@ async function resume(projectDir: string, state: WorkflowState) {
     config,
     sessionId,
     summaryBase,
-    metadata: { plannerTool: 'test-planner', implementerTool: 'test-implementer', mode: 'quick' },
+    metadata: { plannerTool: 'test-planner', implementerTool: 'test-implementer' },
     setTrackedState: () => {},
     resumeHolder: { messages: [] },
     isolation: makeCopyingIsolation({ projectDir, sessionId }),

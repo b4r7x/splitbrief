@@ -23,3 +23,10 @@ export function plannerCallbacksContextOf(wctx: WorkflowContext): PlannerCallbac
     }),
   };
 }
+
+/** The request the planner reads: the run's feature and the `@file` context it carries. */
+export function plannerFeature(feature: string, plannerContext: string | undefined): string {
+  return plannerContext
+    ? `${feature}\n\n<user-context>\n${plannerContext}\n</user-context>`
+    : feature;
+}

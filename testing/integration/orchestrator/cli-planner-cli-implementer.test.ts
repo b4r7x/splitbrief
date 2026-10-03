@@ -52,54 +52,38 @@ function setupProject(marker: string): string {
   return projectDir;
 }
 
-function tasksMarkdown(): string {
-  return `---
-id: T001
-title: Create CLI planner implementer module
-action: create
-file: src/cli-planner-implementer.ts
-depends_on: []
----
-
-### Description
-Create a module proving a CLI planner task can be implemented by a separate CLI implementer.
-
-### Scope
-**In bounds:**
-- src/cli-planner-implementer.ts
-
-**Out of bounds:**
-- validation script changes
-- unrelated source files
-
-### Current Code
-None.
-
-### Type Definitions
-\`\`\`ts
-export const cliPlannerImplementer: string;
-\`\`\`
-
-### Pattern
-Use a named const export.
-
-### Implementation Steps
-1. Create src/cli-planner-implementer.ts.
-2. Export the marker string expected by validate.mjs.
-
-### Tests
-- node validate.mjs passes.
-
-### Constraints
-- Do not modify validate.mjs.
-- Do not write files outside src/cli-planner-implementer.ts.
-
-### Escalation
-- Stop if the target file path is not writable.
-
-### Evidence
-- validate.mjs passes after promotion from the staged project.
-`;
+/** The plan the fake planner answers its planning session with. */
+function planAnswer(): string {
+  return JSON.stringify({
+    result: {
+      kind: 'plan',
+      summary: 'Prove a CLI planner task can be built by a separate CLI implementer.',
+      decisions: [],
+      criteria: [{ id: 'C1', text: 'validate.mjs passes', checkIds: ['K1'] }],
+      checks: [],
+      validation: null,
+      tasks: [
+        {
+          id: 'T001',
+          title: 'Create CLI planner implementer module',
+          intent:
+            'Create a module proving a CLI planner task can be implemented by a separate CLI implementer.',
+          criteria: ['C1'],
+          checks: [{ id: 'K1', kind: 'cmd', value: 'node validate.mjs', required: true }],
+          suggestedFiles: ['src/cli-planner-implementer.ts'],
+          contextFiles: [],
+          exclusions: ['validation script changes', 'unrelated source files'],
+          protectedOperations: null,
+          steps: [
+            'Create src/cli-planner-implementer.ts.',
+            'Export the marker string expected by validate.mjs.',
+          ],
+          dependsOn: [],
+          batch: 1,
+        },
+      ],
+    },
+  });
 }
 
 function installFakeCodexPlanner(binDir: string): string {
@@ -109,7 +93,7 @@ function installFakeCodexPlanner(binDir: string): string {
     '#!/usr/bin/env node',
     "const { appendFileSync, readFileSync } = require('node:fs');",
     `const runLogPath = ${JSON.stringify(runLogPath)};`,
-    `const tasks = ${JSON.stringify(tasksMarkdown())};`,
+    `const plan = ${JSON.stringify(planAnswer())};`,
     'appendFileSync(runLogPath, JSON.stringify({ cwd: process.cwd(), args: process.argv.slice(2) }) + "\\n");',
     'if (process.argv.includes("--version")) {',
     '  console.log("codex 0.147.0");',
@@ -123,7 +107,7 @@ function installFakeCodexPlanner(binDir: string): string {
     '  process.exit(0);',
     '}',
     'console.log(JSON.stringify({ type: "thread.started", thread_id: threadId }));',
-    'console.log(JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: tasks } }));',
+    'console.log(JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: plan } }));',
     'console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 101, output_tokens: 33 } }));',
   ].join('\n');
   writeFileSync(executablePath, script + '\n', 'utf-8');
@@ -191,7 +175,6 @@ describe('CLI planner to CLI implementer workflow', { timeout: 90_000 }, () => {
           testCommand: 'node validate.mjs',
         },
         workflow: {
-          mode: 'quick',
           approve: 'none',
           maxRetries: 1,
         },

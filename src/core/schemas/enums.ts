@@ -119,6 +119,8 @@ export const RECOVERY_REASONS = [
   'brief-review-no-progress',
   'brief-quality-unrepaired',
   'seat-protocol-error',
+  'plan-questions-exhausted',
+  'plan-checks-failed',
 ] as const;
 export const RecoveryReasonSchema = z.enum(RECOVERY_REASONS);
 export type RecoveryReason = z.infer<typeof RecoveryReasonSchema>;
@@ -185,26 +187,25 @@ export const CURRENT_CODE_CONTEXT_MODES = [
 export const CurrentCodeContextModeSchema = z.enum(CURRENT_CODE_CONTEXT_MODES);
 export type CurrentCodeContextMode = z.infer<typeof CurrentCodeContextModeSchema>;
 
+/** Modes are retired: these parse what older runs saved, and nothing new is written. */
 export const WORKFLOW_MODES = ['quick', 'standard', 'speckit'] as const;
 export const RETIRED_WORKFLOW_MODE = 'instant' as const;
-export const RETIRED_WORKFLOW_MODE_NOTICE =
-  'workflow mode "instant" was merged into "quick"; using quick. Update your config or --mode flag.';
 export const WorkflowModeSchema = z.preprocess(
   (value) => (value === RETIRED_WORKFLOW_MODE ? 'quick' : value),
   z.enum(WORKFLOW_MODES),
 );
 export type WorkflowMode = z.infer<typeof WorkflowModeSchema>;
 
-export function normalizeWorkflowMode(raw: string | undefined): WorkflowMode | undefined {
-  const parsed = WorkflowModeSchema.safeParse(raw?.trim().toLowerCase());
-  return parsed.success ? parsed.data : undefined;
-}
-
-export const APPROVE_LEVELS = ['none', 'spec', 'plan', 'all', 'default'] as const;
-export const ApproveLevelSchema = z.enum(APPROVE_LEVELS);
+export const APPROVE_LEVELS = ['plan', 'none'] as const;
+/** The levels before the one plan card. Each loads as `plan` with one notice. */
+export const RETIRED_APPROVE_LEVELS = ['all', 'spec', 'default'] as const;
+export const ApproveLevelSchema = z.preprocess(
+  (value) => (includes(RETIRED_APPROVE_LEVELS, value) ? 'plan' : value),
+  z.enum(APPROVE_LEVELS),
+);
 export type ApproveLevel = z.infer<typeof ApproveLevelSchema>;
 
-const BRIEF_REVIEW_PROMPT_KINDS = ['spec', 'plan', 'briefs', 'artifact'] as const;
+const BRIEF_REVIEW_PROMPT_KINDS = ['plan', 'artifact'] as const;
 const BriefReviewPromptKindSchema = z.enum(BRIEF_REVIEW_PROMPT_KINDS);
 export type BriefReviewPromptKind = z.infer<typeof BriefReviewPromptKindSchema>;
 

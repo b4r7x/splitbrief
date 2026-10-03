@@ -8,15 +8,41 @@ import {
 import type { ActionClass } from '../../../core/schemas/enums.js';
 import type { GateActionInput, GateDecision } from './types.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import type { Task } from '../../../core/schemas/task.js';
+import { protectedWriteClass } from './action-classifier.js';
 
 /** A confirmation the run already granted holds for the same path and operation. */
 function confirmedEarlierInRun(input: GateActionInput, actionClass: ActionClass): boolean {
-  if (input.targetPath === undefined) return false;
   const approvals = readEvidenceLedger(input)?.approvals ?? [];
   return approvals.some(
     (approval) =>
       approval.actionClass === actionClass &&
       approval.actionDescription === input.actionDescription,
+  );
+}
+
+/**
+ * The protected writes an approved plan lists, as the confirmations `confirmedEarlierInRun` reads:
+ * the same ActionClass and `write <path>` the write gate asks about.
+ */
+export function planConfirmations(
+  tasks: readonly Task[],
+  projectDir: string,
+): NonNullable<GateDecision['confirmApprovals']> {
+  return tasks.flatMap((task) =>
+    (task.protectedOperations ?? []).flatMap((operation) => {
+      const actionClass = protectedWriteClass(operation.path, projectDir);
+      return actionClass === null
+        ? []
+        : [
+            {
+              tier: 'confirm' as const,
+              actionClass,
+              actionDescription: `write ${operation.path}`,
+              reason: 'listed on the approved plan',
+            },
+          ];
+    }),
   );
 }
 
@@ -89,24 +115,6 @@ export async function gateConfirmTier(args: ConfirmTierInput): Promise<GateDecis
     };
   }
 
-  if (response.decision === 'deny') {
-    publishApprovalRejected({ bus, phase, tier, actionClass, taskId, reason: response.reason });
-    return { allow: false, reason: response.reason, tier, actionClass, actionDescription };
-  }
-
-  publishApprovalRejected({
-    bus,
-    phase,
-    tier,
-    actionClass,
-    taskId,
-    reason: 'invalid_confirm_response',
-  });
-  return {
-    allow: false,
-    reason: 'invalid_confirm_response',
-    tier,
-    actionClass,
-    actionDescription,
-  };
+  publishApprovalRejected({ bus, phase, tier, actionClass, taskId, reason: response.reason });
+  return { allow: false, reason: response.reason, tier, actionClass, actionDescription };
 }

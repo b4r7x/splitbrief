@@ -1,14 +1,11 @@
 import { useEffect, useEffectEvent } from 'react';
-import { type RewindTarget, setResumeHandler, setRewindHandler } from '../../handlers.js';
-import { sessionDir } from '../../../../core/paths.js';
-import type { CopyResult, CopyTarget } from '../../../../core/runtime/commands/types.js';
-import type { Focus } from '../../../../stores/ui/focus.js';
+import { setResumeHandler, setRewindHandler } from '../../handlers.js';
+import type { TaskRedoRequest } from '../../../../core/state/build-rewind-action.js';
 import { useInputMode } from '../use-input-mode.js';
 import { useRunContinue } from '../use-run-continue.js';
 import { useRunLoop, type RunWorkflowFn } from '../use-run-loop.js';
 import { createReviewInputHandler, type ReviewInputEffects } from '../../review-parser.js';
 import { useWorkflowKeys } from '../use-keys.js';
-import { useBriefReviewKeys } from '../use-brief-review-keys.js';
 import { resolveInputHint } from '../../input-hints.js';
 import { continueRun } from '../../../../engine/orchestrator/run/continue.js';
 import { configStore } from '../../../../stores/project/config.js';
@@ -41,27 +38,18 @@ export interface WorkflowScreenDeps {
   /** The app's preparation composition root; continuing a run at rest re-prepares its tools. */
   sessionSelect?: SessionSelectDeps | undefined;
   /**
-   * The editor process and the planner queue. One port serves both routes into an editor —
-   * the `edit-file` review command and the external-edit request the raw editor's ctrl+o
-   * files — so neither can start a process the screen's owner did not supply.
+   * The editor process and the planner queue. The editor overlay's ctrl+o is the one route
+   * into an external editor, so it cannot start a process the screen's owner did not supply.
    */
   reviewInput?: ReviewInputEffects | undefined;
 }
 
 interface UseWorkflowScreenOptions {
   onRuntimeCommand: (command: string) => void;
-  copyTarget?: ((target: CopyTarget) => Promise<CopyResult>) | undefined;
-  canCopyFocused?: ((focus: Focus | null) => boolean) | undefined;
   deps?: WorkflowScreenDeps | undefined;
 }
 
-export function useWorkflowScreen({
-  onRuntimeCommand,
-  copyTarget,
-  canCopyFocused,
-  deps,
-}: UseWorkflowScreenOptions) {
-  const configuredProjectDir = configStore.use((s) => s.projectDir);
+export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenOptions) {
   const showSpend = configStore.use((s) => s.config === null || getShowSpend(s.config));
   const [skills] = useStores(skillsStore);
   const selectedSkillMetas = skills.available.filter((m) => skills.selected.has(m.id));
@@ -72,7 +60,6 @@ export function useWorkflowScreen({
   const execution = workflowRoute?.execution;
   const local = execution?.kind === 'local' ? execution : undefined;
   const prepared = local?.prepared;
-  const projectDir = record?.ref.projectDir ?? configuredProjectDir;
 
   const inputMode = useInputMode();
   const review = createReviewInputHandler(inputMode, deps?.reviewInput);
@@ -85,9 +72,9 @@ export function useWorkflowScreen({
   const atRestRecord = execution?.kind === 'at-rest' ? record : undefined;
 
   // One continuation path for a run at rest: the engine decides whether the run can be picked up,
-  // the preparation attempt re-enters it in place, and the screen never moves. A rewind is written
-  // onto the saved state first, so the run re-enters at the step it rewound to.
-  const continueAtRest = (text: string, run = atRestRecord, rewind?: RewindTarget): void => {
+  // the preparation attempt re-enters it in place, and the screen never moves. A redone brief is
+  // reset on the saved state first, so the run re-enters at that brief.
+  const continueAtRest = (text: string, run = atRestRecord, rewind?: TaskRedoRequest): void => {
     const sessionSelect = deps?.sessionSelect;
     if (run === undefined || sessionSelect === undefined) return;
     const outcome = continueRun({
@@ -130,24 +117,13 @@ export function useWorkflowScreen({
   const approvalPromptState = approvalPromptStore.use((s) => s);
   const promptPending = approvalPromptState.status === 'pending';
 
-  const activeSessionId = record?.ref.sessionId ?? runner.sessionId;
-  const sessionDirPath =
-    activeSessionId === undefined ? undefined : sessionDir(projectDir, activeSessionId);
-
-  const { fieldSessionOwned } = useWorkflowInlineEdit({
+  useWorkflowInlineEdit({
     promptPending,
     inputMode,
-    sessionDirPath,
     openExternalEditor: deps?.reviewInput?.openExternalEditor,
   });
 
-  const globalKeysActive = !promptPending && !fieldSessionOwned;
-  useWorkflowKeys({ isActive: globalKeysActive });
-  const navigateBriefReview = useBriefReviewKeys({
-    isActive: globalKeysActive,
-    copyTarget,
-    canCopyFocused,
-  });
+  useWorkflowKeys({ isActive: !promptPending });
 
   const parked = stopStore.use((s) => s.phase === 'parked');
 
@@ -189,7 +165,6 @@ export function useWorkflowScreen({
     reviewFilePath,
     approvalPromptState,
     promptPending,
-    navigateBriefReview,
     startedAt: runner.startedAt,
     /** The run on screen, at rest; undefined while a local process is driving it. */
     atRestRecord,

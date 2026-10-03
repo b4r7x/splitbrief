@@ -63,7 +63,6 @@ function makeConfigWithOptionalSections(): Config {
     },
     approval: {
       enabled: true,
-      tiers: { read: 'auto', destructive: 'confirm' },
       feedRejectionsToPlanner: false,
     },
   };

@@ -3,7 +3,6 @@ import type { TaskId } from '../../core/schemas/task.js';
 import type {
   RecoveryAction,
   TaskCompletionMethod,
-  WorkflowMode,
   UserEditConflictAction,
   CurrentCodeContextMode,
   TaskContextFit,
@@ -25,7 +24,7 @@ import type { ValidationResult } from './validation/result.js';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { ImplementerPublisher } from '../implementers/types.js';
 import type { EmittedChain } from '../../core/schemas/drift-chain.js';
-import type { UserEditConflict, TaskReviewRequest } from '../events/workflow-events.js';
+import type { UserEditConflict } from '../events/workflow-events.js';
 import { formatRecoveryHeadline } from '../../core/recovery/headline.js';
 import { formatResumeCommand } from '../../core/recovery/resume-command.js';
 import { labelError } from '../../utils/format-errors.js';
@@ -471,10 +470,6 @@ export function publishRecoveryPrompted(
   });
 }
 
-export function publishTaskReviewNeeded(ctx: BusContext, request: TaskReviewRequest): void {
-  ctx.bus.publish({ type: 'task_review_needed', ts: Date.now(), phase: ctx.phase, ...request });
-}
-
 type RecoveryOutcome = EngineEventOf<'recovery_resolved'>['outcome'];
 
 type RecoveryEventSpec =
@@ -546,7 +541,6 @@ export function publishRecoveryResolved(
 export function publishWorkflowConfig(
   ctx: BusContext,
   opts: {
-    mode: WorkflowMode;
     plannerTool: string;
     plannerModel?: string | undefined;
     implementerTool: string;
@@ -560,7 +554,6 @@ export function publishWorkflowConfig(
     type: 'workflow_config',
     ts: Date.now(),
     phase: ctx.phase,
-    mode: opts.mode,
     plannerTool: opts.plannerTool,
     ...(opts.plannerModel !== undefined && { plannerModel: opts.plannerModel }),
     implementerTool: opts.implementerTool,

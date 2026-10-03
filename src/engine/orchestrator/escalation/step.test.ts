@@ -8,6 +8,7 @@ import { createImplementerBase } from '../../implementers/pipeline/run.js';
 import { createChangeDetector } from '../../change-detection.js';
 import { buildLanguageContext } from '../../spec/prompts/language-context.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
+import { CONFIRM_PHRASE } from '../../../core/approval/types.js';
 import { createRunIsolation } from '../isolation/create.js';
 import { createValidator } from '../validation/run.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
@@ -677,7 +678,7 @@ describe('runRetryStep — planner-approved widening', () => {
         .fn()
         .mockResolvedValue(
           decision === 'allow'
-            ? { decision: 'allow', scope: 'once' }
+            ? { decision: 'confirm', phrase: CONFIRM_PHRASE, reason: 'ok' }
             : { decision: 'deny', reason: 'out of scope' },
         ),
     });
@@ -691,7 +692,6 @@ describe('runRetryStep — planner-approved widening', () => {
             approval: {
               enabled: true,
               feedRejectionsToPlanner: false,
-              tiers: { write_out_of_scope: 'sticky' },
             },
             workflow: {},
           }),
@@ -709,10 +709,9 @@ describe('runRetryStep — planner-approved widening', () => {
       transitionType: 'HINT_SUCCESS',
       usageCategory: 'implementer',
       retryFailureFallback: 'retry failed',
-      scopeWidening: { paths: ['src/other.ts'], reason: 'consumer' },
+      scopeWidening: { paths: ['.env.local'], reason: 'consumer' },
       invokeRetry: async ({ projectDir: runDir }) => {
-        mkdirSync(join(runDir, 'src'), { recursive: true });
-        writeFileSync(join(runDir, 'src/other.ts'), 'export const other = 1;\n');
+        writeFileSync(join(runDir, '.env.local'), 'export const other = 1;\n');
         return { success: true };
       },
     });
@@ -722,7 +721,7 @@ describe('runRetryStep — planner-approved widening', () => {
   it('records an allowed widening on the brief with the planner reason', async () => {
     const { outcome, events, projectDir, sessionId } = await runWidenedRetry('allow');
 
-    const provenance = '`src/other.ts` — planner-approved: consumer';
+    const provenance = '`.env.local` — planner-approved: consumer';
     expect(outcome.task.scope?.approvedOutOfBounds).toEqual([provenance]);
     expect(outcome.state.tasks[0]?.scope?.approvedOutOfBounds).toEqual([provenance]);
     expect(loadState({ projectDir, sessionId })?.tasks[0]?.scope?.approvedOutOfBounds).toEqual([
@@ -730,13 +729,13 @@ describe('runRetryStep — planner-approved widening', () => {
     ]);
     expect(events.find((event) => event.type === 'task_scope_widened')).toMatchObject({
       taskId: 'T031',
-      paths: ['src/other.ts'],
+      paths: ['.env.local'],
       reason: 'consumer',
     });
     expect(outcome.result).toMatchObject({ completed: true, method: 'escalated-hint' });
   });
 
-  it('records nothing on a denied write and raises the scope-violation recovery', async () => {
+  it('records nothing on a denied write', async () => {
     const { outcome, events } = await runWidenedRetry('deny');
 
     expect(outcome.result).toEqual({
@@ -744,84 +743,15 @@ describe('runRetryStep — planner-approved widening', () => {
       method: 'failed',
       attempts: 1,
       lastError:
-        "Retry changed files blocked by approval gate: out of scope. SPLITBRIEF discarded this attempt's writes to src/other.ts. Retry from the current files; do not try to recover the rejected writes.",
+        "Retry changed files blocked by approval gate: out of scope. SPLITBRIEF discarded this attempt's writes to .env.local. Retry from the current files; do not try to recover the rejected writes.",
     });
     expect(outcome.state.tasks[0]?.scope?.approvedOutOfBounds).toBeUndefined();
     expect(events.find((event) => event.type === 'task_scope_widened')).toBeUndefined();
-    expect(events.find((event) => event.type === 'recovery_prompted')).toMatchObject({
-      reason: 'scope-violation',
-      taskId: 'T031',
-    });
+    expect(events.find((event) => event.type === 'recovery_prompted')).toBeUndefined();
   });
 });
 
 describe('runRetryStep — gate denial', () => {
-  it('gate-denied out-of-scope write raises scope-violation recovery', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T030', file: 'src/main.ts' });
-    const state = makeImplState([task]);
-    const { callbacks } = makeCallbacks({
-      onTieredApproval: vi.fn().mockResolvedValue({ decision: 'deny', reason: 'out of scope' }),
-    });
-    const { bus, events } = makeBusRecorder();
-    const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
-
-    const outcome = await runRetryStep({
-      ctx: {
-        projectDir,
-        sessionId,
-        config: makeNoValidationConfig({
-          approval: {
-            enabled: true,
-            feedRejectionsToPlanner: false,
-            tiers: { write_out_of_scope: 'sticky' },
-          },
-          workflow: {},
-        }),
-        callbacks,
-        bus,
-        planner: makePlanner(),
-        reviewer: makePlanner(),
-        context: defaultContext,
-        implementer: makeImplementer(),
-        metadata: TEST_METADATA,
-        sinks: TEST_SINKS,
-        validator: createValidator(),
-        isolation: makeCopyingIsolation({ projectDir, sessionId }),
-        taskStartSnapshot,
-        dependsOnFiles: [],
-      },
-      task,
-      state,
-      lastError: 'validation failed',
-      attempts: 1,
-      method: 'local',
-      transitionType: 'VALIDATION_PASS',
-      usageCategory: 'implementer',
-      retryFailureFallback: 'retry failed',
-      invokeRetry: async ({ projectDir: runDir }) => {
-        mkdirSync(join(runDir, 'src'), { recursive: true });
-        writeFileSync(join(runDir, 'src/other.ts'), 'export const other = 1;\n');
-        return { success: true };
-      },
-    });
-
-    expect(outcome.result).toEqual({
-      completed: false,
-      method: 'failed',
-      attempts: 1,
-      lastError:
-        "Retry changed files blocked by approval gate: out of scope. SPLITBRIEF discarded this attempt's writes to src/other.ts. Retry from the current files; do not try to recover the rejected writes.",
-    });
-    const prompted = events.find((event) => event.type === 'recovery_prompted');
-    expect(prompted).toMatchObject({ reason: 'scope-violation', taskId: 'T030' });
-    expect(loadState({ projectDir, sessionId })?.pendingRecovery).toMatchObject({
-      reason: 'scope-violation',
-      files: ['src/other.ts'],
-      recommendedAction: 'retry-same-worker',
-    });
-  });
-
   it('gate-denied package change returns failed retry with lastError and raises no recovery', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T030', file: 'src/main.ts' });

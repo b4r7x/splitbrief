@@ -6,7 +6,7 @@ import { ONE_SHOT_API_CAPS } from './types.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { callPhase } from '#testing/helpers/planner-call.js';
+import { callPlanner } from '#testing/helpers/planner-call.js';
 
 const PLANTED_ENV = {
   SPLITBRIEF_FAKE_API_KEY: 'fake-api-key',
@@ -59,12 +59,10 @@ ${marker}`;
         'test-planner',
       );
       const onQuestion = vi.fn();
-      await callPhase(planner, {
-        feature: 'plan feature',
+      await callPlanner(planner, {
+        prompt: 'plan feature',
         projectDir,
         callbacks: { onOutput: vi.fn(), onQuestion },
-        skillsContext: '',
-        codebaseContext: '',
       });
 
       expect(onQuestion).toHaveBeenCalledWith([

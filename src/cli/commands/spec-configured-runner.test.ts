@@ -12,8 +12,9 @@ import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { CONFIRM_PHRASE } from '../../core/approval/types.js';
-import { CONFIG_FILE, SPLITBRIEF_DIR, TASKS_FILE } from '../../core/paths.js';
+import { CONFIG_FILE, PLAN_JSON_FILE, SPLITBRIEF_DIR } from '../../core/paths.js';
 import { ConfigSchema, type Config } from '../../core/schemas/config.js';
 import type { ArtifactApprovalReview } from '../../engine/runners/types.js';
 import {
@@ -52,26 +53,11 @@ function writeConfig(config: Config): void {
   writeFileSync(join(tmp, SPLITBRIEF_DIR, CONFIG_FILE), JSON.stringify(config, null, 2));
 }
 
-const configuredPlannerArtifact = `---
-id: T001
-title: Record configured planner output
-action: create
-file: src/configured.ts
-depends_on: []
----
-
-### Description
-Record a result from the configured planner.
-
-### Implementation Steps
-1. Write the configured result.
-
-### Tests
-- vitest passes
-
-### Constraints
-- Keep the result deterministic
-`;
+const configuredPlan = makePlanProposal({
+  summary: 'Record configured planner output',
+  tasks: [makeTaskSpec({ title: 'Record the result', suggestedFiles: ['src/configured.ts'] })],
+});
+const configuredPlannerArtifact = JSON.stringify({ result: configuredPlan });
 
 function configuredDirectPlannerConfig(markerEnv: string): Config {
   const childProgram = [
@@ -94,7 +80,7 @@ function configuredDirectPlannerConfig(markerEnv: string): Config {
 
   return ConfigSchema.parse({
     ...makeConfig({
-      workflow: { mode: 'quick' },
+      workflow: {},
       planner: {
         kind: 'agent',
         command: command.executable,
@@ -188,9 +174,9 @@ describe('spec command', () => {
         .map((entry) => entry.name);
       expect(sessions).toHaveLength(2);
       for (const session of sessions) {
-        expect(readFileSync(join(sessionsRoot(), session, TASKS_FILE), 'utf8')).toBe(
-          configuredPlannerArtifact,
-        );
+        expect(
+          JSON.parse(readFileSync(join(sessionsRoot(), session, PLAN_JSON_FILE), 'utf8')),
+        ).toEqual(configuredPlan);
       }
     } finally {
       if (originalHome === undefined) delete process.env.HOME;

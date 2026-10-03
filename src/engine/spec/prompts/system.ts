@@ -25,7 +25,7 @@ ${workspaceRules(isolationDir)}
 - Use ${languageContext.importConvention}
 - Follow the exact function signatures provided
 - Stop and report rather than guessing when the brief's stop conditions are met, or when the target file's current content contradicts the brief
-- The Task Brief inlines the current code, types and signatures you need. Start editing from the brief. Read a file only to see lines the brief does not show, and search only for a symbol the brief names.
+- The Task Brief inlines the read-only code of the context files it lists. Read the files it suggests before you edit them, and search only for a symbol the brief names.
 - SPLITBRIEF runs the project's typecheck, lint, format and test gates after you finish, and its verdict is the authority. Do not run them, and do not run the whole test suite, screenshot or render tools, or repeated git diffs.
 - Run at most the focused test files the brief lists under Tests, once, after your edits. If one fails and you cannot fix it, stop and report the failure.
 - When the brief's Tests or Evidence ask you to run a project-wide gate or to render screenshots, SPLITBRIEF and the review seat do that. Implement the change and its tests, then report.

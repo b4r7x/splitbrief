@@ -1,12 +1,13 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
+import { makePlanProposal } from '#testing/helpers/factories/plan.js';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { createElement, type ReactElement } from 'react';
 import { App, type AppProps } from '../../../../src/app/root.js';
 import { createDefaultConfig } from '../../../../src/core/config/load/defaults.js';
 import { createInitialState, transition } from '../../../../src/core/state/machine.js';
+import { PlanSchema } from '../../../../src/core/schemas/plan.js';
 import { ensureSessionDir } from '../../../../src/core/paths-io.js';
-import { artifactPresence } from '../../../../src/core/sessions/run-record-io.js';
 import { resumeStep } from '../../../../src/core/sessions/run-status.js';
 import { saveState } from '../../../../src/core/state/persistence.js';
 import type { EngineEvent } from '../../../../src/engine/events/types.js';
@@ -148,12 +149,12 @@ export async function runPtyChild(
       publishEvent(options, {
         type: 'workflow_started',
         ts: Date.now(),
-        phase: 'reviewing-spec',
+        phase: 'reviewing-plan',
         feature: PTY_FEATURE,
       });
       const approval = await whileAppLives(
         options,
-        options.callbacks.onApprovalNeeded('spec', reviewPath),
+        options.callbacks.onApprovalNeeded('plan', reviewPath, []),
       );
       if (approval === APP_ABORTED) {
         throwIfAborted(options.signal);
@@ -174,10 +175,10 @@ export async function runPtyChild(
         throwIfAborted(options.signal);
         const cut = options.sinks.consumeBoundaryInterrupt?.() === true ? 'boundary' : 'mid-step';
         const ref = { projectDir, sessionId: PTY_REVIEW_SESSION_ID };
-        const current = rebaseOnPersistedWorkflowState(ref, reviewingSpecState());
+        const current = rebaseOnPersistedWorkflowState(ref, reviewingPlanState());
         const parked = transitionAndSave(ref, current, {
           type: 'INTERRUPT_STEP',
-          step: resumeStep(current, artifactPresence(ref)),
+          step: resumeStep(current),
           source: 'user',
           cut,
         });
@@ -211,18 +212,23 @@ export async function runPtyChild(
   }
 }
 
-function reviewingSpecState() {
+/** A run parked at its plan card: the plan it planned is saved, the build has not begun. */
+function reviewingPlanState() {
   const initial = createInitialState(PTY_FEATURE, new Date(0));
-  const researching = transition(initial, { type: 'START' });
-  const specifying = transition(researching, { type: 'RESEARCH_DONE' });
-  return transition(specifying, { type: 'SPEC_DONE' });
+  const planning = transition(initial, { type: 'START' });
+  const compiled = transition(planning, {
+    type: 'PLAN_COMPILED',
+    plan: PlanSchema.parse(makePlanProposal()),
+    tasks: [],
+  });
+  return transition(compiled, { type: 'PLAN_DONE', tasks: [] });
 }
 
 async function preparePtyExecution(
   projectDir: string,
   config: ReturnType<typeof createDefaultConfig>,
 ): Promise<PreparedExecution> {
-  const resumeState = reviewingSpecState();
+  const resumeState = reviewingPlanState();
   const ref = { projectDir, sessionId: PTY_REVIEW_SESSION_ID };
   ensureSessionDir(ref.projectDir, ref.sessionId);
   // A gate is a durable wait: the phase it parks at is on disk before the run

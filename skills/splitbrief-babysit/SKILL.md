@@ -66,7 +66,7 @@ version: 3
 planner:     { kind: cli, tool: <installed-tool>, model: <named-model> }
 implementer: { kind: cli, tool: <installed-tool>, model: <named-model> }
 validation:  { typecheck: true, lint: true, test: true }
-workflow:    { approve: all, max_retries: 3, mode: standard, task_review: none }
+workflow:    { approve: plan }
 ```
 
 Preserve the user's seats. Confirm model names through the configured tools before launch; choose a fallback only within the user's authorization.
@@ -78,7 +78,7 @@ If the task file's first line gives the exact launch command, use it without its
 Redirect stderr to a run-specific file so a crash survives alternate-screen restoration.
 Create `SCR` with `mktemp -d` or the host's scratch directory. Record the terminal handle and scratch path.
 
-Launch `node dist/cli.js start --mode standard '<task>' @<task-file>`.
+Launch `node dist/cli.js start '<task>' @<task-file>`.
 For an existing run, use `continue <run-id>` instead. Retain the process exit status and inspect stderr on unexpected exit.
 
 When `command -v tmux` succeeds, always launch in a named tmux session:
@@ -95,7 +95,7 @@ echo "SPLITBRIEF EXIT CODE: $?"
 exec bash
 EOF
 chmod +x "$SCR/launch.sh"
-tmux new-session -d -s "$T" -x 140 -y 45 -e "SB_REPO=$SB_REPO" -e "SB_STDERR=$SB_STDERR" "$SCR/launch.sh" start --mode standard '<one sentence>' @.splitbrief/inbox/<run>/tasks.md
+tmux new-session -d -s "$T" -x 140 -y 45 -e "SB_REPO=$SB_REPO" -e "SB_STDERR=$SB_STDERR" "$SCR/launch.sh" start '<one sentence>' @.splitbrief/inbox/<run>/tasks.md
 tmux set-option -t "$T" window-size manual
 ```
 
@@ -160,7 +160,7 @@ Every row below is keyboard work in the pane — that is the point, not a conven
 | Moment | What to do |
 |---|---|
 | Planner question | `↑↓` choose, `⏎` next, `tab` writes a free answer, last `⏎` sends |
-| Spec / plan / briefs gate | read the artifact in the session dir first, then `y` |
+| Plan card | read `plan.md` / `plan.json` in the session dir first; `y` approves the plan and also confirms every protected operation listed on the card (`Approving also confirms: …`), so check each listed write against the task before `y` |
 | Inline external-edit prompt (`[c] continue`) | verify the changed files match recorded fixes or authorized user edits, then send `c` |
 | Bordered recovery panel (each row shows its key) | send the action letter through the terminal; `⏎` takes the highlighted row, `tab` types a correction when the halt takes one. `r` is Try again; `w` opens the halted seat's picker |
 | Protected-path write approval (manifest, lockfile, CI config, env or key file, `.git`, `.splitbrief`) | allow only when the task explicitly asks for that operation; otherwise deny — a denial is normal. A write prompt for an ordinary project file is a tool defect: stop |

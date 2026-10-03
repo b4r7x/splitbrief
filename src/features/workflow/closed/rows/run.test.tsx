@@ -136,8 +136,8 @@ describe('runSectionRows', () => {
       renderRun({ summary: priced, width: 34, crewNamed: true }).lastFrame() ?? '',
     );
 
-    expect(wide).toContain('2026-09-14-add-email-validation · standard');
-    expect(narrow).not.toContain('standard');
+    expect(wide).toContain('2026-09-14-add-email-validation');
+    expect(wide).not.toContain('standard');
     expect(narrow).toContain('2026-09-14…validation');
     for (const line of narrow.split('\n')) expect(line.length).toBeLessThanOrEqual(34);
   });

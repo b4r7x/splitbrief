@@ -10,7 +10,6 @@ import { registerInitCommand } from './cli/commands/init.js';
 import { registerStatusCommand } from './cli/commands/status.js';
 import { registerResumeCommand } from './cli/commands/resume.js';
 import { registerReviewCommand } from './cli/commands/review.js';
-import { registerApprovalCommand } from './cli/commands/approval.js';
 import { registerContinueCommand } from './cli/commands/continue/register.js';
 import { isCliError } from './cli/errors.js';
 import { assertSupportedNodeVersion } from './cli/node-guard.js';
@@ -40,7 +39,6 @@ registerInitCommand(program);
 registerStatusCommand(program);
 registerResumeCommand(program);
 registerReviewCommand(program);
-registerApprovalCommand(program);
 registerContinueCommand(program);
 
 async function main(): Promise<void> {

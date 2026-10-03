@@ -3,10 +3,8 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Config } from '../../core/schemas/config.js';
 import { createApiPlanner } from './api.js';
-import { runDocumentPhases } from './document-phases.js';
-import { callPhase } from '#testing/helpers/planner-call.js';
+import { callPlanner } from '#testing/helpers/planner-call.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { PLANNER_DOCUMENT_FIXTURES } from '#testing/helpers/factories/phase-call.js';
 
 let server: http.Server;
 let port: number;
@@ -22,29 +20,6 @@ let receivedCatalogRequests: { pathname: string; limit: string | null }[];
 let projectDir: string;
 let openAiCompletionChunks: string[];
 let openAiCompletionReplies: string[];
-
-const validPlannerArtifact = `---
-id: T001
-title: Test task
-action: create
-file: src/example.ts
-depends_on: []
----
-
-# Test plan
-
-### Description
-Create the example file.
-
-### Implementation Steps
-1. Write the file.
-
-### Tests
-- npm test
-
-### Constraints
-- Follow project conventions.
-`;
 
 function proxyFetchToLocalServer(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const requestUrl =
@@ -188,37 +163,6 @@ afterEach(async () => {
 });
 
 describe('createApiPlanner', () => {
-  it('regenerate sends prompt to chat endpoint and returns parsed text + usage', async () => {
-    const planner = createApiPlanner(makeApiPlannerConfig('ollama'));
-    const collected: string[] = [];
-
-    const result = await planner.regenerate({
-      prompt: 'the prompt',
-      projectDir,
-      callbacks: { onOutput: (text) => collected.push(text) },
-    });
-
-    expect(result.text).toBe('Hello world');
-    expect(result.usage).toEqual({
-      inputTokens: 42,
-      outputTokens: 17,
-      counterCoverage: {
-        input: 'partial',
-        output: 'partial',
-        cacheRead: 'missing',
-        cacheCreate: 'missing',
-        reasoning: 'missing',
-      },
-      providerTotals: { input: 42, output: 17 },
-    });
-    expect(collected.join('')).toBe('Hello world');
-
-    expect(receivedBodies).toHaveLength(1);
-    expect(receivedBodies[0]!.model).toBe('test-model');
-    expect(receivedBodies[0]!.stream).toBe(true);
-    expect(receivedBodies[0]!.messages[0]).toMatchObject({ role: 'user', content: 'the prompt' });
-  });
-
   it('sends a typed call schema as response_format and a schema-less call without it', async () => {
     const planner = createApiPlanner(makeApiPlannerConfig('ollama'));
     const call = planner.typedCall({
@@ -247,7 +191,7 @@ describe('createApiPlanner', () => {
       cfg.planner.contextLength = 5000;
       const planner = createApiPlanner(cfg);
 
-      await planner.regenerate({
+      await callPlanner(planner, {
         prompt: 'the prompt',
         projectDir,
         callbacks: { onOutput: () => {} },
@@ -263,7 +207,7 @@ describe('createApiPlanner', () => {
     cfg.planner.effort = 'high';
     const planner = createApiPlanner(cfg);
 
-    await planner.regenerate({
+    await callPlanner(planner, {
       prompt: 'the prompt',
       projectDir,
       callbacks: { onOutput: () => {} },
@@ -271,79 +215,6 @@ describe('createApiPlanner', () => {
 
     expect(receivedBodies).toHaveLength(1);
     expect(receivedBodies[0]).not.toHaveProperty('reasoning_effort');
-  });
-
-  it('spends one call per document phase and accumulates token usage across them', async () => {
-    const planner = createApiPlanner(makeApiPlannerConfig('ollama'));
-    openAiCompletionReplies = [
-      PLANNER_DOCUMENT_FIXTURES.research,
-      PLANNER_DOCUMENT_FIXTURES.spec,
-      PLANNER_DOCUMENT_FIXTURES.plan,
-      validPlannerArtifact,
-    ];
-
-    const result = await runDocumentPhases({
-      planner,
-      mode: 'standard',
-      feature: 'test feature',
-      projectDir,
-      callbacks: {
-        onOutput: vi.fn(),
-        onPhase: vi.fn(),
-      },
-    });
-
-    expect(receivedBodies).toHaveLength(4);
-    expect(result.usage).toEqual({
-      inputTokens: 42 * 4,
-      outputTokens: 17 * 4,
-      counterCoverage: {
-        input: 'partial',
-        output: 'partial',
-        cacheRead: 'missing',
-        cacheCreate: 'missing',
-        reasoning: 'missing',
-      },
-      providerTotals: { input: 42, output: 17 },
-    });
-  });
-
-  it('injects priorMessages into the first call of the planner only (FR-007 api-kind)', async () => {
-    const planner = createApiPlanner(makeApiPlannerConfig('ollama'));
-    openAiCompletionReplies = [PLANNER_DOCUMENT_FIXTURES.research, PLANNER_DOCUMENT_FIXTURES.spec];
-    const priorMessages = [
-      { role: 'user' as const, content: 'start: add auth' },
-      { role: 'assistant' as const, content: 'we should use JWT' },
-    ];
-
-    await callPhase(planner, {
-      call: 'research',
-      feature: 'add auth',
-      projectDir,
-      priorMessages,
-      callbacks: { onOutput: vi.fn(), onPhase: vi.fn() },
-    });
-    await callPhase(planner, {
-      call: 'spec',
-      feature: 'add auth',
-      projectDir,
-      priorMessages,
-      callbacks: { onOutput: vi.fn(), onPhase: vi.fn() },
-    });
-
-    expect(receivedBodies.length).toBeGreaterThan(0);
-    const firstCall = receivedBodies[0]!;
-    expect(firstCall.messages[0]).toEqual({ role: 'user', content: 'start: add auth' });
-    expect(firstCall.messages[1]).toEqual({ role: 'assistant', content: 'we should use JWT' });
-    expect(firstCall.messages[firstCall.messages.length - 1]!.role).toBe('user');
-
-    const secondCall = receivedBodies[1]!;
-    expect(secondCall.messages[0]!.role).toBe('user');
-    const hasAssistantPrior = secondCall.messages.some(
-      (m: { role: string; content: string }) =>
-        m.role === 'assistant' && m.content === 'we should use JWT',
-    );
-    expect(hasAssistantPrior).toBe(false);
   });
 
   it.each([['ollama'], ['custom-endpoint']] as const)(
@@ -395,7 +266,7 @@ describe('createApiPlanner', () => {
     const planner = createApiPlanner(cfg);
 
     await expect(
-      planner.regenerate({
+      callPlanner(planner, {
         prompt: 'this prompt cannot fit the one-token planner window',
         projectDir,
         callbacks: { onOutput: () => {} },

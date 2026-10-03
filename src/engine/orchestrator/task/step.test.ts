@@ -219,15 +219,14 @@ describe('runSingleTask — completion, abort and approval evidence', { timeout:
     const task = makeTask({
       id: 'T001',
       action: 'create',
-      file: 'src/hello.ts',
-      scope: { inBounds: ['src/hello.ts'] },
+      file: 'package.json',
+      scope: { inBounds: ['package.json'] },
     });
     const state = implementingState([task]);
     const implementer = makeImplementer({
       capabilities: { writesFiles: 'direct' },
       implement: vi.fn().mockImplementation(async ({ projectDir: runDir }: ImplementerOptions) => {
-        mkdirSync(join(runDir, 'src'), { recursive: true });
-        writeFileSync(join(runDir, 'src/hello.ts'), 'export const hello = "world";\n');
+        writeFileSync(join(runDir, 'package.json'), '{"name":"hello"}\n');
         return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
       }),
     });
@@ -236,7 +235,7 @@ describe('runSingleTask — completion, abort and approval evidence', { timeout:
       onTieredApproval: vi.fn().mockResolvedValue({
         decision: 'confirm',
         phrase: 'I confirm',
-        reason: 'approved scoped source write',
+        reason: 'approved manifest write',
       }),
     };
 
@@ -250,7 +249,6 @@ describe('runSingleTask — completion, abort and approval evidence', { timeout:
           approval: {
             enabled: true,
             feedRejectionsToPlanner: false,
-            tiers: { write_in_scope: 'confirm' },
           },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
           workflow: { maxRetries: 2 },
@@ -270,9 +268,9 @@ describe('runSingleTask — completion, abort and approval evidence', { timeout:
       expect.objectContaining({
         taskId: 'T001',
         tier: 'confirm',
-        actionClass: 'write_in_scope',
-        actionDescription: 'create src/hello.ts',
-        reason: 'approved scoped source write',
+        actionClass: 'package_change',
+        actionDescription: 'write package.json',
+        reason: 'approved manifest write',
       }),
     );
   });

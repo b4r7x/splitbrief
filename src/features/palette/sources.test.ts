@@ -5,7 +5,7 @@ import { makeSession } from '#testing/helpers/factories/session.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { createRuntimeCommands } from '../../core/runtime/commands/registry.js';
 import { makeCtx } from '#testing/helpers/runtime-commands.js';
-import { WORKFLOW_MODES } from '../../core/schemas/enums.js';
+import { SCROLL_COMMAND_TARGETS } from '../../core/runtime/commands/types.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import type { Screen } from '../../core/navigation/types.js';
 import { createInitialState } from '../../core/state/machine.js';
@@ -227,11 +227,11 @@ describe('buildPaletteSources registry rows', () => {
   it('offers one prefill row for an argument command instead of one row per option', () => {
     const items = buildRegistrySources();
 
-    const modeRows = items.filter((item) => item.label === '/mode');
-    expect(modeRows).toHaveLength(1);
-    expect(modeRows[0]?.action).toEqual({ kind: 'prefill', text: '/mode ' });
-    for (const mode of WORKFLOW_MODES) {
-      expect(items.some((item) => item.label === mode)).toBe(false);
+    const scrollRows = items.filter((item) => item.label === '/scroll');
+    expect(scrollRows).toHaveLength(1);
+    expect(scrollRows[0]?.action).toEqual({ kind: 'prefill', text: '/scroll ' });
+    for (const target of SCROLL_COMMAND_TARGETS) {
+      expect(items.some((item) => item.label === target)).toBe(false);
     }
   });
 });

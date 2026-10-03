@@ -75,7 +75,7 @@ describe('start command — shorthand invocation', () => {
     });
   });
 
-  it('applies --mode quick through real store initialization on shorthand invocation', async () => {
+  it('applies --implementer-model through real store initialization on shorthand invocation', async () => {
     writeConfigMarker(tmp);
 
     const deps: StartDeps = {
@@ -90,8 +90,8 @@ describe('start command — shorthand invocation', () => {
     await program.parseAsync([
       'node',
       'splitbrief',
-      '--mode',
-      'quick',
+      '--implementer-model',
+      'override-model',
       'build feature X',
       '--project',
       tmp,
@@ -104,7 +104,7 @@ describe('start command — shorthand invocation', () => {
         prepared: { runtime: { feature: 'build feature X' } },
       },
     });
-    expect(configStore.get().config?.workflow.mode).toBe('quick');
+    expect(configStore.get().config?.implementer).toMatchObject({ model: 'override-model' });
   }, 30_000);
 
   it('interactive and JSON starts consume prepared execution', async () => {

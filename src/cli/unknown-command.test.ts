@@ -4,25 +4,14 @@ import { isCliError } from './errors.js';
 
 // Mirrors the registration order in src/cli.ts; the guard itself is fed the
 // live `program.commands` list, so this is a sample, not a second registry.
-const COMMANDS = [
-  'start',
-  'doctor',
-  'spec',
-  'init',
-  'status',
-  'resume',
-  'review',
-  'approval',
-  'continue',
-];
+const COMMANDS = ['start', 'doctor', 'spec', 'init', 'status', 'resume', 'review', 'continue'];
 
 // A sample of the value-taking flags `valueTakingFlags(program)` reads off the
 // live registrations in src/cli/options.ts; the boolean flags are absent on
 // purpose, because that is the distinction the operand scan turns on.
 const VALUE_FLAGS: ReadonlySet<string> = new Set([
-  '--approve',
   '--model',
-  '--mode',
+  '--planner-args',
   '--project',
   '--planner',
   '--implementer',
@@ -65,7 +54,7 @@ describe('assertNotMistypedCommand rejects a near-miss subcommand', () => {
     { argv: ['spce'], suggestion: 'spec' },
     { argv: ['docter'], suggestion: 'doctor' },
     { argv: ['doctro', '--json'], suggestion: 'doctor' },
-    { argv: ['spce', '--mode', 'quick'], suggestion: 'spec' },
+    { argv: ['spce', '--model', 'qwen'], suggestion: 'spec' },
   ])('rejects $argv suggesting $suggestion', ({ argv, suggestion }) => {
     const captured = captureThrown(argv);
 
@@ -98,6 +87,7 @@ describe('assertNotMistypedCommand rejects a retired command', () => {
     { argv: ['stats'], hint: 'run usage and cost details are available with `/usage`' },
     { argv: ['snapshot', 'list'], hint: '/run accept' },
     { argv: ['worktree'], hint: 'there is no worktree command' },
+    { argv: ['approval', 'list'], hint: 'there are no grants to list or clear' },
   ])('rejects $argv instead of starting a workflow', ({ argv, hint }) => {
     const captured = captureThrown(argv);
 
@@ -127,6 +117,31 @@ describe('assertNotMistypedCommand rejects a retired command', () => {
   });
 });
 
+describe('assertNotMistypedCommand rejects a removed flag', () => {
+  it.each([
+    {
+      argv: ['add caching', '--mode', 'quick'],
+      message: '--mode was removed: every run plans in one session',
+    },
+    {
+      argv: ['start', '--mode=speckit', 'add caching'],
+      message: '--mode was removed: every run plans in one session',
+    },
+    {
+      argv: ['add caching', '--approve', 'none'],
+      message: '--approve was removed: set workflow.approve (plan or none) in the config',
+    },
+    {
+      argv: ['spec', '--approve=all', 'add caching'],
+      message: '--approve was removed: set workflow.approve (plan or none) in the config',
+    },
+  ])('names where $argv.1 went', ({ argv, message }) => {
+    const captured = captureThrown(argv);
+    expect(isCliError(captured)).toBe(true);
+    expect(messageOf(captured)).toBe(message);
+  });
+});
+
 describe('assertNotMistypedCommand leaves real invocations alone', () => {
   it.each([
     { label: 'no arguments', argv: [] },
@@ -144,7 +159,9 @@ describe('assertNotMistypedCommand leaves real invocations alone', () => {
     { label: 'a quoted feature that opens with a newly retired name', argv: ['export the ledger'] },
     { label: 'an inherited Object.prototype key', argv: ['toString'] },
     { label: 'a retired name that is a value-flag argument', argv: ['--project', 'attach'] },
-    { label: 'a near-miss that is a value-flag argument', argv: ['--mode', 'doctro'] },
+    { label: 'a near-miss that is a value-flag argument', argv: ['--model', 'doctro'] },
+    { label: "a planner tool's own --mode flag", argv: ['add x', '--planner-args', '--mode'] },
+    { label: 'a removed flag after the end of options', argv: ['start', '--', '--mode', 'x'] },
   ])('admits $label', ({ argv }) => {
     expect(() => assertNotMistypedCommand(argv, COMMANDS, VALUE_FLAGS)).not.toThrow();
   });

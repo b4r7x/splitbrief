@@ -109,12 +109,8 @@ describe('runRows', () => {
     expect(runRows(one).some((row) => row.label === 'Phases')).toBe(false);
   });
 
-  it('names the session and the mode it ran in', () => {
-    expect(valueFor(makeView(), 'Session')).toBe(
-      '2026-09-14-add-email-validation-with-tests · standard',
-    );
-    const noMode = makeView({ run: { ...makeView().run, mode: null } });
-    expect(valueFor(noMode, 'Session')).toBe('2026-09-14-add-email-validation-with-tests');
+  it('names the session and no mode', () => {
+    expect(valueFor(makeView(), 'Session')).toBe('2026-09-14-add-email-validation-with-tests');
   });
 
   it('keeps the rows in one reading order', () => {

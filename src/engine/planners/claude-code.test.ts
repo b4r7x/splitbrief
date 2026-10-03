@@ -2,8 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { writeFileSync, chmodSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { CliExecutableIdentity } from '../../core/discovery/detection.js';
-import { SANDBOX_DIR, TASKS_FILE } from '../../core/paths.js';
-import { writeSpecFile } from '../../core/paths-io.js';
+import { SANDBOX_DIR } from '../../core/paths.js';
 import {
   cliAuthChannelHostStateAccess,
   defaultCliAuthChannel,
@@ -18,7 +17,7 @@ import { writeCommandShim } from '#testing/helpers/command-shim.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
-import { callPhase } from '#testing/helpers/planner-call.js';
+import { callPlanner } from '#testing/helpers/planner-call.js';
 
 let shimDir: string;
 let projectDir: string;
@@ -226,14 +225,13 @@ describe('createClaudeCodePlanner planning', () => {
     };
 
     await expect(
-      callPhase(planner, { call: 'research', feature: 'expired', projectDir, callbacks }),
+      callPlanner(planner, { prompt: 'expired', projectDir, callbacks }),
     ).rejects.toThrow(expiredLine);
     expect(expiredSessionIds).toEqual(['sess-old']);
     expect(readFileSync(argvLog, 'utf8').trim().split('\n')).toHaveLength(1);
 
-    const rerun = await callPhase(planner, {
-      call: 'research',
-      feature: 'rerun',
+    const rerun = await callPlanner(planner, {
+      prompt: 'rerun',
       projectDir,
       callbacks,
     });
@@ -277,8 +275,8 @@ describe('createClaudeCodePlanner planning', () => {
     });
 
     await expect(
-      callPhase(planner, {
-        feature: 'mismatch',
+      callPlanner(planner, {
+        prompt: 'mismatch',
         projectDir,
         callbacks: {
           onOutput: (chunk) => output.push(chunk),
@@ -294,80 +292,6 @@ describe('createClaudeCodePlanner planning', () => {
     expect(output.join('\n')).not.toContain('stale resumed output');
     expect(JSON.stringify(events)).not.toContain('sess-new-unexpected');
     expect(readFileSync(argvLog, 'utf8').trim().split('\n')).toHaveLength(1);
-  });
-
-  it('reads phase artifacts from the terminal result only and ignores seeded session tasks.md', async () => {
-    const terminalMarkdown = `# Task Briefs: titleCase function
-
----
-id: T001
-title: Create titleCase function in src/text.ts
-action: create
-file: src/text.ts
-depends_on: []
----
-
-### Description
-Create a new file \`src/text.ts\` exporting a \`titleCase\` function.
-
-### Tests
-- \`titleCase('hello world')\` → \`'Hello World'\`
-
----
-id: T002
-title: Add vitest tests for titleCase in src/text.test.ts
-action: create
-file: src/text.test.ts
-depends_on: [T001]
----
-
-### Description
-Create \`src/text.test.ts\` with vitest tests for \`titleCase\`.
-
-### Tests
-- \`expect(titleCase('hello world')).toBe('Hello World')\`
-`;
-    const shimPath = join(shimDir, 'claude');
-    writeFileSync(
-      shimPath,
-      [
-        '#!/bin/bash',
-        `cat <<'JSON_EOF'`,
-        JSON.stringify({
-          type: 'result',
-          session_id: '0a3443ac-432e-40c8-bdf9-29859130257f',
-          result: terminalMarkdown,
-          usage: { input_tokens: 6, output_tokens: 3006 },
-        }),
-        'JSON_EOF',
-        '',
-      ].join('\n'),
-      'utf8',
-    );
-    chmodSync(shimPath, 0o755);
-    process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
-
-    const warnings: string[] = [];
-    const sessionId = '2026-08-06-add-a-titlecase-function-to-src-text-ts-that-capit';
-    writeSpecFile({ projectDir, sessionId }, TASKS_FILE, terminalMarkdown);
-
-    const planner = await createTrustedClaudeCodePlanner({ authChannel: undefined });
-
-    const result = await callPhase(planner, {
-      feature: 'add a titleCase function to src/text.ts',
-      projectDir,
-      callbacks: {
-        onOutput: () => {},
-        onWarning: (message) => warnings.push(message),
-        sessionId,
-      },
-    });
-
-    expect(warnings).toEqual([]);
-    if (result.kind !== 'artifact') throw new Error('Expected a completed planner artifact');
-    expect(result.tasks?.map((task) => task.id)).toEqual(['T001', 'T002']);
-    expect(result.artifact.artifact.text).toContain('id: T001');
-    expect(result.artifact.rawOutput).toBeUndefined();
   });
 
   it('captures the native session id as it streams, so the next call resumes a failed one', async () => {
@@ -408,21 +332,18 @@ Create the stream capture file.
 
     const planner = await createTrustedClaudeCodePlanner({ authChannel: undefined });
     await expect(
-      callPhase(planner, {
-        call: 'research',
-        feature: 'first call dies after the id',
+      callPlanner(planner, {
+        prompt: 'first call dies after the id',
         projectDir,
         callbacks: { onOutput: () => {} },
       }),
     ).rejects.toBeDefined();
 
-    const second = await callPhase(planner, {
-      feature: 'second call',
+    await callPlanner(planner, {
+      prompt: 'second call',
       projectDir,
       callbacks: { onOutput: () => {} },
     });
-    if (second.kind !== 'artifact') throw new Error('Expected a completed planner artifact');
-    expect(second.tasks).toHaveLength(1);
 
     const calls = readFileSync(argvLog, 'utf8')
       .trim()
@@ -466,21 +387,16 @@ Create the Claude retry file.
     process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
 
     const planner = await createTrustedClaudeCodePlanner({ authChannel: undefined });
-    const first = await callPhase(planner, {
-      feature: 'first call',
+    await callPlanner(planner, {
+      prompt: 'first call',
       projectDir,
       callbacks: { onOutput: () => {} },
     });
-    const second = await callPhase(planner, {
-      feature: 'retry call',
+    await callPlanner(planner, {
+      prompt: 'retry call',
       projectDir,
       callbacks: { onOutput: () => {} },
     });
-
-    if (first.kind !== 'artifact') throw new Error('Expected a completed planner artifact');
-    expect(first.tasks).toHaveLength(1);
-    if (second.kind !== 'artifact') throw new Error('Expected a completed planner artifact');
-    expect(second.tasks).toHaveLength(1);
 
     const calls = readFileSync(argvLog, 'utf8')
       .trim()
@@ -777,8 +693,8 @@ const wait = setInterval(() => {
         await planner.injectUserTurn?.({ text: 'answer', projectDir, callbacks: { onCallEvent } }),
       ).toMatchObject({ status: 'delivered' });
     } else {
-      const result = callPhase(planner, {
-        feature: 'refactor',
+      const result = callPlanner(planner, {
+        prompt: 'refactor',
         projectDir,
         callbacks: {
           signal: controller.signal,
@@ -787,7 +703,7 @@ const wait = setInterval(() => {
         },
       });
       if (abort) await expect(result).rejects.toThrow();
-      else expect((await result).kind).toBe('conversation');
+      else await result;
     }
     expect(output).toEqual(['Which module?']);
     expect(events.filter((event) => event.type === 'call_started')).toHaveLength(1);
@@ -818,8 +734,8 @@ const wait = setInterval(() => {
       });
       const events: RunnerCallEvent[] = [];
       await expect(
-        callPhase(planner, {
-          feature: 'refactor',
+        callPlanner(planner, {
+          prompt: 'refactor',
           projectDir,
           callbacks: {
             onOutput: () => {},

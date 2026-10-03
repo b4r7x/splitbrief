@@ -73,7 +73,6 @@ function diffOfLength(path: string, chars: number): string {
 
 /** A run whose every required source is present, for one field at a time. */
 const WHOLE: ApiReviewContextInput = {
-  mode: 'standard',
   feature: 'Add a login route',
   spec: '# Spec\n\nAdd a login route.\n',
   taskBriefs: '## T001 — login route\n\nWrite it.\n',
@@ -174,14 +173,22 @@ describe('the packet an API review seat is handed', () => {
     expect(packet.missingSections).toEqual(['drift-report.json']);
   });
 
-  it('requires the spec its mode writes, and reviews quick mode against its request', () => {
-    const missing = refused({ mode: 'standard', spec: '' });
-    expect(missing.cause).toBe('missing-required');
-    expect(missing.missingSections).toEqual(['spec.md']);
+  it('reviews against the spec when the run wrote one, else against the original request', () => {
+    const withSpec = complete({});
+    expect(withSpec.manifest).toContainEqual({
+      path: 'spec.md',
+      kind: 'required',
+      state: 'included',
+    });
 
-    const quick = complete({ mode: 'quick', spec: '' });
-    expect(quick.text).toContain('Add a login route');
-    expect(quick.manifest).toContainEqual({ path: 'spec.md', kind: 'optional', state: 'missing' });
+    const withoutSpec = complete({ spec: '' });
+    expect(withoutSpec.text).toContain('This run wrote no specification.');
+    expect(withoutSpec.text).toContain('Add a login route');
+    expect(withoutSpec.manifest).toContainEqual({
+      path: 'spec.md',
+      kind: 'optional',
+      state: 'missing',
+    });
   });
 
   it('reads the diff’s own spelling of a path with a space or a non-ASCII name', () => {
@@ -297,7 +304,6 @@ function setupRun(opts: { ledger: boolean }): { projectDir: string; sessionId: s
       createEvidenceLedger({
         sessionId,
         feature: 'Add a login route',
-        mode: 'standard',
         tasks: [task],
       }),
     );

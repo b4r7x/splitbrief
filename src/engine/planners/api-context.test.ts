@@ -2,8 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
-import { callPhase } from '#testing/helpers/planner-call.js';
-import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { sha256Hex } from '../../utils/sha256.js';
 import {
   apiContextError,
@@ -17,9 +15,7 @@ import {
   type ApiContextManifestEntry,
   type ApiPlanningContext,
 } from './api-context.js';
-import { createPlannerBase } from './base.js';
 import { buildProjectContext } from './context.js';
-import { ONE_SHOT_API_CAPS } from './types.js';
 
 type PacketInput = Parameters<typeof buildApiPlanningContext>[0];
 type Overrides = Partial<PacketInput> & Pick<PacketInput, 'request'>;
@@ -479,61 +475,5 @@ describe('the insufficiency the PLAN seat hands to recovery', () => {
       ]),
     });
     expect(readApiContextDiagnostic(apiContextError(measured))).toEqual(measured);
-  });
-});
-
-describe('a PLAN seat that reads no files of its own', () => {
-  function recordingApiPlanner() {
-    const prompts: string[] = [];
-    const planner = createPlannerBase({
-      invokePlan: async ({ prompt }) => {
-        prompts.push(prompt);
-        return makeRunnerCallResult({ status: 'completed', text: '# Research\n\nFindings.' });
-      },
-      invokeEscalate: async () => makeRunnerCallResult({ status: 'completed', text: '' }),
-      isAvailable: async () => true,
-      backendKind: 'api',
-      model: 'qwen-coder',
-      consumesPriorMessages: true,
-      planningContextBudget: ROOMY,
-      capabilities: ONE_SHOT_API_CAPS,
-    });
-    return { planner, prompts };
-  }
-
-  it('supplies the named source in the prompt it dispatches', async () => {
-    await withTempDir('api-context-seat', async (dir) => {
-      const source = 'export const wired = true;\n';
-      write(dir, 'src/wired.ts', source);
-      const { planner, prompts } = recordingApiPlanner();
-
-      await callPhase(planner, {
-        call: 'research',
-        feature: 'Modify `src/wired.ts` so it logs.',
-        projectDir: dir,
-        callbacks: { onOutput: () => {} },
-      });
-
-      expect(prompts).toHaveLength(1);
-      expect(prompts[0]).toContain(source);
-      expect(prompts[0]).toContain('no filesystem, shell or search tool');
-    });
-  });
-
-  it('refuses before anything is dispatched when the packet is incomplete', async () => {
-    await withTempDir('api-context-seat', async (dir) => {
-      const { planner, prompts } = recordingApiPlanner();
-
-      await expect(
-        callPhase(planner, {
-          call: 'plan',
-          feature: 'Write the plan.',
-          spec: '',
-          projectDir: dir,
-          callbacks: { onOutput: () => {} },
-        }),
-      ).rejects.toMatchObject({ kind: 'api-insufficient-context' });
-      expect(prompts).toEqual([]);
-    });
   });
 });

@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
 import { makeImplementer, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
@@ -22,7 +21,8 @@ import { saveSummary } from '../core/sessions/io.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import type { WorkflowState } from '../core/schemas/workflow.js';
 import type { Implementer } from '../engine/implementers/types.js';
-import type { Planner, RunPhaseInput } from '../engine/planners/types.js';
+import type { Planner } from '../engine/planners/types.js';
+import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
 
 // The two terminal guards read state and session after the run; skipping the run
 // itself is what makes them reachable without driving a whole workflow.
@@ -315,7 +315,6 @@ describe('runHeadless — with a reviewer configured', () => {
       resumeState: state,
     });
     expect(prepared.config.reviewer).toMatchObject({ kind: 'cli', tool: 'codex' });
-    expect(prepared.config.workflow.taskReview).toBe('none');
 
     await expect(
       runHeadless({
@@ -361,8 +360,6 @@ describe('runHeadless — with a reviewer configured', () => {
       '  test_command: "noop"',
       'workflow:',
       '  approve: none',
-      '  mode: quick',
-      '  task_review: none',
     ]);
     const sessionId = 'sess-headless-reviewer-run';
     ensureSessionDir(projectDir, sessionId);
@@ -377,18 +374,15 @@ describe('runHeadless — with a reviewer configured', () => {
     expect(prepared.gates).toContainEqual(expect.objectContaining({ slot: { role: 'reviewer' } }));
 
     const planner = makePlanner({
-      runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
-        makePhaseCallResult({
-          call,
-          tasks: [
-            makeTask({
-              scope: { inBounds: ['src/hello.ts'], outOfBounds: ['everything else'] },
-              evidence: ['src/hello.test.ts passes'],
-              typeDefs: 'export type Hello = string;',
-            }),
-          ],
-          usage: { inputTokens: 50, outputTokens: 25 },
-        }),
+      typedCall: typedCallFromTasks(
+        [
+          makeTask({
+            scope: { inBounds: ['src/hello.ts'], outOfBounds: ['everything else'] },
+            evidence: ['src/hello.test.ts passes'],
+            typeDefs: 'export type Hello = string;',
+          }),
+        ],
+        { inputTokens: 50, outputTokens: 25 },
       ),
     });
 

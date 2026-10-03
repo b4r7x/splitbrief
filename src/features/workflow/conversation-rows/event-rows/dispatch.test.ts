@@ -142,7 +142,7 @@ describe('event row dispatch', () => {
     expect(rows[0]?.segments.every((segment) => segment.tone === 'textDim')).toBe(true);
   });
 
-  it('says protected paths still ask when the session turns on --yolo', () => {
+  it('says only a protected write asks when an old session logged --yolo', () => {
     const rows = eventRows({
       event: { type: 'approval_mode_changed', ts: 0, mode: 'yolo' },
       globalIndex: 0,
@@ -150,7 +150,7 @@ describe('event row dispatch', () => {
       ctx: { width: 80, viewportRows: 20, streaming },
     });
 
-    expect(rows.map(rowText).join('\n')).toContain('tiered approvals off · protected paths ask');
+    expect(rows.map(rowText).join('\n')).toContain('only a write to a protected path asks');
   });
 
   it('strips OSC-52/CSI control bytes from a user prompt row now that it owns the title', () => {
@@ -1002,7 +1002,8 @@ describe('event row dispatch', () => {
       .map(rowText)
       .join('\n');
 
-    expect(text).toContain('Paused at the plan gate — press Enter to reopen it.');
+    expect(text).toContain('Paused at the plan.');
+    expect(text).not.toContain('reopen');
     expect(text).not.toContain('Turn stopped');
     expect(text).not.toContain('retry');
   });

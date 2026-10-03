@@ -10,8 +10,6 @@ import {
   makeImplementer,
   makePlanner,
 } from '#testing/helpers/orchestrator-factories.js';
-import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
-import type { RunPhaseInput } from '../../../src/engine/planners/types.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -25,6 +23,7 @@ import {
   parsePreparedConfig,
   type PreparedExecution,
 } from '../../../src/engine/runners/prepared-execution.js';
+import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
 
 const dirs: string[] = [];
 
@@ -124,13 +123,7 @@ describe('baseline-relative acceptance', { timeout: 90_000 }, () => {
 
     const events: EngineEvent[] = [];
     const planner = makePlanner({
-      runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
-        makePhaseCallResult({
-          call,
-          usage: { inputTokens: 140, outputTokens: 90 },
-          ...(call === 'tasks' ? { tasks: [task] } : {}),
-        }),
-      ),
+      typedCall: typedCallFromTasks([task], { inputTokens: 140, outputTokens: 90 }),
       review: vi.fn().mockResolvedValue({
         text: '# Final review\n\nTask completed over a pre-existing red validation stage.',
         usage: { inputTokens: 60, outputTokens: 30 },
@@ -168,7 +161,6 @@ describe('baseline-relative acceptance', { timeout: 90_000 }, () => {
         testCommand: 'node validate.mjs',
       },
       workflow: {
-        mode: 'standard',
         approve: 'none',
         maxRetries: 1,
       },

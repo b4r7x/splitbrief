@@ -88,40 +88,20 @@ export interface PlannerArtifactRecoveryOptions extends RecoveryBuilderBase {
 }
 
 /**
- * The planner answered but produced nothing to build. Re-issuing the call or
- * sending it a correction are the two ways forward; neither ends the run.
+ * The planning session stopped inside its bounds: a third round of questions, or a plan that still
+ * failed its checks after the one repair. The conversation stays, so the operator's correction or
+ * a re-issue continues the same session.
  */
-export function buildPlannerNoBriefsRecoveryIssue(
-  opts: PlannerArtifactRecoveryOptions,
+export function buildPlanSessionHaltRecoveryIssue(
+  opts: PlannerArtifactRecoveryOptions & {
+    reason: Extract<RecoveryReason, 'plan-questions-exhausted' | 'plan-checks-failed'>;
+  },
 ): RecoveryIssue {
   const actions = orderedActions(['retry-same-worker', 'revise', 'end-run']);
   return createRecoveryIssue({
     id: opts.id,
     seat: 'plan',
-    reason: 'planner-returned-no-briefs',
-    phase: opts.phase,
-    files: [],
-    affectedTaskIds: [],
-    message: opts.message,
-    details: opts.details ?? [],
-    availableActions: actions,
-    recommendedAction: chooseRecommended(actions, ['retry-same-worker']),
-    createdAt: opts.createdAt,
-  });
-}
-
-/**
- * The repair loop could not bring the briefs up to the quality bar and no briefs
- * gate is configured, so there is no review to hand them to.
- */
-export function buildBriefQualityUnrepairedRecoveryIssue(
-  opts: PlannerArtifactRecoveryOptions,
-): RecoveryIssue {
-  const actions = orderedActions(['retry-same-worker', 'revise', 'end-run']);
-  return createRecoveryIssue({
-    id: opts.id,
-    seat: 'plan',
-    reason: 'brief-quality-unrepaired',
+    reason: opts.reason,
     phase: opts.phase,
     files: [],
     affectedTaskIds: [],
@@ -129,48 +109,6 @@ export function buildBriefQualityUnrepairedRecoveryIssue(
     details: opts.details ?? [],
     availableActions: actions,
     recommendedAction: chooseRecommended(actions, ['revise']),
-    createdAt: opts.createdAt,
-  });
-}
-
-/**
- * The briefs gate has gone round the same failure enough times that another turn
- * of it is not review. The run stops for a decision; it never ends itself.
- */
-export function buildBriefReviewNoProgressRecoveryIssue(
-  opts: PlannerArtifactRecoveryOptions,
-): RecoveryIssue {
-  const actions = orderedActions(['revise', 'end-run']);
-  return createRecoveryIssue({
-    id: opts.id,
-    reason: 'brief-review-no-progress',
-    phase: opts.phase,
-    files: [],
-    affectedTaskIds: [],
-    message: opts.message,
-    details: opts.details ?? [],
-    availableActions: actions,
-    recommendedAction: 'revise',
-    createdAt: opts.createdAt,
-  });
-}
-
-/** A hard constitution violation: the spec is rewritten, or the run stops. */
-export function buildConstitutionCheckFailedRecoveryIssue(
-  opts: PlannerArtifactRecoveryOptions,
-): RecoveryIssue {
-  const actions = orderedActions(['revise-spec', 'end-run']);
-  return createRecoveryIssue({
-    id: opts.id,
-    seat: 'plan',
-    reason: 'constitution-check-failed',
-    phase: opts.phase,
-    files: [],
-    affectedTaskIds: [],
-    message: opts.message,
-    details: opts.details ?? [],
-    availableActions: actions,
-    recommendedAction: 'revise-spec',
     createdAt: opts.createdAt,
   });
 }

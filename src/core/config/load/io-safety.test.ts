@@ -83,12 +83,12 @@ describe('config load safety', () => {
       const rawYaml = '# keep this note\nversion: 3\ncustom: retained\n';
       try {
         const written = writeConfigDocument(dir, rawYaml, [
-          { path: ['workflow', 'mode'], value: 'quick' },
+          { path: ['workflow', 'approve'], value: 'none' },
         ]);
 
         expect(written).toContain('# keep this note');
         expect(written).toContain('custom: retained');
-        expect(written).toContain('mode: quick');
+        expect(written).toContain('approve: none');
         expect(readFileSync(join(dir, SPLITBRIEF_DIR, 'config.yaml'), 'utf-8')).toBe(written);
         const ignored = readFileSync(join(dir, '.gitignore'), 'utf-8');
         expect(ignored).toContain(`${SPLITBRIEF_DIR}/`);
@@ -374,7 +374,7 @@ describe('config document transaction safety', () => {
       writeFileSync(configPath(dir), external);
 
       const result = await transactConfigDocument(dir, before.revision, [
-        { path: ['workflow', 'mode'], value: 'quick' },
+        { path: ['workflow', 'approve'], value: 'none' },
       ]);
 
       expect(result).toMatchObject({ kind: 'conflict' });
@@ -392,7 +392,7 @@ describe('config document transaction safety', () => {
       const result = await transactConfigDocumentForTest(
         dir,
         before.revision,
-        [{ path: ['workflow', 'mode'], value: 'quick' }],
+        [{ path: ['workflow', 'approve'], value: 'none' }],
         (path, bytes, options) =>
           confinedAtomicWriteFileForTest(path, bytes, options, {
             fsync: async (handle, target) => {
@@ -404,7 +404,7 @@ describe('config document transaction safety', () => {
       );
 
       expect(result).toMatchObject({ kind: 'durability-uncertain' });
-      expect(loadConfig(dir).config.workflow.mode).toBe('quick');
+      expect(loadConfig(dir).config.workflow.approve).toBe('none');
     } finally {
       cleanupTempDir(dir);
     }
@@ -418,14 +418,14 @@ describe('config document transaction safety', () => {
       const result = await transactConfigDocumentForTest(
         dir,
         before.revision,
-        [{ path: ['workflow', 'mode'], value: 'quick' }],
+        [{ path: ['workflow', 'approve'], value: 'none' }],
         (path, bytes, options) =>
           confinedAtomicWriteFileForTest(path, bytes, options, {
             fsync: async (handle, target) => {
               if (target === 'directory') {
                 writeFileSync(
                   path,
-                  Buffer.from(bytes).toString('utf8').replace('mode: quick', 'mode: standard'),
+                  Buffer.from(bytes).toString('utf8').replace('approve: none', 'approve: plan'),
                 );
                 throw Object.assign(new Error('sync failed'), { code: 'EIO' });
               }
@@ -435,7 +435,7 @@ describe('config document transaction safety', () => {
       );
 
       expect(result).toMatchObject({ kind: 'durability-uncertain' });
-      expect(loadConfig(dir).config.workflow.mode).toBe('standard');
+      expect(loadConfig(dir).config.workflow.approve).toBe('plan');
     } finally {
       cleanupTempDir(dir);
     }
@@ -451,7 +451,7 @@ describe('config document transaction safety', () => {
         transactConfigDocumentForTest(
           dir,
           before.revision,
-          [{ path: ['workflow', 'mode'], value: 'quick' }],
+          [{ path: ['workflow', 'approve'], value: 'none' }],
           (path, bytes, options) =>
             confinedAtomicWriteFileForTest(path, bytes, options, {
               fsync: async (handle, target) => {

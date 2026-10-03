@@ -1,11 +1,10 @@
-import type { Phase, WorkflowMode } from '../../../core/schemas/enums.js';
+import type { Phase } from '../../../core/schemas/enums.js';
 import { resolveGlyphTier } from '../../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { SIMPLE_REVIEW_BASE_CHROME_ROWS, SIMPLE_TASK_ROW_HEIGHT } from './brief-review.js';
 import {
   getActiveRailStage,
   getRailStages,
-  railIsHandoff,
   selectRailStage,
   type RailStage,
 } from '../../../core/rail-stages.js';
@@ -113,8 +112,7 @@ export function buildRailFraction(
   currentTask: number,
   totalTasks: number,
 ): string {
-  const carriesFraction = stage === 'build' || stage === 'briefs';
-  return carriesFraction && totalTasks > 0 ? `${currentTask}/${totalTasks}` : '';
+  return stage === 'build' && totalTasks > 0 ? `${currentTask}/${totalTasks}` : '';
 }
 
 // The fraction the rail actually renders: the active stage's `N/M`. A cancelled stage has status
@@ -124,11 +122,8 @@ export function resolveRailFraction(input: {
   currentTask: number;
   totalTasks: number;
   cancelled: boolean;
-  mode?: WorkflowMode;
 }): string {
-  const activeStage = input.cancelled
-    ? null
-    : getActiveRailStage(input.phase, input.mode ?? 'standard');
+  const activeStage = input.cancelled ? null : getActiveRailStage(input.phase);
   return activeStage
     ? buildRailFraction(activeStage.stage, input.currentTask, input.totalTasks)
     : '';
@@ -152,20 +147,18 @@ export function getRailStageZones(input: {
   cols: number;
   fraction: string;
   cancelled?: boolean;
-  mode?: WorkflowMode;
   leftCol?: number;
   topRow?: number;
 }): RailStageZone[] {
   const leftCol = input.leftCol ?? RAIL_CONTENT_LEFT_COL;
   const topRow = input.topRow ?? RAIL_STAGE_FIRST_ROW;
-  const mode = input.mode ?? 'standard';
   const tier = resolveGlyphTier();
-  const stages = getRailStages(input.phase, { cancelled: input.cancelled ?? false, mode });
+  const stages = getRailStages(input.phase, { cancelled: input.cancelled ?? false });
   const contentWidth = getChromeContentWidth(input.cols);
   const maxCol = leftCol + contentWidth - 1;
 
   if (input.form === 'C') {
-    const rendered = selectRailStage(stages, mode);
+    const rendered = selectRailStage(stages);
     if (!rendered) return [];
     const { state, index } = rendered;
     const fractionWidth =
@@ -191,10 +184,7 @@ export function getRailStageZones(input: {
   const zones: RailStageZone[] = [];
   let cursor = leftCol;
   stages.forEach((state, index) => {
-    if (index > 0) {
-      const handoff = railIsHandoff(stages[index - 1]?.stage ?? state.stage, state.stage);
-      cursor += railConnectorWidth({ handoff }, tier);
-    }
+    if (index > 0) cursor += railConnectorWidth(tier);
     const width = railFormBSegmentWidth(state, { short });
     if (cursor <= maxCol) {
       zones.push({

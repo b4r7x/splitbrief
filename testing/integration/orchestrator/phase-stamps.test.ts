@@ -10,7 +10,6 @@ import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import type {
   EscalateOptions,
   PlannerOutputCallbacks,
-  RunPhaseInput,
 } from '../../../src/engine/planners/types.js';
 import { addEvent } from '../../../src/stores/workflow/actions/event.js';
 import { lifecycleStore } from '../../../src/stores/workflow/lifecycle.js';
@@ -19,7 +18,6 @@ import {
   makeImplementer,
   makePlanner,
 } from '#testing/helpers/orchestrator-factories.js';
-import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -28,6 +26,7 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import { seedValidationProject } from '#testing/helpers/validation-project.js';
+import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
 
 const dirs: string[] = [];
 
@@ -86,15 +85,13 @@ async function runEscalatedBrief(): Promise<EngineEvent[]> {
       config: makeConfig({
         implementer: { kind: 'agent', command: 'node', model: 'cheap-direct-agent' },
         validation: { typecheck: false, lint: false, test: true, testCommand: 'node validate.mjs' },
-        workflow: { mode: 'quick', approve: 'none', maxRetries: 1 },
+        workflow: { approve: 'none', maxRetries: 1 },
       }),
     }),
     callbacks: makeCallbacks().callbacks,
     sinks: TEST_WORKFLOW_SINKS,
     _planner: makePlanner({
-      runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
-        makePhaseCallResult({ call, ...(call === 'tasks' ? { tasks: [task] } : {}) }),
-      ),
+      typedCall: typedCallFromTasks([task]),
       escalateHint: vi.fn(async (opts: EscalateOptions) => {
         const hint = 'VERDICT: answer\nUse the from-retry marker validate.mjs expects.';
         plannerCall(opts.callbacks, 'escalation-1', hint);

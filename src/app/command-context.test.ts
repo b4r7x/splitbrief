@@ -15,7 +15,7 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { routerStore } from '../stores/navigation/router.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import type { EngineEventOf } from '../engine/events/types.js';
-import type { RewindTarget } from '../core/state/build-rewind-action.js';
+import type { TaskRedoRequest } from '../core/state/build-rewind-action.js';
 import {
   setClearQueueHandler,
   setRewindHandler,
@@ -30,8 +30,6 @@ import {
 import { readConversationScrollSnapshot } from '../features/workflow/layout/snapshot.js';
 import { findLatestRenderableDiffKey } from '../core/sections/event-sections.js';
 import { configStore } from '../stores/project/config.js';
-import { formatConfigSaveFailure } from '../stores/project/save-feedback.js';
-import { configError } from '../core/config/errors.js';
 import { composerDraftStore } from '../stores/ui/composer-draft.js';
 import { attachmentsStore } from '../stores/workflow/attachments.js';
 import { skillsStore } from '../stores/project/skills.js';
@@ -115,30 +113,6 @@ describe('buildCommandContext', () => {
     expect(attachmentsStore.peek()).toEqual([]);
   });
 
-  it('names why a command-driven save failed, in the line the picker shows', async () => {
-    const config = makeConfig();
-    configStore.__testReset({ projectDir: '/tmp/project', config, diskConfig: config });
-    const path = '/tmp/project/.splitbrief/config.yaml';
-    const failed = configError.saveFailed(
-      path,
-      configError.validationFailed(path, [
-        'Configuration errors in .splitbrief/config.yaml:',
-        '  workflow.mode: Invalid option',
-      ]),
-    );
-    const save = vi
-      .spyOn(configStore, 'save')
-      .mockResolvedValue({ kind: 'failure', ok: false, error: failed });
-    onTestFinished(() => save.mockRestore());
-
-    const result = await build().setWorkflowMode('quick');
-
-    const line = formatConfigSaveFailure(failed);
-    expect(line).toBe('Failed to save config: workflow.mode: Invalid option');
-    expect(result).toEqual({ kind: 'failure', ok: false, errorMessage: line });
-    expect(feedbackStore.get()).toMatchObject({ message: line, isError: true });
-  });
-
   it('delegates queue clearing to the live workflow handler', () => {
     setClearQueueHandler(() => ({ status: 'cleared', count: 2 }));
 
@@ -162,17 +136,8 @@ describe('buildCommandContext', () => {
     expect(result).toBe('empty');
   });
 
-  it('routes rewind requests to the live workflow handler', () => {
-    const requests: RewindTarget[] = [];
-    setRewindHandler((request) => requests.push(request));
-
-    build().requestRewind('spec', 'redo');
-
-    expect(requests).toEqual([{ target: 'spec', comment: 'redo' }]);
-  });
-
   it('routes task redo through the live rewind handler', () => {
-    const requests: RewindTarget[] = [];
+    const requests: TaskRedoRequest[] = [];
     setRewindHandler((request) => requests.push(request));
 
     build().requestTaskRedo('T-1');

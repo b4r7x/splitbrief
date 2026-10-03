@@ -14,14 +14,14 @@ import { defaultCliAuthChannel } from '../../../core/runners/cli-tool-catalog.js
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
-import { deriveRunStatus, NO_ARTIFACTS } from '../../../core/sessions/run-status.js';
+import { deriveRunStatus } from '../../../core/sessions/run-status.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { abortError, composeAbortSignal } from '../../../utils/abort.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../events/workflow-cancel.js';
 import { WORKFLOW_REWIND_ABORT_REASON } from '../../../core/phases.js';
 import { error } from '../../../utils/error.js';
 import { runnerCallInterruptedStatus } from '../../calls/status.js';
-import { createPhaseRunner, type PhaseRunnerConfig } from '../../planners/run-phase.js';
+import { createPlannerBase, type PlannerBaseConfig } from '../../planners/base.js';
 import { createShellPlanner } from '../../planners/shell.js';
 import type { Planner } from '../../planners/types.js';
 import { streamCompletion } from '../../providers/openai-stream/completion.js';
@@ -29,7 +29,7 @@ import { interruptedError } from '../../runners/claude/stream.js';
 import type { PlannerCallbacksContext } from '../types.js';
 import { addUsageAndSave } from '../state-ops.js';
 import { handlePlanningFailure } from './failure.js';
-import { runPlanningSteps } from './steps.js';
+import { runPlanningSession } from './session.js';
 
 let dirs: string[] = [];
 
@@ -378,7 +378,7 @@ describe('handlePlanningFailure', () => {
   });
 });
 
-type InvokePlan = PhaseRunnerConfig['invokePlan'];
+type InvokePlan = PlannerBaseConfig['invokePlan'];
 type InvokeInput = Parameters<InvokePlan>[0];
 
 function untilAborted(signal: AbortSignal | undefined): Promise<void> {
@@ -456,9 +456,13 @@ function scriptedPlanner(
   call: (input: InvokeInput, inFlight: () => void) => ReturnType<InvokePlan>,
   inFlight: () => void,
 ): Planner {
-  return makePlanner({
-    runPhase: createPhaseRunner({ invokePlan: (input) => call(input, inFlight) }),
+  const base = createPlannerBase({
+    invokePlan: (input) => call(input, inFlight),
+    invokeEscalate: () => Promise.reject(new Error('the planning session escalates nothing')),
+    isAvailable: async () => true,
+    capabilities: makePlanner().capabilities,
   });
+  return makePlanner({ typedCall: base.typedCall });
 }
 
 // A real shell planner: `sleep` holds the call open until the stop kills it.
@@ -468,14 +472,14 @@ function shellPlanner(inFlight: () => void): Planner {
   );
   return {
     ...shell,
-    runPhase: (input) =>
-      shell.runPhase({
-        ...input,
+    typedCall: (ctx) =>
+      shell.typedCall({
+        ...ctx,
         callbacks: {
-          ...input.callbacks,
+          ...ctx.callbacks,
           onCallEvent: (event) => {
             if (event.type === 'call_started') inFlight();
-            input.callbacks.onCallEvent?.(event);
+            ctx.callbacks.onCallEvent?.(event);
           },
         },
       }),
@@ -509,7 +513,7 @@ async function runFirstPlannerCall(
   const inFlight = new Promise<void>((resolve) => {
     markInFlight = resolve;
   });
-  const running = runPlanningSteps({
+  const running = runPlanningSession({
     wctx,
     state,
     planner: planner(markInFlight),
@@ -520,7 +524,7 @@ async function runFirstPlannerCall(
   const result = await running;
   const saved = loadState({ projectDir, sessionId });
   if (saved === null) throw new Error('Missing state');
-  const status = deriveRunStatus({ state: saved, liveness: 'not-alive', artifacts: NO_ARTIFACTS });
+  const status = deriveRunStatus({ state: saved, liveness: 'not-alive' });
   return { result, saved, status, events };
 }
 
@@ -538,14 +542,14 @@ describe('a stop during a planner call', () => {
     expect(result).toMatchObject({ disposition: 'terminal', outcome: 'interrupted' });
     expect(saved.pendingRecovery).toBeUndefined();
     expect(saved.interruptedStep).toMatchObject({
-      step: { kind: 'planner', call: 'research' },
+      step: { kind: 'planner', call: 'plan' },
       source: 'user',
       cut: 'mid-step',
     });
     expect(status).toEqual({
       kind: 'open',
       stop: { kind: 'paused', at: 'mid-step' },
-      resumeAt: { kind: 'planner', call: 'research' },
+      resumeAt: { kind: 'planner', call: 'plan' },
     });
     expect(events.some((event) => event.type === 'error')).toBe(false);
   });

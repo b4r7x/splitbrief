@@ -34,7 +34,6 @@ splitbrief init
   Detected: claude-code, codex, ollama
   Planner [claude-code] >  ↵
   Implementer [ollama qwen3-coder:30b] >  ↵
-  Mode [standard] >  ↵
   Wrote .splitbrief/config.yaml
 ```
 
@@ -48,67 +47,76 @@ splitbrief init
 
 ### 2. Fix a typo
 
-**When:** the change is a one-line edit in one file. No spec, no plan, no approval gate.
+**When:** the change is a one-line edit in one file, and you do not want to stop at the plan card.
+
+**Config:**
+
+```yaml
+workflow:
+  approve: none
+  maxRetries: 2
+```
 
 **Run:**
 
 ```bash
-splitbrief start --mode quick "rename function calcualteTax to calculateTax in src/billing/tax.ts"
+splitbrief start "rename function calcualteTax to calculateTax in src/billing/tax.ts"
 ```
 
 **You'll see:**
 
 ```
-mode resolved: quick
-planner_status: quick_plan
-brief_quality_passed
-T001  modify  src/billing/tax.ts  rename function
-implementer_generate_done
-validate · tsc ✓ lint ✓ test ✓
-task_completed T001
+phase: planning        → plan.json, plan.md, tasks.md
+phase: implementing
+  T001 ✓  src/billing/tax.ts
+phase: final-review    → review.md
 workflow_complete
 ```
 
-`quick` mode does one planner call and goes straight into the task loop — no `spec.md`, no `plan.md`, no approval gates. Because the mode advisor reads "rename" in a short prompt as `trivial`, the planner is additionally told to skip its codebase-structure review and to keep the run to a handful of briefs.
+Every run plans in one session; a small change simply gets a small plan. With `approve: none` the checked plan goes straight to the build.
 
-**Variations:** Set `workflow.mode: quick` in config to default new runs to quick. `--mode instant` is retired: it still runs, resolves to `quick`, and prints a deprecation notice.
+**Variations:** Leave `approve` unset (it defaults to `plan`) to see the plan card first. `--mode` and `--approve` were removed: they fail the command with a one-line pointer (`--approve was removed: set workflow.approve (plan or none) in the config`).
 
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md) §1.3.1, recipe 3.
+**See also:** [docs/WORKFLOW.md](./WORKFLOW.md#3-the-planning-session), recipe 3.
 
 ---
 
 ### 3. Add a small feature
 
-**When:** the change touches one file but you want a Task Brief written to disk for review.
+**When:** you want the plan and its Task Briefs written to disk for review before anything is implemented.
 
 **Run:**
 
 ```bash
-splitbrief start --mode quick "add an isAdult helper that returns true when age >= 18"
+splitbrief spec "add an isAdult helper that returns true when age >= 18"
 ```
 
 **You'll see:**
 
 ```
-mode resolved: quick
-planner_status: quick_plan
-brief_quality_passed
-T001  create  src/utils/age.ts  add isAdult helper
-validate · tsc ✓ lint ✓ test ✓
-workflow_complete
+Planning feature: add an isAdult helper that returns true when age >= 18 (planner: claude-code)
+
+
+Planning complete.
+  Session: 2026-10-02-add-an-isadult-helper
+  /home/me/app/.splitbrief/sessions/2026-10-02-add-an-isadult-helper/plan.json
+  /home/me/app/.splitbrief/sessions/2026-10-02-add-an-isadult-helper/plan.md
+  /home/me/app/.splitbrief/sessions/2026-10-02-add-an-isadult-helper/tasks.md (1 tasks)
 ```
 
-`quick` mode produces a `tasks.md` transport in the session folder and runs the brief-quality gate, but skips the supporting `spec.md` / `plan.md` and the `reviewing-briefs` approval gate. Useful when you want the brief on disk for audit but don't need the ceremony of standard mode.
+The paths are absolute: `spec` prints the project directory it resolved.
 
-**Variations:** Pair with `--implementer ollama` to keep the implementer local. If you want only the Task Brief without touching the working tree at all, `splitbrief spec --mode quick "add an isAdult helper that returns true when age >= 18"` produces the same single `tasks.md` planning output without implementing.
+`spec` runs the same planning session as `start` and stops after the plan passed its checks. If the planner asks a question, `spec` prints it under `The planner asks:` and reads one line; `⏎` takes the defaults.
 
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md) §1.2.
+**Variations:** Pair `start` with `--implementer ollama` to keep the implementer local. Without a terminal, `spec` takes every question's default.
+
+**See also:** [docs/CLI-REFERENCE.md](./CLI-REFERENCE.md#splitbrief-spec).
 
 ---
 
 ### 4. Refactor across files
 
-**When:** the change touches several files and you want a planner→implementer split with one approval gate on the supporting spec.
+**When:** the change touches several files and you want to approve the plan before the build.
 
 **Run:**
 
@@ -119,14 +127,9 @@ splitbrief start "extract the duplicated date-formatting logic into a shared uti
 **You'll see:**
 
 ```
-mode resolved: standard
-phase: researching
-phase: specifying      → spec.md
-phase: reviewing-spec  ← awaiting approval
+phase: planning        → plan.json, plan.md, tasks.md
+phase: reviewing-plan  ← the plan card
   y approve · c comment · q end run · e edit
-> y
-phase: planning        → plan.md, tasks.md
-phase: reviewing-briefs ← brief approval (simple view)
 > y
 phase: implementing
   T001 ✓  T002 ✓  T003 ✓
@@ -134,49 +137,45 @@ phase: final-review    → review.md
 workflow_complete
 ```
 
-`standard` is the default mode (4 planner calls). The spec gate blocks by default (`approve: spec`). While the composer is empty, one key settles the gate: `y` approves, `q` rejects, `e` opens the review file in the external editor, and `c` starts a comment. The typed commands still work — `approve`, `comment <text>`, `reject` / `quit`, `edit` / `edit-file`. Typing anything turns the letters back into text, so a draft is never eaten by a shortcut. `VISUAL` is explicit; otherwise SPLITBRIEF uses non-terminal `EDITOR`, detected GUI editors from safe absolute `PATH` segments, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`; Windows detection honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims.
+The plan card is on by default (`approve: plan`). While the composer is empty, one key settles it: `y` approves the plan and starts the build, `c` starts a correction, `e` opens `plan.json` in the in-app editor, and `q` ends the run. The typed commands still work — `approve`, `comment <text>`, `end-run`, `edit`. Typing anything turns the letters back into text, so a draft is never eaten by a shortcut.
 
-**Variations:** `--approve none` skips the spec and plan approval gates only. Standard and speckit modes still run the brief-review gate before implementation. `--approve all` blocks on spec and plan (the speckit default). During a gate, approve or reject through the TUI prompt.
+**Variations:** `workflow.approve: none` skips the card. A correction (`comment split T002 in two`) goes back to the planning session, which answers with a new plan; the card shows again.
 
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md) §1.3, recipe 5.
+**See also:** [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#the-plan-card), recipe 5.
 
 ---
 
 ### 5. Add auth, migration, or security work
 
-**When:** the change is large, risky, or externally visible. You want maximum ceremony: research, clarifications, constitution check, plan, analyze, then tasks.
+**When:** the change is large, risky, or touches a protected path such as `package.json`.
 
 **Run:**
 
 ```bash
-splitbrief start --mode speckit "add JWT bearer auth to the public REST API"
+splitbrief start "add JWT bearer auth to the public REST API"
 ```
 
 **You'll see:**
 
 ```
-mode resolved: speckit
-phase: researching        → research.md
-phase: specifying         → spec.md
-phase: reviewing-spec     ← approval (speckit default)
-phase: clarifying         → clarifications.md
-  Q: which library? express-jwt or jose?
-> jose
-phase: constitution-check → constitution-check.json (passed)
-phase: planning           → plan.md
-phase: reviewing-plan     ← approval
-phase: analyzing          → analyze.json
-  specTaskCoverage: 0.94  planTaskCoverage: 0.91
+phase: planning
+  Questions before the plan · round 1 of 2
+  Which JWT library? jose (default) · express-jwt
+> ⏎
+phase: reviewing-plan  ← the plan card
+  Protected operations
+  - T002: write package.json
+> y
 phase: implementing
   T001 ✓ T002 ✓ T003 ✓ T004 ✓
 phase: final-review
 ```
 
-Speckit runs 6–7 planner calls and writes `research.md`, `spec.md`, `clarifications.md`, `constitution-check.json`, `plan.md`, `analyze.json`, and `tasks.md` to the session directory. Constitution violations with `severity: hard` abort the run.
+The planner may ask up to three questions per round, for at most two rounds; every question has a default, and `⏎` through the panel takes them. The plan lists the protected writes it needs; approving the card confirms them, so `write package.json` does not ask again during the build. A protected write the plan did not list still asks.
 
-**Variations:** `workflow.speckit.minCoverage` (default `0.9`) controls when analyze warnings fire. Drop the constitution by deleting `.specify/memory/constitution.md`.
+**Variations:** Give the planner more context with `@file` arguments, or attach project skills with `/skills` (recipe 22).
 
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md) §1.3.2, [docs/TASK-CONTRACT.md](./TASK-CONTRACT.md).
+**See also:** [docs/TASK-CONTRACT.md](./TASK-CONTRACT.md#the-plan-contract), recipe 9.
 
 ---
 
@@ -312,45 +311,33 @@ validate · tsc ✓ lint ✓ test ✓
 
 ## Safety
 
-### 9. Approve risky declared file writes explicitly
+### 9. Confirm a protected file write
 
-**When:** you want SPLITBRIEF to confirm before the implementer writes control-plane paths, package manifests/lockfiles, or files outside the task's declared scope.
+**When:** the implementer writes a control-plane path, a package manifest or lockfile, CI configuration, or an env or key file. Those writes always ask; no other write does.
 
-**Setup (`.splitbrief/config.yaml`):**
-
-```yaml
-approval:
-  enabled: true
-  tiers:
-    read:               auto       # silent
-    write_in_scope:     auto       # silent (task.file or task.scope.inBounds)
-    write_out_of_scope: confirm    # prompt once per path per run
-  feedRejectionsToPlanner: true
-```
+**Setup:** nothing to configure. `approval.enabled`, `--yolo` and the retired `approval.tiers` do not change the rule.
 
 **Run:**
 
 ```bash
-splitbrief start "consolidate the test fixtures"
+splitbrief start "add a lint script to package.json"
 ```
 
-**You'll see (when an out-of-scope write triggers):**
+**You'll see (when the plan did not list the write):**
 
 ```
-approval_prompted
-  class:   write_out_of_scope
-  pattern: src/legacy/**/*.ts
-  task:    T002 (consolidate fixtures in src/test/)
-  [a]pprove once  [s]ticky (this session)  [r]eject
-> s
-approval_sticky_recorded
+Change a package manifest:
+  package.json
+  y Confirm · r reason · esc deny
+> y
+approval_granted
 ```
 
-Sticky grants persist to `.splitbrief/approvals.json`; revoke with `splitbrief approval clear`.
+A confirmation holds for that path for the rest of the run. A plan that lists the write under its protected operations is confirmed when you approve the plan card, so the build does not ask again. There are no sticky grants and no `splitbrief approval` command.
 
-**Variations:** Set every produced file-write class to `auto` for legacy YOLO behavior, or to `confirm` for paranoid mode. A `--json` run has no reply channel, so any class left at `sticky` or `confirm` fails closed there with `APPROVAL_REQUIRED`. A write to a protected path (dependency manifests and lockfiles, `.git`, `.splitbrief`, CI configuration, env and key files) always asks whatever the tiers say, so a headless run denies it with `APPROVAL_REQUIRED`.
+**Variations:** A `--json` or `--plain` run has no reply channel, so a protected write fails closed there with `APPROVAL_REQUIRED`, even when the plan lists it: an unattended approval confirms nothing. Run that change interactively.
 
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) §approval, recipe 10.
+**See also:** [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#protected-path-confirmation), recipe 26.
 
 ---
 
@@ -392,105 +379,93 @@ The drift chain detector tracks out-of-bounds files across tasks. A high score i
 
 ## Mid-workflow control
 
-### 11. Pause and edit the brief
+### 11. Edit the plan before the build
 
-**When:** the planner produced a brief that's mostly right but needs a tweak before implementation starts.
+**When:** the plan is mostly right but needs a tweak before implementation starts.
 
 **Run:**
 
-During the `reviewing-briefs` gate (standard / speckit modes):
+At the plan card:
 
 ```
-phase: reviewing-briefs
-  T001 add validator     create  src/auth/validate.ts
-  T002 wire validator    modify  src/auth/middleware.ts
-  T003 add tests         create  src/auth/validate.test.ts
+phase: reviewing-plan
+  T001 add validator     src/auth/validate.ts
+  T002 wire validator    src/auth/middleware.ts
+  T003 add tests         src/auth/validate.test.ts
   y approve · c comment · q end run · e edit
 > e
 ```
 
-`e` on an empty composer, plus `Ctrl+E`, `edit`, `E`, and `edit-file`, all point to the external editor path for the brief markdown. `VISUAL` is explicit; otherwise SPLITBRIEF uses non-terminal `EDITOR`, detected GUI editors from safe absolute `PATH` segments, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`; Windows detection honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims. Save and exit; SPLITBRIEF re-reads `tasks.md`, re-runs brief quality, and returns to the brief-review gate until you explicitly approve.
+`e` on an empty composer, `Ctrl+E` and `edit` all open the run's `plan.json` in the in-app editor. `Ctrl+S` checks the text first — the JSON, the plan schema and the plan checks. A text that fails stays open with `Not saved: <first message> (+N more)`. A valid save closes the editor; SPLITBRIEF compiles the edited plan, rewrites `plan.md` and `tasks.md`, and shows the card again until you approve.
 
 **You'll see:**
 
 ```
-Opened in editor (vim) … saved.
-brief_quality_passed
-phase: reviewing-briefs
+plan_regenerated (edited plan.json)
+phase: reviewing-plan
 > y
 phase: implementing
 ```
 
-**Variations:** `comment <text>` triggers planner regeneration with the comment as feedback. The comment goes through `planner.regenerate(...)` exactly the same way `/revise-spec <text>` does.
+**Variations:** `Ctrl+O` inside the editor opens `plan.json` in the external editor (`VISUAL`, then non-terminal `EDITOR`, then detected GUI editors, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`); saving there settles the card the same way. There is no per-brief field editor.
 
-**See also:** [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) `/revise-spec`, recipe 12.
+**See also:** [docs/FEATURES.md](./FEATURES.md#editing-planjson), recipe 12.
 
 ---
 
-### 12. Reject the brief and regenerate
+### 12. Request changes to the plan
 
-**When:** the brief got the architecture wrong and you want a do-over.
+**When:** the plan got the architecture wrong and you want a new one.
 
 **Run:**
 
-At the `reviewing-spec` gate:
+At the plan card:
 
 ```
-phase: reviewing-spec
+phase: reviewing-plan
 > comment the validator should be a plain function, not a class. Reuse the existing isEmail helper.
 ```
 
 **You'll see:**
 
 ```
-spec_regenerated
-phase: reviewing-spec    ← second pass
+phase: planning          ← the planning session answers the correction
+phase: reviewing-plan    ← the new plan
 > approve
-planner_status: planning
+phase: implementing
 ```
 
-A non-empty `comment <text>` regenerates. `reject` ends the workflow.
+A non-empty `comment <text>` (or `c`, then the text) sends the correction and the plan you reviewed to the planning session, which answers with a new plan. `q` or `end-run` ends the run.
 
-**Variations:** Mid-run, `/revise-spec <text>` rewinds to the spec gate from any phase from `reviewing-spec` onward. `/revise-plan <text>` rewinds only the plan (spec preserved).
+**Variations:** `/revise-spec` and `/revise-plan` were removed; typing either prints `request changes on the plan`. A correction typed at an open run at rest steers the step it continues.
 
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md) §1.1, [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md).
+**See also:** [docs/WORKFLOW.md](./WORKFLOW.md#3-the-planning-session), [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md#the-plan-card).
 
 ---
 
-### 13. Migrate away from rich brief review
+### 13. Update a config from before the planning session
 
-**When:** an older project config still sets `workflow.briefReview: rich`, and config load now refuses it.
-
-**Setup (`.splitbrief/config.yaml`):**
-
-```yaml
-workflow:
-  briefReview: simple    # deprecated compatibility input; ignored
-```
+**When:** an older `.splitbrief/config.yaml` still carries `workflow.mode`, `workflow.approve: all|spec|default`, `workflow.task_review`, `workflow.brief_review`, `workflow.speckit` or `approval.tiers`.
 
 **Run:**
 
 ```bash
-splitbrief start "add login form"
-# opens the simple review gate when the run reaches reviewing-briefs
+splitbrief doctor
 ```
 
-**You'll see:**
+**You'll see** one notice per retired key, for example:
 
 ```
-phase: reviewing-briefs
-  T001 add validator     create  src/auth/validate.ts
-  T002 wire validator    modify  src/auth/middleware.ts
-  T003 add tests         create  src/auth/validate.test.ts
-
-  y approve · c comment · q end run · e edit
+workflow.mode was retired and is ignored: every run plans in one session. Delete workflow.mode.
+workflow.approve "all" was retired; using "plan": the plan waits for your approval before the build. Set approve to plan or none.
+workflow.task_review was retired and is ignored: the build no longer stops for your review after each brief. Delete workflow.task_review.
 ```
 
-`e` on an empty composer, plus `Ctrl+E`, `edit`, `E`, and `edit-file`, open `.splitbrief/sessions/<id>/tasks.md` in the external editor. `VISUAL` is explicit; otherwise SPLITBRIEF uses non-terminal `EDITOR`, detected GUI editors from safe absolute `PATH` segments, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`; Windows detection honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims. Save and exit; SPLITBRIEF re-reads `tasks.md`, re-runs brief quality, and returns to the brief-review gate until you explicitly approve.
+The config still loads: each retired key is ignored, and a retired `approve` value loads as `plan`. Delete the keys (or set `approve: plan`, the default) and the notices stop.
 
-**Variations:** Dropping the key entirely works too — the field is ignored and deprecated. Removing it does not disable the existing brief approval gate.
+**Variations:** The full list of retired keys and their notices is in [docs/CONFIGURATION.md](./CONFIGURATION.md#retired-keys-that-still-load).
 
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) `workflow.briefReview`.
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md#5-workflow).
 
 ---
 
@@ -538,7 +513,7 @@ Denied tasks land in the evidence ledger as `skipped: <reason>`. There is no `/s
 
 ### 15. Redo a completed task
 
-**When:** a task succeeded but the result wasn't what you wanted, and you've now updated the spec via `/revise-spec`.
+**When:** a task succeeded but the result wasn't what you wanted, and you want the implementer to try it again.
 
 **Run:**
 
@@ -556,7 +531,7 @@ validate · tsc ✓ lint ✓ test ✓
 task_completed T003
 ```
 
-`/redo-task` only resets the single task — it doesn't re-plan. Use `/revise-plan` to regenerate the brief instead.
+`/redo-task` only resets the single task — it doesn't re-plan. A change to the brief itself is made on the plan card, before the build.
 
 **Variations:** Redo is gated to `implementing`, `validating-task`, and `escalating` phases. The slash command takes the task ID; calling without one prints a usage error.
 
@@ -564,27 +539,36 @@ task_completed T003
 
 ---
 
-### 16. Choose the mode for the next run
+### 16. Skip the plan card
 
-**When:** the mode advisor says the task needs more or less planning than this mode gives, and you want the next run in another mode.
+**When:** you trust the plan checks and want the build to start as soon as the plan passes them.
+
+**Config:**
+
+```yaml
+workflow:
+  approve: none
+  maxRetries: 2
+```
 
 **Run:**
 
-```
-> /mode quick
+```bash
+splitbrief start "add a health endpoint"
 ```
 
 **You'll see:**
 
 ```
-Workflow mode set to: quick for the next run
+phase: planning
+phase: implementing
 ```
 
-`/mode <name>` accepts `quick`, `standard`, or `speckit` and persists the value to config. A run keeps the mode it saved when it started, so the run on screen goes on in its own mode, and continuing it later does not change that; the new mode applies from the next run. The retired `instant` is accepted too: it sets `quick` and reports that the modes were merged. `/mode` with no argument refills the composer with `/mode `, so the three modes appear as completion rows carrying their planning-call and gate counts, with `current` on the config's mode — the one the next run starts with.
+With `approve: none` the card never opens. A plan that fails its checks still goes back to the planner and never reaches the build, and a write to a protected path still asks during the build. The Settings overlay (`Ctrl+,`) carries the same choice as its **Plan approval** row (`plan · none`).
 
-**Variations:** `--mode <name>` on `start` is the same setting at the CLI boundary; on `resume` / `continue` a started run keeps its saved mode and the flag prints a notice. The mode advisor (`mode_advice` event) hints when the current mode looks wrong but never auto-switches.
+**Variations:** There are no workflow modes: `/mode` prints `/mode was removed: every run plans in one session`, and `--mode` fails the command.
 
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md) §1.2.
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md#5-workflow).
 
 ---
 
@@ -618,7 +602,7 @@ Stop options · Changes and draft stay.
 
 No option reverts files: git is the layer that reverses a run, which is why SPLITBRIEF leaves the changes unstaged. Opening the menu preserves the draft; `Tab` dismisses it and returns to writing.
 
-**Variations:** `/resume` continues an open run — typed instructions steer it, a blank Enter resumes a continuable run at rest but not a run parked in this process; `/end` closes a parked one. From the shell, `splitbrief resume` re-enters the active saved run and `splitbrief continue <session-id>` works when the active pointer is gone. Every open run is continuable, `researching` and `specifying` included; a run killed during validation or escalation re-enters at the start of the brief it was on. Only a closed run is refused, and a saved state that is not the current version must be migrated before it will resume.
+**Variations:** `/resume` continues an open run — typed instructions steer it, a blank Enter resumes a continuable run at rest but not a run parked in this process; `/end` closes a parked one. From the shell, `splitbrief resume` re-enters the active saved run and `splitbrief continue <session-id>` works when the active pointer is gone. Every open run is continuable, one stopped in its planning session included; a run killed during validation or escalation re-enters at the start of the brief it was on. Only a closed run is refused, and a saved state that is not the current version must be migrated before it will resume.
 
 **See also:** [docs/FEATURES.md](./FEATURES.md#stopping-a-run), [docs/WORKFLOW.md](./WORKFLOW.md) §1.5, §1.6.
 
@@ -640,15 +624,14 @@ splitbrief start --json --allow-hooks "regenerate API client from openapi.yaml" 
 **You'll see (NDJSON, one event per line):**
 
 ```
-{"type":"workflow_started","ts":1745692800000,"phase":"researching","feature":"regenerate API client from openapi.yaml"}
-{"type":"planner_status","ts":1745692801200,"phase":"researching","status":"researching"}
-{"type":"brief_quality_passed","ts":1745692840100,"phase":"planning","score":1,"warningCount":0}
+{"type":"workflow_started","ts":1745692800000,"phase":"planning","feature":"regenerate API client from openapi.yaml"}
+{"type":"plan_approved","ts":1745692840100,"phase":"reviewing-plan"}
 {"type":"task_completed","ts":1745692902300,"phase":"implementing","taskId":"T001"}
 …
 {"type":"workflow_complete","ts":1745692980000,"phase":"complete"}
 ```
 
-`--json` requires a feature argument and replaces the TUI sink with NDJSON-on-stdout. The on-disk JSONL log is still written. `--allow-hooks` skips the interactive trust prompt.
+`--json` requires a feature argument and replaces the TUI sink with NDJSON-on-stdout. The on-disk JSONL log is still written. `--allow-hooks` skips the interactive trust prompt. The plan card is approved unattended; set `workflow.approve: none` in the CI config to skip it. A planner question stops the run with an `input_required` record and exit code 1.
 
 **Variations:** `CI=1` env var auto-disables fullscreen mode even without `--json`.
 
@@ -696,14 +679,14 @@ The same data lives in `.splitbrief/sessions/<id>/summary.json` once the run fin
 **Run:**
 
 ```bash
-splitbrief start --plain --approve none --allow-hooks "regenerate API client from openapi.yaml"
+splitbrief start --plain --allow-hooks "regenerate API client from openapi.yaml"
 ```
 
 **You'll see:**
 
 ```
-phase: researching
 phase: planning
+phase: reviewing-plan
 phase: implementing
 task T001: done (typecheck lint test)
 task T002: done (typecheck lint test)
@@ -794,7 +777,7 @@ done: 2 tasks
 # what is discoverable in this repo
 ls .claude/skills .splitbrief/skills 2>/dev/null
 
-splitbrief start --plain --approve none \
+splitbrief start --plain \
   --skills testing-standards,api-conventions \
   "add a POST /invoices endpoint"
 ```
@@ -819,43 +802,33 @@ with exit `2`.
 
 ### 23. Define project-level coding rules
 
-**When:** you want speckit's constitution-check to enforce project conventions (no React Context, ESM `.js` suffix, etc.).
+**When:** you want every seat — planner, implementer and reviewer — to follow project conventions (no React Context, ESM `.js` suffix, etc.).
 
-**Setup:** write `.specify/memory/constitution.md`:
+**Setup:** write the rules as a project skill, `.splitbrief/skills/house-rules/SKILL.md`:
 
 ```markdown
-# Project Constitution
-
-## Principle 1 — Zero runtime classes
-Production TypeScript uses pure functions and module-scoped state.
-Test fixtures may contain class syntax only when class behavior is under test.
-
-## Principle 2 — ESM .js suffix
-Every internal import uses the `.js` suffix: `'./foo.js'` not `'./foo'`.
-
-## Principle 3 — No barrels
-Re-export-only `index.ts` files are forbidden under `src/`.
+---
+name: house-rules
+description: Project coding conventions every brief must follow
+---
+- Production TypeScript uses pure functions and module-scoped state; no runtime classes.
+- Every internal import uses the `.js` suffix: `'./foo.js'` not `'./foo'`.
+- Re-export-only `index.ts` files are forbidden under `src/`.
 ```
 
 **Run:**
 
 ```bash
-splitbrief start --mode speckit "add a new HTTP client"
+splitbrief start --plain --skills house-rules "add a new HTTP client"
 ```
 
-**You'll see:**
+Interactively, select the skill with `/skills house-rules` before you start.
 
-```
-phase: constitution-check
-  passed: true
-  violations: []
-```
+**You'll see:** nothing extra. The rules reach every turn of the planning session, each implementer brief and the final review under one `## Active Project Skills` section, and the reviewer judges the result against them.
 
-A hard violation (`severity: hard`) aborts the run with a `warning` event explaining which principle failed.
+**Variations:** There is no constitution check: the speckit mode that ran it was removed. A rule that must hold mechanically belongs in a lint rule or a `post_task` hook (recipe 24).
 
-**Variations:** Constitution-check is speckit-only. Standard and quick don't read it. Delete the file to disable.
-
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md) §1.3.2.
+**See also:** recipe 22, [docs/FEATURES.md](./FEATURES.md#skills).
 
 ---
 
@@ -928,24 +901,28 @@ Press `Ctrl+K` from any screen.
 │                                                                          │
 │  › Type a command…                                                       │
 │                                                                          │
-│  Navigate                                                                │
-│  ▌ /help               Show help overlay                         ctrl+/  │
-│    /sessions           Browse past sessions                              │
-│    /settings           Crew, validation, workflow                ctrl+,  │
-│    /home               Return to home screen                             │
-│    /quit               Exit application                          ctrl+q  │
-│  Crew                                                                    │
-│    /crew               Who fills each seat          [plan|build|review]  │
-│    /mode               Workflow mode           [quick|standard|speckit]  │
-│    /refresh            Re-detect available tools                         │
-│   ↓ 15 more                                                              │
+│  Navigate                                                              █ │
+│  ▌ /help                   Show help                            ctrl+/ █ │
+│    /skills                 Skills for every seat  <skill-id …>         █ │
+│    /sessions               Browse past sessions                        █ │
+│    /settings               Crew, validation, workflow           ctrl+, █ │
+│    /home                   Return to home screen                       █ │
+│    /quit                   Exit application                     ctrl+q █ │
+│    Skill · Terminal layout Check spacing and terminal-width behavior   █ │
+│    Skill · Release checks  Run deterministic quality gates             │ │
+│  Crew                                                                  │ │
+│    /crew                   Who fills each seat  [plan|build|review]    │ │
+│    /refresh                Re-detect available tools                   │ │
+│  Workflow                                                              │ │
+│    /stop                   Open stop and session options               │ │
+│   ↓ 10 more                                                              │
 │                                                                          │
 │  ↑↓ select · ⏎ run or fill in · esc close                                │
 │                                                                          │
 ╰──────────────────────────────────────────────────────────────────────────╯
 ```
 
-Captured on the workflow screen. Start typing to fuzzy-filter the list. Enter on a no-argument command runs it; Enter on a command that takes an argument prefills `/name ` in the composer so you can complete it. Press Escape to dismiss without invoking.
+Captured at 80x24 on the workflow screen, in a project with two skills (the `Skill ·` rows); the bar on the right is the scrollbar. Start typing to fuzzy-filter the list. Enter on a no-argument command runs it; Enter on a command that takes an argument prefills `/name ` in the composer so you can complete it. Press Escape to dismiss without invoking.
 
 **Notes:**
 - The palette is disabled while another overlay (help, settings, skills) is active.
@@ -959,9 +936,9 @@ Captured on the workflow screen. Start typing to fuzzy-filter the list. Enter on
 
 ---
 
-### 26. Confirm a destructive file write (confirm tier)
+### 26. Confirm a destructive file write
 
-**When:** a file write is classified as `destructive` (a control-plane path under `.git/**` or `.splitbrief/**`). A protected write always takes the confirm tier; no setting turns it off.
+**When:** a file write is classified as `destructive` (a control-plane path under `.git/**` or `.splitbrief/**`). A protected write always asks; no setting turns it off.
 
 **You'll see:**
 
@@ -985,17 +962,17 @@ Captured on the workflow screen. Start typing to fuzzy-filter the list. Enter on
 1. `↑↓` move the highlight and `⏎` takes the highlighted row; the gate opens on Confirm. Pressing `⏎` approves the write and the evidence trail records that no reason was stated.
 2. To record why instead, move to `r` first, type a reason (e.g. `repairing session metadata`), then press `⏎`.
 
-**Key assignment:** every confirm-tier gate confirms on `⏎` over the highlighted row. On the `destructive` class the Confirm row carries no key of its own — `y` does not approve a control-plane write; it moves the highlight to Confirm and answers with `⏎ confirms this write · esc deny`, which keeps the way out visible at the moment the user mis-keyed. Every other confirm-tier class — `package_change`, `sensitive_change` (CI configuration, env and key files, titled `Change a CI or secret file:`), or any class you configure as `confirm` — also confirms on `y`.
+**Key assignment:** every protected-path prompt confirms on `⏎` over the highlighted row. On the `destructive` class the Confirm row carries no key of its own — `y` does not approve a control-plane write; it moves the highlight to Confirm and answers with `⏎ confirms this write · esc deny`, which keeps the way out visible at the moment the user mis-keyed. The other protected classes — `package_change` (titled `Change a package manifest:`) and `sensitive_change` (CI configuration, env and key files, titled `Change a CI or secret file:`) — also confirm on `y`.
 
 **Rejection cases:**
 - `x`, `n`, `⏎` on the highlighted `x` row, or Escape → action denied (`user_cancelled`).
 - Keystrokes buffered before the prompt appeared are discarded for 150 ms, so typeahead cannot confirm a write.
 
 **Notes:**
-- Confirm-tier approvals are one-shot and are NOT persisted to `.splitbrief/approvals.json`.
-- Only `sticky`-tier grants are saved to `approvals.json`.
+- A confirmation holds for that path for the rest of the run; it is recorded in the run's `evidence.json`, not in a grants file.
+- There are no sticky grants and no tier overrides.
 
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) §approval.tiers, recipe 9.
+**See also:** [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#protected-path-confirmation), recipe 9.
 
 ---
 
@@ -1018,24 +995,19 @@ When `feedRejectionsToPlanner` is `true`, every rejected action is recorded in t
 {
   "type": "rejection",
   "taskId": "T002",
-  "actionClass": "write_out_of_scope",
-  "actionDescription": "delete src/legacy/auth.ts",
+  "actionClass": "package_change",
+  "actionDescription": "write package.json",
   "reason": "user_cancelled"
 }
 ```
 
-On the next planner call (e.g. after `/revise-plan` or a task loop restart), the planner receives these rejection entries as context and adapts — for example, by proposing a different approach for the rejected action or updating scope to exclude the off-limits path.
+On the next turn of the planning session (for example after a correction at the plan card, or when a stopped run continues in planning), the planner receives these rejection entries as the lead of its prompt and adapts — for example, by proposing a different approach for the rejected write.
 
-**You'll see (after `/revise-plan`):**
-
-```
-planner_status: planning (with 2 rejection(s) in context)
-plan_regenerated · 3 tasks  ← T002 now avoids the rejected path
-```
+**You'll see:** the new plan on the plan card, with T002 no longer writing the rejected path.
 
 **Variations:** Set `approval.feedRejectionsToPlanner: false` to keep rejections out of planner context (useful when you want to deny an action once without influencing the plan).
 
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) §approval, [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) `/revise-plan`.
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) §approval, recipe 12.
 
 ---
 

@@ -222,6 +222,7 @@ async function admitRunners(input: AdmissionInput, sink: ReportSink): Promise<Ad
   const collected = await deps.collectReadiness({
     projectDir: input.projectDir,
     config,
+    interaction: input.policy.interaction,
     cliReadiness: [],
     probeRunnerAvailability: (probe) =>
       deps.probeRunnerAvailability({

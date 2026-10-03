@@ -1,5 +1,4 @@
 import { uniqueSorted } from '../../../utils/collections.js';
-import { readApprovalsStore } from '../../../core/approval/store.js';
 import { gateAction } from './tiered-approval.js';
 import type { GateDecision, GateActionInput } from './types.js';
 
@@ -28,19 +27,13 @@ export async function gateChangedFiles(
 ): Promise<GateChangedFilesDecision> {
   const changedFiles = uniqueSorted(input.changedFiles);
   const confirmApprovals: NonNullable<GateDecision['confirmApprovals']> = [];
-  const grants = readApprovalsStore(input.projectDir).grants;
   const deniedFiles: string[] = [];
   const denials: GateDecision[] = [];
   let firstDenial: GateDecision | undefined;
   for (const file of changedFiles) {
     if (input.signal?.aborted) break;
     const actionDescription = `write ${file}`;
-    const decision = await gateAction({
-      ...input,
-      actionDescription,
-      targetPath: file,
-      grants,
-    });
+    const decision = await gateAction({ ...input, actionDescription, targetPath: file });
     if (!decision.allow) {
       deniedFiles.push(file);
       denials.push(decision);

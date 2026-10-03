@@ -4,7 +4,7 @@ import type { CliImplementerConfig } from '../../core/schemas/implementer-config
 import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { prependPath, trustedShimGate } from '#testing/helpers/command-shim.js';
-import { callPhase } from '#testing/helpers/planner-call.js';
+import { callPlanner } from '#testing/helpers/planner-call.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import type { RunnerCallContext, RunnerCallEvent } from '../calls/types.js';
 import { createClaudeCodePlanner } from '../planners/claude-code.js';
@@ -153,7 +153,7 @@ const ROUTES: ReadonlyArray<{
   {
     name: 'generic PLAN',
     tool: 'codex',
-    run: (ch) => callPhase(codexPlanner(ch), { projectDir, callbacks: callbacks() }),
+    run: (ch) => callPlanner(codexPlanner(ch), { projectDir, callbacks: callbacks() }),
   },
   {
     name: 'generic REVIEW',
@@ -175,7 +175,7 @@ const ROUTES: ReadonlyArray<{
   {
     name: 'Claude stream',
     tool: 'claude-code',
-    run: (ch) => callPhase(claudePlanner(ch), { projectDir, callbacks: callbacks() }),
+    run: (ch) => callPlanner(claudePlanner(ch), { projectDir, callbacks: callbacks() }),
   },
   {
     name: 'Claude one-shot',

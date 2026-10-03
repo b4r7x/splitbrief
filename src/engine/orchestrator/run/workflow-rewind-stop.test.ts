@@ -23,6 +23,7 @@ import { readRunEvents } from '../../events/replay.js';
 import { abortError } from '../../../utils/abort.js';
 import { transitionAndSave } from '../state-ops.js';
 import { runWorkflow } from './workflow.js';
+import { typedCallAnswering } from '#testing/helpers/typed-planner.js';
 
 describe('rewind during a planner call', () => {
   let projectDir = '';
@@ -51,7 +52,7 @@ describe('rewind during a planner call', () => {
       resumeState: state,
       active: reactivateExistingSession(ref),
       config: makeConfig({
-        workflow: { mode: 'quick', approve: 'none' },
+        workflow: { approve: 'none' },
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         planner: {
           kind: 'shell',
@@ -76,7 +77,7 @@ describe('rewind during a planner call', () => {
       callbacks: makeCallbacks().callbacks,
       signal: controller.signal,
       _planner: makePlanner({
-        runPhase: async () => {
+        typedCall: typedCallAnswering(() => {
           const current = loadState(ref);
           if (current === null) throw new Error('missing planner state');
           transitionAndSave(ref, current, { type: 'REWIND_TO_SPEC', comment: 'revisit spec' });
@@ -93,7 +94,7 @@ describe('rewind during a planner call', () => {
           rewound = true;
           controller.abort(WORKFLOW_REWIND_ABORT_REASON);
           throw abortError(controller.signal);
-        },
+        }),
       }),
       _implementer: makeImplementer(),
     });

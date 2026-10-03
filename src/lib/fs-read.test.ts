@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { readFileOrEmpty, readValidatedJson, readJsonl, parseJsonlLine } from './fs.js';
+import { readValidatedJson, readJsonl, parseJsonlLine } from './fs.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 let tmp: string;
@@ -11,25 +11,6 @@ function makeTmp(): string {
 }
 afterEach(() => {
   if (tmp) cleanupTempDir(tmp);
-});
-
-describe('readFileOrEmpty', () => {
-  it('returns content when file exists', async () => {
-    const dir = makeTmp();
-    const file = join(dir, 'hello.txt');
-    writeFileSync(file, 'hello world', 'utf-8');
-    expect(await readFileOrEmpty(file)).toBe('hello world');
-  });
-
-  it('returns empty string when file does not exist', async () => {
-    const dir = makeTmp();
-    expect(await readFileOrEmpty(join(dir, 'nope.txt'))).toBe('');
-  });
-
-  it('rethrows non-ENOENT read errors', async () => {
-    const dir = makeTmp();
-    await expect(readFileOrEmpty(dir)).rejects.toThrow();
-  });
 });
 
 describe('readValidatedJson', () => {

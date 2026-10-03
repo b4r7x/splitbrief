@@ -1,21 +1,20 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadState } from '../../../src/core/state/persistence.js';
 import { createImplementerBase } from '../../../src/engine/implementers/pipeline/run.js';
 import type { InvokeOpts } from '../../../src/engine/implementers/types.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
-import type { RunPhaseInput } from '../../../src/engine/planners/types.js';
 import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
+import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
 
 const dirs: string[] = [];
 
@@ -47,12 +46,10 @@ describe('a brief parked inside a direct writer', { timeout: 90_000 }, () => {
     const config = makeConfig({
       implementer: { kind: 'agent', command: 'node', model: 'direct-agent', contextLength: 4096 },
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-      workflow: { mode: 'quick', approve: 'none', maxRetries: 1 },
+      workflow: { approve: 'none', maxRetries: 1 },
     });
     const planner = makePlanner({
-      runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
-        makePhaseCallResult({ call, usage: null, ...(call === 'tasks' ? { tasks: [task] } : {}) }),
-      ),
+      typedCall: typedCallFromTasks([task]),
     });
 
     const stop = new AbortController();

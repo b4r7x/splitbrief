@@ -1,13 +1,13 @@
-import { opensPlanGate, plannerStepsFor } from '../pipeline-spec/steps.js';
+import { opensPlanGate } from '../pipeline-spec/steps.js';
 import type { Phase } from '../schemas/enums.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
-import type { GateName, PlannerCall, StepRef } from '../schemas/run-step.js';
+import type { GateName, StepRef } from '../schemas/run-step.js';
 import type { WorkflowState } from '../schemas/workflow.js';
 
 export type StopReason =
   | { kind: 'input-required' }
   | { kind: 'paused'; at: 'mid-step' | 'boundary' }
-  | { kind: 'waiting'; gate: GateName }
+  | { kind: 'waiting'; gate: GateName; reopens: boolean }
   | { kind: 'halted'; issue: RecoveryIssue }
   | { kind: 'failed'; message: string }
   | { kind: 'interrupted' };
@@ -16,48 +16,6 @@ export type RunStatus =
   | { kind: 'running' }
   | { kind: 'open'; stop: StopReason; resumeAt: StepRef }
   | { kind: 'closed'; as: 'complete' | 'ended' };
-
-export type ArtifactPresence = {
-  research: boolean;
-  spec: boolean;
-  plan: boolean;
-  tasks: boolean;
-  clarifications: boolean;
-  constitution: boolean;
-  analyze: boolean;
-  review: boolean;
-};
-
-/** Artifacts shape `resumeAt` only, never the status kind; callers that want the kind pass this. */
-export const NO_ARTIFACTS: ArtifactPresence = {
-  research: false,
-  spec: false,
-  plan: false,
-  tasks: false,
-  clarifications: false,
-  constitution: false,
-  analyze: false,
-  review: false,
-};
-
-const CALL_ARTIFACT: Record<PlannerCall, keyof ArtifactPresence> = {
-  research: 'research',
-  spec: 'spec',
-  plan: 'plan',
-  tasks: 'tasks',
-  clarify: 'clarifications',
-  constitution: 'constitution',
-  analyze: 'analyze',
-};
-
-const PHASE_CALL: Partial<Record<Phase, PlannerCall>> = {
-  researching: 'research',
-  specifying: 'spec',
-  clarifying: 'clarify',
-  'constitution-check': 'constitution',
-  planning: 'plan',
-  analyzing: 'analyze',
-};
 
 const PHASE_GATE: Partial<Record<Phase, GateName>> = {
   'reviewing-spec': 'spec',
@@ -68,11 +26,22 @@ const PHASE_GATE: Partial<Record<Phase, GateName>> = {
 /**
  * The gate a saved phase waits at. The briefs of a run whose steps open no plan gate once waited in
  * `reviewing-plan` too, so a state that records such a run there is at its briefs call. A state that
- * records neither its mode nor its approve level stays at the gate it names.
+ * records neither its mode nor its approve level stays at the gate it names, and so does a planning
+ * session's plan, which enters `reviewing-plan` only when its approval opens.
  */
 function parkedGate(state: WorkflowState): GateName | undefined {
-  if (state.phase === 'reviewing-plan' && recordsNoPlanGate(state)) return undefined;
+  if (state.phase === 'reviewing-plan' && state.plan === undefined && recordsNoPlanGate(state)) {
+    return undefined;
+  }
   return PHASE_GATE[state.phase];
+}
+
+/**
+ * Only a run parked at a typed plan's card reopens it. A run parked at a spec, plan or briefs gate
+ * without one stopped inside the old multi-step chain, and continues as one planning session.
+ */
+export function reopensPlanCard(state: WorkflowState): boolean {
+  return state.phase === 'reviewing-plan' && state.plan !== undefined;
 }
 
 function recordsNoPlanGate(state: WorkflowState): boolean {
@@ -80,15 +49,16 @@ function recordsNoPlanGate(state: WorkflowState): boolean {
   return state.approve !== undefined && !opensPlanGate(state.mode ?? 'standard', state.approve);
 }
 
+/** The one step a planning session runs, whatever planner phase an older run saved. */
+const PLANNING_STEP: StepRef = { kind: 'planner', call: 'plan' };
+
 /**
- * Where a run picks up. First match wins: the gate it is parked at, the brief it
- * was building, the review it reached, else the first planner artifact its mode
- * has not written yet.
+ * Where a run picks up. First match wins: its planning session's questions, the gate
+ * it is parked at, the brief it was building, the review it reached, else its
+ * planning session.
  */
-export function resumeStep(state: WorkflowState, artifacts: ArtifactPresence): StepRef {
-  if (state.pendingPlannerConversation !== undefined) {
-    return { kind: 'planner', call: state.pendingPlannerConversation.call };
-  }
+export function resumeStep(state: WorkflowState): StepRef {
+  if (state.pendingPlannerConversation !== undefined) return PLANNING_STEP;
   const gate = parkedGate(state);
   if (gate !== undefined) return { kind: 'gate', gate };
 
@@ -105,21 +75,8 @@ export function resumeStep(state: WorkflowState, artifacts: ArtifactPresence): S
     case 'complete':
       return { kind: 'review', cycle: state.reviewFixes?.cycle ?? 0 };
     default:
-      return { kind: 'planner', call: nextPlannerCall(state, artifacts) };
+      return PLANNING_STEP;
   }
-}
-
-function nextPlannerCall(state: WorkflowState, artifacts: ArtifactPresence): PlannerCall {
-  const order = plannerStepsFor(state.mode ?? 'standard', state.approve ?? 'default').map(
-    (step) => step.call,
-  );
-  const current = PHASE_CALL[state.phase];
-  const from = current === undefined ? 0 : Math.max(order.indexOf(current), 0);
-  for (let index = from; index < order.length; index++) {
-    const call = order[index];
-    if (call !== undefined && !artifacts[CALL_ARTIFACT[call]]) return call;
-  }
-  return order[order.length - 1] ?? 'tasks';
 }
 
 /**
@@ -131,7 +88,6 @@ export function deriveRunStatus(
   input: Readonly<{
     state: WorkflowState;
     liveness: 'alive' | 'not-alive';
-    artifacts: ArtifactPresence;
   }>,
 ): RunStatus {
   const { state } = input;
@@ -144,7 +100,7 @@ export function deriveRunStatus(
   const open = (stop: StopReason): RunStatus => ({
     kind: 'open',
     stop,
-    resumeAt: resumeStep(state, input.artifacts),
+    resumeAt: resumeStep(state),
   });
 
   if (state.pendingRecovery !== undefined) {
@@ -168,7 +124,7 @@ export function deriveRunStatus(
   if (state.awaitingContinue) return open({ kind: 'paused', at: 'mid-step' });
 
   const gate = parkedGate(state);
-  if (gate !== undefined) return open({ kind: 'waiting', gate });
+  if (gate !== undefined) return open({ kind: 'waiting', gate, reopens: reopensPlanCard(state) });
   if (state.lastFailure !== undefined) {
     return open({ kind: 'failed', message: state.lastFailure.message });
   }

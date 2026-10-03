@@ -1,4 +1,3 @@
-import { blocksPlanGate, blocksSpecGate } from '../config/runtime/resolve.js';
 import {
   ANALYZE_FILE,
   CLARIFICATIONS_FILE,
@@ -12,7 +11,7 @@ import type { ApproveLevel, Phase, WorkflowMode } from '../schemas/enums.js';
 import type { GateName, PlannerCall } from '../schemas/run-step.js';
 import { assertNever } from '../../utils/type-guards.js';
 
-export type PlannerStepArtifact =
+type PlannerStepArtifact =
   | typeof RESEARCH_FILE
   | typeof SPEC_FILE
   | typeof PLAN_FILE
@@ -26,7 +25,7 @@ export type PlannerStepArtifact =
  * the call runs, `artifact` is the file whose presence memoizes it, and
  * `gateAfter` is the approval that opens once it has landed.
  */
-export type PlannerStep = Readonly<{
+type PlannerStep = Readonly<{
   call: PlannerCall;
   phase: Phase;
   artifact: PlannerStepArtifact | null;
@@ -50,8 +49,7 @@ export function plannerStepsFor(
   mode: WorkflowMode,
   approveLevel: ApproveLevel,
 ): readonly PlannerStep[] {
-  const specGate: GateName | null = blocksSpecGate(approveLevel) ? 'spec' : null;
-  const planGate: GateName | null = blocksPlanGate(approveLevel) ? 'plan' : null;
+  const planGate: GateName | null = approveLevel === 'plan' ? 'plan' : null;
 
   switch (mode) {
     case 'quick':
@@ -65,7 +63,7 @@ export function plannerStepsFor(
           call: 'spec',
           phase: 'specifying',
           artifact: SPEC_FILE,
-          gateAfter: specGate,
+          gateAfter: null,
           inputs: ['research'],
         },
         {
@@ -104,7 +102,7 @@ export function plannerStepsFor(
           call: 'constitution',
           phase: 'constitution-check',
           artifact: CONSTITUTION_CHECK_FILE,
-          gateAfter: specGate,
+          gateAfter: null,
           inputs: ['spec'],
         },
         {
@@ -134,7 +132,7 @@ export function plannerStepsFor(
   }
 }
 
-/** Whether a run's steps open the plan gate: quick mode never does, the others only at `plan` or `all`. */
+/** Whether a run's steps open the plan gate: quick mode never does, the others only at `plan`. */
 export function opensPlanGate(mode: WorkflowMode, approveLevel: ApproveLevel): boolean {
   return plannerStepsFor(mode, approveLevel).some((step) => step.gateAfter === 'plan');
 }

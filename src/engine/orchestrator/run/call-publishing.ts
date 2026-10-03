@@ -2,7 +2,6 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Reviewer } from '../../reviewers/types.js';
 import type {
   Planner,
-  PlannerCallbacks,
   PlannerCallEventCallbacks,
   PlannerOutputCallbacks,
   PlannerStructuredSummaryOptions,
@@ -22,17 +21,6 @@ function publishPlannerRunnerCall(
   event: Parameters<typeof publishRunnerCallEvent>[1],
 ): void {
   publishRunnerCallEvent({ bus: ctx.bus, phase: ctx.getPhase() }, event);
-}
-
-function withPlannerCallbacks(
-  callbacks: PlannerCallbacks,
-  ctx: PlannerCallPublisherContext,
-): PlannerCallbacks {
-  if (callbacks.onCallEvent !== undefined) return callbacks;
-  return {
-    ...callbacks,
-    onCallEvent: (event) => publishPlannerRunnerCall(ctx, event),
-  };
 }
 
 function withPlannerOutputCallbacks(
@@ -96,16 +84,6 @@ export function withPlannerCallPublishing(
     isAvailable: () => planner.isAvailable(),
     getVersion: () => planner.getVersion(),
     capabilities: planner.capabilities,
-    runPhase: (input) =>
-      planner.runPhase({
-        ...input,
-        callbacks: withPlannerCallbacks(input.callbacks, ctx),
-      }),
-    regenerate: (opts) =>
-      planner.regenerate({
-        ...opts,
-        callbacks: withPlannerCallbacks(opts.callbacks, ctx),
-      }),
     escalateHint: (opts) =>
       planner.escalateHint({
         ...opts,

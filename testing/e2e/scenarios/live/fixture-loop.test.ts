@@ -60,7 +60,6 @@ describe('live fixture loop', () => {
           expect(run.stderr).not.toMatch(/Run readiness blocked|BLOCKED:/);
           const completed = assertPlainStdout(run.stdout);
           const facts = assertSessionDir(run.sessionDir, {
-            mode: row.mode,
             expectedBriefs: row.expectedBriefs,
             completed,
           });

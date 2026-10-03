@@ -2,8 +2,6 @@ import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { useStores } from '../../../stores/use-stores.js';
-import { useAdvisory } from '../hooks/use-advisory.js';
-import { formatAdvisoryText } from '../../../engine/orchestrator/planning/mode-advisor.js';
 import { configStore } from '../../../stores/project/config.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { focusStore } from '../../../stores/ui/focus.js';
@@ -11,8 +9,6 @@ import { routerStore } from '../../../stores/navigation/router.js';
 import { preparationStore } from '../../../stores/navigation/preparation.js';
 import { focusHasResolvableCopy } from '../copy/resolve.js';
 import { getActiveRailStage } from '../../../core/rail-stages.js';
-import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
-import { useRunMode } from '../hooks/use-run-mode.js';
 import {
   deriveLiveStatus,
   formatStageElapsed,
@@ -74,18 +70,13 @@ export function InputFooter({
   );
   const taskListView = selectTaskListView(tasks);
   const stopped = useStopByline();
-  const advisory = useAdvisory();
   const config = configStore.useConfig();
   const displayNames = useCrewDisplayNames(config);
-  // The byline draws the run's own mode, not the config's: quick has no Spec step, so an old quick
-  // `researching` phase maps onto Plan and Spec never earns a completed mark. The shared derivation
-  // keeps the byline on the mode the engine resolved when `/mode` writes the next run's.
-  const mode = useRunMode() ?? DEFAULT_WORKFLOW_MODE;
   const reviewer = configuredReviewerRunner(config);
   const reviewerSeat = reviewer
     ? formatSeatIdentity({ seat: reviewer, displayName: displayNames.review ?? displayNames.plan })
     : '';
-  const activeStage = getActiveRailStage(lifecycle.phase, mode);
+  const activeStage = getActiveRailStage(lifecycle.phase);
   const stageText = activeStage ? formatStageLabel(activeStage.stage) : '';
   const fractionText = stageFractionText(taskListView);
   // Only advertise `y copy` when the focused region actually resolves a value, so the affordance
@@ -113,7 +104,6 @@ export function InputFooter({
       ? null
       : deriveLiveStatus({
           phase: lifecycle.phase,
-          mode,
           status: lifecycle.status,
           cancelled: lifecycle.cancelled,
           startedAt: lifecycle.startedAt,
@@ -227,10 +217,6 @@ export function InputFooter({
     // A run that is stopping or parked is not on its way to finishing: an estimate beside that
     // byline would be a prediction about work nobody is doing.
     etaText: stopped === null ? etaLabel : null,
-    advisoryText:
-      stopped === null && advisory !== null && advisory.kind !== 'none'
-        ? formatAdvisoryText(advisory)
-        : null,
     copyHint: copyResolvable ? 'y copy' : null,
     worktreeLabel: worktreeName ? sanitizeTerminalDisplayText(worktreeName) : null,
   });

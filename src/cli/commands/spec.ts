@@ -1,21 +1,39 @@
 import type { Command } from 'commander';
 import ansis from 'ansis';
 import { createPlanner } from '../../engine/runners/factory.js';
-import { runDocumentPhases } from '../../engine/planners/document-phases.js';
-import type { Planner, PlanResult } from '../../engine/planners/types.js';
-import type { Phase, WorkflowMode } from '../../core/schemas/enums.js';
+import type { Planner } from '../../engine/planners/types.js';
 import { getRunnerDisplayName } from '../../core/config/accessors/runner-config.js';
-import { getWorkflowMode } from '../../core/config/accessors/values.js';
 import { ensureGitAndConfig, canonicalizeProjectDir, loadConfigOrExit } from '../setup.js';
-import { withCliErrors } from '../errors.js';
-import { TASKS_FILE, sessionDir } from '../../core/paths.js';
+import { cliError, withCliErrors } from '../errors.js';
+import { PLAN_FILE, PLAN_JSON_FILE, TASKS_FILE, sessionDir } from '../../core/paths.js';
 import { writeSpecFile } from '../../core/paths-io.js';
 import { ensureHooksTrusted } from '../hook-trust-prompt.js';
-import { sanitizeTerminalDisplayText, stripTerminalControls } from '../../utils/display-text.js';
+import { stripTerminalControls } from '../../utils/display-text.js';
+import {
+  PLAN_ANSWER_JSON_SCHEMA,
+  PlanAnswerSchema,
+  type PlanProposal,
+} from '../../core/schemas/plan.js';
+import { writePlanJson } from '../../core/sessions/plan-file.js';
+import { requestTyped } from '../../engine/runners/typed-output.js';
+import { formatTasks } from '../../engine/spec/formatter.js';
+import { formatPlanMarkdown } from '../../engine/spec/plan-markdown.js';
+import { taskFromSpec } from '../../engine/spec/plan-tasks.js';
+import {
+  MAX_QUESTION_ROUNDS,
+  planFullTurn,
+  type PlanRound,
+} from '../../engine/spec/prompts/plan-session.js';
+import {
+  runPlanSession,
+  type PlanSessionOutcome,
+} from '../../engine/orchestrator/planning/plan-session.js';
+import { checkFullPlan, planTurnText } from '../../engine/orchestrator/planning/session.js';
+import { questionsText } from '../../core/state/planning-conversation.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import {
   emitEffectiveConfigWarnings,
   resolveEffectiveConfig,
-  type EffectiveConfigWarning,
 } from '../../core/config/runtime/effective-config.js';
 import { workflowOptsToCLIOverrides } from '../../core/config/runtime/overrides/from-options.js';
 import type { ArtifactApprovalReview } from '../../engine/runners/types.js';
@@ -23,6 +41,7 @@ import { createCustomRunnerRuntime } from '../../engine/runners/custom-runner-ru
 import {
   promptCustomRunnerArtifactApproval,
   promptCustomRunnerDisclosure,
+  promptForLine,
 } from '../custom-runner-prompts.js';
 import { ALLOW_REPO_RUNNERS_HELP } from '../options.js';
 import { prepareExecution } from '../../engine/runners/prepare-execution/prepare-execution.js';
@@ -40,8 +59,24 @@ type SpecOpts = {
   project?: string;
   allowHooks: boolean;
   allowRepoRunners: boolean;
-  mode?: WorkflowMode;
 };
+
+function sessionFailure(outcome: Exclude<PlanSessionOutcome, { kind: 'plan' }>): Error {
+  switch (outcome.kind) {
+    case 'seat-protocol':
+      return outcome.error;
+    case 'questions-exhausted':
+      return cliError(
+        `The planner asked a third round of questions; a session takes ${MAX_QUESTION_ROUNDS}.`,
+      );
+    case 'checks-failed':
+      return cliError(
+        `The plan failed its checks again after one repair:\n${outcome.errors
+          .map((error) => `- ${error.message}`)
+          .join('\n')}`,
+      );
+  }
+}
 
 interface SpecCommandDeps {
   createPlanner?: typeof createPlanner | undefined;
@@ -58,8 +93,7 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
     deps.promptCustomRunnerArtifactApproval ?? promptCustomRunnerArtifactApproval;
   program
     .command('spec <feature>')
-    .description('Generate spec, plan, and tasks only (no implementation)')
-    .option('--mode <mode>', 'Workflow mode: quick, standard, or speckit')
+    .description('Plan a feature and write its plan and Task Briefs (no implementation)')
     .option('--project <dir>', 'Project directory (default: cwd)')
     .option('--allow-hooks', 'Trust hook config without prompting (use in CI)', false)
     .option('--allow-repo-runners', ALLOW_REPO_RUNNERS_HELP, false)
@@ -80,15 +114,7 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
         overrides: workflowOptsToCLIOverrides(opts),
         loaderDiagnostics: loaded.loaderDiagnostics,
       });
-      // Load-time validation sees the raw file; resolveEffectiveConfig re-validates an
-      // already-preprocessed config, so notices about retired values are only on this side.
-      emitEffectiveConfigWarnings([
-        ...warnings,
-        ...loaded.warnings.map(
-          (message): EffectiveConfigWarning => ({ source: 'validation', message }),
-        ),
-      ]);
-      const mode = getWorkflowMode(config);
+      emitEffectiveConfigWarnings(warnings);
 
       const interaction = process.stdin.isTTY ? 'interactive' : 'headless';
       const execution = preparedExecutionOrThrow(
@@ -142,47 +168,71 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
         throw cause;
       }
       console.log(
-        `Planning feature: ${stripTerminalControls(feature)} (planner: ${getRunnerDisplayName(config.planner)}, mode: ${mode})\n`,
+        `Planning feature: ${stripTerminalControls(feature)} (planner: ${getRunnerDisplayName(config.planner)})\n`,
       );
 
-      let result: PlanResult;
+      const ref = { projectDir, sessionId };
+      let plan: PlanProposal;
       try {
-        result = await withCliErrors(() =>
-          runDocumentPhases({
+        plan = await withCliErrors(async () => {
+          // The BUILD context is measured as a headless `start` measures it.
+          const planContext = { config: execution.config, projectDir, modelCache: modelCacheStore };
+          const turnText = await planTurnText({
+            wctx: { ...planContext, sessionId },
             planner,
-            mode,
             feature: execution.runtime.feature,
-            projectDir,
-            callbacks: {
-              onOutput(text: string) {
-                process.stdout.write(
-                  sanitizeTerminalDisplayText(text, { preserveLineBreaks: true }),
-                );
-              },
-              onPhase(phase: Phase) {
-                console.log(`\n${ansis.bold(`--- ${phase} ---`)}\n`);
-              },
-              sessionId,
+            language: undefined,
+            onWarn: (message) => console.warn(stripTerminalControls(message)),
+          });
+          const rounds: PlanRound[] = [];
+          let asked = '';
+          const outcome = await runPlanSession({
+            rounds: 0,
+            ask: async (turn) => {
+              if (turn.kind === 'answers') rounds.push({ reply: asked, answer: turn.reply.text });
+              return requestTyped({
+                prompt: await turnText((prompt) =>
+                  planFullTurn(prompt, rounds, turn.kind === 'repair' ? turn : undefined),
+                ),
+                schema: PlanAnswerSchema,
+                jsonSchema: PLAN_ANSWER_JSON_SCHEMA,
+                schemaName: 'plan_result',
+                call: planner.typedCall({
+                  projectDir,
+                  seat: 'planner',
+                  callbacks: { onOutput: () => {} },
+                }),
+              });
             },
-          }),
-        );
+            // Without a terminal nobody can answer, so every question takes its default.
+            answer: async (questions) => {
+              asked = questionsText(questions);
+              console.log(`${ansis.bold('The planner asks:')}\n${stripTerminalControls(asked)}\n`);
+              return interaction === 'interactive'
+                ? promptForLine('Your answer (⏎ takes the defaults): ')
+                : '';
+            },
+            check: (proposal) => checkFullPlan(planContext, proposal),
+          });
+          if (outcome.kind !== 'plan') throw sessionFailure(outcome);
+          return outcome.plan;
+        });
       } catch (cause) {
         rollbackPreparedExecutionOwnership(execution);
         throw cause;
       }
       releasePreparedExecutionOwnership(execution);
 
-      for (const phase of result.phases) {
-        writeSpecFile({ projectDir, sessionId }, phase.artifact.logicalName, phase.artifact.text);
-      }
+      const tasks = plan.tasks.map((spec) => taskFromSpec(spec, projectDir));
+      writePlanJson(ref, plan);
+      writeSpecFile(ref, PLAN_FILE, formatPlanMarkdown(plan));
+      writeSpecFile(ref, TASKS_FILE, formatTasks(tasks));
 
       const sessionPath = sessionDir(projectDir, sessionId);
-      console.log('\nSpec generation complete.');
+      console.log('\nPlanning complete.');
       console.log(`  Session: ${ansis.dim(sessionId)}`);
-      for (const phase of result.phases) {
-        const taskSuffix =
-          phase.artifact.logicalName === TASKS_FILE ? ` (${result.tasks.length} tasks)` : '';
-        console.log(`  ${ansis.dim(`${sessionPath}/${phase.artifact.logicalName}`)}${taskSuffix}`);
-      }
+      console.log(`  ${ansis.dim(`${sessionPath}/${PLAN_JSON_FILE}`)}`);
+      console.log(`  ${ansis.dim(`${sessionPath}/${PLAN_FILE}`)}`);
+      console.log(`  ${ansis.dim(`${sessionPath}/${TASKS_FILE}`)} (${tasks.length} tasks)`);
     });
 }

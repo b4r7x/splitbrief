@@ -50,7 +50,7 @@ describe('displayValue', () => {
   });
 
   it('reads the policy meaning of an unset gate level off the def', () => {
-    expect(displayValue(getDef('workflow.approve'), undefined)).toBe('follows mode');
+    expect(displayValue(getDef('workflow.approve'), undefined)).toBe('plan');
   });
 });
 

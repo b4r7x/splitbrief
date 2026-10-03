@@ -2,7 +2,7 @@ import type { EngineEvent } from '../../engine/events/types.js';
 import type { PreparedExecution } from '../../engine/runners/prepared-execution.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
-import type { RewindTarget } from '../../core/state/build-rewind-action.js';
+import type { TaskRedoRequest } from '../../core/state/build-rewind-action.js';
 import { buildRewindAction } from '../../core/state/build-rewind-action.js';
 import { transitionAndSave } from '../../engine/orchestrator/state-ops.js';
 import { appendProtectedEngineEvent } from '../../core/sessions/log-writer.js';
@@ -15,7 +15,6 @@ import { type ResumeHydration, resumeFailureMessage } from './resume-hydration.j
 export interface PendingRewind {
   prepared: PreparedExecution;
   event: EngineEvent;
-  feedback: string | undefined;
 }
 
 interface RewindHandlerDeps {
@@ -34,7 +33,7 @@ export function buildRewindHandler({
   resetMode,
   setPendingRewind,
   onRewound,
-}: RewindHandlerDeps): (request: RewindTarget) => void {
+}: RewindHandlerDeps): (request: TaskRedoRequest) => void {
   return (request) => {
     resetMode();
     const ref = prepared.session.ref;
@@ -46,7 +45,7 @@ export function buildRewindHandler({
     }
     const rewound = rewindSavedState(ref, request, hydrated.state);
     if (rewound === undefined) return;
-    setPendingRewind({ prepared, event: rewound.event, feedback: rewound.feedback });
+    setPendingRewind({ prepared, event: rewound.event });
     controller.abort(WORKFLOW_REWIND_ABORT_REASON);
     onRewound(rewound.next);
   };
@@ -58,15 +57,10 @@ export function buildRewindHandler({
  */
 export function rewindSavedState(
   ref: SessionRef,
-  request: RewindTarget,
+  request: TaskRedoRequest,
   current: WorkflowState,
-): { next: WorkflowState; event: EngineEvent; feedback: string | undefined } | undefined {
-  const { action, event } = buildRewindAction({
-    request,
-    ref,
-    state: current,
-    persistEvent: false,
-  });
+): { next: WorkflowState; event: EngineEvent } | undefined {
+  const { action, event } = buildRewindAction({ request, state: current });
   let next: WorkflowState;
   try {
     next = transitionAndSave(ref, current, action, {
@@ -77,12 +71,5 @@ export function rewindSavedState(
     return undefined;
   }
   appendProtectedEngineEvent(ref, event, RewindEventSchema);
-  return {
-    next,
-    event,
-    feedback:
-      action.type === 'REWIND_TO_SPEC' || action.type === 'REWIND_TO_PLAN'
-        ? action.comment
-        : undefined,
-  };
+  return { next, event };
 }

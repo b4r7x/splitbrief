@@ -24,7 +24,6 @@ import { closeApprovalPrompt } from '../../../src/stores/approval-prompt/prompt.
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { configStore } from '../../../src/stores/project/config.js';
 import { skillsStore } from '../../../src/stores/project/skills.js';
-import { composerDraftStore } from '../../../src/stores/ui/composer-draft.js';
 import { controlsStore } from '../../../src/stores/ui/controls.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
 import { overlayStore } from '../../../src/stores/ui/overlay.js';
@@ -235,11 +234,6 @@ function togglePreviewSidebar(): ToggleSidebarResult {
 function createPreviewCommandContext(): RuntimeCommandContext {
   return createCommandContext({
     projectDir: previewProjectDir,
-    getConfig: () => configStore.get().config,
-    saveConfig: async (config) => {
-      await previewPicker.saveConfig(config);
-      return { kind: 'saved', ok: true };
-    },
     getSessionId: () => {
       const route = routerStore.get();
       return route.screen === 'workflow' ? route.run.ref.sessionId : null;
@@ -248,7 +242,6 @@ function createPreviewCommandContext(): RuntimeCommandContext {
     openOverlay: overlayStore.open,
     navigateHome: () => routerStore.navigate({ to: 'home' }),
     quit: sayUnavailable,
-    prefillComposer: composerDraftStore.request,
     setFeedbackMessage: feedbackStore.setMessage,
     setFeedbackError: feedbackStore.setError,
     refreshDetection: unavailableInPreview,
@@ -257,7 +250,6 @@ function createPreviewCommandContext(): RuntimeCommandContext {
     toggleSkill: togglePreviewSkill,
     refreshSkills: previewKeys.refreshSkills,
     getCurrentPhase: () => lifecycleStore.get().phase,
-    requestRewind: () => false,
     requestTaskRedo: () => false,
     resumeRun: () => false,
     endRun: () => false,
@@ -267,8 +259,6 @@ function createPreviewCommandContext(): RuntimeCommandContext {
     plannerSupportsImages: () => false,
     detachImage,
     listAttachments,
-    listApprovals: () => [],
-    clearApprovals: () => 0,
     acceptRunSnapshot: unavailableInPreview,
     rejectRunSnapshot: unavailableInPreview,
     refreshRun: () => {

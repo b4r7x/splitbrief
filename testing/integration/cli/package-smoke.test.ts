@@ -10,7 +10,6 @@ import {
   statSync,
 } from 'node:fs';
 import { join, relative } from 'node:path';
-import { WORKFLOW_MODES } from '../../../src/core/schemas/enums.js';
 import { tmpdir } from 'node:os';
 
 const ROOT = join(import.meta.dirname, '..', '..', '..');
@@ -121,9 +120,7 @@ describe('package smoke test', () => {
       .split('\n')
       .filter((line) => line.trim().startsWith('$ splitbrief'));
     expect(exampleLines.length).toBeGreaterThanOrEqual(10);
-    for (const mode of WORKFLOW_MODES) {
-      expect(result.stdout).toContain(`--mode ${mode}`);
-    }
+    expect(result.stdout).not.toMatch(/--mode\b/);
   }, 60_000);
 
   it('--version prints the package.json version', () => {

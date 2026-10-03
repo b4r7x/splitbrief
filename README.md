@@ -25,11 +25,11 @@ You: "add user authentication with JWT"
           │
           ▼
 ┌──────────────────────┐
-│  PLANNER              │  The stronger tool. Researches the codebase,
-│  (CLI tool or API)    │  compiles Task Briefs, adds support docs
-└─────────┬────────────┘  when they buy down risk
+│  PLANNER              │  The stronger tool. Researches the codebase
+│  (CLI tool or API)    │  in one planning session and returns a
+└─────────┬────────────┘  typed plan that SPLITBRIEF checks
           │ may ask clarifying questions
-          │ tasks.md transport, optional spec/plan support
+          │ plan.json, rendered as plan.md and tasks.md
           │ you approve, edit, comment, or quit
           ▼
 ┌──────────────────────┐
@@ -117,10 +117,9 @@ After `splitbrief init` and the first `splitbrief start`, SPLITBRIEF creates a `
     └── 2026-04-14-add-user-auth/
         ├── state.json
         ├── session.jsonl
-        ├── research.md  ← optional research notes when produced
-        ├── spec.md      ← optional support doc for larger work
-        ├── plan.md
-        └── tasks.md     ← markdown transport for Task Briefs
+        ├── plan.json    ← the typed plan the planner returned
+        ├── plan.md      ← the plan, rendered for people
+        └── tasks.md     ← the Task Briefs, rendered from plan.json
 ```
 
 Sessions are durable workflow records for resume, history, filtering/search, and artifact review. They are scoped to one workflow each — see [docs/VISION.md](./docs/VISION.md) for the full list of non-goals.
@@ -155,23 +154,21 @@ export SPLITBRIEF_CONTEXT_LENGTH=32768
 | `splitbrief resume` | Resume an interrupted workflow |
 | `splitbrief status` | Show current workflow state |
 
-Those are the ones you need first. The full set — `approval`, `continue` — is in [docs/CLI-REFERENCE.md](./docs/CLI-REFERENCE.md).
+Those are the ones you need first. The full set — `continue`, `review` — is in [docs/CLI-REFERENCE.md](./docs/CLI-REFERENCE.md).
 
-`start` and `spec` both take `--mode quick|standard|speckit`, which sets how much planning ceremony runs before the Task Briefs exist. The default is `standard`.
+`start` and `spec` both run one planning session: the planner may ask up to two rounds of questions, then returns a typed plan that SPLITBRIEF checks and writes as `plan.json`, `plan.md` and `tasks.md`.
 
-`--approve none` auto-approves spec/plan review gates only. Briefs review and file-write tiered approvals still follow workflow and approval config; use `--yolo` or approval tiers for unattended file writes.
+With `workflow.approve: plan` (the default) the plan card waits for your approval before the build; `workflow.approve: none` skips it. A write to a protected path still asks, unless the approved plan lists it.
 
 ## Slash commands
 
 | Command | What it does |
 |---------|-------------|
-| `/revise-spec [comment]` | Rewind to spec phase with optional comment for planner |
-| `/revise-plan [comment]` | Rewind to plan phase with optional comment for planner |
 | `/redo-task <id>` | Reset a specific task and re-run it |
 | `/queue show` | Show queued messages |
 | `/queue clear` | Clear the message queue |
 
-Those are the ones you reach for mid-run. The full set — `/crew`, `/mode`, `/approval`, `/diff`, `/cost` — is in [docs/SLASH-COMMANDS-REFERENCE.md](./docs/SLASH-COMMANDS-REFERENCE.md).
+Those are the ones you reach for mid-run. The full set — `/crew`, `/diff`, `/usage`, `/stop` — is in [docs/SLASH-COMMANDS-REFERENCE.md](./docs/SLASH-COMMANDS-REFERENCE.md).
 
 ## Configuration
 
@@ -203,7 +200,7 @@ validation:
 
 workflow:
   maxRetries: 2
-  approve: default
+  approve: plan
 ```
 
 `contextLength` sets the application budget without changing server capacity. API calls use configured context, observed active context or an 8192-token default; PLAN and REVIEW reserve 2048 output tokens plus a 15% input-estimation margin. BUILD reserves for the declared file bundle. Optional implementer profiles still keep one implementer role: SPLITBRIEF selects the capable profile with the smallest sufficient context window for each Task Brief instead of becoming a multi-agent manager.
@@ -385,7 +382,7 @@ TypeScript 6.x, ESM only, Ink 6.8 + React 19 for the TUI. Tests are colocated wi
 - **EventBus architecture** — engine emits typed `EngineEvent` values; UI, persistence, and hooks subscribe as independent sinks. See [docs/ARCHITECTURE.md](https://github.com/b4r7x/splitbrief/blob/main/docs/ARCHITECTURE.md#eventbus).
 - **Workflow hooks** — fire shell commands at workflow events (`pre_task`, `post_validation`, etc.). See [docs/HOOKS-CONFIG.md](https://github.com/b4r7x/splitbrief/blob/main/docs/HOOKS-CONFIG.md).
 - **Repo-map context** — ranked symbol summary auto-injected into the planner prompt so it can compile a sharper Task Brief. Tree-sitter + PageRank + SQLite cache for fast incremental updates. See [docs/REPOMAP.md](https://github.com/b4r7x/splitbrief/blob/main/docs/REPOMAP.md).
-- **Headless mode** — `splitbrief start --json "feature"` emits each engine event as NDJSON to stdout and skips the TUI. Workflow review gates are auto-approved; file-write tiered sticky/confirm approvals fail closed unless their tiers allow the write.
+- **Headless mode** — `splitbrief start --json "feature"` emits each engine event as NDJSON to stdout and skips the TUI. The plan card is approved unattended; a write to a protected path fails closed, because no one is there to confirm it.
 
 ## Current state
 

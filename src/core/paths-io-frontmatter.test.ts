@@ -28,7 +28,6 @@ describe('buildSpecFrontmatter', () => {
     plannerModel: 'opus-4',
     implementerTool: 'ollama',
     implementerModel: 'qwen3:32b',
-    mode: 'standard',
   };
 
   it('includes all fields when provided', () => {
@@ -36,7 +35,7 @@ describe('buildSpecFrontmatter', () => {
     expect(fm).toContain('generated_by: splitbrief v');
     expect(fm).toContain('planner: claude-code (opus-4)');
     expect(fm).toContain('implementer: ollama (qwen3:32b)');
-    expect(fm).toContain('mode: standard');
+    expect(fm).not.toContain('mode:');
     expect(fm).toContain('created_at: ');
   });
 
@@ -44,13 +43,11 @@ describe('buildSpecFrontmatter', () => {
     const fm = buildSpecFrontmatter({
       plannerTool: 'claude-code',
       implementerTool: 'ollama',
-      mode: 'quick',
     });
     expect(fm).toContain('planner: claude-code');
     expect(fm).not.toContain('planner: claude-code (');
     expect(fm).toContain('implementer: ollama');
     expect(fm).not.toContain('implementer: ollama (');
-    expect(fm).toContain('mode: quick');
   });
 
   it('starts with --- and ends with ---', () => {
@@ -81,7 +78,6 @@ describe('writeSpecFile with metadata', () => {
   const meta: SpecMetadata = {
     plannerTool: 'claude-code',
     implementerTool: 'ollama',
-    mode: 'standard',
   };
 
   it('prepends frontmatter to spec files when metadata is passed', () => {

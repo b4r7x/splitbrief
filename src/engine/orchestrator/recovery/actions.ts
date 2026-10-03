@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { phaseRole } from '../../../core/phases.js';
 import type { RecoveryAction } from '../../../core/schemas/enums.js';
-import type { WorkflowMode } from '../../../core/schemas/enums.js';
 import { allowedActionsForReason } from '../../../core/schemas/recovery/policy.js';
 import type { RecoveryIssue, SeatSwapCandidate } from '../../../core/schemas/recovery/schemas.js';
 import type { CrewSeatId } from '../../../core/crew/identity.js';
@@ -14,7 +13,6 @@ import { assertNever } from '../../../utils/type-guards.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { nowIso } from '../../../utils/format-time.js';
 import type { EventBus } from '../../events/types.js';
-import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { hashTaskBrief } from '../../brief-hash.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
@@ -100,10 +98,9 @@ export interface ApplyRecoveryActionOptions {
   action: RecoveryAction;
   bus: EventBus;
   config?: Config | undefined;
-  mode?: WorkflowMode | undefined;
   /** `switch-seat` only: which offered tool the seat moves to. Defaults to the first offer. */
   candidate?: SeatSwapCandidate | undefined;
-  /** `revise` / `revise-spec` only: what the operator wants changed. */
+  /** `revise` only (and an old run's `revise-spec`): what the operator wants changed. */
   comment?: string | undefined;
 }
 
@@ -159,10 +156,11 @@ export function applyRecoveryAction(opts: ApplyRecoveryActionOptions): ApplyReco
       return applyPauseRecoveryAction(opts, issue);
     case 'end-run':
       return applyEndRunRecoveryAction(opts, issue);
+    // `revise-spec` is offered only by an old run's constitution halt. No spec step is left to
+    // rewind to, so its note goes to the one planning session like any other correction.
     case 'revise':
-      return applyReviseRecoveryAction(opts, issue);
     case 'revise-spec':
-      return applyReviseSpecRecoveryAction(opts, issue);
+      return applyReviseRecoveryAction(opts, issue);
     case 'skip-current-task':
       return applySkipCurrentTaskRecoveryAction(opts, issue);
     case 'retry-same-worker':
@@ -368,35 +366,6 @@ function applyReviewCorrectionAction(
   return { ok: true, action: opts.action, issue, state, status: 'continued' };
 }
 
-/** Send the spec back to the planner with the operator's note, then resume planning. */
-function applyReviseSpecRecoveryAction(
-  opts: ApplyRecoveryActionOptions,
-  issue: RecoveryIssue,
-): ApplyRecoveryActionResult {
-  let state = markRecoveryApplying(opts, issue);
-  const comment = opts.comment?.trim() ?? '';
-  state = transitionAndSave(
-    opts,
-    state,
-    { type: 'REWIND_TO_SPEC', ...(comment.length > 0 && { comment }) },
-    { expectedRevision: state.stateRevision ?? 0 },
-  );
-  state = transitionAndSave(
-    opts,
-    state,
-    { type: 'RESOLVE_PENDING_RECOVERY' },
-    { expectedRevision: state.stateRevision ?? 0 },
-  );
-  publishRecoveryResolved({
-    bus: opts.bus,
-    phase: state.phase,
-    issue,
-    action: opts.action,
-    outcome: 'continued',
-  });
-  return { ok: true, action: opts.action, issue, state, status: 'continued' };
-}
-
 function applySkipCurrentTaskRecoveryAction(
   opts: ApplyRecoveryActionOptions,
   issue: RecoveryIssue,
@@ -420,7 +389,6 @@ function applySkipCurrentTaskRecoveryAction(
       sessionId: opts.sessionId,
       state: opts.state,
       task: target,
-      mode: opts.mode,
       reason,
     });
   } catch (err) {
@@ -824,7 +792,6 @@ function recordRecoverySkipEvidence(opts: {
   sessionId: string;
   state: WorkflowState;
   task: Task;
-  mode?: WorkflowMode | undefined;
   reason: string;
 }): void {
   const existing = readEvidenceLedger(opts);
@@ -833,7 +800,6 @@ function recordRecoverySkipEvidence(opts: {
     {
       sessionId: opts.sessionId,
       feature: opts.state.feature,
-      mode: opts.state.mode ?? opts.mode ?? DEFAULT_WORKFLOW_MODE,
       tasks: opts.state.tasks,
       briefHash,
     },

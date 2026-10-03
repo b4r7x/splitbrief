@@ -87,7 +87,7 @@ function directConfig(runners: readonly ReturnType<typeof makeDirectRunner>[]): 
     ...makeConfig({
       implementer: { kind: 'cli', tool: 'codex', authChannel: 'session' },
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-      workflow: { mode: 'quick' },
+      workflow: {},
       approval: { enabled: false, feedRejectionsToPlanner: true },
     }),
     implementerProfiles: {
@@ -178,14 +178,12 @@ async function initializeConfiguredDirectWorkflow(
       startTime: Date.now(),
       plannerTool: 'test-planner',
       implementerTool: 'configured-direct',
-      mode: 'quick',
       projectDir: input.projectDir,
       sessionId: input.sessionId,
     },
     metadata: {
       plannerTool: 'test-planner',
       implementerTool: 'configured-direct',
-      mode: 'quick',
     },
     setTrackedState: () => {},
     resumeHolder: { messages: [] },

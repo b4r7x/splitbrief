@@ -23,19 +23,14 @@ interface OpenParams {
 interface OpenSession {
   status: 'open';
   filePath: string | null;
+  /** The text the session opened with. */
+  opened: string;
   ownerToken: number;
   submitting: boolean;
   layout: EditorLayout;
 }
 
 export type EditorSessionState = { status: 'closed' } | (OpenSession & EditorState);
-
-// Owner token of a live field-editor session, or null when none is open. The single
-// ownership predicate (mount ≡ input-suppression ≡ keys ≡ write-gate) compares
-// this against reviewStore.ownerToken.
-export function fieldSessionOwnerToken(s: EditorSessionState): number | null {
-  return s.status === 'open' && s.surface === 'field' ? s.ownerToken : null;
-}
 
 const initial: EditorSessionState = { status: 'closed' };
 
@@ -45,6 +40,7 @@ function openSession(surface: EditorSurface, params: OpenParams): EditorSessionS
   return {
     status: 'open',
     filePath: params.filePath,
+    opened: params.value,
     ownerToken: params.ownerToken,
     submitting: false,
     layout: params.layout,
@@ -55,7 +51,6 @@ function openSession(surface: EditorSurface, params: OpenParams): EditorSessionS
 export const editorStore = {
   ...storeBase(store),
   openRaw: (params: OpenParams) => store.set(openSession('raw', params)),
-  openField: (params: OpenParams) => store.set(openSession('field', params)),
   dispatch: (event: EditorEvent) =>
     store.set((s) => {
       if (s.status !== 'open') return s;

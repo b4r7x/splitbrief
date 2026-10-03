@@ -1,5 +1,4 @@
 import type { Config } from '../../../src/core/schemas/config.js';
-import type { WorkflowMode } from '../../../src/core/schemas/enums.js';
 
 const e2eApiKey =
   process.env.SPLITBRIEF_E2E_RECORD === '1'
@@ -36,19 +35,14 @@ type E2eScenarioConfigOverrides = Omit<
   validation?: Partial<Config['validation']>;
 };
 
-export function makeE2eScenarioConfig(
-  mode: WorkflowMode,
-  overrides: E2eScenarioConfigOverrides = {},
-): Config {
+export function makeE2eScenarioConfig(overrides: E2eScenarioConfigOverrides = {}): Config {
   return {
     version: 3,
     planner: e2ePlanner,
     implementer: e2eImplementer,
     ...overrides,
     workflow: {
-      mode,
       maxRetries: 3,
-      taskReview: 'none',
       compactionFormat: 'auto',
       ...overrides.workflow,
     },

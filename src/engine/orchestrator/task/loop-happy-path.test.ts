@@ -15,7 +15,6 @@ import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { transition } from '../../../core/state/machine.js';
 import { resumeStep } from '../../../core/sessions/run-status.js';
-import { artifactPresence } from '../../../core/sessions/run-record-io.js';
 import { runTaskLoop } from './loop.js';
 
 let dirs: string[] = [];
@@ -216,7 +215,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       implement: vi.fn().mockImplementation(async () => {
         const persisted = loadState(ref);
         if (persisted !== null) {
-          const step = resumeStep(persisted, artifactPresence(ref));
+          const step = resumeStep(persisted);
           const stopped = transition(persisted, {
             type: 'INTERRUPT_STEP',
             step,

@@ -2,7 +2,8 @@ import type { Task } from '../../../src/core/schemas/task.js';
 import type { TokenDelta } from '../../../src/core/schemas/tokens.js';
 import type { Planner } from '../../../src/engine/planners/types.js';
 import { ONE_SHOT_API_CAPS } from '../../../src/engine/planners/types.js';
-import { makePhaseCallResult } from '../factories/phase-call.js';
+import { makeRunnerCallResult } from '../factories/runner-call.js';
+import { planFromTasks } from '../typed-planner.js';
 
 export type FauxPlanScript = {
   tasks: Task[];
@@ -19,45 +20,29 @@ export type FauxEscalationScript = {
 };
 
 export type FauxPlannerState = {
-  phaseCallCount: number;
+  planCallCount: number;
   escalateHintCallCount: number;
   escalateFullCallCount: number;
-  receivedFeatures: string[];
+  receivedPrompts: string[];
   receivedErrors: string[];
 };
 
 export function fauxPlanner(opts?: {
-  phases?: FauxPlanScript[];
+  plans?: FauxPlanScript[];
   escalations?: FauxEscalationScript[];
 }): { planner: Planner; state: FauxPlannerState } {
-  const phases = opts?.phases ?? [];
+  const plans = opts?.plans ?? [];
   const escalations = opts?.escalations ?? [];
 
   const state: FauxPlannerState = {
-    phaseCallCount: 0,
+    planCallCount: 0,
     escalateHintCallCount: 0,
     escalateFullCallCount: 0,
-    receivedFeatures: [],
+    receivedPrompts: [],
     receivedErrors: [],
   };
 
   const planner: Planner = {
-    async runPhase({ call, inputs }) {
-      state.phaseCallCount++;
-      state.receivedFeatures.push(inputs.feature);
-      const script = phases[(state.phaseCallCount - 1) % phases.length];
-      if (script?.throws) throw script.throws;
-      return makePhaseCallResult({
-        call,
-        usage: script?.usage ?? null,
-        ...(call === 'tasks' ? { tasks: script?.tasks ?? [] } : {}),
-      });
-    },
-
-    async regenerate() {
-      return { text: '', usage: null };
-    },
-
     async escalateHint({ error }) {
       state.escalateHintCallCount++;
       state.receivedErrors.push(error);
@@ -92,9 +77,26 @@ export function fauxPlanner(opts?: {
       return { text: '', usage: null };
     },
 
-    typedCall: () => {
-      throw new Error('typedCall is not stubbed');
-    },
+    typedCall: (ctx) => ({
+      seat: ctx.seat,
+      typedOutput: 'fallback',
+      canResume: false,
+      async invoke({ prompt }) {
+        state.planCallCount++;
+        state.receivedPrompts.push(prompt);
+        const script = plans[(state.planCallCount - 1) % plans.length];
+        if (script?.throws) throw script.throws;
+        const usage = script?.usage ?? null;
+        return makeRunnerCallResult({
+          status: 'completed',
+          text: JSON.stringify({ result: planFromTasks(script?.tasks ?? []) }),
+          usage:
+            usage === null
+              ? null
+              : { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens },
+        });
+      },
+    }),
 
     async injectUserTurn() {
       return { status: 'delivered', usage: null };

@@ -28,8 +28,6 @@ const coverage = {
     'src/app/overlays/editor.tsx',
     'src/features/editor/use-editor-keys.ts',
     'src/features/editor/editor-buffer-view.tsx',
-    'src/features/editor/brief-field-editor.tsx',
-    'src/features/editor/use-inline-edit-trigger.ts',
     'src/types/**',
   ],
   thresholds: { statements: 50, branches: 40, functions: 50, lines: 55 },

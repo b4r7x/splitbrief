@@ -13,7 +13,6 @@ const SENTINELS: Record<string, string> = {
   'halt-signatures-sh': "*'sandbox required but unavailable'*) halt=spawn ;;",
   'gate-rules': 'typecheck → lint → test',
   gates: 'uv run pytest',
-  'modes-table': '| `speckit` | 6-7 | spec, plan, briefs |',
   'brief-grouping': 'no file-count or line-count threshold decides a boundary',
   'body-order': '`### Current Code` is never sent to a direct writer',
   'closing-line': 'Edit <file>, <second file> directly in the working directory.',
@@ -46,13 +45,21 @@ describe('skill-blocks', () => {
     }
   });
 
-  it('lists the direct-writer body without Current Code and renumbers what follows', () => {
+  it('sends a direct writer the read-only context code where Current Code would stand', () => {
     const order = renderBlock('body-order') ?? '';
     expect(order).not.toMatch(/^\d+\. `### Current Code`$/m);
     expect(order).toContain('4. `### Pattern`');
-    expect(order).toContain('5. `### Implementation Steps`');
-    expect(order).toContain('10. `### Constraints`');
-    expect(order).not.toContain('11.');
+    expect(order).toContain('5. `### Read-only context (do not modify) — <path>`');
+    expect(order).toContain('6. `### Implementation Steps`');
+    expect(order).toContain('11. `### Constraints`');
+  });
+
+  it('maps contextFiles to the read-only context section in the brief template', () => {
+    const template = renderBlock('brief-template') ?? '';
+    expect(template).toContain(
+      '`contextFiles` → one `### Read-only context (do not modify) — <path>` section per file',
+    );
+    expect(template).not.toContain('under `### Current Code`');
   });
 
   it('applies the skill substitutions to the implementer preamble', () => {

@@ -27,7 +27,7 @@ import type { EscalationContext } from './types.js';
 vi.setConfig({ testTimeout: 30_000 });
 
 const RETRY_MARKER = 'src/hello.ts';
-const OUT_OF_SCOPE_FILE = 'src/other.ts';
+const PROTECTED_FILE = '.env.local';
 
 let dirs: string[] = [];
 
@@ -53,7 +53,7 @@ function writeFileIn(dir: string, relPath: string, contents: string): void {
 
 type CtxOptions = {
   callbacks: OrchestratorCallbacks;
-  hintWritesOutOfScope?: boolean;
+  hintWritesProtected?: boolean;
   hintRejects?: boolean;
   hintResult?: { success: boolean; output: string };
   retryResult?: { success: false; outcome: 'no-staged-change'; error: string; output: string };
@@ -73,8 +73,8 @@ async function makeCtx(
   const { bus, events } = makeBusRecorder();
   const escalateHint = vi.fn().mockImplementation(async ({ projectDir: stagedDir }) => {
     if (opts.hintRejects) throw new Error('snapshot failed');
-    if (opts.hintWritesOutOfScope) {
-      writeFileIn(stagedDir, OUT_OF_SCOPE_FILE, 'export const value = "hint";\n');
+    if (opts.hintWritesProtected) {
+      writeFileIn(stagedDir, PROTECTED_FILE, 'export const value = "hint";\n');
     }
     return {
       success: true,
@@ -92,7 +92,6 @@ async function makeCtx(
       approval: {
         enabled: true,
         feedRejectionsToPlanner: false,
-        tiers: { write_out_of_scope: 'sticky' },
       },
     }),
     callbacks: opts.callbacks,
@@ -128,7 +127,7 @@ describe('runEscalationTier hint tier gate handling', () => {
     });
     const { ctx, events } = await makeCtx(projectDir, sessionId, {
       callbacks,
-      hintWritesOutOfScope: true,
+      hintWritesProtected: true,
     });
     const task = makeTask();
     const state = makeImplState([task]);
@@ -146,10 +145,10 @@ describe('runEscalationTier hint tier gate handling', () => {
       method: 'failed',
       attempts: 1,
       lastError:
-        "Hint-tier changed files blocked by approval gate: user denied. SPLITBRIEF discarded this attempt's writes to src/other.ts. Retry from the current files; do not try to recover the rejected writes.",
+        "Hint-tier changed files blocked by approval gate: user denied. SPLITBRIEF discarded this attempt's writes to .env.local. Retry from the current files; do not try to recover the rejected writes.",
     });
     expect(outcome.lastError).toBe(
-      "Hint-tier changed files blocked by approval gate: user denied. SPLITBRIEF discarded this attempt's writes to src/other.ts. Retry from the current files; do not try to recover the rejected writes.",
+      "Hint-tier changed files blocked by approval gate: user denied. SPLITBRIEF discarded this attempt's writes to .env.local. Retry from the current files; do not try to recover the rejected writes.",
     );
     expect(existsSync(join(projectDir, RETRY_MARKER))).toBe(false);
     expect(events.some((e) => e.type === 'approval_rejected')).toBe(true);

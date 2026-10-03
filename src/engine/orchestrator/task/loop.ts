@@ -21,16 +21,15 @@ import {
 } from '../changed-files-baseline.js';
 import { configForProfile, createTaskImplementer } from './routing.js';
 import { publishError, publishTasksPlanned, publishWarning } from '../events.js';
-import { reviewTaskIfNeeded } from './review-flow.js';
 import { checkDependencyGate } from './dependency-gate.js';
-import { checkUserEditGate } from './user-edit-gate.js';
+import { checkUserEditConflicts } from '../user-edit/detection.js';
 import { selectRoutingProfile } from './routing-selection.js';
 import { absorbAcceptedFiles, reconcileAfterTask } from './post-task.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { error } from '../../../utils/error.js';
 import { buildImplementerUnavailableRecoveryIssue } from '../recovery/builders/task.js';
-import { deriveRunStatus, NO_ARTIFACTS } from '../../../core/sessions/run-status.js';
+import { deriveRunStatus } from '../../../core/sessions/run-status.js';
 
 type RunTaskLoopOptions = {
   wctx: WorkflowContext;
@@ -150,24 +149,22 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       setTrackedState,
       task,
       taskIndex: i,
-      taskBreakdowns,
     });
     state = depGate.state;
-    if (depGate.stopped) {
-      return { state, taskBreakdowns, status: depGate.cancelled ? 'cancelled' : 'stopped' };
-    }
+    if (depGate.stopped) return { state, taskBreakdowns, status: 'stopped' };
 
     syncBaselineIntoState();
-    const preEditGate = await checkUserEditGate({
-      wctx,
-      reviewWctx: wctx,
+    const preEditGate = await checkUserEditConflicts({
+      projectDir,
+      sessionId,
+      callbacks: wctx.callbacks,
+      bus: wctx.bus,
       state,
       setTrackedState,
       task,
       taskIndex: i,
       baseline: changedFilesBaseline,
       acknowledgedUserEditFiles,
-      taskBreakdowns,
     });
     state = preEditGate.state;
     if (preEditGate.stopped) {
@@ -193,15 +190,11 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       state,
       setTrackedState,
       task: refreshedTask,
-      taskIndex: i,
       resolvedProfiles: resolvedProfiles.profiles,
-      taskBreakdowns,
       getRunnerModelName,
     });
     state = routing.state;
-    if (!routing.ok) {
-      return { state, taskBreakdowns, status: routing.cancelled ? 'cancelled' : 'stopped' };
-    }
+    if (!routing.ok) return { state, taskBreakdowns, status: 'stopped' };
     const { selectedProfile, selectedModel, routingDecision } = routing;
     const selectedTaskConfig = configForProfile(
       config,
@@ -294,61 +287,24 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     // would otherwise lack this brief's files (read back as a user edit) and its usage.
     persistTaskBreakdowns();
 
-    const reviewDecision = await reviewTaskIfNeeded({
-      wctx: taskWorkflowContext,
-      state,
-      setTrackedState,
-      task: completedTask ?? refreshedTask,
-      taskIndex: i,
-      filesTouched: [...taskAcceptedFiles],
-      taskBreakdowns,
-      routingDecision,
-      implementerProfile: selectedProfile.name,
-    });
-    state = reviewDecision.state;
-    if (reviewDecision.decision === 'abort') {
-      setCurrentTask(undefined);
-      return { state, taskBreakdowns, status: 'cancelled' };
-    }
-    if (reviewDecision.decision === 'stop' || wctx.signal?.aborted) {
-      setCurrentTask(undefined);
-      return { state, taskBreakdowns, status: 'stopped' };
-    }
-    if (reviewDecision.decision === 'redo-task') {
-      wctx.bus.publish({
-        type: 'task_reset',
-        ts: Date.now(),
-        phase: state.phase,
-        taskId: refreshedTask.id,
-      });
-      i--;
-      continue;
-    }
-
-    if (state.currentTaskIndex <= i) {
+    if (wctx.signal?.aborted || state.currentTaskIndex <= i) {
       setCurrentTask(undefined);
       return { state, taskBreakdowns, status: 'stopped' };
     }
 
     const reconcile = await reconcileAfterTask({
       wctx,
-      taskWctx: taskWorkflowContext,
       state,
       setTrackedState,
       task: refreshedTask,
       taskIndex: i,
       baseline: changedFilesBaseline,
       acknowledgedUserEditFiles,
-      taskBreakdowns,
-      routingDecision,
-      implementerProfile: selectedProfile.name,
     });
     state = reconcile.state;
     changedFilesBaseline = reconcile.baseline;
     if (reconcile.stop) {
-      if (
-        deriveRunStatus({ state, liveness: 'not-alive', artifacts: NO_ARTIFACTS }).kind !== 'closed'
-      ) {
+      if (deriveRunStatus({ state, liveness: 'not-alive' }).kind !== 'closed') {
         persistTaskBreakdowns();
       }
       setCurrentTask(undefined);

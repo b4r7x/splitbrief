@@ -180,8 +180,18 @@ export const REVIEW_FRAME_ROWS = 2;
 // shows nothing: below it the review body yields the region instead of rendering.
 export const REVIEW_MIN_ROWS = REVIEW_FRAME_ROWS + REVIEW_HEADER_ROWS + 1;
 
+// The rows a plan card's frame and key legend must leave the document past REVIEW_MIN_ROWS: five
+// more plan rows and the "N more" footer under them. Short of that the plan takes their rows.
+export const REVIEW_DECORATION_ROWS = 5 + REVIEW_FOOTER_ROWS;
+
 function getWorkflowMiddleRows(rows: number, inputRows: number, progressRows: number): number {
   return Math.max(0, rows - getChromeHeight(inputRows, progressRows));
+}
+
+// The rows the plan card's panel may take and still leave its document REVIEW_MIN_ROWS. No build
+// block paints while a gate is open, so the panel and the document share the whole middle.
+export function getReviewPanelBudget(input: { rows: number; inputRows: number }): number {
+  return Math.max(0, getWorkflowMiddleRows(input.rows, input.inputRows, 0) - REVIEW_MIN_ROWS);
 }
 
 export function clampWorkflowPromptRows(input: {

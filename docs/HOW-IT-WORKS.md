@@ -18,7 +18,7 @@ graph TD
     JSON -->|no| Interactive["setupWorkflow() → initStores() → renderApp()"]
 ```
 
-**`--json`** runs the workflow headless via `runHeadless()` (`src/cli/headless.ts`). Events stream as NDJSON to stdout. Workflow review gates are auto-approved; file-write tiered sticky/confirm approvals fail closed unless their tiers allow the write. A write to a protected path (dependency manifests and lockfiles, `.git`, `.splitbrief`, CI configuration, env and key files) always asks. No tier setting changes that, so a headless run denies it with `APPROVAL_REQUIRED`. **`--plain`** is the same headless run with the text rendering of that stream (`phase:`, `task <id>:`, `review:`, `done:`); the two cannot share stdout, so passing both exits `2`.
+**`--json`** runs the workflow headless via `runHeadless()` (`src/cli/headless.ts`). Events stream as NDJSON to stdout. The plan card is approved unattended, and an unattended approval confirms none of the plan's protected writes. A write to a protected path (dependency manifests and lockfiles, `.git`, `.splitbrief`, CI configuration, env and key files) always asks, and no other write does, so a headless run denies a protected write with `APPROVAL_REQUIRED`. **`--plain`** is the same headless run with the text rendering of that stream (`phase:`, `task <id>:`, `review:`, `done:`); the two cannot share stdout, so passing both exits `2`.
 
 **Interactive** (the default) is the path most users take. It calls `setupWorkflow()` (`src/cli/setup.ts`) to resolve the project directory, check for a git repo, and create a default config if none exists. If no config exists and no CLI overrides were provided, it returns `needsSetup: true` and the router opens the setup screen instead of the workflow.
 
@@ -58,7 +58,7 @@ There is no summary screen. A run that stops stays on the screen it was already 
 
 `<WorkflowScreen/>` is where the engine starts. `useRunLoop()` (`src/features/workflow/hooks/use-run-loop.ts`) triggers `runWorkflow()` from the engine: it creates an `AbortController`, wires up cancel/rewind handlers, creates a TUI event sink, and calls `runWorkflow()` with callbacks that bridge engine gate requests to the UI's input mode system. Beside it, `useRunContinue()` (`use-run-continue.ts`) owns how the run is re-entered — the state and steer its next turn starts from, and the `continueRun` call behind `/resume` and a typed correction.
 
-The callbacks are how the engine asks for human decisions without importing React. `onApprovalNeeded` switches to review mode and resolves when the user responds. `onTaskReviewNeeded` switches to question mode. The engine `await`s these promises — it's blocked until the user answers.
+The callbacks are how the engine asks for human decisions without importing React. `onApprovalNeeded` switches to review mode for the plan card and resolves when the user responds. `onPlannerReply` waits on the planner's questions. The engine `await`s these promises — it's blocked until the user answers.
 
 ---
 
@@ -93,28 +93,23 @@ After initialization, `runWorkflow()` installs a queue handler (for messages the
 
 ## Planning phases
 
-`runPlanningPhases()` (`src/engine/orchestrator/run/phases.ts`) decides whether planning runs at all — a run whose `resumeStep` names a brief or a review is past it, and one parked at a gate goes to `resumeParkedApproval()` — then delegates to `runPlanningPhase()` (`src/engine/orchestrator/planning/run.ts`), which resolves the workflow mode and hands the run to the step loop.
+`runPlanningPhases()` (`src/engine/orchestrator/run/phases.ts`) decides whether planning runs at all — a run whose `resumeStep` names a brief or a review is past it, and one parked at the plan card goes to `resumeParkedApproval()` — then delegates to `runPlanningPhase()` (`src/engine/orchestrator/planning/run.ts`). That function takes a saved rewind if the state carries one, and runs the planning session.
 
-**The step loop** — `runPlanningSteps()` (`src/engine/orchestrator/planning/steps.ts`). It walks `plannerStepsFor(mode, approveLevel)` (`src/core/pipeline-spec/steps.ts`), one planner call per step:
+**The planning session** — `runPlanningSession()` (`src/engine/orchestrator/planning/session.ts`) drives the pure loop `runPlanSession()` (`plan-session.ts`):
 
-- a step whose artifact is already on disk is skipped, so a resumed run re-issues only the calls it never finished;
-- the phase transition happens **before** the call and the artifact is persisted **after** it, so `state.json` always names the call that is running;
-- a call that actually ran invalidates the artifacts below it, and so does a gate the operator revised, so nothing downstream is left stale;
-- the gate a step declares opens once the artifact lands, and parks the run at `reviewing-spec` / `reviewing-plan` until it is answered.
+- the planner answers typed JSON against `PlanAnswerSchema` through `requestTyped`: questions (at most 3 per round, at most 2 rounds) or a plan;
+- a plan is checked by `checkPlan` plus the context fit, and goes back to the planner once if it fails;
+- a plan that passes is compiled: `taskFromSpec` maps its tasks, `plan.json` is written, `plan.md` and `tasks.md` are rendered, and `PLAN_COMPILED` stores it;
+- `runPlanApproval()` opens the plan card when `workflow.approve` is `plan`, then dispatches `BEGIN_IMPLEMENTATION`.
 
-**quick** is one step: the `tasks` call with the quick prompt, no supporting documents and no document gates. When the mode advisor classifies the prompt as `trivial`, `runPlanningPhase()` sets `trivial: true` and the quick prompt drops its codebase-review step and caps the brief count. **standard** adds `research` → `spec` → `plan` before it. **speckit** adds the `clarify` pointer, the constitution check, and the post-plan `analyze` pass; those three bodies live in `src/engine/orchestrator/planning/speckit.ts`.
+An older run parked in a retired planning phase or at an older gate continues as this one session; the session reads the run's earlier research, spec, plan and `tasks.md` as "Earlier Planning".
 
-Before the loop starts, `runPlanningPhase()` builds a repo map via `buildRepoMap()` (`src/engine/codebase/repomap.ts`) — a PageRank-weighted summary of the codebase focused on files relevant to the feature. This gives the planner structural context without sending the entire codebase.
+Before the session starts, `openingPlanPrompt` (`src/engine/orchestrator/planning/session.ts`) builds a repo map via `buildRepoMap()` (`src/engine/codebase/repomap.ts`) — a PageRank-weighted summary of the codebase focused on files relevant to the feature. It does this for every planning session, `splitbrief spec` included. This gives the planner structural context without sending the entire codebase.
 
-During planning, the planner streams text. `planner_heartbeat` events (`src/engine/orchestrator/planning/heartbeat.ts`) fire every 2 seconds after a 5-second threshold, carrying `phase`, `elapsedMs` (restarts when `callId` changes), `accumulatedTokens`, optional `callId`, and optional `phaseHint`. These are proof-of-life signals during long waits — the TUI shows them as a spinning indicator.
+During planning, `planner_heartbeat` events (`src/engine/orchestrator/planning/heartbeat.ts`) fire every 2 seconds after a 5-second threshold, carrying `phase`, `elapsedMs` (restarts when `callId` changes), `accumulatedTokens` (always 0 now: nothing reports a call's tokens while it runs) and optional `callId`. These are proof-of-life signals during long waits — the TUI shows them as a spinning indicator. The planning session streams no narration, because its answer is typed JSON.
 
-Planning artifacts (`research.md`, `spec.md`, `plan.md`, `tasks.md`, plus speckit artifacts when produced) are written to the session folder as each step completes, via `writeSpecFile()` in `src/core/paths-io.ts`. That write is what memoizes the step: the artifact on disk is the record that the call happened.
+The plan lands as three files in the session folder: `plan.json` (`writePlanJson`, `src/core/sessions/plan-file.ts`), and `plan.md` and `tasks.md`, rendered from it and written with `artifact_written` events. A run planned by an older engine also has `research.md`, `spec.md` and possibly `brief-quality.json`; a new run writes none of them.
 
-The Task Briefs land as two files. `tasks.md` is written with the other
-planning artifacts by `persistPhases()`
-(`src/engine/orchestrator/planning/io.ts`), and the brief quality gate writes
-`brief-quality.json` beside it (`writeBriefQualityReport`,
-`src/engine/spec/brief-quality-file.ts`) before the briefs approval loop opens.
 Planning ends in exactly one of two dispositions: `ready-for-tasks` or
 `terminal` (`PlanningPhaseResult`,
 `src/engine/orchestrator/planning/types.ts`). A terminal result carries the
@@ -131,7 +126,7 @@ result makes zero implementer or task-loop calls.
 
 Before the first task, the loop primes the validation baseline: `primeBaseline()` (`src/engine/orchestrator/validation/run.ts`) probes every enabled stage — typecheck, lint, test — once, on the real project directory, and publishes `validation_baseline` progress events (`running` while a stage is being probed, then `done`). The probe deliberately does not short-circuit: a stage that is red before any task ran is recorded as a pre-existing failure and published in the done event's `failing` set, and the stages themselves are never exempted from being probed. This is the user's proof of life before the first `task_started`, and the record the acceptance gate later consults to tell pre-existing failures apart from failures the task introduced.
 
-The loop iterates tasks in order (tasks are already topologically sorted by `dependsOn` during planning). For each task:
+The loop iterates tasks in the order of `plan.json`. `checkPlan` (`src/engine/spec/plan-checks.ts`) refuses a plan that lists a task before a lower batch (`batch-out-of-order`) or before a dependency (`dependency-later-batch`, `dependency-later-task`), so that order is the build order. For each task:
 
 **Dependency check** — if any task in this task's `dependsOn` list has failed or been skipped, the task enters recovery. The user is prompted to decide what to do.
 
@@ -144,7 +139,7 @@ Filesystem snapshots, diffs, and validation remain available; the Git index and 
 **Execution** — `runSingleTask()` (`src/engine/orchestrator/task/step.ts`) runs the task:
 
 1. Transitions state to `START_TASK` and refreshes the file's current code from disk
-2. Runs the tiered file-write approval gate, classifying declared changed paths by scope/risk (in-scope, out-of-scope, control-plane, package change) and gating those writes at the configured tier
+2. Runs the file-write approval gate, classifying declared changed paths by scope/risk (in-scope, out-of-scope, control-plane, package change) and asking only for a write to a protected path
 3. Runs pre-task hooks if configured
 4. Calls `runImplementation()` (`src/engine/orchestrator/task/run-implementation.ts`) — the implementer receives the task brief and produces code. An implementer whose `capabilities.writesFiles` is `direct` (the `cli` and `agent` kinds) is pointed at the run's isolated worktree, not the project directory; one whose `writesFiles` is `extracted-code` (the `api` and `shell` kinds) returns the file body and never touches the filesystem itself. For a modify task, the extracted-code branch refuses a marker-less whole-file replacement that would discard most of the existing file: the file stays untouched, and the task fails with a message carrying the kept-of-had line counts and a literal SEARCH/REPLACE template so the retry can apply an exact patch
 5. Applies changed files via `applyChangedFiles()` (`src/engine/orchestrator/task/apply-changed-files.ts`) → `gateAndPromoteChangedFiles()` (`src/engine/orchestrator/approval/gate-and-promote.ts`). It diffs the working directory against the task-start snapshot, so the gate sees everything that actually changed and not only the brief's declared file. Files written in isolation are then promoted into the real project directory; files SPLITBRIEF wrote from an `extracted-code` response are already there, admitted by the pre-write gate inside `runImplementation()`. Only a changed set discovered inside isolation is promoted: if isolation reports no changes and the changed set falls back to the real project, those changes are the user's own edits — they are gated but never promoted, and left alone on denial (see [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md)). Promotion is hash-guarded — if a file changed underneath SPLITBRIEF between snapshot and write, the task stops with a promote conflict instead of overwriting it
@@ -205,13 +200,13 @@ Every workflow run produces files on disk under `.splitbrief/sessions/<id>/`:
 
 **`session.jsonl`** — the full event log, append-only. The JSONL sink writes every `EngineEvent` as it's published (`src/core/sessions/log-writer.ts`). This is the audit trail and the source for context rebuild when resuming with a stateless backend.
 
-**`research.md`, `spec.md`, `plan.md`, `tasks.md`** — planning artifacts, written once at the end of each planning phase when the selected mode produces them. The user reviews applicable artifacts during approval gates.
+**`plan.json`, `plan.md`, `tasks.md`** — the plan the planning session compiled, and its two renderings. The user reviews `plan.md` on the plan card and may edit `plan.json`. A run planned by an older engine also holds `research.md`, `spec.md` and the other documents of the retired chain.
 
 **`summary.json`** — final cost, timing, task outcomes. Written at the end of each pass by `saveFinalSession()` (`src/engine/orchestrator/session-lifecycle/finalize.ts`), which also clears the `.splitbrief/active` lock file once the run is closed. A resumed pass drops the stop the last pass recorded as it starts (`reopenSessionRecord`).
 
 **`snapshots/`** — the content-addressed working-tree snapshot `/run accept` records, plus the run ledger marking the run accepted. There are no configurable trigger points and no pre-run baseline.
 
-**On interrupt** (SIGINT/SIGTERM), `withSignalHandlers()` (`src/engine/orchestrator/signals.ts`) runs `shutdownWorkflow()` (`src/engine/orchestrator/session-lifecycle/shutdown.ts`): it kills all child processes, saves the current state to `state.json`, and discards any in-progress file change. The `.splitbrief/active` marker is preserved when there's pending recovery or a rewind in progress, cleared otherwise. Continue later with `splitbrief continue <session-id>` when the saved state is resumable.
+**On interrupt** (SIGINT/SIGTERM), `withSignalHandlers()` (`src/engine/orchestrator/signals.ts`) runs `shutdownWorkflow()` (`src/engine/orchestrator/session-lifecycle/shutdown.ts`): it kills all child processes and saves the current state to `state.json`. It does not touch the `.splitbrief/active` marker: `saveFinalSession()` clears that only once the run is closed. Continue later with `splitbrief continue <session-id>` when the saved state is resumable.
 
 **Collectable orphan directories.** A session directory that never started — a crash or abort after `readiness.json` landed and before the run wrote its lockfile — holds nothing but `readiness.json`, or nothing at all. A directory with exactly that content (or empty) is **collectable**; `src/core/sessions/orphans.ts` is where the recognition rule lives. A directory holding any other artifact — a lockfile, an ownership marker, or anything else — is never collectable.
 
@@ -221,9 +216,9 @@ Every workflow run produces files on disk under `.splitbrief/sessions/<id>/`:
 
 When all tasks complete, `runTasksAndReview()` calls `runFinalReviewPhase()` (`src/engine/orchestrator/final-review.ts`).
 
-The function transitions state to `ALL_DONE`, then asks the reviewer to read the full git diff against the spec. It computes brief drift — comparing what each task brief asked for against what actually changed — and includes that analysis in the review prompt. The call goes out through `runReviewerCall()` (`src/engine/orchestrator/review-call.ts`), which attributes the usage to the `reviewer` category and writes the response to `review.md` in the session folder.
+The function transitions state to `ALL_DONE`, then asks the reviewer to read the full git diff against the plan (`plan.md`; an older run without `state.plan` uses its `spec.md`). It computes brief drift — comparing what each task brief asked for against what actually changed — and includes that analysis in the review prompt. The call goes out through `runReviewerCall()` (`src/engine/orchestrator/review-call.ts`), which attributes the usage to the `reviewer` category and writes the response to `review.md` in the session folder.
 
-This is the only call the reviewer makes. Planning, Task Brief compilation, `regenerate`, hint assistance, summarization and `injectUserTurn` all stay on the planner, whatever the `reviewer` block says. With no `reviewer` configured, the seat is the planner's own runner and the phase behaves exactly as it did before the seat became assignable.
+This is the only call the reviewer makes. Planning, Task Brief compilation, hint assistance, summarization and `injectUserTurn` all stay on the planner, whatever the `reviewer` block says. With no `reviewer` configured, the seat is the planner's own runner and the phase behaves exactly as it did before the seat became assignable.
 
 When the reviewer call fails, the review is reported as failed (`reviewStatus: 'failed'`) with the reviewer's display name in the error, the final-review evidence is still recorded, and the summary is still built. SPLITBRIEF never falls back to the planner behind your back.
 
@@ -251,13 +246,13 @@ Inside `initializeWorkflow()` (`src/engine/orchestrator/run/init.ts`), context r
 
 1. **Native session resume** -- if the planner has `supportsSessionResume` and `plannerSessionId` is set, the factory seeds the backend with that thread id and it resumes the conversation (`claude --resume <id>`, `codex exec resume <id>`). The id is only ever one the tool itself reported: it is captured from the stream as the call runs, so a call cut halfway still leaves a thread to pick up.
 2. **Auto-compaction + transcript rebuild** -- `autoCompactResumeContext()` (`src/engine/orchestrator/resume-context.ts`) checks whether the JSONL log exceeds `compactionThreshold`. If so, it summarizes old messages via `planner.summarize()`. Then, if `supportsSessionResume` is false, the PLAN seat moved to another tool, or the state holds no `plannerSessionId`, `applyRebuiltContext()` rebuilds a messages array from `session.jsonl` and injects it as `resumeHolder.messages` for the next planner call. The array is the planner conversation: user turns and planner replies. It carries no implementer output and no document a planner call landed, because that document is a step artifact that the step prompts pass as an input.
-3. **Artifact fallback** -- if no transcript exists to rebuild from and native resume failed, the run continues with spec/plan/tasks artifacts only.
+3. **Artifact fallback** -- if no transcript exists to rebuild from and native resume failed, the run continues with its plan and task artifacts only.
 
-The orchestrator then publishes `workflow_resumed` and picks up at the step `resumeStep` names — the gate it parked at, the brief it was building, the review it reached, or the first planner artifact its mode has not written yet. It does not replay what is already on disk.
+The orchestrator then publishes `workflow_resumed` and picks up at the step `resumeStep` names — the gate it parked at, the brief it was building, the review it reached, or the planning session for anything before the build. It does not replay what is already on disk.
 
 ### Related commands
 
-**`splitbrief spec <feature>`** (`src/cli/commands/spec.ts`) -- runs the planner for the selected workflow mode and exits without implementation. The mode decides which planning phases run: `standard` and `speckit` write the research, spec, plan and tasks artifacts; `quick` makes a single planner call that writes `tasks.md`. Because the command never implements, the approval gates of a full run do not apply to it.
+**`splitbrief spec <feature>`** (`src/cli/commands/spec.ts`) -- runs the planning session and exits without implementation. It writes `plan.json`, `plan.md` and `tasks.md`. In a terminal it reads one line of answers to the planner's questions; without a TTY every question takes its default. Because the command never implements, the plan card does not apply to it.
 
 **`splitbrief continue [alias]`** (registered in `src/cli/commands/continue/register.ts`) -- continues a session by numeric alias, by session ID, or through the active pointer, resuming from its saved state.
 

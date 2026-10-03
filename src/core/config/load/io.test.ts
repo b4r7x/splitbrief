@@ -2,11 +2,14 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadConfig } from './io.js';
-import { resolveMode } from '../runtime/resolve.js';
 import { DEFAULT_LOCAL_RETRIES } from '../../pipeline-spec/retries.js';
 import { SPLITBRIEF_DIR } from '../../paths.js';
 import { expectCli } from '#testing/helpers/config-narrowing.js';
-import { optionalSectionsYaml, writeConfigYaml } from '#testing/helpers/config-io.js';
+import {
+  optionalSectionsYaml,
+  writeConfigYaml,
+  writeConfigYamlText,
+} from '#testing/helpers/config-io.js';
 
 const TMP = join(import.meta.dirname, '.tmp-config-io-merge');
 
@@ -32,14 +35,48 @@ describe('config loading', () => {
       expect(expectCli(config.planner).tool).toBe('claude-code');
     });
 
-    it('loads workflow.taskReview from YAML', () => {
-      const dir = join(TMP, 'task-review-config');
-      writeConfigYaml(dir, {
-        workflow: { task_review: 'failed' },
-      });
+    it('loads a pre-S3 workflow block with one notice per retired key', () => {
+      const dir = join(TMP, 'pre-s3-workflow');
+      writeConfigYamlText(
+        dir,
+        [
+          'version: 3',
+          'planner:',
+          '  kind: cli',
+          '  tool: claude-code',
+          '  model: claude-opus-5-5',
+          '  effort: medium',
+          'reviewer:',
+          '  kind: cli',
+          '  tool: codex',
+          '  model: gpt-6-astra',
+          '  effort: medium',
+          'implementer:',
+          '  kind: cli',
+          '  tool: opencode',
+          '  model: opencode-go/deepseek-v4.1-flash',
+          '  variant: max',
+          'validation:',
+          '  typecheck: true',
+          '  lint: true',
+          '  test: true',
+          'workflow:',
+          '  approve: all',
+          '  max_retries: 3',
+          '  mode: standard',
+          '  task_review: none',
+          '',
+        ].join('\n'),
+      );
 
-      const { config } = loadConfig(dir);
-      expect(config.workflow.taskReview).toBe('failed');
+      const { config, warnings } = loadConfig(dir);
+
+      expect(config.workflow.approve).toBe('plan');
+      expect(warnings.filter((w) => w.includes('was retired'))).toEqual([
+        'workflow.mode was retired and is ignored: every run plans in one session. Delete workflow.mode.',
+        'workflow.approve "all" was retired; using "plan": the plan waits for your approval before the build. Set approve to plan or none.',
+        'workflow.task_review was retired and is ignored: the build no longer stops for your review after each brief. Delete workflow.task_review.',
+      ]);
     });
 
     it('preserves schema-supported optional top-level sections while merging defaults', () => {
@@ -65,11 +102,6 @@ describe('config loading', () => {
       });
       expect(config.approval).toEqual({
         enabled: true,
-        tiers: {
-          read: 'auto',
-          write_in_scope: 'sticky',
-          write_out_of_scope: 'confirm',
-        },
         feedRejectionsToPlanner: false,
       });
     });
@@ -98,7 +130,7 @@ describe('config loading', () => {
       });
     });
 
-    it('accepts camelCase hook and approval tier keys from YAML', () => {
+    it('accepts camelCase hook keys from YAML', () => {
       const dir = join(TMP, 'nested-camel-case');
       writeConfigYaml(dir, {
         implementer: { model: 'codellama:13b' },
@@ -111,13 +143,6 @@ describe('config loading', () => {
             },
           ],
         },
-        approval: {
-          tiers: {
-            writeInScope: 'sticky',
-            writeOutOfScope: 'confirm',
-            packageChange: 'confirm',
-          },
-        },
       });
 
       const { config } = loadConfig(dir);
@@ -126,11 +151,6 @@ describe('config loading', () => {
         command: './scripts/pre-task.sh',
         timeout_ms: 5000,
         on_failure: 'block',
-      });
-      expect(config.approval?.tiers).toMatchObject({
-        write_in_scope: 'sticky',
-        write_out_of_scope: 'confirm',
-        package_change: 'confirm',
       });
     });
 
@@ -163,13 +183,6 @@ describe('config loading', () => {
       expect(() => loadConfig(dir)).toThrow('workflow.persistTranscript: Unknown config key');
     });
 
-    it('rejects the removed workflow.briefReview rich variant', () => {
-      const dir = join(TMP, 'removed-brief-review-rich');
-      writeConfigYaml(dir, { workflow: { max_retries: 3, brief_review: 'rich' } });
-
-      expect(() => loadConfig(dir)).toThrow(/workflow\.briefReview/);
-    });
-
     it('rejects the removed hooks.builtin block', () => {
       const dir = join(TMP, 'removed-hooks-builtin');
       writeConfigYaml(dir, { hooks: { builtin: { snapshots: false } } });
@@ -197,16 +210,6 @@ describe('config loading', () => {
 
       expect(() => loadConfig(dir)).toThrow('codebase.cacheDir: Unknown config key');
     });
-
-    it.each([['network'], ['validation']])(
-      'rejects the removed approval tier %s',
-      (tier: string) => {
-        const dir = join(TMP, `removed-approval-tier-${tier}`);
-        writeConfigYaml(dir, { approval: { tiers: { [tier]: 'confirm' } } });
-
-        expect(() => loadConfig(dir)).toThrow(`approval.tiers.${tier}: Unknown config key`);
-      },
-    );
 
     it('rejects the removed sessions.scope global value', () => {
       const dir = join(TMP, 'removed-sessions-scope-global');
@@ -278,13 +281,9 @@ describe('config loading', () => {
       const dir = join(TMP, 'workflow-full-surface');
       writeConfigYaml(dir, {
         workflow: {
-          approve: 'all',
+          approve: 'plan',
           max_retries: 2,
           git: { create_branch: true },
-          speckit: { min_coverage: 0.8 },
-          mode: 'speckit',
-          brief_review: 'simple',
-          task_review: 'every',
           drift_chain_threshold: 0.4,
           compaction_threshold: 50,
           compaction_format: 'structured',
@@ -292,14 +291,10 @@ describe('config loading', () => {
       });
 
       expect(loadConfig(dir).config.workflow).toEqual({
-        approve: 'all',
+        approve: 'plan',
         maxRetries: 2,
         git: { createBranch: true },
         isolation: 'worktree',
-        speckit: { minCoverage: 0.8 },
-        mode: 'speckit',
-        briefReview: 'simple',
-        taskReview: 'every',
         driftChainThreshold: 0.4,
         compactionThreshold: 50,
         compactionFormat: 'structured',
@@ -353,7 +348,7 @@ describe('config loading', () => {
       expect(config.workflow.isolation).toBe('worktree');
     });
 
-    it('defaults workflow.mode to standard when raw YAML omits mode', () => {
+    it('loads a workflow block without mode with no mode and no notice', () => {
       const dir = join(TMP, 'workflow-without-mode');
       const splitbriefDir = join(dir, SPLITBRIEF_DIR);
       mkdirSync(splitbriefDir, { recursive: true });
@@ -370,15 +365,15 @@ describe('config loading', () => {
           '  apiBase: http://localhost:11434/v1',
           '  model: qwen2.5-coder:7b',
           'workflow:',
-          '  approve: default',
+          '  approve: plan',
           '  max_retries: 3',
         ].join('\n'),
         'utf-8',
       );
 
-      const { config } = loadConfig(dir);
-      expect(config.workflow.mode).toBe('standard');
-      expect(resolveMode({ config })).toBe('standard');
+      const { config, warnings } = loadConfig(dir);
+      expect(config.workflow).not.toHaveProperty('mode');
+      expect(warnings.filter((warning) => warning.includes('was retired'))).toEqual([]);
     });
   });
 });

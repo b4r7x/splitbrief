@@ -179,7 +179,7 @@ export function writeConfigMarker(projectDir: string): void {
 
 export function writeReadyReadinessFixtures(
   projectDir: string,
-  options: { validation?: boolean; codebase?: boolean } = {},
+  options: { validation?: boolean; codebase?: boolean; approve?: 'plan' | 'none' } = {},
 ): void {
   mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
   writeFileSync(join(projectDir, '.git', 'info', 'exclude'), '.splitbrief/\npackage.json\n');
@@ -211,7 +211,7 @@ export function writeReadyReadinessFixtures(
       '  testCommand: node -e ""',
     );
   }
-  lines.push('workflow:', '  approve: default', '  maxRetries: 3', '  mode: standard');
+  lines.push('workflow:', `  approve: ${options.approve ?? 'plan'}`, '  maxRetries: 3');
   if (options.codebase === false) {
     lines.push('codebase:', '  enabled: false');
   }

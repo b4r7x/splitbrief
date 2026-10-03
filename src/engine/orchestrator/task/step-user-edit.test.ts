@@ -16,6 +16,7 @@ import {
   setupTaskProject as setupProject,
 } from '#testing/helpers/orchestrator-task-context.js';
 import { loadState } from '../../../core/state/persistence.js';
+import { CONFIRM_PHRASE } from '../../../core/approval/types.js';
 import type { ImplementerOptions } from '../../implementers/types.js';
 import { createImplementerBase } from '../../implementers/pipeline/run.js';
 import { createValidator } from '../validation/run.js';
@@ -25,7 +26,7 @@ afterEach(cleanupTaskProjects);
 
 describe('runSingleTask — user edits', () => {
   it('denied rollback does not erase a clean-at-start file edited during approval', async () => {
-    const { projectDir, sessionId } = setupProject({ 'src/existing.ts': 'export const v = 1;\n' });
+    const { projectDir, sessionId } = setupProject({ '.env.local': 'export const v = 1;\n' });
 
     const task = makeTask({
       id: 'T001',
@@ -37,7 +38,7 @@ describe('runSingleTask — user edits', () => {
 
     const implementer = makeImplementer({
       implement: vi.fn().mockImplementation(async () => {
-        writeFileSync(join(projectDir, 'src/existing.ts'), 'export const v = 99; // implementer\n');
+        writeFileSync(join(projectDir, '.env.local'), 'export const v = 99; // implementer\n');
         return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
       }),
     });
@@ -45,7 +46,7 @@ describe('runSingleTask — user edits', () => {
     const callbacks = {
       ...makeCallbacks().callbacks,
       onTieredApproval: vi.fn().mockImplementation(async () => {
-        writeFileSync(join(projectDir, 'src/existing.ts'), concurrentUserEdit);
+        writeFileSync(join(projectDir, '.env.local'), concurrentUserEdit);
         return { decision: 'deny', reason: 'out of scope' };
       }),
     };
@@ -62,7 +63,6 @@ describe('runSingleTask — user edits', () => {
           approval: {
             enabled: true,
             feedRejectionsToPlanner: false,
-            tiers: { write_out_of_scope: 'sticky' },
           },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
           workflow: { maxRetries: 2 },
@@ -77,7 +77,7 @@ describe('runSingleTask — user edits', () => {
       setCurrentTask: vi.fn(),
     });
 
-    expect(readFileSync(join(projectDir, 'src/existing.ts'), 'utf-8')).toBe(concurrentUserEdit);
+    expect(readFileSync(join(projectDir, '.env.local'), 'utf-8')).toBe(concurrentUserEdit);
     expect(events.find((event) => event.type === 'warning')).toMatchObject({
       type: 'warning',
       message: expect.stringContaining('rollback skipped files changed during approval'),
@@ -85,7 +85,7 @@ describe('runSingleTask — user edits', () => {
   });
 
   it('denied direct write leaves user edits made during approval and drops staged implementer output', async () => {
-    const { projectDir, sessionId } = setupProject({ 'src/existing.ts': 'export const v = 1;\n' });
+    const { projectDir, sessionId } = setupProject({ '.env.local': 'export const v = 1;\n' });
 
     const task = makeTask({
       id: 'T001',
@@ -98,7 +98,7 @@ describe('runSingleTask — user edits', () => {
     const implementer = makeImplementer({
       capabilities: { writesFiles: 'direct' },
       implement: vi.fn().mockImplementation(async ({ projectDir: runDir }: ImplementerOptions) => {
-        writeFileSync(join(runDir, 'src/existing.ts'), 'export const v = 99; // implementer\n');
+        writeFileSync(join(runDir, '.env.local'), 'export const v = 99; // implementer\n');
         return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
       }),
     });
@@ -106,7 +106,7 @@ describe('runSingleTask — user edits', () => {
     const callbacks = {
       ...makeCallbacks().callbacks,
       onTieredApproval: vi.fn().mockImplementation(async () => {
-        writeFileSync(join(projectDir, 'src/existing.ts'), concurrentUserEdit);
+        writeFileSync(join(projectDir, '.env.local'), concurrentUserEdit);
         return { decision: 'deny', reason: 'out of scope' };
       }),
     };
@@ -123,7 +123,6 @@ describe('runSingleTask — user edits', () => {
           approval: {
             enabled: true,
             feedRejectionsToPlanner: false,
-            tiers: { write_out_of_scope: 'sticky' },
           },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
           workflow: { maxRetries: 2 },
@@ -138,11 +137,11 @@ describe('runSingleTask — user edits', () => {
       setCurrentTask: vi.fn(),
     });
 
-    expect(readFileSync(join(projectDir, 'src/existing.ts'), 'utf-8')).toBe(concurrentUserEdit);
+    expect(readFileSync(join(projectDir, '.env.local'), 'utf-8')).toBe(concurrentUserEdit);
   });
 
   it('approved direct write does not promote staged output over user edits made during approval', async () => {
-    const { projectDir, sessionId } = setupProject({ 'src/other.ts': 'export const v = 1;\n' });
+    const { projectDir, sessionId } = setupProject({ '.env.local': 'export const v = 1;\n' });
 
     const task = makeTask({
       id: 'T001',
@@ -155,7 +154,7 @@ describe('runSingleTask — user edits', () => {
     const implementer = makeImplementer({
       capabilities: { writesFiles: 'direct' },
       implement: vi.fn().mockImplementation(async ({ projectDir: runDir }: ImplementerOptions) => {
-        writeFileSync(join(runDir, 'src/other.ts'), 'export const v = 99; // implementer\n');
+        writeFileSync(join(runDir, '.env.local'), 'export const v = 99; // implementer\n');
         return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
       }),
     });
@@ -163,8 +162,8 @@ describe('runSingleTask — user edits', () => {
     const callbacks = {
       ...makeCallbacks().callbacks,
       onTieredApproval: vi.fn().mockImplementation(async () => {
-        writeFileSync(join(projectDir, 'src/other.ts'), concurrentUserEdit);
-        return { decision: 'allow', scope: 'once' };
+        writeFileSync(join(projectDir, '.env.local'), concurrentUserEdit);
+        return { decision: 'confirm', phrase: CONFIRM_PHRASE, reason: 'ok' };
       }),
     };
     const runValidation = vi.fn().mockResolvedValue([]);
@@ -181,7 +180,6 @@ describe('runSingleTask — user edits', () => {
           approval: {
             enabled: true,
             feedRejectionsToPlanner: false,
-            tiers: { write_out_of_scope: 'sticky' },
           },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
           workflow: { maxRetries: 2 },
@@ -197,7 +195,7 @@ describe('runSingleTask — user edits', () => {
       setCurrentTask: vi.fn(),
     });
 
-    expect(readFileSync(join(projectDir, 'src/other.ts'), 'utf-8')).toBe(concurrentUserEdit);
+    expect(readFileSync(join(projectDir, '.env.local'), 'utf-8')).toBe(concurrentUserEdit);
     expect(runValidation).not.toHaveBeenCalled();
     expect(result.currentTaskIndex).toBe(0);
     expect(
@@ -211,7 +209,7 @@ describe('runSingleTask — user edits', () => {
       selectedAction: 'pause',
       conflict: {
         kind: 'changed-during-approval-promotion',
-        files: ['src/other.ts'],
+        files: ['.env.local'],
         affectedTaskIds: ['T001'],
         safeToContinue: false,
       },
@@ -226,13 +224,13 @@ describe('runSingleTask — user edits', () => {
     const { projectDir, sessionId } = setupProject();
 
     mkdirSync(join(projectDir, 'src'), { recursive: true });
-    writeFileSync(join(projectDir, 'src/race.ts'), 'export const value = "before";\n');
+    writeFileSync(join(projectDir, 'package.json'), 'export const value = "before";\n');
 
     const task = makeTask({
       id: 'T001',
       action: 'modify',
-      file: 'src/race.ts',
-      scope: { inBounds: ['src/race.ts'] },
+      file: 'package.json',
+      scope: { inBounds: ['package.json'] },
     });
     const state = implementingState([task]);
 
@@ -253,10 +251,10 @@ describe('runSingleTask — user edits', () => {
       ...makeCallbacks().callbacks,
       onTieredApproval: vi.fn().mockImplementation(async () => {
         approvalCalls++;
-        if (approvalCalls === 2) {
-          writeFileSync(join(projectDir, 'src/race.ts'), userEdit);
+        if (approvalCalls === 1) {
+          writeFileSync(join(projectDir, 'package.json'), userEdit);
         }
-        return { decision: 'allow', scope: 'once' };
+        return { decision: 'confirm', phrase: CONFIRM_PHRASE, reason: 'ok' };
       }),
       onUserEditConflict,
     };
@@ -274,7 +272,6 @@ describe('runSingleTask — user edits', () => {
           approval: {
             enabled: true,
             feedRejectionsToPlanner: false,
-            tiers: { write_in_scope: 'sticky' },
           },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
           workflow: { maxRetries: 2 },
@@ -290,14 +287,14 @@ describe('runSingleTask — user edits', () => {
       setCurrentTask: vi.fn(),
     });
 
-    expect(readFileSync(join(projectDir, 'src/race.ts'), 'utf-8')).toBe(userEdit);
+    expect(readFileSync(join(projectDir, 'package.json'), 'utf-8')).toBe(userEdit);
     expect(runValidation).not.toHaveBeenCalled();
     expect(result.currentTaskIndex).toBe(0);
     expect(onUserEditConflict).not.toHaveBeenCalled();
     expect(result.pendingRecovery).toMatchObject({
       reason: 'approval-promotion-conflict',
       taskId: 'T001',
-      files: ['src/race.ts'],
+      files: ['package.json'],
       availableActions: ['skip-current-task', 'pause-run', 'end-run'],
     });
     expect(loadState({ projectDir, sessionId })?.pendingRecovery).toMatchObject({
@@ -309,7 +306,7 @@ describe('runSingleTask — user edits', () => {
       selectedAction: 'pause',
       conflict: {
         kind: 'changed-during-approval-promotion',
-        files: ['src/race.ts'],
+        files: ['package.json'],
       },
     });
   });

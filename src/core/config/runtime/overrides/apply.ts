@@ -1,13 +1,5 @@
 import type { z } from 'zod';
-import {
-  APPROVE_LEVELS,
-  ApproveLevelSchema,
-  EFFORT_LEVELS,
-  EffortLevelSchema,
-  WORKFLOW_MODES,
-  WorkflowModeSchema,
-  type ApproveLevel,
-} from '../../../schemas/enums.js';
+import { EFFORT_LEVELS, EffortLevelSchema } from '../../../schemas/enums.js';
 import { configError } from '../../errors.js';
 import type { Config } from '../../../schemas/config.js';
 import { defaultApprovalConfig } from '../../../schemas/config.js';
@@ -32,10 +24,6 @@ function parseOverrideOrThrow<T>(
   return parsed.data;
 }
 
-export function applyApproveOverride(config: Config, level: ApproveLevel): Config {
-  return { ...config, workflow: { ...config.workflow, approve: level } };
-}
-
 export function applyCLIOverrides(config: Config, overrides: CLIOverrides): Config {
   let next = config;
   if (overrides.planner) {
@@ -55,19 +43,6 @@ export function applyCLIOverrides(config: Config, overrides: CLIOverrides): Conf
   }
   if (overrides.reviewer) {
     next = applyRunnerOverrides('reviewer', overrides.reviewer, next);
-  }
-  if (overrides.approve !== undefined) {
-    const level = parseOverrideOrThrow(
-      ApproveLevelSchema,
-      overrides.approve,
-      '--approve',
-      APPROVE_LEVELS,
-    );
-    next = applyApproveOverride(next, level);
-  }
-  if (overrides.mode !== undefined) {
-    const mode = parseOverrideOrThrow(WorkflowModeSchema, overrides.mode, 'mode', WORKFLOW_MODES);
-    next = { ...next, workflow: { ...next.workflow, mode } };
   }
   if (overrides.plannerEffort !== undefined) {
     const effort = parseOverrideOrThrow(

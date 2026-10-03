@@ -14,8 +14,7 @@ import { SPLITBRIEF_DIR, sessionDir } from '../../../src/core/paths.js';
 import { runHeadless } from '../../../src/cli/headless.js';
 import { readLockfile, checkSessionLiveness } from '../../../src/core/sessions/lockfile.js';
 import { makeImplementer, makePlanner } from '#testing/helpers/orchestrator-factories.js';
-import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
-import type { RunPhaseInput } from '../../../src/engine/planners/types.js';
+import { planFromTasks, typedCallAnswering } from '#testing/helpers/typed-planner.js';
 
 setupStartCommandIntegration();
 
@@ -39,16 +38,15 @@ describe('start command — liveness record', () => {
     let midRunPid: number | undefined;
     let midRunExitedAt: number | undefined;
     const planner = makePlanner({
-      runPhase: vi.fn(async ({ call }: RunPhaseInput) => {
-        const lock = readLockfile(sessionDir(tmp, onlySessionId(tmp)));
-        midRunPid = lock?.pid;
-        midRunExitedAt = lock?.exitedAt;
-        return makePhaseCallResult({
-          call,
-          tasks: [],
-          usage: { inputTokens: 50, outputTokens: 25 },
-        });
-      }),
+      typedCall: typedCallAnswering(
+        () => {
+          const lock = readLockfile(sessionDir(tmp, onlySessionId(tmp)));
+          midRunPid = lock?.pid;
+          midRunExitedAt = lock?.exitedAt;
+          return planFromTasks([]);
+        },
+        { inputTokens: 50, outputTokens: 25 },
+      ),
     });
     const implementer = makeImplementer();
 
@@ -67,15 +65,13 @@ describe('start command — liveness record', () => {
         'splitbrief',
         'start',
         '--json',
-        '--mode',
-        'quick',
         'implement X',
         '--project',
         tmp,
       ]),
     ).rejects.toMatchObject({
       exitCode: 1,
-      message: expect.stringContaining('Recovery required (planner-returned-no-briefs)'),
+      message: expect.stringContaining('Recovery required (plan-checks-failed)'),
     });
 
     const sessionId = onlySessionId(tmp);

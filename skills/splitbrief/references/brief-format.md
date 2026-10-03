@@ -5,11 +5,26 @@ The brief is the contract between the planner (this session) and the implementer
 ## Template
 
 <!-- generated: brief-template -->
+    Plan each brief as a task with these fields, then render each field in its place:
+
+    - `id` → frontmatter `id`.
+    - `title` → frontmatter `title`.
+    - `intent` → `### Description`.
+    - `criteria` → `### Evidence`: one bullet per acceptance criterion the brief serves, naming the check that proves it.
+    - `checks` → `### Tests` for each test check, and `### Evidence` with one `<id> <kind>: <value>` bullet per check.
+    - `suggestedFiles` → frontmatter `file` (the first one) and `files` (all of them).
+    - `contextFiles` → one `### Read-only context (do not modify) — <path>` section per file, with its current code.
+    - `exclusions` → `### Scope` under `**Out of bounds:**`.
+    - `protectedOperations` → `### Constraints`: one `Protected write: <path> (the user confirms it before it lands)` bullet per operation.
+    - `steps` → `### Implementation Steps`.
+    - `dependsOn` → frontmatter `depends_on`.
+    - `batch` → no field of its own: a brief of a later batch names the briefs it follows in `depends_on`.
+
     Frontmatter values are parsed literally. Never emit an alternation such as `create | modify` — choose one value:
 
     - `id` — unique brief id: `T001`, `T002`, ... in emission order.
     - `title` — one short line.
-    - `action` — exactly `create` or `modify`.
+    - `action` — exactly `create` or `modify`. Use `modify` when `file` exists, otherwise `create`.
     - `file` — one project-relative path (no leading `/`, no `..`): the slice's anchor.
     - `files` — optional YAML list of every project-relative path the slice writes, `file` among them. Omit it when the slice writes only the anchor.
     - `depends_on` — YAML list of brief ids this one must follow: `[]` when independent, `[T001, T002]` when it must run after both.
@@ -38,9 +53,9 @@ The brief is the contract between the planner (this session) and the implementer
     // All referenced types, copied verbatim
     ```
 
-    ### Current Code
+    ### Read-only context (do not modify) — src/path/to/context.ts
     ```typescript
-    // Relevant existing code for modify tasks
+    // The current code of a context file the change reads but does not write
     ```
 
     ### Pattern
@@ -55,8 +70,6 @@ The brief is the contract between the planner (this session) and the implementer
     - Test case with concrete inputs/outputs
 
     ### Scope
-    **In bounds:**
-    - Context the change works within
     **Out of bounds:**
     - Explicit exclusion the reviewer checks
     **Approved out of bounds:**
@@ -73,22 +86,22 @@ The brief is the contract between the planner (this session) and the implementer
     - Follow existing codebase patterns
 <!-- /generated -->
 
-The fenced examples are TypeScript. For Python, Go, Rust, or JavaScript use that language's fence and idioms — the CLI substitutes the Signature, Type Definitions, and Current Code examples per language.
+The fenced examples are TypeScript. For Python, Go, Rust, or JavaScript use that language's fence and idioms — the CLI substitutes the Signature, Type Definitions, and read-only context examples per language.
 
 ## Brief Contract (required semantics)
 
 <!-- generated: brief-contract -->
-Every brief must cover these nine semantic sections, even when one is brief:
+Every brief must cover these nine semantic sections, even when one is brief. Each section renders the plan task fields the template maps to it:
 
-1. **Identity** — frontmatter `id`, `title`, `action`, `file`, optional `files`, `depends_on`.
-2. **Intent** — `### Description`: what the change is and why it matters.
-3. **Scope** — `### Scope` with `**In bounds:**`, `**Out of bounds:**`, and optional `**Approved out of bounds:**` bullet lists. REQUIRED in standard mode. `files` are the suggested files; **In bounds** is context; **Out of bounds** lists the explicit exclusions the reviewer checks.
-4. **Code Context** — `### Signature`, `### Current Code`, `### Type Definitions`, and `### Pattern`: copied verbatim from the project when relevant. The implementer cannot look up other files.
-5. **Implementation Plan** — `### Implementation Steps`: 3-5 numbered steps with concrete function calls and patterns.
-6. **Validation** — `### Tests`: REQUIRED concrete test cases with specific inputs and expected outputs, in every brief. No phrases like "should work correctly", and no deferring the cases to whichever brief owns the test file.
-7. **Constraints** — `### Constraints`: invariants, dependency rules, ESM imports with .js extensions, refusal conditions.
+1. **Identity** — frontmatter `id`, `title`, `action`, `file`, optional `files`, `depends_on`, from the task's `id`, `title`, `suggestedFiles` and `dependsOn`.
+2. **Intent** — `### Description`: the task's `intent`, what the change is and why it matters.
+3. **Scope** — `### Scope` with `**Out of bounds:**` and optional `**Approved out of bounds:**` bullet lists, from the task's `exclusions`. REQUIRED. `files` are the suggested files; **Out of bounds** lists the explicit exclusions the reviewer checks.
+4. **Code Context** — `### Signature`, `### Type Definitions` and `### Pattern`, copied verbatim from the project when relevant, and one `### Read-only context (do not modify) — <path>` section with the current code of each of the task's `contextFiles`. The implementer reads the files it suggests itself, and searches only for a symbol the brief names.
+5. **Implementation Plan** — `### Implementation Steps`: the task's `steps`, 3-5 numbered steps with concrete function calls and patterns.
+6. **Validation** — `### Tests`: the task's test checks, REQUIRED concrete test cases with specific inputs and expected outputs, in every brief. No phrases like "should work correctly", and no deferring the cases to whichever brief owns the test file.
+7. **Constraints** — `### Constraints`: invariants, dependency rules, ESM imports with .js extensions, refusal conditions, and the task's `protectedOperations` as protected writes the user confirms.
 8. **Escalation** — `### Escalation`: bullets describing when the implementer must stop and ask instead of guessing. Required whenever the brief contains plausible ambiguity.
-9. **Evidence** — `### Evidence`: REQUIRED bullets describing the reviewable proof that should exist when the brief is done (the focused tests that pass, the changed files, the behavior a reviewer can check). Renders and project-wide gates are the review seat's and SPLITBRIEF's evidence, not the implementer's steps.
+9. **Evidence** — `### Evidence`: the task's checks and the criteria they prove, REQUIRED bullets describing the reviewable proof that should exist when the brief is done (the focused tests that pass, the changed files, the behavior a reviewer can check). Renders and project-wide gates are the review seat's and SPLITBRIEF's evidence, not the implementer's steps.
 
 Every brief must also leave typecheck, lint and tests green on its own. Never plan for a failing gate: when a change would break a sibling file, widen the brief's `files` to include it, keep the change backward compatible with an optional property and a default, or split the work so each brief lands whole. Before a brief deletes or renames an export, its `files` name every consumer found by searching the whole repository — `src/` and `testing/` alike, colocated and sibling tests included.
 <!-- /generated -->
@@ -96,11 +109,11 @@ Every brief must also leave typecheck, lint and tests green on its own. Never pl
 ## Critical Rules
 
 <!-- generated: critical-rules -->
-1. **Self-contained**: Each brief must inline ALL context needed. Include relevant current code for modify tasks, TypeScript type annotations, import paths, function signatures from dependencies, and expected patterns.
+1. **Self-contained**: Each brief must inline the context the implementer cannot read in the files it suggests: the current code of its context files, TypeScript type annotations, import paths, function signatures from dependencies, and expected patterns.
 
 2. **Coherent**: One brief delivers one coherent, reviewable outcome. List every path that outcome writes under `files`. Keep the tests, callers, wiring, fixtures and necessary documentation with the behavior they cover; a file boundary alone never makes a separate brief. Combine related corrections that share a contract, mechanism or code context; a mechanical rename carries all its callers and pinned strings. Split independent outcomes, or a complex mechanism, when separate validation, context or recovery makes the work easier to execute correctly. Two assertions that can pass separately do not require separate briefs, and no file-count or line-count threshold decides a boundary. Keep each brief self-contained for its actual runner, with every acceptance criterion and repository constraint it needs, and within the real model context and prompt transport limits, system text, skills and retry feedback included. Do not aim for a number of briefs. Order the dependencies so each brief leaves its affected checks green.
 
-3. **Dependency-ordered**: Briefs must be ordered so dependencies come first. Use `depends_on` to declare which briefs must complete first. Independent briefs can run in parallel.
+3. **Dependency-ordered**: Briefs must be ordered so dependencies come first. Use `depends_on` to declare which briefs must complete first; a brief of a later batch names the briefs it follows. Independent briefs can run in parallel.
 
 4. **Concrete validation**: Every `### Tests` block must list specific test cases with concrete inputs and expected outputs, as `-` bullets. This holds for every brief, including one whose test file a different brief owns: list the cases that verify THIS brief's change. Never replace the bullets with prose that defers validation to another brief. Name the focused test files and cases only. SPLITBRIEF runs typecheck, lint and the affected tests after every brief, so never tell the implementer to run a project-wide gate, the whole suite, or a screenshot/render tool.
 
@@ -115,7 +128,7 @@ Every brief must also leave typecheck, lint and tests green on its own. Never pl
 9. **Reserved delimiter**: Outside fenced code blocks, lines containing only `---` are reserved for Task Brief frontmatter delimiters. Never use a bare `---` as a horizontal rule or phase-heading separator.
 <!-- /generated -->
 
-The three blocks above are generated from the CLI with its TypeScript language context (`npm run skills:sync`; `npm run skills:check` fails when they drift). Two readings differ in the skill: contract item 3's `REQUIRED in standard mode` is `always` here (Scope is required in both skill modes), and the TypeScript-specific wording (`TypeScript type annotations`, `ESM imports with .js extensions`) becomes the project language's own convention for other languages.
+The three blocks above are generated from the CLI with its TypeScript language context (`npm run skills:sync`; `npm run skills:check` fails when they drift). One reading differs in the skill: the TypeScript-specific wording (`TypeScript type annotations`, `ESM imports with .js extensions`) becomes the project language's own convention for other languages.
 
 ## Skill additions (appended by this pipeline, never by the planner's judgment)
 
@@ -128,7 +141,7 @@ The three blocks above are generated from the CLI with its TypeScript language c
 <!-- /generated -->
   plus the skill's own: `Do NOT run git add, git commit, git stash, or create .bak files`
 - Rules found in the project's instruction files (CLAUDE.md, AGENTS.md, …) are copied into `### Constraints` verbatim; a never-commit rule goes into every brief.
-- `### Current Code` carries the whole file when it is ≤ 300 lines; otherwise only the enclosing functions the brief touches, with a line `(excerpt: lines 40–95 of 412)`.
+- A `### Read-only context (do not modify) — <path>` section carries the whole context file when it is ≤ 300 lines; otherwise only the functions the brief reads, with a line `(excerpt: lines 40–95 of 412)`.
 
 ## Files written
 

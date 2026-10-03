@@ -19,7 +19,7 @@ import {
   settingsItemSection,
   type SettingsItem,
 } from '../../features/settings/items.js';
-import { CURRENT_MARKER, helpTextRows, settingsHelpLines } from '../../features/settings/help.js';
+import { helpTextRows, settingsHelpLines } from '../../features/settings/help.js';
 import { parseSettingsFocus } from '../../features/settings/focus.js';
 import { useCrewDisplayNames } from '../../hooks/use-crew-display-names.js';
 import { hintFor, useSettingsEditor } from '../../features/settings/hooks/editor.js';
@@ -131,10 +131,6 @@ export function SettingsOverlay() {
   const verdictLine =
     verdict === undefined ? null : <CrewVerdictLine verdict={verdict} width={rect.innerWidth} />;
 
-  const selectedValue =
-    selectedItem !== undefined && selectedItem.kind === 'setting'
-      ? getValue(selectedItem.def)
-      : undefined;
   const detail =
     selectedItem === undefined
       ? undefined
@@ -143,7 +139,7 @@ export function SettingsOverlay() {
             selectedItem.kind === 'crew'
               ? CREW_SEAT_LABELS[selectedItem.row.id]
               : (selectedItem.def.readLabel?.(config) ?? selectedItem.def.label),
-          lines: settingsHelpLines({ item: selectedItem, value: selectedValue }),
+          lines: settingsHelpLines(selectedItem),
         };
   const help = showDescription && detail !== undefined ? detail : null;
   const helpRows = help === null ? [] : helpTextRows(help.lines, rect.innerWidth);
@@ -240,14 +236,7 @@ export function SettingsOverlay() {
           <RuleHeader label={help.label} width={rect.innerWidth} />
           {helpRows.map((row, index) => (
             <Box key={`help-${index}`} height={1} flexShrink={0} overflow="hidden">
-              {row.current === true ? (
-                <>
-                  <Text color={t.text}>{row.text}</Text>
-                  <Text color={t.textDim}>{` ${CURRENT_MARKER}`}</Text>
-                </>
-              ) : (
-                <Text color={t.textDim}>{row.text}</Text>
-              )}
+              <Text color={t.textDim}>{row.text}</Text>
             </Box>
           ))}
         </Box>

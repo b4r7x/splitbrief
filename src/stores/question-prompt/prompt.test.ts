@@ -43,6 +43,20 @@ describe('planner question batch', () => {
     expect(store.answer('Yes')).toBeUndefined();
   });
 
+  it('answers every question with its declared default when each one takes a bare ⏎', () => {
+    store.setQuestions(questions);
+    let batch: ReturnType<typeof store.answer>;
+    for (const question of questions) {
+      const { drafts, index } = store.get();
+      const draft = drafts[index];
+      const options = questionOptions(question);
+      batch = store.answer(
+        options.length > 0 ? (options[draft?.selected ?? 0] ?? '') : (draft?.text ?? ''),
+      );
+    }
+    expect(batch?.qa.map((pair) => pair.answer)).toEqual(['Builder', 'src/', 'No']);
+  });
+
   it('hands the completed batch over once and clears it when the next prompt opens', () => {
     store.setQuestions(questions);
     for (const answer of ['Planner', 'src/auth.ts', 'No']) store.answer(answer);

@@ -1,7 +1,7 @@
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { CallUsageEvidence } from '../../../core/schemas/usage-evidence.js';
-import type { RunnerKind, WorkflowMode } from '../../../core/schemas/enums.js';
+import type { RunnerKind } from '../../../core/schemas/enums.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { readSpecFileOrEmpty } from '../../../core/paths-io.js';
 import { REVIEW_FILE } from '../../../core/paths.js';
@@ -38,14 +38,13 @@ export type SummaryBase = {
   reviewerTool?: string;
   reviewerModel?: string;
   reviewerKind?: RunnerKind;
-  mode?: WorkflowMode;
   projectDir?: string;
   sessionId?: string;
   pricingCache?: ModelCacheAccessor | undefined;
 };
 
 type BuildSummaryOptions = SummaryBase & {
-  state: BuildSummaryState & Pick<WorkflowState, 'phase' | 'currentTaskIndex' | 'mode'>;
+  state: BuildSummaryState & Pick<WorkflowState, 'phase' | 'currentTaskIndex'>;
   taskBreakdowns?: TaskTokenUsage[];
   phaseTimings?: Record<string, number>;
   /**
@@ -113,14 +112,11 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     reviewerModel,
     reviewerKind,
     phaseTimings,
-    mode,
     projectDir,
     sessionId,
     pricingCache,
     callEvidence,
   } = opts;
-  // The mode the run saved wins, as planning resolves it; the base names the config's.
-  const runMode = state.mode ?? mode;
   const totalTasks = state.tasks.length;
   const completionCounts = countLocalAndEscalatedTasks(state, taskBreakdowns);
   const completedByLocal = completionCounts.local;
@@ -224,7 +220,6 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     ...(reviewerModel !== undefined && { reviewerModel }),
     ...(reviewerKind !== undefined && { reviewerKind }),
     phaseTimings,
-    ...(runMode !== undefined && { mode: runMode }),
     ...(evidenceSummary && { evidenceSummary }),
     ...(briefQuality && { briefQuality }),
     ...(driftSummary && { driftSummary }),

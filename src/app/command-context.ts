@@ -17,7 +17,6 @@ import { getSections } from '../stores/workflow/actions/sections.js';
 import type { Config } from '../core/schemas/config.js';
 import type { Screen } from '../core/navigation/types.js';
 import { configStore } from '../stores/project/config.js';
-import { formatConfigSaveFailure } from '../stores/project/save-feedback.js';
 import { overlayStore } from '../stores/ui/overlay.js';
 import { composerDraftStore } from '../stores/ui/composer-draft.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
@@ -36,13 +35,12 @@ import { getDefaultDetectionService } from '../engine/detection/service.js';
 import { refreshDetectionForCurrentConfig } from '../engine/detection/store-publication.js';
 import { detectionStore } from '../stores/project/detection.js';
 import { readActive } from '../core/sessions/active-pointer.js';
-import type { RewindTarget } from '../core/state/build-rewind-action.js';
+import type { TaskRedoRequest } from '../core/state/build-rewind-action.js';
 import type {
   AttachImageResult,
   CopyResult,
   CopyTarget,
   QueueClearCommandResult,
-  RuntimeConfigSaveResult,
   RuntimeCommandContext,
   ScrollCommandTarget,
   ScrollConversationResult,
@@ -57,11 +55,6 @@ import { createCommandContext } from '../core/runtime/commands/context-factory.j
 import { copyToClipboard } from '../lib/clipboard/clipboard.js';
 import { acceptRunSnapshot, rejectRunSnapshot } from '../engine/snapshots/run/lifecycle.js';
 import { readRunRecord } from '../core/sessions/run-record-io.js';
-import {
-  readApprovalsStore,
-  mutateApprovalsStore,
-  clearGrantsByScope,
-} from '../core/approval/store.js';
 import { writeUiPrefs } from '../core/ui-prefs.js';
 import { error } from '../utils/error.js';
 import { assertNever } from '../utils/type-guards.js';
@@ -78,7 +71,7 @@ export interface ConversationScrollMetrics {
 // reach into. `useRuntimeCommands` (below, in this module) wires the real
 // `features/workflow/**` implementations into these ports; the page files never see them.
 export interface WorkflowCommandPorts {
-  requestRewind: (request: RewindTarget) => boolean;
+  requestRewind: (request: TaskRedoRequest) => boolean;
   requestClearQueue: () => QueueClearCommandResult | Promise<QueueClearCommandResult>;
   findLatestActivityBatchKey: () => string | null;
   findLatestDiffKey: () => string | null;
@@ -226,38 +219,11 @@ export function buildCommandContext({
     route.screen === 'workflow' ? route.run.ref.projectDir : configStore.get().projectDir;
   return createCommandContext({
     projectDir: () => projectDir,
-    getConfig: () => configStore.get().config,
-    saveConfig: async (config): Promise<RuntimeConfigSaveResult> => {
-      const result = await configStore.save(config);
-      switch (result.kind) {
-        case 'saved':
-          return { kind: 'saved', ok: true };
-        case 'conflict':
-          return {
-            kind: 'conflict',
-            ok: false,
-            errorMessage: 'Config changed on disk. Reload before saving again.',
-          };
-        case 'durability-uncertain':
-          return {
-            kind: 'durability-uncertain',
-            ok: false,
-            errorMessage: `Config save could not be confirmed: ${result.warning}`,
-          };
-        case 'failure':
-          return {
-            kind: 'failure',
-            ok: false,
-            errorMessage: formatConfigSaveFailure(result.error),
-          };
-      }
-    },
     getSessionId: () => routeSessionId(route, projectDir),
     noActiveSession: appCommandContextError.noActiveSession,
     openOverlay: overlayStore.open,
     navigateHome: () => routerStore.navigate({ to: 'home' }),
     quit: () => requestQuit(exit),
-    prefillComposer: composerDraftStore.request,
     setFeedbackMessage: feedbackStore.setMessage,
     setFeedbackError: feedbackStore.setError,
     refreshDetection: async () => {
@@ -276,7 +242,6 @@ export function buildCommandContext({
     toggleSkill,
     refreshSkills,
     getCurrentPhase: () => lifecycleStore.get().phase,
-    requestRewind: workflow.requestRewind,
     requestTaskRedo: (taskId) => workflow.requestRewind({ target: 'task', taskId }),
     resumeRun: () => requestResume(''),
     endRun: requestEndRun,
@@ -287,16 +252,6 @@ export function buildCommandContext({
     plannerSupportsImages: () => plannerSupportsImages(configStore.get().config),
     detachImage,
     listAttachments,
-    listApprovals: (projectDir) => readApprovalsStore(projectDir).grants,
-    clearApprovals: (projectDir, scope) => {
-      let removed = 0;
-      mutateApprovalsStore(projectDir, (before) => {
-        const after = clearGrantsByScope(before, scope);
-        removed = before.grants.length - after.grants.length;
-        return after;
-      });
-      return removed;
-    },
     acceptRunSnapshot,
     rejectRunSnapshot,
     refreshRun: () => {
@@ -362,10 +317,9 @@ export function useRuntimeCommands({
           },
         })
       : createContext();
-  // The command list embeds the skill id set as `/skills`'s closed options and the current mode as
-  // `/mode`'s `current` hint, so it has to be rebuilt whenever either store changes.
+  // The command list embeds the skill id set as `/skills`'s closed options, so it has to be
+  // rebuilt whenever that store changes.
   skillsStore.use((s) => s);
-  configStore.use((s) => s.config?.workflow.mode);
   const commands = createRuntimeCommands(ctx);
   const runtimeChainRef = useRef(Promise.resolve());
   const handleRuntimeCommand = (raw: string, from: Screen) => {
@@ -384,8 +338,6 @@ export function useRuntimeCommands({
   };
   return {
     commands,
-    copyTarget: ctx.copyTarget,
-    setWorkflowMode: ctx.setWorkflowMode,
     handleRuntimeCommand,
   };
 }

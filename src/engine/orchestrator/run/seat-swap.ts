@@ -1,5 +1,4 @@
 import type { Config } from '../../../core/schemas/config.js';
-import type { WorkflowMode } from '../../../core/schemas/enums.js';
 import type { SeatSwapCandidate } from '../../../core/schemas/recovery/schemas.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { EventBus } from '../../events/types.js';
@@ -30,7 +29,6 @@ export type ApplyOfferedSeatSwapInput = Readonly<{
   bus: EventBus;
   config: Config;
   prepared: PreparedExecution;
-  mode?: WorkflowMode | undefined;
   savedState: WorkflowState | undefined;
   signal?: AbortSignal | undefined;
   /** Called once the swap is admitted, with the preparation the seats are now built from. */
@@ -76,7 +74,6 @@ export async function applyOfferedSeatSwap(
     candidate: choice.candidate,
     policy: choice.policy,
     signal: input.signal ?? new AbortController().signal,
-    ...(input.mode !== undefined && { mode: input.mode }),
     ...(input.prepare !== undefined && { prepare: input.prepare }),
   });
 

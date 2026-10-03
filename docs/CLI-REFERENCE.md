@@ -23,14 +23,13 @@ SPLITBRIEF — an orchestrator of two coding tools: one plans and reviews, the o
 | # | Command | Purpose |
 |---|---|---|
 | 1 | `splitbrief start` | Launch a workflow (TUI or headless). Also the default command: `splitbrief "feature"` works without `start`. |
-| 2 | `splitbrief spec` | Run the planner only — produce the planning artifacts for a mode, no implementation. |
+| 2 | `splitbrief spec` | Run the planning session only — write `plan.json`, `plan.md` and `tasks.md`, no implementation. |
 | 3 | `splitbrief init` | Create `.splitbrief/config.yaml` with detected models. |
 | 4 | `splitbrief status` | Show the active session. |
 | 5 | `splitbrief resume` | Resume the active interrupted workflow. |
 | 6 | `splitbrief continue` | Session continuity: resume a saved session. |
-| 7 | `splitbrief approval` | List or clear sticky approval grants. |
-| 8 | `splitbrief doctor` | Check run readiness without creating a workflow session. |
-| 9 | `splitbrief review` | Review the working-tree diff in one reviewer call — no session, no planning. |
+| 7 | `splitbrief doctor` | Check run readiness without creating a workflow session. |
+| 8 | `splitbrief review` | Review the working-tree diff in one reviewer call — no session, no planning. |
 
 ---
 
@@ -42,7 +41,7 @@ SPLITBRIEF — an orchestrator of two coding tools: one plans and reviews, the o
 splitbrief start [feature] [options]
 ```
 
-Launch a complete plan-and-implement workflow. Without a feature argument the TUI opens to the home screen so you can pick one interactively. With a feature, SPLITBRIEF runs the planner, gathers approvals (per `--mode`), then dispatches the implementer loop. This is the canonical entry point for ordinary work.
+Launch a complete plan-and-implement workflow. Without a feature argument the TUI opens to the home screen so you can pick one interactively. With a feature, SPLITBRIEF runs one planning session, shows the plan card (unless `workflow.approve: none`), then dispatches the implementer loop. This is the canonical entry point for ordinary work.
 
 **Shorthand.** `splitbrief "feature"` is equivalent to `splitbrief start "feature"` — `start` is the default command (`isDefault`). No subcommand required for the happy path.
 
@@ -51,7 +50,7 @@ Launch a complete plan-and-implement workflow. Without a feature argument the TU
 ### Usage
 
 ```
-splitbrief start [feature] [--mode <mode>] [--approve <level>] \
+splitbrief start [feature] \
   [--planner <tool>] [--planner-model <model>] [--planner-command <cmd>] \
   [--planner-api-base <url>] [--planner-api-key-env <var>] [--planner-args <arg>] \
   [--planner-output-format <format>] [--planner-context-length <tokens>] \
@@ -73,8 +72,6 @@ splitbrief start [feature] [--mode <mode>] [--approve <level>] \
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `--mode <mode>` | enum | `standard` (or `workflow.mode` from config) | One of `quick`, `standard`, `speckit`. The retired `instant` still parses and resolves to `quick` with a deprecation notice. See [WORKFLOW.md](./WORKFLOW.md). |
-| `--approve <level>` | enum | `default` | Document approval gates: `none`, `spec`, `plan`, `all`, `default`. `none` skips every approval gate; other concrete levels include briefs review in standard/speckit. Quick opens no gates. `default` follows the mode. |
 | `--planner <tool>` | string | from config | Planner tool: `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code`, `antigravity`, `ollama`, `lm-studio`, `llama-cpp`, `shell`, `agent`. The flag's help text is derived from `PLANNER_TOOL_IDS` (`src/core/schemas/enums.ts`), so `splitbrief start --help` always prints the admitted set. A CLI tool id here always selects the CLI; an API provider that reuses a CLI tool's id is configured in `.splitbrief/config.yaml` (`kind: api`) and cannot be selected by this flag. |
 | `--planner-model <model>` | string | from config | Planner model identifier (for API planners). |
 | `--planner-command <cmd>` | string | from config | Custom planner command (when `--planner=shell`). |
@@ -104,7 +101,7 @@ splitbrief start [feature] [--mode <mode>] [--approve <level>] \
 | `--model <model>` | string | — | Alias for `--implementer-model`. |
 | `--provider <provider>` | string | — | Alias for `--implementer`. |
 | `--skills <ids>` | string | — | Comma-separated skill ids to attach to every seat for this run, the headless equivalent of the `/skills` picker. Resolved against the same scan roots before planning starts; an id no root carries fails with `Unknown skill: <id> (scanned: <roots>)` and exit `2`. On `start` it applies to headless runs (`--json` / `--plain`); on `resume` and `continue` it applies in both modes, to that continue only — it is not saved, so a later continue without it uses the selection the run saved when it started. |
-| `--yolo` | boolean | `false` | Disable file-write tiered approval prompts for the session. A write to a protected path (dependency manifests and lockfiles, CI configuration, env and key files, `.git`, `.splitbrief`) still asks. Spec/plan gates still follow `--approve` / mode policy, and briefs review remains separate. This is not a shell or network sandbox setting. |
+| `--yolo` | boolean | `false` | Kept for compatibility. It skips nothing: only a write to a protected path (dependency manifests and lockfiles, CI configuration, env and key files, `.git`, `.splitbrief`) asks, and that write still asks. The plan card follows `workflow.approve`. This is not a shell or network sandbox setting. |
 | `--project <dir>` | path | cwd | Project directory. |
 | `--no-fullscreen` | boolean | fullscreen on | Disable the alternate screen buffer. Useful when piping or debugging. |
 | `--no-mouse` | boolean | mouse on | Disable Ink mouse tracking — click, hover and scroll. Tracking runs only in fullscreen, so `--no-fullscreen` disables it too and leaves this flag a no-op. |
@@ -127,17 +124,14 @@ splitbrief "refactor auth" @design-notes.md @screenshot.png
 # Interactive TUI (no feature → home screen)
 splitbrief start
 
-# Standard workflow on a feature description
+# A workflow on a feature description
 splitbrief start "extract auth into module"
 
-# Speckit mode
-splitbrief start --mode speckit "rewrite billing"
-
 # Headless / CI: stream NDJSON events
-splitbrief start --json --approve none "fix flaky test in user.test.ts"
+splitbrief start --json "fix flaky test in user.test.ts"
 
 # Headless / CI: four line shapes a shell script can read
-splitbrief start --plain --approve none "fix flaky test in user.test.ts"
+splitbrief start --plain "fix flaky test in user.test.ts"
 
 ```
 
@@ -150,7 +144,7 @@ splitbrief start --plain --approve none "fix flaky test in user.test.ts"
 ### Files affected
 
 - **Reads:** `.splitbrief/config.yaml`, `.splitbrief/sessions/<id>/state.json` (if resuming), repo files supplied to the planner.
-- **Writes:** `.splitbrief/sessions/<id>/{readiness.json,spec.md,plan.md,tasks.md,state.json,session.jsonl}`, working-tree changes by the implementer.
+- **Writes:** `.splitbrief/sessions/<id>/{readiness.json,plan.json,plan.md,tasks.md,state.json,session.jsonl}`, working-tree changes by the implementer.
 
 ### See also
 
@@ -180,21 +174,20 @@ splitbrief start --plain --approve none "fix flaky test in user.test.ts"
 splitbrief spec <feature> [options]
 ```
 
-Run only the planner. Produces the planning artifacts for the selected mode in a fresh session folder, then exits without invoking the implementer. In `standard` and `speckit` that is `spec.md`, `plan.md`, and `tasks.md`; in `quick`, a single planner call produces `tasks.md`. Useful for review-only flows or scripting.
+Run only the planning session. It writes `plan.json`, `plan.md` and `tasks.md` to a fresh session folder, then exits without invoking the implementer. Useful for review-only flows or scripting.
 
-Planner stream output is stripped of terminal control sequences before writing to stdout.
+The planning session is the same one `splitbrief start` runs ([WORKFLOW.md](./WORKFLOW.md#3-the-planning-session)): the planner answers with one typed plan, SPLITBRIEF checks it (`checkPlan` plus the context fit), and a plan that fails its checks goes back to the planner once.
 
 ### Usage
 
 ```
-splitbrief spec <feature> [--mode <mode>] [--project <dir>] [--allow-hooks] [--allow-repo-runners]
+splitbrief spec <feature> [--project <dir>] [--allow-hooks] [--allow-repo-runners]
 ```
 
 ### Options
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `--mode <mode>` | enum | `standard` (or `workflow.mode` from config) | One of `quick`, `standard`, `speckit`. Same validation and precedence as `splitbrief start`: the flag wins over `workflow.mode`, and an unrecognized value fails the command. See [WORKFLOW.md](./WORKFLOW.md). |
 | `--project <dir>` | path | cwd | Project directory. |
 | `--allow-hooks` | boolean | `false` | Trust the hook config without prompting (CI). |
 | `--allow-repo-runners` | boolean | `false` | Grant this run the planner runner command the project config declares. |
@@ -202,48 +195,41 @@ splitbrief spec <feature> [--mode <mode>] [--project <dir>] [--allow-hooks] [--a
 ### Examples
 
 ```bash
-# Generate a spec for review
+# Plan a feature for review
 splitbrief spec "add SSO via Okta"
-
-# Just the Task Brief, one planner call
-splitbrief spec --mode quick "rename the config loader"
-
-# Full ceremony for a risky change
-# (writes the standard artifact set: spec --mode speckit never produces the
-# speckit-only orchestrator artifacts)
-splitbrief spec --mode speckit "replace the auth provider"
 
 # Run in another repo
 splitbrief spec --project ../service-a "add health endpoint"
 
-# CI-friendly invocation
+# CI-friendly invocation (no terminal: every question takes its default)
 splitbrief spec --allow-hooks "tighten zod schemas"
 ```
 
 ### Exit codes
 
-- `0` — the mode's planner artifacts were written.
-- `1` — not a git repo, invalid or unwritable config, invalid `--mode` value, hooks distrusted, planner failure, init failure, or any other failure (the underlying error message is preserved through `Error.cause`).
+- `0` — the plan passed its checks and `plan.json`, `plan.md` and `tasks.md` were written.
+- `1` — not a git repo, invalid or unwritable config, hooks distrusted, a removed flag (`--mode`, `--approve`), planner failure, a plan that failed its checks again after one repair, a third round of questions, init failure, or any other failure (the underlying error message is preserved through `Error.cause`).
 
 ### Files affected
 
 - **Reads:** `.splitbrief/config.yaml`, repo files passed to the planner, `~/.splitbrief/trust/hooks.json`.
-- **Writes:** the planning artifacts under `.splitbrief/sessions/<id>/` for the resolved mode (`research.md`, `spec.md`, `plan.md`, `tasks.md` in `standard` / `speckit`; `tasks.md` in `quick`), and the `.splitbrief/active` pointer.
+- **Writes:** `plan.json`, `plan.md` and `tasks.md` under `.splitbrief/sessions/<id>/`, and the `.splitbrief/active` pointer.
 - **On a failed planner call:** the session directory it allocated is removed again via the preparation rollback (including the `.splitbrief/active` pointer); no directory is left behind.
 
 ### See also
 
 - `splitbrief start` — full plan-and-implement.
-- [TASK-CONTRACT.md](./TASK-CONTRACT.md), [WORKFLOW.md](./WORKFLOW.md).
+- [TASK-CONTRACT.md](./TASK-CONTRACT.md#the-plan-contract), [WORKFLOW.md](./WORKFLOW.md).
 
 ### Behavior notes
 
-- Planner output streams to stdout in real time via the `onOutput` callback. Phase headings appear as bold `--- <phase> ---` separators.
-- The line printed before planning starts names the planner and the resolved mode, so the mode in force is visible at the point of decision.
-- `spec` runs no approval gate. `--approve` is not accepted here; the mode's approval defaults apply to `splitbrief start`, not to planning-only runs.
+- The line printed before planning starts names the feature and the planner: `Planning feature: <feature> (planner: <name>)`.
+- The planner's stream is not echoed: its answer is typed JSON.
+- Questions: the planner may ask up to three questions per round, for at most two rounds, and every question carries a default. `spec` prints them under `The planner asks:`. In a terminal it reads one line (`Your answer (⏎ takes the defaults): `), and an empty line takes the defaults. Without a terminal every question takes its default.
+- The planner is told the BUILD context a headless `start` measures: the profile's declared `contextLength`, else the model catalog. `spec` takes no `--skills`, so its prompt carries no skills block, as a `start` with no skills selected.
+- `spec` shows no plan card. `--mode` and `--approve` were removed and fail the command with exit code 1.
 - The stale-session sweep runs before the new session is prepared — a crashed prior run will not block this one.
-- Session id is generated from the feature; the final summary prints the absolute path of every artifact the mode produced.
-- The number of generated tasks is reported as `... (N tasks)` after the run.
+- Session id is generated from the feature. The final summary prints `Planning complete.`, the session id and the path of `plan.json`, `plan.md` and `tasks.md`, with the task count as `(N tasks)`.
 
 ---
 
@@ -425,6 +411,7 @@ Other distinguishable runner outcomes (`spawn-not-found`, `protocol-failure`, `i
 ### Behavior notes
 
 - Missing config reports `splitbrief init`; legacy config warnings report `splitbrief init --reconfigure`, but `doctor` does not run setup commands.
+- Every load-time config notice is listed, one per retired key (`workflow.mode`, `workflow.approve: all|spec|default`, `workflow.task_review`, `workflow.brief_review`, `workflow.speckit`, `approval.tiers`; see [CONFIGURATION.md §16](./CONFIGURATION.md#retired-keys-that-still-load)). The **Workflow** section reports the plan approval level as the check `approval.resolved` (`Plan approval: plan.`), and the context check uses one floor for every run: 32,000 tokens.
 - Validation readiness is posture only. It reports disabled checks or missing npm scripts without running validation commands; the exception is `--probe-validation`, which runs the configured commands.
 - Runner availability is probed for the `api` runners a run would call (`runners.availability.planner`, `runners.availability.implementer.<profile>`, and `runners.availability.reviewer` when a `reviewer` block is configured). Each probe is one model-list round trip against the endpoint the runner already targets, bounded by a 2s budget and run in parallel. An unreachable planner or default implementer is a blocker — the planning phase runs before the implementer is first used — while a non-default profile is a warning. A probe that could not run or overran its budget reports `not-probed` (info); it never reports available. When no probe runs at all, readiness says so and makes no claim (`runners.availability`).
 - The arg-vector preflight runs here too, so a blocker `start` would raise can be inspected without starting a run: a flag the installed binary's help does not advertise is a blocker (`runners.cli.<tool>.arg-vector.<role>`), a flag it marks deprecated is a warning, and a help text that cannot be read reports ok. See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md).
@@ -569,7 +556,7 @@ Closing a run clears `.splitbrief/active`, so after an `/end` there is nothing f
 ### Usage
 
 ```
-splitbrief resume [--mode <mode>] [--approve <level>] \
+splitbrief resume \
   [--planner <tool>] [--planner-model <model>] [--planner-command <cmd>] \
   [--planner-api-base <url>] [--planner-api-key-env <var>] [--planner-args <arg>] \
   [--planner-output-format <format>] [--planner-context-length <tokens>] \
@@ -588,15 +575,14 @@ splitbrief resume [--mode <mode>] [--approve <level>] \
 
 ### Options
 
-Resume accepts the same workflow override options as `start`. See [`splitbrief start`](#splitbrief-start) for the shared runner, mode, and approval flags.
+Resume accepts the same workflow override options as `start`. See [`splitbrief start`](#splitbrief-start) for the shared runner flags.
 
 | Flag | Notes |
 |---|---|
 | `--json` | Resume the run in headless mode, streaming NDJSON to stdout. |
 | `--plain` | Resume the run in headless mode, writing plain lines to stdout. Mutually exclusive with `--json`. |
 | `--skills <ids>` | Comma-separated skill ids for every seat. The list applies to that continue only: it is not saved, so a later continue without it uses the selection the run saved when it started. Applies in headless and interactive mode alike. |
-| `--approve` / planner+implementer flags | Override the persisted values for this run only. |
-| `--mode` | A started run keeps the mode saved in its `state.json`: a `--mode` that names another mode prints a notice and changes nothing. Only a `state.json` from an older release, which saved no mode, takes the flag. |
+| Planner, implementer and reviewer flags | Override the persisted values for this run only. |
 
 ### Examples
 
@@ -605,7 +591,7 @@ Resume accepts the same workflow override options as `start`. See [`splitbrief s
 splitbrief resume
 
 # Resume in headless mode for CI re-runs
-splitbrief resume --json --approve none
+splitbrief resume --json
 
 # Force a different implementer for the rest of the run
 splitbrief resume --implementer claude-code --implementer-model claude-sonnet-4-5
@@ -634,7 +620,7 @@ splitbrief resume --implementer claude-code --implementer-model claude-sonnet-4-
 - A session with a pending recovery is not refused headlessly. `resume --plain` and `resume --json` print the issue, the recommended action and the `splitbrief continue … --action …` line to stderr and exit `1`; pass that action to `continue` to carry on.
 - Any open run resumes. `deriveRunStatus` (`src/core/sessions/run-status.ts`) decides: a run is open until it is closed, and only two things close it — a final review that passed, and an explicit End run. A closed run is refused with `Run <id> is closed (complete|ended); nothing to resume.` A run killed during validation or escalation re-enters at the start of the brief it was on, with that brief's files restored from its task-start snapshot.
 - A short `Resuming: <feature> (phase: <phase>, task N/M)` line prints before the TUI mounts. `N` never exceeds `M`: a run whose briefs have all settled reads `M/M`.
-- The workflow mode is pinned in `state.json` alongside `plannerModel` when the run starts, and resume keeps it: a `--mode` that names another mode prints a notice and changes nothing. The saved approval level applies unless `--approve` or `workflow.approve` sets a level other than `default`.
+- The plan approval level comes from `workflow.approve`, else `plan`. Resume overwrites the level the run saved with that value. A run saved by an older release continues as one planning session if it stopped before its plan: its saved mode is ignored, and only the plan card (or nothing, under `approve: none`) opens before the build.
 
 ---
 
@@ -654,14 +640,13 @@ Continue a run by name: resolves the active session, a session id, or a numeric 
 |---|---|---|---|
 | `<session-id-or-number>` | string \| number (positional) | active | Session ID or numeric alias; omitted to use `.splitbrief/active`. |
 | `--project <dir>` | path | cwd | Project directory. |
-| `--approve <level>` | approval | mode default | Spec/plan document approval mode. |
 | `--allow-hooks` | boolean | `false` | Trust hook config without prompting. |
 | `--allow-repo-runners` | boolean | `false` | Trust repo-local shell/agent runner commands from project config for resumed workflow execution. |
 | `--action <skip\|retry\|switch-seat:<tool>[:<model>]\|end-run>` | enum | — | Apply this action to the run's pending recovery, then continue — the headless equivalent of choosing it in the recovery panel. `skip` is `skip-current-task`, `retry` is `retry-same-worker`, `switch-seat:<tool>[:<model>]` moves the blocked seat, and `end-run` closes the run. The first three carry the run on; `end-run` records the close, prints `Run <id> closed. The files it wrote are still on disk.` and stops there. |
 | `--skills <ids>` | string | — | Comma-separated skill ids for every seat, in headless and interactive mode alike. The list applies to that continue only: it is not saved, so a later continue without it uses the selection the run saved when it started. |
 | `--json` | boolean | `false` | Continue the run in headless NDJSON mode. |
 | `--plain` | boolean | `false` | Continue the run in headless plain-line mode. Mutually exclusive with `--json`. |
-| Other resume flags | — | — | Runner overrides, mode, `--no-fullscreen`, `--no-mouse`, `--hover`, and approval controls. |
+| Other resume flags | — | — | Runner overrides, `--no-fullscreen`, `--no-mouse`, `--hover` and `--yolo`. |
 
 ### Examples
 
@@ -709,86 +694,10 @@ splitbrief continue 2026-05-01-add-auth --action end-run
 
 ---
 
-## splitbrief approval
+## Removed commands and flags
 
-**Synopsis**
-
-```
-splitbrief approval <subcommand> [options]
-```
-
-Manage sticky approval grants. When a workflow asks for approval and the user picks "always allow", the choice is recorded as a grant. This command lists or clears those grants.
-
-Subcommands: `list`, `clear`.
-
----
-
-### splitbrief approval list
-
-**Synopsis**
-
-```
-splitbrief approval list [--project <dir>]
-```
-
-Print every grant in `.splitbrief/approvals.json` as an aligned table.
-
-#### Options
-
-| Flag | Type | Default | Description |
-|---|---|---|---|
-| `--project <dir>` | path | cwd | Project directory. |
-
-#### Output
-
-Columns: `pattern`, `class`, `scope`, `sessionId`, `grantedAt`. If empty, prints `No sticky approvals on record.`
-
-#### Exit codes
-
-- `0` — listed.
-- `1` — store could not be read.
-
----
-
-### splitbrief approval clear
-
-**Synopsis**
-
-```
-splitbrief approval clear [--scope <scope>] [--project <dir>]
-```
-
-Remove grants whose scope matches the filter.
-
-#### Options
-
-| Flag | Type | Default | Description |
-|---|---|---|---|
-| `--scope <scope>` | enum | `all` | One of `session`, `always`, `all`. |
-| `--project <dir>` | path | cwd | Project directory. |
-
-#### Examples
-
-```bash
-splitbrief approval list
-splitbrief approval clear                      # clears everything
-splitbrief approval clear --scope session      # only per-session grants
-splitbrief approval clear --scope always       # only persistent grants
-```
-
-#### Exit codes
-
-- `0` — cleared (prints `Cleared <N> approval grant(s).`, where `N` may be `0`).
-- `1` — invalid scope or store write failure.
-
-### Files affected (approval)
-
-- **Reads / writes:** `.splitbrief/approvals.json`.
-
-### See also (approval)
-
-- [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) — `/approval` semantics during a run.
-- [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) — hook policies that interact with approvals.
+- `splitbrief approval list|clear` was removed with the sticky grants it managed. `splitbrief approval` now fails with exit code 1: `unknown command 'approval' — a protected write asks once per run; there are no grants to list or clear`.
+- `--mode` and `--approve` were removed. Passing either to any command fails with exit code 1 before any work starts: `--mode was removed: every run plans in one session`, `--approve was removed: set workflow.approve (plan or none) in the config` (`RETIRED_FLAGS`, `src/cli/unknown-command.ts`). A flag value is skipped, so `--planner-args --mode` still reaches the planner tool's own `--mode`.
 
 ---
 
@@ -803,7 +712,6 @@ Commands in this section share stable `stateId` / `state` identifiers and copyab
 | Flag | Commands | Default | Notes |
 |---|---|---|---|
 | `--project <dir>` | most | cwd | Project directory. |
-| `--mode <mode>` | `start`, `spec`, `resume`, `continue` | `workflow.mode`, else `standard` | One of `quick`, `standard`, `speckit`; the retired `instant` parses as `quick` with a deprecation notice. Validated against the same enum everywhere; on the resume family a started run keeps the mode saved in `state.json`, and a flag that names another mode prints a notice. |
 | `--allow-hooks` | `start`, `resume`, `continue`, `spec` | `false` | Skip the hook-trust prompt. CI flag. |
 | `--allow-repo-runners` | `start`, `resume`, `continue`, `spec`, `review` | `false` | Trust repo-local shell/agent runner execution from project config. Separate from hook trust. |
 | `--allow-unverified-auth` | `start`, `resume`, `continue`, `review` | `false` | Let a headless run proceed with unverified CLI authentication. No effect on interactive runs, which disclose and prompt. |
@@ -816,20 +724,19 @@ Commands in this section share stable `stateId` / `state` identifiers and copyab
 |---|---|---|
 | `.splitbrief/config.yaml` | `init` | Provider, model, workflow, and hooks config. |
 | `.splitbrief/active` | `start`, `spec` | Pointer to the current session while a workflow is active; cleared on final save unless preserved for recovery. |
-| `.splitbrief/sessions/<id>/spec.md` | planner | Spec phase output. |
-| `.splitbrief/sessions/<id>/plan.md` | planner | Plan phase output. |
-| `.splitbrief/sessions/<id>/tasks.md` | planner | Task list. |
+| `.splitbrief/sessions/<id>/plan.json` | planning session | The checked plan: the one source the briefs compile from. |
+| `.splitbrief/sessions/<id>/plan.md` | planning session | Rendering of `plan.json`; the body of the plan card. |
+| `.splitbrief/sessions/<id>/tasks.md` | planning session | Rendering of the compiled Task Briefs. |
 | `.splitbrief/sessions/<id>/state.json` | orchestrator | Persisted machine state for `resume` / `status`. |
 | `.splitbrief/sessions/<id>/seats.json` | `start`, `resume`, `continue` | The crew the session last ran with, so a resume can report a seat change. Rewritten by every run that starts, resumes included; a resume that never starts leaves it alone. |
 | `.splitbrief/sessions/<id>/session.jsonl` | orchestrator | Append-only transcript and event log. |
 | `.splitbrief/sessions/<id>/snapshots/<snap-id>/` | runtime `/run accept` | The working-tree snapshot an accepted run records, plus the run ledger that marks it accepted. Nothing records a pre-run baseline, so `/run reject confirm` has nothing to restore. |
-| `.splitbrief/approvals.json` | `approval`, runtime `/approval` | Sticky grants. |
 | `~/.splitbrief/trust/hooks.json` | `start`/`resume`/`spec` trust prompt | Hook trust receipts, owner-only, keyed by checkout. Never inside the project. |
 | `$XDG_STATE_HOME/splitbrief/trees/<hash>/<session-id>/` | run isolation | The implementer's per-run worktree, on branch `splitbrief/<session-id>`. Defaults to `~/.local/state/splitbrief/trees/...` when `XDG_STATE_HOME` is unset; `<hash>` is the first 12 hex chars of `sha256(realpath(git-common-dir))` so every linked checkout shares one trees root. Outside `.git/` (direct-writing CLIs refuse paths there) and outside the project root (so project-rooted test globs never walk the second copy). `git worktree list` is how you find one that outlived its run. |
 
 ### Headless event stream (`--json`)
 
-When `start`, `resume`, or an interrupted resumable `continue` runs with `--json`, stdout emits one public JSON record per line (NDJSON). Live workflow events use `{ "type": "event", "data": <EngineEvent> }`. Other records use named top-level types such as `readiness_report`, `recovery_required`, `final_review_failed` (with the `blocking` finding count), `final_review_incomplete` (the review never finished), `warning`, and `error`. Public records are bounded and secret-redacted before writing. The TUI is not started, the alternate screen buffer is never entered, and `--no-fullscreen`/`--no-mouse`/`--hover` are no-ops in this mode. Workflow review gates approve by default (a blocked brief-readiness report therefore proceeds after the second internal approval), questions resolve non-interactively, continuation retry prompts never park (a watchdog idle-kill fails the run instead), recovery pauses such as unknown paid pricing exit non-zero, failed sessions exit non-zero, and file-write tiered sticky/confirm approvals fail closed instead of waiting for input.
+When `start`, `resume`, or an interrupted resumable `continue` runs with `--json`, stdout emits one public JSON record per line (NDJSON). Live workflow events use `{ "type": "event", "data": <EngineEvent> }`. Other records use named top-level types such as `readiness_report`, `recovery_required`, `final_review_failed` (with the `blocking` finding count), `final_review_incomplete` (the review never finished), `warning`, and `error`. Public records are bounded and secret-redacted before writing. The TUI is not started, the alternate screen buffer is never entered, and `--no-fullscreen`/`--no-mouse`/`--hover` are no-ops in this mode. The plan card is approved unattended, which pre-confirms nothing (set `workflow.approve: none` to skip the card). A planner question writes an `input_required` record and exits non-zero with the `splitbrief continue <id>` line to answer it. Continuation retry prompts never park (a watchdog idle-kill fails the run instead), recovery pauses such as unknown paid pricing exit non-zero, failed sessions exit non-zero, and a write to a protected path fails closed with `APPROVAL_REQUIRED` instead of waiting for input.
 
 The `recovery_required` record carries `reason`, `status` (`awaiting-user` | `paused` | `applying`), message, task/files when known, `availableActions`, and `recommendedAction`; `status` was added after the initial release and older consumers must treat it as optional. The command fails with exit code 1 for **every** pending recovery status — `paused` and `applying` exit non-zero exactly like `awaiting-user` — and the error message names the available resolution actions.
 
@@ -838,7 +745,8 @@ The `recovery_required` record carries `reason`, `status` (`awaiting-user` | `pa
 `--plain` renders the same headless run as four line shapes and nothing else, so a shell script can read a run without a JSON parser:
 
 ```
-phase: researching
+phase: planning
+phase: reviewing-plan
 phase: implementing
 task T001: done (typecheck lint test)
 task T002: done (typecheck lint test)
@@ -871,15 +779,9 @@ Continue with: splitbrief continue 2026-09-13-add-auth --action switch-seat:clau
 
 A quota halt ends the first line with the clock its limit resets on, spelled when the line is printed; with `--json`, the halt's `error` event record carries it as `resetAt`. The last line is the command to paste. When the recommended action is one `continue` cannot take on its own, the line opens the recovery panel and names the row to choose there, in the panel's own words: `Continue with: splitbrief continue 2026-09-13-add-auth, then choose Pause run in the recovery panel`. That line carries no `[--plain|--json]`: the panel needs the TUI. With `--json` the same facts also arrive on stdout as a `recovery_required` record carrying `reason`, `status`, `message`, `taskId`, `files`, `availableActions`, `recommendedAction` and `resumeCommand`.
 
-### Workflow modes (`--mode`)
+### Planning session
 
-| Mode | Planner calls | Approval gates | Best for |
-|---|:---:|:---:|---|
-| `quick` | 1 | none | Trivial edits and small tasks that still need a brief. |
-| `standard` (default) | 4 | supporting spec + briefs | Ordinary feature work. |
-| `speckit` | 6–7 | supporting spec + plan + briefs | Large, risky, or externally visible work. |
-
-`--mode` is accepted by `start`, `spec`, `resume`, and `continue`. On `spec` it selects planning depth only — that command never implements and runs no approval gate. `--mode instant` is retired: it still parses, resolves to `quick`, and prints a deprecation notice on stderr. Detailed semantics in [WORKFLOW.md](./WORKFLOW.md).
+There are no workflow modes. Every run plans in one session: one typed planner call, plus one per question round (at most two rounds of at most three questions), plus at most one repair when the plan fails its checks. The plan card then waits for approval unless `workflow.approve: none`. `--mode` was removed; see [Removed commands and flags](#removed-commands-and-flags). Detailed semantics in [WORKFLOW.md](./WORKFLOW.md#3-the-planning-session).
 
 ### Runner kinds (`--planner` / `--implementer`)
 
@@ -897,8 +799,6 @@ Schemas and YAML shape live in [ARCHITECTURE.md](./ARCHITECTURE.md) and [CONFIGU
 ```bash
 splitbrief --help                     # top-level help
 splitbrief <command> --help           # command help (Commander-generated)
-splitbrief approval --help            # subcommand parents print their child list
-splitbrief approval list --help       # leaf subcommand help
 ```
 
 Commander emits a usage banner, the description string, and the option table verbatim — this reference document expands the same surface with examples, exit codes, files, and behavior notes.

@@ -3,8 +3,8 @@ import type { PlannerCall } from '../../../core/schemas/run-step.js';
 import { assertNever } from '../../../utils/type-guards.js';
 
 // One vocabulary for what the run is doing right now: the byline says it as a heading, the build
-// block says it inside a sentence. Both read it here. The plan stage holds two planner calls, so
-// its verb names the call the engine said it is on. A gate that rewrites its document from a
+// block says it inside a sentence. Both read it here. The plan stage is one planning session, and
+// only an older run's briefs call has a verb of its own. A gate that rewrites its document from a
 // change request names that call with the verb it has outside the gate.
 export function activeVerb(
   phase: Phase,
@@ -24,7 +24,6 @@ export function activeVerb(
     case 'constitution-check':
       return 'Checking constitution…';
     case 'planning':
-      if (plannerCall === 'plan') return 'Writing the plan…';
       if (plannerCall === 'tasks') return 'Compiling briefs…';
       return 'Planning…';
     case 'reviewing-plan':

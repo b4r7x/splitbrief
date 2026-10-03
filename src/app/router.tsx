@@ -11,8 +11,7 @@ import { EditorOverlay } from './overlays/editor.js';
 import { SettingsOverlay } from './overlays/settings.js';
 import { UsageOverlay } from './overlays/usage.js';
 import { ToolModelPicker } from './overlays/runners.js';
-import { focusHasResolvableCopy } from '../features/workflow/copy/resolve.js';
-import type { RuntimeCommandDef, CopyResult, CopyTarget } from '../core/runtime/commands/types.js';
+import type { RuntimeCommandDef } from '../core/runtime/commands/types.js';
 import type { OverlayType, Screen } from '../core/navigation/types.js';
 import type { WorkflowScreenDeps } from '../features/workflow/hooks/workflow-screen/use-model.js';
 import type { AppInteractionDeps } from './root.js';
@@ -24,7 +23,6 @@ interface RouterProps {
   overlayActive: OverlayType;
   commands: RuntimeCommandDef[];
   onRuntime: (raw: string, from: Screen) => void;
-  copyTarget: (target: CopyTarget) => Promise<CopyResult>;
   workflowDeps?: WorkflowScreenDeps | undefined;
   interactionDeps?: AppInteractionDeps | undefined;
 }
@@ -34,7 +32,6 @@ export function Router({
   overlayActive,
   commands,
   onRuntime,
-  copyTarget,
   workflowDeps,
   interactionDeps,
 }: RouterProps) {
@@ -48,7 +45,6 @@ export function Router({
         screen,
         commands,
         onRuntime,
-        copyTarget,
         workflowDeps,
         interactionDeps,
       })}
@@ -67,14 +63,12 @@ function renderScreen({
   screen,
   commands,
   onRuntime,
-  copyTarget,
   workflowDeps,
   interactionDeps,
 }: {
   screen: Screen;
   commands: RuntimeCommandDef[];
   onRuntime: (raw: string, from: Screen) => void;
-  copyTarget: (target: CopyTarget) => Promise<CopyResult>;
   workflowDeps?: WorkflowScreenDeps | undefined;
   interactionDeps?: AppInteractionDeps | undefined;
 }): ReactNode {
@@ -94,8 +88,6 @@ function renderScreen({
         <WorkflowScreen
           commands={commands}
           onRuntimeCommand={(raw) => onRuntime(raw, 'workflow')}
-          copyTarget={copyTarget}
-          canCopyFocused={focusHasResolvableCopy}
           deps={workflowDeps}
           readClipboardImage={interactionDeps?.readClipboardImage}
           listProjectFiles={interactionDeps?.listProjectFiles}

@@ -48,7 +48,7 @@ function legacyClaudeConfigYaml(comment: string): string {
     '  lint: true',
     '  test: true',
     'workflow:',
-    '  mode: standard',
+    '  approve: plan',
     'unrelated_extension:',
     '  exact_runner_id: vendor/model@2026-08-01',
     '',
@@ -86,7 +86,7 @@ describe('config roundtrip', () => {
       writeConfigYaml(dir, {
         planner: { kind: 'cli', tool: 'codex', model: 'auto' },
         implementer: { kind: 'cli', tool: 'codex', model: 'auto' },
-        workflow: { mode: 'standard' },
+        workflow: { approve: 'plan' },
       });
 
       const { config, warnings } = loadConfig(dir);
@@ -94,7 +94,7 @@ describe('config roundtrip', () => {
       expect(config.planner).toMatchObject({ kind: 'cli', tool: 'codex', model: 'auto' });
       expect(config.implementer).toMatchObject({ kind: 'cli', tool: 'codex', model: 'auto' });
 
-      writeConfig(dir, { ...config, workflow: { ...config.workflow, mode: 'quick' } });
+      writeConfig(dir, { ...config, workflow: { ...config.workflow, approve: 'none' } });
 
       const rawYaml = readFileSync(join(dir, SPLITBRIEF_DIR, 'config.yaml'), 'utf-8');
       expect(yamlBlock(rawYaml, 'planner')).toContain('model: auto');
@@ -104,7 +104,7 @@ describe('config roundtrip', () => {
       expect(reloaded.warnings).toEqual([]);
       expect(reloaded.config.planner).toEqual(config.planner);
       expect(reloaded.config.implementer).toEqual(config.implementer);
-      expect(reloaded.config.workflow.mode).toBe('quick');
+      expect(reloaded.config.workflow.approve).toBe('none');
     });
 
     it('keeps a legacy Claude channel omission read-only', () => {
@@ -139,7 +139,8 @@ describe('config roundtrip', () => {
       configStore.load(dir);
       const config = loadConfig(dir).config;
       expect(
-        (await configStore.save({ ...config, workflow: { ...config.workflow, mode: 'quick' } })).ok,
+        (await configStore.save({ ...config, workflow: { ...config.workflow, approve: 'none' } }))
+          .ok,
       ).toBe(true);
 
       const saved = readFileSync(path, 'utf-8');
@@ -174,11 +175,7 @@ describe('config roundtrip', () => {
       expect(written.palette).toBeDefined();
       expect(written.approval).toBeDefined();
       expect((written.palette as Record<string, unknown>).custom_actions).toBeDefined();
-      const approval = written.approval as Record<string, unknown>;
-      const tiers = approval.tiers as Record<string, unknown>;
-      expect(tiers.write_in_scope).toBe('sticky');
-      expect(tiers.write_out_of_scope).toBe('confirm');
-      expect(tiers.writeInScope).toBeUndefined();
+      expect((written.approval as Record<string, unknown>).feed_rejections_to_planner).toBe(false);
     });
 
     it('loads and writes implementer profiles without changing the legacy implementer', () => {

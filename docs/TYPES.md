@@ -144,7 +144,7 @@ Types should live where their domain meaning is created — not in a central `ty
 ```
 src/core/schemas/          # ~30 flat leaves plus the intentional recovery/ exception
 ├── config.ts              # ConfigSchema + Config type
-├── enums.ts               # PlannerKind, ImplementerKind, Mode enums
+├── enums.ts               # Phase, ApproveLevel, recovery enums; WorkflowMode (older runs only)
 ├── implementer-config.ts
 ├── planner-config.ts
 ├── runner-fields.ts
@@ -160,7 +160,7 @@ src/core/schemas/          # ~30 flat leaves plus the intentional recovery/ exce
 │   ├── facts.ts           # RecoveryFact accessors
 │   ├── policy.ts          # legal recovery actions and selection checks
 │   └── schemas.ts         # recovery Zod schemas + inferred types
-└── …                      # analyze, drift, evidence, snapshot, hooks, … (flat leaves)
+└── …                      # plan, drift, evidence, snapshot, hooks, … (flat leaves)
 ```
 
 **Inferred types co-locate with their schema.** Each file exports the schema *and* the inferred type:

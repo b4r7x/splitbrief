@@ -214,25 +214,3 @@ export type CustomRunnerRuntimePort = Readonly<{
     input: BeginDeclaredArtifactReviewInput,
   ) => Promise<PreparedDeclaredArtifactReview>;
 }>;
-
-export type RuntimeExecutionReceipt = Readonly<{
-  /** The admitted CLI binary; a backend that owns no executable records none. */
-  executablePath?: string | undefined;
-  version: string;
-  runtimeDigest: string;
-  protocolDigest: string;
-}>;
-
-/**
- * The prepared planner call: preparation launches nothing, so the members a
- * launch would observe — argument vector, working directory, credential copy,
- * environment fingerprint, session scope — are not part of the record; the
- * planner adapter prepares them at dispatch.
- */
-export type PreparedPlannerInvocation = Readonly<{
-  runtime: RuntimeExecutionReceipt;
-  role: 'planner-read-only';
-  transport: PlannerArtifactTransport;
-  terminalContract: string;
-  capabilityDigest: string;
-}>;

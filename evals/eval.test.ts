@@ -748,7 +748,7 @@ describe('eval harness', () => {
     expect(config.implementer.service).toBe('custom-endpoint');
     expect(config.implementer.offering).toBe('payg');
     expect(config.planner.apiBase).toBe('https://api.example.test/v1');
-    expect(config.workflow.mode).toBe('quick');
+    expect(config.workflow.approve).toBe('none');
   });
 
   it('selects the baseline implementer model in baseline mode and the routed model in routed mode', () => {

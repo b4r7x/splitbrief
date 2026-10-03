@@ -23,7 +23,6 @@ import {
   type SeatSwapChoice,
 } from '../../../engine/orchestrator/run/seat-swap.js';
 import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js';
-import { resolveMode } from '../../../core/config/runtime/resolve.js';
 import {
   WORKFLOW_CANCEL_REASON_USER,
   WORKFLOW_USER_CANCELLED_ABORT_REASON,
@@ -54,7 +53,7 @@ import { overlayStore } from '../../../stores/ui/overlay.js';
 import { markWorkflowPaused } from '../../../stores/workflow/actions/pause.js';
 import { parkStoppedRun } from '../../../engine/orchestrator/state-ops.js';
 import { closeRunIfOpen } from '../../../engine/orchestrator/run/close.js';
-import { deriveRunStatus, NO_ARTIFACTS } from '../../../core/sessions/run-status.js';
+import { deriveRunStatus } from '../../../core/sessions/run-status.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import {
   onProcessRegistryChange,
@@ -166,8 +165,6 @@ export function useRunLoop({
       stateForRun = hydrated.state;
     }
     const pendingRewind = pendingRewindRef.current;
-    const rewindFeedbackForRun =
-      pendingRewind?.prepared === prepared ? pendingRewind.feedback : undefined;
     pendingRewindRef.current = null;
     let recoveryPromptAlreadyPublished = false;
 
@@ -234,7 +231,6 @@ export function useRunLoop({
       const status = deriveRunStatus({
         state: current,
         liveness: 'not-alive',
-        artifacts: NO_ARTIFACTS,
       });
       const next =
         closure !== undefined
@@ -367,7 +363,6 @@ export function useRunLoop({
             bus: createRecoveryBus({ ...session.ref, sink: addTuiEvent }),
             config: preparedForRun.config,
             prepared: preparedForRun,
-            mode: resolveMode({ config: preparedForRun.config, savedMode: stateForRun.mode }),
             savedState: stateForRun,
             signal: controller.signal,
             prepare: prepareExecutionFn,
@@ -436,7 +431,6 @@ export function useRunLoop({
           savedState: stateForRun,
           selectedSkills,
           ...(steerForRun !== undefined && { steer: steerForRun }),
-          ...(rewindFeedbackForRun !== undefined && { rewindFeedback: rewindFeedbackForRun }),
           ...(detectedContextLength !== undefined && { detectedContextLength }),
           ...(retryProfileOverride !== undefined && { retryProfileOverride }),
           ...(retryProfileOverrideTaskId !== undefined && { retryProfileOverrideTaskId }),

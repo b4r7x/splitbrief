@@ -27,7 +27,6 @@ export async function runHeadlessStart(
     plannerContext,
     opts,
     transport: 'headless',
-    defaultApprove: 'none',
     emitReadiness: (report) => {
       if (mode !== 'json') {
         if (report.counts.blocker > 0) process.stderr.write(`${formatReadinessBlockers(report)}\n`);

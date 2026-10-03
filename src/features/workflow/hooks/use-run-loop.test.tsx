@@ -21,6 +21,8 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import type { Config } from '../../../core/schemas/config.js';
+import type { ClarificationQuestion } from '../../../core/schemas/question.js';
+import { questionsText } from '../../../core/state/planning-conversation.js';
 import type { PlannerConfig } from '../../../core/schemas/planner-config.js';
 import { buildContextOverflowRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/task.js';
 import { runWorkflow } from '../../../engine/orchestrator/run/workflow.js';
@@ -577,7 +579,7 @@ describe('useRunLoop', () => {
     const inst = renderHarness({
       prepared,
       runWorkflow: async (options) => {
-        await options.callbacks?.onApprovalNeeded?.('spec', 'spec.md');
+        await options.callbacks?.onApprovalNeeded?.('plan', 'plan.md', []);
         return makeSummary();
       },
     });
@@ -618,7 +620,7 @@ describe('useRunLoop', () => {
       feature: 'cancel reason',
       sessionId,
       planner: { kind: 'shell', command: 'sleep', args: ['10'] },
-      workflow: { mode: 'quick' },
+      workflow: {},
     });
     const inst = renderHarness({ prepared, runWorkflow: runWorkflowWithCompletion });
     const logPath = join(sessionDir(projectDir, sessionId), 'session.jsonl');
@@ -641,41 +643,6 @@ describe('useRunLoop', () => {
     );
 
     await runFinished;
-    inst.unmount();
-  });
-
-  it('persists a rewind event to the session log when the user rewinds to spec', async () => {
-    const sessionId = '2024-01-01-add-auth';
-    const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
-    const ref = prepared.session.ref;
-    const run = recordedEngine({
-      1: parkAt({ ...createInitialState('add auth'), phase: 'reviewing-spec' }),
-    });
-
-    const inst = renderHarness({ prepared, runWorkflow: run.engine });
-    await vi.waitFor(() => {
-      expect(loadState(ref)?.phase).toBe('reviewing-spec');
-    });
-
-    const didRewind = requestRewind({ target: 'spec', comment: 'needs clarification' });
-    expect(didRewind).toBe(true);
-    await vi.waitFor(() => {
-      expect(run.returned()).toBe(2);
-    });
-
-    const logPath = join(sessionDir(projectDir, sessionId), 'session.jsonl');
-    expect(existsSync(logPath)).toBe(true);
-    const log = readFileSync(logPath, 'utf-8');
-    expect(log).toContain('rewind_to_spec');
-    expect(log).toContain('needs clarification');
-    // The rewound run re-entered the engine as the session it already is, at the spec step.
-    expect(run.entered.map((entry) => entry.purpose)).toEqual(['new-workflow', 'resume']);
-    expect(loadState(ref)).toMatchObject({
-      phase: 'specifying',
-      rewindPending: { target: 'spec', comment: 'needs clarification' },
-    });
-    expect(errorMessages()).toEqual([expect.stringContaining('is not available')]);
-
     inst.unmount();
   });
 
@@ -711,10 +678,7 @@ describe('useRunLoop', () => {
 
   it('rewind retry reuses prepared runner authority after store changes', async () => {
     const sessionId = '2024-01-01-prepared-rewind';
-    const saved: WorkflowState = {
-      ...createInitialState('prepared rewind'),
-      phase: 'reviewing-spec',
-    };
+    const saved = makeImplState([makeTask({ id: 'T001', status: 'done' })]);
     ensureSessionDir(projectDir, sessionId);
     saveState({ projectDir, sessionId }, saved);
     const prepared = preparedExecution({
@@ -745,7 +709,7 @@ describe('useRunLoop', () => {
       }),
     });
 
-    expect(requestRewind({ target: 'spec', comment: 'reuse prepared authority' })).toBe(true);
+    expect(requestRewind({ target: 'task', taskId: 'T001' })).toBe(true);
 
     await vi.waitFor(() => {
       expect(attempts).toHaveLength(2);
@@ -768,14 +732,8 @@ describe('useRunLoop', () => {
     const scopedSessionId = '2024-01-01-scoped';
     ensureSessionDir(projectDir, foreignSessionId);
     ensureSessionDir(projectDir, scopedSessionId);
-    const foreignState: WorkflowState = {
-      ...createInitialState('foreign feature'),
-      phase: 'reviewing-spec',
-    };
-    const scopedState: WorkflowState = {
-      ...createInitialState('add auth'),
-      phase: 'reviewing-spec',
-    };
+    const foreignState = makeImplState([makeTask({ id: 'T001', status: 'done' })]);
+    const scopedState = makeImplState([makeTask({ id: 'T001', status: 'done' })]);
     saveState({ projectDir, sessionId: foreignSessionId }, foreignState);
     const prepared = preparedExecution({
       projectDir,
@@ -786,14 +744,14 @@ describe('useRunLoop', () => {
 
     const inst = renderHarness({ prepared, runWorkflow: run.engine });
     await vi.waitFor(() => {
-      expect(loadState(prepared.session.ref)?.phase).toBe('reviewing-spec');
+      expect(loadState(prepared.session.ref)?.phase).toBe('implementing');
     });
     // The pointer now names a FOREIGN interrupted session while the screen stays scoped to B.
     // A pointer-keyed rewind would corrupt the foreign session; the in-scope id (B) must win.
     clearActiveReceipt(prepared.session.ref, prepared.session.active);
     writeActive({ projectDir, sessionId: foreignSessionId });
 
-    const didRewind = requestRewind({ target: 'spec', comment: 'scope-correct rewind' });
+    const didRewind = requestRewind({ target: 'task', taskId: 'T001' });
     expect(didRewind).toBe(true);
     await vi.waitFor(() => {
       expect(run.returned()).toBe(2);
@@ -803,8 +761,8 @@ describe('useRunLoop', () => {
       join(sessionDir(projectDir, scopedSessionId), 'session.jsonl'),
       'utf-8',
     );
-    expect(scopedLog).toContain('rewind_to_spec');
-    expect(scopedLog).toContain('scope-correct rewind');
+    expect(scopedLog).toContain('task_reset');
+    expect(scopedLog).toContain('T001');
 
     expect(existsSync(join(sessionDir(projectDir, foreignSessionId), 'session.jsonl'))).toBe(false);
 
@@ -933,13 +891,16 @@ describe('useRunLoop', () => {
   it('leaves the steer unrecorded when it answers a planner question still pending', async () => {
     const sessionId = '2024-01-01-pending-answer';
     const answer = 'change src/auth.ts instead';
+    const questions: ClarificationQuestion[] = [
+      { id: 'module', type: 'input', text: 'Which module should change?', default: 'src/app.ts' },
+    ];
     const resume: WorkflowState = {
       ...createInitialState('add auth'),
       phase: 'planning',
       pendingPlannerConversation: {
-        call: 'research',
-        text: 'Which module should change?',
-        questions: [],
+        call: 'plan',
+        text: questionsText(questions),
+        questions,
         answers: [],
         answered: false,
       },
@@ -965,8 +926,8 @@ describe('useRunLoop', () => {
     runner.handleResume(answer);
     await flush();
 
-    // The pending question owns the answer: the call loop records it when it consumes
-    // the seed, so the re-entry itself publishes nothing.
+    // The planning session's pending question owns the answer: the session records it when it
+    // consumes the seed, so the re-entry itself publishes nothing.
     expect(userMessageEvents()).toHaveLength(0);
     const log = readFileSync(join(sessionDir(projectDir, sessionId), 'session.jsonl'), 'utf-8');
     expect(log).not.toContain(answer);
@@ -1172,7 +1133,7 @@ describe('useRunLoop', () => {
     await flush();
 
     expect(abortTurn()).toBe(false);
-    expect(requestRewind({ target: 'spec' })).toBe(false);
+    expect(requestRewind({ target: 'task', taskId: 'T001' })).toBe(false);
   });
 
   it('asks nothing about a file halt whose files are back at the baseline', async () => {
@@ -1228,7 +1189,7 @@ describe('useRunLoop', () => {
           command: 'sh',
           args: ['-c', `cat >/dev/null; echo "You've hit your usage limit." >&2; exit 1`],
         },
-        workflow: { mode: 'quick' },
+        workflow: {},
       });
       const ref = prepared.session.ref;
       const requests: PrepareExecutionInput[] = [];
@@ -1406,10 +1367,7 @@ describe('useRunLoop', () => {
       const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
       const ref = prepared.session.ref;
       const run = recordedEngine({
-        1: parkAt(
-          { ...createInitialState('add auth'), phase: 'reviewing-spec' },
-          'the spec so far',
-        ),
+        1: parkAt(makeImplState([makeTask({ id: 'T001', status: 'done' })]), 'the build so far'),
       });
 
       const inst = renderHarness({ prepared, runWorkflow: run.engine });
@@ -1417,15 +1375,15 @@ describe('useRunLoop', () => {
         expect(userMessageEvents()).toHaveLength(1);
       });
 
-      expect(requestRewind({ target: 'spec', comment: 'name the error codes' })).toBe(true);
+      expect(requestRewind({ target: 'task', taskId: 'T001' })).toBe(true);
       await vi.waitFor(() => {
         expect(run.returned()).toBe(2);
       });
 
       expect(run.entered.map((entry) => entry.purpose)).toEqual(['new-workflow', 'resume']);
       expect(run.entered[1]?.session.ref).toEqual(ref);
-      expect(userMessageEvents()).toEqual([expect.objectContaining({ text: 'the spec so far' })]);
-      expect(eventsStore.get().events.map((event) => event.type)).toContain('rewind_to_spec');
+      expect(userMessageEvents()).toEqual([expect.objectContaining({ text: 'the build so far' })]);
+      expect(eventsStore.get().events.map((event) => event.type)).toContain('task_reset');
       expect(errorMessages()).toEqual([expect.stringContaining('is not available')]);
 
       inst.unmount();

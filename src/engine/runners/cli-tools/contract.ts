@@ -295,6 +295,8 @@ export type CliImplementerBuildArgsInput = Readonly<{
   installedVersion?: string | undefined;
   /** The run's global skills, which the call may read and never write. */
   skillRoots?: readonly string[] | undefined;
+  /** The JSON Schema the final answer must match; absent for a text call. */
+  schema?: CliSchemaInput | undefined;
 }>;
 
 export type CliPlannerAdapter<Tool extends CliToolId = CliToolId> = CliAdapterContract<

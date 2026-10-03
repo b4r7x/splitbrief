@@ -1,6 +1,20 @@
 <!--
 Sync Impact Report
-- Version change: 2.2.1 → 2.3.0 (MINOR: II's last task rule changes —
+- Version change: 2.3.0 → 2.4.0 (MINOR: II's mechanism text changes —
+  one planning session replaces the fixed research → spec → plan → tasks
+  chain, and the configured implementer model's measured context replaces
+  the 7B/8K and 27B/16K prompt figures. The weaker implementer stays)
+- Modified principles (2.4.0):
+  - II. Spec-Driven Development (the workflow line and the prompt-size
+    paragraph are replaced)
+- Updated sections (2.4.0): none
+- Templates requiring updates (2.4.0):
+  - .specify/templates/plan-template.md ✅ compatible
+  - .specify/templates/spec-template.md ✅ compatible
+  - .specify/templates/tasks-template.md ✅ compatible
+- Follow-up TODOs (2.4.0): none; the 2.3.0 TODO is done
+
+Prior pass — 2.2.1 → 2.3.0 (MINOR: II's last task rule changes —
   a task's files are guidance; it carries or names every file it needs, and
   the implementer may edit a further project file the change needs, naming
   it in its report. The rest of II is unchanged until the planning rework)
@@ -145,7 +159,11 @@ a separate API key.
 ### II. Spec-Driven Development
 
 No code is written without a specification. The workflow MUST follow:
-research → spec → plan → tasks → implement → validate → review.
+plan → implement → validate → review. One planning session produces the
+plan: the planner may ask the user questions first, then returns one
+typed plan (acceptance criteria, checks, tasks) that SPLITBRIEF checks
+deterministically before the build. The specification is that plan's
+criteria; there is no fixed chain of planner documents.
 
 Each implementation task MUST be self-contained: all context needed
 by the implementer (function signatures, types, current code, test
@@ -154,9 +172,9 @@ task carries or names every file it needs; SPLITBRIEF attaches their
 current code, and the implementer may edit a further project file when
 the change needs it, naming it in its report.
 
-Task prompts for models under 15B parameters MUST target a single
-function per task. Total prompt size MUST stay under 8K tokens for
-7B models and under 16K tokens for 27B models.
+Each task MUST fit the configured implementer model's measured
+context, with room left for the model to work. The implementer stays
+the weaker model.
 
 ### III. Weaker-Model Implementation
 
@@ -335,4 +353,4 @@ MUST be documented in the plan.md Complexity Tracking table with:
 the violation, why it is needed, and why the simpler alternative
 was rejected.
 
-**Version**: 2.3.0 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-10-01
+**Version**: 2.4.0 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-10-02

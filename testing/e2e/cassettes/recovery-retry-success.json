@@ -76,14 +76,14 @@
           "authorization": "***",
           "content-type": "application/json"
         },
-        "body": "{\"purpose\":\"planner quick task briefs\"}"
+        "body": "{\"purpose\":\"planner typed plan\"}"
       },
       "response": {
         "status": 200,
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"---\\nid: T001\\ntitle: Create form validation helper\\naction: create\\nfile: src/form-validation.ts\\ndepends_on: []\\n---\\n### Description\\nCreate src/form-validation.ts with a validateForm helper for email input.\\n\\n### Implementation Steps\\n1. Define a FormInput type with an optional email field.\\n2. Export validateForm with validity and error details.\\n\\n### Tests\\n- Verify validateForm rejects a missing or malformed email.\\n\\n### Scope\\n**In bounds:**\\n- src/form-validation.ts\\n**Out of bounds:**\\n- UI forms or network submission.\\n\\n### Escalation\\n- Stop if validation rules require product policy decisions.\\n\\n### Evidence\\n- The helper returns explicit errors for invalid input.\\n\\n### Type Definitions\\n```ts\\nexport type FormInput = { email?: string };\\nexport type FormValidationResult = { valid: boolean; errors: string[] };\\n```\\n\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":390,\"completion_tokens\":190}}\n\ndata: [DONE]\n\n"
+        "body": "data: {\"choices\": [{\"index\": 0, \"delta\": {\"content\": \"{\\\"result\\\":{\\\"kind\\\":\\\"plan\\\",\\\"summary\\\":\\\"Add a validateForm helper in src/form-validation.ts.\\\",\\\"decisions\\\":[],\\\"criteria\\\":[{\\\"id\\\":\\\"C1\\\",\\\"text\\\":\\\"validateForm rejects a missing or malformed email with an explicit error.\\\",\\\"checkIds\\\":[\\\"T001-K1\\\"]}],\\\"checks\\\":[],\\\"validation\\\":null,\\\"tasks\\\":[{\\\"id\\\":\\\"T001\\\",\\\"title\\\":\\\"Create form validation helper\\\",\\\"intent\\\":\\\"Create src/form-validation.ts with a validateForm helper for email input.\\\",\\\"criteria\\\":[\\\"C1\\\"],\\\"checks\\\":[{\\\"id\\\":\\\"T001-K1\\\",\\\"kind\\\":\\\"test\\\",\\\"value\\\":\\\"Verify validateForm rejects a missing or malformed email.\\\",\\\"required\\\":true}],\\\"suggestedFiles\\\":[\\\"src/form-validation.ts\\\"],\\\"contextFiles\\\":[],\\\"exclusions\\\":[\\\"UI forms or network submission.\\\"],\\\"protectedOperations\\\":null,\\\"steps\\\":[\\\"Define a FormInput type with an optional email field.\\\",\\\"Export validateForm with validity and error details.\\\"],\\\"dependsOn\\\":[],\\\"batch\\\":1}]}}\"}, \"finish_reason\": null}]}\n\ndata: {\"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"stop\"}], \"usage\": {\"prompt_tokens\": 390, \"completion_tokens\": 190}}\n\ndata: [DONE]\n\n"
       },
       "provider": "openai-compatible",
       "durationMs": 1410
@@ -177,7 +177,6 @@
     }
   ],
   "meta": {
-    "mode": "quick",
     "plannerProvider": "custom-endpoint",
     "plannerModel": "claude-sonnet-4-6",
     "implementerProvider": "custom-endpoint",

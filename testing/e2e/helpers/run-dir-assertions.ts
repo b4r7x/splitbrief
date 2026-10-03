@@ -4,19 +4,16 @@ import { join } from 'node:path';
 import { expect } from 'vitest';
 import { addEndpointScenario } from '../../../evals/scenarios/add-endpoint.js';
 import {
-  BRIEF_QUALITY_FILE,
   DRIFT_REPORT_FILE,
   EVIDENCE_FILE,
   PLAN_FILE,
   REVIEW_FILE,
   SESSION_LOG_FILE,
-  SPEC_FILE,
   SPLITBRIEF_DIR,
   SUMMARY_FILE,
   TASKS_FILE,
 } from '../../../src/core/paths.js';
 import { phaseTokenRole } from '../../../src/core/phases.js';
-import { MODES } from '../../../src/core/pipeline-spec/modes.js';
 import { DriftReportSchema } from '../../../src/core/schemas/drift.js';
 import { EvidenceLedgerSchema } from '../../../src/core/schemas/evidence.js';
 import { SessionSchema } from '../../../src/core/schemas/session.js';
@@ -28,7 +25,6 @@ import { type Task, taskFiles } from '../../../src/core/schemas/task.js';
 import { parseFinalReview } from '../../../src/engine/parsers/final-review.js';
 import { parseTasksStrict } from '../../../src/engine/spec/tasks/parse.js';
 import { isRecord } from '../../../src/utils/type-guards.js';
-import type { FixtureMode } from '../live/fixture-rows.js';
 
 const PLAIN_LINE =
   /^(phase: [a-z-]+|task T\d{3}: (done|failed) \(.+\)|review: (passed|failed)( \(\d+ blocking\))?|done: \d+ tasks|gates: NONE — review-only)$/;
@@ -67,7 +63,6 @@ export function assertPlainStdout(stdout: string): number {
 export function assertSessionDir(
   sessionDir: string,
   opts: {
-    mode: FixtureMode;
     expectedBriefs: Readonly<{ min: number; max: number }>;
     completed: number;
   },
@@ -77,12 +72,8 @@ export function assertSessionDir(
   expect(tasks.length).toBeLessThanOrEqual(opts.expectedBriefs.max);
   expect(tasks.filter((task) => task.action === 'modify').length).toBeGreaterThanOrEqual(1);
 
-  if (opts.mode === 'standard') {
-    expect(readText(sessionDir, SPEC_FILE).trim()).not.toBe('');
-    expect(readText(sessionDir, PLAN_FILE).trim()).not.toBe('');
-  }
+  expect(readText(sessionDir, PLAN_FILE).trim()).not.toBe('');
 
-  expect(readJson(sessionDir, BRIEF_QUALITY_FILE)).toMatchObject({ passed: true });
   EvidenceLedgerSchema.parse(readJson(sessionDir, EVIDENCE_FILE));
   expect(DriftReportSchema.parse(readJson(sessionDir, DRIFT_REPORT_FILE)).passed).toBe(true);
   expect(['pass', 'pass_with_notes']).toContain(
@@ -109,7 +100,7 @@ export function assertSessionDir(
 
   const events = readEventEntries(sessionDir);
   const calls = countRunnerCalls(events);
-  expect(calls.planner).toBe(MODES[opts.mode].plannerCalls);
+  expect(calls.planner).toBe(1);
   expect(calls.implementer).toBe(tasks.length);
   expect(calls.review).toBe(1);
   expect(events.filter(wroteNothing)).toHaveLength(0);
@@ -172,7 +163,7 @@ function countRunnerCalls(events: readonly SessionLogEventEntry[]): RunnerCallCo
     if (entry.type !== 'runner_call_started') continue;
     const role = eventField(entry.data, 'role');
     // A planner-seat call outside the planning phases is an escalation or a
-    // summary, and carries its own role; the mode's planner-call budget counts
+    // summary, and carries its own role; the planning session's one call counts
     // only the phases `phaseTokenRole` attributes to the planner.
     if (
       role === 'planner' &&

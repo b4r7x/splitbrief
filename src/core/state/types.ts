@@ -2,6 +2,7 @@ import type { Task, TaskId } from '../schemas/task.js';
 import type { QueuedMessage, WorkflowState, PlannerConversation } from '../schemas/workflow.js';
 import type { RecoveryAction, ReviewStatus } from '../schemas/enums.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
+import type { Plan } from '../schemas/plan.js';
 import type { StepCut, StepRef } from '../schemas/run-step.js';
 
 export type MachineAction = StateAction;
@@ -23,6 +24,7 @@ export type StateAction =
   | { type: 'BEGIN_PLANNING' }
   | { type: 'PLAN_DONE'; tasks: Task[] }
   | { type: 'BRIEFS_COMPILED'; tasks: Task[] }
+  | { type: 'PLAN_COMPILED'; plan: Plan; tasks: Task[] }
   | { type: 'BRIEF_ADMISSION_OPENED' }
   | { type: 'BEGIN_IMPLEMENTATION' }
   | { type: 'SPEC_CLARIFY_START' }
@@ -38,8 +40,14 @@ export type StateAction =
   | { type: 'HINT_FAIL' }
   | { type: 'FULL_SUCCESS' }
   | { type: 'SKIP_TASK'; taskId: TaskId }
-  | { type: 'UPDATE_TASK_CODE'; taskId: TaskId; code: string; codeByFile?: Record<string, string> }
-  | { type: 'CLEAR_TASK_CODE'; taskId: TaskId }
+  | {
+      type: 'UPDATE_TASK_CODE';
+      taskId: TaskId;
+      action: Task['action'];
+      code?: string;
+      codeByFile?: Record<string, string>;
+      contextCodeByFile?: Record<string, string>;
+    }
   | { type: 'WIDEN_TASK_SCOPE'; taskId: TaskId; paths: string[]; reason: string }
   | { type: 'ALL_DONE' }
   | { type: 'REVIEW_DONE'; reviewStatus: ReviewStatus }
@@ -60,7 +68,7 @@ export type StateAction =
   | { type: 'REWIND_TO_SPEC'; comment?: string }
   | { type: 'REWIND_TO_PLAN'; comment?: string }
   | { type: 'RESET_TASK'; taskId: TaskId }
-  | { type: 'CLEAR_REWIND_PENDING' }
+  | { type: 'CORRECT_PLAN'; comment: string }
   | { type: 'ENQUEUE_USER_MSG'; message: QueuedMessage }
   | { type: 'MARK_INJECTING_NATIVE'; id: string; attempt?: number }
   | { type: 'MARK_DELIVERED_NATIVE'; id: string }

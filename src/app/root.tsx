@@ -47,7 +47,7 @@ export function App({ workflowDeps, interactionDeps }: AppProps = {}) {
     lifecycleStore,
   );
   const { exit } = useApp();
-  const { commands, copyTarget, handleRuntimeCommand } = useRuntimeCommands({
+  const { commands, handleRuntimeCommand } = useRuntimeCommands({
     exit,
     phase,
     createContext: interactionDeps?.runtimeContext,
@@ -65,7 +65,6 @@ export function App({ workflowDeps, interactionDeps }: AppProps = {}) {
         overlayActive={overlayActive}
         commands={commands}
         onRuntime={handleRuntimeCommand}
-        copyTarget={copyTarget}
         workflowDeps={workflowDeps}
         interactionDeps={interactionDeps}
       />

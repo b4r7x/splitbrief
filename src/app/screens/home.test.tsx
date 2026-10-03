@@ -77,11 +77,11 @@ const COMMANDS: RuntimeCommandDef[] = [
   },
   {
     kind: 'arg',
-    name: '/mode',
-    label: 'Mode',
-    description: 'Workflow mode',
+    name: '/image',
+    label: 'Image',
+    description: 'Attach an image',
     category: 'navigate',
-    args: { kind: 'free', hint: '<text>' },
+    args: { kind: 'free', hint: '<path>' },
     validScreens: ['home'],
     handler: () => {},
   },
@@ -375,7 +375,7 @@ describe('HomeScreen', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('|___/ .__/');
-    expect(frame).toContain('standard');
+    expect(frame).toContain('/crew to change');
     expect(frame).toContain('Describe your feature…');
     ui.unmount();
   });
@@ -402,7 +402,6 @@ describe('HomeScreen', () => {
       config: makeConfig({
         planner: { kind: 'cli', tool: 'codex', model: longModel },
         implementer: { model: longModel },
-        workflow: { mode: 'standard' },
       }),
     });
 
@@ -469,7 +468,7 @@ describe('HomeScreen', () => {
 
     const before = ui.lastFrame() ?? '';
     const plannerLine = lineContaining(before, 'Claude Code CLI');
-    const modeLine = lineContaining(before, 'standard');
+    const statusLine = lineContaining(before, '/crew to change');
 
     await flushEffects();
     ui.stdin.write('/');
@@ -478,7 +477,7 @@ describe('HomeScreen', () => {
     const after = ui.lastFrame() ?? '';
     expect(after).toContain('tab fill');
     expect(lineContaining(after, 'Claude Code CLI')).toBe(plannerLine);
-    expect(lineContaining(after, 'standard')).toBe(modeLine);
+    expect(lineContaining(after, '/crew to change')).toBe(statusLine);
     ui.unmount();
   });
 
@@ -964,7 +963,7 @@ describe('HomeScreen', () => {
       const onTieredApproval = input.policy.onTieredApproval;
       if (!onTieredApproval) throw new Error('Expected the interactive approval callback.');
       await onTieredApproval({
-        tier: 'sticky',
+        tier: 'confirm',
         actionClass: 'network',
         actionDescription: 'Run the configured custom tool',
         phase: 'planning',

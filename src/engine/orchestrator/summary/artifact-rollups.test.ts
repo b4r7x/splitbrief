@@ -43,7 +43,6 @@ describe('buildSummary session artifact rollups', () => {
       let ledger = createEvidenceLedger({
         sessionId,
         feature: 'ev-test',
-        mode: 'standard',
         tasks: [task],
       });
       ledger = recordLocalTaskEvidence({
@@ -82,7 +81,6 @@ describe('buildSummary session artifact rollups', () => {
       let ledger = createEvidenceLedger({
         sessionId,
         feature: 'stopped',
-        mode: 'standard',
         tasks: [first, stopped],
       });
       ledger = recordLocalTaskEvidence({
@@ -134,7 +132,6 @@ describe('buildSummary session artifact rollups', () => {
         ledger: createEvidenceLedger({
           sessionId,
           feature: 'rewound',
-          mode: 'standard',
           tasks: [oldTask],
         }),
         task: oldTask,

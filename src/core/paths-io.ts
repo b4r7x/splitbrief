@@ -20,7 +20,6 @@ import { assertPathConfined, assertModelWritablePathConfined } from '../lib/path
 import { validateSafeIdentifier } from '../utils/validate-identifier.js';
 import { nowIso } from '../utils/format-time.js';
 import { error, matches } from '../utils/error.js';
-import type { WorkflowMode } from './schemas/enums.js';
 
 export const pathError = {
   escapesProject: (filePath: string, cause?: unknown) =>
@@ -56,7 +55,6 @@ export type SpecMetadata = {
   plannerModel?: string | undefined;
   implementerTool: string;
   implementerModel?: string | undefined;
-  mode: WorkflowMode;
 };
 
 const FRONTMATTER_FILES = new Set([SPEC_FILE, PLAN_FILE, TASKS_FILE, REVIEW_FILE]);
@@ -78,7 +76,6 @@ export function buildSpecFrontmatter(opts: SpecMetadata): string {
     `generated_by: splitbrief v${getSplitbriefVersion()}`,
     plannerLine,
     implementerLine,
-    `mode: ${opts.mode}`,
     `created_at: ${nowIso()}`,
     '---',
     '',

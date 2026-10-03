@@ -46,7 +46,7 @@ export async function runFixtureRow(row: FixtureRow): Promise<FixtureRunResult> 
   mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
   writeFileSync(
     join(projectDir, SPLITBRIEF_DIR, 'config.yaml'),
-    YAML.stringify(fixtureConfig(row, seats)),
+    YAML.stringify(fixtureConfig(seats)),
     'utf-8',
   );
   const stateHome = join(tmpDir, 'state');
@@ -60,10 +60,6 @@ export async function runFixtureRow(row: FixtureRow): Promise<FixtureRunResult> 
       'src/cli.ts',
       'start',
       '--plain',
-      '--mode',
-      row.mode,
-      '--approve',
-      'none',
       '--allow-unverified-auth',
       '--project',
       projectDir,
@@ -83,14 +79,13 @@ export async function runFixtureRow(row: FixtureRow): Promise<FixtureRunResult> 
   };
 }
 
-function fixtureConfig(row: FixtureRow, seats: FixtureRowSeats): Config {
+function fixtureConfig(seats: FixtureRowSeats): Config {
   return makeConfig({
     planner: { kind: 'cli', tool: catalogTool(seats.plan.tool), model: seats.plan.model },
     implementer: { kind: 'cli', tool: catalogTool(seats.build.tool), model: seats.build.model },
     reviewer: { kind: 'cli', tool: catalogTool(seats.review.tool), model: seats.review.model },
     validation: { typecheck: true, lint: false, test: true, testCommand: 'npm test' },
     workflow: {
-      mode: row.mode,
       approve: 'none',
       maxRetries: 1,
     },

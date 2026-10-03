@@ -45,6 +45,7 @@ const ReviewPacketRunnerSchema = z.object({
 const ReviewPacketRunSchema = z.object({
   sessionId: z.string(),
   feature: z.string(),
+  /** Always null since modes were retired; older packets name their mode. */
   mode: WorkflowModeSchema.nullable(),
   phase: PhaseSchema,
   planner: ReviewPacketRunnerSchema,

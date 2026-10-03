@@ -14,8 +14,7 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
-import type { RunPhaseInput } from '../../../src/engine/planners/types.js';
+import { planFromTasks, scriptedTypedCall } from '#testing/helpers/typed-planner.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
@@ -74,15 +73,8 @@ describe('resume planning continuation with a direct-writing implementer', {
       typeDefs: 'export const resumed: string',
     });
 
-    const planner = makePlanner({
-      runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
-        makePhaseCallResult({
-          call,
-          usage: { inputTokens: 120, outputTokens: 80 },
-          ...(call === 'tasks' ? { tasks: [task] } : {}),
-        }),
-      ),
-    });
+    const typed = scriptedTypedCall([planFromTasks([task])]);
+    const planner = makePlanner({ typedCall: typed.typedCall });
     const implementer = makeImplementer({
       capabilities: { writesFiles: 'direct' },
       implement: vi.fn().mockImplementation(async (opts: ImplementerOptions) => {
@@ -110,7 +102,6 @@ describe('resume planning continuation with a direct-writing implementer', {
         },
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         workflow: {
-          mode: 'standard',
           approve: 'none',
           maxRetries: 1,
         },
@@ -169,12 +160,8 @@ describe('resume planning continuation with a direct-writing implementer', {
       _eventSink: (event) => events.push(event),
     });
 
-    // The run was parked inside planning, so it re-issues the call it was on and the one below
-    // it; the documents above are the run's own record and are not asked for again.
-    expect(vi.mocked(planner.runPhase).mock.calls.map((call) => call[0].call)).toEqual([
-      'plan',
-      'tasks',
-    ]);
+    // The run was parked inside the old planning chain, so it continues on one planning session.
+    expect(typed.prompts).toHaveLength(1);
     expect(implementer.implement).toHaveBeenCalledTimes(1);
     expect(readFileSync(join(projectDir, targetFile), 'utf-8')).toBe(implementation);
     expect(summary.totalTasks).toBe(1);

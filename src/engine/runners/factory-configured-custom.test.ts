@@ -27,7 +27,6 @@ import { customRunnerAdmissionError } from './custom-launchability.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
 import { prepareExecution } from './prepare-execution/prepare-execution.js';
 import type { ReadinessReport } from '../../core/readiness/types.js';
-import { callPhase } from '#testing/helpers/planner-call.js';
 
 type CustomRunnerRole = 'planner' | 'implementer';
 type CustomCommandContract = 'output' | 'direct';
@@ -445,63 +444,6 @@ describe('configured custom runner factory behavior', () => {
         ? observedProvenance.transport.lease.attemptId
         : undefined,
     );
-  });
-
-  it('carries the production declared-file receipt into the owned planner artifact', async () => {
-    const fixture = createFixture('planner-direct-owned-artifact');
-    const taskMarkdown = `---
-id: T001
-title: Preserve the receipt
-action: create
-file: src/receipt.ts
-depends_on: []
----
-
-### Description
-Preserve the declared-file receipt.
-
-### Implementation Steps
-1. Keep the receipt attached to the phase artifact.
-
-### Tests
-- vitest passes
-
-### Constraints
-- Keep the receipt attempt-bound
-`;
-    const config = configuredFactoryBehaviorConfig({
-      role: 'planner',
-      contract: 'direct',
-      sourceName: fixture.sourceName,
-      program: [
-        "const fs = require('node:fs');",
-        `fs.writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, ${JSON.stringify(taskMarkdown)});`,
-      ].join('\n'),
-      legacyProgram: `require('node:fs').writeFileSync(${JSON.stringify(fixture.legacyMarker)}, 'legacy');`,
-    });
-
-    const planner = await createPlanner(config, undefined, {
-      customRuntime: factoryRuntime(fixture, 'interactive'),
-    });
-    const result = await callPhase(planner, {
-      feature: 'preserve the declared artifact receipt',
-      projectDir: fixture.projectDir,
-      callbacks: { onOutput: () => {} },
-    });
-    if (result.kind !== 'artifact') throw new Error('Expected a completed planner artifact');
-    const artifact = result.artifact.artifact;
-
-    expect(artifact).toBeDefined();
-    expect(artifact?.transport).toBe('declared-file');
-    expect(artifact?.sourceReceipt).toMatchObject({
-      kind: 'declared-file',
-      leaseId: expect.any(String),
-      inodeIdentity: expect.stringMatching(/^\d+:\d+$/),
-      leaseReceiptDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
-    });
-    expect(artifact?.programId).toBeNull();
-    expect(artifact?.batchId).toBeNull();
-    expect(artifact?.text).toBe(taskMarkdown);
   });
 
   it('runs a configured implementer output child through the public factory', async () => {

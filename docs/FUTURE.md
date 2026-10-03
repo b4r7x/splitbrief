@@ -35,12 +35,12 @@ Labels are opinions, not contracts. Contributors can argue for re-labeling via P
 - User selects an entry.
 - All subsequent entries in `session.jsonl` are marked `rewound: true` (soft delete; we don't physically truncate the file because we want the audit trail).
 - `state.json` is restored to a snapshot captured at the chosen point.
-- Artifact files (`spec.md`, `plan.md`, `tasks.md`) are restored from snapshots.
+- Artifact files (`plan.json`, `plan.md`, `tasks.md`) are restored from snapshots.
 - Planner's backend session (where applicable) is forked: for Claude Code, we spawn a new child session from the chosen turn; for stateless backends, we rebuild messages up to the chosen point only.
 
 **Why deferred.**
 
-- Our phase-based workflow already provides coarse rewind via the gate's **Request changes** row and the shipped soft rewind commands (`/revise-spec`, `/revise-plan`, `/redo-task`). That covers 90% of cases.
+- Our phase-based workflow already provides coarse rewind via the plan card's **Request changes** row and the shipped `/redo-task` command. That covers 90% of cases.
 - Full rewind requires versioning every artifact at every rewind-able point, which roughly doubles disk footprint for a session.
 - UI complexity is non-trivial: picker, preview of which artifacts will change, confirmation.
 - Git commits complicate things: if tasks were already committed (and maybe pushed), rewind can't silently un-commit.

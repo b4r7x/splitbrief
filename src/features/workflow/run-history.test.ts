@@ -18,9 +18,6 @@ import { eventsStore } from '../../stores/workflow/events.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../stores/workflow/tasks.js';
 import { tokensStore } from '../../stores/workflow/tokens.js';
-import { makeConfig } from '#testing/helpers/factories/config.js';
-import { configStore } from '../../stores/project/config.js';
-import { modeAdviceStore } from '../../stores/workflow/mode-advice.js';
 import { hydrateRun, readRunHistory } from './run-history.js';
 
 let projectDir = '';
@@ -86,7 +83,6 @@ beforeEach(() => {
 
 afterEach(() => {
   resetWorkflow();
-  configStore.__testReset();
   if (projectDir) cleanupTempDir(projectDir);
   projectDir = '';
 });
@@ -116,20 +112,6 @@ describe('hydrateRun', () => {
     ]);
     expect(tasksStore.get().taskMap.get('T001')?.status).toBe(live.tasks);
     expect(lifecycleStore.get().phase).toBe(live.phase);
-  });
-
-  it('settles the mode the run saved, whatever the config names today', async () => {
-    writeLog(RUN);
-    configStore.__testReset({ projectDir, config: makeConfig({ workflow: { mode: 'standard' } }) });
-
-    await hydrateRun(
-      makeRunRecord({
-        ref: { projectDir, sessionId: SESSION_ID },
-        hydration: { kind: 'loaded', state: { ...savedState(), mode: 'quick' } },
-      }),
-    );
-
-    expect(modeAdviceStore.get().mode).toBe('quick');
   });
 
   it('lays the saved state over the replay: the brief list and the spend come from it', async () => {

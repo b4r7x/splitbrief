@@ -37,7 +37,7 @@ afterEach(() => {
 
 async function runUserEditAnswer(
   answer: 'abort-workflow' | 'pause' | 'continue-unrelated',
-  opts: { race?: 'end' | 'complete'; reviewEvery?: boolean } = {},
+  opts: { race?: 'end' | 'complete' } = {},
 ) {
   const projectDir = createTempDir('user-edit-abort');
   dirs.push(projectDir);
@@ -64,8 +64,6 @@ async function runUserEditAnswer(
   const config = makeNoValidationConfig({
     approval: { enabled: false, feedRejectionsToPlanner: true },
     workflow: {
-      mode: 'quick',
-      taskReview: opts.reviewEvery ? 'every' : 'none',
       isolation: 'staged-copy',
     },
   });
@@ -101,10 +99,7 @@ async function runUserEditAnswer(
   const events: EngineEvent[] = [];
   const summary = await runWorkflow({
     prepared,
-    callbacks: makeCallbacks({
-      onUserEditConflict,
-      onTaskReviewNeeded: async () => ({ action: 'continue' }),
-    }).callbacks,
+    callbacks: makeCallbacks({ onUserEditConflict }).callbacks,
     sinks: TEST_SINKS,
     _planner: makePlanner(),
     _implementer: implementer,
@@ -122,10 +117,9 @@ async function runUserEditAnswer(
 
 describe('user-edit question answer', () => {
   it('ends the run on abort without offering a second recovery decision', async () => {
-    const result = await runUserEditAnswer('abort-workflow', { reviewEvery: true });
+    const result = await runUserEditAnswer('abort-workflow');
 
     expect(result.events.filter((event) => event.type === 'task_started')).toHaveLength(0);
-    expect(result.events.filter((event) => event.type === 'task_review_needed')).toHaveLength(0);
     expect(result.persisted?.closed?.as).toBe('ended');
     expect(result.persisted?.pendingRecovery).toBeUndefined();
     expect(result.summary.phase).toBe('implementing');
@@ -139,7 +133,7 @@ describe('user-edit question answer', () => {
     expect(result.persisted?.stateRevision).toBe(result.revisionAtAnswer + 1);
   });
 
-  it('ends after a brief without reviewing or writing task metadata after the close', async () => {
+  it('ends after a brief without writing task metadata after the close', async () => {
     const projectDir = createTempDir('user-edit-post-task-abort');
     dirs.push(projectDir);
     execFileSync('git', ['init', '--quiet'], { cwd: projectDir });
@@ -168,10 +162,8 @@ describe('user-edit question answer', () => {
       }),
     });
     const { bus, events } = makeBusRecorder();
-    let reviewEventsAtAnswer = 0;
     let revisionAtAnswer = 0;
     const onUserEditConflict = async () => {
-      reviewEventsAtAnswer = events.filter((event) => event.type === 'task_review_needed').length;
       revisionAtAnswer = loadState(ref)?.stateRevision ?? 0;
       return 'abort-workflow' as const;
     };
@@ -181,12 +173,9 @@ describe('user-edit question answer', () => {
         sessionId,
         config: makeNoValidationConfig({
           approval: { enabled: false, feedRejectionsToPlanner: true },
-          workflow: { taskReview: 'every', isolation: 'staged-copy' },
+          workflow: { isolation: 'staged-copy' },
         }),
-        callbacks: makeCallbacks({
-          onTaskReviewNeeded: async () => ({ action: 'continue' }),
-          onUserEditConflict,
-        }).callbacks,
+        callbacks: makeCallbacks({ onUserEditConflict }).callbacks,
         implementer,
         bus,
       }),
@@ -199,9 +188,6 @@ describe('user-edit question answer', () => {
       { selectedAction: 'abort-workflow' },
     ]);
     expect(events.filter((event) => event.type === 'task_started')).toHaveLength(1);
-    expect(events.filter((event) => event.type === 'task_review_needed')).toHaveLength(
-      reviewEventsAtAnswer,
-    );
     expect(result.status).toBe('cancelled');
     expect(result.state.closed?.as).toBe('ended');
     expect(loadState(ref)?.stateRevision).toBe(revisionAtAnswer + 1);
@@ -211,9 +197,8 @@ describe('user-edit question answer', () => {
   it.each(['end', 'complete'] as const)(
     'does not replace a terminal %s that wins while the question is open',
     async (race) => {
-      const result = await runUserEditAnswer('abort-workflow', { race, reviewEvery: true });
+      const result = await runUserEditAnswer('abort-workflow', { race });
 
-      expect(result.events.filter((event) => event.type === 'task_review_needed')).toHaveLength(0);
       expect(result.persisted?.stateRevision).toBe(result.revisionAtAnswer + 1);
       expect(readRunRecord(result.ref)?.status).toEqual({
         kind: 'closed',

@@ -17,7 +17,7 @@ import {
   CONFIRM_REASON_HINTS,
   CONFIRM_REASON_OPTIONAL,
   CONFIRM_REASON_UNSTATED,
-  STICKY_HINTS,
+  CHOOSE_HINTS,
   approvalTitle,
   getApprovalPromptRows,
 } from '../../prompt-rows/approval.js';
@@ -109,7 +109,7 @@ describe('ApprovalPrompt confirm tier', () => {
     expect(frame).toContain('r   Confirm with a reason');
     expect(frame).toContain('x   Deny');
     expect(frame).toContain('this cannot be undone');
-    expect(frame).toContain(STICKY_HINTS);
+    expect(frame).toContain(CHOOSE_HINTS);
     expect(frame).not.toContain(glyph('cursor'));
 
     await flushEffects();
@@ -209,7 +209,7 @@ describe('ApprovalPrompt confirm tier', () => {
     await tick(20);
     const cleared = stripColor(ui.lastFrame());
     expect(cleared).not.toContain(CONFIRM_NUDGE);
-    expect(cleared).toContain(STICKY_HINTS);
+    expect(cleared).toContain(CHOOSE_HINTS);
     expect(cleared).toContain(`${bar}r   Confirm with a reason`);
 
     ui.stdin.write(ESC);
@@ -349,7 +349,7 @@ describe('ApprovalPrompt confirm tier', () => {
       expect(chooseStep).toContain(confirmRow);
       expect(chooseStep).toContain('Confirm with a reason');
       expect(chooseStep).toContain('Deny');
-      expect(chooseStep).toContain(STICKY_HINTS);
+      expect(chooseStep).toContain(CHOOSE_HINTS);
       expect(chooseStep).not.toContain('…');
 
       ui.stdin.write('r');
@@ -406,7 +406,7 @@ describe('ApprovalPrompt confirm tier', () => {
     await flushEffects();
 
     const width = approvalTextWidth(34);
-    const legend = fitKeyLegend(STICKY_HINTS, width);
+    const legend = fitKeyLegend(CHOOSE_HINTS, width);
     expect(legend).toBe('↑↓ select · ⏎ confirm');
     const chooseStep = stripColor(ui.lastFrame());
     expect(chooseStep).toContain(legend);
@@ -444,7 +444,7 @@ describe('short-viewport clamp on the confirm panel', () => {
     const lines = stripColor(ui.lastFrame()).replace(/\n$/, '').split('\n');
     expect(lines).toHaveLength(budget - 2);
     // The legend sits directly above the last row, so the bottom border is painted too.
-    expect(lines.at(-2)).toContain(STICKY_HINTS);
+    expect(lines.at(-2)).toContain(CHOOSE_HINTS);
 
     ui.stdin.write(ESC);
     await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });

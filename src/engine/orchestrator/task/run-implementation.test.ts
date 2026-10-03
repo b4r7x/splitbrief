@@ -132,7 +132,7 @@ async function runIsolatedDirectScenario(approval: 'approved' | 'rejected'): Pro
   const outsideSentinel = join(outsideDir, 'child-can-reach-host');
   const task = makeTask({
     id: approval === 'approved' ? 'T029' : 'T030',
-    file: 'src/direct.ts',
+    file: '.env.local',
     action: 'create',
   });
   const state = makeImplState([task]);
@@ -161,7 +161,7 @@ async function runIsolatedDirectScenario(approval: 'approved' | 'rejected'): Pro
     "  '// session-id-outside-workspace-path:' + prompt.split(process.cwd()).join('').includes('t028-session-must-not-reach-child'),",
     "  'export const direct = true;',",
     '];',
-    "fs.writeFileSync('src/direct.ts', lines.join('\\n') + '\\n');",
+    "fs.writeFileSync('.env.local', lines.join('\\n') + '\\n');",
   ].join('');
   const implementer = await createPreparedImplementer(
     configuredImplementer('direct', program),
@@ -180,7 +180,6 @@ async function runIsolatedDirectScenario(approval: 'approved' | 'rejected'): Pro
     approval: {
       enabled: true,
       feedRejectionsToPlanner: true,
-      tiers: { write_in_scope: 'confirm' },
     },
   });
   const wctx = makeWctx({
@@ -207,7 +206,7 @@ async function runIsolatedDirectScenario(approval: 'approved' | 'rejected'): Pro
   if (workspace === undefined)
     throw new Error('Direct implementation did not receive an outer stage');
   expect(workspace.sandboxEnv.T028_ALLOWED_VALUE).toBeUndefined();
-  const stagedOutput = readFileSync(join(workspace.projectDir, 'src', 'direct.ts'), 'utf8');
+  const stagedOutput = readFileSync(join(workspace.projectDir, '.env.local'), 'utf8');
   expect(stagedOutput).toContain(`// cwd:${realpathSync(workspace.projectDir)}`);
   expect(stagedOutput).toContain('// allowed:runtime-source-only');
   expect(stagedOutput).toContain('// undeclared:absent');
@@ -215,7 +214,7 @@ async function runIsolatedDirectScenario(approval: 'approved' | 'rejected'): Pro
   // directory; the session id must not travel anywhere else in the prompt.
   expect(stagedOutput).toContain('// session-id-outside-workspace-path:false');
   expect(readFileSync(outsideSentinel, 'utf8')).toBe('outside-stage-reachable');
-  expect(existsSync(join(projectDir, 'src', 'direct.ts'))).toBe(false);
+  expect(existsSync(join(projectDir, '.env.local'))).toBe(false);
 
   const applied = await applyChangedFiles({
     wctx,
@@ -230,7 +229,7 @@ async function runIsolatedDirectScenario(approval: 'approved' | 'rejected'): Pro
 
   expect(applied.proceed).toBe(approval === 'approved');
   expect(existsSync(workspace.projectDir)).toBe(false);
-  expect(existsSync(join(projectDir, 'src', 'direct.ts'))).toBe(approval === 'approved');
+  expect(existsSync(join(projectDir, '.env.local'))).toBe(approval === 'approved');
 }
 
 describe('runImplementation configured custom contracts', () => {

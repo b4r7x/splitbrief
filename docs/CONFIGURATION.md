@@ -2,7 +2,7 @@
 
 Complete reference for `.splitbrief/config.yaml` — the single declarative file that wires SPLITBRIEF to your planner, reviewer, implementer, validation tools, workflow gates, and hooks.
 
-This document is a field-by-field reference. For end-user mode semantics see [WORKFLOW.md](./WORKFLOW.md); for hook plumbing see [HOOKS-CONFIG.md](./HOOKS-CONFIG.md); for repo-map tuning see [REPOMAP.md](./REPOMAP.md).
+This document is a field-by-field reference. For the planning session and plan approval see [WORKFLOW.md](./WORKFLOW.md); for hook plumbing see [HOOKS-CONFIG.md](./HOOKS-CONFIG.md); for repo-map tuning see [REPOMAP.md](./REPOMAP.md).
 
 ---
 
@@ -30,17 +30,17 @@ implementerProfiles:
   default: local-qwen
   profiles: { local-qwen: { kind: api, ... }, cheap-cloud: { kind: api, ... } }
 validation:     { typecheck, lint, test, testCommand }
-workflow:       { mode, approve, maxRetries, git, isolation, ... }
+workflow:       { approve, maxRetries, git, isolation, ... }
 sessions:       { scope: project }
 escalation:     { enabled, intermediateProvider, intermediateModel }
 codebase:       { enabled, tokenBudget, include, exclude }
 hooks:          { pre_task, post_task, ... }
 palette:        { customActions: [...] }
-approval:       { enabled, tiers, feedRejectionsToPlanner, allowedPaths }
+approval:       { enabled, feedRejectionsToPlanner, allowedPaths }
 customCommands: { <id>: { label, contract, executable, argv, ... } }
 ```
 
-Top-level keys are **not** strict at the root — an unknown key is ignored — except the five keys this release removed (`otel`, `snapshots`, `trust`, `plannerEstimateReview`, `autoSplitOverflow`), which are named as load errors like any other removed key (§16). Most nested objects (`workflow` and its `git` / `speckit` blocks, `hooks`, `codebase`, `approval` and its `tiers` block, every runner config) are strict and will reject unknown fields.
+Top-level keys are **not** strict at the root — an unknown key is ignored — except the five keys this release removed (`otel`, `snapshots`, `trust`, `plannerEstimateReview`, `autoSplitOverflow`), which are named as load errors like any other removed key (§16). Most nested objects (`workflow` and its `git` block, `hooks`, `codebase`, `approval`, every runner config) are strict and will reject unknown fields. The retired keys `workflow.mode`, `workflow.speckit`, `workflow.brief_review`, `workflow.task_review` and `approval.tiers` still load, with one notice each, and are ignored (§16).
 
 ---
 
@@ -509,7 +509,7 @@ SPLITBRIEF resolves each validation stage through one ladder — `config → man
 
 1. **Project config** — `typecheckCommand`, `lintCommand`, `testCommand` override everything.
 2. **Manifest** — a `package.json` script named `typecheck` / `lint` / `test`, a `Makefile` or `justfile` target of that name, or the matching `pyproject.toml` section (`[tool.mypy]` → `mypy .`, `[tool.ruff]` → `ruff check .`, `[tool.pytest.ini_options]` → `pytest`). Deterministic, and read before any model output.
-3. **Planner-discovered** — during the research phase, the planner reads config files and reports the project's validation toolchain. Persisted to `WorkflowState.discoveredValidation`. The reader (`src/core/pipeline-spec/research-fields.ts`) finds the `Validation Tools` heading at any level, with or without a qualifier, and reads both `**Label**:` and `**Label:**`. A label with no value on its line takes the first bullet nested under it. A discovered command passes a safety check first. Among its rules, a package manager passes only as `<manager> test` with no path after it, `make` and `just` only as `<runner> <stage>`, `uv run` and `poetry run` only before a Python stack tool, and `node` or `python` only without a script, a module other than a Python stack tool, or inline code. A refused command becomes a `validation` warning that names the reason, and the stage uses config, the manifest or the stack default.
+3. **Planner-discovered** — in the planning session, the planner reports the project's validation toolchain in the `validation` block of `plan.json` (`language`, `typecheck`, `lint`, `test`, `testPattern`). `sanitizeDiscoveredValidation` (`src/engine/orchestrator/planning/sanitize-discovered-validation.ts`) checks it, and the result is persisted to `WorkflowState.discoveredValidation`. A discovered command passes a safety check first. Among its rules, a package manager passes only as `<manager> test` with no path after it, `make` and `just` only as `<runner> <stage>`, `uv run` and `poetry run` only before a Python stack tool, and `node` or `python` only without a script, a module other than a Python stack tool, or inline code. A refused command becomes a `validation` warning that names the reason, and the stage uses config, the manifest or the stack default.
 4. **Stack default** — the row `detectStack` picked from `src/core/validation/stacks/` (`validation.stack` pins it): rust, go, python, typescript or javascript, in that marker order. Per-stack commands are tabulated in [FEATURES.md §Validation pipeline](./FEATURES.md#validation-pipeline--checkpoints).
 5. **None** — the stage is recorded as `skipped` with the reason `no <stage> command for an unrecognised stack`, never as passed. A run where every enabled stage is skipped that way emits a warning and prints `gates: NONE — review-only`; it still implements and still reviews, but nothing was verified by a gate. SPLITBRIEF never guesses `npm test` or `npx tsc --noEmit` on a project that is neither JavaScript nor TypeScript.
 
@@ -534,17 +534,14 @@ A task's validation is judged against the run's baseline, not absolute repositor
 
 Automatic staging, commits, and index checkpoints are not supported; commit changes manually.
 
-workflow.briefReview is currently ignored and deprecated; it does not enable an extra review step.
-
-
-Mode, spec/plan document gates, retries, git strategy, and brief-review style.
+Plan approval, retries, git, isolation and transcript compaction. Every run plans in one session ([WORKFLOW.md](./WORKFLOW.md#3-the-planning-session)); there are no workflow modes.
 
 ### Schema
 
 ```ts
 workflow: {
-  // Document approval gates
-  approve?:               'none' | 'spec' | 'plan' | 'all' | 'default';
+  // Plan approval
+  approve?:               'plan' | 'none'; // default plan
 
   // Retries
   maxRetries:             number; // int >= 0 — REQUIRED
@@ -558,15 +555,7 @@ workflow: {
   // Where a direct-writing implementer works before promotion
   isolation?:             'worktree' | 'staged-copy';
 
-  // Mode + brief review
-  mode?:                  'quick' | 'standard' | 'speckit';
-  briefReview?:           'simple';
-  taskReview?:            'none' | 'failed' | 'every';
-
   driftChainThreshold?:   0..1;
-
-  // Speckit-only
-  speckit?:               { minCoverage?: 0..1 };
 
   // Transcript
   compactionThreshold?:   number;  // int >= 10
@@ -574,6 +563,12 @@ workflow: {
 
   // Compatibility only; no rendered effect
   showSpend?:             boolean; // default true
+
+  // Retired: each loads with one notice and is ignored (§16)
+  mode?:                  unknown;
+  speckit?:               unknown;
+  briefReview?:           unknown;
+  taskReview?:            unknown;
 }
 ```
 
@@ -581,33 +576,18 @@ workflow: {
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `mode` | enum | `standard` | `quick` \| `standard` \| `speckit`. The retired `instant` still loads as `quick` with a deprecation warning; any other value fails validation. |
-| `approve` | enum | `default` | Document approval gates: `none` skips every approval gate; `spec`, `plan`, and `all` select spec, plan, or both and also open briefs review in standard/speckit. `default` follows the mode. Quick opens no gates. Brief quality checks still run. |
+| `approve` | enum | `plan` | `plan`: the plan card waits for your approval before the build starts. `none`: the plan goes straight to the build. The retired values `all`, `spec` and `default` load as `plan` with one notice (§16). Approving the plan never overrides a failed plan check, and a write to a protected path still asks during the build under either value. |
 | `maxRetries` | int >= 0 | `2` | Per-task local retries before escalation kicks in, so a brief gets `1 + maxRetries` attempts. The default is `DEFAULT_LOCAL_RETRIES` (`src/core/pipeline-spec/retries.ts`), the same constant the Build progress block reads for `attempt <a> of <max>`. |
 | `git.commitStrategy` | retired | absent | Legacy `none` is accepted with a deprecation warning and removed from the loaded config; `checkpoint` and `per-task` are rejected. Omit the field. |
 | `git.createBranch` | boolean | `false` | Auto-create `splitbrief/<slug>` branch at workflow start. |
 | `isolation` | enum | `worktree` | Where an implementer that writes files itself does its work before changes are promoted into the project: `worktree` (one linked git worktree per run) or `staged-copy` (a temporary copy of the project per task). Unused when the implementer returns file contents (`writesFiles: extracted-code`) — SPLITBRIEF writes those files into the project itself. |
-| `briefReview` | deprecated | ignored | Compatibility input accepts only `simple`; `rich` is rejected. It does not control the existing brief approval gate or external editor. |
-| `taskReview` | enum | `none` | Per-task review gate after implementation: `none` (never pause), `failed` (pause only when a task fails, hits recovery, or its validation fails), `every` (pause after every advancing task). **Requires an interactive TUI run** — any value other than `none` is rejected at startup in headless mode (`src/cli/headless.ts`), so leave it `none` for CI. |
 | `driftChainThreshold` | 0..1 | `0.6` | Threshold used when omitted; higher = fewer drift-chain events. |
-| `speckit.minCoverage` | 0..1 | `0.9` | Speckit-mode spec/plan→task traceability threshold. The analyze phase emits a `warning` event when measured `specTaskCoverage` or `planTaskCoverage` falls below this value. Not a test-coverage gate. |
 | `compactionThreshold` | int >= 10 | unset | On resume, auto-compact persisted transcript context when compacted message count exceeds this threshold and the planner supports self-summarisation. |
 | `compactionFormat` | enum | `auto` | Summary format for transcript compaction: `auto` selects structured JSON for `api` planners, freeform text for `cli`, `shell`, and `agent`; `freeform` preserves legacy markdown/text summaries; `structured` requires Zod-validated JSON and falls back to freeform text if validation fails. |
 | `showSpend` (`show_spend`) | compatibility boolean | `true` | Retained in config, with no main-screen rendered effect. `/copy cost` copies the same spend text `/usage` reads rather than answering a switched-off display. Open `/usage` for usage details; there is no Show spend setting. |
+| `mode`, `speckit`, `brief_review`, `task_review` | retired | absent | Each loads with one notice and changes nothing (§16). Delete them. |
 
-### Per-mode defaults
-
-| Mode | Planner calls | Default `approve` | Best for |
-|---|:---:|:---:|---|
-| `quick` | 1 | `none` | Trivial edits and small tasks that still want a brief |
-| `standard` (default) | 4 | `spec` | Ordinary feature work |
-| `speckit` | 6–7 | `all` | Large, risky, externally visible |
-
-`approve: default` resolves to the table above via `resolveApproveLevel()` (`src/core/config/runtime/resolve.ts`).
-
-**Deprecated: `workflow.mode: instant`.** The `instant` mode was merged into `quick`. The string still parses — `WorkflowModeSchema` (`src/core/schemas/enums.ts`) preprocesses it to `quick` — so an existing config keeps loading unchanged, and `validateConfig` pushes a deprecation warning telling you to update the value. `--mode instant` behaves the same way and warns on stderr. Nothing writes `instant` any more; update the file to `quick` to silence the notice.
-
-`briefReview` remains a compatibility field; omit it from new configurations. The existing brief gate and external editor are independent of this field.
+`resolveApproveLevel()` (`src/core/config/runtime/resolve.ts`) picks the level from the config, else `plan`; a run saves the level it ran with in `state.approve` only as a record. There is no CLI flag for it: `--approve` was removed. A headless run (`--json`, `--plain`) approves the plan card unattended; set `approve: none` to skip the card.
 
 ### Implementer isolation
 
@@ -631,33 +611,28 @@ workflow:
 
 ### YAML examples
 
-Minimal (rely on per-mode defaults):
+Minimal (the plan waits for your approval):
 
 ```yaml
 workflow:
-  mode: standard
   maxRetries: 2
 ```
 
-Speckit with manual commits:
+Plan approval with drift tuning:
 
 ```yaml
 workflow:
-  mode: speckit
-  approve: all
+  approve: plan
   maxRetries: 2
   driftChainThreshold: 0.6
   git:
     createBranch: false
-  speckit:
-    minCoverage: 0.8
 ```
 
 Headless CI:
 
 ```yaml
 workflow:
-  mode: quick
   approve: none
   maxRetries: 2
 ```
@@ -666,7 +641,7 @@ workflow:
 - `git.createBranch: true` — when running SPLITBRIEF in CI or against `main` and you don't want the changes landing on the current branch.
 - `isolation: worktree` — the default, and the only strategy where the implementer can run the project's own typecheck, lint, and tests before handing work back. Choose `staged-copy` only when a linked git worktree is not workable for your setup.
 
-**See also:** [WORKFLOW.md](./WORKFLOW.md), [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) (`/mode` runtime override). Workflow approval level is set with `--approve` or `workflow.approve`.
+**See also:** [WORKFLOW.md](./WORKFLOW.md), [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#the-plan-card). The plan approval level is set with `workflow.approve` only.
 
 ---
 
@@ -806,31 +781,22 @@ hooks:
 
 ## 9. `approval`
 
-Tiered approval system for declared file writes. It sits orthogonal to `workflow.approve`, which controls spec/plan gates. Both the block and its `tiers` sub-block are strict: an unknown key fails the load.
+Protected-path confirmation for file writes during the build. It is separate from `workflow.approve`, which controls the plan card. The block is strict: an unknown key fails the load.
 
 ### Schema
 
 ```ts
 approval: {
   enabled:                    boolean;        // default true
-  tiers?: {
-    read?:                ApprovalTier;
-    write_in_scope?:      ApprovalTier;
-    write_out_of_scope?:  ApprovalTier;
-    destructive?:         ApprovalTier;   // ignored: protected paths always confirm
-    package_change?:      ApprovalTier;   // ignored: protected paths always confirm
-    sensitive_change?:    ApprovalTier;   // ignored: protected paths always confirm
-  };
   feedRejectionsToPlanner:    boolean;        // default true
+  allowedPaths?:              string[];
+  tiers?:                     unknown;        // retired: one notice, ignored (§16)
 }
-
-type ApprovalTier = 'auto' | 'sticky' | 'confirm';
 ```
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `enabled` | boolean | `true` | Master toggle for file-write tiered approval; a protected-path write asks even when it is `false` |
-| `tiers.<op>` | enum | per-op default | `auto` (no prompt), `sticky` (prompt once, remember), `confirm` (prompt for each path; a confirmation holds for the same path and operation for the rest of the run) |
+| `enabled` | boolean | `true` | Kept for compatibility. It changes no decision: a write to a protected path asks whatever it says, and no other write asks. |
 | `feedRejectionsToPlanner` | boolean | `true` | When the user rejects an op, send the rejection back to the planner so it can adapt. |
 
 ### approval.allowedPaths
@@ -838,7 +804,7 @@ type ApprovalTier = 'auto' | 'sticky' | 'confirm';
 Type: `string[]` (optional)
 Default: not set (no paths pre-approved)
 
-Glob patterns for paths that are always treated as in-scope for writes. Writes to matching files are classified as `write_in_scope` (auto-approved by default) regardless of the current task's `inBounds`.
+Glob patterns for paths that are always treated as in-scope for writes. Writes to matching files are classified as `write_in_scope` regardless of the current task's `inBounds`.
 
 ```yaml
 approval:
@@ -852,11 +818,9 @@ This is a **union** with task-level `scope.inBounds` — either match is suffici
 
 Supported glob patterns: exact match (`src/config.ts`), recursive directory (`src/**`), single-level directory (`src/*`), extension wildcard (`*.ts`), and simple star (`src/utils/*`).
 
-Note: `allowedPaths` only affects the action *class* (`write_in_scope` vs `write_out_of_scope`), not the *tier*. If you override `approval.tiers.write_in_scope: 'sticky'`, writes to allowed paths will still prompt once per session.
+Note: `allowedPaths` only affects the action *class* (`write_in_scope` vs `write_out_of_scope`). Neither class asks.
 
-**Tier keys:** `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, `package_change`, `sensitive_change`. The block is strict: any other key fails the load. `destructive`, `package_change` and `sensitive_change` still load, but the loader prints `approval.tiers.<key> is ignored: a write to a protected path always asks.` and the gate does not read them. There is no tier for validation, shell commands, or network access; SPLITBRIEF does not sandbox those.
-
-**Default tiers:** `read`, `write_in_scope` and `write_out_of_scope` are `auto`: a brief's files are suggestions, so an unplanned ordinary file is recorded as touched, not suggested, and does not ask. The protected classes — `destructive` (`.git`, `.splitbrief`), `sensitive_change` (CI configuration, env and key files) and `package_change` (manifests and lockfiles) — are `confirm`. A write to one of those protected paths asks whatever `enabled`, `--yolo` or `tiers` say, and a confirmation holds for the same path for the rest of the run; a `tiers` override applies to the other three classes only (see [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md)).
+**The rule is fixed.** A write to a protected path — `destructive` (`.git`, `.splitbrief`), `sensitive_change` (CI configuration, env and key files) or `package_change` (manifests and lockfiles) — asks, and no other write does. `approval.enabled: false` and `--yolo` do not change that. A confirmation holds for the same path for the rest of the run, and approving a plan that lists the write under its protected operations confirms it in advance. There are no sticky grants and no tier overrides: `approval.tiers` is a retired key that loads with one notice and is ignored. There is no tier for validation, shell commands, or network access; SPLITBRIEF does not sandbox those. See [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#protected-path-confirmation).
 
 YAML — strict:
 
@@ -864,13 +828,9 @@ YAML — strict:
 approval:
   enabled: true
   feedRejectionsToPlanner: true
-  tiers:
-    read: auto
-    write_in_scope: sticky
-    write_out_of_scope: confirm
 ```
 
-**When to use:** new projects, production codebases, or onboarding where you want explicit visibility into out-of-scope, control-plane, or package-file writes.
+**When to use:** set `feedRejectionsToPlanner: false` when a rejected protected write should not reach the planner's next prompt.
 
 ---
 
@@ -900,9 +860,9 @@ palette:
       label: "Accept current run"
       description: "Mark the current run state as accepted"
       command: /run accept
-    - id: quick-mode
-      label: "Switch to quick mode"
-      command: /mode quick
+    - id: usage
+      label: "Show token usage"
+      command: /usage
 ```
 
 **When to use:** surfacing project-specific runbook actions inside SPLITBRIEF's TUI without leaving the session.
@@ -1009,7 +969,7 @@ The three admitted local providers have no default credential environment variab
 | `TERM_PROGRAM` | Kitty keyboard-protocol detection for advanced key bindings. |
 | `FORCE_HYPERLINK` | `1` (or any non-empty value other than `0`/`false`) forces OSC 8 hyperlink emission for markdown links; `0`/`false` forces plain styled labels; otherwise SPLITBRIEF sniffs `TERM_PROGRAM`/`VTE_VERSION`/`KITTY_WINDOW_ID`/`WT_SESSION`/`TERM` (Apple Terminal is excluded from auto-detection). The only configuration-surface change of the file-link feature — no YAML key (`src/lib/terminal/hyperlinks.ts`). |
 | `SPLITBRIEF_REDUCE_MOTION` / `REDUCE_MOTION` | Set to `1` to pin TUI spinner frames and slow status ticks to 1s (`src/lib/terminal/reduce-motion.ts`). |
-| `VISUAL` | Explicit external editor for spec/plan/brief review. Takes precedence over every other editor source, including detected GUI editors. |
+| `VISUAL` | Explicit external editor for the plan card's `plan.json` (`Ctrl+O`). Takes precedence over every other editor source, including detected GUI editors. |
 | `EDITOR` | External editor fallback when `VISUAL` is unset or empty. Non-terminal values are used before auto-detected GUI editors; terminal editors such as `vim` or `nano` are used only after GUI detection and macOS `open -W -t` fail. Implicit GUI detection probes only safe absolute `PATH` segments and honors Windows `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims. |
 
 ---
@@ -1020,8 +980,6 @@ Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `cont
 
 | Flag | Purpose | Commands |
 |---|---|---|
-| `--approve <level>` | Document approval gates: `none` \| `spec` \| `plan` \| `all` \| `default` | start, resume, continue |
-| `--mode <mode>` | `quick` \| `standard` \| `speckit` | start, spec, resume, continue |
 | `--model <m>` | Alias for `--implementer-model` | start, resume, continue |
 | `--provider <p>` | Alias for `--implementer` | start, resume, continue |
 | `--planner <tool>` | Planner tool override | start, resume, continue |
@@ -1059,10 +1017,12 @@ Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `cont
 | `--allow-unverified-auth` | Let a headless run proceed with unverified CLI authentication (no effect interactively) | start, resume, continue |
 | `--json` | Headless: NDJSON `EngineEvent`s to stdout, no TUI | start, resume, continue |
 | `--plain` | Headless: one plain line per phase, task, review and completion (`phase:`, `task T00N: done\|failed (<gates>)`, `review:`, `done:`), no TUI. Refuses to run alongside `--json` (exit `2`) | start, resume, continue |
-| `--yolo` | Skip file-write tiered approval prompts for this session; protected paths still ask | start, resume, continue |
+| `--yolo` | Kept for compatibility. It skips nothing: only a write to a protected path asks, and it still asks | start, resume, continue |
 | `--skills <ids>` | Comma-separated skill ids to attach to every seat (unknown id → exit `2`); on resume and continue, for that continue only | start (headless), resume, continue |
 | `--action <action>` | Apply an action to the pending recovery before continuing: `skip`, `retry`, or `switch-seat:<tool>[:<model>]` | continue |
 | `--reconfigure` | Overwrite existing config | init |
+
+`--mode` and `--approve` were removed. Passing either fails with exit code 1 before any work starts: `--mode was removed: every run plans in one session`, `--approve was removed: set workflow.approve (plan or none) in the config` (`RETIRED_FLAGS`, `src/cli/unknown-command.ts`).
 
 ---
 
@@ -1075,7 +1035,7 @@ Config is validated on every load (`src/core/config/load/io.ts:loadConfig`).
   - Config file permission warning on POSIX (`config-file-permissions`; see §1 **Permissions**).
   - A `shell` or `agent` runner passing `{prompt}` through argv instead of stdin (`securityWarnings`, `src/core/config/load/validation/warnings.ts`).
 
-Unknown top-level keys are tolerated, apart from the five removed ones named in §16, which fail the load; unknown nested keys in strict blocks (`workflow` and its `git` / `speckit` blocks, `hooks`, `codebase`, `approval` and its `tiers` block, every runner config, `PlannerCapabilities`) fail validation. Each unrecognized key is reported at its own dotted path — `workflow.autoApproveSpec: Unknown config key …`, not just `workflow` — and every error found in one load is reported together, one line per path, so a config with several problems is not corrected one attempt at a time.
+Unknown top-level keys are tolerated, apart from the five removed ones named in §16, which fail the load; unknown nested keys in strict blocks (`workflow` and its `git` block, `hooks`, `codebase`, `approval`, every runner config, `PlannerCapabilities`) fail validation. The retired keys of §16 are not unknown: each loads with one notice. Each unrecognized key is reported at its own dotted path — `workflow.autoApproveSpec: Unknown config key …`, not just `workflow` — and every error found in one load is reported together, one line per path, so a config with several problems is not corrected one attempt at a time.
 
 ---
 
@@ -1083,7 +1043,22 @@ Unknown top-level keys are tolerated, apart from the five removed ones named in 
 
 `version: 3` is the only accepted schema version. A config carrying any other version — or none at all — is rejected at load with `Unsupported config version: <value>. Supported: 3.` Run `splitbrief init --reconfigure` to write a current config; there is no in-memory upgrade path.
 
-Fields that older shapes used are gone rather than aliased — `workflow.autoApproveSpec` / `workflow.autoApprovePlan` are replaced by `workflow.approve`, `workflow.commitStrategy` and `workflow.git.commitStrategy` by manual commits, and `workflow.mode: full` by `workflow.mode: speckit`. These old fields and values fail validation with the offending path named, except `workflow.git.commitStrategy: none`: it loads with a deprecation warning and is removed from the resolved config. Delete the retired field when updating your config.
+Fields that older shapes used are gone rather than aliased — `workflow.autoApproveSpec` / `workflow.autoApprovePlan` are replaced by `workflow.approve`, and `workflow.commitStrategy` and `workflow.git.commitStrategy` by manual commits. These old fields and values fail validation with the offending path named, except `workflow.git.commitStrategy: none`: it loads with a deprecation warning and is removed from the resolved config. Delete the retired field when updating your config.
+
+### Retired keys that still load
+
+The one-planning-session release retired the workflow modes, the extra gates and the tier overrides. Their keys do not fail the load: each one loads with exactly one notice and is ignored, so an existing config keeps working until you delete the key (`RETIRED_CONFIG_VALUES`, `src/core/config/load/validation/config.ts`). A config that carries several prints one notice per key. The readiness report that `splitbrief start` and `splitbrief doctor` print lists every load-time notice.
+
+| You had | Notice | What to do |
+|---|---|---|
+| `workflow.mode` (any value, including the older `instant` and `full`) | `workflow.mode was retired and is ignored: every run plans in one session. Delete workflow.mode.` | Delete the key. |
+| `workflow.approve: all`, `spec` or `default` | `workflow.approve "<value>" was retired; using "plan": the plan waits for your approval before the build. Set approve to plan or none.` | Set `approve: plan`, or delete the key: `plan` is the default. |
+| `workflow.task_review` (`taskReview`) | `workflow.task_review was retired and is ignored: the build no longer stops for your review after each brief. Delete workflow.task_review.` | Delete the key. |
+| `workflow.brief_review` (`briefReview`, any value, including `rich`) | `workflow.brief_review was retired and is ignored: you review the briefs on the plan card. Delete workflow.brief_review.` | Delete the key. |
+| `workflow.speckit` (the whole block) | `workflow.speckit was retired and is ignored: every run plans in one session. Delete workflow.speckit.` | Delete the block. |
+| `approval.tiers` (the whole block, any key) | `approval.tiers was retired and is ignored: a write to a protected path always asks, and no other write does. Delete approval.tiers.` | Delete the block. |
+
+The readiness report shows the plan approval level in its **Workflow** section, as the check `approval.resolved` (`Plan approval: plan.`). Readiness checks one context floor for every run: 32,000 tokens.
 
 ### Removed identities
 
@@ -1097,9 +1072,8 @@ Runner identities that a `version: 3` config once accepted are rejected by name,
 
 ### Removed config keys
 
-Twenty-one shapes that a `version: 3` config once carried are gone: eighteen removed keys, plus three
-removed **values** of keys that still exist (`workflow.briefReview: rich`, a hook entry's
-`kind: module`, `sessions.scope: global`). There is no version bump and no migration pass — every
+Eighteen shapes that a `version: 3` config once carried are gone: sixteen removed keys, plus two
+removed **values** of keys that still exist (a hook entry's `kind: module`, `sessions.scope: global`). There is no version bump and no migration pass — every
 one of them fails the load. One load names them all: `validateConfig`
 (`src/core/config/load/validation/config.ts`) collects every error and the thrown message carries one
 `  <path>: <message>` line per offending path, so a config carrying several is told about all of them
@@ -1112,23 +1086,20 @@ key.
 | You had | On load | Replacement |
 |---|---|---|
 | `workflow.persistTranscript` | rejected — `workflow.persistTranscript: Unknown config key …` | None. The transcript and `session.jsonl` are always written; persistence is no longer a policy. |
-| `workflow.briefReview: rich` | rejected — `Invalid input: expected "simple"` | Omit the field; `simple` is accepted only for compatibility and ignored. |
 | `hooks.builtin` | rejected — `hooks.builtin: Unknown config key …` | None. The built-in hook bundle is gone; write the check as an ordinary `kind: command` hook (§8). |
 | `hooks.pre_compact` | rejected — `hooks.pre_compact: Unknown config key …` | None. Transcript compaction is automatic and fires no hook; `HOOK_EVENTS` is the eleven events in §8. |
 | hook entry `kind: module` | rejected — `Invalid input: expected "command"` | `kind: command` — an executable and argv, the only hook kind. |
 | `approval.headless` | rejected — `approval.headless: Unknown config key …` | None, and this is a **behaviour change**: a run with no reply channel (`--json`, `--plain`) already fails closed on its own, and a run that has one is now always prompted. See §9. |
-| `approval.tiers.network` | rejected — `approval.tiers.network: Unknown config key …` | None. There is no network tier and never was a network sandbox; the five tiers in §9 are all of them. |
-| `approval.tiers.validation` | rejected — `approval.tiers.validation: Unknown config key …` | None. Validation is gated by `validation.*` (§4), not by an approval tier. |
 | `codebase.cacheDir` | rejected — `codebase.cacheDir: Unknown config key …` | None. The repo-map cache is always `.splitbrief/`. |
 | `sessions.scope: global` | rejected — `Invalid input: expected "project"` | `scope: project` — sessions live under the project's `.splitbrief/`. |
 | `trust` (the whole block, `trust.customRenderers`) | rejected — `trust: Unknown config key …` | None. Custom renderers are gone; nothing reads the flag. |
 | `otel` (the whole block) | rejected — `otel: Unknown config key …` | None. The OpenTelemetry sink, its packages and `--otel-exporter` are gone; use the JSON event stream (`--json`) or a `post_task` hook. |
 | `snapshots` (the whole block, including `snapshots.auto.*`) | rejected — `snapshots: Unknown config key …` | None. Snapshots are still taken as the baseline for change detection and for `/run reject`; the trigger points are fixed, not configurable, and there is no `splitbrief snapshot` command. A run captures its baseline before the first task and records one run snapshot at the end for `/run reject` to roll back to (see [`SLASH-COMMANDS-REFERENCE.md`](./SLASH-COMMANDS-REFERENCE.md)). |
-| `plannerEstimateReview` | rejected — `plannerEstimateReview: Unknown config key …` | None. The estimate-review gate is gone; the brief-approval gate (§5 `approve`) is the remaining stop before implementation. |
+| `plannerEstimateReview` | rejected — `plannerEstimateReview: Unknown config key …` | None. The estimate-review gate is gone; the plan card (§5 `approve`) is the remaining stop before implementation. |
 | `autoSplitOverflow` | rejected — `autoSplitOverflow: Unknown config key …` | None. An overflowing task is reported rather than split automatically; re-plan or narrow the feature description. |
 | `workflow.maxBudget` (`max_budget`) | rejected — `workflow.maxBudget: Unknown config key …` | None. Budget gates are gone; a run reports what it spent and stops when you stop it. |
 | `workflow.budgetPauseThreshold` (`budget_pause_threshold`) | rejected — `workflow.budgetPauseThreshold: Unknown config key …` | None. There is no budget pause to threshold. |
-| `workflow.costGate` (`cost_gate`) | rejected — `workflow.costGate: Unknown config key …` | None. The cost-approval gate is gone; the brief-approval gate (§5 `approve`) is the remaining stop before implementation. |
+| `workflow.costGate` (`cost_gate`) | rejected — `workflow.costGate: Unknown config key …` | None. The cost-approval gate is gone; the plan card (§5 `approve`) is the remaining stop before implementation. |
 | `implementerProfiles.profiles.*.costTier` (`cost_tier`) | rejected — `cost_tier: Unknown config key …` | None. Routing is by capability — context window, then name — never by price. |
 | `implementerProfiles.profiles.*.pricePer1M` (`price_per1_m`) | rejected — `price_per1_m: Unknown config key …` | None. Profiles carry no price. |
 | `implementer.model: auto:cheapest` | rejected — `Unknown model …` from the runner, since the marker is no longer parsed | Name a concrete model, or `auto` to delegate to the tool's own default. |
@@ -1137,7 +1108,7 @@ key.
 
 ## 17. Full production example
 
-A representative config: Claude Code subscription as planner, a small local LM Studio model as implementer, mid-tier escalation to a larger local Ollama model, hooks, and tiered approval. Use it as a starting point, then adjust credentials, hooks, and approval tiers for your environment.
+A representative config: Claude Code subscription as planner, a small local LM Studio model as implementer, mid-tier escalation to a larger local Ollama model, hooks, and plan approval. Use it as a starting point, then adjust credentials, hooks, and approval for your environment.
 
 <!-- config-example: full-production -->
 ```yaml
@@ -1173,17 +1144,14 @@ validation:
   test: true
   testCommand: npm test -- --run --reporter=dot
 
-# ---------- Workflow: speckit, all gates, manual commits ----------
+# ---------- Workflow: plan approval, manual commits ----------
 workflow:
-  mode: speckit
-  approve: all
+  approve: plan
   maxRetries: 2
   driftChainThreshold: 0.6
   git:
     createBranch: false
   isolation: worktree
-  speckit:
-    minCoverage: 0.8
 
 # ---------- Mid-tier escalation to a larger local model (cheap stop before Opus) ----------
 escalation:
@@ -1223,21 +1191,17 @@ hooks:
       timeout_ms: 60000
       on_failure: warn
 
-# ---------- Tiered approval: prompt on out-of-scope/control-plane writes ----------
+# ---------- Approval: a write to a protected path asks ----------
 approval:
   enabled: true
   feedRejectionsToPlanner: true
-  tiers:
-    read: auto
-    write_in_scope: sticky
-    write_out_of_scope: confirm
 
 # ---------- Custom palette actions ----------
 palette:
   customActions:
-    - id: quick-mode
-      label: "Switch to quick mode"
-      command: /mode quick
+    - id: usage
+      label: "Show token usage"
+      command: /usage
     - id: accept-run
       label: "Accept current run"
       command: /run accept
@@ -1438,7 +1402,7 @@ These researched offerings have **dated blocked verdicts** — no first-class pr
 - [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) — planner/implementer pipeline and runner matrix
 - [TESTING.md](./TESTING.md) — testing contract
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — runner contracts, orchestrator loop, event model
-- [WORKFLOW.md](./WORKFLOW.md) — mode + approval semantics in depth
+- [WORKFLOW.md](./WORKFLOW.md) — the planning session and plan approval in depth
 - [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) — hook events, `HookEntry` schema, trust model
 - [REPOMAP.md](./REPOMAP.md) — `codebase.*` semantics, PageRank, cache
 - [API-KEYS.md](./API-KEYS.md) — secret handling and redaction

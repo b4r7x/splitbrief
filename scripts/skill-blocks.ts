@@ -16,7 +16,6 @@ import {
   MAX_HINT_ERROR_LENGTH,
   RETRY_FRAMINGS,
 } from '../src/core/pipeline-spec/ladder.js';
-import { DEFAULT_MODE, MODES } from '../src/core/pipeline-spec/modes.js';
 import { DEFAULT_LOCAL_RETRIES } from '../src/core/pipeline-spec/retries.js';
 import { REVIEW_CYCLE_CAP, VERDICT_RULES } from '../src/core/pipeline-spec/review.js';
 import { SCOPE_RULE } from '../src/core/pipeline-spec/scope.js';
@@ -37,7 +36,7 @@ import {
   CLI_IMPLEMENTER_ADAPTERS,
   CLI_PLANNER_ADAPTERS,
 } from '../src/engine/runners/cli-tools/registry.js';
-import { TASK_BRIEF_HEADINGS } from '../src/engine/spec/headings.js';
+import { READ_ONLY_CONTEXT_HEADING, TASK_BRIEF_HEADINGS } from '../src/engine/spec/headings.js';
 import { formatTaskPrompt } from '../src/engine/spec/prompt-formatter.js';
 import { buildEscalationPrompt, buildHintPrompt } from '../src/engine/spec/prompts/escalation.js';
 import { buildLanguageContext } from '../src/engine/spec/prompts/language-context.js';
@@ -336,29 +335,17 @@ function gateRules(): string {
   ]);
 }
 
-function modesTable(): string {
-  return [
-    table(
-      ['Mode', 'Planner calls', 'Approval gates'],
-      Object.entries(MODES).map(([mode, spec]) => [
-        `\`${mode}\``,
-        String(spec.plannerCalls),
-        spec.gates.length === 0 ? 'none' : spec.gates.join(', '),
-      ]),
-    ),
-    '',
-    `Default: \`${DEFAULT_MODE.skill}\`.`,
-  ].join('\n');
-}
-
-// The skill spawns direct writers only, and the CLI sends a direct writer no `### Current Code`.
+// The skill spawns direct writers only: the CLI sends a direct writer no `### Current Code`, and
+// puts the read-only context code where the current code would stand.
 function bodyOrder(): string {
   const currentCode = TASK_BRIEF_HEADINGS.currentCode.heading;
-  const headings = BRIEF_SECTION_ORDER.filter((heading) => heading !== currentCode);
+  const headings = BRIEF_SECTION_ORDER.map((heading) =>
+    heading === currentCode ? `${READ_ONLY_CONTEXT_HEADING} — <path>` : heading,
+  );
   return [
     ...headings.map((heading, index) => `${index + 1}. \`${heading}\``),
     '',
-    `\`${currentCode}\` is never sent to a direct writer: the tool reads the file itself.`,
+    `\`${currentCode}\` is never sent to a direct writer: the tool reads the file itself. A \`${READ_ONLY_CONTEXT_HEADING} — <path>\` section carries the current code of each context file, one per file.`,
   ].join('\n');
 }
 
@@ -528,7 +515,6 @@ const BLOCKS: Record<string, () => string> = {
   'halt-signatures-sh': haltSignaturesSh,
   'gate-rules': gateRules,
   gates,
-  'modes-table': modesTable,
   'brief-grouping': sliceRuleText,
   'body-order': bodyOrder,
   'closing-line': closingLine,

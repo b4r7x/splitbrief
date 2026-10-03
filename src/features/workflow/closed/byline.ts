@@ -103,8 +103,13 @@ function openByline(stop: StopReason, resumeAt: StepRef): Byline {
         reason: `Paused at ${stepWord(resumeAt)}`,
         action: 'Type a correction or ⏎ to continue',
       };
+    // Only a typed plan's card reopens. An old run parked at a gate of the old chain continues as one
+    // planning session, which takes a typed correction as its lead.
     case 'waiting':
-      return { reason: `Waiting at the ${stop.gate} gate`, action: '⏎ to reopen it' };
+      return {
+        reason: `Waiting at ${stepWord(resumeAt)}`,
+        action: stop.reopens ? '⏎ to reopen it' : '⏎ to continue',
+      };
     case 'input-required':
       return { reason: 'Waiting for your answer', action: 'Type a reply or ⏎ to continue' };
     case 'halted':
@@ -122,13 +127,15 @@ function openByline(stop: StopReason, resumeAt: StepRef): Byline {
   }
 }
 
-/** A step in the words the rest of the screen uses for it: a brief by id, a call by its name. */
+/**
+ * A step in the words the rest of the screen uses for it: a brief by id, and every planner call or
+ * gate as the plan, the one stage the rail shows for them.
+ */
 export function stepWord(step: StepRef): string {
   switch (step.kind) {
     case 'planner':
-      return `the ${step.call} step`;
     case 'gate':
-      return `the ${step.gate} gate`;
+      return 'the plan';
     case 'brief':
       return step.taskId;
     default:

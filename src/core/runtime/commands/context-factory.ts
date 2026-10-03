@@ -1,28 +1,18 @@
-import { type Config, DEFAULT_WORKFLOW_MODE } from '../../schemas/config.js';
-import { getWorkflowMode } from '../../config/accessors/values.js';
 import type { Phase } from '../../schemas/enums.js';
-import type { RewindTarget } from '../../state/build-rewind-action.js';
 import type { OverlayType } from '../../navigation/types.js';
 import type {
   DiscoveryRefreshSummary,
   RuntimeCommandContext,
-  RuntimeConfigSaveResult,
   QueueClearCommandResult,
 } from './types.js';
 
-type CommandRewindRequest = Extract<RewindTarget, { target: 'spec' | 'plan' }>;
-type ApprovalScope = 'session' | 'always' | 'all';
-
 interface CommandContextFactoryOptions {
   projectDir: () => string;
-  getConfig: () => Config | null;
-  saveConfig: (config: Config) => Promise<RuntimeConfigSaveResult>;
   getSessionId: (command: string) => string | null | undefined;
   noActiveSession: (command: string) => Error;
   openOverlay: (type: OverlayType, focus?: string) => void;
   navigateHome: () => void;
   quit: () => void;
-  prefillComposer: RuntimeCommandContext['prefillComposer'];
   setFeedbackMessage: (message: string) => void;
   setFeedbackError: (message: string) => void;
   refreshDetection: () => Promise<DiscoveryRefreshSummary>;
@@ -31,7 +21,6 @@ interface CommandContextFactoryOptions {
   toggleSkill: RuntimeCommandContext['toggleSkill'];
   refreshSkills: RuntimeCommandContext['refreshSkills'];
   getCurrentPhase: () => Phase;
-  requestRewind: (request: CommandRewindRequest) => boolean;
   requestTaskRedo: (taskId: string) => boolean;
   resumeRun: () => boolean;
   endRun: () => boolean;
@@ -50,8 +39,6 @@ interface CommandContextFactoryOptions {
   plannerSupportsImages: () => boolean;
   detachImage: RuntimeCommandContext['detachImage'];
   listAttachments: RuntimeCommandContext['listAttachments'];
-  listApprovals: (projectDir: string) => ReturnType<RuntimeCommandContext['listApprovals']>;
-  clearApprovals: (projectDir: string, scope: ApprovalScope) => number;
   acceptRunSnapshot: (
     projectDir: string,
     sessionId: string,
@@ -75,29 +62,11 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
     if (!sessionId) throw opts.noActiveSession(command);
     return sessionId;
   };
-  const updateConfig = async (
-    update: (config: Config) => Config,
-  ): Promise<RuntimeConfigSaveResult> => {
-    const config = opts.getConfig();
-    if (!config) return { kind: 'failure', ok: false };
-    const result = await opts.saveConfig(update(config));
-    if (result.kind !== 'saved' && result.errorMessage) {
-      opts.setFeedbackError(result.errorMessage);
-    }
-    return result;
-  };
 
   return {
     openOverlay: opts.openOverlay,
     navigate: () => opts.navigateHome(),
     quit: opts.quit,
-    setWorkflowMode: (mode) =>
-      updateConfig((current) => ({ ...current, workflow: { ...current.workflow, mode } })),
-    getWorkflowMode: () => {
-      const config = opts.getConfig();
-      return config === null ? DEFAULT_WORKFLOW_MODE : getWorkflowMode(config);
-    },
-    prefillComposer: opts.prefillComposer,
     setFeedbackMessage: opts.setFeedbackMessage,
     setFeedbackError: opts.setFeedbackError,
     refreshDetection: opts.refreshDetection,
@@ -106,10 +75,6 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
     toggleSkill: opts.toggleSkill,
     refreshSkills: opts.refreshSkills,
     getCurrentPhase: opts.getCurrentPhase,
-    requestRewind: (target, comment) => {
-      const request: CommandRewindRequest = { target, ...(comment ? { comment } : {}) };
-      return opts.requestRewind(request);
-    },
     requestTaskRedo: opts.requestTaskRedo,
     resumeRun: opts.resumeRun,
     endRun: opts.endRun,
@@ -126,8 +91,6 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
     },
     detachImage: opts.detachImage,
     listAttachments: opts.listAttachments,
-    listApprovals: () => opts.listApprovals(opts.projectDir()),
-    clearApprovals: () => opts.clearApprovals(opts.projectDir(), 'all'),
     acceptRunSnapshot: () =>
       opts.acceptRunSnapshot(opts.projectDir(), sessionIdOrThrow('/run accept')),
     rejectRunSnapshot: () =>

@@ -83,7 +83,6 @@ function App() {
         overlayActive={overlay}
         commands={[]}
         onRuntime={() => {}}
-        copyTarget={async () => 'empty'}
         workflowDeps={{ runWorkflow }}
       />
     </ThemeProvider>

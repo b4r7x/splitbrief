@@ -19,7 +19,6 @@ import { createInitialState } from '../../../src/core/state/machine.js';
 import { saveState, loadState } from '../../../src/core/state/persistence.js';
 import { writeLockfile } from '../../../src/core/sessions/lockfile.js';
 import { SPLITBRIEF_DIR, CONFIG_FILE, RESEARCH_FILE, sessionDir } from '../../../src/core/paths.js';
-import { artifactPresence } from '../../../src/core/sessions/run-record-io.js';
 import { resumeStep } from '../../../src/core/sessions/run-status.js';
 
 // Resume runs the same readiness gate as start, and the default config points the
@@ -119,7 +118,7 @@ describe('CLI integration: resume interrupted session', { timeout: 90_000 }, () 
     expect(loadState({ projectDir: tmp, sessionId })?.tasks[0]?.id).toBe('T001');
   });
 
-  it('kill during spec resumes at spec', async () => {
+  it('kill during spec resumes at the planning session', async () => {
     const sessionId = '2026-04-18-killed-in-spec';
     mkdirSync(sessionDir(tmp, sessionId), { recursive: true });
     writeFileSync(join(sessionDir(tmp, sessionId), RESEARCH_FILE), '# Research\n\nFindings.\n');
@@ -137,12 +136,12 @@ describe('CLI integration: resume interrupted session', { timeout: 90_000 }, () 
     expect(stderr).not.toContain('cannot be resumed');
     expect(stdout).toMatch(/Resuming/);
     expect(stdout).toContain('specifying');
-    // research.md is on disk and spec.md is not: the run picks up at the spec call.
+    // An old run stopped inside the retired chain picks up at its planning session.
     const saved = loadState({ projectDir: tmp, sessionId });
     if (saved === null) throw new Error('expected the resumed state to load');
-    expect(resumeStep(saved, artifactPresence({ projectDir: tmp, sessionId }))).toEqual({
+    expect(resumeStep(saved)).toEqual({
       kind: 'planner',
-      call: 'spec',
+      call: 'plan',
     });
   });
 

@@ -18,7 +18,7 @@ import { loadState, saveState } from '../../../core/state/persistence.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { reactivateExistingSession } from '../../../core/sessions/active-pointer.js';
 import { readSession } from '../../../core/sessions/io.js';
-import { artifactPresence, readRunRecord } from '../../../core/sessions/run-record-io.js';
+import { readRunRecord } from '../../../core/sessions/run-record-io.js';
 import { resumeStep } from '../../../core/sessions/run-status.js';
 import { transitionAndSave } from '../../../engine/orchestrator/state-ops.js';
 import { finalizeEndedRun } from '../../../engine/orchestrator/session-lifecycle/finalize.js';
@@ -88,7 +88,7 @@ function saveInterrupted(options: EngineOptions) {
   if (state === null) throw new Error('missing fixture state');
   const saved = transitionAndSave(ref, state, {
     type: 'INTERRUPT_STEP',
-    step: resumeStep(state, artifactPresence(ref)),
+    step: resumeStep(state),
     source: 'user',
     cut: 'mid-step',
   });
@@ -237,10 +237,10 @@ describe('run-loop stop completion', () => {
             }),
           );
         } else if (wait === 'review approval') {
-          await options.callbacks.onApprovalNeeded('spec', 'spec.md');
+          await options.callbacks.onApprovalNeeded('plan', 'plan.md', []);
         } else {
           await options.callbacks.onTieredApproval?.({
-            tier: 'sticky',
+            tier: 'confirm',
             actionClass: 'network',
             actionDescription: 'connect',
             phase: 'researching',
@@ -270,9 +270,9 @@ describe('run-loop stop completion', () => {
     const state: WorkflowState = {
       ...transition(createInitialState('question fixture'), { type: 'START' }),
       pendingPlannerConversation: {
-        call: 'research',
-        text: 'Which module?',
-        questions: [],
+        call: 'plan',
+        text: '1. Which module? (default: src/a.ts)',
+        questions: [{ id: 'module', type: 'input', text: 'Which module?', default: 'src/a.ts' }],
         answers: [],
         answered: false,
       },

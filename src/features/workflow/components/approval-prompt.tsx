@@ -5,15 +5,17 @@ import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { getApprovalPromptRows } from '../prompt-rows/approval.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../lib/terminal/typeahead-grace.js';
 import type { TieredApprovalResponse } from '../../../core/approval/types.js';
-import { ConfirmApprovalPrompt } from './approval-prompt/confirm.js';
+import { ConfirmApprovalPrompt, PROMPT_ZONE_Z } from './approval-prompt/confirm.js';
 import { DocumentReviewPrompt } from './approval-prompt/document.js';
 import type { ReviewArtifact } from '../prompt-rows/approval.js';
-import { PROMPT_ZONE_Z, StickyApprovalPrompt } from './approval-prompt/sticky.js';
 
 export { PROMPT_ZONE_Z };
 
 export interface ReviewPanelProps {
   artifact: ReviewArtifact;
+  confirms: readonly string[];
+  /** The rows the panel may take (`getReviewPanelBudget`); the page budgets the same number. */
+  budgetRows: number;
   selectedIndex: number;
   commenting: boolean;
 }
@@ -52,33 +54,14 @@ export function ApprovalPrompt({ clampedBoxRows, review }: ApprovalPromptProps) 
     );
   }
 
-  const { request } = state;
-
-  if (request.tier === 'sticky') {
-    return (
-      <StickyApprovalPrompt
-        key={generation}
-        request={request}
-        promptRows={promptRows}
-        clampedBoxRows={clampedBoxRows}
-        isActive={isActive}
-        graceUntil={graceUntilRef.current}
-      />
-    );
-  }
-
-  if (request.tier === 'confirm') {
-    return (
-      <ConfirmApprovalPrompt
-        key={generation}
-        request={request}
-        promptRows={promptRows}
-        clampedBoxRows={clampedBoxRows}
-        isActive={isActive}
-        graceUntil={graceUntilRef.current}
-      />
-    );
-  }
-
-  return null;
+  return (
+    <ConfirmApprovalPrompt
+      key={generation}
+      request={state.request}
+      promptRows={promptRows}
+      clampedBoxRows={clampedBoxRows}
+      isActive={isActive}
+      graceUntil={graceUntilRef.current}
+    />
+  );
 }

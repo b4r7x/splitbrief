@@ -24,7 +24,7 @@ import { WorkflowFooter, WorkflowHeader } from './chrome.js';
 import { ConversationFlow } from './conversation-flow/flow.js';
 import type { RouteData } from '../../../stores/navigation/router.js';
 
-const RAIL_STAGES = ['Spec', 'Plan', 'Briefs', 'Build', 'Review'];
+const RAIL_STAGES = ['Plan', 'Build', 'Review'];
 // The workflow composer wears the round frame; its top-left corner is what marks the box's left
 // edge.
 const COMPOSER_TOP_LEFT = '╭';
@@ -56,7 +56,7 @@ describe('WorkflowHeader', () => {
     resetAllStores();
   });
 
-  it('renders the full rail/chrome frame: five stages, no retired dot labels, one divider', async () => {
+  it('renders the full rail/chrome frame: three stages, no retired dot labels, one divider', async () => {
     const ui = renderFeature(<WorkflowHeader startedAt={new Date().toISOString()} />);
     await tick();
     const frame = ui.lastFrame() ?? '';

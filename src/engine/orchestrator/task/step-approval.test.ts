@@ -15,7 +15,6 @@ import {
   setupTaskProject as setupProject,
 } from '#testing/helpers/orchestrator-task-context.js';
 import { CONFIRM_PHRASE } from '../../../core/approval/types.js';
-import { loadState } from '../../../core/state/persistence.js';
 import { createValidator } from '../validation/run.js';
 import { runSingleTask } from './step.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
@@ -236,127 +235,6 @@ describe('runSingleTask — approval gates', () => {
     expect(readFileSync(join(projectDir, '.env.local'), 'utf-8')).toBe('TOKEN=2 # user edit\n');
     const error = events.find((e) => e.type === 'error');
     expect(error?.message).toContain("SPLITBRIEF discarded this attempt's writes to src/hello.ts.");
-  });
-
-  it('runs approval before pre_task hooks and skips hooks when approval denies', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const markerPath = join(projectDir, 'pre-task-ran.txt');
-    const task = makeTask({
-      id: 'T001',
-      action: 'create',
-      file: 'src/hello.ts',
-    });
-    const state = implementingState([task]);
-    const implementer = makeImplementer({ implement: vi.fn() });
-    const { callbacks } = makeCallbacks();
-    const { bus, events } = makeBusRecorder();
-
-    const result = await runSingleTask({
-      wctx: makeWorkflowContext({
-        projectDir,
-        sessionId,
-        callbacks,
-        implementer,
-        bus,
-        config: makeConfig({
-          approval: {
-            enabled: true,
-            feedRejectionsToPlanner: true,
-            tiers: { write_in_scope: 'sticky' },
-          },
-          hooks: {
-            pre_task: [
-              {
-                kind: 'command',
-                command: 'node',
-                args: [
-                  '-e',
-                  `require('node:fs').writeFileSync(${JSON.stringify(markerPath)}, 'ran')`,
-                ],
-                timeout_ms: 5000,
-                on_failure: 'block',
-              },
-            ],
-          },
-          validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-          workflow: { maxRetries: 2 },
-        }),
-      }),
-      task,
-      index: 0,
-      totalTasks: 1,
-      state,
-      taskBreakdowns: [],
-      setTrackedState: vi.fn(),
-      setCurrentTask: vi.fn(),
-    });
-
-    expect(implementer.implement).not.toHaveBeenCalled();
-    expect(result.currentTaskIndex).toBe(0);
-    expect(existsSync(markerPath)).toBe(false);
-    expect(events.find((e) => e.type === 'approval_rejected')).toMatchObject({
-      type: 'approval_rejected',
-      taskId: 'T001',
-      actionClass: 'write_in_scope',
-      reason: 'APPROVAL_REQUIRED',
-    });
-    expect(events.find((e) => e.type === 'task_skipped')).toBeUndefined();
-  });
-
-  it('publishes workflow_cancelled and resets the task when approval returns user_cancelled', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({
-      id: 'T001',
-      action: 'create',
-      file: 'src/hello.ts',
-    });
-    const state = implementingState([task]);
-    const implementer = makeImplementer({ implement: vi.fn() });
-    const { callbacks } = makeCallbacks({
-      onTieredApproval: vi.fn().mockResolvedValue({
-        decision: 'deny',
-        reason: 'user_cancelled',
-      }),
-    });
-    const { bus, events } = makeBusRecorder();
-
-    const result = await runSingleTask({
-      wctx: makeWorkflowContext({
-        projectDir,
-        sessionId,
-        callbacks,
-        implementer,
-        bus,
-        config: makeConfig({
-          approval: {
-            enabled: true,
-            feedRejectionsToPlanner: true,
-            tiers: { write_in_scope: 'sticky' },
-          },
-          validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-          workflow: { maxRetries: 2 },
-        }),
-      }),
-      task,
-      index: 0,
-      totalTasks: 1,
-      state,
-      taskBreakdowns: [],
-      setTrackedState: vi.fn(),
-      setCurrentTask: vi.fn(),
-    });
-
-    expect(implementer.implement).not.toHaveBeenCalled();
-    expect(result.currentTaskIndex).toBe(0);
-    expect(result.tasks[0]?.status).toBe('pending');
-    expect(loadState({ projectDir, sessionId })?.tasks[0]?.status).toBe('pending');
-    expect(events.find((event) => event.type === 'workflow_cancelled')).toMatchObject({
-      type: 'workflow_cancelled',
-      reason: 'user_cancelled',
-    });
-    expect(events.find((event) => event.type === 'error')).toMatchObject({
-      message: 'Task blocked by approval gate: user_cancelled',
-    });
   });
 
   it('allows actual in-scope changed files to proceed', async () => {

@@ -124,18 +124,34 @@ describe('openRunByline', () => {
     ).toBe('Paused at T003 · type a correction or ⏎ to continue');
   });
 
-  it('names the gate a waiting run is parked at', () => {
+  it('reopens the plan card a run with a typed plan is parked at', () => {
     expect(
       openRunByline({
         ...OPEN,
         status: {
           kind: 'open',
-          stop: { kind: 'waiting', gate: 'spec' },
-          resumeAt: { kind: 'gate', gate: 'spec' },
+          stop: { kind: 'waiting', gate: 'plan', reopens: true },
+          resumeAt: { kind: 'gate', gate: 'plan' },
         },
       }),
-    ).toBe('Waiting at the spec gate · ⏎ to reopen it');
+    ).toBe('Waiting at the plan · ⏎ to reopen it');
   });
+
+  it.each(['spec', 'plan', 'briefs'] as const)(
+    'continues an old run parked at its %s gate as the plan stage, without reopening it',
+    (gate) => {
+      expect(
+        openRunByline({
+          ...OPEN,
+          status: {
+            kind: 'open',
+            stop: { kind: 'waiting', gate, reopens: false },
+            resumeAt: { kind: 'gate', gate },
+          },
+        }),
+      ).toBe('Waiting at the plan · ⏎ to continue');
+    },
+  );
 
   it('quotes the halt headline rather than the raw reason', () => {
     expect(
@@ -189,7 +205,7 @@ describe('openRunByline', () => {
           resumeAt: { kind: 'planner', call: 'tasks' },
         },
       }),
-    ).toBe('Interrupted · ⏎ to continue from the tasks step');
+    ).toBe('Interrupted · ⏎ to continue from the plan');
   });
 
   it('says why a run nothing can pick up cannot be continued', () => {
@@ -226,8 +242,9 @@ describe('openRunByline', () => {
 
 describe('stepWord', () => {
   it.each([
-    [{ kind: 'planner', call: 'spec' } as const, 'the spec step'],
-    [{ kind: 'gate', gate: 'briefs' } as const, 'the briefs gate'],
+    [{ kind: 'planner', call: 'spec' } as const, 'the plan'],
+    [{ kind: 'planner', call: 'plan' } as const, 'the plan'],
+    [{ kind: 'gate', gate: 'briefs' } as const, 'the plan'],
     [{ kind: 'brief', taskId: taskId('T007'), attempt: 0 } as const, 'T007'],
     [{ kind: 'review', cycle: 1 } as const, 'the review'],
   ])('names %o as %s', (step, word) => {

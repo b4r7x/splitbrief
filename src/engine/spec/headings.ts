@@ -15,13 +15,5 @@ export const TASK_BRIEF_HEADINGS = {
   evidence: { heading: '### Evidence', keys: ['evidence'] },
 } as const;
 
-export const REQUIRED_BRIEF_SECTIONS = [
-  'Description (Intent)',
-  'Scope',
-  'Implementation Steps',
-  'Tests (Validation)',
-  'Constraints',
-  'Escalation',
-  'Evidence',
-  'Type Definitions',
-] as const;
+/** Where each context file's current code reaches the implementer, one section per file. */
+export const READ_ONLY_CONTEXT_HEADING = '### Read-only context (do not modify)';

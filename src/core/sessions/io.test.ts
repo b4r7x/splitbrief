@@ -271,7 +271,7 @@ describe('readSession', () => {
 });
 
 describe('rows derived from state.json', () => {
-  it('lists a summary-less session that has a state.json as open, with its phase and mode', () => {
+  it('lists a summary-less session that has a state.json as open, with its phase', () => {
     tmp = createTempDir('sessions-io-test');
     const sessionId = '2024-01-01-crashed';
     const state = makeImplState([makeTask()], { feature: 'crashed-feature', mode: 'standard' });
@@ -288,8 +288,8 @@ describe('rows derived from state.json', () => {
       status: 'open',
       stop: 'interrupted',
       phase: 'implementing',
-      mode: 'standard',
     });
+    expect(sessions[0]).not.toHaveProperty('mode');
     expect(sessions[0]?.summary).toBeNull();
   });
 

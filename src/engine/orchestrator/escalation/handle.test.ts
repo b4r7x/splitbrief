@@ -22,6 +22,7 @@ import { handleRetryAndEscalation } from './handle.js';
 import type { HooksConfig } from '../../../core/schemas/hooks.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
 import { formatRecoveryHeadline } from '../../../core/recovery/headline.js';
+import { CONFIRM_PHRASE } from '../../../core/approval/types.js';
 
 // The escalation tiers acquire from the run isolation handle; on the copying
 // strategy under parallel full-suite load that staged-copy IO can push these
@@ -312,8 +313,8 @@ describe('handleRetryAndEscalation', () => {
     const { callbacks } = makeCallbacks({
       onTieredApproval: vi.fn().mockImplementation(async () => {
         mkdirSync(join(projectDir, 'src'), { recursive: true });
-        writeFileSync(join(projectDir, 'src/other.ts'), 'export const value = "user";\n');
-        return { decision: 'allow', scope: 'once' };
+        writeFileSync(join(projectDir, '.env.local'), 'export const value = "user";\n');
+        return { decision: 'confirm', phrase: CONFIRM_PHRASE, reason: 'ok' };
       }),
       onUserEditConflict,
     });
@@ -322,7 +323,7 @@ describe('handleRetryAndEscalation', () => {
     const implementer = makeImplementer({
       retry: vi.fn().mockImplementation(async ({ projectDir: runDir }: { projectDir: string }) => {
         mkdirSync(join(runDir, 'src'), { recursive: true });
-        writeFileSync(join(runDir, 'src/other.ts'), 'export const value = "retry";\n');
+        writeFileSync(join(runDir, '.env.local'), 'export const value = "retry";\n');
         return { success: true, output: 'fixed', usage: { inputTokens: 20, outputTokens: 10 } };
       }),
     });
@@ -341,7 +342,6 @@ describe('handleRetryAndEscalation', () => {
           approval: {
             enabled: true,
             feedRejectionsToPlanner: false,
-            tiers: { write_out_of_scope: 'sticky' },
           },
         }),
         planner,
@@ -359,14 +359,14 @@ describe('handleRetryAndEscalation', () => {
     expect(finalState.pendingRecovery).toMatchObject({
       reason: 'approval-promotion-conflict',
       taskId: 'T001',
-      files: ['src/other.ts'],
+      files: ['.env.local'],
     });
     expect(busEvents.find((event) => event.type === 'paused_external_changes')).toMatchObject({
       type: 'paused_external_changes',
       selectedAction: 'pause',
       conflict: {
         kind: 'changed-during-approval-promotion',
-        files: ['src/other.ts'],
+        files: ['.env.local'],
       },
     });
   });

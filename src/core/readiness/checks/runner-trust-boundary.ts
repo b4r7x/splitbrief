@@ -1,6 +1,6 @@
 import type { resolveImplementerProfiles } from '../../config/accessors/implementer-profiles.js';
 import { resolveReviewerRunner } from '../../config/accessors/reviewer-runner.js';
-import { resolveApproveLevel, resolveMode } from '../../config/runtime/resolve.js';
+import { resolveApproveLevel } from '../../config/runtime/resolve.js';
 import {
   CLI_TOOL_CATALOG,
   type CliPlannerTier2FullEscalationTrust,
@@ -21,11 +21,11 @@ import { formatRunner } from './runner-label.js';
 export function buildRunnerTrustBoundaryChecks(
   config: Config,
   profiles: ReturnType<typeof resolveImplementerProfiles>['profiles'],
+  interaction: 'interactive' | 'headless' | undefined,
 ): ReadinessCheck[] {
-  const mode = resolveMode({ config });
-  const approve = resolveApproveLevel({ mode, configApprove: config.workflow.approve });
-  const specPlanAutoApproved = approve === 'none';
-  const fileWriteApprovalDisabled = config.approval?.enabled === false;
+  const approve = resolveApproveLevel(config);
+  // A headless run has nobody at the plan card, so it approves the card unattended.
+  const planAutoApproved = approve === 'none' || interaction === 'headless';
 
   const checks: ReadinessCheck[] = [];
   checks.push(
@@ -40,8 +40,7 @@ export function buildRunnerTrustBoundaryChecks(
       }),
       runner: config.planner,
       approve,
-      specPlanAutoApproved,
-      fileWriteApprovalDisabled,
+      planAutoApproved,
     }),
   );
 
@@ -55,8 +54,7 @@ export function buildRunnerTrustBoundaryChecks(
         trust: getRunnerTrustMeta(runnerRoleForActiveRole('reviewer'), reviewer.runner),
         runner: reviewer.runner,
         approve,
-        specPlanAutoApproved,
-        fileWriteApprovalDisabled,
+        planAutoApproved,
       }),
     );
   }
@@ -73,8 +71,7 @@ export function buildRunnerTrustBoundaryChecks(
         trust: getRunnerTrustMeta('implementer', profile.config),
         runner: profile.config,
         approve,
-        specPlanAutoApproved,
-        fileWriteApprovalDisabled,
+        planAutoApproved,
       }),
     );
   }
@@ -150,26 +147,18 @@ function runnerTrustBoundaryCheck(opts: {
   plannerTier2FullEscalation?: CliPlannerTier2FullEscalationTrust | undefined;
   runner: Config['planner'] | Config['implementer'];
   approve: string;
-  specPlanAutoApproved: boolean;
-  fileWriteApprovalDisabled: boolean;
+  planAutoApproved: boolean;
 }): ReadinessCheck[] {
   if (!opts.trust.executesLocalCommand && opts.trust.autoAllowFlags.length === 0) return [];
 
-  const approvalAutomationActive = opts.specPlanAutoApproved || opts.fileWriteApprovalDisabled;
-  const automation = [
-    opts.specPlanAutoApproved ? 'spec/plan approval is auto-approved' : null,
-    opts.fileWriteApprovalDisabled
-      ? 'file-write approval prompts are disabled; protected paths still ask'
-      : null,
-  ].filter((entry): entry is string => entry !== null);
   const details = [
     ...declaredCommandDetails(opts.runner),
-    `Spec/plan approval level: ${opts.approve}.`,
-    `File-write approval prompts: ${opts.fileWriteApprovalDisabled ? 'disabled; protected paths still ask' : 'enabled'}.`,
-    'SPLITBRIEF approval gates review spec/plan documents and declared/promoted file writes; they do not sandbox shell commands or network access inside external runners.',
+    `Plan approval: ${opts.approve}.`,
+    'Only a write to a protected path asks.',
+    'SPLITBRIEF approval gates review the plan and declared/promoted file writes; they do not sandbox shell commands or network access inside external runners.',
   ];
-  if (automation.length > 0) {
-    details.push(`Approval automation: ${automation.join('; ')}.`);
+  if (opts.planAutoApproved) {
+    details.push('Approval automation: plan approval is auto-approved.');
   }
   if (opts.trust.autoAllowFlags.length > 0) {
     details.push(`Runner auto/allow flags: ${opts.trust.autoAllowFlags.join(', ')}`);
@@ -195,7 +184,7 @@ function runnerTrustBoundaryCheck(opts: {
       severity: 'warning',
       summary: trustBoundarySummary({
         label: opts.label,
-        approvalAutomationActive,
+        approvalAutomationActive: opts.planAutoApproved,
         autoAllowFlags:
           opts.trust.autoAllowFlags.length > 0 ||
           (opts.plannerTier2FullEscalation?.autoAllowFlags.length ?? 0) > 0,
@@ -219,7 +208,6 @@ function runnerTrustBoundaryCheck(opts: {
             autoAllowFlags: [...opts.plannerTier2FullEscalation.autoAllowFlags],
           },
         }),
-        fileWriteApprovalEnabled: !opts.fileWriteApprovalDisabled,
       },
     },
   ];

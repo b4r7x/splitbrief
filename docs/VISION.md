@@ -6,7 +6,7 @@ SPLITBRIEF coordinates tools; users own Git staging and commits.
 
 An orchestrator for two coding tools. One plans, the other executes, the review seat reads the result, and SPLITBRIEF owns everything in between:
 
-- **Planner** — the stronger of the two. Researches the repo, compiles Task Briefs, decides when a spec is worth the cost, answers escalations, and reviews the finished diff against the spec and the briefs unless the review seat is assigned elsewhere.
+- **Planner** — the stronger of the two. Researches the repo, plans in one typed planning session, answers escalations, and reviews the finished diff against the plan and the briefs unless the review seat is assigned elsewhere.
 - **Implementer** — the weaker model, reached either as a tool CLI driving a smaller model or as an API endpoint. Executes one Task Brief at a time in a fresh context. The transport is the user's choice; SPLITBRIEF does not privilege one.
 - **SPLITBRIEF** — owns the contract (the Task Brief), the isolation the implementer works in, the validation pipeline, retry, escalation, and the evidence trail.
 
@@ -20,7 +20,7 @@ What a run spent is reported after it finishes, when the prices are known. It is
 - **NOT Claude Squad / Overstory** — we don't manage multiple parallel agent sessions
 - **NOT a multi-agent coordinator** — two roles (planner + implementer) filling three seats (plan, build, review), clear hierarchy
 - **NOT a swarm manager** — no dynamic agent count, agent racing, or same-checkout parallel writing
-- **NOT a generic orchestration framework** — opinionated workflow centered on Task Briefs, with specs only when the work needs more structure
+- **NOT a generic orchestration framework** — opinionated workflow centered on Task Briefs, compiled from one checked plan per run
 - **NOT a kanban board or project-management system** — no boards, tickets, or cross-team task tracking
 - **NOT a plan archive** — sessions are execution records scoped to one workflow each, not a long-lived store of past plans
 - **NOT a cross-plan dependency tracker** — SPLITBRIEF reasons about one workflow at a time, not dependencies across plans
@@ -130,7 +130,7 @@ Sources: [Augment Code — open-source agent orchestrators](https://www.augmentc
 See `.specify/memory/constitution.md` for the 6 constitutional principles:
 
 1. **Two-Tool Orchestration** — two roles fill three seats: the stronger tool researches, plans, absorbs escalations and holds the review seat unless a reviewer is assigned; the weaker one executes briefs. Cost follows from the split
-2. **Spec-Driven Development** — Task Briefs first; specs only for larger or riskier work
+2. **Spec-Driven Development** — no code without a plan: one planning session returns a typed plan that SPLITBRIEF checks before the build; each Task Brief is self-contained
 3. **Weaker-Model Implementation** — the implementer is a weaker model, not a weaker transport; a tool CLI and an API endpoint are equally supported and the user picks
 4. **Functional Purity** — zero runtime classes, pure functions, ESM, no unnecessary comments
 5. **Validate Before Checkpoint** — SPLITBRIEF owns the per-task validation pipeline; manual Git staging and commits; final review of the run diff (the planner's seat unless a reviewer is assigned)

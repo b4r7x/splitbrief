@@ -17,10 +17,8 @@ import type { Phase } from '../../core/schemas/enums.js';
 import { markCancellationRequested } from '../../stores/workflow/actions/interrupt.js';
 import { markWorkflowResumed } from '../../stores/workflow/actions/resume.js';
 import { stopStore } from '../../stores/workflow/stop.js';
-import type { RewindTarget } from '../../core/state/build-rewind-action.js';
+import type { TaskRedoRequest } from '../../core/state/build-rewind-action.js';
 import type { QueueClearResult, QueueSubmissionResult } from '../../engine/orchestrator/types.js';
-
-export type { RewindTarget };
 
 type AbortHandler = () => void;
 
@@ -28,7 +26,7 @@ interface Handlers {
   stop: () => void;
   cancel: () => void;
   resume: (text: string) => void;
-  rewind: (request: RewindTarget) => void;
+  rewind: (request: TaskRedoRequest) => void;
   queue: (text: string, phase: Phase) => QueueSubmissionResult | Promise<QueueSubmissionResult>;
   clearQueue: () => QueueClearResult | Promise<QueueClearResult>;
 }
@@ -274,7 +272,7 @@ export function requestQuit(exit: () => void): void {
   requestDeparture('quit', exit);
 }
 
-export function requestRewind(request: RewindTarget): boolean {
+export function requestRewind(request: TaskRedoRequest): boolean {
   if (!handlers.rewind) return false;
   handlers.rewind(request);
   return true;

@@ -122,14 +122,14 @@ describe('stopByline', () => {
 
   it('names the gate a planning stop settled at and claims no changes', () => {
     expect(stopByline(settled({ kind: 'gate', gate: 'plan' }))).toEqual({
-      lead: 'Paused at the plan gate',
+      lead: 'Paused at the plan',
       hint: PARKED_HINT,
     });
   });
 
   it('names the planner step a stop cut, which changed no files', () => {
     expect(stopByline(settled({ kind: 'planner', call: 'tasks' }))?.lead).toBe(
-      'Paused at the tasks step',
+      'Paused at the plan',
     );
   });
 
@@ -167,7 +167,7 @@ describe('stopByline', () => {
 
   it('names the gate a run was ended at and claims no changes it never made', () => {
     expect(stopByline(ended({ phase: 'reviewing-plan' }))).toEqual({
-      lead: 'Cancelled by you at the plan gate',
+      lead: 'Cancelled by you at the plan',
       hint: 'esc back to sessions · ctrl+c quit',
     });
   });
@@ -201,7 +201,7 @@ describe('stopByline', () => {
           },
         ),
       )?.lead,
-    ).toBe('Cancelled by you at the plan gate · Changes kept');
+    ).toBe('Cancelled by you at the plan · Changes kept');
   });
 
   it('claims the changes earlier briefs made', () => {

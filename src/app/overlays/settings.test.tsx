@@ -244,28 +244,29 @@ describe('SettingsOverlay', () => {
   // The help block is a fixed DESCRIPTION_ROWS = 5 tall and pays for a wrapped description out of
   // the spacer above its rule, so a description that wraps must not grow the panel by a row.
   it('keeps the frame height identical between a 1-line and a 2-line description row', async () => {
-    // Inner width at 100 cols / roomy density is 70 cells (76 - OVERLAY_FRAME_COLS).
+    // Inner width at 70 cols / roomy density is 60 cells (70 - 4 - OVERLAY_FRAME_COLS).
     const shortDef = SETTINGS_DEFS.find((def) => def.id === 'validation.lint');
     const longDef = SETTINGS_DEFS.find((def) => def.id === 'workflow.approve');
-    expect(shortDef?.description.length).toBeLessThanOrEqual(70);
-    expect(longDef?.description.length).toBeGreaterThan(70);
+    expect(shortDef?.description.length).toBeLessThanOrEqual(60);
+    expect(longDef?.description.length).toBeGreaterThan(60);
 
     overlayStore.open('settings', 'validation.lint');
-    const shortUi = renderAt(100, 40);
+    const shortUi = renderAt(70, 40);
     await flushEffects();
     const shortFrame = stripAnsiStyles(shortUi.lastFrame()).split('\n');
     shortUi.unmount();
 
     overlayStore.open('settings', 'workflow.approve');
-    const longUi = renderAt(100, 40);
+    const longUi = renderAt(70, 40);
     await flushEffects();
     const longFrame = stripAnsiStyles(longUi.lastFrame()).split('\n');
     longUi.unmount();
 
     expect(shortFrame.some((line) => line.includes('Run linter'))).toBe(true);
-    const wrapStart = longFrame.findIndex((line) => line.includes('"default"'));
+    const wrapStart = longFrame.findIndex((line) => line.includes('Whether the plan waits'));
     expect(wrapStart).toBeGreaterThan(-1);
-    expect(longFrame[wrapStart + 1]).toContain('mode)');
+    expect(longFrame[wrapStart]).not.toContain('starts');
+    expect(longFrame[wrapStart + 1]).toContain('starts');
     expect(longFrame).toHaveLength(shortFrame.length);
     expect(topBorderRow(shortFrame)).toBeGreaterThanOrEqual(0);
     expect(topBorderRow(longFrame)).toBe(topBorderRow(shortFrame));
@@ -364,14 +365,14 @@ describe('SettingsOverlay', () => {
   });
 
   it('heads the help block with a rule carrying the highlighted row label', async () => {
-    overlayStore.open('settings', 'workflow.mode');
+    overlayStore.open('settings', 'workflow.approve');
     const ui = renderAt(100, 40);
     await tick(20);
     const lines = frameLines(ui);
     const rule = lines.find((line) => RULE_ROW.test(line));
 
-    expect(rule).toMatch(/Mode [─-]{3,}/);
-    expect(indexOfLine(lines, 'quick')).toBe(lines.indexOf(rule ?? '') + 1);
+    expect(rule).toMatch(/Plan approval [─-]{3,}/);
+    expect(indexOfLine(lines, 'Whether the plan waits')).toBe(lines.indexOf(rule ?? '') + 1);
 
     ui.unmount();
   });
@@ -386,24 +387,22 @@ describe('SettingsOverlay', () => {
     ui.unmount();
   });
 
-  it('prices every mode and marks the configured one on the right edge', async () => {
+  it('offers no mode row, whatever mode the config still names', async () => {
     seed({ workflow: { mode: 'speckit' } });
-    overlayStore.open('settings', 'workflow.mode');
+    overlayStore.open('settings', 'filter:workflow');
     const ui = renderAt(100, 40);
     await tick(20);
-    const lines = frameLines(ui);
+    const frame = stripAnsiStyles(ui.lastFrame());
 
-    const modeLine = (mode: string) => panelText(lineWith(lines, mode) ?? '');
-
-    expect(modeLine('quick     1 planning call · 0 gates')).not.toMatch(/current$/);
-    expect(modeLine('speckit   6-7 planning calls · 3 gates')).toMatch(/current$/);
-    expect(lines.filter((line) => panelText(line).endsWith('current'))).toHaveLength(1);
+    expect(frame).toContain('Plan approval');
+    expect(frame).not.toMatch(/\bMode\b/);
+    expect(frame).not.toContain('speckit');
 
     ui.unmount();
   });
 
   it.each([
-    ['workflow.mode', 'space cycle'],
+    ['workflow.approve', 'space cycle'],
     ['validation.lint', 'space toggle'],
     ['validation.testCommand', '⏎ edit'],
   ])('advertises %s as %s in the legend', async (focus, hint) => {
@@ -493,7 +492,7 @@ describe('SettingsOverlay', () => {
 
   it.each([
     ['seat:plan', 'a one-line help'],
-    ['workflow.mode', 'the mode table'],
+    ['workflow.compactionFormat', 'a two-line help'],
   ])('leaves a blank row above the rule for %s (%s)', async (focus) => {
     overlayStore.open('settings', focus);
     const ui = renderAt(100, 40);
@@ -507,16 +506,16 @@ describe('SettingsOverlay', () => {
     ui.unmount();
   });
 
-  it('closes the mode table one blank row above the legend', async () => {
-    overlayStore.open('settings', 'workflow.mode');
+  it('closes the help block one blank row above the legend', async () => {
+    overlayStore.open('settings', 'workflow.compactionFormat');
     const ui = renderAt(100, 40);
     await tick(20);
     const lines = stripAnsiStyles(ui.lastFrame()).split('\n');
-    const speckit = indexOfLine(lines, 'speckit');
+    const options = indexOfLine(lines, 'auto · freeform · structured');
 
-    expect(speckit).toBeGreaterThan(indexOfLine(lines, 'quick'));
-    expect(panelText(lines[speckit + 1] ?? '')).toBe('');
-    expect(lines[speckit + 2]).toContain('↑↓ select');
+    expect(options).toBeGreaterThan(indexOfLine(lines, 'Summary format for transcript compaction'));
+    expect(panelText(lines[options + 1] ?? '')).toBe('');
+    expect(lines[options + 2]).toContain('↑↓ select');
 
     ui.unmount();
   });

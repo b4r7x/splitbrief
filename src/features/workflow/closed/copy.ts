@@ -153,9 +153,7 @@ function phaseSegments(phases: SummaryView['phases']): CopySegment[] {
 }
 
 function sessionSegments(run: SummaryView['run']): CopySegment[] {
-  const segments: CopySegment[] = [{ text: run.sessionId, tone: 'text' }];
-  if (run.mode !== null) segments.push({ text: run.mode, tone: 'text' });
-  return segments;
+  return [{ text: run.sessionId, tone: 'text' }];
 }
 
 /**

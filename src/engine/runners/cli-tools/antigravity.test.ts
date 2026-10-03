@@ -60,6 +60,7 @@ function implementerArgs(
     model?: string | undefined;
     configuredArgs?: readonly string[];
     effort?: EffortLevel | undefined;
+    schema?: CliSchemaInput | undefined;
   } = {},
 ) {
   return antigravityImplementerAdapter.buildArgs({
@@ -68,6 +69,7 @@ function implementerArgs(
     projectDir: '/staged',
     configuredArgs: options.configuredArgs ?? [],
     effort: options.effort,
+    schema: options.schema,
   });
 }
 
@@ -137,6 +139,29 @@ describe('Antigravity role adapters', () => {
       'plan',
       '--add-dir',
       '/project',
+      '--output-format',
+      'stream-json',
+    ]);
+  });
+
+  it('appends the inline schema after the implementer generation args, and nothing without one', () => {
+    expect(implementerArgs({ schema: { json: { type: 'object' } } })).toEqual([
+      '-p',
+      PROMPT,
+      '--dangerously-skip-permissions',
+      '--add-dir',
+      '/staged',
+      '--output-format',
+      'stream-json',
+      '--json-schema',
+      '{"type":"object"}',
+    ]);
+    expect(implementerArgs()).toEqual([
+      '-p',
+      PROMPT,
+      '--dangerously-skip-permissions',
+      '--add-dir',
+      '/staged',
       '--output-format',
       'stream-json',
     ]);

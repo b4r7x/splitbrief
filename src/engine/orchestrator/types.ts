@@ -21,11 +21,7 @@ import type {
   TieredApprovalRequest,
   TieredApprovalResponse,
 } from '../../core/approval/types.js';
-import type {
-  UserEditConflict,
-  TaskReviewRequest,
-  TaskReviewResponse,
-} from '../events/workflow-events.js';
+import type { UserEditConflict } from '../events/workflow-events.js';
 import type { RoutingDecision } from './context-routing/types.js';
 import type { ModelCacheAccessor } from '../providers/model/resolution.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
@@ -38,9 +34,11 @@ export interface OrchestratorCallbacks {
   onPlannerReply?:
     | ((reply: PlannerConversation) => Promise<string | PlannerReplyAnswer | undefined>)
     | undefined;
+  /** `confirms`: the protected operations approving confirms in advance, as the gate names them. */
   onApprovalNeeded: (
     type: BriefReviewPromptKind,
     input: ApprovalReviewInput,
+    confirms: readonly string[],
   ) => Promise<ApprovalReviewResult>;
   onUserEditConflict?:
     | ((conflict: UserEditConflict) => Promise<UserEditConflictAction>)
@@ -54,7 +52,6 @@ export interface OrchestratorCallbacks {
   onTieredApproval?:
     | ((request: TieredApprovalRequest) => Promise<TieredApprovalResponse>)
     | undefined;
-  onTaskReviewNeeded?: ((request: TaskReviewRequest) => Promise<TaskReviewResponse>) | undefined;
   onComplete: (summary: Summary) => void;
 }
 
@@ -114,7 +111,6 @@ export interface WorkflowContext {
   streamingSink?: StreamingSink | undefined;
   plannerContext?: string | undefined;
   detectedContextLength?: number | undefined;
-  setRewindFeedback?: ((feedback: string | undefined) => void) | undefined;
   /**
    * The continuation this run carries: the partial its cut attempt left and the
    * steer that restarted it. The step the run stopped at takes it; every other

@@ -79,15 +79,7 @@ describe('start command — shorthand invocation', () => {
     const program = new Command();
     program.exitOverride();
     registerStartCommand(program, fakeDeps);
-    await program.parseAsync([
-      'node',
-      'splitbrief',
-      '--mode',
-      'quick',
-      'build feature X',
-      '--project',
-      tmp,
-    ]);
+    await program.parseAsync(['node', 'splitbrief', 'build feature X', '--project', tmp]);
 
     expect(routerStore.get()).toMatchObject({
       screen: 'workflow',

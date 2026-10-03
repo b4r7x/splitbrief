@@ -4,20 +4,20 @@ import type {
   WorkflowContext,
   WorkflowSinks,
 } from '../../src/engine/orchestrator/types.js';
-import type { Planner, RunPhaseInput } from '../../src/engine/planners/types.js';
+import type { Planner } from '../../src/engine/planners/types.js';
 import type { Implementer } from '../../src/engine/implementers/types.js';
 import {
   createImplementer,
   type ImplementerCreationOptions,
 } from '../../src/engine/runners/factory.js';
 import { makeTask } from './factories/task.js';
-import { makePhaseCallResult } from './factories/phase-call.js';
 import { createEventBus } from '../../src/engine/events/bus.js';
 import type { EngineEvent, EventBus } from '../../src/engine/events/types.js';
 import { createValidator } from '../../src/engine/orchestrator/validation/run.js';
 import { createRunIsolation } from '../../src/engine/orchestrator/isolation/create.js';
 import type { RunIsolation } from '../../src/engine/orchestrator/isolation/types.js';
 import { defaultContext, makeNoValidationConfig } from './factories/config.js';
+import { typedCallFromTasks } from './typed-planner.js';
 
 export const TEST_METADATA = {
   plannerTool: 'claude-code',
@@ -93,15 +93,6 @@ export function makeCallbacks(overrides?: Partial<OrchestratorCallbacks>): {
 
 export function makePlanner(overrides?: Partial<Planner>): Planner {
   return {
-    runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
-      makePhaseCallResult({
-        call,
-        ...(call === 'tasks'
-          ? { tasks: [makeTask()], usage: { inputTokens: 100, outputTokens: 50 } }
-          : {}),
-      }),
-    ),
-    regenerate: vi.fn().mockResolvedValue({ text: '# Regenerated\n\nUpdated.', usage: null }),
     escalateHint: vi
       .fn()
       .mockResolvedValue({ success: false, output: '', code: null, usage: null }),
@@ -112,9 +103,7 @@ export function makePlanner(overrides?: Partial<Planner>): Planner {
     getVersion: vi.fn().mockResolvedValue('1.0'),
     review: vi.fn().mockResolvedValue({ text: '### Verdict\npass\n', usage: null }),
     summarize: vi.fn().mockResolvedValue({ text: '', usage: null }),
-    typedCall: () => {
-      throw new Error('typedCall is not stubbed');
-    },
+    typedCall: typedCallFromTasks([makeTask()], { inputTokens: 100, outputTokens: 50 }),
     capabilities: {
       supportsConversationalPlanning: false,
       supportsHintEscalation: true,

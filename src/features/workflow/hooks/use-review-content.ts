@@ -13,7 +13,6 @@ interface LoadedReviewContent {
   content: string;
   filePath: string;
   ownerToken: number;
-  revision: number;
 }
 
 export function useReviewContent(
@@ -21,7 +20,6 @@ export function useReviewContent(
   reader: ReviewContentReader = fs.readFile,
 ): string {
   const [loaded, setLoaded] = useState<LoadedReviewContent | null>(null);
-  const revision = reviewStore.use((s) => s.revision);
   const ownerToken = reviewStore.use((s) => s.ownerToken);
 
   useEffect(() => {
@@ -34,14 +32,9 @@ export function useReviewContent(
     const filePath = source.filePath;
     const controller = new AbortController();
     const readOwnerToken = ownerToken;
-    const readRevision = revision;
     const readStillCurrent = (): boolean => {
       const current = reviewStore.get();
-      return (
-        !controller.signal.aborted &&
-        current.ownerToken === readOwnerToken &&
-        current.revision === readRevision
-      );
+      return !controller.signal.aborted && current.ownerToken === readOwnerToken;
     };
     reader(filePath, { signal: controller.signal, encoding: 'utf8' })
       .then((data) => {
@@ -50,7 +43,6 @@ export function useReviewContent(
           content: data,
           filePath,
           ownerToken: readOwnerToken,
-          revision: readRevision,
         });
       })
       .catch((err: unknown) => {
@@ -63,14 +55,13 @@ export function useReviewContent(
     return () => {
       controller.abort();
     };
-  }, [source, ownerToken, revision, reader]);
+  }, [source, ownerToken, reader]);
 
   if (source?.kind === 'artifact') return source.text;
 
   return source?.kind === 'file' &&
     loaded?.filePath === source.filePath &&
-    loaded.ownerToken === ownerToken &&
-    loaded.revision === revision
+    loaded.ownerToken === ownerToken
     ? loaded.content
     : '';
 }

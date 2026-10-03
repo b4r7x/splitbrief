@@ -105,4 +105,3 @@ export type RecoveryFact = z.infer<typeof RecoveryFactSchema>;
 export type SeatSwapCandidate = z.infer<typeof SeatSwapCandidateSchema>;
 export type SwitchSeatOffer = z.infer<typeof SwitchSeatOfferSchema>;
 export type RecoveryIssue = z.infer<typeof RecoveryIssueSchema>;
-export type TaskReviewRecovery = z.infer<typeof TaskReviewRecoverySchema>;

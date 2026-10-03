@@ -1,9 +1,4 @@
-import {
-  PHASES,
-  type Phase,
-  type RunnerKind,
-  type WorkflowMode,
-} from '../../../core/schemas/enums.js';
+import { PHASES, type Phase, type RunnerKind } from '../../../core/schemas/enums.js';
 import type { PlannerCall } from '../../../core/schemas/run-step.js';
 import type { CliToolId } from '../../../core/runners/cli-tool-catalog.js';
 import { activeVerb } from './phase-verb.js';
@@ -87,30 +82,23 @@ export function deriveLiveStatus(input: {
   reviewerLabel: string | null;
   plannerCall: PlannerCall | null;
   plannerCallStartedTs: number | null;
-  mode?: WorkflowMode;
 }): LiveStatus | null {
   if (input.status !== 'running') return null;
   if (input.cancelled) return null;
   if (RAIL_GATE_PHASES.has(input.phase) && input.plannerCall === null) return null;
-  const mode = input.mode ?? 'standard';
-  const activeIndex = getRailActiveIndex(input.phase, mode);
-  const activeStage = getActiveRailStage(input.phase, mode);
+  const activeIndex = getRailActiveIndex(input.phase);
+  const activeStage = getActiveRailStage(input.phase);
   if (activeIndex < 0 || activeStage === null) return null;
-  const completionTimes = railStageCompletionTimesFromPhaseFirstSeen(input.phaseFirstSeenTs, mode);
-  // Quick has no Spec step: Plan is the first stage it runs, so it opens with the run itself
-  // rather than with a Spec completion that never happens.
-  const firstRunStage = mode === 'quick' ? 1 : 0;
+  const completionTimes = railStageCompletionTimesFromPhaseFirstSeen(input.phaseFirstSeenTs);
   const stageOpened =
-    activeIndex > firstRunStage ? (completionTimes[activeIndex - 1] ?? 0) : (input.startedAt ?? 0);
+    activeIndex > 0 ? (completionTimes[activeIndex - 1] ?? 0) : (input.startedAt ?? 0);
   // A resumed run counts from its resume: the time it sat parked was no stage's work. While the
   // engine names a planner call the clock is that call's, so the stage's earlier calls stay out.
   const callStart = input.plannerCall === null ? 0 : (input.plannerCallStartedTs ?? 0);
   const stageStart = Math.max(stageOpened, input.resumedAt ?? 0, callStart);
   const waitedMs = PHASES.reduce(
     (total, phase) =>
-      getRailActiveIndex(phase, mode) === activeIndex
-        ? total + (input.waitedMs[phase] ?? 0)
-        : total,
+      getRailActiveIndex(phase) === activeIndex ? total + (input.waitedMs[phase] ?? 0) : total,
     0,
   );
   return {

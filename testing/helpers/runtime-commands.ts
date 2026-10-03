@@ -1,23 +1,18 @@
 import { executeRuntimeCommand } from '../../src/core/runtime/commands/dispatch.js';
 import type {
   RuntimeCommandDef,
-  RuntimeConfigSaveResult,
   RuntimeCommandContext,
 } from '../../src/core/runtime/commands/types.js';
 import type { Phase } from '../../src/core/schemas/enums.js';
 
 export const noop = () => {};
 export const noopTrue = () => true;
-const noopSaved = async (): Promise<RuntimeConfigSaveResult> => ({ kind: 'saved', ok: true });
 
 export function makeCtx(overrides: Partial<RuntimeCommandContext> = {}): RuntimeCommandContext {
   return {
     openOverlay: noop,
     navigate: noop,
     quit: noop,
-    setWorkflowMode: noopSaved,
-    getWorkflowMode: () => 'standard',
-    prefillComposer: noop,
     setFeedbackMessage: noop,
     setFeedbackError: noop,
     refreshDetection: async () => ({
@@ -34,7 +29,6 @@ export function makeCtx(overrides: Partial<RuntimeCommandContext> = {}): Runtime
     toggleSkill: () => ({ status: 'unknown' as const }),
     refreshSkills: async () => {},
     getCurrentPhase: () => 'idle',
-    requestRewind: noopTrue,
     requestTaskRedo: noopTrue,
     resumeRun: noopTrue,
     endRun: noopTrue,
@@ -43,8 +37,6 @@ export function makeCtx(overrides: Partial<RuntimeCommandContext> = {}): Runtime
     attachImage: () => ({ ok: false, reason: 'not-image' }),
     detachImage: () => false,
     listAttachments: () => [],
-    listApprovals: () => [],
-    clearApprovals: () => 0,
     acceptRunSnapshot: async () => ({ snapshotId: 'snap-accepted', isFirstSnapshot: false }),
     refreshRun: noop,
     rejectRunSnapshot: async () => ({

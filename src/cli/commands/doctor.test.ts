@@ -120,9 +120,8 @@ function validConfigYaml(): string {
     '  test: true',
     '  testCommand: npm test',
     'workflow:',
-    '  approve: default',
+    '  approve: plan',
     '  maxRetries: 3',
-    '  mode: quick',
   ].join('\n');
 }
 
@@ -969,7 +968,7 @@ describe('custom runner consent preflight', () => {
       '  model: qwen2.5-coder:7b',
       '  contextLength: 32768',
       'workflow:',
-      '  mode: quick',
+      '  approve: plan',
     ].join('\n');
   }
 

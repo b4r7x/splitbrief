@@ -102,12 +102,11 @@ it.each(['initial', 'local', 'hint'] as const)(
       approval: {
         enabled: true,
         feedRejectionsToPlanner: false,
-        tiers: { write_in_scope: 'confirm' },
       },
     });
     const writeResult = async (opts: { projectDir: string }) => {
       workspace = opts.projectDir;
-      writeFileSync(join(workspace, 'partial.ts'), 'complete before approval');
+      writeFileSync(join(workspace, '.env.local'), 'complete before approval');
       return { success: true, output: '' };
     };
     const wctx = makeWctx({
@@ -135,7 +134,7 @@ it.each(['initial', 'local', 'hint'] as const)(
     });
     wctx.callbacks.onTieredApproval = async () => {
       approvals += 1;
-      if (approvals === 2) stop.abort();
+      stop.abort();
       return { decision: 'confirm', phrase: 'I confirm', reason: 'fixture approval' };
     };
     const stopped = await runSingleTask({
@@ -153,14 +152,14 @@ it.each(['initial', 'local', 'hint'] as const)(
         case: 'stop-during-approval',
         approvals,
         workspaceExists: existsSync(workspace),
-        partialExists: existsSync(join(workspace, 'partial.ts')),
-        targetExists: existsSync(join(f.projectDir, 'partial.ts')),
+        partialExists: existsSync(join(workspace, '.env.local')),
+        targetExists: existsSync(join(f.projectDir, '.env.local')),
         attempt: stopped.attempt,
       }),
     );
-    expect(approvals).toBe(2);
-    expect(existsSync(join(f.projectDir, 'partial.ts'))).toBe(false);
-    expect(existsSync(join(workspace, 'partial.ts'))).toBe(true);
+    expect(approvals).toBe(1);
+    expect(existsSync(join(f.projectDir, '.env.local'))).toBe(false);
+    expect(existsSync(join(workspace, '.env.local'))).toBe(true);
   },
 );
 

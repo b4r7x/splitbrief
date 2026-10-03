@@ -20,15 +20,15 @@ import { createInitialState } from '../../core/state/machine.js';
 import { loadState, saveState } from '../../core/state/persistence.js';
 import { allowedActionsForReason } from '../../core/schemas/recovery/policy.js';
 import { RecoveryIssueSchema, type RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
-import { NO_ARTIFACTS, deriveRunStatus } from '../../core/sessions/run-status.js';
+import { deriveRunStatus } from '../../core/sessions/run-status.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { Task } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { defaultCliAuthChannel } from '../../core/runners/cli-tool-catalog.js';
 import { error } from '../../utils/error.js';
 import type { EngineEvent } from '../events/types.js';
-import { apiContextError, type ApiContextDiagnostic } from '../providers/api-context-diagnostic.js';
-import { runPlanningSteps } from './planning/steps.js';
+import type { ApiContextDiagnostic } from '../providers/api-context-diagnostic.js';
+import { runPlanningSession } from './planning/session.js';
 import { applyRecoveryAction } from './recovery/actions.js';
 import { MAX_SUMMARY_LENGTH } from './recovery/builders/issue.js';
 import { buildPlannerCallFailedRecoveryIssue } from './recovery/builders/planner.js';
@@ -37,7 +37,6 @@ import { runTasksAndReview } from './run/task-execution.js';
 
 const universe = vi.hoisted(() => ({ fullDiff: '', changedFiles: [] as string[] }));
 const drift = vi.hoisted(() => ({ fails: false }));
-const planContext = vi.hoisted(() => ({ throws: null as unknown }));
 const taskLoop = vi.hoisted(() => ({ calls: 0 }));
 
 // The run universe is git's answer. Nothing in this suite may touch a
@@ -60,18 +59,6 @@ vi.mock('./drift/analyze.js', async (importOriginal) => {
     analyzeBriefDrift: (input: Parameters<typeof actual.analyzeBriefDrift>[0]) => {
       if (drift.fails) throw new Error('the ledger and the universe disagree');
       return actual.analyzeBriefDrift(input);
-    },
-  };
-});
-
-// The plan seat's required context, refusing where the run assembles it.
-vi.mock('../planners/context.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../planners/context.js')>();
-  return {
-    ...actual,
-    buildProjectContextMarkdown: async (projectDir: string) => {
-      if (planContext.throws !== null) throw planContext.throws;
-      return actual.buildProjectContextMarkdown(projectDir);
     },
   };
 });
@@ -116,7 +103,6 @@ afterEach(() => {
   universe.fullDiff = '';
   universe.changedFiles = [];
   drift.fails = false;
-  planContext.throws = null;
   taskLoop.calls = 0;
 });
 
@@ -145,14 +131,24 @@ function factString(issue: RecoveryIssue | undefined, key: string): string {
 }
 
 describe('a PLAN packet the seat was never given', () => {
-  async function plan(ref: { projectDir: string; sessionId: string }, thrown: unknown) {
-    planContext.throws = thrown;
-    const planner = makePlanner();
-    const state: WorkflowState = { ...createInitialState('Add a login route'), mode: 'quick' };
+  // A seat that reads no files of its own, on a model with room to spare: what refuses the packet
+  // is the evidence the request promises and the project does not have.
+  async function plan(ref: { projectDir: string; sessionId: string }, feature: string) {
+    const planner = makePlanner({
+      resolvePlanningContext: async () => ({
+        contextKey: 'ollama@local',
+        selectionId: 'qwen2.5',
+        observedAt: 0,
+        applicationContextTokens: 64_000,
+        budgetSource: 'configured',
+        loadState: 'unknown',
+      }),
+    });
+    const state: WorkflowState = createInitialState(feature);
     saveState(ref, state);
     const wctx = makeWctx({ ...ref, planner, reviewer: planner });
 
-    const result = await runPlanningSteps({ wctx, planner, state, feature: 'Add a login route' });
+    const result = await runPlanningSession({ wctx, planner, state, feature });
 
     if (result.disposition !== 'terminal') throw new Error('expected a terminal planning result');
     expect(result.outcome).toBe('halted');
@@ -161,15 +157,15 @@ describe('a PLAN packet the seat was never given', () => {
 
   it('halts on the plan seat before the first call, with the cause and the sections kept', async () => {
     const ref = setupSession('plan-context');
-    const missingSections = ['spec.md', 'src/login.ts'];
+    const missingSections = ['src/login.ts', 'src/session.ts'];
 
     const { state, issue, planner } = await plan(
       ref,
-      apiContextError(diagnostic({ missingSections, cause: 'missing-required', ...ESTIMATES })),
+      'Modify `src/login.ts` and update `src/session.ts` to add a login route.',
     );
 
-    expect(planner.runPhase).not.toHaveBeenCalled();
-    expect(state.phase).toBe('idle');
+    expect(planner.typedCall).not.toHaveBeenCalled();
+    expect(state.phase).toBe('planning');
     expect(issue?.reason).toBe('planner-call-failed');
     expect(issue?.seat).toBe('plan');
     expect(issue?.taskId).toBeUndefined();
@@ -190,9 +186,12 @@ describe('a PLAN packet the seat was never given', () => {
     // be told to wait for a limit to reset and to keep its planner seat.
     const { issue } = await plan(
       ref,
-      apiContextError(diagnostic({ missingSections: ['fixtures/insufficient_quota.json'] })),
+      'Update `fixtures/insufficient_quota.json` for the login route.',
     );
 
+    expect(JSON.parse(factString(issue, 'apiContextMissingSectionsJson'))).toEqual([
+      'fixtures/insufficient_quota.json',
+    ]);
     expect(issue?.reason).toBe('planner-call-failed');
     expect(issue?.resetAt).toBeUndefined();
     expect(issue?.message).not.toContain('usage limit');
@@ -228,7 +227,6 @@ function setupRun(
       createEvidenceLedger({
         sessionId: ref.sessionId,
         feature: 'Add a login route',
-        mode: 'standard',
         tasks: [makeTask({ id: 'T001', status: 'done' })],
       }),
     );
@@ -341,9 +339,7 @@ describe('a REVIEW that reached no verdict', () => {
     const failed = events.find((event) => event.type === 'error' && event.code === 'review_failed');
     expect(failed).toBeDefined();
     expect(JSON.stringify(failed)).not.toContain('0 blocking');
-    expect(
-      deriveRunStatus({ state: result.state, liveness: 'not-alive', artifacts: NO_ARTIFACTS }).kind,
-    ).toBe('open');
+    expect(deriveRunStatus({ state: result.state, liveness: 'not-alive' }).kind).toBe('open');
   });
 
   it('refuses a packet missing its recorded evidence rather than reviewing what is left', async () => {

@@ -60,9 +60,9 @@ describe('deriveLiveStatus', () => {
     });
   });
 
-  it('names the planner call the plan stage is on', () => {
+  it('says one verb for the planning session and names an old chain briefs call', () => {
     expect(deriveLiveStatus({ ...base, phase: 'planning', plannerCall: 'plan' })?.verb).toBe(
-      'Writing the plan…',
+      'Planning…',
     );
     expect(deriveLiveStatus({ ...base, phase: 'planning', plannerCall: 'tasks' })?.verb).toBe(
       'Compiling briefs…',
@@ -76,7 +76,7 @@ describe('deriveLiveStatus', () => {
       phase: 'specifying',
       waitedMs: { researching: 4_000, specifying: 1_000, planning: 9_000, implementing: 500 },
     });
-    expect(status?.waitedMs).toBe(5_000);
+    expect(status?.waitedMs).toBe(14_000);
 
     const build = deriveLiveStatus({
       ...base,
@@ -118,42 +118,24 @@ describe('deriveLiveStatus', () => {
     expect(firstStage?.stageStart).toBe(90_000);
   });
 
-  it('opens the quick Plan clock with the run, not the Spec completion quick never has', () => {
+  it('opens the Plan clock with the run and counts the waits of every pre-build phase', () => {
     const waits = { researching: 1_000, specifying: 2_000, planning: 4_000, implementing: 8_000 };
-    const quick = deriveLiveStatus({
-      ...base,
-      phase: 'researching',
-      mode: 'quick',
-      waitedMs: waits,
-    });
-    expect(quick).toEqual({
+    const oldChain = deriveLiveStatus({ ...base, phase: 'researching', waitedMs: waits });
+    expect(oldChain).toEqual({
       verb: 'Researching…',
       stageStart: 1000,
       waitedMs: 7_000,
       tone: 'planner',
     });
 
-    const resumed = deriveLiveStatus({
+    const planning = deriveLiveStatus({
       ...base,
-      phase: 'researching',
-      mode: 'quick',
-      resumedAt: 90_000,
-      plannerCallStartedTs: 60_000,
+      phase: 'planning',
+      phaseFirstSeenTs: { researching: 2_000, planning: 50_000 },
+      waitedMs: waits,
     });
-    expect(resumed?.stageStart).toBe(90_000);
-
-    const namedCall = deriveLiveStatus({
-      ...base,
-      phase: 'researching',
-      mode: 'quick',
-      plannerCall: 'research',
-      plannerCallStartedTs: 60_000,
-    });
-    expect(namedCall?.stageStart).toBe(60_000);
-
-    const standard = deriveLiveStatus({ ...base, phase: 'researching', waitedMs: waits });
-    expect(standard?.stageStart).toBe(1000);
-    expect(standard?.waitedMs).toBe(3_000);
+    expect(planning?.stageStart).toBe(1000);
+    expect(planning?.waitedMs).toBe(7_000);
   });
 
   it('counts the planner call the engine names, and the stage once it names none', () => {
@@ -168,7 +150,7 @@ describe('deriveLiveStatus', () => {
         ?.stageStart,
     ).toBe(60_000);
     expect(deriveLiveStatus({ ...planStage, plannerCallStartedTs: 60_000 })?.stageStart).toBe(
-      5_000,
+      base.startedAt,
     );
     expect(
       deriveLiveStatus({
@@ -210,7 +192,7 @@ describe('deriveLiveStatus', () => {
     regenerate('reviewing-plan', 'plan');
     expect(lifecycleStore.get().phase).toBe('reviewing-plan');
     expect(liveNow()).toMatchObject({
-      verb: 'Writing the plan…',
+      verb: 'Planning…',
       stageStart: 50_000,
       tone: 'planner',
     });

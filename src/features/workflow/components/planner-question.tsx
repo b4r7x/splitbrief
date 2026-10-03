@@ -9,7 +9,6 @@ import { listRowLead } from '../../../components/list-row.js';
 import { formatKeyHints, SELECT_HINT } from '../prompt-rows/approval.js';
 import { fitKeyLegend } from '../../../core/key-legend.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../lib/terminal/typeahead-grace.js';
-import { useFieldSessionOwned } from '../../editor/use-field-session-owned.js';
 import { clamp } from '../../../utils/math.js';
 
 export function PlannerQuestion({
@@ -29,7 +28,6 @@ export function PlannerQuestion({
 }) {
   const state = questionPromptStore.use((value) => value);
   const t = useTheme();
-  const fieldEditorOpen = useFieldSessionOwned();
   const [offset, setOffset] = useState(0);
   const question = state.questions?.[state.index];
   const selected = state.drafts[state.index]?.selected ?? 0;
@@ -93,7 +91,7 @@ export function PlannerQuestion({
         }
       }
     },
-    { isActive: (focused || writing) && !disabled && !fieldEditorOpen },
+    { isActive: (focused || writing) && !disabled },
   );
 
   if (!question) return null;
@@ -169,8 +167,8 @@ export function PlannerQuestion({
               columns={Math.max(1, innerWidth - 2)}
               rows={QUESTION_ANSWER_ROWS}
               maxRows={QUESTION_ANSWER_ROWS}
-              focus={writing && !disabled && !fieldEditorOpen}
-              isActive={writing && !disabled && !fieldEditorOpen}
+              focus={writing && !disabled}
+              isActive={writing && !disabled}
               keyBindings={{
                 submit: (key) => key.return && !key.shift,
                 newline: (key) => key.return && key.shift,

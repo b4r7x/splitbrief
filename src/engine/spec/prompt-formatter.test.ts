@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { formatTaskPrompt, formatRetryPrompt } from './prompt-formatter.js';
+import {
+  formatTaskPrompt,
+  formatRetryPrompt,
+  formatImplementerSystemPreamble,
+} from './prompt-formatter.js';
+import { buildLanguageContext } from './prompts/language-context.js';
 import { estimateTokens } from '../../core/tokens/estimate.js';
 import { makeTask as makeBaseTask } from '#testing/helpers/factories/task.js';
 import { defaultContext } from '#testing/helpers/factories/config.js';
@@ -230,6 +235,72 @@ describe('formatTaskPrompt', () => {
     expect(retry).toContain('### Current Code — src/health.test.ts');
   });
 
+  it('carries context files whole under a read-only heading, for a new file and a bundle', () => {
+    const task = makeTask({
+      action: 'create',
+      file: 'src/health.ts',
+      contextFiles: ['src/types.ts'],
+      contextCodeByFile: { 'src/types.ts': 'export type Health = "ok";\n' },
+    });
+
+    for (const prompt of [
+      formatTaskPrompt({ task, context, contextLength: 8192 }),
+      formatTaskPrompt({ task, context, outputContract: 'file-bundle-v1' }),
+      formatRetryPrompt({ task, context, error: 'boom', attempt: 1, contextLength: 8192 }),
+    ]) {
+      expect(prompt).toContain('### Read-only context (do not modify) — src/types.ts');
+      expect(prompt).toContain('export type Health = "ok";');
+      expect(prompt).not.toContain('### Current Code');
+    }
+  });
+
+  it('leaves room for the context code when it truncates the target code', () => {
+    const contextLength = 32768;
+    const task = makeTask({
+      action: 'modify',
+      currentCode: 'export const big = 1;\n'.repeat(17_000),
+      contextFiles: ['src/types.ts'],
+      contextCodeByFile: { 'src/types.ts': 'export type Health = "ok";\n'.repeat(1_400) },
+    });
+    const system = formatImplementerSystemPreamble(
+      buildLanguageContext(undefined),
+      'extracted-code',
+      context.dir,
+    );
+
+    for (const prompt of [
+      formatTaskPrompt({ task, context, contextLength }),
+      formatRetryPrompt({ task, context, error: 'boom', attempt: 1, contextLength }),
+    ]) {
+      expect(prompt).toContain('### Read-only context (do not modify) — src/types.ts');
+      expect(estimateTokens(prompt) + estimateTokens(system)).toBeLessThanOrEqual(contextLength);
+    }
+  });
+
+  it('keeps the target code when a context file alone would fill the budget', () => {
+    const contextLength = 12_000;
+    const task = makeTask({
+      action: 'modify',
+      currentCode: 'export const anchor = 1;\n',
+      contextFiles: ['src/big.ts'],
+      contextCodeByFile: { 'src/big.ts': 'x'.repeat(36_000) },
+    });
+    const system = formatImplementerSystemPreamble(
+      buildLanguageContext(undefined),
+      'extracted-code',
+      context.dir,
+    );
+
+    for (const prompt of [
+      formatTaskPrompt({ task, context, contextLength }),
+      formatRetryPrompt({ task, context, error: 'boom', attempt: 1, contextLength }),
+    ]) {
+      expect(prompt).toContain('export const anchor = 1;');
+      expect(prompt).toContain('### Read-only context (do not modify) — src/big.ts');
+      expect(estimateTokens(prompt) + estimateTokens(system)).toBeLessThanOrEqual(contextLength);
+    }
+  });
+
   it('retry prompt surfaces Scope / Escalation / Evidence and keeps the retry framing', () => {
     const task = makeTask({
       scope: { outOfBounds: ['no schema changes'] },
@@ -254,19 +325,23 @@ describe('direct writer', () => {
     files: ['src/x.ts', 'src/x.test.ts'],
     currentCode: 'export function x(): void {}\n',
     currentCodeByFile: { 'src/x.test.ts': "it('x', () => {});\n" },
+    contextCodeByFile: { 'src/y.ts': 'export const y = 1;\n' },
   });
 
-  it('task prompt carries no current code: the tool reads the files it edits', () => {
+  it('task prompt carries the context code but not the code of the files it edits', () => {
     const prompt = formatTaskPrompt({ task, context, contextLength: 8192, writesFiles: 'direct' });
 
     expect(prompt).not.toContain('Current Code');
     expect(prompt).not.toContain('export function x(): void {}');
     expect(prompt).not.toContain("it('x', () => {});");
+    expect(prompt).toContain(
+      '### Read-only context (do not modify) — src/y.ts\nexport const y = 1;',
+    );
     expect(prompt).toContain('- src/x.ts (anchor)');
     expect(prompt).toContain('Edit src/x.ts, src/x.test.ts directly in the isolation directory');
   });
 
-  it('retry prompt carries no current code either', () => {
+  it('retry prompt carries the context code and no current code either', () => {
     const retry = formatRetryPrompt({
       task,
       context,
@@ -280,6 +355,7 @@ describe('direct writer', () => {
     expect(retry).not.toContain('Current Code');
     expect(retry).not.toContain('export function x(): void {}');
     expect(retry).not.toContain("it('x', () => {});");
+    expect(retry).toContain('### Read-only context (do not modify) — src/y.ts');
     expect(retry).toContain('rephrased');
   });
 

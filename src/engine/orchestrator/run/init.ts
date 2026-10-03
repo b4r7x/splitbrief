@@ -16,7 +16,7 @@ import type { StreamingSink } from '../task/streaming-feed.js';
 import type { RunIsolation } from '../isolation/types.js';
 import { worktreePromotionConflictIsResolved } from '../isolation/acquisition.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
-import { resolveApproveLevel, resolveMode } from '../../../core/config/runtime/resolve.js';
+import { resolveApproveLevel } from '../../../core/config/runtime/resolve.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import {
   formatSeatChangeNotice,
@@ -71,8 +71,8 @@ import {
   readInterruptedPartial,
   type ContinuationHolder,
 } from '../continuation.js';
-import { artifactPresence } from '../../../core/sessions/run-record-io.js';
 import { resumeStep } from '../../../core/sessions/run-status.js';
+import { sessionConversation } from '../../../core/state/planning-conversation.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { restoreInterruptedTaskFiles } from '../task/rollback.js';
 import { applyRebuiltContext, autoCompactResumeContext } from '../resume-context.js';
@@ -101,8 +101,6 @@ export type RunWorkflowOptions = {
   savedState?: WorkflowState | undefined;
   selectedSkills?: SkillMeta[] | undefined;
   signal?: AbortSignal | undefined;
-  /** Transient rewind feedback used by same-process continuation when transcript persistence is disabled. */
-  rewindFeedback?: string | undefined;
   /**
    * What the operator said when they continued this run. It seeds the first
    * step's continuation, so that step composes it into its own prompt.
@@ -170,7 +168,8 @@ export function composeWorkflowCustomRunnerRuntime(
     projectDir: input.projectDir,
     sessionId: input.sessionId,
     sweepStaleReviews: true,
-    onArtifactApproval: input.callbacks.onApprovalNeeded,
+    // An artifact review confirms no protected operation.
+    onArtifactApproval: (type, review) => input.callbacks.onApprovalNeeded(type, review, []),
     admission: {
       interaction: input.interaction,
       allowRepoRunners: input.allowRepoRunners,
@@ -213,18 +212,13 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
 
   let savedState = newWorkflow ? undefined : (args.savedState ?? opts.savedState);
   if (savedState) {
-    const mode = resolveMode({ config, savedMode: savedState.mode });
-    const approve = resolveApproveLevel({
-      mode,
-      configApprove: config.workflow.approve,
-      savedApprove: savedState.approve,
-    });
-    if (savedState.mode !== mode || savedState.approve !== approve) {
+    const approve = resolveApproveLevel(config);
+    if (savedState.approve !== approve) {
       const head = readWorkflowStateHead({ projectDir, sessionId });
       const pinned = commitWorkflowState({
         ref: { projectDir, sessionId },
         expected: head === null ? null : savedState,
-        next: { ...savedState, mode, approve },
+        next: { ...savedState, approve },
       });
       if (pinned.kind === 'conflict') {
         throw stateOpsError.conflict({
@@ -240,7 +234,6 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
       savedState = pinned.state;
     }
     setTrackedState(savedState);
-    bus.publish({ type: 'mode_resolved', ts: Date.now(), phase: savedState.phase, mode, approve });
   }
   // Every resume passes here, from the app and from the CLI alike, so this is
   // the one place the record is compared and rewritten. A moved plan seat also drops the
@@ -276,7 +269,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     setTrackedState(savedState);
   }
   const hasPendingRecovery = savedState?.pendingRecovery !== undefined;
-  const resumed = await resumeContinuation({
+  const continuation = await resumeContinuation({
     ref: { projectDir, sessionId },
     state: savedState,
     steer: opts.steer,
@@ -325,7 +318,6 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
         bus,
         resumeHolder,
         requireNonEmpty: true,
-        withoutCutCall: resumed.seedsPlannerPartial,
       });
     }
   }
@@ -371,15 +363,9 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
       newWorkflow && args.savedState !== undefined ? args.savedState : createInitialState(feature);
     // Saved with the start, as planning resolves them: planning keeps them only in memory, and
     // its first call reads the saved state back, so a run that saved none later took the config's.
-    const mode = resolveMode({ config, savedMode: state.mode });
     state = {
       ...state,
-      mode,
-      approve: resolveApproveLevel({
-        mode,
-        configApprove: config.workflow.approve,
-        savedApprove: state.approve,
-      }),
+      approve: resolveApproveLevel(config),
       plannerTool: summaryBase.plannerTool,
       ...(summaryBase.plannerModel !== undefined && { plannerModel: summaryBase.plannerModel }),
       ...(summaryBase.plannerKind !== undefined && { plannerKind: summaryBase.plannerKind }),
@@ -424,7 +410,6 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
   publishWorkflowConfig(
     { bus: bus, phase: state.phase },
     {
-      mode: resolveMode({ config, savedMode: state.mode }),
       plannerTool: summaryBase.plannerTool,
       plannerModel: summaryBase.plannerModel,
       implementerTool: summaryBase.implementerTool,
@@ -478,7 +463,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     }),
     ...(opts.streamingSink !== undefined && { streamingSink: opts.streamingSink }),
     ...(plannerContext !== undefined && { plannerContext }),
-    continuation: resumed.holder,
+    continuation,
   };
 
   return { ok: true, state, wctx };
@@ -486,9 +471,10 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
 
 /**
  * The words that restart a run are the user turn they are: recorded once in the
- * transcript and the session log. Not when the run has a question still pending —
- * the steer is that question's answer, and the call loop records it when it
- * consumes the seed.
+ * transcript and the session log. Not when the planning session has a question
+ * still pending — the steer is that question's answer, and the session records it
+ * when it consumes the seed. An older chain's question is earlier planning, so the
+ * steer is a turn of its own.
  */
 function publishResumedSteer(input: {
   bus: EventBus;
@@ -500,7 +486,7 @@ function publishResumedSteer(input: {
   const { bus, projectDir, sessionId, state } = input;
   const steer = input.steer?.trim();
   if (state === undefined || steer === undefined || steer === '') return;
-  if (state.pendingPlannerConversation?.answered === false) return;
+  if (sessionConversation(state)?.answered === false) return;
   appendMessage({ projectDir, sessionId }, { role: 'user', phase: state.phase, text: steer });
   publishUserMessage({ bus, phase: state.phase }, steer);
 }
@@ -514,10 +500,9 @@ export async function resumeContinuation(input: {
   ref: SessionRef;
   state: WorkflowState | undefined;
   steer: string | undefined;
-}): Promise<{ holder: ContinuationHolder; seedsPlannerPartial: boolean }> {
+}): Promise<ContinuationHolder> {
   const { ref, state, steer } = input;
-  if (state === undefined)
-    return { holder: createContinuationHolder(), seedsPlannerPartial: false };
+  if (state === undefined) return createContinuationHolder();
   const interrupted = state.interruptedStep;
   const task = state.tasks[state.currentTaskIndex];
   const keepWorkspace =
@@ -537,17 +522,13 @@ export async function resumeContinuation(input: {
       ? await readInterruptedPartial(ref)
       : undefined;
   if (partial === undefined && steer === undefined && !keepWorkspace)
-    return { holder: createContinuationHolder(), seedsPlannerPartial: false };
-  const step = interrupted?.step ?? resumeStep(state, artifactPresence(ref));
-  return {
-    holder: createContinuationHolder({
-      step,
-      ...(partial !== undefined && { partial }),
-      ...(steer !== undefined && { steer }),
-      ...(keepWorkspace && { keepWorkspace: true, briefFingerprint: hashTaskBrief([task]) }),
-    }),
-    seedsPlannerPartial: partial !== undefined && step.kind === 'planner',
-  };
+    return createContinuationHolder();
+  return createContinuationHolder({
+    step: interrupted?.step ?? resumeStep(state),
+    ...(partial !== undefined && { partial }),
+    ...(steer !== undefined && { steer }),
+    ...(keepWorkspace && { keepWorkspace: true, briefFingerprint: hashTaskBrief([task]) }),
+  });
 }
 
 const FILE_HALT_REASONS = new Set(['user-edit-conflict', 'approval-promotion-conflict']);

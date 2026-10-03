@@ -6,12 +6,7 @@ import type { EngineEvent } from '../../../engine/events/types.js';
 import { glyph, type GlyphTier, resolveGlyphTier } from '../../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { ROW_LEADING } from '../../../components/row-leading.js';
-import {
-  getRailStages,
-  railIsHandoff,
-  type RailStage,
-  type RailStageState,
-} from '../../../core/rail-stages.js';
+import { getRailStages, type RailStage, type RailStageState } from '../../../core/rail-stages.js';
 
 // The workflow screen's one left line: the column the transcript's marks land on past its own
 // lead, where the rail marker, every box border and the rows flanking the composer start too. The
@@ -140,9 +135,7 @@ export type RailForm = 'B' | 'C';
 export const RAIL_MARKER_SLOT_WIDTH = 2;
 
 export const RAIL_SHORT_LABEL: Record<RailStage, string> = {
-  spec: 'Spc',
   plan: 'Pln',
-  briefs: 'Brf',
   build: 'Bld',
   review: 'Rvw',
 };
@@ -151,20 +144,15 @@ export function railFormBLabel(state: RailStageState, options: { short: boolean 
   return options.short ? RAIL_SHORT_LABEL[state.stage] : formatStageLabel(state.stage);
 }
 
-// Same-role and handoff connectors, each wrapped in single spaces. Measured through the glyph tier so a
-// degraded host's wider ascii arrow (` -> `) keeps the renderer and the click zones in lockstep.
-export function railConnectorString(
-  options: { handoff: boolean },
-  tier: GlyphTier = resolveGlyphTier(),
-): string {
-  return ` ${glyph(options.handoff ? 'connectorHandoff' : 'connectorSame', tier)} `;
+// Every seam between two stages is a role handoff, drawn as an arrow wrapped in single spaces.
+// Measured through the glyph tier so a degraded host's wider ascii arrow (` -> `) keeps the
+// renderer and the click zones in lockstep.
+export function railConnectorString(tier: GlyphTier = resolveGlyphTier()): string {
+  return ` ${glyph('connectorHandoff', tier)} `;
 }
 
-export function railConnectorWidth(
-  options: { handoff: boolean },
-  tier: GlyphTier = resolveGlyphTier(),
-): number {
-  return getTerminalCellWidth(railConnectorString(options, tier));
+export function railConnectorWidth(tier: GlyphTier = resolveGlyphTier()): number {
+  return getTerminalCellWidth(railConnectorString(tier));
 }
 
 export function railFormBSegmentWidth(state: RailStageState, options: { short: boolean }): number {
@@ -177,13 +165,7 @@ export function measureFormB(
   tier: GlyphTier = resolveGlyphTier(),
 ): number {
   return stages.reduce((width, state, index) => {
-    const connector =
-      index > 0
-        ? railConnectorWidth(
-            { handoff: railIsHandoff(stages[index - 1]?.stage ?? state.stage, state.stage) },
-            tier,
-          )
-        : 0;
+    const connector = index > 0 ? railConnectorWidth(tier) : 0;
     return width + connector + railFormBSegmentWidth(state, options);
   }, 0);
 }
@@ -199,7 +181,7 @@ export function chooseFormBVariant(
   return { short: true };
 }
 
-// The thinnest five-stage line — short labels, fixed marker slots, semantic connectors. Below this
+// The thinnest three-stage line — short labels, fixed marker slots, semantic connectors. Below this
 // the rail drops to Form C, so the threshold is computed from the same primitives the rail renders.
 function getRailFormBMinWidth(phase: Phase, tier: GlyphTier = resolveGlyphTier()): number {
   return measureFormB(getRailStages(phase), { short: true }, tier);

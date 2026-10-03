@@ -92,8 +92,6 @@ export function writeMinimalHeadlessConfigYaml(
     '  test_command: "noop"',
     'workflow:',
     '  approve: none',
-    '  mode: quick',
-    '  task_review: none',
   ]);
 }
 

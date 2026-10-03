@@ -1,6 +1,5 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { WorkflowContext } from '../types.js';
 import type { RoutingDecision } from '../context-routing/types.js';
 import type { ResolvedImplementerProfile } from '../../../core/config/accessors/implementer-profiles.js';
@@ -16,7 +15,6 @@ import {
   retryProfileOverrideForTask,
   routingBlockMessage,
 } from './routing.js';
-import { stopWithReview } from './stop-with-review.js';
 
 export type RoutingSelectionResult =
   | {
@@ -26,19 +24,17 @@ export type RoutingSelectionResult =
       selectedModel: string | undefined;
       routingDecision: RoutingDecision;
     }
-  | { ok: false; state: WorkflowState; cancelled: boolean };
+  | { ok: false; state: WorkflowState };
 
 export async function selectRoutingProfile(opts: {
   wctx: WorkflowContext;
   state: WorkflowState;
   setTrackedState: (s: WorkflowState) => void;
   task: Task;
-  taskIndex: number;
   resolvedProfiles: ResolvedImplementerProfile[];
-  taskBreakdowns: TaskTokenUsage[];
   getRunnerModelName: (config: ResolvedImplementerProfile['config']) => string | undefined;
 }): Promise<RoutingSelectionResult> {
-  const { wctx, task, taskIndex, taskBreakdowns, setTrackedState, resolvedProfiles } = opts;
+  const { wctx, task, setTrackedState, resolvedProfiles } = opts;
   const { projectDir } = wctx;
   let state = opts.state;
 
@@ -59,7 +55,7 @@ export async function selectRoutingProfile(opts: {
       createdAt: nowIso(),
     });
     state = raisePendingRecovery(wctx, state, issue, setTrackedState);
-    return { ok: false, state, cancelled: false };
+    return { ok: false, state };
   }
 
   const routingDecision = routeTaskToImplementerProfile(
@@ -91,17 +87,7 @@ export async function selectRoutingProfile(opts: {
       createdAt: nowIso(),
     });
     state = raisePendingRecovery(wctx, state, issue, setTrackedState);
-    const review = await stopWithReview({
-      wctx,
-      state,
-      setTrackedState,
-      task,
-      taskIndex,
-      filesTouched: issue.files,
-      taskBreakdowns,
-      routingDecision,
-    });
-    return { ok: false, state: review.state, cancelled: review.cancelled };
+    return { ok: false, state };
   }
 
   return { ok: true, state, selectedProfile, selectedModel, routingDecision };

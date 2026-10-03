@@ -1,8 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createRuntimeCommands } from './registry.js';
 import { ALL_SCREENS } from '../../navigation/types.js';
-import { WORKFLOW_MODES, type WorkflowMode } from '../../schemas/enums.js';
-import { describeModeShape } from '../../pipeline-spec/mode-shape.js';
 import {
   COMMAND_CATEGORIES,
   REMOVED_COMMANDS,
@@ -22,8 +20,8 @@ describe('createRuntimeCommands registry shape', () => {
 
   it('registers the commands the reference documents, once each', () => {
     const registered = commands.map((cmd) => cmd.name);
-    expect(registered).toHaveLength(27);
-    expect(new Set(registered).size).toBe(27);
+    expect(registered).toHaveLength(23);
+    expect(new Set(registered).size).toBe(23);
   });
 
   it('registers /usage once, on the workflow, under view', () => {
@@ -101,34 +99,6 @@ describe('createRuntimeCommands registry shape', () => {
     for (const removed of Object.keys(REMOVED_COMMANDS)) {
       expect(names).not.toContain(removed);
     }
-  });
-});
-
-describe('/mode options', () => {
-  function modeArgs(current: WorkflowMode) {
-    const command = createRuntimeCommands(makeCtx({ getWorkflowMode: () => current })).find(
-      (cmd) => cmd.name === '/mode',
-    );
-    if (command?.kind !== 'arg' || command.args.kind !== 'closed') {
-      throw new Error('/mode is not a closed-argument command');
-    }
-    return command.args;
-  }
-
-  it('prices every mode from the pipeline spec, gate names spelled out', () => {
-    const args = modeArgs('speckit');
-
-    expect(args.options).toEqual([...WORKFLOW_MODES]);
-    expect(args.optionDescriptions).toEqual(
-      Object.fromEntries(
-        WORKFLOW_MODES.map((mode) => [mode, describeModeShape(mode, { gateNames: true })]),
-      ),
-    );
-  });
-
-  it('marks the mode the config is on, and only that one', () => {
-    expect(modeArgs('speckit').optionHints).toEqual({ speckit: 'current' });
-    expect(modeArgs('quick').optionHints).toEqual({ quick: 'current' });
   });
 });
 

@@ -31,5 +31,3 @@ export function sliceRuleText(): string {
     'Do not aim for a number of briefs. Order the dependencies so each brief leaves its affected checks green.',
   ].join(' ');
 }
-
-export const PLAN_PROMPT_MAX_BYTES = 110_000;

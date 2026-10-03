@@ -297,6 +297,7 @@ describe('prepareExecution', () => {
       },
     });
     const prepareSession = vi.fn(() => preparedSession(project, 'prepared-session'));
+    const collectReadiness = vi.fn(async () => ({ report: readyReport(project), config }));
 
     const outcome = await prepareExecution({
       projectDir: project,
@@ -306,7 +307,7 @@ describe('prepareExecution', () => {
       policy: policy('new-workflow'),
       deps: {
         collectArgVectorPreflightChecks: async () => [],
-        collectReadiness: async () => ({ report: readyReport(project), config }),
+        collectReadiness,
         detectRunnerEvidence: async ({ context }) => freshCliEvidence(context),
         resolveCliExecutableAliases: async () => ({
           command: 'codex',
@@ -320,6 +321,10 @@ describe('prepareExecution', () => {
 
     expect(outcome.kind).toBe('prepared');
     if (outcome.kind !== 'prepared') return;
+    // The report describes the run that starts: a headless one approves its plan unattended.
+    expect(collectReadiness).toHaveBeenCalledWith(
+      expect.objectContaining({ interaction: 'headless' }),
+    );
     expect(outcome.execution.gates).toHaveLength(5);
     expect(outcome.execution.gates.map((gate) => [gate.slot, gate.kind])).toEqual([
       [{ role: 'planner' }, 'cli'],

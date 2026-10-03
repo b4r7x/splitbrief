@@ -15,7 +15,7 @@ import {
   CONFIRM_REASON_OPTIONAL,
   CONFIRM_REASON_UNSTATED,
   IRREVERSIBLE_NOTE,
-  STICKY_HINTS,
+  CHOOSE_HINTS,
   approvalKeyColumnWidth,
   approvalOptionKeyCell,
   approvalOptionLabelText,
@@ -25,15 +25,16 @@ import {
   getConfirmOptionZones,
   getConfirmOptions,
   isIrreversibleActionClass,
-  stickyLeadShed,
-  stickySpacersShed,
+  promptLeadShed,
+  promptSpacersShed,
 } from '../../prompt-rows/approval.js';
 import { CONFIRM_PHRASE } from '../../../../core/approval/types.js';
 import type { TieredApprovalRequest } from '../../../../core/approval/types.js';
 import { approvalTextWidth } from '../../prompt-rows/measure.js';
-import { PROMPT_ZONE_Z } from './sticky.js';
 import { navigateIndex } from '../../../../utils/indexing.js';
 import { fitKeyLegend } from '../../../../core/key-legend.js';
+
+export const PROMPT_ZONE_Z = 50;
 
 type ConfirmStep = 'choose' | 'reason';
 
@@ -67,7 +68,7 @@ export function ConfirmApprovalPrompt({
   const cols = terminalSizeStore.use((s) => s.cols);
   const rows = terminalSizeStore.use((s) => s.rows);
   const boxRows = Math.min(promptRows, clampedBoxRows ?? promptRows);
-  const spacersShed = stickySpacersShed(promptRows, boxRows);
+  const spacersShed = promptSpacersShed(promptRows, boxRows);
   const irreversible = isIrreversibleActionClass(request.actionClass);
   const options = getConfirmOptions(request.actionClass);
   const keyWidth = approvalKeyColumnWidth(options);
@@ -161,7 +162,7 @@ export function ConfirmApprovalPrompt({
       promptRows: boxRows,
       actionClass: request.actionClass,
       actionDescription: request.actionDescription,
-      leadShed: stickyLeadShed(spacersShed),
+      leadShed: promptLeadShed(spacersShed),
     });
     const cleanups = zones.map((zone) =>
       registerMouseZone({
@@ -227,7 +228,7 @@ export function ConfirmApprovalPrompt({
           {nudged ? (
             <Text color={t.warning}>{fitKeyLegend(CONFIRM_NUDGE, approvalTextWidth(cols))}</Text>
           ) : (
-            <Text color={t.textDim}>{fitKeyLegend(STICKY_HINTS, approvalTextWidth(cols))}</Text>
+            <Text color={t.textDim}>{fitKeyLegend(CHOOSE_HINTS, approvalTextWidth(cols))}</Text>
           )}
         </>
       ) : (

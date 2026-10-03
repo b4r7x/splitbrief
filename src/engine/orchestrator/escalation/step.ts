@@ -1,9 +1,7 @@
 import { loadState } from '../../../core/state/persistence.js';
 import { defaultImplementerWriteMode } from '../../../core/schemas/implementer-config.js';
 import { formatValidationError } from '../validation/format-error.js';
-import { addUsageAndSave, raisePendingRecovery, transitionAndSave } from '../state-ops.js';
-import { buildScopeViolationRecoveryIssue } from '../recovery/builders/task.js';
-import { nowIso } from '../../../utils/format-time.js';
+import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import { refreshAndPersistCode } from '../task/refresh-code.js';
 import { gateAndPromoteChangedFiles } from '../approval/gate-and-promote.js';
 import { withPerCallAbort } from '../cancellable-call.js';
@@ -217,7 +215,6 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
     };
   }
   if (gateResult.outcome === 'gate-denied') {
-    const { decision } = gateResult.denial;
     const message = recordRetryDenial({
       ctx,
       state: gateResult.state,
@@ -226,23 +223,8 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
       subject: 'Retry',
       blocked: true,
     });
-    const deniedState =
-      decision.actionClass === 'write_out_of_scope'
-        ? raisePendingRecovery(
-            ctx,
-            gateResult.state,
-            buildScopeViolationRecoveryIssue({
-              task,
-              phase: gateResult.state.phase,
-              undeclaredFiles: decision.deniedFiles,
-              attempts,
-              maxAttempts: ctx.config.workflow.maxRetries,
-              createdAt: nowIso(),
-            }),
-          )
-        : gateResult.state;
     return {
-      state: deniedState,
+      state: gateResult.state,
       task,
       lastError: message,
       attempts,

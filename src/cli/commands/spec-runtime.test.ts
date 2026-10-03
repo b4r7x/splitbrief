@@ -9,7 +9,6 @@ import {
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makePlanner } from '#testing/helpers/orchestrator-factories.js';
-import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
 import { SPLITBRIEF_DIR } from '../../core/paths.js';
 import { defaultCliAuthChannel } from '../../core/runners/cli-tool-catalog.js';
 import {
@@ -17,7 +16,7 @@ import {
   PlannerArtifactSemanticIdSchema,
 } from '../../core/schemas/planner-artifact.js';
 import type { Config } from '../../core/schemas/config.js';
-import type { Planner, RunPhaseInput } from '../../engine/planners/types.js';
+import type { Planner } from '../../engine/planners/types.js';
 import type {
   ArtifactApprovalReview,
   CustomRunnerRuntimePort,
@@ -54,13 +53,7 @@ beforeEach(() => {
   consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
   originalIsTTY = process.stdin.isTTY;
   createPlannerMock.mockReset();
-  createPlannerMock.mockResolvedValue(
-    makePlanner({
-      runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
-        makePhaseCallResult({ call, ...(call === 'tasks' ? { tasks: [] } : {}) }),
-      ),
-    }),
-  );
+  createPlannerMock.mockResolvedValue(makePlanner());
 });
 
 afterEach(() => {

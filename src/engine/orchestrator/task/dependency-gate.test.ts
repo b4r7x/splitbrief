@@ -28,7 +28,6 @@ describe('checkDependencyGate', () => {
       setTrackedState: vi.fn(),
       task: first,
       taskIndex: 1,
-      taskBreakdowns: [],
     });
 
     expect(gate.stopped).toBe(true);
@@ -51,10 +50,9 @@ describe('checkDependencyGate', () => {
       setTrackedState: vi.fn(),
       task: next,
       taskIndex: 1,
-      taskBreakdowns: [],
     });
 
-    expect(gate).toMatchObject({ stopped: false, cancelled: false });
+    expect(gate.stopped).toBe(false);
     expect(gate.state.pendingRecovery).toBeUndefined();
   });
 });

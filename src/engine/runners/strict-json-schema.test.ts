@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import { PLAN_ANSWER_JSON_SCHEMA } from '../../core/schemas/plan.js';
 import { isStrictJsonSchema } from './strict-json-schema.js';
 
 const leaf = {
@@ -22,6 +23,10 @@ describe('isStrictJsonSchema', () => {
         ),
       ),
     ).toBe(true);
+  });
+
+  it('accepts the planning session answer, so planners use the native transport', () => {
+    expect(isStrictJsonSchema(PLAN_ANSWER_JSON_SCHEMA)).toBe(true);
   });
 
   it('accepts a strict object reached through $ref', () => {

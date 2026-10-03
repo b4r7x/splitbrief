@@ -204,12 +204,12 @@ describe('useSettingsEditor', () => {
 
 describe('hintFor', () => {
   const enumDef: SettingDef = {
-    id: 'workflow.mode',
-    label: 'Mode',
+    id: 'workflow.approve',
+    label: 'Plan approval',
     section: 'Workflow',
     description: '',
     kind: 'enum',
-    options: ['quick', 'standard'],
+    options: ['plan', 'none'],
   };
 
   it('advertises space rather than Enter on a row Enter cannot act on', () => {

@@ -233,21 +233,6 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
-      id: 'home-mode-completion',
-      title: 'Home · /mode completion menu',
-      surface: screenSurface('home'),
-      checkpoint: {
-        id: 'ready',
-        title: 'Mode completion open',
-        kind: 'ready',
-        marker: '0 gates',
-      },
-      elements: [
-        { id: 'composer', title: 'Feature composer' },
-        { id: 'completion', title: 'Mode completion menu' },
-      ],
-    }),
-    defineScenario({
       id: 'home-reference-completion',
       title: 'Home · @ reference completion menu',
       surface: screenSurface('home'),
@@ -295,38 +280,6 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
-      id: 'workflow-quick-setup',
-      title: 'Workflow · quick setup',
-      surface: screenSurface('workflow'),
-      checkpoint: {
-        id: 'quick-setup',
-        title: 'Preparing a quick run before its briefs call',
-        kind: 'planning',
-        marker: 'Planning…',
-      },
-      elements: [
-        { id: 'header', title: 'Workflow header' },
-        { id: 'composer', title: 'Workflow composer' },
-      ],
-    }),
-    defineScenario({
-      id: 'workflow-quick-researching',
-      title: 'Workflow · quick run researching',
-      surface: screenSurface('workflow'),
-      viewports: WIDE_VIEWPORTS,
-      checkpoint: {
-        id: 'quick-researching',
-        title: 'A quick run researching before its briefs call',
-        kind: 'planning',
-        marker: 'Researching…',
-      },
-      elements: [
-        { id: 'header', title: 'Workflow header' },
-        { id: 'sidebar', title: 'Workflow sidebar' },
-        { id: 'composer', title: 'Workflow composer' },
-      ],
-    }),
-    defineScenario({
       id: 'workflow-planning',
       title: 'Workflow · planning',
       surface: screenSurface('workflow'),
@@ -334,7 +287,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'planning',
         title: 'Active planning',
         kind: 'planning',
-        marker: 'Planning deterministic visual fixtures',
+        marker: 'Keep the public API?',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -343,33 +296,18 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
-      id: 'workflow-briefs-compiled',
-      title: 'Workflow · briefs compiled and measured',
+      id: 'workflow-plan-compiled',
+      title: 'Workflow · plan compiled',
       surface: screenSurface('workflow'),
       checkpoint: {
-        id: 'briefs-compiled',
-        title: 'One Task Brief card, then its quality verdict',
+        id: 'plan-compiled',
+        title: 'The planning session writes plan.md and tasks.md from plan.json',
         kind: 'planning',
-        marker: 'brief quality',
+        marker: 'Planning…',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
-        { id: 'transcript', title: 'Briefs transcript' },
-      ],
-    }),
-    defineScenario({
-      id: 'workflow-briefs-approved',
-      title: 'Workflow · briefs approved without an edit',
-      surface: screenSurface('workflow'),
-      checkpoint: {
-        id: 'briefs-approved',
-        title: 'The approval re-measures the briefs and repeats neither card nor verdict',
-        kind: 'implementation',
-        marker: 'brief readiness',
-      },
-      elements: [
-        { id: 'header', title: 'Workflow header' },
-        { id: 'transcript', title: 'Briefs transcript' },
+        { id: 'transcript', title: 'Plan transcript' },
       ],
     }),
     defineScenario({
@@ -589,78 +527,13 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'review',
         title: 'Review approval',
         kind: 'review',
-        marker: 'Apply bounded visual fixture patch',
+        marker: 'Change a package manifest:',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Review transcript' },
         { id: 'approval-panel', title: 'Approval panel' },
         { id: 'composer', title: 'Workflow composer' },
-      ],
-    }),
-    defineScenario({
-      id: 'workflow-approval-document',
-      title: 'Workflow · plan review gate',
-      surface: screenSurface('workflow'),
-      checkpoint: {
-        id: 'approval-document',
-        title: 'Document review gate',
-        kind: 'review',
-        marker: 'Approve plan and review the briefs',
-      },
-      elements: [
-        { id: 'header', title: 'Workflow header' },
-        { id: 'transcript', title: 'Review transcript' },
-        { id: 'approval-panel', title: 'Document review panel' },
-        { id: 'composer', title: 'Workflow composer' },
-      ],
-    }),
-    defineScenario({
-      id: 'workflow-gate-regenerating',
-      title: 'Workflow · plan rewritten from a gate change request',
-      surface: screenSurface('workflow'),
-      checkpoint: {
-        id: 'gate-regenerating',
-        title: 'Gate regeneration in progress',
-        kind: 'planning',
-        marker: 'Regenerating plan with feedback',
-      },
-      elements: [
-        { id: 'header', title: 'Workflow header' },
-        { id: 'transcript', title: 'Planning transcript' },
-        { id: 'composer', title: 'Workflow composer' },
-      ],
-    }),
-    defineScenario({
-      id: 'workflow-briefs-gate-regenerating',
-      title: 'Workflow · briefs rewritten from a gate change request',
-      surface: screenSurface('workflow'),
-      checkpoint: {
-        id: 'briefs-gate-regenerating',
-        title: 'Briefs gate regeneration in progress',
-        kind: 'planning',
-        marker: 'Applying Task Brief revision feedback',
-      },
-      elements: [
-        { id: 'header', title: 'Workflow header' },
-        { id: 'transcript', title: 'Planning transcript' },
-        { id: 'composer', title: 'Workflow composer' },
-      ],
-    }),
-    defineScenario({
-      id: 'workflow-approval-permission',
-      title: 'Workflow · out-of-scope write gate',
-      surface: screenSurface('workflow'),
-      checkpoint: {
-        id: 'approval-permission',
-        title: 'Permission gate',
-        kind: 'review',
-        marker: "Write outside the brief's declared files:",
-      },
-      elements: [
-        { id: 'header', title: 'Workflow header' },
-        { id: 'transcript', title: 'Implementation transcript' },
-        { id: 'approval-panel', title: 'Permission panel' },
       ],
     }),
     defineScenario({
@@ -696,34 +569,20 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
-      id: 'workflow-briefs-shared-file',
-      title: 'Workflow · brief parser warnings',
+      id: 'workflow-plan-card',
+      title: 'Workflow · plan card',
       surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
       checkpoint: {
-        id: 'briefs-shared-file',
-        title: 'Parser warnings',
-        kind: 'planning',
-        marker: 'Edge Cases',
-      },
-      elements: [
-        { id: 'header', title: 'Workflow header' },
-        { id: 'transcript', title: 'Planning transcript' },
-      ],
-    }),
-    defineScenario({
-      id: 'workflow-reviewing-briefs',
-      title: 'Workflow · briefs review gate',
-      surface: screenSurface('workflow'),
-      checkpoint: {
-        id: 'reviewing-briefs',
-        title: 'Briefs review gate',
+        id: 'plan-card',
+        title: 'Plan card',
         kind: 'review',
-        marker: 'start the build',
+        marker: 'Approve plan and start the build',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
-        { id: 'transcript', title: 'Briefs transcript' },
-        { id: 'approval-panel', title: 'Briefs review panel' },
+        { id: 'transcript', title: 'Plan transcript' },
+        { id: 'approval-panel', title: 'Plan card panel' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
@@ -745,24 +604,6 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
-    // A titled spec, then briefs past an unclosed code sample and a block-scalar title: the spec
-    // card counts sections and not its title, the Tasks card lists what the parser reads.
-    defineScenario({
-      id: 'workflow-spec-tasks-cards',
-      title: 'Workflow · spec and tasks cards',
-      surface: screenSurface('workflow'),
-      checkpoint: {
-        id: 'spec-tasks-cards',
-        title: 'Spec and tasks cards',
-        kind: 'planning',
-        marker: 'T003',
-      },
-      elements: [
-        { id: 'header', title: 'Workflow header' },
-        { id: 'transcript', title: 'Spec and tasks cards transcript' },
-        { id: 'composer', title: 'Workflow composer' },
-      ],
-    }),
     defineScenario({
       id: 'workflow-question',
       title: 'Workflow · clarification question',
@@ -777,23 +618,6 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Question transcript' },
-        { id: 'question-panel', title: 'Question panel' },
-        { id: 'composer', title: 'Workflow composer' },
-      ],
-    }),
-    defineScenario({
-      id: 'workflow-gate-question',
-      title: 'Workflow · question in a plan revision at the gate',
-      surface: screenSurface('workflow'),
-      checkpoint: {
-        id: 'gate-question',
-        title: 'Plan revision question',
-        kind: 'question',
-        marker: 'Which call should the live probe make',
-      },
-      elements: [
-        { id: 'header', title: 'Workflow header' },
-        { id: 'transcript', title: 'Gate revision transcript' },
         { id: 'question-panel', title: 'Question panel' },
         { id: 'composer', title: 'Workflow composer' },
       ],
@@ -860,22 +684,6 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Answered questions transcript' },
-        { id: 'composer', title: 'Workflow composer' },
-      ],
-    }),
-    defineScenario({
-      id: 'workflow-task-review',
-      title: 'Workflow · task review without usage counts',
-      surface: screenSurface('workflow'),
-      checkpoint: {
-        id: 'task-review',
-        title: 'Task ready for review',
-        kind: 'question',
-        marker: 'ready for review',
-      },
-      elements: [
-        { id: 'header', title: 'Workflow header' },
-        { id: 'question-panel', title: 'Task review panel' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
@@ -969,11 +777,11 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-at-rest-quick',
-      title: 'Workflow · a quick run paused at rest',
+      title: 'Workflow · an old quick run paused at rest',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'at-rest-paused',
-        title: 'Quick run paused at rest',
+        title: 'An old quick run at rest; continuing it runs one planning session',
         kind: 'ready',
         marker: 'a correction or ⏎ to continue',
       },
@@ -1167,27 +975,11 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'gate-stopped',
         title: 'Run stopped while a gate was open',
         kind: 'ready',
-        marker: 'plan gate',
+        marker: 'Paused at the plan',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Replayed transcript' },
-        { id: 'composer', title: 'Workflow composer' },
-      ],
-    }),
-    defineScenario({
-      id: 'workflow-gate-corrected',
-      title: 'Workflow · parked gate corrected, replayed from the run log',
-      surface: screenSurface('workflow'),
-      checkpoint: {
-        id: 'gate-corrected',
-        title: 'Correction applied before the plan gate reopens',
-        kind: 'ready',
-        marker: 'plan gate',
-      },
-      elements: [
-        { id: 'header', title: 'Workflow header' },
-        { id: 'transcript', title: 'Replayed correction and revised plan' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
@@ -1280,6 +1072,38 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Plan-seat usage-limit recovery menu',
         kind: 'question',
         marker: 'Change PLAN tool',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-plan-checks',
+      title: 'Workflow · a plan that still fails its checks after one repair',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery-plan-checks',
+        title: 'Plan checks halt recovery menu',
+        kind: 'question',
+        marker: 'Send a correction',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-plan-questions',
+      title: 'Workflow · a planner that still asks questions after two rounds',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery-plan-questions',
+        title: 'Plan questions halt recovery menu',
+        kind: 'question',
+        marker: 'Send a correction',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -1501,14 +1325,14 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
-      id: 'workflow-mode-next-run',
-      title: 'Workflow · a mode set for the next run',
+      id: 'workflow-removed-command',
+      title: 'Workflow · a removed command points at its replacement',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'ready',
-        title: 'Mode saved for the next run',
+        title: 'Removed command answered',
         kind: 'ready',
-        marker: 'for the next run',
+        marker: 'was removed',
       },
       elements: [{ id: 'composer', title: 'Workflow composer' }],
     }),
@@ -1697,6 +1521,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       {
         id: 'overlay-settings-filter-plan',
         title: 'Overlay · settings · filtered to plan',
+        marker: 'Settings',
+      },
+      {
+        id: 'overlay-settings-filter-approval',
+        title: 'Overlay · settings · filtered to plan approval',
         marker: 'Settings',
       },
       {
@@ -1967,17 +1796,17 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       {
         id: 'workflow-stop-menu-parked-gate',
         title: 'Workflow · parked at the plan gate',
-        marker: 'Paused at the plan gate',
+        marker: 'Paused at the plan',
       },
       {
         id: 'workflow-stop-menu-ended-gate',
         title: 'Workflow · ended at the plan gate',
-        marker: 'Cancelled by you at the plan gate',
+        marker: 'Cancelled by you at the plan',
       },
       {
         id: 'workflow-stop-menu-ended-rewound-gate',
         title: 'Workflow · ended after revising the plan',
-        marker: 'Cancelled by you at the plan gate',
+        marker: 'Cancelled by you at the plan',
         viewports: [...REQUIRED_VIEWPORTS, viewport({ cols: 60, rows: 40 })],
       },
       {
@@ -2039,7 +1868,14 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
     underlyingScreen: 'workflow',
     panelTitle: 'Editor frame',
     checkpointTitle: 'Editor ready',
-    scenarios: [{ id: 'overlay-editor', title: 'Overlay · editor', marker: 'Add greeting helper' }],
+    scenarios: [
+      { id: 'overlay-editor', title: 'Overlay · editor', marker: 'Add greeting helper' },
+      {
+        id: 'overlay-editor-not-saved',
+        title: 'Overlay · editor · a plan that fails its checks is not saved',
+        marker: 'Not saved',
+      },
+    ],
   }),
 };
 

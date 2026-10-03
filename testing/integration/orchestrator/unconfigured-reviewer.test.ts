@@ -11,8 +11,6 @@ import {
   makeImplementer,
   makePlanner,
 } from '#testing/helpers/orchestrator-factories.js';
-import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
-import type { RunPhaseInput } from '../../../src/engine/planners/types.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makePricedModelCache } from '#testing/helpers/factories/model-cache.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
@@ -24,6 +22,7 @@ import { addEvent } from '../../../src/stores/workflow/actions/event.js';
 import { tokensStore } from '../../../src/stores/workflow/tokens.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import { seedValidationProject } from '#testing/helpers/validation-project.js';
+import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
 
 const dirs: string[] = [];
 
@@ -57,29 +56,22 @@ describe('run with no reviewer configured', () => {
     const events: EngineEvent[] = [];
 
     const planner = makePlanner({
-      runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
-        makePhaseCallResult({
-          call,
-          usage: PLAN_USAGE,
-          ...(call === 'tasks'
-            ? {
-                tasks: [
-                  makeTask({
-                    id: 'T001',
-                    action: 'create',
-                    file: targetFile,
-                    title: 'Create validated module',
-                    description: 'Create a module that satisfies the project validation script.',
-                    implementationSteps: ['Create src/loop.ts with the marker export.'],
-                    tests: ['node validate.mjs passes'],
-                    scope: { inBounds: [targetFile], outOfBounds: ['unrelated files'] },
-                    evidence: ['validation passes before workflow_complete'],
-                    typeDefs: 'export const loop: string',
-                  }),
-                ],
-              }
-            : {}),
-        }),
+      typedCall: typedCallFromTasks(
+        [
+          makeTask({
+            id: 'T001',
+            action: 'create',
+            file: targetFile,
+            title: 'Create validated module',
+            description: 'Create a module that satisfies the project validation script.',
+            implementationSteps: ['Create src/loop.ts with the marker export.'],
+            tests: ['node validate.mjs passes'],
+            scope: { inBounds: [targetFile], outOfBounds: ['unrelated files'] },
+            evidence: ['validation passes before workflow_complete'],
+            typeDefs: 'export const loop: string',
+          }),
+        ],
+        PLAN_USAGE,
       ),
       review: vi
         .fn()
@@ -115,7 +107,7 @@ describe('run with no reviewer configured', () => {
         contextLength: 4096,
       },
       validation: { typecheck: false, lint: false, test: true, testCommand: 'node validate.mjs' },
-      workflow: { mode: 'standard', approve: 'none', maxRetries: 1 },
+      workflow: { approve: 'none', maxRetries: 1 },
     });
     const prepared = makePreparedExecution({
       projectDir,
@@ -166,22 +158,12 @@ describe('run with no reviewer configured', () => {
       'planner_status',
       'user_message',
       'workflow_config',
-      'mode_resolved',
-      // Four planner calls, each its own durable step: it starts, it books its tokens, and its
-      // document is on disk before the next one begins.
+      // One planning session: it starts, it books its tokens, and plan.md and tasks.md, rendered
+      // from the plan, are on disk before the build begins.
       'planner_status',
       'cost_update',
       'artifact_written',
-      'planner_status',
-      'cost_update',
       'artifact_written',
-      'planner_status',
-      'cost_update',
-      'artifact_written',
-      'planner_status',
-      'cost_update',
-      'artifact_written',
-      'brief_quality_passed',
       'snapshot_created',
       'tasks_planned',
       'validation_baseline',
@@ -228,7 +210,7 @@ describe('run with no reviewer configured', () => {
 
     // A run without a reviewer bills the review tokens on the strong side's single cost line.
     // Each planner call books its own usage, so the planning half is one charge per call.
-    const plannerCalls = vi.mocked(planner.runPhase).mock.calls.length;
+    const plannerCalls = vi.mocked(planner.typedCall).mock.calls.length;
     const providerCosts = summary.costBreakdown?.providerCosts ?? {};
     expect(Object.keys(providerCosts)).toEqual([PLANNER_PROVIDER]);
     expect(providerCosts[PLANNER_PROVIDER]).toMatchObject({

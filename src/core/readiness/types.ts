@@ -46,7 +46,6 @@ export interface ReadinessReport {
   nextAction: ReadinessNextAction;
   sections: ReadinessSection[];
   metadata: {
-    mode?: string | undefined;
     approve?: string | undefined;
     configPath?: string | undefined;
     configExists?: boolean | undefined;

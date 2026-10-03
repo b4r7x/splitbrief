@@ -17,6 +17,12 @@ import type {
   TieredApprovalResponse,
 } from '../../../core/approval/types.js';
 import { CONFIRM_PHRASE } from '../../../core/approval/types.js';
+import { createInitialState } from '../../../core/state/machine.js';
+import { persistApprovalEvidence } from '../evidence/persistence.js';
+import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
+import { TaskSpecSchema } from '../../../core/schemas/plan.js';
+import { taskFromSpec } from '../../spec/plan-tasks.js';
+import { planConfirmations } from './confirm.js';
 
 function makeInput(overrides: Partial<GateChangedFilesInput> = {}): GateChangedFilesInput {
   const { bus } = makeBusRecorder();
@@ -46,14 +52,6 @@ describe('gateChangedFiles', () => {
     const input = makeInput({
       changedFiles: ['src/z.ts', 'src/a.ts', 'src/z.ts'],
       config: makeApprovalConfig({ enabled: true }),
-      callbacks: {
-        onApprovalNeeded: async () => ({ approved: true }),
-        onComplete: () => {},
-        onTieredApproval: async (): Promise<TieredApprovalResponse> => ({
-          decision: 'allow',
-          scope: 'once',
-        }),
-      },
     });
 
     const result = await gateChangedFiles(input);
@@ -65,15 +63,15 @@ describe('gateChangedFiles', () => {
   it('gates every file after a denial and names each denied path', async () => {
     const asked: string[] = [];
     const input = makeInput({
-      changedFiles: ['src/c.ts', 'src/a.ts', 'src/b.ts'],
-      config: makeApprovalConfig({ enabled: true, tiers: { write_out_of_scope: 'sticky' } }),
+      changedFiles: ['package.json', '.env', 'go.mod'],
+      config: makeApprovalConfig({ enabled: true }),
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
         onComplete: () => {},
         onTieredApproval: async (request): Promise<TieredApprovalResponse> => {
           asked.push(request.actionDescription);
-          return request.actionDescription === 'write src/b.ts'
-            ? { decision: 'allow', scope: 'once' }
+          return request.actionDescription === 'write go.mod'
+            ? { decision: 'confirm', phrase: CONFIRM_PHRASE, reason: 'ok' }
             : { decision: 'deny', reason: 'no' };
         },
       },
@@ -81,32 +79,32 @@ describe('gateChangedFiles', () => {
 
     const result = await gateChangedFiles(input);
 
-    expect(asked).toEqual(['write src/a.ts', 'write src/b.ts', 'write src/c.ts']);
-    expect(result).toMatchObject({ allow: false, deniedFiles: ['src/a.ts', 'src/c.ts'] });
+    expect(asked).toEqual(['write .env', 'write go.mod', 'write package.json']);
+    expect(result).toMatchObject({ allow: false, deniedFiles: ['.env', 'package.json'] });
   });
 
   it('returns the first rejected file and action when a later write is denied', async () => {
     const input = makeInput({
-      changedFiles: ['src/z.ts', 'src/a.ts', 'src/z.ts'],
-      config: makeApprovalConfig({ enabled: true, tiers: { write_out_of_scope: 'sticky' } }),
+      changedFiles: ['package.json', '.env', 'package.json'],
+      config: makeApprovalConfig({ enabled: true }),
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
         onComplete: () => {},
         onTieredApproval: async (request): Promise<TieredApprovalResponse> => {
-          if (request.actionDescription === 'write src/a.ts') {
-            return { decision: 'allow', scope: 'once' };
+          if (request.actionDescription === 'write .env') {
+            return { decision: 'confirm', phrase: CONFIRM_PHRASE, reason: 'ok' };
           }
-          return { decision: 'deny', reason: 'blocked z' };
+          return { decision: 'deny', reason: 'blocked manifest' };
         },
       },
     });
 
     const result = await gateChangedFiles(input);
 
-    expect(result).toMatchObject({ allow: false, deniedFiles: ['src/z.ts'] });
-    expect(result.changedFiles).toEqual(['src/a.ts', 'src/z.ts']);
-    expect(result.actionDescription).toBe('write src/z.ts');
-    expect(result.reason).toBe('blocked z');
+    expect(result).toMatchObject({ allow: false, deniedFiles: ['package.json'] });
+    expect(result.changedFiles).toEqual(['.env', 'package.json']);
+    expect(result.actionDescription).toBe('write package.json');
+    expect(result.reason).toBe('blocked manifest');
   });
 
   it('aggregates confirm-tier approvals across package and control-plane writes', async () => {
@@ -166,32 +164,6 @@ describe('gateChangedFiles', () => {
     expect(requests).toEqual([]);
   });
 
-  it.each([
-    { name: 'suffix of a declared file', changed: 'src/app.ts.backup', dependsOnFiles: [] },
-    { name: 'declared file under another root', changed: 'other/src/app.ts', dependsOnFiles: [] },
-    {
-      name: 'suffix of a selected dependency',
-      changed: 'src/shared/utils.ts.orig',
-      dependsOnFiles: ['src/shared/utils.ts'],
-    },
-  ])('$name reaches the sticky tier', async ({ changed, dependsOnFiles }) => {
-    const requests: TieredApprovalRequest[] = [];
-    const result = await gateChangedFiles(
-      makeInput({
-        task: makeTask({ file: 'src/app.ts' }),
-        changedFiles: [changed],
-        dependsOnFiles,
-        config: makeApprovalConfig({ enabled: true, tiers: { write_out_of_scope: 'sticky' } }),
-        callbacks: recordingCallbacks(requests),
-      }),
-    );
-
-    expect(result).toMatchObject({ allow: false, deniedFiles: [changed] });
-    expect(requests.map((request) => [request.tier, request.actionClass])).toEqual([
-      ['sticky', 'write_out_of_scope'],
-    ]);
-  });
-
   it('writes to a selected dependency are auto-approved', async () => {
     const requests: TieredApprovalRequest[] = [];
     const result = await gateChangedFiles(
@@ -206,32 +178,71 @@ describe('gateChangedFiles', () => {
     expect(result.allow).toBe(true);
     expect(requests).toEqual([]);
   });
+});
 
-  it('a sticky grant for app.ts does not cover its backup', async () => {
-    const requests: TieredApprovalRequest[] = [];
+describe('protected writes an approved plan lists', () => {
+  it('lets the listed write pass without a prompt and still asks for an unlisted one', async () => {
+    const asked: string[] = [];
     const input = makeInput({
-      changedFiles: ['src/app.ts'],
-      config: makeApprovalConfig({ enabled: true, tiers: { write_out_of_scope: 'sticky' } }),
+      changedFiles: ['package.json', '.env'],
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
         onComplete: () => {},
         onTieredApproval: async (request): Promise<TieredApprovalResponse> => {
-          requests.push(request);
-          return request.actionDescription === 'write src/app.ts'
-            ? { decision: 'allow', scope: 'session' }
-            : { decision: 'deny', reason: 'not granted' };
+          asked.push(request.actionDescription);
+          return { decision: 'deny', reason: 'no' };
         },
       },
     });
+    const planned = makeTask({
+      file: 'src/foo.ts',
+      protectedOperations: [{ path: 'package.json', operation: 'write' }],
+    });
+    persistApprovalEvidence({
+      wctx: input,
+      state: createInitialState('feature'),
+      decision: { allow: true, confirmApprovals: planConfirmations([planned], input.projectDir) },
+    });
 
-    expect((await gateChangedFiles(input)).allow).toBe(true);
-    expect((await gateChangedFiles(input)).allow).toBe(true);
-    const backup = await gateChangedFiles({ ...input, changedFiles: ['src/app.ts.backup'] });
+    const result = await gateChangedFiles(input);
 
-    expect(backup).toMatchObject({ allow: false, deniedFiles: ['src/app.ts.backup'] });
-    expect(requests.map((request) => request.actionDescription)).toEqual([
-      'write src/app.ts',
-      'write src/app.ts.backup',
-    ]);
+    expect(asked).toEqual(['write .env']);
+    expect(result.allow).toBe(false);
+    if (result.allow) return;
+    expect(result.deniedFiles).toEqual(['.env']);
   });
+
+  it.each(['./package.json', 'src/../package.json'])(
+    'matches a listed %s to the package.json the gate asks about',
+    async (listed) => {
+      const asked: string[] = [];
+      const input = makeInput({
+        changedFiles: ['package.json'],
+        callbacks: {
+          onApprovalNeeded: async () => ({ approved: true }),
+          onComplete: () => {},
+          onTieredApproval: async (request): Promise<TieredApprovalResponse> => {
+            asked.push(request.actionDescription);
+            return { decision: 'deny', reason: 'no' };
+          },
+        },
+      });
+      const planned = taskFromSpec(
+        TaskSpecSchema.parse(
+          makeTaskSpec({ protectedOperations: [{ path: listed, operation: 'write' }] }),
+        ),
+        input.projectDir,
+      );
+      persistApprovalEvidence({
+        wctx: input,
+        state: createInitialState('feature'),
+        decision: { allow: true, confirmApprovals: planConfirmations([planned], input.projectDir) },
+      });
+
+      const result = await gateChangedFiles(input);
+
+      expect(asked).toEqual([]);
+      expect(result.allow).toBe(true);
+    },
+  );
 });

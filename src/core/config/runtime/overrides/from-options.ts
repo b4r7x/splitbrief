@@ -1,12 +1,5 @@
-import type { Config } from '../../../schemas/config.js';
 import type { WorkflowOpts } from '../../../types/config-options.js';
-import { normalizeWorkflowMode, type WorkflowMode } from '../../../schemas/enums.js';
-import { getWorkflowMode } from '../../accessors/values.js';
 import type { CLIOverrides } from './schema.js';
-
-export function resolveCliWorkflowMode(opts: WorkflowOpts, config: Config): WorkflowMode {
-  return normalizeWorkflowMode(opts.mode) ?? getWorkflowMode(config);
-}
 
 export function workflowOptsToCLIOverrides(opts: WorkflowOpts): CLIOverrides {
   return {
@@ -40,8 +33,6 @@ export function workflowOptsToCLIOverrides(opts: WorkflowOpts): CLIOverrides {
       outputFormat: opts.reviewerOutputFormat,
       contextLength: opts.reviewerContextLength,
     },
-    approve: opts.approve,
-    mode: opts.mode,
     plannerEffort: opts.plannerEffort,
     reviewerEffort: opts.reviewerEffort,
     yolo: opts.yolo,

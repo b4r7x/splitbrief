@@ -6,12 +6,7 @@ import { overlayStore } from '../../stores/ui/overlay.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { stopStore } from '../../stores/workflow/stop.js';
 import { tasksStore } from '../../stores/workflow/tasks.js';
-import type {
-  RuntimeCommandDef,
-  CopyResult,
-  CopyTarget,
-} from '../../core/runtime/commands/types.js';
-import type { Focus } from '../../stores/ui/focus.js';
+import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { ApprovalPrompt } from '../../features/workflow/components/approval-prompt.js';
 import { QuestionPrompt } from '../../features/workflow/components/question-prompt.js';
 import { ScreenShell } from '../../components/screen-shell.js';
@@ -30,11 +25,11 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { preparationStore } from '../../stores/navigation/preparation.js';
 import { controlsStore } from '../../stores/ui/controls.js';
 import { inputHeightStore } from '../../stores/ui/input-height.js';
-import { focusStore } from '../../stores/ui/focus.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { useStores } from '../../stores/use-stores.js';
 import {
   clampWorkflowPromptRows,
+  getReviewPanelBudget,
   getWorkflowContentWidth,
   getWorkflowSidebarWidth,
   getWorkflowViewportHeight,
@@ -60,7 +55,7 @@ import {
   formatRecoveryPrompt,
 } from '../../features/workflow/recovery-prompt.js';
 import { queuePlaceholder } from '../../features/workflow/input-hints.js';
-import { REVIEW_COMMENT_DRAFT } from '../../core/keybindings/review.js';
+import { REVIEW_COMMENT_DRAFT } from '../../features/workflow/review-commands.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../lib/terminal/typeahead-grace.js';
 import { navigateIndex } from '../../utils/indexing.js';
 import { sessionSelectDeps } from '../prepare-resume.js';
@@ -70,8 +65,6 @@ import type { listProjectFiles } from '../../lib/file-listing.js';
 interface WorkflowScreenProps {
   commands: RuntimeCommandDef[];
   onRuntimeCommand: (command: string) => void;
-  copyTarget?: ((target: CopyTarget) => Promise<CopyResult>) | undefined;
-  canCopyFocused?: ((focus: Focus | null) => boolean) | undefined;
   deps?: WorkflowScreenDeps | undefined;
   readClipboardImage?: typeof readClipboardImage | undefined;
   listProjectFiles?: typeof listProjectFiles | undefined;
@@ -80,8 +73,6 @@ interface WorkflowScreenProps {
 export function WorkflowScreen({
   commands,
   onRuntimeCommand,
-  copyTarget,
-  canCopyFocused,
   deps,
   readClipboardImage,
   listProjectFiles,
@@ -101,20 +92,17 @@ export function WorkflowScreen({
   const [reviewSelected, setReviewSelected] = useState(0);
   const reviewKeysArmed = reviewKeysStore.use((state) => state.armed);
   const reviewOwnerToken = reviewStore.use((state) => state.ownerToken);
-  const briefFocus = focusStore.use((focus) => focus);
+  const reviewConfirms = reviewStore.use((state) => state.confirms);
   const recoveryIssue = recoveryNoticeStore.use((state) => state.issue);
   const questionState = questionPromptStore.use((state) => state);
   const plannerQuestions = questionState.questions;
 
   const model = useWorkflowScreen({
     onRuntimeCommand,
-    copyTarget,
-    canCopyFocused,
     // Continuing a run at rest re-prepares its tools through the app's own preparation root,
     // which is where every other seat preparation in the TUI already goes.
     deps: { ...deps, sessionSelect: deps?.sessionSelect ?? sessionSelectDeps },
   });
-  const briefListReview = model.phase === 'reviewing-briefs';
   const reviewArtifact =
     model.inputMode.mode === 'review' && !model.promptPending && !model.hasOverlay
       ? reviewArtifactForPhase(model.phase)
@@ -122,16 +110,12 @@ export function WorkflowScreen({
   // A draft in the composer is what turns the letters back into text, so the same flag decides
   // whether the panel advertises them or the two keys a comment answers to.
   const reviewCommenting = reviewArtifact !== null && !reviewKeysArmed;
-  const reviewYankActive = briefListReview && (canCopyFocused?.(briefFocus) ?? false);
 
   useLayoutEffect(() => {
     setReviewSelected(0);
   }, [reviewArtifact, reviewOwnerToken]);
 
   const handleReviewBoundaryNavigate = (direction: 'up' | 'down'): boolean => {
-    // A focused brief answers the arrows first; with no list under the gate they move the cursor,
-    // which is the only thing every document gate has to move.
-    if (briefListReview && model.navigateBriefReview(direction)) return true;
     if (reviewArtifact === null) return false;
     const optionCount = reviewDocumentOptions(reviewArtifact).length;
     setReviewSelected((index) => navigateIndex(direction, index, optionCount));
@@ -170,8 +154,8 @@ export function WorkflowScreen({
     }
     if (reviewArtifact !== null && text.trim() === '') {
       const row = reviewDocumentOptions(reviewArtifact)[reviewSelected];
-      // The comment row hands the keyboard to the composer the same way the `c` accelerator does:
-      // one prefilled draft, so there is one spelling of a review comment and not two.
+      // The comment row hands the keyboard to the composer the same way a typed `c` does: one
+      // prefilled draft, so there is one spelling of a review comment and not two.
       if (row === undefined || row.command === 'comment') {
         composerDraftStore.request(REVIEW_COMMENT_DRAFT);
         return;
@@ -213,12 +197,17 @@ export function WorkflowScreen({
       : true
     : false;
   const railForm = selectRailForm({ phase: model.phase, cols });
+  const reviewBudgetRows = getReviewPanelBudget({ rows, inputRows });
   const requestedPromptRows = stopMenuOpen
     ? stopMenuLayout(readStopMenuRows(), cols).height
     : getWorkflowPromptRows({
         approvalState: model.approvalPromptState,
         questionHint,
-        reviewArtifact,
+        review: {
+          artifact: reviewArtifact,
+          confirms: reviewConfirms,
+          budgetRows: reviewBudgetRows,
+        },
         recoveryIssue: recoveryPromptOpen ? recoveryIssue : null,
         questions: plannerQuestions,
         questionIndex: questionState.index,
@@ -366,7 +355,6 @@ export function WorkflowScreen({
                   },
                 }
               : {})}
-            reviewYankActive={reviewYankActive}
             reviewEpoch={model.inputMode.mode === 'review' ? reviewOwnerToken : undefined}
             disabled={model.hasOverlay || model.promptPending || covered}
           />
@@ -399,6 +387,8 @@ export function WorkflowScreen({
               : {
                   review: {
                     artifact: reviewArtifact,
+                    confirms: reviewConfirms,
+                    budgetRows: reviewBudgetRows,
                     selectedIndex: reviewSelected,
                     commenting: reviewCommenting,
                   },

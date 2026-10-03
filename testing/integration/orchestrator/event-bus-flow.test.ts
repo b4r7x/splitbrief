@@ -48,7 +48,7 @@ describe('EventBus end-to-end flow', { timeout: 90_000 }, () => {
         tasks: [
           makeTask({
             scope: {
-              inBounds: ['Modify only `src/hello.ts`.'],
+              inBounds: ['src/hello.ts'],
               outOfBounds: ['Do not touch anything outside the task file.'],
             },
             evidence: ['brief-quality.json confirms the task brief is complete'],

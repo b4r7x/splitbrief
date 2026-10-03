@@ -36,7 +36,12 @@ type PlannerCall = { args: string[]; prompt: string };
 
 const FEATURE = 'name the export';
 const TRANSCRIPT_LINE = 'The export must be named PERIWINKLE-42.';
-const QUESTION = 'Which module?\n<!-- Q:{"id":"module","type":"input","text":"Which module?"} -->';
+const QUESTION = JSON.stringify({
+  result: {
+    kind: 'questions',
+    questions: [{ id: 'module', text: 'Which module?', choices: null, default: 'src' }],
+  },
+});
 
 /**
  * Fake planner CLIs that log every call with the prompt they read from stdin.
@@ -118,7 +123,7 @@ function crewConfig(planner: Config['planner']): Config {
       planner,
       implementer: { kind: 'cli', tool: 'opencode', model: 'opencode/test', contextLength: 4096 },
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-      workflow: { mode: 'quick', approve: 'none', maxRetries: 1 },
+      workflow: { approve: 'none', maxRetries: 1 },
     }),
   );
 }

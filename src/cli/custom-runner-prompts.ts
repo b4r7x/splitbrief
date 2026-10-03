@@ -15,7 +15,7 @@ type CustomRunnerPromptOptions = Readonly<{
   write?: ((text: string) => void) | undefined;
 }>;
 
-async function promptForLine(question: string): Promise<string> {
+export async function promptForLine(question: string): Promise<string> {
   const readline = createInterface({ input: process.stdin, output: process.stderr });
   const eof = Symbol('eof');
   const closed = new Promise<typeof eof>((resolve) => readline.once('close', () => resolve(eof)));

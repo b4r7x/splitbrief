@@ -1,5 +1,4 @@
 import type { Phase } from './schemas/enums.js';
-import { PHASES } from './schemas/enums.js';
 
 type PhaseRole = 'planner' | 'implementer';
 
@@ -60,18 +59,6 @@ export function isImplementerPhase(phase: Phase): boolean {
 // `idle` is the pre-start phase, not an end: a run resets to it and can start over.
 export function isTerminalPhase(phase: Phase): boolean {
   return phase === 'complete';
-}
-
-function phaseOrder(phase: Phase): number {
-  return PHASES.indexOf(phase);
-}
-
-export function canReviseSpec(phase: Phase): boolean {
-  return !isTerminalPhase(phase) && phaseOrder(phase) >= phaseOrder('reviewing-spec');
-}
-
-export function canRevisePlan(phase: Phase): boolean {
-  return !isTerminalPhase(phase) && phaseOrder(phase) >= phaseOrder('reviewing-plan');
 }
 
 export function canRedoTask(phase: Phase): boolean {

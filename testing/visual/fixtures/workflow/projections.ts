@@ -8,19 +8,19 @@ import { retainedWorkspaceNotices, retainedWorkspaceProjection } from './retaine
 import { taskId } from '../../../../src/core/schemas/task.js';
 import type { WorkflowState } from '../../../../src/core/schemas/workflow.js';
 import { makeTask } from '../../../helpers/factories/task.js';
-import { makeUsage } from '../../../helpers/factories/summary.js';
+import { makePlanProposal, makeTaskSpec } from '../../../helpers/factories/plan.js';
+import { formatPlanMarkdown } from '../../../../src/engine/spec/plan-markdown.js';
+import { MAX_QUESTION_ROUNDS } from '../../../../src/engine/spec/prompts/plan-session.js';
+import { taskFromSpec } from '../../../../src/engine/spec/plan-tasks.js';
+import { planConfirmations } from '../../../../src/engine/orchestrator/approval/confirm.js';
 import { makeImplState, makeWorkflowState } from '../../../helpers/factories/workflow-state.js';
 import type { EngineEvent, EngineEventOf } from '../../../../src/engine/events/types.js';
-import type {
-  TaskReviewRequest,
-  UserEditConflict,
-} from '../../../../src/engine/events/workflow-events.js';
+import type { UserEditConflict } from '../../../../src/engine/events/workflow-events.js';
 import type { ClarificationQuestion } from '../../../../src/core/schemas/question.js';
 import type { ReviewArtifact } from '../../../../src/features/workflow/prompt-rows/approval.js';
 import { getWorkflowPromptRows } from '../../../../src/features/workflow/prompt-rows/workflow.js';
 import { formatRecoveryPrompt } from '../../../../src/features/workflow/recovery-prompt.js';
 import { formatUserEditConflictPrompt } from '../../../../src/features/workflow/user-edit-conflict-prompt.js';
-import { formatTaskReviewPrompt } from '../../../../src/features/workflow/task-review-prompt.js';
 import { projectRunnerCallEvents } from '../../../../src/engine/calls/event-projection.js';
 import type { RunnerCallEvent } from '../../../../src/engine/calls/types.js';
 import {
@@ -32,7 +32,7 @@ import type { TieredApprovalRequest } from '../../../../src/core/approval/types.
 import type { StopIntent, StopParkKind, StopPhase } from '../../../../src/stores/workflow/stop.js';
 import type { ScenarioId } from '../../contracts/identifiers.js';
 import { scenarioId } from '../../contracts/identifiers.js';
-import { specTasksCardsProjection, tasksCardProjection } from './artifact-card-projections.js';
+import { tasksCardProjection } from './artifact-card-projections.js';
 import {
   buildRetryExhaustedRecoveryIssue,
   buildReviewFailedRecoveryIssue,
@@ -44,7 +44,10 @@ import {
   hintHaltDetails,
   reviewSeatDetails,
 } from '../../../../src/engine/orchestrator/recovery/builders/details.js';
-import { buildPlannerCallFailedRecoveryIssue } from '../../../../src/engine/orchestrator/recovery/builders/planner.js';
+import {
+  buildPlanSessionHaltRecoveryIssue,
+  buildPlannerCallFailedRecoveryIssue,
+} from '../../../../src/engine/orchestrator/recovery/builders/planner.js';
 import {
   diagnosePlannerCallFailure,
   type PlannerCallDiagnosis,
@@ -62,7 +65,11 @@ import { error } from '../../../../src/utils/error.js';
 import { createEventBus } from '../../../../src/engine/events/bus.js';
 import type { EventBus } from '../../../../src/engine/events/types.js';
 import { sanitizeDiscoveredValidation } from '../../../../src/engine/orchestrator/planning/sanitize-discovered-validation.js';
-import { visualConfig, VISUAL_WORKFLOW_SESSION_ID } from '../screen-fixtures.js';
+import {
+  VISUAL_FIXTURE_PROJECT_DIR,
+  visualConfig,
+  VISUAL_WORKFLOW_SESSION_ID,
+} from '../screen-fixtures.js';
 import { VISUAL_FIXTURE_EPOCH } from '../common.js';
 import { RUNNER_IDLE_WARN_MS } from '../../../../src/core/schemas/runner-fields.js';
 import { atRestProjections } from './at-rest-projections.js';
@@ -85,7 +92,6 @@ const FIXED_CALL_ID = 'visual-call-001';
 const FIXED_RUNNER_NAME = 'ollama';
 const FIXED_RUNNER_MODEL = 'qwen2.5-coder:7b';
 const WORKFLOW_FEATURE = 'Visual fixture workflow';
-const BRIEFS_COMPILED_FEATURE = 'Rotate the session secrets in the config module so the tests pass';
 export const WORKFLOW_FIXTURE_REVIEW_FILE = 'testing/visual/fixtures/workflow/projections.ts';
 export const WORKFLOW_FIXTURE_REVIEW_PANEL_FILE =
   'testing/visual/fixtures/workflow/review-fixture.md';
@@ -96,14 +102,13 @@ export const WORKFLOW_FIXTURE_TASK_ID_3 = taskId('T903');
 
 export const WORKFLOW_FIXTURE_TEXT = Object.freeze({
   idle: 'no events yet',
-  planning: 'Planning deterministic visual fixtures',
   planningNarration: 'Reading the parser before the fixture it pins.',
   planningRead: 'src/engine/streaming/parse-stream-json.ts',
   planningReply: 'The parser keeps the frames out of the reply.',
   implementation: 'Inspecting deterministic fixture contract',
   implementationTask: 'Project deterministic workflow activity',
   validationSkipReason: 'no affected test file found',
-  review: 'Apply bounded visual fixture patch',
+  review: 'package.json',
   reviewAnswer: 'Approve once',
   question: 'Which seat performs the per-slice review?',
   questionAnswer: 'Reviewer/planner seat',
@@ -129,13 +134,16 @@ interface FixtureQuestion {
 interface FixtureApproval {
   readonly actionDescription: string;
   readonly answer: string;
-  readonly tier?: TieredApprovalRequest['tier'];
   readonly actionClass?: TieredApprovalRequest['actionClass'];
 }
 
 interface FixtureReview {
   readonly filePath: string;
   readonly source: string;
+  /** The plan.json beside a plan card's plan.md, the file its Edit row opens. */
+  readonly planJson?: string;
+  /** What approving the plan card confirms, as the engine hands it to the card. */
+  readonly confirms?: readonly string[];
 }
 
 interface FixtureStreaming {
@@ -166,7 +174,6 @@ export interface WorkflowFixtureProjection {
   readonly sidebarVisible: boolean;
   readonly question?: FixtureQuestion;
   readonly questionPreview?: 'overflow-back';
-  readonly taskReview?: TaskReviewRequest;
   readonly userEditConflict?: UserEditConflict;
   readonly approval?: FixtureApproval;
   readonly review?: FixtureReview;
@@ -187,11 +194,7 @@ export interface WorkflowFixtureProjection {
 }
 
 const WORKFLOW_IDLE_ID = scenarioId('workflow-idle');
-const WORKFLOW_QUICK_SETUP_ID = scenarioId('workflow-quick-setup');
-const WORKFLOW_QUICK_RESEARCHING_ID = scenarioId('workflow-quick-researching');
 const WORKFLOW_PLANNING_ID = scenarioId('workflow-planning');
-const WORKFLOW_BRIEFS_COMPILED_ID = scenarioId('workflow-briefs-compiled');
-const WORKFLOW_BRIEFS_APPROVED_ID = scenarioId('workflow-briefs-approved');
 const WORKFLOW_IMPLEMENTATION_ID = scenarioId('workflow-implementation');
 const WORKFLOW_IMPLEMENTATION_RETRY_ID = scenarioId('workflow-implementation-retry');
 const WORKFLOW_VALIDATION_ID = scenarioId('workflow-validation');
@@ -204,12 +207,7 @@ const WORKFLOW_REVIEW_ID = scenarioId('workflow-review');
 const WORKFLOW_REVIEW_FIX_ID = scenarioId('workflow-review-fix');
 const WORKFLOW_REVIEW_FIX_NO_CHANGE_ID = scenarioId('workflow-review-fix-no-change');
 const WORKFLOW_FINAL_REVIEW_ID = scenarioId('workflow-final-review');
-const WORKFLOW_APPROVAL_DOCUMENT_ID = scenarioId('workflow-approval-document');
-const WORKFLOW_GATE_REGENERATING_ID = scenarioId('workflow-gate-regenerating');
-const WORKFLOW_BRIEFS_GATE_REGENERATING_ID = scenarioId('workflow-briefs-gate-regenerating');
-const WORKFLOW_APPROVAL_PERMISSION_ID = scenarioId('workflow-approval-permission');
 const WORKFLOW_APPROVAL_CONFIRM_ID = scenarioId('workflow-approval-confirm');
-const WORKFLOW_REVIEWING_BRIEFS_ID = scenarioId('workflow-reviewing-briefs');
 const WORKFLOW_QUESTION_ID = scenarioId('workflow-question');
 const WORKFLOW_PAUSED_MID_BRIEF_ID = scenarioId('workflow-paused-mid-brief');
 const WORKFLOW_PAUSED_BOUNDARY_ID = scenarioId('workflow-paused-boundary');
@@ -225,6 +223,8 @@ const WORKFLOW_RECOVERY_LEFT_ISOLATION_ID = scenarioId('workflow-recovery-left-i
 const WORKFLOW_RECOVERY_CHECKOUT_CHANGED_ID = scenarioId('workflow-recovery-checkout-changed');
 const WORKFLOW_API_CONTEXT_ID = scenarioId('workflow-api-context-insufficient');
 const WORKFLOW_RECOVERY_PLAN_SEAT_ID = scenarioId('workflow-recovery-plan-seat');
+const WORKFLOW_RECOVERY_PLAN_CHECKS_ID = scenarioId('workflow-recovery-plan-checks');
+const WORKFLOW_RECOVERY_PLAN_QUESTIONS_ID = scenarioId('workflow-recovery-plan-questions');
 const WORKFLOW_RECOVERY_PLAN_SWAPPED_ID = scenarioId('workflow-recovery-plan-swapped');
 const WORKFLOW_RECOVERY_REVIEW_SEAT_ID = scenarioId('workflow-recovery-review-seat');
 const WORKFLOW_RECOVERY_HINT_SEAT_ID = scenarioId('workflow-recovery-hint-seat');
@@ -240,49 +240,8 @@ const idleProjection: WorkflowFixtureProjection = {
   sidebarVisible: false,
 };
 
-const quickSetupProjection: WorkflowFixtureProjection = {
-  scenarioId: WORKFLOW_QUICK_SETUP_ID,
-  feature: WORKFLOW_FEATURE,
-  inputMode: 'normal',
-  sidebarVisible: true,
-  config: { workflow: { mode: 'quick' } },
-  events: [
-    { type: 'workflow_started', ts: FIXED_TS, phase: 'planning', feature: WORKFLOW_FEATURE },
-    {
-      type: 'planner_status',
-      ts: FIXED_TS + 100,
-      phase: 'planning',
-      status: 'running',
-      tool: 'claude-code',
-      model: 'fixture-planner-v1',
-    },
-    { type: 'user_message', ts: FIXED_TS + 200, phase: 'planning', text: WORKFLOW_FEATURE },
-  ],
-};
-
-// A quick run researching: the first live phase an old quick run opens on, which the quick rail
-// maps onto Plan. The frame pins that Spec stays pending while the byline names the live run.
-const quickResearchingProjection: WorkflowFixtureProjection = {
-  scenarioId: WORKFLOW_QUICK_RESEARCHING_ID,
-  feature: WORKFLOW_FEATURE,
-  inputMode: 'normal',
-  sidebarVisible: true,
-  config: { workflow: { mode: 'quick' } },
-  events: [
-    { type: 'workflow_started', ts: FIXED_TS, phase: 'researching', feature: WORKFLOW_FEATURE },
-    {
-      type: 'planner_status',
-      ts: FIXED_TS + 100,
-      phase: 'researching',
-      status: 'running',
-      tool: 'claude-code',
-      model: 'fixture-planner-v1',
-      call: 'research',
-    },
-    { type: 'user_message', ts: FIXED_TS + 200, phase: 'researching', text: WORKFLOW_FEATURE },
-  ],
-};
-
+// One planning session: it asked a round of questions, took the answers and plans on. Nothing
+// streams while the planner works; the byline carries the session.
 const planningProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_PLANNING_ID,
   feature: WORKFLOW_FEATURE,
@@ -296,15 +255,13 @@ const planningProjection: WorkflowFixtureProjection = {
       feature: WORKFLOW_FEATURE,
     },
     {
-      type: 'artifact_written',
-      ts: FIXED_TS + 50,
-      phase: 'researching',
-      filename: 'research.md',
-      path: '.splitbrief/sessions/2026-09-17-workflow-conversation-recovery/research.md',
-      lineCount: 24,
-      excerpt: ['Project Overview', 'Existing workflow and recovery behavior'],
-      omittedCount: 5,
-      omittedUnit: 'section',
+      type: 'planner_status',
+      ts: FIXED_TS + 10,
+      phase: 'planning',
+      status: 'running',
+      tool: 'claude-code',
+      model: 'fixture-planner-v1',
+      call: 'plan',
     },
     {
       type: 'planner_text',
@@ -312,118 +269,18 @@ const planningProjection: WorkflowFixtureProjection = {
       phase: 'planning',
       role: 'planner',
       content: 'plain',
-      text: 'Which module should the plan cover?',
+      messageStart: true,
+      text: 'Questions before the plan · round 1 of 2',
     },
     {
       type: 'user_message',
       ts: FIXED_TS + 70,
       phase: 'planning',
-      text: 'Refactor src/auth.ts; preserve the public API.',
-    },
-    {
-      type: 'planner_status',
-      ts: FIXED_TS + 100,
-      phase: 'planning',
-      status: 'running',
-      tool: 'claude-code',
-      model: 'fixture-planner-v1',
-      call: 'tasks',
-    },
-    {
-      type: 'planner_text',
-      ts: FIXED_TS + 200,
-      phase: 'planning',
-      role: 'planner',
-      content: 'plain',
-      text: WORKFLOW_FIXTURE_TEXT.planning,
-    },
-  ],
-};
-
-// The card the tasks step announces for three briefs, cut by the engine's own excerpt builder.
-const COMPILED_BRIEFS_CARD: EngineEvent = {
-  type: 'artifact_written',
-  ts: FIXED_TS + 200,
-  phase: 'planning',
-  filename: 'tasks.md',
-  path: '.splitbrief/sessions/2026-09-17-workflow-conversation-recovery/tasks.md',
-  ...buildArtifactExcerpt(
-    formatTasks([
-      makeTask({
-        id: WORKFLOW_FIXTURE_TASK_ID,
-        title: WORKFLOW_FIXTURE_TEXT.implementationTask,
-        file: WORKFLOW_FIXTURE_REVIEW_FILE,
-        files: [
-          WORKFLOW_FIXTURE_REVIEW_FILE,
-          'testing/visual/fixtures/workflow/at-rest-projections.ts',
-        ],
-      }),
-      makeTask({
-        id: WORKFLOW_FIXTURE_TASK_ID_2,
-        title: 'Register the bounded fixture projection',
-        file: WORKFLOW_FIXTURE_SECOND_FILE,
-        files: [WORKFLOW_FIXTURE_SECOND_FILE, 'testing/visual/fixtures/workflow/setup.ts'],
-      }),
-      makeTask({
-        id: WORKFLOW_FIXTURE_TASK_ID_3,
-        title: 'Capture the bounded fixture frame',
-        file: WORKFLOW_FIXTURE_REVIEW_PANEL_FILE,
-        files: [
-          WORKFLOW_FIXTURE_REVIEW_PANEL_FILE,
-          'testing/visual/fixtures/workflow/artifact-card-projections.ts',
-        ],
-      }),
-    ]),
-    'tasks.md',
-  ),
-};
-
-// A quick run right after its tasks step, in the order the engine publishes it: the card the step
-// announced, then the quality verdict and the prompt's risk advice. The quality
-// pass kept the briefs, so no second card follows.
-const briefsCompiledProjection: WorkflowFixtureProjection = {
-  scenarioId: WORKFLOW_BRIEFS_COMPILED_ID,
-  feature: BRIEFS_COMPILED_FEATURE,
-  inputMode: 'normal',
-  sidebarVisible: false,
-  config: { workflow: { mode: 'quick' } },
-  events: [
-    {
-      type: 'workflow_started',
-      ts: FIXED_TS,
-      phase: 'planning',
-      feature: BRIEFS_COMPILED_FEATURE,
-    },
-    {
-      type: 'planner_status',
-      ts: FIXED_TS + 100,
-      phase: 'planning',
-      status: 'running',
-      tool: 'claude-code',
-      model: 'fixture-planner-v1',
-      call: 'tasks',
-    },
-    COMPILED_BRIEFS_CARD,
-    {
-      type: 'brief_quality_passed',
-      ts: FIXED_TS + 220,
-      phase: 'planning',
-      score: 1,
-      warningCount: 0,
-    },
-    // The prompt's own risk advice, exactly as `adviseMode` scores this scenario's feature in quick
-    // mode: the footer names the risk, and no brief or file count ever produces advice.
-    {
-      type: 'mode_advice',
-      ts: FIXED_TS + 250,
-      phase: 'planning',
-      kind: 'upgrade',
-      risk: 'high',
-      currentMode: 'quick',
-      suggestedMode: 'speckit',
-      confidence: 0.89,
-      factors: ['matched: \\bsession\\b', 'matched: \\bsecret(s)?\\b'],
-      missing: [],
+      text: '1. Which module should the plan cover?\nsrc/auth.ts\n\n2. Keep the public API?\nYes',
+      qa: [
+        { question: 'Which module should the plan cover?', answer: 'src/auth.ts' },
+        { question: 'Keep the public API?', answer: 'Yes' },
+      ],
     },
   ],
 };
@@ -457,47 +314,6 @@ const FIXTURE_TASKS_PLANNED: EngineEvent = {
       file: WORKFLOW_FIXTURE_REVIEW_PANEL_FILE,
       action: 'create',
     },
-  ],
-};
-
-// A standard run right after its briefs gate, approved with no edit: the card from the tasks step
-// and the verdict before the gate, then the readiness the approval re-measured. The approval
-// changed nothing, so it announces no second card and no second verdict.
-const briefsApprovedProjection: WorkflowFixtureProjection = {
-  scenarioId: WORKFLOW_BRIEFS_APPROVED_ID,
-  feature: WORKFLOW_FEATURE,
-  inputMode: 'normal',
-  sidebarVisible: false,
-  events: [
-    {
-      type: 'workflow_started',
-      ts: FIXED_TS,
-      phase: 'planning',
-      feature: WORKFLOW_FEATURE,
-    },
-    COMPILED_BRIEFS_CARD,
-    {
-      type: 'brief_quality_passed',
-      ts: FIXED_TS + 220,
-      phase: 'planning',
-      score: 1,
-      warningCount: 0,
-    },
-    {
-      type: 'planner_status',
-      ts: FIXED_TS + 230,
-      phase: 'reviewing-briefs',
-      status: 'running',
-      tool: 'claude-code',
-      model: 'fixture-planner-v1',
-    },
-    {
-      type: 'brief_readiness_passed',
-      ts: FIXED_TS + 300,
-      phase: 'reviewing-briefs',
-      taskCount: 3,
-    },
-    { ...FIXTURE_TASKS_PLANNED, ts: FIXED_TS + 400 },
   ],
 };
 
@@ -780,45 +596,21 @@ function plannerCommandRefusals(ts: number): EngineEvent[] {
         lintCommand: 'npm run lint',
         testCommand: 'npm test',
       },
-      { bus, phase: 'researching' },
+      { bus, phase: 'planning' },
     ),
   );
 }
 
+// The plan's validation block named a package script for two stages: compiling the plan writes its
+// two cards, and the sanitizer then refuses both scripts, one warning per stage.
 const plannerCommandsRefusedProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-planner-commands-refused'),
   feature: WORKFLOW_FEATURE,
   inputMode: 'normal',
   sidebarVisible: false,
-  events: [
-    {
-      type: 'workflow_started',
-      ts: FIXED_TS,
-      phase: 'researching',
-      feature: WORKFLOW_FEATURE,
-    },
-    {
-      type: 'artifact_written',
-      ts: FIXED_TS + 50,
-      phase: 'researching',
-      filename: 'research.md',
-      path: '.splitbrief/sessions/2026-09-17-workflow-conversation-recovery/research.md',
-      lineCount: 24,
-      excerpt: ['Project Overview', 'Validation Tools'],
-      omittedCount: 5,
-      omittedUnit: 'section',
-    },
-    ...plannerCommandRefusals(FIXED_TS + 60),
-    {
-      type: 'planner_status',
-      ts: FIXED_TS + 100,
-      phase: 'specifying',
-      status: 'running',
-      tool: 'claude-code',
-      model: 'fixture-planner-v1',
-      call: 'spec',
-    },
-  ],
+  get events(): EngineEvent[] {
+    return [...planCompiledProjection.events, ...plannerCommandRefusals(FIXED_TS + 300)];
+  },
 };
 
 const implementationRetryProjection: WorkflowFixtureProjection = {
@@ -1185,176 +977,6 @@ const reviewProjection: WorkflowFixtureProjection = {
   },
 };
 
-const approvalDocumentProjection: WorkflowFixtureProjection = {
-  scenarioId: WORKFLOW_APPROVAL_DOCUMENT_ID,
-  feature: WORKFLOW_FEATURE,
-  inputMode: 'review',
-  sidebarVisible: false,
-  events: [
-    {
-      type: 'workflow_started',
-      ts: FIXED_TS,
-      phase: 'reviewing-plan',
-      feature: WORKFLOW_FEATURE,
-    },
-    {
-      type: 'planner_text',
-      ts: FIXED_TS + 100,
-      phase: 'reviewing-plan',
-      role: 'planner',
-      content: 'plain',
-      text: 'The plan slices the fixture feature into three briefs.',
-    },
-  ],
-  reviewArtifact: 'plan',
-  review: {
-    filePath: WORKFLOW_FIXTURE_REVIEW_PANEL_FILE,
-    source: '# Fixture plan\n\n1. Read the contract\n2. Slice the change\n3. Run the gates',
-  },
-};
-
-// A change request sent from the plan gate: the engine names the planner call on the planning
-// phase, and the call's runner events carry the gate phase the run still stands in. The byline
-// stays live across that flip.
-const gateRegeneratingProjection: WorkflowFixtureProjection = {
-  scenarioId: WORKFLOW_GATE_REGENERATING_ID,
-  feature: WORKFLOW_FEATURE,
-  inputMode: 'normal',
-  sidebarVisible: false,
-  events: [
-    { type: 'workflow_started', ts: FIXED_TS, phase: 'reviewing-plan', feature: WORKFLOW_FEATURE },
-    {
-      type: 'planner_text',
-      ts: FIXED_TS + 100,
-      phase: 'reviewing-plan',
-      text: '\n[Regenerating plan with feedback: add one brief for the live probe]\n',
-    },
-    {
-      type: 'planner_status',
-      ts: FIXED_TS + 100,
-      phase: 'planning',
-      status: 'running',
-      tool: 'claude-code',
-      model: 'fixture-planner-v1',
-      call: 'plan',
-    },
-    {
-      type: 'runner_call_started',
-      ts: FIXED_TS + 110,
-      phase: 'reviewing-plan',
-      callId: 'gate-regenerate',
-      role: 'planner',
-      backendKind: 'cli',
-      sequence: 0,
-    },
-  ],
-};
-
-// The same change request sent from the briefs gate: the planner recompiles the briefs.
-const briefsGateRegeneratingProjection: WorkflowFixtureProjection = {
-  scenarioId: WORKFLOW_BRIEFS_GATE_REGENERATING_ID,
-  feature: WORKFLOW_FEATURE,
-  inputMode: 'normal',
-  sidebarVisible: false,
-  events: [
-    {
-      type: 'workflow_started',
-      ts: FIXED_TS,
-      phase: 'reviewing-briefs',
-      feature: WORKFLOW_FEATURE,
-    },
-    {
-      type: 'planner_text',
-      ts: FIXED_TS + 100,
-      phase: 'reviewing-briefs',
-      text: '\n[Applying Task Brief revision feedback]\n',
-    },
-    {
-      type: 'planner_status',
-      ts: FIXED_TS + 100,
-      phase: 'planning',
-      status: 'running',
-      tool: 'claude-code',
-      model: 'fixture-planner-v1',
-      call: 'tasks',
-    },
-    {
-      type: 'runner_call_started',
-      ts: FIXED_TS + 110,
-      phase: 'reviewing-briefs',
-      callId: 'briefs-gate-regenerate',
-      role: 'planner',
-      backendKind: 'cli',
-      sequence: 0,
-    },
-  ],
-};
-
-// The warnings the brief parser raises when briefs share a file, two briefs and then three, and when
-// a brief carries sections the grammar drops.
-const briefsSharedFileProjection: WorkflowFixtureProjection = {
-  scenarioId: scenarioId('workflow-briefs-shared-file'),
-  feature: WORKFLOW_FEATURE,
-  inputMode: 'normal',
-  sidebarVisible: false,
-  events: [
-    { type: 'workflow_started', ts: FIXED_TS, phase: 'planning', feature: WORKFLOW_FEATURE },
-    {
-      type: 'warning',
-      ts: FIXED_TS + 100,
-      phase: 'planning',
-      message:
-        'Task Briefs T001 and T004 both declare docs/SUBSYSTEMS.md; the later brief modifies what the earlier one wrote',
-    },
-    {
-      type: 'warning',
-      ts: FIXED_TS + 101,
-      phase: 'planning',
-      message:
-        'Task Briefs T005, T006 and T007 all declare src/run.ts; each later brief modifies what the earlier ones wrote',
-    },
-    {
-      type: 'warning',
-      ts: FIXED_TS + 102,
-      phase: 'planning',
-      message:
-        'Task T002 has 2 sections not in the Task Brief grammar; they will be dropped: Edge Cases, Notes',
-    },
-  ],
-};
-
-const approvalPermissionProjection: WorkflowFixtureProjection = {
-  scenarioId: WORKFLOW_APPROVAL_PERMISSION_ID,
-  feature: WORKFLOW_FEATURE,
-  inputMode: 'normal',
-  sidebarVisible: false,
-  events: [
-    {
-      type: 'workflow_started',
-      ts: FIXED_TS,
-      phase: 'implementing',
-      feature: WORKFLOW_FEATURE,
-    },
-    {
-      type: 'task_started',
-      ts: FIXED_TS + 100,
-      phase: 'implementing',
-      taskId: WORKFLOW_FIXTURE_TASK_ID,
-      title: WORKFLOW_FIXTURE_TEXT.implementationTask,
-      index: 0,
-      total: 1,
-      file: WORKFLOW_FIXTURE_REVIEW_FILE,
-      action: 'modify',
-      tool: 'ollama',
-      model: FIXED_RUNNER_MODEL,
-    },
-  ],
-  approval: {
-    actionDescription: 'src/features/workflow/panel.ts',
-    answer: WORKFLOW_FIXTURE_TEXT.reviewAnswer,
-  },
-};
-
 const approvalConfirmProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_APPROVAL_CONFIRM_ID,
   feature: WORKFLOW_FEATURE,
@@ -1382,7 +1004,6 @@ const approvalConfirmProjection: WorkflowFixtureProjection = {
     },
   ],
   approval: {
-    tier: 'confirm',
     actionClass: 'destructive',
     actionDescription: '.splitbrief/state.json',
     answer: WORKFLOW_FIXTURE_TEXT.reviewAnswer,
@@ -1393,39 +1014,104 @@ const approvalConfirmSecretProjection: WorkflowFixtureProjection = {
   ...approvalConfirmProjection,
   scenarioId: scenarioId('workflow-approval-confirm-secret'),
   approval: {
-    tier: 'confirm',
     actionClass: 'sensitive_change',
     actionDescription: '.env.local',
     answer: WORKFLOW_FIXTURE_TEXT.reviewAnswer,
   },
 };
 
-const reviewingBriefsProjection: WorkflowFixtureProjection = {
-  scenarioId: WORKFLOW_REVIEWING_BRIEFS_ID,
+// The plan card: two batches and one protected operation, rendered by the same formatter the
+// planning session writes plan.md with.
+const PLAN_CARD_PLAN = makePlanProposal({
+  summary: 'Add a greeting module and expose it from the CLI.',
+  decisions: ['Keep the greeting in one module', 'Add the CLI flag in a second batch'],
+  criteria: [
+    { id: 'C1', text: 'A name gets a greeting', checkIds: ['K1'] },
+    { id: 'C2', text: 'The CLI prints the greeting', checkIds: ['K2'] },
+  ],
+  tasks: [
+    makeTaskSpec(),
+    makeTaskSpec({
+      id: 'T002',
+      title: 'Expose the greeting from the CLI',
+      intent: 'Print the greeting for --name',
+      criteria: ['C2'],
+      checks: [{ id: 'K2', kind: 'test', value: 'src/cli.test.ts', required: true }],
+      suggestedFiles: ['src/cli.ts'],
+      contextFiles: ['src/hello.ts'],
+      protectedOperations: [
+        { path: 'package.json', operation: 'write' },
+        { path: 'package-lock.json', operation: 'write' },
+      ],
+      dependsOn: ['T001'],
+      batch: 2,
+    }),
+  ],
+});
+
+const planCardProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-plan-card'),
   feature: WORKFLOW_FEATURE,
   inputMode: 'review',
-  sidebarVisible: false,
+  sidebarVisible: true,
   events: [
     {
       type: 'workflow_started',
       ts: FIXED_TS,
-      phase: 'reviewing-briefs',
+      phase: 'reviewing-plan',
       feature: WORKFLOW_FEATURE,
     },
+  ],
+  reviewArtifact: 'plan',
+  review: {
+    filePath: 'testing/visual/fixtures/workflow/plan-card/plan.md',
+    source: formatPlanMarkdown(PLAN_CARD_PLAN),
+    planJson: `${JSON.stringify(PLAN_CARD_PLAN, null, 2)}\n`,
+    confirms: planConfirmations(
+      PLAN_CARD_PLAN.tasks.map((spec) => taskFromSpec(spec, VISUAL_FIXTURE_PROJECT_DIR)),
+      VISUAL_FIXTURE_PROJECT_DIR,
+    ).map((confirmation) => confirmation.actionDescription),
+  },
+};
+
+// The planning session right after its plan passed the checks: the two cards it announces, plan.md
+// and tasks.md, both rendered from plan.json.
+const planCompiledProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-plan-compiled'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: false,
+  events: [
+    { type: 'workflow_started', ts: FIXED_TS, phase: 'planning', feature: WORKFLOW_FEATURE },
     {
-      type: 'planner_text',
+      type: 'planner_status',
       ts: FIXED_TS + 100,
-      phase: 'reviewing-briefs',
-      role: 'planner',
-      content: 'plain',
-      text: 'Three briefs compiled from the approved plan.',
+      phase: 'planning',
+      status: 'running',
+      tool: 'claude-code',
+      model: 'fixture-planner-v1',
+      call: 'plan',
+    },
+    {
+      type: 'artifact_written',
+      ts: FIXED_TS + 200,
+      phase: 'planning',
+      filename: 'plan.md',
+      path: '.splitbrief/sessions/2026-09-17-workflow-conversation-recovery/plan.md',
+      ...buildArtifactExcerpt(formatPlanMarkdown(PLAN_CARD_PLAN), 'plan.md'),
+    },
+    {
+      type: 'artifact_written',
+      ts: FIXED_TS + 210,
+      phase: 'planning',
+      filename: 'tasks.md',
+      path: '.splitbrief/sessions/2026-09-17-workflow-conversation-recovery/tasks.md',
+      ...buildArtifactExcerpt(
+        formatTasks(PLAN_CARD_PLAN.tasks.map((spec) => taskFromSpec(spec, '/nonexistent'))),
+        'tasks.md',
+      ),
     },
   ],
-  reviewArtifact: 'briefs',
-  review: {
-    filePath: WORKFLOW_FIXTURE_REVIEW_PANEL_FILE,
-    source: '# T001 modify\n\nProject deterministic workflow activity.',
-  },
 };
 
 const questionProjection: WorkflowFixtureProjection = {
@@ -1437,8 +1123,26 @@ const questionProjection: WorkflowFixtureProjection = {
     {
       type: 'workflow_started',
       ts: FIXED_TS,
-      phase: 'clarifying',
+      phase: 'planning',
       feature: WORKFLOW_FEATURE,
+    },
+    {
+      type: 'planner_status',
+      ts: FIXED_TS + 10,
+      phase: 'planning',
+      status: 'running',
+      tool: 'claude-code',
+      model: 'fixture-planner-v1',
+      call: 'plan',
+    },
+    {
+      type: 'planner_text',
+      ts: FIXED_TS + 100,
+      phase: 'planning',
+      role: 'planner',
+      content: 'plain',
+      messageStart: true,
+      text: 'Questions before the plan · round 1 of 2',
     },
   ],
   question: {
@@ -1482,59 +1186,6 @@ const questionProjection: WorkflowFixtureProjection = {
   },
 };
 
-// A 'Request changes' at the plan gate whose revision reply asks a question: the planner call has
-// ended, so the question waits inside the gate before the gate reopens.
-const gateQuestionProjection: WorkflowFixtureProjection = {
-  scenarioId: scenarioId('workflow-gate-question'),
-  feature: WORKFLOW_FEATURE,
-  inputMode: 'question',
-  sidebarVisible: false,
-  events: [
-    { type: 'workflow_started', ts: FIXED_TS, phase: 'reviewing-plan', feature: WORKFLOW_FEATURE },
-    {
-      type: 'planner_text',
-      ts: FIXED_TS + 100,
-      phase: 'reviewing-plan',
-      text: '\n[Regenerating plan with feedback: add one brief for the live probe]\n',
-    },
-    {
-      type: 'planner_status',
-      ts: FIXED_TS + 100,
-      phase: 'planning',
-      status: 'running',
-      tool: 'claude-code',
-      model: 'fixture-planner-v1',
-      call: 'plan',
-    },
-    {
-      type: 'planner_status',
-      ts: FIXED_TS + 200,
-      phase: 'planning',
-      status: 'done',
-      tool: 'claude-code',
-      model: 'fixture-planner-v1',
-      call: 'plan',
-    },
-  ],
-  question: {
-    prompt: 'Which call should the live probe make on each tool?',
-    answer: '',
-    questions: [
-      {
-        id: 'probe-role',
-        type: 'choice',
-        text: 'Which call should the live probe make on each tool?',
-        options: [
-          'One-shot read-only call (role: review), so codex runs with --ephemeral and no session is left behind',
-          'Planning-thread call (role: planner, with resume), which also tests resuming but leaves a session behind',
-        ],
-        default:
-          'One-shot read-only call (role: review), so codex runs with --ephemeral and no session is left behind',
-      },
-    ],
-  },
-};
-
 const questionOverflowProjection: WorkflowFixtureProjection = {
   ...questionProjection,
   scenarioId: scenarioId('workflow-question-overflow'),
@@ -1571,11 +1222,11 @@ const plannerReplyProjection: WorkflowFixtureProjection = {
   inputMode: 'question',
   sidebarVisible: false,
   events: [
-    { type: 'workflow_started', ts: FIXED_TS, phase: 'researching', feature: 'Refactor my code' },
+    { type: 'workflow_started', ts: FIXED_TS, phase: 'planning', feature: 'Refactor my code' },
     {
       type: 'planner_text',
       ts: FIXED_TS + 100,
-      phase: 'researching',
+      phase: 'planning',
       role: 'planner',
       content: 'plain',
       text: 'Which module should change? Tell me what is wrong or what behavior you want to improve.',
@@ -1585,7 +1236,7 @@ const plannerReplyProjection: WorkflowFixtureProjection = {
 };
 
 // The flat numbered blob the planner prompt consumes. It is the qa pairs below joined, so only
-// the pairs are content; the join is exempted from the string bound like the task-review prompt.
+// the pairs are content; the join is exempted from the string bound.
 const ANSWERED_QUESTIONS_TEXT =
   '1. What should be refactored? Give a file/module/feature name or area of the codebase.\nI want you to first review the changes and then after review make tasks of fixes for implementer\n\n2. What kind of refactor?\nSimplify/clean up existing code';
 
@@ -1595,19 +1246,19 @@ const answeredQuestionsProjection: WorkflowFixtureProjection = {
   inputMode: 'normal',
   sidebarVisible: false,
   events: [
-    { type: 'workflow_started', ts: FIXED_TS, phase: 'clarifying', feature: 'Refactor my code' },
+    { type: 'workflow_started', ts: FIXED_TS, phase: 'planning', feature: 'Refactor my code' },
     {
       type: 'planner_text',
       ts: FIXED_TS + 100,
-      phase: 'clarifying',
+      phase: 'planning',
       role: 'planner',
       content: 'plain',
-      text: 'A few questions before I write the plan.',
+      text: 'Questions before the plan · round 1 of 2',
     },
     {
       type: 'user_message',
       ts: FIXED_TS + 200,
-      phase: 'clarifying',
+      phase: 'planning',
       text: ANSWERED_QUESTIONS_TEXT,
       qa: [
         {
@@ -1620,51 +1271,6 @@ const answeredQuestionsProjection: WorkflowFixtureProjection = {
       ],
     },
   ],
-};
-
-const taskReviewRequest: TaskReviewRequest = {
-  taskId: WORKFLOW_FIXTURE_TASK_ID,
-  taskTitle: 'Update fixture',
-  status: 'done',
-  filesTouched: ['src/fixture.ts'],
-  validation: { passed: true, summary: 'tests passed', stages: [{ stage: 'test', passed: true }] },
-  evidence: {
-    summary: 'behavior verified',
-    expected: ['fixture works'],
-    observed: ['fixture works'],
-  },
-  cost: {
-    tokenUsage: makeUsage({ implementerInput: 12345, implementerOutput: 23456 }),
-    tool: 'ollama',
-    model: 'qwen',
-  },
-  routing: {
-    fit: 'tight',
-    estimatedTokens: 12345,
-    untruncatedEstimatedTokens: 23456,
-    contextLength: 32768,
-    currentCodeTruncated: false,
-    currentCodeContextMode: 'whole-file',
-    reason: 'Selected worker (tight, estimated 12345/32768 tokens)',
-  },
-  availableCommands: ['continue', 'redo-task', 'abort'],
-};
-
-const taskReviewProjection: WorkflowFixtureProjection = {
-  scenarioId: scenarioId('workflow-task-review'),
-  feature: WORKFLOW_FEATURE,
-  inputMode: 'question',
-  sidebarVisible: false,
-  taskReview: taskReviewRequest,
-  events: [
-    { type: 'workflow_started', ts: FIXED_TS, phase: 'implementing', feature: WORKFLOW_FEATURE },
-  ],
-  question: {
-    get prompt() {
-      return formatTaskReviewPrompt(taskReviewRequest);
-    },
-    answer: 'c',
-  },
 };
 
 const failureProjection: WorkflowFixtureProjection = {
@@ -2197,6 +1803,84 @@ const planSeatRecoveryProjection: WorkflowFixtureProjection = {
   },
 };
 
+/** A plan that failed its checks, went back once with the errors, and failed them again. */
+function planChecksRecoveryIssue(): RecoveryIssue {
+  return buildPlanSessionHaltRecoveryIssue({
+    id: 'rec_visual_plan_checks',
+    reason: 'plan-checks-failed',
+    phase: 'planning',
+    message: 'The plan failed its checks again after one repair.',
+    details: ['Criterion C2 is served by no task.', 'Tasks T002 and T003 depend on each other.'],
+    createdAt: new Date(FIXED_TS).toISOString(),
+  });
+}
+
+/** A planner that still asked questions after its two rounds: the third round is the halt's details. */
+function planQuestionsRecoveryIssue(): RecoveryIssue {
+  return buildPlanSessionHaltRecoveryIssue({
+    id: 'rec_visual_plan_questions',
+    reason: 'plan-questions-exhausted',
+    phase: 'planning',
+    message: `The planner asked a third round of questions; a session takes ${MAX_QUESTION_ROUNDS}.`,
+    details: ['Which store keeps the greeting?', 'Should the CLI print a trailing newline?'],
+    createdAt: new Date(FIXED_TS).toISOString(),
+  });
+}
+
+const planQuestionsRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: WORKFLOW_RECOVERY_PLAN_QUESTIONS_ID,
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  events: [
+    { type: 'workflow_started', ts: FIXED_TS, phase: 'planning', feature: WORKFLOW_FEATURE },
+    {
+      type: 'planner_text',
+      ts: FIXED_TS + 100,
+      phase: 'planning',
+      role: 'planner',
+      content: 'plain',
+      messageStart: true,
+      text: 'Questions before the plan · round 2 of 2',
+    },
+  ],
+  get resumeState() {
+    return makeWorkflowState({
+      feature: WORKFLOW_FEATURE,
+      startedAt: RESUMED_RUN_STARTED_AT,
+      phase: 'planning',
+      pendingRecovery: planQuestionsRecoveryIssue(),
+    });
+  },
+};
+
+const planChecksRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: WORKFLOW_RECOVERY_PLAN_CHECKS_ID,
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  get events(): EngineEvent[] {
+    return [
+      { type: 'workflow_started', ts: FIXED_TS, phase: 'planning', feature: WORKFLOW_FEATURE },
+      ...publishedEvents(FIXED_TS + 100, (bus) =>
+        publishWarning({
+          bus,
+          phase: 'planning',
+          message: 'The plan failed 2 checks; it goes back to the planner once.',
+        }),
+      ),
+    ];
+  },
+  get resumeState() {
+    return makeWorkflowState({
+      feature: WORKFLOW_FEATURE,
+      startedAt: RESUMED_RUN_STARTED_AT,
+      phase: 'planning',
+      pendingRecovery: planChecksRecoveryIssue(),
+    });
+  },
+};
+
 const reviewSeatRecoveryProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_RECOVERY_REVIEW_SEAT_ID,
   feature: WORKFLOW_FEATURE,
@@ -2280,7 +1964,7 @@ function claudePlanActivity(
   return {
     type: 'runner_call_activity',
     ts: FIXED_TS + 100 + sequence * 10,
-    phase: 'researching',
+    phase: 'planning',
     callId: 'visual-claude-call',
     role: 'planner',
     backendKind: 'cli',
@@ -2305,15 +1989,15 @@ const planActivityProjection: WorkflowFixtureProjection = {
   sidebarVisible: true,
   config: { planner: CLAUDE_PLAN_SEAT },
   events: [
-    { type: 'workflow_started', ts: FIXED_TS, phase: 'researching', feature: WORKFLOW_FEATURE },
+    { type: 'workflow_started', ts: FIXED_TS, phase: 'planning', feature: WORKFLOW_FEATURE },
     {
       type: 'planner_status',
       ts: FIXED_TS + 50,
-      phase: 'researching',
+      phase: 'planning',
       status: 'running',
       tool: 'claude-code',
       model: 'opus',
-      call: 'research',
+      call: 'plan',
     },
     claudePlanActivity(1, {
       stage: 'completed',
@@ -2844,11 +2528,8 @@ const implementationSilentProjection: WorkflowFixtureProjection = {
 
 const projections = [
   idleProjection,
-  quickSetupProjection,
-  quickResearchingProjection,
   planningProjection,
-  briefsCompiledProjection,
-  briefsApprovedProjection,
+  planCompiledProjection,
   implementationProjection,
   implementationRetryProjection,
   reviewFixProjection,
@@ -2861,24 +2542,16 @@ const projections = [
   implementationUserEditsProjection,
   userEditConflictPromptProjection,
   reviewProjection,
-  approvalDocumentProjection,
-  { ...approvalDocumentProjection, scenarioId: scenarioId('workflow-selection-copy') },
-  gateRegeneratingProjection,
-  briefsGateRegeneratingProjection,
-  approvalPermissionProjection,
   approvalConfirmProjection,
   approvalConfirmSecretProjection,
-  reviewingBriefsProjection,
+  planCardProjection,
+  { ...planCardProjection, scenarioId: scenarioId('workflow-selection-copy') },
   tasksCardProjection,
-  specTasksCardsProjection,
   questionProjection,
-  gateQuestionProjection,
   questionOverflowProjection,
   questionInputProjection,
   plannerReplyProjection,
-  briefsSharedFileProjection,
   answeredQuestionsProjection,
-  taskReviewProjection,
   pausedMidBriefProjection,
   pausedBoundaryProjection,
   stoppingProjection,
@@ -2895,6 +2568,8 @@ const projections = [
   checkoutChangedRecoveryProjection,
   apiContextRecoveryProjection,
   planSeatRecoveryProjection,
+  planChecksRecoveryProjection,
+  planQuestionsRecoveryProjection,
   planSeatSwappedProjection,
   reviewSeatRecoveryProjection,
   hintSeatRecoveryProjection,
@@ -2917,7 +2592,6 @@ export function fixtureQuestionHint(projection: WorkflowFixtureProjection): stri
   if (projection.question !== undefined) return projection.question.prompt;
   if (projection.userEditConflict !== undefined)
     return formatUserEditConflictPrompt(projection.userEditConflict);
-  if (projection.taskReview !== undefined) return formatTaskReviewPrompt(projection.taskReview);
   const halt = projection.resumeState?.pendingRecovery;
   return halt === undefined ? null : formatRecoveryPrompt(halt);
 }
@@ -2932,8 +2606,8 @@ export function getWorkflowFixturePromptRows(
       : {
           status: 'pending',
           request: {
-            tier: projection.approval.tier ?? 'sticky',
-            actionClass: projection.approval.actionClass ?? 'write_out_of_scope',
+            tier: 'confirm',
+            actionClass: projection.approval.actionClass ?? 'package_change',
             actionDescription: projection.approval.actionDescription,
             taskId: WORKFLOW_FIXTURE_TASK_ID,
             phase: 'reviewing-plan',
@@ -2945,7 +2619,13 @@ export function getWorkflowFixturePromptRows(
     approvalState,
     questionHint,
     questions: projection.question?.questions,
-    reviewArtifact: projection.reviewArtifact ?? null,
+    // The chrome facts ask whether a panel is open, not how tall it is at one height, so the plan
+    // card is measured unshed.
+    review: {
+      artifact: projection.reviewArtifact ?? null,
+      confirms: [],
+      budgetRows: Number.POSITIVE_INFINITY,
+    },
     cols,
   });
 }
@@ -2973,11 +2653,12 @@ function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
     runnerHaltRow(usageLimitRecoveryIssue(), OLLAMA_LIMIT_WORDS),
   ];
   const oversized = projectionStrings(projection).find(
-    // The production formatter joins bounded facts and commands into one multiline prompt, and
-    // the answered card's flat text joins its bounded qa pairs; neither is independent content.
-    // Nor is a halt the engine composed around the tool's own bounded words.
+    // The answered card's flat text joins its bounded qa pairs; it is not independent content.
+    // Nor is a halt the engine composed around the tool's own bounded words, or the plan card's
+    // plan.md and plan.json, which the plan formatter and the plan schema write whole.
     (value) =>
-      value !== formatTaskReviewPrompt(taskReviewRequest) &&
+      value !== planCardProjection.review?.source &&
+      value !== planCardProjection.review?.planJson &&
       value !== ANSWERED_QUESTIONS_TEXT &&
       !retainedWorkspaceNotices.includes(value) &&
       !engineHaltText.includes(value) &&

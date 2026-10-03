@@ -33,68 +33,39 @@ const IMPLEMENTER_HOLD_MS = 180_000;
 /** How long teardown waits for the held implementer to leave, or to die after a signal. */
 const HOLD_EXIT_TIMEOUT_MS = 5_000;
 
-const TASK_BRIEF = `---
-id: T001
-title: Add a greeting helper
-action: create
-file: ${GREET_FILE}
-files:
-  - ${GREET_FILE}
-  - ${MARKER_FILE}
-depends_on: []
----
-
-### Description
-
-Add a standalone greeting helper plus the run marker constant beside it.
-
-### Signature
-
-\`\`\`
-export function greet(name: string): string
-\`\`\`
-
-### Type Definitions
-
-\`\`\`
-// greet: (name: string) => string
-\`\`\`
-
-### Pattern
-
-A plain exported function with no imports, like the rest of this project.
-
-### Implementation Steps
-
-1. Create \`${MARKER_FILE}\` exporting \`RUN_MARKER\`.
-2. Create \`${GREET_FILE}\` exporting \`greet\`.
-
-### Tests
-
-- greet('a') === 'hello a'
-- greet('') === 'hello'
-
-### Scope
-
-**In bounds:**
-- ${GREET_FILE}
-- ${MARKER_FILE}
-
-**Out of bounds:**
-- everything else
-
-### Escalation
-
-- Stop and ask if the greeting wording is ambiguous.
-
-### Evidence
-
-- Both declared files exist and export the named symbols.
-
-### Constraints
-
-- No imports; the module stands alone.
-`;
+/** The planning session's one typed answer: a plan with the single greeting brief. */
+const PLAN_ANSWER = {
+  result: {
+    kind: 'plan',
+    summary: 'Add a standalone greeting helper plus the run marker constant beside it.',
+    decisions: [],
+    criteria: [{ id: 'C1', text: 'greet returns a greeting', checkIds: ['T001-K1', 'T001-K2'] }],
+    checks: [],
+    validation: null,
+    tasks: [
+      {
+        id: 'T001',
+        title: 'Add a greeting helper',
+        intent: 'Add a standalone greeting helper plus the run marker constant beside it.',
+        criteria: ['C1'],
+        checks: [
+          { id: 'T001-K1', kind: 'test', value: "greet('a') === 'hello a'", required: true },
+          { id: 'T001-K2', kind: 'test', value: "greet('') === 'hello'", required: true },
+        ],
+        suggestedFiles: [GREET_FILE, MARKER_FILE],
+        contextFiles: [],
+        exclusions: ['everything else'],
+        protectedOperations: null,
+        steps: [
+          `Create \`${MARKER_FILE}\` exporting \`RUN_MARKER\`.`,
+          `Create \`${GREET_FILE}\` exporting \`greet\`.`,
+        ],
+        dependsOn: [],
+        batch: 1,
+      },
+    ],
+  },
+};
 
 const REVIEW_REPLY = `### Verdict
 
@@ -114,18 +85,18 @@ The fixture implementation matches its brief.
 `;
 
 /**
- * Both planner calls of a quick run reach this one script: the brief compile and
- * the final review. Only `buildFinalReviewPrompt` titles its prompt "Final
+ * Both planner calls of a run reach this one script: the typed plan and the
+ * final review. Only `buildFinalReviewPrompt` titles its prompt "Final
  * Implementation Review", so the title is what the script branches on.
  */
 const PLANNER_SCRIPT = `const chunks = [];
 for await (const chunk of process.stdin) chunks.push(chunk);
 const prompt = Buffer.concat(chunks).toString('utf-8');
 
-const TASKS = ${JSON.stringify(TASK_BRIEF)};
+const PLAN = ${JSON.stringify(JSON.stringify(PLAN_ANSWER))};
 const REVIEW = ${JSON.stringify(REVIEW_REPLY)};
 
-process.stdout.write(prompt.includes('Final Implementation Review') ? REVIEW : TASKS);
+process.stdout.write(prompt.includes('Final Implementation Review') ? REVIEW : PLAN);
 `;
 
 /**
@@ -313,6 +284,6 @@ function fixtureConfig(): Config {
       contextLength: 200_000,
     },
     validation: { typecheck: false, lint: false, test: false },
-    workflow: { mode: 'quick', approve: 'none', maxRetries: 1 },
+    workflow: { approve: 'none', maxRetries: 1 },
   });
 }

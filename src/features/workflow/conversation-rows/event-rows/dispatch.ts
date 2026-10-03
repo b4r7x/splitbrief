@@ -377,10 +377,7 @@ export function eventRowBlock(options: {
       return cardRowsBlock({
         keyPrefix,
         label: 'approval',
-        value:
-          event.mode === 'yolo'
-            ? 'tiered approvals off · protected paths ask'
-            : 'tiered approvals restored',
+        value: 'only a write to a protected path asks',
         width: ctx.width,
         labelTone: 'textDim',
         valueTone: 'textDim',
@@ -395,11 +392,11 @@ export function eventRowBlock(options: {
       return calloutRowsBlock({
         keyPrefix,
         label: 'interrupted',
-        // A gate runs no turn: continuing it reopens the gate, it retries nothing.
+        // A gate runs no turn, so there is nothing to retry; the byline says what ⏎ does there.
         // A boundary brief event names the brief to resume, not the one just completed.
         value:
           event.step?.kind === 'gate'
-            ? `Paused at ${stepWord(event.step)} — press Enter to reopen it.`
+            ? `Paused at ${stepWord(event.step)}.`
             : event.at === 'boundary' && event.step?.kind === 'brief'
               ? `Paused before ${event.step.taskId}.`
               : 'Turn stopped — type instructions to steer, or press Enter to retry.',

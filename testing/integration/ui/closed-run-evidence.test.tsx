@@ -7,6 +7,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import type { EvidenceLedger } from '../../../src/core/schemas/evidence.js';
+import type { Task } from '../../../src/core/schemas/task.js';
 import { createEvidenceLedger } from '../../../src/core/evidence/ledger-state.js';
 import { recordFinalReviewEvidence } from '../../../src/engine/orchestrator/evidence/reporting.js';
 import { recordLocalTaskEvidence } from '../../../src/engine/orchestrator/evidence/task.js';
@@ -23,13 +24,17 @@ const SESSION_ID = 'summary-evidence-session';
 function showClosedRun(opts: {
   summary: ReturnType<typeof makeSummary>;
   ledger: EvidenceLedger | null;
+  tasks?: Task[];
 }) {
   routerStore.init({
     screen: 'workflow',
     run: makeRunRecord({
       ref: { projectDir: '/tmp/closed-evidence', sessionId: SESSION_ID },
       status: { kind: 'closed', as: 'complete' },
-      hydration: { kind: 'loaded', state: makeWorkflowState({ phase: 'complete' }) },
+      hydration: {
+        kind: 'loaded',
+        state: makeWorkflowState({ phase: 'complete', tasks: opts.tasks ?? [] }),
+      },
       summary: opts.summary,
       ledger: opts.ledger,
     }),
@@ -62,7 +67,6 @@ describe('closed-run evidence ledger (integration)', () => {
     let ledger = createEvidenceLedger({
       sessionId: SESSION_ID,
       feature: 'demo',
-      mode: 'standard',
       tasks: [task],
     });
     ledger = recordLocalTaskEvidence({
@@ -81,6 +85,7 @@ describe('closed-run evidence ledger (integration)', () => {
     terminalSizeStore.__testReset({ cols: 160, rows: 60, isSmall: false });
     showClosedRun({
       ledger,
+      tasks: [{ ...task, status: 'done' }],
       summary: makeSummary({
         totalTasks: 1,
         completedByLocal: 1,
@@ -102,7 +107,7 @@ describe('closed-run evidence ledger (integration)', () => {
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('Briefs');
+    expect(frame).toMatch(/^\s*Briefs [─-]/m);
     expect(frame).toContain('T001 Evidence detail');
     expect(frame).toContain('src/evidence.ts');
     expect(frame).toContain(glyph('check'));

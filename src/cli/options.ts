@@ -158,7 +158,6 @@ export function addWorkflowOptions(cmd: Command): Command {
   // terminal breaks them mid-word. 32, not 39, so a term up to 44 columns still wraps.
   return cmd
     .configureHelp({ minWidthToWrap: 32 })
-    .option('--approve <level>', 'Approval gates: none, spec, plan, all, default (follows mode)')
     .option('--model <model>', 'Override implementer model (alias for --implementer-model)')
     .option('--provider <provider>', 'Override implementer provider (alias for --implementer)')
     .option(
@@ -242,7 +241,6 @@ export function addWorkflowOptions(cmd: Command): Command {
     .option('--no-fullscreen', 'Disable fullscreen alternate screen buffer')
     .option('--no-mouse', 'Disable mouse tracking')
     .option('--hover', 'Enable hover highlight (opt-in; requires mouse + fullscreen)', false)
-    .option('--mode <mode>', 'Workflow mode: quick, standard, or speckit')
     .option(
       '--planner-effort <level>',
       "Planner effort hint: none, minimal, low, medium, high, xhigh, max. The seat's tool accepts a subset and reports what it rejects; dropped with a warning on seats that cannot send it.",
@@ -266,7 +264,7 @@ export function addWorkflowOptions(cmd: Command): Command {
     )
     .option(
       '--yolo',
-      'Skip file-write tiered approval prompts for this session; protected paths still ask',
+      'Kept for compatibility: changes nothing; only a write to a protected path asks',
       false,
     )
     .option(

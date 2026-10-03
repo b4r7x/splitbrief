@@ -9,6 +9,7 @@ import {
   type Phase,
 } from './enums.js';
 import { TaskSchema } from './task.js';
+import { PlanSchema } from './plan.js';
 import { TokenUsageSchema, TaskTokenUsageSchema } from './tokens.js';
 import { RecoveryIssueSchema } from './recovery/schemas.js';
 import { StepCutSchema, StepRefSchema } from './run-step.js';
@@ -22,6 +23,8 @@ export const PlannerConversationSchema = z.object({
   questions: z.array(ClarificationQuestionSchema),
   answers: z.array(z.object({ reply: z.string(), answer: z.string() })),
   answered: z.boolean().default(false),
+  /** What the user asked of the planning session these questions belong to (a plan-card correction). */
+  lead: z.string().optional(),
 });
 export type PlannerConversation = z.infer<typeof PlannerConversationSchema>;
 
@@ -133,6 +136,7 @@ const WorkflowStateFields = {
   pendingRecovery: RecoveryIssueSchema.optional(),
   pendingPlannerConversation: PlannerConversationSchema.optional(),
   discoveredValidation: DiscoveredValidationSchema.optional(),
+  plan: PlanSchema.optional(),
   validationBaseline: ValidationBaselineSchema.optional(),
   reviewFixes: z
     .object({

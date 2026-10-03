@@ -57,7 +57,7 @@ One brief delivers one coherent, reviewable outcome. List every path that outcom
 
 ## Phase 1 — Briefs
 
-`standard`: write `spec.md` (Overview, Acceptance Criteria — each verifiable, Functional Requirements, Out of Scope) and `plan-notes.md` (Summary, `### New Files` / `### Modified Files` path lines with an indented purpose each, Key Implementation Details, Testing Strategy). Both modes: write `briefs/T001.md` … and `briefs/index.md` exactly per references/brief-format.md — template, nine-section contract, critical rules, skill additions. Read every file a brief names before writing its Current Code and Signature sections.
+`standard`: write `spec.md` (Overview, Acceptance Criteria — each verifiable, Functional Requirements, Out of Scope) and `plan-notes.md` (Summary, `### New Files` / `### Modified Files` path lines with an indented purpose each, Key Implementation Details, Testing Strategy). Both modes: write `briefs/T001.md` … and `briefs/index.md` exactly per references/brief-format.md — template, nine-section contract, critical rules, skill additions. Read every file a brief names before writing its read-only context and Signature sections.
 
 ## Hand-back
 

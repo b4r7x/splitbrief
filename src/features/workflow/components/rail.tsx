@@ -1,6 +1,6 @@
 import { Box, Text } from 'ink';
 import { formatStageLabel } from '../../../core/phase-display.js';
-import type { Phase, WorkflowMode } from '../../../core/schemas/enums.js';
+import type { Phase } from '../../../core/schemas/enums.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { useTheme, type Theme } from '../../../components/theme.js';
@@ -13,7 +13,6 @@ import { useStores } from '../../../stores/use-stores.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import {
   getRailStages,
-  railIsHandoff,
   railStageRole,
   selectRailStage,
   type RailRole,
@@ -63,22 +62,11 @@ function haltColor(status: RailStageStatus, t: Theme): string | null {
   return null;
 }
 
-function railFormCState(
-  stages: RailStageState[],
-  mode: WorkflowMode = 'standard',
-): RailStageState | undefined {
-  return selectRailStage(stages, mode)?.state;
-}
-
-export function railFormCText(input: {
-  stages: RailStageState[];
-  fraction: string;
-  mode?: WorkflowMode | undefined;
-}): string {
-  const { stages, fraction, mode = 'standard' } = input;
-  const state = railFormCState(stages, mode);
+export function railFormCText(input: { stages: RailStageState[]; fraction: string }): string {
+  const { stages, fraction } = input;
+  const state = selectRailStage(stages)?.state;
   const status = state?.status ?? 'pending';
-  const stage = state?.stage ?? 'spec';
+  const stage = state?.stage ?? 'plan';
   const text = `${stageMarkerGlyph(status)} ${formatStageLabel(stage)}`;
   if (status === 'cancelled') return `${text}${RAIL_FORM_C_CANCELLED_SUFFIX}`;
   if (status === 'active' && fraction !== '') return `${text}  task ${fraction}`;
@@ -109,7 +97,7 @@ function RailFormBNode({
   const connector =
     left !== undefined
       ? {
-          text: railConnectorString({ handoff: railIsHandoff(left.stage, state.stage) }),
+          text: railConnectorString(),
           color: left.status === 'done' ? roleColor(railStageRole(left.stage), t) : t.textDim,
         }
       : undefined;
@@ -155,23 +143,15 @@ export function RailFormB({
   );
 }
 
-function RailFormC({
-  stages,
-  fraction,
-  mode,
-}: {
-  stages: RailStageState[];
-  fraction: string;
-  mode: WorkflowMode;
-}) {
+function RailFormC({ stages, fraction }: { stages: RailStageState[]; fraction: string }) {
   const t = useTheme();
-  const state = railFormCState(stages, mode);
+  const state = selectRailStage(stages)?.state;
   const live = state?.status === 'active';
-  const rc = roleColor(railStageRole(state?.stage ?? 'spec'), t);
+  const rc = roleColor(railStageRole(state?.stage ?? 'plan'), t);
   return (
     <Box height={1} overflow="hidden">
       <Text color={rc} bold={live} dimColor={!live}>
-        {railFormCText({ stages, fraction, mode })}
+        {railFormCText({ stages, fraction })}
       </Text>
     </Box>
   );
@@ -194,21 +174,19 @@ function RailComplete({ summary }: { summary: RailDoneSummary }) {
 }
 
 // The rail's actually-rendered width, so the header budgets the runner/clock tail against what the
-// rail paints — not the full five-stage pipeline. `complete` collapses to a short done line and a
+// rail paints — not the full three-stage pipeline. `complete` collapses to a short done line and a
 // narrow terminal collapses to Form C, both far shorter than the Form-B measure.
 export function measureRailCells(input: {
   phase: Phase;
   cancelled: boolean;
   form: RailForm;
   cols: number;
-  mode?: WorkflowMode | undefined;
   tasks: TasksState;
   localCount: number;
   events: readonly EngineEvent[];
   /** Stages the caller already knows; a run at rest wears the mark its own status earned. */
   stages?: readonly RailStageState[] | undefined;
 }): number {
-  const mode = input.mode ?? 'standard';
   if (input.stages === undefined && input.phase === 'complete') {
     return getTerminalCellWidth(
       railCompleteText({
@@ -218,18 +196,15 @@ export function measureRailCells(input: {
       }),
     );
   }
-  const stages = [
-    ...(input.stages ?? getRailStages(input.phase, { cancelled: input.cancelled, mode })),
-  ];
+  const stages = [...(input.stages ?? getRailStages(input.phase, { cancelled: input.cancelled }))];
   if (input.form === 'C') {
     const fraction = resolveRailFraction({
       phase: input.phase,
       currentTask: input.tasks.currentTask,
       totalTasks: input.tasks.totalTasks,
       cancelled: input.cancelled,
-      mode,
     });
-    return getTerminalCellWidth(railFormCText({ stages, fraction, mode }));
+    return getTerminalCellWidth(railFormCText({ stages, fraction }));
   }
   const { short } = chooseFormBVariant(stages, getChromeContentWidth(input.cols));
   return measureFormB(stages, { short });
@@ -237,11 +212,9 @@ export function measureRailCells(input: {
 
 export function Rail({
   form,
-  mode: givenMode,
   stages: givenStages,
 }: {
   form?: RailForm | undefined;
-  mode?: WorkflowMode | undefined;
   /** A run at rest paints the stages its record names, not the ones a live phase implies. */
   stages?: readonly RailStageState[] | undefined;
 }) {
@@ -258,7 +231,6 @@ export function Rail({
   const phase = lifecycle.phase;
   const cancelled = lifecycle.cancelled;
   const resolved: RailForm = form ?? 'B';
-  const mode = givenMode ?? 'standard';
   const contentWidth = getChromeContentWidth(cols);
   const display = deriveWorkflowDisplay({
     status: lifecycle.status,
@@ -271,7 +243,6 @@ export function Rail({
     ...(givenStages ??
       getRailStages(phase, {
         cancelled,
-        mode,
         ...(display.halted === undefined ? {} : { halted: display.halted }),
       })),
   ];
@@ -280,7 +251,6 @@ export function Rail({
     currentTask: tasks.currentTask,
     totalTasks: tasks.totalTasks,
     cancelled,
-    mode,
   });
 
   if (givenStages === undefined && phase === 'complete') {
@@ -295,7 +265,7 @@ export function Rail({
     );
   }
   if (resolved === 'C') {
-    return <RailFormC stages={stages} fraction={fraction} mode={mode} />;
+    return <RailFormC stages={stages} fraction={fraction} />;
   }
 
   return <RailFormB stages={stages} contentWidth={contentWidth} />;

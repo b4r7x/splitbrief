@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { SCOPE_ENTRY_CASES } from '#testing/helpers/scope-entries.js';
-import { classifyAction, extractActionPattern } from './action-classifier.js';
+import { classifyAction } from './action-classifier.js';
 import type { ClassifyInput } from './action-classifier.js';
 
 const baseInput: ClassifyInput = {
@@ -190,22 +190,6 @@ describe('classifyAction — protected paths', () => {
   });
 });
 
-describe('classifyAction — tier overrides', () => {
-  it('write_out_of_scope → confirm via tierOverrides', () => {
-    const result = classifyAction(make('edit src/unrelated/other.ts'), {
-      write_out_of_scope: 'confirm',
-    });
-    expect(result).toEqual({ actionClass: 'write_out_of_scope', tier: 'confirm' });
-  });
-
-  it('package_change → sticky via tierOverrides', () => {
-    const result = classifyAction(make('write package.json'), {
-      package_change: 'sticky',
-    });
-    expect(result).toEqual({ actionClass: 'package_change', tier: 'sticky' });
-  });
-});
-
 describe('classifyAction — allowedPaths', () => {
   it('write to file matching allowedPaths → write_in_scope/auto', () => {
     const result = classifyAction(
@@ -254,17 +238,6 @@ describe('classifyAction — allowedPaths', () => {
       }),
     );
     expect(result).toEqual({ actionClass: 'write_in_scope', tier: 'auto' });
-  });
-
-  it('allowedPaths respects tier overrides on write_in_scope', () => {
-    const result = classifyAction(
-      make('edit src/components/button.ts', {
-        taskInBounds: [],
-        allowedPaths: ['src/**'],
-      }),
-      { write_in_scope: 'sticky' },
-    );
-    expect(result).toEqual({ actionClass: 'write_in_scope', tier: 'sticky' });
   });
 });
 
@@ -348,14 +321,6 @@ describe('classifyAction — exact target path', () => {
       classifyAction(make('write src/feature/foo.ts', { targetPath: 'src/unrelated/other.ts' })),
     ).toEqual({ actionClass: 'write_out_of_scope', tier: 'auto' });
   });
-
-  it('the sticky grant pattern is the exact target path', () => {
-    expect(
-      extractActionPattern(
-        make('write src/app.ts.backup', { ...declared, targetPath: './src/app.ts.backup' }),
-      ),
-    ).toBe('src/app.ts.backup');
-  });
 });
 
 describe('classifyAction — prose paths match whole tokens only', () => {
@@ -383,15 +348,6 @@ describe('classifyAction — prose paths match whole tokens only', () => {
         }),
       ),
     ).toEqual({ actionClass: 'write_in_scope', tier: 'auto' });
-  });
-
-  it('a prose grant pattern is one whole path, or else the whole prose', () => {
-    expect(extractActionPattern(make('edit src/app.ts.backup', declared))).toBe(
-      'src/app.ts.backup',
-    );
-    expect(extractActionPattern(make('modify src/app.ts, src/other.ts', declared))).toBe(
-      'modify src/app.ts, src/other.ts',
-    );
   });
 });
 

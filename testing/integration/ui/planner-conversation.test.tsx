@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { flushEffects, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
@@ -15,15 +15,15 @@ import { controlsStore } from '../../../src/stores/ui/controls.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { prependPath, trustedShimGate } from '#testing/helpers/command-shim.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
-import { PLANNER_DOCUMENT_FIXTURES } from '#testing/helpers/factories/phase-call.js';
-import { createTestSinks, REAL_TASKS_MD } from '#testing/helpers/planning-phase.js';
+import { makePlanProposal } from '#testing/helpers/factories/plan.js';
+import { createTestSinks } from '#testing/helpers/planning-phase.js';
 import { createClaudeCodePlanner } from '../../../src/engine/planners/claude-code.js';
 import { createEventBus } from '../../../src/engine/events/bus.js';
 import { createJsonlSink } from '../../../src/engine/events/sinks/jsonl.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import { eventRowBlock } from '../../../src/features/workflow/conversation-rows/event-rows/dispatch.js';
-import { runPlanningSteps } from '../../../src/engine/orchestrator/planning/steps.js';
-import { createInitialState, transition } from '../../../src/core/state/machine.js';
+import { runPlanningSession } from '../../../src/engine/orchestrator/planning/session.js';
+import { createInitialState } from '../../../src/core/state/machine.js';
 import { eventsStore } from '../../../src/stores/workflow/events.js';
 
 let projectDir = '';
@@ -58,17 +58,22 @@ afterEach(() => {
 });
 
 describe('planner conversation in the full workflow screen', () => {
-  it('shows an accepted answer and resumed Claude activity while the real subprocess is still running', async () => {
-    const release = join(projectDir, 'release');
-    const completed = join(projectDir, 'completed');
+  it('answers the planning session in the question box and replays the answer as a qa batch', async () => {
     const invocations = join(projectDir, 'invocations.json');
     const shim = join(projectDir, 'claude');
-    const documents = [
-      'Which module should change?',
-      PLANNER_DOCUMENT_FIXTURES.research,
-      PLANNER_DOCUMENT_FIXTURES.spec,
-      PLANNER_DOCUMENT_FIXTURES.plan,
-      REAL_TASKS_MD,
+    const answers = [
+      {
+        kind: 'questions',
+        questions: [
+          {
+            id: 'module',
+            text: 'Which module should change?',
+            choices: null,
+            default: 'src/auth.ts',
+          },
+        ],
+      },
+      makePlanProposal(),
     ];
     writeFileSync(
       shim,
@@ -76,27 +81,12 @@ describe('planner conversation in the full workflow screen', () => {
 const fs = require('node:fs');
 const path = ${JSON.stringify(invocations)};
 const calls = fs.existsSync(path) ? JSON.parse(fs.readFileSync(path, 'utf8')) : [];
-const index = calls.length;
 calls.push({args: process.argv.slice(2), prompt: fs.readFileSync(0, 'utf8')});
 fs.writeFileSync(path, JSON.stringify(calls));
+const answers = ${JSON.stringify(answers)};
 const emit = (frame) => console.log(JSON.stringify({session_id: 'native-screen', ...frame}));
-const documents = ${JSON.stringify(documents)};
 emit({type: 'system', subtype: 'init'});
-if (index === 1) {
-  emit({type: 'assistant', message: {content: [
-    {type: 'text', text: 'Inspecting the authentication module now.'},
-    {type: 'tool_use', id: 'read-auth', name: 'Read', input: {file_path: 'src/auth.ts'}}
-  ]}});
-  const deadline = setTimeout(() => process.exit(3), 5000);
-  const timer = setInterval(() => {
-    if (!fs.existsSync(${JSON.stringify(release)})) return;
-    clearInterval(timer); clearTimeout(deadline);
-    fs.writeFileSync(${JSON.stringify(completed)}, 'done');
-    emit({type: 'result', result: documents[index]});
-  }, 10);
-} else {
-  emit({type: 'result', result: documents[index]});
-}
+emit({type: 'result', is_error: false, result: '', structured_output: {result: answers[calls.length - 1]}});
 `,
     );
     chmodSync(shim, 0o755);
@@ -113,155 +103,21 @@ if (index === 1) {
       const bus = createEventBus();
       if (options.tuiSink) bus.subscribe(options.tuiSink);
       bus.subscribe(createJsonlSink(ref));
-      const state = {
-        ...transition(createInitialState('Refactor the implementation'), { type: 'START' }),
-        mode: 'standard' as const,
-        approve: 'none' as const,
-      };
-      bus.publish({
-        type: 'planner_status',
-        ts: Date.now(),
-        phase: state.phase,
-        status: 'running',
-      });
+      const state = createInitialState('Refactor the implementation');
       try {
-        const result = await runPlanningSteps({
+        const result = await runPlanningSession({
           wctx: {
             ...ref,
             config: options.prepared.config,
             bus,
             callbacks: options.callbacks,
             sinks: createTestSinks(),
-            metadata: { plannerTool: 'claude-code', implementerTool: 'test', mode: 'standard' },
+            metadata: { plannerTool: 'claude-code', implementerTool: 'test' },
             signal: options.signal,
           },
           state,
           planner,
           feature: state.feature,
-          approveLevel: 'none',
-        });
-        expect(result.disposition).toBe('tasks-ready');
-        return makeSummary();
-      } finally {
-        finished.resolve();
-      }
-    };
-    ui = mountWorkflowScreen({ deps: { runWorkflow }, projectDir, rows: 40 });
-    const screen = ui;
-    try {
-      await vi.waitFor(
-        () => expect(stripAnsiStyles(screen.lastFrame())).toContain('Waiting for your answer'),
-        { timeout: 3000 },
-      );
-      await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
-      screen.stdin.write('Refactor src/auth.ts; preserve the public API.');
-      await flushEffects();
-      screen.stdin.write('\r');
-      await vi.waitFor(
-        () => {
-          const frame = stripAnsiStyles(screen.lastFrame());
-          expect(frame).toContain('Refactor src/auth.ts; preserve the public API.');
-          expect(frame).toContain('Inspecting the authentication module now.');
-          expect(frame).toContain('src/auth.ts');
-          expect(frame).not.toContain('system activity');
-          expect(frame).not.toContain('completed planner');
-          expect(frame.indexOf('Refactor src/auth.ts;')).toBeLessThan(
-            frame.indexOf('Inspecting the authentication'),
-          );
-        },
-        { timeout: 3000 },
-      );
-      expect(existsSync(completed)).toBe(false);
-      expect(
-        eventsStore.get().events.filter((event) => event.type === 'user_message'),
-      ).toHaveLength(1);
-      const calls: unknown = JSON.parse(readFileSync(invocations, 'utf8'));
-      expect(calls).toEqual([
-        expect.objectContaining({
-          prompt: expect.stringContaining('SPLITBRIEF handles all interaction'),
-        }),
-        expect.objectContaining({
-          args: expect.arrayContaining(['--resume', 'native-screen']),
-          prompt: expect.stringContaining('[User reply] Refactor src/auth.ts;'),
-        }),
-      ]);
-    } catch (cause) {
-      screen.unmount();
-      throw cause;
-    } finally {
-      writeFileSync(release, 'continue');
-      await finished.promise;
-    }
-    const replay = await readRunEvents({ projectDir, sessionId });
-    expect(
-      replay.events.filter((event) => event.type === 'user_message').map((event) => event.text),
-    ).toEqual(['Refactor src/auth.ts; preserve the public API.']);
-    expect(
-      replay.events
-        .filter((event) => event.type === 'artifact_written')
-        .map((event) => event.filename),
-    ).toEqual(['research.md', 'spec.md', 'plan.md', 'tasks.md']);
-  });
-
-  it('records a structured batch as a qa payload and renders it styled after replay', async () => {
-    const invocations = join(projectDir, 'invocations.json');
-    const shim = join(projectDir, 'claude');
-    const question = { id: 'module', type: 'input', text: 'Which module should change?' };
-    const documents = [
-      `Scoping first. <!-- Q:${JSON.stringify(question)} -->`,
-      PLANNER_DOCUMENT_FIXTURES.research,
-      PLANNER_DOCUMENT_FIXTURES.spec,
-      PLANNER_DOCUMENT_FIXTURES.plan,
-      REAL_TASKS_MD,
-    ];
-    writeFileSync(
-      shim,
-      `#!${process.execPath}
-const fs = require('node:fs');
-const path = ${JSON.stringify(invocations)};
-const calls = fs.existsSync(path) ? JSON.parse(fs.readFileSync(path, 'utf8')) : [];
-calls.push({args: process.argv.slice(2), prompt: fs.readFileSync(0, 'utf8')});
-fs.writeFileSync(path, JSON.stringify(calls));
-const emit = (frame) => console.log(JSON.stringify({session_id: 'native-screen', ...frame}));
-const documents = ${JSON.stringify(documents)};
-emit({type: 'system', subtype: 'init'});
-emit({type: 'result', result: documents[calls.length - 1]});
-`,
-    );
-    chmodSync(shim, 0o755);
-    restorePath = prependPath(projectDir);
-    const planner = createClaudeCodePlanner({
-      authChannel: undefined,
-      trustedCli: trustedShimGate({ dir: projectDir, tool: 'claude-code' }),
-    });
-    const finished = Promise.withResolvers<void>();
-    let sessionId = '';
-    const runWorkflow = async (options: RunWorkflowOptions): Promise<Summary> => {
-      const ref = options.prepared.session.ref;
-      sessionId = ref.sessionId;
-      const bus = createEventBus();
-      if (options.tuiSink) bus.subscribe(options.tuiSink);
-      bus.subscribe(createJsonlSink(ref));
-      const state = {
-        ...transition(createInitialState('Refactor the implementation'), { type: 'START' }),
-        mode: 'standard' as const,
-        approve: 'none' as const,
-      };
-      try {
-        const result = await runPlanningSteps({
-          wctx: {
-            ...ref,
-            config: options.prepared.config,
-            bus,
-            callbacks: options.callbacks,
-            sinks: createTestSinks(),
-            metadata: { plannerTool: 'claude-code', implementerTool: 'test', mode: 'standard' },
-            signal: options.signal,
-          },
-          state,
-          planner,
-          feature: state.feature,
-          approveLevel: 'none',
         });
         expect(result.disposition).toBe('tasks-ready');
         return makeSummary();
@@ -277,7 +133,8 @@ emit({type: 'result', result: documents[calls.length - 1]});
         { timeout: 3000 },
       );
       await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
-      screen.stdin.write('Refactor src/auth.ts; preserve the public API.');
+      // The draft starts filled with the default; the answer extends it.
+      screen.stdin.write('; preserve the public API.');
       await flushEffects();
       screen.stdin.write('\r');
       await vi.waitFor(
@@ -285,7 +142,7 @@ emit({type: 'result', result: documents[calls.length - 1]});
           const frame = stripAnsiStyles(screen.lastFrame());
           expect(frame).toContain('Answered · 1 question');
           expect(frame).toContain('1. Which module should change?');
-          expect(frame).toContain('Refactor src/auth.ts; preserve the public API.');
+          expect(frame).toContain('src/auth.ts; preserve the public API.');
         },
         { timeout: 3000 },
       );
@@ -294,23 +151,13 @@ emit({type: 'result', result: documents[calls.length - 1]});
         .events.filter((event) => event.type === 'user_message');
       expect(userMessages).toHaveLength(1);
       expect(userMessages[0]).toMatchObject({
-        text: '1. Which module should change?\nRefactor src/auth.ts; preserve the public API.',
+        text: '1. Which module should change?\nsrc/auth.ts; preserve the public API.',
         qa: [
           {
             question: 'Which module should change?',
-            answer: 'Refactor src/auth.ts; preserve the public API.',
+            answer: 'src/auth.ts; preserve the public API.',
           },
         ],
-      });
-      await vi.waitFor(() => {
-        const calls: unknown = JSON.parse(readFileSync(invocations, 'utf8'));
-        expect(calls).toEqual([
-          expect.anything(),
-          expect.objectContaining({
-            args: expect.arrayContaining(['--resume', 'native-screen']),
-            prompt: expect.stringContaining('[User reply]'),
-          }),
-        ]);
       });
     } catch (cause) {
       screen.unmount();
@@ -318,16 +165,21 @@ emit({type: 'result', result: documents[calls.length - 1]});
     } finally {
       await finished.promise;
     }
+    const calls: unknown = JSON.parse(readFileSync(invocations, 'utf8'));
+    expect(calls).toEqual([
+      expect.anything(),
+      expect.objectContaining({
+        args: expect.arrayContaining(['--resume', 'native-screen']),
+        prompt: expect.stringContaining('src/auth.ts; preserve the public API.'),
+      }),
+    ]);
     const replay = await readRunEvents({ projectDir, sessionId });
+    expect(
+      replay.events
+        .filter((event) => event.type === 'artifact_written')
+        .map((event) => event.filename),
+    ).toEqual(['plan.md', 'tasks.md']);
     const replayedUserMessage = replay.events.find((event) => event.type === 'user_message');
-    expect(replayedUserMessage).toMatchObject({
-      qa: [
-        {
-          question: 'Which module should change?',
-          answer: 'Refactor src/auth.ts; preserve the public API.',
-        },
-      ],
-    });
     if (replayedUserMessage?.type !== 'user_message') throw new Error('no replayed user message');
     const block = eventRowBlock({
       event: replayedUserMessage,
@@ -340,7 +192,7 @@ emit({type: 'result', result: documents[calls.length - 1]});
     expect(rows.map((row) => row.segments.map((segment) => segment.text).join(''))).toEqual([
       'Answered · 1 question',
       '1. Which module should change?',
-      'Refactor src/auth.ts; preserve the public API.',
+      'src/auth.ts; preserve the public API.',
     ]);
   });
 

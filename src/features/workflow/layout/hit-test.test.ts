@@ -177,7 +177,7 @@ describe('rail stage hit zones', () => {
       cols: 80,
       fraction: buildRailFraction('build', 3, 7),
     });
-    expect(zones).toHaveLength(5);
+    expect(zones).toHaveLength(3);
     expect(zoneByIndex(zones, 0).left).toBe(RAIL_CONTENT_LEFT_COL);
     let prevRight = -1;
     for (const zone of zones) {
@@ -200,7 +200,7 @@ describe('rail stage hit zones', () => {
       expect(hitRailStage(zones, mid, RAIL_STAGE_FIRST_ROW)).toBe(zone.index);
     }
     expect(hitRailStage(zones, RAIL_CONTENT_LEFT_COL - 1, RAIL_STAGE_FIRST_ROW)).toBeNull();
-    expect(hitRailStage(zones, zoneByIndex(zones, 4).right + 1, RAIL_STAGE_FIRST_ROW)).toBeNull();
+    expect(hitRailStage(zones, zoneByIndex(zones, 2).right + 1, RAIL_STAGE_FIRST_ROW)).toBeNull();
     expect(hitRailStage(zones, zoneByIndex(zones, 0).left, RAIL_STAGE_FIRST_ROW + 1)).toBeNull();
   });
 
@@ -212,12 +212,12 @@ describe('rail stage hit zones', () => {
       fraction: buildRailFraction('build', 3, 7),
     });
     expect(zones).toHaveLength(1);
-    const zone = zoneByIndex(zones, 3);
+    const zone = zoneByIndex(zones, 1);
     expect(zone.left).toBe(RAIL_CONTENT_LEFT_COL);
     expect(zone.top).toBe(RAIL_STAGE_FIRST_ROW);
   });
 
-  it('maps a quick researching run onto Plan in a narrow Form C zone, never Spec', () => {
+  it('maps an old researching run onto Plan in a narrow Form C zone', () => {
     const cols = 20;
     const maxCol = RAIL_CONTENT_LEFT_COL + getChromeContentWidth(cols) - 1;
     const zones = getRailStageZones({
@@ -225,19 +225,17 @@ describe('rail stage hit zones', () => {
       phase: 'researching',
       cols,
       fraction: '',
-      mode: 'quick',
     });
     expect(zones).toHaveLength(1);
-    const zone = zoneByIndex(zones, 1);
+    const zone = zoneByIndex(zones, 0);
     expect(zone.stage).toBe('plan');
     expect(zone.left).toBe(RAIL_CONTENT_LEFT_COL);
     expect(zone.right).toBeLessThanOrEqual(maxCol);
     expect(zone.top).toBe(RAIL_STAGE_FIRST_ROW);
-    expect(zones.some((candidate) => candidate.stage === 'spec')).toBe(false);
-    expect(hitRailStage(zones, zone.left, RAIL_STAGE_FIRST_ROW)).toBe(1);
+    expect(hitRailStage(zones, zone.left, RAIL_STAGE_FIRST_ROW)).toBe(0);
   });
 
-  it('keeps a completed quick run off Spec in a narrow Form C zone', () => {
+  it('selects the done Review of a completed run in a narrow Form C zone', () => {
     const cols = 20;
     const maxCol = RAIL_CONTENT_LEFT_COL + getChromeContentWidth(cols) - 1;
     const zones = getRailStageZones({
@@ -245,19 +243,17 @@ describe('rail stage hit zones', () => {
       phase: 'complete',
       cols,
       fraction: '',
-      mode: 'quick',
     });
     expect(zones).toHaveLength(1);
-    const zone = zoneByIndex(zones, 4);
+    const zone = zoneByIndex(zones, 2);
     expect(zone.stage).toBe('review');
     expect(zone.left).toBe(RAIL_CONTENT_LEFT_COL);
     expect(zone.right).toBeLessThanOrEqual(maxCol);
     expect(zone.top).toBe(RAIL_STAGE_FIRST_ROW);
-    expect(zones.some((candidate) => candidate.stage === 'spec')).toBe(false);
-    expect(hitRailStage(zones, zone.left, RAIL_STAGE_FIRST_ROW)).toBe(4);
+    expect(hitRailStage(zones, zone.left, RAIL_STAGE_FIRST_ROW)).toBe(2);
   });
 
-  it('maps an ended quick run onto its stop stage in a narrow Form C zone, never Spec', () => {
+  it('maps a cancelled run onto its stop stage in a narrow Form C zone', () => {
     const cols = 20;
     const maxCol = RAIL_CONTENT_LEFT_COL + getChromeContentWidth(cols) - 1;
     const zones = getRailStageZones({
@@ -266,16 +262,14 @@ describe('rail stage hit zones', () => {
       cols,
       fraction: '',
       cancelled: true,
-      mode: 'quick',
     });
     expect(zones).toHaveLength(1);
-    const zone = zoneByIndex(zones, 3);
+    const zone = zoneByIndex(zones, 1);
     expect(zone.stage).toBe('build');
     expect(zone.left).toBe(RAIL_CONTENT_LEFT_COL);
     expect(zone.right).toBe(maxCol);
     expect(zone.top).toBe(RAIL_STAGE_FIRST_ROW);
-    expect(zones.some((candidate) => candidate.stage === 'spec')).toBe(false);
-    expect(hitRailStage(zones, zone.left, RAIL_STAGE_FIRST_ROW)).toBe(3);
+    expect(hitRailStage(zones, zone.left, RAIL_STAGE_FIRST_ROW)).toBe(1);
   });
 
   it('drops zones past the truncated rail width so a clipped label is never a phantom hotspot', () => {
@@ -287,8 +281,7 @@ describe('rail stage hit zones', () => {
       fraction: buildRailFraction('build', 3, 7),
     });
     const indices = zones.map((zone) => zone.index);
-    expect(indices).not.toContain(3);
-    expect(indices).not.toContain(4);
+    expect(indices).not.toContain(2);
     const maxCol = RAIL_CONTENT_LEFT_COL + cols - 1;
     for (const zone of zones) expect(zone.right).toBeLessThanOrEqual(maxCol);
   });
@@ -313,7 +306,7 @@ describe('rail stage hit zones', () => {
 });
 
 describe('resolveRailFraction', () => {
-  it('renders the active build/briefs fraction during a live run', () => {
+  it('renders the active build fraction during a live run', () => {
     expect(
       resolveRailFraction({
         phase: 'implementing',

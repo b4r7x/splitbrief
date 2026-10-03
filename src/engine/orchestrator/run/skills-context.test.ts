@@ -8,12 +8,9 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
 import { formatRetryPrompt, formatTaskPrompt } from '../../spec/prompt-formatter.js';
 import { buildHintPrompt } from '../../spec/prompts/escalation.js';
-import { buildPlanPrompt, buildRegeneratePrompt } from '../../spec/prompts/plan.js';
-import { buildQuickPlanPrompt } from '../../spec/prompts/quick-plan.js';
-import { buildResearchPrompt } from '../../spec/prompts/research.js';
 import { buildFinalReviewPrompt } from '../../spec/prompts/review.js';
-import { buildSpecPrompt } from '../../spec/prompts/spec.js';
-import { buildTasksPrompt } from '../../spec/prompts/tasks.js';
+import { buildLanguageContext } from '../../spec/prompts/language-context.js';
+import { buildPlanSessionPrompt } from '../../spec/prompts/plan-session.js';
 import { discoverSkills } from '../../skill-discovery.js';
 import { buildApiReviewContext } from '../api-review-context.js';
 import { buildSkillsContext } from './skills-context.js';
@@ -187,7 +184,6 @@ describe('buildSkillsContext', () => {
     const context = { name: 'demo', dir: projectDir, skillsContext };
     const task = makeTask();
     const review = buildApiReviewContext({
-      mode: 'standard',
       feature: 'feature',
       spec: '# Spec',
       taskBriefs: '## T001',
@@ -201,19 +197,11 @@ describe('buildSkillsContext', () => {
     });
     if (review.kind !== 'complete') throw new Error('expected a complete review packet');
     const prompts = {
-      research: buildResearchPrompt('feature', 'project', skillsContext),
-      spec: buildSpecPrompt('feature', '# Research', undefined, skillsContext),
-      plan: buildPlanPrompt({
-        spec: { content: '# Spec', hasClarifications: false },
+      plan: buildPlanSessionPrompt({
+        feature: 'feature',
         projectContext: 'project',
-        skillsContext,
-      }),
-      tasks: buildTasksPrompt({ spec: '# Spec', plan: '# Plan', skillsContext }),
-      quick: buildQuickPlanPrompt({ feature: 'feature', projectContext: 'project', skillsContext }),
-      regenerate: buildRegeneratePrompt({
-        artifactType: 'spec',
-        currentContent: '# Spec',
-        feedback: 'more',
+        languageContext: buildLanguageContext(undefined),
+        build: { model: undefined, contextTokens: 64_000 },
         skillsContext,
       }),
       brief: formatTaskPrompt({ task, context, writesFiles: 'direct' }),

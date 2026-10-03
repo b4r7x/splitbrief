@@ -1,17 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { join } from 'node:path';
 import { renderFeature, flushEffects, tick } from '#testing/helpers/ink.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
-import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import type { ApprovalReviewResult } from '../../../src/core/approval/types.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
 import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
-import { formatTasks } from '../../../src/engine/spec/formatter.js';
 import { REVIEW_DOCUMENT_HINTS } from '../../../src/features/workflow/prompt-rows/approval.js';
 import { WorkflowScreen } from '../../../src/app/screens/workflow.js';
 import { mountWorkflowScreen, prepareWorkflowExecution } from '#testing/helpers/workflow-screen.js';
@@ -28,7 +26,6 @@ const { terminalSizeStore } = await import('../../../src/stores/ui/terminal-size
 const { routerStore } = await import('../../../src/stores/navigation/router.js');
 const { lifecycleStore } = await import('../../../src/stores/workflow/lifecycle.js');
 const { editorStore } = await import('../../../src/stores/ui/editor.js');
-const { feedbackStore } = await import('../../../src/stores/ui/feedback.js');
 const { reviewStore } = await import('../../../src/stores/workflow/review.js');
 const { externalEditRequestStore } = await import(
   '../../../src/stores/ui/external-edit-request.js'
@@ -99,24 +96,12 @@ describe('WorkflowScreen review editing', () => {
     routerStore.init({ screen: 'home' });
   });
 
-  it('brief review uses the simple review surface and workflow footer', async () => {
+  it('the plan card uses the simple review surface and workflow footer', async () => {
     const projectDir = createTempDir('workflow-screen-review-footer');
     try {
-      const tasksPath = join(projectDir, 'tasks.md');
-      writeFileSync(
-        tasksPath,
-        formatTasks([
-          makeTask({
-            id: 'T001',
-            title: 'Simple footer task',
-            file: 'src/review-footer.ts',
-            evidence: ['reviewable proof'],
-            scope: { inBounds: ['src/review-footer.ts'], outOfBounds: [] },
-          }),
-        ]),
-        'utf-8',
-      );
-      const config = makeConfig({ workflow: { briefReview: 'simple' } });
+      const planPath = join(projectDir, 'plan.md');
+      writeFileSync(planPath, '# Plan\n\nSimple footer plan\n', 'utf-8');
+      const config = makeConfig();
       const prepared = prepareWorkflowExecution({
         projectDir,
         feature: 'review footer review',
@@ -131,8 +116,8 @@ describe('WorkflowScreen review editing', () => {
         execution: { kind: 'local', prepared },
       });
       runWorkflow.mockImplementationOnce(async (opts) => {
-        lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
-        await opts.callbacks.onApprovalNeeded('briefs', tasksPath);
+        lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+        await opts.callbacks.onApprovalNeeded('plan', planPath, []);
         return makeSummary({ feature: 'review footer review' });
       });
 
@@ -141,7 +126,7 @@ describe('WorkflowScreen review editing', () => {
       );
 
       await vi.waitFor(() => {
-        expect(ui.lastFrame() ?? '').toContain('Simple footer task');
+        expect(ui.lastFrame() ?? '').toContain('Simple footer plan');
         expect(ui.lastFrame() ?? '').toContain(REVIEW_DOCUMENT_HINTS);
       });
       const frame = ui.lastFrame() ?? '';
@@ -155,61 +140,41 @@ describe('WorkflowScreen review editing', () => {
     }
   });
 
-  it('the edit command opens the external editor for brief review and resolves the edit action', async () => {
-    const projectDir = createTempDir('workflow-screen-brief-shortcut');
+  it('an external edit at the plan card opens plan.json and resolves the edit action', async () => {
+    const projectDir = createTempDir('workflow-screen-plan-external');
     try {
-      const tasksPath = join(projectDir, 'tasks.md');
+      const planPath = join(projectDir, 'plan.md');
+      const planJsonPath = join(projectDir, 'plan.json');
       const { editorPath, logPath } = writeFakeReviewEditor(projectDir);
-      const editedText = formatTasks([
-        makeTask({
-          id: 'T001',
-          title: 'Review shortcut task edited',
-          file: 'src/review-shortcut.ts',
-          evidence: ['reviewable proof'],
-          scope: { inBounds: ['src/review-shortcut.ts'], outOfBounds: [] },
-        }),
-      ]);
-      writeFileSync(
-        tasksPath,
-        formatTasks([
-          makeTask({
-            id: 'T001',
-            title: 'Review shortcut task',
-            file: 'src/review-shortcut.ts',
-            evidence: ['reviewable proof'],
-            scope: { inBounds: ['src/review-shortcut.ts'], outOfBounds: [] },
-          }),
-        ]),
-        'utf-8',
-      );
+      writeFileSync(planPath, '# Plan\n\nExternal shortcut plan\n', 'utf-8');
+      writeFileSync(planJsonPath, '{}\n', 'utf-8');
       stubReviewEditor(editorPath);
       vi.stubEnv('FAKE_REVIEW_EDITOR_LOG', logPath);
-      vi.stubEnv('FAKE_REVIEW_EDITOR_CONTENT', editedText);
+      vi.stubEnv('FAKE_REVIEW_EDITOR_CONTENT', '{"edited":true}\n');
       let approvalResult: ApprovalReviewResult | undefined;
 
       runWorkflow.mockImplementationOnce(async (opts) => {
-        lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
-        approvalResult = await opts.callbacks.onApprovalNeeded('briefs', tasksPath);
+        lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+        approvalResult = await opts.callbacks.onApprovalNeeded('plan', planPath, []);
         return makeSummary();
       });
       const ui = mountWorkflow(projectDir);
 
       await vi.waitFor(() => {
-        expect(ui.lastFrame() ?? '').toContain('Review shortcut task');
+        expect(ui.lastFrame() ?? '').toContain('External shortcut plan');
       });
       await waitForReviewPrompt(ui);
 
-      const ownerToken = reviewStore.get().ownerToken;
-      externalEditRequestStore.request(ownerToken);
+      externalEditRequestStore.request(reviewStore.get().ownerToken, '{}\n');
       await tick(20);
 
       await vi.waitFor(() => {
-        expect(readFileSync(logPath, 'utf-8').trim()).toBe(tasksPath);
+        expect(readFileSync(logPath, 'utf-8').trim()).toBe(planJsonPath);
       }, REVIEW_EDITOR_WAIT_MS);
       await vi.waitFor(() => {
         expect(approvalResult).toEqual({ approved: false, action: 'edit' });
       }, REVIEW_EDITOR_WAIT_MS);
-      expect(readFileSync(tasksPath, 'utf-8')).toContain('Review shortcut task edited');
+      expect(readFileSync(planJsonPath, 'utf-8')).toContain('"edited":true');
 
       ui.unmount();
     } finally {
@@ -217,55 +182,49 @@ describe('WorkflowScreen review editing', () => {
     }
   });
 
-  it('Ctrl+E opens the inline raw editor for brief review and does not spawn the external editor', async () => {
-    const projectDir = createTempDir('workflow-screen-brief-inline');
+  it.each([
+    ['Ctrl+E', CTRL_E],
+    ['the edit command', 'edit'],
+  ] as const)('%s opens plan.json in the editor overlay at the plan card', async (_name, keys) => {
+    const projectDir = createTempDir('workflow-screen-plan-inline');
     try {
       const { editorPath, logPath } = writeFakeReviewEditor(projectDir);
-      // The brief file Ctrl+E edits is a session artifact: the inline editor reads it through the
-      // session confinement, so a repo-root path would be refused the way production refuses one.
-      // The run owns the session directory, so the file is written once the run has allocated it.
-      const tasksPath = join(sessionDir(projectDir, WORKFLOW_SCREEN_SESSION_ID), 'tasks.md');
+      const dir = sessionDir(projectDir, WORKFLOW_SCREEN_SESSION_ID);
+      const planPath = join(dir, 'plan.md');
       stubReviewEditor(editorPath);
       vi.stubEnv('FAKE_REVIEW_EDITOR_LOG', logPath);
       vi.stubEnv('FAKE_REVIEW_EDITOR_CONTENT', 'inline-must-not-spawn');
 
       runWorkflow.mockImplementationOnce(async (opts) => {
-        writeFileSync(
-          tasksPath,
-          formatTasks([
-            makeTask({
-              id: 'T001',
-              title: 'Inline shortcut task',
-              file: 'src/inline-shortcut.ts',
-              evidence: ['reviewable proof'],
-              scope: { inBounds: ['src/inline-shortcut.ts'], outOfBounds: [] },
-            }),
-          ]),
-          'utf-8',
-        );
-        lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
+        writeFileSync(planPath, '# Plan\n\nInline shortcut plan\n', 'utf-8');
+        writeFileSync(join(dir, 'plan.json'), '{"summary":"inline plan json"}\n', 'utf-8');
+        lifecycleStore.__testReset({ phase: 'reviewing-plan' });
         // The run stays in flight while the gate waits, exactly as it does in production: a mock
         // that returned first would settle the route and take the gate off screen.
-        await opts.callbacks.onApprovalNeeded('briefs', tasksPath);
+        await opts.callbacks.onApprovalNeeded('plan', planPath, []);
         return makeSummary();
       });
       const ui = mountWorkflow(projectDir);
 
       await vi.waitFor(() => {
-        expect(ui.lastFrame() ?? '').toContain('Inline shortcut task');
+        expect(ui.lastFrame() ?? '').toContain('Inline shortcut plan');
       });
       await waitForReviewPrompt(ui);
 
-      ui.stdin.write(CTRL_E);
+      await flushEffects();
+      ui.stdin.write(keys);
+      if (keys === 'edit') {
+        await flushEffects();
+        ui.stdin.write(ENTER);
+      }
 
       await vi.waitFor(() => {
         expect(editorStore.get().status).toBe('open');
       });
       const session = editorStore.get();
-      expect(session.status === 'open' ? session.surface : null).toBe('raw');
-      expect(session.status === 'open' ? session.value : null).toContain('Inline shortcut task');
-      // Single owner (REQ-049 / CON-D): Ctrl+E is the inline editor's alone; it must not also
-      // fire the composer's external-editor path, so the fake $EDITOR is never spawned.
+      expect(session.status === 'open' ? session.filePath : null).toBe(join(dir, 'plan.json'));
+      expect(session.status === 'open' ? session.value : null).toContain('inline plan json');
+      // The overlay is the editor: the fake $EDITOR is never spawned.
       expect(existsSync(logPath)).toBe(false);
 
       editorStore.close();
@@ -275,143 +234,29 @@ describe('WorkflowScreen review editing', () => {
     }
   });
 
-  it.each([
-    ['spec', 'reviewing-spec'],
-    ['plan', 'reviewing-plan'],
-  ] as const)(
-    'the edit command opens the external editor for %s review and refreshes before approval',
-    async (type, phase) => {
-      const projectDir = createTempDir(`workflow-screen-${type}-editor`);
-      try {
-        const reviewPath = join(projectDir, `${type}.md`);
-        const { editorPath, logPath } = writeFakeReviewEditor(projectDir);
-        const editedText = `# Edited ${type} review\n\nfresh editor content\n`;
-        writeFileSync(reviewPath, `# Original ${type} review\n\nstale content\n`, 'utf-8');
-        stubReviewEditor(editorPath);
-        vi.stubEnv('FAKE_REVIEW_EDITOR_LOG', logPath);
-        vi.stubEnv('FAKE_REVIEW_EDITOR_CONTENT', editedText);
-        let approvalResult: ApprovalReviewResult | undefined;
-
-        runWorkflow.mockImplementationOnce(async (opts) => {
-          lifecycleStore.__testReset({ phase });
-          approvalResult = await opts.callbacks.onApprovalNeeded(type, reviewPath);
-          return makeSummary({ feature: `${type} review editor` });
-        });
-
-        const ui = mountWorkflow(projectDir);
-
-        await vi.waitFor(() => {
-          expect(ui.lastFrame() ?? '').toContain(`Original ${type} review`);
-        });
-        await waitForReviewPrompt(ui);
-
-        await flushEffects();
-        ui.stdin.write('edit');
-        await vi.waitFor(() => {
-          expect(ui.lastFrame() ?? '').toContain('edit');
-        }, REVIEW_EDITOR_WAIT_MS);
-        await flushEffects();
-        ui.stdin.write(ENTER);
-
-        await vi.waitFor(() => {
-          expect(readFileSync(logPath, 'utf-8')).toContain(reviewPath);
-        }, REVIEW_EDITOR_WAIT_MS);
-        await vi.waitFor(() => {
-          expect(ui.lastFrame() ?? '').toContain(`Edited ${type} review`);
-        }, REVIEW_EDITOR_WAIT_MS);
-        expect(readFileSync(reviewPath, 'utf-8')).toContain(`Edited ${type} review`);
-        expect(approvalResult).toBeUndefined();
-
-        // "Edited … — content reloaded" owns the feedback row until it auto-clears (3s);
-        // the review key legend returns after that.
-        await waitForReviewPrompt(ui, REVIEW_EDITOR_WAIT_MS);
-        await flushEffects();
-        ui.stdin.write('approve');
-        await vi.waitFor(() => {
-          expect(ui.lastFrame() ?? '').toContain('approve');
-        }, REVIEW_EDITOR_WAIT_MS);
-        await flushEffects();
-        ui.stdin.write(ENTER);
-
-        await vi.waitFor(() => {
-          expect(approvalResult).toEqual({ approved: true });
-        }, REVIEW_EDITOR_WAIT_MS);
-
-        ui.unmount();
-      } finally {
-        cleanupTempDir(projectDir);
-      }
-    },
-  );
-
-  it('refreshes the review overlay with an edit the editor saved before exiting non-zero', async () => {
-    const projectDir = createTempDir('workflow-screen-spec-editor-failure');
-    try {
-      const reviewPath = join(projectDir, 'spec.md');
-      const { editorPath, logPath } = writeFakeReviewEditor(projectDir);
-      writeFileSync(reviewPath, '# Original spec review\n\nstale content\n', 'utf-8');
-      stubReviewEditor(editorPath);
-      vi.stubEnv('FAKE_REVIEW_EDITOR_LOG', logPath);
-      vi.stubEnv('FAKE_REVIEW_EDITOR_CONTENT', '# Edited spec review\n\nfresh editor content\n');
-      vi.stubEnv('FAKE_REVIEW_EDITOR_EXIT_CODE', '1');
-      let approvalResult: ApprovalReviewResult | undefined;
-
-      runWorkflow.mockImplementationOnce(async (opts) => {
-        lifecycleStore.__testReset({ phase: 'reviewing-spec' });
-        approvalResult = await opts.callbacks.onApprovalNeeded('spec', reviewPath);
-        return makeSummary({ feature: 'spec review editor failure' });
-      });
-
-      const ui = mountWorkflow(projectDir);
-      await vi.waitFor(() => {
-        expect(ui.lastFrame() ?? '').toContain('Original spec review');
-      });
-      await waitForReviewPrompt(ui);
-
-      const messages: string[] = [];
-      const unsubscribe = feedbackStore.subscribe(() => {
-        const { message } = feedbackStore.get();
-        if (message !== null) messages.push(message);
-      });
-      try {
-        externalEditRequestStore.request(reviewStore.get().ownerToken);
-        await vi.waitFor(() => {
-          expect(ui.lastFrame() ?? '').toContain('Edited spec review');
-        }, REVIEW_EDITOR_WAIT_MS);
-      } finally {
-        unsubscribe();
-      }
-
-      expect(messages).toContain(
-        `Editor exited with status 1 (${basename(process.execPath)}) but saved spec.md — content reloaded`,
-      );
-      expect(approvalResult).toBeUndefined();
-
-      ui.unmount();
-    } finally {
-      cleanupTempDir(projectDir);
-    }
-  });
-
   it('runs the external-editor handoff exactly once when the requested token still owns the review prompt', async () => {
     const projectDir = createTempDir('workflow-bridge-fresh');
     try {
-      const reviewPath = join(projectDir, 'tasks.md');
-      writeFileSync(reviewPath, '# Tasks\n', 'utf-8');
+      const reviewPath = join(projectDir, 'plan.md');
+      const editPath = join(projectDir, 'plan.json');
+      writeFileSync(reviewPath, '# Plan\n', 'utf-8');
+      writeFileSync(editPath, '{}\n', 'utf-8');
       const { editorPath, logPath } = writeFakeReviewEditor(projectDir);
       stubReviewEditor(editorPath);
       vi.stubEnv('FAKE_REVIEW_EDITOR_LOG', logPath);
-      vi.stubEnv('FAKE_REVIEW_EDITOR_CONTENT', '# Tasks\n');
+      vi.stubEnv('FAKE_REVIEW_EDITOR_CONTENT', '{}\n');
 
       const ui = mountWorkflow(projectDir);
       await tick(20);
 
+      // The plan card shows plan.md; the edit it hands the external editor is plan.json.
+      lifecycleStore.__testReset({ phase: 'reviewing-plan' });
       const token = reviewStore.setReviewFile(reviewPath);
-      externalEditRequestStore.request(token);
+      externalEditRequestStore.request(token, '{}\n');
       await tick(20);
 
       await vi.waitFor(() => {
-        expect(readFileSync(logPath, 'utf-8').trim()).toBe(reviewPath);
+        expect(readFileSync(logPath, 'utf-8').trim()).toBe(editPath);
       }, REVIEW_EDITOR_WAIT_MS);
       expect(externalEditRequestStore.get().status).toBe('idle');
 
@@ -438,7 +283,7 @@ describe('WorkflowScreen review editing', () => {
 
       const staleToken = reviewStore.setReviewFile(reviewPath);
       reviewStore.setReviewFile(otherPath);
-      externalEditRequestStore.request(staleToken);
+      externalEditRequestStore.request(staleToken, '{}\n');
       await tick(40);
 
       expect(existsSync(logPath)).toBe(false);

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
 import {
   chmodSync,
@@ -28,8 +28,6 @@ import type { CliStartGate } from '../../../src/engine/runners/start-gate.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
-import type { RunPhaseInput } from '../../../src/engine/planners/types.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
@@ -51,6 +49,7 @@ import { makePreparedExecution } from '#testing/helpers/factories/prepared-execu
 import { resolveCustomExecutable } from '../../../src/engine/runners/resolve-cli-executable.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
 import { persistReadyExecutionState } from '#testing/helpers/persisted-execution.js';
+import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
 
 const TARGET_SRC = 'src/change-proof.ts';
 const TARGET_TEST = 'tests/change-proof.test.mjs';
@@ -302,7 +301,7 @@ async function runDirectWriterImplementation(
     config: makeConfig({
       implementer: implementerConfig(),
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-      workflow: { mode: 'quick', maxRetries: 0 },
+      workflow: { maxRetries: 0 },
     }),
   });
   wctx.implementer = createCliImplementer(implementerConfig(), { trustedCli: fixture.trustedGate });
@@ -395,7 +394,7 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
           config: makeConfig({
             implementer: implementerConfig(),
             validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-            workflow: { mode: 'quick', maxRetries: 0 },
+            workflow: { maxRetries: 0 },
             approval: { enabled: false, feedRejectionsToPlanner: false },
           }),
         }),
@@ -455,7 +454,7 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
           config: makeConfig({
             implementer: implementerConfig(),
             validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-            workflow: { mode: 'quick', maxRetries: 0 },
+            workflow: { maxRetries: 0 },
             approval: { enabled: false, feedRejectionsToPlanner: false },
           }),
         }),
@@ -484,13 +483,7 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
     const events: EngineEvent[] = [];
     const task = proofTask();
     const planner = makePlanner({
-      runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
-        makePhaseCallResult({
-          call,
-          tasks: [task],
-          usage: { inputTokens: 40, outputTokens: 20 },
-        }),
-      ),
+      typedCall: typedCallFromTasks([task], { inputTokens: 40, outputTokens: 20 }),
     });
 
     const feature = 'prove direct writer promotion';
@@ -514,7 +507,6 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
         testCommand: 'node validate.mjs',
       },
       workflow: {
-        mode: 'quick',
         maxRetries: 0,
       },
       approval: { enabled: false, feedRejectionsToPlanner: false },

@@ -275,33 +275,6 @@ describe('createPlannerBase — structured summarization', () => {
   });
 });
 
-describe('createPlannerBase — regenerate', () => {
-  it('leads a revision issued with the conversation so far with that conversation', async () => {
-    const prompts: string[] = [];
-    const planner = createPlannerBase({
-      invokePlan: async ({ prompt }) => {
-        prompts.push(prompt);
-        return completedRunnerCall('# Spec\n\nRevised.\n');
-      },
-      invokeEscalate: async () => completedRunnerCall(''),
-      isAvailable: async () => true,
-      capabilities: defaultCapabilities,
-    });
-
-    await planner.regenerate({
-      prompt: 'Regenerate the spec.',
-      projectDir,
-      callbacks: { onOutput: () => {} },
-      priorMessages: [{ role: 'user', content: 'The export must be named PERIWINKLE-42.' }],
-    });
-
-    expect(prompts).toHaveLength(1);
-    expect(prompts[0]).toContain('<!-- prior conversation -->');
-    expect(prompts[0]).toContain('[user] The export must be named PERIWINKLE-42.');
-    expect(prompts[0]?.endsWith('Regenerate the spec.')).toBe(true);
-  });
-});
-
 describe('createPlannerBase — typedCall', () => {
   it('defaults typedOutput to fallback and canResume to the resume capability', () => {
     const planner = createPlannerBase({
@@ -379,6 +352,50 @@ describe('createPlannerBase — typedCall', () => {
 
     expect(invokePlan).toHaveBeenCalledWith(expect.objectContaining({ prompt: 'q', schema }));
     expect(invokeEscalate).not.toHaveBeenCalled();
+  });
+
+  it('hands a planning session its attachments on the planner thread', async () => {
+    const invokePlan = vi.fn(async () => completedRunnerCall(''));
+    const planner = createPlannerBase({
+      invokePlan,
+      invokeEscalate: async () => completedRunnerCall(''),
+      isAvailable: async () => true,
+      capabilities: { ...defaultCapabilities, supportsImages: true },
+    });
+    const images = [
+      { id: 'a', kind: 'image' as const, path: '/tmp/a.png', mimeType: 'image/png', sizeBytes: 1 },
+    ];
+
+    await planner
+      .typedCall({ projectDir: '/p', callbacks: { onOutput: () => {} }, seat: 'planner', images })
+      .invoke({ prompt: 'q' });
+
+    expect(invokePlan).toHaveBeenCalledWith(expect.objectContaining({ images }));
+  });
+
+  it('leads a planning call on a fresh session with the conversation so far', async () => {
+    const invokePlan = vi.fn(async () => completedRunnerCall(''));
+    const planner = createPlannerBase({
+      invokePlan,
+      invokeEscalate: async () => completedRunnerCall(''),
+      isAvailable: async () => true,
+      capabilities: defaultCapabilities,
+    });
+
+    await planner
+      .typedCall({
+        projectDir: '/p',
+        callbacks: { onOutput: () => {} },
+        seat: 'planner',
+        priorMessages: [{ role: 'user', content: 'Name the export PERIWINKLE-42.' }],
+      })
+      .invoke({ prompt: 'q' });
+
+    expect(invokePlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: expect.stringMatching(/PERIWINKLE-42[\s\S]*q$/),
+      }),
+    );
   });
 
   it('carries the typed call role into the escalation context', async () => {

@@ -136,7 +136,6 @@ interface ComposerProps {
   onEditShortcut?: (() => void) | undefined;
   onReviewBoundaryNavigate?: ((direction: 'up' | 'down') => boolean | undefined) | undefined;
   onReviewInteraction?: (() => void) | undefined;
-  reviewYankActive?: boolean | undefined;
   questionEpoch?: number | undefined;
   inputPaddingX?: number | undefined;
   readClipboardImage?: typeof readSystemClipboardImage | undefined;
@@ -187,7 +186,6 @@ function ComposerInput({
   onEditShortcut,
   onReviewBoundaryNavigate,
   onReviewInteraction,
-  reviewYankActive = false,
   questionEpoch,
   inputPaddingX = 1,
   readClipboardImage = readSystemClipboardImage,
@@ -566,13 +564,6 @@ function ComposerInput({
     disabled,
     briefFocusHeld,
     draftEmpty: textDraftEmpty,
-    reviewYankActive,
-    onDraft: (text) => {
-      onReviewInteraction?.();
-      draft.replaceDocument(createDraftDocument(text));
-      bumpEpoch();
-    },
-    onCommand: onSubmit ?? (() => undefined),
   });
 
   const isEditShortcut = (input: string, key: Key): boolean =>

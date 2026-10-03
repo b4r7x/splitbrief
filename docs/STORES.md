@@ -67,9 +67,8 @@ src/stores/
 │   ├── streaming-output.ts   # Live streamed runner output
 │   ├── transcript-tail.ts    # What the blocks after the run's events add to the transcript
 │   ├── recovery-notice.ts    # Halted seat + its quota reset, for the header
-│   ├── mode-advice.ts        # The run's mode and the advice the byline and sidebar show
 │   └── review.ts             # Review file path + scroll
-├── approval-prompt/          # Tiered approval request/response prompt
+├── approval-prompt/          # Confirmation prompt (protected writes, custom-runner admission)
 │   └── prompt.ts             # approvalPromptStore (via channels/prompt)
 ├── channels/                 # Cross-store messaging channels
 │   ├── prompt.ts             # createPromptChannel — request/response with supersede/cancel
@@ -213,7 +212,6 @@ routerStore.navigate('workflow', { feature: 'auth' });
 | `streamingOutputStore` | `workflow/streaming-output.ts` | `{ taskId, lines, active }` | `startStreaming()`, `replaceLines()`, `stopStreaming()` |
 | `transcriptTailStore` | `workflow/transcript-tail.ts` | `{ rowCount, renderableUnits }` — what a closed run's ledger adds after the run's own events | `setMetrics()` — written by the transcript, read by the keyboard so both measure one document |
 | `recoveryNoticeStore` | `workflow/recovery-notice.ts` | `{ seat, resetAt }` — the seat an open halt stopped on and the clock its quota returns on | `open({ seat, resetAt })`, `clear()` — written by the TUI recovery driver |
-| `modeAdviceStore` | `workflow/mode-advice.ts` | `{ mode, advice }` — the last mode `mode_resolved` named and the last `mode_advice` verdict, `none` included, kept apart from the capped event log | internal writes via `actions.addEvent` / `loadEvents`; `settle({ mode, advice })` — written by `readRunHistory` with the mode a replayed run continues in and the advice its saved inputs earn |
 | `approvalPromptStore` | `approval-prompt/prompt.ts` | `{ status: 'idle' } \| { status: 'pending', request, resolve }` | `openApprovalPrompt()`, `closeApprovalPrompt()` (via `channels/prompt`) |
 | `routerStore` | `navigation/router.ts` | `RouteData` (discriminated union on `screen`) | `navigate()`, `init()` — with transition guards |
 | `configStore` | `project/config.ts` | `{ config: Config \| null, projectDir, overrides }` | `load()`, `save()`, `useConfig()` |

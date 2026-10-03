@@ -45,7 +45,7 @@ describe('e2e: a checkout whose git state changes during an implementer call', (
   it('halts the headless run with the evidence, and continue --action retry finishes it', async () => {
     fixture = createStopContinueFixture(escapingImplementerScript);
 
-    const halted = await cli(fixture, ['start', '--mode', 'quick', '--approve', 'none', 'smoke']);
+    const halted = await cli(fixture, ['start', 'smoke']);
 
     expect(halted.exitCode).toBe(1);
     const sessionId = readActive(fixture.projectDir);

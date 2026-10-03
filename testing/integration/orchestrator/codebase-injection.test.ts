@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createInitialState, transition } from '../../../src/core/state/machine.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
 import { runPlanningPhase } from '../../../src/engine/orchestrator/planning/run.js';
@@ -9,16 +9,15 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { makeTask } from '#testing/helpers/factories/task.js';
-import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
-import type { RunPhaseInput } from '../../../src/engine/planners/types.js';
+import { makePlanProposal } from '#testing/helpers/factories/plan.js';
+import { scriptedTypedCall } from '#testing/helpers/typed-planner.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import {
   makeWorkflowMetadata,
   TEST_WORKFLOW_SINKS,
 } from '#testing/helpers/orchestrator-context.js';
 
-const META = makeWorkflowMetadata('quick');
+const META = makeWorkflowMetadata();
 const dirs: string[] = [];
 
 beforeEach(() => resetAllStores());
@@ -40,7 +39,6 @@ interface PlanRunOpts {
   name: string;
   feature: string;
   enabled: boolean;
-  preseedContext?: string;
   seedCache?: (projectDir: string) => void;
 }
 
@@ -55,17 +53,8 @@ async function planWithCodebase(
   ensureSessionDir(projectDir, sessionId);
   opts.seedCache?.(projectDir);
 
-  let context = opts.preseedContext;
-  const planner = makePlanner({
-    runPhase: vi.fn(async ({ call, inputs }: RunPhaseInput) => {
-      context = inputs.codebaseContext;
-      return makePhaseCallResult({
-        call,
-        usage: { inputTokens: 50, outputTokens: 25 },
-        ...(call === 'tasks' ? { tasks: [makeTask()] } : {}),
-      });
-    }),
-  });
+  const typed = scriptedTypedCall([makePlanProposal()]);
+  const planner = makePlanner({ typedCall: typed.typedCall });
   const { callbacks } = makeCallbacks();
   const bus = createEventBus();
   const warnings: string[] = [];
@@ -74,7 +63,6 @@ async function planWithCodebase(
   });
   const config = makeConfig({
     workflow: {
-      mode: 'quick',
       approve: 'none',
     },
     codebase: { enabled: opts.enabled, tokenBudget: 1000 },
@@ -98,7 +86,9 @@ async function planWithCodebase(
     feature: state.feature,
   });
 
-  return { context, warnings };
+  // The repository map is the prompt section between its heading and the next one.
+  const map = typed.prompts[0]?.match(/## Repository Map\n([\s\S]*?)\n## /)?.[1];
+  return { context: map, warnings };
 }
 
 describe('codebase context injection into planner', { timeout: 90_000 }, () => {
@@ -119,7 +109,6 @@ describe('codebase context injection into planner', { timeout: 90_000 }, () => {
       name: 'codebase-disabled',
       feature: 'add baz feature',
       enabled: false,
-      preseedContext: 'SENTINEL',
     });
 
     expect(context).toBeUndefined();

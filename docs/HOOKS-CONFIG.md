@@ -150,15 +150,13 @@ A single JSON object is written to the child's stdin, then stdin is closed:
   },
   "context": {
     "projectDir": "/Users/you/project",
-    "sessionId": "s_01H...",
-    "phase": "implement",
-    "mode": "standard"
+    "sessionId": "s_01H..."
   }
 }
 ```
 
 - `event` is the in-flight `EngineEvent` — the same payload rendered in the TUI. Fields present depend on event type (see [per-event availability](#per-event-availability)). The stdin payload is bounded and secret-redacted before it is written to the child process.
-- `context` is static for the run: `projectDir` (absolute), `sessionId` (per-invocation), `phase` (`plan` / `implement` / `validate`), `mode` (`quick` / `standard` / `speckit`).
+- `context` is static for the run: `projectDir` (absolute) and `sessionId` (per-invocation).
 
 ### stdout — optional response
 

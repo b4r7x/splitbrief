@@ -1,4 +1,4 @@
-import type { Phase, WorkflowMode } from '../../../../src/core/schemas/enums.js';
+import type { Phase } from '../../../../src/core/schemas/enums.js';
 import type { EvidenceLedger, EvidenceTask } from '../../../../src/core/schemas/evidence.js';
 import type { RunRecord } from '../../../../src/core/sessions/run-record.js';
 import type { RunStatus } from '../../../../src/core/sessions/run-status.js';
@@ -587,12 +587,10 @@ function record(input: {
   readonly summary?: Readonly<Summary>;
   readonly ledger?: EvidenceLedger;
   readonly checkpoint?: RunRecord['checkpoint'];
-  readonly mode?: WorkflowMode;
 }): RunRecord {
   return {
     ref: { projectDir: VISUAL_FIXTURE_PROJECT_DIR, sessionId: input.sessionId },
     feature: AT_REST_FIXTURE_FEATURE,
-    mode: input.mode ?? 'standard',
     startedAt: STARTED_AT_ISO,
     hydration: { kind: 'loaded', state: input.state },
     status: input.status,
@@ -714,23 +712,22 @@ const AT_REST_WAITING_GATE = record({
   sessionId: 'visual-at-rest-waiting-gate',
   status: {
     kind: 'open',
-    stop: { kind: 'waiting', gate: 'spec' },
+    stop: { kind: 'waiting', gate: 'spec', reopens: false },
     resumeAt: { kind: 'gate', gate: 'spec' },
   },
   state: savedState({ phase: 'reviewing-spec', briefs: [] }),
 });
 
 /**
- * A quick run saved while it still researched: quick has no Spec step, so the rail folds the phase
- * into Plan — Spec stays pending and the paused stop marks Plan.
+ * A quick run saved while it still researched: the rail folds the phase into Plan, and the paused
+ * stop marks Plan.
  */
 const AT_REST_QUICK = record({
   sessionId: 'visual-at-rest-quick',
-  mode: 'quick',
   status: {
     kind: 'open',
     stop: { kind: 'paused', at: 'mid-step' },
-    resumeAt: { kind: 'planner', call: 'tasks' },
+    resumeAt: { kind: 'planner', call: 'plan' },
   },
   state: savedState({ phase: 'researching', briefs: [] }),
 });
@@ -1026,15 +1023,5 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   atRestProjection({
     id: 'workflow-gate-stopped',
     route: { record: GATE_STOPPED, log: GATE_STOPPED_LOG },
-  }),
-  atRestProjection({
-    id: 'workflow-gate-corrected',
-    route: {
-      record: {
-        ...GATE_STOPPED,
-        ref: { ...GATE_STOPPED.ref, sessionId: 'visual-gate-corrected' },
-      },
-      log: 'testing/fixtures/session-log/gate-corrected.jsonl',
-    },
   }),
 ];

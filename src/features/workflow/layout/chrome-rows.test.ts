@@ -9,7 +9,6 @@ import {
   getRailActiveIndex,
   getRailStages,
   isRailCurrent,
-  railIsHandoff,
   railStageCompletionTimesFromPhaseFirstSeen,
   railStageRole,
 } from '../../../core/rail-stages.js';
@@ -122,19 +121,19 @@ describe('rail phase → stage map', () => {
     }
   });
 
-  it('folds research into the spec stage', () => {
+  it("folds an old run's research and briefs gate into the plan stage", () => {
     expect(getRailActiveIndex('researching')).toBe(0);
-    expect(getRailStages('researching').filter((s) => s.status === 'active')).toEqual([
-      { stage: 'spec', status: 'active' },
+    expect(getRailActiveIndex('reviewing-briefs')).toBe(0);
+    expect(getRailStages('reviewing-briefs').filter((s) => s.status === 'active')).toEqual([
+      { stage: 'plan', status: 'active' },
     ]);
   });
 
-  it('reaches the north-star: plan done and briefs active in the same frame', () => {
-    const stages = getRailStages('reviewing-briefs');
-    expect(stages.find((s) => s.stage === 'spec')?.status).toBe('done');
+  it('marks plan done and build active in the same frame', () => {
+    const stages = getRailStages('implementing');
     expect(stages.find((s) => s.stage === 'plan')?.status).toBe('done');
-    expect(stages.find((s) => s.stage === 'briefs')?.status).toBe('active');
-    expect(stages.find((s) => s.stage === 'build')?.status).toBe('pending');
+    expect(stages.find((s) => s.stage === 'build')?.status).toBe('active');
+    expect(stages.find((s) => s.stage === 'review')?.status).toBe('pending');
   });
 
   it('marks every stage pending at idle and every stage done at complete', () => {
@@ -160,7 +159,7 @@ describe('rail phase → stage map', () => {
     const stages = getRailStages('implementing', { cancelled: true });
     expect(stages.filter((s) => s.status === 'active')).toHaveLength(0);
     expect(stages.find((s) => s.stage === 'build')?.status).toBe('cancelled');
-    expect(stages.find((s) => s.stage === 'briefs')?.status).toBe('done');
+    expect(stages.find((s) => s.stage === 'plan')?.status).toBe('done');
     expect(stages.find((s) => s.stage === 'review')?.status).toBe('pending');
   });
 });
@@ -175,39 +174,28 @@ describe('isRailCurrent', () => {
 });
 
 describe('railStageRole', () => {
-  it('binds spec/plan/briefs to planner, build to implementer, review to validator', () => {
-    expect(railStageRole('spec')).toBe('planner');
+  it('binds plan to planner, build to implementer, review to validator', () => {
     expect(railStageRole('plan')).toBe('planner');
-    expect(railStageRole('briefs')).toBe('planner');
     expect(railStageRole('build')).toBe('implementer');
     expect(railStageRole('review')).toBe('validator');
-  });
-
-  it('marks the two role seams (briefs→build, build→review) as handoffs', () => {
-    expect(railIsHandoff('spec', 'plan')).toBe(false);
-    expect(railIsHandoff('plan', 'briefs')).toBe(false);
-    expect(railIsHandoff('briefs', 'build')).toBe(true);
-    expect(railIsHandoff('build', 'review')).toBe(true);
   });
 });
 
 describe('rail Form-B width primitives', () => {
   it('opens every stage with a two-cell marker slot plus its label width', () => {
-    const [spec] = getRailStages('idle');
-    if (!spec) throw new Error('no spec stage');
-    expect(railFormBSegmentWidth(spec, { short: false })).toBe(
-      RAIL_MARKER_SLOT_WIDTH + 'spec'.length,
+    const [plan] = getRailStages('idle');
+    if (!plan) throw new Error('no plan stage');
+    expect(railFormBSegmentWidth(plan, { short: false })).toBe(
+      RAIL_MARKER_SLOT_WIDTH + 'plan'.length,
     );
-    expect(railFormBSegmentWidth(spec, { short: true })).toBe(
-      RAIL_MARKER_SLOT_WIDTH + RAIL_SHORT_LABEL.spec.length,
+    expect(railFormBSegmentWidth(plan, { short: true })).toBe(
+      RAIL_MARKER_SLOT_WIDTH + RAIL_SHORT_LABEL.plan.length,
     );
   });
 
   it('rail stage labels render in Title Case across every stage', () => {
     const expected: Record<string, [string, string]> = {
-      spec: ['Spec', 'Spc'],
       plan: ['Plan', 'Pln'],
-      briefs: ['Briefs', 'Brf'],
       build: ['Build', 'Bld'],
       review: ['Review', 'Rvw'],
     };
@@ -218,23 +206,20 @@ describe('rail Form-B width primitives', () => {
     }
   });
 
-  it('measures the same-role chevron at 3 cells and the handoff arrow per tier', () => {
-    expect(railConnectorWidth({ handoff: false }, 'unicode')).toBe(3);
-    expect(railConnectorWidth({ handoff: true }, 'unicode')).toBe(3);
-    expect(railConnectorWidth({ handoff: false }, 'ascii')).toBe(3);
+  it('measures the handoff arrow per tier', () => {
+    expect(railConnectorWidth('unicode')).toBe(3);
     // The ascii handoff renders ` -> ` (4 cells); geometry must track it so clicks stay aligned.
-    expect(railConnectorWidth({ handoff: true }, 'ascii')).toBe(4);
+    expect(railConnectorWidth('ascii')).toBe(4);
   });
 
-  it('sums the full and short five-stage lines from the shared primitives', () => {
+  it('sums the full and short three-stage lines from the shared primitives', () => {
     const stages = getRailStages('implementing');
-    // markers 5×2=10, labels spec/plan/briefs/build/verify=25, connectors ›››→→? -> two chevrons +
-    // two arrows = 3+3+3+3 (unicode) = 12.
-    expect(measureFormB(stages, { short: false }, 'unicode')).toBe(10 + 25 + 12);
-    expect(measureFormB(stages, { short: true }, 'unicode')).toBe(10 + 15 + 12);
+    // markers 3×2=6, labels plan/build/review=15 (short 9), two handoff arrows = 3+3 (unicode).
+    expect(measureFormB(stages, { short: false }, 'unicode')).toBe(6 + 15 + 6);
+    expect(measureFormB(stages, { short: true }, 'unicode')).toBe(6 + 9 + 6);
     // ascii widens the two handoff arrows to ` -> ` (4 each).
-    expect(measureFormB(stages, { short: false }, 'ascii')).toBe(10 + 25 + 14);
-    expect(measureFormB(stages, { short: true }, 'ascii')).toBe(10 + 15 + 14);
+    expect(measureFormB(stages, { short: false }, 'ascii')).toBe(6 + 15 + 8);
+    expect(measureFormB(stages, { short: true }, 'ascii')).toBe(6 + 9 + 8);
   });
 
   it('keeps full labels while they fit and collapses to short labels under pressure', () => {
@@ -246,7 +231,7 @@ describe('rail Form-B width primitives', () => {
 });
 
 describe('selectRailForm', () => {
-  it('drops to Form C one cell before the thinnest five-stage line would overflow', () => {
+  it('drops to Form C one cell before the thinnest three-stage line would overflow', () => {
     forceUnicodeGlyphs();
     const stages = getRailStages('implementing');
     const min = measureFormB(stages, { short: true }, 'unicode');
@@ -284,12 +269,9 @@ describe('railStageCompletionTimesFromPhaseFirstSeen', () => {
       planning: 200,
       'reviewing-briefs': 300,
       implementing: 400,
+      'final-review': 500,
     });
-    expect(times[0]).toBe(200);
-    expect(times[1]).toBe(300);
-    expect(times[2]).toBe(400);
-    expect(times[3]).toBe(0);
-    expect(times[4]).toBe(0);
+    expect(times).toEqual([400, 500, 0]);
   });
 
   it('leaves every stage unmarked while still in the first stage', () => {
@@ -300,14 +282,14 @@ describe('railStageCompletionTimesFromPhaseFirstSeen', () => {
   it('marks every stage done at the complete phase', () => {
     const times = railStageCompletionTimesFromPhaseFirstSeen({ specifying: 100, complete: 999 });
     expect(times.every((time) => time > 0)).toBe(true);
-    expect(times[4]).toBe(999);
+    expect(times[2]).toBe(999);
   });
 
   it('takes the earliest first-seen phase when multiple phases clear the same stage', () => {
     const times = railStageCompletionTimesFromPhaseFirstSeen({
       specifying: 100,
-      planning: 250,
-      'reviewing-briefs': 200,
+      implementing: 250,
+      'final-review': 200,
     });
     expect(times[0]).toBe(200);
   });

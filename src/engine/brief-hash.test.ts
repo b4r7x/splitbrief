@@ -31,6 +31,12 @@ describe('hashTaskBrief', () => {
     expect(first).not.toBe(hashTaskBrief([{ ...task, description: 'Revised requirement' }]));
   });
 
+  it('excludes contextCodeByFile', () => {
+    const task = makeTask({ contextFiles: ['src/types.ts'] });
+    const first = hashTaskBrief([{ ...task, contextCodeByFile: { 'src/types.ts': 'before' } }]);
+    expect(first).toBe(hashTaskBrief([task]));
+  });
+
   it('produces different hashes for different titles', () => {
     const a = hashTaskBrief([makeTask({ title: 'Alpha task' })]);
     const b = hashTaskBrief([makeTask({ title: 'Beta task' })]);

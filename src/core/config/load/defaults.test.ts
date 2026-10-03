@@ -49,7 +49,7 @@ describe('config defaults', () => {
       expect(defaults.implementer).not.toHaveProperty('contextLength');
       expect(expectApi(defaults.implementer).model).toBe('qwen3-coder:30b');
       expect(expectApi(defaults.implementer).temperature).toBe(DEFAULT_IMPLEMENTER_TEMPERATURE);
-      expect(config.workflow.taskReview).toBe('none');
+      expect(config.workflow).not.toHaveProperty('taskReview');
     });
 
     it('leaves the reviewer seat unset when the config has no reviewer block', () => {
@@ -96,11 +96,11 @@ describe('config defaults', () => {
       const dir = join(TMP, 'stale-shiki-theme');
       writeConfigYaml(dir, {
         shiki_theme: 'github-light',
-        workflow: { mode: 'quick' },
+        workflow: { approve: 'none' },
       });
 
       const { config } = loadConfig(dir);
-      expect(config.workflow.mode).toBe('quick');
+      expect(config.workflow.approve).toBe('none');
       expect(config).not.toHaveProperty('shikiTheme');
     });
 
@@ -113,7 +113,8 @@ describe('config defaults', () => {
       expect(config.workflow).not.toHaveProperty('autoApprovePlan');
       expect(config.workflow).not.toHaveProperty('commitStrategy');
       expect(config.workflow).not.toHaveProperty('git');
-      expect(config.workflow.approve).toBe('default');
+      expect(config.workflow).not.toHaveProperty('mode');
+      expect(config.workflow.approve).toBe('plan');
     });
 
     it('does not serialize removed workflow fields when writing a new config', async () => {
@@ -129,7 +130,8 @@ describe('config defaults', () => {
       expect(workflow.auto_approve_plan).toBeUndefined();
       expect(workflow.commit_strategy).toBeUndefined();
       expect(workflow.git).toBeUndefined();
-      expect(workflow.approve).toBe('default');
+      expect(workflow.mode).toBeUndefined();
+      expect(workflow.approve).toBe('plan');
     });
 
     it.each(['checkpoint', 'per-task'])(

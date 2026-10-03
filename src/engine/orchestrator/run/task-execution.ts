@@ -1,7 +1,6 @@
 import { isTaskCompleted, type Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Summary } from '../../../core/schemas/summary.js';
-import type { Phase } from '../../../core/schemas/enums.js';
 import type { StepRef } from '../../../core/schemas/run-step.js';
 import type { WorkflowContext } from '../types.js';
 import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
@@ -24,7 +23,7 @@ import { plannerCallHaltIssue } from '../recovery/planner-call-failure.js';
 import { finalReviewFailedCause } from '../../../core/recovery/headline.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { ensureRunBaselineSnapshot, recordRunSnapshotForRun } from './snapshots.js';
-import { PLAN_FILE, REVIEW_FILE, SPEC_FILE, TASKS_FILE } from '../../../core/paths.js';
+import { REVIEW_FILE } from '../../../core/paths.js';
 import type { PlanningPhaseResult } from '../planning/types.js';
 
 export type RunTasksAndReviewOptions = {
@@ -51,12 +50,6 @@ function noVerdictFailure(review: FinalReviewResult): FinalReviewFailure | undef
     message: 'The final review reached no verdict, so nothing was judged.',
   };
 }
-
-export const APPROVAL_PARKED_ARTIFACT: Partial<Record<Phase, string>> = {
-  'reviewing-spec': SPEC_FILE,
-  'reviewing-plan': PLAN_FILE,
-  'reviewing-briefs': TASKS_FILE,
-};
 
 /**
  * Pause after this brief, held in place. The state records the brief the run

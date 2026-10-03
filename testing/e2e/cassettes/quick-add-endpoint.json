@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "name": "quick mode - add endpoint",
+  "name": "planning session - add endpoint",
   "recordedAt": "2026-04-30T12:05:00.000Z",
   "entries": [
     {
@@ -76,14 +76,14 @@
           "authorization": "***",
           "content-type": "application/json"
         },
-        "body": "{\"purpose\":\"planner quick task briefs\"}"
+        "body": "{\"purpose\":\"planner typed plan\"}"
       },
       "response": {
         "status": 200,
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"---\\nid: T001\\ntitle: Create health helper\\naction: create\\nfile: src/health.ts\\ndepends_on: []\\n---\\n### Description\\nCreate src/health.ts with a getHealth helper.\\n\\n### Implementation Steps\\n1. Add a getHealth function that returns a stable ok status.\\n2. Export the function from the file.\\n\\n### Tests\\n- Verify getHealth returns an object with status equal to ok.\\n\\n### Scope\\n**In bounds:**\\n- src/health.ts\\n**Out of bounds:**\\n- HTTP server routing or package metadata.\\n\\n### Escalation\\n- Stop if endpoint wiring is required outside the target helper.\\n\\n### Evidence\\n- The helper exposes deterministic health data.\\n\\n### Type Definitions\\n```ts\\nexport type HealthResult = { status: 'ok' };\\n```\\n\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":360,\"completion_tokens\":172}}\n\ndata: [DONE]\n\n"
+        "body": "data: {\"choices\": [{\"index\": 0, \"delta\": {\"content\": \"{\\\"result\\\":{\\\"kind\\\":\\\"plan\\\",\\\"summary\\\":\\\"Add a getHealth helper in src/health.ts.\\\",\\\"decisions\\\":[],\\\"criteria\\\":[{\\\"id\\\":\\\"C1\\\",\\\"text\\\":\\\"getHealth returns an object with status equal to ok.\\\",\\\"checkIds\\\":[\\\"T001-K1\\\"]}],\\\"checks\\\":[],\\\"validation\\\":null,\\\"tasks\\\":[{\\\"id\\\":\\\"T001\\\",\\\"title\\\":\\\"Create health helper\\\",\\\"intent\\\":\\\"Create src/health.ts with a getHealth helper that returns a stable ok status.\\\",\\\"criteria\\\":[\\\"C1\\\"],\\\"checks\\\":[{\\\"id\\\":\\\"T001-K1\\\",\\\"kind\\\":\\\"test\\\",\\\"value\\\":\\\"Verify getHealth returns an object with status equal to ok.\\\",\\\"required\\\":true}],\\\"suggestedFiles\\\":[\\\"src/health.ts\\\"],\\\"contextFiles\\\":[],\\\"exclusions\\\":[\\\"HTTP server routing or package metadata.\\\"],\\\"protectedOperations\\\":null,\\\"steps\\\":[\\\"Add a getHealth function that returns a stable ok status.\\\",\\\"Export the function from the file.\\\"],\\\"dependsOn\\\":[],\\\"batch\\\":1}]}}\"}, \"finish_reason\": null}]}\n\ndata: {\"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"stop\"}], \"usage\": {\"prompt_tokens\": 360, \"completion_tokens\": 172}}\n\ndata: [DONE]\n\n"
       },
       "provider": "openai-compatible",
       "durationMs": 1450
@@ -155,7 +155,6 @@
     }
   ],
   "meta": {
-    "mode": "quick",
     "plannerProvider": "custom-endpoint",
     "plannerModel": "claude-sonnet-4-6",
     "implementerProvider": "custom-endpoint",

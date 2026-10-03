@@ -5,7 +5,6 @@ import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { formatElapsedClock } from '../../../utils/format-time.js';
 import { useSharedClock } from '../../../hooks/use-shared-clock.js';
-import { useRunMode } from '../hooks/use-run-mode.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
@@ -14,7 +13,6 @@ import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js
 import { configStore } from '../../../stores/project/config.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
-import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
 import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import { formatCollapsedSeatLine } from '../../../core/crew/identity.js';
 import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
@@ -125,16 +123,11 @@ export function Header({ startedAt, railForm, stages, seatLine: givenSeatLine }:
   const { startedAt: lifecycleStartedAt, endedAt, durationMs, phase, cancelled } = lifecycle;
   const config = configStore.use((s) => s.config);
   const displayNames = useCrewDisplayNames(config);
-  // The rail draws the run's own mode, not the config's: quick has no Spec step, so an old quick
-  // `researching` phase maps onto Plan and Spec never earns a completed mark. The shared
-  // derivation keeps the rail on the mode the engine resolved when `/mode` writes the next run's.
-  const mode = useRunMode() ?? DEFAULT_WORKFLOW_MODE;
   const railCells = measureRailCells({
     phase,
     cancelled,
     form: railForm ?? 'B',
     cols,
-    mode,
     tasks,
     localCount: tokens.localCount,
     events: eventsState.events,
@@ -161,7 +154,7 @@ export function Header({ startedAt, railForm, stages, seatLine: givenSeatLine }:
       cols={cols}
       railCells={railCells}
       seatLine={seatLine}
-      rail={<Rail form={railForm} mode={mode} {...(stages !== undefined && { stages })} />}
+      rail={<Rail form={railForm} {...(stages !== undefined && { stages })} />}
       clock={
         <ElapsedClock
           mountedAt={startedAt}

@@ -20,4 +20,24 @@ describe('REMOVED_COMMANDS', () => {
   it.each(['/attach', '/detach'])('points %s at /image', (name) => {
     expect(REMOVED_COMMANDS[name]).toContain('/image');
   });
+
+  it.each(['/revise-spec', '/revise-plan'])('points %s at the plan approval', (name) => {
+    expect(REMOVED_COMMANDS[name]).toBe('request changes on the plan');
+  });
+
+  it('says why /mode is gone', () => {
+    expect(REMOVED_COMMANDS['/mode']).toContain('one session');
+  });
+
+  it('says how protected writes ask now that /approval is gone', () => {
+    expect(`/approval was removed: ${REMOVED_COMMANDS['/approval']}`.length).toBeLessThanOrEqual(
+      60,
+    );
+    expect(REMOVED_COMMANDS['/approval']).toContain('once per run');
+  });
+
+  it('says in one line that only a protected write asks now that /yolo is gone', () => {
+    expect(`/yolo was removed: ${REMOVED_COMMANDS['/yolo']}`.length).toBeLessThanOrEqual(60);
+    expect(REMOVED_COMMANDS['/yolo']).toBe('only a write to a protected path asks');
+  });
 });

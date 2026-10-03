@@ -192,67 +192,33 @@ describe('phase resolution', () => {
 });
 
 describe('rail', () => {
-  it('marks every stage done on a finished run', () => {
+  it('marks all three stages done on a finished run', () => {
     const rail = derive(readySummary()).rail;
-    expect(rail.map((state) => state.status)).toEqual(['done', 'done', 'done', 'done', 'done']);
-  });
-
-  it('freezes an ended run at the stage it stopped in', () => {
-    const view = derive(makeSummary({ phase: 'planning' }), { status: ENDED });
-    expect(view.rail.map((state) => state.status)).toEqual([
-      'done',
-      'cancelled',
-      'pending',
-      'pending',
-      'pending',
-    ]);
-  });
-
-  it('marks the stage an ended run stopped in', () => {
-    const view = derive(makeSummary({ phase: 'implementing' }), { status: ENDED });
-    expect(view.rail[3]).toEqual({ stage: 'build', status: 'cancelled' });
-  });
-
-  it('keeps quick Spec pending and marks Plan through Review done on a finished quick run', () => {
-    const view = derive(readySummary(), { mode: 'quick' });
-    expect(view.rail).toEqual([
-      { stage: 'spec', status: 'pending' },
+    expect(rail).toEqual([
       { stage: 'plan', status: 'done' },
-      { stage: 'briefs', status: 'done' },
       { stage: 'build', status: 'done' },
       { stage: 'review', status: 'done' },
     ]);
   });
 
-  it('keeps quick Spec pending and folds an ended quick run stopped in research into Plan', () => {
+  it('freezes an ended run at the stage it stopped in', () => {
+    const view = derive(makeSummary({ phase: 'planning' }), { status: ENDED });
+    expect(view.rail.map((state) => state.status)).toEqual(['cancelled', 'pending', 'pending']);
+  });
+
+  it('marks the stage an ended run stopped in', () => {
+    const view = derive(makeSummary({ phase: 'implementing' }), { status: ENDED });
+    expect(view.rail[1]).toEqual({ stage: 'build', status: 'cancelled' });
+  });
+
+  it('folds an ended old run stopped in research into Plan', () => {
     const view = derive(makeSummary({ phase: 'researching' }), {
       status: ENDED,
-      mode: 'quick',
       ledger: makeLedger([ledgerTask({ id: taskId('T001'), status: 'pending' })]),
     });
     expect(view.rail).toEqual([
-      { stage: 'spec', status: 'pending' },
       { stage: 'plan', status: 'cancelled' },
-      { stage: 'briefs', status: 'pending' },
       { stage: 'build', status: 'pending' },
-      { stage: 'review', status: 'pending' },
-    ]);
-  });
-
-  it('keeps quick Spec pending and cancels the stage an ended quick run stopped in', () => {
-    const view = derive(makeSummary({ phase: 'implementing' }), {
-      status: ENDED,
-      mode: 'quick',
-      ledger: makeLedger([
-        ledgerTask({ id: taskId('T001') }),
-        ledgerTask({ id: taskId('T002'), status: 'in_progress' }),
-      ]),
-    });
-    expect(view.rail).toEqual([
-      { stage: 'spec', status: 'pending' },
-      { stage: 'plan', status: 'done' },
-      { stage: 'briefs', status: 'done' },
-      { stage: 'build', status: 'cancelled' },
       { stage: 'review', status: 'pending' },
     ]);
   });
@@ -899,14 +865,15 @@ describe('checkpoint, phases and pass-through', () => {
     expect(view.phases).toEqual([{ phase: 'planning', ms: 1000 }]);
   });
 
-  it('carries the session id, mode and clock from the record', () => {
+  it('carries the session id and clock from the record, and no mode', () => {
     const view = derive(makeSummary({ mode: 'standard', totalTime: 133_000 }), {
       ref: { projectDir: '/tmp/p', sessionId: '2026-09-14-add-email-validation' },
     });
-    expect(view.run).toMatchObject({
+    expect(view.run).toEqual({
+      feature: expect.any(String),
       sessionId: '2026-09-14-add-email-validation',
-      mode: 'standard',
       totalMs: 133_000,
+      phase: expect.any(String),
     });
   });
 

@@ -22,7 +22,7 @@ Users should never think about session lifecycle. `splitbrief continue` figures 
 
 ### 4. Progressive disclosure everywhere
 
-Default output is minimal. Details expand on keypress. Config starts at 3 lines (planner + implementer) and grows only when needed. Help shows examples, not just flags. Brief review exposes the active commands inline and sends text edits to the user's external editor.
+Default output is minimal. Details expand on keypress. Config starts at 3 lines (planner + implementer) and grows only when needed. Help shows examples, not just flags. The plan card shows its rows inline and opens `plan.json` in the in-app editor or the user's external editor.
 
 ### 5. Streaming partial output
 
@@ -157,11 +157,11 @@ The niche has direct competitors now (`VISION.md`). Any single row here can be m
 |---|---|
 | `doctor` | Pre-flight readiness check with blockers/warnings/suggestions |
 | Recovery system | Typed `RecoveryIssue` → user chooses `RecoveryAction` (skip, retry, abort, switch-profile) |
-| Mode system | `quick`/`standard`/`speckit` — adjusts ceremony to task complexity |
+| Planning session | One typed planning session: up to 2 rounds of questions, a checked `plan.json`, one optional plan card |
 | Drift detection | Detects when implementation diverges from plan |
 | Worktree isolation | One git worktree per run for a direct-writing implementer, project dependencies linked in, changes promoted back hash-guarded. Isolates files, not the runtime — it is not a security boundary |
 | 92 typed events + `--json` | NDJSON event stream for CI/automation |
-| Tiered approval | Sticky session/always scopes with per-action classification |
+| Protected-path confirmation | Per-action classification; a write to a protected path asks once per path per run, and approving the plan card confirms the protected writes the plan lists |
 | Task Brief contract | Precise, structured handoff artifact between planner and implementer |
 
 ---
@@ -210,7 +210,7 @@ These were specced in DIRECTION but not yet built as of the audit. Each is a sta
 | Contextual footer keybindings | Footer changes based on cursor position | ✅ |
 | Recovery consequence text | "retry-task: re-runs prompt, costs ~$0.02" | — |
 | Auto-expand active diffs | Diffs expanded for running task, collapsed for completed | — |
-| Unify approval flags | `--auto` removed; `--approve none` and `--yolo` remain distinct concepts (document gates vs file-write gates) | ✅ |
+| Unify approval flags | `--auto` and `--approve` removed; `workflow.approve: none` (the plan card) and `--yolo` remain distinct concepts | ✅ |
 | Session numeric aliases | `splitbrief continue 1` instead of the full `20250412-143022-abc` id | ✅ (on `continue`; the `attach` command was retired) |
 | HTML/Markdown session export | Export workflow results as shareable artifact | — |
 | External `$EDITOR` integration | Open editor for long feature descriptions | — |

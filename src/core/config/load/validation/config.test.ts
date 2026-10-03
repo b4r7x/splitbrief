@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { validateConfig } from './config.js';
+import { retiredValueNotices, validateConfig } from './config.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 
 const savedEnv: Record<string, string | undefined> = {};
@@ -149,18 +149,67 @@ describe('validateConfig', () => {
     ).toBe(false);
   });
 
-  it('loads a config declaring the retired instant mode as quick and warns', () => {
-    const base = makeConfig();
-    const config = { ...base, workflow: { ...base.workflow, mode: 'instant' } };
+  it.each(['instant', 'quick', 'standard', 'speckit', 'anything'])(
+    'loads a config naming the retired workflow.mode %s with exactly one notice',
+    (mode) => {
+      const base = makeConfig();
+      const config = { ...base, workflow: { ...base.workflow, mode } };
 
-    const { errors, warnings, data } = validateConfig(config);
+      const { errors } = validateConfig(config);
+      const warnings = retiredValueNotices(config);
+
+      expect(errors).toEqual([]);
+      expect(warnings.filter((w) => w.includes('mode'))).toEqual([
+        'workflow.mode was retired and is ignored: every run plans in one session. Delete workflow.mode.',
+      ]);
+    },
+  );
+
+  it('loads approve: all with mode: speckit with exactly one notice per key', () => {
+    const base = makeConfig();
+    const config = { ...base, workflow: { ...base.workflow, approve: 'all', mode: 'speckit' } };
+
+    const { errors, data } = validateConfig(config);
+    const warnings = retiredValueNotices(config);
 
     expect(errors).toEqual([]);
-    expect(data?.workflow.mode).toBe('quick');
-    expect(warnings.some((w) => w.includes('instant') && w.includes('quick'))).toBe(true);
+    expect(data?.workflow.approve).toBe('plan');
+    expect(warnings.filter((w) => w.includes('was retired'))).toEqual([
+      'workflow.mode was retired and is ignored: every run plans in one session. Delete workflow.mode.',
+      'workflow.approve "all" was retired; using "plan": the plan waits for your approval before the build. Set approve to plan or none.',
+    ]);
   });
 
-  it('loads protected-class tier overrides with a notice that they are ignored', () => {
+  it.each(['all', 'spec', 'default'])(
+    'loads the retired approve level %s as plan with one notice',
+    (approve) => {
+      const base = makeConfig();
+      const config = { ...base, workflow: { ...base.workflow, approve } };
+
+      const { errors, data } = validateConfig(config);
+      const warnings = retiredValueNotices(config);
+
+      expect(errors).toEqual([]);
+      expect(data?.workflow.approve).toBe('plan');
+      expect(warnings.filter((w) => w.includes('workflow.approve'))).toEqual([
+        `workflow.approve "${approve}" was retired; using "plan": the plan waits for your approval before the build. Set approve to plan or none.`,
+      ]);
+    },
+  );
+
+  it.each(['plan', 'none', undefined])('gives no approve notice for approve %s', (approve) => {
+    const base = makeConfig();
+    const config = { ...base, workflow: { ...base.workflow, approve } };
+
+    const { errors, data } = validateConfig(config);
+    const warnings = retiredValueNotices(config);
+
+    expect(errors).toEqual([]);
+    expect(data?.workflow.approve).toBe(approve);
+    expect(warnings.filter((w) => w.includes('approve'))).toEqual([]);
+  });
+
+  it('loads a retired approval.tiers map with exactly one notice', () => {
     const config = makeConfig({
       approval: {
         enabled: true,
@@ -168,25 +217,48 @@ describe('validateConfig', () => {
         tiers: {
           destructive: 'auto',
           package_change: 'auto',
-          sensitive_change: 'auto',
           write_out_of_scope: 'sticky',
         },
       },
     });
 
-    const { errors, warnings } = validateConfig(config);
+    const { errors } = validateConfig(config);
+    const warnings = retiredValueNotices(config);
 
     expect(errors).toEqual([]);
-    expect(warnings).toContain(
-      'approval.tiers.destructive is ignored: a write to a protected path always asks.',
-    );
-    expect(warnings).toContain(
-      'approval.tiers.package_change is ignored: a write to a protected path always asks.',
-    );
-    expect(warnings).toContain(
-      'approval.tiers.sensitive_change is ignored: a write to a protected path always asks.',
-    );
-    expect(warnings.some((w) => w.includes('write_out_of_scope'))).toBe(false);
+    expect(warnings.filter((w) => w.includes('approval.tiers'))).toEqual([
+      'approval.tiers was retired and is ignored: a write to a protected path always asks, and no other write does. Delete approval.tiers.',
+    ]);
+  });
+
+  it.each([
+    {
+      key: 'taskReview',
+      value: 'every',
+      notice:
+        'workflow.task_review was retired and is ignored: the build no longer stops for your review after each brief. Delete workflow.task_review.',
+    },
+    {
+      key: 'briefReview',
+      value: 'rich',
+      notice:
+        'workflow.brief_review was retired and is ignored: you review the briefs on the plan card. Delete workflow.brief_review.',
+    },
+    {
+      key: 'speckit',
+      value: { minCoverage: 0.8 },
+      notice:
+        'workflow.speckit was retired and is ignored: every run plans in one session. Delete workflow.speckit.',
+    },
+  ])('loads a retired workflow.$key with exactly one notice', ({ key, value, notice }) => {
+    const base = makeConfig();
+    const config = { ...base, workflow: { ...base.workflow, [key]: value } };
+
+    const { errors } = validateConfig(config);
+    const warnings = retiredValueNotices(config);
+
+    expect(errors).toEqual([]);
+    expect(warnings).toEqual([notice]);
   });
 
   it('blocks non-default implementer profiles when required credentials are missing', () => {

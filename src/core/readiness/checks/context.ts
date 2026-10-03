@@ -1,28 +1,16 @@
 import { resolveImplementerProfiles } from '../../config/accessors/implementer-profiles.js';
-import { resolveMode } from '../../config/runtime/resolve.js';
 import type { Config } from '../../schemas/config.js';
-import type { WorkflowMode } from '../../schemas/enums.js';
 import type { ReadinessCheck } from '../types.js';
 import { formatRoleLabel } from '../../phase-display.js';
 
-const MODE_CONTEXT_FLOORS: Record<WorkflowMode, number> = {
-  quick: 16_000,
-  standard: 32_000,
-  speckit: 64_000,
-};
+const CONTEXT_FLOOR = 32_000;
 
 export function buildContextChecks(config: Config): ReadinessCheck[] {
-  const mode = resolveMode({ config });
-  const floor = MODE_CONTEXT_FLOORS[mode];
-  const checks: ReadinessCheck[] = [
-    contextLengthCheck('planner', config.planner.contextLength, floor),
-  ];
+  const checks: ReadinessCheck[] = [contextLengthCheck('planner', config.planner.contextLength)];
 
   try {
     const profiles = resolveImplementerProfiles(config);
-    checks.push(
-      contextLengthCheck('implementer', profiles.defaultProfile.config.contextLength, floor),
-    );
+    checks.push(contextLengthCheck('implementer', profiles.defaultProfile.config.contextLength));
   } catch {
     return checks;
   }
@@ -33,7 +21,6 @@ export function buildContextChecks(config: Config): ReadinessCheck[] {
 function contextLengthCheck(
   role: 'planner' | 'implementer',
   contextLength: number | undefined,
-  floor: number,
 ): ReadinessCheck {
   if (contextLength === undefined) {
     return {
@@ -42,18 +29,18 @@ function contextLengthCheck(
       summary: `${formatRoleLabel(role)} context length is not configured.`,
       fix: `Set ${role}.contextLength if the provider reports an unreliable context window.`,
       nextAction: 'raise-context',
-      metadata: { role, contextLength: null, recommendedMinimum: floor },
+      metadata: { role, contextLength: null, recommendedMinimum: CONTEXT_FLOOR },
     };
   }
 
-  if (contextLength < floor) {
+  if (contextLength < CONTEXT_FLOOR) {
     return {
       id: `context.${role}.tight`,
       severity: 'warning',
-      summary: `${formatRoleLabel(role)} context length ${contextLength} may be tight for this mode.`,
-      fix: 'Use a larger model/context window or choose a smaller workflow mode.',
+      summary: `${formatRoleLabel(role)} context length ${contextLength} may be tight.`,
+      fix: 'Use a model with a larger context window.',
       nextAction: 'raise-context',
-      metadata: { role, contextLength, recommendedMinimum: floor },
+      metadata: { role, contextLength, recommendedMinimum: CONTEXT_FLOOR },
     };
   }
 
@@ -61,6 +48,6 @@ function contextLengthCheck(
     id: `context.${role}.ok`,
     severity: 'ok',
     summary: `${formatRoleLabel(role)} context length ${contextLength} is configured.`,
-    metadata: { role, contextLength, recommendedMinimum: floor },
+    metadata: { role, contextLength, recommendedMinimum: CONTEXT_FLOOR },
   };
 }

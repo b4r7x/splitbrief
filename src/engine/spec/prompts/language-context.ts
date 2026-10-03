@@ -1,4 +1,3 @@
-import { researchField } from '../../../core/pipeline-spec/research-fields.js';
 import { detectStack } from '../../../core/validation/stacks/registry.js';
 
 export type LanguageContext = {
@@ -98,10 +97,6 @@ export function codeFenceLanguage(ctx: LanguageContext): string {
 
 export function detectPromptLanguage(projectDir: string): string | undefined {
   return detectStack(projectDir)?.language;
-}
-
-export function extractLanguageFromResearch(researchMarkdown: string): string | undefined {
-  return normalizeLanguage(researchField(researchMarkdown, 'Language'));
 }
 
 export function buildLanguageContextSections(

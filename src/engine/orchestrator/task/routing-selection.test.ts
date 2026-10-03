@@ -86,9 +86,7 @@ describe('selectRoutingProfile context cache', () => {
       state,
       setTrackedState: () => {},
       task,
-      taskIndex: 0,
       resolvedProfiles: [profile],
-      taskBreakdowns: [],
       getRunnerModelName,
     });
 
@@ -110,9 +108,7 @@ describe('selectRoutingProfile context cache', () => {
       state,
       setTrackedState: () => {},
       task,
-      taskIndex: 0,
       resolvedProfiles: [profile],
-      taskBreakdowns: [],
       getRunnerModelName,
     });
 
@@ -131,9 +127,7 @@ describe('selectRoutingProfile context cache', () => {
       state,
       setTrackedState: () => {},
       task,
-      taskIndex: 0,
       resolvedProfiles: profiles,
-      taskBreakdowns: [],
       getRunnerModelName,
     });
 
@@ -147,9 +141,7 @@ describe('selectRoutingProfile context cache', () => {
       state,
       setTrackedState: () => {},
       task,
-      taskIndex: 0,
       resolvedProfiles: profiles,
-      taskBreakdowns: [],
       getRunnerModelName,
     });
 
@@ -174,9 +166,7 @@ describe('selectRoutingProfile recovery override', () => {
       state,
       setTrackedState: () => {},
       task,
-      taskIndex: 0,
       resolvedProfiles: profiles,
-      taskBreakdowns: [],
       getRunnerModelName,
     });
 
@@ -194,9 +184,7 @@ describe('selectRoutingProfile recovery override', () => {
       state: makeImplStateWithMetadata([otherTask]),
       setTrackedState: () => {},
       task: otherTask,
-      taskIndex: 0,
       resolvedProfiles: profiles,
-      taskBreakdowns: [],
       getRunnerModelName,
     });
 

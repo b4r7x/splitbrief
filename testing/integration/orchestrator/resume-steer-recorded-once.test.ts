@@ -7,7 +7,6 @@ import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import type { ImplementerOptions } from '../../../src/engine/implementers/types.js';
-import type { RunPhaseInput } from '../../../src/engine/planners/types.js';
 import {
   makeCallbacks,
   makeImplementer,
@@ -15,7 +14,7 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
+import { planFromTasks, scriptedTypedCall } from '#testing/helpers/typed-planner.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
@@ -86,15 +85,8 @@ describe('a steer that resumes a run is recorded exactly once', { timeout: 90_00
       typeDefs: 'export const steered = true;',
     });
 
-    const planner = makePlanner({
-      runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
-        makePhaseCallResult({
-          call,
-          usage: { inputTokens: 100, outputTokens: 60 },
-          ...(call === 'tasks' ? { tasks: [task] } : {}),
-        }),
-      ),
-    });
+    const typed = scriptedTypedCall([planFromTasks([task])]);
+    const planner = makePlanner({ typedCall: typed.typedCall });
     const implementer = makeImplementer({
       capabilities: { writesFiles: 'direct' },
       implement: vi.fn().mockImplementation(async (opts: ImplementerOptions) => {
@@ -120,7 +112,6 @@ describe('a steer that resumes a run is recorded exactly once', { timeout: 90_00
         },
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         workflow: {
-          mode: 'standard',
           approve: 'none',
           maxRetries: 1,
         },
@@ -186,11 +177,8 @@ describe('a steer that resumes a run is recorded exactly once', { timeout: 90_00
     expect(userMessages).toHaveLength(1);
     expect(userMessages[0]).toMatchObject({ type: 'user_message', phase: 'planning', text: steer });
 
-    const planCall = vi
-      .mocked(planner.runPhase)
-      .mock.calls.map((call) => call[0])
-      .find((input) => input.call === 'plan');
-    expect(planCall?.inputs.promptSuffix).toContain(steer);
+    expect(typed.prompts).toHaveLength(1);
+    expect(typed.prompts[0]?.split(steer)).toHaveLength(2);
 
     const log = readFileSync(
       join(projectDir, '.splitbrief', 'sessions', sessionId, 'session.jsonl'),
@@ -204,6 +192,8 @@ describe('a steer that resumes a run is recorded exactly once', { timeout: 90_00
     expect(events.map((event) => event.type)).toContain('workflow_complete');
   });
 
+  // A typed answer cut mid-call is not a document to continue, so the session asks again with the
+  // steer and leaves the partial out.
   it('hands a stateless planner the cut partial and the steer once each', async () => {
     const projectDir = setupProject();
     const ref = { projectDir, sessionId: 'sess-steer-partial-once' };
@@ -232,7 +222,15 @@ describe('a steer that resumes a run is recorded exactly once', { timeout: 90_00
     const planner = createPlannerBase({
       invokePlan: async ({ prompt }) => {
         prompts.push(prompt);
-        return makeRunnerCallResult({ status: 'completed', text: 'Which module?' });
+        return makeRunnerCallResult({
+          status: 'completed',
+          text: JSON.stringify({
+            result: {
+              kind: 'questions',
+              questions: [{ id: 'module', text: 'Which module?', choices: null, default: 'src' }],
+            },
+          }),
+        });
       },
       invokeEscalate: async () => makeRunnerCallResult({ status: 'completed', text: '' }),
       isAvailable: async () => true,
@@ -243,7 +241,7 @@ describe('a steer that resumes a run is recorded exactly once', { timeout: 90_00
       prepared: makePreparedExecution({
         ...ref,
         feature: cut.feature,
-        config: makeConfig({ workflow: { mode: 'quick' } }),
+        config: makeConfig({ workflow: {} }),
         resumeState: cut,
         active: reactivateExistingSession(ref),
       }),

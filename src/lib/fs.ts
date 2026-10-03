@@ -18,7 +18,6 @@ import { readFile, lstat, writeFile, rename, rm } from 'node:fs/promises';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { error, matches } from '../utils/error.js';
 import { assertWritablePathConfined } from './path-confinement.js';
-import { isENOENT } from './process/errors.js';
 import { warnError } from './warn.js';
 
 export function readJsonSafe(path: string): unknown | null {
@@ -273,15 +272,6 @@ export async function readFileSafeAsync(path: string): Promise<string | null> {
     return await readFile(path, 'utf-8');
   } catch {
     return null;
-  }
-}
-
-export async function readFileOrEmpty(filePath: string): Promise<string> {
-  try {
-    return await readFile(filePath, 'utf-8');
-  } catch (err) {
-    if (isENOENT(err)) return '';
-    throw err;
   }
 }
 

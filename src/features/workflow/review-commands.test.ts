@@ -66,10 +66,10 @@ describe('parseReviewCommand', () => {
         command: { action: 'revise', comment: 'split the first task' },
       },
     ],
-    ['edit', { kind: 'open-external-editor' }],
-    ['e', { kind: 'open-external-editor' }],
-    ['E', { kind: 'open-external-editor' }],
-    ['edit-file', { kind: 'open-external-editor' }],
+    ['edit', { kind: 'open-editor' }],
+    ['e', { kind: 'open-editor' }],
+    ['E', { kind: 'open-editor' }],
+    ['edit-file', { kind: 'open-editor' }],
     [
       'external_edit_applied',
       { kind: 'brief-review-command', command: { action: 'external_edit_applied' } },
@@ -87,7 +87,11 @@ describe('parseReviewCommand', () => {
   it('refuses override, duplicate, and incomplete intents instead of inventing an action', () => {
     expect(parseReviewCommand('approve again overrides')).toBeNull();
     expect(parseReviewCommand('retry retry')).toBeNull();
-    expect(parseReviewCommand('comment')).toBeNull();
     expect(parseReviewCommand('revise')).toBeNull();
+  });
+
+  it('opens the comment draft for a bare comment, the word the comment row stands for', () => {
+    expect(parseReviewCommand('comment')).toEqual({ kind: 'comment-draft' });
+    expect(parseReviewCommand('C')).toEqual({ kind: 'comment-draft' });
   });
 });

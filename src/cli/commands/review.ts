@@ -6,7 +6,6 @@ import { getRunnerCatalogDisplayName } from '../../core/config/accessors/runner-
 import {
   emitEffectiveConfigWarnings,
   resolveEffectiveConfig,
-  type EffectiveConfigWarning,
 } from '../../core/config/runtime/effective-config.js';
 import type { CLIOverrides } from '../../core/config/runtime/overrides/schema.js';
 import {
@@ -132,12 +131,7 @@ export function registerReviewCommand(program: Command, deps: ReviewCommandDeps 
         overrides: seatOverrides(opts.reviewer),
         loaderDiagnostics: loaded.loaderDiagnostics,
       });
-      emitEffectiveConfigWarnings([
-        ...warnings,
-        ...loaded.warnings.map(
-          (message): EffectiveConfigWarning => ({ source: 'validation', message }),
-        ),
-      ]);
+      emitEffectiveConfigWarnings(warnings);
 
       const stamp = reviewStamp(new Date());
       const interaction = process.stdin.isTTY ? 'interactive' : 'headless';

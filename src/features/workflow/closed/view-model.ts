@@ -1,4 +1,4 @@
-import type { Phase, TaskCompletionMethod, WorkflowMode } from '../../../core/schemas/enums.js';
+import type { Phase, TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import type { BriefQualitySummary, ReviewVerdict, Summary } from '../../../core/schemas/summary.js';
 import type { TaskId } from '../../../core/schemas/task.js';
 import type { RunRecord } from '../../../core/sessions/run-record.js';
@@ -81,7 +81,6 @@ export interface SummaryView {
   outcome: Readonly<{ kind: SummaryOutcomeKind }>;
   run: Readonly<{
     feature: string;
-    mode: WorkflowMode | null;
     totalMs: number;
     phase: Phase;
     sessionId: string;
@@ -139,19 +138,17 @@ export function deriveSummaryView(input: DeriveSummaryViewInput): SummaryView | 
   };
   const outcomeKind = outcomeKindFor(summary, record.status.as);
   const phase = resolvePhase(summary, savedPhase(record));
-  const mode = record.mode ?? summary.mode;
   const tasks = state?.tasks ?? null;
   const rows = briefRows({ summary, ledger, currentTasks: tasks });
   return {
     outcome: { kind: outcomeKind },
     run: {
       feature: sanitizeTerminalDisplayText(summary.feature),
-      mode: summary.mode ?? null,
       totalMs: summary.totalTime,
       phase,
       sessionId: sanitizeTerminalDisplayText(record.ref.sessionId),
     },
-    rail: railFor(phase, outcomeKind, mode),
+    rail: railFor(phase, outcomeKind),
     seats: {
       plan: plannerSeatView(summary),
       build: buildSeatView(summary),
@@ -211,14 +208,9 @@ function resolvePhase(summary: Summary, saved: Phase | null): Phase {
   return 'planning';
 }
 
-function railFor(
-  phase: Phase,
-  kind: SummaryOutcomeKind,
-  mode: WorkflowMode | undefined,
-): RailStageState[] {
-  const modeOption = mode === undefined ? {} : { mode };
-  if (kind !== 'ended') return getRailStages('complete', modeOption);
-  return getRailStages(phase, { halted: ENDED_HALT, ...modeOption });
+function railFor(phase: Phase, kind: SummaryOutcomeKind): RailStageState[] {
+  if (kind !== 'ended') return getRailStages('complete');
+  return getRailStages(phase, { halted: ENDED_HALT });
 }
 
 /** A run somebody ended is not a run that broke: the stage it stopped on wears the cancel mark. */

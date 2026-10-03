@@ -5,14 +5,13 @@ import { makeE2eScenarioConfig } from '../helpers/config.js';
 import { runE2eWorkflow, setupE2eScenario } from '../helpers/harness.js';
 
 const scenario = {
-  name: 'quick mode - trivial edit',
+  name: 'planning session - trivial edit',
   cassetteName: 'quick-trivial-edit',
   feature: 'fix typo in README',
-  mode: 'quick' as const,
-  config: makeE2eScenarioConfig('quick'),
+  config: makeE2eScenarioConfig(),
 };
 
-describe('e2e: quick mode trivial edit', () => {
+describe('e2e: one-task plan makes a trivial edit', () => {
   const ctx = setupE2eScenario(scenario);
 
   it('completes one task via cheap implementer and emits workflow_complete', async () => {

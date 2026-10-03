@@ -205,7 +205,7 @@ export function createCliPlanner(
     projectDir: string;
     callbacks: Pick<
       PlannerCallbacks,
-      'onOutput' | 'onQuestion' | 'onSessionId' | 'onSessionExpired' | 'sessionId' | 'onCallEvent'
+      'onOutput' | 'onQuestion' | 'onSessionId' | 'onSessionExpired' | 'onCallEvent'
     >;
     callContext: RunnerCallContext;
     accessMode: 'planning' | 'read-only' | 'write-files';
@@ -215,9 +215,7 @@ export function createCliPlanner(
   }): Promise<RunnerCallResult> {
     const { prompt, projectDir, callbacks, callContext, accessMode, signal, sandboxEnv, schema } =
       opts;
-    const shouldGuardMutations =
-      accessMode === 'read-only' ||
-      (accessMode === 'planning' && callbacks.sessionId !== undefined);
+    const shouldGuardMutations = accessMode !== 'write-files';
     if (shouldGuardMutations) await resolveExecutable(projectDir);
     const environment =
       sandboxEnv ?? (await createRunnerSandboxEnv(projectDir, plannerCfg, 'planner'));

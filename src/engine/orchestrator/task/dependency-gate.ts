@@ -1,6 +1,5 @@
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { WorkflowContext } from '../types.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { getFailedTaskIds, getSkippedTaskIds } from '../../../core/state/selectors.js';
@@ -8,7 +7,6 @@ import { uniqueSortedIds } from '../../../utils/collections.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { raisePendingRecovery } from '../state-ops.js';
 import { buildDependencyBlockedRecoveryIssue } from '../recovery/builders/task.js';
-import { stopWithReview } from './stop-with-review.js';
 
 function hasDependencyFailed(task: Task, failedTasks: TaskId[], skippedTasks: TaskId[]): boolean {
   const blocked = new Set<string>([...failedTasks, ...skippedTasks]);
@@ -21,14 +19,13 @@ export async function checkDependencyGate(opts: {
   setTrackedState: (s: WorkflowState) => void;
   task: Task;
   taskIndex: number;
-  taskBreakdowns: TaskTokenUsage[];
-}): Promise<{ state: WorkflowState; stopped: boolean; cancelled: boolean }> {
-  const { wctx, task, taskIndex, taskBreakdowns, setTrackedState } = opts;
+}): Promise<{ state: WorkflowState; stopped: boolean }> {
+  const { wctx, task, taskIndex, setTrackedState } = opts;
   let state = opts.state;
   const failedTaskIds = getFailedTaskIds(state);
   const skippedTaskIds = getSkippedTaskIds(state);
   if (!hasDependencyFailed(task, failedTaskIds, skippedTaskIds)) {
-    return { state, stopped: false, cancelled: false };
+    return { state, stopped: false };
   }
   const blockedByTaskIds = task.dependsOn.filter(
     (id) => failedTaskIds.includes(id) || skippedTaskIds.includes(id),
@@ -52,14 +49,5 @@ export async function checkDependencyGate(opts: {
     affectedTaskIds: uniqueSortedIds([...built.affectedTaskIds, ...dependents]),
   };
   state = raisePendingRecovery(wctx, state, issue, setTrackedState);
-  const review = await stopWithReview({
-    wctx,
-    state,
-    setTrackedState,
-    task,
-    taskIndex,
-    filesTouched: issue.files,
-    taskBreakdowns,
-  });
-  return { state: review.state, stopped: true, cancelled: review.cancelled };
+  return { state, stopped: true };
 }

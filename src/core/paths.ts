@@ -61,13 +61,9 @@ export const reviewPacketMarkdownPath = (ref: SessionRef): string =>
 export const getSplitbriefPath = (projectDir: string, ...parts: string[]): string =>
   join(projectDir, SPLITBRIEF_DIR, ...parts);
 
-const APPROVALS_FILE = 'approvals.json';
-
-export const approvalsFile = (projectDir: string): string =>
-  join(projectDir, SPLITBRIEF_DIR, APPROVALS_FILE);
-
 export const SPEC_FILE = 'spec.md';
 export const PLAN_FILE = 'plan.md';
+export const PLAN_JSON_FILE = 'plan.json';
 export const TASKS_FILE = 'tasks.md';
 export const RESEARCH_FILE = 'research.md';
 export const REVIEW_FILE = 'review.md';
@@ -79,13 +75,11 @@ export const SESSION_LOG_FILE = 'session.jsonl';
 export const CONFIG_FILE = 'config.yaml';
 export const CLARIFICATIONS_FILE = 'clarifications.md';
 export const CONSTITUTION_CHECK_FILE = 'constitution-check.json';
-export const SPECIFY_CONSTITUTION_FILE = join('.specify', 'memory', 'constitution.md');
 export const ANALYZE_FILE = 'analyze.json';
 export const EVIDENCE_FILE = 'evidence.json';
 export const DRIFT_REPORT_FILE = 'drift-report.json';
 export const DRIFT_CHAINS_FILE = 'drift-chains.json';
 export const BRIEF_QUALITY_FILE = 'brief-quality.json';
-export const BRIEF_READINESS_FILE = 'brief-readiness.json';
 export const READINESS_FILE = 'readiness.json';
 export const REVIEW_PACKET_JSON_FILE = 'review-packet.json';
 export const REVIEW_PACKET_MARKDOWN_FILE = 'review-packet.md';

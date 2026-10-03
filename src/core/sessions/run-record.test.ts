@@ -5,7 +5,7 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
-import { RESEARCH_FILE, SPEC_FILE, sessionDir } from '../paths.js';
+import { RESEARCH_FILE, sessionDir } from '../paths.js';
 import type { WorkflowState } from '../schemas/workflow.js';
 import { saveState } from '../state/persistence.js';
 import { saveSummary } from './io.js';
@@ -49,7 +49,7 @@ describe('loadRunRecord', () => {
     expect(loaded.status).toEqual({
       kind: 'open',
       stop: { kind: 'failed', message: 'Session has no saved state to read.' },
-      resumeAt: { kind: 'planner', call: 'research' },
+      resumeAt: { kind: 'planner', call: 'plan' },
     });
     expect(loaded.feature).toBe('');
     expect(loaded.startedAt).toBeNull();
@@ -65,14 +65,13 @@ describe('loadRunRecord', () => {
     expect(loaded.status).toMatchObject({ kind: 'open', stop: { kind: 'failed' } });
   });
 
-  it('reads an open paused run with its feature, mode and resume step', () => {
+  it('reads an open paused run with its feature and resume step', () => {
     project();
     withState({ phase: 'implementing', mode: 'standard', awaitingContinue: true });
 
     const loaded = record();
 
     expect(loaded.feature).toBe('feat');
-    expect(loaded.mode).toBe('standard');
     expect(loaded.startedAt).not.toBeNull();
     expect(loaded.status).toMatchObject({
       kind: 'open',
@@ -107,14 +106,11 @@ describe('loadRunRecord', () => {
     expect(loaded.summary?.feature).toBe('feat');
   });
 
-  it('probes the artifacts the run left behind when it picks the resume step', () => {
+  it('resumes an old run that wrote research at its planning session', () => {
     project();
     withState({ phase: 'idle', mode: 'standard', currentTaskIndex: 0 });
     writeFileSync(join(sessionDir(tmp, SESSION_ID), RESEARCH_FILE), '# research\n');
 
-    expect(record().status).toMatchObject({ resumeAt: { kind: 'planner', call: 'spec' } });
-
-    writeFileSync(join(sessionDir(tmp, SESSION_ID), SPEC_FILE), '# spec\n');
     expect(record().status).toMatchObject({ resumeAt: { kind: 'planner', call: 'plan' } });
   });
 

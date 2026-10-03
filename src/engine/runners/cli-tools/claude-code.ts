@@ -52,11 +52,11 @@ const CLAUDE_PROTECTED_FLAGS = new Set([
 type ClaudeBuildCommon = Readonly<{
   model: string | undefined;
   effort: EffortLevel | undefined;
+  schema?: CliSchemaInput | undefined;
 }>;
 
 type ClaudePlannerBuild = ClaudeBuildCommon &
   Readonly<{
-    schema?: CliSchemaInput | undefined;
     prompt: string;
     projectDir: string;
     configuredArgs: readonly string[];
@@ -73,6 +73,7 @@ type ClaudeImplementerBuild = Readonly<{
   effort?: EffortLevel | undefined;
   installedVersion?: string | undefined;
   skillRoots?: readonly string[] | undefined;
+  schema?: CliSchemaInput | undefined;
 }>;
 
 function schemaArgs(schema: CliSchemaInput | undefined): string[] {
@@ -83,6 +84,7 @@ function buildBaseArgs(opts: ClaudeBuildCommon): string[] {
   const args: string[] = [...CLAUDE_BASE_ARGS];
   if (opts.model !== undefined) args.push('--model', opts.model);
   if (opts.effort !== undefined) args.push('--effort', opts.effort);
+  args.push(...schemaArgs(opts.schema));
   return args;
 }
 
@@ -99,7 +101,7 @@ function skillRootPermissions(skillRoots: readonly string[]) {
 }
 
 function plannerBaseArgs(opts: ClaudePlannerBuild): string[] {
-  const args = [...buildBaseArgs(opts), ...schemaArgs(opts.schema)];
+  const args = buildBaseArgs(opts);
   // SPLITBRIEF collects planner answers after the CLI turn finishes.
   if (opts.mode === 'plan')
     args.push('--permission-mode', 'plan', '--disallowedTools', 'AskUserQuestion');
@@ -176,7 +178,7 @@ function linkedNodeModules(projectDir: string): string[] {
 
 function implementerBaseArgs(opts: ClaudeImplementerBuild): string[] {
   return [
-    ...buildBaseArgs({ model: opts.model, effort: opts.effort }),
+    ...buildBaseArgs({ model: opts.model, effort: opts.effort, schema: opts.schema }),
     '--permission-mode',
     'acceptEdits',
     '--settings',

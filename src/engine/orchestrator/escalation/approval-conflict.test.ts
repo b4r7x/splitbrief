@@ -53,7 +53,7 @@ describe('handleApprovalTimeUserEditConflict', () => {
       reviewer: planner,
       context: { name: 'test', dir: projectDir },
       implementer: makeImplementer(),
-      metadata: { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' },
+      metadata: { plannerTool: 'claude-code', implementerTool: 'ollama' },
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       validator: {
         primeBaseline: async () => undefined,

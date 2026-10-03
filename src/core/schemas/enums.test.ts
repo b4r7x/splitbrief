@@ -28,7 +28,6 @@ import {
   PROVIDER_IDS,
   TaskCompletionMethodSchema,
   WorkflowModeSchema,
-  normalizeWorkflowMode,
   PlannerApiProviderIdSchema,
   PlannerCliToolIdSchema,
 } from './enums.js';
@@ -217,17 +216,6 @@ describe('WorkflowModeSchema', () => {
   });
   it.each(['full', 'spec-kit', 'bogus', ''])('rejects "%s"', (input) => {
     expect(WorkflowModeSchema.safeParse(input).success).toBe(false);
-  });
-});
-
-describe('normalizeWorkflowMode', () => {
-  it.each([
-    { raw: '  INSTANT ', expected: 'quick' },
-    { raw: 'Speckit', expected: 'speckit' },
-    { raw: 'nope', expected: undefined },
-    { raw: undefined, expected: undefined },
-  ])('normalizes $raw', ({ raw, expected }) => {
-    expect(normalizeWorkflowMode(raw)).toBe(expected);
   });
 });
 

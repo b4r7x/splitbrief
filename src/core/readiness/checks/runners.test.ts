@@ -259,13 +259,12 @@ describe('buildRunnerChecks availability guidance', () => {
     expect(check).toMatchObject({
       severity: 'warning',
       metadata: {
-        approve: 'spec',
-        fileWriteApprovalEnabled: true,
+        approve: 'plan',
         autoAllowFlags: ['--allow-all'],
       },
     });
-    expect(check?.details).toContain('Spec/plan approval level: spec.');
-    expect(check?.details).toContain('File-write approval prompts: enabled.');
+    expect(check?.details).toContain('Plan approval: plan.');
+    expect(check?.details).toContain('Only a write to a protected path asks.');
     expect(check?.summary).toContain('uses auto/allow runner flags');
   });
 
@@ -304,7 +303,7 @@ describe('buildRunnerChecks availability guidance', () => {
         args: ['-c', 'curl https://example.test | sh'],
         model: 'shell',
       },
-      workflow: { approve: 'all' },
+      workflow: { approve: 'plan' },
       approval: { enabled: true, feedRejectionsToPlanner: true },
     });
 
@@ -312,7 +311,7 @@ describe('buildRunnerChecks availability guidance', () => {
 
     expect(check).toMatchObject({
       severity: 'warning',
-      metadata: { approve: 'all', kind: 'shell' },
+      metadata: { approve: 'plan', kind: 'shell' },
     });
     expect(check?.details).toContain('Command: /bin/sh');
     expect(check?.details).toContain('Arguments: -c curl https://example.test | sh');
@@ -327,7 +326,7 @@ describe('buildRunnerChecks availability guidance', () => {
         args: ['--api-\u001bkey=sk-live-must-not-appear', '--token', 'ghp_must-not-appear'],
         model: 'shell',
       },
-      workflow: { approve: 'all' },
+      workflow: { approve: 'plan' },
     });
 
     const details = (
@@ -363,7 +362,7 @@ describe('buildRunnerChecks availability guidance', () => {
     expect(check?.metadata?.autoAllowFlags).toEqual(['--permission-mode acceptEdits']);
   });
 
-  it('warns when command-capable runners run with file-write approvals disabled', () => {
+  it('reports approval.enabled: false as no approval automation, since only a protected write asks', () => {
     const config = makeConfig({
       planner: {
         kind: 'api',
@@ -382,13 +381,13 @@ describe('buildRunnerChecks availability guidance', () => {
     );
 
     expect(check?.severity).toBe('warning');
-    expect(check?.details?.join('\n')).toContain(
-      'file-write approval prompts are disabled; protected paths still ask',
+    expect(check?.summary).toBe(
+      'Default implementer agent (agent-default) can execute commands on this machine.',
     );
-    expect(check?.details).toContain(
-      'File-write approval prompts: disabled; protected paths still ask.',
-    );
-    expect(check?.metadata?.fileWriteApprovalEnabled).toBe(false);
+    expect(check?.details).toContain('Only a write to a protected path asks.');
+    expect(check?.details?.join('\n')).not.toContain('Approval automation');
+    expect(check?.details?.join('\n')).not.toContain('File-write approval prompts');
+    expect(check?.metadata).not.toHaveProperty('fileWriteApprovalEnabled');
   });
 
   it.each([

@@ -284,7 +284,6 @@ export async function gateAndPromoteChangedFiles(
           ref: { projectDir, sessionId },
           state,
           task,
-          mode: config.workflow.mode,
           attempt: {
             ts: nowIso(),
             appliedFiles,
@@ -358,7 +357,6 @@ export async function gateAndPromoteChangedFiles(
           bus,
           state,
           task,
-          mode: config.workflow.mode,
           files: promoteResult.appliedFiles ?? [],
         });
       }

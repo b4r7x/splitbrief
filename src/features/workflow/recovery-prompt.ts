@@ -144,12 +144,12 @@ function formatRecoveryActionText(
       return 'switch the seat to another tool';
     case 'planner-split-rebase':
       return `ask planner to ${rebaseVerb(context)}`;
+    // An old run's `revise-spec` sends its note to the planning session, as `revise` does.
     case 'revise':
+    case 'revise-spec':
       return context.reason === 'review-failed'
         ? 'revise · send the findings back with a correction'
         : 'revise · send the planner a correction';
-    case 'revise-spec':
-      return 'revise the spec · send it back with a note';
     case 'continue':
       return 'continue';
     case 'skip-current-task':
@@ -454,7 +454,12 @@ function formatRecoveryHeader(issue: RecoveryIssue): string {
   if (usageLimit !== undefined) return usageLimit;
   // The engine's sentence carries the evidence for the headless sinks; here the evidence is the
   // first fact row, so the header names the halt and nothing is said twice.
-  if (issue.reason === 'implementer-left-isolation' || issue.reason === 'checkout-changed') {
+  if (
+    issue.reason === 'implementer-left-isolation' ||
+    issue.reason === 'checkout-changed' ||
+    issue.reason === 'plan-questions-exhausted' ||
+    issue.reason === 'plan-checks-failed'
+  ) {
     return `Recovery needed · ${formatRecoveryHeadline(issue)}`;
   }
   // "T003 validation failed" takes "after 3 attempts"; a cause that already

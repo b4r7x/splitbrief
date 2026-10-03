@@ -7,14 +7,13 @@ import { makeE2eScenarioConfig } from '../helpers/config.js';
 import { runE2eWorkflow, setupE2eScenario } from '../helpers/harness.js';
 
 const scenario = {
-  name: 'quick mode - add endpoint',
+  name: 'planning session - add endpoint',
   cassetteName: 'quick-add-endpoint',
   // Spelled without the leading slash: the planner context packet reads an
   // explicitly named path as project evidence, and an absolute path can never
   // be read, so the run would refuse to dispatch.
   feature: 'add GET api/health endpoint',
-  mode: 'quick' as const,
-  config: makeE2eScenarioConfig('quick'),
+  config: makeE2eScenarioConfig(),
 };
 
 function hasSessionArtifact(projectDir: string, fileName: string): boolean {
@@ -25,7 +24,7 @@ function hasSessionArtifact(projectDir: string, fileName: string): boolean {
   );
 }
 
-describe('e2e: quick mode add endpoint', () => {
+describe('e2e: one-task plan adds an endpoint', () => {
   const ctx = setupE2eScenario(scenario);
 
   it('completes planning and implementation with session artifacts and token usage', async () => {

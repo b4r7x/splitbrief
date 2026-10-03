@@ -8,29 +8,17 @@ User-facing capability reference for SPLITBRIEF. For each feature: what it does,
 
 ## Core orchestration
 
-### Workflow modes (quick / standard / speckit)
+### One planning session, one plan card
 
-**What it does.** Three canonical modes trade ceremony for speed. All three converge on the same Task Brief contract and pass through the shared `runWorkflow` orchestrator.
+**What it does.** Every run follows one path: one planning session writes a typed, checked plan; the plan card waits for your approval; the implementer builds the briefs; the review seat reviews the result. The header rail shows three stages — Plan, Build, Review. There are no workflow modes: `--mode`, `workflow.mode` and `/mode` were removed (the config key loads with one notice and is ignored).
 
-**How to use.** `--mode` flag, `workflow.mode` config, or `/mode` at runtime.
+**How to use.**
 
 ```bash
-splitbrief start --mode quick "add unit test for X"
-splitbrief start --mode standard "add JWT middleware"   # default
-splitbrief start --mode speckit "redesign auth subsystem"
+splitbrief start "add JWT middleware"
 ```
 
-**When to use.**
-
-| Mode | Planner calls | Approval gates | Pick when |
-|---|:---:|:---:|---|
-| `quick` | 1 | 0 | Trivial edits and small tasks that warrant a brief but not a spec |
-| `standard` (default) | 4 | 2 (spec + briefs) | Ordinary feature work — research → spec → plan → tasks |
-| `speckit` | 6–7 | 3 (spec + plan + briefs) | Risky, large, or externally visible work |
-
-The counts come from `MODES` (`src/core/pipeline-spec/modes.ts`), which is also what the `/mode` completion rows, the Settings Mode row and the planner prompts read.
-
-**Configuration.** `workflow.mode`, `workflow.approve` (`none|spec|plan|all|default`), `workflow.maxRetries`. See [CONFIGURATION.md §workflow](./CONFIGURATION.md#5-workflow).
+**Configuration.** `workflow.approve` (`plan` by default, or `none` to skip the plan card), `workflow.maxRetries`. See [CONFIGURATION.md §workflow](./CONFIGURATION.md#5-workflow) and [The planning session](#the-planning-session) below.
 
 ### Zero-ceremony entry (`splitbrief "feature"` shorthand)
 
@@ -40,7 +28,7 @@ The counts come from `MODES` (`src/core/pipeline-spec/modes.ts`), which is also 
 
 ```bash
 splitbrief "fix the typo in README"
-splitbrief "add JWT middleware" --mode standard
+splitbrief "add JWT middleware" @design-notes.md
 ```
 
 ### `@file` context injection
@@ -89,7 +77,7 @@ Full schema: [CONFIGURATION.md §planner](./CONFIGURATION.md#2-planner) and [CON
 
 ### Run Readiness / Doctor
 
-**What it does.** Before `splitbrief start` spends planner or implementer tokens, SPLITBRIEF checks config, mode/approval resolution, runner posture, context length, validation settings, git status, and active-session conflicts. Blockers stop the run; warnings can continue.
+**What it does.** Before `splitbrief start` spends planner or implementer tokens, SPLITBRIEF checks config, the plan approval level, runner posture, context length, validation settings, git status, and active-session conflicts. Blockers stop the run; warnings can continue.
 
 **How to use.**
 
@@ -159,7 +147,7 @@ Outcome events include `task_retry`, `task_escalating` and `hint_failed`; the le
 
 **What it does.** After all tasks reach a terminal state, the review seat — the `reviewer` runner when one is configured, the planner when none is — reviews the entire diff against the Task Brief and any supporting spec. The deterministic drift report (see below) is rendered into the prompt under `## Deterministic Drift Report` so the reviewer sees both signals at once.
 
-**How to use.** Always runs in every mode. Output is written to `.splitbrief/sessions/<id>/review.md`. Fires `workflow_complete` and writes `summary.json`.
+**How to use.** Always runs. Output is written to `.splitbrief/sessions/<id>/review.md`. Fires `workflow_complete` and writes `summary.json`.
 
 **When to use.** No opt-out — final review is the closing safety check before the workflow is marked complete.
 
@@ -171,7 +159,7 @@ Outcome events include `task_retry`, `task_escalating` and `hint_failed`; the le
 
 **What it does.** The Task Brief is a self-contained executable contract for one slice — one verifiable change, whose files are listed under `files` and anchored by `file` — with nine semantic sections: Identity, Intent, Scope, Code Context, Implementation Plan, Validation, Constraints, Escalation, Evidence. A slice is often one file; the planner's budget is five files and roughly 150–200 changed lines. Persisted as `Task[]` in `state.json`; transported as `tasks.md`.
 
-**How to use.** Briefs are written by the planner in every mode. External tools consume the active brief by reading `.splitbrief/sessions/<id>/tasks.md` or the task list in `.splitbrief/sessions/<id>/state.json`. Brief hash metadata is recorded in evidence and drift artifacts when available; `state.json` task objects do not carry `briefHash`.
+**How to use.** Briefs are compiled from the checked plan (`plan.json`) on every run. External tools consume the active brief by reading `.splitbrief/sessions/<id>/tasks.md` or the task list in `.splitbrief/sessions/<id>/state.json`. Brief hash metadata is recorded in evidence and drift artifacts when available; `state.json` task objects do not carry `briefHash`.
 
 **Example (truncated `tasks.md`):**
 
@@ -194,58 +182,40 @@ dependsOn: []
 
 Full schema: [TASK-CONTRACT.md](./TASK-CONTRACT.md).
 
-### Spec / plan / tasks artifacts (mode-dependent)
+### The planning session
 
-**What it does.** Standard and speckit modes write supporting markdown files to `.splitbrief/sessions/<id>/`:
+**What it does.** Every run plans in one session. The planner answers with one typed plan (`PlanAnswerSchema`, `src/core/schemas/plan.ts`) through the seat's native JSON-schema flag or a JSON fallback. Before the plan it may ask up to three questions per round, for at most two rounds; each question carries a default. SPLITBRIEF then checks the plan, and a plan that fails goes back to the planner once. There are no workflow modes, no mode advisor, and no spec, research or clarify steps.
 
-| File | Modes |
+**How to use.** `splitbrief start "<feature>"`, or `splitbrief spec "<feature>"` for the plan alone. Questions open in the bordered question panel: the default choice comes first, and `⏎` through the panel takes the defaults. Headless runs stop on a question with an `input_required` record; `splitbrief spec` without a terminal takes every default.
+
+**Artifacts.** The session writes to `.splitbrief/sessions/<id>/`:
+
+| File | What it is |
 |---|---|
-| `tasks.md` | all three modes |
-| `spec.md`, `plan.md` | `standard`, `speckit` |
-| `research.md`, `clarifications.md`, `constitution-check.json`, `analyze.json` | `speckit` only |
-| `review.md`, `summary.json`, `evidence.json` | all modes |
+| `plan.json` | The checked plan: the one source the briefs compile from |
+| `plan.md` | Rendering of `plan.json`: summary, protected operations, batches. The body of the plan card |
+| `tasks.md` | Rendering of the compiled Task Briefs |
+| `review.md`, `summary.json`, `evidence.json` | Written later in the run |
 
-**How to use.** Files are auto-written at phase boundaries. Inspect them in-place.
+A run from an older release keeps the files it wrote (`research.md`, `spec.md`, `brief-quality.json`, …); they are read, never written again.
 
-### Brief quality gate
+### Plan checks
 
-**What it does.** A deterministic linter scores every Task Brief before implementation begins. Error codes are `missing_scope`, `missing_validation`, `vague_validation`, `missing_evidence`, `missing_escalation`, `missing_code_context`, `empty_task_list`, `write_outside_declared_files` (a step writes a path the brief never declared), `anchor_not_in_files` (`file` is missing from `files`), and `missing_implementation_steps`. `missing_type_definitions` and `test_without_code` (a test brief whose subject is created in another brief — fold the two into one slice) are warnings. Any error-level issue blocks transition to `implementing`.
+**What it does.** `checkPlan` (`src/engine/spec/plan-checks.ts`) is a deterministic check of the typed plan: unique task and check ids, every criterion covered by a task and named by a check, every task carrying a check, dependencies that exist, point to an earlier or the same batch and have no cycle, no suggested or context file outside the project, and a context fit for every task (only an `overflow` blocks). The failures go back to the planner once; a plan that fails again halts the run with the `plan-checks-failed` recovery, whose panel lists the messages without the check codes. A third round of questions halts with `plan-questions-exhausted`.
 
-**How to use.** Always runs in all three modes. Result persists at `brief-quality.json`; events are `brief_quality_passed` or `brief_quality_failed`. Visible in a closed run’s `Run` block's `Briefs` row (`quality 0.92 · 1 warning`), present only when the gate ran.
+**How to use.** Always runs. There is no brief-quality pass and no brief-readiness report; briefs compiled from a checked plan go straight to the plan card. Full rule table: [TASK-CONTRACT.md](./TASK-CONTRACT.md#the-plan-contract).
 
-**When to use.** Out of the box. To inspect after the fact, read `.splitbrief/sessions/<id>/brief-quality.json`.
+### The plan card
 
-### Brief readiness gate
+**What it does.** The one approval before the build. The card shows `plan.md` and four rows: **Approve plan and start the build** (`y`), **Request changes** (`c`), **Edit plan.json** (`e`), **End run** (`q`). A correction goes to the planning session, which answers with a new plan; the card shows again. Approving the card confirms the plan's protected operations in advance (`plan.md` lists them as, for example, `- T002: write package.json` under `## Protected operations`), so that write does not ask again during the build; a line above the rows names them (`Approving also confirms: write package.json`) whatever part of `plan.md` is in view. On a terminal too short for that list and a row of the plan, the line counts them instead (`Approving also confirms 2 protected operations`). Approving never overrides a failed check.
 
-**What it does.** Before Task Briefs are approved, a routing preview estimates every brief against the selected worker profiles and blocks briefs whose block kinds are `overflow` (the task overflows the selected worker's context window), `no-capable-worker` (no profile can run the task), or `stale-conflict` (stale or conflicting routing context). Each block names the task, the kind, and the next best action.
+**How to use.** On by default. `workflow.approve: none` skips the card; a headless run approves it unattended, which confirms nothing in advance. See [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#the-plan-card).
 
-**How to use.** Runs at briefs approval and again after brief edits. Result persists at `brief-readiness.json`; events are `brief_readiness_passed` or `brief_readiness_blocked`.
+### Editing plan.json
 
-**When to use.** To inspect a blocked approval after the fact, read `.splitbrief/sessions/<id>/brief-readiness.json`.
+**What it does.** `Ctrl+E`, `e` and `edit` at the plan card all open the same file, the run's `plan.json`, in the in-app editor overlay. `Ctrl+S` checks the text before it writes it: the JSON, the plan schema and `checkPlan` (the engine checks the context fit after the save). A text that fails stays open with one red row, `Not saved: <first message> (+N more)`, and no check codes. A valid save closes the editor and settles the card with the edit: the engine compiles the edited plan, rewrites `plan.md` and `tasks.md`, and shows the card again. An edit the engine refuses restores `plan.json` and publishes `The edited plan was not applied: …`.
 
-### Mode advisor (deterministic risk classifier)
-
-**What it does.** A pure keyword/pattern classifier (no LLM call) emits a `ModeAdviceKind` of `none | downgrade | upgrade | missing-context` for the user prompt. Risk tiers: `trivial → quick`, `small → quick`, `normal → standard`, `high → speckit`. Confidence threshold of 0.65 for upgrades / downgrades; missing-context can fire below. A `trivial` classification also sets `trivial: true` on the quick planning phase, which drops the planner's codebase-review step; no mode caps the number of briefs.
-
-**How to use.** Runs automatically before planning. Surfaces in the workflow footer as `advisor: consider quick · trivial edit` or similar. Never auto-switches the mode — the user decides via `/mode`, which sets the next run's mode.
-
-**Events.** `mode_advice`.
-
-### Brief review gate (standard / speckit)
-
-**What it does.** After Task Briefs are compiled, standard and speckit enter a `reviewing-briefs` phase. The user can approve, comment (sends feedback for regeneration), reject (workflow ends), or edit the briefs. Quick skips this gate.
-
-The review surface includes a compact execution-readiness scorecard: `ready`, `routing pending`, `split/overflow`, `risky/tight`, `stale/conflict`, and `missing checks`. Unknown, stale, pending, or missing routing/context fit does not count as ready.
-
-**How to use.** The brief approval gate runs independently of the ignored/deprecated `workflow.briefReview` compatibility field. Legacy `rich` fails config load. The view exposes approve/comment/reject/edit text commands. Approve reads `.splitbrief/sessions/<id>/tasks.md`, parses it, and re-runs the brief quality gate before implementation. `Ctrl+E`, `e`, `edit`, `E`, and `edit-file` open the persisted `tasks.md` contract in the external editor, then return to the gate on parse or quality errors.
-
-### Task Brief external editor handoff
-
-**What it does.** Opens the persisted Task Brief markdown before any implementer token is spent. The editor resolver uses explicit `VISUAL` first, then non-terminal `EDITOR`, then detected GUI editors (`cursor`, `code`, `zed`, `subl`, `mate`, `bbedit`) with wait flags, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`. Implicit GUI auto-detection probes only safe absolute `PATH` segments (empty, `.`, and relative segments are skipped) and spawns the resolved absolute executable path. On Windows, implicit discovery also honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` suffixes. The inline rich plan editor is disabled; the external editor is the text-editing path for brief changes.
-
-After the editor exits successfully, SPLITBRIEF re-reads `.splitbrief/sessions/<id>/tasks.md`, parses the Task Brief contract, and re-runs brief-quality validation before letting implementation proceed. If parsing or quality checks fail, the review gate stays open so you can edit again or send feedback for regeneration.
-
-**How to use.** At the `reviewing-briefs` gate, press `Ctrl+E` or type `e`, `edit`, `E`, or `edit-file`. Save and close the editor, then approve once the reloaded brief passes validation.
+**How to use.** `Ctrl+O` inside the editor opens `plan.json` in the external editor instead (`VISUAL`, then non-terminal `EDITOR`, then detected GUI editors with wait flags, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`); saving there settles the card with the edit the same way. There is no per-brief field editor: a brief changes through `plan.json` or a correction.
 
 ---
 
@@ -265,11 +235,9 @@ Open `/usage` from a live or saved workflow to inspect reported counters and ava
 
 ### Planner heartbeat
 
-**What it does.** During planner calls exceeding 5 seconds, displays proof of life: an incrementing token counter and the current phase hint (e.g. "analyzing dependencies...", "writing spec..."). Prevents dead-zone silences.
+**What it does.** During a planner call the composer byline shows proof of life: `Planning… m:ss`, counted from the moment the call opened. While the planner waits on you, the byline reads `Waiting for your answer · Plan`.
 
 **How to use.** Always active. No configuration needed.
-
-**When to use.** Automatic during any planner call. The heartbeat appears in the TUI below the status line.
 
 ### Streaming partial output (extracted-code implementers)
 
@@ -307,7 +275,7 @@ The second row appears only while a brief is running, and reads `Keep running` o
 
 ### Recovery stops
 
-**What it does.** When SPLITBRIEF cannot safely continue, it writes a durable `pendingRecovery` issue to `state.json`, appends recovery events to `session.jsonl`, and shows one compact decision prompt. Triggers include context overflow before worker dispatch, retry exhaustion, dependency-blocked tasks, user-edit or approval-promotion conflicts, an unplanned write denied under a `write_out_of_scope` tier override, an implementer that left its isolation directory (a tool call that reached outside it, or a change to your checkout during the call — see [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#recovery)), a refused implementer command line, two consecutive implementer timeouts on one brief, a denied approval, a failed snapshot, and a final review that still fails after its fix cycles. The planner seat raises them too — a failed planner call, a `tasks` call that parsed no briefs, a hard constitution violation, a briefs gate that stopped making progress, and a brief-quality repair that failed where no gate exists to decide — and every issue carries the `seat` it belongs to, so the panel and the swap offer name the seat that is actually stuck. Every one of them also fires the `on_halt` hook.
+**What it does.** When SPLITBRIEF cannot safely continue, it writes a durable `pendingRecovery` issue to `state.json`, appends recovery events to `session.jsonl`, and shows one compact decision prompt. Triggers include context overflow before worker dispatch, retry exhaustion, dependency-blocked tasks, user-edit or approval-promotion conflicts, an implementer that left its isolation directory (a tool call that reached outside it, or a change to your checkout during the call — see [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#recovery)), a refused implementer command line, two consecutive implementer timeouts on one brief, a denied approval, a failed snapshot, and a final review that still fails after its fix cycles. The planner seat raises them too — a failed planner call (`planner-call-failed`), a third round of questions (`plan-questions-exhausted`), a plan that fails its checks again after one repair (`plan-checks-failed`), and a typed answer that does not parse after its repair (`seat-protocol-error`) — and every issue carries the `seat` it belongs to, so the panel and the swap offer name the seat that is actually stuck. Every one of them also fires the `on_halt` hook.
 
 **Actions.** Available actions are filtered per issue:
 
@@ -319,27 +287,20 @@ The second row appears only while a brief is running, and reads `Keep running` o
 | `pause-run` | Leaves the active session resumable with the issue intact. |
 | `end-run` | Closes the run: `state.json` records `closed`, the run lists as `ended`, and nothing reverts. |
 | `revise` | Queues the operator's correction for the next planner turn, then clears the halt. After a failed final review, it records the correction and sends the review's findings back through one more repair cycle. |
-| `revise-spec` | Rewinds to `specifying` with the operator's note, then clears the halt. |
+| `revise-spec` | Kept for an older `constitution-check-failed` halt: it acts as `revise` and queues the note as a correction for the planning session. |
 | `route-bigger-worker` | Resets the current task and reruns it with the larger implementer profile named by the recovery issue. |
 | `switch-seat` | Offered for the halts the seat itself caused or can have caused — `runner-usage-limit`, `runner-unauthenticated`, `implementer-recipe-invalid`, `implementer-left-isolation`, `checkout-changed`, `runner-timeout-repeated`, `planner-call-failed` — on the plan seat as readily as the build seat: moves the blocked seat to another ready detected tool and re-prepares the same session on it. In the TUI, taking it opens that seat's own picker on the first offered tool, where the tool and its model are chosen; closing the picker with no change leaves the halt open. |
 | `planner-split-rebase` | Legacy/manual only; new recovery prompts do not offer it, and old states block with `planner-proposal-required`. |
 
 **Resume/headless.** `splitbrief resume` shows pending recovery before any planner or implementer call. Headless JSON runs emit `recovery_required` with reason, task/files, available actions, and recommendation, then exit non-zero; both headless renderings print the recommended action and the exact `splitbrief continue <session> --action …` line to stderr, and `continue --action <skip|retry|switch-seat:<tool>[:<model>]|end-run>` applies it without a TUI.
 
-### Tiered approval gates (auto / sticky / confirm)
+### Protected-path confirmation
 
-**What it does.** Declared implementer file writes are classified before application: `auto` (proceed silently), `sticky` (prompt once per session per pattern; persisted to `.splitbrief/approvals.json`), `confirm` (require typed confirmation phrase). The classifier produces `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, `sensitive_change`, and `package_change`; `approval.tiers` accepts every class, and the loader names a `destructive`, `package_change` or `sensitive_change` key as ignored. A brief's files are suggestions: an unplanned ordinary file is `auto` and recorded as touched, not suggested. A write to a protected path (dependency manifests and lockfiles, CI configuration, env and key files, `.git`, `.splitbrief`) is `confirm` whatever `approval.enabled`, `approval.tiers` or `--yolo` say, and the confirmation holds for that path for the rest of the run. There is no tier for shell commands or network access; SPLITBRIEF does not sandbox either. Composes orthogonally with the document-level approval loop.
+**What it does.** A write to a protected path asks before it reaches the project, and no other write does. The protected paths are dependency manifests and lockfiles (`package_change`), CI configuration and env and key files (`sensitive_change`), and `.git` and `.splitbrief` (`destructive`). A brief's files are suggestions: an unplanned ordinary file is recorded as touched, not suggested, and does not ask. A confirmation holds for that path for the rest of the run, and approving a plan card that lists the write confirms it in advance. `approval.enabled: false` and `--yolo` do not change the rule. There are no sticky grants, no `.splitbrief/approvals.json`, no `/approval` command, no `splitbrief approval` command, and no tier overrides (`approval.tiers` loads with one notice and is ignored). There is no check for shell commands or network access; SPLITBRIEF does not sandbox either.
 
-**How to use.** Defaults are deterministic; override via `approval:` config block. Inspect or clear sticky grants:
+**How to use.** Nothing to configure. Answer the prompt with Confirm (and an optional reason) or deny it; a denial discards only the denied file. A headless run has no reply channel, so a protected write fails closed with `APPROVAL_REQUIRED`.
 
-```bash
-splitbrief approval list
-splitbrief approval clear --scope session   # session | always | all
-```
-
-Or in the TUI: `/approval list` / `/approval clear`. Headless mode fails fast at sticky/confirm tier.
-
-**Events.** `approval_prompted`, `approval_granted`, `approval_rejected`, `approval_sticky_recorded`. Rejections are also written to the evidence ledger with a reason string.
+**Events.** `approval_prompted`, `approval_granted`, `approval_rejected`. Confirmations and rejections are also written to the evidence ledger with a reason string.
 
 ### Snapshots (advanced run safety)
 
@@ -384,7 +345,7 @@ Persisted as `drift-chains.json`. Surfaces as `chainDriftSummary` in `summary.js
 
 ### Slash commands palette
 
-**What it does.** Runtime commands use slash names (`/help`, `/mode`, etc.), but the same registry backs composer `/` input and the command palette. Type `/` to open the inline picker; the dispatcher resolves names by exact match (including aliases) then by fuzzy match. Every one of the 27 commands carries exactly one of five categories — Navigate, Crew, Workflow, View, Input & output — and the palette and help overlay render those as section headers when no query is typed. Commands that take an argument prefill `/<name> ` in the composer instead of running bare, so no row errors on Enter.
+**What it does.** Runtime commands use slash names (`/help`, `/usage`, etc.), but the same registry backs composer `/` input and the command palette. Type `/` to open the inline picker; the dispatcher resolves names by exact match (including aliases) then by fuzzy match. Every one of the 23 commands carries exactly one of five categories — Navigate, Crew, Workflow, View, Input & output — and the palette and help overlay render those as section headers when no query is typed. Commands that take an argument prefill `/<name> ` in the composer instead of running bare, so no row errors on Enter.
 
 **Navigate**
 
@@ -403,21 +364,18 @@ Persisted as `drift-chains.json`. Surfaces as `chainDriftSummary` in `summary.js
 | Command | Purpose |
 |---|---|
 | `/crew [plan\|build\|review]` | Who fills each seat — bare `/crew` opens Settings with the cursor on `plan`; `/crew <seat>` opens that seat's picker overlay directly |
-| `/mode [quick\|standard\|speckit]` | Workflow mode |
 | `/refresh` | Re-detect available tools |
 
 **Workflow**
 
 | Command | Purpose |
 |---|---|
-| `/revise-spec [feedback]` | Rewind to spec phase with optional feedback |
-| `/revise-plan [feedback]` | Rewind to plan phase with optional feedback |
 | `/redo-task <task-id>` | Reset a task to pending and re-run it |
 | `/queue [show\|clear]` | Show or clear the message queue |
-| `/approval [list\|clear]` | List or clear sticky approval grants |
 | `/run <accept\|reject>` | Accept or reject what this run wrote (rejection needs `/run reject confirm`) |
 | `/resume` | Continue a paused or stopped run |
 | `/end` | Close the run, keeping every change on disk |
+| `/stop` | Open the inline session-options menu (Stop now, Pause after this brief, End run) |
 
 **View**
 
@@ -428,6 +386,7 @@ Persisted as `drift-chains.json`. Surfaces as `chainDriftSummary` in `summary.js
 | `/diff` | Expand or collapse the latest diff (Ctrl+D) |
 | `/sidebar` | Show or hide the workflow sidebar |
 | `/tasks` | Show the brief list — opens the sidebar and leaves it open (at or below 120 columns there is no sidebar, so the command answers with the list itself) |
+| `/usage` | Open token and monetary details for the run |
 
 **Input & output**
 
@@ -437,6 +396,8 @@ Persisted as `drift-chains.json`. Surfaces as `chainDriftSummary` in `summary.js
 | `/image <path> \| list \| remove <index-or-id>` | Attach, list or remove images for the next planner call |
 
 **Capability-aware `/image`.** The command is offered only when the PLAN seat can actually receive images — `cli` seats can, an `api` seat depends on its model, `shell` and `agent` never can. On a seat without vision the row is hidden and typing the command answers `PLAN seat cannot see images — pick a vision model with /crew plan`, instead of dropping the attachment silently at call time.
+
+`/mode`, `/revise-spec`, `/revise-plan` and `/approval` were removed; typing one prints `<name> was removed: <pointer>` (`REMOVED_COMMANDS`). A change to the plan is requested on the plan card.
 
 Full reference: [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md).
 
@@ -451,9 +412,9 @@ Full reference: [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md).
 ```yaml
 palette:
   customActions:
-    - id: quick-mode
-      label: "Switch to quick mode"
-      command: /mode quick
+    - id: usage
+      label: "Show token usage"
+      command: /usage
 ```
 
 ### Help overlay (`Ctrl+/`)
@@ -464,13 +425,13 @@ palette:
 
 **What it does.** Browses summary-backed past sessions from `.splitbrief/sessions/`. Open via `/sessions` or from the home screen. Each row shows status icon, feature, and relative start time.
 
-Sessions are execution records scoped to one workflow each. The brief review gate is scoped to the current session's Task Briefs, routing, context fit, checkpoints, and conflict posture before execution.
+Sessions are execution records scoped to one workflow each. The plan card is scoped to the current session's plan: its summary, decisions, criteria, tasks with their checks and batches, and the protected writes it lists.
 
 ### Settings overlay
 
 **What it does.** One overlay for crew, validation and workflow defaults. Open via `/settings` (Ctrl+,). Writes back to `.splitbrief/config.yaml`. Crew is its first section; there is no separate crew surface.
 
-**The help block.** The bottom of the panel explains the highlighted row and nothing else. A labelled rule heads it — `Mode ────` to the right edge, the same rule a closed run's ledger uses for its sections — carrying the row's own label, or the seat word on a crew row. The block is bottom-anchored and five rows tall: the rule never touches the last row of the list, and under it sit at most three rows of help, so the legend stays put and nothing below it ever shifts as the cursor moves. A bounded number keeps its range on the line that names it (`Max retry attempts per task · 0–10`); an enum adds a row listing its options; `Mode` gets the whole shape table the `/mode ` completion rows show, one line per mode, with the mode the config is on painted bright and marked `current` on the right edge.
+**The help block.** The bottom of the panel explains the highlighted row and nothing else. A labelled rule heads it — `Plan approval ────` to the right edge, the same rule a closed run's ledger uses for its sections — carrying the row's own label, or the seat word on a crew row. The block is bottom-anchored and five rows tall: the rule never touches the last row of the list, and under it sit at most three rows of help, so the legend stays put and nothing below it ever shifts as the cursor moves. A bounded number keeps its range on the line that names it (`Max retry attempts per task · 0–10`); an enum adds a row listing its options (`plan · none` on Plan approval). There is no Mode row.
 
 **Reading the list.** Values are as bright as the labels they belong to; only the section headers, the help and the key legend stay dim. The blank row between sections is spent only where the list has rows to spare: below an 18-row list budget the sections close up, which is what keeps a settings row on screen at 80x24 rather than a gap. An unset `Test command` reads `auto`, the stack's own runner, not a dash. The legend names the one key the highlighted row answers to — `space cycle` on an enum, `space toggle` on a boolean, `⏎ edit` on a string or number, `⏎ change seat` on a crew row.
 
@@ -513,9 +474,9 @@ The fraction counts briefs that **passed their checks** — a started brief is n
 
 ### Input footer
 
-**What it does.** One byline under the composer carrying the run's live state, and the advisor signal below it when active.
+**What it does.** One byline under the composer carrying the run's live state.
 
-**Format.** The lead is the live status — `⠙ Implementing… 1:12`, `⠙ Writing the plan… 0:41` or `⠙ Compiling briefs… 1:03` during planning, named from the planner call the engine says it is on and falling back to `Planning…` when it names none, `Waiting for you`, `Still working — silent 3m 0s` (only `Still working` while the build block is on screen, whose freshness line states the silence; where no block is painted — during planning, or while the stop menu takes its rows — the byline carries the count), a stop state such as `Paused at T003 · Partial changes kept`, or the closing `Stopped by you` / `Build failed`. After it, in this order and dropped from the right as the width shrinks: a hint, `<n> queued`, the ETA, the advisor line (`advisor: consider quick · trivial edit`), `y copy` when the focused region has something to copy, and the worktree name. The elapsed time is the step's own. During planning the step is the planner call the lead names, counted from the moment that call opened, so `Compiling briefs…` never counts the plan call before it; the first call after the run starts or resumes counts from that start, so the preparation before it stays on the clock. In the build and the final review the step is the stage. A resume starts the clock again, and the minutes the run spent waiting on you — a planner question, an approval gate — are subtracted, so answering a question does not make the next brief look slow.
+**Format.** The lead is the live status — `⠙ Implementing… 1:12`, `⠙ Planning… 0:41` during the planning session (`Compiling briefs…` only on an older run's briefs call), `Waiting for you`, `Still working — silent 3m 0s` (only `Still working` while the build block is on screen, whose freshness line states the silence; where no block is painted — during planning, or while the stop menu takes its rows — the byline carries the count), a stop state such as `Paused at T003 · Partial changes kept`, or the closing `Stopped by you` / `Build failed`. After it, in this order and dropped from the right as the width shrinks: a hint, `<n> queued`, the ETA, `y copy` when the focused region has something to copy, and the worktree name. The elapsed time is the step's own. During planning the step is the planner call that is open, counted from the moment that call opened; the first call after the run starts or resumes counts from that start, so the preparation before it stays on the clock. In the build and the final review the step is the stage. A resume starts the clock again, and the minutes the run spent waiting on you — a planner question, an approval gate — are subtracted, so answering a question does not make the next brief look slow.
 
 **Steer, queue, interrupt.** The composer means a different thing in each state, and its placeholder says which:
 
@@ -527,15 +488,15 @@ The fraction counts briefs that **passed their checks** — a started brief is n
 
 **What it does.** The workflow screen is the run's home whether anything is running on it or not. Opening a run from `/sessions`, from the home list or from the palette replays its `session.jsonl` into the workflow stores and shows the run exactly where it stopped: the same header rail, the same transcript, the same footer. Nothing navigates to a second screen, and continuing the run flips it back to live in place. There is no summary screen.
 
-**Format (header).** The rail and the collapsed seat line, marked for a run that is not moving: stages the run cleared paint `●` in their role hue, stages it never reached `○` dim, and the stage it stopped on wears the mark its stop earned — `×` in warning tone for a run that is paused, waiting at a gate, or interrupted (a stop you can answer), `✗` in error tone for a run that halted on a recovery or died on an error. A closed, complete run shows five `●`; a quick run's Spec stage never leaves `○` pending, so its complete rail shows four. A closed run's seat line names the crew that actually ran it, read from its own record; an open run's names the crew it would continue on.
+**Format (header).** The rail and the collapsed seat line, marked for a run that is not moving: stages the run cleared paint `●` in their role hue, stages it never reached `○` dim, and the stage it stopped on wears the mark its stop earned — `×` in warning tone for a run that is paused, waiting at a gate, or interrupted (a stop you can answer), `✗` in error tone for a run that halted on a recovery or died on an error. The rail has three stages — Plan, Build, Review — and a closed, complete run shows three `●`. A closed run's seat line names the crew that actually ran it, read from its own record; an open run's names the crew it would continue on.
 
 **Format (composer and byline).** An open run takes a correction: the placeholder reads `Type a correction, or ⏎ to continue…`, a bare `⏎` continues it, and typed text rides into the next step's own prompt as a steer. The byline says where it stopped and the one key that moves it:
 
 - `Paused at T003 · type a correction or ⏎ to continue`
-- `Waiting at the spec gate · ⏎ to reopen it`
+- `Waiting at the plan · ⏎ to reopen it` (an older run waiting at its spec or briefs gate reads `Waiting at the plan · ⏎ to continue`: it continues as one planning session)
 - `Halted · Usage limit on ollama · ⏎ to decide`
 - `Stopped by an error · Planning failed. · ⏎ to retry the step`
-- `Interrupted · ⏎ to continue from the tasks step`
+- `Interrupted · ⏎ to continue from T003`
 
 A run nothing can pick up says why before where — `Saved state unreadable · start it again from home` — and takes `/commands` only. A run another process is driving reads `Running in another process`.
 
@@ -543,9 +504,9 @@ A run nothing can pick up says why before where — `Saved state unreadable · s
 
 - One outcome sentence led by its glyph: `✓ Ready · 3/3 briefs passed · review 0 blocking, 1 advisory · scope clean · 4 files changed`, `⚠ Needs attention · …`, or `× Ended · Build 2/5 · stopped in T003 · partial changes kept`; a run ended before its first brief reads `× Ended · Plan 0/3 · nothing built`. The fraction counts briefs that passed — never one that merely started or escalated. Whole ` · ` tokens shed from the right when the line overruns; nothing is cut mid-token.
 - `Briefs` — one row per brief in the saved current plan, including a plan ended at its approval gate before evidence was written. The rows use the transcript's grammar: `✓ T001 Add validator module  src/validate.ts · local · 84.2s`, `▲` escalated, `✗` failed, `–` skipped, `×` the brief the run stopped inside (`· stopped · 2 partial files`), `○` a brief that never started.
-- `Earlier work` — present after a rewind when ledger or spend entries cannot be joined safely to the current plan. An old T001 remains distinct from a newly compiled T001. The outcome fraction counts only current briefs; the Files section and `/usage` keep the run's earlier work and spend.
+- `Earlier work` — present when ledger or spend entries cannot be joined safely to the current plan, as on an older run that rewound its plan. An old T001 remains distinct from a newly compiled T001. The outcome fraction counts only current briefs; the Files section and `/usage` keep the run's earlier work and spend.
 - `Files` — the changed set, sorted, project-relative and middle-cut, with ` · partial` on a file the stopped brief left half-written.
-- `Run` — labelled facts, one home each: `Crew` (only when the header named fewer than three seats), `Review`, `Packet`, `Scope`, `Briefs` (brief quality), `Phases`, `Session`. A fact with no value carries one absence word — `not run`, `not checked`, `not estimated` — never `—`, `n/a` or `$0.00`. The run's cost and token counts are not ledger facts; `/usage` keeps those counters and the spend.
+- `Run` — labelled facts, one home each: `Crew` (only when the header named fewer than three seats), `Review`, `Packet`, `Scope`, `Briefs` (brief quality, only on an older run that wrote `brief-quality.json`), `Phases`, `Session`. A fact with no value carries one absence word — `not run`, `not checked`, `not estimated` — never `—`, `n/a` or `$0.00`. The run's cost and token counts are not ledger facts; `/usage` keeps those counters and the spend.
 
 A closed run whose record was never written says so in one line rather than painting an empty ledger: `× Ended · no run record was written`.
 
@@ -593,19 +554,19 @@ hooks:
 
 ### `splitbrief start --json`
 
-**What it does.** Skips Ink, emits a readiness report first, replaces the TUI sink with NDJSON-on-stdout, and stubs workflow host callbacks: review gates approve; planner questions persist as pending input, emit `input_required`, and exit non-zero, as does recovery. File-write tiered approvals still follow approval config and fail closed for sticky/confirm tiers without a grant. The normal `session.jsonl` log is still written for the run.
+**What it does.** Skips Ink, emits a readiness report first, replaces the TUI sink with NDJSON-on-stdout, and stubs workflow host callbacks: the plan card is approved unattended (it confirms no protected operation in advance); planner questions persist as pending input, emit `input_required`, and exit non-zero, as does recovery. A write to a protected path fails closed with `APPROVAL_REQUIRED`. The normal `session.jsonl` log is still written for the run.
 
 **How to use.**
 
 ```bash
-splitbrief start --json --allow-hooks --mode quick "add lint rule for empty catch" > events.ndjson
+splitbrief start --json --allow-hooks "add lint rule for empty catch" > events.ndjson
 ```
 
 **When to use.** CI integration, scripted batch runs, or anywhere a TTY is unavailable.
 
 **Behavior differences.**
 
-- Sticky / confirm-tier approvals fail fast.
+- A protected write fails fast. Set `workflow.approve: none` to skip the plan card instead of approving it.
 - All other behavior matches an interactive run.
 
 The first line is `{ type: "readiness_report", report: ... }`. After that, `stdoutJsonSink` in `src/engine/events/sinks/stdout-json.ts` emits one `EngineEvent` JSON object per line.
@@ -689,7 +650,7 @@ Offered only when the PLAN seat can receive images; on a seat without vision the
 
 **Detection.** A directory holding a `SKILL.md` is a skill and is not descended into; other directories are walked to depth 4. Loose `.md` files count only at the top level of a root. Frontmatter that omits `name` falls back to the directory (or file) name; a file with no frontmatter block is skipped. Symlinks are followed in both scopes, but project scope never leaves the project: a project symlink whose target resolves outside the project is dropped, not read.
 
-**Where they reach the seats.** The run renders the selected skills once (`buildSkillsContext`, `src/engine/orchestrator/run/skills-context.ts`) into one `## Active Project Skills` section, and each seat's calls carry it: the four document steps (research, spec, plan and tasks) and each regeneration at the spec, plan and briefs gates, each implementer brief and its retries, the hint call and the final review, for every runner kind. The briefs gate's routing preview counts the section the way the worker receives it. A `cli` implementer in its isolation worktree may read an attached global skill's files; a write there halts the brief. A Claude Code planner, reviewer or hint call may read them too, and never write them. Per skill the section says where the skill lives — `Base directory:` for a skill directory, `File:` for a loose `.md` skill (a `SKILL.md` at the top of a root included) or `AGENTS.md`. A project skill, and a global one whose files live in the project, is spelled relative to the project root, so the checkout and an isolation worktree resolve it alike. A project skill git ignores — `.splitbrief/skills` always is — is in no isolation copy, so it is spelled by its absolute path in the checkout and read like a global skill, and so is every other global skill. Then come its `SKILL.md` body and its `references/*.md`. A 16 000-character budget takes every body whole first, in selection order, then the references of each inlined skill, each whole; a body or a reference that does not fit is named by path instead, never cut. A continued run rebuilds the section from the skill ids the run saved when it started. A saved id that no longer resolves, or a selected skill whose file cannot be read, raises a `warning` with code `skills_unresolved` naming it, and the section leaves it out. Each start and continue records the ids of the skills the section carries as `skills` on its `workflow_config` event, so `session.jsonl` names what reached the seats. A body named by path raises a `warning` event with code `skills_truncated` naming its skill (`1 skill over the skills budget, named by path: …`) and the TUI feedback row says the same; a reference named by path is the normal case and raises none. The four pipeline skills (`splitbrief`, `splitbrief-brief`, `splitbrief-run`, `splitbrief-review`) and `splitbrief-babysit` are excluded from this list: the planner gets that contract from the pipeline spec, not from a skill file, and the babysit skill supervises the CLI itself.
+**Where they reach the seats.** The run renders the selected skills once (`buildSkillsContext`, `src/engine/orchestrator/run/skills-context.ts`) into one `## Active Project Skills` section, and each seat's calls carry it: every turn of the planning session, each implementer brief and its retries, the hint call and the final review, for every runner kind. The plan's context-fit check counts the section the way the worker receives it. A `cli` implementer in its isolation worktree may read an attached global skill's files; a write there halts the brief. A Claude Code planner, reviewer or hint call may read them too, and never write them. Per skill the section says where the skill lives — `Base directory:` for a skill directory, `File:` for a loose `.md` skill (a `SKILL.md` at the top of a root included) or `AGENTS.md`. A project skill, and a global one whose files live in the project, is spelled relative to the project root, so the checkout and an isolation worktree resolve it alike. A project skill git ignores — `.splitbrief/skills` always is — is in no isolation copy, so it is spelled by its absolute path in the checkout and read like a global skill, and so is every other global skill. Then come its `SKILL.md` body and its `references/*.md`. A 16 000-character budget takes every body whole first, in selection order, then the references of each inlined skill, each whole; a body or a reference that does not fit is named by path instead, never cut. A continued run rebuilds the section from the skill ids the run saved when it started. A saved id that no longer resolves, or a selected skill whose file cannot be read, raises a `warning` with code `skills_unresolved` naming it, and the section leaves it out. Each start and continue records the ids of the skills the section carries as `skills` on its `workflow_config` event, so `session.jsonl` names what reached the seats. A body named by path raises a `warning` event with code `skills_truncated` naming its skill (`1 skill over the skills budget, named by path: …`) and the TUI feedback row says the same; a reference named by path is the normal case and raises none. The four pipeline skills (`splitbrief`, `splitbrief-brief`, `splitbrief-run`, `splitbrief-review`) and `splitbrief-babysit` are excluded from this list: the planner gets that contract from the pipeline spec, not from a skill file, and the babysit skill supervises the CLI itself.
 
 **How to use.** Open the picker via `/skills` on any screen (Ctrl+S on home). Discovery re-runs when the overlay opens or when `/skills` is typed, so a skill added mid-session appears without a restart. `/skills <id> [<id>…]` toggles one or several skills from the composer instead of opening the picker; ids match fuzzily, and the `/` menu completes them project-first, then already-selected global ones, showing each skill's name and description. The command palette also carries one `Skill · <name>` row per discovered skill, which toggles selection directly. From the command line, `--skills <id,…>` selects them without a picker: on headless `start` (`--json` / `--plain`) and on `resume` / `continue` in either mode. An unknown id fails before planning with `Unknown skill: <id> (scanned: <roots>)` and exit 2. Selection applies to the session only. On `resume` / `continue`, `--skills` applies to that continue only: it is not saved, so a later continue without it uses the selection the run saved when it started. Read-only — SPLITBRIEF never writes to skill sources.
 

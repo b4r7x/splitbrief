@@ -87,6 +87,7 @@ function implementerBaseArgs(input: AntigravityImplementerBuildInput): string[] 
     input.projectDir,
     ...ANTIGRAVITY_OUTPUT_ARGS,
     ...generationArgs(input),
+    ...schemaArgs(input.schema),
   ];
 }
 

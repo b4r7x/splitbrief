@@ -1,5 +1,4 @@
 import type { Config } from '../../../core/schemas/config.js';
-import type { WorkflowMode } from '../../../core/schemas/enums.js';
 import type { SeatSwapCandidate } from '../../../core/schemas/recovery/schemas.js';
 import type { CrewSeatId } from '../../../core/crew/identity.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
@@ -32,7 +31,6 @@ export type SwitchSeatResumeInput = Readonly<{
   state: WorkflowState;
   bus: EventBus;
   config: Config;
-  mode?: WorkflowMode | undefined;
   candidate: SeatSwapCandidate;
   policy: Extract<PreparationPolicy, { purpose: 'resume' }>;
   signal: AbortSignal;
@@ -60,7 +58,6 @@ export async function switchSeatAndPrepareResume(
     bus: input.bus,
     config: input.config,
     candidate: input.candidate,
-    ...(input.mode !== undefined && { mode: input.mode }),
   });
   if (!applied.ok) {
     return {

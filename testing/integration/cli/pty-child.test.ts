@@ -168,7 +168,7 @@ describe('PTY behavior child', () => {
           renderApp: async (element) => {
             const runWorkflow = renderedWorkflow(element);
             const saved = loadState({ projectDir, sessionId: PTY_REVIEW_SESSION_ID });
-            expect(saved?.phase).toBe('reviewing-spec');
+            expect(saved?.phase).toBe('reviewing-plan');
             const running = runWorkflow(
               workflowOptions(
                 projectDir,
@@ -176,7 +176,7 @@ describe('PTY behavior child', () => {
                   onApprovalNeeded: async () => ({ approved: true }),
                   onContinuationNeeded: async (_partial, at) => {
                     // The approval gate runs inside the step's continuation loop now, so a user
-                    // interrupt there cuts mid-step while the pickup point stays the spec gate.
+                    // interrupt there cuts mid-step while the pickup point stays the plan gate.
                     expect(at).toBe('mid-step');
                     const interrupted = loadState({
                       projectDir,
@@ -184,7 +184,7 @@ describe('PTY behavior child', () => {
                     });
                     expect(interrupted?.interruptedStep?.step).toEqual({
                       kind: 'gate',
-                      gate: 'spec',
+                      gate: 'plan',
                     });
                     expect(interrupted?.interruptedStep?.cut).toBe('mid-step');
                     expect(interrupted?.interruptedStep?.source).toBe('user');

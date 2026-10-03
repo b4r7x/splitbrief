@@ -1,10 +1,5 @@
 import { z } from 'zod';
-import {
-  WorkflowModeSchema,
-  CommitStrategySchema,
-  ApproveLevelSchema,
-  IsolationStrategySchema,
-} from './enums.js';
+import { CommitStrategySchema, ApproveLevelSchema, IsolationStrategySchema } from './enums.js';
 import { PlannerConfigSchema } from './planner-config.js';
 import { ImplementerConfigSchema, ImplementerProfilesConfigSchema } from './implementer-config.js';
 import { ReviewerConfigSchema } from './reviewer-config.js';
@@ -66,28 +61,10 @@ const GitWorkflowConfigSchema = GitWorkflowFieldsSchema.superRefine((git, ctx) =
   ({ commitStrategy: _retired, ...git }): z.infer<typeof GitWorkflowFieldsSchema> => git,
 );
 
-export const TaskReviewModeSchema = z.enum(['none', 'failed', 'every']);
-export type TaskReviewMode = z.infer<typeof TaskReviewModeSchema>;
-
-const SpeckitWorkflowConfigSchema = z.strictObject({
-  minCoverage: z.number().min(0).max(1).optional(),
-});
-
-export const ApprovalTierSchema = z.enum(['auto', 'sticky', 'confirm']);
-export type ApprovalTier = z.infer<typeof ApprovalTierSchema>;
-
-export const TierMapSchema = z.strictObject({
-  read: ApprovalTierSchema.optional(),
-  write_in_scope: ApprovalTierSchema.optional(),
-  write_out_of_scope: ApprovalTierSchema.optional(),
-  destructive: ApprovalTierSchema.optional(),
-  package_change: ApprovalTierSchema.optional(),
-  sensitive_change: ApprovalTierSchema.optional(),
-});
-
 export const ApprovalConfigSchema = z.strictObject({
   enabled: z.boolean().default(true),
-  tiers: TierMapSchema.optional(),
+  /** Retired: loads with one notice and changes nothing. */
+  tiers: z.unknown().optional(),
   feedRejectionsToPlanner: z.boolean().default(true),
   allowedPaths: z.array(z.string().min(1)).optional(),
 });
@@ -121,10 +98,14 @@ export const ConfigSchema = z.object({
     maxRetries: z.number().int().min(0),
     git: GitWorkflowConfigSchema.optional(),
     isolation: IsolationStrategySchema.optional(),
-    speckit: SpeckitWorkflowConfigSchema.optional(),
-    mode: WorkflowModeSchema.optional(),
-    briefReview: z.enum(['simple']).optional(),
-    taskReview: TaskReviewModeSchema.optional(),
+    /** Retired: loads with one notice and changes nothing. */
+    speckit: z.unknown().optional(),
+    /** Retired: loads with one notice and changes nothing. */
+    mode: z.unknown().optional(),
+    /** Retired: loads with one notice and changes nothing. */
+    briefReview: z.unknown().optional(),
+    /** Retired: loads with one notice and changes nothing. */
+    taskReview: z.unknown().optional(),
     driftChainThreshold: z.number().min(0).max(1).optional(),
     compactionThreshold: z.number().int().min(10).optional(),
     compactionFormat: CompactionFormatSchema.default('auto'),
@@ -143,5 +124,3 @@ export const ConfigSchema = z.object({
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
-
-export const DEFAULT_WORKFLOW_MODE = 'standard' as const;

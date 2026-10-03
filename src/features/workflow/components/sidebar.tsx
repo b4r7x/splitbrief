@@ -13,8 +13,6 @@ import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { selectTaskListView, taskTargetLabel, tasksStore } from '../../../stores/workflow/tasks.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { configStore } from '../../../stores/project/config.js';
-import type { WorkflowMode } from '../../../core/schemas/enums.js';
-import { useRunMode } from '../hooks/use-run-mode.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import {
   CREW_LABEL_WIDTH,
@@ -32,7 +30,6 @@ import {
   getSidebarTaskWindow,
   getSidebarStatusColumnCells,
 } from '../layout/rect.js';
-import { useAdvisory } from '../hooks/use-advisory.js';
 import { useSpinnerFrame } from '../../../hooks/use-spinner-frame.js';
 import { useSharedClock } from '../../../hooks/use-shared-clock.js';
 import { formatLocalSharePct, localShare } from '../display/local-share.js';
@@ -134,7 +131,7 @@ function rowSpec(status: WorkflowTask['status'], t: Theme): RowSpec {
   }
 }
 
-function SidebarWaiting({ mode }: { mode: WorkflowMode | null }) {
+function SidebarWaiting() {
   const t = useTheme();
   const [lifecycle, controls, approval, recovery] = useStores(
     lifecycleStore,
@@ -164,7 +161,7 @@ function SidebarWaiting({ mode }: { mode: WorkflowMode | null }) {
     return <Text color={t.textDim}>{`${LIST_INDENT}No tasks yet`}</Text>;
   }
 
-  const stage = getActiveRailStage(lifecycle.phase, mode ?? 'standard')?.stage ?? '';
+  const stage = getActiveRailStage(lifecycle.phase)?.stage ?? '';
   const elapsed = lifecycle.startedAt !== null ? formatElapsedClock(now - lifecycle.startedAt) : '';
   return (
     <Box flexDirection="column">
@@ -273,11 +270,7 @@ export function Sidebar({ width, height }: SidebarProps) {
   const view = tasksStore.use(selectTaskListView);
   const config = configStore.use((s) => s.config);
   const displayNames = useCrewDisplayNames(config);
-  // The mode the run is on, as the one shared derivation reads it: the engine's resolved mode
-  // leads, the record's prepared-run mode stands in, and only a run with neither reads the config.
-  const mode = useRunMode();
   const seats: readonly CrewSeat[] = config ? deriveCrewSeats({ config, displayNames }) : [];
-  const advisory = useAdvisory();
   // The footer reports how much of the build the local seat carried, which is a routing fact. The
   // run's tokens and money are not read here at all: /usage is where they are named.
   const localCount = tokensStore.use((s) => s.localCount);
@@ -291,8 +284,8 @@ export function Sidebar({ width, height }: SidebarProps) {
   const escalatedCount = tasks.filter((tk) => tk.status === 'escalated').length;
   const innerWidth = Math.max(0, width - 4);
 
-  // The local-share row is unconditional; mode and the done/escalated split are not.
-  const footerRows = seats.length + 1 + (mode ? 1 : 0) + (escalatedCount > 0 ? 1 : 0);
+  // The local-share row is unconditional; the done/escalated split is not.
+  const footerRows = seats.length + 1 + (escalatedCount > 0 ? 1 : 0);
   // Without a height the caller is not budgeting rows, so the list never windows.
   const listRows =
     height === undefined ? tasks.length : getSidebarTaskListRows({ height, footerRows });
@@ -347,7 +340,7 @@ export function Sidebar({ width, height }: SidebarProps) {
         flexShrink={1}
         overflow="hidden"
       >
-        {tasks.length === 0 && <SidebarWaiting mode={mode} />}
+        {tasks.length === 0 && <SidebarWaiting />}
         {listWindow.showAbove && <Text color={t.textDim}>{`${LIST_INDENT}${aboveLabel}`}</Text>}
         {visible.map((task) => (
           <TaskRow key={task.id} task={task} width={width} statusCells={statusCells} />
@@ -360,16 +353,6 @@ export function Sidebar({ width, height }: SidebarProps) {
           <Divider width={innerWidth} />
         </Box>
         <Box flexDirection="column" paddingX={1}>
-          {mode && (
-            <Text color={t.textDim}>
-              {mode}
-              {advisory && advisory.kind !== 'none' && (
-                <Text>
-                  {SOFT_SEP}risk <Text color={t.warning}>{advisory.risk}</Text>
-                </Text>
-              )}
-            </Text>
-          )}
           {escalatedCount > 0 && (
             <Text color={t.textDim}>
               {doneCount} done{SOFT_SEP}

@@ -13,7 +13,6 @@ import {
   cancelEscapeAction,
   isEscapeActionPending,
 } from '../lib/terminal/escape-debounce.js';
-import { useFieldSessionOwned } from '../features/editor/use-field-session-owned.js';
 import { useStores } from '../stores/use-stores.js';
 import { assertNever } from '../utils/type-guards.js';
 import { SEAT_PICKER_OVERLAYS, type OverlayType } from '../core/navigation/types.js';
@@ -169,12 +168,6 @@ export function useAppKeys({ exit, deps = defaultAppKeyDeps }: UseAppKeysOptions
   const promptPending = approval.status === 'pending';
   const completionOpen = completion.open;
   const sessionPreparationActive = sessionSelection.preparation.kind !== 'idle';
-  // The inline briefs field editor is not an overlay (it renders inside the workflow screen), so
-  // overlayStore.active stays 'none' while it owns input. Every app-level handler that could steal
-  // a keystroke from it — the global shortcut chords and the workflow Escape ladder — must stand
-  // down while the field session owns the live prompt, mirroring the workflow screen's
-  // globalKeysActive gate so exactly one useInput owns each key/mouse event (REQ-049 / CON-D).
-  const fieldSessionOwned = useFieldSessionOwned();
 
   const sessionProject = route.screen === 'workflow' ? route.run.ref.projectDir : null;
   const sessionId = route.screen === 'workflow' ? route.run.ref.sessionId : null;
@@ -290,8 +283,7 @@ export function useAppKeys({ exit, deps = defaultAppKeyDeps }: UseAppKeysOptions
         !overlayExclusive &&
         !promptPending &&
         !completionOpen &&
-        !sessionPreparationActive &&
-        !fieldSessionOwned,
+        !sessionPreparationActive,
     },
   );
 
@@ -328,7 +320,7 @@ export function useAppKeys({ exit, deps = defaultAppKeyDeps }: UseAppKeysOptions
       }
     },
     {
-      isActive: !isOpen && !promptPending && !sessionPreparationActive && !fieldSessionOwned,
+      isActive: !isOpen && !promptPending && !sessionPreparationActive,
     },
   );
 }

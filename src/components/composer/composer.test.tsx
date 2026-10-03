@@ -95,9 +95,9 @@ describe('Composer submit draft retention', () => {
   const COMMANDS: RuntimeCommandDef[] = [
     {
       kind: 'arg',
-      name: '/mode',
-      label: 'Mode',
-      description: 'Workflow mode',
+      name: '/sample',
+      label: 'Sample',
+      description: 'Sample command',
       category: 'navigate',
       args: { kind: 'free', hint: '<text>' },
       validScreens: ['home'],
@@ -194,13 +194,13 @@ describe('Composer submit draft retention', () => {
       />,
     );
     await flushEffects();
-    ui.stdin.write('/mode quick');
+    ui.stdin.write('/sample quick');
     await flushEffects();
     ui.stdin.write('\r');
     await flushEffects();
 
-    expect(dispatched).toEqual(['/mode quick']);
-    expect(ui.lastFrame()).not.toContain('/mode quick');
+    expect(dispatched).toEqual(['/sample quick']);
+    expect(ui.lastFrame()).not.toContain('/sample quick');
     ui.unmount();
   });
 

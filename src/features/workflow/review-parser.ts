@@ -6,6 +6,7 @@ import { reviewStore } from '../../stores/workflow/review.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { requestEnqueue } from './handlers.js';
+import { openReviewEditor, reviewEditPath } from './review-editor.js';
 import { editorDisplayLabel, resolveEditorArgv } from './editor-command.js';
 import { isLivePhase, isImplementerPhase } from '../../core/phases.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
@@ -14,7 +15,9 @@ import {
   suspendTerminalForEditor,
 } from '../../lib/terminal/editor-handover.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
+import { composerDraftStore } from '../../stores/ui/composer-draft.js';
 import {
+  REVIEW_COMMENT_DRAFT,
   REVIEW_UNKNOWN_COMMAND_MESSAGE,
   parseReviewCommand,
   reviewCommandToApprovalReviewResult,
@@ -97,26 +100,26 @@ function applyExternalEdit(
     feedbackStore.setError(`Review closed while editing — ${fileName} saved but not applied`);
     return;
   }
-  if (lifecycleStore.get().phase === 'reviewing-briefs') {
-    const result = reviewCommandToApprovalReviewResult({ action: 'external_edit_applied' });
-    if (result) {
-      feedbackStore.setMessage(`${lead} — applying changes`);
-      inputMode.resolve(result);
-    }
-    return;
-  }
-  reviewStore.reloadReviewFile();
-  feedbackStore.setMessage(`${lead} — content reloaded`);
+  // The plan card shows plan.md, rendered from the plan.json just edited: only the engine can
+  // check and compile it, so the edit settles the gate.
+  feedbackStore.setMessage(`${lead} — applying changes`);
+  inputMode.resolve({ approved: false, action: 'edit' });
 }
 
 let externalEditorOpen = false;
 
+/**
+ * `baseline` is the text the edit started from when it did not start from the file: the editor
+ * overlay saves its buffer before it hands over, so its opening text is what an edit changed.
+ */
 export async function openReviewFileExternally(
   inputMode: UseInputModeResult,
   spawnEditor: SpawnEditor = spawnEditorProcess,
+  baseline?: string | undefined,
 ): Promise<void> {
-  const { filePath, ownerToken: reviewOwner } = reviewStore.get();
-  if (!filePath) return;
+  const reviewOwner = reviewStore.get().ownerToken;
+  const filePath = reviewEditPath();
+  if (filePath === null) return;
   // A buffered second "e" while the editor is already out would stack a second handover
   // and a second editor over the same tty.
   if (externalEditorOpen) return;
@@ -127,7 +130,7 @@ export async function openReviewFileExternally(
     const fileName = basename(filePath);
     const openingMessage = `Opening ${editorLabel} — ${fileName}…`;
     feedbackStore.setMessage(openingMessage);
-    const before = await readReviewSnapshot(filePath);
+    const before = baseline ?? (await readReviewSnapshot(filePath));
     await new Promise((resolve) => setTimeout(resolve, OPENING_SIGNAL_PAINT_MS));
     // Last check before the handover, so nothing may await after it: the paint window stays
     // interactive, and another armed review key ('y'/'q') can settle the gate — clearing the
@@ -141,11 +144,14 @@ export async function openReviewFileExternally(
     try {
       exit = await runEditor({ command, args, filePath, spawnEditor });
     } catch (err) {
-      setPostEditorFeedback(
-        reviewOwner,
-        `Failed to open editor (${editorLabel}): ${toErrorMessage(err)}`,
-        true,
-      );
+      const failure = `Failed to open editor (${editorLabel}): ${toErrorMessage(err)}`;
+      // The overlay saved its edit before the handover: that edit still settles the card.
+      const saved = await readReviewSnapshot(filePath);
+      if (before !== null && saved !== null && before !== saved) {
+        applyExternalEdit(inputMode, filePath, reviewOwner, failure);
+        return;
+      }
+      setPostEditorFeedback(reviewOwner, failure, true);
       return;
     }
     const after = await readReviewSnapshot(filePath);
@@ -230,12 +236,13 @@ export interface ReviewInputHandler {
  * both, so no surface can start a real editor while it believes it is running on fixtures.
  */
 export interface ReviewInputEffects {
-  openExternalEditor: (inputMode: UseInputModeResult) => Promise<void>;
+  openExternalEditor: (inputMode: UseInputModeResult, baseline?: string) => Promise<void>;
   enqueue: typeof requestEnqueue;
 }
 
 const productionReviewInputEffects: ReviewInputEffects = {
-  openExternalEditor: (inputMode) => openReviewFileExternally(inputMode),
+  openExternalEditor: (inputMode, baseline) =>
+    openReviewFileExternally(inputMode, spawnEditorProcess, baseline),
   enqueue: requestEnqueue,
 };
 
@@ -285,6 +292,12 @@ export function createReviewInputHandler(
     if (inputMode.mode === 'review') {
       const parsed = parseReviewCommand(text);
       if (!parsed) {
+        // Any other text at the plan card is a correction the planning session answers.
+        const correction = text.trim();
+        if (correction !== '' && reviewEditPath() !== null) {
+          inputMode.resolve({ approved: false, action: 'revise', comment: correction });
+          return;
+        }
         feedbackStore.setError(REVIEW_UNKNOWN_COMMAND_MESSAGE);
         return;
       }
@@ -301,9 +314,11 @@ export function createReviewInputHandler(
         feedbackStore.setMessage('Review prompt is still pending.');
         return;
       }
-      if (parsed.kind === 'open-external-editor') {
-        await effects.openExternalEditor(inputMode);
+      if (parsed.kind === 'comment-draft') {
+        composerDraftStore.request(REVIEW_COMMENT_DRAFT);
+        return;
       }
+      if (parsed.kind === 'open-editor') await openReviewEditor();
       return;
     }
 

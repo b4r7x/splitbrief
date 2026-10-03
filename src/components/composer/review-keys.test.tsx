@@ -34,7 +34,17 @@ function reviewComposer(submissions: string[]) {
 // the legend be one render apart here as they are on screen.
 function ReviewPanel() {
   const armed = reviewKeysStore.use((s) => s.armed);
-  return <ApprovalPrompt review={{ artifact: 'plan', selectedIndex: 1, commenting: !armed }} />;
+  return (
+    <ApprovalPrompt
+      review={{
+        artifact: 'plan',
+        confirms: [],
+        budgetRows: 40,
+        selectedIndex: 1,
+        commenting: !armed,
+      }}
+    />
+  );
 }
 
 describe('Composer review action keys', () => {
@@ -43,72 +53,37 @@ describe('Composer review action keys', () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 24 });
   });
 
-  it.each([
-    ['y', 'approve'],
-    ['e', 'edit-file'],
-    ['q', 'end-run'],
-  ])('settles the gate when %s is pressed on an empty draft', async (typed, command) => {
+  it.each([['y'], ['e'], ['c'], ['q']])(
+    'types %s into the draft instead of settling the gate',
+    async (typed) => {
+      const submissions: string[] = [];
+      const ui = renderFeature(reviewComposer(submissions));
+      await tick(PAST_GRACE);
+      await flushEffects();
+
+      ui.stdin.write(typed);
+      await flushEffects();
+
+      expect(submissions).toEqual([]);
+      expect(stripAnsiStyles(ui.lastFrame())).toContain(`${typed}`);
+      ui.unmount();
+    },
+  );
+
+  it('submits a sentence that opens with an option letter as typed', async () => {
     const submissions: string[] = [];
     const ui = renderFeature(reviewComposer(submissions));
     await tick(PAST_GRACE);
     await flushEffects();
 
-    ui.stdin.write(typed);
-    await flushEffects();
-
-    expect(submissions).toEqual([command]);
-    expect(stripAnsiStyles(ui.lastFrame())).not.toContain(`> ${typed}`);
-    ui.unmount();
-  });
-
-  it('opens a typed comment instead of settling when c is pressed', async () => {
-    const submissions: string[] = [];
-    const ui = renderFeature(reviewComposer(submissions));
-    await tick(PAST_GRACE);
-    await flushEffects();
-
-    ui.stdin.write('c');
-    await flushEffects();
-
-    expect(submissions).toEqual([]);
-    expect(stripAnsiStyles(ui.lastFrame())).toContain('comment ');
-
-    ui.stdin.write('split the first task');
-    await flushEffects();
+    for (const char of 'quickly drop T003') {
+      ui.stdin.write(char);
+      await flushEffects();
+    }
     ui.stdin.write('\r');
     await flushEffects();
 
-    expect(submissions).toEqual(['comment split the first task']);
-    ui.unmount();
-  });
-
-  it('types the letters as text once the draft is no longer empty', async () => {
-    const submissions: string[] = [];
-    const ui = renderFeature(reviewComposer(submissions));
-    await tick(PAST_GRACE);
-    await flushEffects();
-
-    ui.stdin.write('c');
-    await flushEffects();
-    ui.stdin.write('q');
-    await flushEffects();
-    ui.stdin.write('y');
-    await flushEffects();
-
-    expect(submissions).toEqual([]);
-    expect(stripAnsiStyles(ui.lastFrame())).toContain('comment qy');
-    ui.unmount();
-  });
-
-  it('ignores action keys buffered before the gate opened', async () => {
-    const submissions: string[] = [];
-    const ui = renderFeature(reviewComposer(submissions));
-    await flushEffects();
-
-    ui.stdin.write('y');
-    await flushEffects();
-
-    expect(submissions).toEqual([]);
+    expect(submissions).toEqual(['quickly drop T003']);
     ui.unmount();
   });
 
@@ -120,18 +95,18 @@ describe('Composer review action keys', () => {
     // Empty draft: the keys are live and the panel is entitled to advertise them.
     expect(reviewKeysStore.get().armed).toBe(true);
 
-    ui.stdin.write('c');
+    ui.stdin.write('x');
     await flushEffects();
 
-    // One keystroke turns the letters back into text, and the panel stops promising them in the
-    // same render — there is no second computation that could disagree.
+    // One keystroke starts a correction, and the panel stops promising its rows in the same
+    // render — there is no second computation that could disagree.
     expect(reviewKeysStore.get().armed).toBe(false);
 
     ui.unmount();
     expect(reviewKeysStore.get().armed).toBe(false);
   });
 
-  it('turns the review panel legend over to the comment keys when c starts a draft', async () => {
+  it('turns the review panel legend over to the comment keys when a draft starts', async () => {
     controlsStore.setInputMode('review');
     const ui = renderFeature(
       <>
@@ -144,24 +119,25 @@ describe('Composer review action keys', () => {
 
     expect(stripAnsiStyles(ui.lastFrame())).toContain(REVIEW_DOCUMENT_HINTS);
 
-    ui.stdin.write('c');
+    ui.stdin.write('split T002');
     await flushEffects();
 
     // The panel is a mirror of `reviewKeysStore.armed`, so the draft and the legend change in the
-    // same render: the composer holds `comment ` and the letters are text again.
+    // same render.
     const frame = stripAnsiStyles(ui.lastFrame());
     expect(frame).toContain(REVIEW_COMMENT_HINTS);
     expect(frame).not.toContain(REVIEW_DOCUMENT_HINTS);
-    expect(frame).toContain('comment ');
+    expect(frame).toContain('split T002');
     ui.unmount();
   });
 
-  // A review gate can also be settled by sending the command as text, so the typed vocabulary has
-  // to keep working after the one-key shortcuts were added.
+  // A review gate is settled by sending the command as text, so the typed vocabulary reaches the
+  // parser whole.
   it.each([
     ['approve', { kind: 'brief-review-command', command: { action: 'approve' } }],
     ['end-run', { kind: 'brief-review-command', command: { action: 'end-run' } }],
-    ['edit-file', { kind: 'open-external-editor' }],
+    ['edit-file', { kind: 'open-editor' }],
+    ['c', { kind: 'comment-draft' }],
     [
       'comment add more evidence',
       { kind: 'brief-review-command', command: { action: 'revise', comment: 'add more evidence' } },
@@ -172,41 +148,13 @@ describe('Composer review action keys', () => {
     await tick(PAST_GRACE);
     await flushEffects();
 
-    // The first letter of `approve` is not a bound key; `e` and `c` are, so typing them first
-    // would settle or prefill. Seeding a space keeps the draft non-empty, exactly as an IPC
-    // client's text arrives, and proves the letters are text from that point on.
-    ui.stdin.write(` ${typed}`);
+    ui.stdin.write(typed);
     await flushEffects();
     ui.stdin.write('\r');
     await flushEffects();
 
-    // The seed keeps the keys in text mode while it lives in the draft; send strips it as typing
-    // residue, and the parser settles the word — exactly as it does for text arriving over IPC.
     expect(submissions).toEqual([typed]);
     expect(parseReviewCommand(submissions[0] ?? '')).toEqual(parsed);
-    ui.unmount();
-  });
-
-  it('leaves the keys alone outside review mode', async () => {
-    const submissions: string[] = [];
-    const ui = renderFeature(
-      <Composer
-        commands={[]}
-        currentScreen="workflow"
-        mode="normal"
-        hint=""
-        onSubmit={(text) => submissions.push(text)}
-        onRuntimeCommand={() => {}}
-      />,
-    );
-    await tick(PAST_GRACE);
-    await flushEffects();
-
-    ui.stdin.write('y');
-    await flushEffects();
-
-    expect(submissions).toEqual([]);
-    expect(stripAnsiStyles(ui.lastFrame())).toContain('y');
     ui.unmount();
   });
 });

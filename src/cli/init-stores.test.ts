@@ -404,22 +404,6 @@ describe('initStores', () => {
     expect(config.implementer.kind).toBe('api');
   }, 30_000);
 
-  it('applies CLI-override workflow mode on top of loaded config', async () => {
-    const dir = makeProjectDir();
-    writeConfigYaml(
-      dir,
-      toYaml({
-        ...createDefaultConfig(),
-        planner: { kind: 'cli', tool: 'claude-code' },
-        implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4-6' },
-      }),
-    );
-
-    await initStores(dir, { mode: 'quick' });
-
-    expect(configStore.get().config?.workflow.mode).toBe('quick');
-  }, 30_000);
-
   it('populates sessionsStore.sessions from the on-disk session directory', async () => {
     const dir = makeProjectDir();
     writeConfigYaml(

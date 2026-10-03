@@ -76,8 +76,6 @@ function effectConfig(timeoutMs: number | undefined): Config {
     validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
     workflow: {
       maxRetries: 0,
-      mode: 'quick',
-      taskReview: 'none',
       compactionFormat: 'auto',
     },
   });

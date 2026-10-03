@@ -42,7 +42,7 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
       ...makePassingTask(id),
       file,
       scope: {
-        inBounds: [`Modify only \`${file}\`.`],
+        inBounds: [file],
         outOfBounds: ['Do not touch anything outside the task file.'],
       },
     };

@@ -1,4 +1,3 @@
-import type { WorkflowMode } from '../../../core/schemas/enums.js';
 import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
 import { sessionDir } from '../../../core/paths.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
@@ -27,7 +26,6 @@ export async function acquireLiveness(opts: {
   projectDir: string;
   sessionId: string;
   feature: string;
-  mode: WorkflowMode;
   signal?: AbortSignal | undefined;
 }): Promise<() => Promise<void>> {
   const dir = sessionDir(opts.projectDir, opts.sessionId);
@@ -51,7 +49,6 @@ export async function acquireLiveness(opts: {
       startTimeMs: now,
       lastAliveMs: now,
       sessionId: opts.sessionId,
-      mode: opts.mode,
       feature: opts.feature,
     });
     const stopHeartbeat = startHeartbeat(dir);

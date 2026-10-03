@@ -27,7 +27,7 @@ import type {
   RetryOptions,
 } from '../../implementers/types.js';
 import type { ContinuationHolder } from '../continuation.js';
-import { deriveRunStatus, NO_ARTIFACTS } from '../../../core/sessions/run-status.js';
+import { deriveRunStatus } from '../../../core/sessions/run-status.js';
 import { createStdoutTextSink } from '../../events/sinks/stdout-text.js';
 import { runTasksAndReview } from './task-execution.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
@@ -854,9 +854,7 @@ describe('runTasksAndReview repair pause', { timeout: 120_000 }, () => {
     });
     expect(parked.state.awaitingContinue).toBe(true);
     expect(parked.state.reviewFixes?.cycle).toBe(1);
-    expect(
-      deriveRunStatus({ state: parked.state, liveness: 'not-alive', artifacts: NO_ARTIFACTS }),
-    ).toMatchObject({
+    expect(deriveRunStatus({ state: parked.state, liveness: 'not-alive' })).toMatchObject({
       kind: 'open',
       stop: { kind: 'paused', at: 'boundary' },
       resumeAt: { kind: 'brief', taskId: 'T002', attempt: 0 },
@@ -917,9 +915,7 @@ describe('runTasksAndReview repair pause', { timeout: 120_000 }, () => {
     });
     expect(result.state.awaitingContinue).toBe(true);
     expect(result.state.reviewFixes?.cycle).toBe(1);
-    expect(
-      deriveRunStatus({ state: result.state, liveness: 'not-alive', artifacts: NO_ARTIFACTS }),
-    ).toMatchObject({
+    expect(deriveRunStatus({ state: result.state, liveness: 'not-alive' })).toMatchObject({
       kind: 'open',
       stop: { kind: 'paused', at: 'boundary' },
     });

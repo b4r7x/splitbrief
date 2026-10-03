@@ -112,7 +112,6 @@ function isPlannerDocumentTurn(turn: readonly SessionLogMessageEntry[]): boolean
 function plannerConversation(
   entries: readonly SessionLogMessageEntry[],
   pendingQueue: WorkflowState['messageQueue'],
-  withoutCutCall: boolean,
 ): ResumeMessage[] {
   const turns = turnsOf(
     entries.filter(
@@ -121,29 +120,18 @@ function plannerConversation(
         !isStillPendingQueuedTranscriptMessage(message, pendingQueue),
     ),
   ).filter((turn) => !isPlannerDocumentTurn(turn));
-  if (withoutCutCall) {
-    const cut = turns.findLastIndex((turn) => turn.at(-1)?.interrupted === true);
-    if (cut !== -1) turns.splice(cut, 1);
-  }
   return turns.flat().map(toResumeMessage);
 }
 
-/**
- * The planner conversation `session.jsonl` holds. `withoutCutCall` leaves out the latest cut call,
- * for a continuation that already hands its partial to the step it resumes.
- */
-export async function buildResumeContext(opts: {
-  ref: SessionRef;
-  withoutCutCall?: boolean | undefined;
-}): Promise<ResumeContext> {
+/** The planner conversation `session.jsonl` holds, a cut call's partial included. */
+export async function buildResumeContext(opts: { ref: SessionRef }): Promise<ResumeContext> {
   const { ref } = opts;
-  const withoutCutCall = opts.withoutCutCall === true;
   const pending = pendingQueueEntries(ref);
   if (pending.unavailable) return { messages: [], warning: 'state-unavailable' };
   const pendingQueue = pending.queue;
   try {
     const entries = await readCompactedResumeEntries(ref);
-    return { messages: plannerConversation(entries, pendingQueue, withoutCutCall) };
+    return { messages: plannerConversation(entries, pendingQueue) };
   } catch {
     // A compacted read that fails degrades to replaying the raw message log.
     // That replay is deliberately unguarded: if the same session directory is
@@ -151,6 +139,6 @@ export async function buildResumeContext(opts: {
     // silently empty history is worse than not resuming.
     const entries: SessionLogMessageEntry[] = [];
     for await (const m of readMessages(ref)) entries.push(m);
-    return { messages: plannerConversation(entries, pendingQueue, withoutCutCall) };
+    return { messages: plannerConversation(entries, pendingQueue) };
   }
 }

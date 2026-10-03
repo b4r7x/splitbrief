@@ -18,8 +18,6 @@ export type ApplyRebuiltContextOpts = {
   bus: EventBus;
   resumeHolder: ResumeContextHolder | undefined;
   requireNonEmpty?: boolean | undefined;
-  /** The continuation hands the step its cut call's partial, so the transcript leaves it out. */
-  withoutCutCall?: boolean | undefined;
 };
 
 export type AutoCompactResumeOpts = {
@@ -83,8 +81,8 @@ export async function autoCompactResumeContext(
 }
 
 export async function applyRebuiltContext(opts: ApplyRebuiltContextOpts): Promise<void> {
-  const { projectDir, sessionId, bus, resumeHolder, requireNonEmpty, withoutCutCall } = opts;
-  const rebuilt = await buildResumeContext({ ref: { projectDir, sessionId }, withoutCutCall });
+  const { projectDir, sessionId, bus, resumeHolder, requireNonEmpty } = opts;
+  const rebuilt = await buildResumeContext({ ref: { projectDir, sessionId } });
   if (rebuilt.warning === 'state-unavailable') {
     publishWarning({
       bus,
@@ -113,7 +111,6 @@ export async function withExpiredSessionReissue<T>(opts: {
   /** The state the call starts on: the thread it names is the one the call resumes. */
   state: WorkflowState;
   signal?: AbortSignal | undefined;
-  withoutCutCall?: boolean | undefined;
   issue: (priorMessages?: PriorMessage[]) => Promise<T>;
 }): Promise<T> {
   const { projectDir, sessionId, bus, state, signal } = opts;
@@ -136,7 +133,6 @@ export async function withExpiredSessionReissue<T>(opts: {
       sessionId,
       bus,
       resumeHolder: rebuilt,
-      withoutCutCall: opts.withoutCutCall,
     });
     return opts.issue(rebuilt.messages);
   }

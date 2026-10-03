@@ -49,7 +49,7 @@ describe('WorkflowScreen prepared-route stability', () => {
     const readinessBeforeMount = readFileSync(target, 'utf8');
 
     configStore.__testReset({
-      config: makeConfig({ workflow: { mode: 'quick' } }),
+      config: makeConfig({ workflow: {} }),
       projectDir,
     });
     terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });

@@ -17,7 +17,7 @@ const inputMode: UseInputModeResult = {
   questionEpoch: 0,
   setReviewMode: async () => ({ approved: false }),
   setQuestionMode: async () => '',
-  resolve: () => {},
+  resolve: vi.fn(),
   resetMode: () => {},
 };
 
@@ -26,13 +26,8 @@ function makeEditor() {
 }
 
 function Host({ open }: { open: ReviewInputEffects['openExternalEditor'] }) {
-  const { fieldSessionOwned } = useWorkflowInlineEdit({
-    promptPending: false,
-    inputMode,
-    sessionDirPath: undefined,
-    openExternalEditor: open,
-  });
-  return <Text>{fieldSessionOwned ? 'owned' : 'unowned'}</Text>;
+  useWorkflowInlineEdit({ promptPending: false, inputMode, openExternalEditor: open });
+  return <Text>host</Text>;
 }
 
 describe('useWorkflowInlineEdit external edit requests', () => {
@@ -54,10 +49,10 @@ describe('useWorkflowInlineEdit external edit requests', () => {
     ui = renderFeature(<Host open={open} />);
     await flushEffects();
 
-    externalEditRequestStore.request(token);
+    externalEditRequestStore.request(token, 'opened');
     await flushEffects();
 
-    expect(open.mock.calls).toEqual([[inputMode]]);
+    expect(open.mock.calls).toEqual([[inputMode, 'opened']]);
     expect(externalEditRequestStore.get()).toEqual({ status: 'idle' });
   });
 
@@ -68,7 +63,7 @@ describe('useWorkflowInlineEdit external edit requests', () => {
     ui = renderFeature(<Host open={open} />);
     await flushEffects();
 
-    externalEditRequestStore.request(staleToken);
+    externalEditRequestStore.request(staleToken, 'opened');
     await flushEffects();
 
     expect(open).not.toHaveBeenCalled();
@@ -80,7 +75,7 @@ describe('useWorkflowInlineEdit external edit requests', () => {
     const token = reviewStore.setReviewFile(REVIEW_FILE);
     ui = renderFeature(<Host open={open} />);
     await flushEffects();
-    externalEditRequestStore.request(token);
+    externalEditRequestStore.request(token, 'opened');
     await flushEffects();
     expect(open).toHaveBeenCalledTimes(1);
 
@@ -105,10 +100,29 @@ describe('useWorkflowInlineEdit external edit requests', () => {
     await flushEffects();
 
     const token = reviewStore.setReviewFile(REVIEW_FILE);
-    externalEditRequestStore.request(token);
+    externalEditRequestStore.request(token, 'opened');
     await flushEffects();
 
     expect(open).not.toHaveBeenCalled();
-    expect(externalEditRequestStore.get()).toEqual({ status: 'requested', ownerToken: token });
+    expect(externalEditRequestStore.get()).toEqual({
+      status: 'requested',
+      ownerToken: token,
+      action: 'open-external',
+      baseline: 'opened',
+    });
+  });
+
+  it('settles the gate with an edit the overlay saved, without opening an editor', async () => {
+    const open = makeEditor();
+    const token = reviewStore.setReviewFile(REVIEW_FILE);
+    ui = renderFeature(<Host open={open} />);
+    await flushEffects();
+
+    externalEditRequestStore.requestApply(token);
+    await flushEffects();
+
+    expect(inputMode.resolve).toHaveBeenCalledWith({ approved: false, action: 'edit' });
+    expect(open).not.toHaveBeenCalled();
+    expect(externalEditRequestStore.get()).toEqual({ status: 'idle' });
   });
 });

@@ -299,7 +299,9 @@ describe('applyRecoveryAction: the run-level answers', () => {
     expect(result.state.pendingRecovery).toBeUndefined();
   });
 
-  it('revise-spec rewinds to the spec with the note and clears the halt', () => {
+  // No spec step is left to rewind to: an old run's constitution halt sends its note to the one
+  // planning session as a queued correction.
+  it('revise-spec on an old constitution halt queues the note and clears the halt', () => {
     const { projectDir, sessionId } = setupSession('recovery-revise-spec');
     const issue = {
       ...reviseIssue('constitution-check-failed'),
@@ -318,10 +320,10 @@ describe('applyRecoveryAction: the run-level answers', () => {
     });
 
     expect(result).toMatchObject({ ok: true, status: 'continued' });
-    expect(result.state.phase).toBe('specifying');
-    expect(result.state.rewindPending).toEqual({ target: 'spec', comment: 'drop the class' });
+    expect(result.state.rewindPending).toBeUndefined();
     expect(result.state.pendingRecovery).toBeUndefined();
-    expect(loadState({ projectDir, sessionId })?.rewindPending?.target).toBe('spec');
+    expect(result.state.messageQueue.map((message) => message.text)).toEqual(['drop the class']);
+    expect(loadState({ projectDir, sessionId })?.messageQueue).toHaveLength(1);
   });
 
   it('switch-seat on a plan-seat halt resolves it without resetting a brief', () => {
@@ -527,18 +529,15 @@ describe('applyRecoveryAction: switch-seat', () => {
   });
 });
 
-it.each([undefined, 'quick'] as const)(
-  'records CLI recovery evidence in the saved mode when caller mode is %s',
-  (mode) => {
-    const ref = setupSession('skip-saved-mode');
-    const state = makeImplState([makeTask({ status: 'failed' })], {
-      mode: 'speckit',
-      pendingRecovery: makeRecoveryIssue(),
-    });
-    saveState(ref, state);
-    const { bus } = makeBusRecorder();
-    const result = applyRecoveryAction({ ...ref, state, action: 'skip-current-task', bus, mode });
-    expect(result.ok).toBe(true);
-    expect(readEvidenceLedger(ref)?.mode).toBe('speckit');
-  },
-);
+it('records CLI recovery evidence with no workflow mode, even for a run that saved one', () => {
+  const ref = setupSession('skip-saved-mode');
+  const state = makeImplState([makeTask({ status: 'failed' })], {
+    mode: 'speckit',
+    pendingRecovery: makeRecoveryIssue(),
+  });
+  saveState(ref, state);
+  const { bus } = makeBusRecorder();
+  const result = applyRecoveryAction({ ...ref, state, action: 'skip-current-task', bus });
+  expect(result.ok).toBe(true);
+  expect(readEvidenceLedger(ref)).not.toHaveProperty('mode');
+});

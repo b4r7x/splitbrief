@@ -9,8 +9,6 @@ import {
   writeReadyReadinessFixtures,
 } from '#testing/helpers/start-command.js';
 import { makeImplementer, makePlanner } from '#testing/helpers/orchestrator-factories.js';
-import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
-import type { RunPhaseInput } from '../../../src/engine/planners/types.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import {
   preparedHeadlessExecution,
@@ -28,6 +26,7 @@ import { writeActive } from '../../../src/core/sessions/active-pointer.js';
 import { buildRetryExhaustedRecoveryIssue } from '../../../src/engine/orchestrator/recovery/builders/task.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
+import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
 
 const mocks = vi.hoisted(() => ({
   runWorkflow: vi.fn<(opts: RunWorkflowOptions) => Promise<Summary>>(),
@@ -67,7 +66,7 @@ describe('splitbrief start --plain', { timeout: 90_000 }, () => {
 
   it('renders the run as plain lines and puts no NDJSON record on the same stdout', async () => {
     const tmp = getStartCommandTmp();
-    writeReadyReadinessFixtures(tmp, { validation: false, codebase: false });
+    writeReadyReadinessFixtures(tmp, { validation: false, codebase: false, approve: 'none' });
 
     const chunks: string[] = [];
     vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
@@ -90,13 +89,7 @@ describe('splitbrief start --plain', { timeout: 90_000 }, () => {
     });
 
     const planner = makePlanner({
-      runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
-        makePhaseCallResult({
-          call,
-          usage: { inputTokens: 140, outputTokens: 90 },
-          ...(call === 'tasks' ? { tasks: [task] } : {}),
-        }),
-      ),
+      typedCall: typedCallFromTasks([task], { inputTokens: 140, outputTokens: 90 }),
       review: vi.fn().mockResolvedValue({
         text: '# Final review\n\nPassed validation.\n\n### Verdict\npass\n',
         usage: { inputTokens: 60, outputTokens: 30 },
@@ -131,17 +124,13 @@ describe('splitbrief start --plain', { timeout: 90_000 }, () => {
       'splitbrief',
       'start',
       '--plain',
-      '--mode',
-      'standard',
-      '--approve',
-      'none',
       'run a plain-output loop',
       '--project',
       tmp,
     ]);
 
     const stdout = chunks.join('');
-    expect(stdout).toContain('phase: researching');
+    expect(stdout).toContain('phase: planning');
     expect(stdout).toContain('task T001: done');
 
     const lines = stdout.trimEnd().split('\n').filter(Boolean);

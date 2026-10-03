@@ -73,7 +73,7 @@ Examples:
 | artifacts | briefs | `spec.md` → `plan-notes.md` → briefs |
 | briefs | one per coherent outcome, no count limit | one per coherent outcome, no count limit |
 
-The CLI defaults to `standard` in an isolation worktree; these skills default to `quick` in the working tree — the one documented divergence between the two sides, and the only `intentional` row of `DIVERGENCE_TABLE` (`src/core/pipeline-spec/divergences.ts`). Everything else countable is rendered from the same spec, so it cannot drift silently.
+The CLI has no modes: it plans every run in one planning session and builds in an isolation worktree. These skills default to `quick` in the working tree — the one documented divergence between the two sides, and the only `intentional` row of `DIVERGENCE_TABLE` (`src/core/pipeline-spec/divergences.ts`). Everything else countable is rendered from the same spec, so it cannot drift silently.
 
 `plan` prints the plan block and the briefs, writes nothing. `--ask` gates at the plan block (default: print and run); `--yes` alongside it keeps that one pause but applies gate-tooling fixes without asking. `--no-escalate` stops the ladder at the hint rung so the session never implements a brief itself.
 
@@ -89,7 +89,6 @@ The CLI defaults to `standard` in an isolation worktree; these skills default to
 | verdict rules and fix cycle | `src/core/pipeline-spec/review.ts` |
 | gate order, capture limits, narrowing | `src/core/pipeline-spec/gates.ts`, `src/core/validation/stacks/` |
 | allowed set, drift, baseline fingerprint | `src/core/pipeline-spec/scope.ts`, `baseline.ts` |
-| modes, caps, upgrade thresholds | `src/core/pipeline-spec/modes.ts` |
 | halt signatures on auth / usage | `src/core/pipeline-spec/halts.ts` |
 | deadlines | `src/core/pipeline-spec/timeouts.ts` |
 | tool argv | `src/engine/runners/cli-tools/*.ts` |
@@ -116,7 +115,7 @@ Every block the skills share with the CLI lives between `<!-- generated: <id> --
 
 | Source | Blocks |
 |---|---|
-| `src/core/pipeline-spec/` | `ladder-table`, `retry-framings`, `hint-placement`, `halt-signatures` and its shell form `halt-signatures-sh`, `gate-rules`, `modes-table`, `caps`, `body-order`, `closing-constraints`, `scope-rule`, `baseline-rule`, `timeouts`, `verdict-rules`, `fix-cycle`, `wait-protocol` |
+| `src/core/pipeline-spec/` | `ladder-table`, `retry-framings`, `hint-placement`, `halt-signatures` and its shell form `halt-signatures-sh`, `gate-rules`, `brief-grouping`, `body-order`, `closing-constraints`, `scope-rule`, `baseline-rule`, `timeouts`, `verdict-rules`, `fix-cycle`, `wait-protocol` |
 | `src/core/validation/stacks/` | `gates` — the per-stack coverage, narrowing and allowed-command tables |
 | `src/engine/spec/prompts/*`, `prompt-formatter.ts` | `brief-template`, `brief-contract`, `critical-rules`, `implementer-preamble`, `closing-line`, `hint-prompt`, `takeover-prompt`, `review-packet` |
 | `src/engine/events/sinks/stdout-text.ts` | `plain-shapes` |

@@ -70,12 +70,14 @@ describe('allowedActionsForReason', () => {
     ]);
   });
 
-  it.each(['planner-returned-no-briefs', 'brief-quality-unrepaired'] as const)(
-    '%s offers a re-issue, a correction or an end',
-    (reason) => {
-      expect(allowedActionsForReason(reason)).toEqual(['retry-same-worker', 'revise', 'end-run']);
-    },
-  );
+  it.each([
+    'planner-returned-no-briefs',
+    'brief-quality-unrepaired',
+    'plan-questions-exhausted',
+    'plan-checks-failed',
+  ] as const)('%s offers a re-issue, a correction or an end', (reason) => {
+    expect(allowedActionsForReason(reason)).toEqual(['retry-same-worker', 'revise', 'end-run']);
+  });
 
   it('brief-review-no-progress only revises or ends', () => {
     expect(allowedActionsForReason('brief-review-no-progress')).toEqual(['revise', 'end-run']);

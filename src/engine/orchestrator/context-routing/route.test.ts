@@ -207,6 +207,20 @@ describe('routeTaskToImplementerProfile', () => {
     expect(decision.currentCodeContextMode).toBe('whole-file');
   });
 
+  it('counts read-only context code in the fit estimate', () => {
+    const task = makeTask({ contextFiles: ['src/types.ts'] });
+    const withContext = routeTaskToImplementerProfile({
+      task: { ...task, contextCodeByFile: { 'src/types.ts': 'export const x = 1;'.repeat(3000) } },
+      context,
+      profiles: [profile('small', 6_000)],
+    });
+    expect(
+      routeTaskToImplementerProfile({ task, context, profiles: [profile('small', 6_000)] }).fit,
+    ).toBe('fits');
+    expect(withContext.fit).toBe('overflow');
+    expect(withContext.currentCodeTruncated).toBe(false);
+  });
+
   it('chooses the smallest fitting profile within the same cost tier', () => {
     const task = makeTask();
 

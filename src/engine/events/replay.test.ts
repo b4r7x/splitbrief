@@ -222,7 +222,7 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
     forced: false,
   },
   snapshot_restore_conflict: { snapshotId: 'snap-1', conflictedPaths: ['src/b.ts'] },
-  mode_resolved: { phase: 'researching', mode: 'standard', approve: 'default' },
+  mode_resolved: { phase: 'researching', mode: 'standard', approve: 'plan' },
   mode_advice: {
     phase: 'researching',
     kind: 'none',

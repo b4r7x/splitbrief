@@ -17,19 +17,13 @@ afterEach(() => {
 });
 
 describe('editorStore ownership capture', () => {
-  it('openRaw and openField capture the owner token at open time', () => {
+  it('openRaw captures the owner token at open time', () => {
     editorStore.openRaw({ filePath: 'spec.md', value: 'body', ownerToken: 7, layout: LAYOUT });
     const raw = editorStore.get();
     expect(raw.status).toBe('open');
     if (raw.status !== 'open') throw new Error('expected open');
     expect(raw.ownerToken).toBe(7);
     expect(raw.surface).toBe('raw');
-
-    editorStore.openField({ filePath: 'tasks.md', value: 'body', ownerToken: 9, layout: LAYOUT });
-    const field = editorStore.get();
-    if (field.status !== 'open') throw new Error('expected open');
-    expect(field.ownerToken).toBe(9);
-    expect(field.surface).toBe('field');
   });
 });
 

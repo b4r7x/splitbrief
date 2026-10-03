@@ -33,7 +33,6 @@ function writeConfigYaml(extras: Record<string, unknown> = {}) {
     validation: { typecheck: true, lint: true, test: true, test_command: 'npm test' },
     workflow: {
       max_retries: 3,
-      mode: 'standard',
     },
     sessions: { scope: 'project' },
     escalation: { enabled: false },
@@ -99,6 +98,24 @@ describe('configStore.load', () => {
     const config = loadedConfig();
     expect(expectApi(config.implementer).provider).toBe('lm-studio');
     expect(config.implementer.model).toBe('qwen3-coder-30b');
+  });
+
+  it('prints every retired-value notice once, the retired approve level included', () => {
+    writeConfigYaml({
+      workflow: { max_retries: 3, approve: 'all', mode: 'standard', task_review: 'none' },
+    });
+    const stderrChunks: string[] = [];
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      stderrChunks.push(String(chunk));
+      return true;
+    });
+
+    configStore.load(tmpDir);
+
+    const retired = stderrChunks.filter((chunk) => chunk.includes('was retired'));
+    expect(retired).toHaveLength(3);
+    expect(retired.filter((chunk) => chunk.includes('workflow.approve "all"'))).toHaveLength(1);
+    vi.restoreAllMocks();
   });
 
   itUnix('prints stable loader warnings once after resolveEffectiveConfig', () => {
@@ -204,6 +221,21 @@ describe('configStore.save', () => {
     expect(loadedConfig().escalation?.enabled).toBe(true);
     const written = YAML.parse(readFileSync(join(tmpDir, SPLITBRIEF_DIR, 'config.yaml'), 'utf-8'));
     expect(written.escalation.enabled).toBe(true);
+  });
+
+  it('writes plan over a retired approve level the file still holds', async () => {
+    writeConfigYaml({ workflow: { max_retries: 3, approve: 'all' } });
+    configStore.load(tmpDir);
+    expect(loadedConfig().workflow.approve).toBe('plan');
+
+    const result = await configStore.save({
+      ...loadedConfig(),
+      workflow: { ...loadedConfig().workflow, approve: 'plan' },
+    });
+
+    expect(result.ok).toBe(true);
+    const written = YAML.parse(readFileSync(join(tmpDir, SPLITBRIEF_DIR, 'config.yaml'), 'utf-8'));
+    expect(written.workflow.approve).toBe('plan');
   });
 
   it('does not persist an implementer model override when saving an unrelated setting', async () => {
@@ -427,7 +459,7 @@ describe('config persistence semantic diff', () => {
       path: ['implementer_profiles', 'profiles', 'fast', 'model'],
       value: 'gpt-5.4-mini',
     });
-    expect(editsForSave(before, after)).toEqual(edits);
+    expect(editsForSave(before, after, '')).toEqual(edits);
   });
 });
 
@@ -568,14 +600,14 @@ my_custom_key: "keep: this # exactly"
     const before = loadedConfig();
     const updated = {
       ...before,
-      workflow: { ...before.workflow, mode: 'speckit' as const },
+      workflow: { ...before.workflow, maxRetries: 5 },
     };
     await configStore.save(updated);
 
     const parsed = YAML.parse(readRawConfig()) as Record<string, unknown>;
-    expect((parsed.workflow as Record<string, unknown>).mode).toBe('speckit');
+    expect((parsed.workflow as Record<string, unknown>).max_retries).toBe(5);
     const { config: reloaded } = loadConfig(tmpDir);
-    expect(reloaded.workflow.mode).toBe('speckit');
+    expect(reloaded.workflow.maxRetries).toBe(5);
     expect(reloaded.implementer.model).toBe('qwen2.5-coder:7b');
   });
 

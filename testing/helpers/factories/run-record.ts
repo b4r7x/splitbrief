@@ -8,7 +8,6 @@ const DEFAULTS: RunRecord = {
     sessionId: '2026-09-14-feature',
   },
   feature: 'feature',
-  mode: 'standard',
   startedAt: '2026-09-14T00:00:00.000Z',
   hydration: { kind: 'missing' },
   status: { kind: 'closed', as: 'complete' },

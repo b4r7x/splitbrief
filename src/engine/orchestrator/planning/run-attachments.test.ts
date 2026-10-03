@@ -7,7 +7,8 @@ import {
   makeBusRecorder,
   TEST_METADATA,
 } from '#testing/helpers/orchestrator-factories.js';
-import { setupProject, REAL_TASKS_MD } from '#testing/helpers/planning-phase.js';
+import { setupProject } from '#testing/helpers/planning-phase.js';
+import { makePlanProposal } from '#testing/helpers/factories/plan.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import type { Attachment } from '../../../core/schemas/attachment.js';
 import type { PlannerCapabilities } from '../../planners/types.js';
@@ -48,7 +49,7 @@ describe('runPlanningPhase — attachments capability gate (F-123 seam)', () => 
     const planner = createPlannerBase({
       invokePlan: async ({ images }) => {
         seenImages = images;
-        return completedRunnerCall(REAL_TASKS_MD);
+        return completedRunnerCall(JSON.stringify({ result: makePlanProposal() }));
       },
       invokeEscalate: async () => completedRunnerCall(''),
       isAvailable: async () => true,
@@ -62,7 +63,7 @@ describe('runPlanningPhase — attachments capability gate (F-123 seam)', () => 
     const result = await runPlanningPhase({
       wctx: {
         projectDir,
-        config: makeConfig({ workflow: { mode: 'quick' } }),
+        config: makeConfig({ workflow: {} }),
         callbacks,
         metadata: TEST_METADATA,
         sessionId,

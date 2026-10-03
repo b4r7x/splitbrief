@@ -9,10 +9,8 @@ import { createStdoutTextSink } from '../../../src/engine/events/sinks/stdout-te
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import type { ImplementerOptions } from '../../../src/engine/implementers/types.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
-import type { RunPhaseInput } from '../../../src/engine/planners/types.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import {
   makeCallbacks,
@@ -24,6 +22,7 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { assertPlainStdout } from '../../e2e/helpers/run-dir-assertions.js';
+import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
 
 const BRIEF_COUNT = 13;
 const STOP_AFTER = 'T005';
@@ -73,7 +72,7 @@ describe('a thirteen-brief run stopped between briefs and continued', { timeout:
     const ref = { projectDir, sessionId };
     const feature = 'thirteen coherent briefs';
     const config = makeNoValidationConfig({
-      workflow: { mode: 'quick', approve: 'none', maxRetries: 1, isolation: 'staged-copy' },
+      workflow: { approve: 'none', maxRetries: 1, isolation: 'staged-copy' },
       approval: { enabled: false, feedRejectionsToPlanner: false },
     });
 
@@ -95,9 +94,7 @@ describe('a thirteen-brief run stopped between briefs and continued', { timeout:
     });
     const review = vi.fn(async () => ({ text: '### Verdict\npass\n', usage: null }));
     const planner = makePlanner({
-      runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
-        makePhaseCallResult({ call, usage: null, ...(call === 'tasks' ? { tasks: TASKS } : {}) }),
-      ),
+      typedCall: typedCallFromTasks(TASKS),
       review,
     });
 

@@ -38,7 +38,7 @@ export function persistRetryApprovalEvidence(
 ): void {
   if (!decision.confirmApprovals || decision.confirmApprovals.length === 0) return;
   try {
-    let ledger = getOrCreateLedger({ ref: ctx, state, mode: ctx.config.workflow.mode });
+    let ledger = getOrCreateLedger({ ref: ctx, state });
     for (const approval of decision.confirmApprovals) {
       ledger = recordApprovalEvidence({
         ledger,
@@ -70,7 +70,7 @@ export function persistRetryRejectionEvidence(
   )
     return;
   try {
-    const ledger = getOrCreateLedger({ ref: ctx, state, mode: ctx.config.workflow.mode });
+    const ledger = getOrCreateLedger({ ref: ctx, state });
     const updated = recordRejectionEvidence({
       ledger,
       tier: rejectedTier,

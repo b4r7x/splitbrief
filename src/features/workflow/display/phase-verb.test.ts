@@ -3,8 +3,8 @@ import { PHASES } from '../../../core/schemas/enums.js';
 import { activeVerb, inlineActiveVerb } from './phase-verb.js';
 
 describe('activeVerb', () => {
-  it('names the planner call the plan stage is on', () => {
-    expect(activeVerb('planning', null, 'plan')).toBe('Writing the plan…');
+  it('says one verb for the planning session and names an old chain briefs call', () => {
+    expect(activeVerb('planning', null, 'plan')).toBe('Planning…');
     expect(activeVerb('planning', null, 'tasks')).toBe('Compiling briefs…');
   });
 
@@ -21,7 +21,7 @@ describe('activeVerb', () => {
 
   it('names the call a gate runs to rewrite its document with the verb it has outside the gate', () => {
     expect(activeVerb('reviewing-spec', null, 'spec')).toBe(activeVerb('specifying', null, 'spec'));
-    expect(activeVerb('reviewing-plan', null, 'plan')).toBe('Writing the plan…');
+    expect(activeVerb('reviewing-plan', null, 'plan')).toBe('Planning…');
     expect(activeVerb('reviewing-plan', null, null)).toBe('Reviewing plan…');
     expect(activeVerb('reviewing-briefs', null, 'tasks')).toBe('Compiling briefs…');
     expect(activeVerb('reviewing-briefs', null, null)).toBe('Reviewing briefs…');

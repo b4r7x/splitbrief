@@ -3,11 +3,9 @@ import { join } from 'node:path';
 import { afterEach, beforeEach } from 'vitest';
 import YAML from 'yaml';
 import { ConfigSchema, type Config } from '../../../src/core/schemas/config.js';
-import type { WorkflowMode } from '../../../src/core/schemas/enums.js';
 import { getApiProviderDescriptor } from '../../../src/core/providers/api-provider-catalog.js';
 import { markHooksConfigTrusted } from '../../../src/core/hooks/trust.js';
 import { loadConfig } from '../../../src/core/config/load/io.js';
-import { applyCLIOverrides } from '../../../src/core/config/runtime/overrides/apply.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { createEventBus } from '../../../src/engine/events/bus.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
@@ -26,7 +24,6 @@ export interface E2eScenario {
   name: string;
   cassetteName: string;
   feature: string;
-  mode: WorkflowMode;
   config: Config;
 }
 
@@ -110,7 +107,7 @@ export async function runE2eWorkflow(
   scenario: E2eScenario,
 ): ReturnType<typeof runWorkflow> {
   const bus = createEventBus();
-  const baseConfig = replaySafeConfig(loadAndOverrideConfig(ctx.projectDir, scenario.mode));
+  const baseConfig = replaySafeConfig(loadAndOverrideConfig(ctx.projectDir));
   const hooks = baseConfig.hooks;
   if (hooks !== undefined) markHooksConfigTrusted(ctx.projectDir, hooks);
   const config = hooks === undefined ? baseConfig : ConfigSchema.parse({ ...baseConfig, hooks });
@@ -194,7 +191,7 @@ function replaySafeConfig(config: Config): Config {
   });
 }
 
-function loadAndOverrideConfig(projectDir: string, mode: WorkflowMode): Config {
+function loadAndOverrideConfig(projectDir: string): Config {
   const { config } = loadConfig(projectDir);
-  return applyCLIOverrides(config, { mode, approve: 'none' });
+  return { ...config, workflow: { ...config.workflow, approve: 'none' } };
 }

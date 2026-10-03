@@ -218,6 +218,15 @@ describe('createContinuationHolder', () => {
     });
   });
 
+  it('gives a steer an old run parked at a retired planner call to the planning session', () => {
+    const holder = createContinuationHolder({
+      step: { kind: 'planner', call: 'tasks' },
+      steer: 'keep it small',
+    });
+
+    expect(holder.take({ kind: 'planner', call: 'plan' })).toEqual({ steer: 'keep it small' });
+  });
+
   it('gives an empty cut only to its recorded step and only once', () => {
     const step = { kind: 'brief' as const, taskId: taskId('T001'), attempt: 1 };
     const holder = createContinuationHolder({ step, partial: '' });

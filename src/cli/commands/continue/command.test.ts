@@ -11,7 +11,7 @@ import { writeConfig } from '../../../core/config/load/io.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { skillsStore } from '../../../stores/project/skills.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { activeFile, CONFIG_FILE, sessionsRoot, SPLITBRIEF_DIR } from '../../../core/paths.js';
+import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../../core/paths.js';
 import type { PrepareExecutionInput } from '../../../engine/runners/prepare-execution/prepare-execution.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
@@ -276,39 +276,6 @@ describe('continueCommand', () => {
     expect(headlessRuns[0]).toMatchObject({ sessionId, state: { phase: 'implementing' } });
   });
 
-  it('rejects JSON task review before publishing a new active generation', async () => {
-    const projectDir = makeTmpProject();
-    const sessionId = '2025-04-01-json-review';
-    const sessDir = makeSessionDir(projectDir, sessionId);
-    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId });
-    writeState(sessDir, 'implementing');
-    writeFileSync(
-      join(projectDir, SPLITBRIEF_DIR, CONFIG_FILE),
-      JSON.stringify(makeConfig({ workflow: { taskReview: 'every' } })),
-    );
-    const existingActive = JSON.stringify({
-      version: 1,
-      sessionId,
-      generation: '11111111-1111-4111-8111-111111111111',
-    });
-    writeFileSync(activeFile(projectDir), existingActive);
-    const prepare = vi.fn(prepareResume);
-    const runHeadless = vi.fn(async () => {});
-    deps = createDeps({ prepareExecution: prepare, runHeadless });
-
-    await expect(
-      continueCommand(sessionId, { projectDir, json: true }, deps),
-    ).rejects.toMatchObject({
-      kind: 'cli-error',
-      message: expect.stringContaining('workflow.taskReview requires an interactive TUI run'),
-    });
-
-    expect(prepare).not.toHaveBeenCalled();
-    expect(runHeadless).not.toHaveBeenCalled();
-    expect(readFileSync(activeFile(projectDir), 'utf8')).toBe(existingActive);
-    expect(readdirSync(sessionsRoot(projectDir))).toEqual([sessionId]);
-  });
-
   it('applies skip/retry/switch-seat headlessly', async () => {
     const projectDir = makeTmpProject();
     const cases = [
@@ -521,7 +488,7 @@ describe('continueCommand', () => {
     );
   });
 
-  it('preserves the saved workflow mode on resume when --mode is not passed', async () => {
+  it('resumes a run that saved a workflow mode, with its approve mapped onto plan', async () => {
     const projectDir = makeTmpProject();
     const sessDir = makeSessionDir(projectDir, '2025-04-01-saved-mode');
     writeLockfile(sessDir, { exitedAt: Date.now(), sessionId: '2025-04-01-saved-mode' });
@@ -530,7 +497,7 @@ describe('continueCommand', () => {
     await continueCommand('2025-04-01-saved-mode', { projectDir, json: true }, deps);
 
     expect(headlessRuns).toHaveLength(1);
-    expect(headlessRuns[0]?.state).toMatchObject({ mode: 'speckit', approve: 'all' });
+    expect(headlessRuns[0]?.state).toMatchObject({ mode: 'speckit', approve: 'plan' });
   });
 
   it('rehydrates the skills selection from persisted state on resume', async () => {
@@ -543,33 +510,6 @@ describe('continueCommand', () => {
 
     expect(renderRuns).toHaveLength(1);
     expect([...skillsStore.get().selected].sort()).toEqual(['react', 'typescript']);
-  });
-
-  it('keeps the saved workflow mode and says so when --mode names another', async () => {
-    const projectDir = makeTmpProject();
-    const sessDir = makeSessionDir(projectDir, '2025-04-01-override-mode');
-    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId: '2025-04-01-override-mode' });
-    writeState(sessDir, 'implementing', { mode: 'speckit', approve: 'all' });
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    // `mockRestore` clears the recorded calls, so they are read before it runs.
-    let warnings: string[] = [];
-
-    try {
-      await continueCommand(
-        '2025-04-01-override-mode',
-        { projectDir, json: true, mode: 'quick' },
-        deps,
-      );
-      warnings = warnSpy.mock.calls.map((call) => call.join(' '));
-    } finally {
-      warnSpy.mockRestore();
-    }
-
-    expect(warnings).toContain(
-      "The run keeps its saved workflow mode 'speckit'; --mode quick applies only to a new run.",
-    );
-    expect(headlessRuns).toHaveLength(1);
-    expect(headlessRuns[0]?.state).toMatchObject({ mode: 'speckit' });
   });
 
   it('strips terminal control bytes from the pre-TUI resume status line', async () => {

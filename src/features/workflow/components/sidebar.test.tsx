@@ -10,8 +10,6 @@ import { PLANNER_INHERITANCE } from '../../../core/crew/identity.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { configStore } from '../../../stores/project/config.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
-import { routerStore } from '../../../stores/navigation/router.js';
-import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
@@ -187,7 +185,7 @@ describe('Sidebar — passed count', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     expect(frame).toContain('No tasks yet');
-    expect(frame).toContain('Spec');
+    expect(frame).toMatch(/\bPlan\b/);
 
     ui.unmount();
   });
@@ -207,14 +205,14 @@ describe('Sidebar — passed count', () => {
       const firstFrame = stripAnsiStyles(ui.lastFrame() ?? '');
       const firstSpinnerFrame = spinnerFrames()[0] ?? '';
 
-      expect(firstFrame).toContain(`${firstSpinnerFrame} Spec`);
+      expect(firstFrame).toContain(`${firstSpinnerFrame} Plan`);
       expect(firstFrame).toContain('0:00');
 
       await vi.advanceTimersByTimeAsync(1000);
       await flushEffects();
 
       const nextFrame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(nextFrame).toContain(`${firstSpinnerFrame} Spec`);
+      expect(nextFrame).toContain(`${firstSpinnerFrame} Plan`);
       expect(nextFrame).toContain('0:01');
     } finally {
       ui?.unmount();
@@ -253,7 +251,7 @@ describe('Sidebar — passed count', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     expect(frame).toContain('No tasks yet');
-    expect(frame).not.toContain('Spec');
+    expect(frame).not.toMatch(/\bPlan\b/);
 
     ui.unmount();
   });
@@ -271,7 +269,7 @@ describe('Sidebar — passed count', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     expect(frame).toContain('Planner interrupted');
-    expect(frame).not.toContain('Spec');
+    expect(frame).not.toMatch(/\bPlan\b/);
 
     ui.unmount();
   });
@@ -291,7 +289,6 @@ describe('Sidebar — passed count', () => {
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('20/40');
-    expect(frame).toContain('standard');
     expect(frame).toContain('local');
 
     ui.unmount();
@@ -540,7 +537,7 @@ describe('Sidebar — persistent task list', () => {
 
     // The stage label sits on the title column; its spinner takes the marker column, so the empty
     // state uses the same two-column grid as a populated list.
-    expect(titleColumn('Spec')).toBe(titleColumn('No tasks yet'));
+    expect(titleColumn('Plan')).toBe(titleColumn('No tasks yet'));
     ui.unmount();
 
     tasksStore.__testReset({ tasks: [task('1', 'in_progress', 'A real title')] });
@@ -639,7 +636,6 @@ describe('Sidebar — persistent task list', () => {
     const lines = frame.split('\n');
 
     expect(frame).toContain('Tasks 30/60');
-    expect(frame).toContain('standard');
     expect(frame).toContain('local');
     expect(lines.length).toBeLessThanOrEqual(15);
 
@@ -751,8 +747,8 @@ describe('Sidebar — usage lives in /usage', () => {
   });
 });
 
-describe('Sidebar — the mode row', () => {
-  it('names the mode the run is on, not the one the config names today', async () => {
+describe('Sidebar — no mode row', () => {
+  it('names no mode, even when the engine resolves one', async () => {
     configStore.__testReset({
       projectDir: '/tmp/project',
       config: makeConfig({ workflow: { mode: 'standard' } }),
@@ -763,38 +759,7 @@ describe('Sidebar — the mode row', () => {
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('quick');
-    expect(frame).not.toContain('standard');
-
-    ui.unmount();
-  });
-
-  it('keeps a fresh run on its resolved mode when the next-run config changes', async () => {
-    configStore.__testReset({
-      projectDir: '/tmp/project',
-      config: makeConfig({ workflow: { mode: 'standard' } }),
-    });
-    // A fresh run: the record was read before any state was saved, so it carries no mode.
-    routerStore.init({
-      screen: 'workflow',
-      run: makeRunRecord({ mode: null }),
-      execution: { kind: 'at-rest' },
-    });
-    addEvent({ type: 'mode_resolved', ts: 1, phase: 'planning', mode: 'quick', approve: 'none' });
-
-    const ui = renderFeature(<Sidebar width={40} />);
-    await tick();
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('quick');
-
-    // `/mode speckit` is written for the next run and must not repaint this run's mode row.
-    configStore.__testReset({
-      projectDir: '/tmp/project',
-      config: makeConfig({ workflow: { mode: 'speckit' } }),
-    });
-    await tick();
-    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(frame).toContain('quick');
-    expect(frame).not.toContain('speckit');
+    expect(frame).not.toMatch(/\b(quick|standard|speckit)\b/);
 
     ui.unmount();
   });

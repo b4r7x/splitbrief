@@ -21,20 +21,24 @@ const docs = {
 const claims = [
   ['workflow-v4-state', 'workflow', 'stateVersion: 4'],
   [
-    'task-contract-zero-error-admission',
+    'task-contract-plan-check-admission',
     'taskContract',
-    'A Task Brief may enter implementation only when the current deterministic Brief Quality report has zero errors.',
-  ],
-  ['task-contract-warnings-non-blocking', 'taskContract', 'Warnings remain non-blocking'],
-  [
-    'task-contract-no-quality-override',
-    'taskContract',
-    'an invalid brief must never be advanced through an approval override',
+    'A Task Brief may enter implementation only when the plan it was compiled from passed `checkPlan` and the context fit.',
   ],
   [
-    'task-contract-quality-artifact',
+    'task-contract-failed-plan-not-applied',
     'taskContract',
-    'The report is written to the session folder as `brief-quality.json`.',
+    'A plan that fails `checkPlan` never reaches the plan card, and an edited `plan.json` that fails its checks is not applied.',
+  ],
+  [
+    'task-contract-no-check-override',
+    'taskContract',
+    'Approving the plan card never overrides a failed check.',
+  ],
+  [
+    'task-contract-plan-artifact',
+    'taskContract',
+    'the checked plan is written to the session folder as `plan.json`',
   ],
   [
     'cli-headless-recovery-exit',
@@ -54,9 +58,9 @@ const claims = [
     'A planner never gains canonical write authority.',
   ],
   [
-    'publication-compatibility-projections',
+    'publication-plan-renderings',
     'planners',
-    'the fixed `tasks.md`, `brief-quality.json`, `spec.md`, and `plan.md` files are compatibility projections of that generation',
+    '`plan.json` is the plan, and the fixed `plan.md` and `tasks.md` files are renderings of `plan.json`.',
   ],
   [
     'transport-stdout-final-current-call',

@@ -59,8 +59,8 @@ const TRUST_BOUNDARY: ReadinessCheck = {
   severity: 'warning',
   summary: 'Planner claude-code can execute commands on this machine.',
   details: [
-    'Spec/plan approval level: none.',
-    'SPLITBRIEF approval gates review spec/plan documents and declared/promoted file writes; they do not sandbox shell commands or network access inside external runners.',
+    'Plan approval: none.',
+    'SPLITBRIEF approval gates review the plan and declared/promoted file writes; they do not sandbox shell commands or network access inside external runners.',
   ],
 };
 

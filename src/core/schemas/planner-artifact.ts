@@ -45,7 +45,6 @@ export const PlannerArtifactTransportSchema = z
   .readonly();
 export type PlannerArtifactTransport = z.infer<typeof PlannerArtifactTransportSchema>;
 export const DeclaredArtifactLeaseSchema = leaseSchema;
-export type DeclaredArtifactLease = z.infer<typeof DeclaredArtifactLeaseSchema>;
 
 export const PlannerSessionScopeSchema = z
   .discriminatedUnion('kind', [
@@ -128,4 +127,3 @@ export const OwnedPlannerArtifactSchema = z
     }
   })
   .readonly();
-export type OwnedPlannerArtifact = z.infer<typeof OwnedPlannerArtifactSchema>;

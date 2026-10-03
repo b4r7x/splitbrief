@@ -1,10 +1,8 @@
 import { assertNever } from '../../../utils/type-guards.js';
 import type { Phase } from '../../schemas/enums.js';
 import type { TaskStatus } from '../../schemas/enums.js';
-import type { WorkflowMode } from '../../schemas/enums.js';
 import { CREW_SEAT_IDS } from '../../crew/identity.js';
 import type { OverlayType, Screen } from '../../navigation/types.js';
-import type { ApprovalGrant } from '../../schemas/approval-store.js';
 import type { CopyOutcome } from '../../../lib/clipboard/clipboard.js';
 import type { ResolveAttachmentReason } from '../../attachments/resolve.js';
 
@@ -72,12 +70,6 @@ export interface BriefListEntry {
   readonly id: string;
   readonly status: TaskStatus;
 }
-
-export type RuntimeConfigSaveResult =
-  | Readonly<{ kind: 'saved'; ok: true }>
-  | Readonly<{ kind: 'conflict'; ok: false; errorMessage?: string | undefined }>
-  | Readonly<{ kind: 'durability-uncertain'; ok: false; errorMessage?: string | undefined }>
-  | Readonly<{ kind: 'failure'; ok: false; errorMessage?: string | undefined }>;
 
 export type DiscoveryRefreshLaneOutcome =
   | 'cached'
@@ -152,8 +144,6 @@ export const RUN_ACTIONS = ['accept', 'reject'] as const;
 
 export const QUEUE_ACTIONS = ['show', 'clear'] as const;
 
-export const APPROVAL_ACTIONS = ['list', 'clear'] as const;
-
 export const IMAGE_ACTIONS = ['list', 'remove'] as const;
 
 export const CREW_COMMAND_SEATS = CREW_SEAT_IDS;
@@ -161,6 +151,7 @@ export const CREW_COMMAND_SEATS = CREW_SEAT_IDS;
 /** Deleted names keep pointing at their replacement for one release. */
 export const REMOVED_COMMANDS: Readonly<Record<string, string>> = {
   '/accept-run': 'a run is accepted with /run accept',
+  '/approval': 'a protected write asks once per run',
   '/attach': 'images are attached with /image <path>',
   '/compact-transcript': 'the transcript compacts itself as the context window fills',
   '/config': 'the same settings open with /settings',
@@ -169,12 +160,14 @@ export const REMOVED_COMMANDS: Readonly<Record<string, string>> = {
   '/export': 'a run leaves its artifacts in .splitbrief/sessions/<id>/',
   '/handoff': 'a run leaves its artifacts in .splitbrief/sessions/<id>/',
   '/implementer': 'the BUILD seat is chosen with /crew build',
+  '/mode': 'every run plans in one session',
   '/planner': 'the PLAN seat is chosen with /crew plan',
   '/reject-run': 'a run is rejected with /run reject confirm',
   '/repomap': 'the repo map rebuilds itself on each planning run, with no manual step',
+  '/revise-plan': 'request changes on the plan',
+  '/revise-spec': 'request changes on the plan',
   '/reviewer': 'the REVIEW seat is chosen with /crew review',
-  '/yolo':
-    'approval prompts are turned off with approval.enabled: false in the config; protected paths still ask',
+  '/yolo': 'only a write to a protected path asks',
 };
 
 export type AttachImageResult =
@@ -240,9 +233,6 @@ export interface RuntimeCommandContext {
   openOverlay: (type: OverlayType, focus?: string) => void;
   navigate: (to: 'home') => void;
   quit: () => void;
-  setWorkflowMode: (mode: WorkflowMode) => Promise<RuntimeConfigSaveResult>;
-  getWorkflowMode: () => WorkflowMode;
-  prefillComposer: (text: string) => void;
   setFeedbackMessage: (msg: string) => void;
   setFeedbackError: (msg: string) => void;
   refreshDetection: () => Promise<DiscoveryRefreshSummary>;
@@ -251,7 +241,6 @@ export interface RuntimeCommandContext {
   toggleSkill: (id: string) => SkillToggleResult;
   refreshSkills: () => Promise<void>;
   getCurrentPhase: () => Phase;
-  requestRewind: (target: 'spec' | 'plan', comment?: string) => boolean;
   requestTaskRedo: (taskId: string) => boolean;
   resumeRun: () => boolean;
   endRun: () => boolean;
@@ -261,8 +250,6 @@ export interface RuntimeCommandContext {
   attachImage: (input: string) => AttachImageResult;
   detachImage: (idOrIndex: string) => boolean;
   listAttachments: () => Array<{ id: string; path: string }>;
-  listApprovals: () => ApprovalGrant[];
-  clearApprovals: () => number;
   acceptRunSnapshot: () => Promise<AcceptRunSnapshotResult>;
   rejectRunSnapshot: () => Promise<RejectRunSnapshotResult>;
   /** Re-reads the run on screen, so a command that changed its record changes what the screen says. */

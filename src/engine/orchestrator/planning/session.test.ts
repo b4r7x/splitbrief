@@ -1,0 +1,991 @@
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
+import {
+  makeBusRecorder,
+  makeCallbacks,
+  makePlanner,
+  TEST_METADATA,
+  TEST_SINKS,
+} from '#testing/helpers/orchestrator-factories.js';
+import { setupProject } from '#testing/helpers/planning-phase.js';
+import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { scriptedTypedCall } from '#testing/helpers/typed-planner.js';
+import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import { PLAN_JSON_FILE, SESSION_LOG_FILE, sessionDir } from '../../../core/paths.js';
+import { readSpecFileOrEmpty } from '../../../core/paths-io.js';
+import type { PlanResult } from '../../../core/schemas/plan.js';
+import type { Config } from '../../../core/schemas/config.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { parsePlanJson } from '../../../core/sessions/plan-file.js';
+import { loadState, saveState } from '../../../core/state/persistence.js';
+import { createInitialState, transition } from '../../../core/state/machine.js';
+import { gateChangedFiles } from '../approval/gate-files.js';
+import { enqueueUserMessage } from '../queue/submit.js';
+import type { OrchestratorCallbacks, ResumeContextHolder } from '../types.js';
+import type { Planner } from '../../planners/types.js';
+import { sessionResumeExpiredError } from '../../session-expiry.js';
+import { applyRecoveryAction } from '../recovery/actions.js';
+import { resumeContinuation } from '../run/init.js';
+import { measureApiBudget } from '../../providers/api-budget.js';
+import { runPlanningPhase } from './run.js';
+
+const dirs: string[] = [];
+afterEach(() => {
+  for (const dir of dirs.splice(0)) cleanupTempDir(dir);
+});
+
+const questions = (round: number): PlanResult => ({
+  kind: 'questions',
+  questions: [
+    { id: `q${round}a`, text: `Round ${round}: which module?`, choices: null, default: 'src/a.ts' },
+    {
+      id: `q${round}b`,
+      text: `Round ${round}: which style?`,
+      choices: ['terse', 'verbose'],
+      default: 'terse',
+    },
+  ],
+});
+
+const uncoveredPlan = makePlanProposal({
+  criteria: [
+    { id: 'C1', text: 'A name gets a greeting', checkIds: ['K1'] },
+    { id: 'C2', text: 'An empty name is refused', checkIds: ['K1'] },
+  ],
+});
+
+async function plan(opts: {
+  script: Array<PlanResult | string | Error>;
+  config?: Config;
+  callbacks?: Partial<OrchestratorCallbacks>;
+  state?: (state: WorkflowState) => WorkflowState;
+  setup?: (projectDir: string) => void;
+  rewindPending?: WorkflowState['rewindPending'];
+  planner?: Partial<Planner>;
+  resumeHolder?: ResumeContextHolder;
+  feature?: string;
+}) {
+  const { projectDir, sessionId } = setupProject(dirs);
+  opts.setup?.(projectDir);
+  const typed = scriptedTypedCall(opts.script);
+  const planner = makePlanner({ typedCall: typed.typedCall, ...opts.planner });
+  const onApprovalNeeded = vi.fn().mockResolvedValue({ approved: true });
+  const { bus, events } = makeBusRecorder();
+  const started = transition(createInitialState('greet people'), { type: 'START' });
+  const state = opts.state?.(started) ?? started;
+  saveState({ projectDir, sessionId }, state);
+  const result = await runPlanningPhase({
+    wctx: {
+      projectDir,
+      sessionId,
+      config: opts.config ?? makeConfig({ codebase: { enabled: false, tokenBudget: 4000 } }),
+      callbacks: makeCallbacks({ onApprovalNeeded, ...opts.callbacks }).callbacks,
+      bus,
+      metadata: TEST_METADATA,
+      sinks: TEST_SINKS,
+      ...(opts.resumeHolder !== undefined && { resumeHolder: opts.resumeHolder }),
+    },
+    planner,
+    state,
+    feature: opts.feature ?? 'greet people',
+    ...(opts.rewindPending !== undefined && { rewindPending: opts.rewindPending }),
+  });
+  return {
+    result,
+    prompts: typed.prompts,
+    contexts: typed.contexts,
+    onApprovalNeeded,
+    events,
+    projectDir,
+    sessionId,
+  };
+}
+
+describe('the planning thread', () => {
+  it('hands the rebuilt transcript to the first call only', async () => {
+    const messages = [{ role: 'user' as const, content: 'Earlier: keep the public API' }];
+    const run = await plan({
+      script: [questions(1), makePlanProposal()],
+      callbacks: { onPlannerReply: vi.fn().mockResolvedValue('') },
+      resumeHolder: { messages },
+    });
+
+    expect(run.contexts.map((ctx) => ctx.priorMessages)).toEqual([messages, undefined]);
+    expect(run.result.disposition).toBe('ready-for-tasks');
+  });
+
+  it('asks again on a fresh session with the whole conversation when the thread expired', async () => {
+    const run = await plan({
+      script: [
+        questions(1),
+        sessionResumeExpiredError('native-1', 'No conversation found with session ID native-1'),
+        makePlanProposal(),
+      ],
+      callbacks: { onPlannerReply: vi.fn().mockResolvedValue('') },
+      planner: {
+        capabilities: { ...makePlanner().capabilities, supportsSessionResume: true },
+      },
+      state: (state) => ({ ...state, plannerSessionId: 'native-1' }),
+    });
+
+    // On the thread the answers go alone; the fresh session reads the prompt and the round again.
+    expect(run.prompts[1]).not.toContain('# Plan the change');
+    expect(run.prompts[2]).toContain('# Plan the change');
+    expect(run.prompts[2]).toContain('Round 1: which module?');
+    expect(run.events).toContainEqual(
+      expect.objectContaining({
+        type: 'warning',
+        message: expect.stringMatching(/^Planner session expired/),
+      }),
+    );
+    expect(run.result.disposition).toBe('ready-for-tasks');
+    expect(run.result.state.plannerSessionId ?? null).toBeNull();
+  });
+});
+
+describe('a planner that reads no files of its own', () => {
+  const ROOMY_CONTEXT = {
+    contextKey: 'ollama@local',
+    selectionId: 'qwen2.5',
+    observedAt: 0,
+    applicationContextTokens: 64_000,
+    budgetSource: 'configured' as const,
+    loadState: 'unknown' as const,
+  };
+  const writeHello = (projectDir: string) => {
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(join(projectDir, 'src', 'hello.ts'), 'export const HELLO_SENTINEL = 1;\n');
+  };
+
+  it('carries the current source of the files the request names in its first prompt', async () => {
+    const run = await plan({
+      script: [makePlanProposal()],
+      planner: { resolvePlanningContext: async () => ROOMY_CONTEXT },
+      feature: 'Modify `src/hello.ts` so it greets people by name.',
+      setup: writeHello,
+    });
+
+    expect(run.prompts).toHaveLength(1);
+    expect(run.prompts[0]).toContain('export const HELLO_SENTINEL = 1;');
+    expect(run.prompts[0]).toContain('src/hello.ts — whole file, sha256');
+    expect(run.prompts[0]).toContain('no filesystem, shell or search tool');
+    expect(run.result.disposition).toBe('ready-for-tasks');
+  });
+
+  it('leaves a planner that reads the project itself to read it', async () => {
+    const run = await plan({
+      script: [makePlanProposal()],
+      feature: 'Modify `src/hello.ts` so it greets people by name.',
+      setup: writeHello,
+    });
+
+    expect(run.prompts[0]).not.toContain('HELLO_SENTINEL');
+  });
+
+  it('admits every later turn of a session whose first packet filled the context', async () => {
+    const context = { ...ROOMY_CONTEXT, applicationContextTokens: 16_000 };
+    const run = await plan({
+      script: [questions(1), uncoveredPlan, 'not json', makePlanProposal()],
+      config: makeConfig({ codebase: { enabled: true, tokenBudget: 4000 } }),
+      callbacks: { onPlannerReply: vi.fn().mockResolvedValue('') },
+      planner: { resolvePlanningContext: async () => context },
+      feature: 'Modify `src/m0.ts` so it greets people by name.',
+      setup: (projectDir) => {
+        mkdirSync(join(projectDir, 'src'), { recursive: true });
+        for (let index = 0; index < 40; index++) {
+          writeFileSync(
+            join(projectDir, 'src', `m${index}.ts`),
+            `import { m${(index + 1) % 40} } from './m${(index + 1) % 40}.js';\nexport function m${index}(name: string): string {\n  return \`${'x'.repeat(1200)}\` + name + m${(index + 1) % 40};\n}\n`,
+          );
+        }
+      },
+    });
+
+    expect(run.prompts).toHaveLength(4);
+    for (const prompt of run.prompts) {
+      const measured = measureApiBudget({
+        context,
+        messages: [{ role: 'user', content: prompt }],
+        role: 'plan',
+      });
+      expect(measured.kind).toBe('fits');
+    }
+    expect(run.result.disposition).toBe('ready-for-tasks');
+  });
+
+  it('halts before any call when the named source does not fit the model', async () => {
+    const run = await plan({
+      script: [makePlanProposal()],
+      planner: {
+        resolvePlanningContext: async () => ({ ...ROOMY_CONTEXT, applicationContextTokens: 2_200 }),
+      },
+      feature: 'Modify `src/hello.ts` so it greets people by name.',
+      setup: writeHello,
+    });
+
+    expect(run.prompts).toEqual([]);
+    expect(run.result).toMatchObject({ disposition: 'terminal', outcome: 'halted' });
+    expect(run.result.state.pendingRecovery?.facts?.apiContextCode).toBe('insufficient-context');
+  });
+});
+
+describe('the planning session on the live path', () => {
+  it('asks the questions, takes every default on ⏎, and reaches the plan approval', async () => {
+    const onPlannerReply = vi.fn().mockResolvedValue('');
+    const run = await plan({
+      script: [questions(1), makePlanProposal()],
+      callbacks: { onPlannerReply },
+    });
+
+    expect(onPlannerReply).toHaveBeenCalledTimes(1);
+    expect(onPlannerReply.mock.calls[0]?.[0]).toMatchObject({
+      call: 'plan',
+      questions: [
+        { id: 'q1a', type: 'input', default: 'src/a.ts' },
+        { id: 'q1b', type: 'choice', options: ['terse', 'verbose'], default: 'terse' },
+      ],
+    });
+    expect(run.prompts[1]).toContain('Round 1: which module?\nsrc/a.ts');
+    expect(run.prompts[1]).toContain('Round 1: which style?\nterse');
+    expect(run.onApprovalNeeded).toHaveBeenCalledWith(
+      'plan',
+      expect.stringMatching(/plan\.md$/),
+      [],
+    );
+    expect(run.result.disposition).toBe('ready-for-tasks');
+    expect(run.result.state.phase).toBe('implementing');
+    expect(run.result.state.pendingPlannerConversation).toBeUndefined();
+    expect(run.result.state.plan?.summary).toBe('Greet people by name');
+    expect(run.result.state.tasks.map((task) => task.file)).toEqual(['src/hello.ts']);
+    expect(parsePlanJson(readSpecFileOrEmpty(run, PLAN_JSON_FILE))).toEqual({
+      plan: makePlanProposal(),
+    });
+  });
+
+  it('keeps a typed reply in the session log and hands it to the next planning call', async () => {
+    const run = await plan({
+      script: [questions(1), makePlanProposal()],
+      callbacks: { onPlannerReply: vi.fn().mockResolvedValue('use-jwt-for-auth') },
+    });
+
+    const log = readFileSync(
+      join(sessionDir(run.projectDir, run.sessionId), SESSION_LOG_FILE),
+      'utf8',
+    );
+    expect(log).toContain('use-jwt-for-auth');
+    expect(run.prompts[0]).not.toContain('use-jwt-for-auth');
+    expect(run.prompts[1]).toContain('use-jwt-for-auth');
+    expect(run.result.disposition).toBe('ready-for-tasks');
+  });
+
+  it.each([
+    ['an uncovered criterion', uncoveredPlan, 'uncovered-criterion'],
+    [
+      'a criterion without a check',
+      makePlanProposal({ criteria: [{ id: 'C1', text: 'A name gets a greeting', checkIds: [] }] }),
+      'criterion-without-check',
+    ],
+    [
+      'a dependency cycle',
+      makePlanProposal({
+        tasks: [
+          makeTaskSpec({ id: 'T001', dependsOn: ['T002'] }),
+          makeTaskSpec({
+            id: 'T002',
+            dependsOn: ['T001'],
+            checks: [{ id: 'K2', kind: 'test', value: 'src/b.test.ts', required: true }],
+            suggestedFiles: ['src/b.ts'],
+          }),
+        ],
+      }),
+      'dependency-cycle',
+    ],
+    [
+      'a duplicate check id',
+      makePlanProposal({
+        tasks: [
+          makeTaskSpec({ id: 'T001' }),
+          makeTaskSpec({ id: 'T002', suggestedFiles: ['src/b.ts'] }),
+        ],
+      }),
+      'duplicate-check-id',
+    ],
+    [
+      'a task over the context of the implementer',
+      makePlanProposal({ tasks: [makeTaskSpec({ contextFiles: ['src/big.ts'] })] }),
+      'context-overflow',
+    ],
+    [
+      'a directory as a context file',
+      makePlanProposal({ tasks: [makeTaskSpec({ contextFiles: ['src'] })] }),
+      'path-not-file',
+    ],
+    [
+      'a directory as a suggested file',
+      makePlanProposal({ tasks: [makeTaskSpec({ suggestedFiles: ['src'] })] }),
+      'path-not-file',
+    ],
+    [
+      'a context file that does not exist',
+      makePlanProposal({ tasks: [makeTaskSpec({ contextFiles: ['src/gone.ts'] })] }),
+      'missing-context-file',
+    ],
+    [
+      'a protected operation that asks for nothing',
+      makePlanProposal({
+        tasks: [
+          makeTaskSpec({ protectedOperations: [{ path: 'src/hello.ts', operation: 'write' }] }),
+        ],
+      }),
+      'unprotected-operation',
+    ],
+  ] as const)(
+    'sends a plan with %s back once and approves the corrected plan',
+    async (_label, invalid, code) => {
+      const run = await plan({
+        script: [invalid, makePlanProposal()],
+        config: makeConfig({
+          codebase: { enabled: false, tokenBudget: 4000 },
+          implementer: { contextLength: 8192 },
+        }),
+        setup: (projectDir) => {
+          mkdirSync(join(projectDir, 'src'), { recursive: true });
+          writeFileSync(join(projectDir, 'src', 'big.ts'), 'export const x = 1;\n'.repeat(2500));
+        },
+      });
+
+      expect(run.prompts).toHaveLength(2);
+      expect(run.prompts[1]).toContain(`- ${code}: `);
+      // The planner reads the check codes; the operator's warning names only the count.
+      expect(run.events).toContainEqual(
+        expect.objectContaining({
+          type: 'warning',
+          message: expect.stringMatching(
+            /^The plan failed \d+ checks?; it goes back to the planner once\.$/,
+          ),
+        }),
+      );
+      expect(run.onApprovalNeeded).toHaveBeenCalledTimes(1);
+      expect(run.result.disposition).toBe('ready-for-tasks');
+    },
+  );
+
+  it('halts on a second plan that fails its checks and never opens the approval', async () => {
+    const run = await plan({ script: [uncoveredPlan, uncoveredPlan] });
+
+    expect(run.onApprovalNeeded).not.toHaveBeenCalled();
+    expect(run.result).toMatchObject({ disposition: 'terminal', outcome: 'halted' });
+    expect(run.result.state.pendingRecovery).toMatchObject({
+      reason: 'plan-checks-failed',
+      details: ['Criterion C2 is served by no task.'],
+    });
+  });
+
+  it('halts on a third round of questions and keeps the answered rounds', async () => {
+    const run = await plan({
+      script: [questions(1), questions(2), questions(3)],
+      callbacks: { onPlannerReply: vi.fn().mockResolvedValue('') },
+    });
+
+    expect(run.result).toMatchObject({ disposition: 'terminal', outcome: 'halted' });
+    expect(run.result.state.pendingRecovery?.reason).toBe('plan-questions-exhausted');
+    expect(run.result.state.pendingPlannerConversation?.answers).toHaveLength(2);
+  });
+
+  it.each([
+    ['retry-same-worker', undefined],
+    ['revise', 'Keep it in one module'],
+  ] as const)(
+    'tells the planner no question round remains when a run halted at a third round continues (%s)',
+    async (action, comment) => {
+      const first = await plan({
+        script: [questions(1), questions(2), questions(3)],
+        callbacks: { onPlannerReply: vi.fn().mockResolvedValue('') },
+      });
+      expect(first.result.state.pendingRecovery?.reason).toBe('plan-questions-exhausted');
+      const saved = loadState(first);
+      if (saved === null) throw new Error('state not saved');
+      const applied = applyRecoveryAction({
+        ...first,
+        state: saved,
+        action,
+        comment,
+        bus: makeBusRecorder().bus,
+      });
+      expect(applied).toMatchObject({ ok: true, status: 'continued' });
+
+      const typed = scriptedTypedCall([makePlanProposal()]);
+      const result = await runPlanningPhase({
+        wctx: {
+          projectDir: first.projectDir,
+          sessionId: first.sessionId,
+          config: makeConfig({ codebase: { enabled: false, tokenBudget: 4000 } }),
+          callbacks: makeCallbacks().callbacks,
+          bus: makeBusRecorder().bus,
+          metadata: TEST_METADATA,
+          sinks: TEST_SINKS,
+        },
+        planner: makePlanner({ typedCall: typed.typedCall }),
+        state: applied.state,
+        feature: 'greet people',
+      });
+
+      expect(typed.prompts[0]).toContain('No question round remains');
+      if (comment !== undefined) expect(typed.prompts[0]).toContain(comment);
+      expect(result.disposition).toBe('ready-for-tasks');
+    },
+  );
+
+  it('halts on an answer that twice fails the typed contract', async () => {
+    const run = await plan({ script: ['not json', 'still not json'] });
+
+    expect(run.result).toMatchObject({ disposition: 'terminal', outcome: 'halted' });
+    expect(run.result.state.pendingRecovery?.reason).toBe('seat-protocol-error');
+  });
+
+  it('records the plan validation block as the discovered validation', async () => {
+    const run = await plan({
+      script: [
+        makePlanProposal({
+          validation: {
+            language: 'typescript',
+            typecheck: 'npx tsc --noEmit',
+            lint: null,
+            test: 'npx vitest run',
+            testPattern: '*.test.ts',
+          },
+        }),
+      ],
+    });
+
+    expect(run.result.state.discoveredValidation).toEqual({
+      language: 'typescript',
+      typecheckCommand: 'npx tsc --noEmit',
+      testCommand: 'npx vitest run',
+      testPattern: '*.test.ts',
+    });
+  });
+
+  it('parks unanswered questions and answers them when the run continues', async () => {
+    const first = await plan({ script: [questions(1)] });
+    expect(first.result).toMatchObject({ disposition: 'terminal', outcome: 'input-required' });
+
+    const saved = loadState(first);
+    if (saved === null) throw new Error('state not saved');
+    expect(saved.pendingPlannerConversation).toMatchObject({ call: 'plan', answered: false });
+
+    const typed = scriptedTypedCall([makePlanProposal()]);
+    const result = await runPlanningPhase({
+      wctx: {
+        projectDir: first.projectDir,
+        sessionId: first.sessionId,
+        config: makeConfig({ codebase: { enabled: false, tokenBudget: 4000 } }),
+        callbacks: makeCallbacks({
+          onPlannerReply: vi.fn().mockResolvedValue({
+            text: '1. Round 1: which module?\nsrc/b.ts',
+            qa: [{ question: 'Round 1: which module?', answer: 'src/b.ts' }],
+          }),
+        }).callbacks,
+        bus: makeBusRecorder().bus,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+      },
+      planner: makePlanner({ typedCall: typed.typedCall }),
+      state: saved,
+      feature: 'greet people',
+    });
+
+    expect(typed.prompts).toHaveLength(1);
+    expect(typed.prompts[0]).toContain('Round 1: which module?\nsrc/b.ts');
+    expect(result.disposition).toBe('ready-for-tasks');
+  });
+
+  it('runs a pending rewind as one session that carries its comment, then shows the plan card', async () => {
+    const rewindPending = { target: 'plan' as const, comment: 'Split the greeting module' };
+    const run = await plan({
+      script: [makePlanProposal()],
+      state: (state) => ({ ...state, rewindPending }),
+      rewindPending,
+    });
+
+    expect(run.prompts).toHaveLength(1);
+    expect(run.prompts[0]).toContain('Split the greeting module');
+    expect(run.onApprovalNeeded).toHaveBeenCalledOnce();
+    expect(run.onApprovalNeeded).toHaveBeenCalledWith(
+      'plan',
+      expect.stringMatching(/plan\.md$/),
+      [],
+    );
+    expect(run.result.disposition).toBe('ready-for-tasks');
+    expect(loadState(run)?.rewindPending).toBeUndefined();
+  });
+
+  it('reads a plan conversation an older chain left as earlier planning and clears it', async () => {
+    const onPlannerReply = vi.fn();
+    const run = await plan({
+      script: [makePlanProposal()],
+      callbacks: { onPlannerReply },
+      state: (state) => ({
+        ...state,
+        pendingPlannerConversation: {
+          call: 'plan',
+          text: 'Which store should keep the greeting?',
+          questions: [],
+          answers: [],
+          answered: false,
+        },
+      }),
+    });
+
+    expect(onPlannerReply).not.toHaveBeenCalled();
+    expect(run.prompts).toHaveLength(1);
+    expect(run.prompts[0]).toContain('Which store should keep the greeting?');
+    expect(run.result.disposition).toBe('ready-for-tasks');
+    expect(run.result.state.pendingPlannerConversation).toBeUndefined();
+  });
+
+  it('reads a steer that continues an old unanswered question as that question’s answer', async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const state: WorkflowState = {
+      ...createInitialState('greet people'),
+      phase: 'researching',
+      mode: 'standard',
+      pendingPlannerConversation: {
+        call: 'research',
+        text: 'Which DB should we use?',
+        questions: [],
+        answers: [],
+        answered: false,
+      },
+    };
+    saveState({ projectDir, sessionId }, state);
+    const holder = await resumeContinuation({
+      ref: { projectDir, sessionId },
+      state,
+      steer: 'ANSWER-ABC postgres',
+    });
+    const typed = scriptedTypedCall([makePlanProposal()]);
+
+    await runPlanningPhase({
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeConfig({ codebase: { enabled: false, tokenBudget: 4000 } }),
+        callbacks: makeCallbacks().callbacks,
+        bus: makeBusRecorder().bus,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+        continuation: holder,
+      },
+      planner: makePlanner({ typedCall: typed.typedCall }),
+      state,
+      feature: 'greet people',
+    });
+
+    expect(typed.prompts[0]).toContain('Which DB should we use?\n\nUser:\nANSWER-ABC postgres');
+    expect(typed.prompts[0]).not.toContain('(not answered)');
+    expect(typed.prompts[0]?.match(/ANSWER-ABC/g)).toHaveLength(1);
+  });
+
+  it('starts an old run that stopped inside the multi-step chain on one session with its documents', async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const { writeSpecFile } = await import('../../../core/paths-io.js');
+    writeSpecFile({ projectDir, sessionId }, 'research.md', '# Research\n\nOld findings', null);
+    const typed = scriptedTypedCall([makePlanProposal({ tasks: [makeTaskSpec()] })]);
+    const state: WorkflowState = {
+      ...createInitialState('greet people'),
+      phase: 'reviewing-spec',
+      mode: 'standard',
+    };
+    saveState({ projectDir, sessionId }, state);
+
+    const result = await runPlanningPhase({
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeConfig({ codebase: { enabled: false, tokenBudget: 4000 } }),
+        callbacks: makeCallbacks().callbacks,
+        bus: makeBusRecorder().bus,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+      },
+      planner: makePlanner({ typedCall: typed.typedCall }),
+      state,
+      feature: 'greet people',
+    });
+
+    expect(typed.prompts[0]).toContain('Old findings');
+    expect(result.disposition).toBe('ready-for-tasks');
+  });
+});
+
+describe('the plan card', () => {
+  it('sends typed text back to the same session with the plan, then shows the card again', async () => {
+    const onApprovalNeeded = vi
+      .fn()
+      .mockResolvedValueOnce({ approved: false, action: 'revise', comment: 'Greet in Polish' })
+      .mockResolvedValue({ approved: true });
+    const run = await plan({
+      script: [makePlanProposal(), makePlanProposal({ summary: 'Greet people in Polish' })],
+      callbacks: { onApprovalNeeded },
+    });
+
+    expect(run.prompts).toHaveLength(2);
+    expect(run.prompts[1]).toContain('Greet in Polish');
+    expect(run.prompts[1]).toContain('"summary": "Greet people by name"');
+    expect(onApprovalNeeded).toHaveBeenCalledTimes(2);
+    expect(run.events.some((event) => JSON.stringify(event).includes('Regenerating'))).toBe(false);
+    expect(run.result.disposition).toBe('ready-for-tasks');
+    expect(run.result.state.plan?.summary).toBe('Greet people in Polish');
+  });
+
+  it('keeps the correction on every later call of a planner without a session', async () => {
+    const onApprovalNeeded = vi
+      .fn()
+      .mockResolvedValueOnce({ approved: false, action: 'revise', comment: 'Greet in Polish' })
+      .mockResolvedValue({ approved: true });
+    const run = await plan({
+      script: [
+        makePlanProposal(),
+        questions(1),
+        makePlanProposal({ summary: 'Greet people in Polish' }),
+      ],
+      callbacks: { onApprovalNeeded, onPlannerReply: vi.fn().mockResolvedValue('') },
+    });
+
+    expect(run.prompts).toHaveLength(3);
+    expect(run.prompts[2]).toContain('Greet in Polish');
+    expect(run.prompts[2]).toContain('"summary": "Greet people by name"');
+    expect(run.prompts[2]?.match(/Greet in Polish/g)).toHaveLength(1);
+    expect(run.result.state.plan?.summary).toBe('Greet people in Polish');
+  });
+
+  it('keeps the correction across a stop at the questions it led to', async () => {
+    const first = await plan({
+      script: [makePlanProposal(), questions(1)],
+      callbacks: {
+        onApprovalNeeded: vi
+          .fn()
+          .mockResolvedValueOnce({ approved: false, action: 'revise', comment: 'Greet in Polish' }),
+      },
+    });
+    expect(first.result).toMatchObject({ disposition: 'terminal', outcome: 'input-required' });
+    const saved = loadState(first);
+    if (saved === null) throw new Error('state not saved');
+
+    const typed = scriptedTypedCall([questions(2), makePlanProposal()]);
+    await runPlanningPhase({
+      wctx: {
+        projectDir: first.projectDir,
+        sessionId: first.sessionId,
+        config: makeConfig({ codebase: { enabled: false, tokenBudget: 4000 } }),
+        callbacks: makeCallbacks({
+          onPlannerReply: vi.fn().mockResolvedValue(''),
+          onApprovalNeeded: vi.fn().mockResolvedValue({ approved: true }),
+        }).callbacks,
+        bus: makeBusRecorder().bus,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+      },
+      planner: makePlanner({ typedCall: typed.typedCall }),
+      state: saved,
+      feature: 'greet people',
+    });
+
+    expect(typed.prompts).toHaveLength(2);
+    expect(typed.prompts[0]).toContain('Greet in Polish');
+    expect(typed.prompts[1]).toContain('Greet in Polish');
+  });
+
+  async function continuePlanning(
+    first: { projectDir: string; sessionId: string },
+    script: Array<PlanResult | string | Error>,
+    steer?: string,
+  ) {
+    const saved = loadState(first);
+    if (saved === null) throw new Error('state not saved');
+    const holder = await resumeContinuation({ ref: first, state: saved, steer });
+    let state = saved.pendingRecovery
+      ? transition(saved, { type: 'RESOLVE_PENDING_RECOVERY' })
+      : saved;
+    if (state.interruptedStep !== undefined) state = transition(state, { type: 'RESUME_STEP' });
+    saveState(first, state);
+    const typed = scriptedTypedCall(script);
+    const result = await runPlanningPhase({
+      wctx: {
+        projectDir: first.projectDir,
+        sessionId: first.sessionId,
+        config: makeConfig({ codebase: { enabled: false, tokenBudget: 4000 } }),
+        callbacks: makeCallbacks({
+          onApprovalNeeded: vi.fn().mockResolvedValue({ approved: true }),
+        }).callbacks,
+        bus: makeBusRecorder().bus,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+        continuation: holder,
+      },
+      planner: makePlanner({ typedCall: typed.typedCall }),
+      state,
+      feature: 'greet people',
+      ...(state.rewindPending !== undefined && { rewindPending: state.rewindPending }),
+    });
+    return { result, prompts: typed.prompts };
+  }
+
+  const reviseOnce = () =>
+    vi
+      .fn()
+      .mockResolvedValueOnce({ approved: false, action: 'revise', comment: 'Greet in Polish' });
+
+  it('keeps the correction and the plan it corrects when its replan halts and the run continues', async () => {
+    const first = await plan({
+      script: [makePlanProposal(), 'not json', 'still not json'],
+      callbacks: { onApprovalNeeded: reviseOnce() },
+    });
+    expect(first.result.state.pendingRecovery?.reason).toBe('seat-protocol-error');
+
+    const next = await continuePlanning(first, [
+      makePlanProposal({ summary: 'Greet people in Polish' }),
+    ]);
+
+    expect(next.prompts[0]).toContain('Greet in Polish');
+    expect(next.prompts[0]).toContain('"summary": "Greet people by name"');
+    expect(next.result.disposition).toBe('ready-for-tasks');
+    expect(loadState(first)?.rewindPending).toBeUndefined();
+  });
+
+  it('hands a steer to the replan a stop cut mid-call', async () => {
+    const first = await plan({
+      script: [makePlanProposal(), 'not json', 'still not json'],
+      callbacks: { onApprovalNeeded: reviseOnce() },
+    });
+    const halted = loadState(first);
+    if (halted === null) throw new Error('state not saved');
+    saveState(
+      first,
+      transition(transition(halted, { type: 'RESOLVE_PENDING_RECOVERY' }), {
+        type: 'INTERRUPT_STEP',
+        step: { kind: 'planner', call: 'plan' },
+        source: 'user',
+        cut: 'mid-step',
+      }),
+    );
+
+    const next = await continuePlanning(first, [makePlanProposal()], 'ALSO SURNAMES');
+
+    expect(next.prompts[0]).toContain('ALSO SURNAMES');
+    expect(next.prompts[0]).toContain('Greet in Polish');
+  });
+
+  it('sends only the correction to a planner that keeps its session', async () => {
+    const onApprovalNeeded = vi
+      .fn()
+      .mockResolvedValueOnce({ approved: false, action: 'revise', comment: 'Greet in Polish' })
+      .mockResolvedValue({ approved: true });
+    const run = await plan({
+      script: [makePlanProposal(), makePlanProposal({ summary: 'Greet people in Polish' })],
+      callbacks: { onApprovalNeeded },
+      planner: {
+        capabilities: { ...makePlanner().capabilities, supportsSessionResume: true },
+      },
+      state: (state) => ({ ...state, plannerSessionId: 'native-1' }),
+    });
+
+    expect(run.prompts[1]).toContain('Greet in Polish');
+    expect(run.prompts[1]).toContain('"summary": "Greet people by name"');
+    expect(run.prompts[1]).not.toContain('# Plan the change');
+    expect(run.result.disposition).toBe('ready-for-tasks');
+  });
+
+  const editPlanJson = (text: string) => async (_type: string, input: string) => {
+    writeFileSync(join(dirname(input), PLAN_JSON_FILE), text);
+    return { approved: false, action: 'edit' };
+  };
+
+  it('compiles a valid edit of plan.json and shows the card again without a planner call', async () => {
+    const edited = makePlanProposal({
+      summary: 'Edited by hand',
+      tasks: [makeTaskSpec({ suggestedFiles: ['src/greet.ts'] })],
+    });
+    const onApprovalNeeded = vi
+      .fn()
+      .mockImplementationOnce(editPlanJson(JSON.stringify(edited)))
+      .mockResolvedValue({ approved: true });
+    const run = await plan({ script: [makePlanProposal()], callbacks: { onApprovalNeeded } });
+
+    expect(run.prompts).toHaveLength(1);
+    expect(onApprovalNeeded).toHaveBeenCalledTimes(2);
+    expect(run.result.disposition).toBe('ready-for-tasks');
+    expect(run.result.state.plan?.summary).toBe('Edited by hand');
+    expect(run.result.state.tasks.map((task) => task.file)).toEqual(['src/greet.ts']);
+    expect(
+      readFileSync(join(sessionDir(run.projectDir, run.sessionId), 'plan.md'), 'utf8'),
+    ).toContain('Edited by hand');
+  });
+
+  it.each([
+    ['text that is not JSON', '{ "summary": '],
+    ['a plan that fails its checks', JSON.stringify(uncoveredPlan)],
+  ])(
+    'restores plan.json after an edit to %s and names the errors in one warning',
+    async (_label, text) => {
+      const onApprovalNeeded = vi
+        .fn()
+        .mockImplementationOnce(editPlanJson(text))
+        .mockResolvedValue({ approved: true });
+      const run = await plan({ script: [makePlanProposal()], callbacks: { onApprovalNeeded } });
+
+      const warnings = run.events.filter(
+        (event) => event.type === 'warning' && event.message.startsWith('The edited plan'),
+      );
+      expect(warnings).toHaveLength(1);
+      expect(JSON.stringify(warnings)).not.toContain('uncovered-criterion');
+      expect(onApprovalNeeded).toHaveBeenCalledTimes(2);
+      expect(parsePlanJson(readSpecFileOrEmpty(run, PLAN_JSON_FILE))).toEqual({
+        plan: makePlanProposal(),
+      });
+      expect(run.result.state.plan?.summary).toBe('Greet people by name');
+      expect(run.result.disposition).toBe('ready-for-tasks');
+    },
+  );
+
+  it('turns a message still queued at the card into a correction', async () => {
+    let projectDir = '';
+    const onApprovalNeeded = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        const ref = { projectDir, sessionId: 'sess-planning' };
+        const saved = loadState(ref);
+        if (saved === null) throw new Error('state not saved');
+        enqueueUserMessage({
+          ...ref,
+          state: saved,
+          text: 'Also greet by surname',
+          // Queued during the last planner call, after that call drained the queue.
+          phase: 'planning',
+          bus: makeBusRecorder().bus,
+        });
+        return { approved: false };
+      })
+      .mockResolvedValue({ approved: true });
+    const run = await plan({
+      script: [makePlanProposal(), makePlanProposal({ summary: 'Greet by full name' })],
+      callbacks: { onApprovalNeeded },
+      setup: (dir) => {
+        projectDir = dir;
+      },
+    });
+
+    expect(run.prompts).toHaveLength(2);
+    expect(run.prompts[1]).toContain('Also greet by surname');
+    expect(onApprovalNeeded).toHaveBeenCalledTimes(2);
+    expect(run.result.state.plan?.summary).toBe('Greet by full name');
+  });
+
+  it('closes the run on End run', async () => {
+    const run = await plan({
+      script: [makePlanProposal()],
+      callbacks: {
+        onApprovalNeeded: vi.fn().mockResolvedValue({ approved: false, action: 'end-run' }),
+      },
+    });
+
+    expect(run.result).toMatchObject({ disposition: 'terminal', outcome: 'closed' });
+  });
+
+  it('asks again on a superseded prompt', async () => {
+    const onApprovalNeeded = vi
+      .fn()
+      .mockResolvedValueOnce({ approved: false })
+      .mockResolvedValue({ approved: true });
+    const run = await plan({ script: [makePlanProposal()], callbacks: { onApprovalNeeded } });
+
+    expect(onApprovalNeeded).toHaveBeenCalledTimes(2);
+    expect(run.prompts).toHaveLength(1);
+    expect(run.result.disposition).toBe('ready-for-tasks');
+  });
+
+  const protectedPlan = makePlanProposal({
+    tasks: [makeTaskSpec({ protectedOperations: [{ path: 'package.json', operation: 'write' }] })],
+  });
+
+  it('confirms the protected operations of a plan the operator approved', async () => {
+    const run = await plan({ script: [protectedPlan] });
+
+    expect(readEvidenceLedger(run)?.approvals).toEqual([
+      expect.objectContaining({
+        tier: 'confirm',
+        actionClass: 'package_change',
+        actionDescription: 'write package.json',
+      }),
+    ]);
+  });
+
+  it('shows the card exactly what approving it confirms, whatever plan.json now says', async () => {
+    const onApprovalNeeded = vi.fn(async (_type: string, input: unknown) => {
+      if (typeof input !== 'string') throw new Error('expected the plan card path');
+      writeFileSync(join(dirname(input), PLAN_JSON_FILE), JSON.stringify(makePlanProposal()));
+      return { approved: true as const };
+    });
+    const run = await plan({ script: [protectedPlan], callbacks: { onApprovalNeeded } });
+
+    expect(onApprovalNeeded).toHaveBeenCalledWith('plan', expect.any(String), [
+      'write package.json',
+    ]);
+    expect(
+      readEvidenceLedger(run)?.approvals?.map((approval) => approval.actionDescription),
+    ).toEqual(['write package.json']);
+  });
+
+  it('confirms nothing when nobody looked at the plan', async () => {
+    const run = await plan({
+      script: [protectedPlan],
+      callbacks: {
+        onApprovalNeeded: vi.fn().mockResolvedValue({ approved: true, unattended: true }),
+      },
+    });
+
+    expect(run.result.disposition).toBe('ready-for-tasks');
+    expect(readEvidenceLedger(run)?.approvals ?? []).toEqual([]);
+  });
+
+  it('skips the card at approve: none and still asks for a listed protected write', async () => {
+    const config = makeConfig({
+      codebase: { enabled: false, tokenBudget: 4000 },
+      workflow: { approve: 'none' },
+    });
+    const run = await plan({ script: [protectedPlan], config });
+
+    expect(run.prompts).toHaveLength(1);
+    expect(run.onApprovalNeeded).not.toHaveBeenCalled();
+    expect(run.result.state.phase).toBe('implementing');
+    expect(readEvidenceLedger(run)?.approvals ?? []).toEqual([]);
+
+    const task = run.result.state.tasks[0];
+    if (task === undefined) throw new Error('expected the plan to compile a task');
+    const asked: string[] = [];
+    const gated = await gateChangedFiles({
+      changedFiles: ['package.json'],
+      task,
+      dependsOnFiles: [],
+      projectDir: run.projectDir,
+      sessionId: run.sessionId,
+      phase: 'implementing',
+      taskId: task.id,
+      bus: makeBusRecorder().bus,
+      callbacks: makeCallbacks({
+        onTieredApproval: async (request) => {
+          asked.push(request.actionDescription);
+          return { decision: 'deny', reason: 'no' };
+        },
+      }).callbacks,
+      config,
+    });
+
+    expect(asked).toEqual(['write package.json']);
+    expect(gated.allow).toBe(false);
+  });
+});

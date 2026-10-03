@@ -27,7 +27,7 @@ A file should be describable in one sentence with no "and". If the description n
 
 **The recurring SRP failures in this codebase (all real, all caught in audit):**
 
-- **Junk-drawer `shared.ts`.** A file named `shared.ts` / `helpers.ts` attracts unrelated code. `planning/shared.ts` held a planner-call loop *and* a briefs-approval loop *and* task-file IO *and* one-line glue. The name is the smell — split by concern into intent-named siblings (`planner-call-loop.ts`, `briefs-approval-loop.ts`) and the bucket disappears.
+- **Junk-drawer `shared.ts`.** A file named `shared.ts` / `helpers.ts` attracts unrelated code. `planning/shared.ts` once held a planner-call loop *and* a briefs-approval loop *and* task-file IO *and* one-line glue. The name is the smell — split by concern into intent-named siblings and the bucket disappears.
 - **Non-component logic under `components/`.** A `.ts` (no JSX) doing file IO + engine routing + store reads under `features/*/components/` is misplaced. `components/` holds view code; pure formatters go to a feature-root `*-format.ts`, IO/routing goes to a feature service or behind an engine facade.
 - **Engine-domain logic under `features/`.** A React-free module that re-runs engine work (route + prompt assembly + token estimate) sitting in `features/` because its only consumer is a preview panel. It is engine work — move the compute into a domain-named `engine/` home (e.g. `engine/routing-preview.ts`, never an `engine/facades/`-style tech-layer folder) and let the feature call one function.
 - **A function that both transforms and does IO.** `buildSummary` mixing pure aggregation with five disk reads, `review-packet/sections.ts` mixing pure section builders with git/fs. Extract the IO into a sibling so the transform stays pure and unit-testable without temp dirs.
@@ -193,7 +193,7 @@ Run top to bottom on any diff. The mechanical rows are mostly covered by `npm ru
 
 **Tests**
 - [ ] Tests assert observable behavior, not implementation — no `vi.mock` of `./` siblings, no `toHaveBeenCalledTimes` unless the call count *is* the contract ([TESTING.md](./TESTING.md), STRUCTURE rule 15).
-- [ ] No coupling to exact glyphs, spacing, or verbatim user-facing copy in rendered-frame assertions — assert stable signals (the id is flagged, an action exists), not `'▸ /mode'` or `'[3|]'`.
+- [ ] No coupling to exact glyphs, spacing, or verbatim user-facing copy in rendered-frame assertions — assert stable signals (the id is flagged, an action exists), not `'▸ /usage'` or `'[3|]'`.
 - [ ] No `as any` fakes standing in for a real typed contract; no test of a trivial helper/wiring (`typeof x === 'function'`).
 - [ ] Check which validation stages were baseline-exempt for each task, and confirm the review packet names them next to the raw pass counts.
 - [ ] Oversized test files (>500 LOC) split by concern, with shared setup in `testing/helpers/` factories rather than copy-pasted per test.

@@ -6,7 +6,7 @@ export interface SettingsFocus {
   initialFilter: string | undefined;
 }
 
-/** `filter:temp`, `seat:build`, `workflow.mode`, undefined. A row key carries colons of its own. */
+/** `filter:temp`, `seat:build`, `workflow.approve`, undefined. A row key carries colons of its own. */
 export function parseSettingsFocus(focus: string | undefined): SettingsFocus {
   if (focus === undefined || focus === '')
     return { initialKey: undefined, initialFilter: undefined };

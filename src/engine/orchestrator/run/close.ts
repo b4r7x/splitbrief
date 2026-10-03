@@ -1,4 +1,4 @@
-import { deriveRunStatus, NO_ARTIFACTS } from '../../../core/sessions/run-status.js';
+import { deriveRunStatus } from '../../../core/sessions/run-status.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { transition } from '../../../core/state/machine.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
@@ -19,10 +19,7 @@ export function closeRunIfOpen(
     // creates the head instead of failing the CAS against a file that is not there.
     const head = readWorkflowStateHead(ref);
     const latest = head === null ? state : rebaseOnPersistedWorkflowState(ref, state);
-    if (
-      deriveRunStatus({ state: latest, liveness: 'not-alive', artifacts: NO_ARTIFACTS }).kind ===
-      'closed'
-    ) {
+    if (deriveRunStatus({ state: latest, liveness: 'not-alive' }).kind === 'closed') {
       return { state: latest, closedNow: false };
     }
 

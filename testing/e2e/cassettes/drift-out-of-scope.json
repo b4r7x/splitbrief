@@ -76,14 +76,14 @@
           "authorization": "***",
           "content-type": "application/json"
         },
-        "body": "{\"purpose\":\"planner quick task briefs\"}"
+        "body": "{\"purpose\":\"planner typed plan\"}"
       },
       "response": {
         "status": 200,
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"---\\nid: T001\\ntitle: Create config parser\\naction: create\\nfile: src/config-parser.ts\\ndepends_on: []\\n---\\n### Description\\nCreate src/config-parser.ts with a parseConfig helper for simple key values.\\n\\n### Implementation Steps\\n1. Parse semicolon-separated key value pairs into a lookup map.\\n2. Return a default name and enabled flag when fields are absent.\\n\\n### Tests\\n- Verify parseConfig reads name and enabled values from a simple input string.\\n\\n### Scope\\n**In bounds:**\\n- src/config-parser.ts\\n**Out of bounds:**\\n- File system config loading or environment variable reads.\\n\\n### Escalation\\n- Stop if parser behavior needs schema migration or security decisions.\\n\\n### Evidence\\n- The parser returns deterministic defaults and parsed values.\\n\\n### Type Definitions\\n```ts\\nexport type ParsedConfig = { name: string; enabled: boolean };\\n```\\n\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":385,\"completion_tokens\":188}}\n\ndata: [DONE]\n\n"
+        "body": "data: {\"choices\": [{\"index\": 0, \"delta\": {\"content\": \"{\\\"result\\\":{\\\"kind\\\":\\\"plan\\\",\\\"summary\\\":\\\"Add a parseConfig helper in src/config-parser.ts.\\\",\\\"decisions\\\":[],\\\"criteria\\\":[{\\\"id\\\":\\\"C1\\\",\\\"text\\\":\\\"parseConfig reads name and enabled values and returns defaults when they are absent.\\\",\\\"checkIds\\\":[\\\"T001-K1\\\"]}],\\\"checks\\\":[],\\\"validation\\\":null,\\\"tasks\\\":[{\\\"id\\\":\\\"T001\\\",\\\"title\\\":\\\"Create config parser\\\",\\\"intent\\\":\\\"Create src/config-parser.ts with a parseConfig helper for simple key values.\\\",\\\"criteria\\\":[\\\"C1\\\"],\\\"checks\\\":[{\\\"id\\\":\\\"T001-K1\\\",\\\"kind\\\":\\\"test\\\",\\\"value\\\":\\\"Verify parseConfig reads name and enabled values from a simple input string.\\\",\\\"required\\\":true}],\\\"suggestedFiles\\\":[\\\"src/config-parser.ts\\\"],\\\"contextFiles\\\":[],\\\"exclusions\\\":[\\\"File system config loading or environment variable reads.\\\"],\\\"protectedOperations\\\":null,\\\"steps\\\":[\\\"Parse semicolon-separated key value pairs into a lookup map.\\\",\\\"Return a default name and enabled flag when fields are absent.\\\"],\\\"dependsOn\\\":[],\\\"batch\\\":1}]}}\"}, \"finish_reason\": null}]}\n\ndata: {\"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"stop\"}], \"usage\": {\"prompt_tokens\": 385, \"completion_tokens\": 188}}\n\ndata: [DONE]\n\n"
       },
       "provider": "openai-compatible",
       "durationMs": 1420
@@ -155,7 +155,6 @@
     }
   ],
   "meta": {
-    "mode": "quick",
     "plannerProvider": "custom-endpoint",
     "plannerModel": "claude-sonnet-4-6",
     "implementerProvider": "custom-endpoint",

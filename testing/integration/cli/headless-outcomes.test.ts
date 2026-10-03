@@ -21,6 +21,7 @@ import { processError } from '../../../src/lib/process/errors.js';
 import type { Implementer } from '../../../src/engine/implementers/types.js';
 import type { Planner } from '../../../src/engine/planners/types.js';
 import { runHeadless } from '../../../src/cli/headless.js';
+import { typedCallAnswering } from '#testing/helpers/typed-planner.js';
 
 let stderrSpy: ReturnType<typeof vi.spyOn>;
 let dirs: string[] = [];
@@ -199,9 +200,9 @@ describe('runHeadless — a halted session exits non-zero', () => {
     writeActive({ projectDir, sessionId });
 
     const stalledPlanner = makePlanner({
-      runPhase: vi
-        .fn()
-        .mockRejectedValue(processError.idleTimeout({ command: 'fake-planner', idleMs: 300_000 })),
+      typedCall: typedCallAnswering(() => {
+        throw processError.idleTimeout({ command: 'fake-planner', idleMs: 300_000 });
+      }),
     });
 
     await expect(

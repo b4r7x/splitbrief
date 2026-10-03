@@ -181,7 +181,6 @@ export function createApiPlanner(config: Config, seat: ApiSeatRole = 'planner'):
 
   const invoke = ({
     prompt,
-    apiContext,
     callbacks,
     priorMessages,
     signal,
@@ -189,7 +188,6 @@ export function createApiPlanner(config: Config, seat: ApiSeatRole = 'planner'):
     schema,
   }: {
     prompt: string;
-    apiContext?: ApiRuntimeContext | undefined;
     projectDir: string;
     callContext: RunnerCallContext;
     callbacks: {
@@ -220,7 +218,6 @@ export function createApiPlanner(config: Config, seat: ApiSeatRole = 'planner'):
       invokeApiTransport({
         client,
         model,
-        apiContext,
         prepared,
         planner: {
           provider,
@@ -251,8 +248,8 @@ export function createApiPlanner(config: Config, seat: ApiSeatRole = 'planner'):
     model,
     consumesPriorMessages: true,
     typedOutput: 'native',
-    // An API seat reads no files of its own, so every planning call is given an
-    // explicit evidence packet assembled to this allocation.
+    // An API seat reads no files of its own, so its planning session is given an explicit
+    // evidence packet assembled to this allocation.
     resolvePlanningContext: async (signal) => {
       const resolution = await resolveApiCallContext(prepared, signal);
       if (resolution.kind === 'refused') throw resolution.error;

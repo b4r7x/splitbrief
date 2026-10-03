@@ -6,7 +6,6 @@ import {
   toolRowFocus,
   type OverlayType,
 } from '../../core/navigation/types.js';
-import { resolveMode } from '../../core/config/runtime/resolve.js';
 import type { RecoveryAction } from '../../core/schemas/enums.js';
 import type { RecoveryIssue, SeatSwapCandidate } from '../../core/schemas/recovery/schemas.js';
 import type { TaskId } from '../../core/schemas/task.js';
@@ -174,11 +173,9 @@ export function createRecoveryDriver(
     const promptRecoveryComment = async (action: RecoveryAction): Promise<string> => {
       if (action !== 'revise' && action !== 'revise-spec') return '';
       return inputMode.setQuestionMode(
-        action === 'revise-spec'
-          ? 'What should the spec say instead? (enter sends no note)'
-          : issue.reason === 'review-failed'
-            ? "What should the fix change? (enter sends the review's findings alone)"
-            : 'What should the planner change? (enter sends no note)',
+        issue.reason === 'review-failed'
+          ? "What should the fix change? (enter sends the review's findings alone)"
+          : 'What should the planner change? (enter sends no note)',
       );
     };
 
@@ -219,7 +216,6 @@ export function createRecoveryDriver(
         action,
         bus,
         config,
-        mode: resolveMode({ config, savedMode: state.mode }),
         ...(comment.trim() === '' ? {} : { comment }),
       });
 

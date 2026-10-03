@@ -1,14 +1,14 @@
-import type { Config, ApprovalTier } from '../../../core/schemas/config.js';
+import type { Config } from '../../../core/schemas/config.js';
+import type { ApprovalTier } from '../../../core/approval/types.js';
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { Phase } from '../../../core/schemas/enums.js';
-import type { ApprovalGrant } from '../../../core/schemas/approval-store.js';
 import type { ActionClass } from '../../../core/schemas/enums.js';
 import type { OrchestratorCallbacks } from '../types.js';
 import type { EventBus } from '../../events/types.js';
 
 export type GateActionInput = {
   actionDescription: string;
-  targetPath?: string | undefined;
+  targetPath: string;
   task: Task;
   dependsOnFiles: string[];
   projectDir: string;
@@ -19,7 +19,6 @@ export type GateActionInput = {
   callbacks: OrchestratorCallbacks;
   config: Config;
   getApprovalEnabled?: (() => boolean) | undefined;
-  grants?: ApprovalGrant[];
 };
 
 export type GateDecision = {

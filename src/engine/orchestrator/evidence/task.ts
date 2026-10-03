@@ -383,8 +383,8 @@ export type RecordApiApplyEvidenceInput = {
 /**
  * The durable record of what one bundle response did on disk, written before
  * the attempt's own outcome is decided. Together with promotion receipts, it
- * proves which targets this task created. Without creation proof, a later
- * capture parks a create brief whose anchor already exists.
+ * proves which targets this task created. Without creation proof, a retry
+ * within the same dispatch parks a create brief whose anchor now exists.
  */
 export function recordApiApplyEvidence(input: RecordApiApplyEvidenceInput): EvidenceLedger {
   const next = findOrSeed(input.ledger, input.task, input.briefHash);

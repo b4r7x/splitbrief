@@ -1,5 +1,5 @@
 import type { Config } from '../schemas/config.js';
-import { APPROVE_LEVELS, WORKFLOW_MODES } from '../schemas/enums.js';
+import { APPROVE_LEVELS } from '../schemas/enums.js';
 import { CompactionFormatSchema } from '../schemas/compaction.js';
 import { resolveImplementerProfiles } from '../config/accessors/implementer-profiles.js';
 import { RUNNER_IDLE_KILL_MS } from '../schemas/runner-fields.js';
@@ -73,21 +73,13 @@ export const SETTINGS_DEFS: SettingDef[] = [
     unsetLabel: `auto (idle kill ${RUNNER_IDLE_KILL_MS / 60_000}m)`,
   },
   {
-    id: 'workflow.mode',
-    label: 'Mode',
-    section: 'Workflow',
-    description: 'How many planner calls run before building, and how many gates stop for you',
-    kind: 'enum',
-    options: [...WORKFLOW_MODES],
-  },
-  {
     id: 'workflow.approve',
-    label: 'Spec/plan gates',
+    label: 'Plan approval',
     section: 'Workflow',
-    description: 'Which spec/plan document gates block the workflow ("default" follows mode)',
+    description: 'Whether the plan waits for your approval before the build starts',
     kind: 'enum',
     options: [...APPROVE_LEVELS],
-    unsetLabel: 'follows mode',
+    unsetLabel: 'plan',
   },
   {
     id: 'workflow.maxRetries',

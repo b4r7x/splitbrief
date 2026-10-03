@@ -5,6 +5,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { execFileSync } from 'node:child_process';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import type { PlannerConfig } from '../../../core/schemas/planner-config.js';
 import { runWorkflow } from '../../../engine/orchestrator/run/workflow.js';
@@ -32,7 +33,6 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 const FIRST_FEATURE = 'first run';
 const SECOND_FEATURE = 'second run';
 const MISSING_PLANNER_COMMAND = 'splitbrief-non-existent-planner-x7q9';
-const REWIND_COMMENT = 'restart the first feature';
 
 const LONG_RUNNING_PLANNER: PlannerConfig = { kind: 'shell', command: 'sleep', args: ['10'] };
 const MISSING_PLANNER: PlannerConfig = {
@@ -72,7 +72,7 @@ function preparedExecution(input: {
     config: makeConfig({
       planner: input.planner,
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-      workflow: { mode: 'quick', approve: 'none' },
+      workflow: { approve: 'none' },
     }),
     preparationId: `abort-race-${input.sessionId}`,
     active: reactivateExistingSession(ref),
@@ -212,7 +212,6 @@ describe('useRunLoop abort race', () => {
     const calls: Array<{
       feature: string;
       savedState: WorkflowState | undefined;
-      rewindFeedback: string | undefined;
       sessionId: string;
     }> = [];
     const runWorkflow: RunWorkflowFn = async (opts) => {
@@ -222,7 +221,6 @@ describe('useRunLoop abort race', () => {
       calls.push({
         feature: opts.prepared.runtime.feature,
         savedState: opts.savedState,
-        rewindFeedback: opts.rewindFeedback,
         sessionId,
       });
       if (!signal.aborted) {
@@ -247,12 +245,13 @@ describe('useRunLoop abort race', () => {
     if (firstCall === undefined) throw new Error('expected the first workflow call');
     const savedState: WorkflowState = {
       ...createInitialState(FIRST_FEATURE),
-      phase: 'reviewing-spec',
+      phase: 'implementing',
+      tasks: [makeTask({ id: 'T001', status: 'done' })],
     };
     ensureSessionDir(projectDir, firstCall.sessionId);
     saveState({ projectDir, sessionId: firstCall.sessionId }, savedState);
 
-    expect(requestRewind({ target: 'spec', comment: REWIND_COMMENT })).toBe(true);
+    expect(requestRewind({ target: 'task', taskId: 'T001' })).toBe(true);
 
     clearActiveReceipt(firstPrepared.session.ref, firstPrepared.session.active);
     const secondPrepared = preparedExecution({
@@ -270,14 +269,7 @@ describe('useRunLoop abort race', () => {
     if (secondCall === undefined)
       throw new Error('expected a workflow invocation for the second feature');
     expect(secondCall.savedState).toBeUndefined();
-    expect(secondCall.rewindFeedback).toBeUndefined();
-    expect(
-      eventsStore
-        .get()
-        .events.some(
-          (event) => event.type === 'rewind_to_spec' && event.comment === REWIND_COMMENT,
-        ),
-    ).toBe(false);
+    expect(eventsStore.get().events.some((event) => event.type === 'task_reset')).toBe(false);
     ui.unmount();
   });
 });

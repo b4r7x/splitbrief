@@ -164,14 +164,16 @@ function sessionLog(prepared: PreparedExecution): string {
 }
 
 describe('createRecoveryDriver', () => {
-  it('records skipped brief evidence in the saved run mode after config changes', async () => {
+  it('records skipped brief evidence without the mode an older run saved', async () => {
     const { prepared, state } = setupSession();
     const saved = { ...state, mode: 'speckit' as const };
     saveState(prepared.session.ref, saved);
     const { inputMode } = makeInputMode(['skip-current-task']);
     const result = await runDriver(prepared, saved, inputMode);
     expect(result.shouldRun).toBe(true);
-    expect(readEvidenceLedger(prepared.session.ref)?.mode).toBe('speckit');
+    const ledger = readEvidenceLedger(prepared.session.ref);
+    expect(ledger).not.toBeNull();
+    expect(ledger).not.toHaveProperty('mode');
   });
 
   it('applies a valid action on the first answer without re-prompting', async () => {

@@ -85,7 +85,7 @@ Cause: YAML failed zod validation. The message lists each failing path. Check:
 - `version: 3` is present — no other version loads.
 - Top-level `planner` / `implementer` have a valid `kind`.
 - Per-kind required fields are set (e.g. `kind: api` requires `provider` and `apiBase`).
-- No unknown keys in `workflow`, `codebase`, `hooks` — those sections are strict. Removed fields (`workflow.autoApproveSpec`, `workflow.autoApprovePlan`, top-level `workflow.commitStrategy`) fail here rather than being ignored.
+- No unknown keys in `workflow`, `codebase`, `hooks` — those sections are strict. Removed fields (`workflow.autoApproveSpec`, `workflow.autoApprovePlan`, top-level `workflow.commitStrategy`) fail here rather than being ignored. The retired planning keys do not fail: `workflow.mode`, `workflow.task_review`, `workflow.brief_review`, `workflow.speckit`, `approval.tiers` and the `workflow.approve` values `all`, `spec` and `default` each load with one notice.
 
 See [CONFIGURATION.md](./CONFIGURATION.md) for the full schema. The loader throws `ConfigError` (`src/core/config/errors.ts`) and `loadConfigOrExit` in `src/cli/setup.ts` exits with code 1.
 
@@ -163,7 +163,7 @@ chmod 700 .splitbrief
 
 ## Troubleshooting workflow
 
-1. **Reproduce minimally.** `splitbrief start --json --mode quick "minimal repro"` — the quick mode is one planner call with no approval gates; easiest to script.
+1. **Reproduce minimally.** `splitbrief start --json "minimal repro"` with `workflow.approve: none` in the config — one planning session and no plan card; easiest to script.
 2. **Check the session log.**
    ```bash
    cat .splitbrief/active

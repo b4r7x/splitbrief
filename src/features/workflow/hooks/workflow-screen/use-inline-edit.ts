@@ -1,39 +1,45 @@
 import { useEffect } from 'react';
-import { useInlineEditTrigger } from '../../../editor/use-inline-edit-trigger.js';
-import { useFieldSessionOwned } from '../../../editor/use-field-session-owned.js';
+import { useInput } from 'ink';
+import { openReviewEditor } from '../../review-editor.js';
 import { openReviewFileExternally, type ReviewInputEffects } from '../../review-parser.js';
+import { reviewArtifactForPhase } from '../../prompt-rows/approval.js';
 import type { UseInputModeResult } from '../use-input-mode.js';
-import { editorStore } from '../../../../stores/ui/editor.js';
+import { controlsStore } from '../../../../stores/ui/controls.js';
 import { externalEditRequestStore } from '../../../../stores/ui/external-edit-request.js';
+import { overlayStore } from '../../../../stores/ui/overlay.js';
+import { lifecycleStore } from '../../../../stores/workflow/lifecycle.js';
 import { reviewStore } from '../../../../stores/workflow/review.js';
 
 export function useWorkflowInlineEdit(opts: {
   promptPending: boolean;
   inputMode: UseInputModeResult;
-  sessionDirPath: string | undefined;
   /** Absent leaves the production editor in place; the owner check runs either way. */
   openExternalEditor?: ReviewInputEffects['openExternalEditor'] | undefined;
-}): { fieldSessionOwned: boolean } {
-  const { promptPending, inputMode, sessionDirPath, openExternalEditor } = opts;
+}): void {
+  const { promptPending, inputMode, openExternalEditor } = opts;
 
-  const fieldSessionOpen = editorStore.use((s) => s.status === 'open' && s.surface === 'field');
-  const fieldSessionOwned = useFieldSessionOwned();
-  const globalKeysActive = !promptPending && !fieldSessionOwned;
-  useInlineEditTrigger({ isActive: globalKeysActive, sessionDirPath });
-
-  useEffect(() => {
-    if (fieldSessionOpen && !fieldSessionOwned) editorStore.close();
-  }, [fieldSessionOpen, fieldSessionOwned]);
-
-  const externalEditToken = externalEditRequestStore.use((s) =>
-    s.status === 'requested' ? s.ownerToken : null,
+  const reviewGate = lifecycleStore.use((s) => reviewArtifactForPhase(s.phase) !== null);
+  const inReviewMode = controlsStore.use((c) => c.inputMode === 'review');
+  const overlayFree = overlayStore.use((s) => s.active === 'none' && !s.exclusive);
+  useInput(
+    (input, key) => {
+      if (key.ctrl && input === 'e') void openReviewEditor();
+    },
+    { isActive: !promptPending && inReviewMode && reviewGate && overlayFree },
   );
-  useEffect(() => {
-    if (externalEditToken === null) return;
-    externalEditRequestStore.consume();
-    if (reviewStore.get().ownerToken !== externalEditToken) return;
-    void (openExternalEditor ?? openReviewFileExternally)(inputMode);
-  }, [externalEditToken, inputMode.resolve, openExternalEditor]);
 
-  return { fieldSessionOwned };
+  const request = externalEditRequestStore.use((s) => (s.status === 'requested' ? s : null));
+  useEffect(() => {
+    if (request === null) return;
+    externalEditRequestStore.consume();
+    if (reviewStore.get().ownerToken !== request.ownerToken) return;
+    if (request.action === 'apply-edit') {
+      inputMode.resolve({ approved: false, action: 'edit' });
+      return;
+    }
+    const open: ReviewInputEffects['openExternalEditor'] =
+      openExternalEditor ??
+      ((mode, baseline) => openReviewFileExternally(mode, undefined, baseline));
+    void open(inputMode, request.baseline);
+  }, [request, inputMode.resolve, openExternalEditor]);
 }

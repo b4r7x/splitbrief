@@ -224,6 +224,23 @@ describe('Claude Code role adapters', () => {
     ]);
   });
 
+  it('carries the implementer schema directly before the acceptEdits permission', () => {
+    const args = claudeCodeImplementerAdapter.buildArgs({
+      prompt: '<brief>',
+      model: undefined,
+      projectDir: '/project',
+      configuredArgs: [],
+      schema: { json: { type: 'object' } },
+    });
+    const schemaIndex = args.indexOf('--json-schema');
+    expect(args.slice(schemaIndex, schemaIndex + 4)).toEqual([
+      '--json-schema',
+      '{"type":"object"}',
+      '--permission-mode',
+      'acceptEdits',
+    ]);
+  });
+
   it('refuses a configured --json-schema that would override the adapter schema', () => {
     const base = claudeCodePlannerAdapter.buildArgs({
       prompt: '<brief>',

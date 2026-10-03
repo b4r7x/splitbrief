@@ -78,14 +78,14 @@ src/cli/
 ├── errors.ts          # cliError() factory + isCliError predicate — see ERRORS.md
 ├── headless.ts        # runHeadless(feature, dir, opts) — no-TUI workflow driver for `--json`
 ├── hook-trust-prompt.ts  # TTY hook disclosure + trust prompt (executable, resolved path, argv); refuses in non-TTY unless --allow-hooks
-├── …                  # plus leaf modules (unknown-command, render-table, parse-at-files, …) — `rg --files src/cli` for the full set
+├── …                  # plus leaf modules (unknown-command, parse-at-files, …) — `rg --files src/cli` for the full set
 ├── commands/          # commander subcommand handlers — one file per subcommand, registered in cli.ts (thin — delegate to core). Listing is representative; `rg --files src/cli/commands` for the full set
 │   ├── start/
 │   ├── resume.ts
 │   ├── spec.ts
 │   ├── init.ts
 │   ├── status.ts
-│   └── …              # plus approval, continue, doctor, review, and more — see the rg pointer above
+│   └── …              # plus continue, doctor, review, and more — see the rg pointer above
 └── sessions/          # session-id resolution for subcommands
     ├── resolve.ts          # assertSessionExists and session-id resolution
     ├── aliases.ts          # numeric alias ↔ session-id mapping from lockfiles
@@ -157,9 +157,9 @@ src/engine/codebase/
 
 ```
 src/core/pipeline-spec/      # the typed pipeline contract: ladder.ts, retries.ts, gates.ts, halts.ts,
-                             #   modes.ts, steps.ts, mode-shape.ts, review.ts, brief.ts, scope.ts,
-                             #   baseline.ts, timeouts.ts, divergences.ts, planner-documents.ts,
-                             #   research-fields.ts — pure data and readers, no I/O
+                             #   steps.ts (older runs' step table, read by run-status), review.ts,
+                             #   brief.ts, scope.ts, baseline.ts, timeouts.ts, divergences.ts,
+                             #   planner-documents.ts — pure data and readers, no I/O
 src/core/scope/              # declared-set.ts — the one path ↔ Scope matcher every consumer calls
 src/core/validation/stacks/  # typescript · javascript · python · go · rust rows + registry.ts
 src/core/recovery/           # headline.ts, action-label.ts, resume-command.ts, user-edit-actions.ts
@@ -254,8 +254,7 @@ features/workflow/
 ├── hooks/                    # feature-local hooks
 │   ├── workflow-screen/      # screen model split by intent
 │   │   ├── use-model.ts      # public useWorkflowScreen + WorkflowScreenDeps
-│   │   ├── use-inline-edit.ts # inline field context + external-edit CAS
-│   │   └── use-readiness.ts  # readiness collection + TUI persistence
+│   │   └── use-inline-edit.ts # ctrl+e plan.json editor opener + external-edit handoff
 │   ├── use-run-loop.ts       # runWorkflow + the recovery loop + the process-registry stop watcher
 │   ├── use-run-continue.ts   # how the run is re-entered: the state, the steer, continueRun
 │   └── use-keys.ts
@@ -287,7 +286,7 @@ features/settings/
 
 The `SettingsOverlay` entry is the page `app/overlays/settings.tsx`; it composes `items.ts`, `presentation.ts`, `hooks/editor.ts` and the `crew` feature's renderers.
 
-`features/palette/` follows the same shape: its entry is the page `app/overlays/palette.tsx`, which composes the feature-local `sources.ts` and `results.ts` (`sources.ts` assembles commands/modes/picker actions/live tasks/sessions/custom actions; `results.ts` ranks/filter-matches them for rendering).
+`features/palette/` follows the same shape: its entry is the page `app/overlays/palette.tsx`, which composes the feature-local `sources.ts` and `results.ts` (`sources.ts` assembles commands/skills/live tasks/sessions/custom actions; `results.ts` ranks/filter-matches them for rendering).
 
 **Dissolved (pure-entry) surfaces** (e.g. `setup`, `help`, `sessions`, `skills`):
 
@@ -524,7 +523,7 @@ Features are small and irregular. A template would over-prescribe (minimal featu
 | `settings` | Settings overlay — the crew section plus the field editor for config | `app/overlays/settings.tsx` | `features/settings/` (items + presentation + hooks) |
 | `crew` | No page of its own — rows + renderers consumed by the settings and setup pages | — | `features/crew/` |
 | `runners` | Seat picker — tool + model selection for each seat picker role | `app/overlays/runners.tsx` | `features/runners/` |
-| `editor` | Inline spec / plan / Task Brief editor — headless editing kernel over raw + brief-field surfaces | `app/overlays/editor.tsx` | `features/editor/` |
+| `editor` | Inline `plan.json` editor for the plan card — headless editing kernel with a save check | `app/overlays/editor.tsx` | `features/editor/` |
 | `help` | Global help overlay — keyboard and command reference | `app/overlays/help.tsx` | dissolved (page only) |
 | `sessions` | Sessions picker — select a past session to resume | `app/overlays/sessions.tsx` | dissolved (page only) |
 | `skills` | Skills picker — toggle available skills for a workflow | `app/overlays/skills.tsx` | dissolved (page only) |
@@ -534,21 +533,20 @@ Each surface's entry page is what `src/app/router.tsx` imports (and `app/layout.
 
 ### Inline editor feature layout
 
-The `editor` surface is a headless pure editing kernel feeding two thin Ink surfaces (a full-surface raw editor for `spec.md` / `plan.md` and a small-viewport field editor for Task Briefs). Its decision logic lives in pure `src/core/` modules so the Ink glue carries no branch logic:
+The `editor` surface is a headless pure editing kernel feeding one thin Ink surface: a full-surface editor for the plan card's `plan.json`, whose save runs the plan checks (`plan-save.ts`). Its decision logic lives in pure `src/core/` modules so the Ink glue carries no branch logic:
 
 ```
 src/features/editor/                  # feature internals (imported by app/overlays/editor.tsx)
-├── raw-editor-view.tsx               # full-surface exclusive-overlay raw editor
-├── brief-field-editor.tsx           # small-viewport Task Brief field editor
-├── brief-field-model.ts             # editable-brief field projection over the parsed Task model
-├── brief-save.ts                    # brief round-trip + dep-cycle / quality save gate
+├── editor-buffer-view.tsx            # full-surface exclusive-overlay editor
+├── plan-save.ts                      # plan.json save check: JSON + PlanProposalSchema + checkPlan
 ├── editor-line-segments.ts          # visual-row segmentation for rendering
-├── editor-viewport.ts               # viewport-scroll math for the editor surfaces
-├── use-editor-keys.ts               # useInput wiring over resolveEditorKeyAction
-└── use-inline-edit-trigger.ts       # Ctrl+E review-gate opener (confined read + owner-token capture)
+├── editor-viewport.ts               # viewport-scroll math for the editor surface
+└── use-editor-keys.ts               # useInput wiring over resolveEditorKeyAction
+
+src/features/workflow/review-editor.ts # Ctrl+E / e opener: plan.json in the editor overlay (owner-token capture)
 
 src/app/overlays/editor.tsx           # FLAT overlay page (exclusive; sets overlayStore.setExclusive)
-src/stores/ui/editor.ts               # editorStore singleton (openRaw / openField, owner-token write gate)
+src/stores/ui/editor.ts               # editorStore singleton (openRaw, owner-token write gate)
 src/stores/ui/external-edit-request.ts # one-shot Ctrl+O intent bridge (features/editor → store ← workflow effect); non-gated, carries the CAS ownerToken
 src/core/editor/editor-state.ts       # EditorEvent / EditorMotion types + pure editing-state reducer
 src/core/editor/grapheme-motions.ts   # grapheme + display-width caret/selection motions
@@ -559,7 +557,7 @@ src/features/workflow/components/frame-panel.tsx  # shared single-line-border fr
 
 The raw editor overlay and `ReviewView` share `FramePanel` (in `features/workflow/components/`, beside `divider.tsx` — so it can use the sibling `Divider` without a components→features boundary violation). The overlay consumes it page→feature (`app/overlays/editor.tsx → features/workflow/components/frame-panel`); `ReviewView` consumes it same-slice. The `Ctrl+O` external-editor escape hatch never lets `features/editor` import `features/workflow`: `features/editor` emits an intent into `stores/ui/external-edit-request.ts` and the workflow effect in `features/workflow/hooks/workflow-screen/use-inline-edit.ts` consumes it and runs the existing `review-parser` handoff (`features/editor → store ← workflow effect`, gate 9 clean).
 
-Colocated tests sit next to each source file (`editor-state.test.ts`, `grapheme-motions.test.ts`, `editor.test.ts`, `brief-field-model.test.ts`, `brief-save.test.ts`, `editor-line-segments.test.ts`, `editor-buffer-view.test.tsx`, `external-edit-request.test.ts`, `frame-panel.test.tsx`, `src/stores/ui/editor.test.ts`). The keymap in `src/core/keybindings/editor.ts` is the single source of truth for editor chords; the documented keymap in [`SLASH-COMMANDS-REFERENCE.md`](./SLASH-COMMANDS-REFERENCE.md#inline-editor-spec-plan-and-task-brief) is asserted against it by `src/core/keybindings/editor.test.ts` so the two cannot drift. `Ctrl+O` maps to `{ kind: 'open-external' }` (open the file in the external editor) on both surfaces — raw pre-saves the buffer (CAS-guarded) then hands off; the field surface discards the in-progress edit and opens the whole `tasks.md`.
+Colocated tests sit next to each source file (`editor-state.test.ts`, `grapheme-motions.test.ts`, `editor.test.ts`, `editor-line-segments.test.ts`, `editor-buffer-view.test.tsx`, `external-edit-request.test.ts`, `frame-panel.test.tsx`, `src/stores/ui/editor.test.ts`). The keymap in `src/core/keybindings/editor.ts` is the single source of truth for editor chords; the documented keymap in [`SLASH-COMMANDS-REFERENCE.md`](./SLASH-COMMANDS-REFERENCE.md#inline-editor-planjson) is asserted against it by `src/core/keybindings/editor.test.ts` so the two cannot drift. `Ctrl+O` maps to `{ kind: 'open-external' }` (open the file in the external editor): the overlay pre-saves the buffer (owner-token guarded) then hands off.
 
 **Ratified kernel-contract amendments** (recorded as intentional): (1) `EditorState.affinity: 'upstream' | 'downstream'` — a 1-bit field so a caret on a soft-wrap seam resolves to the correct visual row (`'upstream'` is the default and reproduces prior behavior everywhere except exactly on a seam); (2) `EditorKeyAction` gains `{ kind: 'open-external' }` for the `Ctrl+O` escape hatch; (3) `followCaretScroll` (`src/core/editor/editor-state.ts:264`) reads `state.affinity` instead of the `upstream` default so a downstream seam's painted lower-row caret is not clipped at the viewport's bottom edge (model ≡ paint). The two delete-line reads (`editor-state.ts:137,143`) keep the `upstream` default.
 
@@ -585,16 +583,15 @@ The canonical patterns in this codebase are `src/engine/orchestrator/planning/` 
 ```
 orchestrator/
 ├── planning/
-│   ├── run.ts        # entry — resolves the mode and runs the step loop
-│   ├── steps.ts      # internal — one planner call per step, memoized by artifact
-│   ├── speckit.ts    # internal — the clarify, constitution and analyze calls
-│   ├── invalidate.ts # internal — drops what a revised artifact invalidated
-│   ├── rewind.ts     # internal — rewind-to-approval flow
-│   ├── io.ts         # internal — spec/brief read-write helpers
-│   ├── call-loop.ts  # internal — planner call/stream loop
+│   ├── run.ts        # entry — takes a saved rewind, runs the session, then the plan card
+│   ├── session.ts    # internal — repo map, the planning session, plan compile and the plan card
+│   ├── plan-session.ts # internal — pure question / plan / repair loop
+│   ├── plan-context-fit.ts # internal — each task's context fit for checkPlan
+│   ├── api-packet.ts # internal — the evidence packet of a planner that reads no files
+│   ├── call-loop.ts  # internal — waits for the user's answers to planner questions
 │   ├── queue-drain.ts # internal — drain queued messages into the planner
 │   ├── failure.ts    # internal — planner failure handling
-│   └── brief-quality-gate.ts # internal — brief severity gate
+│   └── mutation-guard.ts # internal — refuses a read-only call that changed the project
 ├── task/
 │   ├── step.ts              # entry — single-task execution
 │   ├── pre-task.ts          # internal — pre-hook dispatch, task-start event, snapshot

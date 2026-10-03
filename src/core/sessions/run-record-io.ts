@@ -1,22 +1,8 @@
-import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { readJsonSafe } from '../../lib/fs.js';
 import { matches } from '../../utils/error.js';
 import { readEvidenceLedger } from '../evidence/ledger-storage.js';
-import {
-  ANALYZE_FILE,
-  CLARIFICATIONS_FILE,
-  CONSTITUTION_CHECK_FILE,
-  PLAN_FILE,
-  RESEARCH_FILE,
-  REVIEW_FILE,
-  RUN_LEDGER_FILE,
-  SPEC_FILE,
-  SUMMARY_FILE,
-  TASKS_FILE,
-  sessionDir,
-  snapshotsDir,
-} from '../paths.js';
+import { RUN_LEDGER_FILE, SUMMARY_FILE, sessionDir, snapshotsDir } from '../paths.js';
 import type { EvidenceLedger } from '../schemas/evidence.js';
 import { RunSnapshotLedgerSchema } from '../schemas/snapshot.js';
 import type { Summary } from '../schemas/summary.js';
@@ -29,26 +15,9 @@ import {
   type RunRecord,
   type RunRecordDeps,
 } from './run-record.js';
-import type { ArtifactPresence } from './run-status.js';
 import { parsePersistedSession } from './summary-parser.js';
 
 const isLedgerUnreadable = matches('recovery-evidence-storage');
-
-/** Which artifacts the run got as far as writing; one stat each, no parsing. */
-export function artifactPresence(ref: SessionRef): ArtifactPresence {
-  const dir = sessionDir(ref.projectDir, ref.sessionId);
-  const has = (file: string): boolean => existsSync(join(dir, file));
-  return {
-    research: has(RESEARCH_FILE),
-    spec: has(SPEC_FILE),
-    plan: has(PLAN_FILE),
-    tasks: has(TASKS_FILE),
-    clarifications: has(CLARIFICATIONS_FILE),
-    constitution: has(CONSTITUTION_CHECK_FILE),
-    analyze: has(ANALYZE_FILE),
-    review: has(REVIEW_FILE),
-  };
-}
 
 export function readSessionSummary(ref: SessionRef): Summary | null {
   const raw = readJsonSafe(join(sessionDir(ref.projectDir, ref.sessionId), SUMMARY_FILE));
@@ -82,7 +51,6 @@ export function defaultRunRecordDeps(): RunRecordDeps {
       checkSessionLiveness(sessionDir(ref.projectDir, ref.sessionId)).alive ? 'alive' : 'not-alive',
     readSummary: readSessionSummary,
     readLedger,
-    artifacts: artifactPresence,
     readCheckpoint: readRunCheckpoint,
   };
 }

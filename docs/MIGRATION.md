@@ -42,7 +42,7 @@ New actions: `CLOSE_RUN`, `INTERRUPT_STEP`, `RESUME_STEP`, `BEGIN_PLANNING`. New
 
 ### Planner interface
 
-`Planner.plan()` and `Planner.quickPlan()` are gone, and with them `PlanOptions`. A planner implements `runPhase({ call, projectDir, inputs, callbacks })` — one call, one document, one artifact — and the orchestrator's step loop decides the order. See [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
+`Planner.plan()` and `Planner.quickPlan()` are gone, and with them `PlanOptions`. The `runPhase()` call that replaced them is gone too: a planner implements `typedCall()`, and the planning session calls it through `requestTyped` with `PlanAnswerSchema`, so each turn returns typed questions or a typed plan. See [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
 
 ### Removed UI surface
 
@@ -111,7 +111,7 @@ If you query session JSONL files programmatically:
 
 ## Headless mode (--json flag)
 
-New `--json` flag on workflow commands. Disables the Ink TUI, emits an NDJSON `EngineEvent` stream on stdout (one JSON document per line, parseable by `jq` or any NDJSON consumer), auto-approves workflow review gates, answers clarifications with an empty string, keeps file-write tiered approvals under approval config, and emits recovery before exiting non-zero.
+New `--json` flag on workflow commands. Disables the Ink TUI, emits an NDJSON `EngineEvent` stream on stdout (one JSON document per line, parseable by `jq` or any NDJSON consumer), approves the plan card unattended, writes an `input_required` record and exits non-zero on a planner question, refuses a write to a protected path because no one is there to confirm it, and emits recovery before exiting non-zero.
 
 Exit codes:
 - `0` — workflow completed successfully (`workflow_complete` emitted).

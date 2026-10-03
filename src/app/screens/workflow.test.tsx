@@ -26,6 +26,7 @@ import {
 import { getContentTopRow } from '../../features/workflow/layout/chrome-rows.js';
 import { getWorkflowContentRect } from '../../features/workflow/layout/rect.js';
 import { WorkflowScreen } from './workflow.js';
+import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../lib/terminal/typeahead-grace.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeCtx, runCommandInTest } from '#testing/helpers/runtime-commands.js';
@@ -165,16 +166,16 @@ describe('WorkflowScreen chrome calibration', () => {
         phase: 'reviewing-plan',
         feature: 'review action lifecycle',
       });
-      outcomes.push(await opts.callbacks.onApprovalNeeded('plan', firstReviewPath));
+      outcomes.push(await opts.callbacks.onApprovalNeeded('plan', firstReviewPath, []));
       publishEvent(opts, {
         type: 'planner_text',
         ts: FIXED_TS + 1,
-        phase: 'reviewing-spec',
+        phase: 'reviewing-plan',
         role: 'planner',
         content: 'plain',
         text: 'Second review opened',
       });
-      outcomes.push(await opts.callbacks.onApprovalNeeded('spec', secondReviewPath));
+      outcomes.push(await opts.callbacks.onApprovalNeeded('plan', secondReviewPath, []));
       return pendingWorkflow();
     });
 
@@ -234,7 +235,7 @@ describe('WorkflowScreen chrome calibration', () => {
         phase: 'reviewing-plan',
         feature: 'wrapped review',
       });
-      outcome = await opts.callbacks.onApprovalNeeded('plan', reviewPath);
+      outcome = await opts.callbacks.onApprovalNeeded('plan', reviewPath, []);
       return pendingWorkflow();
     });
 
@@ -270,7 +271,7 @@ describe('WorkflowScreen chrome calibration', () => {
         phase: 'reviewing-plan',
         feature: 'multiline review ownership',
       });
-      await opts.callbacks.onApprovalNeeded('plan', reviewPath);
+      await opts.callbacks.onApprovalNeeded('plan', reviewPath, []);
       return pendingWorkflow();
     });
 
@@ -314,7 +315,7 @@ describe('WorkflowScreen chrome calibration', () => {
         phase: 'reviewing-plan',
         feature: 'stale review action',
       });
-      outcome = await opts.callbacks.onApprovalNeeded('plan', reviewPath);
+      outcome = await opts.callbacks.onApprovalNeeded('plan', reviewPath, []);
       return pendingWorkflow();
     });
 
@@ -343,6 +344,48 @@ describe('WorkflowScreen chrome calibration', () => {
     ui.stdin.write('\r');
     await vi.waitFor(() => {
       expect(outcome).toEqual({ approved: false, action: 'end-run' });
+    });
+    ui.unmount();
+  });
+
+  it.each([
+    ['quickly drop T003 and keep T002'],
+    ['yes, but split T002 into two tasks'],
+    ['edit nothing, just rename T001'],
+    ['Split T002 into two tasks'],
+  ])('sends "%s" typed at the plan card to the planner as a correction', async (typed) => {
+    const reviewPath = join(projectDir, 'plan.md');
+    writeFileSync(reviewPath, 'Greet people by name.', 'utf8');
+    let outcome: ApprovalReviewResult | undefined;
+    configStore.__testReset({ config: makeConfig(), projectDir });
+    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
+    navigatePreparedWorkflow(projectDir, 'plan card correction');
+    runWorkflow.mockImplementation(async (opts) => {
+      publishEvent(opts, {
+        type: 'workflow_started',
+        ts: FIXED_TS,
+        phase: 'reviewing-plan',
+        feature: 'plan card correction',
+      });
+      outcome = await opts.callbacks.onApprovalNeeded('plan', reviewPath, []);
+      return pendingWorkflow();
+    });
+
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+    );
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Greet people by name.');
+    });
+    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+    for (const char of typed) {
+      ui.stdin.write(char);
+      await flushEffects();
+    }
+    ui.stdin.write('\r');
+
+    await vi.waitFor(() => {
+      expect(outcome).toEqual({ approved: false, action: 'revise', comment: typed });
     });
     ui.unmount();
   });
@@ -511,7 +554,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     ui.unmount();
   });
 
-  it('rewinds a halted run to the plan on /revise-plan and continues it in place', async () => {
+  it('resets a brief of a halted run on /redo-task and continues it in place', async () => {
     const issue = makeRecoveryIssue({
       reason: 'user-edit-conflict',
       phase: 'implementing',
@@ -538,8 +581,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     }));
     const commands = workflowCommands(
       makeCtx({
-        requestRewind: (target, comment) =>
-          requestRewind({ target, ...(comment !== undefined && { comment }) }),
+        requestTaskRedo: (id) => requestRewind({ target: 'task', taskId: id }),
         setFeedbackError: feedbackStore.setError,
       }),
     );
@@ -568,7 +610,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     );
     await flushEffects();
 
-    ui.stdin.write('/revise-plan split the brief');
+    ui.stdin.write('/redo-task T001');
     await flushEffects();
     ui.stdin.write('\r');
     await vi.waitFor(() => {
@@ -576,11 +618,9 @@ describe('WorkflowScreen showing a run at rest', () => {
     });
 
     const saved = hydrateResume(record.ref);
-    if (saved.kind !== 'loaded') throw new Error('expected the rewound state on disk');
-    expect(saved.state.phase).toBe('planning');
-    expect(saved.state.rewindPending).toEqual({ target: 'plan', comment: 'split the brief' });
-    expect(saved.state.pendingRecovery).toBeUndefined();
-    expect(saved.state.tasks).toEqual([]);
+    if (saved.kind !== 'loaded') throw new Error('expected the reset state on disk');
+    expect(saved.state.phase).toBe('implementing');
+    expect(saved.state.tasks[0]?.status).toBe('pending');
     expect(prepareResume).toHaveBeenCalledWith(
       { ref: record.ref, state: saved.state },
       expect.anything(),

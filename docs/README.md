@@ -3,7 +3,7 @@
 > **New here?** Read in this order:
 > 1. [MENTAL-MODEL.md](./MENTAL-MODEL.md) — what SPLITBRIEF is and how it thinks
 > 2. [HOW-IT-WORKS.md](./HOW-IT-WORKS.md) — the complete data flow with file paths
-> 3. [WORKFLOW.md](./WORKFLOW.md) — the state machine, phases, modes
+> 3. [WORKFLOW.md](./WORKFLOW.md) — the state machine, phases, the planning session
 
 **SPLITBRIEF** orchestrates two coding tools. One plans and reviews, the other executes, and SPLITBRIEF holds the contract, the isolation, the validation, the retries, the escalation, and the evidence between them. What a run spent is reported after it finishes; it is not the promise.
 
@@ -15,14 +15,14 @@ Read these to learn how SPLITBRIEF works. Each doc builds on the previous one.
 
 | Doc | What it covers |
 |-----|---------------|
-| [MENTAL-MODEL.md](./MENTAL-MODEL.md) | The concept: two roles, Task Brief contract, four layers, modes, runs. No code. |
+| [MENTAL-MODEL.md](./MENTAL-MODEL.md) | The concept: two roles, Task Brief contract, four layers, one planning session, runs. No code. |
 | [CONCEPTS.md](./CONCEPTS.md) | Concepts & glossary: shared vocabulary used throughout `src/` and the other docs. |
 | [HOW-IT-WORKS.md](./HOW-IT-WORKS.md) | The same flow with file paths and function names. CLI entry → stores → TUI → engine → planning → tasks → review. |
 | [WORKFLOW.md](./WORKFLOW.md) | The state machine: every phase, every transition, the run contract, stopping and continuing, rewind. |
 | [ENGINE.md](./ENGINE.md) | The orchestrator, EventBus, sinks, callbacks vs events, abort handling, message queue. |
 | [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) | Four runner kinds, planner/implementer interfaces, Task Brief structure, token accounting. |
 | [STORES-AND-UI.md](./STORES-AND-UI.md) | Store factory, store groups, how events reach React, screens, overlays. |
-| [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md) | Approval gates, tiered approval, escalation tiers, recovery system, drift detection. |
+| [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md) | The plan card, protected-path confirmation, escalation tiers, recovery system, drift detection. |
 | [SUBSYSTEMS.md](./SUBSYSTEMS.md) | Hooks, snapshots, repo-map, runtime commands, detection, compaction, evidence ledger, session lifecycle. |
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | How the code is organized: design rationale plus a verified inventory of events, commands, paths, and public API surface. |
 
@@ -64,7 +64,7 @@ Specialized subsystem docs linked from the main chapters above.
 
 - [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) — Workflow hook schema, dispatch, substitution, trust model
 - [REPOMAP.md](./REPOMAP.md) — Repo-map: PageRank, token budgeting, SQLite cache
-- [TASK-CONTRACT.md](./TASK-CONTRACT.md) — Task Brief schema, quality gate, evidence
+- [TASK-CONTRACT.md](./TASK-CONTRACT.md) — Plan contract, Task Brief schema, plan checks, evidence
 - [BOOTSTRAP.md](./BOOTSTRAP.md) — Startup steps and ordering
 - [API-KEYS.md](./API-KEYS.md) — Provider keys and secret hygiene
 - [DEBUGGING.md](./DEBUGGING.md) — Diagnosing failures, log locations

@@ -5,7 +5,7 @@ import type { EventBus } from '../events/types.js';
 import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
 import type { Config } from '../../core/schemas/config.js';
 import { readSpecFileOrEmpty, type SpecMetadata } from '../../core/paths-io.js';
-import { SPEC_FILE, TASKS_FILE } from '../../core/paths.js';
+import { PLAN_FILE, SPEC_FILE, TASKS_FILE } from '../../core/paths.js';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import {
   getRunnerCatalogDisplayName,
@@ -48,7 +48,6 @@ import {
   readApiContextDiagnostic,
   type ApiContextDiagnostic,
 } from '../providers/api-context-diagnostic.js';
-import { resolveMode } from '../../core/config/runtime/resolve.js';
 import { isRecord } from '../../utils/type-guards.js';
 import {
   diagnosePlannerCallFailure,
@@ -173,7 +172,11 @@ export async function runFinalReviewPhase(opts: {
       workspaceFiles: universe.changedFiles,
     });
     const fullDiff = [universe.fullDiff, reviewScope.laterDiff].filter(Boolean).join('\n');
-    const spec = readSpecFileOrEmpty({ projectDir, sessionId }, SPEC_FILE);
+    // A run planned on one session agreed on its plan; only an older run wrote a spec.
+    const spec = readSpecFileOrEmpty(
+      { projectDir, sessionId },
+      state.plan === undefined ? SPEC_FILE : PLAN_FILE,
+    );
     const taskBriefs =
       readSpecFileOrEmpty({ projectDir, sessionId }, TASKS_FILE) || formatTasks(state.tasks);
 
@@ -214,7 +217,6 @@ export async function runFinalReviewPhase(opts: {
     let fullPrompt: string;
     if (reviewRunner.kind === 'api') {
       const packet = buildApiReviewContext({
-        mode: resolveMode({ config, savedMode: state.mode }),
         feature: state.feature,
         spec,
         taskBriefs,

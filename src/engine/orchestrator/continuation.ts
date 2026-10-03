@@ -63,11 +63,12 @@ export type ContinuationHolder = {
 /**
  * Two step refs name the same parked work. A brief also compares its attempt: a
  * mid-step partial belongs to the try that produced it, so a seed an earlier
- * attempt left must not resume a later one — a reset attempt starts clean.
+ * attempt left must not resume a later one — a reset attempt starts clean. A run plans in one
+ * session, so every planner step is that session, whichever retired call an old run saved.
  */
 function sameStep(a: StepRef, b: StepRef): boolean {
   if (a.kind !== b.kind) return false;
-  if (a.kind === 'planner') return b.kind === 'planner' && a.call === b.call;
+  if (a.kind === 'planner') return true;
   if (a.kind === 'gate') return b.kind === 'gate' && a.gate === b.gate;
   if (a.kind === 'brief')
     return b.kind === 'brief' && a.taskId === b.taskId && a.attempt === b.attempt;

@@ -84,12 +84,9 @@ function includesAll(...markers: readonly string[]): CheckpointPredicate {
 
 const checkpointPredicates = [
   [checkpointId('idle'), includesAll(WORKFLOW_FIXTURE_TEXT.idle)],
-  [checkpointId('quick-setup'), includesAll('Planning…')],
-  // A quick run never leaves Spec, so the rail shows its researching phase as the live Plan stage.
-  [checkpointId('quick-researching'), includesAll('Researching…', 'Plan')],
-  [checkpointId('planning'), includesAll(WORKFLOW_FIXTURE_TEXT.planning)],
-  [checkpointId('briefs-compiled'), includesAll('passed')],
-  [checkpointId('briefs-approved'), includesAll('3 tasks')],
+  // One planning session: the answered round stays in the transcript, the byline carries the call.
+  [checkpointId('planning'), includesAll('Keep the public API?', 'Planning…')],
+  [checkpointId('plan-compiled'), includesAll('plan.md', 'tasks.md')],
   // The build-progress block is the fact the implementation checkpoint must carry at every width;
   // the task header scrolls out of a 60x18 transcript, so pinning it would pin the viewport too.
   [
@@ -120,34 +117,22 @@ const checkpointPredicates = [
   [checkpointId('touched-not-suggested'), includesAll('also changed')],
   // The tiered gate owns this checkpoint: it takes the prompt zone from the document panel, so the
   // panel's own words are never on this frame.
-  [checkpointId('review'), includesAll('allow this operation only', WORKFLOW_FIXTURE_TEXT.review)],
+  [checkpointId('review'), includesAll('Confirm with a reason', WORKFLOW_FIXTURE_TEXT.review)],
   // The document loads from disk after the panel paints, so each gate waits on the first row of
   // its own document too — otherwise the frame captures a gate over an empty box.
-  [checkpointId('approval-document'), includesAll('End run', 'Fixture plan')],
-  [checkpointId('selection-copy'), includesAll('End run', 'Fixture plan')],
-  [checkpointId('gate-regenerating'), includesAll('Regenerating plan with feedback')],
-  [checkpointId('briefs-gate-regenerating'), includesAll('Applying Task Brief revision feedback')],
-  [checkpointId('approval-permission'), includesAll('allow this operation only')],
+  [checkpointId('selection-copy'), includesAll('End run', 'Edit plan.json')],
   [checkpointId('approval-confirm'), includesAll('Confirm with a reason')],
   [checkpointId('approval-confirm-secret'), includesAll('Confirm with a reason')],
-  [checkpointId('reviewing-briefs'), includesAll('Approve briefs', 'T001 modify')],
+  [checkpointId('plan-card'), includesAll('End run', 'Edit plan.json')],
   // The two briefs whose long headers the card once skipped, beside the first and the last.
   [checkpointId('tasks-card'), includesAll('T001', 'T004', 'T006', 'T007')],
   // The subsections the spec card does not nest, and the briefs after T001's unclosed sample.
-  [checkpointId('spec-tasks-cards'), includesAll('+ 12 more sections', 'T002', 'T003')],
   [checkpointId('question'), includesAll(WORKFLOW_FIXTURE_TEXT.question)],
-  [checkpointId('gate-question'), includesAll('Which call should the live probe make')],
   [checkpointId('question-overflow'), includesAll('Question 2 of 3')],
   [checkpointId('question-input'), includesAll('Question 1 of 2', 'New instruction')],
   [checkpointId('planner-reply'), includesAll('Reply to the planner…', 'Waiting for your answer')],
   // The transcript pins the tail, so the block's last row is the width-stable marker.
   [checkpointId('question-answered'), includesAll('Simplify/clean up existing code')],
-  [
-    checkpointId('task-review'),
-    includesAll('c   continue recommended', 'r   redo task', 'a   abort'),
-  ],
-  // The transcript pins the tail, so the last warning's own words are the width-stable marker.
-  [checkpointId('briefs-shared-file'), includesAll()],
   [checkpointId('paused-mid-brief'), includesAll('/resume', 'Turn stopped')],
   [checkpointId('paused-boundary'), includesAll('briefs complete', 'Paused before T902')],
   [checkpointId('stopping'), includesAll('esc back after stop')],
@@ -171,6 +156,8 @@ const checkpointPredicates = [
   [checkpointId('recovery'), includesAll(WORKFLOW_FIXTURE_TEXT.recovery)],
   [checkpointId('recovery-user-edits'), includesAll(WORKFLOW_FIXTURE_TEXT.recoveryUserEdits)],
   [checkpointId('recovery-plan'), includesAll(WORKFLOW_FIXTURE_TEXT.recoveryPlan)],
+  [checkpointId('recovery-plan-checks'), includesAll('Criterion C2 is served by no task.')],
+  [checkpointId('recovery-plan-questions'), includesAll('Which store keeps the greeting?')],
   [checkpointId('recovery-review'), includesAll(WORKFLOW_FIXTURE_TEXT.recoveryPlan)],
   [checkpointId('recovery-hint'), includesAll(WORKFLOW_FIXTURE_TEXT.recoveryPlan)],
   [checkpointId('recovery-plan-swapped'), includesAll('Continued via Change PLAN tool')],
@@ -183,7 +170,6 @@ const checkpointPredicates = [
   [checkpointId('at-rest-left-isolation'), includesAll()],
   [checkpointId('gates-approved'), includesAll()],
   [checkpointId('gate-stopped'), includesAll()],
-  [checkpointId('gate-corrected'), includesAll()],
   [checkpointId('api-context'), includesAll(WORKFLOW_FIXTURE_TEXT.apiContext, 'Try again')],
   [
     checkpointId('planning-claude-frames'),

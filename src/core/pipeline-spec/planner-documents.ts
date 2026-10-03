@@ -53,44 +53,14 @@ export function headingMatchesSection(heading: string, section: string): boolean
   return QUALIFIER_SEPARATORS.some((separator) => rest.startsWith(separator));
 }
 
-/** A conversational reply, including a heading titled Questions, is not a completed document. */
-export function isPlannerDocument(call: PlannerDocumentCall, text: string): boolean {
-  return missingPlannerDocumentSections(call, text).length === 0;
-}
-
 /**
- * The required sections no heading with a body names. A reply whose document sits inside one
- * top-level md fence is read as that document, the way {@link plannerDocumentText} persists it.
+ * A conversational reply, including a heading titled Questions, is not a completed document. A
+ * reply whose document sits inside one top-level md fence is read as that document.
  */
-export function missingPlannerDocumentSections(call: PlannerDocumentCall, text: string): string[] {
-  const missing = missingSections(call, text);
-  if (missing.length === 0) return missing;
+export function isPlannerDocument(call: PlannerDocumentCall, text: string): boolean {
+  if (missingSections(call, text).length === 0) return true;
   const unwrapped = unwrapMarkdownFence(text);
-  if (unwrapped !== undefined && missingSections(call, unwrapped).length === 0) return [];
-  return missing;
-}
-
-/** The document to persist: the reply itself, or the inside of the md fence that wraps it. */
-export function plannerDocumentText(call: PlannerDocumentCall, text: string): string | undefined {
-  if (missingSections(call, text).length === 0) return text;
-  const unwrapped = unwrapMarkdownFence(text);
-  if (unwrapped !== undefined && missingSections(call, unwrapped).length === 0) return unwrapped;
-  return undefined;
-}
-
-/** What an empty ⏎ on a planner reply sends: continue, and return the step's whole artifact. */
-export function emptyReplyContinuation(call: string, pendingText: string): string {
-  if (!isDocumentCall(call)) {
-    const artifact = call === 'tasks' ? 'tasks.md' : call;
-    return `No further input: proceed with your best judgement and return the complete ${artifact} content as your whole reply.`;
-  }
-  const base = `No further input: proceed with your best judgement. Return the complete ${call} document as your whole reply, with these exact section headings: ${PLANNER_DOCUMENT_SECTIONS[call].join(', ')}.`;
-  const missing = missingPlannerDocumentSections(call, pendingText);
-  return missing.length === 0 ? base : `${base} Missing or unrecognised: ${missing.join(', ')}.`;
-}
-
-function isDocumentCall(call: string): call is PlannerDocumentCall {
-  return Object.hasOwn(PLANNER_DOCUMENT_SECTIONS, call);
+  return unwrapped !== undefined && missingSections(call, unwrapped).length === 0;
 }
 
 function missingSections(call: PlannerDocumentCall, text: string): string[] {

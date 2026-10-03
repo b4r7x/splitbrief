@@ -5,7 +5,6 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
 import type { Config } from '../../../core/schemas/config.js';
-import { resolveMode } from '../../../core/config/runtime/resolve.js';
 import { WORKFLOW_REWIND_ABORT_REASON } from '../../../core/phases.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { pruneOrphanSessions } from '../../../core/sessions/orphans.js';
@@ -53,11 +52,9 @@ import {
   readWorkflowStateHead,
   rebaseOnPersistedWorkflowState,
   recordLastFailure,
-  stateOpsError,
 } from '../state-ops.js';
 import { sessionDir } from '../../../core/paths.js';
-import { artifactPresence } from '../../../core/sessions/run-record-io.js';
-import { deriveRunStatus, NO_ARTIFACTS, resumeStep } from '../../../core/sessions/run-status.js';
+import { deriveRunStatus, resumeStep } from '../../../core/sessions/run-status.js';
 
 function resolveSessionStart(savedState: WorkflowState | undefined): number {
   if (!savedState) return Date.now();
@@ -104,17 +101,6 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   }
   const requestedSavedState = opts.savedState ?? runtime.resumeState;
   let savedState: WorkflowState | undefined;
-  if (opts.prepared.purpose !== 'new-workflow') {
-    try {
-      savedState = readWorkflowStateHead({ projectDir, sessionId })?.state;
-    } catch (err) {
-      // The mode lookup must not fail the run ahead of the guarded read below:
-      // an unreadable head leaves the mode to the config and the read inside the
-      // run body reports the state problem through the run's own error path.
-      if (!stateOpsError.isInvalidHead(err)) throw err;
-    }
-  }
-  const mode = resolveMode({ config, savedMode: savedState?.mode });
   // A boundary interrupt raised before this run started (Esc-Esc in a dead zone
   // of a previous run that then ended into recovery without passing a call
   // boundary) is stale: drain it so it cannot park this run's first call
@@ -140,7 +126,6 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
       ...(ident.reviewerTool !== undefined && { reviewerTool: ident.reviewerTool }),
       ...(ident.reviewerModel !== undefined && { reviewerModel: ident.reviewerModel }),
       ...(ident.reviewerKind !== undefined && { reviewerKind: ident.reviewerKind }),
-      mode,
       projectDir,
       sessionId,
       ...(opts.modelCache !== undefined && { pricingCache: opts.modelCache }),
@@ -153,7 +138,6 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     plannerModel: summaryBase.plannerModel,
     implementerTool: summaryBase.implementerTool,
     implementerModel: summaryBase.implementerModel,
-    mode,
   };
 
   let trackedState: WorkflowState | undefined;
@@ -163,7 +147,6 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   let workflowBus: WorkflowContext['bus'] | undefined;
   let workflowPhase: WorkflowState['phase'] | undefined;
   let cancellationPublished = false;
-  let transientRewindFeedback = opts.rewindFeedback;
 
   const trackState = (state: WorkflowState): void => {
     trackedState = state;
@@ -173,7 +156,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   // the session record and every resume decision derive from it afterwards.
   const recordFailure = (state: WorkflowState, message: string): WorkflowState =>
     recordLastFailure({ projectDir, sessionId }, state, {
-      step: resumeStep(state, artifactPresence({ projectDir, sessionId })),
+      step: resumeStep(state),
       message,
       at: nowIso(),
     });
@@ -202,7 +185,6 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
       const status = deriveRunStatus({
         state: trackedState,
         liveness: 'not-alive',
-        artifacts: NO_ARTIFACTS,
       });
       if (status.kind === 'closed' && status.as === 'complete') return;
     }
@@ -226,7 +208,6 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     projectDir,
     sessionId,
     feature,
-    mode,
     signal: opts.signal,
   });
 
@@ -288,8 +269,8 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
       },
       async () => {
         try {
-          // The mode lookup above serves liveness. Read progress again after acquisition:
-          // the previous runner may have finished while orphan cleanup was awaiting.
+          // Read progress after acquisition: the previous runner may have finished while orphan
+          // cleanup was awaiting.
           savedState =
             opts.prepared.purpose === 'new-workflow'
               ? undefined
@@ -329,9 +310,6 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
               init.wctx.reviewer === init.wctx.planner
                 ? publishingPlanner
                 : withReviewerCallPublishing(init.wctx.reviewer, callPublisher),
-            setRewindFeedback: (feedback) => {
-              transientRewindFeedback = feedback;
-            },
           };
           trackedState = init.state;
           const phaseTimings: Record<string, number> = {};
@@ -351,8 +329,6 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
           let stateForPlanning = init.state;
           let savedStateForPlanning = savedState;
           while (true) {
-            const feedbackForPlanning = transientRewindFeedback;
-            transientRewindFeedback = undefined;
             const planning = await runPlanningPhases({
               wctx,
               state: stateForPlanning,
@@ -360,7 +336,6 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
               phaseTimings,
               startTime,
               setTrackedState: trackState,
-              ...(feedbackForPlanning !== undefined && { rewindFeedback: feedbackForPlanning }),
             });
             trackState(planning.state);
 

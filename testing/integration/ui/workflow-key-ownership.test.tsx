@@ -3,7 +3,8 @@ import { flushEffects, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import type { TieredApprovalRequest } from '../../../src/core/approval/types.js';
+import { CONFIRM_PHRASE, type TieredApprovalRequest } from '../../../src/core/approval/types.js';
+import { CONFIRM_REASON_UNSTATED } from '../../../src/features/workflow/prompt-rows/approval.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
 import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
@@ -20,11 +21,17 @@ const { openApprovalPrompt } = await import('../../../src/stores/approval-prompt
 
 const PAST_GRACE = PROMPT_TYPEAHEAD_GRACE_MS + 30;
 
-function stickyRequest(): TieredApprovalRequest {
+const CONFIRMED = {
+  decision: 'confirm',
+  phrase: CONFIRM_PHRASE,
+  reason: CONFIRM_REASON_UNSTATED,
+} as const;
+
+function confirmRequest(): TieredApprovalRequest {
   return {
-    tier: 'sticky',
-    actionClass: 'write_out_of_scope',
-    actionDescription: 'write outside task scope',
+    tier: 'confirm',
+    actionClass: 'package_change',
+    actionDescription: 'write package.json',
     phase: 'implementing',
   };
 }
@@ -54,22 +61,22 @@ describe('WorkflowScreen key ownership', () => {
     const ui = mountWorkflow();
     await tick(20);
 
-    const decision = openApprovalPrompt(stickyRequest());
+    const decision = openApprovalPrompt(confirmRequest());
     await tick(PAST_GRACE);
     await tick(20);
 
-    expect(ui.lastFrame() ?? '').toContain('allow this operation only');
+    expect(ui.lastFrame() ?? '').toContain('Confirm with a reason');
 
-    // A single 's' must produce exactly one semantic action: the prompt's session-approve.
-    // If the composer were still focused it would also append 's' to the input box.
+    // A single 'y' must produce exactly one semantic action: the prompt's confirm.
+    // If the composer were still focused it would also append 'y' to the input box.
     await flushEffects();
-    ui.stdin.write('s');
-    await expect(decision).resolves.toEqual({ decision: 'allow', scope: 'session' });
+    ui.stdin.write('y');
+    await expect(decision).resolves.toEqual(CONFIRMED);
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    // The composer's input row never received the 's' (it stayed on the placeholder hint).
-    expect(frame).not.toMatch(/>\s+s(\s|$)/m);
+    // The composer's input row never received the 'y' (it stayed on the placeholder hint).
+    expect(frame).not.toMatch(/>\s+y(\s|$)/m);
 
     ui.unmount();
   });
@@ -79,12 +86,12 @@ describe('WorkflowScreen key ownership', () => {
     const ui = mountWorkflow(6);
     await tick(20);
 
-    const decision = openApprovalPrompt(stickyRequest());
+    const decision = openApprovalPrompt(confirmRequest());
     await tick(PAST_GRACE);
     await flushEffects();
 
-    ui.stdin.write('s');
-    await expect(decision).resolves.toEqual({ decision: 'allow', scope: 'session' });
+    ui.stdin.write('y');
+    await expect(decision).resolves.toEqual(CONFIRMED);
 
     ui.unmount();
   });
@@ -93,7 +100,7 @@ describe('WorkflowScreen key ownership', () => {
     const ui = mountWorkflow();
     await tick(20);
 
-    const decision = openApprovalPrompt(stickyRequest());
+    const decision = openApprovalPrompt(confirmRequest());
     await tick(20);
 
     // The 'x' arrives inside the grace window (a keystroke meant for the composer that was

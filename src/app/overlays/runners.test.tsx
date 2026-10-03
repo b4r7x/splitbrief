@@ -1125,7 +1125,7 @@ describe('ToolModelPicker leaving a hand-written shell seat', () => {
         '  lint: false',
         '  test: false',
         'workflow:',
-        '  mode: quick',
+        '  approve: plan',
         '',
       ].join('\n'),
     );

@@ -1,4 +1,4 @@
-import { deriveRunStatus, NO_ARTIFACTS } from '../sessions/run-status.js';
+import { deriveRunStatus } from '../sessions/run-status.js';
 import type { MachineAction, StateAction } from './types.js';
 import { WORKFLOW_STATE_VERSION, type WorkflowState } from '../schemas/workflow.js';
 import { isTaskCompleted, type TaskId } from '../schemas/task.js';
@@ -21,7 +21,6 @@ const anytimeActions = [
   'SET_PLANNER_SESSION_ID',
   'REWIND_TO_SPEC',
   'REWIND_TO_PLAN',
-  'CLEAR_REWIND_PENDING',
   'WIDEN_TASK_SCOPE',
   'ENQUEUE_USER_MSG',
   'MARK_INJECTING_NATIVE',
@@ -47,32 +46,34 @@ const phaseActions = {
   idle: ['START', 'RESEARCH_DONE', 'SPEC_CLARIFY_START', 'BEGIN_PLANNING'],
   researching: ['RESEARCH_DONE', 'SPEC_CLARIFY_START', 'PLAN_DONE', 'BEGIN_PLANNING'],
   specifying: ['SPEC_DONE', 'RESEARCH_DONE', 'PLAN_DONE', 'SPEC_CLARIFY_START', 'BEGIN_PLANNING'],
-  'reviewing-spec': ['APPROVE_SPEC', 'SPEC_CLARIFY_START', 'PLAN_DONE'],
-  clarifying: ['SPEC_CLARIFY_DONE'],
-  'constitution-check': ['CONSTITUTION_CHECK_PASS', 'SPEC_DONE'],
+  'reviewing-spec': ['APPROVE_SPEC', 'SPEC_CLARIFY_START', 'PLAN_DONE', 'BEGIN_PLANNING'],
+  clarifying: ['SPEC_CLARIFY_DONE', 'BEGIN_PLANNING'],
+  'constitution-check': ['CONSTITUTION_CHECK_PASS', 'SPEC_DONE', 'BEGIN_PLANNING'],
   planning: [
     'RESEARCH_DONE',
     'PLAN_DONE',
     'BRIEFS_COMPILED',
+    'PLAN_COMPILED',
     'SPEC_CLARIFY_START',
     'BRIEF_ADMISSION_OPENED',
     'BEGIN_IMPLEMENTATION',
     'ANALYZE_START',
   ],
   'reviewing-plan': [
+    'CORRECT_PLAN',
     'PLAN_DONE',
     'BRIEFS_COMPILED',
+    'PLAN_COMPILED',
     'BRIEF_ADMISSION_OPENED',
     'BEGIN_IMPLEMENTATION',
     'ANALYZE_START',
     'BEGIN_PLANNING',
   ],
-  'reviewing-briefs': ['BRIEF_ADMISSION_OPENED', 'BEGIN_IMPLEMENTATION'],
-  analyzing: ['PLAN_DONE', 'BRIEFS_COMPILED'],
+  'reviewing-briefs': ['BRIEF_ADMISSION_OPENED', 'BEGIN_IMPLEMENTATION', 'BEGIN_PLANNING'],
+  analyzing: ['PLAN_DONE', 'BRIEFS_COMPILED', 'BEGIN_PLANNING'],
   implementing: [
     'START_TASK',
     'UPDATE_TASK_CODE',
-    'CLEAR_TASK_CODE',
     'TASK_SENT',
     'VALIDATION_PASS',
     'HINT_SUCCESS',
@@ -82,12 +83,7 @@ const phaseActions = {
     'ALL_DONE',
   ],
   'validating-task': [...VALIDATION_OR_ESCALATION_SHARED_ACTIONS, 'VALIDATION_FAIL', 'ESCALATE'],
-  escalating: [
-    ...VALIDATION_OR_ESCALATION_SHARED_ACTIONS,
-    'UPDATE_TASK_CODE',
-    'CLEAR_TASK_CODE',
-    'HINT_FAIL',
-  ],
+  escalating: [...VALIDATION_OR_ESCALATION_SHARED_ACTIONS, 'UPDATE_TASK_CODE', 'HINT_FAIL'],
   'final-review': ['REVIEW_DONE', 'REVIEW_FIX_START'],
   complete: ['REVIEW_FIX_START'],
 } as const satisfies Record<Phase, readonly MachineAction['type'][]>;
@@ -125,7 +121,12 @@ function stripCurrentCode(state: WorkflowState, taskId: TaskId): WorkflowState {
     ...state,
     tasks: state.tasks.map((t) => {
       if (t.id !== taskId) return t;
-      const { currentCode: _currentCode, currentCodeByFile: _currentCodeByFile, ...rest } = t;
+      const {
+        currentCode: _currentCode,
+        currentCodeByFile: _currentCodeByFile,
+        contextCodeByFile: _contextCodeByFile,
+        ...rest
+      } = t;
       return rest;
     }),
   };
@@ -236,7 +237,7 @@ export function transition(
 
   switch (action.type) {
     case 'START':
-      return { ...state, phase: state.mode === 'quick' ? 'planning' : 'researching' };
+      return { ...state, phase: 'planning' };
 
     case 'RESEARCH_DONE':
       return { ...state, phase: 'specifying' };
@@ -256,6 +257,13 @@ export function transition(
     // A run whose steps open no plan gate keeps its compiled briefs in the phase that compiled them.
     case 'BRIEFS_COMPILED':
       return { ...state, phase: 'planning', tasks: action.tasks };
+
+    case 'PLAN_COMPILED':
+      return { ...state, plan: action.plan, tasks: action.tasks, rewindPending: undefined };
+
+    // A correction at the plan card stands until a plan compiles, so a replan that stops keeps it.
+    case 'CORRECT_PLAN':
+      return { ...state, rewindPending: { target: 'plan', comment: action.comment } };
 
     case 'BEGIN_IMPLEMENTATION':
       return {
@@ -330,22 +338,25 @@ export function transition(
       };
     }
 
-    case 'UPDATE_TASK_CODE':
+    case 'UPDATE_TASK_CODE': {
+      const stripped = stripCurrentCode(state, action.taskId);
       return {
-        ...state,
-        tasks: state.tasks.map((t) =>
+        ...stripped,
+        tasks: stripped.tasks.map((t) =>
           t.id === action.taskId
             ? {
                 ...t,
-                currentCode: action.code,
-                ...(action.codeByFile ? { currentCodeByFile: action.codeByFile } : {}),
+                action: action.action,
+                ...(action.code !== undefined && { currentCode: action.code }),
+                ...(action.codeByFile !== undefined && { currentCodeByFile: action.codeByFile }),
+                ...(action.contextCodeByFile !== undefined && {
+                  contextCodeByFile: action.contextCodeByFile,
+                }),
               }
             : t,
         ),
       };
-
-    case 'CLEAR_TASK_CODE':
-      return stripCurrentCode(state, action.taskId);
+    }
 
     case 'WIDEN_TASK_SCOPE':
       return widenTaskScope(state, action);
@@ -381,9 +392,7 @@ export function transition(
     }
 
     case 'CLOSE_RUN':
-      if (
-        deriveRunStatus({ state, liveness: 'not-alive', artifacts: NO_ARTIFACTS }).kind === 'closed'
-      ) {
+      if (deriveRunStatus({ state, liveness: 'not-alive' }).kind === 'closed') {
         return state;
       }
       return {
@@ -449,9 +458,6 @@ export function transition(
 
     case 'REWIND_TO_PLAN':
       return rewindReset(state, 'plan', action.comment);
-
-    case 'CLEAR_REWIND_PENDING':
-      return { ...state, rewindPending: undefined };
 
     case 'RESET_TASK': {
       const idx = state.tasks.findIndex((t) => t.id === action.taskId);

@@ -7,7 +7,7 @@ import { sessionDir, SESSION_LOG_FILE } from '../../../core/paths.js';
 import { saveState } from '../../../core/state/persistence.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { buildResumeContext } from './rebuild.js';
-import { PLANNER_DOCUMENT_FIXTURES } from '#testing/helpers/factories/phase-call.js';
+import { PLANNER_DOCUMENT_FIXTURES } from '#testing/helpers/factories/planner-documents.js';
 import { REAL_TASKS_MD } from '#testing/helpers/planning-phase.js';
 
 let dirs: string[] = [];

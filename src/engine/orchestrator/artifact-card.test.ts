@@ -59,7 +59,6 @@ describe('buildArtifactExcerpt — the document itself', () => {
     const text = `${buildSpecFrontmatter({
       plannerTool: 'claude-code',
       implementerTool: 'codex',
-      mode: 'standard',
     })}# Plan\n\nBody.\n`;
     const result = buildArtifactExcerpt(text, PLAN_FILE);
 

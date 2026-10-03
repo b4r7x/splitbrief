@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { realpathSync } from 'node:fs';
 import YAML, { parseDocument, type Document } from 'yaml';
 import { CONFIG_VERSION, type Config } from '../../schemas/config.js';
-import { validateConfig } from './validation/config.js';
+import { retiredValueNotices, validateConfig } from './validation/config.js';
 import { fromYaml, toYaml } from './transform.js';
 import { createDefaultConfig, mergeWithDefaults } from './defaults.js';
 import {
@@ -39,9 +39,13 @@ export interface LoadConfigResult {
   revision: ExpectedConfigRevision;
 }
 
-export type ConfigLoaderDiagnostic = { kind: 'config-file-permissions'; path: string };
+/** What the load found in the file itself: the file's permissions, and a retired value it holds. */
+export type ConfigLoaderDiagnostic =
+  | { kind: 'config-file-permissions'; path: string }
+  | { kind: 'retired-value'; notice: string };
 
 export function formatConfigLoaderDiagnostic(diagnostic: ConfigLoaderDiagnostic): string {
+  if (diagnostic.kind === 'retired-value') return diagnostic.notice;
   return `Config file ${diagnostic.path} has overly permissive permissions. Consider running: chmod 600 ${diagnostic.path}`;
 }
 
@@ -110,11 +114,8 @@ function parseLoadedConfig(
     throw configError.unsupportedVersion(camelRecord['version']);
   }
 
-  const {
-    errors,
-    warnings: validationWarnings,
-    data,
-  } = validateConfig(mergeWithDefaults(camelRecord));
+  const merged = mergeWithDefaults(camelRecord);
+  const { errors, warnings: validationWarnings, data } = validateConfig(merged);
   if (errors.length > 0) {
     const lines = [`Configuration errors in ${SPLITBRIEF_DIR}/${CONFIG_FILE}:`];
     for (const err of errors) lines.push(`  ${err.path}: ${err.message}`);
@@ -129,6 +130,11 @@ function parseLoadedConfig(
       'Unexpected validation state: no data after successful validation',
     ]);
   }
+  // The raw file names a retired value; the config it loads as no longer does (`approve: all` loads
+  // as `plan`), so only the load can say so.
+  loaderDiagnostics.push(
+    ...retiredValueNotices(merged).map((notice) => ({ kind: 'retired-value' as const, notice })),
+  );
   return {
     config: data,
     loaderDiagnostics,

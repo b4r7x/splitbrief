@@ -9,6 +9,9 @@ export const REVIEW_HINT = `y approve${SOFT_SEP}c comment${SOFT_SEP}q end run${S
 export const REVIEW_UNKNOWN_COMMAND_MESSAGE =
   'Unknown command. Use: approve, comment <text>, end-run, or edit';
 
+/** The draft the comment row opens: the text after it goes back to the planner as a correction. */
+export const REVIEW_COMMENT_DRAFT = 'comment ';
+
 const APPROVE_ALIASES = new Set(['approve', 'yes', 'y', 'ok', 'lgtm', 'continue']);
 // The gate no longer rejects, it ends the run; the words it used to take still parse.
 const END_RUN_ALIASES = new Set(['end-run', 'end run', 'end', 'quit', 'q', 'reject', 'no', 'n']);
@@ -24,7 +27,8 @@ export type ReviewCommand = { readonly action: LocalBriefReviewAction } | Legacy
 
 export type ReviewAction =
   | { kind: 'brief-review-command'; command: ReviewCommand }
-  | { kind: 'open-external-editor' }
+  | { kind: 'open-editor' }
+  | { kind: 'comment-draft' }
   | null;
 
 export function reviewOpeningPromptMessage(): string {
@@ -44,8 +48,9 @@ export function parseReviewCommand(text: string): ReviewAction {
   }
   if (cmd === 'status') return briefReviewAction('status');
   if (cmd === 'edit-file' || cmd === 'edit' || cmd === 'e') {
-    return { kind: 'open-external-editor' };
+    return { kind: 'open-editor' };
   }
+  if (cmd === 'comment' || cmd === 'c') return { kind: 'comment-draft' };
   if (cmd.startsWith('comment ') || cmd.startsWith('revise ')) {
     const firstWhitespace = raw.search(/\s/);
     const comment = firstWhitespace === -1 ? '' : raw.slice(firstWhitespace + 1).trim();

@@ -29,7 +29,7 @@ Existing example to follow: `src/cli/commands/start/register.ts`.
    - `handler` — sync or async; an `'arg'` command receives the raw argument string
    - `args` — `'arg'` commands only: `{ kind: 'closed', options, optional? }` when the argument set is fixed (the completion menu offers exactly those — `/crew` closes over `CREW_COMMAND_SEATS`), or `{ kind: 'free', hint }`
    - Optional: `label` (for the command palette), `shortcut`, `hidden`
-4. Guards: add `guard: (ctx) => string | undefined` when the command is only valid in some phases or states. A returned string is the reason — it blocks the command *and* hides its row, so no listed command errors on Enter. The context is `{ phase, plannerSupportsImages }`; phase predicates live in `src/core/phases.ts` (`canReviseSpec`, `canRevisePlan`, `canRedoTask`)
+4. Guards: add `guard: (ctx) => string | undefined` when the command is only valid in some phases or states. A returned string is the reason — it blocks the command *and* hides its row, so no listed command errors on Enter. The context is `{ phase, plannerSupportsImages }`; phase predicates live in `src/core/phases.ts` (`canRedoTask`)
 5. One name, one command: there is no alias mechanism, so a second spelling means a second row. A name that is gone for good belongs in `REMOVED_COMMANDS` (`src/core/runtime/commands/types.ts`) with the sentence that tells the user where it went, never as a row that errors
 6. Document in `docs/SLASH-COMMANDS-REFERENCE.md`
 
@@ -187,7 +187,7 @@ The `assertNever(event)` default case ensures the compiler catches missing event
 4. Wire into `buildSections()` in `src/core/readiness/checks/build.ts`:
    - Import your builder
    - Add a `{ id, title, checks: build<Name>Checks(input.config) }` entry to the sections array
-5. Existing checks: `config`, `mode`, `runners`, `context`, `validation`, `repo`, `cost`
+5. Existing sections: `config`, `repo`, `workflow` (`approval.ts`), `runners`, `context`, `validation`
 
 Follow the `runners.ts` pattern: return an array of checks, use `metadata` for machine-readable details, use `fix` for actionable suggestions.
 

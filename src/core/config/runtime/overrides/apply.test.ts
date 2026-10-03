@@ -1,39 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { applyCLIOverrides, applyApproveOverride } from './apply.js';
+import { applyCLIOverrides } from './apply.js';
 import { workflowOptsToCLIOverrides } from './from-options.js';
 import type { Config } from '../../../schemas/config.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 
-const baseConfig: Config = makeConfig({ workflow: { approve: 'default' } });
-
-describe('applyCLIOverrides — approve', () => {
-  it('--approve <level> sets workflow.approve', () => {
-    const result = applyCLIOverrides(baseConfig, { approve: 'none' });
-    expect(result.workflow.approve).toBe('none');
-  });
-
-  it('--approve none writes no companion keys beyond approve', () => {
-    const result = applyCLIOverrides(baseConfig, { approve: 'none' });
-    expect(result.workflow).not.toHaveProperty('autoApproveSpec');
-    expect(result.workflow).not.toHaveProperty('autoApprovePlan');
-  });
-
-  it('throws on invalid --approve value', () => {
-    expect(() => applyCLIOverrides(baseConfig, { approve: 'bogus' })).toThrow(/Must be one of/);
-  });
-
-  it('accepts --approve default', () => {
-    const result = applyCLIOverrides(baseConfig, { approve: 'default' });
-    expect(result.workflow.approve).toBe('default');
-  });
-});
-
-describe('applyApproveOverride', () => {
-  it.each(['none', 'plan'] as const)('sets approve to %s and nothing else', (level) => {
-    const result = applyApproveOverride(baseConfig, level);
-    expect(result.workflow).toEqual({ ...baseConfig.workflow, approve: level });
-  });
-});
+const baseConfig: Config = makeConfig({ workflow: { approve: 'plan' } });
 
 describe('applyCLIOverrides — plannerEffort', () => {
   it('sets planner.effort when valid', () => {
@@ -66,13 +37,13 @@ describe('applyCLIOverrides — yolo', () => {
       ...baseConfig,
       approval: {
         enabled: true,
-        tiers: { destructive: 'confirm' },
         feedRejectionsToPlanner: true,
+        allowedPaths: ['docs/**'],
       },
     };
     const result = applyCLIOverrides(config, { yolo: true });
     expect(result.approval?.enabled).toBe(false);
-    expect(result.approval?.tiers?.destructive).toBe('confirm');
+    expect(result.approval?.allowedPaths).toEqual(['docs/**']);
     expect(result.approval?.feedRejectionsToPlanner).toBe(true);
   });
 
@@ -86,20 +57,10 @@ describe('applyCLIOverrides — yolo', () => {
   });
 });
 
-describe('applyCLIOverrides — contextLength and mode', () => {
+describe('applyCLIOverrides — contextLength', () => {
   it('applies contextLength override', () => {
     const result = applyCLIOverrides(baseConfig, { contextLength: 16384 });
     expect(result.implementer.contextLength).toBe(16384);
-  });
-
-  it.each(['full', 'spec-kit'])('rejects the removed %s mode alias', (mode) => {
-    expect(() => applyCLIOverrides(baseConfig, { mode })).toThrow(
-      /Invalid mode: (full|spec-kit)\. Must be one of: quick, standard, speckit/,
-    );
-  });
-
-  it('maps --mode instant onto quick', () => {
-    expect(applyCLIOverrides(baseConfig, { mode: 'instant' }).workflow.mode).toBe('quick');
   });
 
   it('preserves a configured approve level when no approve override is given', () => {

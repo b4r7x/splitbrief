@@ -16,9 +16,9 @@ export const COMMANDS: RuntimeCommandDef[] = [
   },
   {
     kind: 'arg',
-    name: '/mode',
-    label: 'Mode',
-    description: 'Workflow mode',
+    name: '/sample',
+    label: 'Sample',
+    description: 'Sample command',
     category: 'navigate',
     args: { kind: 'free', hint: '<text>' },
     validScreens: ['home'],

@@ -280,7 +280,6 @@ const CONFIG_BEFORE_THE_OVERRIDE_PARAMETER = makeConfig({
     temperature: 0.2,
   },
   workflow: {
-    mode: 'standard',
     maxRetries: 2,
   },
 });

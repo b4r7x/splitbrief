@@ -64,7 +64,6 @@ function guardScenario(model: string | undefined) {
   return {
     tool: 'claude-code',
     model,
-    mode: 'quick' as const,
     feature: 'guard scenario that must never reach a real call',
     validateScript: '',
     implementerContextLength: 4096,
@@ -421,7 +420,7 @@ describe('release matrix manifest and config', () => {
     expect(config.planner.tool).toBe('codex');
     expect(config.implementer.contextLength).toBe(4096);
     expect(config.reviewer).toBeUndefined();
-    expect(config.workflow.mode).toBe('quick');
+    expect(config.workflow.mode).toBeUndefined();
   });
 
   it('assembles a speckit row config with the reviewer seat', () => {
@@ -433,7 +432,7 @@ describe('release matrix manifest and config', () => {
     if (reviewer === undefined || reviewer.kind !== 'cli') throw new Error('unreachable');
 
     expect(reviewer.tool).toBe('codex');
-    expect(config.workflow.mode).toBe('speckit');
+    expect(config.workflow.mode).toBeUndefined();
 
     const contextMd = MATRIX_TIERS.speckit.contextMd;
     if (contextMd === undefined) throw new Error('unreachable');

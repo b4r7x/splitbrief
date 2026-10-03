@@ -7,7 +7,6 @@ import type { SkillMeta } from '../../../core/skills/types.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
-import { getWorkflowMode } from '../../../core/config/accessors/values.js';
 import { DETECTING_TOOLS_STATUS } from '../../../core/discovery/copy.js';
 import {
   CREW_LABEL_WIDTH,
@@ -75,19 +74,18 @@ export function HomeSeatBlock({ rows, width }: { rows: number; width: number }) 
     review: theme.reviewer,
   };
 
-  const mode = getWorkflowMode(config);
   // The block is bare text, so it opens two cells inside the composer's column — where the
   // composer's own caret sits — and its lines have that much less of `width` to spend.
   const textWidth = Math.max(1, width - MARK_SLOT_CELLS);
   // The hint is the point of the row, so it is the last thing to go: drop the
   // skills count, then the detection notice, until the line fits.
   const optional = shedToFit({
-    lead: [mode],
+    lead: [],
     optional: [selectedSkillsText(skills), ...(coldDiscovery ? [DETECTING_TOOLS_STATUS] : [])],
     tail: [CREW_HINT],
     width: textWidth,
   });
-  const status = [mode, ...optional, CREW_HINT].join(SOFT_SEP);
+  const status = [...optional, CREW_HINT].join(SOFT_SEP);
 
   return (
     <Box flexDirection="column" width={width} flexShrink={0} paddingLeft={MARK_SLOT_CELLS}>

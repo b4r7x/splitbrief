@@ -15,45 +15,45 @@ function statusOf(
 }
 
 describe('rail stage status', () => {
-  it('shows Plan active and Spec pending while a saved quick run researches', () => {
-    const stages = getRailStages('researching', { mode: 'quick' });
+  it.each([
+    'researching',
+    'specifying',
+    'reviewing-spec',
+    'clarifying',
+    'constitution-check',
+    'planning',
+    'reviewing-plan',
+    'reviewing-briefs',
+    'analyzing',
+  ] as const)('folds the pre-build phase %s into Plan', (phase) => {
+    const stages = getRailStages(phase);
+    expect(stages.map((state) => state.stage)).toEqual(['plan', 'build', 'review']);
     expect(statusOf(stages, 'plan')).toBe('active');
-    expect(statusOf(stages, 'spec')).toBe('pending');
+    expect(statusOf(stages, 'build')).toBe('pending');
   });
 
-  it('marks Plan through Review done and leaves Spec pending when a quick run completes', () => {
-    const stages = getRailStages('complete', { mode: 'quick' });
-    expect(stages.filter((state) => state.status === 'done').map((state) => state.stage)).toEqual([
-      'plan',
-      'briefs',
-      'build',
-      'review',
-    ]);
-    expect(statusOf(stages, 'spec')).toBe('pending');
+  it('marks all three stages done when a run completes', () => {
+    const stages = getRailStages('complete');
+    expect(stages.every((state) => state.status === 'done')).toBe(true);
   });
 
-  it('marks the stop stage of an ended quick run', () => {
-    const stages = getRailStages('implementing', { halted: 'failed', mode: 'quick' });
+  it('marks the stop stage of an ended run', () => {
+    const stages = getRailStages('implementing', { halted: 'failed' });
+    expect(statusOf(stages, 'plan')).toBe('done');
     expect(statusOf(stages, 'build')).toBe('failed');
     expect(statusOf(stages, 'review')).toBe('pending');
-  });
-
-  it('shows Spec active and Plan pending while standard Research runs', () => {
-    const stages = getRailStages('researching');
-    expect(statusOf(stages, 'spec')).toBe('active');
-    expect(statusOf(stages, 'plan')).toBe('pending');
   });
 });
 
 describe('Form C selection', () => {
-  it('selects Plan for quick idle and Review for quick complete', () => {
-    expect(selectRailStage(getRailStages('idle', { mode: 'quick' }), 'quick')).toEqual({
+  it('selects Plan for idle and Review for complete', () => {
+    expect(selectRailStage(getRailStages('idle'))).toEqual({
       state: { stage: 'plan', status: 'pending' },
-      index: 1,
+      index: 0,
     });
-    expect(selectRailStage(getRailStages('complete', { mode: 'quick' }), 'quick')).toEqual({
+    expect(selectRailStage(getRailStages('complete'))).toEqual({
       state: { stage: 'review', status: 'done' },
-      index: 4,
+      index: 2,
     });
   });
 });

@@ -1,12 +1,14 @@
-import type { ApprovalTier } from '../schemas/config.js';
 import type { ActionClass } from '../schemas/enums.js';
 import type { Phase } from '../schemas/enums.js';
 import type { TaskId } from '../schemas/task.js';
 
 export const CONFIRM_PHRASE = 'I confirm';
 
+/** What a gate does with an action class: let it through, or ask for a confirmation. */
+export type ApprovalTier = 'auto' | 'confirm';
+
 export type TieredApprovalRequest = {
-  tier: ApprovalTier;
+  tier: 'confirm';
   actionClass: ActionClass;
   actionDescription: string;
   taskId?: TaskId | undefined;
@@ -14,12 +16,17 @@ export type TieredApprovalRequest = {
 };
 
 export type TieredApprovalResponse =
-  | { decision: 'allow'; scope: 'once' | 'session' | 'always' }
   | { decision: 'deny'; reason: string }
   | { decision: 'confirm'; phrase: string; reason: string };
 
 export type ApprovalReviewResult =
-  | { approved: true; action?: undefined; comment?: undefined }
+  | {
+      approved: true;
+      action?: undefined;
+      comment?: undefined;
+      /** Nobody looked at what was approved (headless); it confirms no protected operation. */
+      unattended?: true | undefined;
+    }
   | { approved: false; action: 'edit'; comment?: string | undefined }
   | {
       approved: false;

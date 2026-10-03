@@ -10,9 +10,7 @@ import type {
   PlannerCallbacks,
   PlannerOutputCallbacks,
   EscalateOptions,
-  RegenerateOptions,
   EscalationResult,
-  RegenerateResult,
   PlannerCapabilities,
   PriorMessage,
   PlannerSummaryMessage,
@@ -20,26 +18,46 @@ import type {
   PlannerSummaryOptions,
   PlannerUserTurnOptions,
   PlannerUserTurnResult,
-  PlannerInvokeResult,
 } from './types.js';
 import { DEFAULT_AVAILABILITY } from '../availability.js';
 import { escalateFull, escalateHint } from './escalation.js';
-import { createPhaseRunner, prepareInvokeArgs, type PhaseRunnerConfig } from './run-phase.js';
-import type { ApiRuntimeContext } from '../providers/runtime-context.js';
+import { formatMessagesForCli } from '../streaming/format-messages.js';
 import { createPlannerCallContext } from './call-context.js';
 import { summarize, summarizeStructured } from './summary.js';
 import { toTokenDelta } from '../calls/projection.js';
 import type { RunnerCallContext, RunnerCallResult } from '../calls/types.js';
 import { requireCompletedCall } from './require-completed-call.js';
 
+type InvokeExtras = {
+  priorMessages?: PriorMessage[];
+  images?: Attachment[];
+};
+
+export function prepareInvokeArgs(opts: {
+  prompt: string;
+  priorMessages: PriorMessage[] | undefined;
+  images: Attachment[] | undefined;
+  consumesPriorMessages: boolean | undefined;
+}): { effectivePrompt: string; extras: InvokeExtras } {
+  const { prompt, priorMessages, images, consumesPriorMessages } = opts;
+  const hasPrior = priorMessages !== undefined && priorMessages.length > 0;
+  const effectivePrompt =
+    hasPrior && !consumesPriorMessages ? formatMessagesForCli(priorMessages) + prompt : prompt;
+  const hasImages = images !== undefined && images.length > 0;
+  const extras: InvokeExtras = {
+    ...(consumesPriorMessages && hasPrior ? { priorMessages } : {}),
+    ...(hasImages ? { images } : {}),
+  };
+  return { effectivePrompt, extras };
+}
+
 type InternalInvokeOptions = {
   prompt: string;
-  apiContext?: ApiRuntimeContext | undefined;
   projectDir: string;
   callContext: RunnerCallContext;
   callbacks: Pick<
     PlannerCallbacks,
-    'onOutput' | 'onQuestion' | 'onSessionId' | 'onSessionExpired' | 'sessionId' | 'onCallEvent'
+    'onOutput' | 'onQuestion' | 'onSessionId' | 'onSessionExpired' | 'onCallEvent'
   >;
   priorMessages?: PriorMessage[] | undefined;
   images?: Attachment[] | undefined;
@@ -48,11 +66,7 @@ type InternalInvokeOptions = {
   sandboxEnv?: NodeJS.ProcessEnv | undefined;
 };
 
-// artifactFile names the artifact the phase reads back (e.g. tasks.md), so a backend that writes
-// it directly is not mistaken for a planner mutating the project.
-type InternalPlanInvokeFn = (
-  opts: InternalInvokeOptions & { artifactFile?: string | undefined },
-) => Promise<PlannerInvokeResult>;
+type InternalPlanInvokeFn = (opts: InternalInvokeOptions) => Promise<RunnerCallResult>;
 // invokeEscalate exists separately: Claude Code uses session-chaining for plan phases but one-shot for escalations.
 type InternalEscalateInvokeFn = (
   opts: InternalInvokeOptions & { accessMode: 'read-only' | 'write-files' },
@@ -96,44 +110,13 @@ export interface PlannerBaseConfig {
    * block to the prompt for the first planning phase.
    */
   consumesPriorMessages?: boolean;
-  /**
-   * Input-token allocation for the explicitly assembled PLAN context packet.
-   * Set by seats that read no files of their own; see `run-phase.ts`.
-   */
-  planningContextBudget?: number | undefined;
-  resolvePlanningContext?: PhaseRunnerConfig['resolvePlanningContext'];
   injectUserTurn?: (opts: PlannerUserTurnOptions) => Promise<PlannerUserTurnResult>;
+  resolvePlanningContext?: Planner['resolvePlanningContext'];
 }
 export function createPlannerBase(config: PlannerBaseConfig): Planner {
   const capabilities = config.capabilities;
 
   const planner: Planner = {
-    runPhase: createPhaseRunner(config),
-
-    async regenerate(opts: RegenerateOptions): Promise<RegenerateResult> {
-      const { prompt, projectDir, callbacks, priorMessages } = opts;
-      const callContext = createPlannerCallContext(config, 'planner');
-      const { effectivePrompt, extras } = prepareInvokeArgs({
-        prompt,
-        priorMessages,
-        images: undefined,
-        consumesPriorMessages: config.consumesPriorMessages,
-      });
-      // A revised document is planning, so it lands on the planner's thread, where the steps
-      // after it read the revision rather than the document it replaced.
-      const result = requireCompletedCall(
-        await config.invokePlan({
-          prompt: effectivePrompt,
-          projectDir,
-          callContext,
-          callbacks,
-          ...extras,
-          signal: callbacks.signal,
-        }),
-      );
-      return { text: result.text, usage: toTokenDelta(result.usage) };
-    },
-
     async escalateHint(opts: EscalateOptions): Promise<EscalationResult> {
       return escalateHint(config, opts);
     },
@@ -173,12 +156,19 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
         // A planner answer is a turn on the planning thread the backend holds, so a repair
         // continues the thread that gave it; a review holds no session.
         if (ctx.seat === 'planner') {
-          return config.invokePlan({
+          const { effectivePrompt, extras } = prepareInvokeArgs({
             prompt,
+            priorMessages: ctx.priorMessages,
+            images: ctx.images,
+            consumesPriorMessages: config.consumesPriorMessages,
+          });
+          return config.invokePlan({
+            prompt: effectivePrompt,
             projectDir: ctx.projectDir,
             callContext,
             callbacks: ctx.callbacks,
             signal: ctx.callbacks.signal,
+            ...extras,
             ...(schema !== undefined && { schema }),
           });
         }
@@ -213,6 +203,9 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
     ...(config.unavailabilityReason && { unavailabilityReason: config.unavailabilityReason }),
     ...(config.getVersion && { getVersion: config.getVersion }),
     ...(config.injectUserTurn && { injectUserTurn: config.injectUserTurn }),
+    ...(config.resolvePlanningContext && {
+      resolvePlanningContext: config.resolvePlanningContext,
+    }),
     capabilities,
   };
 

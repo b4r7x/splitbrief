@@ -4,7 +4,7 @@ The SPLITBRIEF planner sees a token-budgeted **repo-map** of your project's sour
 
 ## Why
 
-Without a repo-map, cheap planners (Ollama, DeepSeek, etc.) miss existing helpers and propose duplicates. Even Claude burns tokens reading files we could have summarized. The repo-map costs ~4000 tokens per workflow and saves orders of magnitude more on `researching` phase reads.
+Without a repo-map, cheap planners (Ollama, DeepSeek, etc.) miss existing helpers and propose duplicates. Even Claude burns tokens reading files we could have summarized. The repo-map costs ~4000 tokens per workflow and saves orders of magnitude more on planning-session reads.
 
 ## What it contains
 

@@ -15,7 +15,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import {
   makeCallbacks,
@@ -41,6 +40,7 @@ import {
   workspaceOwner,
 } from '../../../src/engine/orchestrator/isolation/retention.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
+import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
 
 // Cold-process proof harness. The host runs this file once per matrix cell:
 //   F2B_PROOF_DIR=<fixture> F2B_PROOF_ENTRY=<n> F2B_PROOF_ROUTE=<initial|local|hint>
@@ -90,7 +90,7 @@ function makeColdTask() {
 
 function makeColdConfig() {
   return makeNoValidationConfig({
-    workflow: { mode: 'quick', approve: 'none', maxRetries: 1 },
+    workflow: { approve: 'none', maxRetries: 1 },
     approval: { enabled: false, feedRejectionsToPlanner: false },
   });
 }
@@ -149,13 +149,7 @@ async function runColdEntry(input: {
           }),
         }
       : {}),
-    runPhase: vi.fn(async ({ call }) =>
-      makePhaseCallResult({
-        call,
-        usage: null,
-        ...(call === 'tasks' ? { tasks: [task] } : {}),
-      }),
-    ),
+    typedCall: typedCallFromTasks([task]),
   });
   const writeAndStop = async (opts: ImplementerOptions) => {
     assertUnborn(projectDir);
@@ -508,13 +502,7 @@ it.skipIf(!proofMainEnd)(
       sinks: TEST_SINKS,
       eventBus: bus,
       _planner: makePlanner({
-        runPhase: vi.fn(async ({ call }) =>
-          makePhaseCallResult({
-            call,
-            usage: null,
-            ...(call === 'tasks' ? { tasks: [makeColdTask()] } : {}),
-          }),
-        ),
+        typedCall: typedCallFromTasks([makeColdTask()]),
       }),
       _implementer: makeImplementer({
         capabilities: { writesFiles: 'direct' },
@@ -567,7 +555,6 @@ it.skipIf(!proofMainEnd)(
     expect(cancellations[0]).toMatchObject({ reason: WORKFLOW_CANCEL_REASON_USER });
     expect(events.filter((event) => event.type === 'recovery_prompted')).toHaveLength(0);
     expect(events.filter((event) => event.type === 'task_started')).toHaveLength(0);
-    expect(events.filter((event) => event.type === 'task_review_needed')).toHaveLength(0);
     expect(events.filter((event) => event.type === 'paused_external_changes')).toMatchObject([
       { selectedAction: 'abort-workflow' },
     ]);
@@ -597,7 +584,6 @@ it.skipIf(!proofMainEnd)(
           workflow_cancelled: cancellations.length,
           recovery_prompted: 0,
           task_started: 0,
-          task_review_needed: 0,
         },
         state: {
           revisionAtAnswer,

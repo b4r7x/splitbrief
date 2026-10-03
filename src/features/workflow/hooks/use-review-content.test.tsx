@@ -198,7 +198,7 @@ describe('useReviewContent', () => {
     });
   });
 
-  it('keeps the same review through viewport rerenders and reloads it after an editor revision', async () => {
+  it('keeps the same review through viewport rerenders and reloads it when the card reopens on the same file', async () => {
     const file = join(tmp, 'spec.md');
     writeFileSync(file, 'before edit\n');
     reviewStore.setReviewFile(file);
@@ -217,21 +217,13 @@ describe('useReviewContent', () => {
     terminalSizeStore.__testReset({ cols: 60, rows: 18 });
     await vi.waitFor(() => {
       expect(ui?.lastFrame()).toContain('60x18:content=before edit');
-      expect(reviewStore.get().revision).toBe(0);
     });
 
-    reviewStore.setScrollOffset(9);
-    reviewStore.setRenderedLineCount(30);
     writeFileSync(file, 'after edit\n');
-    reviewStore.reloadReviewFile();
+    reviewStore.setReviewFile(file);
 
     await vi.waitFor(() => {
       expect(ui?.lastFrame()).toContain('60x18:content=after edit');
-      expect(reviewStore.get()).toMatchObject({
-        revision: 1,
-        scrollOffset: 0,
-        renderedLineCount: 0,
-      });
     });
   });
 

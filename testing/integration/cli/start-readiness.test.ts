@@ -1,9 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   getStartCommandTmp,
-  prepareExecutionMock,
   probeRunnerAvailabilityMock,
   readSingleSessionArtifact,
   renderCalls,
@@ -16,18 +15,9 @@ import {
   writeSessionLockfile,
 } from '#testing/helpers/start-command.js';
 import { isCliError } from '../../../src/cli/errors.js';
-import { activeFile, CONFIG_FILE, sessionsRoot, SPLITBRIEF_DIR } from '../../../src/core/paths.js';
+import { activeFile } from '../../../src/core/paths.js';
 
 setupStartCommandIntegration();
-
-function enableTaskReview(projectDir: string): void {
-  const configPath = join(projectDir, SPLITBRIEF_DIR, CONFIG_FILE);
-  const yaml = readFileSync(configPath, 'utf8');
-  writeFileSync(
-    configPath,
-    yaml.replace('  mode: standard', '  mode: standard\n  taskReview: every'),
-  );
-}
 
 describe('start command — readiness', () => {
   afterEach(() => {
@@ -189,27 +179,5 @@ describe('start command — readiness', () => {
       remediation:
         'Run `ollama serve`, or configure a different implementer, then run `splitbrief doctor` again.',
     });
-  });
-
-  it('rejects JSON task review before preparing or activating a session', async () => {
-    const tmp = getStartCommandTmp();
-    writeReadyReadinessFixtures(tmp);
-    enableTaskReview(tmp);
-
-    let captured: unknown;
-    try {
-      await runStart(['--project', tmp, '--json', 'implement X']);
-    } catch (err) {
-      captured = err;
-    }
-
-    expect(isCliError(captured)).toBe(true);
-    expect((captured as Error).message).toContain(
-      'workflow.taskReview requires an interactive TUI run',
-    );
-    expect(prepareExecutionMock).not.toHaveBeenCalled();
-    expect(runHeadlessMock).not.toHaveBeenCalled();
-    expect(existsSync(activeFile(tmp))).toBe(false);
-    expect(existsSync(sessionsRoot(tmp))).toBe(false);
   });
 });

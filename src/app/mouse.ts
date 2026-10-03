@@ -40,18 +40,8 @@ export function wireAppMouse(filteredStdin: FilteredStdin): () => void {
       return;
     }
 
-    if (fieldSessionOwnsInput()) {
-      if (event.type === 'move') clearWorkflowHover();
-      return;
-    }
-
     handleWorkflowPointer(event);
   });
-}
-
-function fieldSessionOwnsInput(): boolean {
-  const editor = editorStore.get();
-  return editor.status === 'open' && editor.surface === 'field';
 }
 
 export function useAppMouse(): void {
@@ -77,7 +67,6 @@ function handleWheel(event: MouseEvent): void {
   }
   if (routerStore.get().screen !== 'workflow') return;
   if (modalPromptOwnsInput()) return;
-  if (fieldSessionOwnsInput()) return;
   handleWorkflowMouseWheel(event);
 }
 

@@ -49,7 +49,7 @@ The core sentence is:
 
 Durable workflow sessions are core product surface. Users should be able to resume work, inspect session history, browse/filter/search previous sessions, and review the artifacts a run produced.
 
-A session is an execution record for one workflow. It may contain `spec.md`, `plan.md`, `tasks.md`, `summary.json`, `review.md`, evidence, drift reports, checkpoints, and runner transcripts. These artifacts support resume, review, audit, handoff, and final validation.
+A session is an execution record for one workflow. It may contain `plan.json`, `plan.md`, `tasks.md`, `summary.json`, `review.md`, evidence, drift reports, checkpoints, and runner transcripts. These artifacts support resume, review, audit, handoff, and final validation.
 
 A session history is not a plan archive (see the non-goals list in [VISION.md](./VISION.md)). Plan Review is scoped to the current session's Task Briefs and execution readiness.
 

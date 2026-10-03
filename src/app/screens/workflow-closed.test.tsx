@@ -536,25 +536,15 @@ describe('the workflow screen showing a closed run', () => {
     expect(withSpendOff).not.toContain('$0.15');
   });
 
-  it('does not label an old summary with the mode the live config is set to', () => {
+  it('names no mode, neither the one the summary recorded nor the live config', () => {
     configStore.__testReset({ config: makeConfig({ workflow: { mode: 'quick' } }) });
-    showClosedRun({ summary: makeSummary() });
-
-    const ui = mount(160, 40);
-    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-
-    expect(frame).not.toContain('quick');
-
-    ui.unmount();
-  });
-
-  it('renders the mode the summary itself recorded', () => {
     showClosedRun({ summary: makeSummary({ mode: 'standard' }) });
 
     const ui = mount(160, 40);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('standard');
+    expect(frame).not.toContain('quick');
+    expect(frame).not.toContain('standard');
 
     ui.unmount();
   });

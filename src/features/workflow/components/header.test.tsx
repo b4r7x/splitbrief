@@ -140,7 +140,7 @@ describe('Header — seat line', () => {
     expect(frame).toContain('BUILD');
     expect(frame).toContain('REVIEW');
     expect(frame).toContain('qwen2.5-coder:7b');
-    expect(frame.slice(frame.indexOf('PLAN'))).not.toContain(glyph('connectorSame'));
+    expect(frame.slice(frame.indexOf('PLAN'))).not.toContain('›');
   });
 
   it('gives up one seat name to the tight bar instead of hiding all three', async () => {
@@ -233,7 +233,7 @@ describe('Header — seat line', () => {
     vi.useFakeTimers();
     vi.setSystemTime(5_000);
     lifecycleStore.__testReset({ phase: 'planning', status: 'running', startedAt: 0 });
-    terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: true });
+    terminalSizeStore.__testReset({ cols: 52, rows: 24, isSmall: true });
     configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
 
     const instance = render(<Header startedAt={STARTED_AT} />);
@@ -285,9 +285,9 @@ describe('Header — rail and elapsed', () => {
     ui.unmount();
 
     // The active marker opens the rail on the gutter column the hit-test zones use, and its label
-    // follows one marker slot in. A budget error blanks `Spec` while keeping its cells.
+    // follows one marker slot in. A budget error blanks `Plan` while keeping its cells.
     expect(row.indexOf(glyph('stageActive'))).toBe(WORKFLOW_GUTTER_X);
-    expect(row).toContain(`${glyph('stageActive')} Spec`);
+    expect(row).toContain(`${glyph('stageActive')} Plan`);
     // The seat line and the clock stop short of the right gutter.
     expect(row.length).toBeLessThanOrEqual(120 - WORKFLOW_GUTTER_X);
   });
@@ -450,13 +450,13 @@ describe('Header — rail and elapsed', () => {
       phase: 'implementing',
       open: () => {
         void openApprovalPrompt({
-          tier: 'sticky',
+          tier: 'confirm',
           actionClass: 'network',
           actionDescription: 'push to origin',
           phase: 'implementing',
         });
       },
-      answer: () => closeApprovalPrompt({ decision: 'allow', scope: 'once' }),
+      answer: () => closeApprovalPrompt({ decision: 'deny', reason: 'denied' }),
     },
     {
       wait: 'a recovery choice',

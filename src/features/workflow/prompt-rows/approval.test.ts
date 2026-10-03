@@ -1,19 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { plannerStepsFor } from '../../../core/pipeline-spec/steps.js';
 import {
   CONFIRM_HINT,
   CONFIRM_NUDGE,
   CONFIRM_REASON_HINTS,
   REVIEW_COMMENT_HINTS,
   REVIEW_DOCUMENT_HINTS,
-  STICKY_HINTS,
+  CHOOSE_HINTS,
   approvalKeyColumnWidth,
   getConfirmOptions,
   getConfirmPrimaryKey,
   getReviewDocumentPromptRows,
   reviewArtifactForPhase,
+  reviewDocumentForm,
   reviewDocumentOptions,
 } from './approval.js';
+import { REVIEW_DECORATION_ROWS } from '../layout/rect.js';
 
 describe('review gate legends', () => {
   it('keeps the document legend to the keys its option rows do not spell out', () => {
@@ -46,7 +47,7 @@ describe('confirm gate keys and legends', () => {
   it('teaches ⏎ as confirm and esc as deny on both steps', () => {
     expect(CONFIRM_HINT).toEqual({ key: '⏎', verb: 'confirm' });
     expect(CONFIRM_REASON_HINTS).toBe('⏎ confirm · esc deny');
-    expect(STICKY_HINTS).toBe('↑↓ select · ⏎ confirm · esc deny');
+    expect(CHOOSE_HINTS).toBe('↑↓ select · ⏎ confirm · esc deny');
   });
 
   it('keeps the way out on the refusal a stray y earns', () => {
@@ -55,17 +56,16 @@ describe('confirm gate keys and legends', () => {
 });
 
 describe('reviewArtifactForPhase', () => {
-  it.each([
-    ['reviewing-spec', 'spec'],
-    ['reviewing-plan', 'plan'],
-    ['reviewing-briefs', 'briefs'],
-  ] as const)('maps %s to the artifact under review', (phase, artifact) => {
-    expect(reviewArtifactForPhase(phase)).toBe(artifact);
+  it('maps reviewing-plan to the plan card', () => {
+    expect(reviewArtifactForPhase('reviewing-plan')).toBe('plan');
   });
 
-  it('leaves every other phase without a review panel', () => {
-    expect(reviewArtifactForPhase('implementing')).toBeNull();
-  });
+  it.each(['implementing', 'reviewing-spec', 'reviewing-briefs'] as const)(
+    'leaves %s without a review panel',
+    (phase) => {
+      expect(reviewArtifactForPhase(phase)).toBeNull();
+    },
+  );
 });
 
 describe('reviewDocumentOptions', () => {
@@ -77,45 +77,117 @@ describe('reviewDocumentOptions', () => {
   });
 
   it('names what ending the run does instead of calling it a rejection', () => {
-    const labels = reviewDocumentOptions('briefs').map((row) => row.label);
+    const labels = reviewDocumentOptions('plan').map((row) => row.label);
 
     expect(labels).toContain('End run (close this run)');
     expect(labels.join(' ')).not.toMatch(/reject/i);
   });
 
-  it.each(['spec', 'plan', 'briefs'] as const)(
-    'claims no kept changes at the %s gate, which opens before any brief has run',
-    (artifact) => {
-      const labels = reviewDocumentOptions(artifact).map((row) => row.label);
+  it('claims no kept changes at the plan card, which opens before any brief has run', () => {
+    const labels = reviewDocumentOptions('plan').map((row) => row.label);
 
-      expect(labels).toContain('End run (close this run)');
-      expect(labels.join(' ')).not.toMatch(/keep changes/);
-    },
-  );
+    expect(labels).toContain('End run (close this run)');
+    expect(labels.join(' ')).not.toMatch(/keep changes/);
+  });
 
-  it('releases the briefs review from the plan gate, which opens after the briefs are compiled', () => {
-    for (const mode of ['standard', 'speckit'] as const) {
-      const steps = plannerStepsFor(mode, 'all');
-      const gate = steps.findIndex((step) => step.gateAfter === 'plan');
-      expect(steps.slice(0, gate + 1).map((step) => step.call)).toContain('tasks');
-    }
+  it('releases the build from the plan card', () => {
+    expect(reviewDocumentOptions('plan')[0]?.label).toBe('Approve plan and start the build');
+  });
 
-    expect(reviewDocumentOptions('plan')[0]?.label).toBe('Approve plan and review the briefs');
+  it('edits plan.json at the plan card, the file plan.md is rendered from', () => {
+    expect(reviewDocumentOptions('plan')[2]?.label).toBe('Edit plan.json');
   });
 });
 
 describe('getReviewDocumentPromptRows', () => {
+  const TALL = 40;
+
   it('budgets nothing when no artifact is on review', () => {
-    expect(getReviewDocumentPromptRows(null, 120)).toBe(0);
+    expect(getReviewDocumentPromptRows(null, [], 120, TALL)).toBe(0);
+  });
+
+  it('budgets one more row for what approving confirms', () => {
+    expect(getReviewDocumentPromptRows('plan', ['write package.json'], 120, TALL)).toBe(
+      2 + 1 + 4 + 1 + 1,
+    );
   });
 
   it('budgets the four rows, the blank and the legend inside the border', () => {
-    expect(getReviewDocumentPromptRows('plan', 120)).toBe(2 + 4 + 1 + 1);
+    expect(getReviewDocumentPromptRows('plan', [], 120, TALL)).toBe(2 + 4 + 1 + 1);
+  });
+
+  it('draws no border below 80 columns, however tall the terminal', () => {
+    expect(getReviewDocumentPromptRows('plan', [], 60, TALL)).toBe(4 + 1);
   });
 
   it('keeps the legend on one row at the narrowest supported width', () => {
-    expect(getReviewDocumentPromptRows('briefs', 60)).toBeLessThanOrEqual(
+    expect(getReviewDocumentPromptRows('plan', [], 60, TALL)).toBeLessThanOrEqual(
       2 + 4 + 1 + REVIEW_DOCUMENT_HINTS.length,
     );
+  });
+});
+
+describe('reviewDocumentForm', () => {
+  const confirms = ['write package.json'];
+
+  it('sheds the border on a wide but short terminal before the plan loses its rows', () => {
+    const budgetRows = 6 + REVIEW_DECORATION_ROWS;
+    expect(reviewDocumentForm({ artifact: 'plan', confirms, cols: 120, budgetRows })).toEqual({
+      framed: false,
+      legend: true,
+      confirmsText: 'Approving also confirms: write package.json',
+    });
+  });
+
+  it('sheds the legend next, then counts what approving confirms', () => {
+    expect(
+      reviewDocumentForm({
+        artifact: 'plan',
+        confirms,
+        cols: 120,
+        budgetRows: 5 + REVIEW_DECORATION_ROWS,
+      }).legend,
+    ).toBe(false);
+    expect(
+      reviewDocumentForm({
+        artifact: 'plan',
+        confirms: ['write package.json', 'write .github/workflows/ci.yml'],
+        cols: 60,
+        budgetRows: 5,
+      }).confirmsText,
+    ).toBe('Approving also confirms 2 protected operations');
+  });
+
+  it('starts every wrapped line of a long confirms list at its column', () => {
+    const many = [
+      'write package.json',
+      'write package-lock.json',
+      'write .github/workflows/release-and-publish-npm.yml',
+      'write packages/cli/package.json',
+      'write packages/core/package.json',
+      'write .env.example',
+    ];
+    for (let cols = 60; cols <= 120; cols++) {
+      const { confirmsText } = reviewDocumentForm({
+        artifact: 'plan',
+        confirms: many,
+        cols,
+        budgetRows: Number.POSITIVE_INFINITY,
+      });
+      const lines = confirmsText?.split('\n') ?? [];
+      expect(lines.length).toBeGreaterThan(1);
+      for (const line of lines) expect(line, `at ${cols} columns`).not.toMatch(/^\s/);
+    }
+  });
+
+  it('keeps every option when even the fewest rows do not fit', () => {
+    const form = reviewDocumentForm({ artifact: 'plan', confirms, cols: 60, budgetRows: 0 });
+
+    expect(form).toEqual({
+      framed: false,
+      legend: false,
+      confirmsText: 'Approving also confirms 1 protected operation',
+    });
+    expect(getReviewDocumentPromptRows('plan', confirms, 60, 0)).toBe(1 + 4);
   });
 });

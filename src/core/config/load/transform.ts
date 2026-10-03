@@ -25,7 +25,6 @@ function transformKey(
   path: readonly string[],
 ): string {
   if (path[0] === 'hooks') return transformHookKey(key, path);
-  if (path.length === 2 && path[0] === 'approval' && path[1] === 'tiers') return camelToSnake(key);
   return keyFn(key);
 }
 

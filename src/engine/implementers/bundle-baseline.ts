@@ -156,7 +156,8 @@ export async function captureBundleBaseline(
 /**
  * Every operation is derived from what the confined filesystem holds: present is
  * `modify`, absent is `create`. The anchor additionally has to agree with the
- * action its brief claims, so a stale brief is refused rather than silently
+ * action its brief was dispatched with (`refreshCurrentCode` derives it), so an
+ * anchor that changed since dispatch is refused rather than silently
  * reinterpreted. The one exception is a retry after this same task created the
  * anchor: the recorded creation makes `create` mean modify against the freshly
  * captured content. A non-anchor target makes no claim and needs no exception.

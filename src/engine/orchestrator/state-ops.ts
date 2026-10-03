@@ -15,7 +15,6 @@ import { assertSessionDirConfined } from '../../core/sessions/confinement.js';
 import { error, matches, type AppError } from '../../utils/error.js';
 import { warnError } from '../../lib/warn.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
-import { artifactPresence } from '../../core/sessions/run-record-io.js';
 import { resumeStep } from '../../core/sessions/run-status.js';
 import type { EventBus } from '../events/types.js';
 import { addUsage, type UsageCategory } from './tokens.js';
@@ -515,31 +514,6 @@ export function recordLastFailure(
   }
 }
 
-/**
- * What a planning call hands its planner: the run keeps the thread the planner reports and drops
- * one it finds expired, on the caller's own copy of the state, so neither a later call nor a run
- * re-entered on this state resumes it. A thread the run no longer names is not the one to drop.
- */
-export function plannerThreadCallbacks(
-  ref: SessionRef,
-  state: Readonly<{ get: () => WorkflowState; set: (next: WorkflowState) => void }>,
-): {
-  sessionId: string;
-  onSessionId: (id: string) => void;
-  onSessionExpired: (expiredId: string) => void;
-} {
-  const saveThread = (sessionId: string | null): void => {
-    state.set(transitionAndSave(ref, state.get(), { type: 'SET_PLANNER_SESSION_ID', sessionId }));
-  };
-  return {
-    sessionId: ref.sessionId,
-    onSessionId: saveThread,
-    onSessionExpired: (expiredId) => {
-      if (state.get().plannerSessionId === expiredId) saveThread(null);
-    },
-  };
-}
-
 export function raisePendingRecovery(
   scope: WorkflowPersistenceContext,
   state: WorkflowState,
@@ -563,7 +537,7 @@ export function parkStoppedRun(
   state: WorkflowState,
 ): WorkflowState {
   if (state.interruptedStep !== undefined) return state;
-  const step = resumeStep(state, artifactPresence(scope));
+  const step = resumeStep(state);
   const cut = step.kind === 'gate' ? 'boundary' : 'mid-step';
   const next = transitionAndSave(scope, state, {
     type: 'INTERRUPT_STEP',

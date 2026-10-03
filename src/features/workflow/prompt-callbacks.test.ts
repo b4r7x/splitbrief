@@ -1,18 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildPromptCallbacks } from './prompt-callbacks.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
-import {
-  TASK_REVIEW_COMMANDS,
-  type TaskReviewRequest,
-  type UserEditConflict,
-} from '../../engine/events/workflow-events.js';
+import type { UserEditConflict } from '../../engine/events/workflow-events.js';
 import { taskId } from '../../core/schemas/task.js';
-import { feedbackStore } from '../../stores/ui/feedback.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { stopStore } from '../../stores/workflow/stop.js';
 import { tasksStore } from '../../stores/workflow/tasks.js';
 import { reviewStore } from '../../stores/workflow/review.js';
-import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 function makeInputMode(answers: string | string[]): UseInputModeResult {
   const queue = Array.isArray(answers) ? [...answers] : [answers];
@@ -49,27 +43,12 @@ const conflict: UserEditConflict = {
   availableActions: ['continue-unrelated', 'pause', 'abort-workflow'],
 };
 
-function makeReviewRequest(): TaskReviewRequest {
-  return {
-    taskId: taskId('T001'),
-    taskTitle: 'do the thing',
-    status: 'done',
-    filesTouched: ['src/a.ts'],
-    validation: { passed: true, summary: 'all green', stages: [] },
-    evidence: { summary: 'evidence', expected: [], observed: [] },
-    cost: {
-      tokenUsage: makeUsage({ implementerInput: 10, implementerOutput: 5 }),
-    },
-    availableCommands: [...TASK_REVIEW_COMMANDS],
-  };
-}
-
 describe('buildPromptCallbacks onApprovalNeeded', () => {
   afterEach(() => {
     reviewStore.reset();
   });
 
-  it.each(['briefs', 'spec', 'plan'] as const)(
+  it.each(['plan', 'artifact'] as const)(
     'uses the generic review hint for %s approvals',
     async (type) => {
       const setReviewMode = vi
@@ -80,11 +59,50 @@ describe('buildPromptCallbacks onApprovalNeeded', () => {
         setReviewMode,
       });
 
-      await callbacks.onApprovalNeeded(type, '/tmp/review.md');
+      await callbacks.onApprovalNeeded(type, '/tmp/review.md', []);
 
       expect(setReviewMode).toHaveBeenCalledWith('');
     },
   );
+
+  it('lists what the engine says approving the plan card confirms, not what a file says', async () => {
+    const setReviewMode = vi
+      .fn<UseInputModeResult['setReviewMode']>()
+      .mockImplementation(async () => {
+        expect(reviewStore.get().confirms).toEqual(['write package.json']);
+        return { approved: true };
+      });
+    const callbacks = makeCallbacksWithInputMode({ ...makeInputMode(''), setReviewMode });
+
+    await callbacks.onApprovalNeeded('plan', '/nonexistent/plan.md', ['write package.json']);
+
+    expect(setReviewMode).toHaveBeenCalledOnce();
+  });
+
+  it('replaces the confirms on a revised plan card and clears them for an artifact review', async () => {
+    const seen: (readonly string[])[] = [];
+    const setReviewMode = vi
+      .fn<UseInputModeResult['setReviewMode']>()
+      .mockImplementation(async () => {
+        seen.push(reviewStore.get().confirms);
+        return { approved: false, action: 'revise', comment: 'split T002' };
+      });
+    const callbacks = makeCallbacksWithInputMode({ ...makeInputMode(''), setReviewMode });
+
+    await callbacks.onApprovalNeeded('plan', '/nonexistent/plan.md', ['write package.json']);
+    await callbacks.onApprovalNeeded('plan', '/nonexistent/plan.md', [
+      'write package.json',
+      'write package-lock.json',
+    ]);
+    await callbacks.onApprovalNeeded('artifact', { label: 'Artifact', text: 'text' }, []);
+
+    expect(seen).toEqual([
+      ['write package.json'],
+      ['write package.json', 'write package-lock.json'],
+      [],
+    ]);
+    expect(reviewStore.get().confirms).toEqual([]);
+  });
 
   it('uses the frozen artifact text without retaining its display label as a path', async () => {
     const review = Object.freeze({
@@ -106,7 +124,7 @@ describe('buildPromptCallbacks onApprovalNeeded', () => {
       setReviewMode,
     });
 
-    await expect(callbacks.onApprovalNeeded('artifact', review)).resolves.toEqual({
+    await expect(callbacks.onApprovalNeeded('artifact', review, [])).resolves.toEqual({
       approved: true,
     });
 
@@ -134,48 +152,6 @@ describe('buildPromptCallbacks onUserEditConflict', () => {
   it('maps the "abort" answer to abort-workflow', async () => {
     const result = await makeCallbacks('abort').onUserEditConflict?.(conflict);
     expect(result).toBe('abort-workflow');
-  });
-});
-
-describe('buildPromptCallbacks onTaskReviewNeeded', () => {
-  beforeEach(() => {
-    feedbackStore.reset();
-    lifecycleStore.__testReset();
-  });
-
-  it('parses a notes answer as continue with notes attached', async () => {
-    const result = await makeCallbacks('notes looks good to me').onTaskReviewNeeded?.(
-      makeReviewRequest(),
-    );
-    expect(result).toEqual({ action: 'continue', notes: 'looks good to me' });
-  });
-
-  it('re-prompts on unrecognized input instead of accepting the task', async () => {
-    const result = await makeCallbacks(['redo it please', 'continue']).onTaskReviewNeeded?.(
-      makeReviewRequest(),
-    );
-
-    expect(result).toEqual({ action: 'continue' });
-    expect(feedbackStore.get().isError).toBe(true);
-    expect(feedbackStore.get().message).toContain('Unrecognized task review command');
-  });
-
-  it('re-prompts when the answer was not advertised by availableCommands', async () => {
-    const result = await makeCallbacks(['abort', 'continue']).onTaskReviewNeeded?.({
-      ...makeReviewRequest(),
-      availableCommands: ['continue'],
-    });
-
-    expect(result).toEqual({ action: 'continue' });
-    expect(feedbackStore.get().isError).toBe(true);
-    expect(feedbackStore.get().message).toContain('Use: continue');
-  });
-
-  it('returns task review abort without mutating workflow state', async () => {
-    const result = await makeCallbacks('abort').onTaskReviewNeeded?.(makeReviewRequest());
-
-    expect(result).toEqual({ action: 'abort' });
-    expect(lifecycleStore.get().cancelled).toBe(false);
   });
 });
 

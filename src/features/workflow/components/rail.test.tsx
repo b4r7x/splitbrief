@@ -23,7 +23,7 @@ import {
 } from '../layout/hit-test.js';
 import { Rail, railFormCText } from './rail.js';
 
-const STAGES = ['Spec', 'Plan', 'Briefs', 'Build', 'Review'];
+const STAGES = ['Plan', 'Build', 'Review'];
 
 const ACTIVE = glyph('stageActive');
 const DONE = glyph('stageDone');
@@ -73,7 +73,7 @@ beforeEach(() => {
 });
 
 describe('Rail — Form B (horizontal pipeline)', () => {
-  it('renders the five stages on one row with state-encoding markers, exactly one active', async () => {
+  it('renders the three stages on one row with state-encoding markers, exactly one active', async () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
     tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
@@ -81,12 +81,12 @@ describe('Rail — Form B (horizontal pipeline)', () => {
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    const railLine = frame.split('\n').find((row) => row.includes('Spec')) ?? '';
+    const railLine = frame.split('\n').find((row) => row.includes('Plan')) ?? '';
     for (const stage of STAGES) expect(railLine).toContain(stage);
-    // spec/plan/briefs done (●), build active (◉), verify pending (○).
+    // plan done (●), build active (◉), review pending (○).
     expect(countActiveMarkers(frame)).toBe(1);
     expect(railLine).toContain(`${ACTIVE} Build`);
-    expect(railLine).toContain(`${DONE} Spec`);
+    expect(railLine).toContain(`${DONE} Plan`);
     expect(railLine).toContain(`${PENDING} Review`);
     ui.unmount();
   });
@@ -109,7 +109,7 @@ describe('Rail — Form B (horizontal pipeline)', () => {
     expect(idleFrame).not.toContain(ACTIVE);
     expect(countActiveMarkers(runningFrame)).toBe(1);
     // The active marker sits on the first stage, ahead of its label.
-    expect(runningFrame).toContain(`${ACTIVE} Spec`);
+    expect(runningFrame).toContain(`${ACTIVE} Plan`);
   });
 
   it('aligns every Form-B stage label with its hit-test zone (marker at the zone left edge)', async () => {
@@ -122,7 +122,7 @@ describe('Rail — Form B (horizontal pipeline)', () => {
     const frame = ui.lastFrame() ?? '';
 
     const zones = getRailStageZones({ form: 'B', phase: 'implementing', cols, fraction: '' });
-    expect(zones).toHaveLength(5);
+    expect(zones).toHaveLength(3);
     for (const zone of zones) {
       // The label is painted one marker slot to the right of the zone's left edge (the marker).
       expect(renderedStageCol(frame, formatStageLabel(zone.stage))).toBe(
@@ -145,20 +145,17 @@ describe('Rail — Form B (horizontal pipeline)', () => {
     ui.unmount();
   });
 
-  it('encodes the handoff without color: two seam arrows, chevrons between same-role stages', async () => {
+  it('encodes the handoff without color: an arrow on each of the two role seams', async () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
     tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
     const ui = renderRail('B');
     await tick();
-    const railLine = lineContaining(ui.lastFrame() ?? '', 'Spec');
+    const railLine = lineContaining(ui.lastFrame() ?? '', 'Plan');
 
     // With ANSI stripped the role hue is gone, so the seam reads only by the connector shape: the
-    // two role seams (briefs→build, build→verify) paint the arrow; the other gaps paint chevrons.
-    const arrow = railConnectorString({ handoff: true });
-    const chevron = railConnectorString({ handoff: false });
-    expect(railLine.split(arrow).length - 1).toBe(2);
-    expect(railLine.split(chevron).length - 1).toBe(2);
+    // two role seams (plan→build, build→review) paint the arrow.
+    expect(railLine.split(railConnectorString()).length - 1).toBe(2);
     ui.unmount();
   });
 
@@ -218,7 +215,7 @@ describe('Rail — completion reward', () => {
     expect(frame).toContain('7/7 local');
     expect(frame).toContain('no drift');
     expect(countActiveMarkers(frame)).toBe(0);
-    expect(frame).not.toContain('Spec');
+    expect(frame).not.toContain('Plan');
     ui.unmount();
   });
 

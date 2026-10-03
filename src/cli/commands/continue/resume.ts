@@ -6,11 +6,7 @@ import { routerStore } from '../../../stores/navigation/router.js';
 import { readRunRecord } from '../../../core/sessions/run-record-io.js';
 import { hydrateRun } from '../../../features/workflow/run-history.js';
 import { skillsStore } from '../../../stores/project/skills.js';
-import {
-  assertHeadlessTaskReviewDisabled,
-  resolveSelectedSkills,
-  runHeadless,
-} from '../../headless.js';
+import { resolveSelectedSkills, runHeadless } from '../../headless.js';
 import { assertResumableState } from '../../sessions/resolve.js';
 import { setupWorkflow } from '../../setup.js';
 import { resolveRunConfig } from '../../build-overrides.js';
@@ -25,7 +21,6 @@ import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js'
 import type { WorkflowOpts } from '../../../core/types/config-options.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Config } from '../../../core/schemas/config.js';
-import { normalizeWorkflowMode, type WorkflowMode } from '../../../core/schemas/enums.js';
 import type { ContinueDeps } from './command.js';
 import { cliPreparationPolicy, preparedExecutionOrThrow } from '../start/readiness.js';
 import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';
@@ -51,20 +46,6 @@ const defaultResumeTailDeps: ResumeTailDeps = {
   setupWorkflow,
   prepareExecution,
 };
-
-/**
- * A started run keeps the mode it saved: planning reads it back from `state.json`, so `--mode`
- * cannot change it. A flag that names another mode gets a notice. A state that saved no mode
- * takes the flag through the config, so it gets none.
- */
-function reportKeptMode(state: WorkflowState, cliMode: WorkflowMode | undefined): void {
-  const mode = normalizeWorkflowMode(cliMode);
-  if (mode === undefined || state.mode === undefined || mode === state.mode) return;
-  const resolved = mode === cliMode ? '' : ` (resolves to ${mode})`;
-  console.warn(
-    `The run keeps its saved workflow mode '${state.mode}'; --mode ${cliMode}${resolved} applies only to a new run.`,
-  );
-}
 
 /**
  * A resume that lands on a different crew than the one the run last used says
@@ -99,7 +80,6 @@ export async function resumeSavedSession(args: {
   // provider.
   assertResumableState(args.state, sessionId);
   const { state } = args;
-  reportKeptMode(state, opts.mode);
 
   const config = args.config ?? resolveRunConfig({ projectDir, opts });
   const ref = { projectDir, sessionId };
@@ -107,7 +87,6 @@ export async function resumeSavedSession(args: {
   const selectedSkills = await resolveSelectedSkills(projectDir, opts.skills);
   const headless = opts.json === true || opts.plain === true;
   const interaction = headless ? 'headless' : 'interactive';
-  if (headless) assertHeadlessTaskReviewDisabled(config);
 
   const prepareResume = async (mode: 'interactive' | 'headless') =>
     preparedExecutionOrThrow(

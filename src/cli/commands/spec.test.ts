@@ -23,33 +23,23 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import {
   CONFIG_FILE,
   PLAN_FILE,
-  RESEARCH_FILE,
+  PLAN_JSON_FILE,
   SPLITBRIEF_DIR,
-  SPEC_FILE,
   TASKS_FILE,
 } from '../../core/paths.js';
 import { defaultCliAuthChannel } from '../../core/runners/cli-tool-catalog.js';
 import type { Config } from '../../core/schemas/config.js';
-import type { Planner, RunPhaseInput } from '../../engine/planners/types.js';
-import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
+import type { Planner } from '../../engine/planners/types.js';
+import {
+  planFromTasks,
+  scriptedTypedCall,
+  typedCallAnswering,
+  typedCallFromTasks,
+} from '#testing/helpers/typed-planner.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { registerSpecCommand } from './spec.js';
 
 const createPlannerMock = vi.fn<(config: Config) => Promise<Planner>>();
-
-const PHASE_TEXT: Record<string, string> = {
-  research: '# Research',
-  spec: '# Generated Spec',
-  plan: '# Generated Plan',
-  tasks: '# Tasks',
-};
-
-function phaseFor(input: RunPhaseInput, tasks?: ReturnType<typeof makeTask>[]) {
-  return makePhaseCallResult({
-    call: input.call,
-    text: PHASE_TEXT[input.call] ?? '# Artifact',
-    ...(input.call === 'tasks' ? { tasks: tasks ?? [] } : {}),
-  });
-}
 
 let tmp: string;
 let shimDir: string;
@@ -78,11 +68,7 @@ beforeEach(() => {
   chmodSync(join(tmp, 'scripts', 'planner'), 0o755);
   consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
   createPlannerMock.mockReset();
-  createPlannerMock.mockResolvedValue(
-    makePlanner({
-      runPhase: vi.fn(async (input: RunPhaseInput) => phaseFor(input)),
-    }),
-  );
+  createPlannerMock.mockResolvedValue(makePlanner());
 });
 
 afterEach(() => {
@@ -201,30 +187,72 @@ describe('spec command', () => {
     const [session, ...rest] = readdirSync(sessionsRoot());
     expect(rest).toHaveLength(0);
     if (!session) throw new Error('expected one session folder');
-    const specPath = join(sessionsRoot(), session, SPEC_FILE);
-    expect(readFileSync(specPath, 'utf8')).toContain('# Generated Spec');
+    const planPath = join(sessionsRoot(), session, PLAN_FILE);
+    expect(readFileSync(planPath, 'utf8')).toContain('Plan from the scripted briefs');
   });
 
-  it('strips terminal controls from streamed planner output', async () => {
-    const stdoutChunks: string[] = [];
-    const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
-      stdoutChunks.push(String(chunk));
-      return true;
-    });
-    createPlannerMock.mockResolvedValue(
-      makePlanner({
-        runPhase: vi.fn(async (input: RunPhaseInput) => {
-          input.callbacks.onOutput('\u001b]52;c;clipboard-secret\u0007visible\u009b2K');
-          return phaseFor(input);
-        }),
-      }),
+  it('prints the planner questions without terminal controls and takes their defaults without a TTY', async () => {
+    const typed = scriptedTypedCall([
+      {
+        kind: 'questions',
+        questions: [
+          {
+            id: 'store',
+            text: '\u001b]52;c;clipboard-secret\u0007Which store?\u009b2K',
+            choices: ['sqlite', 'postgres'],
+            default: 'sqlite',
+          },
+        ],
+      },
+      planFromTasks([makeTask()]),
+    ]);
+    createPlannerMock.mockResolvedValue(makePlanner({ typedCall: typed.typedCall }));
+    const program = new Command();
+    program.exitOverride();
+    registerSpecCommand(program, { createPlanner: createPlannerMock });
+
+    await program.parseAsync([
+      'node',
+      'splitbrief',
+      'spec',
+      '--project',
+      tmp,
+      '--allow-hooks',
+      'add health endpoint',
+    ]);
+
+    const logged = consoleSpy.mock.calls.map((args) => String(args[0])).join('\n');
+    // The CLI's own styling is ANSI; the planner's text arrives with none of its controls.
+    expect(logged).toContain('\n1. Which store? (default: sqlite)\n');
+    expect(logged).not.toContain('clipboard-secret');
+    expect(logged).not.toContain('\u001b]');
+    expect(logged).not.toContain('\u0007');
+    expect(logged).not.toContain('\u009b');
+    expect(typed.prompts).toHaveLength(2);
+    expect(typed.prompts[1]).toContain('sqlite');
+  });
+
+  it('tells the planner the BUILD context the model catalog publishes, as a run does', async () => {
+    writeConfig(
+      makeConfig({ implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-opus-5' } }),
     );
+    modelCacheStore.hydrateModelsDevCatalog({
+      catalog: {
+        anthropic: {
+          id: 'anthropic',
+          models: { 'claude-opus-5': { id: 'claude-opus-5', limit: { context: 765_432 } } },
+        },
+      },
+      fetchedAt: 1,
+      validatedAt: 1,
+    });
+    const typed = scriptedTypedCall([planFromTasks([makeTask()])]);
+    createPlannerMock.mockResolvedValue(makePlanner({ typedCall: typed.typedCall }));
+    const program = new Command();
+    program.exitOverride();
+    registerSpecCommand(program, { createPlanner: createPlannerMock });
 
     try {
-      const program = new Command();
-      program.exitOverride();
-      registerSpecCommand(program, { createPlanner: createPlannerMock });
-
       await program.parseAsync([
         'node',
         'splitbrief',
@@ -235,19 +263,65 @@ describe('spec command', () => {
         'add health endpoint',
       ]);
     } finally {
-      stdoutSpy.mockRestore();
+      modelCacheStore.reset();
     }
 
-    const stdout = stdoutChunks.join('');
-    expect(stdout).toContain('visible');
-    expect(stdout).not.toContain('clipboard-secret');
-    expect(stdout).not.toContain('\u001b');
-    expect(stdout).not.toContain('\u0007');
-    expect(stdout).not.toContain('\u009b');
+    expect(typed.prompts[0]).toContain('a measured context of 765,432 tokens');
+  });
+
+  describe('with a planner that reads no files of its own', () => {
+    const context = (applicationContextTokens: number) => async () => ({
+      contextKey: 'ollama@local',
+      selectionId: 'qwen2.5',
+      observedAt: 0,
+      applicationContextTokens,
+      budgetSource: 'configured' as const,
+      loadState: 'unknown' as const,
+    });
+    const request = 'Modify `src/hello.ts` so it greets people by name.';
+
+    function runSpec(): Promise<Command> {
+      mkdirSync(join(tmp, 'src'), { recursive: true });
+      writeFileSync(join(tmp, 'src', 'hello.ts'), 'export const HELLO_SENTINEL = 1;\n');
+      const program = new Command();
+      program.exitOverride();
+      registerSpecCommand(program, { createPlanner: createPlannerMock });
+      return program.parseAsync([
+        'node',
+        'splitbrief',
+        'spec',
+        '--project',
+        tmp,
+        '--allow-hooks',
+        request,
+      ]);
+    }
+
+    it('carries the current source of the files the request names in its first prompt', async () => {
+      const typed = scriptedTypedCall([planFromTasks([makeTask()])]);
+      createPlannerMock.mockResolvedValue(
+        makePlanner({ typedCall: typed.typedCall, resolvePlanningContext: context(64_000) }),
+      );
+
+      await runSpec();
+
+      expect(typed.prompts[0]).toContain('export const HELLO_SENTINEL = 1;');
+      expect(typed.prompts[0]).toContain('src/hello.ts — whole file, sha256');
+    });
+
+    it('fails before any call when the named source does not fit the model', async () => {
+      const typed = scriptedTypedCall([planFromTasks([makeTask()])]);
+      createPlannerMock.mockResolvedValue(
+        makePlanner({ typedCall: typed.typedCall, resolvePlanningContext: context(2_200) }),
+      );
+
+      await expect(runSpec()).rejects.toThrow(/does not fit the seat.s context window/);
+      expect(typed.prompts).toEqual([]);
+    });
   });
 });
 
-describe('spec command — resolved-mode reporting', () => {
+describe('spec command — reporting', () => {
   function runSpec(args: string[]): Promise<Command> {
     const program = new Command();
     program.exitOverride();
@@ -267,20 +341,20 @@ describe('spec command — resolved-mode reporting', () => {
     return consoleSpy.mock.calls.map((args) => String(args[0])).join('\n');
   }
 
-  it('names the planner and the resolved mode on the pre-planning line', async () => {
+  it('names the planner on the pre-planning line', async () => {
     writeConfig(
       makeConfig({
         planner: { kind: 'shell', command: './scripts/planner', model: 'planner-default' },
       }),
     );
 
-    await runSpec(['--allow-repo-runners', '--mode', 'quick', 'add health endpoint']);
+    await runSpec(['--allow-repo-runners', 'add health endpoint']);
 
     const line = loggedOutput()
       .split('\n')
       .find((l) => l.startsWith('Planning feature:'));
     expect(line).toBeDefined();
-    expect(line).toContain('(planner: shell, mode: quick)');
+    expect(line).toContain('(planner: shell)');
   });
 
   it('strips terminal control bytes from the feature argument', async () => {
@@ -297,28 +371,7 @@ describe('spec command — resolved-mode reporting', () => {
     expect(line).not.toContain('\u009b');
   });
 
-  it('reports only tasks.md in quick mode', async () => {
-    createPlannerMock.mockResolvedValue(
-      makePlanner({
-        runPhase: vi.fn(async (input: RunPhaseInput) => phaseFor(input, [makeTask()])),
-      }),
-    );
-
-    await runSpec(['--mode', 'quick', 'add health endpoint']);
-
-    const logged = loggedOutput();
-    expect(logged).toContain('/tasks.md');
-    expect(logged).not.toContain('spec.md');
-    expect(logged).not.toContain('plan.md');
-  });
-
-  it('lists research, spec, plan and tasks with absolute paths that exist on disk', async () => {
-    createPlannerMock.mockResolvedValue(
-      makePlanner({
-        runPhase: vi.fn(async (input: RunPhaseInput) => phaseFor(input)),
-      }),
-    );
-
+  it('lists plan.json, plan.md and tasks.md with absolute paths that exist on disk', async () => {
     await runSpec(['add health endpoint']);
 
     const [session, ...rest] = readdirSync(sessionsRoot());
@@ -326,7 +379,7 @@ describe('spec command — resolved-mode reporting', () => {
     if (!session) throw new Error('expected one session folder');
     const sessionPath = join(sessionsRoot(), session);
     const logged = loggedOutput();
-    for (const filename of [RESEARCH_FILE, SPEC_FILE, PLAN_FILE, TASKS_FILE]) {
+    for (const filename of [PLAN_JSON_FILE, PLAN_FILE, TASKS_FILE]) {
       expect(logged).toContain(`${sessionPath}/${filename}`);
       expect(existsSync(join(sessionPath, filename))).toBe(true);
     }
@@ -335,7 +388,10 @@ describe('spec command — resolved-mode reporting', () => {
   it('reports the task count exactly once, on the tasks line', async () => {
     createPlannerMock.mockResolvedValue(
       makePlanner({
-        runPhase: vi.fn(async (input: RunPhaseInput) => phaseFor(input, [makeTask(), makeTask()])),
+        typedCall: typedCallFromTasks([
+          makeTask({ id: 'T001', file: 'src/a.ts' }),
+          makeTask({ id: 'T002', file: 'src/b.ts' }),
+        ]),
       }),
     );
 
@@ -353,7 +409,9 @@ describe('spec command — preparation ownership across the planner call', () =>
   it('a failing planner call leaves no session directory behind and clears the active pointer', async () => {
     createPlannerMock.mockResolvedValue(
       makePlanner({
-        runPhase: vi.fn().mockRejectedValue(new Error('planner exploded')),
+        typedCall: typedCallAnswering(() => {
+          throw new Error('planner exploded');
+        }),
       }),
     );
     const program = new Command();
@@ -378,6 +436,58 @@ describe('spec command — preparation ownership across the planner call', () =>
     expect(existsSync(join(tmp, SPLITBRIEF_DIR, 'active'))).toBe(false);
   });
 
+  const question = (round: number) => ({
+    kind: 'questions' as const,
+    questions: [{ id: `q${round}`, text: `Round ${round}?`, choices: null, default: 'yes' }],
+  });
+  const uncovered = {
+    ...planFromTasks([makeTask()]),
+    criteria: [
+      { id: 'C1', text: 'The briefs are built', checkIds: ['T001-K1'] },
+      { id: 'C2', text: 'Nothing serves this', checkIds: ['T001-K1'] },
+    ],
+  };
+
+  it.each([
+    [
+      'a third round of questions',
+      [question(1), question(2), question(3)],
+      'The planner asked a third round of questions; a session takes 2.',
+    ],
+    [
+      'a plan that fails its checks again after one repair',
+      [uncovered, uncovered],
+      'The plan failed its checks again after one repair:\n- Criterion C2 is served by no task.',
+    ],
+  ] as const)(
+    'fails on %s and leaves no session directory behind',
+    async (_label, script, message) => {
+      createPlannerMock.mockResolvedValue(
+        makePlanner({ typedCall: scriptedTypedCall([...script]).typedCall }),
+      );
+      const program = new Command();
+      program.exitOverride();
+      registerSpecCommand(program, { createPlanner: createPlannerMock });
+
+      await expect(
+        program.parseAsync([
+          'node',
+          'splitbrief',
+          'spec',
+          '--project',
+          tmp,
+          '--allow-hooks',
+          'add health endpoint',
+        ]),
+      ).rejects.toThrow(message);
+
+      if (existsSync(sessionsRoot())) {
+        expect(readdirSync(sessionsRoot(), { withFileTypes: true })).toHaveLength(0);
+      }
+      expect(existsSync(join(tmp, SPLITBRIEF_DIR, 'active'))).toBe(false);
+    },
+  );
+
   it('a successful planner call keeps the session directory and its artifacts, with no ownership marker left over', async () => {
     const program = new Command();
     program.exitOverride();
@@ -397,7 +507,9 @@ describe('spec command — preparation ownership across the planner call', () =>
     expect(rest).toHaveLength(0);
     if (!session) throw new Error('expected one session folder');
     const sessionPath = join(sessionsRoot(), session);
-    expect(readFileSync(join(sessionPath, SPEC_FILE), 'utf8')).toContain('# Generated Spec');
+    expect(readFileSync(join(sessionPath, PLAN_FILE), 'utf8')).toContain(
+      'Plan from the scripted briefs',
+    );
     expect(existsSync(join(sessionPath, '.prepare-owner.json'))).toBe(false);
   });
 });

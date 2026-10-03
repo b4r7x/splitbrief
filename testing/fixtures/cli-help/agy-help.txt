@@ -6,7 +6,7 @@ Usage of agy:
   --conversation                  Resume a previous conversation by ID
   --dangerously-skip-permissions  Auto-approve all tool permission requests without prompting
   --disable-slash-commands        Disable slash command and skill expansion in print mode
-  --effort                        Reasoning effort for the current CLI session (low|medium|high|max)
+  --effort                        Reasoning effort for the current CLI session (low|medium|high|xhigh|max)
   -i                              Short alias for --prompt-interactive
   --input-format                  Input format for print mode (text, stream-json). stream-json reads one NDJSON message per line from stdin and runs a turn for each; it requires --output-format stream-json (default text)
   --json-schema                   Optional JSON schema string or path to a schema file to enforce structured output (for stream-json, only applicable to the final result)

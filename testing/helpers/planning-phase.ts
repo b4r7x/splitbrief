@@ -20,14 +20,8 @@ import { writeEvidenceLedger } from '../../src/core/evidence/ledger-storage.js';
 import { recordRejectionEvidence } from '../../src/engine/orchestrator/evidence/approval.js';
 import type { OrchestratorCallbacks, WorkflowSinks } from '../../src/engine/orchestrator/types.js';
 import type { ApprovalReviewResult } from '../../src/core/approval/types.js';
-import type {
-  PhaseInputs,
-  Planner,
-  PlannerDocumentCall,
-  RunPhaseInput,
-} from '../../src/engine/planners/types.js';
-import { makePhaseCallResult } from './factories/phase-call.js';
-import { error } from '../../src/utils/error.js';
+import type { Planner } from '../../src/engine/planners/types.js';
+import { typedCallFromTasks } from './typed-planner.js';
 import type { Config } from '../../src/core/schemas/config.js';
 import type { Attachment } from '../../src/core/schemas/attachment.js';
 
@@ -110,7 +104,7 @@ export function makePassingTask(id = 'T001') {
   return makeTask({
     id,
     scope: {
-      inBounds: ['Modify only `src/hello.ts`.'],
+      inBounds: ['src/hello.ts'],
       outOfBounds: ['Do not touch anything outside the task file.'],
     },
     evidence: ['brief-quality.json confirms the task brief is complete'],
@@ -118,69 +112,17 @@ export function makePassingTask(id = 'T001') {
   });
 }
 
-export function makeBriefQualityFailureTask() {
-  return makeTask({
-    scope: undefined,
-    evidence: [],
-  });
-}
-
 export function makePassingPlanner(overrides?: Partial<Planner>): Planner {
   return makePlanner({
-    runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
-      makePhaseCallResult({
-        call,
-        ...(call === 'tasks' ? { text: REAL_TASKS_MD, tasks: [makePassingTask()] } : {}),
-        ...(call === 'tasks' ? { usage: { inputTokens: 100, outputTokens: 50 } } : {}),
-      }),
-    ),
+    typedCall: typedCallFromTasks([makePassingTask()], { inputTokens: 100, outputTokens: 50 }),
     ...overrides,
   });
-}
-
-/** A passing planner that records the inputs of every call it is asked to make. */
-export function makeRecordingPlanner(overrides?: Partial<Planner>): {
-  planner: Planner;
-  calls: Array<{ call: PlannerDocumentCall; inputs: PhaseInputs }>;
-} {
-  const calls: Array<{ call: PlannerDocumentCall; inputs: PhaseInputs }> = [];
-  const planner = makePassingPlanner({
-    runPhase: vi.fn(async ({ call, inputs }: RunPhaseInput) => {
-      calls.push({ call, inputs });
-      return makePhaseCallResult({
-        call,
-        ...(call === 'tasks' ? { text: REAL_TASKS_MD, tasks: [makePassingTask()] } : {}),
-      });
-    }),
-    ...overrides,
-  });
-  return { planner, calls };
-}
-
-/**
- * A passing planner on a `thread` its seat no longer holds: its first revision drops the thread
- * and fails, as codex and Claude Code do, and `reissued` answers every revision after it.
- */
-export function makeExpiredThreadPlanner(thread: string, reissued: Planner['regenerate']) {
-  const regenerate = vi
-    .fn<Planner['regenerate']>()
-    .mockImplementationOnce(async ({ callbacks }) => {
-      callbacks.onSessionExpired?.(thread);
-      throw error('session-resume-expired', `could not resume session ${thread}`);
-    })
-    .mockImplementation(reissued);
-  const planner = makePassingPlanner({
-    capabilities: { ...makePlanner().capabilities, supportsSessionResume: true },
-    regenerate,
-  });
-  return { planner, regenerate };
 }
 
 export function seedRejectionEvidence(projectDir: string, sessionId: string): void {
   let ledger = createEvidenceLedger({
     sessionId,
     feature: 'previous feature',
-    mode: 'standard',
     tasks: [makePassingTask()],
   });
   ledger = recordRejectionEvidence({
@@ -201,14 +143,9 @@ export function sequencedApproval(
   return fn;
 }
 
-export const auto = (mode?: Config['workflow']['mode']): Partial<Config['workflow']> => ({
-  approve: 'none',
-  ...(mode ? { mode } : {}),
-});
+export const auto = (): Partial<Config['workflow']> => ({ approve: 'none' });
 
-export const manual = (mode?: Config['workflow']['mode']): Partial<Config['workflow']> => ({
-  ...(mode ? { mode } : {}),
-});
+export const manual = (): Partial<Config['workflow']> => ({});
 
 export type RunOpts = {
   planner?: Planner;
@@ -217,7 +154,6 @@ export type RunOpts = {
   state?: WorkflowState;
   feature?: string;
   rewindPending?: WorkflowState['rewindPending'];
-  rewindFeedback?: string | undefined;
   drainPendingAttachments?: (() => Attachment[]) | undefined;
   sinks?: WorkflowSinks & { abortTurn: () => boolean };
   plannerContext?: string | undefined;
@@ -249,7 +185,6 @@ export async function runPlanningTurn(dirs: string[], opts: RunOpts = {}) {
     state,
     feature: opts.feature ?? 'test-feature',
     ...(opts.rewindPending ? { rewindPending: opts.rewindPending } : {}),
-    ...(opts.rewindFeedback !== undefined && { rewindFeedback: opts.rewindFeedback }),
   });
   return { result, projectDir, sessionId, events: recorder.events };
 }

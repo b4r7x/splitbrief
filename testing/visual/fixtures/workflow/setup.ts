@@ -15,7 +15,7 @@ import { controlsStore } from '../../../../src/stores/ui/controls.js';
 import { addEvent } from '../../../../src/stores/workflow/actions/event.js';
 import { reviewStore } from '../../../../src/stores/workflow/review.js';
 import { streamingOutputStore } from '../../../../src/stores/workflow/streaming-output.js';
-import { SESSION_LOG_FILE, sessionDir } from '../../../../src/core/paths.js';
+import { PLAN_JSON_FILE, SESSION_LOG_FILE, sessionDir } from '../../../../src/core/paths.js';
 import { hydrateRun } from '../../../../src/features/workflow/run-history.js';
 import { PREVIEW_UNAVAILABLE, type FixtureContext, type FixtureFactory } from '../common.js';
 import {
@@ -65,8 +65,8 @@ function applyProjection(projection: WorkflowFixtureProjection): void {
 
   if (projection.approval !== undefined) {
     void openApprovalPrompt({
-      tier: projection.approval.tier ?? 'sticky',
-      actionClass: projection.approval.actionClass ?? 'write_out_of_scope',
+      tier: 'confirm',
+      actionClass: projection.approval.actionClass ?? 'package_change',
       actionDescription: projection.approval.actionDescription,
       taskId: WORKFLOW_FIXTURE_TASK_ID,
       phase: 'reviewing-plan',
@@ -93,6 +93,9 @@ async function setupProjection(
     const filePath = getReviewFilePath(projection.review);
     await mkdir(dirname(filePath), { recursive: true });
     await writeFile(filePath, projection.review.source);
+    if (projection.review.planJson !== undefined) {
+      await writeFile(join(dirname(filePath), PLAN_JSON_FILE), projection.review.planJson);
+    }
   }
   const route = routerStore.get();
   if (route.screen !== 'workflow') {
@@ -133,11 +136,11 @@ function activateFixtureInputMode(
   options: Parameters<RunWorkflowFn>[0],
 ): void {
   if (projection.review !== undefined) {
-    void options.callbacks.onApprovalNeeded('briefs', getReviewFilePath(projection.review));
-  }
-  if (projection.taskReview !== undefined) {
-    void options.callbacks.onTaskReviewNeeded?.(projection.taskReview);
-    return;
+    void options.callbacks.onApprovalNeeded(
+      'plan',
+      getReviewFilePath(projection.review),
+      projection.review.confirms ?? [],
+    );
   }
   if (projection.userEditConflict !== undefined) {
     void options.callbacks.onUserEditConflict?.(projection.userEditConflict);

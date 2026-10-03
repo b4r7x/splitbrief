@@ -47,22 +47,22 @@ describe('composer integration: completions', () => {
     });
     await flushEffects();
 
-    ui.stdin.write('/mde');
+    ui.stdin.write('/smple');
     await flushEffects();
 
-    expect(ui.lastFrame()).toContain('/mde');
+    expect(ui.lastFrame()).toContain('/smple');
 
     await flushEffects();
     ui.stdin.write(TAB);
     await flushEffects();
 
-    expect(ui.lastFrame()).toContain('/mode');
+    expect(ui.lastFrame()).toContain('/sample');
 
     await flushEffects();
     ui.stdin.write(ENTER);
     await flushEffects();
 
-    expect(commandCalls).toEqual(['/mode']);
+    expect(commandCalls).toEqual(['/sample']);
     expect(submits).toEqual([]);
 
     ui.unmount();
@@ -83,7 +83,7 @@ describe('composer integration: completions', () => {
     ui.stdin.write('/');
     await flushEffects();
     await vi.waitFor(() => {
-      expect(ui.lastFrame()).toContain('/mode');
+      expect(ui.lastFrame()).toContain('/sample');
     });
     await flushEffects();
     ui.stdin.write(DOWN);
@@ -92,7 +92,7 @@ describe('composer integration: completions', () => {
     await flushEffects();
 
     await vi.waitFor(() => {
-      expect(ui.lastFrame()).toContain('/mode');
+      expect(ui.lastFrame()).toContain('/sample');
     });
     expect(ui.lastFrame()).not.toContain('/help');
     expect(commandCalls).toEqual([]);
@@ -101,7 +101,7 @@ describe('composer integration: completions', () => {
     ui.stdin.write(ENTER);
     await flushEffects();
     await vi.waitFor(() => {
-      expect(commandCalls).toEqual(['/mode']);
+      expect(commandCalls).toEqual(['/sample']);
     });
     ui.unmount();
   });

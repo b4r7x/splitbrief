@@ -86,7 +86,7 @@ SPLITBRIEF_PERF=1 node --expose-gc ./node_modules/vitest/vitest.mjs run testing/
 - `testing/helpers/factories/<domain>.ts` = pure **TypeScript constructors** returning typed objects with overrides. No I/O.
 - **Rule of two:** data stays inline inside one test file until a second test needs it. Promotion happens on the second consumer, not the first.
 
-**Feature sub-components get a colocated test when they carry behaviour.** A sub-component that renders a visible affordance off branching state — an approval prompt, a brief review scorecard, a pipeline bar — is tested next to its `*.tsx` against `lastFrame()` and observable store state, the same way `src/features/workflow/components/` already is. Styling-only or pure-passthrough sub-components stay covered transitively through the page seam (`app/screens/<x>.tsx` / `app/overlays/<x>.tsx`); do not add a "does not crash" test for them. Shared primitives in `src/components/` (`MultilineInput` → `input/multiline-input.test.tsx`, `ScrollWindow` → `pickers/scroll-window.test.ts`, `SessionRow` → `session-row.test.tsx`) carry their own colocated tests — their cost amortises across consumers. A primitive whose behaviour lives in a backing hook is covered through that hook's test instead (`FilterableList` via `src/hooks/use-filterable-list.test.tsx`).
+**Feature sub-components get a colocated test when they carry behaviour.** A sub-component that renders a visible affordance off branching state — an approval prompt, the plan card, a pipeline bar — is tested next to its `*.tsx` against `lastFrame()` and observable store state, the same way `src/features/workflow/components/` already is. Styling-only or pure-passthrough sub-components stay covered transitively through the page seam (`app/screens/<x>.tsx` / `app/overlays/<x>.tsx`); do not add a "does not crash" test for them. Shared primitives in `src/components/` (`MultilineInput` → `input/multiline-input.test.tsx`, `ScrollWindow` → `pickers/scroll-window.test.ts`, `SessionRow` → `session-row.test.tsx`) carry their own colocated tests — their cost amortises across consumers. A primitive whose behaviour lives in a backing hook is covered through that hook's test instead (`FilterableList` via `src/hooks/use-filterable-list.test.tsx`).
 
 **Decision-bearing orchestrator modules get a colocated test.** A module in `src/engine/orchestrator/` that makes a decision or owns observable control-flow behaviour — escalation tiers, queue drain order, signal-handler cleanup, planning-phase routing, recovery actions, the task loop and step — is unit-tested next to its source against its returned decision and the events it emits. This is why `escalation/step.test.ts`, `queue/submit.test.ts`, `signals.test.ts`, `planning/*.test.ts`, `recovery/*.test.ts`, `task/loop-*.test.ts`, `task/step.test.ts`, and `run/workflow.test.ts` (the same files the Recovery flow section below tells you to run) all exist. The `runWorkflow()` integration seam under `testing/integration/orchestrator/` covers the composition of these modules across a full multi-phase run, not the per-module decision. Reserve it for behaviour that only emerges from wiring several modules together (a phase progressing, a task pausing before overwriting a user edit, a workflow completing). Trivial glue with no branch of its own — a function that only forwards to an already-tested helper — stays covered transitively at that seam.
 
@@ -106,15 +106,13 @@ Colocated support files under `src/**` that import `vitest` or another dev-only 
 
 ## Current workflow policy
 
-Cost-aware implementer routing, user-edit conflict handling, and the brief review gate follow the same rule: test the decision contract, not the private call graph.
+Cost-aware implementer routing, user-edit conflict handling, and the plan card follow the same rule: test the decision contract, not the private call graph.
 
 **Routing and context fit.** Public pure helpers are valid unit-test targets when they encode product policy. Examples: context-window classification, prompt-size estimation, profile ordering, capable-profile selection, and no-capable-profile failure. These tests should assert the returned decision object, selected profile, rejection reasons, and fit status. Do not spy on internal sort helpers or duplicate the full prompt formatter in the test.
 
 **User-edit conflicts.** Conflict tests should set up real task/file ownership data and assert the public classification or emitted event: conflict kind, affected task ids, `safeToContinue`, and available actions. Do not assert that a particular detector function was called. Orchestrator-level coverage belongs at the task loop or `runWorkflow()` seam when the behavior is "pause before overwriting the user" or "continue on unrelated external edits."
 
-**Brief review gate.** Pure `parseReviewCommand` cases live in `src/features/workflow/review-commands.test.ts` (import `review-commands.js` directly, not the `review-parser` re-export). Handler routing, external-editor spawn, and terminal handover during review input belong in `testing/integration/ui/review-input.test.ts`. Component tests should render the simple brief review surface and assert visible markers the user depends on: selected worker, context fit or overflow, quality state, load errors, and conflict labels. Avoid micro-tests for keybinding passthrough unless the helper is exported as a pure public parser; prefer grouping key maps with `it.each` when adding more cases.
-
-**Brief field editor CAS.** Rendered ownership, save gate, stdin suppression, multi-field save, and submit-in-flight behavior belong in `testing/integration/ui/brief-field-editor-ownership.test.ts` (`.test.ts` with `createElement`, not a colocated `.tsx` owner). Pure `editorStore` transitions (scroll, layout reflow, token capture) stay in `src/stores/ui/editor.test.ts`. `readSessionFileConfined` cases at the editor read boundary live in `src/core/sessions/confinement.test.ts`. The `useFieldSessionOwned` hook contract stays in `src/features/editor/use-field-session-owned.test.tsx`.
+**Plan card.** Pure `parseReviewCommand` cases live in `src/features/workflow/review-commands.test.ts`. Handler routing, external-editor spawn, and terminal handover during review input belong in `testing/integration/ui/review-input.test.ts`. The card's engine contract (approve, a typed correction, a re-validated `plan.json` edit, `approve: none`) lives in the `the plan card` block of `src/engine/orchestrator/planning/session.test.ts`. Avoid micro-tests for keybinding passthrough unless the helper is exported as a pure public parser; prefer grouping key maps with `it.each` when adding more cases.
 
 **Input history persistence.** Debounced `~/.splitbrief/history` writes and teardown at the composer persistence boundary stay in `src/stores/ui/persistence.test.ts`.
 
@@ -162,21 +160,21 @@ Skipping is two-layered. With the env unset every case reports skipped and the r
 
 Model pins are cheap by default: `claude-code` → `haiku`, `codex` → `gpt-5.6-luna`, `opencode` → the first free id discovered from `opencode api GET /api/model` at run time, `command-code` → `deepseek/deepseek-v4-flash`. Each is overridable via `SPLITBRIEF_REAL_CLI_<TOOL>_MODEL`. A ceiling refuses any pin whose tokens include `opus`, `fable`, or `sol` outright, so a mistyped env var cannot burn credits on a frontier model.
 
-Easy runs `quick` mode — one planner call plus one implementer call — with a 300 s per-case timeout. Heavy runs `standard` mode with a compiled brief and a final review held by the planner, with a 900 s per-case timeout. The per-case vitest timeout is the only bound.
+Both tiers run the one planning session with `approve: none`; they differ in task and assertions. Easy asks for one file (`EASY_TIER`, a 4096-token implementer context) and has a 300 s per-case timeout. Heavy asks for two files (`HEAVY_TIER`, a 128k implementer context), also asserts planner tokens, a review packet from the final review the planner holds, and the evidence summary, and has a 900 s per-case timeout. The per-case vitest timeout is the only bound.
 
 Like `real-cli-planner-implementer-smoke.test.ts`, the live tier is opt-in drift evidence, never the admission proof.
 
 ### Fixture loop row
 
-`testing/e2e/scenarios/live/fixture-loop.test.ts` runs the whole loop over the rows of `testing/e2e/live/fixture-rows.ts` — `fixture-quick-claude-cmd-codex` (`quick`, $0.05, 300 s) and `fixture-standard-claude-cmd-codex` (`standard`, $0.50, 900 s), both planning with `claude-code`, building with `command-code` and reviewing with `codex` — against a copy of the `add-endpoint` eval fixture, through the real binary in `--plain` mode. It needs two switches: `SPLITBRIEF_REAL_CLI_E2E=1` and `SPLITBRIEF_LIVE_FIXTURE=1`, both set by `npm run test:e2e:live:fixture`. With either unset every row is `it.skip`, the reason is printed, and the file exits `0`. Readiness gating goes through the same `gateLiveMatrixRow` as the release matrix, so `SPLITBRIEF_LIVE_SKIP` skips a row whose tool is missing instead of failing it. Every outcome — pass, fail, or skip — appends a row to the same manifest; a passing row also copies `tasks.md`, `evidence.json`, `drift-report.json` and `review.md` beside `summary.json` and `session.jsonl`.
+`testing/e2e/scenarios/live/fixture-loop.test.ts` runs the whole loop over the rows of `testing/e2e/live/fixture-rows.ts` — `fixture-quick-claude-cmd-codex` (300 s) and `fixture-standard-claude-cmd-codex` (900 s), both planning with `claude-code`, building with `command-code` and reviewing with `codex` — against a copy of the `add-endpoint` eval fixture, through the real binary in `--plain` mode. The CLI has no modes, so a row's `mode` field is a label: both rows run the same feature through the one planning session with `approve: none` and differ only in their timeout. It needs two switches: `SPLITBRIEF_REAL_CLI_E2E=1` and `SPLITBRIEF_LIVE_FIXTURE=1`, both set by `npm run test:e2e:live:fixture`. With either unset every row is `it.skip`, the reason is printed, and the file exits `0`. Readiness gating goes through the same `gateLiveMatrixRow` as the release matrix, so `SPLITBRIEF_LIVE_SKIP` skips a row whose tool is missing instead of failing it. Every outcome — pass, fail, or skip — appends a row to the same manifest; a passing row also copies `tasks.md`, `evidence.json`, `drift-report.json` and `review.md` beside `summary.json` and `session.jsonl`.
 
-What a row proves lives in `testing/e2e/helpers/run-dir-assertions.ts`, four assertions over the finished run: `assertPlainStdout` (every stdout line matches the `--plain` grammar and none parses as JSON; `phase: implementing`, `review: passed` and a positive `done:` line are all present; it returns that count), `assertSessionDir` (brief count inside the row's range with at least one `modify`, non-empty `spec.md`/`plan.md` in standard, `brief-quality.json` passed, evidence ledger and drift report parse with drift `passed`, a `pass`/`pass_with_notes` verdict, `summary.json` complete with its `totalTasks` equal to the parsed briefs and to the stdout `done:` count, every task done locally on non-zero implementer tokens, and the `runner_call_started` counts per role with no `implementer_wrote_nothing` and no `runner_call_error`), `assertFixtureQuality` (the scenario's own quality checks against the built project) and `assertWorkingTree` (nothing outside the declared `files` and `.splitbrief/` changed). The module carries a colocated test against a synthetic session dir (`run-dir-assertions.test.ts`), so `npm test` covers the assertions without spawning a CLI. The row itself is drift evidence like the tiers above — [RELEASING.md](./RELEASING.md) says when it may become a gate.
+What a row proves lives in `testing/e2e/helpers/run-dir-assertions.ts`, four assertions over the finished run: `assertPlainStdout` (every stdout line matches the `--plain` grammar and none parses as JSON; `phase: implementing`, `review: passed` and a positive `done:` line are all present; it returns that count), `assertSessionDir` (brief count inside the row's range with at least one `modify`, non-empty `plan.md`, evidence ledger and drift report parse with drift `passed`, a `pass`/`pass_with_notes` verdict, `summary.json` complete with its `totalTasks` equal to the parsed briefs and to the stdout `done:` count, every task done locally on non-zero implementer tokens, and the `runner_call_started` counts per role with no `implementer_wrote_nothing` and no `runner_call_error`), `assertFixtureQuality` (the scenario's own quality checks against the built project) and `assertWorkingTree` (nothing outside the declared `files` and `.splitbrief/` changed). The module carries a colocated test against a synthetic session dir (`run-dir-assertions.test.ts`), so `npm test` covers the assertions without spawning a CLI. The row itself is drift evidence like the tiers above — [RELEASING.md](./RELEASING.md) says when it may become a gate.
 
 The skills' shell scripts are proven the same deterministic way, not by the live tier: `testing/integration/skills/wait-attempt.test.ts` and `testing/integration/skills/splitbrief-gate.test.ts` drive `skills/splitbrief-run/scripts/*.sh` under `sh` in a temp run dir with real child processes — exit 0, exit 1, a `--deadline 2` timeout that kills the group, a pre-existing `.done`, a missing pid file, a halt phrase in the log tail, `--reconcile`, and one stop-gate case per host. They run under `npm test`.
 
 ### Release matrix
 
-Above the easy/heavy pairs sits the release matrix: `testing/e2e/scenarios/live/release-matrix.test.ts` runs one row per entry of `testing/e2e/live/matrix.ts` — `{ id, mode, plan, build, review?, task }` — covering every workflow mode (`quick`, `standard`, `speckit`), a same-tool canary for every CLI tool in the catalog, and cross-vendor pairs where the plan and build tools differ. Seats resolve their pin through the same `liveModelPin` table as the tiers below.
+Above the easy/heavy pairs sits the release matrix: `testing/e2e/scenarios/live/release-matrix.test.ts` runs one row per entry of `testing/e2e/live/matrix.ts` — `{ id, mode, plan, build, review?, task }` — covering the three task tiers of `MATRIX_TIERS` (`testing/e2e/helpers/live-harness.ts`; keyed `quick`, `standard` and `speckit`, which are labels, not workflow modes — the `speckit` tier writes a `context.md` and answers the planner's reply with it), a same-tool canary for every CLI tool in the catalog, and cross-vendor pairs where the plan and build tools differ. Seats resolve their pin through the same `liveModelPin` table as the tiers below.
 
 Its switch is `SPLITBRIEF_RELEASE_LIVE=1` (the npm script `test:e2e:release` sets `SPLITBRIEF_REAL_CLI_E2E=1` itself); unset, the file prints `skipped: SPLITBRIEF_RELEASE_LIVE not set` and every row exits skipped. Readiness is stricter here than in the tier below: a tool that is missing or not `ready` fails its row unless its id is listed in the comma-separated `SPLITBRIEF_LIVE_SKIP` allow-list, in which case the row skips with a reason.
 
@@ -184,7 +182,7 @@ Every row — pass, fail, or skip — is appended to `.test-artifacts/live/manif
 
 ### Publish smoke
 
-`testing/e2e/scenarios/live/publish-smoke.test.ts` is the one-row pre-publish check: the shipped crew pinned in code — `claude-code` · `opus` plans and reviews, `claude-code` · `sonnet` builds — through `runReleaseMatrixRow` on the `quick` tier task, so the row is gated, configured, asserted and recorded exactly like a release-matrix row, plus two assertions read back from the copied artifacts: `summary.json` status `complete` and a `pass` / `pass_with_notes` verdict in `review.md`. Its switch is `SPLITBRIEF_PUBLISH_LIVE=1`, set by `npm run test:e2e:publish` together with `SPLITBRIEF_REAL_CLI_E2E=1`; unset, the file prints `skipped: SPLITBRIEF_PUBLISH_LIVE not set` and exits `0`. The pins sit above the live cost ceiling on purpose, which is why the row bypasses `liveModelPin` and never runs under the easy, heavy or release switches. One `quick` run under the 300 s ceiling.
+`testing/e2e/scenarios/live/publish-smoke.test.ts` is the one-row pre-publish check: the shipped crew pinned in code — `claude-code` · `opus` plans and reviews, `claude-code` · `sonnet` builds — through `runReleaseMatrixRow` on the `quick` tier task, so the row is gated, configured, asserted and recorded exactly like a release-matrix row, plus two assertions read back from the copied artifacts: `summary.json` status `complete` and a `pass` / `pass_with_notes` verdict in `review.md`. Its switch is `SPLITBRIEF_PUBLISH_LIVE=1`, set by `npm run test:e2e:publish` together with `SPLITBRIEF_REAL_CLI_E2E=1`; unset, the file prints `skipped: SPLITBRIEF_PUBLISH_LIVE not set` and exits `0`. The pins sit above the live cost ceiling on purpose, which is why the row bypasses `liveModelPin` and never runs under the easy, heavy or release switches. One `quick`-tier run under the 300 s ceiling.
 
 ## How to add an integration test
 
@@ -235,9 +233,9 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 
-it('quick mode completes one task via local implementer', async () => {
+it('completes one task via local implementer', async () => {
   const task = makeTask();
-  const { planner } = fauxPlanner({ phases: [{ tasks: [task] }] });
+  const { planner } = fauxPlanner({ plans: [{ tasks: [task] }] });
   const { implementer } = fauxImplementer({ steps: [{ success: true, output: 'done' }] });
   const events: EngineEvent[] = [];
   await runWorkflow({
@@ -277,7 +275,7 @@ it('start --json emits NDJSON and exits 0', async () => {
   });
 });
 ```
-The headless driver (`src/cli/headless.ts`) wires `stdoutJsonSink` to the bus and stubs workflow host callbacks so integration tests can drive `splitbrief start --json` end-to-end and assert on the event sequence plus exit code. Tiered approvals still use approval config and fail closed when headless sticky/confirm has no grant. No Ink mount, no TTY detection.
+The headless driver (`src/cli/headless.ts`) wires `stdoutJsonSink` to the bus and stubs workflow host callbacks so integration tests can drive `splitbrief start --json` end-to-end and assert on the event sequence plus exit code. The plan card is approved unattended; a write to a protected path has no one to confirm it headlessly, so it fails closed. No Ink mount, no TTY detection.
 
 **UI flow — render a feature + drive engine events through stores** (`testing/helpers/ink.ts`):
 
@@ -310,7 +308,7 @@ it('workflow screen shows an escalation card when escalate event arrives', async
 
 **Planner (`fauxPlanner`):**
 
-- `phases` — each `runPhase()` call consumes the next entry (`tasks`, optional `usage`, or `throws`).
+- `plans` — each typed planning call consumes the next entry (`tasks`, optional `usage`, or `throws`).
 - `escalations` — entries for `escalateHint()` and `escalateFull()` (`success`, `output`, `code`, `usage`, or `throws`).
 
 **Implementer (`fauxImplementer`):**
@@ -526,10 +524,10 @@ Why: real stores, real Ink render, observable output + observable store state.
 
 ## Low-value test audit
 
-For the cost-aware implementer pool and brief review gate work, the audit target is narrow:
+For the cost-aware implementer pool and plan card work, the audit target is narrow:
 
 - Delete or rewrite tests that only prove a wrapper calls another helper, a hook stores React state, a schema accepts a literal already type-checked by TypeScript, or a component "does not crash."
-- Keep tests that encode routing policy, context overflow behavior, conflict classification, external-editor round-trip behavior, visible brief review markers, or user-facing CLI wording.
+- Keep tests that encode routing policy, context overflow behavior, conflict classification, external-editor round-trip behavior, visible plan card markers, or user-facing CLI wording.
 - Prefer rewriting many one-key or one-getter cases into a table or a single lifecycle test over deleting behavior coverage.
 
 ## Convention cross-reference
@@ -631,14 +629,14 @@ The run directory is content-addressed from the normalized selection. Repeating 
 | `workflow-at-rest-paused` | paused mid-brief; `× build` on the rail, `Paused at T003 · type a correction or ⏎ to continue` |
 | `workflow-at-rest-halted` | a quota halt; `✗ build`, `Halted · Usage limit on ollama · ⏎ to decide` |
 | `workflow-recovery-paused` | a halt paused from its recovery menu; the feedback line `Recovery paused.` over the byline `Halted · T002 left the isolation directory · ⏎ to decide` |
-| `workflow-at-rest-waiting-gate` | parked at the spec gate; `Waiting at the spec gate · ⏎ to reopen it` |
-| `workflow-at-rest-quick` | a quick run paused at rest; Spec stays `○` pending, `× plan` wears the stop, `a correction or ⏎ to continue` |
-| `workflow-closed-complete-ready` | five `●`, the `Closed ─` block, `Keep it with /run accept…` |
+| `workflow-at-rest-waiting-gate` | an older run parked at its spec gate; `Waiting at the plan · ⏎ to continue` |
+| `workflow-at-rest-quick` | an older run paused while it still researched; the three-stage rail folds that phase into Plan, `× plan` wears the stop, `Paused at the plan · type a correction or ⏎ to continue` |
+| `workflow-closed-complete-ready` | three `●` (Plan, Build, Review), the `Closed ─` block, `Keep it with /run accept…` |
 | `workflow-closed-complete-needs-attention` | the same block with a failing review and a dirty scope |
 | `workflow-closed-ended` | a run somebody ended inside T003; `× Ended · Build 1/5 · stopped in T003` |
 | `workflow-replayed-history` | the transcript read back from `testing/fixtures/session-log/run.jsonl` |
 
-The at-rest fixtures go through the production path: the fixture copies a real log into the session dir, calls `hydrateRun`, and inits the route at rest. Nothing is staged into the stores by hand. `workflow-quick-researching` pins the live quick rail at 160x45, 120x40, 80x24 and 60x18: `Researching…` under Plan while Spec stays `○` pending, and its 160x45 frame carries the sidebar's `quick` mode.
+The at-rest fixtures go through the production path: the fixture copies a real log into the session dir, calls `hydrateRun`, and inits the route at rest. Nothing is staged into the stores by hand. `workflow-plan-compiled` shows the planning session's two cards, `plan.md` and `tasks.md`, both rendered from `plan.json`; `workflow-at-rest-quick` is an old quick run at rest, which continues as one planning session.
 
 ### Artifact layout
 
@@ -713,7 +711,7 @@ The terminal-boundary behavior harness lives under `testing/integration/cli/pty/
 npm run tui-shots:pty
 ```
 
-The harness spawns at fixed `100x30` dimensions and mounts the production `App` through `renderApp` in an active `reviewing-spec` state. It types the approval prefix, invokes a one-shot real editor child through `VISUAL`, returns to the review, completes `approve`, and submits the real approval callback before sending Ctrl+Q. It checks terminal restoration, child exit, and process-group reaping. The isolated child environment uses an allowlist and temporary home and project roots; it does not contact a provider.
+The harness spawns at fixed `100x30` dimensions and mounts the production `App` through `renderApp` in an active `reviewing-plan` state. It types the approval prefix, invokes a one-shot real editor child through `VISUAL`, returns to the review, completes `approve`, and submits the real approval callback before sending Ctrl+Q. It checks terminal restoration, child exit, and process-group reaping. The isolated child environment uses an allowlist and temporary home and project roots; it does not contact a provider.
 
 PTY teardown awaits child reaping before listeners, timers, and temporary roots are disposed.
 
@@ -775,7 +773,7 @@ The log is written under `.splitbrief/debug/keys-*.log` in the smoke project and
 From any project with a valid `.splitbrief/config.yaml`:
 
 ```bash
-node dist/cli.js start --json --mode quick "smoke feature"
+node dist/cli.js start --json "smoke feature"
 ```
 
 Verify: NDJSON on stdout, first line is `readiness_report`, the first model-backed workflow event is `workflow_started`, last workflow event is `workflow_complete`, and the process exits `0`. If `--json` is unrecognized, run `npm run build` — stale `dist/` is the most common cause.

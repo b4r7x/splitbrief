@@ -34,7 +34,7 @@ describe('buildRewindHandler', () => {
       kind: 'missing',
     });
 
-    handler({ target: 'spec' });
+    handler({ target: 'task', taskId: 'T001' });
 
     expect(resetMode).toHaveBeenCalledTimes(1);
     expect(controller.signal.aborted).toBe(false);
@@ -50,7 +50,7 @@ describe('buildRewindHandler', () => {
       message: 'bad json',
     });
 
-    handler({ target: 'spec' });
+    handler({ target: 'task', taskId: 'T001' });
 
     expect(feedbackStore.get().message).toBe('Cannot resume: bad json');
     expect(controller.signal.aborted).toBe(false);

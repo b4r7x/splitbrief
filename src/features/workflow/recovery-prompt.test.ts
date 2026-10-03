@@ -208,6 +208,22 @@ describe('recovery prompt', () => {
     expect(lines[0]).not.toContain('(approve');
   });
 
+  it.each([
+    ['plan-questions-exhausted', 'Recovery needed · Planner still asks questions after 2 rounds'],
+    ['plan-checks-failed', 'Recovery needed · Plan still fails its checks after one repair'],
+  ] as const)('names a %s halt by its headline, not a second wording of it', (reason, header) => {
+    const prompt = formatRecoveryPrompt({
+      ...baseIssue,
+      reason,
+      taskId: undefined,
+      attempts: undefined,
+      message: 'The plan failed its checks again after one repair.',
+    });
+
+    expect(prompt).toContain(header);
+    expect(prompt).not.toContain('again after one repair.');
+  });
+
   it('serializes the rows into a flat prompt with the recommended accent marker', () => {
     const prompt = formatRecoveryPrompt(baseIssue);
 
@@ -443,7 +459,7 @@ describe('recovery prompt', () => {
       '[a]  end run · closes this run, changes kept',
     ]);
     expect(formatRecoveryActionLines(['revise-spec', 'end-run'], {}, 'revise-spec')[0]).toContain(
-      'revise the spec',
+      'revise · send the planner a correction',
     );
   });
 

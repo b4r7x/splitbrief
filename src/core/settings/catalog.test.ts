@@ -81,7 +81,6 @@ describe('SETTINGS_DEFS dead settings', () => {
     );
 
     expect(workflowIds).toEqual([
-      'workflow.mode',
       'workflow.approve',
       'workflow.maxRetries',
       'workflow.compactionFormat',
@@ -97,19 +96,6 @@ describe('SETTINGS_DEFS workflow compaction', () => {
       kind: 'enum',
       options: ['auto', 'freeform', 'structured'],
     });
-  });
-});
-
-describe('SETTINGS_DEFS workflow.mode description', () => {
-  // The per-mode cost table is the help block's (`settingsHelpLines`), so the row itself says
-  // what the setting decides in one sentence instead of carrying three lines of table.
-  it('says in one line what the mode decides', () => {
-    const def = SETTINGS_DEFS.find((d) => d.id === 'workflow.mode');
-
-    expect(def?.description).toBe(
-      'How many planner calls run before building, and how many gates stop for you',
-    );
-    expect(def?.description).not.toContain('\n');
   });
 });
 

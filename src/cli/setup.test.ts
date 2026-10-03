@@ -66,10 +66,10 @@ describe('setupWorkflow', () => {
     },
   );
 
-  it('still requests setup when non-runner flags (mode / auto / budget) are the only extras', async () => {
+  it('still requests setup when non-runner flags are the only extras', async () => {
     createTestGitRepo(tmp);
 
-    const mode = await setupWorkflow({ project: tmp, fullscreen: false, mode: 'quick' });
+    const mode = await setupWorkflow({ project: tmp, fullscreen: false });
     expect(mode.needsSetup).toBe(true);
   });
 

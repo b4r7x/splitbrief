@@ -25,83 +25,46 @@ function recordAt(input: {
 }
 
 describe('atRestRailStages', () => {
-  it('marks every stage done on a run that finished', () => {
+  it('marks all three stages done on a run that finished', () => {
     const stages = atRestRailStages(recordAt({ status: { kind: 'closed', as: 'complete' } }));
-    expect(stages.map((stage) => stage.status)).toEqual(['done', 'done', 'done', 'done', 'done']);
+    expect(stages).toEqual([
+      { stage: 'plan', status: 'done' },
+      { stage: 'build', status: 'done' },
+      { stage: 'review', status: 'done' },
+    ]);
   });
 
   it('marks the stage a run somebody ended stopped on', () => {
     const stages = atRestRailStages(
       recordAt({ status: { kind: 'closed', as: 'ended' }, phase: 'implementing' }),
     );
-    expect(stages[3]).toEqual({ stage: 'build', status: 'cancelled' });
+    expect(stages.map((stage) => stage.status)).toEqual(['done', 'cancelled', 'pending']);
   });
 
   it.each([
     ['paused', { kind: 'paused', at: 'mid-step' } as const, 'cancelled'],
-    ['waiting', { kind: 'waiting', gate: 'spec' } as const, 'cancelled'],
+    ['waiting', { kind: 'waiting', gate: 'spec', reopens: false } as const, 'cancelled'],
     ['interrupted', { kind: 'interrupted' } as const, 'cancelled'],
     ['failed', { kind: 'failed', message: 'boom' } as const, 'failed'],
   ])('wears the %s mark the stop earned', (_label, stop, expected) => {
     const stages = atRestRailStages(recordAt({ status: openWith(stop), phase: 'implementing' }));
-    expect(stages[3]?.status).toBe(expected);
+    expect(stages[1]?.status).toBe(expected);
   });
 
   it('leaves a run another process is driving on its active stage', () => {
     const stages = atRestRailStages(recordAt({ status: { kind: 'running' }, phase: 'planning' }));
-    expect(stages[1]).toEqual({ stage: 'plan', status: 'active' });
+    expect(stages[0]).toEqual({ stage: 'plan', status: 'active' });
   });
 
-  it('keeps quick Spec pending and folds an old research stop into Plan', () => {
-    const stages = atRestRailStages(
-      recordAt({
-        status: openWith({ kind: 'interrupted' }),
-        phase: 'researching',
-        mode: 'quick',
-      }),
-    );
-    expect(stages.map((stage) => stage.status)).toEqual([
-      'pending',
-      'cancelled',
-      'pending',
-      'pending',
-      'pending',
-    ]);
-  });
-
-  it('keeps quick Spec pending and marks Plan active while a quick run is driven', () => {
-    const stages = atRestRailStages(
-      recordAt({ status: { kind: 'running' }, phase: 'planning', mode: 'quick' }),
-    );
-    expect(stages[0]).toEqual({ stage: 'spec', status: 'pending' });
-    expect(stages[1]).toEqual({ stage: 'plan', status: 'active' });
-  });
-
-  it('keeps quick Spec pending when a quick run finished', () => {
-    const stages = atRestRailStages(
-      recordAt({ status: { kind: 'closed', as: 'complete' }, mode: 'quick' }),
-    );
-    expect(stages.map((stage) => stage.status)).toEqual([
-      'pending',
-      'done',
-      'done',
-      'done',
-      'done',
-    ]);
-  });
-
-  it('keeps quick Spec pending and cancels the stage a quick run was ended on', () => {
-    const stages = atRestRailStages(
-      recordAt({ status: { kind: 'closed', as: 'ended' }, phase: 'implementing', mode: 'quick' }),
-    );
-    expect(stages.map((stage) => stage.status)).toEqual([
-      'pending',
-      'done',
-      'done',
-      'cancelled',
-      'pending',
-    ]);
-  });
+  it.each(['standard', 'quick', 'speckit'] as const)(
+    'folds an old %s research stop into Plan',
+    (mode) => {
+      const stages = atRestRailStages(
+        recordAt({ status: openWith({ kind: 'interrupted' }), phase: 'researching', mode }),
+      );
+      expect(stages.map((stage) => stage.status)).toEqual(['cancelled', 'pending', 'pending']);
+    },
+  );
 });
 
 describe('atRestComposer', () => {

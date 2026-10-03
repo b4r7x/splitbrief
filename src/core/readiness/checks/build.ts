@@ -1,4 +1,4 @@
-import { resolveApproveLevel, resolveMode } from '../../config/runtime/resolve.js';
+import { resolveApproveLevel } from '../../config/runtime/resolve.js';
 import {
   aggregateReadinessStatus,
   countReadinessChecks,
@@ -6,7 +6,7 @@ import {
   selectNextAction,
 } from '../status.js';
 import { buildConfigChecks } from './config.js';
-import { buildModeChecks } from './mode.js';
+import { buildApprovalChecks } from './approval.js';
 import { buildRunnerChecks } from './runners.js';
 import { buildContextChecks } from './context.js';
 import { buildValidationChecks } from './validation.js';
@@ -28,6 +28,8 @@ export interface BuildReadinessReportInput {
   repo: RepoReadinessInput;
   cliReadiness?: readonly CliReadinessResult[] | undefined;
   availability?: readonly RunnerAvailabilityFact[] | undefined;
+  /** How the run the report describes starts; a headless one approves its plan card unattended. */
+  interaction?: 'interactive' | 'headless' | undefined;
 }
 
 export function buildReadinessReport(input: BuildReadinessReportInput): ReadinessReport {
@@ -36,11 +38,7 @@ export function buildReadinessReport(input: BuildReadinessReportInput): Readines
   const counts = countReadinessChecks(checks);
   const status = aggregateReadinessStatus(counts);
   const nextAction = selectNextAction(checks, status);
-  const mode = input.config ? resolveMode({ config: input.config }) : undefined;
-  const approve =
-    input.config && mode
-      ? resolveApproveLevel({ mode, configApprove: input.config.workflow.approve })
-      : undefined;
+  const approve = input.config ? resolveApproveLevel(input.config) : undefined;
 
   return {
     generatedAt: nowIso(),
@@ -52,7 +50,6 @@ export function buildReadinessReport(input: BuildReadinessReportInput): Readines
     metadata: {
       configPath: input.configLoad.path,
       configExists: input.configLoad.state !== 'missing',
-      ...(mode !== undefined && { mode }),
       ...(approve !== undefined && { approve }),
     },
   };
@@ -78,14 +75,19 @@ function buildSections(input: BuildReadinessReportInput): ReadinessSection[] {
     1,
     0,
     {
-      id: 'mode',
-      title: 'Mode',
-      checks: buildModeChecks(input.config),
+      id: 'workflow',
+      title: 'Workflow',
+      checks: buildApprovalChecks(input.config, input.interaction),
     },
     {
       id: 'runners',
       title: 'Runners',
-      checks: buildRunnerChecks(input.config, input.cliReadiness, input.availability),
+      checks: buildRunnerChecks(
+        input.config,
+        input.cliReadiness,
+        input.availability,
+        input.interaction,
+      ),
     },
     {
       id: 'context',

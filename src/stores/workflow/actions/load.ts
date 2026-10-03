@@ -5,7 +5,6 @@ import { updateOperations } from '../operations/reducer.js';
 import { _operationsInternal } from '../operations/state.js';
 import { _tasksInternal } from '../tasks.js';
 import { _tokensInternal, updateTokens } from '../tokens.js';
-import { _modeAdviceInternal, updateModeAdvice } from '../mode-advice.js';
 import { reduceLifecycle, reduceTasks } from './event.js';
 import { resetWorkflow } from './reset.js';
 
@@ -23,5 +22,4 @@ export function loadEvents(events: EngineEvent[]): void {
   _tokensInternal.set((state) => events.reduce(updateTokens, state));
   _lifecycleInternal.set((state) => reduced.reduce(reduceLifecycle, state));
   _operationsInternal.set((state) => reduced.reduce(updateOperations, state));
-  _modeAdviceInternal.set((state) => reduced.reduce(updateModeAdvice, state));
 }

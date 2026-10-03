@@ -122,8 +122,6 @@ export function makeConfig(overrides?: ConfigOverrides): Config {
     },
     workflow: {
       maxRetries: 3,
-      mode: 'standard',
-      taskReview: 'none',
       ...overrides?.workflow,
       compactionFormat: overrides?.workflow?.compactionFormat ?? 'auto',
     },
@@ -159,7 +157,6 @@ export function makeApprovalConfig(
     approval: {
       enabled: approval.enabled ?? true,
       feedRejectionsToPlanner: approval.feedRejectionsToPlanner ?? true,
-      ...(approval.tiers !== undefined && { tiers: approval.tiers }),
       ...(approval.allowedPaths !== undefined && { allowedPaths: approval.allowedPaths }),
     },
   });

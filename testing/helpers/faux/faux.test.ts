@@ -4,35 +4,25 @@ import { fauxImplementer } from './implementer.js';
 import type { ImplementerOptions } from '../../../src/engine/implementers/types.js';
 import { defaultContext, makeConfig } from '../factories/config.js';
 import { makeTask } from '../factories/task.js';
-import { buildLanguageContext } from '../../../src/engine/spec/prompts/language-context.js';
-
-const LANGUAGE_CONTEXT = buildLanguageContext(undefined);
 
 describe('fauxPlanner', () => {
-  it('returns scripted tasks and tracks calls', async () => {
+  it('answers with the plan of its scripted tasks and tracks calls', async () => {
     const task = makeTask({ title: 'test task' });
-    const { planner, state } = fauxPlanner({ phases: [{ tasks: [task] }] });
-    const result = await planner.runPhase({
-      call: 'tasks',
-      projectDir: '/tmp',
-      inputs: { feature: 'add feature', projectContext: '', languageContext: LANGUAGE_CONTEXT },
-      callbacks: { onOutput: () => {} },
-    });
-    if (result.kind !== 'artifact') throw new Error('Expected a completed planner artifact');
-    expect(result.tasks).toHaveLength(1);
-    expect(state.phaseCallCount).toBe(1);
-    expect(state.receivedFeatures).toEqual(['add feature']);
+    const { planner, state } = fauxPlanner({ plans: [{ tasks: [task] }] });
+    const result = await planner
+      .typedCall({ projectDir: '/tmp', seat: 'planner', callbacks: { onOutput: () => {} } })
+      .invoke({ prompt: 'add feature' });
+    expect(JSON.parse(result.text).result.tasks).toHaveLength(1);
+    expect(state.planCallCount).toBe(1);
+    expect(state.receivedPrompts).toEqual(['add feature']);
   });
 
   it('throws when script says so', async () => {
-    const { planner } = fauxPlanner({ phases: [{ tasks: [], throws: new Error('boom') }] });
+    const { planner } = fauxPlanner({ plans: [{ tasks: [], throws: new Error('boom') }] });
     await expect(
-      planner.runPhase({
-        call: 'research',
-        projectDir: '/tmp',
-        inputs: { feature: 'x', projectContext: '', languageContext: LANGUAGE_CONTEXT },
-        callbacks: { onOutput: () => {} },
-      }),
+      planner
+        .typedCall({ projectDir: '/tmp', seat: 'planner', callbacks: { onOutput: () => {} } })
+        .invoke({ prompt: 'x' }),
     ).rejects.toThrow('boom');
   });
 });

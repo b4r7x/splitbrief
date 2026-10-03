@@ -4,6 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { feedbackStore } from '../../stores/ui/feedback.js';
+import { composerDraftStore } from '../../stores/ui/composer-draft.js';
+import { editorStore } from '../../stores/ui/editor.js';
+import { overlayStore } from '../../stores/ui/overlay.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { setActiveTerminalHandover } from '../../lib/terminal/editor-handover.js';
@@ -40,7 +43,7 @@ describe('openReviewFileExternally stale-owner feedback', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'review-parser-test-'));
     feedbackStore.reset();
     reviewStore.reset();
-    lifecycleStore.__testReset({ phase: 'reviewing-spec' });
+    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
     vi.stubEnv('VISUAL', 'mock-editor');
     setActiveTerminalHandover({
       fullscreen: false,
@@ -84,7 +87,7 @@ describe('openReviewFileExternally stale-owner feedback', () => {
       outcome: { kind: 'close', code: 1, signal: null } satisfies EditorOutcome,
     },
   ])('does not overwrite newer feedback after a stale $label', async ({ outcome }) => {
-    const reviewFile = join(tempDir, 'spec.md');
+    const reviewFile = join(tempDir, 'plan.json');
     const newerReviewFile = join(tempDir, 'newer.md');
     writeFileSync(reviewFile, '# spec\n');
     writeFileSync(newerReviewFile, '# newer\n');
@@ -110,6 +113,41 @@ describe('openReviewFileExternally stale-owner feedback', () => {
       message: 'new-owner feedback',
       isError: false,
     });
+  });
+
+  it('settles the card with the in-app edit an untouched external editor leaves on disk', async () => {
+    const planMd = join(tempDir, 'plan.md');
+    writeFileSync(planMd, 'Greet people by name\n');
+    // The overlay saved its buffer to plan.json before it handed over to the external editor.
+    writeFileSync(join(tempDir, 'plan.json'), '{"edited":true}\n');
+    reviewStore.setReviewFile(planMd);
+    const child = new EventEmitter();
+    const spawnEditor: SpawnEditor = () => {
+      queueMicrotask(() => child.emit('close', 0, null));
+      return child;
+    };
+    const inputMode = makeInputMode();
+
+    await openReviewFileExternally(inputMode, spawnEditor, '{"compiled":true}\n');
+
+    expect(inputMode.resolve).toHaveBeenCalledWith({ approved: false, action: 'edit' });
+  });
+
+  it('settles the card with the in-app edit when the external editor fails to start', async () => {
+    const planMd = join(tempDir, 'plan.md');
+    writeFileSync(planMd, 'Greet people by name\n');
+    writeFileSync(join(tempDir, 'plan.json'), '{"edited":true}\n');
+    reviewStore.setReviewFile(planMd);
+    const child = new EventEmitter();
+    const spawnEditor: SpawnEditor = () => {
+      queueMicrotask(() => child.emit('error', new Error('spawn failed')));
+      return child;
+    };
+    const inputMode = makeInputMode();
+
+    await openReviewFileExternally(inputMode, spawnEditor, '{"compiled":true}\n');
+
+    expect(inputMode.resolve).toHaveBeenCalledWith({ approved: false, action: 'edit' });
   });
 });
 
@@ -191,20 +229,26 @@ describe('review input effects', () => {
   });
 
   it.each(['e', 'edit', 'edit-file'])(
-    'spends the supplied editor once for %s and never reaches the terminal handover',
+    'opens plan.json in the editor overlay for %s and never reaches the terminal handover',
     async (command) => {
-      const reviewFile = join(tempDir, 'tasks.md');
-      writeFileSync(reviewFile, '# tasks\n');
+      lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+      const reviewFile = join(tempDir, 'plan.md');
+      writeFileSync(reviewFile, '# Plan\n');
+      writeFileSync(join(tempDir, 'plan.json'), '{}\n');
       reviewStore.setReviewFile(reviewFile);
       const inputMode = makeInputMode('review');
       const effects = makeEffects();
 
       await createReviewInputHandler(inputMode, effects).handleInput(command);
 
-      expect(effects.openExternalEditor.mock.calls).toEqual([[inputMode]]);
+      const editor = editorStore.get();
+      expect(editor.status === 'open' ? editor.filePath : null).toBe(join(tempDir, 'plan.json'));
+      expect(overlayStore.get().active).toBe('editor');
+      expect(effects.openExternalEditor).not.toHaveBeenCalled();
       expect(stdinPause).not.toHaveBeenCalled();
       expect(inputMode.resolve).not.toHaveBeenCalled();
-      expect(feedbackStore.get()).toEqual({ message: null, isError: false });
+      editorStore.close();
+      overlayStore.close();
     },
   );
 
@@ -223,6 +267,36 @@ describe('review input effects', () => {
 
     expect(inputMode.resolve).toHaveBeenCalledWith(resolved);
     expect(effects.openExternalEditor).not.toHaveBeenCalled();
+  });
+
+  it('sends free text typed at the plan card back to the planner as a correction', async () => {
+    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    const reviewFile = join(tempDir, 'plan.md');
+    writeFileSync(reviewFile, 'Greet people by name\n');
+    reviewStore.setReviewFile(reviewFile);
+    const inputMode = makeInputMode('review');
+
+    await createReviewInputHandler(inputMode, makeEffects()).handleInput('  Greet in Polish ');
+
+    expect(inputMode.resolve).toHaveBeenCalledWith({
+      approved: false,
+      action: 'revise',
+      comment: 'Greet in Polish',
+    });
+    expect(feedbackStore.get().message).toBeNull();
+  });
+
+  it('opens the comment draft for a bare c instead of sending the letter to the planner', async () => {
+    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    const reviewFile = join(tempDir, 'plan.md');
+    writeFileSync(reviewFile, 'Greet people by name\n');
+    reviewStore.setReviewFile(reviewFile);
+    const inputMode = makeInputMode('review');
+
+    await createReviewInputHandler(inputMode, makeEffects()).handleInput('c');
+
+    expect(inputMode.resolve).not.toHaveBeenCalled();
+    expect(composerDraftStore.get().request?.value).toBe('comment ');
   });
 
   it('answers a question through the same resolve with the effects supplied', async () => {
@@ -288,17 +362,17 @@ describe('review input effects', () => {
     });
   });
 
-  it('keeps the production editor when no effects are supplied', async () => {
-    lifecycleStore.__testReset({ phase: 'reviewing-spec' });
-    const reviewFile = join(tempDir, 'spec.md');
+  it('opens the external editor on the gate edit file', async () => {
+    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    const reviewFile = join(tempDir, 'plan.json');
     writeFileSync(reviewFile, '# spec\n');
     reviewStore.setReviewFile(reviewFile);
 
-    const pending = createReviewInputHandler(makeInputMode('review')).handleInput('edit-file');
+    const pending = openReviewFileExternally(makeInputMode('review'));
     // Only openReviewFileExternally announces the editor, and it does so before its first
     // await — so this message is the production function running, not a stand-in.
     expect(feedbackStore.get()).toEqual({
-      message: 'Opening mock-editor — spec.md…',
+      message: 'Opening mock-editor — plan.json…',
       isError: false,
     });
 

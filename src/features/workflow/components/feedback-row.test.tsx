@@ -59,7 +59,7 @@ describe('FeedbackRow', () => {
 
   it('says nothing while a tiered approval is pending', () => {
     void openApprovalPrompt({
-      tier: 'sticky',
+      tier: 'confirm',
       actionClass: 'write_out_of_scope',
       actionDescription: 'write src/x.ts',
       phase: 'implementing',

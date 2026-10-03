@@ -1,6 +1,6 @@
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { ActionClass } from '../../../core/schemas/enums.js';
-import type { ApprovalTier } from '../../../core/schemas/config.js';
+import type { ApprovalTier } from '../../../core/approval/types.js';
 import type { TaskId } from '../../../core/schemas/task.js';
 import type { EventBus } from '../../events/types.js';
 
@@ -27,7 +27,7 @@ export function publishApprovalRejected(args: ApprovalEventBase & { reason: stri
 
 export function publishApprovalGranted(
   args: ApprovalEventBase & {
-    scope: 'once' | 'session' | 'always';
+    scope: 'once' | 'session';
     confirmReason?: string | undefined;
   },
 ): void {

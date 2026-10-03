@@ -78,7 +78,6 @@ export function renderReviewPacketMarkdown(packet: ReviewPacket): string {
     '## Run Header',
     `- Session: ${packet.sessionId}`,
     `- Feature: ${packet.run.feature}`,
-    `- Mode: ${packet.run.mode ?? 'n/a'}`,
     `- Planner: ${packet.run.planner.tool ?? 'n/a'}${packet.run.planner.model ? ` (${packet.run.planner.model})` : ''}`,
     `- Implementer: ${packet.run.implementer.tool ?? 'n/a'}${packet.run.implementer.model ? ` (${packet.run.implementer.model})` : ''}`,
     `- Tasks: ${packet.run.totalTasks} total, ${packet.run.completedLocally} local, ${packet.run.escalated} escalated, ${packet.run.skipped} skipped, ${packet.run.failed} failed`,

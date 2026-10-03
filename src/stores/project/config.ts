@@ -90,7 +90,7 @@ async function saveOnce(
   expectedRevision: ExpectedConfigRevision,
   expectedProjectDir: string,
 ): Promise<ConfigSaveResult> {
-  const { config, diskConfig, projectDir, overrides, revision } = store.get();
+  const { config, diskConfig, projectDir, overrides, revision, rawYaml } = store.get();
   if (!projectDir) throw configError.loadNotCalled('save');
   if (!config || !diskConfig) throw configError.loadNotCalled('save');
   if (projectDir !== expectedProjectDir || !configRevisionsMatch(expectedRevision, revision)) {
@@ -104,7 +104,7 @@ async function saveOnce(
   const edits =
     revision === null
       ? [{ path: [], value: toYaml(persisted) }]
-      : editsForSave(diskConfig, persisted);
+      : editsForSave(diskConfig, persisted, rawYaml);
   try {
     const result = await transactConfigDocument(projectDir, revision, edits);
     if (result.kind === 'conflict') {

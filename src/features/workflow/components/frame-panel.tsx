@@ -10,6 +10,8 @@ import { Divider } from '../../../components/divider.js';
 
 interface FramePanelProps {
   filePath: string;
+  /** Dim text the title row ends with; the path gives up its leading cells to it. */
+  aside?: string | undefined;
   width: number;
   height: number;
   children: ReactNode;
@@ -17,9 +19,10 @@ interface FramePanelProps {
 
 export const OVERLAY_FRAME_COLS = 4; // border(2) + paddingX(2)
 
-export function FramePanel({ filePath, width, height, children }: FramePanelProps) {
+export function FramePanel({ filePath, aside, width, height, children }: FramePanelProps) {
   const t = useTheme();
   const innerWidth = Math.max(1, width - OVERLAY_FRAME_COLS);
+  const asideCells = aside === undefined ? 0 : getTerminalCellWidth(aside) + 2;
   return (
     <Box
       flexDirection="column"
@@ -32,7 +35,13 @@ export function FramePanel({ filePath, width, height, children }: FramePanelProp
       overflow="hidden"
     >
       <Box height={1} overflow="hidden">
-        {renderFrameTitle(filePath, innerWidth, t.textDim, t.text)}
+        {renderFrameTitle(filePath, innerWidth - asideCells, t.textDim, t.text)}
+        {aside !== undefined && (
+          <>
+            <Box flexGrow={1} />
+            <Text color={t.textDim}>{aside}</Text>
+          </>
+        )}
       </Box>
       <Divider width={innerWidth} />
       {children}

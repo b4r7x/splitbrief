@@ -20,6 +20,8 @@ import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
 import { makePassingTask } from '#testing/helpers/planning-phase.js';
 import { makePlanner } from '#testing/helpers/orchestrator-factories.js';
+import { makePlanProposal } from '#testing/helpers/factories/plan.js';
+import { scriptedTypedCall } from '#testing/helpers/typed-planner.js';
 import { formatTasks } from '../../../src/engine/spec/formatter.js';
 import { saveState } from '../../../src/core/state/persistence.js';
 import { sessionDir } from '../../../src/core/paths.js';
@@ -50,8 +52,10 @@ afterEach(() => {
 });
 
 describe('a correction typed at a parked approval gate', () => {
+  // An old run parked at its spec or briefs gate continues on one planning session, which the
+  // correction leads.
   it.each(['spec', 'briefs'] as const)(
-    'revises %s before reopening its gate and replays one user message',
+    'hands a correction typed at the %s gate to the planner and replays one user message',
     async (gate) => {
       const sessionId = 'at-rest-steer-session';
       const feature = 'add auth';
@@ -61,8 +65,7 @@ describe('a correction typed at a parked approval gate', () => {
         ...createInitialState(feature),
         phase,
         tasks,
-        mode: 'standard',
-        approve: 'all',
+        approve: 'plan',
         interruptedStep: {
           step: { kind: 'gate', gate },
           source: 'user',
@@ -79,19 +82,9 @@ describe('a correction typed at a parked approval gate', () => {
       saveState({ projectDir, sessionId }, savedState);
 
       const steers: (string | undefined)[] = [];
-      const prompts: string[] = [];
-      const config = makeConfig({ workflow: { mode: 'standard', approve: 'all' } });
-      const revised =
-        gate === 'spec'
-          ? `# Revised spec\n\n${STEER}\n`
-          : formatTasks([
-              { ...makePassingTask(), title: 'Use the cached parser', description: STEER },
-            ]);
-      const revise = async (prompt: string) => {
-        prompts.push(prompt);
-        return { text: revised, usage: null };
-      };
-      const planner = makePlanner({ regenerate: ({ prompt }) => revise(prompt), review: revise });
+      const config = makeConfig({ workflow: { approve: 'plan' } });
+      const typed = scriptedTypedCall([makePlanProposal()]);
+      const planner = makePlanner({ typedCall: typed.typedCall });
       const prepared = prepareWorkflowExecution({
         projectDir,
         feature,
@@ -135,7 +128,7 @@ describe('a correction typed at a parked approval gate', () => {
         rows: 40,
       });
       await vi.waitFor(() => {
-        expect(stripAnsiStyles(ui?.lastFrame() ?? '')).toContain('gate');
+        expect(stripAnsiStyles(ui?.lastFrame() ?? '')).toContain('Paused at the plan');
       });
       expect(
         eventsStore.get().events.filter((event) => event.type === 'user_message'),
@@ -163,14 +156,9 @@ describe('a correction typed at a parked approval gate', () => {
         expect(route.screen === 'workflow' && route.execution.kind === 'at-rest').toBe(true);
       });
 
-      expect(prompts).toHaveLength(1);
-      expect(prompts[0]).toContain(STEER);
-      expect(
-        readFileSync(
-          join(sessionDir(projectDir, sessionId), gate === 'spec' ? 'spec.md' : 'tasks.md'),
-          'utf8',
-        ),
-      ).toContain('cached parser');
+      expect(planner.review).not.toHaveBeenCalled();
+      expect(typed.prompts).toHaveLength(1);
+      expect(typed.prompts[0]).toContain(STEER);
 
       const log = readFileSync(join(sessionDir(projectDir, sessionId), 'session.jsonl'), 'utf-8');
       const steerRows = log

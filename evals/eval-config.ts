@@ -63,7 +63,7 @@ export function buildEvalConfig(pair: ModelPair, mode: EvalMode): Config {
     },
     workflow: {
       maxRetries: 1,
-      mode: 'quick',
+      approve: 'none',
     },
   });
 }

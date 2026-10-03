@@ -67,6 +67,7 @@ describe('HomeSeatBlock', () => {
     expect(lines[2]).toContain('REVIEW');
     expect(lines[2]).toContain('same as planner');
     expect(lines[3]).toContain('/crew to change');
+    expect(lines[3]).not.toMatch(/\b(quick|standard|speckit)\b/);
     for (const line of lines) {
       expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(WIDTH);
     }

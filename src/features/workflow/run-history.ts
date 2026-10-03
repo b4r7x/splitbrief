@@ -1,17 +1,12 @@
-import { resolveMode } from '../../core/config/runtime/resolve.js';
 import type { RunRecord } from '../../core/sessions/run-record.js';
 import { readRunEvents, type RunReplay } from '../../engine/events/replay.js';
-import { adviseRun } from '../../engine/orchestrator/planning/mode-advisor.js';
-import { configStore } from '../../stores/project/config.js';
 import { loadEvents } from '../../stores/workflow/actions/load.js';
 import { hydrateFromState } from '../../stores/workflow/actions/hydrate.js';
-import { modeAdviceStore } from '../../stores/workflow/mode-advice.js';
 
 /**
  * A past run, put back on the workflow screen: its session log replayed into the stores, then the
- * saved state laid over the facts the log cannot settle — the phase it stopped in, the brief list,
- * what it spent, and the mode advice its saved inputs earn today. One read at the navigation
- * event; the live bus appends from there.
+ * saved state laid over the facts the log cannot settle — the phase it stopped in, the brief list
+ * and what it spent. One read at the navigation event; the live bus appends from there.
  */
 export async function hydrateRun(record: RunRecord): Promise<void> {
   const publish = await readRunHistory(record);
@@ -31,18 +26,6 @@ export async function readRunHistory(record: RunRecord): Promise<() => void> {
     const { state } = record.hydration;
     hydrateFromState(state, {
       endedAt: lastRunEventTs(replay) ?? runRecordEnd(record),
-    });
-    // The mode the run continues in: its saved one, else the config's, as planning resolves it.
-    const { config } = configStore.get();
-    if (config === null) return;
-    const mode = resolveMode({ config, savedMode: state.mode });
-    modeAdviceStore.settle({
-      mode,
-      advice: adviseRun({
-        feature: state.feature,
-        plannerContext: state.plannerContext,
-        mode,
-      }),
     });
   };
 }

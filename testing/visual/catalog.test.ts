@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ACTIVE_OVERLAYS, ALL_SCREENS } from '../../src/core/navigation/types.js';
 import { configStore } from '../../src/stores/project/config.js';
 import { routerStore } from '../../src/stores/navigation/router.js';
-import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import {
   listVisualScenarios,
   findVisualScenario,
@@ -29,11 +28,11 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['home-recent-sessions', ['120x40', '80x24']],
   ['workflow-implementation', ['120x40', '80x24', '60x18', '160x45', '220x45']],
   ['workflow-implementation-silent', ['120x40', '80x24', '60x18', '160x45', '220x45']],
+  ['workflow-plan-card', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-plan-activity', ['120x40', '80x24', '60x18', '160x45', '220x45']],
   ['workflow-question', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-question-input', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-question-overflow', ['120x40', '80x24', '60x18', '160x45']],
-  ['workflow-quick-researching', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-stop-menu-ended-rewound-gate', ['120x40', '80x24', '60x18', '60x40']],
 ]);
 
@@ -48,7 +47,6 @@ describe('visual catalog', () => {
       'home-preparation-failed',
       'home-preparation-blocked',
       'workflow-continuing',
-      'workflow-task-review',
       'home-draft-image',
       'overlay-usage-details',
       'overlay-usage-details-legacy',
@@ -60,30 +58,6 @@ describe('visual catalog', () => {
       'overlay-picker-auth-unsupported',
     ]) {
       expect(findVisualScenario(id), id).toBeDefined();
-    }
-  });
-
-  it('keeps nonzero usage out of the mounted automatic task review', async () => {
-    const scenario = findVisualScenario('workflow-task-review');
-    const checkpoint = scenario?.checkpoints[0];
-    if (scenario === undefined || checkpoint === undefined)
-      throw new Error('Missing task review fixture');
-    for (const viewport of REQUIRED_VIEWPORTS) {
-      const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
-      try {
-        const frame = stripAnsiStyles(await handle.waitForCheckpoint());
-        expect(frame).toContain('ready for review');
-        expect(frame).toContain('c   continue recommended');
-        expect(frame).toContain('r   redo task');
-        expect(frame).toContain('a   abort');
-        if (viewport.rows > 18) {
-          expect(frame).toContain('worker ollama / qwen');
-          expect(frame).toContain('route tight');
-        }
-        expect(frame).not.toMatch(/tokens|12345|23456|32768|Selected worker/);
-      } finally {
-        await handle.unmount();
-      }
     }
   });
 

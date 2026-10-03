@@ -231,28 +231,6 @@ describe('wireAppMouse', () => {
     dispose();
   });
 
-  it('blocks workflow fallback hit testing while a field-editor session owns input', () => {
-    const snapshot = openBriefReview(12);
-    const listTop = snapshot.rect.top + snapshot.taskTopOffset;
-    const mock = createMockFilteredStdin();
-    const dispose = wireAppMouse(mock.filtered);
-
-    mock.emit(pointerEvent('press', snapshot.rect.left, listTop));
-    expect(focusStore.get()).toEqual({ region: 'brief', index: snapshot.previousCount });
-
-    focusStore.clear();
-    editorStore.openField({
-      filePath: 'briefs.md',
-      value: 'title text',
-      ownerToken: reviewStore.get().ownerToken,
-      layout: { columns: 80, rows: 30 },
-    });
-    mock.emit(pointerEvent('press', snapshot.rect.left, listTop));
-
-    expect(focusStore.get()).toBeNull();
-    dispose();
-  });
-
   it('ignores workflow wheel input while overlays or prompts own input', () => {
     routerStore.init(WORKFLOW_ROUTE);
     seedConversation();
@@ -277,17 +255,6 @@ describe('wireAppMouse', () => {
             resolve: () => {},
           }),
         release: () => approvalPromptStore.__testReset(),
-      },
-      {
-        name: 'field editor',
-        take: () =>
-          editorStore.openField({
-            filePath: 'briefs.md',
-            value: 'title text',
-            ownerToken: 1,
-            layout: { columns: 80, rows: 30 },
-          }),
-        release: () => editorStore.close(),
       },
     ];
 

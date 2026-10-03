@@ -122,7 +122,6 @@ function WorkflowRoute({ deps }: { deps: WorkflowScreenDeps }) {
       overlayActive={overlayActive}
       commands={[]}
       onRuntime={() => {}}
-      copyTarget={async () => 'empty'}
       workflowDeps={deps}
     />
   );

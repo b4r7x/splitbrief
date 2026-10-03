@@ -18,7 +18,6 @@ const METADATA: SpecMetadata = {
   plannerModel: 'opus',
   implementerTool: 'codex',
   implementerModel: 'gpt-5',
-  mode: 'standard',
 };
 
 let tempDir: string | undefined;

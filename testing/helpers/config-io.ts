@@ -36,11 +36,6 @@ export function optionalSectionsYaml(): Record<string, unknown> {
     },
     approval: {
       enabled: true,
-      tiers: {
-        read: 'auto',
-        write_in_scope: 'sticky',
-        write_out_of_scope: 'confirm',
-      },
       feed_rejections_to_planner: false,
     },
   };

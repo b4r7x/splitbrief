@@ -116,18 +116,6 @@ describe('ConfigSchema user config contracts', () => {
     ).toBe(true);
   });
 
-  it('rejects unknown approval tiers before they can change write approvals', () => {
-    expect(
-      hasIssueAtPath(
-        issuesFor({
-          ...validConfig,
-          approval: { tiers: { write_out_of_scope: 'always' } },
-        }),
-        'approval.tiers.write_out_of_scope',
-      ),
-    ).toBe(true);
-  });
-
   it('defaults workflow compaction format and rejects unknown formats', () => {
     expect(
       ConfigSchema.parse({

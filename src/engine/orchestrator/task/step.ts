@@ -1,5 +1,4 @@
 import type { Task } from '../../../core/schemas/task.js';
-import { taskFiles } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import { formatValidationError } from '../validation/format-error.js';
@@ -9,28 +8,19 @@ import { recordTaskUsage } from '../tokens.js';
 import { toErrorMessage, labelError } from '../../../utils/format-errors.js';
 import { isAbortError } from '../../../utils/abort.js';
 import { publishError } from '../events.js';
-import { addUsageAndSave, raisePendingRecovery, transitionAndSave } from '../state-ops.js';
-import { buildApprovalDeniedRecoveryIssue } from '../recovery/builders/task.js';
-import { nowIso } from '../../../utils/format-time.js';
+import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import { refreshAndPersistCode } from './refresh-code.js';
 import { validateCommitAndAdvance } from './commit.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
-import { gateAction } from '../approval/tiered-approval.js';
 import type { GateDecision } from '../approval/types.js';
 import { detectValidationFailureUserEdit } from '../user-edit/detection.js';
-import { WORKFLOW_CANCEL_REASON_USER } from '../../events/workflow-cancel.js';
 import { handleApprovalTimeUserEditConflict } from '../escalation/approval-conflict.js';
-import {
-  persistTaskEvidence,
-  persistRejectionEvidence,
-  persistApprovalEvidence,
-} from '../evidence/persistence.js';
+import { persistTaskEvidence, persistRejectionEvidence } from '../evidence/persistence.js';
 import { retryAndRecord } from './retry.js';
 import { runPreTaskHooksAndPublish } from './pre-task.js';
 import { isResumableWorkspaceStop, retentionError } from '../isolation/retention.js';
 import { runImplementation } from './run-implementation.js';
 import { applyChangedFiles } from './apply-changed-files.js';
-import { resolveDependsOnFiles } from './resolve-deps.js';
 import { runChainAnalysisSafe } from './analyze-drift.js';
 import { restoreExhaustedTaskFiles } from './rollback.js';
 import { handleFailedImplementation } from './implementation-failure.js';
@@ -84,7 +74,7 @@ type RunSingleTaskOptions = {
 
 export async function runSingleTask(opts: RunSingleTaskOptions): Promise<WorkflowState> {
   const { wctx, index, totalTasks, taskBreakdowns, setTrackedState, setCurrentTask } = opts;
-  const { projectDir, sessionId, config, callbacks } = wctx;
+  const { projectDir, sessionId, config } = wctx;
   let state = opts.state;
 
   if (state.pendingRecovery || wctx.signal?.aborted) return state;
@@ -103,56 +93,6 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
 
   setCurrentTask(task);
   const taskStartTime = Date.now();
-
-  const gateResult = await gateAction({
-    actionDescription: `${task.action} ${taskFiles(task).join(', ')}`,
-    task,
-    dependsOnFiles: resolveDependsOnFiles(state.tasks, task),
-    projectDir,
-    sessionId,
-    phase: state.phase,
-    taskId: task.id,
-    bus: wctx.bus,
-    callbacks,
-    config,
-    getApprovalEnabled: wctx.getApprovalEnabled,
-  });
-  if (!gateResult.allow) {
-    recordApprovalDenial({
-      wctx,
-      state,
-      task,
-      denials: [gateResult],
-      message: `Task blocked by approval gate: ${gateResult.reason ?? 'denied'}`,
-    });
-    if (gateResult.reason === WORKFLOW_CANCEL_REASON_USER) {
-      state = transitionAndSave({ projectDir, sessionId }, state, {
-        type: 'RESET_TASK',
-        taskId: task.id,
-      });
-      setTrackedState(state);
-      wctx.bus.publish({
-        type: 'workflow_cancelled',
-        ts: Date.now(),
-        phase: state.phase,
-        reason: WORKFLOW_CANCEL_REASON_USER,
-      });
-      return state;
-    }
-    return raisePendingRecovery(
-      wctx,
-      state,
-      buildApprovalDeniedRecoveryIssue({
-        task,
-        phase: state.phase,
-        ...(gateResult.reason !== undefined && { denialReason: gateResult.reason }),
-        tool: getRunnerDisplayName(config.implementer),
-        createdAt: nowIso(),
-      }),
-      setTrackedState,
-    );
-  }
-  persistApprovalEvidence({ wctx, state, decision: gateResult, taskId: task.id });
 
   const preTaskResult = await runPreTaskHooksAndPublish({
     wctx,

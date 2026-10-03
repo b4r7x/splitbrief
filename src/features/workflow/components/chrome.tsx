@@ -9,7 +9,6 @@ import { InputFooter } from './input-footer.js';
 import { Divider } from '../../../components/divider.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
-import { useFieldSessionOwned } from '../../editor/use-field-session-owned.js';
 import { glyph } from '../../../lib/glyphs.js';
 import type { ComposerBoxHintOverride } from '../input-hints.js';
 import type { RailStageState } from '../../../core/rail-stages.js';
@@ -82,7 +81,6 @@ export function WorkflowFooter({
   onEditShortcut,
   onReviewBoundaryNavigate,
   onReviewInteraction,
-  reviewYankActive,
   reviewEpoch,
   questionEpoch,
   waitingForUser = false,
@@ -114,7 +112,6 @@ export function WorkflowFooter({
   onEditShortcut?: (() => void) | undefined;
   onReviewBoundaryNavigate?: ((direction: 'up' | 'down') => boolean | undefined) | undefined;
   onReviewInteraction?: (() => void) | undefined;
-  reviewYankActive?: boolean | undefined;
   reviewEpoch?: number | undefined;
   questionEpoch?: number | undefined;
   waitingForUser?: boolean | undefined;
@@ -128,7 +125,6 @@ export function WorkflowFooter({
   listProjectFiles?: typeof listFiles | undefined;
 }) {
   const boxHints = useComposerBoxHints(boxHintOverride);
-  const fieldEditorOpen = useFieldSessionOwned();
   const composerSession = mode === 'review' ? `review:${reviewEpoch ?? 0}` : 'non-review';
   // The width the composer box actually renders at — the terminal inside the gutter — so the
   // input's own wrap math budgets the same cells the box paints.
@@ -155,7 +151,7 @@ export function WorkflowFooter({
         hint={inputHint === '' ? (placeholder ?? '') : inputHint}
         commandsOnly={commandsOnly}
         currentScreen="workflow"
-        disabled={disabled || fieldEditorOpen || recoveryMenuFocused || questionPanelFocused}
+        disabled={disabled || recoveryMenuFocused || questionPanelFocused}
         {...((onReturnToQuestion ?? onToggleRecoveryMenu) !== undefined
           ? { onTab: onReturnToQuestion ?? onToggleRecoveryMenu }
           : {})}
@@ -165,7 +161,6 @@ export function WorkflowFooter({
         {...(onEditShortcut ? { onEditShortcut } : {})}
         {...(onReviewBoundaryNavigate ? { onReviewBoundaryNavigate } : {})}
         {...(onReviewInteraction ? { onReviewInteraction } : {})}
-        reviewYankActive={reviewYankActive}
       />
       <InputFooter
         waiting={waitingForUser}

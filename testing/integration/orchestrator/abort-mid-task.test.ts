@@ -20,7 +20,7 @@ import {
   TEST_WORKFLOW_SINKS,
 } from '#testing/helpers/orchestrator-context.js';
 
-const META = makeWorkflowMetadata('standard');
+const META = makeWorkflowMetadata();
 const dirs: string[] = [];
 
 beforeEach(() => resetAllStores());

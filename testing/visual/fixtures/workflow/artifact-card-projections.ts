@@ -1,4 +1,4 @@
-import { SPEC_FILE, TASKS_FILE } from '../../../../src/core/paths.js';
+import { TASKS_FILE } from '../../../../src/core/paths.js';
 import { buildArtifactExcerpt } from '../../../../src/engine/orchestrator/artifact-card.js';
 import { formatTasks } from '../../../../src/engine/spec/formatter.js';
 import { makeTask } from '../../../helpers/factories/task.js';
@@ -52,7 +52,7 @@ export const tasksCardProjection: WorkflowFixtureProjection = {
       status: 'running',
       tool: 'claude-code',
       model: 'fixture-planner-v1',
-      call: 'tasks',
+      call: 'plan',
     },
     {
       type: 'artifact_written',
@@ -61,111 +61,6 @@ export const tasksCardProjection: WorkflowFixtureProjection = {
       filename: TASKS_FILE,
       path: `.splitbrief/sessions/2026-09-25-fix-the-four-part-b-defects/${TASKS_FILE}`,
       ...buildArtifactExcerpt(tasksCardDocument, TASKS_FILE),
-    },
-  ],
-};
-
-const specSection = (heading: string, subsections: readonly string[]): string[] => [
-  heading,
-  '',
-  ...subsections.flatMap((title) => [`### ${title}`, '', `${title}.`, '']),
-];
-
-// The title stands over two sections of six subsections each: the card lists the two and counts
-// the twelve it does not nest, and the title is not one of them.
-const titledSpecDocument = [
-  '# Spec: Email validation',
-  '',
-  ...specSection('## Requirements', [
-    'Reject an address with no domain',
-    'Trim surrounding whitespace',
-    'Show the message under the field',
-    'Keep the typed value after a failed submit',
-    'Accept plus addressing',
-    'Refuse an address over 254 characters',
-  ]),
-  ...specSection('## Acceptance Criteria', [
-    'A missing domain is refused',
-    'Whitespace is trimmed',
-    'The message names the problem',
-    'The typed value survives',
-    'Plus addressing passes',
-    'A 255-character address is refused',
-  ]),
-].join('\n');
-
-// The shapes the card once read apart from the parser: T001 opens a code sample it never closes,
-// T002's long title is a YAML block scalar, and T003 carries a sample of its own.
-const openFenceTasksDocument = [
-  formatTasks([
-    makeTask({
-      id: 'T001',
-      title: 'Reject an address with no domain',
-      file: 'src/email/validate.ts',
-      description: 'Refuse `user@` before it reaches the server:\n```ts\nif (!domainOf(address)) {',
-    }),
-  ]),
-  '---',
-  'id: T002',
-  'title: >-',
-  '  Trim surrounding whitespace before the',
-  '  address is checked',
-  'action: create',
-  'file: src/email/normalize.ts',
-  'depends_on: []',
-  '---',
-  '',
-  '### Description',
-  'Trim the input before any rule reads it.',
-  formatTasks([
-    makeTask({
-      id: 'T003',
-      title: 'Show the validation message under the field',
-      file: 'src/email/field.tsx',
-      signature: 'export function validationMessage(address: string): string | null',
-      dependsOn: ['T001'],
-    }),
-  ]),
-].join('\n');
-
-const SPEC_TASKS_SESSION = '.splitbrief/sessions/2026-09-25-email-validation';
-
-export const specTasksCardsProjection: WorkflowFixtureProjection = {
-  scenarioId: scenarioId('workflow-spec-tasks-cards'),
-  feature: CARD_FEATURE,
-  inputMode: 'normal',
-  sidebarVisible: false,
-  events: [
-    {
-      type: 'workflow_started',
-      ts: CARD_TS,
-      phase: 'specifying',
-      feature: CARD_FEATURE,
-    },
-    {
-      type: 'artifact_written',
-      ts: CARD_TS + 100,
-      phase: 'specifying',
-      filename: SPEC_FILE,
-      path: `${SPEC_TASKS_SESSION}/${SPEC_FILE}`,
-      ...buildArtifactExcerpt(titledSpecDocument, SPEC_FILE),
-    },
-    {
-      type: 'planner_status',
-      ts: CARD_TS + 200,
-      phase: 'planning',
-      status: 'running',
-      tool: 'claude-code',
-      model: 'fixture-planner-v1',
-      call: 'tasks',
-    },
-    {
-      type: 'artifact_written',
-      ts: CARD_TS + 300,
-      phase: 'planning',
-      filename: TASKS_FILE,
-      path: `${SPEC_TASKS_SESSION}/${TASKS_FILE}`,
-      ...buildArtifactExcerpt(openFenceTasksDocument, TASKS_FILE),
     },
   ],
 };

@@ -4,8 +4,6 @@ import { join } from 'node:path';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-factories.js';
-import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
-import type { RunPhaseInput } from '../../../src/engine/planners/types.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -16,6 +14,7 @@ import { seedValidationProject } from '#testing/helpers/validation-project.js';
 import { executableReceipt } from '#testing/helpers/custom-command-based.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { resolveCustomExecutable } from '../../../src/engine/runners/resolve-cli-executable.js';
+import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
 
 const dirs: string[] = [];
 let originalPath: string | undefined;
@@ -112,13 +111,7 @@ describe('full workflow Claude Code CLI implementer', { timeout: 90_000 }, () =>
     });
 
     const planner = makePlanner({
-      runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
-        makePhaseCallResult({
-          call,
-          usage: { inputTokens: 140, outputTokens: 90 },
-          ...(call === 'tasks' ? { tasks: [task] } : {}),
-        }),
-      ),
+      typedCall: typedCallFromTasks([task], { inputTokens: 140, outputTokens: 90 }),
       review: vi.fn().mockResolvedValue({
         text: '# Final review\n\nClaude Code CLI implementer passed validation.\n\n### Verdict\npass',
         usage: { inputTokens: 60, outputTokens: 30 },
@@ -141,7 +134,6 @@ describe('full workflow Claude Code CLI implementer', { timeout: 90_000 }, () =>
         testCommand: 'node validate.mjs',
       },
       workflow: {
-        mode: 'standard',
         approve: 'none',
         maxRetries: 1,
       },

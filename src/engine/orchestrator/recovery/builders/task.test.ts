@@ -16,7 +16,6 @@ import {
   buildRetryExhaustedRecoveryIssue,
   buildReviewFailedRecoveryIssue,
   buildRunnerUsageLimitRecoveryIssue,
-  buildScopeViolationRecoveryIssue,
   buildSnapshotFailedRecoveryIssue,
   recoveryBuilderForRunnerOutcome,
   switchSeatOffer,
@@ -477,26 +476,6 @@ describe('buildDependencyBlockedRecoveryIssue', () => {
     );
     expect(issue.availableActions).not.toContain('planner-split-rebase');
     expect(issue.recommendedAction).toBe('pause-run');
-    expectValidRecoveryIssue(issue);
-  });
-});
-
-describe('buildScopeViolationRecoveryIssue', () => {
-  it('lists the undeclared writes and recommends the revert retry', () => {
-    const issue = buildScopeViolationRecoveryIssue({
-      task: makeTask({ id: 'T021', file: 'src/main.ts' }),
-      createdAt,
-      undeclaredFiles: ['src/other.ts', 'README.md'],
-      attempts: 1,
-      maxAttempts: 2,
-      tool: 'Codex',
-    });
-
-    expect(issue.reason).toBe('scope-violation');
-    expect(issue.files).toEqual(['README.md', 'src/other.ts']);
-    expect(issue.details.join('\n')).toContain('Undeclared writes: src/other.ts, README.md');
-    expect(issue.recommendedAction).toBe('retry-same-worker');
-    expect(issue.facts?.tool).toBe('Codex');
     expectValidRecoveryIssue(issue);
   });
 });

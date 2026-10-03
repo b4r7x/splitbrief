@@ -3,11 +3,8 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { RecoveryIssueSchema } from '../../../../core/schemas/recovery/schemas.js';
 import type { SeatSwapContext } from './task.js';
 import {
-  buildBriefQualityUnrepairedRecoveryIssue,
-  buildBriefReviewNoProgressRecoveryIssue,
-  buildConstitutionCheckFailedRecoveryIssue,
   buildPlannerCallFailedRecoveryIssue,
-  buildPlannerNoBriefsRecoveryIssue,
+  buildPlanSessionHaltRecoveryIssue,
 } from './planner.js';
 
 const createdAt = '2026-04-28T12:00:00.000Z';
@@ -132,60 +129,23 @@ describe('buildPlannerCallFailedRecoveryIssue', () => {
 });
 
 describe('the planner-output halts', () => {
-  it('a brief-less planner answer can be re-issued or corrected', () => {
-    const issue = buildPlannerNoBriefsRecoveryIssue({
-      phase: 'planning',
-      message: 'The planner produced text but no parsable Task Brief.',
-      createdAt,
-    });
+  it.each(['plan-questions-exhausted', 'plan-checks-failed'] as const)(
+    'a planning session halt (%s) keeps the plan seat and recommends the correction',
+    (reason) => {
+      const issue = buildPlanSessionHaltRecoveryIssue({
+        reason,
+        phase: 'planning',
+        message: 'The planning session stopped.',
+        details: ['uncovered-criterion: Criterion C2 is served by no task.'],
+        createdAt,
+      });
 
-    expect(issue.reason).toBe('planner-returned-no-briefs');
-    expect(issue.seat).toBe('plan');
-    expect(issue.availableActions).toEqual(['retry-same-worker', 'revise', 'end-run']);
-    expect(issue.recommendedAction).toBe('retry-same-worker');
-    expectValidRecoveryIssue(issue);
-  });
-
-  it('unrepaired brief quality recommends the correction', () => {
-    const issue = buildBriefQualityUnrepairedRecoveryIssue({
-      phase: 'reviewing-plan',
-      message: 'Task Brief quality gate failed: missing_scope in T001',
-      createdAt,
-    });
-
-    expect(issue.reason).toBe('brief-quality-unrepaired');
-    expect(issue.availableActions).toEqual(['retry-same-worker', 'revise', 'end-run']);
-    expect(issue.recommendedAction).toBe('revise');
-    expectValidRecoveryIssue(issue);
-  });
-
-  it('a stalled brief review only revises or ends, and names no seat', () => {
-    const issue = buildBriefReviewNoProgressRecoveryIssue({
-      phase: 'reviewing-briefs',
-      message: 'Task Brief review made no progress after 20 consecutive attempts.',
-      createdAt,
-    });
-
-    expect(issue.reason).toBe('brief-review-no-progress');
-    expect(issue.seat).toBeUndefined();
-    expect(issue.availableActions).toEqual(['revise', 'end-run']);
-    expect(issue.recommendedAction).toBe('revise');
-    expectValidRecoveryIssue(issue);
-  });
-
-  it('a hard constitution violation sends the spec back or ends the run', () => {
-    const issue = buildConstitutionCheckFailedRecoveryIssue({
-      phase: 'constitution-check',
-      message: 'Constitution check failed: no runtime classes',
-      details: ['Principle: P1'],
-      createdAt,
-    });
-
-    expect(issue.reason).toBe('constitution-check-failed');
-    expect(issue.seat).toBe('plan');
-    expect(issue.availableActions).toEqual(['revise-spec', 'end-run']);
-    expect(issue.recommendedAction).toBe('revise-spec');
-    expect(issue.details).toEqual(['Principle: P1']);
-    expectValidRecoveryIssue(issue);
-  });
+      expect(issue.reason).toBe(reason);
+      expect(issue.seat).toBe('plan');
+      expect(issue.availableActions).toEqual(['retry-same-worker', 'revise', 'end-run']);
+      expect(issue.recommendedAction).toBe('revise');
+      expect(issue.details).toEqual(['uncovered-criterion: Criterion C2 is served by no task.']);
+      expectValidRecoveryIssue(issue);
+    },
+  );
 });

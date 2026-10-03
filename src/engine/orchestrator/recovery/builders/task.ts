@@ -550,48 +550,6 @@ export function buildDependencyBlockedRecoveryIssue(
   });
 }
 
-export interface ScopeViolationRecoveryOptions extends RecoveryBuilderBase, TaskRecoveryContext {
-  undeclaredFiles: readonly string[];
-  tool?: string | undefined;
-}
-
-/**
- * The operator's tier override gates unplanned writes and an undeclared write
- * was denied. SPLITBRIEF discarded the attempt's writes, so `retry-same-worker`
- * starts again from the current files.
- */
-export function buildScopeViolationRecoveryIssue(
-  opts: ScopeViolationRecoveryOptions,
-): RecoveryIssue {
-  const actions = orderedActions(allowedActionsForReason('scope-violation'));
-  return createRecoveryIssue({
-    id: opts.id,
-    seat: 'build',
-    reason: 'scope-violation',
-    phase: opts.phase ?? 'implementing',
-    task: opts.task,
-    files: [...opts.undeclaredFiles],
-    affectedTaskIds: [opts.task.id],
-    message: `${opts.task.id} wrote outside its declared files`,
-    details: [
-      `Undeclared writes: ${opts.undeclaredFiles.join(', ')}`,
-      `Declared files: ${taskFiles(opts.task).join(', ')}`,
-      ...attemptDetails(opts.attempts, opts.maxAttempts),
-      ...implementerDetails(opts.selectedImplementerProfile),
-    ],
-    ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
-    ...(opts.maxAttempts !== undefined ? { maxAttempts: opts.maxAttempts } : {}),
-    selectedImplementerProfile: opts.selectedImplementerProfile,
-    facts: compactFacts({
-      tool: opts.tool,
-      undeclaredFiles: opts.undeclaredFiles.join(', '),
-    }),
-    availableActions: actions,
-    recommendedAction: 'retry-same-worker',
-    createdAt: opts.createdAt,
-  });
-}
-
 function runnerModel(runner: Config['implementer']): string | undefined {
   return 'model' in runner ? runner.model : undefined;
 }

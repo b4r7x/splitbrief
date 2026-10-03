@@ -77,6 +77,10 @@ export function formatRecoveryHeadline(issue: RecoveryIssue, now: number = Date.
       return 'Brief review is not making progress';
     case 'brief-quality-unrepaired':
       return 'Task Briefs still fail the quality gate';
+    case 'plan-questions-exhausted':
+      return 'Planner still asks questions after 2 rounds';
+    case 'plan-checks-failed':
+      return 'Plan still fails its checks after one repair';
     case 'review-failed': {
       // A final review halt names no brief: it judged the whole run, or it judged nothing.
       const blocking = recoveryFactNumber(issue.facts, 'blocking');

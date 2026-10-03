@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
-import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeConfigYaml } from '#testing/helpers/config-io.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -460,6 +460,25 @@ describe('collectReadiness config loader warnings', () => {
 
     expect(configWarnings).toHaveLength(1);
     expect(configWarnings[0]?.summary).toContain('overly permissive');
+  });
+
+  it('names each retired workflow key once, the load-mapped approve level included', async () => {
+    const configPath = writeMinimalV3Config(tempDir);
+    writeFileSync(
+      configPath,
+      `${readFileSync(configPath, 'utf8')}\nworkflow:\n  approve: all\n  mode: speckit\n`,
+    );
+    chmodSync(configPath, 0o600);
+
+    const { report } = await collectReadiness({ projectDir: tempDir });
+    const retired = flattenReadinessChecks(report.sections)
+      .filter((check) => check.id === 'config.warning' && check.summary.includes('was retired'))
+      .map((check) => check.summary);
+
+    expect(retired).toEqual([
+      'workflow.mode was retired and is ignored: every run plans in one session. Delete workflow.mode.',
+      'workflow.approve "all" was retired; using "plan": the plan waits for your approval before the build. Set approve to plan or none.',
+    ]);
   });
 
   it('reports an unsupported config version as a blocking invalid config', async () => {

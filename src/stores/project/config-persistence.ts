@@ -1,3 +1,4 @@
+import YAML from 'yaml';
 import { ConfigSchema, type Config } from '../../core/schemas/config.js';
 import { toYaml } from '../../core/config/load/transform.js';
 import { isRecord } from '../../utils/type-guards.js';
@@ -83,6 +84,21 @@ export function deriveConfigEdits(before: Config, after: Config): ConfigEdit[] {
   return deriveValueEdits(toYaml(before), toYaml(after), []);
 }
 
-export function editsForSave(before: Config, after: Config): ConfigEdit[] {
-  return deriveConfigEdits(before, after);
+/**
+ * Keys whose load maps a retired value to a current one (`approve: all` loads as `plan`). The file
+ * still holds the retired value, so a save compares against the file and writes the current one.
+ */
+const LOAD_MAPPED_KEYS: readonly (readonly [block: string, key: string])[] = [
+  ['workflow', 'approve'],
+];
+
+export function editsForSave(before: Config, after: Config, rawYaml: string): ConfigEdit[] {
+  const file = toYaml(before);
+  const raw: unknown = YAML.parse(rawYaml);
+  for (const [block, key] of LOAD_MAPPED_KEYS) {
+    const written = isRecord(raw) && isRecord(raw[block]) ? raw[block][key] : undefined;
+    const section = file[block];
+    if (written !== undefined && isRecord(section)) file[block] = { ...section, [key]: written };
+  }
+  return deriveValueEdits(file, toYaml(after), []);
 }

@@ -157,25 +157,17 @@ Both sides accept four **runner kinds** behind a unified interface (`cli`, `api`
 
 ---
 
-## 6. Workflow modes
+## 6. The planning session
 
-Pick a mode based on how much ceremony the work warrants. Set with `--mode`, in `workflow.mode` of the config, or with `/mode` at runtime.
+Every run plans in one session. There are no workflow modes to pick.
 
-| Mode | Planner calls | Approval gates | Best for | Example prompt |
-|---|:---:|:---:|---|---|
-| `quick` | 1 | 0 | Trivial one-step edits and small but real tasks | `"rename foo to bar in src/util.ts"` |
-| `standard` (default) | 4 | 2 (spec + briefs) | Ordinary feature work | `"add an email validator with RFC 5321 support"` |
-| `speckit` | 6–7 | 3 (spec + plan + briefs) | Large, risky, audited work | `"migrate auth from sessions to JWT"` |
+1. The planner may ask up to 3 questions per round, for at most 2 rounds. Each question has a default, and an empty `⏎` takes the defaults.
+2. The planner returns one typed plan: acceptance criteria, checks and tasks. SPLITBRIEF checks it and writes `plan.json`, `plan.md` and `tasks.md` to the session directory. A plan that fails a check goes back to the planner once.
+3. With `workflow.approve: plan` (the default), the plan card opens: approve it, request changes, edit `plan.json`, or end the run. `workflow.approve: none` skips the card and starts the build.
 
-Concrete guidance:
+An older config that still sets `workflow.mode`, `task_review`, `brief_review` or `speckit` loads with one notice per key. Delete those keys.
 
-- Use `quick` for typo fixes, one-line edits, and small additions — anything where writing a spec would take longer than the change itself, but you still want a Task Brief on disk for review. When the mode advisor reads the prompt as trivial, `quick` also tells the planner to skip its codebase-structure review and cap the run at a handful of briefs.
-- Use `standard` as your default — research → spec → plan → tasks, with spec review and briefs review before code is written.
-- Use `speckit` for anything touching auth, security, billing, payments, migrations, or anything externally visible. Adds clarification rounds, a constitution check (against `.specify/memory/constitution.md`), and post-planning analysis with coverage scoring.
-
-A built-in **mode advisor** watches your prompt and quietly suggests a switch when the mode looks wrong (e.g. `speckit` for "fix typo" → suggests `quick`). It never auto-switches; you decide.
-
-Full workflow-mode semantics: [docs/WORKFLOW.md](./WORKFLOW.md).
+Full semantics: [docs/WORKFLOW.md](./WORKFLOW.md).
 
 ---
 
@@ -217,7 +209,6 @@ validation:
   testCommand: npm test
 
 workflow:
-  mode: standard
   maxRetries: 2
 ```
 
@@ -251,7 +242,7 @@ Three additional safety nets:
 
 1. **Snapshots.** `/run accept` records a content-addressed snapshot of the working tree (minus `.git/`, `.splitbrief/`, `node_modules/`) into `.splitbrief/sessions/<id>/snapshots/` and marks the run accepted. It is a record of the tree you kept, not an undo: no phase takes a pre-run baseline, so `/run reject confirm` has nothing to restore — it answers `No run snapshot to reject.` before an accept and `Run already accepted at snapshot <id>.` after one. Git is the layer that undoes a run: the default leaves every change unstaged, so `git diff` and `git checkout` remain the way back.
 2. **Drift detection.** Before the final review, the orchestrator computes a deterministic drift report comparing the actual diff to the Task Brief. Out-of-scope file edits, missing target files, orphan diffs, and missing observed evidence all show up. The review seat sees this report alongside the diff so it cannot rubber-stamp a runaway agent.
-3. **Tiered approval.** Declared/promoted file-write requests are classified as `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, `sensitive_change`, or `package_change` and pass through an `auto` / `sticky` / `confirm` gate: `auto` proceeds silently for reads and in-scope writes; out-of-scope writes are `auto` too, because a brief's files are suggestions, and SPLITBRIEF records them for the reviewer; `sticky` prompts once per session when a tier override asks for it; `confirm` requires a typed phrase for a protected path — `.git`, `.splitbrief`, CI configuration, env and key files, package manifests and lockfiles — even under `--yolo`, once per path per run. Sticky grants persist in `.splitbrief/approvals.json` and are managed via `splitbrief approval list / clear`.
+3. **Protected-path confirmation.** Declared/promoted file writes proceed without a prompt, because a brief's files are suggestions, and SPLITBRIEF records the writes for the reviewer. A write to a protected path — `.git`, `.splitbrief`, CI configuration, env and key files, package manifests and lockfiles — asks for confirmation, even under `--yolo`, once per path per run. A protected write that the approved plan lists is already confirmed.
 
 Same-directory parallel writes are out of scope. A future implementer pool may choose the capable worker with the smallest sufficient context window for each Task Brief, but it is still one implementer role running safely against one checkout.
 
@@ -274,8 +265,8 @@ Explicit non-goals, so you don't go looking:
 These features are active by default unless noted:
 
 - **Command palette (Ctrl+K)** — searchable overlay listing all slash commands with descriptions. See [FEATURES.md §Command palette overlay](./FEATURES.md#command-palette-overlay-ctrlk).
-- **External Task Brief editor** — during brief review, `Ctrl+E`, `e`, `edit`, `E`, and `edit-file` open the persisted Task Brief in an external editor. `VISUAL` is an explicit override; otherwise SPLITBRIEF prefers GUI editors before terminal fallbacks. See [FEATURES.md §Task Brief external editor handoff](./FEATURES.md#task-brief-external-editor-handoff).
-- **Tiered approval gates** — `auto` / `sticky` / `confirm` per action class, composing with the document-level approval loop. See [FEATURES.md §Tiered approval gates](./FEATURES.md#tiered-approval-gates-auto--sticky--confirm).
+- **Plan editor** — at the plan card, `Ctrl+E`, `e` and `edit` open `plan.json` in the in-app editor, which re-validates the plan before it saves; `Ctrl+O` there hands the file to an external editor. `VISUAL` is an explicit override; otherwise SPLITBRIEF prefers GUI editors before terminal fallbacks. See [FEATURES.md §Editing plan.json](./FEATURES.md#editing-planjson).
+- **Protected-path confirmation** — a write to a protected path asks once per run, unless the approved plan lists it. See [FEATURES.md §Protected-path confirmation](./FEATURES.md#protected-path-confirmation).
 
 ---
 

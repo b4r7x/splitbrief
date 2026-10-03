@@ -1,18 +1,51 @@
+import type { TaskSpec } from '../../../core/schemas/plan.js';
+import { READ_ONLY_CONTEXT_HEADING } from '../headings.js';
 import {
   buildLanguageContext,
   codeFenceLanguage,
   type LanguageContext,
 } from './language-context.js';
 
+/**
+ * Where each field of a plan task lands in a skill's Markdown brief. SPLITBRIEF's own tasks.md
+ * (`taskFromSpec`, `formatTasks`) shows no `criteria`, `protectedOperations` or `batch`: they
+ * live in plan.json and plan.md.
+ */
+const BRIEF_HOME_OF_FIELD: Record<keyof TaskSpec, string> = {
+  id: 'frontmatter `id`',
+  title: 'frontmatter `title`',
+  intent: '`### Description`',
+  criteria:
+    '`### Evidence`: one bullet per acceptance criterion the brief serves, naming the check that proves it',
+  checks:
+    '`### Tests` for each test check, and `### Evidence` with one `<id> <kind>: <value>` bullet per check',
+  suggestedFiles: 'frontmatter `file` (the first one) and `files` (all of them)',
+  contextFiles: `one \`${READ_ONLY_CONTEXT_HEADING} — <path>\` section per file, with its current code`,
+  exclusions: '`### Scope` under `**Out of bounds:**`',
+  protectedOperations:
+    '`### Constraints`: one `Protected write: <path> (the user confirms it before it lands)` bullet per operation',
+  steps: '`### Implementation Steps`',
+  dependsOn: 'frontmatter `depends_on`',
+  batch:
+    'no field of its own: a brief of a later batch names the briefs it follows in `depends_on`',
+};
+
 export function buildTaskFormatExample(languageContext?: LanguageContext): string {
   const ctx = languageContext ?? buildLanguageContext(undefined);
   const codeFenceStart = `\`\`\`${codeFenceLanguage(ctx)}`;
+  const fieldHomes = Object.entries(BRIEF_HOME_OF_FIELD)
+    .map(([field, home]) => `- \`${field}\` → ${home}.`)
+    .join('\n');
 
-  return `Frontmatter values are parsed literally. Never emit an alternation such as \`create | modify\` — choose one value:
+  return `Plan each brief as a task with these fields, then render each field in its place:
+
+${fieldHomes}
+
+Frontmatter values are parsed literally. Never emit an alternation such as \`create | modify\` — choose one value:
 
 - \`id\` — unique brief id: \`T001\`, \`T002\`, ... in emission order.
 - \`title\` — one short line.
-- \`action\` — exactly \`create\` or \`modify\`.
+- \`action\` — exactly \`create\` or \`modify\`. Use \`modify\` when \`file\` exists, otherwise \`create\`.
 - \`file\` — one project-relative path (no leading \`/\`, no \`..\`): the slice's anchor.
 - \`files\` — optional YAML list of every project-relative path the slice writes, \`file\` among them. Omit it when the slice writes only the anchor.
 - \`depends_on\` — YAML list of brief ids this one must follow: \`[]\` when independent, \`[T001, T002]\` when it must run after both.
@@ -41,9 +74,9 @@ ${codeFenceStart}
 ${typeDefinitionsExample(ctx)}
 \`\`\`
 
-### Current Code
+${READ_ONLY_CONTEXT_HEADING} — src/path/to/context${ctx.fileExtension}
 ${codeFenceStart}
-${currentCodeExample(ctx)}
+${contextCodeExample(ctx)}
 \`\`\`
 
 ### Pattern
@@ -58,8 +91,6 @@ Existing codebase pattern or exact snippet the implementer should follow.
 - Test case with concrete inputs/outputs
 
 ### Scope
-**In bounds:**
-- Context the change works within
 **Out of bounds:**
 - Explicit exclusion the reviewer checks
 **Approved out of bounds:**
@@ -110,11 +141,11 @@ function typeDefinitionsExample(ctx: LanguageContext): string {
   }
 }
 
-function currentCodeExample(ctx: LanguageContext): string {
+function contextCodeExample(ctx: LanguageContext): string {
   switch (ctx.language) {
     case 'Python':
-      return '# Relevant existing code for modify tasks';
+      return '# The current code of a context file the change reads but does not write';
     default:
-      return '// Relevant existing code for modify tasks';
+      return '// The current code of a context file the change reads but does not write';
   }
 }

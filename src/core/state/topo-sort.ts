@@ -20,7 +20,9 @@ export const topoError = {
     error('topo-duplicate-task-id', `Duplicate task ID: ${taskId}`, { taskId }),
 } as const;
 
-export function assertUniqueTaskIds(tasks: Task[]): void {
+type DependencyNode = Pick<Task, 'id' | 'dependsOn'>;
+
+export function assertUniqueTaskIds(tasks: readonly DependencyNode[]): void {
   const seen = new Set<string>();
   for (const task of tasks) {
     const id = String(task.id);
@@ -29,14 +31,14 @@ export function assertUniqueTaskIds(tasks: Task[]): void {
   }
 }
 
-export function topoSort(tasks: Task[]): Task[] {
+export function topoSort<T extends DependencyNode>(tasks: readonly T[]): T[] {
   assertUniqueTaskIds(tasks);
-  const taskMap = new Map<string, Task>();
+  const taskMap = new Map<string, T>();
   for (const task of tasks) taskMap.set(task.id, task);
 
   const visited = new Set<string>();
   const visiting = new Set<string>();
-  const sorted: Task[] = [];
+  const sorted: T[] = [];
 
   function visit(id: string, path: string[]) {
     if (visited.has(id)) return;

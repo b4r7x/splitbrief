@@ -2,56 +2,31 @@ import * as ink from 'ink';
 import { normalizeKeySignature } from '../../core/keybindings/normalize.js';
 import { resolveEditorKeyAction } from '../../core/keybindings/editor.js';
 import { selectionRange } from '../../core/editor/editor-state.js';
-import type { EditorEvent, EditorSurface } from '../../core/editor/editor-state.js';
+import type { EditorEvent } from '../../core/editor/editor-state.js';
 import { editorStore } from '../../stores/ui/editor.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
-import { approvalPromptStore } from '../../stores/approval-prompt/prompt.js';
 import { copyToClipboard } from '../../lib/clipboard/clipboard.js';
-import { useFieldSessionOwned } from './use-field-session-owned.js';
 
 interface UseEditorKeysOptions {
-  surface: EditorSurface;
-  onSave?: (() => void) | undefined;
-  onCancel?: (() => void) | undefined;
-  onOpenExternal?: (() => void) | undefined;
-  onFieldNext?: (() => void) | undefined;
-  onFieldPrev?: (() => void) | undefined;
+  onSave: () => void;
+  onCancel: () => void;
+  onOpenExternal: () => void;
 }
 
 function isDestructive(event: EditorEvent): boolean {
   return event.kind === 'insert' || event.kind === 'delete';
 }
 
-export function useEditorKeys({
-  surface,
-  onSave,
-  onCancel,
-  onOpenExternal,
-  onFieldNext,
-  onFieldPrev,
-}: UseEditorKeysOptions): void {
-  const surfaceOpen = editorStore.use((s) => s.status === 'open' && s.surface === surface);
+export function useEditorKeys({ onSave, onCancel, onOpenExternal }: UseEditorKeysOptions): void {
+  const surfaceOpen = editorStore.use((s) => s.status === 'open');
   const overlayReady = overlayStore.use((s) => s.exclusive && s.active === 'editor');
-  const fieldOwned = useFieldSessionOwned();
-  // The inline field editor is not itself an overlay, so it must stand down whenever an overlay
-  // or approval prompt covers it — otherwise its useInput and the overlay's both fire for
-  // every keystroke (two owners for one event, CON-D / REQ-049) and typing into the overlay also
-  // mutates the hidden brief buffer. This mirrors the composer's disabled=(hasOverlay||promptPending).
-  const overlayBlocking = overlayStore.use((s) => s.active !== 'none');
-  const promptPending = approvalPromptStore.use((s) => s.status === 'pending');
-  const fieldActive = fieldOwned && !overlayBlocking && !promptPending;
-  const isActive = surfaceOpen && (surface === 'raw' ? overlayReady : fieldActive);
+  const isActive = surfaceOpen && overlayReady;
 
   ink.useInput(
     (input, key) => {
       const state = editorStore.get();
       if (state.status !== 'open') return;
-
-      if (key.tab) {
-        if (key.shift) onFieldPrev?.();
-        else onFieldNext?.();
-        return;
-      }
+      if (key.tab) return;
 
       // Bracketed paste and multi-grapheme input arrive as one string: insert them as a single
       // paste edit so an embedded newline never triggers the newline/save binding (REQ-050) and
@@ -68,13 +43,13 @@ export function useEditorKeys({
 
       switch (action.kind) {
         case 'save':
-          onSave?.();
+          onSave();
           return;
         case 'cancel':
-          onCancel?.();
+          onCancel();
           return;
         case 'open-external':
-          onOpenExternal?.();
+          onOpenExternal();
           return;
         case 'copy': {
           const range = selectionRange(state);

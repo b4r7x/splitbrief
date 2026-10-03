@@ -1,16 +1,14 @@
 import { relative, resolve } from 'node:path';
 import { type ActionClass, PROTECTED_ACTION_CLASSES } from '../../../core/schemas/enums.js';
-import type { ApprovalTier } from '../../../core/schemas/config.js';
+import type { ApprovalTier } from '../../../core/approval/types.js';
 import { SPLITBRIEF_DIR } from '../../../core/paths.js';
 import { isInDeclaredSet } from '../../../core/scope/declared-set.js';
 import { isInsideRoot, isPathConfined } from '../../../lib/path-confinement.js';
 import { matchesGlob } from '../../../utils/path-patterns.js';
 
-export type TierMap = Partial<Record<ActionClass, ApprovalTier>>;
-
 export type ClassifyInput = {
   actionDescription: string;
-  /** The exact file being written; classification and grant patterns prefer it over the prose. */
+  /** The exact file being written; classification prefers it over the prose. */
   targetPath?: string | undefined;
   taskFiles: readonly string[];
   taskInBounds: readonly string[];
@@ -34,10 +32,6 @@ export const DEFAULT_TIER_MAP: Record<ActionClass, ApprovalTier> = {
   package_change: 'confirm',
   sensitive_change: 'confirm',
 };
-
-function resolveTier(actionClass: ActionClass, overrides?: TierMap): ApprovalTier {
-  return overrides?.[actionClass] ?? DEFAULT_TIER_MAP[actionClass];
-}
 
 const PACKAGE_MANIFEST_FILES = new Set([
   'bun.lock',
@@ -158,12 +152,7 @@ function isInScope(filePath: string, input: ClassifyInput): boolean {
   return false;
 }
 
-export function extractActionPattern(input: ClassifyInput): string {
-  const paths = targetPaths(input);
-  return paths.length === 1 && paths[0] !== undefined ? paths[0] : input.actionDescription;
-}
-
-export function classifyAction(input: ClassifyInput, tierOverrides?: TierMap): ClassifyResult {
+export function classifyAction(input: ClassifyInput): ClassifyResult {
   const lower = input.actionDescription.toLowerCase();
 
   const startsWithRead =
@@ -171,33 +160,46 @@ export function classifyAction(input: ClassifyInput, tierOverrides?: TierMap): C
     !PATH_PREFIXES.some((p) => lower.startsWith(p)) &&
     ['read ', 'cat ', 'ls ', 'find ', 'grep '].some((p) => lower.startsWith(p));
   if (startsWithRead) {
-    return { actionClass: 'read', tier: resolveTier('read', tierOverrides) };
+    return { actionClass: 'read', tier: DEFAULT_TIER_MAP.read };
   }
 
   const isWrite = input.targetPath !== undefined || WRITE_VERBS.some((v) => lower.includes(v));
   if (isWrite) {
     const paths = targetPaths(input);
     if (paths.some(isControlPlanePath)) {
-      return { actionClass: 'destructive', tier: resolveTier('destructive', tierOverrides) };
+      return { actionClass: 'destructive', tier: DEFAULT_TIER_MAP.destructive };
     }
     if (paths.some(isSensitivePath)) {
       return {
         actionClass: 'sensitive_change',
-        tier: resolveTier('sensitive_change', tierOverrides),
+        tier: DEFAULT_TIER_MAP.sensitive_change,
       };
     }
     if (paths.some(isKnownPackagePath)) {
-      return { actionClass: 'package_change', tier: resolveTier('package_change', tierOverrides) };
+      return { actionClass: 'package_change', tier: DEFAULT_TIER_MAP.package_change };
     }
     if (paths.length > 0 && paths.every((path) => isInScope(path, input))) {
-      return { actionClass: 'write_in_scope', tier: resolveTier('write_in_scope', tierOverrides) };
+      return { actionClass: 'write_in_scope', tier: DEFAULT_TIER_MAP.write_in_scope };
     }
     return {
       actionClass: 'write_out_of_scope',
-      tier: resolveTier('write_out_of_scope', tierOverrides),
+      tier: DEFAULT_TIER_MAP.write_out_of_scope,
     };
   }
 
   // No write verb and no other pattern: default to read rather than risk a false write classification.
-  return { actionClass: 'read', tier: resolveTier('read', tierOverrides) };
+  return { actionClass: 'read', tier: DEFAULT_TIER_MAP.read };
+}
+
+/** The protected ActionClass of a write of `path`, or null when that write asks for nothing. */
+export function protectedWriteClass(path: string, projectDir: string): ActionClass | null {
+  const { actionClass } = classifyAction({
+    actionDescription: `write ${path}`,
+    targetPath: path,
+    taskFiles: [],
+    taskInBounds: [],
+    dependsOnFiles: [],
+    projectDir,
+  });
+  return isProtectedClass(actionClass) ? actionClass : null;
 }

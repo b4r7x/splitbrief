@@ -96,6 +96,7 @@ const { glyph } = await import('../../../src/lib/glyphs.js');
 const { configStore } = await import('../../../src/stores/project/config.js');
 const { feedbackStore } = await import('../../../src/stores/ui/feedback.js');
 const { overlayStore } = await import('../../../src/stores/ui/overlay.js');
+const { editorStore } = await import('../../../src/stores/ui/editor.js');
 const { pickerViewStore } = await import('../../../src/stores/ui/picker-view.js');
 const { routerStore } = await import('../../../src/stores/navigation/router.js');
 const { terminalSizeStore } = await import('../../../src/stores/ui/terminal-size.js');
@@ -473,15 +474,17 @@ describe('the preview answers for the effects it cannot simulate', () => {
     expectNoProductionEffect();
   });
 
-  it('sends the review gate edit row to the same fixture editor', async () => {
-    const preview = await open('workflow-reviewing-briefs');
+  it('opens the plan card edit row on the fixture plan.json in the editor overlay', async () => {
+    const preview = await open('workflow-plan-card');
 
     // y, c, then the row that files `edit-file` — the route the gate's own legend advertises.
     await press(preview.ui, DOWN);
     await press(preview.ui, DOWN);
-    expect(frame(preview.ui)).toContain('e   Edit in');
+    expect(frame(preview.ui)).toContain('e   Edit plan.json');
     await press(preview.ui, ENTER);
-    await vi.waitFor(() => expect(feedbackStore.get().message).toBe(PREVIEW_UNAVAILABLE));
+    await vi.waitFor(() => expect(overlayStore.get().active).toBe('editor'));
+    const editor = editorStore.get();
+    expect(editor.status === 'open' ? editor.value : '').toContain('"protectedOperations"');
 
     await preview.close();
     expectNoProductionEffect();

@@ -4,7 +4,6 @@ import { stopStore } from '../../stores/workflow/stop.js';
 import { selectRunningBrief, tasksStore } from '../../stores/workflow/tasks.js';
 import { isTaskCompleted } from '../../core/schemas/task.js';
 import { reviewStore } from '../../stores/workflow/review.js';
-import { feedbackStore } from '../../stores/ui/feedback.js';
 import type { OrchestratorCallbacks } from '../../engine/orchestrator/types.js';
 import type { PlannerConversation } from '../../core/schemas/workflow.js';
 import { questionPromptStore } from '../../stores/question-prompt/prompt.js';
@@ -12,7 +11,6 @@ import {
   formatUserEditConflictPrompt,
   parseUserEditConflictAnswer,
 } from './user-edit-conflict-prompt.js';
-import { formatTaskReviewPrompt, parseTaskReviewAnswer } from './task-review-prompt.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 
 function runningTaskId(): string | null {
@@ -40,11 +38,12 @@ export function buildPromptCallbacks(opts: BuildCallbacksOptions): OrchestratorC
   return {
     // `type` stays in the positional signature because `OrchestratorCallbacks` defines it and the
     // engine passes it; the review legend no longer varies by approval type, so nothing reads it.
-    onApprovalNeeded: async (_type, input) => {
-      const artifactReview = typeof input !== 'string';
-      const reviewOwner = artifactReview
-        ? reviewStore.setReviewArtifact(input.text)
-        : reviewStore.setReviewFile(input);
+    onApprovalNeeded: async (_type, input, confirms) => {
+      const reviewOwner =
+        typeof input === 'string'
+          ? reviewStore.setReviewFile(input)
+          : reviewStore.setReviewArtifact(input.text);
+      reviewStore.setConfirms(confirms);
       try {
         // The review panel is the legend now, so the mode carries no hint text of its own.
         return await inputMode.setReviewMode('');
@@ -71,23 +70,6 @@ export function buildPromptCallbacks(opts: BuildCallbacksOptions): OrchestratorC
       });
     },
     onTieredApproval: (request) => openApprovalPrompt(request),
-    onTaskReviewNeeded: async (request) => {
-      const prompt = formatTaskReviewPrompt(request);
-      let decision = parseTaskReviewAnswer(
-        await inputMode.setQuestionMode(prompt),
-        request.availableCommands,
-      );
-      while (!decision) {
-        feedbackStore.setError(
-          `Unrecognized task review command. Use: ${request.availableCommands.join(', ')}.`,
-        );
-        decision = parseTaskReviewAnswer(
-          await inputMode.setQuestionMode(prompt),
-          request.availableCommands,
-        );
-      }
-      return decision;
-    },
     onPlannerReply: async (reply: PlannerConversation) => {
       if (controller.signal.aborted || abortedRef.current) return undefined;
       // One promise owns this turn, including the whole batch of structured answers.

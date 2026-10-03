@@ -9,7 +9,7 @@ import { truncateMiddle, computeTokenBudget } from './token-budget.js';
 import { buildLanguageContext, type LanguageContext } from './prompts/language-context.js';
 import { buildImplementerSystemPreamble as formatImplementerSystemPreamble } from './prompts/system.js';
 import { buildScopeLines } from './formatter.js';
-import { TASK_BRIEF_HEADINGS } from './headings.js';
+import { READ_ONLY_CONTEXT_HEADING, TASK_BRIEF_HEADINGS } from './headings.js';
 import { framingForAttempt } from '../../core/pipeline-spec/ladder.js';
 import { CLOSING_CONSTRAINTS } from '../../core/pipeline-spec/brief.js';
 
@@ -207,9 +207,13 @@ function insertCodeContext(sections: string[], task: Task, budget?: { remaining:
     }
   }
 
-  const blocks = extras.length + (task.currentCode ? 1 : 0);
-  if (blocks === 0) return;
-  const perBlock = budget ? Math.max(0, Math.floor(budget.remaining / blocks)) : undefined;
+  // Every target and every context file shares the budget, so no one file crowds out the rest.
+  const blocks =
+    extras.length + (task.currentCode ? 1 : 0) + Object.keys(task.contextCodeByFile ?? {}).length;
+  const perBlock =
+    budget !== undefined && blocks > 0
+      ? Math.max(0, Math.floor(budget.remaining / blocks))
+      : undefined;
 
   insertAnchorCode(sections, task, perBlock);
 
@@ -220,6 +224,17 @@ function insertCodeContext(sections: string[], task: Task, budget?: { remaining:
       perBlock === undefined ? content : truncateMiddle(content, perBlock),
     ]);
   }
+
+  insertCodeContextSection(sections, contextCodeLines(task, perBlock));
+}
+
+// The refresh bounded context code; a budgeted prompt cuts each file to its share, after the targets.
+function contextCodeLines(task: Task, tokens?: number | undefined): string[] {
+  return Object.entries(task.contextCodeByFile ?? {}).flatMap(([path, content]) => [
+    '',
+    `${READ_ONLY_CONTEXT_HEADING} — ${path}`,
+    tokens === undefined ? content : truncateMiddle(content, tokens),
+  ]);
 }
 
 export function formatTaskPrompt(opts: {
@@ -245,10 +260,12 @@ export function formatTaskPrompt(opts: {
   // whole: a formatter that cut one would ask for a rewrite of code the model
   // never saw. A prompt that does not fit is refused by the call's own budget,
   // with its figures, rather than trimmed to be admitted. A direct writer edits
-  // the files where they live and reads them itself, so it gets none.
+  // the files where they live and reads them itself, so it gets only the context code.
   if (outputContract === 'file-bundle-v1') {
     insertCodeContext(sections, task);
-  } else if (writesFiles !== 'direct' && (task.action === 'modify' || task.currentCodeByFile)) {
+  } else if (writesFiles === 'direct') {
+    insertCodeContextSection(sections, contextCodeLines(task));
+  } else if (task.action === 'modify' || task.currentCodeByFile || task.contextCodeByFile) {
     const budget = contextLength
       ? computeTokenBudget({
           system: formatImplementerSystemPreamble(ctx, writesFiles, context.dir),
@@ -290,7 +307,9 @@ export function formatRetryPrompt(opts: {
 
   if (outputContract === 'file-bundle-v1') {
     insertCodeContext(sections, task);
-  } else if (writesFiles !== 'direct' && (task.currentCode || task.currentCodeByFile)) {
+  } else if (writesFiles === 'direct') {
+    insertCodeContextSection(sections, contextCodeLines(task));
+  } else if (task.currentCode || task.currentCodeByFile || task.contextCodeByFile) {
     const budget = contextLength
       ? computeTokenBudget({
           system: formatImplementerSystemPreamble(ctx, writesFiles, context.dir),

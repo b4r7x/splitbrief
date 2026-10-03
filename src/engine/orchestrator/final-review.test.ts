@@ -15,6 +15,7 @@ import { ensureSessionDir, writeSpecFile } from '../../core/paths-io.js';
 import {
   sessionDir,
   REVIEW_FILE,
+  PLAN_FILE,
   SPEC_FILE,
   TASKS_FILE,
   DRIFT_REPORT_FILE,
@@ -173,6 +174,43 @@ describe('runFinalReviewPhase continuation', () => {
     expect(prompts[0]).toContain('T001');
     expect(prompts[0]).toContain('I had listed two findings');
     expect(prompts[0]).toContain('ignore the formatting nits');
+  });
+
+  it('reviews a run planned on one session against its plan document', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, PLAN_FILE, '# Plan\n\nGreet people by name.\n', null);
+    const prompts: string[] = [];
+    const reviewer = makePlanner({
+      review: async (prompt: string) => {
+        prompts.push(prompt);
+        return { text: '### Verdict\npass\n', usage: null };
+      },
+    });
+
+    await runFinalReviewPhase({
+      projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks: makeCallbacks().callbacks,
+      bus: makeBusRecorder().bus,
+      state: {
+        ...allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+        plan: {
+          summary: 'Greet people by name.',
+          decisions: [],
+          criteria: [{ id: 'C1', text: 'A name gets a greeting', checkIds: ['K1'] }],
+          checks: [],
+          validation: null,
+        },
+      },
+      reviewer,
+      metadata: TEST_METADATA,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      summaryBase: { ...SUMMARY_BASE, projectDir, sessionId },
+      taskBreakdowns: [],
+    });
+
+    expect(prompts[0]).toContain('Greet people by name.');
   });
 
   it('asks for a missing verdict without repeating the continuation note', async () => {

@@ -1,7 +1,4 @@
 import { getRailActiveIndex } from '../../../core/rail-stages.js';
-import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
-import type { WorkflowMode } from '../../../core/schemas/enums.js';
-import { resolveRunMode } from '../display/run-mode.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { readStopMenuRows, stopMenuLayout } from '../stop/options.js';
 import { getProgressRows, selectRailForm, WORKFLOW_GUTTER_X } from './chrome-rows.js';
@@ -15,6 +12,7 @@ import { clamp } from '../../../utils/math.js';
 import {
   getReviewColumnWidth,
   getReviewContentLayout,
+  getReviewPanelBudget,
   getWorkflowContentRect,
   getWorkflowSidebarWidth,
   getWorkflowViewportHeight,
@@ -28,8 +26,6 @@ import {
 import { inputHeightStore } from '../../../stores/ui/input-height.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { routerStore } from '../../../stores/navigation/router.js';
-import { configStore } from '../../../stores/project/config.js';
-import { modeAdviceStore } from '../../../stores/workflow/mode-advice.js';
 import { getSections } from '../../../stores/workflow/actions/sections.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
@@ -90,7 +86,14 @@ function readWorkflowPromptRows(): number {
   return getWorkflowPromptRows({
     approvalState,
     questionHint,
-    reviewArtifact: documentReview ? reviewArtifactForPhase(lifecycleStore.get().phase) : null,
+    review: {
+      artifact: documentReview ? reviewArtifactForPhase(lifecycleStore.get().phase) : null,
+      confirms: reviewStore.get().confirms,
+      budgetRows: getReviewPanelBudget({
+        rows: terminalSizeStore.get().rows,
+        inputRows: inputHeightStore.get().rows,
+      }),
+    },
     recoveryIssue: recoveryPrompt ? recoveryIssue : null,
     questions: questionPromptStore.get().questions,
     questionIndex: questionPromptStore.get().index,
@@ -116,24 +119,7 @@ function readProgressRows(promptRows: number): number {
   });
 }
 
-// The mode the rail draws: the one shared run-mode derivation, then the standard default when no
-// resolved, recorded, prepared or configured mode exists yet. Quick has no Spec step, so the rail
-// needs this to map an old quick `researching` phase onto Plan.
-function readRailMode(): WorkflowMode {
-  const route = routerStore.get();
-  const mode = resolveRunMode({
-    resolvedMode: modeAdviceStore.get().mode,
-    savedMode: route.screen === 'workflow' ? route.run.mode : null,
-    preparedConfig:
-      route.screen === 'workflow' && route.execution.kind === 'local'
-        ? route.execution.prepared.config
-        : null,
-    config: configStore.get().config,
-  });
-  return mode ?? DEFAULT_WORKFLOW_MODE;
-}
-
-function readRailFraction(mode: WorkflowMode): string {
+function readRailFraction(): string {
   const tasks = tasksStore.get();
   const lifecycle = lifecycleStore.get();
   return resolveRailFraction({
@@ -141,7 +127,6 @@ function readRailFraction(mode: WorkflowMode): string {
     currentTask: tasks.currentTask,
     totalTasks: tasks.totalTasks,
     cancelled: lifecycle.cancelled,
-    mode,
   });
 }
 
@@ -158,12 +143,11 @@ export function readRailSnapshot(): RailSnapshot {
   const { cols } = terminalSizeStore.get();
   const phase = lifecycleStore.get().phase;
   const cancelled = lifecycleStore.get().cancelled;
-  const mode = readRailMode();
-  const fraction = readRailFraction(mode);
+  const fraction = readRailFraction();
   const form = selectRailForm({ phase, cols });
   return {
-    zones: getRailStageZones({ form, phase, cols, fraction, cancelled, mode }),
-    activeIndex: getRailActiveIndex(phase, mode),
+    zones: getRailStageZones({ form, phase, cols, fraction, cancelled }),
+    activeIndex: getRailActiveIndex(phase),
   };
 }
 

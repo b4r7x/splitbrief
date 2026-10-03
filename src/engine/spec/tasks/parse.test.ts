@@ -456,7 +456,7 @@ file: src/dangling.ts
     expect(warnings[0]).toContain('task T001');
     expect(warnings[0]).not.toContain('No Task Brief was parsed');
   });
-  it('overlapping files across briefs is a warning', () => {
+  it('parses briefs that share a path without a warning', () => {
     const input = [
       '---',
       'id: T001',
@@ -486,31 +486,6 @@ file: src/dangling.ts
     const tasks = parseTasksStrict(input, (message) => warnings.push(message));
 
     expect(tasks.map((t) => t.id)).toEqual(['T001', 'T002']);
-    expect(warnings).toEqual([
-      'Task Briefs T001 and T002 both declare src/app.ts; the later brief modifies what the earlier one wrote',
-    ]);
-  });
-  it('counts three or more briefs on one path as all of them, each after the ones before', () => {
-    const brief = (id: string, dependsOn: string) =>
-      [
-        '---',
-        `id: ${id}`,
-        `title: "Extend the app in ${id}"`,
-        'action: modify',
-        'file: src/app.ts',
-        `depends_on: [${dependsOn}]`,
-        '---',
-        '',
-        '### Description',
-        'Extend the app.',
-      ].join('\n');
-    const input = [brief('T001', ''), brief('T002', 'T001'), brief('T003', 'T002')].join('\n\n');
-
-    const warnings: string[] = [];
-    parseTasksStrict(input, (message) => warnings.push(message));
-
-    expect(warnings).toEqual([
-      'Task Briefs T001, T002 and T003 all declare src/app.ts; each later brief modifies what the earlier ones wrote',
-    ]);
+    expect(warnings).toEqual([]);
   });
 });

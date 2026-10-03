@@ -11,7 +11,7 @@ Preparation does not reuse completed execution-admission or session-ownership ch
 Entry point: `runWorkflow()` in `src/engine/orchestrator/run/workflow.ts`. It builds a `WorkflowContext`, runs the planner, runs the implementer on each task, reviews the result, and writes a summary. The top-level sequence:
 
 1. `initializeWorkflow()` (`run/init.ts`) — creates the EventBus, subscribes all sinks, spawns the planner and implementer, bootstraps initial state or loads saved state for resume.
-2. `runPlanningPhases()` (`run/phases.ts`) — decides what this entry runs, then hands off to the step loop (`planning/steps.ts`). A mode is an ordered list of steps, one planner call each (`plannerStepsFor`, `src/core/pipeline-spec/steps.ts`); the loop skips every step whose artifact is already on disk, so a re-entry spends only the calls it still owes. A run whose resume step is a brief or a review is past planning and returns ready-for-tasks without entering the loop.
+2. `runPlanningPhases()` (`run/phases.ts`) — decides what this entry runs. A run whose resume step is a brief or a review is past planning and returns ready-for-tasks; a run parked at the plan card re-opens it (`resumeParkedApproval`); everything else runs the one planning session (`planning/session.ts`): typed questions or a typed plan, `checkPlan` with one repair, `plan.json` compiled into tasks, then the plan card.
 3. `runTasksAndReview()` — runs the task loop (implementer writes code, validation runs), then calls the planner for a final review. `runTaskLoop()` returns one of four statuses — `complete`, `stopped` (a recovery or a reconciled halt), `cancelled`, or `paused` (the operator asked for a pause after the current brief) — and only `complete` runs the review. A `paused` loop does not end the run: `runTasksAndReview` parks it in place, recording the brief it stopped before and awaiting a continuation exactly as a mid-call park does, then re-enters the loop when the operator continues. A host with no prompt surface records the park and returns, so the run resumes at that brief later.
 4. `saveFinalSession()` (`session-lifecycle/finalize.ts`) — persists the summary and updates stats. It does not take a status from its caller: it derives the run's status with `deriveRunStatus` from the tracked state, the lockfile and the artifacts on disk, writes that into `summary.json` alongside the run's phase and mode, and releases the active-session receipt **only when the run is closed**. A run that merely stopped keeps its pointer, because it is still continuable. A resumed pass drops the stop the last pass wrote as it starts (`reopenSessionRecord`), so `summary.json` never reports a stop the running run has left behind.
 
@@ -32,12 +32,12 @@ flowchart TD
 
 The orchestrator is split by concern under `src/engine/orchestrator/`:
 
-- **`planning/`** — The planner step loop. `steps.ts` runs one call per step of `plannerStepsFor(mode, approveLevel)`, memoized by the artifact each step writes; `speckit.ts` holds the three calls only speckit makes (clarify, constitution, analyze); `invalidate.ts` drops what a revised artifact invalidated; `regen.ts` regenerates briefs from feedback and `rewind.ts` handles `/revise-spec` and `/revise-plan`.
+- **`planning/`** — The planning session. `run.ts` is the entry (`runPlanningPhase`): it takes a saved rewind, runs the session, then the plan card. `session.ts` builds the repo map, runs the session (`runPlanningSession`), compiles the plan and owns the plan card (`runPlanApproval`); `plan-session.ts` is the pure question/plan/repair loop; `plan-context-fit.ts` estimates each task's context fit.
 - **`task/`** — The task loop. `loop.ts` iterates tasks, `step.ts` runs a single task (call implementer, validate, retry), `commit.ts` advances validated tasks without Git writes, `pre-task.ts` runs pre-task setup.
 - **`run/`** — The run's own entry and exit. `workflow.ts` is `runWorkflow`, `init.ts` builds the context, `phases.ts` decides what a re-entry runs, and `continue.ts` is `continueRun` — the one path that picks a run up: it settles a park this process holds, re-enters a run at rest on its saved state with the operator's steer, or refuses a run that is missing, unreadable or closed, with the reason.
 - **`escalation/`** — Tiered escalation when the implementer fails. Local retries (`local-retries.ts`) come first, then `tier.ts` dispatches the configured intermediate API implementer (`intermediate.ts` / `INTERMEDIATE_TIER`) and a planner hint that the implementer applies (`hint.ts` / `HINT_TIER`). Exhausting the ladder opens recovery; the planner does not take over writing the code.
 - **`recovery/`** — User-facing recovery flow for anything a turn cannot decide alone: the escalation ladder running out, and the planner-seat halts in `builders/planner.ts`. Presents the user with choices: retry same worker, route to a bigger worker, switch the seat, revise, skip, pause, or end the run. `bus.ts` builds the bus a recovery answered between two turns publishes on, so a host that holds no live orchestrator still records the prompt and the decision.
-- **`approval/`** — Tiered approval system for declared file writes. Classifies changed paths by risk (in-scope, out-of-scope, control-plane, package change) and gates those writes at auto/sticky/confirm tiers.
+- **`approval/`** — The write gate for declared file writes. Classifies changed paths by risk (in-scope, out-of-scope, control-plane, package change, CI or secret file) and asks only for a write to a protected path; `confirm.ts` also turns an approved plan's `protectedOperations` into confirmations (`planConfirmations`).
 - **`drift/`** — Brief drift detection. Checks whether implementer output drifted from the Task Brief and reports a score. `chain.ts` tracks chains of drifting tasks.
 - **`evidence/`** — Collects evidence of task completion for the final review. The `review-packet/` subfolder assembles all evidence into a structured packet for the review seat. The review text is parsed into a structured verdict, per-criterion marks and categorised findings by `parseFinalReview()` in `src/engine/parsers/final-review.ts`; an unrecognised review degrades to an unknown verdict. The verdict, criteria counts and finding counts land in the packet's final-review section and are rolled up into `summary.json` (`reviewPacket.finalReviewVerdict`, `reviewPacket.finalReviewFindingCounts`).
 - **`user-edit/`** — Detects when the user edits files outside of SPLITBRIEF during a running workflow. `conflicts.ts` handles merge conflicts between user edits and implementer output. The pre-task gate no longer stops the run on an inspection failure: a failed changed-file scan degrades to a warning and the task proceeds, and a conflict is raised only from a scan that produced a file list.
@@ -160,15 +160,14 @@ Two separate communication mechanisms serve different purposes.
 
 **Callbacks** — Await-able request/response pairs on `WorkflowContext.callbacks` (`OrchestratorCallbacks` in `src/engine/orchestrator/types.ts`). For moments where the workflow must stop and wait for the user:
 
-- `onApprovalNeeded(type, filePath)` — spec, plan, or briefs review
+- `onApprovalNeeded(type, filePath)` — the plan card (`'plan'`, over `plan.md`)
 - `onUserEditConflict(conflict)` — a user edit collides with in-flight work
-- `onPlannerReply(reply)` — planner returns conversation text and optional structured questions; the same step waits for an answer
+- `onPlannerReply(reply)` — the planner asked a round of typed questions; the session waits for the answers
 - `onContinuationNeeded(partialResponse)` — planner call was interrupted, should we continue?
-- `onTieredApproval(request)` — a declared implementer file write needs tiered approval
-- `onTaskReviewNeeded(request)` — task needs human review
+- `onTieredApproval(request)` — a declared implementer write to a protected path needs confirmation
 - `onComplete(summary)` — workflow finished
 
-In **interactive mode**, the TUI fulfills callbacks by switching input mode (e.g., showing an approval prompt) and resolving the promise when the user acts. In **headless mode**, workflow review gates are auto-approved, questions answer empty, recovery exits non-zero, and file-write tiered approvals fail closed unless approval config already allows the write.
+In **interactive mode**, the TUI fulfills callbacks by switching input mode (e.g., showing an approval prompt) and resolving the promise when the user acts. In **headless mode**, the plan card is approved unattended (it confirms none of the plan's protected writes), planner questions stop the run with `input_required`, recovery exits non-zero, and a protected write is denied with `APPROVAL_REQUIRED`.
 
 The split exists because events and callbacks solve different problems. Events push state outward (anyone can listen). Callbacks pull decisions inward (the workflow needs an answer before it can proceed). Merging them would mean either every event blocks until consumed, or every callback becomes lossy.
 
@@ -296,7 +295,7 @@ type Summary = {
   plannerModel?: string
   implementerTool?: string
   implementerModel?: string
-  mode?: WorkflowMode
+  mode?: WorkflowMode                     // older summaries only; a new run writes none
 
   // Per-task breakdown
   taskBreakdown?: TaskTokenUsage[]
@@ -380,10 +379,10 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 
 // Planner heartbeat (emitted while the planner is running)
 { type: 'planner_heartbeat'; elapsedMs: number;
-  accumulatedTokens: number; phaseHint?: string }
+  accumulatedTokens: number }   // accumulatedTokens is always 0: nothing reports a call's tokens while it runs
 
 // Workflow config (emitted once at startup); `skills` names the skills every seat call carries
-{ type: 'workflow_config'; mode: WorkflowMode;
+{ type: 'workflow_config'; mode?: WorkflowMode;   // older logs only; a new run writes none
   plannerTool: string; plannerModel?: string;
   implementerTool: string; implementerModel?: string;
   skills?: string[] }

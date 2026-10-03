@@ -20,14 +20,13 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
 import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type { RunnerCallContext } from '../../../engine/calls/types.js';
-import type { RunPhaseInput, PlannerOutputCallbacks } from '../../../engine/planners/types.js';
+import type { PlannerOutputCallbacks } from '../../../engine/planners/types.js';
 import type { PreparedExecution } from '../../runners/prepared-execution.js';
 import { createEventBus } from '../../../engine/events/bus.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
@@ -68,6 +67,12 @@ import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
 import { readRunEvents } from '../../events/replay.js';
 import { makePassingPlanner } from '#testing/helpers/planning-phase.js';
 import type { OrchestratorCallbacks } from '../types.js';
+import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
+import {
+  planFromTasks,
+  planQuestionsFrom,
+  typedCallAnswering,
+} from '#testing/helpers/typed-planner.js';
 
 let dirs: string[] = [];
 
@@ -235,7 +240,6 @@ function unavailablePlannerConfig(): Config {
     validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
     workflow: {
       approve: 'none',
-      mode: 'quick',
     },
   });
 }
@@ -245,7 +249,7 @@ describe('runWorkflow — smoke', () => {
     const projectDir = setupProject();
     const mutableConfig = makeConfig({
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-      workflow: { approve: 'none', mode: 'quick' },
+      workflow: { approve: 'none' },
     });
     const config = parsePreparedConfig(mutableConfig);
     const feature = 'prepared snapshot';
@@ -332,21 +336,20 @@ describe('runWorkflow — smoke', () => {
     };
     const onContinuationNeeded = vi.fn(async () => 'should not run');
     const { callbacks } = makeCallbacks({ onContinuationNeeded });
-    const runPhase = vi.fn(async ({ call }: RunPhaseInput) => {
-      expect(pendingBoundaryInterrupt).toBe(false);
-      return makePhaseCallResult({
-        call,
-        tasks: [
+    const typedCall = typedCallAnswering(
+      async () => {
+        expect(pendingBoundaryInterrupt).toBe(false);
+        return planFromTasks([
           makeTask({
             id: 'T001',
-            scope: { inBounds: ['src/drain.ts'], outOfBounds: ['other files'] },
+            scope: { inBounds: ['src/hello.ts'], outOfBounds: ['other files'] },
             evidence: ['task_completed event shows the planned task ran'],
             typeDefs: 'type DrainTask = { file: string }',
           }),
-        ],
-        usage: { inputTokens: 50, outputTokens: 25 },
-      });
-    });
+        ]);
+      },
+      { inputTokens: 50, outputTokens: 25 },
+    );
 
     const summary = await runWorkflow({
       feature: 'stale boundary interrupt',
@@ -355,7 +358,6 @@ describe('runWorkflow — smoke', () => {
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         workflow: {
           approve: 'none',
-          mode: 'quick',
         },
       }),
       callbacks,
@@ -365,13 +367,13 @@ describe('runWorkflow — smoke', () => {
         consumeBoundaryInterrupt,
       },
       _eventSink: (e) => events.push(e),
-      _planner: makePlanner({ runPhase }),
+      _planner: makePlanner({ typedCall }),
       _implementer: makeImplementer(),
     });
 
     expect(events.find((e) => e.type === 'turn_interrupted')).toBeUndefined();
     expect(onContinuationNeeded).not.toHaveBeenCalled();
-    expect(runPhase).toHaveBeenCalled();
+    expect(typedCall).toHaveBeenCalled();
     expect(pendingBoundaryInterrupt).toBe(false);
     expect(summary.totalTasks).toBe(1);
   }, 20_000);
@@ -384,7 +386,6 @@ describe('runWorkflow — smoke', () => {
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       workflow: {
         approve: 'none',
-        mode: 'quick',
       },
     });
 
@@ -398,44 +399,13 @@ describe('runWorkflow — smoke', () => {
       sessionId,
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       _planner: makePlanner({
-        runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
-          makePhaseCallResult({
-            call,
-            tasks: [],
-            usage: { inputTokens: 50, outputTokens: 25 },
-          }),
-        ),
+        typedCall: typedCallFromTasks([], { inputTokens: 50, outputTokens: 25 }),
       }),
     });
 
     const { listSessions } = await import('../../../core/sessions/io.js');
     const persisted = listSessions(projectDir).find((s) => s.id === sessionId);
     expect(persisted).toMatchObject({ status: 'open', stop: 'halted' });
-  });
-
-  it('records a brief repair call that throws as the failed stop of the run', async () => {
-    const projectDir = setupProject();
-    const sessionId = 'brief-repair-failed-sid';
-    const { callbacks } = makeCallbacks();
-    const config = makeConfig({
-      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-      workflow: { approve: 'none', mode: 'quick' },
-    });
-
-    // The compiled brief fails the quality gate, and the call that would repair it throws.
-    await runWorkflow({
-      feature: 'brief-repair-failure',
-      projectDir,
-      config,
-      callbacks,
-      sessionId,
-      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-      _planner: makePlanner({ review: vi.fn().mockRejectedValue(new Error('planner exploded')) }),
-    });
-
-    expect(loadState({ projectDir, sessionId })?.lastFailure?.message).toContain(
-      'planner exploded',
-    );
   });
 
   it('initialization failure leaves the run open', async () => {
@@ -506,7 +476,6 @@ describe('runWorkflow — smoke', () => {
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       workflow: {
         approve: 'none',
-        mode: 'quick',
       },
     });
 
@@ -521,15 +490,14 @@ describe('runWorkflow — smoke', () => {
       sessionId,
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       _planner: makePlanner({
-        runPhase: vi.fn(async ({ call }: RunPhaseInput) => {
-          registerProcess(groupChild, { group: true });
-          entriesDuringRun = readRunnerPids({ projectDir, sessionId });
-          return makePhaseCallResult({
-            call,
-            tasks: [makeTask()],
-            usage: { inputTokens: 50, outputTokens: 25 },
-          });
-        }),
+        typedCall: typedCallAnswering(
+          async () => {
+            registerProcess(groupChild, { group: true });
+            entriesDuringRun = readRunnerPids({ projectDir, sessionId });
+            return planFromTasks([makeTask()]);
+          },
+          { inputTokens: 50, outputTokens: 25 },
+        ),
       }),
       _implementer: makeImplementer(),
     });
@@ -649,15 +617,14 @@ describe('runWorkflow — smoke', () => {
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
           workflow: {
             approve: 'none',
-            mode: 'quick',
           },
         }),
         callbacks,
         sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
         _planner: makePlanner({
-          runPhase: vi.fn(async () => {
+          typedCall: typedCallAnswering(() => {
             registerProcess(child);
-            return { kind: 'conversation' as const, text: 'Continue?', questions: [], usage: null };
+            return planQuestionsFrom([], 'Continue?');
           }),
         }),
         _implementer: makeImplementer(),
@@ -704,7 +671,7 @@ describe('runWorkflow — smoke', () => {
     const sessionId = 'concurrent-run-sid';
     const config = makeConfig({
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-      workflow: { approve: 'none', mode: 'quick' },
+      workflow: { approve: 'none' },
     });
     const releaseFirst = Promise.withResolvers<void>();
     const firstAvailability = vi.fn(async () => {
@@ -726,7 +693,6 @@ describe('runWorkflow — smoke', () => {
       await vi.waitFor(() => expect(firstAvailability).toHaveBeenCalledTimes(1));
       const secondPlanner = makePlanner({
         isAvailable: vi.fn(),
-        runPhase: vi.fn(),
       });
       await expect(
         runWorkflow({
@@ -741,7 +707,7 @@ describe('runWorkflow — smoke', () => {
         }),
       ).rejects.toMatchObject({ kind: 'workflow-session-already-live' });
       expect(secondPlanner.isAvailable).not.toHaveBeenCalled();
-      expect(secondPlanner.runPhase).not.toHaveBeenCalled();
+      expect(secondPlanner.typedCall).not.toHaveBeenCalled();
     } finally {
       releaseFirst.resolve();
       await firstRun;
@@ -756,7 +722,7 @@ describe('runWorkflow — smoke', () => {
     writeRawState(ref, legacyWorkflowState('legacy state'));
     const before = readFileSync(stateFile(ref));
 
-    const planner = makePlanner({ isAvailable: vi.fn(), runPhase: vi.fn() });
+    const planner = makePlanner({ isAvailable: vi.fn() });
     const summary = await runWorkflow({
       feature: 'legacy state',
       projectDir,
@@ -771,7 +737,7 @@ describe('runWorkflow — smoke', () => {
     expect(summary.totalTasks).toBe(0);
     expect(readFileSync(stateFile(ref))).toEqual(before);
     expect(planner.isAvailable).not.toHaveBeenCalled();
-    expect(planner.runPhase).not.toHaveBeenCalled();
+    expect(planner.typedCall).not.toHaveBeenCalled();
     expect(planner.review).not.toHaveBeenCalled();
   });
 
@@ -784,7 +750,6 @@ describe('runWorkflow — smoke', () => {
     const before = readFileSync(stateFile(ref));
     const planner = makePlanner({
       isAvailable: vi.fn(),
-      runPhase: vi.fn(),
     });
 
     const summary = await runWorkflow({
@@ -801,7 +766,7 @@ describe('runWorkflow — smoke', () => {
     expect(summary.totalTasks).toBe(0);
     expect(readFileSync(stateFile(ref))).toEqual(before);
     expect(planner.isAvailable).not.toHaveBeenCalled();
-    expect(planner.runPhase).not.toHaveBeenCalled();
+    expect(planner.typedCall).not.toHaveBeenCalled();
   });
 
   it('drops the stop the halted pass recorded once the run is resumed', async () => {
@@ -852,7 +817,7 @@ describe('runWorkflow — smoke', () => {
     ensureSessionDir(projectDir, sessionId);
     saveState(ref, makeImplStateWithMetadata([makeTask({ id: 'T001' })]));
     const before = readFileSync(stateFile(ref));
-    const planner = makePlanner({ isAvailable: vi.fn(), runPhase: vi.fn() });
+    const planner = makePlanner({ isAvailable: vi.fn() });
 
     await expect(
       runWorkflow({
@@ -872,7 +837,7 @@ describe('runWorkflow — smoke', () => {
 
     expect(readFileSync(stateFile(ref))).toEqual(before);
     expect(planner.isAvailable).not.toHaveBeenCalled();
-    expect(planner.runPhase).not.toHaveBeenCalled();
+    expect(planner.typedCall).not.toHaveBeenCalled();
   });
 
   it('uses the explicit sessionId when provided and creates the session directory', async () => {
@@ -926,7 +891,6 @@ describe('runWorkflow — smoke', () => {
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       workflow: {
         approve: 'none',
-        mode: 'quick',
       },
     });
 
@@ -962,7 +926,6 @@ describe('runWorkflow — smoke', () => {
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         workflow: {
           approve: 'none',
-          mode: 'quick',
         },
       }),
       callbacks,
@@ -970,13 +933,9 @@ describe('runWorkflow — smoke', () => {
       signal: controller.signal,
       _eventSink: (event) => events.push(event),
       _planner: makePlanner({
-        runPhase: vi.fn(async ({ call }: RunPhaseInput) => {
+        typedCall: typedCallAnswering(async () => {
           controller.abort(WORKFLOW_USER_CANCELLED_ABORT_REASON);
-          return makePhaseCallResult({
-            call,
-            tasks: [makeTask()],
-            usage: null,
-          });
+          return planFromTasks([makeTask()]);
         }),
       }),
       _implementer: makeImplementer(),
@@ -999,27 +958,21 @@ describe('runWorkflow — smoke', () => {
       projectDir,
       config: makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: { approve: 'none', mode: 'quick' },
+        workflow: { approve: 'none' },
       }),
       callbacks,
       sessionId,
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       signal: controller.signal,
       _planner: makePlanner({
-        runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
-          makePhaseCallResult({
-            call,
-            tasks: [
-              makeTask({
-                id: 'T001',
-                scope: { inBounds: ['src/hello.ts'], outOfBounds: ['other files'] },
-                evidence: ['task_completed event shows the planned task ran'],
-                typeDefs: 'type HelloTask = { file: string }',
-              }),
-            ],
-            usage: null,
+        typedCall: typedCallFromTasks([
+          makeTask({
+            id: 'T001',
+            scope: { inBounds: ['src/hello.ts'], outOfBounds: ['other files'] },
+            evidence: ['task_completed event shows the planned task ran'],
+            typeDefs: 'type HelloTask = { file: string }',
           }),
-        ),
+        ]),
       }),
       _implementer: makeImplementer({
         implement: vi.fn().mockImplementation(async () => {
@@ -1046,27 +999,21 @@ describe('runWorkflow — smoke', () => {
       projectDir,
       config: makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: { approve: 'none', mode: 'quick' },
+        workflow: { approve: 'none' },
       }),
       callbacks,
       sessionId,
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       signal: controller.signal,
       _planner: makePlanner({
-        runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
-          makePhaseCallResult({
-            call,
-            tasks: [
-              makeTask({
-                id: 'T001',
-                scope: { inBounds: ['src/hello.ts'], outOfBounds: ['other files'] },
-                evidence: ['task_completed event shows the planned task ran'],
-                typeDefs: 'type HelloTask = { file: string }',
-              }),
-            ],
-            usage: null,
+        typedCall: typedCallFromTasks([
+          makeTask({
+            id: 'T001',
+            scope: { inBounds: ['src/hello.ts'], outOfBounds: ['other files'] },
+            evidence: ['task_completed event shows the planned task ran'],
+            typeDefs: 'type HelloTask = { file: string }',
           }),
-        ),
+        ]),
       }),
       _implementer: makeImplementer({
         implement: vi.fn().mockImplementation(async () => {
@@ -1106,11 +1053,11 @@ describe('runWorkflow — smoke', () => {
     });
 
     await runWorkflow({
-      feature: 'stop at the spec gate',
+      feature: 'stop at the plan approval',
       projectDir,
       config: makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: { approve: 'spec', mode: 'standard' },
+        workflow: { approve: 'plan' },
       }),
       callbacks,
       sessionId,
@@ -1119,7 +1066,7 @@ describe('runWorkflow — smoke', () => {
       _planner: makePassingPlanner(),
     });
 
-    const gate = { kind: 'gate', gate: 'spec' } as const;
+    const gate = { kind: 'gate', gate: 'plan' } as const;
     // A gate runs no call, so the stop there cut nothing.
     expect(loadState({ projectDir, sessionId })?.interruptedStep).toMatchObject({
       step: gate,
@@ -1133,7 +1080,7 @@ describe('runWorkflow — smoke', () => {
     const last = logged.at(-1);
     expect(last).toMatchObject({
       type: 'turn_interrupted',
-      phase: 'reviewing-spec',
+      phase: 'reviewing-plan',
       source: 'user',
       at: 'boundary',
       step: gate,
@@ -1178,7 +1125,6 @@ describe('runWorkflow — smoke', () => {
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       workflow: {
         approve: 'plan',
-        mode: 'standard',
       },
     });
     const { callbacks } = makeCallbacks({
@@ -1217,7 +1163,7 @@ describe('runWorkflow — smoke', () => {
     expect(loadState({ projectDir, sessionId })?.phase).toBe('reviewing-plan');
   });
 
-  it('records every gate approval in session.jsonl, in the order the gates opened', async () => {
+  it('records the plan approval in session.jsonl', async () => {
     const projectDir = setupProject();
     const sessionId = 'gate-approvals-sid';
     const controller = new AbortController();
@@ -1231,7 +1177,7 @@ describe('runWorkflow — smoke', () => {
       projectDir,
       config: makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: { approve: 'all', mode: 'standard' },
+        workflow: { approve: 'plan' },
       }),
       callbacks,
       sessionId,
@@ -1246,17 +1192,13 @@ describe('runWorkflow — smoke', () => {
       }),
     });
 
-    expect(onApprovalNeeded.mock.calls.map(([type]) => type)).toEqual(['spec', 'plan', 'briefs']);
+    expect(onApprovalNeeded.mock.calls.map(([type]) => type)).toEqual(['plan']);
     const { events } = await readRunEvents({ projectDir, sessionId });
     expect(
       events
         .filter((event) => event.type.endsWith('_approved'))
         .map((event) => [event.type, 'phase' in event ? event.phase : undefined]),
-    ).toEqual([
-      ['spec_approved', 'reviewing-spec'],
-      ['plan_approved', 'reviewing-plan'],
-      ['briefs_approved', 'reviewing-briefs'],
-    ]);
+    ).toEqual([['plan_approved', 'reviewing-plan']]);
   });
 
   it('keeps the active session for an aborted run so it can be picked up', async () => {
@@ -1268,7 +1210,6 @@ describe('runWorkflow — smoke', () => {
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       workflow: {
         approve: 'none',
-        mode: 'quick',
       },
     });
     const controller = new AbortController();
@@ -1303,26 +1244,22 @@ describe('runWorkflow — smoke', () => {
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         workflow: {
           approve: 'none',
-          mode: 'quick',
         },
       }),
       callbacks,
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       _eventSink: (e) => events.push(e),
       _planner: makePlanner({
-        runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
-          makePhaseCallResult({
-            call,
-            tasks: [
-              makeTask({
-                id: 'T001',
-                scope: { inBounds: ['src/hello.ts'], outOfBounds: ['other files'] },
-                evidence: ['task_completed event shows the planned task ran'],
-                typeDefs: 'type HelloTask = { file: string }',
-              }),
-            ],
-            usage: { inputTokens: 50, outputTokens: 25 },
-          }),
+        typedCall: typedCallFromTasks(
+          [
+            makeTask({
+              id: 'T001',
+              scope: { inBounds: ['src/hello.ts'], outOfBounds: ['other files'] },
+              evidence: ['task_completed event shows the planned task ran'],
+              typeDefs: 'type HelloTask = { file: string }',
+            }),
+          ],
+          { inputTokens: 50, outputTokens: 25 },
         ),
       }),
       _implementer: makeImplementer(),
@@ -1332,140 +1269,6 @@ describe('runWorkflow — smoke', () => {
     expect(summary.totalTasks).toBe(1);
     expect(summary.completedByLocal).toBe(1);
   }, 20_000);
-
-  it('a rewind at the task boundary loops back to planning', async () => {
-    const projectDir = setupProject();
-    const runPhase = vi
-      .fn()
-      .mockResolvedValueOnce(
-        makePhaseCallResult({
-          call: 'tasks',
-          tasks: [
-            makeTask({
-              id: 'T001',
-              title: 'First task',
-              file: 'src/first.ts',
-              scope: { inBounds: ['src/first.ts'], outOfBounds: ['other files'] },
-              evidence: ['task_completed event shows the first task ran'],
-              typeDefs: 'type FirstTask = { file: string }',
-            }),
-          ],
-          usage: null,
-        }),
-      )
-      .mockResolvedValueOnce(
-        makePhaseCallResult({
-          call: 'tasks',
-          tasks: [
-            makeTask({
-              id: 'T002',
-              title: 'Revised task',
-              file: 'src/revised.ts',
-              scope: { inBounds: ['src/revised.ts'], outOfBounds: ['other files'] },
-              evidence: ['task_completed event shows the revised task ran'],
-              typeDefs: 'type RevisedTask = { file: string }',
-            }),
-          ],
-          usage: null,
-        }),
-      );
-    const onTaskReviewNeeded = vi
-      .fn()
-      .mockResolvedValueOnce({ action: 'revise-plan' })
-      .mockResolvedValue({ action: 'continue' });
-    const { callbacks } = makeCallbacks({ onTaskReviewNeeded });
-    const events: EngineEvent[] = [];
-
-    await runWorkflow({
-      feature: 'commentless task review rewind',
-      projectDir,
-      config: makeConfig({
-        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: {
-          approve: 'none',
-          mode: 'quick',
-          taskReview: 'every',
-        },
-      }),
-      callbacks,
-      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-      _eventSink: (e) => events.push(e),
-      _planner: makePlanner({
-        runPhase,
-        review: vi.fn().mockResolvedValue({ text: '### Verdict\npass\n', usage: null }),
-      }),
-      _implementer: makeImplementer(),
-    });
-
-    expect(runPhase).toHaveBeenCalledTimes(2);
-    expect(onTaskReviewNeeded).toHaveBeenCalledTimes(2);
-    expect(onTaskReviewNeeded.mock.calls.map(([request]) => request.taskId)).toEqual([
-      'T001',
-      'T002',
-    ]);
-    expect(events.filter((e) => e.type === 'task_review_needed').map((e) => e.taskId)).toEqual([
-      'T001',
-      'T002',
-    ]);
-    // Two full runWorkflow passes over a real git repo — the slowest case in this
-    // file. 20_000 undercut the coverage budget vitest.config.ts already grants
-    // every other test, so the coverage run reaped it; this matches that budget.
-  }, 40_000);
-
-  it('task review abort publishes workflow_cancelled and skips final review', async () => {
-    const projectDir = setupProject();
-    const onTaskReviewNeeded = vi.fn().mockResolvedValue({ action: 'abort' });
-    const { callbacks } = makeCallbacks({ onTaskReviewNeeded });
-    const events: EngineEvent[] = [];
-
-    const summary = await runWorkflow({
-      feature: 'abort from task review',
-      projectDir,
-      config: makeConfig({
-        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: {
-          approve: 'none',
-          mode: 'quick',
-          taskReview: 'every',
-        },
-      }),
-      callbacks,
-      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-      _eventSink: (e) => events.push(e),
-      _planner: makePlanner({
-        runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
-          makePhaseCallResult({
-            call,
-            tasks: [
-              makeTask({
-                id: 'T001',
-                title: 'Abortable task',
-                file: 'src/abortable.ts',
-                scope: { inBounds: ['src/abortable.ts'], outOfBounds: ['other files'] },
-                evidence: ['task_completed event shows the task ran'],
-                typeDefs: 'type AbortableTask = { file: string }',
-              }),
-            ],
-            usage: null,
-          }),
-        ),
-      }),
-      _implementer: makeImplementer(),
-    });
-
-    expect(summary.totalTasks).toBe(1);
-    expect(summary.completedByLocal).toBe(1);
-    expect(onTaskReviewNeeded).toHaveBeenCalledTimes(1);
-    expect(onTaskReviewNeeded.mock.calls[0]?.[0]).toMatchObject({
-      taskId: 'T001',
-      status: 'done',
-    });
-    expect(events.find((event) => event.type === 'workflow_cancelled')).toMatchObject({
-      type: 'workflow_cancelled',
-      reason: 'user_cancelled',
-    });
-    expect(callbacks.onComplete).not.toHaveBeenCalled();
-  });
 
   it('forwards planner runner_call lifecycle events through the workflow EventBus', async () => {
     const projectDir = setupProject();
@@ -1487,14 +1290,13 @@ describe('runWorkflow — smoke', () => {
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         workflow: {
           approve: 'none',
-          mode: 'quick',
         },
       }),
       callbacks,
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       _eventSink: (event) => events.push(event),
       _planner: makePlanner({
-        runPhase: vi.fn(async (opts: RunPhaseInput) => {
+        typedCall: typedCallAnswering(async (_prompt, opts) => {
           opts.callbacks.onCallEvent?.({ type: 'call_started', ts: startedAt, ...call });
           opts.callbacks.onCallEvent?.({
             type: 'call_tool_use_done',
@@ -1523,11 +1325,7 @@ describe('runWorkflow — smoke', () => {
             usage,
             nativeSessionId: null,
           });
-          return makePhaseCallResult({
-            call: opts.call,
-            tasks: [makeTask()],
-            usage: null,
-          });
+          return planFromTasks([makeTask()]);
         }),
       }),
       _implementer: makeImplementer(),
@@ -1567,28 +1365,22 @@ describe('runWorkflow — smoke', () => {
       projectDir,
       config: makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: { approve: 'none', mode: 'quick' },
+        workflow: { approve: 'none' },
       }),
       callbacks,
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       _eventSink: (event) => events.push(event),
       _planner: makePlanner({
-        runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
-          makePhaseCallResult({
-            call,
-            tasks: [
-              makeTask({
-                id: 'T001',
-                title: 'Reviewable task',
-                file: 'src/reviewable.ts',
-                scope: { inBounds: ['src/reviewable.ts'], outOfBounds: ['other files'] },
-                evidence: ['task_completed event shows the task ran'],
-                typeDefs: 'type ReviewableTask = { file: string }',
-              }),
-            ],
-            usage: null,
+        typedCall: typedCallFromTasks([
+          makeTask({
+            id: 'T001',
+            title: 'Reviewable task',
+            file: 'src/reviewable.ts',
+            scope: { inBounds: ['src/reviewable.ts'], outOfBounds: ['other files'] },
+            evidence: ['task_completed event shows the task ran'],
+            typeDefs: 'type ReviewableTask = { file: string }',
           }),
-        ),
+        ]),
         review: vi.fn().mockImplementation(async (_prompt, _dir, cbs: PlannerOutputCallbacks) => {
           emitReviewCall(cbs, 'test-planner');
           return { text: '# Review\n\n### Verdict\npass\n', usage: null };
@@ -1608,22 +1400,16 @@ describe('runWorkflow — smoke', () => {
     const { callbacks } = makeCallbacks();
     const events: EngineEvent[] = [];
     const planner = makePlanner({
-      runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
-        makePhaseCallResult({
-          call,
-          tasks: [
-            makeTask({
-              id: 'T001',
-              title: 'Reviewable task',
-              file: 'src/reviewable.ts',
-              scope: { inBounds: ['src/reviewable.ts'], outOfBounds: ['other files'] },
-              evidence: ['task_completed event shows the task ran'],
-              typeDefs: 'type ReviewableTask = { file: string }',
-            }),
-          ],
-          usage: null,
+      typedCall: typedCallFromTasks([
+        makeTask({
+          id: 'T001',
+          title: 'Reviewable task',
+          file: 'src/reviewable.ts',
+          scope: { inBounds: ['src/reviewable.ts'], outOfBounds: ['other files'] },
+          evidence: ['task_completed event shows the task ran'],
+          typeDefs: 'type ReviewableTask = { file: string }',
         }),
-      ),
+      ]),
     });
 
     await runWorkflow({
@@ -1632,7 +1418,7 @@ describe('runWorkflow — smoke', () => {
       config: makeConfig({
         reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-5' },
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: { approve: 'none', mode: 'quick' },
+        workflow: { approve: 'none' },
       }),
       callbacks,
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
@@ -1687,7 +1473,7 @@ describe('runWorkflow — smoke', () => {
         config: makeConfig({
           planner: { kind: 'agent', command: 'echo', args: ['done'] },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-          workflow: { approve: 'none', mode: 'quick' },
+          workflow: { approve: 'none' },
         }),
         callbacks,
         sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
@@ -1825,7 +1611,6 @@ describe('runWorkflow — createBranch', () => {
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       workflow: {
         git: { createBranch: true },
-        mode: 'quick',
       },
     });
 
@@ -1863,7 +1648,6 @@ describe('runWorkflow — createBranch', () => {
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       workflow: {
         git: { createBranch: false },
-        mode: 'quick',
       },
     });
 
@@ -1925,7 +1709,6 @@ describe('runWorkflow — recovery resume', () => {
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         workflow: {
           approve: 'none',
-          mode: 'quick',
         },
       }),
       callbacks,
@@ -1974,7 +1757,6 @@ describe('runWorkflow — recovery resume', () => {
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         workflow: {
           approve: 'none',
-          mode: 'quick',
         },
       }),
       callbacks,
@@ -2039,7 +1821,6 @@ describe('runWorkflow — recovery resume', () => {
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         workflow: {
           approve: 'none',
-          mode: 'quick',
         },
       }),
       callbacks,

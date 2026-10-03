@@ -35,6 +35,22 @@ describe('EngineEvent alias colocation with EngineEventSchema', () => {
 });
 
 describe('parseEngineEvent', () => {
+  it.each([
+    ['all', 'plan'],
+    ['spec', 'plan'],
+    ['default', 'plan'],
+    ['none', 'none'],
+  ])('replays an old mode_resolved line with approve %s as %s', (saved, loaded) => {
+    const parsed = parseEngineEvent({
+      type: 'mode_resolved',
+      ts: 1,
+      phase: 'researching',
+      mode: 'standard',
+      approve: saved,
+    });
+    expect(parsed).toMatchObject({ type: 'mode_resolved', approve: loaded });
+  });
+
   it('pins the type-level contract for operational message safety metadata', () => {
     const complete = {
       type: 'warning',
@@ -376,7 +392,6 @@ describe('parseEngineEvent', () => {
         elapsedMs: 5000,
         accumulatedTokens: 900,
         callId: 'planner-call-1',
-        phaseHint: 'reading files',
       }),
     ).toEqual(
       expect.objectContaining({

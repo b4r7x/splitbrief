@@ -1,7 +1,7 @@
 import type { Summary } from '../../../core/schemas/summary.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import type { RunRecord } from '../../../core/sessions/run-record.js';
-import { NO_ARTIFACTS, resumeStep } from '../../../core/sessions/run-status.js';
+import { resumeStep } from '../../../core/sessions/run-status.js';
 import type { StopIntent, StopParkKind, StopPhase } from '../../../stores/workflow/stop.js';
 import { stepWord } from '../closed/byline.js';
 import { filesView, stoppedAtForCurrentPlan } from '../closed/projections.js';
@@ -88,7 +88,7 @@ function endedAt(record: RunRecord, stoppedAt: Summary['stoppedAt']): string | n
   const stopped = stoppedAt?.taskId;
   if (stopped !== undefined) return stopped;
   if (record.hydration.kind !== 'loaded') return null;
-  const step = resumeStep(record.hydration.state, NO_ARTIFACTS);
+  const step = resumeStep(record.hydration.state);
   return step.kind === 'planner' ? null : stepWord(step);
 }
 

@@ -146,6 +146,8 @@ export function allowedActionsForReason(reason: RecoveryReason): RecoveryAction[
       return copyActions(PLANNER_CALL_ACTIONS);
     case 'planner-returned-no-briefs':
     case 'brief-quality-unrepaired':
+    case 'plan-questions-exhausted':
+    case 'plan-checks-failed':
       return copyActions(PLANNER_OUTPUT_ACTIONS);
     case 'brief-review-no-progress':
       return copyActions(REVISE_OR_END_ACTIONS);

@@ -39,7 +39,6 @@ export type LiveMatrixMode = 'quick' | 'standard' | 'speckit';
 type LiveScenario = Readonly<{
   tool: string;
   model: string | undefined;
-  mode: LiveMatrixMode;
   feature: string;
   /** Written to <project>/validate.mjs; run as the validation command. */
   validateScript: string;
@@ -252,7 +251,6 @@ export async function runLiveScenario(
         testCommand: 'node validate.mjs',
       },
       workflow: {
-        mode: scenario.mode,
         approve: 'none',
         maxRetries: scenario.maxRetries,
       },
@@ -278,7 +276,6 @@ export async function runLiveScenario(
 }
 
 export const EASY_TIER: LiveTier = {
-  mode: 'quick',
   feature:
     'Create src/live-easy.ts exporting a string constant named liveEasy with value "live-easy".',
   validateScript:
@@ -301,7 +298,6 @@ export function easyAssertions({ summary, projectDir }: LiveRunResult): void {
 }
 
 export const HEAVY_TIER: LiveTier = {
-  mode: 'standard',
   feature:
     'Add src/live-heavy/value.ts exporting a number constant liveHeavyValue with value 42, and src/live-heavy/double.ts exporting a function doubleLiveHeavy that returns its numeric argument times two.',
   validateScript:
@@ -507,7 +503,6 @@ export function releaseMatrixConfig(run: ReleaseMatrixRun, tier: LiveMatrixTier)
       testCommand: 'node validate.mjs',
     },
     workflow: {
-      mode: run.mode,
       approve: 'none',
       maxRetries: tier.maxRetries,
     },

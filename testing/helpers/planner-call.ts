@@ -1,39 +1,19 @@
-import { buildLanguageContext } from '../../src/engine/spec/prompts/language-context.js';
-import type {
-  PhaseCallResult,
-  PhaseInputs,
-  Planner,
-  PlannerCallbacks,
-  PlannerDocumentCall,
-} from '../../src/engine/planners/types.js';
-
-/** A complete `PhaseInputs` with test defaults for everything the caller omits. */
-export function phaseInputs(overrides: Partial<PhaseInputs> = {}): PhaseInputs {
-  return {
-    feature: 'test-feature',
-    projectContext: '',
-    languageContext: buildLanguageContext(undefined),
-    ...overrides,
-  };
-}
+import type { RunnerCallResult } from '../../src/engine/calls/types.js';
+import type { Planner, PlannerCallbacks } from '../../src/engine/planners/types.js';
+import { requireCompletedCall } from '../../src/engine/planners/require-completed-call.js';
 
 /**
- * One planner call with test defaults: the `tasks` call with the quick prompt,
- * which is the shortest real call a backend can make.
+ * One planning call through the seat's typed-call binding, the way the planning session makes it.
+ * The callbacks reach the backend whole, so the session handle callbacks a test passes still fire.
  */
-export function callPhase(
+export async function callPlanner(
   planner: Planner,
-  opts: Partial<PhaseInputs> & {
-    projectDir: string;
-    callbacks: PlannerCallbacks;
-    call?: PlannerDocumentCall | undefined;
-  },
-): Promise<PhaseCallResult> {
-  const { projectDir, callbacks, call, ...inputs } = opts;
-  return planner.runPhase({
-    call: call ?? 'tasks',
-    projectDir,
-    callbacks,
-    inputs: phaseInputs({ quickPlan: { trivial: false }, ...inputs }),
-  });
+  opts: { projectDir: string; callbacks: PlannerCallbacks; prompt?: string | undefined },
+): Promise<RunnerCallResult> {
+  const { projectDir, callbacks } = opts;
+  return requireCompletedCall(
+    await planner
+      .typedCall({ projectDir, seat: 'planner', callbacks })
+      .invoke({ prompt: opts.prompt ?? 'test-feature' }),
+  );
 }

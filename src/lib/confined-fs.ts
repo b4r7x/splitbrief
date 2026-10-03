@@ -70,21 +70,6 @@ export async function confinedReadFileAsync(
   }
 }
 
-export async function confinedReadFileOrEmpty(
-  projectDir: string,
-  relativePath: string,
-): Promise<string> {
-  try {
-    const filePath = resolveConfinedReadPath(projectDir, relativePath);
-    if (filePath === null) return '';
-    return await readFile(filePath, 'utf-8');
-  } catch (err) {
-    if (pathConfinementError.isSymlinkRead(err)) throw err;
-    if (isENOENT(err)) return '';
-    throw err;
-  }
-}
-
 export function confinedWriteFile(projectDir: string, relativePath: string, content: string): void {
   assertWritablePathConfined(relativePath, projectDir);
   const filePath = resolve(projectDir, relativePath);

@@ -13,4 +13,4 @@ validation:
   testCommand: npm test
 workflow:
   maxRetries: 1
-  mode: quick
+  approve: none

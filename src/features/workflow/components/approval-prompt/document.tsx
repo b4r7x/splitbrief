@@ -9,7 +9,8 @@ import {
   approvalKeyColumnWidth,
   approvalOptionKeyCell,
   approvalOptionLabelText,
-  isCompactReviewDocument,
+  REVIEW_CONFIRMS_INDENT,
+  reviewDocumentForm,
   reviewDocumentOptions,
   type ReviewArtifact,
 } from '../../prompt-rows/approval.js';
@@ -19,6 +20,8 @@ import { MARK_SLOT_CELLS } from '../../../../components/row-leading.js';
 
 export interface DocumentReviewPromptProps {
   artifact: ReviewArtifact;
+  confirms: readonly string[];
+  budgetRows: number;
   selectedIndex: number;
   commenting: boolean;
   clampedBoxRows?: number | undefined;
@@ -30,6 +33,8 @@ export interface DocumentReviewPromptProps {
  */
 export function DocumentReviewPrompt({
   artifact,
+  confirms,
+  budgetRows,
   selectedIndex,
   commenting,
   clampedBoxRows,
@@ -40,19 +45,37 @@ export function DocumentReviewPrompt({
   const keyWidth = approvalKeyColumnWidth(options);
   const width = approvalTextWidth(cols);
   const showCursor = !commenting;
-  const compact = isCompactReviewDocument(cols);
+  const form = reviewDocumentForm({ artifact, confirms, cols, budgetRows });
+  // A comment being typed approves nothing, so where the legend was shed the confirms rows teach
+  // the two keys that are still live instead.
+  const commentLegendInConfirms = commenting && !form.legend;
 
   return (
     <Box
       flexDirection="column"
-      {...(compact
-        ? {}
-        : { borderStyle: borderStyleFor('bold'), borderColor: t.border, paddingX: 1 })}
+      {...(form.framed
+        ? { borderStyle: borderStyleFor('bold'), borderColor: t.border, paddingX: 1 }
+        : {})}
       {...(clampedBoxRows === undefined ? {} : { height: clampedBoxRows })}
       width="100%"
       overflow="hidden"
       flexShrink={0}
     >
+      {form.confirmsText === null ? null : (
+        <Box
+          paddingLeft={REVIEW_CONFIRMS_INDENT}
+          height={form.confirmsText.split('\n').length}
+          flexShrink={0}
+        >
+          {commentLegendInConfirms ? (
+            <Text color={t.textDim}>
+              {fitKeyLegend(REVIEW_COMMENT_HINTS, width - REVIEW_CONFIRMS_INDENT)}
+            </Text>
+          ) : (
+            <Text color={t.warning}>{form.confirmsText}</Text>
+          )}
+        </Box>
+      )}
       {options.map((option, index) => {
         const active = showCursor && index === selectedIndex;
         return (
@@ -68,17 +91,19 @@ export function DocumentReviewPrompt({
           </Text>
         );
       })}
-      {compact ? null : <Text> </Text>}
+      {form.framed ? <Text> </Text> : null}
       {/* Stripped of its frame the legend is bare text, so it opens on the text column rather than
           in the column the option cursors above it take. */}
-      <Box paddingLeft={compact ? MARK_SLOT_CELLS : 0}>
-        <Text color={t.textDim}>
-          {fitKeyLegend(
-            commenting ? REVIEW_COMMENT_HINTS : REVIEW_DOCUMENT_HINTS,
-            compact ? Math.max(1, width - MARK_SLOT_CELLS) : width,
-          )}
-        </Text>
-      </Box>
+      {form.legend ? (
+        <Box paddingLeft={form.framed ? 0 : MARK_SLOT_CELLS}>
+          <Text color={t.textDim}>
+            {fitKeyLegend(
+              commenting ? REVIEW_COMMENT_HINTS : REVIEW_DOCUMENT_HINTS,
+              form.framed ? width : Math.max(1, width - MARK_SLOT_CELLS),
+            )}
+          </Text>
+        </Box>
+      ) : null}
     </Box>
   );
 }

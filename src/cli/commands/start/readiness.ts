@@ -31,7 +31,6 @@ import type { WorkflowOpts } from '../../../core/types/config-options.js';
 import { resolveRunConfig } from '../../build-overrides.js';
 import { cliError } from '../../errors.js';
 import { promptCustomRunnerDisclosure } from '../../custom-runner-prompts.js';
-import { assertHeadlessTaskReviewDisabled } from '../../headless.js';
 
 export type DetectCliReadiness = (input: {
   projectDir: string;
@@ -159,7 +158,6 @@ type StartPreparationInput = Readonly<{
   plannerContext?: string | undefined;
   opts: WorkflowOpts;
   transport: 'interactive' | 'headless';
-  defaultApprove?: 'none' | undefined;
   emitReadiness: (report: ReadinessReport) => void;
   /** Where an interactive start asks for runner trust; without one it asks on the terminal. */
   onTieredApproval?: CustomRunnerAdmissionPolicy['onTieredApproval'];
@@ -178,9 +176,7 @@ export async function prepareStartOutcome(
   const config = resolveRunConfig({
     projectDir: input.projectDir,
     opts: input.opts,
-    ...(input.defaultApprove !== undefined && { defaultApprove: input.defaultApprove }),
   });
-  if (input.transport === 'headless') assertHeadlessTaskReviewDisabled(config);
   clearStaleSessionForCli(input.projectDir);
   const interaction = input.transport;
   const outcome = await (input.prepare ?? prepareExecution)({

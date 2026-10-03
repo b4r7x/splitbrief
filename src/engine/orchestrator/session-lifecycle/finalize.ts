@@ -6,12 +6,7 @@ import {
   type ActiveSessionReceipt,
 } from '../../../core/sessions/active-pointer.js';
 import { readSession, saveSummary } from '../../../core/sessions/io.js';
-import { artifactPresence } from '../../../core/sessions/run-record-io.js';
-import {
-  deriveRunStatus,
-  NO_ARTIFACTS,
-  type RunStatus,
-} from '../../../core/sessions/run-status.js';
+import { deriveRunStatus, type RunStatus } from '../../../core/sessions/run-status.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
@@ -34,7 +29,7 @@ export type SaveFinalSessionOpts = {
 const NO_STATE: RunStatus = {
   kind: 'open',
   stop: { kind: 'interrupted' },
-  resumeAt: { kind: 'planner', call: 'research' },
+  resumeAt: { kind: 'planner', call: 'plan' },
 };
 
 function finalRunStatus(opts: Pick<SaveFinalSessionOpts, 'projectDir' | 'sessionId' | 'state'>) {
@@ -42,14 +37,13 @@ function finalRunStatus(opts: Pick<SaveFinalSessionOpts, 'projectDir' | 'session
   return deriveRunStatus({
     state: opts.state,
     liveness: 'not-alive',
-    artifacts: artifactPresence({ projectDir: opts.projectDir, sessionId: opts.sessionId }),
   });
 }
 
 /** Artifacts only shape `resumeAt`, so the preserve decision reads the state alone. */
 export function shouldPreserveActiveState(state: WorkflowState | null | undefined): boolean {
   if (!state) return false;
-  const status = deriveRunStatus({ state, liveness: 'not-alive', artifacts: NO_ARTIFACTS });
+  const status = deriveRunStatus({ state, liveness: 'not-alive' });
   return status.kind !== 'closed';
 }
 
@@ -61,7 +55,6 @@ function sessionFor(opts: SaveFinalSessionOpts, status: RunStatus): Session {
     completedAt: Date.now(),
     stateVersion: WORKFLOW_STATE_VERSION,
     ...(opts.state?.phase !== undefined && { phase: opts.state.phase }),
-    ...(opts.state?.mode !== undefined && { mode: opts.state.mode }),
   };
   if (status.kind === 'closed') {
     return status.as === 'complete'
@@ -100,7 +93,6 @@ export function finalizeEndedRun(
     ...(ident.reviewerTool !== undefined && { reviewerTool: ident.reviewerTool }),
     ...(ident.reviewerModel !== undefined && { reviewerModel: ident.reviewerModel }),
     ...(ident.reviewerKind !== undefined && { reviewerKind: ident.reviewerKind }),
-    ...(state.mode !== undefined && { mode: state.mode }),
     projectDir: ref.projectDir,
     sessionId: ref.sessionId,
     ...(input.modelCache !== undefined && { pricingCache: input.modelCache }),

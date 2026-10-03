@@ -16,10 +16,8 @@ import { createImplementerPublisher } from '../../../src/engine/orchestrator/eve
 import { applyRecoveryAction } from '../../../src/engine/orchestrator/recovery/actions.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import { runTaskLoop } from '../../../src/engine/orchestrator/task/loop.js';
-import type { RunPhaseInput } from '../../../src/engine/planners/types.js';
 import { createEventBus } from '../../../src/engine/events/bus.js';
 import { makeConfig, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
-import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -36,6 +34,7 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
 
 const TARGET = 'src/greet.ts';
 const SOURCE = 'export const greet = (name: string): string => name;\n';
@@ -210,9 +209,7 @@ describe('isolation halt through the orchestrator', { timeout: 90_000 }, () => {
   describe('a direct writer that changes the checkout', () => {
     const planner = () =>
       makePlanner({
-        runPhase: vi.fn(async ({ call }: RunPhaseInput) =>
-          makePhaseCallResult({ call, ...(call === 'tasks' ? { tasks: [greetTask()] } : {}) }),
-        ),
+        typedCall: typedCallFromTasks([greetTask()]),
         review: vi.fn().mockResolvedValue({
           text: '# Final review\n\n### Verdict\npass',
           usage: { inputTokens: 1, outputTokens: 1 },
@@ -254,7 +251,7 @@ describe('isolation halt through the orchestrator', { timeout: 90_000 }, () => {
           contextLength: 4096,
         },
         validation: { typecheck: false, lint: false, test: false },
-        workflow: { mode: 'standard', approve: 'none', maxRetries: 2 },
+        workflow: { approve: 'none', maxRetries: 2 },
       });
 
     async function run(input: {

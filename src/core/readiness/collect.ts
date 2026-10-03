@@ -23,7 +23,6 @@ import {
   selectNextAction,
 } from './status.js';
 import type { Config } from '../schemas/config.js';
-import type { ApproveLevel } from '../schemas/enums.js';
 import { cliReadinessCheckId, type CliReadinessResult } from '../schemas/readiness.js';
 import { CLI_TOOL_IDS } from '../runners/cli-tool-catalog.js';
 import type { WorkflowOpts } from '../types/config-options.js';
@@ -64,12 +63,13 @@ export interface CollectReadinessOptions {
   probeRunnerAvailability?:
     | ((input: { config: Config }) => Promise<readonly RunnerAvailabilityFact[]>)
     | undefined;
+  /** How the run the report describes starts; a headless one approves its plan card unattended. */
+  interaction?: 'interactive' | 'headless' | undefined;
   /**
    * Optional headless-equivalent runner admission probe for doctor-style
    * diagnostics. Execution admission performs its own fresh generic runner
    * preparation.
    */
-  interaction?: 'interactive' | 'headless' | undefined;
   probeRunnerAdmission?:
     | ((input: {
         projectDir: string;
@@ -77,7 +77,6 @@ export interface CollectReadinessOptions {
         interaction: 'interactive' | 'headless';
       }) => Promise<readonly ReadinessCheck[]>)
     | undefined;
-  defaultApprove?: ApproveLevel | undefined;
   probeValidation?: boolean | undefined;
   resumeSession?: SessionRef | undefined;
 }
@@ -151,6 +150,7 @@ export async function collectReadiness(
     ...(loaded.config !== undefined && { config: loaded.config }),
     ...(cliReadiness !== undefined && { cliReadiness }),
     ...(availability !== undefined && { availability }),
+    ...(options.interaction !== undefined && { interaction: options.interaction }),
   };
 
   let report = buildReadinessReport(input);
@@ -225,7 +225,7 @@ function loadReadinessConfig(
     const cliOverrides = workflowOptsToCLIOverrides(options.opts ?? {});
     const { config, warnings: effectiveWarnings } = resolveEffectiveConfig({
       base: loaded.config,
-      overrides: { ...cliOverrides, approve: cliOverrides.approve ?? options.defaultApprove },
+      overrides: cliOverrides,
       loaderDiagnostics: loaded.loaderDiagnostics,
     });
     return {

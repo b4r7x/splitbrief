@@ -132,17 +132,18 @@ export function registerDoctorCommand(program: Command, deps: DoctorDeps = {}): 
     )
     .action(async (opts: DoctorOpts) => {
       const projectDir = await canonicalizeProjectDir(opts);
-      const collected = await collectReadiness({
-        projectDir,
-        probeValidation: opts.probeValidation === true,
-        detectCliReadiness: deps.detectCliReadiness ?? detectConfiguredCliReadiness,
-        probeRunnerAvailability: deps.probeRunnerAvailability ?? probeRunnerAvailability,
-      });
       // A run started the way this doctor run was started is what the report
       // describes: piped or --json stdin gets no confirmation prompt, so the
       // consent verdict is the headless one.
       const interaction =
         opts.json === true || process.stdin.isTTY !== true ? 'headless' : 'interactive';
+      const collected = await collectReadiness({
+        projectDir,
+        interaction,
+        probeValidation: opts.probeValidation === true,
+        detectCliReadiness: deps.detectCliReadiness ?? detectConfiguredCliReadiness,
+        probeRunnerAvailability: deps.probeRunnerAvailability ?? probeRunnerAvailability,
+      });
       const report = await withPreparationPreflights({
         collected,
         projectDir,

@@ -45,8 +45,7 @@ Defined in `src/engine/planners/types.ts`. Every planner implements:
 
 ```typescript
 interface Planner extends RunnerRuntime {
-  runPhase({ call, projectDir, inputs, callbacks }): Promise<PhaseCallResult>
-  regenerate(prompt, artifactType, projectDir, callbacks): Promise<RegenerateResult>
+  typedCall(ctx: TypedCallContext): TypedSeatCall   // the binding requestTyped calls
   escalateHint(task, error, projectDir, callbacks, languageContext?): Promise<EscalationResult>
   escalateFull(task, error, projectDir, callbacks, languageContext?): Promise<EscalationResult> // legacy interface; never dispatched by escalation
   review(prompt, projectDir, callbacks): Promise<{ text: string; usage: TokenDelta | null }>
@@ -57,30 +56,17 @@ interface Planner extends RunnerRuntime {
 }
 ```
 
-`runPhase()` is **one** planner call: one prompt, one document, one owned artifact. `call` is `research | spec | plan | tasks`; the orchestrator's step loop (`src/engine/orchestrator/planning/steps.ts`) decides which calls a mode makes and in what order, persists each artifact as it lands, and hands the next call whatever it needs through `inputs`. A planner never sequences a mode for itself, so a run that stops between two calls loses nothing.
+`typedCall()` is the planner's only planning entry. The planning session (`src/engine/orchestrator/planning/session.ts`) calls it through `requestTyped` with `PlanAnswerSchema`, so each turn returns typed questions or a typed plan; `requestTyped` uses the tool's native schema flag (`--json-schema`, `--output-schema`, `response_format`) where it has one, and repairs a malformed answer once. `runPhase()` and `regenerate()` are deleted: there is no per-document planner call and no artifact regeneration.
 
-`escalateHint()` supplies assistance for an implementer retry. Its prompt includes language-matched Similar Issues examples and the run's skills context. The legacy `escalateFull()` interface remains available to old integrations, but new workflow execution never dispatches that rung. In files mode its prompt carries the same workspace, git and dependency rules as the direct preamble (`workspaceRules`, `src/engine/spec/prompts/system.ts`), naming the call's own `projectDir`; the skill's takeover prompt renders from it. `regenerate()` revises the spec or plan after user comments; it is a planning call, so it resumes and reports the planner's thread like a planning step. `review()` performs the final review.
+`escalateHint()` supplies assistance for an implementer retry. Its prompt includes language-matched Similar Issues examples and the run's skills context. The legacy `escalateFull()` interface remains available to old integrations, but new workflow execution never dispatches that rung. In files mode its prompt carries the same workspace, git and dependency rules as the direct preamble (`workspaceRules`, `src/engine/spec/prompts/system.ts`), naming the call's own `projectDir`; the skill's takeover prompt renders from it. `review()` performs the final review.
 
 `PlannerUserTurnResult` distinguishes `{ status: 'delivered', usage }` from `{ status: 'not-delivered', reason: 'not-ready' }`. Usage may be null after successful delivery. The queue retains a not-ready correction for a later prompt and acknowledges only the IDs that prompt actually carried; arrivals during regeneration stay pending.
 
-`PhaseInputs` is everything one call reads — `feature`, the `research` / `spec` / `plan` text the caller read back from disk, `projectContext`, `languageContext`, the optional `skillsContext` / `codebaseContext`, a `promptPrefix` (drained queue, recorded rejections), a `promptSuffix` (the continuation block a stateless seat needs), a `continuationTurn` that replaces the built prompt for a seat already holding this step's session, `priorMessages` and `attachments` for the first call of the process, and `quickPlan: { trivial }` when the `tasks` call is compiling briefs straight from the feature.
+The planning prompt is built by `buildPlanSessionPrompt` (`src/engine/spec/prompts/plan-session.ts`) from the feature, the project context, the language and skills context, and any earlier planning of an older run; `planFullTurn` restates it for a planner without a native session.
 
-**Continuation per seat.** A step cut by Stop now is continued, not restarted from a blob. The step's own prompt is always stated; the continuation trails it (`composeContinuation`, `src/engine/spec/prompts/continuation.ts`). A planner holding a native session (`claude-code`, `codex` after its own thread id is captured) gets one extra user turn on that session — the steer plus *Continue the `<call>` step and output the complete `<artifact>` again* — because the conversation already carries the prompt. A stateless planner gets the rebuilt step prompt with the partial and the steer on the end. The reviewer re-issues its whole deterministic prompt, rebuilt from disk, with the note appended; it is one shot by constitution and never resumes or keeps a session, whichever seat holds it. A hint call is one shot too. The implementer restarts the brief on `buildPrompt`, with the partial and a line naming the declared files that already changed since the task started; the attempt count does not move.
+**Continuation per seat.** A step cut by Stop now is continued, not restarted from a blob. The step's own prompt is always stated. For the reviewer and the implementer the continuation trails it (`composeContinuation`, `src/engine/spec/prompts/continuation.ts`). The planning session issues its call again: the plan prompt in full (`planFullTurn`), with the operator's steer as a note, on the native session where the tool has one (`claude-code`, `codex` after its own thread id is captured). A cut typed answer leaves no partial to carry, and an unanswered question round takes the steer as its answer. The reviewer re-issues its whole deterministic prompt, rebuilt from disk, with the note appended; it is one shot by constitution and never resumes or keeps a session, whichever seat holds it. A hint call is one shot too. The implementer restarts the brief on `buildPrompt`, with the partial and a line naming the declared files that already changed since the task started; the attempt count does not move.
 
-`PhaseCallResult` is what one call produced:
-
-```typescript
-interface PhaseCallResult {
-  text: string
-  usage: TokenDelta | null
-  artifact: PhaseResult
-  tasks?: Task[]   // the `tasks` call only
-}
-```
-
-The `tasks[]` array is the durable contract. `research.md`, `spec.md` and `plan.md` are supporting documents for human review — quick mode writes none of them.
-
-`runDocumentPhases()` (`src/engine/planners/document-phases.ts`) runs a mode's document calls back to back with no state, no gates and no durability. `splitbrief spec` is its only caller; every real run goes through the orchestrator's step loop instead.
+The `tasks[]` the plan compiles to is the durable contract. `plan.json` is the plan; `plan.md` and `tasks.md` are its renderings for human review. `splitbrief spec` runs the same planning session without a build.
 
 ---
 
@@ -96,7 +82,7 @@ interface Reviewer {
 }
 ```
 
-It is deliberately narrower than `Planner` — a reviewer cannot plan, regenerate, escalate, summarize, resume a session, or write files. A `Planner` satisfies it structurally, which is what lets the planner hold the seat unadapted when no `reviewer` block is configured.
+It is deliberately narrower than `Planner` — a reviewer cannot plan, escalate, summarize, resume a session, or write files. A `Planner` satisfies it structurally, which is what lets the planner hold the seat unadapted when no `reviewer` block is configured.
 
 The port carries no identity fields on purpose. No runner backend knows its own tool or model, so the identity in a failed-review message comes from the config accessor that resolved the seat (`resolveReviewerRunner`), not from the runner object.
 
@@ -106,7 +92,7 @@ The port carries no identity fields on purpose. No runner backend knows its own 
 
 BUILD repair cycles after final review use the selected implementer. These bounded repairs are distinct from planner takeover.
 
-Exactly one: the final review of the run diff, dispatched from `runFinalReviewPhase()` (`src/engine/orchestrator/final-review.ts`) through `runReviewerCall()` (`src/engine/orchestrator/review-call.ts`). Every other strong-side call stays on the planner — the planning phases, `regenerate`, `escalateHint`, `summarize` / `summarizeStructured`, and `injectUserTurn`. `runPlannerReview` is still the planner's own review helper and still serves the speckit analysis and planning-regeneration call sites; the reviewer has its own call path rather than changing that one.
+Exactly one: the final review of the run diff, dispatched from `runFinalReviewPhase()` (`src/engine/orchestrator/final-review.ts`) through `runReviewerCall()` (`src/engine/orchestrator/review-call.ts`). Every other strong-side call stays on the planner — the planning session, `escalateHint`, `summarize` / `summarizeStructured`, and `injectUserTurn`.
 
 A reviewer that fails mid-call is reported, not replaced: `reviewStatus: 'failed'`, the reviewer's display name in the error, final-review evidence recorded, summary still produced. There is deliberately no automatic fallback to the planner.
 
@@ -118,7 +104,7 @@ The orchestrator reads capabilities, not backend identity, to decide what's poss
 
 | Capability | What it gates |
 |---|---|
-| `supportsConversationalPlanning` | Planner can emit inline clarification questions during planning |
+| `supportsConversationalPlanning` | Gates nothing: no engine path reads it. Every planner can return questions in the planning session's typed answer |
 | `supportsHintEscalation` | Planner answers an exhausted or stopped brief in one read-only call with a verdict (`answer`, `widen`, `brief`) and a hint; without it the hint rung is absent (custom command planners by default) |
 | `supportsSessionResume` | Backend exposes a reusable thread handle it reports itself (Claude `--resume`, Codex exec resume) |
 | `supportsEffort` | Backend honors effort/reasoning hints (thinking budget, `reasoning_effort`) — narrowly, that it accepts the `effort: EffortLevel` field on the wire. It is not the seat's effort channel: a tool that carries effort as an opencode `--variant` preset or inside its model id has a real channel while this capability stays false. `seatEffortChannel` (`src/core/runners/capabilities.ts`) is what answers the wider question; see [CONFIGURATION.md](./CONFIGURATION.md) common generation fields. |
@@ -138,23 +124,13 @@ When a capability is missing, the orchestrator falls back. No session resume mea
 
 `src/engine/planners/base.ts` -- `createPlannerBase(config)`.
 
-Wraps a backend-specific `invokePlan()` function as `runPhase` (`src/engine/planners/run-phase.ts`), which selects the prompt builder for the call it was handed:
-
-| `call` | Prompt | Artifact |
-|---|---|---|
-| `research` | `buildResearchPrompt()`, with the repo map as a `<repo-map>` block | `research.md` |
-| `spec` | `buildSpecPrompt()`, reading `inputs.research` | `spec.md` |
-| `plan` | `buildPlanPrompt()`, reading `inputs.spec` | `plan.md` |
-| `tasks` | `buildTasksPrompt()`, or `buildQuickPlanPrompt()` when `inputs.quickPlan` is set | `tasks.md` |
-
-Each call:
-- Calls `callbacks.onPhase()` so the UI can update
+Wraps a backend-specific `invokePlan()` function as the seat's `typedCall` binding. Each call:
 - Creates a transcript buffer (16KB, flushed to `session.jsonl`)
-- Injects `inputs.priorMessages` into the first call this planner instance makes, and never again. API backends receive them as an OpenAI messages array (`consumesPriorMessages: true`); CLI backends get a prompt-level prefix. `inputs.attachments` are delivered the same way, on the first call only.
+- Injects `priorMessages` into the first call of the planning session, and never again. API backends receive them as an OpenAI messages array (`consumesPriorMessages: true`); CLI backends get them in the prompt
 - Converts the backend response into `RunnerCallResult` immediately, then accumulates token usage from the typed call result
-- Returns the phase artifact text from the completed terminal result only; stdin/stdout adapters never reopen files that a backend wrote
+- Returns the answer from the completed terminal result only; stdin/stdout adapters never reopen files that a backend wrote
 
-Quick mode is the `tasks` call with `inputs.quickPlan` set: same machinery, one invocation instead of four. When the mode advisor classified the prompt as `trivial`, `quickPlan.trivial` is true and the prompt drops its codebase-review step and caps the brief count.
+An `api` planner reads no files of its own, so it declares `resolvePlanningContext` and the planning session's prompt carries an explicit evidence packet in place of the project context (`apiPlanningPacket`, `src/engine/orchestrator/planning/api-packet.ts`, built by `buildApiPlanningContext`, `src/engine/planners/api-context.ts`): the project instructions, the current source of every path the request or the earlier planning names, ranked repo-map files in the room left, and a named list of what was not read. The whole prompt is measured against the model's context; a missing, unreadable or oversized required section refuses before any call and halts as `planner-call-failed` with the `insufficient-context` diagnosis. A tool that reads files on its own still reads them.
 
 **Native session continuity.** A backend that resumes its own thread keeps it across the calls of a run. Claude Code captures the id **as it streams** (`onSessionId`, inside `runClaudePlannerStream`), not after the call returns, so a call cut halfway still leaves a thread the next call resumes. The CLI planner keeps the same in-memory `SessionResumeState` and passes only an id the tool itself reported — codex resumes its own thread id, never the SPLITBRIEF session id, which is not a tool thread at all.
 
@@ -178,7 +154,7 @@ Defined in `src/core/schemas/task.ts`. The schema is the persisted transport for
 | Escalation | `escalation` | `### Escalation` |
 | Evidence | `evidence` | `### Evidence` |
 
-The planner outputs briefs as markdown in `tasks.md`. The parser (`src/engine/spec/tasks/parse.ts`, with `blocks.ts` and `sections.ts`) splits blocks by `---` separators, extracts YAML frontmatter per block, reads `###`-headed sections, and toposorts the result by `dependsOn`.
+The planner does not write `tasks.md`. SPLITBRIEF compiles each plan task with `taskFromSpec` (`src/engine/spec/plan-tasks.ts`) and renders the briefs as markdown in `tasks.md` with `formatTasks` (`src/engine/spec/formatter.ts`): one YAML frontmatter block per brief, then `###`-headed sections. `parseTaskSourceBlocks` (`src/engine/spec/tasks/parse.ts`) reads that file back for the artifact card and the transcript rebuild.
 
 Here is what a single brief looks like in `tasks.md`:
 
@@ -240,7 +216,7 @@ with `describe`, use `it.each`.
 - Follow existing codebase patterns
 ````
 
-The implementer sees only its own brief. It has no access to the spec, the plan, or other tasks.
+The implementer sees only its own brief. It has no access to the plan or other tasks.
 
 ---
 
@@ -337,12 +313,12 @@ The last four rows are what makes `direct` reviewable. An agent that writes file
 
 Wraps a backend-specific `invoke()` with:
 
-1. **Build prompt** -- `formatTaskPrompt()` (`src/engine/spec/prompt-formatter.ts`) assembles the task sections and takes the write mode, so the closing instruction matches how the model is expected to answer. For modify tasks, `currentCode` is resolved through a tiered context strategy. A direct writer gets no inlined code at all: it edits the files where they live and reads them itself, so only `extracted-code` writers and the `file-bundle-v1` contract carry file bodies in the prompt.
+1. **Build prompt** -- `formatTaskPrompt()` (`src/engine/spec/prompt-formatter.ts`) assembles the task sections and takes the write mode, so the closing instruction matches how the model is expected to answer. For modify tasks, `currentCode` is resolved through a tiered context strategy. A direct writer gets only the read-only code of the task's `contextFiles`: it edits the files where they live and reads them itself, so only `extracted-code` writers and the `file-bundle-v1` contract carry the bodies of the files they write.
 2. **Prepend system preamble** -- `formatImplementerSystemPreamble(languageContext, writesFiles, projectDir, outputContract)`; the mode-specific preamble described above, naming the call's `projectDir` (the isolation directory for a direct writer, never `context.dir`). API backends send it as a separate system message instead of prepending (`prependSystemPreamble: false`).
 3. **Call backend `invoke()`** -- the actual model call. `InvokeOpts.callContext` identifies the runner call for adapters that can emit typed events directly. `InvokeOpts.sandboxEnv` carries the isolation directory's environment when the run is isolated. Without it, every backend that starts a process builds `createRunnerSandboxEnv` for the directory it runs in, so no runner inherits the SPLITBRIEF environment ([AUTH-METHOD-MATRIX.md](./AUTH-METHOD-MATRIX.md#child-environment)).
 4. **Process output:**
    - API `file-bundle-v1`: parse the entire completed response, approve and baseline-check declared candidates, apply text files, then publish aggregate metrics only after whole-bundle success. Partial application retains its exact effects in task evidence and fails the attempt.
-   - Legacy `extracted-code` for shell/command backends: extract code from response via `extractCode()`, run through tiered approval (`approveWrite`), apply to disk via `applyCode()`, compute diff. Between approval and apply, a plausibility guard (`src/engine/implementers/pipeline/extracted-code.ts`) refuses a marker-less modify response that would keep less than half of a baseline file of at least five non-empty lines: the file is left untouched and the task fails with the kept-of-had line counts plus a literal SEARCH/REPLACE template, so the retry has an exact-patch escape hatch.
+   - Legacy `extracted-code` for shell/command backends: extract code from response via `extractCode()`, run through the write gate (`approveWrite`), apply to disk via `applyCode()`, compute diff. Between approval and apply, a plausibility guard (`src/engine/implementers/pipeline/extracted-code.ts`) refuses a marker-less modify response that would keep less than half of a baseline file of at least five non-empty lines: the file is left untouched and the task fails with the kept-of-had line counts plus a literal SEARCH/REPLACE template, so the retry has an exact-patch escape hatch.
    - `direct` (`extractsCode: false`): detect file changes via `detectChanges()` against the baseline captured before the call. The isolated workspace declares which baseline that is rather than letting the detector sniff the directory: a linked worktree carries git metadata but is seeded with your uncommitted work, so it is compared by file-content hashes, and a retry that rewrites the file the previous attempt already wrote is seen as a change. No change at all is a `no-staged-change` failure, not a silent success: the detector's negative result carries the distinct `reason: 'no-files-changed'`, and the pipeline publishes one coded warning (`category: implementer`, `code: implementer_wrote_nothing`) naming the runner and the task. The warning lands in `session.jsonl` and in the review packet's warnings list, while the retry and escalation behaviour stays exactly as before — the task still fails. The one exception is the first fix attempt of a brief the final review reopened (`allowNoChange`): its code is already on disk, so an attempt that verifies and changes nothing completes, publishes no warning, and marks its `implementer_generate_done` event `noChange: true`. A stderr usage limit still outranks it.
 5. **Publish result** -- `publishDone` with diff metrics (lines added/removed, duration) or `publishFailed`.
 
@@ -677,7 +653,7 @@ Antigravity's per-step `usage` is the usage of that response step and its `resul
 
 **Final response.** For `codex`, `cursor`, `opencode` and `kilo-code` the final response is the messages after the last tool call (`lastMessageGroupText`, `src/engine/runners/cli-tools/final-group.ts`). Each message starts on its own line after a blank one, so a `VERDICT:` line or a `### Verdict` heading never lands mid-line behind narration. A turn that ends on a tool call has no such group, and its last message stands in for it, never the whole stream. The live transcript does not print that final text again when it differs from the streamed messages only by those line breaks (`onlyAddsLineBreaks`, `src/engine/streaming/final-text.ts`). For `claude-code` the final response is the last main-loop message behind the messages a `max_tokens` stop cut before it (`src/engine/runners/claude/stream.ts`). claude-code resumes a cut in a new message that can call tools, so that chain continues through tool calls and closes on any other stop. A `result` record without text keeps the last message and its chain, or the last earlier message with text when the last one has none. Narration outside the chain streams live and stays out of the call's text. The call's text budget warns (`runner_call_text_limit`) only when the text the call ends with was cut, never for narration a final text replaced. A call keeps its first 256 tool results in its result, and the feed still receives every tool completion after them.
 
-A planner never gains canonical write authority. Candidates stay non-canonical until the authoritative generation commit; the fixed `tasks.md`, `brief-quality.json`, `spec.md`, and `plan.md` files are compatibility projections of that generation. See [WORKFLOW.md](./WORKFLOW.md) for the generation, permit, and disposition flow.
+A planner never gains canonical write authority. Its typed answer stays a candidate until it passes `checkPlan` and `compilePlan` writes it; `plan.json` is the plan, and the fixed `plan.md` and `tasks.md` files are renderings of `plan.json`. See [WORKFLOW.md](./WORKFLOW.md) for the planning session and the disposition flow.
 
 ---
 
@@ -746,15 +722,15 @@ type Config = {
   implementerProfiles?: { default?: string; profiles: Record<string, ImplementerProfileConfig> }
   validation: { typecheck: boolean; lint: boolean; test: boolean; testCommand?: string; ... }
   workflow: {
-    mode?: WorkflowMode          // quick | standard | speckit
-    approve?: ApproveLevel       // none | spec | plan | all | default
+    mode?: unknown               // retired: loads with one notice, ignored
+    approve?: ApproveLevel       // plan | none (all, spec, default load as plan with one notice)
     maxRetries: number
     compactionThreshold?: number
     git?: { createBranch?: boolean } // retired commitStrategy input is stripped
-    // ... plus taskReview, briefReview, driftChainThreshold
+    // ... plus driftChainThreshold; taskReview, briefReview and speckit are retired keys (one notice each)
   }
   escalation?: { intermediateProvider?: string; intermediateModel?: string; enabled?: boolean }
-  approval?: { enabled?: boolean; tiers?: TierMap; feedRejectionsToPlanner?: boolean; ... }
+  approval?: { enabled?: boolean; tiers?: unknown /* retired: one notice, ignored */; feedRejectionsToPlanner?: boolean; ... }
   codebase?: CodebaseConfig
   hooks?: HooksConfig
   // ... plus theme, sessions, palette
@@ -771,9 +747,9 @@ Factory dispatch reads `config.planner.kind` and `config.implementer.kind` and l
 
 The planner prompt builders adapt import conventions, type annotation style, and code-fence language to the target project. The `LanguageContext` struct carries five fields: `language`, `importConvention`, `typeAnnotationStyle`, `fileExtension`, `moduleSystem`. Built-in presets exist for TypeScript, JavaScript, Python, Go, and Rust; everything else gets generic defaults.
 
-**Detection** happens two ways. `detectPromptLanguage(projectDir)` probes the project root for manifest files: `Cargo.toml` (Rust), `go.mod` (Go), `pyproject.toml` (Python), then `package.json` (TypeScript if the `typescript` dependency exists, JavaScript otherwise). Separately, `extractLanguageFromResearch()` parses the planner's research markdown output for a `**Language**: <name>` line -- this is the primary detection path in modes that run research (standard, speckit), since the research prompt asks the planner to identify the language. In quick mode, only `detectPromptLanguage()` is available.
+**Detection** happens two ways. `detectPromptLanguage(projectDir)` probes the project root for manifest files: `Cargo.toml` (Rust), `go.mod` (Go), `pyproject.toml` (Python), then `package.json` (TypeScript if the `typescript` dependency exists, JavaScript otherwise). The plan's own `validation.language` becomes `state.discoveredValidation.language` once the plan compiles.
 
-**Which phases receive it:** spec, plan, tasks, and quick-plan prompts all accept an optional `LanguageContext`. Research does not -- it is the phase that produces the language signal. For non-JavaScript/TypeScript projects, language context is injected as a visible `Language Context` section in the prompt. For JS/TS projects it is omitted (the prompt defaults already assume JS/TS conventions).
+**Who receives it:** the planning session prompt carries the `LanguageContext`. For non-JavaScript/TypeScript projects, language context is injected as a visible `Language Context` section in the prompt. For JS/TS projects it is omitted (the prompt defaults already assume JS/TS conventions).
 
 **Adding a new language:** add a case to `buildLanguageContext()` mapping the normalized name to a `LanguageContext` struct, add the name to `normalizeLanguage()`, add a code-fence mapping in `codeFenceLanguage()`, and add a manifest check to `detectPromptLanguage()` if applicable.
 
@@ -783,19 +759,11 @@ The planner prompt builders adapt import conventions, type annotation style, and
 
 `src/engine/spec/prompts/`
 
-Each planning phase has a dedicated prompt builder. All builders produce a single string via the shared `buildPrompt()` helper, which assembles titled sections with headings. Signatures and what they receive:
+The planning session has one prompt builder and a few turn builders, all in `plan-session.ts`. The Task Brief contract text lives in `tasks.ts` (`briefContract`, `criticalRules`, `GATES_ARE_SPLITBRIEFS`, `SKILLS_WITH_EVERY_BRIEF`).
 
-**`buildResearchPrompt(feature, projectContext, skillsContext?)`** -- the first planner call. `projectContext` includes the repo map. The prompt asks the planner to read files, map architecture, identify relevant code, note constraints, and output a structured research report including validation toolchain and detected language.
+**`buildPlanSessionPrompt({ feature, projectContext, languageContext, build, skillsContext?, codebaseContext?, earlierPlanning? })`** -- the first turn of the planning session. `projectContext` includes the repo map. `build` names the implementer model and the context it was measured at, so the planner sizes tasks for it. `earlierPlanning` carries the documents an older run's planning chain wrote. The prompt asks for `{ result }` against `PlanAnswerSchema`: up to 3 questions with defaults, or a plan.
 
-**`buildSpecPrompt(feature, researchOutput, languageContext?)`** -- receives the research output and writes `spec.md`. Defines what to build (not how). Language context sections are injected for non-JS/TS projects.
-
-**`buildPlanPrompt({ spec, projectContext, skillsContext?, languageContext?, maxPromptBytes? })`** -- receives the approved spec (as a `PlanPromptSpec` with content and a `hasClarifications` flag) and writes `plan.md`. Defines how to build it. If the spec includes user clarifications, the output instruction tells the planner to reference those decisions.
-
-**`buildTasksPrompt({ spec, plan, languageContext?, currentTasks?, skillsContext? })`** -- receives spec and plan, produces `tasks.md` markdown. The prompt includes the full Task Brief v1 contract (nine semantic sections), critical rules for self-containment, and a format example. The Coherent rule renders `sliceRuleText()` (`src/core/pipeline-spec/brief.ts`), the same grouping rule the quick prompt and the portable skills carry; no mode caps the brief count. Output is parsed into `Task[]` by the task parser.
-
-**`buildQuickPlanPrompt(feature, projectContext, languageContext?, trivial?)`** -- collapses all phases into one call. Receives the feature and project context directly, emits `tasks.md` with no spec or plan document. With `trivial` set, the first instruction becomes "do not review the codebase structure first"; the brief count is not capped, and the contract sections stay required either way.
-
-**Context availability by phase:** Research sees the feature text, project context (including repo map), and skills context. Spec sees feature + research output + skills context + language context. Plan sees spec + project context + skills context + language context. Tasks sees spec + plan + skills context + language context. Quick sees feature + project context + skills context + language context.
+**Turn builders** -- `planAnswersTurn` (the user's answers), `planRepairTurn` (the failed check messages and codes, with the plan that failed), `planRevisedTurn` (a correction from the plan card or a saved rewind, with the reviewed `plan.json`), and `planFullTurn` (the whole prompt plus the conversation so far, for a planner without a native session).
 
 ---
 

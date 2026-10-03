@@ -17,7 +17,7 @@ The generated blocks below come from the CLI's prompt builders (`npm run skills:
     - Use ESM imports with .js extensions
     - Follow the exact function signatures provided
     - Stop and report rather than guessing when the brief's stop conditions are met, or when the target file's current content contradicts the brief
-    - The Task Brief inlines the current code, types and signatures you need. Start editing from the brief. Read a file only to see lines the brief does not show, and search only for a symbol the brief names.
+    - The Task Brief inlines the read-only code of the context files it lists. Read the files it suggests before you edit them, and search only for a symbol the brief names.
     - The orchestrator runs the project's typecheck, lint, format and test gates after you finish, and its verdict is the authority. Do not run them, and do not run the whole test suite, screenshot or render tools, or repeated git diffs.
     - Run at most the focused test files the brief lists under Tests, once, after your edits. If one fails and you cannot fix it, stop and report the failure.
     - When the brief's Tests or Evidence ask you to run a project-wide gate or to render screenshots, the orchestrator and the review seat do that. Implement the change and its tests, then report.
@@ -53,14 +53,15 @@ A single-file slice prints `### File: <brief file>` instead of the `### Files:` 
 2. `### Signature`
 3. `### Type Definitions`
 4. `### Pattern`
-5. `### Implementation Steps`
-6. `### Tests`
-7. `### Scope`
-8. `### Escalation`
-9. `### Evidence`
-10. `### Constraints`
+5. `### Read-only context (do not modify) — <path>`
+6. `### Implementation Steps`
+7. `### Tests`
+8. `### Scope`
+9. `### Escalation`
+10. `### Evidence`
+11. `### Constraints`
 
-`### Current Code` is never sent to a direct writer: the tool reads the file itself.
+`### Current Code` is never sent to a direct writer: the tool reads the file itself. A `### Read-only context (do not modify) — <path>` section carries the current code of each context file, one per file.
 <!-- /generated -->
 
 Omit a heading whose section the brief does not have; never invent one. `### Tests` is bulleted and ends with the Validation commands list. The four closing constraints from references/brief-format.md are appended to `### Constraints` only when the brief does not already end with them (briefs written by `splitbrief-brief` carry them; a CLI `tasks.md` brief does not).
@@ -157,7 +158,7 @@ Generated from the CLI with its TypeScript language context; for a non-JavaScrip
 Read the reply's first `VERDICT:` line; backticks or bold around it do not matter, and a reply without one reads as `answer`:
 
 - `answer` — retry the brief once with the reply under `## Hints from senior reviewer:` in its error block.
-- `widen <path>[, <path>…] — <reason>` — retry once and let the attempt write the named paths too; a write outside the brief still needs the run's approval stance, and an allowed path is added to the brief's Approved out of bounds as `` `<path>` — planner-approved: <reason> ``.
+- `widen <path>[, <path>…] — <reason>` — retry once and let the attempt write the named paths too; a write to a protected path still waits for the user to confirm it, and an allowed path is added to the brief's Approved out of bounds as `` `<path>` — planner-approved: <reason> ``.
 - `brief — <diagnosis>` — the brief is wrong: do not retry and do not take over; mark the brief `escalated` and report the implementer's hand-back and the diagnosis.
 
 ## 6. Takeover prompt (the session implements)

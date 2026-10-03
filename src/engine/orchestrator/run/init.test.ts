@@ -18,6 +18,8 @@ import { createInitialState } from '../../../core/state/machine.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
+import { appendMessage } from '../../../core/sessions/log-writer.js';
+import type { ResumeContextHolder } from '../types.js';
 import { reactivateExistingSession } from '../../../core/sessions/active-pointer.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
@@ -32,7 +34,6 @@ import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
 import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { hashTaskBrief } from '../../brief-hash.js';
 import { sha256Hex } from '../../../utils/sha256.js';
-import { resolveMode } from '../../../core/config/runtime/resolve.js';
 import {
   captureChangedFilesBaseline,
   serializeChangedFilesBaseline,
@@ -148,6 +149,7 @@ async function initializeTestWorkflow(
     headless?: boolean;
     isolation?: RunIsolation;
     plannerContext?: string | undefined;
+    resumeHolder?: ResumeContextHolder;
   }>,
 ): Promise<{
   init: Awaited<ReturnType<typeof initializeWorkflow>>;
@@ -163,7 +165,7 @@ async function initializeTestWorkflow(
       test: false,
       testCommand: 'noop',
     },
-    workflow: { mode: 'quick' },
+    workflow: {},
     approval: { enabled: false, feedRejectionsToPlanner: true },
     codebase: { enabled: false, tokenBudget: 4000 },
     ...(input.reviewer === undefined ? {} : { reviewer: input.reviewer }),
@@ -187,14 +189,12 @@ async function initializeTestWorkflow(
     ...(input.plannerKind !== undefined && { plannerKind: input.plannerKind }),
     implementerTool: 'test-implementer',
     ...(input.implementerKind !== undefined && { implementerKind: input.implementerKind }),
-    mode: 'quick',
     projectDir: input.projectDir,
     sessionId: input.sessionId,
   };
   const metadata: SpecMetadata = {
     plannerTool,
     implementerTool: 'test-implementer',
-    mode: 'quick',
   };
   const tracked: { current: WorkflowState | undefined } = { current: undefined };
 
@@ -219,7 +219,7 @@ async function initializeTestWorkflow(
     setTrackedState: (state) => {
       tracked.current = state;
     },
-    resumeHolder: { messages: [] },
+    resumeHolder: input.resumeHolder ?? { messages: [] },
     isolation: input.isolation ?? makeCopyingIsolation(input.projectDir, input.sessionId),
     savedState: input.savedState,
     newWorkflow: input.newWorkflow,
@@ -294,7 +294,7 @@ describe('initializeWorkflow', () => {
         projectDir,
         sessionId,
         feature,
-        configOverrides: { workflow: { mode: 'quick' } },
+        configOverrides: { workflow: {} },
         headless: true,
         eventBus: bus,
       });
@@ -520,6 +520,45 @@ describe('initializeWorkflow', () => {
       expect(errorEvent?.message).toContain("Planner 'custom-endpoint' is not available");
       expect(errorEvent?.message).toContain('HTTP 401');
       expect(errorEvent?.message).not.toContain("Make sure it's installed");
+    });
+  });
+
+  it('keeps the partial of an old run cut mid-research in the planner context it continues with', async () => {
+    await withTempDir('splitbrief-init-old-cut-research', async (projectDir) => {
+      const feature = 'old cut research';
+      const sessionId = 'session-init-old-cut-research';
+      ensureSessionDir(projectDir, sessionId);
+      const ref = { projectDir, sessionId };
+      appendMessage(ref, { role: 'user', phase: 'researching', text: 'Plan the greeting' });
+      appendMessage(ref, {
+        role: 'assistant',
+        phase: 'researching',
+        text: 'PARTIAL-RESEARCH so far',
+        interrupted: true,
+      });
+      const resumeHolder: ResumeContextHolder = { messages: [] };
+
+      const { init } = await initializeTestWorkflow({
+        projectDir,
+        sessionId,
+        feature,
+        resumeHolder,
+        savedState: {
+          ...createInitialState(feature),
+          phase: 'researching',
+          mode: 'standard',
+          awaitingContinue: true,
+          interruptedStep: {
+            step: { kind: 'planner', call: 'research' },
+            source: 'user',
+            cut: 'mid-step',
+            at: new Date(0).toISOString(),
+          },
+        },
+      });
+
+      expect(init.ok).toBe(true);
+      expect(JSON.stringify(resumeHolder.messages)).toContain('PARTIAL-RESEARCH so far');
     });
   });
 
@@ -1170,9 +1209,9 @@ describe('initializeWorkflow — the @ context outlives the process', () => {
 describe('initializeWorkflow — the mode a run starts in', () => {
   it.each([
     ['quick', 'planning'],
-    ['standard', 'researching'],
-    ['speckit', 'researching'],
-  ] as const)('saves the %s setup in %s', async (mode, phase) => {
+    ['standard', 'planning'],
+    ['speckit', 'planning'],
+  ] as const)('saves the %s setup in %s, the one planning session', async (mode, phase) => {
     await withTempDir('splitbrief-init-first-phase', async (projectDir) => {
       const sessionId = `session-init-${mode}-phase`;
       const events: EngineEvent[] = [];
@@ -1191,51 +1230,20 @@ describe('initializeWorkflow — the mode a run starts in', () => {
     });
   });
 
-  it('saves the mode and approval level it resolves with the start', async () => {
+  it('saves the approval level it resolves with the start, and no workflow mode', async () => {
     await withTempDir('splitbrief-init-mode', async (projectDir) => {
       const sessionId = 'session-init-mode';
       const started = await initializeTestWorkflow({
         projectDir,
         sessionId,
         feature: 'ship the banner',
-        configOverrides: { workflow: { mode: 'standard', approve: 'all' } },
+        configOverrides: { workflow: { approve: 'plan' } },
       });
 
       expect(started.init.ok).toBe(true);
-      expect(loadState({ projectDir, sessionId })).toMatchObject({
-        mode: 'standard',
-        approve: 'all',
-      });
-    });
-  });
-
-  it('continues in the mode it started in after the config changes', async () => {
-    await withTempDir('splitbrief-init-mode-kept', async (projectDir) => {
-      const sessionId = 'session-init-mode-kept';
-      const feature = 'ship the banner';
-      await initializeTestWorkflow({
-        projectDir,
-        sessionId,
-        feature,
-        configOverrides: { workflow: { mode: 'standard' } },
-      });
       const saved = loadState({ projectDir, sessionId });
-      if (!saved) throw new Error('the start saved no state');
-
-      const continued = await initializeTestWorkflow({
-        projectDir,
-        sessionId,
-        feature,
-        savedState: saved,
-        configOverrides: { workflow: { mode: 'quick' } },
-      });
-
-      expect(continued.init.ok).toBe(true);
-      if (!continued.init.ok) return;
-      // How planning resolves the mode of the pass it runs.
-      expect(resolveMode({ config: continued.config, savedMode: continued.init.state.mode })).toBe(
-        'standard',
-      );
+      expect(saved).toMatchObject({ approve: 'plan' });
+      expect(saved).not.toHaveProperty('mode');
     });
   });
 });

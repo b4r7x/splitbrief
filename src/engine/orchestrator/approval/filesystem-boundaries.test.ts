@@ -341,9 +341,8 @@ async function resume(projectDir: string, savedState: WorkflowState) {
       startTime: Date.now(),
       plannerTool: 'test',
       implementerTool: 'test',
-      mode: 'quick',
     },
-    metadata: { plannerTool: 'test', implementerTool: 'test', mode: 'quick' },
+    metadata: { plannerTool: 'test', implementerTool: 'test' },
     setTrackedState: () => {},
     resumeHolder: { messages: [] },
     isolation: createRunIsolation({

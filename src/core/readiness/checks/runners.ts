@@ -18,6 +18,7 @@ export function buildRunnerChecks(
   config: Config,
   cliReadiness: readonly CliReadinessResult[] = [],
   availability?: readonly RunnerAvailabilityFact[] | undefined,
+  interaction?: 'interactive' | 'headless' | undefined,
 ): ReadinessCheck[] {
   const checks: ReadinessCheck[] = [];
   const configuredCliTools = new Set<CliToolId>();
@@ -59,7 +60,7 @@ export function buildRunnerChecks(
       },
     });
     checks.push(...buildImplementerProfileMetadataChecks(config, resolved.profiles));
-    checks.push(...buildRunnerTrustBoundaryChecks(config, resolved.profiles));
+    checks.push(...buildRunnerTrustBoundaryChecks(config, resolved.profiles, interaction));
     checks.push(...buildWatchdogTimeoutChecks(config, resolved.profiles));
     if (availability !== undefined) {
       checks.push(...buildAvailabilityChecks(config, resolved.profiles, availability));

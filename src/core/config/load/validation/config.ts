@@ -1,11 +1,7 @@
 import type { z } from 'zod';
 import { ConfigSchema } from '../../../schemas/config.js';
 import { REMOVED_RUNNER_KINDS } from '../../../schemas/runner-fields.js';
-import {
-  PROTECTED_ACTION_CLASSES,
-  RETIRED_WORKFLOW_MODE,
-  RETIRED_WORKFLOW_MODE_NOTICE,
-} from '../../../schemas/enums.js';
+import { RETIRED_APPROVE_LEVELS } from '../../../schemas/enums.js';
 import { includes, narrowRecord } from '../../../../utils/type-guards.js';
 import { apiKeyErrors } from './credentials.js';
 import { securityWarnings } from './warnings.js';
@@ -118,16 +114,53 @@ function removedTopLevelKeyErrors(config: Record<string, unknown>): ConfigError[
   }));
 }
 
-function deprecatedModeWarnings(config: Record<string, unknown>): string[] {
-  const mode = narrowRecord(config.workflow)?.mode;
-  return mode === RETIRED_WORKFLOW_MODE ? [RETIRED_WORKFLOW_MODE_NOTICE] : [];
-}
+/**
+ * Retired config values that still load, each with one notice. A row without `value` retires
+ * its key whatever it holds.
+ */
+const RETIRED_CONFIG_VALUES: readonly {
+  path: readonly [block: string, key: string];
+  value?: string;
+  notice: string;
+}[] = [
+  {
+    path: ['workflow', 'mode'],
+    notice:
+      'workflow.mode was retired and is ignored: every run plans in one session. Delete workflow.mode.',
+  },
+  ...RETIRED_APPROVE_LEVELS.map((value) => ({
+    path: ['workflow', 'approve'] as const,
+    value,
+    notice: `workflow.approve "${value}" was retired; using "plan": the plan waits for your approval before the build. Set approve to plan or none.`,
+  })),
+  {
+    path: ['workflow', 'taskReview'],
+    notice:
+      'workflow.task_review was retired and is ignored: the build no longer stops for your review after each brief. Delete workflow.task_review.',
+  },
+  {
+    path: ['workflow', 'briefReview'],
+    notice:
+      'workflow.brief_review was retired and is ignored: you review the briefs on the plan card. Delete workflow.brief_review.',
+  },
+  {
+    path: ['workflow', 'speckit'],
+    notice:
+      'workflow.speckit was retired and is ignored: every run plans in one session. Delete workflow.speckit.',
+  },
+  {
+    path: ['approval', 'tiers'],
+    notice:
+      'approval.tiers was retired and is ignored: a write to a protected path always asks, and no other write does. Delete approval.tiers.',
+  },
+];
 
-function ignoredTierWarnings(config: Record<string, unknown>): string[] {
-  const tiers = narrowRecord(narrowRecord(config.approval)?.tiers) ?? {};
-  return PROTECTED_ACTION_CLASSES.filter((key) => tiers[key] !== undefined).map(
-    (key) => `approval.tiers.${key} is ignored: a write to a protected path always asks.`,
-  );
+/** One notice per retired value the raw config names; the load reports them, once. */
+export function retiredValueNotices(config: Record<string, unknown>): string[] {
+  return RETIRED_CONFIG_VALUES.filter(({ path: [block, key], value }) => {
+    const loaded = narrowRecord(config[block])?.[key];
+    return value === undefined ? loaded !== undefined : loaded === value;
+  }).map(({ notice }) => notice);
 }
 
 export function validateConfig(config: Record<string, unknown>): ConfigValidation {
@@ -147,11 +180,7 @@ export function validateConfig(config: Record<string, unknown>): ConfigValidatio
     errors.push(...apiKeyErrors(result.data));
   }
 
-  const warnings = [
-    ...(result.success ? securityWarnings(result.data) : []),
-    ...deprecatedModeWarnings(config),
-    ...ignoredTierWarnings(config),
-  ];
+  const warnings = result.success ? securityWarnings(result.data) : [];
 
   return { errors, warnings, data: result.success ? result.data : undefined };
 }

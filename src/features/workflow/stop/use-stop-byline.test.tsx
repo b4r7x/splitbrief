@@ -37,7 +37,7 @@ describe('useStopByline', () => {
   afterEach(resetAllStores);
 
   it('names the gate a stop settled at from the run record, with no changes to keep', () => {
-    expect(leadAfterStopAt({ kind: 'gate', gate: 'plan' })).toBe('Paused at the plan gate');
+    expect(leadAfterStopAt({ kind: 'gate', gate: 'plan' })).toBe('Paused at the plan');
   });
 
   it('names the brief the record says the stop cut', () => {
@@ -60,7 +60,7 @@ describe('useStopByline', () => {
     stopStore.end();
     const ui = renderFeature(<Lead />);
 
-    expect(ui.lastFrame().trim()).toBe('Cancelled by you at the plan gate');
+    expect(ui.lastFrame().trim()).toBe('Cancelled by you at the plan');
     ui.unmount();
   });
 });

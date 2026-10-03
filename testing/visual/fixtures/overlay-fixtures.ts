@@ -59,6 +59,7 @@ import { tokensStore } from '../../../src/stores/workflow/tokens.js';
 import { routerStore, type RouteData } from '../../../src/stores/navigation/router.js';
 import { prepareWorkflowExecution } from '../../helpers/workflow-screen.js';
 import { makeRunRecord } from '../../helpers/factories/run-record.js';
+import { makePlanProposal } from '../../helpers/factories/plan.js';
 import { scenarioId } from '../contracts/identifiers.js';
 import { cliDetectionFor } from '../../helpers/factories/detection.js';
 import { makeSession } from '../../helpers/factories/session.js';
@@ -282,27 +283,27 @@ export function seedSessions(): void {
   sessionsStore.__testReset({ sessions: [session], totalCount: 1 });
 }
 
-function seedEditor(): void {
-  const filePath = 'fixtures/visual-session/tasks.md';
-  const ownerToken = reviewStore.setReviewFile(filePath, 8);
+function seedEditor(plan = makePlanProposal({ summary: 'Add greeting helper' })): void {
+  const ownerToken = reviewStore.setReviewFile('fixtures/visual-session/plan.md', 8);
   editorStore.openRaw({
-    filePath,
+    filePath: 'fixtures/visual-session/plan.json',
     ownerToken,
-    value: [
-      '---',
-      'id: T001',
-      'title: Add greeting helper',
-      'action: modify',
-      'file: src/greet.ts',
-      'files: [src/greet.ts, src/greet.test.ts]',
-      'depends_on: []',
-      '---',
-      '',
-      '### Description',
-      'Add a helper that returns a friendly greeting string.',
-    ].join('\n'),
+    value: `${JSON.stringify(plan, null, 2)}\n`,
     layout: { columns: 72, rows: 19 },
   });
+}
+
+/** The edited plan names a criterion no task serves, so Ctrl+S keeps the editor open. */
+function seedEditorUncoveredCriterion(): void {
+  seedEditor(
+    makePlanProposal({
+      summary: 'Add greeting helper',
+      criteria: [
+        { id: 'C1', text: 'A name gets a greeting', checkIds: ['K1'] },
+        { id: 'C2', text: 'An empty name is refused', checkIds: ['K1'] },
+      ],
+    }),
+  );
 }
 
 function seedConfig(overrides?: VisualConfigOverrides): OverlaySeed {
@@ -694,9 +695,11 @@ const createSettingsFilteredFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'settings', focus: 'filter:temp' });
 const createSettingsFilterPlanFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'settings', focus: 'filter:plan' });
-// The Workflow section scrolls off an unfiltered Settings below 120 columns, and its two
-// policy rows (`Spec/plan gates`, `Commit strategy`) are the ones that read as a value only
-// when they are unset — so one scenario holds that section on screen at every width.
+// The Workflow section scrolls off an unfiltered Settings below 120 columns, and its policy
+// row (`Plan approval`) reads as a value only when it is unset — so one scenario holds that
+// section on screen at every width.
+const createSettingsFilterApprovalFixture: FixtureFactory = () =>
+  createOverlayFixture({ overlay: 'settings', focus: 'filter:approval' });
 const createSettingsFilterWorkflowFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'settings', focus: 'filter:workflow' });
 const createPlannerPickerFixture: FixtureFactory = () =>
@@ -1574,7 +1577,19 @@ const createUsageContextFixture: FixtureFactory = () =>
     workflowRoute: usageContextRoute,
   });
 const createEditorFixture: FixtureFactory = () =>
-  createOverlayFixture({ overlay: 'editor', seed: seedEditor, underlyingScreen: 'workflow' });
+  createOverlayFixture({
+    overlay: 'editor',
+    seed: () => seedEditor(),
+    underlyingScreen: 'workflow',
+  });
+const createEditorNotSavedFixture: FixtureFactory = () => ({
+  ...createOverlayFixture({
+    overlay: 'editor',
+    seed: seedEditorUncoveredCriterion,
+    underlyingScreen: 'workflow',
+  }),
+  afterMount: (write) => write.press('\x13'),
+});
 
 export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-help'), createHelpFixture],
@@ -1590,6 +1605,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-settings-floor-full'), createSettingsFloorFullFixture],
   [scenarioId('overlay-settings-filtered'), createSettingsFilteredFixture],
   [scenarioId('overlay-settings-filter-plan'), createSettingsFilterPlanFixture],
+  [scenarioId('overlay-settings-filter-approval'), createSettingsFilterApprovalFixture],
   [scenarioId('overlay-settings-filter-workflow'), createSettingsFilterWorkflowFixture],
   [scenarioId('overlay-planner-picker'), createPlannerPickerFixture],
   [scenarioId('overlay-planner-picker-catalog'), createPlannerPickerCatalogFixture],
@@ -1858,4 +1874,5 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-usage-details-api-twin'), createUsageDetailsApiTwinFixture],
   [scenarioId('overlay-usage-context-insufficient'), createUsageContextFixture],
   [scenarioId('overlay-editor'), createEditorFixture],
+  [scenarioId('overlay-editor-not-saved'), createEditorNotSavedFixture],
 ]);

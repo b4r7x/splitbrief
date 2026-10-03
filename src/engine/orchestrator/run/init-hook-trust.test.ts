@@ -82,7 +82,7 @@ function makeInitArgs(projectDir: string, hooks?: HooksConfig, extra: InitCaller
     extra.config ??
     makeConfig({
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-      workflow: { mode: 'quick' },
+      workflow: {},
       ...(hooks !== undefined && { hooks }),
     });
   const { callbacks } = makeCallbacks();
@@ -91,11 +91,10 @@ function makeInitArgs(projectDir: string, hooks?: HooksConfig, extra: InitCaller
     startTime: Date.now(),
     plannerTool: 'test',
     implementerTool: 'test',
-    mode: 'quick',
     projectDir,
     sessionId,
   };
-  const metadata: SpecMetadata = { plannerTool: 'test', implementerTool: 'test', mode: 'quick' };
+  const metadata: SpecMetadata = { plannerTool: 'test', implementerTool: 'test' };
   return {
     projectDir,
     feature,
@@ -205,7 +204,7 @@ describe('engine-level hook trust gate', () => {
         model: 'agent-default',
       },
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-      workflow: { mode: 'quick' },
+      workflow: {},
       hooks: HOOK,
     });
     const args = makeInitArgs(projectDir, HOOK, { allowHooks: true, config });
@@ -224,7 +223,7 @@ describe('engine-level hook trust gate', () => {
         model: 'agent-default',
       },
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-      workflow: { mode: 'quick' },
+      workflow: {},
       hooks: HOOK,
     });
     const args = makeInitArgs(projectDir, HOOK, {

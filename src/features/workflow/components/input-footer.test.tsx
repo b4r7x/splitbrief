@@ -3,11 +3,8 @@ import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { adviseMode } from '../../../engine/orchestrator/planning/mode-advisor.js';
-import type { AdvisorResult } from '../../../engine/orchestrator/planning/mode-advisor.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
-import { modeAdviceStore } from '../../../stores/workflow/mode-advice.js';
 import { configStore } from '../../../stores/project/config.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
@@ -36,22 +33,6 @@ import { hydrateFromState } from '../../../stores/workflow/actions/hydrate.js';
 import { markWorkflowPaused } from '../../../stores/workflow/actions/pause.js';
 import { markWorkflowResumed } from '../../../stores/workflow/actions/resume.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
-
-function publishAdvisory(advisory: AdvisorResult): void {
-  if (advisory.kind === 'none') return;
-  addEvent({
-    type: 'mode_advice',
-    ts: Date.now(),
-    phase: 'planning',
-    kind: advisory.kind,
-    risk: advisory.risk,
-    currentMode: advisory.currentMode,
-    suggestedMode: advisory.suggestedMode,
-    confidence: advisory.confidence,
-    factors: advisory.factors,
-    missing: advisory.missing,
-  });
-}
 
 function runningOn(runnerName: string): RunningOperation {
   return {
@@ -94,7 +75,6 @@ describe('InputFooter', () => {
     tasksStore.__testReset();
     tokensStore.__testReset();
     operationsStore.__testReset();
-    modeAdviceStore.__testReset();
   });
 
   afterEach(() => {
@@ -107,7 +87,6 @@ describe('InputFooter', () => {
     tasksStore.__testReset();
     tokensStore.__testReset();
     operationsStore.__testReset();
-    modeAdviceStore.__testReset();
   });
 
   it('renders flush, leaving the gutter to the footer that wraps it', () => {
@@ -230,7 +209,7 @@ describe('InputFooter', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     expect(frame).toMatch(/Researching… \d+:\d\d/);
-    expect(frame).not.toContain(`${glyph('stageDone')} Spec`);
+    expect(frame).not.toContain(`${glyph('stageDone')} Plan`);
 
     ui.unmount();
     terminalSizeStore.reset();
@@ -254,7 +233,7 @@ describe('InputFooter', () => {
     terminalSizeStore.reset();
   });
 
-  it('names the planner call the plan stage is on instead of one verb for both', () => {
+  it('says one verb for the planning session and names an old chain briefs call', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     lifecycleStore.__testReset({
       status: 'running',
@@ -265,7 +244,8 @@ describe('InputFooter', () => {
 
     addEvent(makePlannerStatus({ phase: 'planning', call: 'plan', ts: Date.now() }));
     const plan = renderFeature(<InputFooter />);
-    expect(stripAnsiStyles(plan.lastFrame() ?? '')).toMatch(/Writing the plan… 0:\d\d/);
+    // The session's one verb runs on the Plan stage's clock, which opens with the run.
+    expect(stripAnsiStyles(plan.lastFrame() ?? '')).toMatch(/Planning… 1:\d\d/);
     expect(plan.lastFrame() ?? '').not.toContain('briefs');
     plan.unmount();
 
@@ -412,7 +392,7 @@ describe('InputFooter', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     expect(frame).toMatch(/Specifying… \d+:\d\d/);
-    expect(frame).not.toContain(`${glyph('stageDone')} Spec`);
+    expect(frame).not.toContain(`${glyph('stageDone')} Plan`);
 
     ui.unmount();
     terminalSizeStore.reset();
@@ -425,7 +405,7 @@ describe('InputFooter', () => {
     const ui = renderFeature(<InputFooter />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain(`${glyph('stageDone')} Spec`);
+    expect(frame).toContain(`${glyph('stageDone')} Plan`);
     expect(frame).not.toContain('Researching…');
 
     ui.unmount();
@@ -490,7 +470,7 @@ describe('InputFooter', () => {
     const ui = renderFeature(<InputFooter />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain(`${glyph('stageDone')} Spec`);
+    expect(frame).toContain(`${glyph('stageDone')} Plan`);
     expect(frame).not.toContain('git:');
     expect(frame).not.toContain('branch');
 
@@ -612,67 +592,29 @@ describe('InputFooter', () => {
     terminalSizeStore.reset();
   });
 
-  it('renders downgrade advisory text when advisory state is set', () => {
+  it('shows no mode advice a run publishes or replays', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    const advisory = adviseMode('fix typo in footer', 'standard');
-    publishAdvisory(advisory);
-
-    const ui = renderFeature(<InputFooter />);
-    const frame = ui.lastFrame() ?? '';
-
-    expect(frame).toContain('advisor:');
-    expect(frame).toContain('quick');
-
-    ui.unmount();
-    terminalSizeStore.reset();
-  });
-
-  it('still renders a stop advice a run logged before count-only advice was removed', () => {
-    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    publishAdvisory({
-      kind: 'stop',
+    addEvent({
+      type: 'mode_advice',
+      ts: Date.now(),
+      phase: 'planning',
+      kind: 'downgrade',
       risk: 'normal',
       currentMode: 'standard',
-      suggestedMode: 'standard',
-      confidence: 1,
-      factors: ['13 briefs over the 12 cap'],
+      suggestedMode: 'quick',
+      confidence: 0.8,
+      factors: ['short single-file edit'],
       missing: [],
     });
 
     const ui = renderFeature(<InputFooter />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('advisor: 13 briefs over the 12 cap · split the work');
+    expect(frame).not.toContain('advisor');
+    expect(frame).not.toContain('likely quick');
 
     ui.unmount();
     terminalSizeStore.reset();
-  });
-
-  it('renders a prompt-risk upgrade with its risk reason, not the classifier signals', () => {
-    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    publishAdvisory(adviseMode('add auth middleware', 'quick'));
-
-    const ui = renderFeature(<InputFooter />);
-    const frame = ui.lastFrame() ?? '';
-
-    expect(frame).toContain('advisor: consider speckit');
-    expect(frame).toContain('security/config risk');
-    expect(frame).not.toContain('matched:');
-
-    ui.unmount();
-    terminalSizeStore.reset();
-  });
-
-  it('omits advisory text when the advisor has no displayable warning', () => {
-    const advisory = adviseMode('add auth with JWT refresh tokens', 'speckit');
-    publishAdvisory(advisory);
-
-    const ui = renderFeature(<InputFooter />);
-    const frame = ui.lastFrame() ?? '';
-
-    expect(frame).not.toContain('advisor:');
-
-    ui.unmount();
   });
 
   it('does not duplicate cost information already shown in the cost status line', () => {

@@ -37,7 +37,6 @@ function renderRouter() {
       overlayActive={overlayStore.get().active}
       commands={[]}
       onRuntime={() => {}}
-      copyTarget={async () => 'empty'}
     />,
   );
 }
@@ -89,7 +88,6 @@ function WorkflowRoute({ deps }: { deps: WorkflowScreenDeps }) {
       overlayActive={overlayActive}
       commands={[]}
       onRuntime={() => {}}
-      copyTarget={async () => 'empty'}
       workflowDeps={deps}
     />
   );

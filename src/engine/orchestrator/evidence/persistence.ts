@@ -17,14 +17,8 @@ import {
 } from './task.js';
 import type { BundleApplyResult } from '../../implementers/file-bundle.js';
 import { recordApprovalEvidence, recordRejectionEvidence } from './approval.js';
-import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
 import type { ValidationResult } from '../validation/result.js';
-import type {
-  ActionClass,
-  TaskCompletionMethod,
-  TaskStatus,
-  WorkflowMode,
-} from '../../../core/schemas/enums.js';
+import type { ActionClass, TaskCompletionMethod, TaskStatus } from '../../../core/schemas/enums.js';
 import { hashTaskBrief } from '../../brief-hash.js';
 import type { GateDecision } from '../approval/types.js';
 import type {
@@ -37,12 +31,8 @@ import type { SessionRef } from '../../../core/types/session-ref.js';
 import { isInDeclaredSet, taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
 import type { EventBus } from '../../events/types.js';
 
-export function getOrCreateLedger(opts: {
-  ref: SessionRef;
-  state: WorkflowState;
-  mode?: WorkflowMode | undefined;
-}): EvidenceLedger {
-  const { ref, state, mode } = opts;
+export function getOrCreateLedger(opts: { ref: SessionRef; state: WorkflowState }): EvidenceLedger {
+  const { ref, state } = opts;
   const existing = readEvidenceLedger(ref);
   const briefHash = hashTaskBrief(state.tasks);
   return (
@@ -50,7 +40,6 @@ export function getOrCreateLedger(opts: {
     createEvidenceLedger({
       sessionId: ref.sessionId,
       feature: state.feature,
-      mode: mode ?? DEFAULT_WORKFLOW_MODE,
       tasks: state.tasks,
       briefHash,
     })
@@ -81,8 +70,7 @@ export function persistTaskEvidence(opts: {
   try {
     const briefHash = hashTaskBrief(state.tasks);
     mutateEvidenceLedger(wctx, (existing) => {
-      const ledger =
-        existing ?? getOrCreateLedger({ ref: wctx, state, mode: wctx.config.workflow.mode });
+      const ledger = existing ?? getOrCreateLedger({ ref: wctx, state });
       if (recordKind === 'local') {
         return recordLocalTaskEvidence({
           ledger,
@@ -168,8 +156,7 @@ export function persistApiApplyEvidence(opts: {
   try {
     mutateEvidenceLedger(wctx, (existing) =>
       recordApiApplyEvidence({
-        ledger:
-          existing ?? getOrCreateLedger({ ref: wctx, state, mode: wctx.config.workflow.mode }),
+        ledger: existing ?? getOrCreateLedger({ ref: wctx, state }),
         task,
         result,
         workspacePath: opts.workspacePath,
@@ -238,14 +225,13 @@ export function persistPromotionFailureEvidence(opts: {
   ref: SessionRef;
   state: WorkflowState;
   task: Task;
-  mode?: WorkflowMode | undefined;
   attempt: EvidencePromotionAttempt;
 }): { persisted: true } | { persisted: false; error: unknown } {
-  const { ref, state, task, mode, attempt } = opts;
+  const { ref, state, task, attempt } = opts;
   try {
     mutateEvidenceLedger(ref, (existing) =>
       recordPromotionFailureEvidence({
-        ledger: existing ?? getOrCreateLedger({ ref, state, mode }),
+        ledger: existing ?? getOrCreateLedger({ ref, state }),
         task,
         attempt,
         briefHash: hashTaskBrief(state.tasks),
@@ -298,14 +284,13 @@ export function persistPromotedFilesEvidence(opts: {
   bus: EventBus;
   state: WorkflowState;
   task: Task;
-  mode?: WorkflowMode | undefined;
   files: EvidencePromotedFile[];
 }): void {
-  const { ref, bus, state, task, mode, files } = opts;
+  const { ref, bus, state, task, files } = opts;
   try {
     mutateEvidenceLedger(ref, (existing) =>
       recordPromotedFilesEvidence({
-        ledger: existing ?? getOrCreateLedger({ ref, state, mode }),
+        ledger: existing ?? getOrCreateLedger({ ref, state }),
         task,
         files,
         briefHash: hashTaskBrief(state.tasks),
@@ -328,8 +313,7 @@ export function persistRejectionEvidence(opts: {
   const { wctx, state, reason, actionClass, tier, actionDescription, taskId } = opts;
   try {
     mutateEvidenceLedger(wctx, (existing) => {
-      const ledger =
-        existing ?? getOrCreateLedger({ ref: wctx, state, mode: wctx.config.workflow.mode });
+      const ledger = existing ?? getOrCreateLedger({ ref: wctx, state });
       return recordRejectionEvidence({
         ledger,
         tier,
@@ -345,7 +329,7 @@ export function persistRejectionEvidence(opts: {
 }
 
 export function persistApprovalEvidence(opts: {
-  wctx: WorkflowContext;
+  wctx: Pick<WorkflowContext, 'projectDir' | 'sessionId' | 'config' | 'bus'>;
   state: WorkflowState;
   decision: GateDecision;
   taskId?: TaskId | undefined;
@@ -355,8 +339,7 @@ export function persistApprovalEvidence(opts: {
   if (!confirmApprovals || confirmApprovals.length === 0) return;
   try {
     mutateEvidenceLedger(wctx, (existing) => {
-      let ledger =
-        existing ?? getOrCreateLedger({ ref: wctx, state, mode: wctx.config.workflow.mode });
+      let ledger = existing ?? getOrCreateLedger({ ref: wctx, state });
       for (const approval of confirmApprovals) {
         ledger = recordApprovalEvidence({
           ledger,

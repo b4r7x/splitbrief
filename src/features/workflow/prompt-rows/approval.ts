@@ -3,8 +3,10 @@ import { SOFT_SEP } from '../../../core/separators.js';
 import { fitKeyLegend } from '../../../core/key-legend.js';
 import type { ActionClass, Phase } from '../../../core/schemas/enums.js';
 import type { ApprovalPromptState } from '../../../stores/approval-prompt/prompt.js';
-import { SPLITBRIEF_DIR } from '../../../core/paths.js';
+import { PLAN_JSON_FILE } from '../../../core/paths.js';
 import { wrapHard } from '../../../utils/wrap.js';
+import { countNoun } from '../../../utils/pluralize.js';
+import { REVIEW_DECORATION_ROWS } from '../layout/rect.js';
 import {
   MIN_TEXT_WIDTH,
   approvalTextWidth,
@@ -47,7 +49,7 @@ export const CONFIRM_HINT: KeyHint = { key: '⏎', verb: 'confirm' };
 // letters stay live as accelerators. Only one gate panel is ever on screen, so this legend is the
 // single place either of them teaches the keys.
 export const SELECT_HINT: KeyHint = { key: '↑↓', verb: 'select' };
-export const STICKY_HINTS = formatKeyHints([SELECT_HINT, { key: '⏎', verb: 'confirm' }, DENY_HINT]);
+export const CHOOSE_HINTS = formatKeyHints([SELECT_HINT, { key: '⏎', verb: 'confirm' }, DENY_HINT]);
 export const CONFIRM_REASON_HINTS = formatKeyHints([CONFIRM_HINT, DENY_HINT]);
 export const CONFIRM_QUESTION = 'Why are you making this change?';
 export const CONFIRM_REASON_OPTIONAL = 'leave empty to record no reason';
@@ -66,29 +68,12 @@ export interface ApprovalOption {
   label: string;
 }
 
-export const STICKY_OPTIONS: ReadonlyArray<ApprovalOption> = [
-  { key: 'a', label: 'allow this operation only' },
-  { key: 's', label: 'allow for this session' },
-  { key: 'w', label: `allow always (writes ${SPLITBRIEF_DIR}/approvals.json)` },
-  { key: 'x', label: 'deny' },
-];
+export type ReviewArtifact = 'plan';
 
-export type ReviewArtifact = 'spec' | 'plan' | 'briefs';
-
-// Approving an artifact is not an end in itself — it releases the next step. Naming that step on
-// the row is what tells a first-time reader what `y` actually does to the run. The plan gate opens
-// once the briefs are already compiled, so the step it releases is their review.
-const REVIEW_NEXT_STEP: Record<ReviewArtifact, string> = {
-  spec: 'write the plan',
-  plan: 'review the briefs',
-  briefs: 'start the build',
-};
-
+// An old run parked at `reviewing-spec` or `reviewing-briefs` still opens at rest, but the plan
+// card is the only live gate.
 export function reviewArtifactForPhase(phase: Phase): ReviewArtifact | null {
-  if (phase === 'reviewing-spec') return 'spec';
-  if (phase === 'reviewing-plan') return 'plan';
-  if (phase === 'reviewing-briefs') return 'briefs';
-  return null;
+  return phase === 'reviewing-plan' ? 'plan' : null;
 }
 
 export type ReviewDocumentCommand = 'approve' | 'comment' | 'edit-file' | 'end-run';
@@ -97,19 +82,40 @@ export interface ReviewDocumentRow extends ApprovalOption {
   command: ReviewDocumentCommand;
 }
 
+// Approving releases the build, and the row says so: that is what `y` does to the run. The card
+// shows plan.md, which is rendered from plan.json, so Edit opens plan.json and the engine checks
+// and compiles it again.
 export function reviewDocumentOptions(artifact: ReviewArtifact): ReadonlyArray<ReviewDocumentRow> {
   return [
-    {
-      key: 'y',
-      label: `Approve ${artifact} and ${REVIEW_NEXT_STEP[artifact]}`,
-      command: 'approve',
-    },
+    { key: 'y', label: `Approve ${artifact} and start the build`, command: 'approve' },
     { key: 'c', label: 'Request changes (type what to change)', command: 'comment' },
-    { key: 'e', label: 'Edit in $EDITOR', command: 'edit-file' },
+    { key: 'e', label: `Edit ${PLAN_JSON_FILE}`, command: 'edit-file' },
     // A document gate opens before any brief of its plan has run, so the row promises no kept
     // changes: it says what the stop menu says at the same gate.
     { key: 'q', label: 'End run (close this run)', command: 'end-run' },
   ];
+}
+
+/** The confirms line opens on the key column, under the cursor gutter of the rows below it. */
+export const REVIEW_CONFIRMS_INDENT = 2;
+
+/**
+ * The line that keeps what approving confirms in view while the plan scrolls: the card's body can
+ * be one row tall, and these operations are what `y` grants beyond the plan itself. Counted, it
+ * names how many: the plan lists each one under Protected operations, right under its summary.
+ */
+function reviewConfirmsText(
+  confirms: readonly string[],
+  width: number,
+  form: 'listed' | 'counted',
+): string | null {
+  if (confirms.length === 0) return null;
+  return wrapPathAwareText(
+    form === 'listed'
+      ? `Approving also confirms: ${confirms.join(', ')}`
+      : `Approving also confirms ${countNoun(confirms.length, 'protected operation')}`,
+    width - REVIEW_CONFIRMS_INDENT,
+  );
 }
 
 export const REVIEW_DOCUMENT_HINTS = formatKeyHints([SELECT_HINT, { key: '⏎', verb: 'confirm' }]);
@@ -121,24 +127,77 @@ export const REVIEW_COMMENT_HINTS = formatKeyHints([
   { key: 'esc', verb: 'back' },
 ]);
 
-// Below this the panel and the document it gates cannot both keep their chrome. The rows that say
-// something — the options and the legend — stay; the border and the blank above it go, because a
-// box drawn around a gate the reader can no longer read the document behind is decoration.
+// Below this the panel draws no border: a box around a gate whose document has a few columns left
+// is decoration.
 export const REVIEW_DOCUMENT_COMPACT_COLS = 80;
 
-export function isCompactReviewDocument(cols: number): boolean {
-  return cols < REVIEW_DOCUMENT_COMPACT_COLS;
+export interface ReviewDocumentForm {
+  /** The bold border and the blank row above the legend. */
+  framed: boolean;
+  legend: boolean;
+  /** What approving also confirms, wrapped to the panel; null when it confirms nothing. */
+  confirmsText: string | null;
 }
 
-export function getReviewDocumentPromptRows(artifact: ReviewArtifact | null, cols: number): number {
-  if (artifact === null) return 0;
+function reviewDocumentFormRows(form: ReviewDocumentForm, artifact: ReviewArtifact, cols: number) {
   const width = approvalTextWidth(cols);
   const options = reviewDocumentOptions(artifact);
-  const compact = isCompactReviewDocument(cols);
   return (
-    (compact ? 0 : BORDER_ROWS + 1) +
+    (form.framed ? BORDER_ROWS + 1 : 0) +
+    (form.confirmsText === null ? 0 : form.confirmsText.split('\n').length) +
     approvalOptionRowCount(options, width, approvalKeyColumnWidth(options)) +
-    wrappedRows(REVIEW_DOCUMENT_HINTS, width)
+    (form.legend ? wrappedRows(REVIEW_DOCUMENT_HINTS, width) : 0)
+  );
+}
+
+/**
+ * The panel the plan card can afford in `budgetRows` (`getReviewPanelBudget`): the first form that
+ * leaves the plan its rows. The row that says least goes first: the border and its blank, then the
+ * legend (every option carries its own key), then the list of what approving confirms, which
+ * falls back to its count. Past that the options stay, and the body yields the plan. The border
+ * and the legend are decoration, so they also leave the plan REVIEW_DECORATION_ROWS.
+ */
+export function reviewDocumentForm(input: {
+  artifact: ReviewArtifact;
+  confirms: readonly string[];
+  cols: number;
+  budgetRows: number;
+}): ReviewDocumentForm {
+  const width = approvalTextWidth(input.cols);
+  const listed = reviewConfirmsText(input.confirms, width, 'listed');
+  const fewest = {
+    framed: false,
+    legend: false,
+    confirmsText: reviewConfirmsText(input.confirms, width, 'counted'),
+  };
+  const forms: ReviewDocumentForm[] = [
+    ...(input.cols < REVIEW_DOCUMENT_COMPACT_COLS
+      ? []
+      : [{ framed: true, legend: true, confirmsText: listed }]),
+    { framed: false, legend: true, confirmsText: listed },
+    { framed: false, legend: false, confirmsText: listed },
+    fewest,
+  ];
+  return (
+    forms.find(
+      (form) =>
+        reviewDocumentFormRows(form, input.artifact, input.cols) <=
+        input.budgetRows - (form.framed || form.legend ? REVIEW_DECORATION_ROWS : 0),
+    ) ?? fewest
+  );
+}
+
+export function getReviewDocumentPromptRows(
+  artifact: ReviewArtifact | null,
+  confirms: readonly string[],
+  cols: number,
+  budgetRows: number,
+): number {
+  if (artifact === null) return 0;
+  return reviewDocumentFormRows(
+    reviewDocumentForm({ artifact, confirms, cols, budgetRows }),
+    artifact,
+    cols,
   );
 }
 
@@ -221,23 +280,23 @@ export function approvalOptionLabelText(input: {
 
 export const APPROVAL_OPTION_FIRST_ROW_OFFSET = 4;
 
-/** The blank rows a sticky or confirm panel paints: two above the options, one below them. */
-export const STICKY_SPACER_ROWS = 3;
+/** The blank rows the confirm panel paints: two above the options, one below them. */
+export const PROMPT_SPACER_ROWS = 3;
 /** Of those, the ones that sit above the options, so shedding them moves the option rows up. */
-const STICKY_LEAD_SPACER_ROWS = 2;
+const PROMPT_LEAD_SPACER_ROWS = 2;
 
 /**
  * What a region shorter than the panel takes from it. The blank rows go first, top down: a clipped
  * panel loses its bottom border and its legend — the two things the reader cannot answer the gate
  * without. Whitespace is the only row that says nothing, so it is the only row that pays.
  */
-export function stickySpacersShed(promptRows: number, boxRows: number): number {
-  return Math.min(Math.max(0, promptRows - boxRows), STICKY_SPACER_ROWS);
+export function promptSpacersShed(promptRows: number, boxRows: number): number {
+  return Math.min(Math.max(0, promptRows - boxRows), PROMPT_SPACER_ROWS);
 }
 
 /** How far up shedding those blanks moves the option rows. */
-export function stickyLeadShed(spacersShed: number): number {
-  return Math.min(spacersShed, STICKY_LEAD_SPACER_ROWS);
+export function promptLeadShed(spacersShed: number): number {
+  return Math.min(spacersShed, PROMPT_LEAD_SPACER_ROWS);
 }
 
 export interface PromptOptionZone {
@@ -248,7 +307,7 @@ export interface PromptOptionZone {
   bottom: number;
 }
 
-export function stickyRequestRowCount(actionDescription: string, cols: number): number {
+export function approvalSubjectRowCount(actionDescription: string, cols: number): number {
   return pathAwareRows(formatApprovalActionDescription(actionDescription), approvalTextWidth(cols));
 }
 
@@ -289,23 +348,6 @@ export function getApprovalOptionZones(input: {
   return zones;
 }
 
-export function getStickyOptionZones(input: {
-  boxTop: number;
-  cols: number;
-  promptRows: number;
-  actionDescription: string;
-  leadShed?: number;
-}): PromptOptionZone[] {
-  return getApprovalOptionZones({
-    boxTop: input.boxTop,
-    cols: input.cols,
-    promptRows: input.promptRows,
-    subjectRows: stickyRequestRowCount(input.actionDescription, input.cols),
-    options: STICKY_OPTIONS,
-    ...(input.leadShed === undefined ? {} : { leadShed: input.leadShed }),
-  });
-}
-
 export function confirmSubjectRowCount(input: {
   actionClass: ActionClass;
   actionDescription: string;
@@ -315,7 +357,7 @@ export function confirmSubjectRowCount(input: {
   const width = approvalTextWidth(cols);
   return (
     wrappedRows(getApprovalConfirmLabel(actionClass), width) +
-    stickyRequestRowCount(actionDescription, cols) +
+    approvalSubjectRowCount(actionDescription, cols) +
     (isIrreversibleActionClass(actionClass) ? wrappedRows(IRREVERSIBLE_NOTE, width) : 0)
   );
 }
@@ -342,20 +384,6 @@ export function getConfirmOptionZones(input: {
   });
 }
 
-function getStickyRows(actionClass: ActionClass, actionDescription: string, cols: number): number {
-  const width = approvalTextWidth(cols);
-  return (
-    BORDER_ROWS +
-    wrappedRows(approvalTitle(actionClass), width) +
-    1 +
-    stickyRequestRowCount(actionDescription, cols) +
-    1 +
-    approvalOptionRowCount(STICKY_OPTIONS, width, approvalKeyColumnWidth(STICKY_OPTIONS)) +
-    1 +
-    wrappedRows(fitKeyLegend(STICKY_HINTS, width), width)
-  );
-}
-
 function getConfirmRows(actionClass: ActionClass, actionDescription: string, cols: number): number {
   const width = approvalTextWidth(cols);
   const options = getConfirmOptions(actionClass);
@@ -369,7 +397,7 @@ function getConfirmRows(actionClass: ActionClass, actionDescription: string, col
     approvalOptionRowCount(options, width, approvalKeyColumnWidth(options)) +
     1 +
     Math.max(
-      wrappedRows(fitKeyLegend(STICKY_HINTS, width), width),
+      wrappedRows(fitKeyLegend(CHOOSE_HINTS, width), width),
       wrappedRows(fitKeyLegend(CONFIRM_NUDGE, width), width),
     );
   const reasonStepRows =
@@ -384,7 +412,5 @@ function getConfirmRows(actionClass: ActionClass, actionDescription: string, col
 
 export function getApprovalPromptRows(state: ApprovalPromptState, cols: number): number {
   if (state.status !== 'pending') return 0;
-  return state.request.tier === 'sticky'
-    ? getStickyRows(state.request.actionClass, state.request.actionDescription, cols)
-    : getConfirmRows(state.request.actionClass, state.request.actionDescription, cols);
+  return getConfirmRows(state.request.actionClass, state.request.actionDescription, cols);
 }

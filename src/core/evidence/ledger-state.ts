@@ -1,5 +1,4 @@
 import type { Task } from '../schemas/task.js';
-import type { WorkflowMode } from '../schemas/enums.js';
 import type {
   EvidenceLedger,
   EvidenceTask,
@@ -113,7 +112,6 @@ export function findOrSeed(
 export type CreateEvidenceLedgerInput = {
   sessionId: string;
   feature: string;
-  mode?: WorkflowMode | undefined;
   tasks: Task[];
   briefHash?: string | null;
 };
@@ -130,7 +128,6 @@ export function createEvidenceLedger(input: CreateEvidenceLedgerInput): Evidence
     validationSummary: recomputeValidationSummary(tasks),
     briefHash: bh,
   };
-  if (input.mode !== undefined) ledger.mode = input.mode;
   return ledger;
 }
 

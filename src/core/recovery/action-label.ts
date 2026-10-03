@@ -43,10 +43,10 @@ export function recoveryActionLabel(
     }
     case 'planner-split-rebase':
       return `Ask planner to ${rebaseVerb(context)}`;
+    // An old run's `revise-spec` sends its note to the planning session, as `revise` does.
     case 'revise':
-      return 'Send a correction';
     case 'revise-spec':
-      return 'Revise the spec';
+      return 'Send a correction';
     case 'continue':
       return 'Continue';
     case 'skip-current-task':

@@ -29,7 +29,7 @@ implementer: { kind: cli, tool: antigravity, model: gemini-3.8-flash-high, effor
 # implementer: { kind: cli, tool: claude-code, model: sonnet, effort: medium }
 # implementer: { kind: cli, tool: codex, model: <id> }
 validation: { typecheck: true, lint: true, test: true }
-workflow: { approve: all, max_retries: 3, mode: standard, task_review: none }
+workflow: { approve: plan }
 ```
 
 Model ids come from the tool (`agy models`, `claude --model` aliases `opus`, `sonnet`, `fable`). No `reviewer:` block means the planner holds the review seat.
@@ -49,7 +49,7 @@ SCR=<scratch dir>
 cat > "$SCR/launch.sh" <<EOF
 #!/usr/bin/env bash
 cd $PWD
-node $PWD/dist/cli.js start --mode standard "<one sentence>" @.splitbrief/inbox/<run>/tasks.md 2>>"$SCR/splitbrief.stderr"
+node $PWD/dist/cli.js start "<one sentence>" @.splitbrief/inbox/<run>/tasks.md 2>>"$SCR/splitbrief.stderr"
 echo "SPLITBRIEF EXIT CODE: \$?"
 sleep 100000
 EOF
@@ -65,13 +65,11 @@ The owner watches live with `tmux attach -r -t sb`. A read-only attach never res
 | Moment | Read first | Then |
 |---|---|---|
 | Planner question | the question block in the pane | `↑↓` choose, `⏎` next, `tab` writes a free answer, the last `⏎` sends all answers |
-| Spec gate (`reviewing-spec`) | `.splitbrief/sessions/<id>/spec.md`: scope, out of scope, acceptance criteria | `y` approve, `c` request changes, `e` edit |
-| Plan gate (`reviewing-plan`, only with `approve: all`) | `plan.md` | `y` |
-| Briefs gate (`reviewing-briefs`) | `tasks.md`: one module group per brief, no new knobs, no brief planning for a red gate; per-brief declared-file bytes against the argv limit | `y` |
+| Plan card (`reviewing-plan`, with `approve: plan`) | `.splitbrief/sessions/<id>/plan.md`: summary, acceptance criteria, protected writes, one task per coherent outcome, no task planning for a red gate | `y` approve, `c` request changes, `e` edit `plan.json`, `q` end the run |
 | Recovery panel | the reason line and the file list | type the action letter and `⏎`; at a task halt, typed free text retries the brief with that text as the implementer's correction; `w` (switch seat) opens the halted seat's picker on the offered tool, where tool and model are chosen |
 | Stop sheet | — | `esc` opens it, `esc` again stops resumably, `ctrl+c` twice quits after the stop settles |
 
-Headless: `$SB start --plain --approve none --yolo "<sentence>" @tasks.md`. Gates auto-approve, a planner question ends the run with `input_required`, and `kill -INT <pid>` parks the run cleanly (exit 0, status `open · paused`).
+Headless: `$SB start --plain --yolo "<sentence>" @tasks.md`. The plan card is approved unattended (`workflow.approve: none` skips it), a planner question ends the run with `input_required`, and `kill -INT <pid>` parks the run cleanly (exit 0, status `open · paused`).
 
 ## 3. Watching a run
 
@@ -138,12 +136,12 @@ The brief runs in the run's isolation worktree, so the marker the test waits on 
 
 ```
 testing/e2e/scenarios/stop-continue.test.ts   (sequential e2e project, 240 s per case)
-  1. spawn  node --import tsx src/cli.ts start --plain --mode quick --approve none --allow-repo-runners --project <fixture> "smoke"
+  1. spawn  node --import tsx src/cli.ts start --plain --allow-repo-runners --project <fixture> "smoke"
   2. wait   until src/marker.ts appears under <stateHome>/splitbrief/trees (<= 75 s)
   3. kill   the process group with SIGINT; expect exit 0; state.json: interruptedStep.cut === 'mid-step',
             task T001 in_progress, no pendingRecovery, and src/greet.ts not in the project
   4. spawn  node --import tsx src/cli.ts continue --plain --allow-repo-runners --project <fixture>
-  5. assert assertPlainStdout for quick mode, plus the lines `task T001: done (no gates)`, `review: passed`, `done: 1 tasks`
+  5. assert assertPlainStdout, plus the lines `task T001: done (no gates)`, `review: passed`, `done: 1 tasks`
   6. assert state.json: tasks[0].status === 'done', attempt unchanged from the park, no pendingRecovery
   7. assert session.jsonl has no `paused_external_changes` with conflict kind `current-task-conflict`,
             no `own_partial_output_kept` warning and no `Discarded …` warning, and src/greet.ts holds the written code

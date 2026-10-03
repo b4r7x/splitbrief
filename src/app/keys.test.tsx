@@ -25,8 +25,6 @@ import { controlsStore } from '../stores/ui/controls.js';
 import { cancelEscapeAction } from '../lib/terminal/escape-debounce.js';
 import * as handlers from '../features/workflow/handlers.js';
 import { approvalPromptStore, openApprovalPrompt } from '../stores/approval-prompt/prompt.js';
-import { editorStore } from '../stores/ui/editor.js';
-import { reviewStore } from '../stores/workflow/review.js';
 import { continueRunInPlace, sessionSelectStore } from '../stores/navigation/session-select.js';
 import { configStore } from '../stores/project/config.js';
 import { skillsStore } from '../stores/project/skills.js';
@@ -717,7 +715,7 @@ describe('useAppKeys: ESC stop ladder', () => {
     handlers.createAbortHandlerScope()(abort);
     const exit = vi.fn();
     void openApprovalPrompt({
-      tier: 'sticky',
+      tier: 'confirm',
       actionClass: 'network',
       actionDescription: 'push to origin',
       phase: 'implementing',
@@ -871,7 +869,7 @@ describe('useAppKeys: keystroke binding', () => {
   it('Ctrl+K while a tiered approval prompt is pending does not open an overlay over it', async () => {
     const exit = vi.fn();
     void openApprovalPrompt({
-      tier: 'sticky',
+      tier: 'confirm',
       actionClass: 'network',
       actionDescription: 'push to origin',
       phase: 'implementing',
@@ -974,62 +972,6 @@ describe('useAppKeys: keystroke binding', () => {
     await tick(20);
 
     expect(overlayStore.get().active).toBe('planner-picker');
-    ui.unmount();
-  });
-});
-
-describe('useAppKeys: suppressed while the inline briefs field editor owns input', () => {
-  const LAYOUT = { columns: 40, rows: 6 };
-
-  beforeEach(() => {
-    resetAllStores();
-    routerStore.navigate({
-      to: 'workflow',
-      run: makeRunRecord(),
-      execution: localExecution('field-edit test'),
-    });
-    // The field editor is not an overlay: give a field session ownership of the live prompt by
-    // matching its captured token to reviewStore.ownerToken (the CON-B ownership predicate).
-    const token = reviewStore.setReviewFile('/tmp/TASKS.md');
-    editorStore.openField({
-      filePath: '/tmp/TASKS.md',
-      value: 'x',
-      ownerToken: token,
-      layout: LAYOUT,
-    });
-  });
-
-  afterEach(() => {
-    editorStore.close();
-    reviewStore.clearReview();
-    stopStore.__testReset();
-  });
-
-  it.each([
-    { name: 'Ctrl+K', input: '\x0b' },
-    { name: 'Ctrl+,', input: '\x1b[44;5u' },
-    { name: 'Ctrl+/ (legacy \\x1f)', input: '\x1f' },
-  ] as const)('$name does not open an overlay over the field editor', async ({ input }) => {
-    const exit = vi.fn();
-    const ui = renderFeature(<Harness exit={exit} />);
-    await tick(20);
-
-    await writeKey(ui, input);
-    await tick(20);
-
-    expect(overlayStore.get().active).toBe('none');
-    ui.unmount();
-  });
-
-  it('Ctrl+Q does not exit while the field editor owns input', async () => {
-    const exit = vi.fn();
-    const ui = renderFeature(<Harness exit={exit} />);
-    await tick(20);
-
-    await writeKey(ui, '\x11');
-    await tick(20);
-
-    expect(exit).not.toHaveBeenCalled();
     ui.unmount();
   });
 });

@@ -19,7 +19,8 @@ export const LockfileDataSchema = z.object({
   startTimeMs: z.number().finite().nonnegative(),
   lastAliveMs: z.number().finite().nonnegative(),
   sessionId: z.string(),
-  mode: WorkflowModeSchema,
+  /** Written by runs before modes were retired; read only to parse their lockfiles. */
+  mode: WorkflowModeSchema.optional(),
   feature: z.string(),
   exitedAt: z.number().finite().nonnegative().optional(),
   exitCode: z.number().int().optional(),

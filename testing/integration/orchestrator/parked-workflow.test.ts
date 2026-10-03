@@ -1,12 +1,11 @@
 import type { ImplementerOptions } from '../../../src/engine/implementers/types.js';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { makePhaseCallResult } from '#testing/helpers/factories/phase-call.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import {
   makeCallbacks,
@@ -18,6 +17,7 @@ import { createEventBus } from '../../../src/engine/events/bus.js';
 import { loadState } from '../../../src/core/state/persistence.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
+import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
 
 const roots: string[] = [];
 afterEach(() => {
@@ -45,7 +45,7 @@ it.each(['initial', 'local', 'hint'] as const)(
       typeDefs: 'export const complete: boolean',
     });
     const config = makeNoValidationConfig({
-      workflow: { mode: 'quick', approve: 'none', maxRetries: 1 },
+      workflow: { approve: 'none', maxRetries: 1 },
       approval: { enabled: false, feedRejectionsToPlanner: false },
     });
     const ref = { projectDir, sessionId };
@@ -77,13 +77,7 @@ it.each(['initial', 'local', 'hint'] as const)(
           code: null,
           usage: null,
         }),
-        runPhase: vi.fn(async ({ call }) =>
-          makePhaseCallResult({
-            call,
-            usage: null,
-            ...(call === 'tasks' ? { tasks: [task] } : {}),
-          }),
-        ),
+        typedCall: typedCallFromTasks([task]),
       });
       const writeAndStop = async (opts: ImplementerOptions) => {
         roots.push(dirname(opts.projectDir));

@@ -13,11 +13,9 @@ validation:
   lint: true
   test: true
 workflow:
-  approve: default
+  approve: plan
   max_retries: 3
   git:
     commit_strategy: none
-  mode: standard
-  task_review: none
   compaction_format: auto
 theme: terminal

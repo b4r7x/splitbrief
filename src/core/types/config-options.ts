@@ -1,11 +1,4 @@
-import type {
-  ApproveLevel,
-  EffortLevel,
-  OutputFormat,
-  PlannerToolId,
-  ProviderId,
-  WorkflowMode,
-} from '../schemas/enums.js';
+import type { EffortLevel, OutputFormat, PlannerToolId, ProviderId } from '../schemas/enums.js';
 
 export interface WorkflowOpts {
   model?: string;
@@ -38,8 +31,6 @@ export interface WorkflowOpts {
   fullscreen?: boolean;
   mouse?: boolean;
   hover?: boolean;
-  mode?: WorkflowMode;
-  approve?: ApproveLevel;
   plannerEffort?: EffortLevel;
   reviewerEffort?: EffortLevel;
   allowHooks?: boolean;

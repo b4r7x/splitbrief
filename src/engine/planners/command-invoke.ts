@@ -1,9 +1,4 @@
-import type {
-  Planner,
-  PlannerCallbacks,
-  PlannerCapabilities,
-  PlannerInvokeResult,
-} from './types.js';
+import type { Planner, PlannerCallbacks, PlannerCapabilities } from './types.js';
 import { createPlannerBase, type PlannerBaseConfig } from './base.js';
 import {
   invokeCommandBasedRunner,
@@ -119,10 +114,7 @@ function declaredArtifactPrompt(prompt: string, provenance: DeclaredArtifactProv
   return `${prompt}\n\nStdout is diagnostic only. Write the complete result to ${provenance.relativePath}. The result must not exceed ${provenance.maxBytes} bytes.`;
 }
 
-function declaredArtifactProvenance(
-  callContext: RunnerCallContext,
-  artifactFile: string | undefined,
-): DeclaredArtifactProvenance {
+function declaredArtifactProvenance(callContext: RunnerCallContext): DeclaredArtifactProvenance {
   const attemptId = PlannerArtifactAttemptIdSchema.safeParse(callContext.attemptId);
   if (!attemptId.success) {
     throw error(
@@ -132,9 +124,7 @@ function declaredArtifactProvenance(
   }
   const relativePath = `.splitbrief-runner/output/${attemptId.data}/result`;
   return {
-    semanticId: PlannerArtifactSemanticIdSchema.parse(
-      `planner-artifact-${artifactFile ?? 'result'}`,
-    ),
+    semanticId: PlannerArtifactSemanticIdSchema.parse('planner-artifact-result'),
     programId: null,
     batchId: null,
     attemptId: attemptId.data,
@@ -166,7 +156,6 @@ export function createConfiguredCustomPlanner(
     callbacks,
     signal,
     callContext,
-    artifactFile,
   }: {
     prompt: string;
     projectDir: string;
@@ -174,8 +163,7 @@ export function createConfiguredCustomPlanner(
     callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onQuestion' | 'onCallEvent'>;
     signal?: AbortSignal | undefined;
     sandboxEnv?: NodeJS.ProcessEnv | undefined;
-    artifactFile?: string | undefined;
-  }): Promise<PlannerInvokeResult> => {
+  }): Promise<RunnerCallResult> => {
     const requiresDeclaredArtifactReview = direct && callContext.role !== 'escalation';
     await runtime.cleanupStaleArtifactReviews();
 
@@ -221,7 +209,7 @@ export function createConfiguredCustomPlanner(
         const environment = resolveCustomRunnerEnvironment(runtime.sourceEnv, runner.command.env);
         let prepared: PreparedDeclaredArtifactReview | undefined;
         try {
-          const provenance = declaredArtifactProvenance(callContext, artifactFile);
+          const provenance = declaredArtifactProvenance(callContext);
           prepared = await runtime.beginDeclaredArtifactReview({
             stagedProjectDir: staged.projectDir,
             callId: callContext.callId,
@@ -256,7 +244,6 @@ export function createConfiguredCustomPlanner(
             attemptId: provenance.attemptId,
             transport: provenance.transport,
             text,
-            ownedArtifactReceipt: receipt,
           };
         } finally {
           if (prepared !== undefined) await prepared.dispose();

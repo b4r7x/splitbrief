@@ -2,18 +2,21 @@
 
 The state machine reference. Every phase, every transition, what triggers each one, what code runs.
 
-Source of truth: `src/core/state/machine.ts` (reducer), `src/core/phases.ts` (phase taxonomy), `src/core/schemas/enums.ts` (Phase / WorkflowMode enums). Orchestrator entry: `src/engine/orchestrator/run/workflow.ts` → `src/engine/orchestrator/run/phases.ts`.
+Source of truth: `src/core/state/machine.ts` (reducer), `src/core/phases.ts` (phase taxonomy), `src/core/schemas/enums.ts` (Phase enum). Orchestrator entry: `src/engine/orchestrator/run/workflow.ts` → `src/engine/orchestrator/run/phases.ts`. Planning: `src/engine/orchestrator/planning/session.ts`.
 
 For terminology (planner, implementer, runner kinds, runs, run status, stop reason, step, queue), read `docs/CONCEPTS.md` first.
 
-Continuing a final review preserves the number of repair cycles already started. The persisted `reviewFixes.cycle` counts starts; an ordinary continuation never grants another repair budget. Boundary pauses in BUILD repairs durably park the run and continue from the retained cycle and next step. Revising an approved speckit spec invalidates its dependent constitution check before plan or tasks use the revised contents.
+Continuing a final review preserves the number of repair cycles already started. The persisted `reviewFixes.cycle` counts starts; an ordinary continuation never grants another repair budget. Boundary pauses in BUILD repairs durably park the run and continue from the retained cycle and next step.
 
 ---
 
 ## Batching, admission, and disposition
 
 **Two-way disposition.** Every new, retry, rewind, and resume planning path
-returns exactly one of `ready-for-tasks` or `terminal`. Readiness is never
+returns exactly one of `ready-for-tasks` or `terminal` (`PlanningPhaseResult`,
+`src/engine/orchestrator/planning/types.ts`). Inside it, the planning session
+returns `tasks-ready` or `terminal`, and only the plan card turns `tasks-ready`
+into `ready-for-tasks`. Readiness is never
 inferred from cancellation, failure, task count, score, artifact existence,
 phase, or process exit. A terminal result never enters execution.
 
@@ -29,49 +32,28 @@ Five overlays sit on top of any phase. None of them moves `phase`:
 - **`interruptedStep`** — the step a stop cut: `{ step, source, cut, partialRef?, at }`. `cut` says whether the stop landed `mid-step` inside a call or on a `boundary` where it cut nothing: between two briefs, or at a gate. The run stays open and picks that step up again.
 - **`awaitingContinue`** — the boolean beside it, set by the same action and cleared by `RESUME_STEP`. It predates `interruptedStep`; a state written before that field existed still reads as parked.
 - **`lastFailure`** — `{ step, message, at }`, the error a turn died on. The run is still open; `deriveRunStatus` reports it as `failed` and the operator retries the step. `RESUME_STEP` clears it when the run is re-entered.
-- **`rewindPending`** — a `/revise-spec` or `/revise-plan` command was issued. Contains `{ target: 'spec' | 'plan', comment?: string }`. The planning runner reads it on restart and takes the rewind fast-path. Cleared via `CLEAR_REWIND_PENDING` before the approval gate.
+- **`rewindPending`** — `{ target: 'spec' | 'plan', comment?: string }`. `CORRECT_PLAN` writes it when the user requests changes on the plan card, and an older state can carry one from the removed `/revise-spec` and `/revise-plan` commands. It stands until a plan compiles: `PLAN_COMPILED` clears it, so a replan that stops keeps the correction (§5).
 - **`pendingRecovery`** — a `RecoveryIssue` raised when a turn hits something it cannot decide alone. The phase stays where the stop occurred; the overlay gates further progress until the user picks an action.
 
 ### 1.1 Phase diagram
 
+The live path of a new run:
+
 ```mermaid
 stateDiagram-v2
     [*] --> idle
-    idle --> researching : START (standard / speckit)
-    idle --> planning : START (quick)
+    idle --> planning : START
 
-    researching --> specifying : RESEARCH_DONE
+    planning --> planning : PLAN_COMPILED
+    planning --> reviewing_plan : PLAN_DONE (approve plan)
+    planning --> implementing : BEGIN_IMPLEMENTATION (approve none)
 
-    specifying --> reviewing_spec : SPEC_DONE
-    specifying --> clarifying : SPEC_CLARIFY_START
-    specifying --> planning : BEGIN_PLANNING
-    researching --> planning : BEGIN_PLANNING
-
-    reviewing_spec --> planning : APPROVE_SPEC
-    reviewing_spec --> clarifying : SPEC_CLARIFY_START
-
-    clarifying --> constitution_check : SPEC_CLARIFY_DONE
-
-    constitution_check --> planning : CONSTITUTION_CHECK_PASS
-    constitution_check --> reviewing_spec : SPEC_DONE
-
-    planning --> reviewing_plan : PLAN_DONE
-    planning --> planning : BRIEFS_COMPILED
-    planning --> analyzing : ANALYZE_START
-    planning --> reviewing_briefs : BRIEF_ADMISSION_OPENED
-    planning --> implementing : BEGIN_IMPLEMENTATION (no briefs gate)
-
-    reviewing_plan --> reviewing_briefs : BRIEF_ADMISSION_OPENED
-    reviewing_plan --> implementing : BEGIN_IMPLEMENTATION (no briefs gate)
-    reviewing_plan --> analyzing : ANALYZE_START
-
-    analyzing --> reviewing_plan : PLAN_DONE
-    analyzing --> planning : BRIEFS_COMPILED
-
-    reviewing_briefs --> implementing : BEGIN_IMPLEMENTATION
+    reviewing_plan --> reviewing_plan : PLAN_COMPILED (edit)
+    reviewing_plan --> reviewing_plan : CORRECT_PLAN (correction)
+    reviewing_plan --> planning : BEGIN_PLANNING (after CORRECT_PLAN)
+    reviewing_plan --> implementing : BEGIN_IMPLEMENTATION
 
     implementing --> validating_task : TASK_SENT
-    implementing --> analyzing : ANALYZE_START
     implementing --> final_review : ALL_DONE
 
     validating_task --> implementing : VALIDATION_PASS
@@ -86,17 +68,18 @@ stateDiagram-v2
     final_review --> complete : REVIEW_DONE
 
     complete --> closed : review passed
-    researching --> closed : CLOSE_RUN
     planning --> closed : CLOSE_RUN
-    reviewing_briefs --> closed : CLOSE_RUN
+    reviewing_plan --> closed : CLOSE_RUN
     implementing --> closed : CLOSE_RUN
     final_review --> closed : CLOSE_RUN
     closed --> [*]
 ```
 
-No edge returns to `idle`. Every arrow moves forward or closes the run; `CLOSE_RUN` is drawn from five phases for legibility but fires from **any** open phase. A repeated close preserves the first closure, including a passed final review. A state that carries `closed` refuses other actions.
+No edge returns to `idle`. Every arrow moves forward or closes the run; `CLOSE_RUN` is drawn from four phases for legibility but fires from **any** open phase. A repeated close preserves the first closure, including a passed final review. A state that carries `closed` refuses other actions.
 
 The diagram shows phase-level transitions only. `closed`, `interruptedStep`, `awaitingContinue`, `lastFailure`, `rewindPending` and `pendingRecovery` are overlays on any phase — they don't appear as nodes.
+
+**Retired phases.** `researching`, `specifying`, `reviewing-spec`, `clarifying`, `constitution-check`, `reviewing-briefs` and `analyzing` stay in the `Phase` enum so that an older `state.json` still loads. No new run enters them. An older run saved in one of them continues as one planning session: `BEGIN_PLANNING` is allowed from every one of them (and from `reviewing-plan`), and takes the run to `planning`.
 
 ### 1.2 Complete transition table
 
@@ -104,26 +87,12 @@ Verified against the `transition()` reducer in `src/core/state/machine.ts` and t
 
 | From | Action | To | Side effects |
 |------|--------|----|-------------|
-| `idle` | `START` | `researching` or `planning` | Quick starts in `planning`, the phase of its first `tasks` step; standard and speckit start in `researching` |
-| `researching` | `RESEARCH_DONE` | `specifying` | — |
-| `idle` / `researching` / `specifying` | `BEGIN_PLANNING` | `planning` | A planner step enters planning without a document gate in front of it |
-| `specifying` | `SPEC_DONE` | `reviewing-spec` | — |
-| `specifying` | `SPEC_CLARIFY_START` | `clarifying` | Speckit only |
-| `reviewing-spec` | `APPROVE_SPEC` | `planning` | — |
-| `reviewing-spec` | `SPEC_CLARIFY_START` | `clarifying` | Speckit only |
-| `reviewing-spec` | `PLAN_DONE` | `reviewing-plan` | The spec gate approved and the plan the run already holds is unchanged |
-| `clarifying` | `SPEC_CLARIFY_DONE` | `constitution-check` | — |
-| `constitution-check` | `CONSTITUTION_CHECK_PASS` | `planning` | — |
-| `constitution-check` | `SPEC_DONE` | `reviewing-spec` | Speckit opens the spec gate once the constitution check has passed |
-| `planning` | `PLAN_DONE` | `reviewing-plan` | Attaches `tasks` to state. Only a run whose steps open the plan gate |
-| `planning` / `reviewing-plan` / `analyzing` | `BRIEFS_COMPILED` | `planning` | Attaches `tasks` to state. Sent instead of `PLAN_DONE` by a run whose steps open no plan gate (`opensPlanGate`, `src/core/pipeline-spec/steps.ts`): `quick` at any approve level, `standard` and `speckit` at `none` or `spec`. From `reviewing-plan` it moves a run saved there by an older engine |
-| `planning` | `ANALYZE_START` | `analyzing` | Speckit resuming straight into its audit |
-| `planning` / `reviewing-plan` / `reviewing-briefs` | `BRIEF_ADMISSION_OPENED` | `reviewing-briefs` | Resets `currentTaskIndex` and `attempt` to 0 |
-| `planning` / `reviewing-plan` | `BEGIN_IMPLEMENTATION` | `implementing` | A run with no briefs gate enters implementation in one saved transition |
-| `reviewing-plan` | `ANALYZE_START` | `analyzing` | Speckit post-planning audit |
-| `analyzing` | `PLAN_DONE` | `reviewing-plan` | Re-attaches `tasks` to state |
-| `reviewing-briefs` | `BEGIN_IMPLEMENTATION` | `implementing` | Resets `currentTaskIndex` and `attempt` to 0 |
-| `implementing` | `ANALYZE_START` | `analyzing` | Speckit post-planning audit |
+| `idle` | `START` | `planning` | Every run starts in its planning session |
+| `planning` / `reviewing-plan` | `PLAN_COMPILED` | *(same)* | Stores `plan` and `tasks` and clears `rewindPending`. A plan that passed its checks; at the card, a valid `plan.json` edit compiles again in place |
+| `planning` | `PLAN_DONE` | `reviewing-plan` | Attaches `tasks` to state. The plan card opens there (`approve: plan`) |
+| `planning` / `reviewing-plan` | `BEGIN_IMPLEMENTATION` | `implementing` | Resets `currentTaskIndex` and `attempt` to 0. From `planning` when `approve: none` skips the card |
+| `reviewing-plan` | `CORRECT_PLAN` | *(same)* | A correction at the plan card. Stores it as `rewindPending: { target: 'plan', comment }` until a plan compiles, so a run that stops during the replan continues with it |
+| any retired phase / `reviewing-plan` | `BEGIN_PLANNING` | `planning` | After `CORRECT_PLAN`, the correction goes back to the planning session, which compiles the plan again and returns with `PLAN_DONE`. An older run continues as one planning session |
 | `implementing` | `START_TASK` | `implementing` | Sets task to `in_progress`, resets `attempt` to 0 |
 | `implementing` | `TASK_SENT` | `validating-task` | — |
 | `validating-task` | `VALIDATION_PASS` | `implementing` | Marks task `done`, advances `currentTaskIndex`, resets `attempt` |
@@ -145,7 +114,7 @@ Verified against the `transition()` reducer in `src/core/state/machine.ts` and t
 
 **Review fix cycles.** A final review that reports blocking findings does not end the run at `complete`: `REVIEW_FIX_START` carries the per-task findings back into `implementing` and the task loop re-runs only the named tasks (`review_fix_started` publishes the cycle and the task ids). A fix attempt is a retry whose error is the reviewer's findings, word for word, after one fixed instruction (`REVIEW_FIX_INSTRUCTION`, `src/engine/orchestrator/task/run-implementation.ts`): change code only where a finding names a code or test defect, in any ordinary project file the fix needs, never a protected path (dependency manifests, lockfiles, CI configuration, env or key files, `.git`, `.splitbrief`) unless the brief explicitly asks for that operation; leave findings about evidence, renders, validation runs or run files (`evidence.json`, the session folder) to SPLITBRIEF and the review seat — do not search for those files or leave the directory; change nothing and say so when no finding needs a code change. A validation-failure retry does not carry the instruction. A reopened brief's code is already on disk, so its fix attempt may change nothing: a finding that asks only for evidence is answered by an attempt that verifies and edits no file. That attempt passes the declared-effect gate (`allowNoChange`, set by `runImplementation`), promotes nothing, and runs the brief's normal validation — green completes the brief, red enters the normal retry ladder. Its `implementer_generate_done` event carries `noChange: true`, and its done row reads `verified · no change needed` under the file name. Every other attempt, the ladder's retries included, still fails `no-staged-change` when it changes nothing. `VALIDATION_PASS` drops a completed task from `reviewFixes.findings`. The cycle count is capped at `REVIEW_CYCLE_CAP` (2, `src/core/pipeline-spec/review.ts`); when the cap is spent the review is recorded as `REVIEW_DONE { reviewStatus: 'failed' }`, a `review-failed` recovery is raised, and the run fails rather than completing. The operator's `revise` on that halt opens one more cycle with the correction beside the findings ([APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md)).
 
-**Cross-phase actions from `phaseActions` not shown above:** `RESEARCH_DONE` is also allowed from `idle`, `specifying` and `planning`. `SPEC_CLARIFY_START` is allowed from `idle`, `researching`, `reviewing-spec`, and `planning`. `PLAN_DONE` is also allowed from `researching`, `specifying` and `reviewing-plan`. `BRIEF_ADMISSION_OPENED` is allowed from `planning`, `reviewing-plan` and `reviewing-briefs`. `ANALYZE_START` is allowed from `reviewing-plan` and `implementing`. Every planning producer exits where its compiled briefs wait: in `reviewing-plan` when its steps open the plan gate, in `planning` when they do not. `BRIEF_ADMISSION_OPENED` is the single door into `reviewing-briefs` for all three modes. These permit the orchestrator to skip or re-enter phases depending on mode and backend capability without the reducer rejecting the action.
+**Retired chain actions.** `phaseActions` still lists the actions of the retired planning chain — `RESEARCH_DONE`, `SPEC_DONE`, `APPROVE_SPEC`, `SPEC_CLARIFY_START`, `SPEC_CLARIFY_DONE`, `CONSTITUTION_CHECK_PASS`, `BRIEFS_COMPILED`, `BRIEF_ADMISSION_OPENED` and `ANALYZE_START`. No code dispatches them, so they are dead reducer cases that wait for deletion, not compatibility code: `state.json` loads through its schema and `session.jsonl` replays into the stores, and neither path calls `transition`. What an older state needs is its saved phase and `rewindPending`.
 
 ### 1.3 Anytime actions
 
@@ -167,11 +136,10 @@ These fire from any phase. They modify sub-state without changing `phase`.
 | `MARK_RECOVERY_APPLYING` | Records selected recovery action and timestamp on `pendingRecovery`. |
 | `PAUSE_PENDING_RECOVERY` | Sets `pendingRecovery.status` to `'paused'`. |
 | `RESOLVE_PENDING_RECOVERY` | Removes `pendingRecovery` after the selected recovery path is handled. |
-| `REWIND_TO_SPEC` | Sets `phase: 'specifying'`, clears `tasks`, resets `currentTaskIndex` and `attempt` to 0, clears `awaitingContinue`, sets `rewindPending: { target: 'spec', comment? }`. |
-| `REWIND_TO_PLAN` | Sets `phase: 'planning'`, clears `tasks`, resets `currentTaskIndex` and `attempt` to 0, clears `awaitingContinue`, sets `rewindPending: { target: 'plan', comment? }`. |
-| `CLEAR_REWIND_PENDING` | Removes `rewindPending`. |
+| `REWIND_TO_SPEC` | No producer; a dead reducer case that waits for deletion. Sets `phase: 'specifying'`, clears `tasks`, resets `currentTaskIndex` and `attempt` to 0, clears `awaitingContinue`, sets `rewindPending: { target: 'spec', comment? }`. |
+| `REWIND_TO_PLAN` | No producer; a dead reducer case that waits for deletion. Sets `phase: 'planning'`, clears `tasks`, resets `currentTaskIndex` and `attempt` to 0, clears `awaitingContinue`, sets `rewindPending: { target: 'plan', comment? }`. |
 
-Two task-scoped actions also apply in `implementing` and `escalating`: `UPDATE_TASK_CODE` stores partial implementer output on a task, `CLEAR_TASK_CODE` removes it.
+One task-scoped action also applies in `implementing` and `escalating`: `UPDATE_TASK_CODE` replaces the current code captured on a task (anchor, sibling targets and read-only context files); a field it omits is removed.
 
 ---
 
@@ -216,101 +184,74 @@ type RunStatus =
 
 `closed` is the only status nothing can pick up: `state.closed` written by an End run, or `complete` with `reviewStatus: 'passed'`. Everything else is `open` and carries two facts.
 
-**`stop`** — why it is not running, in first-match order: `halted` (a `pendingRecovery` is waiting on an answer) · `input-required` (the planner is waiting for a reply) · `paused` (a park, `at: 'mid-step'` or `'boundary'`) · `waiting` (parked at the spec, plan or briefs gate) · `failed` (`lastFailure` names the error a turn died on) · `interrupted` (the process went away without recording anything).
+**`stop`** — why it is not running, in first-match order: `halted` (a `pendingRecovery` is waiting on an answer) · `input-required` (the planner is waiting for a reply) · `paused` (a park, `at: 'mid-step'` or `'boundary'`) · `waiting` (parked at the plan card, or at an older run's spec or briefs gate) · `failed` (`lastFailure` names the error a turn died on) · `interrupted` (the process went away without recording anything).
 
-**`resumeAt`** — the step it picks up at, from `resumeStep(state, artifacts)`: the gate it is parked at, the brief it was building, the review it reached, or the first planner artifact its mode has not written yet. Artifacts shape `resumeAt` only; they never change the status kind.
+**`resumeAt`** — the step it picks up at, from `resumeStep(state, artifacts)`: the gate it is parked at, the brief it was building, the review it reached, or the planner call its saved phase names (`plan` for a run in `planning`). The engine reads it to decide what runs, not how: every planner call continues as the one planning session. Artifacts shape `resumeAt` only; they never change the status kind.
 
 **Who runs `final-review`** — the review seat, which is the `reviewer` runner from `.splitbrief/config.yaml` when one is configured and the planner's own runner when none is (`resolveReviewerRunner`, `src/core/config/accessors/reviewer-runner.ts`). It is the only call the reviewer makes; every other model call in this state machine, escalation included, stays on the planner. The phase's `phaseRole()` is still `planner` and `phaseTokenRole()` is still `implementer` — those classifications did not move, so per-phase token attribution is unchanged. During the phase the transcript and the composer live status name the seat actually running — the reviewer's tool and model when one is configured, today's wording when none is — and the sidebar carries a reviewer row whenever one is configured. A reviewer that fails does not hand the review back to the planner — the phase records a failed review, stays in `final-review` instead of transitioning `REVIEW_DONE`, and still builds the run summary.
 
-**Planner markdown headers** — `planner_text` events with `content: 'markdown'` prepend a phase label before the rendered markdown body. During `researching`, the label is the literal `RESEARCH` (codebase research output, not the later Task Brief). `specifying` uses `SPEC`, `planning` uses `PLAN`, and `escalating` uses `ESCALATION`. Task Brief markdown is produced later in `planning` and at the `reviewing-briefs` gate, not during the research phase.
+**Planner markdown headers** — only `escalating` planner markdown gets a header (`Escalation`, `plannerPhaseHeader`). No other phase, live or replayed, gets a phase label. The planning session streams no narration of its own, because its answer is typed JSON; its question rounds and warnings show as plain rows.
 
 **Where a stop is recorded:** `interruptedStep` names the step the stop cut and whether it landed mid-call or at a brief boundary. It does not change the phase, and it does not make a run more or less continuable — it only tells the run where to pick up.
 
 ---
 
-## 3. Mode dispatch
+## 3. The planning session
 
-Mode dispatch: `src/engine/orchestrator/planning/run.ts`. A mode is an ordered list of **steps**, each of which can include a conversation before producing its artifact, declared in `src/core/pipeline-spec/steps.ts` and run by `src/engine/orchestrator/planning/steps.ts`. Each step names the phase it runs in, the artifact that memoizes it, and the gate that opens once it has landed. All three modes stay in the product; the question a mode answers is how much ceremony precedes the briefs, not which features are available.
+Every run plans in one typed planning session. There are no workflow modes and no fixed chain of planner documents. Entry: `runPlanningPhase` (`src/engine/orchestrator/planning/run.ts`) → `runPlanningSession` (`src/engine/orchestrator/planning/session.ts`), which drives the pure loop `runPlanSession` (`src/engine/orchestrator/planning/plan-session.ts`).
 
-| Mode | Steps, in order (artifact · phase · gate after) | Planner calls | Default approval |
-|------|---|:---:|:---:|
-| `quick` | `tasks` (tasks.md · planning) | 1 | `none` |
-| `standard` | `research` (research.md · researching) → `spec` (spec.md · specifying · **spec gate**) → `plan` (plan.md · planning) → `tasks` (tasks.md · planning · **plan gate**) | 4 | `spec` |
-| `speckit` | `research` → `spec` → `clarify` (clarifications.md · clarifying) → `constitution` (constitution-check.json · constitution-check · **spec gate**) → `plan` → `tasks` → `analyze` (analyze.json · analyzing · **plan gate**) | 6-7 | `all` |
+| Step | What happens | Code |
+|---|---|---|
+| Questions | The planner may answer with questions instead of a plan: at most 3 per round, each with a `default`, for at most 2 rounds (`MAX_QUESTION_ROUNDS`). A third round halts the run with `plan-questions-exhausted`. | `plan-session.ts` |
+| Typed plan | The planner answers `{ result }` against `PlanAnswerSchema` (`src/core/schemas/plan.ts`): a summary, decisions, acceptance criteria, checks, validation commands and tasks (`TaskSpec`). The call goes through `requestTyped` with the tool's native schema flag where it has one. | `session.ts` |
+| Checks | `checkFullPlan` runs `checkPlan` (`src/engine/spec/plan-checks.ts`) plus the context fit of each task (`estimatePlanContextFits`). A failing plan goes back to the planner once with the errors; a second failure halts with `plan-checks-failed`. A transport repair inside `requestTyped` is counted apart from this one semantic repair. | `session.ts`, `plan-checks.ts` |
+| Compile | `compilePlan` maps each task with `taskFromSpec`, writes `plan.json`, renders `plan.md` and `tasks.md`, and dispatches `PLAN_COMPILED`, which stores `state.plan` and `state.tasks`. The plan's validation block becomes `state.discoveredValidation`. | `session.ts`, `src/engine/spec/plan-tasks.ts` |
+| Plan card | `runPlanApproval` opens the plan card when `workflow.approve` is `plan`, then dispatches `BEGIN_IMPLEMENTATION`. | `session.ts` |
 
-The call counts assume each step completes in one turn. Clarification replies continue that same step before it writes an artifact. The briefs gate opens after the brief quality pass. The `clarify` step spends no planner call. Completed artifacts are reused on resume; a pending conversation takes precedence, and a legacy question-only `research.md` does not count as completed research.
+Briefs made from a plan skip any brief-quality pass: `checkPlan` is the only admission check. The pre-planning hook runs once per process, immediately before the first planner call.
 
-**The retired `instant` mode.** `instant` was merged into `quick`; it is no longer a mode you can select. The string still parses everywhere it was persisted — `WorkflowModeSchema` (`src/core/schemas/enums.ts`) preprocesses `instant` to `quick` — so old configs, old `--mode instant` invocations, and session state written before the merge all keep loading. Reading `instant` prints a deprecation notice: a config warning from `validateConfig`, a `--mode` warning on stderr from `resolveEffectiveConfig`, and a feedback line from the runtime `/mode` handler. One persisted wire format is retained for back-compatibility only, so pre-merge sessions still replay: the `instant_plan_received` event. Nothing produces it any more.
+The planner's questions, the plan and its repair stay on one native planner session where the tool supports it (`SET_PLANNER_SESSION_ID`). A planner without a session gets the full prompt plus the conversation so far on every turn (`planFullTurn`, `src/engine/spec/prompts/plan-session.ts`). An expired native session is reissued once with the rebuilt transcript (`withExpiredSessionReissue`).
 
-With its plan gate (approve `plan` or `all`, the speckit default), speckit's `tasks` step dispatches `PLAN_DONE` (entering `reviewing-plan`), `ANALYZE_START` enters `analyzing`, the plan gate returns to `reviewing-plan`, and `BRIEF_ADMISSION_OPENED` opens `reviewing-briefs`.
+A halt keeps the conversation; only a plan that passed its checks clears it. A `SeatProtocolError` raises a `seat-protocol-error` recovery that offers the seat swap.
 
-A run whose steps open no plan gate never waits in `reviewing-plan`. That is `quick` at any approve level, and `standard` and `speckit` at `none` or `spec`. Quick starts in `planning`, the phase of its first and only planner step. Its `tasks` step, and speckit's `analyze` after it, dispatch `BRIEFS_COMPILED` instead of `PLAN_DONE`, so the briefs stay in `planning`. The brief quality pass runs there, and its repair call is a live planner call. Then `BRIEF_ADMISSION_OPENED` opens the briefs gate if configured. A run with no briefs gate saves `BEGIN_IMPLEMENTATION` directly from its planning phase, with no `reviewing-briefs` state in between.
+### Approval: the plan card
 
-**When the `tasks` call produces no briefs.** The call is never repeated automatically: there is no zero-task retry or repair. A coded, transcript-safe warning (`planner_returned_zero_tasks`) is published stating that the failed attempt contributes no Brief generation, no `tasks.md` is written — so the step stays un-memoized and re-issuing it is exactly what the operator's answer does — and the run halts on a `planner-returned-no-briefs` recovery rather than entering implementation with nothing to build.
+Controlled by `workflow.approve`: `plan` (default) or `none`. `resolveApproveLevel` (`src/core/config/runtime/resolve.ts`) is the one decision, and it reads the config. `approve: none` skips the card, and the build starts as soon as the plan passes its checks. Every run follows the same rule; no run shape skips the card on its own.
 
-### Selecting a mode
+The retired values `all`, `spec` and `default` load as `plan`, with one config notice each (`RETIRED_CONFIG_VALUES`, `src/core/config/load/validation/config.ts`). The CLI has no `--approve` flag; passing it fails with `--approve was removed: set workflow.approve (plan or none) in the config`.
 
-Every entry point that runs the planner reaches all three modes. Resolution happens in `resolveMode()` (`src/core/config/runtime/resolve.ts`), highest precedence first:
+The card shows `plan.md`: the summary, the protected operations the plan lists, the decisions, the criteria and checks, and the tasks by batch. It has four rows (`reviewDocumentOptions`, `src/features/workflow/prompt-rows/approval.ts`):
 
-| Source | Scope | Notes |
-|--------|-------|-------|
-| Saved mode in `state.json` | the resumed run | Written with the approval level when the run starts (`initializeWorkflow`). A started run keeps it: `resume` / `continue` reuse it, and a `--mode` that names another mode prints a notice and changes nothing. A `state.json` from an older release that saved no mode resolves from the rows below on its first continue, then saves that fallback. |
-| `--mode <mode>` | one invocation | Accepted by `start`, `spec`, `resume`, and `continue`. The value is parsed against the three-mode enum; anything else aborts the command with `Invalid mode: <value>. Must be one of: quick, standard, speckit`. |
-| `workflow.mode` in `.splitbrief/config.yaml` | the project | What `/mode` and the Settings Mode row write. |
-| `standard` | — | Built-in default when nothing else is set. |
+| Row (key) | Result | Effect |
+|---|---|---|
+| `y` Approve plan and start the build | `{ approved: true }` | Records each listed protected operation as confirmed in the evidence ledger (`planConfirmations`), publishes `plan_approved`, then `BEGIN_IMPLEMENTATION` |
+| `c` Request changes (type what to change) | `{ approved: false, action: 'revise', comment }` | Publishes `plan_regenerated`, sends `planRevisedTurn(plan.json, comment)` to the planning session, applies its checks with the one repair, and shows the card again |
+| `e` Edit plan.json | `{ approved: false, action: 'edit' }` | Re-reads `plan.json` and validates it: JSON, then `PlanProposalSchema`, then `checkPlan` plus the context fit. A valid edit compiles without a planner call and the card shows again. An invalid edit is not applied: the engine restores `plan.json`, publishes one warning that starts `The edited plan was not applied: `, and shows the card again |
+| `q` End run (close this run) | `{ approved: false, action: 'end-run' }` | `CLOSE_RUN` and `plan_rejected`. The run is closed; its files stay on disk |
 
-`splitbrief spec` takes the same flag with the same validation and the same precedence. The mode decides how much planning happens before the command stops: `quick` makes one planner call, `standard` and `speckit` run the multi-call pipeline. `spec` never implements, so the approval gates below do not apply to it — it writes the artifacts its mode produces and exits. In particular `spec --mode speckit` produces the **standard** artifact set (`research.md`, `spec.md`, `plan.md`, `tasks.md`): the speckit-only artifacts (`clarifications.md`, `constitution-check.json`, `analyze.json`) are orchestrator-side and the 6-7-call row in the table above describes `start`, not `spec`.
+A row is taken with `↑`/`↓` and `⏎`, or by typing its key and `⏎`; no letter settles the card on its own. Any other typed text is a correction (`c` above). `e`, the `edit` command and `Ctrl+E` open `plan.json` in the in-app editor. A save checks the JSON, the schema and `checkPlan` without the context fit (`planSaveErrors`, `src/features/editor/plan-save.ts`); a refused save keeps the overlay open on one row, `Not saved: <first message> (+N more)`. `Ctrl+O` opens the external editor on the same file, and its save settles the card as an edit. Messages queued while the card waits become its correction.
 
-**Where the mode is visible when the choice is made.** On the home screen the crew block above the composer (`src/features/home/components/seat-block.tsx`) prints one labelled row per seat — `PLAN`, `BUILD`, `REVIEW`, each followed by that seat's identity (`Claude Code CLI · Claude Sonnet 4`) — and closes with a status line carrying the mode, then the optional skill count and detection notice, then the `/crew to change` hint. The mode in force is therefore on screen while the feature is being typed; when the block is too short for a row per seat it collapses to a single line, and when the status line is too narrow the optional parts drop before the mode or the hint do. Typing `/mode ` completes the three modes in the composer itself, each row carrying its planning-call and gate counts and `current` on the config's mode — the one the next run starts with — and a bare `/mode` refills the composer with `/mode ` so those rows appear; `/mode <name>` sets it outright, and Settings → Workflow → Mode cycles it in place. All of them persist `workflow.mode` to `.splitbrief/config.yaml`. On the command line, `--mode` is listed in `splitbrief start --help` and `splitbrief spec --help`, and `spec` names the resolved mode alongside the planner identity on the line it prints before planning starts. On every continue, and when fresh planning begins, the orchestrator publishes `mode_resolved` carrying the resolved mode and approval level. Artifact frontmatter, liveness records, recovery evidence, and summaries use the same saved mode. A legacy run with no saved mode takes today's config mode on its first continue and saves that fallback before any planner or queue read; this records the fallback, not a claim about the run's original mode. On the workflow screen the sidebar names the mode the run is on — its saved mode, else the config's, as `resolveMode()` resolves it — not the one the config names today.
-
-### Approval gates
-
-Controlled by `workflow.approve`: `none` | `spec` | `plan` | `all` | `default`. Each mode has a default; `default` follows that mode default. Override via `--approve <level>` on the CLI.
-
-- `none` — skip spec, plan, and briefs approval gates. quick default. The brief quality check still runs.
-- `spec` — gate on supporting spec. standard default.
-- `plan` — gate on plan only.
-- `all` — gate on spec and plan. speckit default.
-
-The brief quality gate (`src/engine/spec/brief-quality.ts`) runs for all three modes after the Task Brief is produced and before `implementing`. It writes `brief-quality.json` and publishes `brief_quality_passed` or `brief_quality_failed`. In `standard` and `speckit`, an error-level report feeds the linter's issues back to the planner as regeneration feedback, up to `workflow.maxRetries` attempts; when the retries are exhausted and a briefs gate runs, the run still enters `reviewing-briefs` with the last quality report in hand rather than failing. This applies to every error-level issue, not only `empty_task_list`.
-
-An unrepaired error-level report is not a planning failure wherever a human still reviews the briefs: the run proceeds to `reviewing-briefs` with the last quality report in hand, and the reviewer decides what happens to them — edit, revise, retry or end the run. Where no briefs gate runs — `quick` mode, `--approve none`, and therefore every headless run that does not ask for a gate — there is no reviewer to decide, so an unrepaired error-level report halts the run with a `brief-quality-unrepaired` recovery naming the first brief error instead of entering `implementing`. At the briefs gate the report is re-measured over the briefs read back from `tasks.md`, so an edit made outside the TUI is measured before it can be approved and an error-level brief is refused rather than admitted. A user cancellation or abort keeps cancellation semantics.
-
-Next to it, the brief readiness gate (`src/engine/orchestrator/planning/brief-readiness-gate.ts`) runs over the Task Briefs at briefs approval and again after brief edits. It writes `brief-readiness.json` and publishes `brief_readiness_passed` or `brief_readiness_blocked`. `READINESS BLOCKED` records a readiness diagnostic and requires re-evaluation or a user edit. It never authorizes a quality override (see [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md)).
-
-With an approval level other than `none`, `standard` and `speckit` enter `reviewing-briefs` after the initial quality check and any bounded repair pass. The user can then review `tasks.md` before implementation.
-
-### Mode advisor
-
-`adviseMode()` in `src/engine/orchestrator/planning/mode-advisor.ts` is a deterministic keyword/pattern classifier. No LLM call. It classifies the feature prompt into a risk tier (`trivial` → quick, `small` → quick, `normal` → standard, `high` → speckit) and produces a `ModeAdviceKind`: `none`, `downgrade`, `upgrade`, or `missing-context`.
-
-The keywords of every tier count only as whole words of prose, so `typography` is not a typo. A name is not a risk signal: fenced code, a code span, a path (any token with a `/`), or a word inside a longer kebab-case or snake_case name such as `overlay-picker-auth-config-owned`.
-
-The `trivial` tier does one thing beyond suggesting `quick`: `runPlanningPhase` passes `trivial: true` into the quick planning phase for that run, and `buildQuickPlanPrompt()` then tells the planner to skip the codebase-structure review. The Task Brief count is not capped. The contract sections (Scope, Escalation, Evidence) are still required; only their length is relaxed.
-
-Upgrade and downgrade advice fire only when `confidence >= 0.65`. Missing-context fires below that threshold when the prompt is obviously vague.
-
-The advisor never auto-switches the mode. It publishes a `mode_advice` event and the footer displays the suggestion. The number of compiled briefs and the files they write produce no advice: no count upgrades a mode or asks for a separate run. A historical `mode_advice` event of kind `stop` still parses and replays.
-
-The byline and the sidebar read the advice from its own slot (`src/stores/workflow/mode-advice.ts`), which every `mode_advice` replaces, `none` included. The event log drops its oldest entries past its cap, so a long run would otherwise lose the advice it started with. A run read back from disk — at rest, or continued — shows the advice its saved feature, `@file` context and mode earn today (`adviseRun`, applied by `readRunHistory`), not a verdict an older advisor logged.
+A headless run approves the card unattended (`{ approved: true, unattended: true }`), and an unattended approval records no confirmation. A protected write in the build then still asks, and a headless run has no one to answer it.
 
 ### Clarification questions
 
-A planner turn either completes the current document or continues the conversation. Research, spec and plan must contain the populated sections declared by their prompts; a heading alone does not make a reply an artifact. A heading may carry a qualifier after the section name (`## Architecture (the parts P01 touches)`, `## Relevant Code: …`, a leading number or bold), but a following word makes a different heading (`Architecture Decisions` is not `Architecture`). A reply that wraps the whole document in one ```` ```md ```` or ```` ```markdown ```` fence is read, and persisted, as the document inside the fence (`plannerDocumentText`, `src/core/pipeline-spec/planner-documents.ts`). Task Briefs still pass the strict parser. Ordinary replies wait for the user before persistence or advancement, including in `quick` mode.
+A planner turn returns either `{ kind: 'questions' }` or `{ kind: 'plan' }`. A question with `choices` shows as a choice; one without shows as a text input. The default comes first and carries a dim `default` mark, and a free-text question starts filled with its default. Walking through with `⏎` takes the defaults; the last question's `⏎` sends the answers. The transcript shows `Questions before the plan · round <n> of 2`, and the byline reads `Waiting for your answer · Plan`.
 
-The planner can optionally attach up to five `<!-- Q:{...} -->` markers for structured questions. Markers never appear in the transcript; choice and input defaults are strings, while confirm defaults are booleans. A numeric choice default names the option at that index; a marker with a string `id` and `text` that the schema still rejects is asked as an input question instead of dropped. Without markers, the user answers the ordinary reply in the composer. A bare `⏎` on a reply sends the default continuation (`emptyReplyContinuation`): proceed with your best judgement and return the complete document, with its exact section headings and the names of the sections the reply lacks. Only a stop leaves the reply unanswered. The fullscreen question panel shows one structured question at a time. A valid default appears first and still requires explicit acceptance. Use up/down and Enter to choose, or Tab / “Write an answer…” to type inside the question box. Input questions focus that field immediately. From the second question, “Previous question” lets you revise an answer; Tab returns from the answer field to these actions. Page Up/Down scroll long questions and options.
+Down at the end of the answer field moves to the separate instruction composer; Tab returns to the question box. Sending a non-empty instruction replaces the whole question batch with that instruction. Cancellation discards the partial batch; restarting a process does not restore unfinished UI drafts.
 
-Down at the end of the answer field moves to the separate instruction composer; Tab returns to the question box. Moving focus and typing preserve both drafts. Sending a non-empty instruction replaces the whole question batch with that instruction, and the planner may ask again. Otherwise, the final “send answers” action submits each original question and answer once. Cancellation discards the partial batch; restarting a process does not restore unfinished UI drafts.
+SPLITBRIEF owns this exchange: the planner returns its questions and finishes the turn, then the host collects the answers. The Claude planner also denies `AskUserQuestion`.
 
-SPLITBRIEF owns this exchange: the planner returns its question and finishes the CLI turn, then the host collects the answer. Shared planner instructions prohibit invoking or searching for native question tools; the Claude planner also denies `AskUserQuestion`. A reply continues the same step as a user answer, without describing it as an interruption. Heartbeats run only while an invocation is active.
+`state.pendingPlannerConversation` records the questions before waiting and the answers before the next planner call. Reloading preserves the pending round; recorded answers are not requested again. Headless runs persist the conversation, emit `input_required` and exit non-zero instead of supplying an answer.
 
-`state.pendingPlannerConversation` records the originating call, reply, questions and answers before waiting. Answers are saved before the next planner call. Continuation uses the same native planner session where supported, or includes the prior reply and answer in the step's prompt. Reloading preserves the pending turn; completed artifacts and already recorded answers are not requested again. No placeholder `spec.md` is needed.
+An older run can carry a pending conversation from the retired `plan` step. The session treats it as its own only when its text matches its questions; otherwise it goes into the prompt as earlier planning and is cleared.
 
-Accepted answers appear in the live transcript before the next invocation. Replay also restores older message-only answers, while keeping adjacent message/event pairs to one visible reply. A resumed Claude call streams as soon as its initialization confirms the expected session. Expired or mismatched sessions can fall back before that confirmation; a failure afterward is reported without silently repeating already-visible work.
+### `splitbrief spec`
 
-Cancellation or an empty answer leaves the step pending. Headless runs persist the conversation, emit `input_required` and exit non-zero instead of supplying an empty answer. A completed artifact clears the pending conversation and allows the next step to run.
+`splitbrief spec "<feature>"` runs the same session without a build and without workflow state (`src/cli/commands/spec.ts`). It writes `plan.json`, `plan.md` and `tasks.md`, and lists the three paths with the task count. In a terminal it prints `The planner asks:` and reads one line; an empty line takes the defaults. Without a TTY every question takes its default. The planner's stream is not echoed, because its output is typed JSON.
 
-This durable conversation belongs to workflow `start` and `continue`. The standalone `splitbrief spec` command has no workflow state: it reports that input is required without saving the reply as a document. Use `start` when the request needs an interactive conversation.
+### Retired modes
+
+`workflow.mode` (`quick`, `standard`, `speckit`, and the older `instant`) is a retired key: any value loads with one notice and changes nothing. The CLI has no `--mode` flag; passing it fails with `--mode was removed: every run plans in one session`. `/mode`, `/revise-spec` and `/revise-plan` are removed commands with a one-line pointer (`REMOVED_COMMANDS`). `WorkflowModeSchema` stays only to read the mode that older `state.json` files, lockfiles and event logs recorded.
 
 ---
 
@@ -332,9 +273,8 @@ Four user actions during a live phase:
 
 | Seat | How it continues |
 |---|---|
-| Planner, on a native session (`claude-code`, `codex`) | One extra user turn on the session it already ran the step on: the operator's steer plus *Continue the `<call>` step and output the complete `<artifact>` again*. The conversation already holds the step's prompt, so it is not sent twice. |
-| Planner, stateless | The step's prompt is rebuilt and the continuation block — the partial, the steer — trails it. Prior messages ride the planner's first call as always. |
-| Reviewer | The whole deterministic review prompt is re-issued — spec, briefs, diff, drift, evidence, rebuilt from disk — with the continuation block on the end. The review is one shot by constitution: it never resumes a session. |
+| Planner | The planning session issues its call again: the plan prompt in full, with the operator's steer as a note, on the native session where the tool has one. A cut typed answer leaves no partial to carry. An unanswered question round takes the steer as its answer. |
+| Reviewer | The whole deterministic review prompt is re-issued — the request (or an older run's spec), briefs, diff, drift, evidence, rebuilt from disk — with the continuation block on the end. The review is one shot by constitution: it never resumes a session. |
 | Implementer | The brief restarts on its own prompt, with the partial and a line naming the declared files that already changed since the task started, so the next attempt edits what is on disk. The attempt count is unchanged. |
 
 A user park keeps partial edits in either the linked worktree or the staged copy, including a silent worker and a stopped retry. Continue reacquires that workspace at the stopped attempt only while the session, project, brief definition, build seat, and directory identity still match. Its original input fingerprints remain authoritative for approval, so a later operator edit cannot be overwritten. A failed continuation-record save leaves the files in place and reports that automatic continuation is unavailable. The record is capped at 8 MiB; it contains fingerprints and only the original dirty-file entries needed to undo unfinished edits. A **cold resume after a crash** restores the brief's own writes (its declared files and the files the evidence ledger records it promoted) from `activeTaskSnapshot` and restarts clean — `implementing` with the task still `in_progress` and no `interruptedStep` is a crash, not a park.
@@ -362,41 +302,15 @@ Stop status follows real work: `Waiting for processes to exit` only while owned 
 
 ## 5. Rewind
 
-Source: `src/engine/orchestrator/planning/rewind.ts`.
+### A saved rewind
 
-### /revise-spec [comment]
+`/revise-spec` and `/revise-plan` are removed commands; request changes on the plan card instead. A correction at the card publishes `plan_regenerated`, dispatches `CORRECT_PLAN` and runs the planning session with the correction (`src/engine/orchestrator/planning/session.ts`). `CORRECT_PLAN` saves the correction as `rewindPending: { target: 'plan', comment }`, and `PLAN_COMPILED` clears it. A run that stops before a plan compiles still carries it, and so can an older `state.json`. On the next planning entry `rewindLead` (`src/engine/orchestrator/planning/run.ts`) resets the drift chain and runs the one planning session with the comment as its correction (`planRevisedTurn`) against the saved `plan.json`, then opens the plan card. `target` is not read: a spec rewind and a plan rewind run the same session.
 
-Dispatches `REWIND_TO_SPEC`. Reducer sets `phase: 'specifying'`, clears `tasks`, resets `currentTaskIndex` and `attempt`, clears `awaitingContinue`, sets `rewindPending: { target: 'spec', comment? }`.
-
-On the next planning restart, `handleRewindSpec` detects `rewindPending`:
-- If `comment` is non-empty: calls `planner.regenerate()` with `buildRegeneratePrompt({ artifactType: 'spec', currentContent: currentSpec, feedback: comment })`. Writes regenerated spec.md.
-- If `comment` is empty: skips regeneration.
-- Either way: dispatches `SPEC_DONE` → `reviewing-spec`. Presents the spec approval gate. On approval: dispatches `APPROVE_SPEC` → `planning`. Regenerates plan and tasks from the new spec. Runs `PLAN_DONE` → `reviewing-plan` (`BRIEFS_COMPILED` → `planning` in a run with no plan gate), then briefs approval.
-
-The regenerated document follows the same admission rule as the initial document. This covers replacement spec and plan artifacts: invalid Markdown is rejected before the file write or `artifact_written` event, so the previous artifact remains available for the current workflow.
-
-### /revise-plan [comment]
-
-Dispatches `REWIND_TO_PLAN`. Reducer sets `phase: 'planning'`, clears `tasks`, resets counters, clears `awaitingContinue`, sets `rewindPending: { target: 'plan', comment? }`.
-
-`handleRewindPlan` detects `rewindPending`:
-- If `comment` is non-empty: calls `planner.regenerate()` on the plan artifact. Writes regenerated plan.md. Spec is preserved.
-- If `comment` is empty: skips regeneration.
-- Re-derives tasks from the plan. Dispatches `PLAN_DONE` (`BRIEFS_COMPILED` in a run with no plan gate). Runs plan approval gate (if enabled), then briefs approval.
+`REWIND_TO_SPEC` and `REWIND_TO_PLAN` have no producer, so they are dead reducer cases that wait for deletion. A saved state needs only its `rewindPending`, which `rewindLead` reads.
 
 ### /redo-task \<id\>
 
 Dispatches `RESET_TASK`. Sets the target task to `pending`, rewinds `currentTaskIndex` to that task's index, resets `attempt` to 0, sets `phase: 'implementing'`. No `rewindPending` — the task loop re-picks the task on its next iteration. Tasks after the target keep their existing status.
-
-| Slash command | Reducer action | `rewindPending` | Regenerates? |
-|---------------|---------------|:---------------:|:------------:|
-| `/revise-spec` + comment | `REWIND_TO_SPEC` | `{ target: 'spec', comment }` | spec → plan → tasks |
-| `/revise-spec` (no comment) | `REWIND_TO_SPEC` | `{ target: 'spec' }` | plan → tasks (spec kept) |
-| `/revise-plan` + comment | `REWIND_TO_PLAN` | `{ target: 'plan', comment }` | plan → tasks |
-| `/revise-plan` (no comment) | `REWIND_TO_PLAN` | `{ target: 'plan' }` | tasks only |
-| `/redo-task <id>` | `RESET_TASK` | not set | no |
-
-`rewindPending` is cleared via `CLEAR_REWIND_PENDING` before the approval gate runs.
 
 ---
 
@@ -412,13 +326,13 @@ At the first thing it has not finished, not at the top. `resumeStep(state, artif
 
 | Saved at | Picks up at |
 |---|---|
-| A gate (`reviewing-spec` / `reviewing-plan` / `reviewing-briefs`) | that gate, re-opened without re-spending the call behind it |
-| `reviewing-plan`, in a state that records a run with no plan gate (an older engine measured every run's briefs there) | the `tasks` step (speckit: `analyze`), which reuses what is on disk; the quality pass runs again. A state that records neither its mode nor its approve level stays at the plan gate |
+| The plan card (`reviewing-plan` with `state.plan`) | the card, re-opened without re-spending the planner call behind it |
+| An older gate (`reviewing-spec`, `reviewing-briefs`, or `reviewing-plan` without `state.plan`) | the planning session, which reads the run's earlier research, spec, plan and `tasks.md` as "Earlier Planning" and takes the correction typed at the gate; then the plan card opens |
 | A brief (`implementing` / `validating-task` / `escalating`) | that brief |
 | `final-review` or `complete` with a failed review | the review, at its recorded cycle |
-| Anything else | the first planner artifact its mode has not written |
+| Anything else (`planning` or a retired planning phase) | the planning session |
 
-**Planning picks up at the first missing artifact.** Every planner step is memoized by the artifact it writes, so the step loop skips what is already on disk and re-issues exactly the call `resumeStep` names: a run killed after `research.md` landed picks up at `spec`, one killed with `plan.md` present picks up at `tasks`. Revising an artifact invalidates what it fed — a revised spec drops `plan.md` and `tasks.md`, a revised plan drops `tasks.md` — so the loop recompiles only what the revision changed.
+**Planning picks up as one session.** `runPlanningPhases` (`src/engine/orchestrator/run/phases.ts`) sends a brief or a review straight to the task loop, re-opens a parked plan card through `resumeParkedApproval`, and runs everything else as the planning session. A run cut mid-call takes `RESUME_STEP` first. Pending questions resume where they stopped; recorded answers are not asked again.
 
 A run saved inside `validating-task` or `escalating` resets the current task (`RESET_TASK`) and restores that task's files from the changed-files baseline snapshot, so the brief is re-attempted from a clean tree rather than half-validated.
 
@@ -427,9 +341,9 @@ A run saved inside `validating-task` or `escalating` resets the current task (`R
 | Planner seat | What the continuation gets |
 |---|---|
 | `supportsSessionResume: true` and `plannerSessionId` set | The native session, resumed on its thread (`claude --resume <id>`, `codex exec resume <id>`). Only an id the tool itself reported is ever resumed: Claude Code captures it as it streams, the CLI planner keeps codex's own thread id, and the SPLITBRIEF session id never reaches the wire. |
-| The backend rejects the session (expired, unknown) | The run drops the thread from its state, warns once (`planner_session_expired`) and issues the planning call again on a fresh session with the rebuilt transcript, the continuation in its stateless form. When that call fails too, the step halts as a planner-call failure that quotes the tool's error, and continuing it starts a fresh session on the rebuilt transcript. Claude Code and codex take the same path. A spec or plan revision takes it too: the revision runs again once on a fresh session with the rebuilt transcript, and a second failure halts it the same way. |
+| The backend rejects the session (expired, unknown) | The run drops the thread from its state, warns once (`planner_session_expired`) and issues the planning call again on a fresh session with the rebuilt transcript, the continuation in its stateless form. When that call fails too, the step halts as a planner-call failure that quotes the tool's error, and continuing it starts a fresh session on the rebuilt transcript. Claude Code and codex take the same path. A change requested on the plan card takes it too, because it runs as a planning-session call: the call runs again once on a fresh session with the rebuilt transcript, and a second failure halts it the same way. |
 | No native session | A transcript rebuilt from `session.jsonl`: the latest compact summary entry plus every message after it, passed as initial context to a fresh planner call. It holds the planner conversation only. It leaves out implementer output and the documents the planner landed, older logs included. It also leaves out the cut call's partial when the continuation hands that partial to the step, and the steer, which is logged after the rebuild. |
-| No transcript either | `applyRebuiltContext()` publishes a warning and continues with the Task Brief transport plus any supporting spec/plan artifacts. |
+| No transcript either | `applyRebuiltContext()` publishes a warning and continues with the Task Brief transport plus `plan.md`. |
 
 Pending queue entries remain in `state.json`. A continuation excludes still-pending queued user messages from the stateless transcript rebuild so they are not duplicated, and `hydrateFromState` reconstructs queue depth from those pending entries so the footer and `/queue show` still reflect them.
 
@@ -438,8 +352,8 @@ Pending queue entries remain in `state.json`. A continuation excludes still-pend
 | Stop reason | What it was | Continuing it |
 |---|---|---|
 | `paused · mid-step` | Stop now, inside a call | Re-issues that step with the partial it left behind and the operator's steer |
-| `paused · boundary` | Pause after this brief, or Stop now at a gate | Starts the brief it stopped before; a typed steer is held for that brief. A gate stop re-opens the gate |
-| `waiting` | Parked at a gate | Re-opens the gate; the call behind it is not re-spent |
+| `paused · boundary` | Pause after this brief, or Stop now at a gate | Starts the brief it stopped before; a typed steer is held for that brief. A stop at the plan card re-opens the card |
+| `waiting` | Parked at the plan card, or at an older run's spec or briefs gate | Re-opens the plan card without re-spending the call behind it; an older gate continues as the planning session. At rest the byline reads `⏎ to reopen it` at the plan card and `⏎ to continue` at an older spec or briefs gate |
 | `halted` | A `pendingRecovery` nobody answered | Shows the recovery panel before any work |
 | `failed` | `lastFailure` — a turn died on an error | Retries the step it died on |
 | `interrupted` | The process went away recording nothing | Restarts at `resumeStep`; an `in_progress` brief with no `interruptedStep` is a crash, so its own writes — declared or recorded as promoted — are restored from `activeTaskSnapshot` and it restarts clean |
@@ -464,11 +378,11 @@ When a task fails validation `maxRetries` times:
 1. **Hint escalation** — present only when the planner has `supportsHintEscalation`; for a planner without it the rung is absent rather than skipped, and the ladder ends at the rung below. The planner sends a short hint, the implementer retries once. An empty hint ends the rung there — no implementer retry, no attempt charged. Success → task `done`.
 2. **Recovery** follows exhausted worker retries and hints: `pendingRecovery` is set and the phase stays where the stop occurred. The planner never automatically writes the implementation. Historical full-tier outcomes remain readable.
 
-An implementer that stops on one of its brief's Escalation bullets is answered by the planner, not by you. Its hand-back goes to the planner in one read-only call, and the planner replies with a verdict: an answer the implementer retries with once, a widening of the brief's Approved out of bounds to named files, or a finding that the brief itself is wrong. A widening passes the same tiered approval as any other out-of-scope write and is recorded on the brief with the planner's reason. Only a brief-is-wrong verdict, a denied write, or a planner that cannot be reached stops the run for you, with the implementer's words and the planner's diagnosis on the panel, where the correction you type at that halt retries the brief with it. Planner questions about requirements still come to you.
+An implementer that stops on one of its brief's Escalation bullets is answered by the planner, not by you. Its hand-back goes to the planner in one read-only call, and the planner replies with a verdict: an answer the implementer retries with once, a widening of the brief's Approved out of bounds to named files, or a finding that the brief itself is wrong. A widening passes the same protected-path confirmation as any other write and is recorded on the brief with the planner's reason. Only a brief-is-wrong verdict, a denied write, or a planner that cannot be reached stops the run for you, with the implementer's words and the planner's diagnosis on the panel, where the correction you type at that halt retries the brief with it. Planner questions about requirements still come to you.
 
-Recovery is not only the task loop's. A planner-seat turn that cannot decide alone raises one too, and the issue carries a `seat` (`plan` | `build` | `review`) so the panel and the swap offer name the seat that is actually stuck: `planner-call-failed` (the call died and the diagnosis is already on the bus), `planner-returned-no-briefs` (the `tasks` call parsed none), `constitution-check-failed` (a hard violation; the phase stays at `constitution-check`), `brief-review-no-progress` (the briefs gate looped without settling) and `brief-quality-unrepaired` (the repair pass failed where no gate exists to decide). `runner-unauthenticated` and `runner-usage-limit` are seat-blocked halts and can fire on the plan seat as readily as the build seat.
+Recovery is not only the task loop's. A planner-seat turn that cannot decide alone raises one too, and the issue carries a `seat` (`plan` | `build` | `review`) so the panel and the swap offer name the seat that is actually stuck: `planner-call-failed` (the call died and the diagnosis is already on the bus), `plan-questions-exhausted` (the planner asked a third round of questions), `plan-checks-failed` (the plan failed its checks again after one repair) and `seat-protocol-error` (the seat's typed answer did not parse after its repair). `planner-returned-no-briefs`, `constitution-check-failed`, `brief-review-no-progress` and `brief-quality-unrepaired` have no producer now; they stay so that an older `state.json` still loads, and their halts still offer their actions. `runner-unauthenticated` and `runner-usage-limit` are seat-blocked halts and can fire on the plan seat as readily as the build seat.
 
-Recovery reasons: `implementation-error`, `validation-failed`, `retry-exhausted`, `runner-unauthenticated`, `runner-usage-limit`, `context-overflow`, `user-edit-conflict`, `approval-promotion-conflict`, `dependency-blocked`, `scope-violation`, `implementer-recipe-invalid`, `implementer-left-isolation`, `checkout-changed`, `runner-timeout-repeated`, `review-failed`, `approval-denied`, `snapshot-failed`, `planner-call-failed`, `planner-returned-no-briefs`, `constitution-check-failed`, `brief-review-no-progress`, `brief-quality-unrepaired`, `seat-protocol-error` (`RECOVERY_REASONS`, `src/core/schemas/enums.ts`; the table in [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md) gives each one its actions).
+Recovery reasons: `implementation-error`, `validation-failed`, `retry-exhausted`, `runner-unauthenticated`, `runner-usage-limit`, `context-overflow`, `user-edit-conflict`, `approval-promotion-conflict`, `dependency-blocked`, `scope-violation`, `implementer-recipe-invalid`, `implementer-left-isolation`, `checkout-changed`, `runner-timeout-repeated`, `review-failed`, `approval-denied`, `snapshot-failed`, `planner-call-failed`, `planner-returned-no-briefs`, `constitution-check-failed`, `brief-review-no-progress`, `brief-quality-unrepaired`, `seat-protocol-error`, `plan-questions-exhausted`, `plan-checks-failed` (`RECOVERY_REASONS`, `src/core/schemas/enums.ts`; the table in [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md) gives each one its actions).
 
 Recovery actions:
 
@@ -478,7 +392,7 @@ Recovery actions:
 | `route-bigger-worker` | Clears recovery, reruns task with named larger profile |
 | `switch-seat` | A seat that cannot run at all: moves it to another ready detected tool and re-prepares the session on it |
 | `revise` | Clears recovery and queues the operator's correction for the next planner turn; on `review-failed`, records the correction and opens one more review fix cycle |
-| `revise-spec` | Rewinds to `specifying` with the operator's note, then clears recovery |
+| `revise-spec` | Kept for an older `constitution-check-failed` halt: it acts as `revise` and queues the note as a correction for the planning session |
 | `continue` | Allowed for safe unrelated user edits only |
 | `skip-current-task` | Records evidence, marks task `skipped`, advances index |
 | `pause-run` | Keeps issue pending and session resumable |
@@ -489,81 +403,56 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
 
 ---
 
-## 8. A standard run, step by step
+## 8. A run, step by step
 
 ```
  1. splitbrief start "add email validator"
- 2. CLI loads .splitbrief/config.yaml → configStore
+ 2. CLI loads .splitbrief/config.yaml → configStore.
+    A retired key (workflow.mode, an old approve value, task_review, ...) prints one notice.
  3. CLI checks .splitbrief/active → error if present.
     Generate session ID, create .splitbrief/sessions/<id>/, write .splitbrief/active.
  4. routerStore → screen: workflow. useWorkflow starts.
 
  5. runWorkflow() begins. initializeWorkflow emits workflow_started.
-    Mode advisor runs — deterministic classifier, publishes mode_advice if applicable.
     Repo map built from codebase config.
 
- 6. phase: idle → START → researching (standard / speckit)
-    Planner streams codebase research. Markdown planner text renders with a `RESEARCH` header.
-    Output → session.jsonl + workflow store → UI.
+ 6. phase: idle → START → planning
+    The planning session sends the typed plan prompt.
     Planner session ID captured → SET_PLANNER_SESSION_ID → state.json.
-    Quick instead starts in planning, the phase of its tasks step.
 
- 7. phase: researching → RESEARCH_DONE → specifying
-    Planner writes supporting spec.md. The artifact must be non-empty Markdown
-    with a heading before review or downstream use. Empty or heading-free output
-    fails admission and does not feed the next phase.
+ 7. Questions (optional, at most 2 rounds of at most 3)
+    SET_PLANNER_CONVERSATION records them; the question box waits.
+    The answers go back on the same planner session.
 
- 8. phase: specifying → SPEC_DONE → reviewing-spec
-    callbacks.onApprovalNeeded('spec', specPath)
-      approve  → re-read spec.md; if edited on disk, regenerate plan + tasks
-                 from the edited spec, then APPROVE_SPEC
-      edit     → open the external editor on spec.md, then re-prompt the gate
-      comment  → planner.regenerate() → loop back to reviewing-spec
+ 8. Plan
+    checkPlan + context fit. A failing plan goes back once; a second failure
+    halts with plan-checks-failed.
+    PLAN_COMPILED stores state.plan and state.tasks.
+    plan.json, plan.md and tasks.md are written.
+
+ 9. phase: planning → PLAN_DONE → reviewing-plan     (approve: plan)
+    callbacks.onApprovalNeeded('plan', plan.md)
+      approve  → record the plan's protected operations as confirmed
+      revise   → the planning session takes the correction → card again
+      edit     → re-validate plan.json → compile or restore → card again
       end run  → CLOSE_RUN. The run is closed; its files stay on disk.
 
- 9. phase: reviewing-spec → APPROVE_SPEC → planning
-    Planner compiles plan and Task Brief transport. Writes plan.md and tasks.md.
-    plan.md must meet the same minimum before downstream use or review. Invalid
-    plan output is not used to derive or review Task Briefs.
+10. phase: reviewing-plan (or planning, with approve: none)
+      → BEGIN_IMPLEMENTATION → implementing
+    Before the first task, the validation baseline is probed: each enabled stage
+    runs once (the test probe is narrowed to the first task's affected file) and
+    publishes `validation_baseline` running/done rows, so the run shows proof of
+    life instead of silent waiting. Stages already red before any task ran are
+    recorded as pre-existing failures.
 
-10. phase: planning → BRIEFS_COMPILED → planning
-    The steps of the default approve level ('spec') open no plan gate, so the
-    briefs stay in planning. With approve 'plan' or 'all', PLAN_DONE takes them
-    to reviewing-plan instead, and the plan gate opens there.
-
-11. phase: planning, then → BRIEF_ADMISSION_OPENED → reviewing-briefs when the briefs gate runs
-    Brief quality gate runs first, where the briefs wait (planning, or
-    reviewing-plan after a plan gate). Writes brief-quality.json. An error-level
-    result feeds the linter's issues back through planner regeneration, up to
-    maxRetries attempts; when they are exhausted the run still enters
-    reviewing-briefs with the last report in hand.
-    Quick and approve none run without that gate: a passing report takes
-    BEGIN_IMPLEMENTATION directly to implementing; an unrepaired report halts.
-
-12. phase: reviewing-briefs
-    callbacks.onApprovalNeeded('briefs', tasksPath)
-    Approval reads tasks.md from disk and re-runs the quality gate over what it
-    read, so brief-quality.json describes the briefs about to run; an error-level
-    report re-prompts the gate instead of being approved. The verdict is published
-    again only when the briefs or the report changed, or the report fails.
-    Ctrl+E/e/edit/E/edit-file opens tasks.md in the external editor
-    resolved as VISUAL, non-terminal EDITOR, detected GUI editor from safe absolute PATH, macOS open, terminal EDITOR, then vi.
-
- 13. phase: reviewing-briefs → BEGIN_IMPLEMENTATION → implementing
-     Runtime output, retries, validation reruns and escalation are tracked as
-     the run proceeds.
-     Before the first task, the validation baseline is probed: each enabled stage
-     runs once (the test probe is narrowed to the first task's affected file) and
-     publishes `validation_baseline` running/done rows, so the run shows proof of
-     life instead of silent waiting. Stages already red before any task ran are
-     recorded as pre-existing failures.
-
-14. Per task:
+11. Per task:
       implementing → START_TASK (task in_progress, attempt 0)
+      The task's code and its read-only context files are refreshed from disk.
       implementer.implement(taskPrompt) → code written to disk
       A direct-writing implementer edits the run's isolation directory instead of
       the project — where it works is set by `workflow.isolation`
       (worktree by default; see CONFIGURATION.md §5)
+      A write to a protected path asks, unless the approved plan listed it.
       implementing → TASK_SENT → validating-task
       typecheck → lint → tests (stops at the first failure attributable to the task)
         pass → VALIDATION_PASS → implementing (next task)
@@ -571,10 +460,11 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
         fail (attempt >= maxRetries) → VALIDATION_FAIL → escalating
           HINT_SUCCESS / HINT_FAIL / FULL_SUCCESS → implementing
 
-15. implementing (last task) → ALL_DONE → final-review
-    Drift report computed. The review seat reads the diff against Task Brief and spec.
+12. implementing (last task) → ALL_DONE → final-review
+    Drift report computed. The review seat reads the diff against the briefs
+    and the plan.
 
-16. final-review → REVIEW_DONE → complete
+13. final-review → REVIEW_DONE → complete
     summary.json written. A passing review closes the run, so .splitbrief/active
     is released and nothing will pick it up again; a failed review leaves the run
     open at complete, and continuing it re-enters the review.
@@ -583,7 +473,7 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
     operator's revise takes REVIEW_FIX_START from complete for one more cycle.
 ```
 
-During live model-call phases, `ctrl+c` is Stop now and parks the run; `esc` opens the stop menu. Messages typed during live planner phases queue; only still-pending delivery entries drain at the next safe-point. `/revise-spec` and `/revise-plan` rewind to the appropriate phase. `/redo-task` replays a single task.
+During live model-call phases, `ctrl+c` is Stop now and parks the run; `esc` opens the stop menu. Messages typed during live planner phases queue; only still-pending delivery entries drain at the next safe-point. Request changes on the plan card to revise the plan. `/redo-task` replays a single task.
 
 ---
 
@@ -616,7 +506,8 @@ type WorkflowState = {
     at: string                             // ISO 8601
   }
   lastFailure?: { step: StepRef; message: string; at: string }
-  rewindPending?: { target: 'spec' | 'plan'; comment?: string }
+  rewindPending?: { target: 'spec' | 'plan'; comment?: string }  // older states only
+  plan?: Plan                              // PLAN_COMPILED; the checked plan without its tasks
   pendingRecovery?: RecoveryIssue
   reviewFixes?: { cycle: number; findings: Record<TaskId, string[]> }
   reviewStatus?: 'passed' | 'failed'
@@ -642,7 +533,7 @@ type QueuedMessage = {
 }
 ```
 
-`StepRef` is the shared step vocabulary (`src/core/schemas/run-step.ts`): `{ kind: 'planner', call }` over the seven planner calls, `{ kind: 'gate', gate }` over spec/plan/briefs, `{ kind: 'brief', taskId, attempt }`, or `{ kind: 'review', cycle }`. The state, the interrupt action, the failure record and `resumeAt` all speak it.
+`StepRef` is the shared step vocabulary (`src/core/schemas/run-step.ts`): `{ kind: 'planner', call }` over the planner calls (a new run uses `plan`; the other six name an older run's steps), `{ kind: 'gate', gate }` over plan (and spec/briefs for older runs), `{ kind: 'brief', taskId, attempt }`, or `{ kind: 'review', cycle }`. The state, the interrupt action, the failure record and `resumeAt` all speak it.
 
 The three closing/stopping fields are additive: a state written before they existed still loads, and `deriveRunStatus` falls back to `awaitingContinue` and the captured partial when `cut` is absent.
 
@@ -656,6 +547,6 @@ The three closing/stopping fields are additive: a state written before they exis
 - `docs/MENTAL-MODEL.md` — the concept without code
 - `docs/HOW-IT-WORKS.md` — same flow with file paths and data flow diagrams
 - `docs/ENGINE.md` — orchestrator internals, EventBus, engine/UI communication
-- `docs/TASK-CONTRACT.md` — brief quality gate rules, evidence vocabulary, drift detection
+- `docs/TASK-CONTRACT.md` — the plan contract, plan checks, evidence vocabulary, drift detection
 - `docs/CONFIGURATION.md` — all config keys including `workflow.*`
-- `docs/SLASH-COMMANDS-REFERENCE.md` — all slash commands including `/revise-spec`, `/revise-plan`, `/redo-task`, `/mode`
+- `docs/SLASH-COMMANDS-REFERENCE.md` — all slash commands including `/redo-task`

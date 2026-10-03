@@ -20,7 +20,6 @@ import { formatResetAt } from '../core/recovery/reset-clock.js';
 import { cliError } from './errors.js';
 import { installTerminalOutputErrorGuard } from '../lib/terminal/control.js';
 import { writeHeadlessJsonRecord } from '../engine/events/public-json.js';
-import type { Config } from '../core/schemas/config.js';
 import { createQuestionMarkerStripper } from '../engine/parsers/question.js';
 
 function buildNoopSinks() {
@@ -209,21 +208,11 @@ export interface RunHeadlessOptions {
   _implementer?: Implementer | undefined;
 }
 
-export function assertHeadlessTaskReviewDisabled(config: Pick<Config, 'workflow'>): void {
-  if ((config.workflow.taskReview ?? 'none') === 'none') return;
-  throw cliError(
-    'workflow.taskReview requires an interactive TUI run. Set workflow.taskReview: none for headless mode.',
-  );
-}
-
 export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
   const { prepared, plain, selectedSkills, _planner, _implementer } = options;
   const projectDir = prepared.session.ref.projectDir;
   const sessionId = prepared.session.ref.sessionId;
-  const runConfig = prepared.config;
   installTerminalOutputErrorGuard();
-
-  assertHeadlessTaskReviewDisabled(runConfig);
   const writeRecord = recordWriterFor(plain === true);
 
   // A resumed session with a pending recovery is already an owner-controlled
@@ -256,7 +245,7 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
       _implementer,
       savedState: prepared.runtime.resumeState,
       callbacks: {
-        onApprovalNeeded: async (_type, _input) => ({ approved: true }),
+        onApprovalNeeded: async (_type, _input) => ({ approved: true, unattended: true }),
         onComplete: () => undefined,
       },
     });
