@@ -7,6 +7,7 @@ import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
 import type { RunnerKind } from '../../../core/schemas/enums.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
+import { cliVocabularyTool, formatModelName } from '../../../core/model-display.js';
 import { resolveModelCatalog } from './catalog.js';
 import type { ModelCacheAccessor } from './resolution.js';
 
@@ -46,7 +47,8 @@ export function resolveModelDisplayName(input: {
     ...(kind === undefined ? {} : { kind }),
   });
   const entry = models.find((m) => m.id === model || m.selectionId === model);
-  return entry?.displayName;
+  if (entry?.displayName !== undefined) return entry.displayName;
+  return formatModelName(model, cliVocabularyTool(providerId, kind));
 }
 
 export function resolveCrewDisplayNames(

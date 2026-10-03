@@ -99,7 +99,7 @@ describe('taskStartedRowBlock continuations', () => {
 
     const lines = rows.map((row) => row.segments.map((segment) => segment.text).join(''));
     expect(lines.length).toBeGreaterThan(1);
-    expect(lines.some((line) => line.includes('OpenCode CLI · openai/gpt-5.6-luna'))).toBe(true);
+    expect(lines.some((line) => line.includes('OpenCode CLI · GPT-5.6 Luna'))).toBe(true);
     for (const line of lines) {
       expect(line.trimEnd()).not.toMatch(/·$/);
     }

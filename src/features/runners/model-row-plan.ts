@@ -10,11 +10,7 @@ import {
   truncateTerminalDisplayTextStart,
 } from '../../utils/display-text.js';
 import { isOptionFamily, routePrefixesOf } from './model-catalog/option-axis.js';
-import {
-  modelIdUnderProvider,
-  sharedModelNamespace,
-  stripModelNamespace,
-} from './model-catalog/provider-axis.js';
+import { modelIdUnderProvider } from './model-catalog/provider-axis.js';
 import { AUTO_ROW_METADATA, sectionOf, type RightRow } from './model-catalog/rows.js';
 
 type ModelRow = Extract<RightRow, { kind: 'model' }>;
@@ -115,11 +111,11 @@ function cellsOf(row: ModelRow, name: string): RowCells {
  */
 function nameRows(
   rows: readonly ModelRow[],
-  namespace: string | undefined,
+  providerId: string | undefined,
 ): { row: ModelRow; name: string }[] {
   const named = rows.map((row) => ({
     row,
-    name: row.model.displayName ?? formatModelName(stripModelNamespace(row.model.id, namespace)),
+    name: row.model.displayName ?? formatModelName(row.model.id, providerId),
   }));
   const twinsByName = new Map<string, ModelRow[]>();
   for (const { row, name } of named) twinsByName.set(name, [...(twinsByName.get(name) ?? []), row]);
@@ -271,10 +267,13 @@ function separateCollisions(
  * every row, names cutting to fit beside it, or drops it for every row — never a row at a time. Then
  * each name is fitted to what its own cells leave, and no two rows are left reading alike.
  */
-export function planModelRows(input: { rows: readonly RightRow[]; width: number }): ModelRowPlan {
+export function planModelRows(input: {
+  rows: readonly RightRow[];
+  width: number;
+  providerId: string | undefined;
+}): ModelRowPlan {
   const modelRows = input.rows.filter((row): row is ModelRow => row.kind === 'model');
-  const namespace = sharedModelNamespace(modelRows.map((row) => row.model.id));
-  const lines = nameRows(modelRows, namespace).map(({ row, name }) => ({
+  const lines = nameRows(modelRows, input.providerId).map(({ row, name }) => ({
     id: row.model.id,
     cells: cellsOf(row, name),
   }));

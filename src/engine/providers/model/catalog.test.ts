@@ -853,7 +853,7 @@ describe('runner-owned catalog resolution', () => {
     });
     expect(recovered?.contextLength).toBeUndefined();
     expect(recovered?.displayName).toBeUndefined();
-    expect(formatModelName(recovered?.id ?? '')).toBe('claude-haiku-4-5');
+    expect(formatModelName(recovered?.id ?? '', 'claude-code')).toBe('Haiku 4.5');
   });
 
   it('answers an alias window from its own declared number, catalog or not', () => {
@@ -1533,6 +1533,8 @@ describe('runner-owned catalog resolution', () => {
     const opencodeRows = resolveModelCatalog('opencode', { cache });
     expect(opencodeRows.map((row) => [row.selectionId, row.membership])).toEqual([
       ['anthropic/claude-sonnet-5', 'bundled-suggestion'],
+      ['deepseek/deepseek-flash', 'bundled-suggestion'],
+      ['opencode-go/deepseek-v4.1-flash', 'bundled-suggestion'],
       ['openai/gpt-5.6-sol', 'bundled-suggestion'],
     ]);
 

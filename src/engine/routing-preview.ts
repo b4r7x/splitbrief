@@ -13,6 +13,7 @@ import { routeTaskToImplementerProfile } from './orchestrator/context-routing/ro
 import { buildRouteTaskOptions } from './orchestrator/context-routing/route-input.js';
 import type { ModelCacheAccessor } from './providers/model/resolution.js';
 import { buildProjectLanguageContext } from './spec/prompts/language-context.js';
+import type { PlanContext } from './spec/prompt-formatter.js';
 import { isENOENT } from '../lib/process/errors.js';
 import { assertWritablePathConfined } from '../lib/path-confinement.js';
 
@@ -37,6 +38,7 @@ export function buildRoutingPreviewMetadata(
     detectedContextLength?: number | undefined;
     /** The run's skills block, which every brief prompt the worker receives carries. */
     skillsContext?: string | undefined;
+    plan?: PlanContext | undefined;
   },
 ): Promise<PlanTaskReviewMetadata[]> {
   const context = previewProjectContext(opts.projectDir, opts.skillsContext);
@@ -70,6 +72,7 @@ export function buildRoutingPreviewMetadata(
           ...(opts.detectedContextLength !== undefined && {
             detectedContextLength: opts.detectedContextLength,
           }),
+          plan: opts.plan,
         }),
       );
       const routeBlocked = decision.selectedProfile === undefined;

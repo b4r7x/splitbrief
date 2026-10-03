@@ -69,6 +69,23 @@ describe('estimatePlanContextFits', () => {
     ]);
   });
 
+  it('counts the plan context every brief carries', async () => {
+    const tasks = [makeTaskSpec()];
+    const bare = makePlanProposal({ decisions: [], tasks });
+    const heavy = makePlanProposal({
+      decisions: ['Keep the greeting in one module and reuse the shared formatter. '.repeat(500)],
+      tasks,
+    });
+
+    expect((await estimatePlanContextFits(bare, { config, projectDir })).get('T001')).toEqual({
+      fit: 'fits',
+    });
+    expect((await estimatePlanContextFits(heavy, { config, projectDir })).get('T001')).toEqual({
+      fit: 'overflow',
+      blocked: expect.any(String),
+    });
+  });
+
   it('gives no estimate to a task that names a directory, so checkPlan can refuse it', async () => {
     const plan = makePlanProposal({
       tasks: [

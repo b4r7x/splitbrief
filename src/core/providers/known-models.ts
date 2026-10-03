@@ -1,4 +1,5 @@
 import type { EffortLevel, ProviderId } from '../schemas/enums.js';
+import { areExactModelSelectionIdsEqual } from './canonical-model-id.js';
 
 export type ModelRecommendation = 'recommended' | 'compatible-only';
 
@@ -106,7 +107,9 @@ function compatibleModel(model: Omit<KnownModel, 'recommendation'>): KnownModel 
  * own number beside Claude's own label, not one we typed. For a CLI tool's rows the declared
  * window is the answer everywhere — what the picker row shows, and what an `auto` seat floors
  * to (REQ-D26, REQ-B08); `catalogProvider`/`catalogModelId` document the full catalog id each
- * alias resolves to and are never read for lookups (models.dev serves `api` runners only).
+ * alias resolves to; `findKnownModel` reads `catalogModelId` so a full id such as `claude-opus-5-5`
+ * takes its alias row's label, and neither is read for models.dev lookups (models.dev serves `api`
+ * runners only).
  */
 const CLAUDE_ALIAS_PROVENANCE =
   'Claude Code 2.1.280 /model menu + baked catalog display_name & context.window + alias table (2026-09-23); code.claude.com/docs/en/model-config';
@@ -224,6 +227,18 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
       catalogProvider: 'openrouter',
       provenance: 'Minimal bundled fallback (2026-08)',
     }),
+    compatibleModel({
+      name: 'deepseek/deepseek-flash',
+      displayName: 'DeepSeek V4.1 Flash',
+      contextLength: 1_000_000,
+      provenance: 'models.dev cache via opencode (2026-10-03): deepseek/deepseek-flash',
+    }),
+    compatibleModel({
+      name: 'opencode-go/deepseek-v4.1-flash',
+      displayName: 'DeepSeek V4.1 Flash',
+      contextLength: 1_000_000,
+      provenance: 'models.dev cache via opencode (2026-10-03): opencode-go/deepseek-v4.1-flash',
+    }),
   ],
   copilot: [
     // Both rows keep their window: bundledMinimumWindow (context-window.ts) floors an
@@ -260,3 +275,19 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
     }),
   ],
 };
+
+export function knownModelAnswersTo(entry: KnownModel, modelId: string): boolean {
+  return (
+    areExactModelSelectionIdsEqual({ left: entry.name, right: modelId }) ||
+    (entry.aliases?.some((alias) =>
+      areExactModelSelectionIdsEqual({ left: alias, right: modelId }),
+    ) ??
+      false) ||
+    (entry.catalogModelId !== undefined &&
+      areExactModelSelectionIdsEqual({ left: entry.catalogModelId, right: modelId }))
+  );
+}
+
+export function findKnownModel(providerId: ProviderId, modelId: string): KnownModel | undefined {
+  return (KNOWN_MODELS[providerId] ?? []).find((entry) => knownModelAnswersTo(entry, modelId));
+}

@@ -1,9 +1,3 @@
-export function areExactModelSelectionIdsEqual(
-  input: Readonly<{ left: string; right: string }>,
-): boolean {
-  return input.left === input.right;
-}
-
 const WINDOW_SUFFIX_RE = /\[(?:1|2)m\]$/i;
 
 /**
@@ -12,7 +6,7 @@ const WINDOW_SUFFIX_RE = /\[(?:1|2)m\]$/i;
  * written to config and passed to `--model` stays verbatim, because the suffix is what selects
  * the window. The matched row lends only its own published window — a suffix never
  * synthesises a number no catalog published, so its meaning belongs in the row's label.
- * Selection identity stays with `areExactModelSelectionIdsEqual` above.
+ * Selection identity stays with `areExactModelSelectionIdsEqual`.
  */
 export function matchesModelsDevId(input: Readonly<{ left: string; right: string }>): boolean {
   return input.left.replace(WINDOW_SUFFIX_RE, '') === input.right.replace(WINDOW_SUFFIX_RE, '');

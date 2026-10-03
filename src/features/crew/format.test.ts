@@ -141,10 +141,10 @@ describe('formatCrewRow', () => {
     const narrow = planSeatBlock({ rows, verdict: undefined, innerWidth: 46, rowBudget: 12 });
 
     expect(formatCrewRow({ row, layout: wide }).content).toBe(
-      'Claude Code CLI · claude-sonnet-4 · high',
+      'Claude Code CLI · Claude Sonnet 4 · high',
     );
     expect(formatCrewRow({ row, layout: narrow }).content).toBe(
-      'Claude Code CLI · claude-sonnet-4',
+      'Claude Code CLI · Claude Sonnet 4',
     );
   });
 

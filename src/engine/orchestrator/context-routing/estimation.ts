@@ -19,6 +19,7 @@ export function estimateFormattedTaskPromptTokens(
     languageContext,
     writesFiles,
     outputContract: opts.outputContract,
+    plan: opts.plan,
   });
   // Routing runs before the isolation directory exists; the project path stands in for its length.
   return (

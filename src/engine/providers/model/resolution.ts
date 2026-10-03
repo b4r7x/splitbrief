@@ -5,7 +5,7 @@ import {
   type ApiProviderId,
 } from '../../../core/providers/api-provider-catalog.js';
 import type { KnownModel } from '../../../core/providers/known-models.js';
-import { KNOWN_MODELS } from '../../../core/providers/known-models.js';
+import { KNOWN_MODELS, knownModelAnswersTo } from '../../../core/providers/known-models.js';
 import type { ProviderId, RunnerKind } from '../../../core/schemas/enums.js';
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
 import {
@@ -18,11 +18,7 @@ import type { ConfiguredProviderRuntime } from '../../detection/provider-outcome
 import type { ScopedCliCatalogRuntime } from '../../detection/cli-catalog-outcomes.js';
 import { findCatalogModelByIdentity, getModelsForProvider } from '../models-dev.js';
 import type { ClaudeCodeModelOption } from '../../../core/providers/claude-code-options.js';
-import {
-  areExactModelSelectionIdsEqual,
-  matchesModelsDevId,
-  splitModelVendorPrefix,
-} from './parsing.js';
+import { matchesModelsDevId, splitModelVendorPrefix } from './parsing.js';
 import { includes } from '../../../utils/type-guards.js';
 
 export interface ModelCacheAccessor {
@@ -250,22 +246,6 @@ export function lookupRuntimeModel(input: {
     ...(kind === undefined ? {} : { kind }),
   });
   return outcome.kind === 'found' ? outcome.model : null;
-}
-
-function knownModelAnswersTo(entry: KnownModel, modelId: string): boolean {
-  return (
-    areExactModelSelectionIdsEqual({ left: entry.name, right: modelId }) ||
-    (entry.aliases?.some((alias) =>
-      areExactModelSelectionIdsEqual({ left: alias, right: modelId }),
-    ) ??
-      false) ||
-    (entry.catalogModelId !== undefined &&
-      areExactModelSelectionIdsEqual({ left: entry.catalogModelId, right: modelId }))
-  );
-}
-
-export function findKnownModel(providerId: ProviderId, modelId: string): KnownModel | undefined {
-  return getBundledModels(providerId).find((entry) => knownModelAnswersTo(entry, modelId));
 }
 
 /**

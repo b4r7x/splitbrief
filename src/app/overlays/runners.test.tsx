@@ -362,7 +362,7 @@ describe('ToolModelPicker provider routes', () => {
     ui.stdin.write('\r'); // select the tool and focus the model column
     await flushEffects();
     await vi.waitFor(() => {
-      expect(frameText(ui)).toContain('openrouter/deepseek-v4-flash');
+      expect(frameText(ui)).toContain('DeepSeek V4 Flash');
     });
     // Auto is focused first; one down is the merged DeepSeek row. Filtering
     // there instead would hide the route rows the expansion has to reveal.
@@ -370,8 +370,8 @@ describe('ToolModelPicker provider routes', () => {
     ui.stdin.write(ARROW_DOWN);
     await vi.waitFor(() => {
       const frame = frameText(ui);
-      expect(frame).toContain(`${listRowLead('active')}openrouter/deepseek-v4-flash`);
-      expect(frame).not.toContain(`${listRowLead('active')}openrouter/deepseek-v4-flash-free`);
+      expect(frame).toContain(`${listRowLead('active')}DeepSeek V4 Flash`);
+      expect(frame).not.toContain(`${listRowLead('active')}DeepSeek V4 Flash Free`);
     });
     await flushEffects();
   }
@@ -544,7 +544,7 @@ describe('ToolModelPicker discovery state', () => {
     expect(frameBefore).toContain('Tools');
     expect(frameBefore).toContain('Codex CLI');
     expect(frameBefore).toContain('OpenCode CLI');
-    expect(frameBefore).toContain('gpt-5-codex');
+    expect(frameBefore).toContain('GPT-5 Codex');
 
     await flushEffects();
     ui.stdin.write(ARROW_DOWN);
@@ -630,8 +630,8 @@ describe('ToolModelPicker discovery state', () => {
     await vi.waitFor(() => {
       const frameAfter = frameText(ui);
       expect(frameAfter).toContain(`${listRowLead('active')}OpenAI Codex CLI`);
-      expect(frameAfter).toContain('gpt-6-codex');
-      expect(frameAfter).not.toContain('gpt-5-codex');
+      expect(frameAfter).toContain('GPT-6 Codex');
+      expect(frameAfter).not.toContain('GPT-5 Codex');
     });
 
     ui.unmount();

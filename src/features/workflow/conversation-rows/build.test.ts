@@ -346,7 +346,7 @@ describe('buildConversationRows', () => {
     const text = rows.map(rowText).join('\n');
 
     expect(text).toContain('runner ***REDACTED***');
-    expect(text).toContain('model sk-***REDACTED***');
+    expect(text).toContain('Model sk ***REDACTED***');
     expect(text).not.toContain('eyJhbGci');
     expect(text.toLowerCase()).not.toContain('abcdefghijklmnopqrstuvwxyz');
   });
@@ -718,7 +718,7 @@ describe('buildConversationRows', () => {
     expect(rows.filter((row) => row.kind === 'activity').map(rowText)).toEqual([
       `${CREW_SEAT_LABELS.plan} activity  1 update  [${CLAUDE_CODE_LABEL} · Opus 5.5]`,
       `${CREW_SEAT_LABELS.build} activity  1 update  [${CLAUDE_CODE_LABEL} · Opus 5.5]`,
-      `${CREW_SEAT_LABELS.plan} activity  1 update  [${CODEX_LABEL} · gpt-5.5]`,
+      `${CREW_SEAT_LABELS.plan} activity  1 update  [${CODEX_LABEL} · GPT-5.5]`,
     ]);
   });
 

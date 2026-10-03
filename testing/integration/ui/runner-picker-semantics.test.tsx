@@ -578,7 +578,7 @@ describe('runner picker semantics integration', () => {
       await flushEffects();
       const discoveredFrame = frameText(discoveredUi);
       expect(discoveredFrame).toContain('1 model');
-      expect(discoveredFrame).toContain('gpt-4o');
+      expect(discoveredFrame).toContain('GPT-4o');
       discoveredUi.unmount();
     });
   });
@@ -791,7 +791,7 @@ describe('runner picker semantics integration', () => {
           // The configured row keeps the selection. Enter opens that row's own axes; the
           // expansion is the settled state the walk below needs, and the commit assertion
           // after the walk pins the model those axes belonged to.
-          expect(frameText(ui)).toContain('gpt-5.4');
+          expect(frameText(ui)).toContain('GPT-5.4');
           ui.stdin.write(ENTER);
           await vi.waitFor(() => {
             expect(frameText(ui)).toContain('effort');

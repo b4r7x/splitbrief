@@ -243,7 +243,7 @@ function activityBatchRunner(events: readonly RunnerActivityEvent[]): string | n
           kind: latest.backendKind,
         });
   const identity = sanitizeTerminalDisplayText(
-    formatToolModel({ tool: runner, model: displayName ?? latest.model, kind: latest.backendKind }),
+    formatToolModel({ tool: runner, model: latest.model, displayName, kind: latest.backendKind }),
   );
   return identity === '' ? null : identity;
 }

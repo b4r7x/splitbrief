@@ -23,6 +23,31 @@ describe('classifyContextFit', () => {
 });
 
 describe('estimateFormattedTaskPromptTokens', () => {
+  it("counts the run's plan context in the estimate", () => {
+    const task = makeTask();
+    const plan = {
+      summary: 'Route every write through the registry.',
+      decisions: ['Keep the registry as the one source of truth. '.repeat(400)],
+      criteria: [],
+      checks: [],
+      validation: null,
+    };
+
+    const withoutPlan = estimateFormattedTaskPromptTokens({
+      task,
+      context,
+      contextLength: 100_000,
+    });
+    const withPlan = estimateFormattedTaskPromptTokens({
+      task,
+      context,
+      contextLength: 100_000,
+      plan,
+    });
+
+    expect(withPlan - withoutPlan).toBeGreaterThan(estimateTokens(plan.decisions[0] ?? '') - 10);
+  });
+
   it('includes the system preamble in the formatted task prompt estimate', () => {
     const task = makeTask();
     const languageContext = buildLanguageContext('python');

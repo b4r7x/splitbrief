@@ -2,11 +2,13 @@ import type { DetectedModel } from '../../../core/discovery/detection.js';
 import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
 import { isAutomaticModel } from '../../../core/providers/automatic-model.js';
 import {
+  areExactModelSelectionIdsEqual,
   canonicalModelBucket,
   isSameCanonicalModel,
   type ModelIdentity,
 } from '../../../core/providers/canonical-model-id.js';
 import {
+  findKnownModel,
   MODELS_DEV_VENDOR_FOR_RUNNER,
   TOOL_EFFORT_LADDERS,
   type KnownModel,
@@ -21,17 +23,12 @@ import type { ClaudeCodeModelOption } from '../../../core/providers/claude-code-
 import { modelRowLanes } from './lane-policy.js';
 import {
   NULL_CACHE,
-  findKnownModel,
   getBundledModels,
   getModelsDevEntries,
   getRuntimeModelSnapshot,
   type ModelCacheAccessor,
 } from './resolution.js';
-import {
-  areExactModelSelectionIdsEqual,
-  matchesModelsDevId,
-  splitModelVendorPrefix,
-} from './parsing.js';
+import { matchesModelsDevId, splitModelVendorPrefix } from './parsing.js';
 
 export type ResolvedModelSource =
   | 'models-dev'
@@ -422,9 +419,8 @@ function configuredRecovery(
   // A configured id no lane lists is still a model the catalog may know — a full
   // `claude-opus-5` beside the aliases, say — so it takes the catalog's window rather than
   // rendering a blank size cell beside nine complete rows. The name it does not take: the id
-  // reads in the tool's own vocabulary through `formatModelName`, where models.dev's
-  // `Claude Haiku 4.5 (latest)` would print a second naming system one line above the `Haiku 4.5`
-  // alias row for the same model.
+  // reads through `formatModelName` (the known row's label, else the pretty id), where
+  // models.dev's `Claude Haiku 4.5 (latest)` would print a second naming system.
   const metadata = metadataForSelection({
     runnerId: input.runnerId,
     selectionId: input.selectionId,

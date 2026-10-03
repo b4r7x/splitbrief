@@ -201,6 +201,16 @@ describe('KNOWN_MODELS copilot bundled floor', () => {
   });
 });
 
+describe('KNOWN_MODELS opencode DeepSeek rows', () => {
+  it('names both DeepSeek routes the owner runs by the one catalog name and window', () => {
+    const rows = (KNOWN_MODELS.opencode ?? []).filter((row) => row.name.includes('deepseek'));
+    expect(rows.map((row) => [row.name, row.displayName, row.contextLength])).toEqual([
+      ['deepseek/deepseek-flash', 'DeepSeek V4.1 Flash', 1_000_000],
+      ['opencode-go/deepseek-v4.1-flash', 'DeepSeek V4.1 Flash', 1_000_000],
+    ]);
+  });
+});
+
 describe('KNOWN_MODELS recommendation metadata', () => {
   it('resolves every pending-evaluation candidate to a bundled row', () => {
     for (const candidate of PENDING_EVALUATION_CANDIDATE_IDS) {

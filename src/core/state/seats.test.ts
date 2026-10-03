@@ -113,7 +113,7 @@ describe('reconcileSeatIdentities', () => {
     });
 
     expect(seatIdentitiesFromConfig(config)).toMatchObject({
-      plan: 'Claude Code CLI · opus · max',
+      plan: 'Claude Code CLI · Opus 5.5 · max',
       ids: { plan: { tool: 'claude-code', model: 'opus', axes: ['max'], kind: 'cli' } },
     });
   });

@@ -15,7 +15,7 @@ import {
 import type { RunnerKind } from '../../core/schemas/enums.js';
 import type { CallUsageEvidence } from '../../core/schemas/usage-evidence.js';
 import { resolveCallUsageEvidence } from '../../engine/orchestrator/summary/call-evidence.js';
-import { formatModelName } from '../../core/model-display.js';
+import { cliVocabularyTool, formatModelName } from '../../core/model-display.js';
 import { stripTerminalControls } from '../../utils/display-text.js';
 
 /**
@@ -69,6 +69,15 @@ export function registerStatusCommand(program: Command): void {
             ? getProviderDisplayName(tool)
             : getRunnerIdentityDisplayName(recorded, tool);
         };
+        const seatModelLabel = (
+          role: 'planner' | 'implementer',
+          tool: string,
+          model: string,
+        ): string => {
+          const recorded = recordedRunnerKind(evidence, role, tool);
+          const provider = recorded === 'ambiguous' ? undefined : cliVocabularyTool(tool, recorded);
+          return stripTerminalControls(formatModelName(model, provider));
+        };
         console.log(
           `${ansis.dim('Feature:')}  ${ansis.bold(stripTerminalControls(state.feature))}`,
         );
@@ -83,7 +92,7 @@ export function registerStatusCommand(program: Command): void {
 
         if (state.plannerTool) {
           const model = state.plannerModel
-            ? ` (${stripTerminalControls(formatModelName(state.plannerModel))})`
+            ? ` (${seatModelLabel('planner', state.plannerTool, state.plannerModel)})`
             : '';
           console.log(
             `${ansis.dim('Planner:')}  ${stripTerminalControls(seatLabel('planner', state.plannerTool))}${model}`,
@@ -91,7 +100,7 @@ export function registerStatusCommand(program: Command): void {
         }
         if (state.implementerTool) {
           const model = state.implementerModel
-            ? ` (${stripTerminalControls(formatModelName(state.implementerModel))})`
+            ? ` (${seatModelLabel('implementer', state.implementerTool, state.implementerModel)})`
             : '';
           console.log(
             `${ansis.dim('Impl:')}     ${stripTerminalControls(seatLabel('implementer', state.implementerTool))}${model}`,

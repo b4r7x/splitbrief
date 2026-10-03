@@ -91,6 +91,7 @@ export function createApiImplementer(
         contextLength: opts.config.implementer.contextLength ?? DEFAULT_UNKNOWN_CONTEXT_LENGTH,
         languageContext: opts.languageContext,
         outputContract: 'file-bundle-v1',
+        plan: opts.plan,
       }),
     buildRetryPrompt: (opts: RetryOptions) =>
       formatRetryPrompt({
@@ -101,6 +102,7 @@ export function createApiImplementer(
         contextLength: opts.config.implementer.contextLength ?? DEFAULT_UNKNOWN_CONTEXT_LENGTH,
         languageContext: opts.languageContext,
         outputContract: 'file-bundle-v1',
+        plan: opts.plan,
       }),
 
     async invoke(opts: InvokeOpts) {

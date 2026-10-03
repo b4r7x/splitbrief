@@ -97,6 +97,39 @@ describe('selectRoutingProfile context cache', () => {
     expect(result.selectedProfile).toEqual(profile);
   });
 
+  it("estimates the brief with the run's plan context", async () => {
+    const wctx = makeTaskWorkflowContext();
+    const task = makeTask();
+    const state = makeImplStateWithMetadata([task]);
+    const select = (s: typeof state) =>
+      selectRoutingProfile({
+        wctx,
+        state: s,
+        setTrackedState: () => {},
+        task,
+        resolvedProfiles: detectedFallbackProfiles(),
+        getRunnerModelName,
+      });
+
+    const withoutPlan = await select(state);
+    const withPlan = await select({
+      ...state,
+      plan: {
+        summary: 'Route every write through the registry.',
+        decisions: ['Keep the registry as the one source of truth. '.repeat(400)],
+        criteria: [],
+        checks: [],
+        validation: null,
+      },
+    });
+
+    expect(withoutPlan.ok && withPlan.ok).toBe(true);
+    if (!withoutPlan.ok || !withPlan.ok) return;
+    expect(withPlan.routingDecision.estimatedTokens).toBeGreaterThan(
+      withoutPlan.routingDecision.estimatedTokens + 1_000,
+    );
+  });
+
   it('falls an api profile back to the application budget when no model cache is provided', async () => {
     const wctx = makeTaskWorkflowContext();
     const task = makeTask();

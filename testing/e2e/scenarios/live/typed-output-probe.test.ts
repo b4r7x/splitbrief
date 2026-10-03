@@ -18,9 +18,15 @@ import { liveToolBlocker } from '../../helpers/live-harness.js';
 const itLive = process.env.SPLITBRIEF_REAL_CLI_E2E === '1' ? it : it.skip;
 
 const TOOLS = [
-  { tool: 'claude-code', command: 'claude' },
-  { tool: 'codex', command: 'codex' },
-  { tool: 'antigravity', command: 'agy' },
+  { tool: 'claude-code', command: 'claude', model: undefined, transport: 'native' },
+  { tool: 'codex', command: 'codex', model: undefined, transport: 'native' },
+  { tool: 'antigravity', command: 'agy', model: undefined, transport: 'native' },
+  {
+    tool: 'opencode',
+    command: 'opencode',
+    model: 'deepseek/deepseek-flash',
+    transport: 'fallback',
+  },
 ] as const;
 
 const schema = z.object({ answer: z.string(), count: z.number() });
@@ -44,7 +50,7 @@ function shellQuote(value: string): string {
 }
 
 describe('live typed-output probe', () => {
-  for (const { tool, command } of TOOLS) {
+  for (const { tool, command, model, transport } of TOOLS) {
     itLive(
       `records one ${tool} call that answers a schema through requestTyped`,
       async (ctx) => {
@@ -79,31 +85,39 @@ describe('live typed-output probe', () => {
 
         const restorePath = prependPath(binDir);
         try {
-          const gate = trustedShimGate({ dir: binDir, tool });
+          const gate = { ...trustedShimGate({ dir: binDir, tool }), installedVersion: version };
           const planner =
             tool === 'claude-code'
               ? createClaudeCodePlanner({ authChannel: undefined, trustedCli: gate })
               : createCliPlanner({
                   config: makeConfig({
-                    planner: { kind: 'cli', tool },
+                    planner: { kind: 'cli', tool, model },
                     implementer: { service: 'ollama', offering: 'local' },
                   }),
                   trustedCli: gate,
                 });
 
+          const call = planner.typedCall({
+            projectDir,
+            callbacks: { onOutput: () => {} },
+            seat: 'reviewer',
+          });
+          const sentSchema: boolean[] = [];
           const result = await requestTyped({
             prompt: 'Do not run any command or tool. Reply with answer "ok" and count 3.',
             schema,
             jsonSchema,
             schemaName: 'typed_output_probe',
-            call: planner.typedCall({
-              projectDir,
-              callbacks: { onOutput: () => {} },
-              seat: 'reviewer',
-            }),
+            call: {
+              ...call,
+              invoke: (input) => {
+                sentSchema.push(input.schema !== undefined);
+                return call.invoke(input);
+              },
+            },
           });
-          expect('value' in result).toBe(true);
-          if (!('value' in result)) throw new Error(result.error.message);
+          expect(sentSchema[0]).toBe(transport === 'native');
+          if (!('value' in result)) throw new Error(JSON.stringify(result.error));
           expect(result.value).toEqual({ answer: 'ok', count: 3 });
 
           const recorded = readFileSync(recordingFile, 'utf8');

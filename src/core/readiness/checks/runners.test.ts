@@ -497,3 +497,54 @@ describe('buildRunnerChecks reviewer seat', () => {
     ).toMatchObject({ severity: 'warning' });
   });
 });
+
+describe('buildRunnerChecks typed-output fallback', () => {
+  const fallbackChecks = (config: ReturnType<typeof makeConfig>) =>
+    buildRunnerChecks(config).filter((check) => check.id.endsWith('.typed-output-fallback'));
+
+  it('warns once when the planner seat is a tool without a schema flag', () => {
+    const checks = fallbackChecks(makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }));
+
+    expect(checks).toEqual([
+      expect.objectContaining({
+        id: 'runners.planner.typed-output-fallback',
+        severity: 'warning',
+        summary:
+          'Planner: opencode has no schema flag; typed answers use the JSON fallback with one repair. claude-code or codex are recommended for this seat.',
+      }),
+    ]);
+  });
+
+  it('warns for a configured reviewer seat without a schema flag', () => {
+    const checks = fallbackChecks(
+      makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code' },
+        reviewer: { kind: 'cli', tool: 'opencode' },
+      }),
+    );
+
+    expect(checks.map((check) => check.id)).toEqual(['runners.reviewer.typed-output-fallback']);
+  });
+
+  it('does not warn for an implementer seat without a schema flag', () => {
+    const checks = fallbackChecks(
+      makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code' },
+        implementer: { kind: 'cli', tool: 'opencode' },
+      }),
+    );
+
+    expect(checks).toEqual([]);
+  });
+
+  it('does not warn for a reviewer seat with a native schema flag', () => {
+    const checks = fallbackChecks(
+      makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code' },
+        reviewer: { kind: 'cli', tool: 'codex' },
+      }),
+    );
+
+    expect(checks).toEqual([]);
+  });
+});

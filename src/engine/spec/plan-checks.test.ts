@@ -56,6 +56,19 @@ describe('checkPlan', () => {
     ]);
   });
 
+  it('refuses a task that serves no criterion and a task whose intent is blank', () => {
+    const plan = makePlanProposal({
+      tasks: [
+        makeTaskSpec(),
+        makeTaskSpec({ id: 'T002', criteria: [], intent: '  \n ', checks: k2 }),
+      ],
+    });
+    expect(checkPlan(plan, projectDir, fits)).toEqual([
+      { code: 'task-without-criterion', message: 'Task T002 serves no criterion.' },
+      { code: 'task-without-intent', message: 'Task T002 has no intent.' },
+    ]);
+  });
+
   it('refuses a criterion without checkIds and one naming an unknown check', () => {
     const plan = makePlanProposal({
       criteria: [

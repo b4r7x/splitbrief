@@ -27,6 +27,9 @@ import { prepareCustomRunnerAdmission } from '../../runners/custom-admission.js'
 import type { RunnerGate } from '../../runners/prepared-execution.js';
 import type { CustomRunnerRuntimePort } from '../../runners/types.js';
 import { createConfiguredCustomImplementer } from '../../implementers/command-invoke.js';
+import { createImplementerBase } from '../../implementers/pipeline/run.js';
+import { makeBaseConfig } from '#testing/helpers/factories/implementer-base.js';
+import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { createStagedProject } from '../approval/staged-project.js';
 import { applyChangedFiles } from './apply-changed-files.js';
@@ -492,6 +495,43 @@ describe('runImplementation continuation note', () => {
       extra:
         'These declared files already differ from the commit this brief started on: src/reseed.ts',
     });
+  });
+});
+
+describe('runImplementation plan context', () => {
+  it("puts the run's plan decisions and the task's criteria in the brief it dispatches", async () => {
+    const { projectDir } = setupProject('plan-context');
+    const sessionId = 'plan-context-session';
+    ensureSessionDir(projectDir, sessionId);
+    const task = makeTask({ id: 'T070', file: 'src/plan.ts', action: 'create', criteria: ['C1'] });
+    const prompts: string[] = [];
+    const invoke = vi.fn().mockImplementation(async (call: { prompt: string }) => {
+      prompts.push(call.prompt);
+      return makeRunnerCallResult({ status: 'completed', text: 'done', usage: null });
+    });
+    const implementer = createImplementerBase(makeBaseConfig({ extractsCode: false, invoke }));
+    const state = makeImplState([task], {
+      plan: {
+        summary: 'Greet people by name',
+        decisions: ['PLAN-DECISION: keep the greeting in one module'],
+        criteria: [{ id: 'C1', text: 'PLAN-CRITERION: a name gets a greeting', checkIds: [] }],
+        checks: [],
+        validation: null,
+      },
+    });
+
+    await runImplementation({
+      wctx: makeWctx({ projectDir, sessionId, implementer }),
+      task,
+      state,
+      taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
+      setTrackedState: vi.fn(),
+      recordApprovalDenial: vi.fn(),
+    });
+
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain('PLAN-DECISION: keep the greeting in one module');
+    expect(prompts[0]).toContain('C1: PLAN-CRITERION: a name gets a greeting');
   });
 });
 

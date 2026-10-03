@@ -21,6 +21,7 @@ import { buildRightModels } from './model-catalog/catalog.js';
 import { assemblePickerDescriptors, buildPickerOptions } from './model-catalog/options.js';
 import { buildRightRows, type RightRow } from './model-catalog/rows.js';
 import { planModelRows } from './model-row-plan.js';
+import { formatModelName } from '../../core/model-display.js';
 
 const FIXTURES = join(import.meta.dirname, '../../../testing/fixtures');
 
@@ -80,7 +81,7 @@ describe('planModelRows on the captured listings', () => {
     (toolId) => {
       const rows = capturedRows(toolId);
       for (const width of ROW_WIDTHS) {
-        const plan = planModelRows({ rows, width });
+        const plan = planModelRows({ rows, width, providerId: undefined });
         const labels = modelIds(rows).map((id) => plan.rows.get(id)?.label);
         const repeated = labels.filter((label, index) => labels.indexOf(label) !== index);
         expect({ width, repeated }).toEqual({ width, repeated: [] });
@@ -96,7 +97,7 @@ describe('planModelRows on the captured listings', () => {
       'kilo/inclusionai/ling-3.0-flash-vl:free',
     ];
     const at = (width: number) => {
-      const plan = planModelRows({ rows, width });
+      const plan = planModelRows({ rows, width, providerId: undefined });
       return ling.map((id) => plan.rows.get(id)?.label);
     };
 
@@ -123,12 +124,12 @@ describe('planModelRows on the captured listings', () => {
       // The spellings a row's name is built from: its own, the vendor a gateway prepends shed,
       // and a twin's, which adds the id the provider gives it.
       const namesOf = (model: (typeof rows)[number]['model']): string[] =>
-        [model.displayName, model.id]
+        [model.displayName, formatModelName(model.id), model.id]
           .filter((name): name is string => name !== undefined)
           .flatMap((name) => [name, name.replace(/^[^:()]{1,24}: /, '')])
           .flatMap((name) => [name, `${name}${SOFT_SEP}${model.id.split('/').at(-1)}`]);
       for (const width of ROW_WIDTHS) {
-        const plan = planModelRows({ rows, width });
+        const plan = planModelRows({ rows, width, providerId: undefined });
         for (const { model } of rows) {
           const label = plan.rows.get(model.id)?.label ?? '';
           if (!label.endsWith(ELLIPSIS)) continue;
@@ -155,7 +156,11 @@ describe('planModelRows on the captured listings', () => {
   );
 
   it('cuts inside a word only where every whole-word form reads like another row', () => {
-    const plan = planModelRows({ rows: capturedRows('kilo-code'), width: 21 });
+    const plan = planModelRows({
+      rows: capturedRows('kilo-code'),
+      width: 21,
+      providerId: undefined,
+    });
     const labels = [...plan.rows.values()].map((row) => row.label);
 
     // `…(free)` would be every free route; `Nemotron 3.5…` is also the Content Safety model.
@@ -164,7 +169,11 @@ describe('planModelRows on the captured listings', () => {
   });
 
   it('names a model family by its whole words where a word would not fit', () => {
-    const plan = planModelRows({ rows: capturedRows('antigravity'), width: 21 });
+    const plan = planModelRows({
+      rows: capturedRows('antigravity'),
+      width: 21,
+      providerId: undefined,
+    });
     const labels = [...plan.rows.values()].map((row) => row.label);
 
     expect(labels).toContain(`Gemini 3.8${ELLIPSIS}`);
@@ -173,16 +182,16 @@ describe('planModelRows on the captured listings', () => {
 
   it('gives up the leading words of a cut another name also starts with', () => {
     const rows = capturedRows('copilot');
-    const plan = planModelRows({ rows, width: 21 });
+    const plan = planModelRows({ rows, width: 21, providerId: undefined });
 
-    expect(plan.rows.get('claude-fable-5.1')?.label).toBe('…fable-5.1');
-    expect(plan.rows.get('claude-fable-5')?.label).toBe('claude-fable-5');
-    expect(plan.rows.get('claude-sonnet-4.6')?.label).toBe('…sonnet-4.6');
+    expect(plan.rows.get('claude-fable-5.1')?.label).toBe('…Fable 5.1');
+    expect(plan.rows.get('claude-fable-5')?.label).toBe('Claude Fable 5');
+    expect(plan.rows.get('claude-sonnet-4.6')?.label).toBe('…Sonnet 4.6');
   });
 
   it('tells two models apart by id where the listing names them alike', () => {
     const rows = capturedRows('opencode');
-    const plan = planModelRows({ rows, width: 47 });
+    const plan = planModelRows({ rows, width: 47, providerId: undefined });
 
     expect(plan.rows.get('ollama-cloud/kimi-k3')?.label).toBe('Kimi K3 · kimi-k3');
     expect(plan.rows.get('kimi-code-plan-global/k3')?.label).toBe('Kimi K3 · k3');
@@ -195,7 +204,7 @@ describe('planModelRows on the captured listings', () => {
         row.kind === 'model' && row.model.contextLength !== undefined ? [row] : [],
       );
       for (const width of ROW_WIDTHS) {
-        const plan = planModelRows({ rows, width });
+        const plan = planModelRows({ rows, width, providerId: undefined });
         const shown = rows.map((row) =>
           (plan.rows.get(row.model.id)?.metadata ?? '').includes(
             formatContextLength(row.model.contextLength),
@@ -210,7 +219,7 @@ describe('planModelRows on the captured listings', () => {
     for (const toolId of ['opencode', 'kilo-code', 'cursor', 'codex'] as const) {
       const rows = capturedRows(toolId);
       for (const width of ROW_WIDTHS) {
-        for (const planned of planModelRows({ rows, width }).rows.values()) {
+        for (const planned of planModelRows({ rows, width, providerId: undefined }).rows.values()) {
           if (planned.path) continue;
           const cells =
             planned.metadata === undefined ? 0 : getTerminalCellWidth(planned.metadata) + 1;
@@ -220,5 +229,18 @@ describe('planModelRows on the captured listings', () => {
         }
       }
     }
+  });
+
+  it('spells a nameless custom id through its provider catalogue label', () => {
+    const row: RightRow = {
+      kind: 'model',
+      model: { id: 'claude-opus-5-5' },
+      provenance: 'Custom',
+      section: '',
+      expanded: false,
+    };
+    const plan = planModelRows({ rows: [row], width: 60, providerId: 'claude-code' });
+
+    expect(plan.rows.get('claude-opus-5-5')?.label).toBe('Opus 5.5');
   });
 });

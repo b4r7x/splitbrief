@@ -39,7 +39,11 @@ export function formatTaskStartedParts(
           role: 'implementer',
           cache: modelCacheStore,
         });
-  const toolLabel = formatToolModel({ tool: event.tool, model: displayName ?? event.model });
+  const toolLabel = formatToolModel({
+    tool: event.tool,
+    model: event.model,
+    displayName,
+  });
   if (toolLabel) parts.push(toolLabel);
   // The recovery panel names this value `Worker`. The routing sentence (`Selected profile default
   // (fits, estimated …)`) restates the worker and the fit, so it stays in the run log.

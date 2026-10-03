@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { canonicalModelId, isSameCanonicalModel } from './canonical-model-id.js';
+import {
+  areExactModelSelectionIdsEqual,
+  canonicalModelId,
+  isSameCanonicalModel,
+} from './canonical-model-id.js';
 
 describe('canonicalModelId', () => {
   it('strips a :free suffix and lower-cases the id', () => {
@@ -63,5 +67,14 @@ describe('isSameCanonicalModel', () => {
         { id: 'sonnet[1m]', owner: 'claude-code' },
       ),
     ).toBe(false);
+  });
+});
+
+describe('areExactModelSelectionIdsEqual', () => {
+  // SPEC-D7: the two comparators answer different questions, and collapsing them into one breaks
+  // `findKnownModel` and the configured-recovery gate. Selection identity stays strict.
+  it('keeps a window-suffixed selection distinct from its bare alias', () => {
+    expect(areExactModelSelectionIdsEqual({ left: 'opus[1m]', right: 'opus' })).toBe(false);
+    expect(areExactModelSelectionIdsEqual({ left: 'opus', right: 'opus' })).toBe(true);
   });
 });

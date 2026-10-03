@@ -343,6 +343,42 @@ describe('api implementer — OpenAI-compatible path', () => {
     expect(consultBody.temperature).toBeUndefined();
   });
 
+  it("sends the run's plan decisions on the first attempt and on a retry", async () => {
+    fetchMock.mockImplementation(async () =>
+      makeOpenAiSseResponse([
+        { content: bundle('src/plan.ts', 'create', 'export const x = 1;\n') },
+        { usage: { prompt_tokens: 10, completion_tokens: 5 } },
+      ]),
+    );
+    const cfg = makeConfig({ implementer: remoteImplementerSeat });
+    const implementer = createApiImplementer(cfg);
+    const call = {
+      task: makeTask({ id: 'T019', file: 'src/plan.ts', action: 'create' }),
+      projectDir,
+      config: cfg,
+      context: defaultContext,
+      onOutput: vi.fn(),
+      plan: {
+        summary: 'Route every write through the registry.',
+        decisions: ['Keep the registry as the one source of truth'],
+        criteria: [],
+        checks: [],
+        validation: null,
+      },
+    };
+
+    await implementer.implement(call);
+    await implementer.retry({ ...call, error: 'tsc failed', attempt: 1, kind: 'local' });
+
+    const bodies = fetchMock.mock.calls.map((args) =>
+      String((args[1] as { body?: string } | undefined)?.body),
+    );
+    expect(bodies).toHaveLength(2);
+    for (const body of bodies) {
+      expect(body).toContain('Keep the registry as the one source of truth');
+    }
+  });
+
   // The schema rejects this config at load (a custom provider has no catalog
   // default for `auto` to resolve to). The runtime guard is the backstop for
   // programmatically-built configs that never passed through the schema, so the

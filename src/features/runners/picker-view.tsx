@@ -226,7 +226,12 @@ export function PickerView({
   // is made once per render, at the width the first row asks for.
   let rowPlan: ModelRowPlan | undefined;
   const rowPlanAt = (width: number): ModelRowPlan => {
-    if (rowPlan?.width !== width) rowPlan = planModelRows({ rows: catalog.rightRows, width });
+    if (rowPlan?.width !== width)
+      rowPlan = planModelRows({
+        rows: catalog.rightRows,
+        width,
+        providerId: catalog.currentItem?.id,
+      });
     return rowPlan;
   };
   // The tool column answers for its status words the same way, over every tool, not the filtered few.
@@ -305,7 +310,7 @@ export function PickerView({
     };
     const modelsByline = (current: ModelBylineRow): string => {
       const model = current.model;
-      const label = model.displayName ?? formatModelName(model.id);
+      const label = model.displayName ?? formatModelName(model.id, catalog.currentItem?.id);
       if (isAutomaticModel(model.id)) {
         return formatModelsByline({
           label,

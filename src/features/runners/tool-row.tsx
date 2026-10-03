@@ -174,7 +174,9 @@ export function renderModelRow({
     );
   }
 
-  const planned = (plan ?? planModelRows({ rows: [row], width: maxWidth })).rows.get(row.model.id);
+  const planned = (
+    plan ?? planModelRows({ rows: [row], width: maxWidth, providerId: undefined })
+  ).rows.get(row.model.id);
   const label = planned?.label ?? row.model.id;
   return (
     <ListRow

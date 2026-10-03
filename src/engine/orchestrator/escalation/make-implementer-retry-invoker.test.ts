@@ -26,6 +26,13 @@ describe('makeImplementerRetryInvoker', () => {
     const config = makeConfig();
     const task = makeTask();
     const signal = new AbortController().signal;
+    const plan = {
+      summary: 'Route every write through the registry.',
+      decisions: ['Keep the registry as the one source of truth'],
+      criteria: [],
+      checks: [],
+      validation: null,
+    };
 
     const invoker = makeImplementerRetryInvoker({
       context: defaultContext,
@@ -50,7 +57,7 @@ describe('makeImplementerRetryInvoker', () => {
       createdByThisTask: ['src/owned.ts'],
       seat: {
         ref: { projectDir: '/staged', sessionId: 'sess-retry', bus: createEventBus() },
-        state: makeImplState([task]),
+        state: { ...makeImplState([task]), plan },
         usageCategory: 'implementer',
       },
     });
@@ -79,6 +86,7 @@ describe('makeImplementerRetryInvoker', () => {
       fileIgnoreProjectDir: '/project',
       changeDetection: 'file-hashes',
       createdByThisTask: ['src/owned.ts'],
+      plan,
     });
   });
 

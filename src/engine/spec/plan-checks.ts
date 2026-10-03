@@ -19,6 +19,8 @@ export type PlanCheckCode =
   | 'uncovered-criterion'
   | 'unknown-criterion'
   | 'task-without-check'
+  | 'task-without-criterion'
+  | 'task-without-intent'
   | 'path-outside-project'
   | 'path-not-file'
   | 'missing-context-file'
@@ -146,6 +148,9 @@ export function checkPlan(
         `Task ${task.id} (batch ${task.batch}) comes after ${previous.id} (batch ${previous.batch}); list the tasks in batch order.`,
       );
     }
+    if (task.criteria.length === 0)
+      fail('task-without-criterion', `Task ${task.id} serves no criterion.`);
+    if (task.intent.trim() === '') fail('task-without-intent', `Task ${task.id} has no intent.`);
     for (const id of task.criteria.filter((criterion) => !criterionIds.includes(criterion))) {
       fail('unknown-criterion', `Task ${task.id} serves unknown criterion ${id}.`);
     }

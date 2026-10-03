@@ -386,7 +386,7 @@ describe('runner row grammar', () => {
     );
     await tick(20);
     const defaultFrame = defaultUi.lastFrame() ?? '';
-    expect(defaultFrame).toContain('gpt-5.4');
+    expect(defaultFrame).toContain('GPT-5.4');
     expect(defaultFrame).not.toContain('Known');
     expect(defaultFrame).not.toContain('Catalog');
     expect(defaultFrame).not.toContain('Detected');
@@ -481,12 +481,11 @@ describe('runner row grammar', () => {
     }
   });
 
-  it('cuts a namespaced model id at the head so the tail still names the model', async () => {
+  it('names a namespaced model id by its pretty tail, with no namespace', async () => {
     const namespaced: ModelOption = { id: 'kilo/anthropic/claude-opus-4.5' };
     const line = await rowLine(modelRow(namespaced, 'Known'), 34);
 
-    expect(line).toContain('claude-opus-4.5');
-    expect(line).toContain(ELLIPSIS);
+    expect(line).toContain('Claude Opus 4.5');
     expect(line).not.toContain('kilo/anthropic');
   });
 
@@ -736,7 +735,7 @@ describe('runner row grammar', () => {
       );
       await tick(20);
       const frame = ui.lastFrame() ?? '';
-      expect(frame).toContain('github-copilot/gpt-5.6');
+      expect(frame).toContain('GPT-5.6');
       expect(frame).toContain('2 providers');
       expect(frame).not.toContain('openrouter');
       expect(frame).not.toContain('●');
@@ -1207,7 +1206,7 @@ describe('runner row grammar', () => {
       );
       await tick(20);
       const frame = ui.lastFrame() ?? '';
-      expect(frame).toContain('openrouter/gemini-3-flash');
+      expect(frame).toContain('Gemini 3 Flash');
       expect(frame).not.toContain('providers');
       expect(frame).not.toContain('1 provider');
       ui.unmount();
@@ -1288,7 +1287,7 @@ describe('runner row grammar', () => {
       }),
     );
     await tick(20);
-    expect(withoutName.lastFrame() ?? '').toContain('custom-coder-v1');
+    expect(withoutName.lastFrame() ?? '').toContain('Custom Coder V1');
     withoutName.unmount();
   });
 

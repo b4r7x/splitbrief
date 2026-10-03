@@ -23,6 +23,13 @@ describe('buildPlanSessionPrompt', () => {
     expect(prompt).toContain('`contextFiles`');
   });
 
+  it('forbids a task to depend on anything outside its fields and the plan context', () => {
+    const prompt = buildPlanSessionPrompt(input);
+    expect(prompt).toContain(
+      "A task must not depend on anything outside its own fields and the plan context (summary, decisions, its criteria); do not refer to 'the plan' or to another task's text.",
+    );
+  });
+
   it('sizes the tasks for the BUILD model and its measured context', () => {
     const prompt = buildPlanSessionPrompt(input);
     expect(prompt).toContain('deepseek-v4.1-flash');
@@ -42,6 +49,20 @@ describe('buildPlanSessionPrompt', () => {
     const prompt = buildPlanSessionPrompt(input);
     expect(prompt).toContain('`protectedOperations`');
     expect(prompt).toContain('dependency manifests and lockfiles');
+  });
+
+  it('sizes a task as one behaviour with its tests and callers, split only for context fit', () => {
+    const prompt = buildPlanSessionPrompt(input);
+    expect(prompt).toContain(
+      'Each task completes one verifiable behaviour, including its tests and the caller changes it needs.',
+    );
+    expect(prompt).toContain(
+      '`intent` names the behaviour and its expected result, never only files.',
+    );
+    expect(prompt).toContain('Never separate implement, test and caller tasks for one behaviour.');
+    expect(prompt).toContain(
+      "Split a behaviour only when its task would not fit the implementer's context, and split it into behaviours that each verify on their own.",
+    );
   });
 
   it('bounds the questions: three per round, two rounds, each with a default', () => {

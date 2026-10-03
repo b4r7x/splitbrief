@@ -5,7 +5,7 @@ import {
   truncateTerminalDisplayText,
 } from '../../utils/display-text.js';
 import { getRunnerDisplayName, type RunnerConfig } from '../config/accessors/runner-config.js';
-import { formatModelName, peelDisplayLabel } from '../model-display.js';
+import { cliVocabularyTool, formatModelName, peelDisplayLabel } from '../model-display.js';
 import { getProviderDisplayName, getRunnerIdentityDisplayName } from '../providers/catalog.js';
 import { AUTOMATIC_MODEL, normalizeConfiguredModel } from '../providers/automatic-model.js';
 import type { RunnerKind } from '../schemas/enums.js';
@@ -110,19 +110,16 @@ function modelWord(
   displayName: string | undefined,
   kind: RunnerKind | undefined,
 ): string {
-  // Only a CLI seat — or an identity recorded before kinds — reads the CLI
-  // tool's model-id vocabulary; an API seat that reuses a tool id does not.
-  const tool =
-    (kind === undefined || kind === 'cli') && isCliToolId(seat.tool) ? seat.tool : undefined;
+  const tool = cliVocabularyTool(seat.tool, kind);
   const model = normalizeConfiguredModel(seat.model, tool);
   if (model === undefined || model === AUTOMATIC_MODEL) return AUTO_MODEL_WORD;
   if (tool !== undefined && CLI_TOOL_CATALOG[tool].effortChannel === 'model-id') {
     const peeled = displayName ? peelDisplayLabel(displayName) : '';
     if (peeled !== '') return peeled;
-    return formatModelName(peelAxisTokensFromModelId(model));
+    return formatModelName(peelAxisTokensFromModelId(model), tool);
   }
   if (displayName) return displayName;
-  return formatModelName(model);
+  return formatModelName(model, tool);
 }
 
 export function formatSeatIdentity(input: {
@@ -171,7 +168,8 @@ export function formatSeatCandidateIdentity(
   displayName?: string | undefined,
 ): string {
   const words = [getProviderDisplayName(candidate.tool)];
-  if (candidate.model !== undefined) words.push(displayName ?? formatModelName(candidate.model));
+  if (candidate.model !== undefined)
+    words.push(displayName ?? formatModelName(candidate.model, candidate.tool));
   return sanitizeTerminalDisplayText(words.join(CREW_IDENTITY_SEPARATOR));
 }
 

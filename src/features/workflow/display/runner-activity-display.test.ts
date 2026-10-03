@@ -168,7 +168,7 @@ describe('warning model id resolution', () => {
     expect(item.diagnosticPreview).toBe('Opus 5.5 → Sonnet 5 (overloaded)');
   });
 
-  it('keeps an unresolved raw id beside the names the catalog knows', () => {
+  it('spells an id no catalog knows as its pretty name beside the catalog names', () => {
     const item = runnerActivityLedgerItem(
       {
         ...fallbackRow,
@@ -179,7 +179,7 @@ describe('warning model id resolution', () => {
       { cache: catalog },
     );
 
-    expect(item.value).toBe('claude_fallback: Opus 5.5 → claude-zeta-9 (overloaded)');
+    expect(item.value).toBe('claude_fallback: Opus 5.5 → Claude Zeta 9 (overloaded)');
   });
 
   it('replaces the longest id first so a shorter sibling cannot rewrite part of it', () => {
@@ -203,7 +203,7 @@ describe('warning model id resolution', () => {
     expect(resolveRunnerActivityModelNames({ ...fallbackRow }, catalog)).toBeNull();
   });
 
-  it('keeps raw ids on an API call whose runner name is a CLI tool id', () => {
+  it('spells an API call ids pretty, never with the CLI alias labels, when its runner name is a CLI tool id', () => {
     const item = runnerActivityLedgerItem(
       {
         ...fallbackRow,
@@ -215,7 +215,7 @@ describe('warning model id resolution', () => {
       { cache: catalog },
     );
 
-    expect(item.value).toBe('claude_fallback: claude-opus-5-5 → claude-sonnet-5 (overloaded)');
+    expect(item.value).toBe('claude_fallback: Claude Opus 5.5 → Claude Sonnet 5 (overloaded)');
   });
 
   it('routes each seat role to the catalog that names its models', () => {

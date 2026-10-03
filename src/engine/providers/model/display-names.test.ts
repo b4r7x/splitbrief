@@ -87,8 +87,47 @@ describe('resolveSeatDisplayName', () => {
         cache: cliNamed,
       }),
     ).toBe('Opencode Test Model');
-    expect(resolveSeatDisplayName(apiRunner, 'implementer', cliNamed)).toBeUndefined();
+    expect(resolveSeatDisplayName(apiRunner, 'implementer', cliNamed)).toBe('Test Model');
     expect(resolveSeatDisplayName(cliRunner, 'implementer', cliNamed)).toBe('Opencode Test Model');
+  });
+});
+
+describe('resolveModelDisplayName', () => {
+  const named = (providerId: string, model: string, cache: ModelCacheAccessor = NULL_CACHE) =>
+    resolveModelDisplayName({ providerId, model, role: 'planner', cache, kind: 'cli' });
+
+  it('names a full Claude id by the alias row that resolves to it', () => {
+    expect(named('claude-code', 'claude-opus-5-5')).toBe('Opus 5.5');
+    expect(named('claude-code', 'claude-fable-5-1')).toBe('Fable 5.1');
+  });
+
+  it('names both DeepSeek ids the owner runs by their catalog name', () => {
+    expect(named('opencode', 'deepseek/deepseek-flash')).toBe('DeepSeek V4.1 Flash');
+    expect(named('opencode', 'opencode-go/deepseek-v4.1-flash')).toBe('DeepSeek V4.1 Flash');
+  });
+
+  it('keeps the catalog name when a nameless runtime row lists the model', () => {
+    const listed: ModelCacheAccessor = {
+      getModelsDevCatalog: () => null,
+      getProviderModels: () => [{ id: 'deepseek/deepseek-flash' }],
+    };
+    expect(named('opencode', 'deepseek/deepseek-flash', listed)).toBe('DeepSeek V4.1 Flash');
+  });
+
+  it('spells a model no catalog knows instead of printing its raw id', () => {
+    expect(named('codex', 'gpt-6-1-sol')).toBe('GPT-6.1 Sol');
+  });
+
+  it('does not take the CLI alias label for an API seat that reuses the tool id', () => {
+    expect(
+      resolveModelDisplayName({
+        providerId: 'claude-code',
+        model: 'opus',
+        role: 'implementer',
+        cache: NULL_CACHE,
+        kind: 'api',
+      }),
+    ).toBe('Opus');
   });
 });
 
@@ -155,7 +194,7 @@ describe('labelSeatChange', () => {
     if (change === undefined) throw new Error('the plan seat moved');
 
     expect(formatSeatChangeNotice(change)).toBe(
-      'PLAN seat changed Claude Code CLI · opus · max → Claude Code CLI · sonnet; context will be rebuilt',
+      'PLAN seat changed Claude Code CLI · Opus 5.5 · max → Claude Code CLI · Sonnet 5; context will be rebuilt',
     );
     expect(formatSeatChangeNotice(labelSeatChange(change, NULL_CACHE))).toBe(
       'PLAN seat changed Claude Code CLI · Opus 5.5 · max → Claude Code CLI · Sonnet 5; context will be rebuilt',
@@ -188,7 +227,7 @@ describe('labelSeatChange', () => {
 
     expect(labelSeatChange(change, cache)).toEqual({
       ...change,
-      before: 'opencode · opencode/test-model',
+      before: 'opencode · Test Model',
       after: 'OpenCode CLI · Opencode Test Model',
     });
   });

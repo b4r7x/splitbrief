@@ -5,6 +5,7 @@ import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { ProjectContext } from '../../../core/state/types.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import type { LanguageContext } from '../../spec/prompts/language-context.js';
+import type { PlanContext } from '../../spec/prompt-formatter.js';
 import type { TaskContextFit, CurrentCodeContextMode } from '../../../core/schemas/enums.js';
 
 export interface TaskPromptEstimateOptions {
@@ -15,6 +16,7 @@ export interface TaskPromptEstimateOptions {
   /** Write mode of the implementer the estimate is for; picks the prompt and preamble it will actually send. */
   writesFiles?: ImplementerWriteMode | undefined;
   outputContract?: BuildOutputContract | undefined;
+  plan?: PlanContext | undefined;
 }
 
 export interface ContextFitOptions {
@@ -30,6 +32,7 @@ export interface RouteTaskOptions extends ContextFitOptions {
   modelCache?: ModelCacheAccessor | undefined;
   languageContext?: LanguageContext | undefined;
   detectedContextLength?: number | undefined;
+  plan?: PlanContext | undefined;
 }
 
 export interface RejectedImplementerProfile {

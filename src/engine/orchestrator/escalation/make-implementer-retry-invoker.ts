@@ -50,6 +50,7 @@ export function makeImplementerRetryInvoker(opts: {
         sandboxEnv,
         fileIgnoreProjectDir,
         changeDetection,
+        plan: seat.state.plan,
         ...(createdByThisTask === undefined ? {} : { createdByThisTask }),
       });
       return implementerSeatAttempt(

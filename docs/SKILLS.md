@@ -38,13 +38,13 @@ Because one row is not `preserved`, `skills/splitbrief-run/SKILL.md`'s `wait-pro
 | `splitbrief-brief` | "compile briefs for this task" | preflight → briefs | run dir only |
 | `splitbrief-run` | "run these briefs with cmd" | spawn per brief → gates → drift → ladder | run dir + source via the implementer |
 | `splitbrief-review` | "review what cmd built against the briefs" | gates once → packet → verdict | run dir only (`plan.md`, `drift.md`, `review-packet.md`, `review/attempt-1.log`, `review.md`) |
-| `splitbrief-babysit` | "run splitbrief and babysit it" | watch the CLI → stop at the first tool defect → fix → verify → build → continue | CLI session record + tool repairs |
+| `splitbrief-babysit` | "run splitbrief and babysit it" | watch the CLI → End run on a tool defect that blocks the run → fix → gates → rebuild → commit → new run; cosmetic defects → debt list; weak seat output → composer correction | CLI session record + tool repairs |
 
 ### Supervised dogfooding
 
 `skills/splitbrief-babysit/` is self-contained when copied or installed alone. It needs no other skill, private `.nuke/` files, `jq`, or fixed agent model. It uses the repository's Node.js runtime. When tmux is on PATH, it always launches the run in a named tmux session and gives the owner `tmux attach -r -t <session>` to watch it live; without tmux, it uses the host's interactive terminal. The configured coding tools remain prerequisites for the CLI run.
 
-The bundled `scripts/watch-run.mjs` polls the session log once per second and preserves its byte cursor between calls. Errors, failed validation, retries, warnings, and recovery events wake the supervisor. The supervisor stops the run; the watcher does not enforce an engine-level barrier. All detected tool defects, including visual defects and false tripwire alarms, require repair before further work. Model mistakes and correctly reported provider limits retain normal CLI recovery.
+The bundled `scripts/watch-run.mjs` polls the session log once per second and preserves its byte cursor between calls. Errors, failed validation, retries, warnings, and recovery events wake the supervisor. The supervisor stops the run; the watcher does not enforce an engine-level barrier. A tool defect that blocks the run, including a false tripwire alarm, ends the run: End run, fix, verify with the gates, rebuild, let the owner commit, then start a new run. A cosmetic defect goes to the debt list and the run goes on. A weak seat output is corrected in the composer, not in code. Model mistakes and correctly reported provider limits retain normal CLI recovery.
 
 The watcher source follows the existing script library convention in `skills/splitbrief-run/scripts/`; `skills:sync` copies it into the installed babysit skill. No source-library path is needed at runtime. The four pipeline skills still use generated contract blocks; the babysit procedure is handwritten and its frontmatter and script mirror are checked by `skills:check`.
 

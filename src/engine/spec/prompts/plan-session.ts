@@ -33,9 +33,12 @@ const RULES = `- Research the repository read-only. Do not edit, create or delet
 - Criteria are the contract. Give each one an id (\`C1\`, \`C2\`, …) and the \`checkIds\` that verify it. Every check id must exist in the run checks or in a task's checks, and every check id is unique.
 - A check is \`test\` (a test file or pattern), \`cmd\` (a command) or \`render\` (a gallery scenario id).
 - Task ids are \`T001\`, \`T002\`, … in order. Every task serves at least one criterion, every criterion is served by at least one task, and every task has at least one check.
+- Each task completes one verifiable behaviour, including its tests and the caller changes it needs. Its \`intent\` names the behaviour and its expected result, never only files. Never separate implement, test and caller tasks for one behaviour.
+- Split a behaviour only when its task would not fit the implementer's context, and split it into behaviours that each verify on their own.
 - \`suggestedFiles\`: the files the task writes, first the main one. At least one. They are guidance: the implementer may touch another ordinary file when the change needs it.
 - \`contextFiles\`: the read-only files the implementer must see. SPLITBRIEF attaches their current code when it dispatches the task.
 - Do not copy code into a task. Name the files; SPLITBRIEF attaches their current code.
+- A task must not depend on anything outside its own fields and the plan context (summary, decisions, its criteria); do not refer to 'the plan' or to another task's text.
 - \`exclusions\`: explicit "do not" notes. The reviewer checks them.
 - \`steps\`: only where the approach is not obvious, else null.
 - \`dependsOn\`: ids of earlier tasks in the same or an earlier batch. No cycles.

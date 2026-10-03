@@ -174,6 +174,7 @@ export async function runImplementation(opts: {
             projectDir,
             state.discoveredValidation?.language,
           ),
+          plan: state.plan,
           onOutput: (text, opts) => {
             recordOutput(text);
             textHandler(text, { messageStart: usesIsolation && opts?.messageStart === true });

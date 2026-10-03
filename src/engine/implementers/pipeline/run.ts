@@ -182,6 +182,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         languageContext: opts.languageContext,
         writesFiles,
         outputContract,
+        plan: opts.plan,
       }));
   const buildRetryPrompt =
     baseConfig.buildRetryPrompt ??
@@ -195,6 +196,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         languageContext: opts.languageContext,
         writesFiles,
         outputContract,
+        plan: opts.plan,
       }));
 
   function failTask(opts: ImplementerOptions): void {

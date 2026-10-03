@@ -52,6 +52,7 @@ export function assessProfile(
     modelId,
     writesFiles,
     outputContract,
+    plan: opts.plan,
   });
   const prompt = formatTaskPrompt({
     task: opts.task,
@@ -60,6 +61,7 @@ export function assessProfile(
     languageContext,
     writesFiles,
     outputContract,
+    plan: opts.plan,
   });
   // Routing runs before the isolation directory exists; the project path stands in for its length.
   const estimatedTokens =

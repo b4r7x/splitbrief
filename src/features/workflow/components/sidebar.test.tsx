@@ -680,7 +680,7 @@ describe('Sidebar — reviewer seat', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     expect(frame).toContain('REVIEW');
-    expect(frame).toContain('gpt-5-codex');
+    expect(frame).toContain('GPT-5 Codex');
     expect(frame).not.toContain(PLANNER_INHERITANCE.mark);
     ui.unmount();
   });

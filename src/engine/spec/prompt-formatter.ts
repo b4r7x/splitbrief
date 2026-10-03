@@ -1,5 +1,6 @@
 import type { ProjectContext, CodeContext } from '../../core/state/types.js';
 import { taskFiles, type Task } from '../../core/schemas/task.js';
+import type { Plan } from '../../core/schemas/plan.js';
 import type { ImplementerWriteMode } from '../../core/schemas/implementer-config.js';
 import type { BuildOutputContract } from '../implementers/file-bundle.js';
 import { extractFunctionContext } from '../parsers/scope-extractor.js';
@@ -14,6 +15,8 @@ import { framingForAttempt } from '../../core/pipeline-spec/ladder.js';
 import { CLOSING_CONSTRAINTS } from '../../core/pipeline-spec/brief.js';
 
 export { formatImplementerSystemPreamble };
+
+export type PlanContext = Pick<Plan, 'summary' | 'decisions' | 'criteria'>;
 
 function resolveCodeContext(
   fileContent: string,
@@ -53,6 +56,7 @@ function buildTaskSections(
   context: ProjectContext | undefined,
   writesFiles: ImplementerWriteMode,
   outputContract: BuildOutputContract | undefined,
+  plan: PlanContext | undefined,
 ): string[] {
   const sections: string[] = [];
 
@@ -85,6 +89,20 @@ function buildTaskSections(
   }
   if (task.pattern) {
     sections.push('', TASK_BRIEF_HEADINGS.pattern.heading, task.pattern);
+  }
+  if (plan) {
+    const matchingCriteria = plan.criteria.filter((c) => task.criteria?.includes(c.id));
+    sections.push('', '### Plan context (read-only)', plan.summary);
+    if (plan.decisions.length > 0) {
+      sections.push('', 'Decisions:', ...plan.decisions.map((d) => `- ${d}`));
+    }
+    if (matchingCriteria.length > 0) {
+      sections.push(
+        '',
+        'Criteria this task serves:',
+        ...matchingCriteria.map((c) => `- ${c.id}: ${c.text}`),
+      );
+    }
   }
   if (task.implementationSteps.length > 0) {
     sections.push(
@@ -244,6 +262,7 @@ export function formatTaskPrompt(opts: {
   languageContext?: LanguageContext | undefined;
   writesFiles?: ImplementerWriteMode | undefined;
   outputContract?: BuildOutputContract | undefined;
+  plan?: PlanContext | undefined;
 }): string {
   const {
     task,
@@ -252,9 +271,10 @@ export function formatTaskPrompt(opts: {
     languageContext,
     writesFiles = 'extracted-code',
     outputContract,
+    plan,
   } = opts;
   const ctx = languageContext ?? buildLanguageContext(undefined);
-  const sections = buildTaskSections(task, context, writesFiles, outputContract);
+  const sections = buildTaskSections(task, context, writesFiles, outputContract, plan);
 
   // A bundle answer carries complete files, so every captured target goes in
   // whole: a formatter that cut one would ask for a rewrite of code the model
@@ -288,6 +308,7 @@ export function formatRetryPrompt(opts: {
   languageContext?: LanguageContext | undefined;
   writesFiles?: ImplementerWriteMode | undefined;
   outputContract?: BuildOutputContract | undefined;
+  plan?: PlanContext | undefined;
 }): string {
   const {
     task,
@@ -298,10 +319,11 @@ export function formatRetryPrompt(opts: {
     languageContext,
     writesFiles = 'extracted-code',
     outputContract,
+    plan,
   } = opts;
   const ctx = languageContext ?? buildLanguageContext(undefined);
   const framing = framingForAttempt(attempt);
-  const sections = buildTaskSections(task, context, writesFiles, outputContract);
+  const sections = buildTaskSections(task, context, writesFiles, outputContract, plan);
 
   sections.unshift(framing, '', 'Error from previous attempt:', error, '');
 

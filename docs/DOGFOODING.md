@@ -1,12 +1,12 @@
 # Dogfooding: developing SPLITBRIEF with SPLITBRIEF
 
-The built CLI runs on its own repository. A stronger tool plans and reviews, a weaker one builds, and the operator watches the run, fixes tool defects, and continues the same session. The self-contained [splitbrief-babysit skill](../skills/splitbrief-babysit/SKILL.md) supplies the supervision protocol and bundled watcher. This page explains the engine semantics, with further details in [WORKFLOW.md](./WORKFLOW.md) and [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md).
+The built CLI runs on its own repository. A stronger tool plans and reviews, a weaker one builds, and the operator watches the run. A tool defect that blocks the run ends it; the fix lands between runs, and a new run starts on the new build. The self-contained [splitbrief-babysit skill](../skills/splitbrief-babysit/SKILL.md) supplies the supervision protocol and bundled watcher. This page explains the engine semantics, with further details in [WORKFLOW.md](./WORKFLOW.md) and [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md).
 
 Four rules, in force for every dogfooding run:
 
 1. **Never commit or stage.** The operator leaves every change in the working tree; the owner commits between runs.
 2. **Run the build you just made.** `npm run build` then `node dist/cli.js …`. The global `splitbrief` on PATH is whatever was installed last and is usually stale.
-3. **Stop on the first detected tool defect.** Stop resumably, fix the cause, verify the fix, rebuild, and `continue` the same run. This includes visual defects, weak flows, and false tripwire alarms. A brief or model mistake handled correctly by the tool remains the run's business.
+3. **A tool defect that blocks the run ends the run.** Choose End run, so the run closes and keeps every file it wrote and its ledger. Then fix the cause in the checkout, verify it with the gates, rebuild, let the owner commit, and start a **new** run. Nobody edits the checkout and nobody rebuilds while a run lives: `npm run build` deletes `dist/` under the running CLI. A cosmetic defect goes to the debt list (a `Debt` section in `babysit.md`) and the run goes on. A weak seat output is corrected in the composer, not in code. A brief or model mistake handled correctly by the tool remains the run's business.
 4. **Every run leaves a record.** Append each defect, repair, and verification result to `.splitbrief/sessions/<id>/babysit.md`. The next supervisor reads that record first.
 
 ## 1. Preflight
@@ -87,21 +87,34 @@ Silence now means no frames. Every admitted tool is spawned in a streaming outpu
 
 Memory: the process should sit in the hundreds of MB. Growth of more than a few MB per second is a leak; `kill -USR2 <pid>` writes a heap snapshot when the run was started with `NODE_OPTIONS=--heapsnapshot-signal=SIGUSR2`.
 
-## 4. The autofix loop
+## 4. Tool defects: end the run, fix, start a new run
 
-Classify every failure before allowing further work. The run owns model and brief mistakes when the tool handles them correctly. The operator stops on any tool defect, including crashes, lost documents, false alarms, incorrect counters, labels, and rendering. A weak flow is also a tool defect: a dead end, an unclear next action, a wait with no feedback, a manual step that the tool can do, or different behavior for one action on neighboring surfaces. An uncertain cause also requires a resumable stop for diagnosis. Expected warnings and correctly reported provider limits use normal recovery. Never retry unchanged code or defer a known tool defect until the final review.
+Classify every failure before allowing further work. There are three classes:
+
+1. **A tool defect that blocks the run** — a crash, a lost document, incorrect state, a false alarm, broken recovery, or a weak flow that leaves no way forward (a dead end, a wait with no feedback). End the run, fix the tool, and start a new run.
+2. **A cosmetic defect** — an incorrect counter, label, copy or rendering, or a weak flow the run can still get through. Record it in the debt list with evidence; the run goes on.
+3. **A weak seat output** — a bad split, a misread task, a weak reply. Correct it in the composer; no code changes. A model mistake the tool handles correctly needs nothing: the retry ladder and the recovery panel own it.
+
+An uncertain cause needs a resumable stop for diagnosis, without code edits. Expected warnings and correctly reported provider limits use normal recovery. Never retry unchanged code or defer a blocking tool defect until the final review.
 
 ```bash
-# 1. stop: esc, esc (resumable) — or ctrl+c ctrl+c, or kill -INT <pid> on a headless run
-# 2. confirm cleanup and process exit; fix the cause; run regression tests, affected suites and typecheck
-# 3. rebuild
+# 1. end the run: esc, then End run (or /end); a run parked on a recovery: $SB continue $ID --action end-run
+# 2. confirm cleanup and process exit; record the defect in babysit.md
+# 3. fix the cause in the checkout; run regression tests, affected suites and typecheck; npm run release-check
+# 4. rebuild; the owner commits
 npm run build
-# 4. carry the same session on
+# 5. start a new run on the new build
+$SB start "<one sentence>" @<task file>
+```
+
+Inspect visual and flow fixes with the look-and-logic loop in `CLAUDE.md`. In the new run, reproduce the original interaction and record the result. If it still fails, end that run too. Never continue the ended run after a tool fix, and never skip a brief to bypass a tool defect.
+
+`continue` still serves a run that stopped for a reason other than a tool defect: a resumable stop for diagnosis, a quit, a crash of the host, a provider limit, or a parked recovery. No code changed and no rebuild happened while it was stopped, so the run carries on in the build it started with:
+
+```bash
 $SB continue $ID                     # picks up at the first artifact not on disk, or the parked step
 $SB continue $ID --action retry      # when the run stopped on a recovery: retry | skip | switch-seat:<tool>[:<model>] | end-run
 ```
-
-Inspect visual and flow fixes with the look-and-logic loop in `CLAUDE.md`. After rebuilding, reproduce the original interaction in a fresh process and record the result. If it still fails, stop again. Do not skip a brief or end a run to bypass a tool defect.
 
 What `continue` does with the saved state (`src/engine/orchestrator/run/init.ts`, `src/core/sessions/run-status.ts`):
 
@@ -112,9 +125,9 @@ What `continue` does with the saved state (`src/engine/orchestrator/run/init.ts`
 | Crashed mid-brief (no `interruptedStep`) | the brief restarts at attempt 0 with its own writes (declared, or recorded as promoted) restored |
 | On a recovery | nothing runs until `--action` or the panel answers it |
 
-Orphaned runner processes from a crash are reaped at the next start (`runner-pids.jsonl`). The code the run itself promotes into the tree does not reach the running orchestrator: a fix the run built for its own benefit needs the same stop → build → continue.
+Orphaned runner processes from a crash are reaped at the next start (`runner-pids.jsonl`). The code the run itself promotes into the tree does not reach the running orchestrator: a fix the run built for its own benefit takes effect in the next run, after the owner commits and rebuilds.
 
-When the planner's output was lost by the tool but is in the log, rebuild the artifact rather than pay for the call again: concatenate the call's `runner_call_text_delta` rows, repair what the split broke, write the file into the session directory, then `continue --action retry`. The step is memoized by the file's presence.
+When the planner's output was lost by the tool but is in the log, rebuild the artifact rather than pay for the call again. This writes into the session directory only, so it is not a code change and the same run continues: concatenate the call's `runner_call_text_delta` rows, repair what the split broke, write the file into the session directory, then `continue --action retry`. The step is memoized by the file's presence.
 
 ## 5. Swapping a seat
 
@@ -124,7 +137,7 @@ From the shell, `continue --implementer <tool> --implementer-model <id>` or `--p
 
 ## 6. Deterministic failures and blocked repairs
 
-A deterministic failure caused by a tool prompt, adapter flag, gate, or default is a tool defect. Stop when detected, diagnose the cause, and fix it before resuming. Do not let the run finish through repeated identical failures. If a repair needs an unauthorized product decision or unavailable credentials, keep the run open and parked. Report the concrete blocker and the saved run ID. Record the options in the defect record and ask the owner. Do not invent the decision.
+A deterministic failure caused by a tool prompt, adapter flag, gate, or default is a tool defect that blocks the run. End the run when it is detected, diagnose the cause, fix it, and start a new run (§4). Do not let the run finish through repeated identical failures. If a repair needs an unauthorized product decision or unavailable credentials, keep the run parked and edit nothing. Report the concrete blocker and the saved run ID. Record the options in the defect record and ask the owner. Do not invent the decision. The code change that the decision brings follows the §4 path.
 
 ## 7. Smoke test: stop, continue, finish
 

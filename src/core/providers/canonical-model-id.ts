@@ -42,6 +42,12 @@ export function canonicalModelBucket(identity: ModelIdentity): string {
   return slash === -1 ? canonical : canonical.slice(slash + 1);
 }
 
+export function areExactModelSelectionIdsEqual(
+  input: Readonly<{ left: string; right: string }>,
+): boolean {
+  return input.left === input.right;
+}
+
 function isSegmentSuffix(shorter: readonly string[], longer: readonly string[]): boolean {
   const offset = longer.length - shorter.length;
   return shorter.every((segment, index) => segment === longer[offset + index]);

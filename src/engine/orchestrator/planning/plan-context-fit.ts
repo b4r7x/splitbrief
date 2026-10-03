@@ -22,7 +22,7 @@ export async function estimatePlanContextFits(
       )
       .map((spec) => refreshCurrentCode(taskFromSpec(spec, opts.projectDir), opts.projectDir)),
   );
-  const metadata = await buildRoutingPreviewMetadata(tasks, opts);
+  const metadata = await buildRoutingPreviewMetadata(tasks, { ...opts, plan });
   return new Map(
     metadata.flatMap((item) =>
       item.contextFit === undefined

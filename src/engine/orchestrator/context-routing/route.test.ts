@@ -221,6 +221,24 @@ describe('routeTaskToImplementerProfile', () => {
     expect(withContext.currentCodeTruncated).toBe(false);
   });
 
+  it("counts the run's plan context in the fit estimate", () => {
+    const task = makeTask();
+    const plan = {
+      summary: 'Route every write through the registry.',
+      decisions: ['Keep the registry as the one source of truth. '.repeat(400)],
+      criteria: [],
+      checks: [],
+      validation: null,
+    };
+    expect(
+      routeTaskToImplementerProfile({ task, context, profiles: [profile('small', 6_000)] }).fit,
+    ).toBe('fits');
+    expect(
+      routeTaskToImplementerProfile({ task, context, profiles: [profile('small', 6_000)], plan })
+        .fit,
+    ).toBe('overflow');
+  });
+
   it('chooses the smallest fitting profile within the same cost tier', () => {
     const task = makeTask();
 

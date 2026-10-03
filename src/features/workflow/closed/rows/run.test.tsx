@@ -124,7 +124,7 @@ describe('runSectionRows', () => {
         .find((line) => line.startsWith('   Crew')) ?? '';
     // A codex seat that named no model: the rail's own short form says `auto`.
     expect(crewLine).toContain('PLAN auto');
-    expect(crewLine).toContain('BUILD qwen-small');
+    expect(crewLine).toContain('BUILD Qwen Small');
     unnamed.unmount();
   });
 

@@ -119,7 +119,7 @@ describe('status command', () => {
     expect(out).not.toContain('No active workflow');
   });
 
-  it('names a custom API seat literally even when its name is a CLI tool id', async () => {
+  it('names a custom API seat by its literal provider word and pretty model even when its name is a CLI tool id', async () => {
     const sessionId = '2026-09-27-api-twin';
     writeActiveSession(tmp, sessionId, 'api twin', {
       plannerTool: 'opencode',
@@ -132,7 +132,7 @@ describe('status command', () => {
     await runStatus([]);
 
     const out = stripVTControlCharacters(captureOutput());
-    expect(out).toContain('Planner:  opencode (gpt-5)');
+    expect(out).toContain('Planner:  opencode (GPT-5)');
     expect(out).not.toContain('OpenCode CLI');
   });
 
@@ -157,11 +157,11 @@ describe('status command', () => {
     await runStatus([]);
 
     const out = stripVTControlCharacters(captureOutput());
-    expect(out).toContain('Planner:  opencode (gpt-5)');
-    expect(out).toContain('Impl:     OpenCode CLI (gpt-5)');
+    expect(out).toContain('Planner:  opencode (GPT-5)');
+    expect(out).toContain('Impl:     OpenCode CLI (GPT-5)');
   });
 
-  it('keeps a seat literal when its own calls recorded both kinds', async () => {
+  it('keeps a seat tool word literal and its model pretty when its own calls recorded both kinds', async () => {
     const sessionId = '2026-09-27-ambiguous-seat';
     writeActiveSession(tmp, sessionId, 'ambiguous seat', {
       plannerTool: 'opencode',
@@ -175,7 +175,7 @@ describe('status command', () => {
     await runStatus([]);
 
     const out = stripVTControlCharacters(captureOutput());
-    expect(out).toContain('Planner:  opencode (gpt-5)');
+    expect(out).toContain('Planner:  opencode (GPT-5)');
     expect(out).not.toContain('OpenCode CLI');
   });
 
@@ -188,7 +188,7 @@ describe('status command', () => {
     await runStatus([]);
 
     expect(stripVTControlCharacters(captureOutput())).toContain(
-      'Planner:  Claude Code CLI (sonnet)',
+      'Planner:  Claude Code CLI (Sonnet 5)',
     );
   });
 });

@@ -273,6 +273,36 @@ describe('createImplementerBase — prompt write contracts', () => {
     }
   });
 
+  it("carries the run's plan context on the first attempt and on a retry", async () => {
+    const prompts: string[] = [];
+    const invoke = vi.fn().mockImplementation(async (opts) => {
+      prompts.push(opts.prompt);
+      return makeRunnerCallResult({ status: 'completed', text: 'done', usage: null });
+    });
+    const implementer = createImplementerBase(makeBaseConfig({ extractsCode: false, invoke }));
+    const call = {
+      task: makeTask({ criteria: ['C1'] }),
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+      plan: {
+        summary: 'Greet people by name',
+        decisions: ['PLAN-DECISION: keep the greeting in one module'],
+        criteria: [{ id: 'C1', text: 'A name gets a greeting', checkIds: [] }],
+      },
+    };
+
+    await implementer.implement(call);
+    await implementer.retry({ ...call, error: 'tsc failed', attempt: 1, kind: 'local' });
+
+    expect(prompts).toHaveLength(2);
+    for (const prompt of prompts) {
+      expect(prompt).toContain('PLAN-DECISION: keep the greeting in one module');
+      expect(prompt).toContain('C1: A name gets a greeting');
+    }
+  });
+
   it("hands the call the directories of the run's attached skills", async () => {
     const invoke = vi
       .fn()

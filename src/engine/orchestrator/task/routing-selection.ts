@@ -71,6 +71,7 @@ export async function selectRoutingProfile(opts: {
       ...(wctx.detectedContextLength !== undefined && {
         detectedContextLength: wctx.detectedContextLength,
       }),
+      plan: state.plan,
     }),
   );
   const selectedProfile = selectedProfileFromDecision(resolvedProfiles, routingDecision);

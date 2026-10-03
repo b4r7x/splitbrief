@@ -427,3 +427,65 @@ describe('formatRetryPrompt', () => {
     expect(retry3).toContain('Current Code');
   });
 });
+
+describe('plan context', () => {
+  const plan = {
+    summary: 'Bound the pipeline with named constants.',
+    decisions: ['MAX_ROUNDS is 2 and lives in src/core/pipeline-spec/bounds.ts.'],
+    criteria: [
+      { id: 'C1', text: 'The bounds module exports MAX_ROUNDS.', checkIds: ['K1'] },
+      { id: 'C2', text: 'The review screen shows the round count.', checkIds: ['K2'] },
+    ],
+  };
+
+  it('carries the decision a task intent names, and only the criteria the task serves', () => {
+    const task = makeTask({
+      description: 'New bounds module with the constants named in the plan decisions.',
+      criteria: ['C1'],
+    });
+    const prompt = formatTaskPrompt({ task, context, plan });
+
+    expect(prompt).toContain('Plan context');
+    expect(prompt).toContain(plan.summary);
+    expect(prompt).toContain('MAX_ROUNDS is 2 and lives in src/core/pipeline-spec/bounds.ts.');
+    expect(prompt).toContain('The bounds module exports MAX_ROUNDS.');
+    expect(prompt).not.toContain('The review screen shows the round count.');
+  });
+
+  it('gives a task with no matching criteria the summary and decisions only', () => {
+    const task = makeTask({ criteria: ['C9'] });
+    const prompt = formatTaskPrompt({ task, context, plan });
+
+    expect(prompt).toContain(plan.summary);
+    expect(prompt).toContain('MAX_ROUNDS is 2');
+    expect(prompt).not.toContain('The bounds module exports MAX_ROUNDS.');
+    expect(prompt).not.toContain('The review screen shows the round count.');
+  });
+
+  it('reads task, then plan context, then code', () => {
+    const task = makeTask({
+      action: 'modify',
+      currentCode: 'export const OLD = 1;\n',
+      criteria: ['C1'],
+    });
+    const prompt = formatTaskPrompt({ task, context, plan });
+
+    const description = prompt.indexOf(task.description);
+    const planContext = prompt.indexOf('Plan context');
+    const code = prompt.indexOf('export const OLD = 1;');
+    expect(description).toBeGreaterThan(-1);
+    expect(planContext).toBeGreaterThan(description);
+    expect(code).toBeGreaterThan(planContext);
+  });
+
+  it('carries the same section in a retry prompt', () => {
+    const task = makeTask({ criteria: ['C2'] });
+    const prompt = formatRetryPrompt({ task, context, error: 'tests failed', attempt: 2, plan });
+
+    expect(prompt).toContain('Plan context');
+    expect(prompt).toContain(plan.summary);
+    expect(prompt).toContain('MAX_ROUNDS is 2');
+    expect(prompt).toContain('The review screen shows the round count.');
+    expect(prompt).not.toContain('The bounds module exports MAX_ROUNDS.');
+  });
+});

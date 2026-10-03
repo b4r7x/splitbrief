@@ -267,13 +267,13 @@ describe('activity batch tone resolution', () => {
 });
 
 describe('activity batch runner identity', () => {
-  it('keeps a custom API call literal even when its name is a CLI tool id', () => {
+  it('names a custom API call by its own provider word and the pretty model name', () => {
     const model = buildActivityBatchViewModel({
       batchKey: 'batch-1',
       events: [activity({ backendKind: 'api', runnerName: 'opencode', model: 'gpt-5' })],
     });
 
-    expect(model.headerRunner).toBe('opencode · gpt-5');
+    expect(model.headerRunner).toBe('opencode · GPT-5');
   });
 
   it('names a CLI call by its catalog display name', () => {
@@ -282,7 +282,7 @@ describe('activity batch runner identity', () => {
       events: [activity({ backendKind: 'cli', runnerName: 'opencode', model: 'gpt-5' })],
     });
 
-    expect(model.headerRunner).toBe('OpenCode CLI · gpt-5');
+    expect(model.headerRunner).toBe('OpenCode CLI · GPT-5');
   });
 
   it('names a CLI call recorded by its command through the tool it starts', () => {
@@ -294,22 +294,22 @@ describe('activity batch runner identity', () => {
     expect(model.headerRunner).toBe('Claude Code CLI · Sonnet 5');
   });
 
-  it('keeps an API call literal when its model name is a CLI alias', () => {
+  it('spells an API call model pretty when its name is a CLI alias, never with the CLI label', () => {
     const model = buildActivityBatchViewModel({
       batchKey: 'batch-1',
       events: [activity({ backendKind: 'api', runnerName: 'claude-code', model: 'sonnet' })],
     });
 
     // The API twin named after the CLI tool must not borrow the CLI alias's display name.
-    expect(model.headerRunner).toBe('claude-code · sonnet');
+    expect(model.headerRunner).toBe('claude-code · Sonnet');
   });
 
-  it('keeps a shell call literal even when it reuses a CLI tool id', () => {
+  it('names a shell call by its own runner word and the pretty model name', () => {
     const model = buildActivityBatchViewModel({
       batchKey: 'batch-1',
       events: [activity({ backendKind: 'shell', runnerName: 'opencode', model: 'gpt-5' })],
     });
 
-    expect(model.headerRunner).toBe('opencode · gpt-5');
+    expect(model.headerRunner).toBe('opencode · GPT-5');
   });
 });

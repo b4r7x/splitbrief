@@ -150,6 +150,24 @@ describe('deriveBuildProgress', () => {
     expect(progress.eta).toEqual({ kind: 'unavailable', reason: 'no brief finished yet' });
   });
 
+  it('quotes no estimate from a single finished brief', () => {
+    const briefs: WorkflowTask[] = [
+      { id: 'T001', title: 'One', status: 'done' },
+      { id: 'T002', title: 'Two', status: 'done' },
+      { id: 'T003', title: 'Three', status: 'in_progress' },
+    ];
+    const one = deriveBuildProgress(
+      input({ tasks: tasksState(briefs, { taskCompletionTimes: [120_000] }) }),
+    );
+    expect(one.eta).toEqual({ kind: 'unavailable', reason: 'one brief finished so far' });
+    expect(buildProgressLines(one, 120)[0]).toContain('ETA unavailable: one brief finished so far');
+
+    const two = deriveBuildProgress(
+      input({ tasks: tasksState(briefs, { taskCompletionTimes: [120_000, 60_000] }) }),
+    );
+    expect(two.eta).toEqual({ kind: 'estimate', remainingMs: 90_000 });
+  });
+
   it('states the attempt against the lineage attempt allowance', () => {
     const progress = deriveBuildProgress(
       input({
@@ -172,7 +190,7 @@ describe('deriveBuildProgress', () => {
         { id: 'T002', title: 'Two', status: 'in_progress' },
         { id: 'T003', title: 'Three', status: 'pending' },
       ],
-      { taskCompletionTimes: [180_000] },
+      { taskCompletionTimes: [180_000, 180_000] },
     );
     const slow = deriveBuildProgress(input({ tasks: twoBriefsLeft }));
     expect(buildProgressLines(slow, 120)[0]).toContain('ETA ~6m');
@@ -184,7 +202,7 @@ describe('deriveBuildProgress', () => {
             { id: 'T001', title: 'One', status: 'done' },
             { id: 'T002', title: 'Two', status: 'in_progress' },
           ],
-          { taskCompletionTimes: [2_000] },
+          { taskCompletionTimes: [2_000, 2_000] },
         ),
       }),
     );
@@ -281,7 +299,7 @@ describe('deriveBuildProgress', () => {
             { id: 'T001', title: 'One', status: 'done' },
             { id: 'T002', title: 'Two', status: 'in_progress' },
           ],
-          { taskCompletionTimes: [120_000] },
+          { taskCompletionTimes: [120_000, 120_000] },
         ),
         operations: operationsState({
           active: runningOperation({ runnerName: 'claude-code' }),
@@ -301,7 +319,7 @@ describe('deriveBuildProgress', () => {
             { id: 'T001', title: 'One', status: 'done' },
             { id: 'T002', title: 'Two', status: 'in_progress' },
           ],
-          { taskCompletionTimes: [120_000] },
+          { taskCompletionTimes: [120_000, 120_000] },
         ),
         operations: operationsState({
           active: runningOperation({ runnerName: 'codex' }),
@@ -321,7 +339,7 @@ describe('deriveBuildProgress', () => {
             { id: 'T001', title: 'One', status: 'done' },
             { id: 'T002', title: 'Two', status: 'in_progress' },
           ],
-          { taskCompletionTimes: [120_000] },
+          { taskCompletionTimes: [120_000, 120_000] },
         ),
         operations: operationsState({
           active: runningOperation({ backendKind: 'shell', runnerName: 'claude' }),
@@ -341,7 +359,7 @@ describe('deriveBuildProgress', () => {
             { id: 'T001', title: 'One', status: 'done' },
             { id: 'T002', title: 'Two', status: 'in_progress' },
           ],
-          { taskCompletionTimes: [120_000] },
+          { taskCompletionTimes: [120_000, 120_000] },
         ),
         operations: operationsState({
           active: runningOperation({ backendKind: 'api', runnerName: 'claude-code' }),
@@ -361,7 +379,7 @@ describe('deriveBuildProgress', () => {
             { id: 'T001', title: 'One', status: 'done' },
             { id: 'T002', title: 'Two', status: 'in_progress' },
           ],
-          { taskCompletionTimes: [120_000] },
+          { taskCompletionTimes: [120_000, 120_000] },
         ),
         operations: operationsState({
           active: runningOperation({ backendKind: 'cli', runnerName: 'claude' }),
@@ -381,7 +399,7 @@ describe('deriveBuildProgress', () => {
             { id: 'T001', title: 'One', status: 'done' },
             { id: 'T002', title: 'Two', status: 'in_progress' },
           ],
-          { taskCompletionTimes: [120_000] },
+          { taskCompletionTimes: [120_000, 120_000] },
         ),
         operations: operationsState({
           active: runningOperation({ runnerName: 'claude' }),

@@ -93,6 +93,9 @@ function etaFor(input: DeriveBuildProgressInput, remaining: number): BuildProgre
   if (taskCompletionTimes.length === 0) {
     return { kind: 'unavailable', reason: 'no brief finished yet' };
   }
+  if (taskCompletionTimes.length === 1) {
+    return { kind: 'unavailable', reason: 'one brief finished so far' };
+  }
   // An estimate built from one seat's pace says nothing about another's, so a swap retires it
   // rather than quoting a number the new worker never earned.
   const { active, last } = input.operations;

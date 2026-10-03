@@ -314,7 +314,7 @@ describe('the workflow screen showing a closed run', () => {
       );
 
       expect(wholeCrew.length, `at ${cols}`).toBe(1);
-      expect(wholeCrew[0], `at ${cols}`).toContain('qwen-small');
+      expect(wholeCrew[0], `at ${cols}`).toContain('Qwen Small');
       expect(wholeCrew[0], `at ${cols}`).toContain(PLANNER_INHERITANCE.mark);
 
       ui.unmount();
@@ -336,7 +336,7 @@ describe('the workflow screen showing a closed run', () => {
     const lines = withoutTextLead(stripAnsiStyles(ui.lastFrame() ?? '')).split('\n');
 
     expect(lines.filter((line) => line.startsWith('Crew'))).toEqual([]);
-    expect(lines[0]).toContain('qwen-small');
+    expect(lines[0]).toContain('Qwen Small');
 
     ui.unmount();
   });
@@ -356,7 +356,7 @@ describe('the workflow screen showing a closed run', () => {
 
     // A codex seat that named no model reads `auto`, as the live rail reads it.
     expect(crewRow).toContain('PLAN auto');
-    expect(crewRow).toContain('qwen-small');
+    expect(crewRow).toContain('Qwen Small');
     expect(crewRow).toContain(PLANNER_INHERITANCE.mark);
 
     ui.unmount();

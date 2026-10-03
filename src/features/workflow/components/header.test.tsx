@@ -139,7 +139,7 @@ describe('Header — seat line', () => {
     expect(frame).toContain('PLAN');
     expect(frame).toContain('BUILD');
     expect(frame).toContain('REVIEW');
-    expect(frame).toContain('qwen2.5-coder:7b');
+    expect(frame).toContain('Qwen2.5 Coder 7B');
     expect(frame.slice(frame.indexOf('PLAN'))).not.toContain('›');
   });
 
@@ -147,7 +147,7 @@ describe('Header — seat line', () => {
     const frame = await seatFrame(110);
 
     expect(frame).toContain('PLAN');
-    expect(frame).toContain('qwen2.5-coder:7b');
+    expect(frame).toContain('Qwen2.5 Coder 7B');
   });
 
   it('says the review seat borrows the planner when no reviewer is configured', async () => {
@@ -163,7 +163,7 @@ describe('Header — seat line', () => {
     );
 
     expect(frame).toContain('REVIEW');
-    expect(frame).toContain('gpt-5-codex');
+    expect(frame).toContain('GPT-5 Codex');
     expect(frame).not.toContain(PLANNER_INHERITANCE.mark);
   });
 
@@ -179,7 +179,7 @@ describe('Header — seat line', () => {
     await tick();
     const rawFrame = instance.lastFrame() ?? '';
 
-    expect(stripAnsiStyles(rawFrame)).toContain('qwen-coder');
+    expect(stripAnsiStyles(rawFrame)).toContain('Qwen Coder');
     expect(rawFrame).not.toContain(hostileSequence);
     instance.unmount();
   });
@@ -194,7 +194,7 @@ describe('Header — seat line', () => {
     await tick();
     const frame = stripAnsiStyles(instance.lastFrame() ?? '');
 
-    expect(frame).toContain('BUILD qwen2.5-coder:7b (resets 17:00)');
+    expect(frame).toContain('BUILD Qwen2.5 Coder 7B (resets 17:00)');
     expect(frame.indexOf('(resets 17:00)')).toBeGreaterThan(frame.indexOf('BUILD'));
     instance.unmount();
   });
@@ -225,7 +225,7 @@ describe('Header — seat line', () => {
     await tick();
     const frame = stripAnsiStyles(instance.lastFrame() ?? '');
 
-    expect(frame).toContain('BUILD qwen2.5-coder:7b (resets 17:00)');
+    expect(frame).toContain('BUILD Qwen2.5 Coder 7B (resets 17:00)');
     instance.unmount();
   });
 

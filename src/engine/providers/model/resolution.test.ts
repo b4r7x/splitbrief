@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
 import {
   NULL_CACHE,
-  findKnownModel,
   getEffectiveModelId,
   getModelsDevEntries,
   lookupModelsDevModel,
@@ -11,6 +10,7 @@ import {
   resolveExactRuntimeModel,
   type ModelCacheAccessor,
 } from './resolution.js';
+import { findKnownModel } from '../../../core/providers/known-models.js';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 
 describe('exact model resolution', () => {

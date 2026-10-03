@@ -231,8 +231,8 @@ describe('seats', () => {
     );
     expect(view.seats.plan).toEqual({
       kind: 'named',
-      identity: 'Claude Code CLI · claude-sonnet-4',
-      short: 'claude-sonnet-4',
+      identity: 'Claude Code CLI · Claude Sonnet 4',
+      short: 'Sonnet 4',
     });
   });
 
@@ -266,7 +266,7 @@ describe('seats', () => {
         implementerModel: 'gpt-5.3-codex-high',
       }),
     );
-    expect(crewLine(view, 200)).toBe('PLAN auto · BUILD gpt-5.3-codex · REVIEW = PLAN');
+    expect(crewLine(view, 200)).toBe('PLAN auto · BUILD GPT-5.3 Codex · REVIEW = PLAN');
   });
 
   it('says the build seat moved, from what to what, when each tool ran one stretch', () => {
@@ -289,7 +289,7 @@ describe('seats', () => {
       }),
     );
     expect(crewLine(view, 200)).toBe(
-      `PLAN not recorded · BUILD gemini-3.8-flash-high${arrowSep()}opencode-go/deepseek-v4.1-flash · REVIEW not recorded`,
+      `PLAN not recorded · BUILD Gemini 3.8 Flash High${arrowSep()}DeepSeek V4.1 Flash · REVIEW not recorded`,
     );
   });
 
@@ -314,7 +314,7 @@ describe('seats', () => {
       }),
     );
     expect(crewLine(view, 200)).toContain(
-      'BUILD 3 briefs on gemini-3.8-flash-high, 1 on opencode-go/deepseek-v4.1-flash',
+      'BUILD 3 briefs on Gemini 3.8 Flash High, 1 on DeepSeek V4.1 Flash',
     );
   });
 
@@ -359,7 +359,7 @@ describe('seats', () => {
     expect(view.seats.build.kind).toBe('named');
   });
 
-  it('keeps a recorded API seat literal when the cost record kept its kind', () => {
+  it('names a recorded API seat by its provider word and the pretty model name when the cost record kept its kind', () => {
     const view = derive(
       makeSummary({
         plannerTool: 'opencode',
@@ -380,12 +380,12 @@ describe('seats', () => {
 
     expect(view.seats.plan).toEqual({
       kind: 'named',
-      identity: 'opencode · gpt-5',
-      short: 'gpt-5',
+      identity: 'opencode · GPT-5',
+      short: 'GPT-5',
     });
   });
 
-  it('keeps a recorded API seat literal when its model name is a CLI alias', () => {
+  it('spells a recorded API seat model pretty when its name is a CLI alias, never with the CLI label', () => {
     const view = derive(
       makeSummary({
         plannerTool: 'claude-code',
@@ -407,8 +407,8 @@ describe('seats', () => {
     // The API twin must not borrow the CLI alias's display name for its own model.
     expect(view.seats.plan).toEqual({
       kind: 'named',
-      identity: 'claude-code · sonnet',
-      short: 'sonnet',
+      identity: 'claude-code · Sonnet',
+      short: 'Sonnet',
     });
   });
 

@@ -1,6 +1,6 @@
 import { resolveImplementerProfiles } from '../../config/accessors/implementer-profiles.js';
 import { getRunnerDisplayName, getRunnerModelName } from '../../config/accessors/runner-config.js';
-import type { CliToolId } from '../../runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG, type CliToolId } from '../../runners/cli-tool-catalog.js';
 import type { Config } from '../../schemas/config.js';
 import { resolveReviewerRunner } from '../../config/accessors/reviewer-runner.js';
 import type { CliReadinessResult } from '../../schemas/readiness.js';
@@ -24,10 +24,14 @@ export function buildRunnerChecks(
   const configuredCliTools = new Set<CliToolId>();
   if (config.planner.kind === 'cli') configuredCliTools.add(config.planner.tool);
   checks.push(plannerCheck(config.planner));
+  checks.push(...typedOutputFallbackCheck('planner', config.planner));
 
   const reviewer = resolveReviewerRunner(config);
   if (reviewer.source === 'configured' && reviewer.runner.kind === 'cli') {
     configuredCliTools.add(reviewer.runner.tool);
+  }
+  if (reviewer.source === 'configured') {
+    checks.push(...typedOutputFallbackCheck('reviewer', reviewer.runner));
   }
 
   let resolved: ReturnType<typeof resolveImplementerProfiles> | null = null;
@@ -74,6 +78,25 @@ export function buildRunnerChecks(
   checks.push(...configuredCliReadinessChecks(configuredCliTools, cliReadiness));
 
   return checks;
+}
+
+function typedOutputFallbackCheck(
+  seat: 'planner' | 'reviewer',
+  runner: Config['planner'] | NonNullable<Config['reviewer']>,
+): ReadinessCheck[] {
+  if (runner.kind !== 'cli') return [];
+
+  const tool = runner.tool;
+  if (CLI_TOOL_CATALOG[tool].typedOutput.kind !== 'fallback') return [];
+
+  return [
+    {
+      id: `runners.${seat}.typed-output-fallback`,
+      severity: 'warning',
+      summary: `${formatRoleLabel(seat)}: ${tool} has no schema flag; typed answers use the JSON fallback with one repair. claude-code or codex are recommended for this seat.`,
+      metadata: { role: seat, tool },
+    },
+  ];
 }
 
 function availabilityCheck(): ReadinessCheck {

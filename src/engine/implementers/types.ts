@@ -13,6 +13,7 @@ import type * as ImplementerConfig from '../../core/schemas/implementer-config.j
 import type { RunnerSlot } from '../runners/prepared-execution.js';
 import type { BundleApplyResult } from './file-bundle.js';
 import type { ImplementerReport } from '../../core/schemas/consult.js';
+import type { PlanContext } from '../spec/prompt-formatter.js';
 
 export interface ImplementerResult {
   success: boolean;
@@ -90,6 +91,7 @@ export interface ImplementerOptions extends UndeclaredWritesPolicy {
     | { partial?: string | undefined; steer?: string | undefined; extra?: string | undefined }
     | undefined;
   languageContext?: LanguageContext | undefined;
+  plan?: PlanContext | undefined;
   phase?: Phase | undefined;
   /**
    * Paths an earlier attempt of this same task is recorded to have created. A
