@@ -88,7 +88,7 @@ Design goals:
 
 Any function exceeding ~300 lines with 5+ responsibilities must be decomposed. Extract named helpers at the responsibility boundary. The orchestrator is the most-changed code; readability > compactness.
 
-Canonical example: `src/engine/orchestrator/task/step.ts` was decomposed into focused modules: `pre-task.ts` (pre-hook dispatch, task-start event, snapshot), `run-implementation.ts` (continuation loop, streaming, staging), `apply-changed-files.ts` (post-impl approval, promotion, conflict detection), `analyze-drift.ts` (per-task drift chain updates), `rollback.ts` (snapshot restore after hook denial or retry exhaustion), and `resolve-deps.ts` (dependency resolution). Colocated tests split across `step.test.ts` (completion/abort/evidence), `step-approval.test.ts`, `step-user-edit.test.ts`, and `step-recovery.test.ts`.
+Canonical example: `src/engine/orchestrator/task/step.ts` was decomposed into focused modules: `pre-task.ts` (pre-hook dispatch, task-start event, snapshot), `run-implementation.ts` (continuation loop, streaming, staging), `attempt-gate.ts` (the protected-write gate over an attempt's changes in the run workspace), `analyze-drift.ts` (per-task drift chain updates), `rollback.ts` (snapshot restore after hook denial or retry exhaustion), and `resolve-deps.ts` (dependency resolution). Colocated tests split across `step.test.ts` (completion/abort/evidence), `step-approval.test.ts`, `step-user-edit.test.ts`, and `step-recovery.test.ts`.
 
 ### AD-3: Selector narrowness is performance
 
@@ -159,7 +159,7 @@ The niche has direct competitors now (`VISION.md`). Any single row here can be m
 | Recovery system | Typed `RecoveryIssue` → user chooses `RecoveryAction` (skip, retry, abort, switch-profile) |
 | Planning session | One typed planning session: up to 2 rounds of questions, a checked `plan.json`, one optional plan card |
 | Drift detection | Detects when implementation diverges from plan |
-| Worktree isolation | One git worktree per run for a direct-writing implementer, project dependencies linked in, changes promoted back hash-guarded. Isolates files, not the runtime — it is not a security boundary |
+| Worktree isolation | One git worktree per run for every implementer, project dependencies linked in; the reviewed result reaches the checkout once, at Apply, through one hash-guarded write. Isolates files, not the runtime — it is not a security boundary |
 | 92 typed events + `--json` | NDJSON event stream for CI/automation |
 | Protected-path confirmation | Per-action classification; a write to a protected path asks once per path per run, and approving the plan card confirms the protected writes the plan lists |
 | Task Brief contract | Precise, structured handoff artifact between planner and implementer |

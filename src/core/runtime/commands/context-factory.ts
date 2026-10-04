@@ -39,15 +39,16 @@ interface CommandContextFactoryOptions {
   plannerSupportsImages: () => boolean;
   detachImage: RuntimeCommandContext['detachImage'];
   listAttachments: RuntimeCommandContext['listAttachments'];
-  acceptRunSnapshot: (
+  acceptRun: (
     projectDir: string,
     sessionId: string,
-  ) => ReturnType<RuntimeCommandContext['acceptRunSnapshot']>;
+    confirm: boolean,
+  ) => ReturnType<RuntimeCommandContext['acceptRun']>;
   refreshRun: RuntimeCommandContext['refreshRun'];
-  rejectRunSnapshot: (
+  rejectRun: (
     projectDir: string,
     sessionId: string,
-  ) => ReturnType<RuntimeCommandContext['rejectRunSnapshot']>;
+  ) => ReturnType<RuntimeCommandContext['rejectRun']>;
   scrollConversation: RuntimeCommandContext['scrollConversation'];
   toggleLatestActivityBatch: RuntimeCommandContext['toggleLatestActivityBatch'];
   toggleLatestDiff: RuntimeCommandContext['toggleLatestDiff'];
@@ -91,10 +92,9 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
     },
     detachImage: opts.detachImage,
     listAttachments: opts.listAttachments,
-    acceptRunSnapshot: () =>
-      opts.acceptRunSnapshot(opts.projectDir(), sessionIdOrThrow('/run accept')),
-    rejectRunSnapshot: () =>
-      opts.rejectRunSnapshot(opts.projectDir(), sessionIdOrThrow('/run reject')),
+    acceptRun: (confirm) =>
+      opts.acceptRun(opts.projectDir(), sessionIdOrThrow('/run accept'), confirm),
+    rejectRun: () => opts.rejectRun(opts.projectDir(), sessionIdOrThrow('/run reject')),
     refreshRun: opts.refreshRun,
     scrollConversation: opts.scrollConversation,
     toggleLatestActivityBatch: opts.toggleLatestActivityBatch,

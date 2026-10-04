@@ -1,9 +1,13 @@
 import type { Phase, TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import type { BriefQualitySummary, ReviewVerdict, Summary } from '../../../core/schemas/summary.js';
 import type { TaskId } from '../../../core/schemas/task.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { RunRecord } from '../../../core/sessions/run-record.js';
+import type { RunStatus } from '../../../core/sessions/run-status.js';
+import type { RailStageStatus } from '../../../core/rail-stages.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { getRailStages, type RailHalt, type RailStageState } from '../../../core/rail-stages.js';
+import { applyStage } from '../at-rest.js';
 import {
   briefRows,
   buildSeatView,
@@ -19,7 +23,7 @@ import {
 } from './projections.js';
 
 /** How a closed run reads: every check agreed, something needs a look, or it was ended. */
-export type SummaryOutcomeKind = 'ready' | 'needs-attention' | 'ended';
+export type SummaryOutcomeKind = 'ready' | 'needs-attention' | 'ended' | 'applied' | 'discarded';
 
 export type SeatView =
   | Readonly<{ kind: 'named'; identity: string; short: string }>
@@ -107,6 +111,8 @@ export interface SummaryView {
     changed: string[] | null;
     partial: ReadonlySet<string>;
     stoppedAt: Readonly<{ taskId: TaskId; partialFiles: string[] }> | null;
+    /** An ended or discarded workspace run saved its changes in run.patch. */
+    patch: boolean;
   }>;
   checkpoint: 'accepted' | 'rejected' | null;
   phases: PhaseTiming[];
@@ -140,6 +146,7 @@ export function deriveSummaryView(input: DeriveSummaryViewInput): SummaryView | 
   const phase = resolvePhase(summary, savedPhase(record));
   const tasks = state?.tasks ?? null;
   const rows = briefRows({ summary, ledger, currentTasks: tasks });
+  const apply = applyStage(record);
   return {
     outcome: { kind: outcomeKind },
     run: {
@@ -148,7 +155,7 @@ export function deriveSummaryView(input: DeriveSummaryViewInput): SummaryView | 
       phase,
       sessionId: sanitizeTerminalDisplayText(record.ref.sessionId),
     },
-    rail: railFor(phase, outcomeKind),
+    rail: railFor(phase, outcomeKind, apply),
     seats: {
       plan: plannerSeatView(summary),
       build: buildSeatView(summary),
@@ -169,7 +176,7 @@ export function deriveSummaryView(input: DeriveSummaryViewInput): SummaryView | 
     quality: summary.briefQuality ?? null,
     cost: input.showSpend === false ? null : costView(summary.costBreakdown),
     tokens: tokensView(summary),
-    files: filesView(summary),
+    files: { ...filesView(summary), patch: workspacePatch(record, state) },
     checkpoint: record.checkpoint?.kind ?? null,
     phases: phaseTimings(summary),
   };
@@ -183,8 +190,13 @@ function savedPhase(record: RunRecord): Phase | null {
  * Ready is the whole run agreeing: it finished, the packet was written, the verdict allows it, the
  * scope check passed and no brief failed. Anything short of that on a finished run needs attention.
  */
-function outcomeKindFor(summary: Summary, closedAs: 'complete' | 'ended'): SummaryOutcomeKind {
+function outcomeKindFor(
+  summary: Summary,
+  closedAs: Extract<RunStatus, { kind: 'closed' }>['as'],
+): SummaryOutcomeKind {
   if (closedAs === 'ended') return 'ended';
+  if (closedAs === 'applied') return 'applied';
+  if (closedAs === 'discarded') return 'discarded';
   const packet = summary.reviewPacket;
   const verdict = packet?.finalReviewVerdict ?? null;
   const ready =
@@ -193,6 +205,14 @@ function outcomeKindFor(summary: Summary, closedAs: 'complete' | 'ended'): Summa
     packet.driftPassed === true &&
     summary.failed === 0;
   return ready ? 'ready' : 'needs-attention';
+}
+
+/** An ended or discarded workspace run left its changes in run.patch; nothing else is a patch. */
+function workspacePatch(record: RunRecord, state: WorkflowState | null): boolean {
+  const workspace = state?.workspace;
+  if (workspace === undefined || workspace.kind === 'checkout') return false;
+  const status = record.status;
+  return status.kind === 'closed' && (status.as === 'ended' || status.as === 'discarded');
 }
 
 /**
@@ -208,9 +228,14 @@ function resolvePhase(summary: Summary, saved: Phase | null): Phase {
   return 'planning';
 }
 
-function railFor(phase: Phase, kind: SummaryOutcomeKind): RailStageState[] {
-  if (kind !== 'ended') return getRailStages('complete');
-  return getRailStages(phase, { halted: ENDED_HALT });
+function railFor(
+  phase: Phase,
+  kind: SummaryOutcomeKind,
+  apply: RailStageStatus | undefined,
+): RailStageState[] {
+  const applyOption = apply === undefined ? {} : { apply };
+  if (kind !== 'ended') return getRailStages('complete', applyOption);
+  return getRailStages(phase, { halted: ENDED_HALT, ...applyOption });
 }
 
 /** A run somebody ended is not a run that broke: the stage it stopped on wears the cancel mark. */

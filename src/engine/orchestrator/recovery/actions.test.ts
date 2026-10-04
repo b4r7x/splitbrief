@@ -13,8 +13,6 @@ import type { Task } from '../../../core/schemas/task.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { applyRecoveryAction } from './actions.js';
 import { buildDependencyBlockedRecoveryIssue } from './builders/task.js';
-import { buildUserEditConflictRecoveryIssue } from './builders/workflow.js';
-import { classifyUserEditConflict } from '../user-edit/conflicts.js';
 
 const createdAt = '2026-04-28T12:00:00.000Z';
 
@@ -195,22 +193,19 @@ describe('applyRecoveryAction: unsafe continue blocked', () => {
   it('blocks ordinary continue for an unsafe conflict even if an issue was malformed to advertise it', () => {
     const { projectDir, sessionId } = setupSession('continue-unsafe-conflict');
     const conflictTask = makeTask({ id: 'T031', file: 'src/current.ts' });
-    const persistedIssue = buildUserEditConflictRecoveryIssue({
-      createdAt,
-      currentTask: conflictTask,
-      conflict: classifyUserEditConflict({
-        files: ['src/current.ts'],
-        currentTask: conflictTask,
-        briefHoldsOutput: () => true,
-        allTasks: [conflictTask],
-        currentTaskIndex: 0,
-      }),
+    const persistedIssue = makeRecoveryIssue({
+      reason: 'user-edit-conflict',
+      phase: 'implementing',
+      taskId: conflictTask.id,
+      taskTitle: conflictTask.title,
+      files: ['src/current.ts'],
+      facts: { conflictKind: 'current-task-conflict', safeToContinue: false },
+      availableActions: ['pause-run', 'skip-current-task', 'end-run'],
+      recommendedAction: 'pause-run',
     });
-    const issue = {
+    const issue: RecoveryIssue = {
       ...persistedIssue,
-      availableActions: ['continue', 'pause-run', 'end-run'] as ReturnType<
-        typeof buildUserEditConflictRecoveryIssue
-      >['availableActions'],
+      availableActions: ['continue', 'pause-run', 'end-run'],
     };
     const base = makeImplState([makeTask({ id: 'T031' })]);
     saveState({ projectDir, sessionId }, { ...base, pendingRecovery: persistedIssue });

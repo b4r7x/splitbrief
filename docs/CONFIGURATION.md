@@ -326,7 +326,7 @@ reviewer:
 
 ## 3. `implementer`
 
-The implementer is the weaker of the two models. What makes a runner the implementer is the model behind it, not the transport SPLITBRIEF uses to reach it: a coding-agent CLI pointed at a smaller model and an OpenAI-compatible API endpoint are equally first-class here, and SPLITBRIEF favors neither. They differ mechanically in one place — a `cli` or `agent` implementer writes files itself (`writesFiles: direct`), while an `api` or `shell` implementer returns file contents that SPLITBRIEF writes (`writesFiles: extracted-code`). Where a direct writer works before its changes reach your checkout is set by `workflow.isolation` (§5).
+The implementer is the weaker model. Model strength determines that role; transport does not. A `cli` or `agent` runner writes directly with `writesFiles: direct`. An `api` or `shell` runner returns code that SPLITBRIEF writes with `writesFiles: extracted-code`. Every writer uses the run workspace selected by `workflow.isolation` (§5).
 
 Same discriminated union as `planner`, with two schema differences: `model` is required on the `api`, `shell`, and `agent` implementer variants, and the `shell`/`agent` variants do **not** accept the planner-only `capabilities` field. The `cli` variant leaves `model` optional — omit it or write `model: auto` to follow the tool's own selection, which preparation reads from the tool's own config or state and passes as `--model`; the two spellings behave identically and neither is rewritten on save. On an `api` runner, `auto` resolves to that provider's catalog default model (for example `ollama` → `qwen3-coder:30b`), and a custom provider with no catalog default rejects `auto` — and model absence — at config load. Implementer write behavior (`extracted-code` vs `direct`) is not a choice: `capabilities.writesFiles` may be declared per profile under `implementerProfiles`, but it must match the runner kind's write mode, and config load rejects a mismatch.
 
@@ -351,7 +351,7 @@ implementer:
   model: gpt-5-codex
 ```
 
-That is the `direct` path: the tool edits files itself inside the run's isolation directory and SPLITBRIEF promotes the result. It is not a side door — the same Task Brief, validation pipeline, retry ladder, consult, and drift accounting apply as for an `api` implementer.
+That is the `direct` path. The tool edits files inside the run workspace. The same Task Brief, validation, retry ladder, consult and drift accounting apply to an `api` implementer. [Apply](./WORKFLOW.md#apply) writes the assessed result into the checkout.
 
 YAML — full (a hosted model behind your own OpenAI-compatible endpoint):
 
@@ -548,7 +548,7 @@ workflow: {
     createBranch?:        boolean;
   };
 
-  // Where a direct-writing implementer works before promotion
+  // The workspace used by every writer and validation
   isolation?:             'worktree' | 'staged-copy';
 
   driftChainThreshold?:   0..1;
@@ -577,7 +577,7 @@ workflow: {
 | `maxRetries` (`max_retries`) | retired | absent | Loads with one notice and changes nothing: `workflow.max_retries was retired and is ignored: the lineage attempt allowance bounds the ladder now. Delete workflow.max_retries.` The ladder is one local retry then the planner's consult; the lineage's bounds and grant live in `BOUNDS` (`src/core/pipeline-spec/bounds.ts`). |
 | `git.commitStrategy` | retired | absent | Legacy `none` is accepted with a deprecation warning and removed from the loaded config; `checkpoint` and `per-task` are rejected. Omit the field. |
 | `git.createBranch` | boolean | `false` | Auto-create `splitbrief/<slug>` branch at workflow start. |
-| `isolation` | enum | `worktree` | Where an implementer that writes files itself does its work before changes are promoted into the project: `worktree` (one linked git worktree per run) or `staged-copy` (a temporary copy of the project per task). Unused when the implementer returns file contents (`writesFiles: extracted-code`) — SPLITBRIEF writes those files into the project itself. |
+| `isolation` | enum | `worktree` | The run workspace strategy for every writer: one linked git `worktree` or one `staged-copy` per run. Tasks, retries, validation and code review use it until [Apply](./WORKFLOW.md#apply). |
 | `driftChainThreshold` | 0..1 | `0.6` | Threshold used when omitted; higher = fewer drift-chain events. |
 | `compactionThreshold` | int >= 10 | unset | On resume, auto-compact persisted transcript context when compacted message count exceeds this threshold and the planner supports self-summarisation. |
 | `compactionFormat` | enum | `auto` | Summary format for transcript compaction: `auto` selects structured JSON for `api` planners, freeform text for `cli`, `shell`, and `agent`; `freeform` preserves legacy markdown/text summaries; `structured` requires Zod-validated JSON and falls back to freeform text if validation fails. |
@@ -588,18 +588,20 @@ workflow: {
 
 ### Implementer isolation
 
-An implementer whose runner writes files itself (`writesFiles: direct` — the `cli` and `agent` kinds) does not edit your checkout while it works. It works in an isolated directory, and SPLITBRIEF promotes the result into the real project directory through the hash-guarded promotion path, which refuses to overwrite a file you changed in the meantime. Isolation moves *where* the writing happens; it never changes *whether* the change reaches you.
+Every writer uses one run workspace. `cli` and `agent` write there directly; SPLITBRIEF writes extracted `api` and `shell` code there too. The deterministic validation pipeline runs in that directory. The implementer's own checks do not replace it. See [workspace data flow](./HOW-IT-WORKS.md#run-workspace-and-apply).
 
 | Value | What it does | Cost |
 |---|---|---|
-| `worktree` (default) | One linked git worktree created for the run. The implementer gets the repository's git history, its own branch, and the project's installed Node dependencies linked in (only Node — virtualenvs, Go module caches, and Rust target directories are not linked), so it can run typecheck, lint, and tests where it is working. | One `git worktree add` per run. |
-| `staged-copy` | A temporary copy of the project per task under the system temp directory. Which files are copied comes from git's own list of tracked and untracked files (`.gitignore`, `.git/info/exclude`, and global excludes), so gitignored build and report artifacts never enter the copy; `.git`, `node_modules`, `.splitbrief/`, `.trees/`, and credential files are excluded on top of that. A fixture the repository gitignores is not present in the copy at execution time, so a runner that reads such a fixture while working in the copy will no longer find it. No git history and no installed dependencies, so the implementer cannot run the project's own checks. | A full project copy per task. |
+| `worktree` (default) | One linked git worktree with its own branch and history. Installed Node dependencies are linked. Python virtualenvs, Go caches and Rust target directories are not linked. | One worktree creation per run. |
+| `staged-copy` | One project copy per run, reused by tasks, retries and continuation. It excludes `.git`, `node_modules`, `.splitbrief/`, `.trees/` and credential files. It has no git history or installed dependencies. | One full project copy per run. |
 
-**Worktree isolation is a file boundary, not a security boundary.** The worktree shares your git repository, your hooks, and your configuration, and it runs on the same machine, as the same user, against the same ports, databases, and network. It gives the implementer its own copy to write in, and SPLITBRIEF checks that it stays there: a tool call that reaches outside the isolation directory stops the call and halts the brief as `implementer-left-isolation`, and a change to the git state of your checkout during a call halts the brief as `checkout-changed` ([APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#recovery)). It does not constrain what the implementer's tool can execute. Neither strategy applies a shell or network sandbox. The workspace environment's PATH is widened to the linked `node_modules/.bin`, resolved to its real path inside the project — the widening is visible in the child's environment, not hidden behind the symlink.
+The fallback also creates one staged copy per run. SPLITBRIEF uses it when the project has no git repository or commit, or when worktree creation fails. In a git project, the copy uses git's tracked and untracked file list with its ignore rules. A fixture excluded by those rules is absent from the copy. The no-git fallback copies ordinary project files with the same internal exclusions.
 
-A run's worktree is created once per run and reused across tasks and retries (a marker carrying the session id is what makes an isolation directory the session's own). It lives outside both `.git/` and the project root — under `$XDG_STATE_HOME/splitbrief/trees/<repo-key>/<session-id>` (or `~/.local/state/splitbrief/trees/<repo-key>/<session-id>` when `XDG_STATE_HOME` is unset), keyed by the first twelve hex characters of `sha256(realpath(git rev-parse --git-common-dir))` — because direct-writing CLIs refuse paths under `.git/` as sensitive and a project-rooted test glob would otherwise walk into the second copy and count every test twice. See [HOW-IT-WORKS.md §Isolation and promotion](./HOW-IT-WORKS.md#isolation-and-promotion). When the run ends, the worktree is removed with force and its branch deleted if nothing unpromoted remains; a run that ends with unpromoted work keeps the worktree and reports the retention, so interrupted work survives there for recovery — `git worktree list` shows the path.
+Readiness warns about stacks the worktree cannot serve. These include linked Node workspace packages, Python editable installs, `go.work`, and a Cargo workspace with a checkout `target/` directory. Links can resolve to checkout sources instead of workspace changes. These warnings do not select another mode automatically. Verify that configured checks assess the workspace candidate. The staged-copy fallback does not supply missing dependencies.
 
-This setting does not move validation. The deterministic typecheck → lint → test pipeline (§4) runs in the real project directory after promotion, and that pipeline plus the planner's review is what decides whether a task is correct. An implementer that can also run checks in its own directory raises the first-pass rate; it is never the authority on correctness. The dependency link is a symlink, which git records as a file, so the common `node_modules/` pattern — which matches directories only — would leave it untracked inside the worktree. When your repository already ignores its own `node_modules`, SPLITBRIEF adds a rooted `/node_modules` line to the repository's `.git/info/exclude` — the exclude file git shares between your checkout and every linked worktree — so the link stays out of change detection. The line is written under a `# splitbrief run isolation <session id>` marker and taken back out when the run's isolation is disposed, so your checkout is left exactly as it was found and a run that dies mid-flight leaves a block naming the session that wrote it. While it stands it changes nothing for your checkout, because your own rules already ignored that directory. A repository that does not ignore `node_modules` at all is left untouched and the run falls back to `staged-copy` rather than let the link pollute change detection.
+The workspace survives while the run stays open. [HOW-IT-WORKS.md](./HOW-IT-WORKS.md#run-workspace-and-apply) owns its worktree location and persistence. [Apply](./WORKFLOW.md#apply) owns checkout integration and closure. [Isolation checks](./APPROVAL-AND-RECOVERY.md#isolation-checks) describe writes that halt and reads that are logged. Neither strategy provides shell or network confinement.
+
+The worktree PATH includes the linked `node_modules/.bin`, resolved to its real path in the project. When the repository already ignores `node_modules`, SPLITBRIEF adds a rooted `/node_modules` line to the shared `.git/info/exclude`. This keeps the dependency symlink out of change detection. The entry uses a `# splitbrief run isolation <session id>` marker for cleanup. A repository that does not ignore `node_modules` falls back to `staged-copy`.
 
 ```yaml
 workflow:
@@ -634,7 +636,7 @@ workflow:
 
 **When to use what:**
 - `git.createBranch: true` — when running SPLITBRIEF in CI or against `main` and you don't want the changes landing on the current branch.
-- `isolation: worktree` — the default, and the only strategy where the implementer can run the project's own typecheck, lint, and tests before handing work back. Choose `staged-copy` only when a linked git worktree is not workable for your setup.
+- `isolation: worktree` creates a run workspace with installed Node dependencies linked. Choose `staged-copy` when a linked worktree cannot serve the project. Both strategies need checks that can run inside the workspace.
 
 **See also:** [WORKFLOW.md](./WORKFLOW.md), [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#the-plan-card). The plan approval level is set with `workflow.approve` only.
 

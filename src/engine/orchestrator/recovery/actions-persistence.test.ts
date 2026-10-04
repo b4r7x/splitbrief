@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { evidenceLedgerPath, readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
@@ -21,8 +22,6 @@ import {
   buildContextOverflowRecoveryIssue,
   buildRetryExhaustedRecoveryIssue,
 } from './builders/task.js';
-import { buildUserEditConflictRecoveryIssue } from './builders/workflow.js';
-import { classifyUserEditConflict } from '../user-edit/conflicts.js';
 
 const createdAt = '2026-04-28T12:00:00.000Z';
 
@@ -89,16 +88,15 @@ describe('applyRecoveryAction: persisted success effects', () => {
   it('continues only a safe user-edit conflict and clears pending recovery', () => {
     const { projectDir, sessionId } = setupSession('continue-safe-conflict');
     const task = makeTask({ id: 'T030', file: 'src/next.ts' });
-    const issue = buildUserEditConflictRecoveryIssue({
-      createdAt,
-      currentTask: task,
-      conflict: classifyUserEditConflict({
-        files: ['README.md'],
-        currentTask: task,
-        briefHoldsOutput: () => false,
-        allTasks: [task],
-        currentTaskIndex: 0,
-      }),
+    const issue = makeRecoveryIssue({
+      reason: 'user-edit-conflict',
+      phase: 'implementing',
+      taskId: task.id,
+      taskTitle: task.title,
+      files: ['README.md'],
+      facts: { conflictKind: 'unrelated', safeToContinue: true },
+      availableActions: ['continue', 'pause-run', 'end-run'],
+      recommendedAction: 'continue',
     });
     const state = { ...implementingState([task]), pendingRecovery: issue };
     const { bus, events } = makeBus(projectDir, sessionId);

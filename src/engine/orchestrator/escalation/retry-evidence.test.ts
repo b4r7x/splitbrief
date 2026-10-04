@@ -49,6 +49,7 @@ async function makeRetryEvidenceCtx(
   const { callbacks } = makeCallbacks();
   const ctx: EscalationContext = {
     projectDir,
+    workspaceDir: projectDir,
     sessionId,
     config: makeNoValidationConfig(),
     callbacks,

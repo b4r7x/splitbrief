@@ -32,6 +32,8 @@ export function recoveryActionLabel(
       return context.seatRetry === undefined
         ? 'Try again'
         : `Try again with ${CREW_SEAT_LABELS[context.seatRetry]}`;
+    case 'restore-backup':
+      return 'Restore backup';
     case 'route-bigger-worker': {
       const profile = recoveryFactString(context.facts, 'routeBiggerProfile');
       return profile === undefined ? 'Use a bigger worker' : `Use a bigger worker · ${profile}`;
@@ -47,6 +49,8 @@ export function recoveryActionLabel(
     case 'revise':
     case 'revise-spec':
       return 'Send a correction';
+    case 'accept-as-is':
+      return 'Accept as is';
     case 'continue':
       return 'Continue';
     case 'skip-current-task':

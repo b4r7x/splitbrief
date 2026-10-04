@@ -1,8 +1,21 @@
-# Brief Format — Product Task Brief v1
+# Brief format, Product Task Brief v1
 
-The brief is the contract between the planner (this session) and the implementer (a different tool with no access to this session). Lifted from the SPLITBRIEF CLI (`src/engine/spec/prompts/task-format-example.ts`, `src/engine/spec/prompts/tasks.ts`). One brief = one verifiable slice = one implementer run.
+The Markdown brief is the implementer's contract. Render it from TaskSpec fields; send no task JSON to the implementer.
 
-## Template
+## Task grouping
+
+<!-- generated: brief-grouping -->
+One brief delivers one coherent, reviewable outcome. List every path that outcome writes under `files`. Keep the tests, callers, wiring, fixtures and necessary documentation with the behavior they cover; a file boundary alone never makes a separate brief. Combine related corrections that share a contract, mechanism or code context; a mechanical rename carries all its callers and pinned strings. Split independent outcomes, or a complex mechanism, when separate validation, context or recovery makes the work easier to execute correctly. Two assertions that can pass separately do not require separate briefs, and no file-count or line-count threshold decides a boundary. Keep each brief self-contained for its actual runner, with every acceptance criterion and repository constraint it needs, and within the real model context and prompt transport limits, system text, skills and retry feedback included. Do not aim for a number of briefs. Order the dependencies so each brief leaves its affected checks green.
+<!-- /generated -->
+
+## Markdown template and field homes
+
+The generated template carries BRIEF_HOME_OF_FIELD from `src/engine/spec/prompts/task-format-example.ts`.
+Keep its frontmatter keys and heading names exactly. Steps are advisory; omit numbered steps when steps is null.
+Treat file/files as suggestions. Use Out of bounds for explicit exclusions, never as a file fence.
+Use Approved out of bounds for further ordinary file guidance when needed. It grants no protected-write permission.
+For protectedOperations, include the path and operation under Constraints. Record user confirmation separately.
+Place batch ordering in depends_on. Keep the numeric batch and registered check objects in plan.json.
 
 <!-- generated: brief-template -->
     Plan each brief as a task with these fields, then render each field in its place:
@@ -43,6 +56,11 @@ The brief is the contract between the planner (this session) and the implementer
     ### Description
     What to implement and why. Include all context the implementer needs.
 
+    **Plan context (read-only):**
+    <plan summary>
+    Decisions: <confirmed plan decisions, including task ids>
+    Criteria this task serves: <criterion ids and text>
+
     ### Signature
     ```typescript
     export function exampleFn(param: Type): ReturnType
@@ -64,7 +82,6 @@ The brief is the contract between the planner (this session) and the implementer
     ### Implementation Steps
     1. Step-by-step HOW to implement
     2. Specific function calls and patterns
-    3. 3-5 steps max
 
     ### Tests
     - Test case with concrete inputs/outputs
@@ -73,10 +90,10 @@ The brief is the contract between the planner (this session) and the implementer
     **Out of bounds:**
     - Explicit exclusion the reviewer checks
     **Approved out of bounds:**
-    - A further path the planner already approved
+    - A further ordinary file the planner suggests
 
     ### Escalation
-    - Stop and ask when the required behavior is ambiguous, when a dependency is missing, or when the brief conflicts with local code.
+    - Stop and report to the planner when the required behavior is ambiguous, when a dependency is missing, or when the brief conflicts with local code.
 
     ### Evidence
     - Reviewable proof the task completed (the focused tests that pass, the changed files, the behavior a reviewer can check).
@@ -84,68 +101,39 @@ The brief is the contract between the planner (this session) and the implementer
     ### Constraints
     - ESM imports with .js extensions
     - Follow existing codebase patterns
+
+    **Implementer report:**
+    The report is advisory. Recorded checks decide whether the task passes.
+    End with one JSON object and nothing after it. Use decisions: [] when you propose no deviation.
+    {"status":"done","filesChanged":["<file>"],"touchedNotSuggested":[{"file":"<file>","reason":"<reason>"}],"notes":null,"decisions":[{"what":"<proposed deviation>","why":"<reason>"}]}
+    If blocked, end with {"status":"blocked","question":"<question>","filesNeeded":["<file>"]} instead. The session consults at once.
+    A decision proposes a deviation. The planner confirms how; the user decides changes to what.
+    No proposed deviation: {"status":"done","filesChanged":["<file>"],"touchedNotSuggested":[],"decisions":[],"notes":null}
 <!-- /generated -->
 
-The fenced examples are TypeScript. For Python, Go, Rust, or JavaScript use that language's fence and idioms — the CLI substitutes the Signature, Type Definitions, and read-only context examples per language.
+Use the project's language and import convention in code examples.
+Copy signature, types and pattern from current code when relevant.
+Attach the current code of contextFiles in their read-only context sections.
 
-## Brief Contract (required semantics)
+## Plan context and report placement
 
-<!-- generated: brief-contract -->
-Every brief must cover these nine semantic sections, even when one is brief. Each section renders the plan task fields the template maps to it:
+Keep Plan context in the bold subsection inside Description shown above.
+Its summary, confirmed decisions with task ids, and criterion text come from references/planning.md.
+Append the report from references/implementer-prompt.md after Constraints under the bold label.
+Neither subsection adds a Task Brief heading or frontmatter key.
+Record validation commands and sources in Constraints as session-run commands, per references/gates.md.
+Carry the workspace rules and project instructions into each self-contained brief.
 
-1. **Identity** — frontmatter `id`, `title`, `action`, `file`, optional `files`, `depends_on`, from the task's `id`, `title`, `suggestedFiles` and `dependsOn`.
-2. **Intent** — `### Description`: the task's `intent`, what the change is and why it matters.
-3. **Scope** — `### Scope` with `**Out of bounds:**` and optional `**Approved out of bounds:**` bullet lists, from the task's `exclusions`. REQUIRED. `files` are the suggested files; **Out of bounds** lists the explicit exclusions the reviewer checks.
-4. **Code Context** — `### Signature`, `### Type Definitions` and `### Pattern`, copied verbatim from the project when relevant, and one `### Read-only context (do not modify) — <path>` section with the current code of each of the task's `contextFiles`. The implementer reads the files it suggests itself, and searches only for a symbol the brief names.
-5. **Implementation Plan** — `### Implementation Steps`: the task's `steps`, 3-5 numbered steps with concrete function calls and patterns.
-6. **Validation** — `### Tests`: the task's test checks, REQUIRED concrete test cases with specific inputs and expected outputs, in every brief. No phrases like "should work correctly", and no deferring the cases to whichever brief owns the test file.
-7. **Constraints** — `### Constraints`: invariants, dependency rules, ESM imports with .js extensions, refusal conditions, and the task's `protectedOperations` as protected writes the user confirms.
-8. **Escalation** — `### Escalation`: bullets describing when the implementer must stop and ask instead of guessing. Required whenever the brief contains plausible ambiguity.
-9. **Evidence** — `### Evidence`: the task's checks and the criteria they prove, REQUIRED bullets describing the reviewable proof that should exist when the brief is done (the focused tests that pass, the changed files, the behavior a reviewer can check). Renders and project-wide gates are the review seat's and SPLITBRIEF's evidence, not the implementer's steps.
+## Parser and artifacts
 
-Every brief must also leave typecheck, lint and tests green on its own. Never plan for a failing gate: when a change would break a sibling file, widen the brief's `files` to include it, keep the change backward compatible with an optional property and a default, or split the work so each brief lands whole. Before a brief deletes or renames an export, its `files` name every consumer found by searching the whole repository — `src/` and `testing/` alike, colocated and sibling tests included.
-<!-- /generated -->
+Use bare `---` only for frontmatter delimiters outside fenced code. Never wrap the whole tasks document in a code fence.
+The strict parser reads the contract. Read-only context sections stay in the raw brief sent to the implementer.
+The current parser can warn about those context headings; it does not retain their code in its parsed Task.
+Keep typed fields in plan.json. Do not reconstruct them from a parsed Task alone.
+CLI tasks.md omits criteria, protectedOperations and batch; load its adjacent plan.json.
 
-## Critical Rules
+    <run>/plan.json · plan.md · tasks.md · plan-inputs.json
+    <run>/briefs/index.md         | id | title | file | action | depends_on |
+    <run>/briefs/T001.md          one Markdown brief per behaviour
 
-<!-- generated: critical-rules -->
-1. **Self-contained**: Each brief must inline the context the implementer cannot read in the files it suggests: the current code of its context files, TypeScript type annotations, import paths, function signatures from dependencies, and expected patterns.
-
-2. **Coherent**: One brief delivers one coherent, reviewable outcome. List every path that outcome writes under `files`. Keep the tests, callers, wiring, fixtures and necessary documentation with the behavior they cover; a file boundary alone never makes a separate brief. Combine related corrections that share a contract, mechanism or code context; a mechanical rename carries all its callers and pinned strings. Split independent outcomes, or a complex mechanism, when separate validation, context or recovery makes the work easier to execute correctly. Two assertions that can pass separately do not require separate briefs, and no file-count or line-count threshold decides a boundary. Keep each brief self-contained for its actual runner, with every acceptance criterion and repository constraint it needs, and within the real model context and prompt transport limits, system text, skills and retry feedback included. Do not aim for a number of briefs. Order the dependencies so each brief leaves its affected checks green.
-
-3. **Dependency-ordered**: Briefs must be ordered so dependencies come first. Use `depends_on` to declare which briefs must complete first; a brief of a later batch names the briefs it follows. Independent briefs can run in parallel.
-
-4. **Concrete validation**: Every `### Tests` block must list specific test cases with concrete inputs and expected outputs, as `-` bullets. This holds for every brief, including one whose test file a different brief owns: list the cases that verify THIS brief's change. Never replace the bullets with prose that defers validation to another brief. Name the focused test files and cases only. SPLITBRIEF runs typecheck, lint and the affected tests after every brief, so never tell the implementer to run a project-wide gate, the whole suite, or a screenshot/render tool.
-
-5. **Inline type definitions**: Copy referenced TypeScript type annotations or data shape definitions verbatim into `### Type Definitions`. Max ~300 tokens — prioritize definitions that appear in the function signature.
-
-6. **Import paths**: Specify exact imports using ESM imports with .js extensions.
-
-7. **Escalation, not guessing**: If a brief could be interpreted multiple ways, list those decision points under `### Escalation` rather than baking a guess into the steps.
-
-8. **Evidence is not implementation**: `### Evidence` describes the proof that survives after the brief is done, not the steps that produce it.
-
-9. **Reserved delimiter**: Outside fenced code blocks, lines containing only `---` are reserved for Task Brief frontmatter delimiters. Never use a bare `---` as a horizontal rule or phase-heading separator.
-<!-- /generated -->
-
-The three blocks above are generated from the CLI with its TypeScript language context (`npm run skills:sync`; `npm run skills:check` fails when they drift). One reading differs in the skill: the TypeScript-specific wording (`TypeScript type annotations`, `ESM imports with .js extensions`) becomes the project language's own convention for other languages.
-
-## Skill additions (appended by this pipeline, never by the planner's judgment)
-
-- `### Tests` ends with `**Validation commands:**` — the gates resolved in Phase 0, verbatim, the test command narrowed per references/gates.md.
-- `### Constraints` ends with the CLI's three closing constraints, always:
-<!-- generated: closing-constraints -->
-  - Do NOT invent new functions not described in the task
-  - Do NOT add features not described in the task
-  - Do NOT import packages not listed in the project dependencies
-<!-- /generated -->
-  plus the skill's own: `Do NOT run git add, git commit, git stash, or create .bak files`
-- Rules found in the project's instruction files (CLAUDE.md, AGENTS.md, …) are copied into `### Constraints` verbatim; a never-commit rule goes into every brief.
-- A `### Read-only context (do not modify) — <path>` section carries the whole context file when it is ≤ 300 lines; otherwise only the functions the brief reads, with a line `(excerpt: lines 40–95 of 412)`.
-
-## Files written
-
-    <run dir>/briefs/index.md      | id | title | file | action | depends_on |
-    <run dir>/briefs/T001.md       one brief per outcome, dependency order
-
-`index.md` is the table a human or `splitbrief-run` reads to know the order; it carries no other content.
+Use the same rendered briefs in tasks.md. Preserve dependencies when appending fixes or replacing split parents.

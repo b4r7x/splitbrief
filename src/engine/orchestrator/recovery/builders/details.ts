@@ -1,6 +1,5 @@
 import type { Task, TaskId } from '../../../../core/schemas/task.js';
 import type { ValidationResult } from '../../validation/result.js';
-import type { UserEditConflict } from '../../../events/workflow-events.js';
 import { uniqueSorted } from '../../../../utils/collections.js';
 import { scopePathPatterns } from '../../../../utils/path-patterns.js';
 import { summarizeText } from './issue.js';
@@ -96,14 +95,4 @@ export function taskFiles(task: Task): string[] {
     ],
     { trim: true, nonEmpty: true },
   );
-}
-
-export function fileConflictDetails(conflict: UserEditConflict): string[] {
-  return conflict.fileConflicts.map((fileConflict) => {
-    const affected =
-      fileConflict.affectedTaskIds.length > 0
-        ? ` affects ${fileConflict.affectedTaskIds.join(', ')}`
-        : '';
-    return `${fileConflict.file}: ${fileConflict.kind}${affected}`;
-  });
 }

@@ -4,7 +4,7 @@ import { getOrCreateLedger } from '../evidence/persistence.js';
 import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { recordApprovalEvidence, recordRejectionEvidence } from '../evidence/approval.js';
 import type { GateDecision } from '../approval/types.js';
-import { denialMessage, type GateDenial } from '../approval/gate-and-promote.js';
+import { denialMessage, type GateDenial } from '../task/attempt-gate.js';
 import { publishError } from '../events.js';
 import { DISCARDED_WRITES_INSTRUCTION } from '../../runners/errors.js';
 import type { EscalationContext } from './types.js';

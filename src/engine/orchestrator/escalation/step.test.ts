@@ -9,6 +9,7 @@ import { createChangeDetector } from '../../change-detection.js';
 import { buildLanguageContext } from '../../spec/prompts/language-context.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { createRunIsolation } from '../isolation/create.js';
+import { runImplementation } from '../task/run-implementation.js';
 import { createValidator } from '../validation/run.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { loadState } from '../../../core/state/persistence.js';
@@ -106,6 +107,63 @@ function configWithProfiles(): Config {
 }
 
 describe('runRetryStep', () => {
+  it('a retry of an extracted-code writer acquires the same workspace as the first attempt', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ file: 'src/value.ts', action: 'modify' });
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    const original = 'export const value = 1;\n';
+    writeFileSync(join(projectDir, task.file), original);
+    const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
+    const receivedDirs: string[] = [];
+    const wctx = makeWctx({
+      projectDir,
+      sessionId,
+      implementer: makeImplementer({
+        capabilities: { writesFiles: 'extracted-code' },
+        implement: async ({ projectDir: dir }) => {
+          receivedDirs.push(dir);
+          writeFileSync(join(dir, task.file), 'export const value = "failed";\n');
+          return { success: false, output: '', error: 'failed first attempt' };
+        },
+      }),
+    });
+
+    try {
+      const first = await runImplementation({
+        wctx,
+        task,
+        state: makeImplState([task]),
+        taskStartSnapshot,
+        setTrackedState: vi.fn(),
+        recordApprovalDenial: vi.fn(),
+      });
+      first.workspace?.cleanup();
+      await runRetryStep({
+        ctx: { ...wctx, taskStartSnapshot, dependsOnFiles: [] },
+        task,
+        state: first.state,
+        lastError: 'failed first attempt',
+        attempts: 1,
+        method: 'local',
+        transitionType: 'VALIDATION_PASS',
+        usageCategory: 'implementer',
+        retryFailureFallback: 'retry failed',
+        invokeRetry: async ({ projectDir: dir }) => {
+          receivedDirs.push(dir);
+          writeFileSync(join(dir, task.file), 'export const value = "retry";\n');
+          return { success: false, output: '', error: 'retry failed' };
+        },
+      });
+
+      expect(first.workspace).toBeDefined();
+      expect(receivedDirs).toEqual([first.workspace?.projectDir, first.workspace?.projectDir]);
+      expect(receivedDirs[0]).not.toBe(projectDir);
+      expect(readFileSync(join(projectDir, task.file), 'utf8')).toBe(original);
+    } finally {
+      await wctx.isolation.dispose();
+    }
+  });
+
   it('passes the workflow abort signal to retry invocation', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T000', file: 'src/signal.ts' });
@@ -124,6 +182,7 @@ describe('runRetryStep', () => {
     await runRetryStep({
       ctx: {
         projectDir,
+        workspaceDir: projectDir,
         sessionId,
         config,
         callbacks,
@@ -185,6 +244,7 @@ describe('runRetryStep', () => {
     const pending = runRetryStep({
       ctx: {
         projectDir,
+        workspaceDir: projectDir,
         sessionId,
         config,
         callbacks,
@@ -278,6 +338,7 @@ describe('runRetryStep', () => {
     const outcome = await runRetryStep({
       ctx: {
         projectDir,
+        workspaceDir: projectDir,
         sessionId,
         config,
         callbacks,
@@ -346,6 +407,7 @@ describe('runRetryStep', () => {
     const outcome = await runRetryStep({
       ctx: {
         projectDir,
+        workspaceDir: projectDir,
         sessionId,
         config,
         callbacks,
@@ -466,6 +528,7 @@ describe('runRetryStep', () => {
     const outcome = await runRetryStep({
       ctx: {
         projectDir,
+        workspaceDir: projectDir,
         sessionId,
         config,
         callbacks,
@@ -543,7 +606,6 @@ describe('runRetryStep', () => {
       const failed = await isolation.acquire({
         role: 'implementer',
         config,
-        writesFiles: 'direct',
       });
       expect(failed.projectDir).toBe(
         isolationWorktreePath(realpathSync(join(projectDir, '.git')), sessionId),
@@ -556,12 +618,13 @@ describe('runRetryStep', () => {
       mkdirSync(join(projectDir, 'src'), { recursive: true });
       writeFileSync(join(projectDir, 'src/shared.ts'), promoted);
       writeFileSync(join(failed.projectDir, 'src/abandoned.ts'), 'export const half = 1;\n');
-      failed.cleanup();
+      failed.cleanup(['src/abandoned.ts']);
 
       const retryDirs: string[] = [];
       const outcome = await runRetryStep({
         ctx: {
           projectDir,
+          workspaceDir: projectDir,
           sessionId,
           config,
           callbacks,
@@ -621,23 +684,20 @@ describe('runRetryStep', () => {
     const rewritten = 'export const dirty = "rewritten by the retry";\n';
 
     try {
-      // The failed attempt wrote the file and had it promoted, so the linked
-      // worktree is already dirty in the very path the retry rewrites. A
-      // detector that compares path membership sees nothing new there.
+      // The failed attempt wrote the file, so the run worktree is already dirty
+      // in the very path the retry rewrites. A detector that compares path
+      // membership sees nothing new there.
       const failed = await isolation.acquire({
         role: 'implementer',
         config,
-        writesFiles: 'direct',
       });
       mkdirSync(join(failed.projectDir, 'src'), { recursive: true });
       writeFileSync(join(failed.projectDir, 'src/dirty.ts'), firstAttempt);
-      mkdirSync(join(projectDir, 'src'), { recursive: true });
-      writeFileSync(join(projectDir, 'src/dirty.ts'), firstAttempt);
-      failed.cleanup();
 
       const outcome = await runRetryStep({
         ctx: {
           projectDir,
+          workspaceDir: failed.projectDir,
           sessionId,
           config,
           callbacks,
@@ -682,7 +742,8 @@ describe('runRetryStep', () => {
 
       expect(outcome.lastError).not.toContain('exited without changing any files');
       expect(outcome.result).toMatchObject({ completed: true, method: 'local' });
-      expect(readFileSync(join(projectDir, 'src/dirty.ts'), 'utf-8')).toBe(rewritten);
+      expect(readFileSync(join(failed.projectDir, 'src/dirty.ts'), 'utf-8')).toBe(rewritten);
+      expect(existsSync(join(projectDir, 'src/dirty.ts'))).toBe(false);
     } finally {
       await isolation.dispose();
     }
@@ -752,7 +813,7 @@ describe('runRetryStep — a failed attempt keeps its story', () => {
 });
 
 describe('runRetryStep — gate denial', () => {
-  it('gate-denied package change returns failed retry with lastError and raises no recovery', async () => {
+  it('attempt-denied package change is restored before returning a failed retry without recovery', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T030', file: 'src/main.ts' });
     const state = makeImplState([task]);
@@ -763,10 +824,13 @@ describe('runRetryStep — gate denial', () => {
     });
     const { bus, events } = makeBusRecorder();
     const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
+    const retryWorkspaceDirs: string[] = [];
+    const runValidation = vi.fn().mockResolvedValue([]);
 
     const outcome = await runRetryStep({
       ctx: {
         projectDir,
+        workspaceDir: projectDir,
         sessionId,
         config: makeNoValidationConfig({
           approval: { enabled: true, feedRejectionsToPlanner: false },
@@ -780,7 +844,7 @@ describe('runRetryStep — gate denial', () => {
         implementer: makeImplementer(),
         metadata: TEST_METADATA,
         sinks: TEST_SINKS,
-        validator: createValidator(),
+        validator: { ...createValidator(), runValidation },
         isolation: makeCopyingIsolation({ projectDir, sessionId }),
         taskStartSnapshot,
         dependsOnFiles: [],
@@ -794,6 +858,7 @@ describe('runRetryStep — gate denial', () => {
       usageCategory: 'implementer',
       retryFailureFallback: 'retry failed',
       invokeRetry: async ({ projectDir: runDir }) => {
+        retryWorkspaceDirs.push(runDir);
         writeFileSync(join(runDir, 'package.json'), '{"name":"changed"}\n');
         return { success: true };
       },
@@ -807,6 +872,9 @@ describe('runRetryStep — gate denial', () => {
         "Retry changed files blocked by approval gate: package change denied. SPLITBRIEF discarded this attempt's writes to package.json. Retry from the current files; do not try to recover the rejected writes.",
     });
     expect(loadState({ projectDir, sessionId })?.pendingRecovery).toBeUndefined();
+    expect(runValidation).not.toHaveBeenCalled();
+    expect(retryWorkspaceDirs.map((dir) => existsSync(join(dir, 'package.json')))).toEqual([false]);
+    expect(existsSync(join(projectDir, 'package.json'))).toBe(false);
     expect(
       events.filter(
         (event) =>

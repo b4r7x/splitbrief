@@ -7,10 +7,6 @@ import { reviewStore } from '../../stores/workflow/review.js';
 import type { OrchestratorCallbacks } from '../../engine/orchestrator/types.js';
 import type { PlannerConversation } from '../../core/schemas/workflow.js';
 import { questionPromptStore } from '../../stores/question-prompt/prompt.js';
-import {
-  formatUserEditConflictPrompt,
-  parseUserEditConflictAnswer,
-} from './user-edit-conflict-prompt.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 
 function runningTaskId(): string | null {
@@ -50,10 +46,6 @@ export function buildPromptCallbacks(opts: BuildCallbacksOptions): OrchestratorC
       } finally {
         reviewStore.clearReviewIfOwner(reviewOwner);
       }
-    },
-    onUserEditConflict: async (conflict) => {
-      const answer = await inputMode.setQuestionMode(formatUserEditConflictPrompt(conflict));
-      return parseUserEditConflictAnswer(answer, conflict.availableActions);
     },
     // A stopped brief parks rather than asking a question: blank Enter never resumes it, and the
     // composer keeps its own meaning until /resume or a typed steer settles this promise.

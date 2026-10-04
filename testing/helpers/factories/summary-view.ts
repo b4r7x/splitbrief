@@ -51,6 +51,7 @@ export function makeView(overrides: Partial<SummaryView> = {}): SummaryView {
       changed: ['src/form.test.ts', 'src/form.ts', 'src/routes/signup.test.ts', 'src/validate.ts'],
       partial: new Set<string>(),
       stoppedAt: null,
+      patch: false,
     },
     checkpoint: null,
     phases: [
@@ -83,6 +84,7 @@ export function endedInBuild(overrides: Partial<SummaryView> = {}): SummaryView 
       changed: ['src/routes/signup.ts', 'src/validate.ts'],
       partial: new Set(['src/routes/signup.ts']),
       stoppedAt: { taskId: taskId('T003'), partialFiles: ['src/routes/signup.ts'] },
+      patch: false,
     },
     ...overrides,
   });
@@ -107,7 +109,7 @@ export function endedInPlanning(overrides: Partial<SummaryView> = {}): SummaryVi
     scope: { kind: 'not-run' },
     cost: { kind: 'unmetered', label: 'subscription-included' },
     tokens: { plan: 12_300, build: 0, review: 0 },
-    files: { changed: null, partial: new Set(), stoppedAt: null },
+    files: { changed: null, partial: new Set(), stoppedAt: null, patch: false },
     phases: [],
     ...overrides,
   });

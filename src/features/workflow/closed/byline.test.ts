@@ -5,6 +5,18 @@ import { taskId } from '../../../core/schemas/task.js';
 import { bylineText, legendText, openRunByline, stepWord } from './byline.js';
 
 describe('bylineText', () => {
+  it('offers the undo on an applied run', () => {
+    expect(bylineText(makeView({ outcome: { kind: 'applied' } }), WIDE)).toBe(
+      'Applied · undo it with /run reject confirm',
+    );
+  });
+
+  it('says how to bring the changes of a discarded run back', () => {
+    expect(bylineText(makeView({ outcome: { kind: 'discarded' } }), WIDE)).toBe(
+      'Bring the changes back with git apply .splitbrief/sessions/2026-09-14-add-email-validation-with-tests/run.patch',
+    );
+  });
+
   it('offers both choices on a ready run', () => {
     expect(bylineText(makeView(), WIDE)).toBe(
       'Keep it with /run accept, or revert it with /run reject confirm',
@@ -110,6 +122,26 @@ describe('bylineText', () => {
 
 describe('openRunByline', () => {
   const OPEN = { continuable: true, width: WIDE } as const;
+
+  it('points a run ready to apply at its result menu', () => {
+    expect(
+      openRunByline({
+        continuable: false,
+        width: WIDE,
+        status: { kind: 'ready-to-apply', override: false },
+      }),
+    ).toBe('Ready to apply · choose Apply, Show diff or Discard');
+  });
+
+  it('says an override is applied as is', () => {
+    expect(
+      openRunByline({
+        continuable: false,
+        width: WIDE,
+        status: { kind: 'ready-to-apply', override: true },
+      }),
+    ).toBe('Ready to apply as is · choose Apply, Show diff or Discard');
+  });
 
   it('names the brief a paused run is holding, then the key that moves it', () => {
     expect(

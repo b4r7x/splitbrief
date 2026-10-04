@@ -58,6 +58,7 @@ const EARLIER_CONSULT: ConsultRecord = {
 
 function consultInput(overrides: Partial<ConsultPromptInput> = {}): ConsultPromptInput {
   return {
+    workspaceDir: '/tmp/run-workspace',
     reason: 'failed',
     plan,
     task: TASK,
@@ -80,6 +81,13 @@ function consultInput(overrides: Partial<ConsultPromptInput> = {}): ConsultPromp
 }
 
 describe('buildConsultPrompt', () => {
+  it.each([false, true])('directs code reads to the workspace, resumed=%s', (resumed) => {
+    const prompt = buildConsultPrompt(consultInput({ resumed }));
+
+    expect(prompt).toContain('The run workspace is `/tmp/run-workspace`.');
+    expect(prompt).toContain('Read project files from this directory');
+  });
+
   it('carries the plan, the task and its revisions, the attempt, the lineage and the reason', () => {
     const prompt = buildConsultPrompt(consultInput());
 

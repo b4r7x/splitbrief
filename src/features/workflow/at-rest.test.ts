@@ -4,6 +4,7 @@ import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js'
 import type { WorkflowMode } from '../../core/schemas/enums.js';
 import { taskId } from '../../core/schemas/task.js';
 import type { RunStatus, StopReason } from '../../core/sessions/run-status.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { atRestComposer, atRestRailStages, recordPhase } from './at-rest.js';
 
 function openWith(stop: StopReason): RunStatus {
@@ -67,7 +68,83 @@ describe('atRestRailStages', () => {
   );
 });
 
+const WORKSPACE = {
+  kind: 'worktree' as const,
+  path: '/tmp/run-workspace',
+  base: { snapshotId: 'workspace-base', head: null },
+};
+
+function workspaceRecord(status: RunStatus, phase: 'implementing' | 'complete' = 'complete') {
+  return makeRunRecord({
+    status,
+    hydration: {
+      kind: 'loaded',
+      state: makeWorkflowState({ phase, workspace: WORKSPACE }),
+    },
+  });
+}
+
+describe('atRestRailStages on a run with a workspace', () => {
+  it('adds a pending Apply stage after a passed review', () => {
+    const stages = atRestRailStages(workspaceRecord({ kind: 'ready-to-apply', override: false }));
+    expect(stages).toEqual([
+      { stage: 'plan', status: 'done' },
+      { stage: 'build', status: 'done' },
+      { stage: 'review', status: 'done' },
+      { stage: 'apply', status: 'pending' },
+    ]);
+  });
+
+  it('marks Apply done on an applied run', () => {
+    const stages = atRestRailStages(workspaceRecord({ kind: 'closed', as: 'applied' }));
+    expect(stages.map((stage) => stage.status)).toEqual(['done', 'done', 'done', 'done']);
+  });
+
+  it('marks Apply cancelled on a discarded run', () => {
+    const stages = atRestRailStages(workspaceRecord({ kind: 'closed', as: 'discarded' }));
+    expect(stages.map((stage) => stage.status)).toEqual(['done', 'done', 'done', 'cancelled']);
+  });
+
+  it('keeps Apply pending behind the stage an ended run stopped on', () => {
+    const stages = atRestRailStages(
+      workspaceRecord({ kind: 'closed', as: 'ended' }, 'implementing'),
+    );
+    expect(stages.map((stage) => stage.status)).toEqual([
+      'done',
+      'cancelled',
+      'pending',
+      'pending',
+    ]);
+  });
+
+  it('marks Apply with the halt of a run stopped inside it', () => {
+    const stages = atRestRailStages(
+      workspaceRecord({
+        kind: 'open',
+        stop: { kind: 'halted', issue: makeRecoveryIssue({ reason: 'apply-conflict' }) },
+        resumeAt: { kind: 'apply' },
+      }),
+    );
+    expect(stages.map((stage) => stage.status)).toEqual(['done', 'done', 'done', 'failed']);
+  });
+
+  it('keeps three stages on a run without a workspace', () => {
+    expect(atRestRailStages(recordAt({ status: { kind: 'closed', as: 'complete' } }))).toHaveLength(
+      3,
+    );
+  });
+});
+
 describe('atRestComposer', () => {
+  it('takes commands and the result menu on a run ready to apply; Enter does not continue it', () => {
+    const composer = atRestComposer(workspaceRecord({ kind: 'ready-to-apply', override: false }));
+    expect(composer).toEqual({
+      continuable: false,
+      commandsOnly: true,
+      placeholder: '/ for a command · tab for the result menu…',
+    });
+  });
+
   it('takes a correction from a run that can be picked up', () => {
     const composer = atRestComposer(
       recordAt({ status: openWith({ kind: 'interrupted' }), phase: 'implementing' }),

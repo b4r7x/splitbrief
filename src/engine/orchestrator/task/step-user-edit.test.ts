@@ -5,6 +5,7 @@ import {
   makeCallbacks,
   makeImplementer,
   makeBusRecorder,
+  openRunWorkspace,
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -15,7 +16,6 @@ import {
   makeTaskWorkflowContext as makeWorkflowContext,
   setupTaskProject as setupProject,
 } from '#testing/helpers/orchestrator-task-context.js';
-import { loadState } from '../../../core/state/persistence.js';
 import { CONFIRM_PHRASE } from '../../../core/approval/types.js';
 import type { ImplementerOptions } from '../../implementers/types.js';
 import { createImplementerBase } from '../../implementers/pipeline/run.js';
@@ -37,7 +37,7 @@ describe('runSingleTask — user edits', () => {
     const state = implementingState([task]);
 
     const implementer = makeImplementer({
-      implement: vi.fn().mockImplementation(async () => {
+      implement: vi.fn().mockImplementation(async ({ projectDir }: ImplementerOptions) => {
         writeFileSync(join(projectDir, '.env.local'), 'export const v = 99; // implementer\n');
         return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
       }),
@@ -77,9 +77,9 @@ describe('runSingleTask — user edits', () => {
     });
 
     expect(readFileSync(join(projectDir, '.env.local'), 'utf-8')).toBe(concurrentUserEdit);
-    expect(events.find((event) => event.type === 'warning')).toMatchObject({
-      type: 'warning',
-      message: expect.stringContaining('rollback skipped files changed during approval'),
+    expect(events.find((event) => event.type === 'error')).toMatchObject({
+      type: 'error',
+      message: expect.stringContaining("discarded this attempt's writes to .env.local"),
     });
   });
 
@@ -138,7 +138,7 @@ describe('runSingleTask — user edits', () => {
     expect(readFileSync(join(projectDir, '.env.local'), 'utf-8')).toBe(concurrentUserEdit);
   });
 
-  it('approved direct write does not promote staged output over user edits made during approval', async () => {
+  it('approved direct write stays in the workspace and a checkout edit made during approval stays in the checkout', async () => {
     const { projectDir, sessionId } = setupProject({ '.env.local': 'export const v = 1;\n' });
 
     const task = makeTask({
@@ -167,8 +167,8 @@ describe('runSingleTask — user edits', () => {
     const runValidation = vi.fn().mockResolvedValue([]);
     const { bus, events } = makeBusRecorder();
 
-    const result = await runSingleTask({
-      wctx: makeWorkflowContext({
+    const wctx = await openRunWorkspace(
+      makeWorkflowContext({
         projectDir,
         sessionId,
         callbacks,
@@ -183,6 +183,9 @@ describe('runSingleTask — user edits', () => {
         }),
         validator: { ...createValidator(), runValidation },
       }),
+    );
+    const result = await runSingleTask({
+      wctx,
       task,
       index: 0,
       totalTasks: 1,
@@ -193,31 +196,15 @@ describe('runSingleTask — user edits', () => {
     });
 
     expect(readFileSync(join(projectDir, '.env.local'), 'utf-8')).toBe(concurrentUserEdit);
-    expect(runValidation).not.toHaveBeenCalled();
-    expect(result.currentTaskIndex).toBe(0);
-    expect(
-      events.find(
-        (event) =>
-          event.type === 'paused_external_changes' &&
-          event.conflict?.kind === 'changed-during-approval-promotion',
-      ),
-    ).toMatchObject({
-      type: 'paused_external_changes',
-      selectedAction: 'pause',
-      conflict: {
-        kind: 'changed-during-approval-promotion',
-        files: ['.env.local'],
-        affectedTaskIds: ['T001'],
-        safeToContinue: false,
-      },
-    });
-    expect(events.find((event) => event.type === 'error')).toMatchObject({
-      type: 'error',
-      message: expect.stringContaining('promotion blocked'),
-    });
+    expect(readFileSync(join(wctx.workspaceDir, '.env.local'), 'utf-8')).toBe(
+      'export const v = 99; // implementer\n',
+    );
+    expect(runValidation).toHaveBeenCalledTimes(1);
+    expect(result.tasks[0]?.status).toBe('done');
+    expect(events.some((event) => event.type === 'paused_external_changes')).toBe(false);
   });
 
-  it('extracted-code approval races ask for user-edit resolution instead of retrying', async () => {
+  it('an extracted-code write lands in the workspace while a checkout edit made during approval stays in the checkout', async () => {
     const { projectDir, sessionId } = setupProject();
 
     mkdirSync(join(projectDir, 'src'), { recursive: true });
@@ -242,7 +229,6 @@ describe('runSingleTask — user edits', () => {
       ),
     });
     const userEdit = 'export const value = "user";\n';
-    const onUserEditConflict = vi.fn().mockResolvedValue('pause');
     let approvalCalls = 0;
     const callbacks = {
       ...makeCallbacks().callbacks,
@@ -253,13 +239,12 @@ describe('runSingleTask — user edits', () => {
         }
         return { decision: 'confirm', phrase: CONFIRM_PHRASE, reason: 'ok' };
       }),
-      onUserEditConflict,
     };
     const runValidation = vi.fn().mockResolvedValue([]);
     const { bus, events } = makeBusRecorder();
 
-    const result = await runSingleTask({
-      wctx: makeWorkflowContext({
+    const wctx = await openRunWorkspace(
+      makeWorkflowContext({
         projectDir,
         sessionId,
         callbacks,
@@ -274,6 +259,9 @@ describe('runSingleTask — user edits', () => {
         }),
         validator: { ...createValidator(), runValidation },
       }),
+    );
+    const result = await runSingleTask({
+      wctx,
       task,
       index: 0,
       totalTasks: 1,
@@ -284,26 +272,12 @@ describe('runSingleTask — user edits', () => {
     });
 
     expect(readFileSync(join(projectDir, 'package.json'), 'utf-8')).toBe(userEdit);
-    expect(runValidation).not.toHaveBeenCalled();
-    expect(result.currentTaskIndex).toBe(0);
-    expect(onUserEditConflict).not.toHaveBeenCalled();
-    expect(result.pendingRecovery).toMatchObject({
-      reason: 'approval-promotion-conflict',
-      taskId: 'T001',
-      files: ['package.json'],
-      availableActions: ['skip-current-task', 'pause-run', 'end-run'],
-    });
-    expect(loadState({ projectDir, sessionId })?.pendingRecovery).toMatchObject({
-      reason: 'approval-promotion-conflict',
-      taskId: 'T001',
-    });
-    expect(events.find((event) => event.type === 'paused_external_changes')).toMatchObject({
-      type: 'paused_external_changes',
-      selectedAction: 'pause',
-      conflict: {
-        kind: 'changed-during-approval-promotion',
-        files: ['package.json'],
-      },
-    });
+    expect(readFileSync(join(wctx.workspaceDir, 'package.json'), 'utf-8')).toBe(
+      'export const value = "implementer";',
+    );
+    expect(runValidation).toHaveBeenCalledTimes(1);
+    expect(result.tasks[0]?.status).toBe('done');
+    expect(result.pendingRecovery).toBeUndefined();
+    expect(events.some((event) => event.type === 'paused_external_changes')).toBe(false);
   });
 });

@@ -40,6 +40,7 @@ export function makeTaskWorkflowContext(overrides?: Partial<WorkflowContext>): W
   const planner = overrides?.planner ?? makePlanner();
   const base: WorkflowContext = {
     projectDir: proj.projectDir,
+    workspaceDir: proj.projectDir,
     sessionId: proj.sessionId,
     config: makeConfig({
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },

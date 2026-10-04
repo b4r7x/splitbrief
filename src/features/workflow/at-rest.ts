@@ -1,5 +1,10 @@
 import type { Phase } from '../../core/schemas/enums.js';
-import { getRailStages, type RailHalt, type RailStageState } from '../../core/rail-stages.js';
+import {
+  getRailStages,
+  type RailHalt,
+  type RailStageState,
+  type RailStageStatus,
+} from '../../core/rail-stages.js';
 import type { RunRecord } from '../../core/sessions/run-record.js';
 import type { StopKind } from '../../core/schemas/run-step.js';
 import { AT_REST_PLACEHOLDER } from './closed/byline.js';
@@ -29,13 +34,37 @@ export function recordPhase(record: RunRecord): Phase {
  */
 export function atRestRailStages(record: RunRecord): RailStageState[] {
   const status = record.status;
-  if (status.kind === 'running') return getRailStages(recordPhase(record));
+  const apply = applyStage(record);
+  const applyOption = apply === undefined ? {} : { apply };
+  if (status.kind === 'running') return getRailStages(recordPhase(record), applyOption);
+  if (status.kind === 'ready-to-apply') return getRailStages('complete', applyOption);
   if (status.kind === 'closed') {
-    return status.as === 'complete'
-      ? getRailStages('complete')
-      : getRailStages(recordPhase(record), { halted: 'cancelled' });
+    return status.as === 'complete' || status.as === 'applied'
+      ? getRailStages('complete', applyOption)
+      : getRailStages(recordPhase(record), { halted: 'cancelled', ...applyOption });
   }
-  return getRailStages(recordPhase(record), { halted: STOP_HALT[status.stop.kind] });
+  const phase = status.resumeAt.kind === 'apply' ? 'complete' : recordPhase(record);
+  return getRailStages(phase, { halted: STOP_HALT[status.stop.kind], ...applyOption });
+}
+
+/**
+ * The Apply stage a workspace run wears on its header rail. A run with no workspace, or one whose
+ * workspace is the checkout itself, has no Apply stage to show.
+ */
+export function applyStage(record: RunRecord): RailStageStatus | undefined {
+  if (record.hydration.kind !== 'loaded') return undefined;
+  const workspace = record.hydration.state.workspace;
+  if (workspace === undefined || workspace.kind === 'checkout') return undefined;
+  const status = record.status;
+  if (status.kind === 'ready-to-apply') return 'pending';
+  if (status.kind === 'closed') {
+    if (status.as === 'applied') return 'done';
+    if (status.as === 'discarded') return 'cancelled';
+  }
+  if (status.kind === 'open' && status.resumeAt.kind === 'apply') {
+    return STOP_HALT[status.stop.kind];
+  }
+  return 'pending';
 }
 
 export interface AtRestComposer {
@@ -54,10 +83,13 @@ export function atRestComposer(record: RunRecord): AtRestComposer {
   return {
     continuable,
     commandsOnly: !continuable,
-    placeholder: !continuable
-      ? AT_REST_PLACEHOLDER.closed
-      : record.status.kind === 'open' && record.status.stop.kind === 'input-required'
-        ? AT_REST_PLACEHOLDER.inputRequired
-        : AT_REST_PLACEHOLDER.open,
+    placeholder:
+      record.status.kind === 'ready-to-apply'
+        ? AT_REST_PLACEHOLDER.ready
+        : !continuable
+          ? AT_REST_PLACEHOLDER.closed
+          : record.status.kind === 'open' && record.status.stop.kind === 'input-required'
+            ? AT_REST_PLACEHOLDER.inputRequired
+            : AT_REST_PLACEHOLDER.open,
   };
 }

@@ -23,6 +23,7 @@ const SessionBaseSchema = z.object({
   phase: PhaseSchema.optional(),
   mode: WorkflowModeSchema.optional(),
   stop: StopKindSchema.optional(),
+  apply: z.enum(['ready', 'applied', 'discarded']).optional(),
 });
 
 const SessionCoreSchema = z.discriminatedUnion('status', [

@@ -1,11 +1,13 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   makeCallbacks,
   makeImplementer,
   makePlanner,
   makeBusRecorder,
+  makeWorktreeIsolation,
+  openRunWorkspace,
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -26,68 +28,6 @@ import { applyRecoveryAction } from '../recovery/actions.js';
 afterEach(cleanupTaskProjects);
 
 describe('runSingleTask — recovery', () => {
-  it('raises a user-edit-conflict recovery when a foreign edit appears in the failing universe', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({
-      id: 'T001',
-      action: 'create',
-      file: 'src/main.ts',
-      scope: { inBounds: ['src/main.ts', 'src/helper.ts'] },
-    });
-    const state = implementingState([task]);
-
-    const implementer = makeImplementer({
-      implement: vi.fn().mockImplementation(async () => {
-        mkdirSync(join(projectDir, 'src'), { recursive: true });
-        writeFileSync(join(projectDir, 'src/main.ts'), 'export const main = 1;\n');
-        return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
-      }),
-      retry: vi.fn(),
-    });
-    const runValidation = vi.fn().mockImplementation(async () => {
-      writeFileSync(join(projectDir, 'src/helper.ts'), 'export const helper = 2; // user edit\n');
-      return [{ stage: 'test' as const, passed: false, error: 'test failed' }];
-    });
-    const { callbacks } = makeCallbacks();
-    const { bus, events } = makeBusRecorder();
-
-    const result = await runSingleTask({
-      wctx: makeWorkflowContext({
-        projectDir,
-        sessionId,
-        callbacks,
-        implementer,
-        bus,
-        config: makeConfig({
-          validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
-        }),
-        validator: { ...createValidator(), runValidation },
-      }),
-      task,
-      index: 0,
-      totalTasks: 1,
-      state,
-      taskBreakdowns: [],
-      setTrackedState: vi.fn(),
-      setCurrentTask: vi.fn(),
-    });
-
-    expect(result.pendingRecovery).toMatchObject({
-      reason: 'user-edit-conflict',
-      taskId: 'T001',
-    });
-    expect(result.pendingRecovery?.files).toContain('src/helper.ts');
-    expect(implementer.retry).not.toHaveBeenCalled();
-    expect(result.tasks[0]?.status).not.toBe('done');
-    expect(events.find((e) => e.type === 'recovery_prompted')).toMatchObject({
-      type: 'recovery_prompted',
-      reason: 'user-edit-conflict',
-    });
-    expect(loadState({ projectDir, sessionId })?.pendingRecovery).toMatchObject({
-      reason: 'user-edit-conflict',
-    });
-  });
-
   it('restores failing task changes to the pre-task state when the retry ladder exhausts', {
     timeout: 90_000,
   }, async () => {
@@ -101,8 +41,8 @@ describe('runSingleTask — recovery', () => {
     const state = implementingState([task]);
 
     const implementer = makeImplementer({
-      implement: vi.fn().mockImplementation(async () => {
-        writeFileSync(join(projectDir, 'src/main.ts'), 'export const main = 999; // broken\n');
+      implement: vi.fn().mockImplementation(async ({ projectDir: runDir }: ImplementerOptions) => {
+        writeFileSync(join(runDir, 'src/main.ts'), 'export const main = 999; // broken\n');
         return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
       }),
       retry: vi.fn().mockResolvedValue({
@@ -117,10 +57,11 @@ describe('runSingleTask — recovery', () => {
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
 
-    const result = await runSingleTask({
-      wctx: makeWorkflowContext({
+    const wctx = await openRunWorkspace(
+      makeWorkflowContext({
         projectDir,
         sessionId,
+        isolation: makeWorktreeIsolation({ projectDir, sessionId }),
         callbacks,
         implementer,
         bus,
@@ -130,6 +71,9 @@ describe('runSingleTask — recovery', () => {
         planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
         validator: { ...createValidator(), runValidation },
       }),
+    );
+    const result = await runSingleTask({
+      wctx,
       task,
       index: 0,
       totalTasks: 1,
@@ -140,7 +84,9 @@ describe('runSingleTask — recovery', () => {
     });
 
     expect(result.pendingRecovery?.reason).toBe('consult-bound-spent');
-    expect(readFileSync(join(projectDir, 'src/main.ts'), 'utf-8')).toBe('export const main = 0;\n');
+    expect(readFileSync(join(wctx.workspaceDir, 'src/main.ts'), 'utf-8')).toBe(
+      'export const main = 0;\n',
+    );
   });
 
   it("does not leak a skipped task's exhausted changes into the next task's validation", {
@@ -165,14 +111,16 @@ describe('runSingleTask — recovery', () => {
     const state = implementingState([taskOne, taskTwo]);
 
     const implementer = makeImplementer({
-      implement: vi.fn().mockImplementation(async ({ task }: ImplementerOptions) => {
-        if (task.id === 'T001') {
-          writeFileSync(join(projectDir, 'src/one.ts'), 'export const one = 999; // broken\n');
-        } else {
-          writeFileSync(join(projectDir, 'src/two.ts'), 'export const two = 1;\n');
-        }
-        return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
-      }),
+      implement: vi
+        .fn()
+        .mockImplementation(async ({ task, projectDir: runDir }: ImplementerOptions) => {
+          if (task.id === 'T001') {
+            writeFileSync(join(runDir, 'src/one.ts'), 'export const one = 999; // broken\n');
+          } else {
+            writeFileSync(join(runDir, 'src/two.ts'), 'export const two = 1;\n');
+          }
+          return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
+        }),
       retry: vi.fn().mockResolvedValue({
         success: false,
         error: 'still broken',
@@ -183,9 +131,9 @@ describe('runSingleTask — recovery', () => {
     // The whole-tree validator observes src/one.ts every time it runs; task 1 fails
     // forever, task 2 passes. Each call records what src/one.ts looks like on disk.
     const oneSeenByValidation: string[] = [];
-    const runValidation = vi.fn().mockImplementation(async () => {
-      oneSeenByValidation.push(readFileSync(join(projectDir, 'src/one.ts'), 'utf-8'));
-      if (readFileSync(join(projectDir, 'src/two.ts'), 'utf-8') === 'export const two = 1;\n') {
+    const runValidation = vi.fn().mockImplementation(async ({ projectDir: dir }) => {
+      oneSeenByValidation.push(readFileSync(join(dir, 'src/one.ts'), 'utf-8'));
+      if (readFileSync(join(dir, 'src/two.ts'), 'utf-8') === 'export const two = 1;\n') {
         return [{ stage: 'test' as const, passed: true }];
       }
       return [{ stage: 'test' as const, passed: false, error: 'test failed' }];
@@ -193,18 +141,21 @@ describe('runSingleTask — recovery', () => {
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
 
-    const wctx = makeWorkflowContext({
-      projectDir,
-      sessionId,
-      callbacks,
-      implementer,
-      bus,
-      config: makeConfig({
-        validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
+    const wctx = await openRunWorkspace(
+      makeWorkflowContext({
+        projectDir,
+        sessionId,
+        isolation: makeWorktreeIsolation({ projectDir, sessionId }),
+        callbacks,
+        implementer,
+        bus,
+        config: makeConfig({
+          validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
+        }),
+        planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
+        validator: { ...createValidator(), runValidation },
       }),
-      planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
-      validator: { ...createValidator(), runValidation },
-    });
+    );
 
     const afterTaskOne = await runSingleTask({
       wctx,
@@ -219,7 +170,9 @@ describe('runSingleTask — recovery', () => {
 
     // Task 1 exhausts the ladder and its broken change is restored to the pre-task state.
     expect(afterTaskOne.pendingRecovery?.reason).toBe('consult-bound-spent');
-    expect(readFileSync(join(projectDir, 'src/one.ts'), 'utf-8')).toBe('export const one = 0;\n');
+    expect(readFileSync(join(wctx.workspaceDir, 'src/one.ts'), 'utf-8')).toBe(
+      'export const one = 0;\n',
+    );
 
     // Skip the exhausted task via the real recovery action, then run task 2.
     const skipResult = applyRecoveryAction({
@@ -350,8 +303,8 @@ describe('runSingleTask — signed-out runner', () => {
     const state = implementingState([task]);
 
     const implementer = makeImplementer({
-      implement: vi.fn().mockImplementation(async () => {
-        writeFileSync(join(projectDir, 'src/main.ts'), 'export const main = 999; // broken\n');
+      implement: vi.fn().mockImplementation(async ({ projectDir: runDir }: ImplementerOptions) => {
+        writeFileSync(join(runDir, 'src/main.ts'), 'export const main = 999; // broken\n');
         return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
       }),
       // The login expires between the first attempt and the retry ladder.
@@ -515,8 +468,8 @@ describe('runSingleTask — usage-limited runner', () => {
     const state = implementingState([task]);
 
     const implementer = makeImplementer({
-      implement: vi.fn().mockImplementation(async () => {
-        writeFileSync(join(projectDir, 'src/main.ts'), 'export const main = 999; // broken\n');
+      implement: vi.fn().mockImplementation(async ({ projectDir: runDir }: ImplementerOptions) => {
+        writeFileSync(join(runDir, 'src/main.ts'), 'export const main = 999; // broken\n');
         return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
       }),
       // The quota runs out between the first attempt and the retry ladder.

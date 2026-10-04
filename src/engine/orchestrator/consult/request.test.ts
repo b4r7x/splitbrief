@@ -1,14 +1,16 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { setupProject } from '#testing/helpers/planning-phase.js';
-import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
-import { saveState } from '../../../core/state/persistence.js';
+import { loadState, saveState } from '../../../core/state/persistence.js';
+import { readMessages } from '../../../core/sessions/log-reader.js';
+import { appendMessage } from '../../../core/sessions/log-writer.js';
 import type { Planner, TypedCallContext } from '../../planners/types.js';
 import type { TypedSeatCall } from '../../runners/typed-output.js';
 import { requestConsult, type ConsultContext } from './request.js';
@@ -19,7 +21,11 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) cleanupTempDir(dir);
 });
 
-type ScriptedConsult = Readonly<{ text: string; nativeSessionId?: string | null }>;
+type ScriptedConsult = Readonly<{
+  text: string;
+  nativeSessionId?: string | null;
+  throws?: string;
+}>;
 
 function consultPlanner(
   script: ScriptedConsult[],
@@ -41,6 +47,7 @@ function consultPlanner(
         prompts.push(prompt);
         const next = script.shift();
         if (next === undefined) throw new Error('the planner was asked once too often');
+        if (next.throws !== undefined) throw new Error(next.throws);
         return makeRunnerCallResult({
           status: 'completed',
           text: next.text,
@@ -102,6 +109,115 @@ function emptySnapshot(): ChangedFilesSnapshot {
 }
 
 describe('requestConsult', () => {
+  it.each([
+    {
+      handle: 'valid',
+      script: [guidanceAnswer('Answer', 'native-2')],
+      heading: '# Consult continued',
+      redelivered: 0,
+    },
+    {
+      handle: 'expired',
+      script: [
+        { text: '', throws: 'No conversation found with session id native-q' },
+        guidanceAnswer('Answer', 'native-2'),
+      ],
+      heading: '# Consult on a failing task',
+      redelivered: 1,
+    },
+  ])(
+    'continue after an answered question, consult sees workspace code ($handle handle)',
+    async ({ script, heading, redelivered }) => {
+      const { projectDir, sessionId } = setupProject(dirs);
+      const ref = { projectDir, sessionId };
+      const workspaceDir = createTempDir('consult-workspace');
+      dirs.push(workspaceDir);
+      const file = 'src/greet.ts';
+      for (const dir of [projectDir, workspaceDir]) mkdirSync(join(dir, 'src'));
+      writeFileSync(join(projectDir, file), 'export const greeting = "checkout";\n');
+      writeFileSync(join(workspaceDir, file), 'export const greeting = "workspace";\n');
+      const reply = 'Greet by first name only.';
+      const task = makeTask({ id: 'T003', file, status: 'failed', revision: 1, criteria: ['C1'] });
+      const planned = { ...consultState(), tasks: [task] };
+      let stopped = transition(
+        { ...planned, tokenUsage: { ...planned.tokenUsage, plannerInput: 40, plannerOutput: 12 } },
+        { type: 'SET_PLANNER_SESSION_ID', sessionId: 'native-q' },
+      );
+      stopped = transition(stopped, {
+        type: 'RECORD_CONSULT',
+        taskId: task.id,
+        revision: 1,
+        reason: 'failed',
+        answer: JSON.parse(guidanceAnswer('Before the stop', null).text),
+      });
+      stopped = transition(stopped, { type: 'COUNT_PLANNER_CALL' });
+      stopped = transition(stopped, { type: 'COUNT_PLANNER_CALL' });
+      saveState(ref, stopped);
+      appendMessage(ref, { role: 'user', phase: 'planning', text: reply });
+
+      const continued = loadState(ref);
+      if (continued === null) throw new Error('the stopped run left no state');
+      expect(continued.plannerSessionId).toBe('native-q');
+      expect(continued.plannerCalls).toEqual(stopped.plannerCalls);
+      expect(continued.tokenUsage).toEqual(stopped.tokenUsage);
+      expect(continued.lineages?.T003?.consults).toBe(1);
+      expect(continued.lineages).toEqual(stopped.lineages);
+
+      const { bus, events } = makeBusRecorder();
+      const planner = consultPlanner([...script], true);
+      let state = continued;
+      const result = await requestConsult(
+        {
+          projectDir,
+          workspaceDir,
+          sessionId,
+          bus,
+          planner: planner.planner,
+          state,
+          onStateChange: (next) => {
+            state = next;
+          },
+        },
+        {
+          task,
+          reason: 'failed',
+          failingOutput: 'missing greeting',
+          snapshot: {
+            head: 'unused',
+            files: [file],
+            dirtyFileContents: { [file]: 'export const greeting = "before";\n' },
+          },
+          changedFiles: [file],
+        },
+      );
+
+      expect('answer' in result).toBe(true);
+      const prompt = planner.prompts.at(-1);
+      expect(prompt).toContain(heading);
+      expect(prompt).toContain('+export const greeting = "workspace";');
+      expect(prompt).not.toContain('greeting = "checkout"');
+      expect(prompt).toContain(`The run workspace is \`${workspaceDir}\`.`);
+      expect(prompt).toContain('Read project files from this directory');
+      expect(planner.contexts.every((context) => context.projectDir === projectDir)).toBe(true);
+      const delivered = planner.contexts
+        .flatMap((context) => context.priorMessages ?? [])
+        .filter((message) => message.content === reply);
+      expect(delivered).toHaveLength(redelivered);
+      expect(planner.prompts.some((sent) => sent.includes(reply))).toBe(false);
+      const logged: string[] = [];
+      for await (const message of readMessages(ref)) logged.push(message.text);
+      expect(logged.filter((text) => text === reply)).toHaveLength(1);
+      expect(loadState(ref)?.plannerSessionId).toBe('native-2');
+      expect(state.lineages?.T003?.consults).toBe(2);
+      expect(state.lineages?.T003?.consultRecords).toHaveLength(2);
+      expect(events.filter((event) => event.type === 'consult_answered')).toHaveLength(1);
+      expect(state.plannerCalls?.used).toBe(3);
+      expect(state.tokenUsage.plannerInput).toBe(50);
+      expect(state.tokenUsage.plannerOutput).toBe(17);
+      expect(existsSync(join(workspaceDir, '.splitbrief'))).toBe(false);
+    },
+  );
+
   it('reuses the saved planner session id for the second consult on a resumable tool', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
     const { bus, events } = makeBusRecorder();
@@ -114,6 +230,7 @@ describe('requestConsult', () => {
     const seen: WorkflowState[] = [];
     const ctx: ConsultContext = {
       projectDir,
+      workspaceDir: projectDir,
       sessionId,
       bus,
       planner: planner.planner,
@@ -173,6 +290,7 @@ describe('requestConsult', () => {
     const seen: WorkflowState[] = [];
     const ctx: ConsultContext = {
       projectDir,
+      workspaceDir: projectDir,
       sessionId,
       bus,
       planner: planner.planner,
@@ -208,6 +326,7 @@ describe('requestConsult', () => {
     const result = await requestConsult(
       {
         projectDir,
+        workspaceDir: projectDir,
         sessionId,
         bus,
         planner: planner.planner,
@@ -241,7 +360,7 @@ describe('requestConsult', () => {
     saveState({ projectDir, sessionId }, state);
 
     await requestConsult(
-      { projectDir, sessionId, bus, planner: planner.planner, state },
+      { projectDir, workspaceDir: projectDir, sessionId, bus, planner: planner.planner, state },
       {
         task: state.tasks[0]!,
         reason: 'failed',
@@ -293,7 +412,7 @@ describe('requestConsult', () => {
     saveState({ projectDir, sessionId }, state);
 
     const pending = requestConsult(
-      { projectDir, sessionId, bus, planner, state },
+      { projectDir, workspaceDir: projectDir, sessionId, bus, planner, state },
       {
         task: state.tasks[0]!,
         reason: 'failed',

@@ -142,10 +142,6 @@ function activateFixtureInputMode(
       projection.review.confirms ?? [],
     );
   }
-  if (projection.userEditConflict !== undefined) {
-    void options.callbacks.onUserEditConflict?.(projection.userEditConflict);
-    return;
-  }
   // A halt is not a planner conversation: the recovery driver sets question mode with the prompt
   // itself, so only the fixture's explicit question scenario needs this callback.
   if (projection.question !== undefined) {

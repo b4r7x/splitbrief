@@ -1,15 +1,28 @@
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { BOUNDS } from '../src/core/pipeline-spec/bounds.js';
+import { GATE_ORDER } from '../src/core/pipeline-spec/gates.js';
+import { parseTasksStrict } from '../src/engine/spec/tasks/parse.js';
 import { GENERATED_BLOCK_IDS, renderBlock } from './skill-blocks.js';
+import { runSyncCli } from './sync-skills.js';
 
 const SENTINELS: Record<string, string> = {
   'brief-template': '### Escalation',
-  'brief-contract': '9. **Evidence**',
-  'critical-rules': '9. **Reserved delimiter**',
   'implementer-preamble': 'directly in the working directory.',
-  'closing-constraints': 'Do NOT import packages not listed in the project dependencies',
-  'retry-framings': 'Try a completely different approach:',
   'consult-contract': 'Answer with exactly one JSON object',
-  'ladder-table': '| `takeover` | planner |',
+  'consult-table': '| `verify` | Run the named registered checks',
+  'seat-recovery': 'retries with backoff',
   'halt-signatures': '`credit balance is too low`',
   'halt-signatures-sh': "*'sandbox required but unavailable'*) halt=spawn ;;",
   'gate-rules': 'typecheck → lint → test',
@@ -17,15 +30,13 @@ const SENTINELS: Record<string, string> = {
   'brief-grouping': 'no file-count or line-count threshold decides a boundary',
   'body-order': '`### Current Code` is never sent to a direct writer',
   'closing-line': 'Edit <file>, <second file> directly in the working directory.',
-  'scope-rule': 'it never fails the attempt',
+  'suggested-files': 'Suggested files are guidance',
   'baseline-rule': '`baseline-sha.txt`',
   timeouts: '--deadline 1200',
-  'plain-shapes': 'task T001: done (',
   'wait-protocol': 'never in the same tool call as the spawn',
-  'verdict-rules': 'exactly one verdict word under ### Verdict',
-  'fix-cycle': 'At most 2 review cycles',
-  'takeover-prompt': '# Escalation: Implement Fix',
-  'review-packet': '`pass` | `pass_with_notes` | `fail`',
+  'verdict-rules': 'every task met, every criterion pass, no blocking finding',
+  'fix-cycle': 'Allow 2 fix cycles',
+  'review-packet': 'The session derives the verdict',
   'recipe:claude-code': `"blockReadsOutsideWorkingDirectories":true}}'\\'' < $P`,
   'recipe:codex': '--sandbox read-only',
   'recipe:opencode': '--agent plan "$(cat $P)"',
@@ -37,7 +48,7 @@ const SENTINELS: Record<string, string> = {
 };
 
 describe('skill-blocks', () => {
-  it('renders every declared block from the CLI sources', () => {
+  it('renders every declared block from engine contracts and the agreed design', () => {
     expect([...GENERATED_BLOCK_IDS].sort()).toEqual(Object.keys(SENTINELS).sort());
     for (const [id, sentinel] of Object.entries(SENTINELS)) {
       expect(renderBlock(id), id).toContain(sentinel);
@@ -61,25 +72,50 @@ describe('skill-blocks', () => {
     expect(template).not.toContain('under `### Current Code`');
   });
 
-  it('applies the skill substitutions to the implementer preamble', () => {
+  it('uses workspace rules and gives validation to the session', () => {
     const preamble = renderBlock('implementer-preamble') ?? '';
     expect(preamble).not.toContain('isolation directory');
     expect(preamble).not.toContain('promoted');
     expect(preamble).not.toContain('SPLITBRIEF');
     expect(preamble).toContain(
-      "The orchestrator runs the project's typecheck, lint, format and test gates",
+      "The orchestrator runs the project's typecheck, lint and affected tests",
     );
-    expect(preamble).toContain('the orchestrator and the review seat do that');
+    expect(preamble).toContain('never run a package-manager install');
   });
 
   it('gives the gates to the orchestrator in the closing line', () => {
     const closing = renderBlock('closing-line') ?? '';
     expect(closing).not.toContain('SPLITBRIEF');
-    expect(closing).toContain('The orchestrator runs the typecheck, lint, format and test gates');
+    for (const line of closing.split('\n')) {
+      expect(line).toContain(`The orchestrator runs the ${GATE_ORDER.join(', ')} gates`);
+      expect(line).not.toContain('format');
+    }
   });
 
-  it('carries no revert instruction in the scope rule', () => {
-    expect(renderBlock('scope-rule') ?? '').not.toMatch(/revert/i);
+  it('renders seat retries and the reset-wait exception from BOUNDS', () => {
+    const recovery = renderBlock('seat-recovery');
+    expect(recovery).toContain(`${BOUNDS.transientRetries} retries with backoff`);
+    expect(recovery).toContain(`${BOUNDS.rateLimitResetWaitMs / 60_000} minutes`);
+    expect(recovery).toContain('reported reset');
+    expect(recovery).toContain('Longer or unknown resets');
+  });
+
+  it('states the waiter process-group limit and reconciles fallback timeouts before recovery', () => {
+    const timeouts = renderBlock('timeouts') ?? '';
+    expect(timeouts).toContain('separate process group');
+    expect(timeouts).toContain('otherwise only the recorded PID');
+    expect(timeouts).not.toContain('kills the process group');
+    const fallback = (renderBlock('wait-protocol') ?? '')
+      .split('\n')
+      .find((line) => line.includes('Fallback,'));
+    expect(fallback).toContain('reconcile the recorded PID and its implementer children');
+    expect(fallback).toContain('Confirm they are gone, or stop them and confirm exit');
+    expect(fallback).toContain('before recovery or another dispatch');
+  });
+
+  it('replaces scope checks with file guidance', () => {
+    expect(renderBlock('suggested-files') ?? '').not.toMatch(/revert|drift|reject/i);
+    expect(renderBlock('scope-rule')).toBeNull();
   });
 
   it('replaces the hint blocks with the consult contract', () => {
@@ -101,17 +137,11 @@ describe('skill-blocks', () => {
   });
 
   it('renders the consult bounds from BOUNDS, not by hand', () => {
-    const contract = renderBlock('consult-contract') ?? '';
+    const contract = renderBlock('consult-table') ?? '';
     expect(contract).toContain('2 consults and 8 attempts');
-    expect(contract).toContain('10 planner calls');
+    expect(contract).toContain('10 planner decisions');
     expect(contract).toContain('4 more attempts');
-    expect(contract).toContain('5 more planner calls');
-  });
-
-  it('renders the ladder with the consult rung in place of the hint', () => {
-    const ladder = renderBlock('ladder-table') ?? '';
-    expect(ladder).toContain('| `consult` | planner-then-implementer |');
-    expect(ladder).not.toMatch(/hint/iu);
+    expect(contract).toContain('5 more planner decisions');
   });
 
   it('every recipe writes its exit code and none invokes coreutils timeout', () => {
@@ -137,5 +167,132 @@ describe('skill-blocks', () => {
   it('returns null for an unknown block id', () => {
     expect(renderBlock('nope')).toBeNull();
     expect(renderBlock('recipe:nope')).toBeNull();
+  });
+
+  it('keeps generated procedures in their canonical references and removes unused blocks', () => {
+    const root = new URL('../skills/', import.meta.url);
+    const library = new URL('splitbrief/references/', root);
+    const homes = {
+      'consult-table': 'recovery.md',
+      'consult-contract': 'recovery.md',
+      'fix-cycle': 'recovery.md',
+      'wait-protocol': 'run-protocol.md',
+      'seat-recovery': 'tool-recipes.md',
+    };
+    const references = readdirSync(library).map((name) => ({
+      name,
+      text: readFileSync(new URL(name, library), 'utf8'),
+    }));
+    for (const [id, home] of Object.entries(homes)) {
+      expect(references.filter(({ text }) => text.includes(`<!-- generated: ${id} -->`))).toEqual([
+        expect.objectContaining({ name: home }),
+      ]);
+    }
+    for (const skill of ['splitbrief', 'splitbrief-brief', 'splitbrief-run', 'splitbrief-review']) {
+      expect(readFileSync(new URL(`${skill}/SKILL.md`, root), 'utf8')).not.toContain(
+        '<!-- generated:',
+      );
+    }
+    expect(renderBlock('plain-shapes')).toBeNull();
+    const authored =
+      references.map(({ text }) => text).join('\n') +
+      readFileSync(new URL('splitbrief-run/scripts/wait-attempt.sh', root), 'utf8');
+    for (const id of GENERATED_BLOCK_IDS) expect(authored).toContain(`generated: ${id}`);
+  });
+
+  it('renders consult actions and shared bounds without a takeover', () => {
+    const consult = renderBlock('consult-table') ?? '';
+    for (const action of ['guidance', 'rewrite-task', 'split-task', 'verify', 'ask-user']) {
+      expect(consult).toContain(`| \`${action}\` |`);
+    }
+    expect(consult).toContain('same id and the same criteria');
+    expect(consult).toContain('Replace with 2–4 subtasks');
+    expect(consult).toContain('2 consults and 8 attempts');
+    expect(consult).toContain('10 planner decisions after planning');
+    expect(consult).toContain('stale');
+    expect(consult).not.toMatch(/takeover|ladder/iu);
+    expect(renderBlock('ladder-table')).toBeNull();
+    expect(renderBlock('takeover-prompt')).toBeNull();
+    expect(renderBlock('retry-framings')).toBeNull();
+  });
+
+  it('requires user confirmation for protected writes and carries proposed decisions', () => {
+    const preamble = renderBlock('implementer-preamble') ?? '';
+    expect(preamble).toContain('user confirmation');
+    expect(preamble).not.toContain('unless the brief explicitly asks');
+    expect(preamble).toContain('"decisions":[{"what":"<proposed deviation>","why":"<reason>"}]');
+    expect(preamble).toContain('advisory');
+    expect(preamble).toContain('render checks are unavailable');
+  });
+
+  it('renders typed review coverage and appends fixes instead of reopening completed tasks', () => {
+    const packet = renderBlock('review-packet') ?? '';
+    expect(packet).toContain('Plan context');
+    expect(packet).toContain('plan: met, partial or missed');
+    expect(packet).toContain('status: pass, fail or unverified');
+    expect(packet).toContain('kind: defect, plan-gap, unverified or question');
+    expect(packet).not.toMatch(/drift|Critical|### Verdict/iu);
+    const rules = renderBlock('verdict-rules') ?? '';
+    expect(rules).toContain('every task met');
+    expect(rules).toContain('every criterion pass');
+    expect(rules).toContain('no blocking finding');
+    expect(rules).toContain('Pending criteria');
+    const fixes = renderBlock('fix-cycle') ?? '';
+    expect(fixes).toContain('new ids');
+    expect(fixes).toContain('2 fix cycles');
+    expect(fixes).toContain('3 reviews');
+    expect(fixes).not.toMatch(/reopen|last brief|path substring/iu);
+    expect(fixes).toContain('references/gates.md');
+    expect(fixes).not.toContain('Re-run the full suite');
+  });
+
+  it('keeps the Markdown brief readable by the strict parser', () => {
+    const template = (renderBlock('brief-template') ?? '').replace(/^ {4}/gm, '');
+    const brief = template.slice(template.indexOf('---\nid: T001'));
+    const warnings: string[] = [];
+    const [task] = parseTasksStrict(brief, (warning) => warnings.push(warning));
+    expect(task?.id).toBe('T001');
+    expect(task?.description).toContain('What to implement and why');
+    expect(task?.description).toContain('Plan context (read-only)');
+    expect(task?.tests).toEqual(['Test case with concrete inputs/outputs']);
+    expect(task?.constraints).toContain('Follow existing codebase patterns');
+    expect(brief).toContain('Plan context (read-only)');
+    expect(brief).toContain('"decisions":[]');
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('Read-only context (do not modify)');
+    expect(warnings[0]).not.toMatch(/Plan context|Implementer report/u);
+  });
+
+  it('syncs the recovery block without rewriting an unchanged babysit script mirror', () => {
+    const root = mkdtempSync(join(tmpdir(), 'skill-blocks-sync-'));
+    try {
+      for (const name of ['splitbrief', 'splitbrief-run', 'splitbrief-babysit']) {
+        mkdirSync(join(root, name, 'scripts'), { recursive: true });
+        const body = name === 'splitbrief' ? 'references/recovery.md' : 'scripts/watch-run.mjs';
+        writeFileSync(
+          join(root, name, 'SKILL.md'),
+          `---\nname: ${name}\ndescription: Test.\nmetadata:\n  argument-hint: test\n---\n${body}\n`,
+        );
+      }
+      mkdirSync(join(root, 'splitbrief', 'references'));
+      writeFileSync(
+        join(root, 'splitbrief', 'references', 'recovery.md'),
+        '<!-- generated: consult-table -->\n<!-- /generated -->\n',
+      );
+      const source = join(root, 'splitbrief-run', 'scripts', 'watch-run.mjs');
+      const mirror = join(root, 'splitbrief-babysit', 'scripts', 'watch-run.mjs');
+      writeFileSync(source, 'watch();\n');
+      writeFileSync(mirror, 'watch();\n');
+      utimesSync(mirror, 1, 1);
+      const before = statSync(mirror).mtimeMs;
+      expect(runSyncCli(root, false, () => {}, renderBlock)).toBe(0);
+      expect(readFileSync(join(root, 'splitbrief/references/recovery.md'), 'utf8')).toContain(
+        '| `verify` | Run the named registered checks',
+      );
+      expect(statSync(mirror).mtimeMs).toBe(before);
+      expect(runSyncCli(root, true, () => {}, renderBlock)).toBe(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

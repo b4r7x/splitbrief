@@ -29,6 +29,14 @@ export interface AcceptRunSnapshotResult {
   isFirstSnapshot: boolean;
 }
 
+export type AcceptRunResult =
+  | { status: 'snapshot-accepted'; snapshotId: string; isFirstSnapshot: boolean }
+  | { status: 'applied'; files: string[] }
+  | { status: 'halted' }
+  | { status: 'review' }
+  | { status: 'confirm-override'; findings: string[] }
+  | { status: 'unavailable'; message: string };
+
 export type RejectRunSnapshotResult =
   | { status: 'empty' }
   | { status: 'accepted'; snapshotId: string }
@@ -40,6 +48,12 @@ export type RejectRunSnapshotResult =
       conflictedPaths: string[];
       missingSnapshotFiles: string[];
     };
+
+export type RejectRunResult =
+  | RejectRunSnapshotResult
+  | { status: 'discarded' }
+  | { status: 'undone'; restored: string[]; unchanged: string[]; conflicts: string[] }
+  | { status: 'unavailable'; message: string };
 
 export type QueueClearCommandResult =
   | { status: 'cleared'; count: number }
@@ -250,8 +264,8 @@ export interface RuntimeCommandContext {
   attachImage: (input: string) => AttachImageResult;
   detachImage: (idOrIndex: string) => boolean;
   listAttachments: () => Array<{ id: string; path: string }>;
-  acceptRunSnapshot: () => Promise<AcceptRunSnapshotResult>;
-  rejectRunSnapshot: () => Promise<RejectRunSnapshotResult>;
+  acceptRun: (confirm: boolean) => Promise<AcceptRunResult>;
+  rejectRun: () => Promise<RejectRunResult>;
   /** Re-reads the run on screen, so a command that changed its record changes what the screen says. */
   refreshRun: () => void;
   scrollConversation: (target: ScrollCommandTarget) => ScrollConversationResult;

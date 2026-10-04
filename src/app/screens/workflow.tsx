@@ -2,6 +2,10 @@ import { useLayoutEffect, useState } from 'react';
 import { Box } from 'ink';
 import { StopMenu } from '../../features/workflow/stop/menu.js';
 import { readStopMenuRows, stopMenuLayout } from '../../features/workflow/stop/options.js';
+import { ResultMenu } from '../../features/workflow/result/menu.js';
+import { resultMenuHeight } from '../../features/workflow/result/options.js';
+import { showRunDiff } from '../../features/workflow/result/show-diff.js';
+import { filesView } from '../../features/workflow/closed/projections.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { stopStore } from '../../stores/workflow/stop.js';
@@ -11,6 +15,7 @@ import { ApprovalPrompt } from '../../features/workflow/components/approval-prom
 import { QuestionPrompt } from '../../features/workflow/components/question-prompt.js';
 import { ScreenShell } from '../../components/screen-shell.js';
 import { Divider } from '../../components/divider.js';
+import { MARK_SLOT_CELLS } from '../../components/row-leading.js';
 import { useTheme } from '../../components/theme.js';
 import { WorkflowBody } from '../../features/workflow/components/body.js';
 import { WorkflowFooter, WorkflowHeader } from '../../features/workflow/components/chrome.js';
@@ -196,24 +201,51 @@ export function WorkflowScreen({
       ? recoveryFocus.menu
       : true
     : false;
+  const ready =
+    model.atRestRecord?.status.kind === 'ready-to-apply' ? model.atRestRecord : undefined;
+  const resultMenuOpen = ready !== undefined && !stopMenuOpen;
+  const resultFocusKey = ready?.ref.sessionId ?? '';
+  const [confirming, setConfirming] = useState(false);
+  const [resultFocus, setResultFocus] = useState<{ key: string; menu: boolean } | null>(null);
+  useLayoutEffect(() => {
+    setConfirming(false);
+    setResultFocus((previous) => {
+      if (!resultMenuOpen) return null;
+      return previous?.key === resultFocusKey ? previous : { key: resultFocusKey, menu: true };
+    });
+  }, [resultFocusKey, resultMenuOpen]);
+  const resultMenuFocused =
+    resultMenuOpen && (resultFocus?.key !== resultFocusKey || resultFocus.menu);
+  const override =
+    ready !== undefined && ready.status.kind === 'ready-to-apply' ? ready.status.override : false;
+  const findings =
+    ready !== undefined && ready.hydration.kind === 'loaded'
+      ? (ready.hydration.state.acceptedAsIs?.findings ?? [])
+      : [];
+  const changedFiles =
+    ready === undefined || ready.summary === null
+      ? null
+      : (filesView(ready.summary).changed?.length ?? null);
   const railForm = selectRailForm({ phase: model.phase, cols });
   const reviewBudgetRows = getReviewPanelBudget({ rows, inputRows });
   const requestedPromptRows = stopMenuOpen
     ? stopMenuLayout(readStopMenuRows(), cols).height
-    : getWorkflowPromptRows({
-        approvalState: model.approvalPromptState,
-        questionHint,
-        review: {
-          artifact: reviewArtifact,
-          confirms: reviewConfirms,
-          budgetRows: reviewBudgetRows,
-        },
-        recoveryIssue: recoveryPromptOpen ? recoveryIssue : null,
-        questions: plannerQuestions,
-        questionIndex: questionState.index,
-        questionWriting: questionState.focus === 'answer',
-        cols,
-      });
+    : resultMenuOpen
+      ? resultMenuHeight({ override, findings, confirming, files: changedFiles }, cols)
+      : getWorkflowPromptRows({
+          approvalState: model.approvalPromptState,
+          questionHint,
+          review: {
+            artifact: reviewArtifact,
+            confirms: reviewConfirms,
+            budgetRows: reviewBudgetRows,
+          },
+          recoveryIssue: recoveryPromptOpen ? recoveryIssue : null,
+          questions: plannerQuestions,
+          questionIndex: questionState.index,
+          questionWriting: questionState.focus === 'answer',
+          cols,
+        });
   const progressRows = getProgressRows({
     phase: model.phase,
     cols,
@@ -260,7 +292,7 @@ export function WorkflowScreen({
 
   // The at-rest byline carries no pip, so it opens on the text column and its budget is what is
   // left of the chrome row past the mark slot.
-  const bylineWidth = getChromeContentWidth(cols);
+  const bylineWidth = Math.max(1, getChromeContentWidth(cols) - MARK_SLOT_CELLS);
   const byline =
     model.atRestRecord === undefined
       ? undefined
@@ -305,12 +337,37 @@ export function WorkflowScreen({
         <Box flexDirection="column" width="100%" flexShrink={0}>
           <Divider width={cols} tone="textDim" label={scrollBelowLabel} />
           <WorkflowFooter
-            compactInput={stopMenuOpen}
-            beforeComposer={stopMenuOpen ? <StopMenu height={promptBoxRows} /> : undefined}
+            compactInput={stopMenuOpen || resultMenuOpen}
+            beforeComposer={
+              stopMenuOpen ? (
+                <StopMenu height={promptBoxRows} />
+              ) : resultMenuOpen ? (
+                <ResultMenu
+                  height={promptBoxRows}
+                  override={override}
+                  findings={findings}
+                  files={changedFiles}
+                  confirming={confirming}
+                  onConfirmingChange={setConfirming}
+                  focused={
+                    resultMenuFocused && !model.hasOverlay && !model.promptPending && !covered
+                  }
+                  onFocusChange={(menu) => setResultFocus({ key: resultFocusKey, menu })}
+                  onCommand={model.handleRuntimeCommand}
+                  onShowDiff={() => {
+                    if (ready !== undefined) void showRunDiff(ready);
+                  }}
+                />
+              ) : undefined
+            }
             handleInput={handleFooterInput}
             readClipboardImage={readClipboardImage}
             listProjectFiles={listProjectFiles}
-            onEmptySubmit={model.onEmptySubmit}
+            onEmptySubmit={
+              resultMenuOpen
+                ? () => setResultFocus({ key: resultFocusKey, menu: true })
+                : model.onEmptySubmit
+            }
             onRuntimeCommand={model.handleRuntimeCommand}
             commands={commands}
             mode={model.inputMode.mode}
@@ -340,12 +397,19 @@ export function WorkflowScreen({
             buildBlockShown={progressRows > 0}
             {...(recoveryPromptOpen
               ? {
-                  recoveryMenuFocused,
-                  onToggleRecoveryMenu: () => {
+                  menuFocused: recoveryMenuFocused,
+                  onToggleMenu: () => {
                     setRecoveryFocus({ key: recoveryFocusKey, menu: !recoveryMenuFocused });
                   },
                 }
-              : {})}
+              : resultMenuOpen
+                ? {
+                    menuFocused: resultMenuFocused,
+                    onToggleMenu: () => {
+                      setResultFocus({ key: resultFocusKey, menu: !resultMenuFocused });
+                    },
+                  }
+                : {})}
             onReviewBoundaryNavigate={handleReviewBoundaryNavigate}
             {...(byline !== undefined && { byline })}
             {...(reviewArtifact !== null
@@ -373,7 +437,7 @@ export function WorkflowScreen({
         {...(transcriptTail !== undefined && { transcriptTail })}
       />
       <Box
-        height={stopMenuOpen ? 0 : promptBoxRows}
+        height={stopMenuOpen || resultMenuOpen ? 0 : promptBoxRows}
         overflow="hidden"
         flexDirection="column"
         flexShrink={0}

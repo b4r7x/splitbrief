@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
@@ -12,6 +12,7 @@ import {
   makeImplementer,
   makePlanner,
   makeWctx,
+  openRunWorkspace,
 } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
@@ -114,8 +115,8 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
     const { bus, events } = makeBusRecorder();
     const planner = makePlanner({ typedCall: consultCallAnswering(() => splitIntoTwo()) });
 
-    const result = await runTaskLoop({
-      wctx: makeWctx({
+    const wctx = await openRunWorkspace(
+      makeWctx({
         projectDir,
         sessionId,
         config: makeNoValidationConfig(),
@@ -125,6 +126,9 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
         validator,
         bus,
       }),
+    );
+    const result = await runTaskLoop({
+      wctx,
       initialState: state,
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
@@ -149,8 +153,10 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
     // Two implementer attempts on T002, one consult on its lineage.
     expect(result.state.lineages?.T002).toMatchObject({ attempts: 2, consults: 1 });
 
-    // T001's work survived the failed retry and the split's rollback.
-    expect(readFileSync(join(projectDir, 'src/a.ts'), 'utf-8')).toBe('done by T001\n');
+    // T001's work survived the failed retry and the split's rollback, in the run
+    // workspace; the checkout never received any of it.
+    expect(readFileSync(join(wctx.workspaceDir, 'src/a.ts'), 'utf-8')).toBe('done by T001\n');
+    expect(existsSync(join(projectDir, 'src/a.ts'))).toBe(false);
 
     expect(events).toContainEqual(
       expect.objectContaining({

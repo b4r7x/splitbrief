@@ -47,11 +47,11 @@ A typical run, step by step:
 3. The planner answers one typed plan — criteria, checks, and Task Briefs, one per slice, ordered by dependency and grouped in batches
 4. SPLITBRIEF checks the plan deterministically (every criterion has a check and a task, the dependencies make sense, every task fits the implementer's context); a failing plan goes back to the planner once
 5. User reviews the plan on one plan card: approve, request changes, edit `plan.json`, or end the run. Approving also confirms the protected writes the plan lists
-6. For each task: the implementer writes code in isolation, SPLITBRIEF promotes the approved changes into the project, then validates (typecheck → lint → test)
+6. For each task, the implementer writes in the run workspace. SPLITBRIEF gates changed files and validates there (typecheck → lint → test).
 7. If validation fails: the implementer retries once, then the planner is consulted for one typed answer — guidance, a rewritten or split brief, a re-run of the checks, or one question for the user
 8. If the ladder cannot go on (a spent bound, a failed consult call, a runner halt): enter recovery — for a spent bound the user can continue with a note, skip the task or end the run; other halts offer retry same worker, route to a bigger worker, skip, pause or end the run
 9. The review seat reviews the final result against the briefs and the request — the planner, unless a `reviewer` is configured
-10. Session summary written to disk, workflow done
+10. The summary is written to disk. A passing workspace review makes the result [ready to apply](./WORKFLOW.md#apply).
 
 The user can stop a run at any time — `esc` opens the stop options, `ctrl+c` stops now, and no option reverts files — queue messages while the planner is working, request changes on the plan, or skip individual tasks.
 
@@ -95,7 +95,7 @@ Every run is a durable record, kept in a folder on disk under `.splitbrief/sessi
 
 One active session at a time per project directory. `.splitbrief/active` contains the current session ID when the active pointer is present, while the per-session lockfile/heartbeat proves whether a process is still alive. Isolated parallel sessions require git worktrees, which give each worktree its own `.splitbrief/`.
 
-**A run is continuable until you close it.** Not until it is "resumable", and not only when it was interrupted — parked, waiting at a gate, halted on a decision, stopped by an error, or killed outright, it keeps its place and picks up at the first thing it has not finished. Two things close a run: passing the final review, and choosing **End run**. A closed run is the only one nothing will pick up again.
+**An open run is continuable.** A park, gate, halt, error or killed process keeps its place. A passing workspace review makes it ready to apply; a ready run awaits Apply or Discard. Apply, Discard or End run closes it. Older runs keep their status rules. See [Run status](./WORKFLOW.md#run-status).
 
 `splitbrief resume` continues the most recent run; `splitbrief continue <session-id>` names one. If the backend supports session persistence (Claude Code, Codex), it reconnects to the thread the tool itself reported. Otherwise it rebuilds context from the JSONL log.
 
@@ -122,11 +122,11 @@ The orchestrator never branches on backend type. It calls the planner's typed ca
 
 ## Where the implementer works
 
-The two transports need different amounts of isolation, and both end in the same place.
+Both transports use the same run workspace.
 
-An implementer that writes files itself works in a git worktree — a second checkout of the same repository, created once per run, with the project's dependencies linked in so the agent can type-check and run tests where it stands. That is the default isolation, and it keeps a half-finished task out of your working tree. An implementer that returns file contents has nothing to isolate: SPLITBRIEF writes the file itself, after the approval gate.
+SPLITBRIEF creates one worktree or staged copy per run. Direct writers edit it; extracted-code writers return code that SPLITBRIEF writes there. Tasks, retries and validation share that directory.
 
-Either way the destination is the same, and it is not negotiable: approved changes land in your real project directory. Promotion is guarded by content hashes — if a file changed underneath SPLITBRIEF between approval and write, the promotion stops rather than clobber your edit.
+Your checkout receives the assessed result once, at [Apply](./WORKFLOW.md#apply). That section defines the merge, checks, hash guard, backup and Discard path.
 
 A worktree isolates files, not runtime and not trust. It shares the ports, the database, the hooks, and the config of the checkout it came from. It is not a security boundary.
 
@@ -134,7 +134,7 @@ A worktree isolates files, not runtime and not trust. It shares the ports, the d
 
 ## Validation and consult
 
-Correctness is not the implementer's to judge — it is the weaker of the two models. SPLITBRIEF owns it: a deterministic pipeline of typecheck → lint → test, run in the real project after promotion, stopping at the first failure attributable to the task. A stage already red at baseline does not stop the pipeline: a task that introduces no new failure is accepted even when the tree was already red, and the planner owns the second opinion at final review. An implementer that can also run checks where it works is a bonus — it raises the first-pass rate, it does not decide the outcome.
+SPLITBRIEF owns correctness through validation and the final review. The typecheck → lint → test pipeline runs inside the run workspace. It stops at the first failure attributable to the task. A stage already red at baseline does not block a task that introduces no new failure. The review seat assesses the result before Apply. The implementer's own checks can improve its work, but do not decide acceptance.
 
 If validation fails, the implementer retries once with the error message. Then SPLITBRIEF asks the planner, read-only, for one typed answer:
 

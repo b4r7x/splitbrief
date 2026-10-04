@@ -1449,6 +1449,7 @@ describe('runWorkflow — smoke', () => {
     const createSpy = vi.spyOn(isolationModule, 'createRunIsolation').mockImplementation((opts) => {
       const handle = originalCreate(opts);
       return {
+        open: handle.open,
         acquire: handle.acquire,
         dispose: async () => {
           disposeCalls += 1;
@@ -1495,6 +1496,7 @@ describe('runWorkflow — smoke', () => {
     const createSpy = vi.spyOn(isolationModule, 'createRunIsolation').mockImplementation((opts) => {
       const handle = originalCreate(opts);
       return {
+        open: handle.open,
         acquire: handle.acquire,
         dispose: async () => {
           throw new Error('dispose boom');

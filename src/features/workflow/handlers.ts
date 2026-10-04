@@ -187,19 +187,27 @@ export function requestEndRun(): boolean {
         active?.kind === 'v1' && active.receipt.sessionId === record.ref.sessionId
           ? active.receipt
           : undefined;
-      const closure = closeRunIfOpen(record.ref, hydrated.state);
-      if (closure.closedNow) {
-        createRecoveryBus({ ...record.ref, sink: addTuiEvent }).publish({
-          type: 'workflow_cancelled',
-          ts: Date.now(),
-          phase: closure.state.phase,
-          reason: WORKFLOW_CANCEL_REASON_USER,
-        });
-      }
-      finalizeEndedRun({ ref: record.ref, active: receipt, config, state: closure.state });
-      routerStore.updateRun({ run: readRunRecord(record.ref), execution: { kind: 'at-rest' } });
-      stopStore.end();
-      sessionsStore.refresh();
+      stopStore.request('end-run');
+      const finish = async (): Promise<void> => {
+        const bus = createRecoveryBus({ ...record.ref, sink: addTuiEvent });
+        const closure = await closeRunIfOpen({ ...record.ref, bus }, hydrated.state);
+        if (closure.closedNow) {
+          bus.publish({
+            type: 'workflow_cancelled',
+            ts: Date.now(),
+            phase: closure.state.phase,
+            reason: WORKFLOW_CANCEL_REASON_USER,
+          });
+        }
+        finalizeEndedRun({ ref: record.ref, active: receipt, config, state: closure.state });
+        routerStore.updateRun({ run: readRunRecord(record.ref), execution: { kind: 'at-rest' } });
+        stopStore.end();
+        sessionsStore.refresh();
+      };
+      void finish().catch((err: unknown) => {
+        stopStore.reset();
+        feedbackStore.setError(toErrorMessage(err));
+      });
       return true;
     } catch (err) {
       feedbackStore.setError(toErrorMessage(err));

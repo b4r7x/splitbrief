@@ -20,6 +20,7 @@ export const OUTCOME_LEADING_CELLS = getTerminalCellWidth(outcomeLeading(glyph('
 export function outcomeMarker(view: SummaryView): Readonly<{ glyph: GlyphName; tone: CopyTone }> {
   switch (view.outcome.kind) {
     case 'ready':
+    case 'applied':
       return { glyph: 'check', tone: 'success' };
     case 'needs-attention':
       return { glyph: 'statusWarning', tone: 'warning' };
@@ -46,6 +47,8 @@ function joinSoft(segments: readonly string[], kept: number): string {
 
 function outcomeSegments(view: SummaryView): string[] {
   const kind = view.outcome.kind;
+  if (kind === 'applied') return appliedSegments(view);
+  if (kind === 'discarded') return discardedSegments(view);
   if (kind !== 'ended') return settledSegments(view, kind);
   if (view.briefs.total === 0) {
     const earlierWork = view.briefs.earlierRows.length > 0 || (view.files.changed?.length ?? 0) > 0;
@@ -80,6 +83,30 @@ function settledSegments(view: SummaryView, kind: 'ready' | 'needs-attention'): 
   ];
 }
 
+function appliedSegments(view: SummaryView): string[] {
+  const changed = view.files.changed;
+  return [
+    'Applied',
+    briefFraction(view),
+    reviewFact(view.review),
+    scopeFact(view.scope),
+    changed === null || changed.length === 0
+      ? filesFact(view)
+      : `${countNoun(changed.length, 'file')} applied`,
+  ];
+}
+
+function discardedSegments(view: SummaryView): string[] {
+  const changed = view.files.changed;
+  return [
+    'Discarded',
+    briefFraction(view),
+    changed === null || changed.length === 0
+      ? filesFact(view)
+      : `${countNoun(changed.length, 'file')} saved in run.patch`,
+  ];
+}
+
 function briefFraction(view: SummaryView): string {
   if (view.briefs.total === 0) return 'no briefs';
   return `${view.briefs.passed}/${view.briefs.total} briefs passed`;
@@ -97,6 +124,7 @@ function haltedDisposition(view: SummaryView): string {
     return stoppedBeforeBuild(view) && view.briefs.earlierRows.length === 0
       ? 'nothing built'
       : 'files not recorded';
+  if (view.files.patch && view.files.changed.length > 0) return 'changes saved in run.patch';
   if (view.files.partial.size > 0) return 'partial changes kept';
   if (view.files.changed.length > 0) return 'changes kept';
   return 'nothing built';

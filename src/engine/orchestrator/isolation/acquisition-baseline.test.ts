@@ -10,14 +10,9 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { makeTask } from '#testing/helpers/factories/task.js';
-import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
-import { makeBusRecorder, makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { createStagedProject } from '../approval/staged-project.js';
-import { gateAndPromoteChangedFiles } from '../approval/gate-and-promote.js';
-import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
+import { createStagedProject, promoteStagedChanges } from '../approval/staged-project.js';
 import type { IsolatedWorkspace } from './types.js';
 import { createRunIsolation } from './create.js';
 
@@ -50,25 +45,12 @@ async function acquire(projectDir: string): Promise<IsolatedWorkspace> {
 }
 
 async function gate(projectDir: string, workspace: IsolatedWorkspace, file: string) {
-  const task = makeTask({ id: 'T010', file });
-  return gateAndPromoteChangedFiles({
-    task,
-    state: makeImplState([task]),
-    projectDir,
-    workspace,
-    taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
-    sessionId: 'sess-baseline',
-    bus: makeBusRecorder().bus,
-    callbacks: makeCallbacks().callbacks,
-    config: makeNoValidationConfig({ approval: { enabled: false, feedRejectionsToPlanner: true } }),
-    dependsOnFiles: [],
-    handleConflict: async (s) => s,
-    onApproved: () => {},
+  return promoteStagedChanges({
+    targetProjectDir: projectDir,
+    stagedProjectDir: workspace.projectDir,
+    files: [file],
+    targetBaseline: workspace.targetBaseline,
   });
-}
-
-function conflictedFiles(outcome: Awaited<ReturnType<typeof gate>>): string[] {
-  return outcome.outcome === 'promote-conflict' ? outcome.conflictedFiles : [];
 }
 
 describe('target acquisition baseline', () => {
@@ -82,8 +64,7 @@ describe('target acquisition baseline', () => {
 
     const outcome = await gate(projectDir, workspace, 'src/app.ts');
 
-    expect(outcome.outcome).toBe('promote-conflict');
-    expect(conflictedFiles(outcome)).toEqual(['src/app.ts']);
+    expect(outcome.conflictedFiles).toEqual(['src/app.ts']);
     expect(readFileSync(join(projectDir, 'src', 'app.ts'), 'utf-8')).toBe('user edit\n');
   });
 
@@ -98,8 +79,7 @@ describe('target acquisition baseline', () => {
 
     const outcome = await gate(projectDir, workspace, 'logo.bin');
 
-    expect(outcome.outcome).toBe('promote-conflict');
-    expect(conflictedFiles(outcome)).toEqual(['logo.bin']);
+    expect(outcome.conflictedFiles).toEqual(['logo.bin']);
     expect(readFileSync(join(projectDir, 'logo.bin'))).toEqual(Buffer.from([0xfe]));
   });
 
@@ -113,8 +93,7 @@ describe('target acquisition baseline', () => {
 
     const outcome = await gate(projectDir, workspace, 'src/new.ts');
 
-    expect(outcome.outcome).toBe('promote-conflict');
-    expect(conflictedFiles(outcome)).toEqual(['src/new.ts']);
+    expect(outcome.conflictedFiles).toEqual(['src/new.ts']);
     expect(readFileSync(join(projectDir, 'src', 'new.ts'), 'utf-8')).toBe('user\n');
   });
 
@@ -128,8 +107,7 @@ describe('target acquisition baseline', () => {
 
     const outcome = await gate(projectDir, workspace, 'src/app.ts');
 
-    expect(outcome.outcome).toBe('promote-conflict');
-    expect(conflictedFiles(outcome)).toEqual(['src/app.ts']);
+    expect(outcome.conflictedFiles).toEqual(['src/app.ts']);
     expect(existsSync(join(projectDir, 'src', 'app.ts'))).toBe(false);
   });
 
@@ -143,12 +121,12 @@ describe('target acquisition baseline', () => {
 
     const outcome = await gate(projectDir, workspace, 'run.sh');
 
-    expect(outcome.outcome).toBe('allow');
+    expect(outcome.conflictedFiles).toEqual([]);
     expect(statSync(join(projectDir, 'run.sh')).mode & 0o777).toBe(0o755);
     expect(readFileSync(join(projectDir, 'src', 'notes.md'), 'utf-8')).toBe('user notes\n');
   });
 
-  it('captures a fresh baseline on every acquisition of a reused isolation', async () => {
+  it('keeps the original target baseline after an operator edit', async () => {
     const projectDir = tempProject('baseline-project');
     writeFileSync(join(projectDir, 'src', 'app.ts'), 'first\n');
 
@@ -160,22 +138,20 @@ describe('target acquisition baseline', () => {
       onRetained: () => {},
     });
     const config = makeNoValidationConfig();
-    const first = await isolation.acquire({ role: 'implementer', config, writesFiles: 'direct' });
+    const first = await isolation.acquire({ role: 'implementer', config });
     dirs.push(first.projectDir);
     first.cleanup();
 
-    // The target moves on between the two acquisitions: a baseline carried over
-    // from the first one would report the second task's promotion as a conflict.
     writeFileSync(join(projectDir, 'src', 'app.ts'), 'second\n');
 
-    const second = await isolation.acquire({ role: 'implementer', config, writesFiles: 'direct' });
+    const second = await isolation.acquire({ role: 'implementer', config });
     dirs.push(second.projectDir);
     writeFileSync(join(second.projectDir, 'src', 'app.ts'), 'worker\n');
 
     const outcome = await gate(projectDir, second, 'src/app.ts');
 
-    expect(outcome.outcome).toBe('allow');
-    expect(readFileSync(join(projectDir, 'src', 'app.ts'), 'utf-8')).toBe('worker\n');
+    expect(outcome.conflictedFiles).toEqual(['src/app.ts']);
+    expect(readFileSync(join(projectDir, 'src', 'app.ts'), 'utf-8')).toBe('second\n');
     await isolation.dispose();
   });
 });

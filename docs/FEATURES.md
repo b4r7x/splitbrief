@@ -96,7 +96,7 @@ splitbrief start --json "fix parser edge case"
 
 ### Validation pipeline + checkpoints
 
-**What it does.** After every implementer task, SPLITBRIEF runs typecheck → lint → test (in that order, stop on first failure). The commands are the ones the project's own stack uses, not a fixed TypeScript trio. Before the lint stage, the brief's own changed files are formatted with the project's own formatter — Biome when a Biome config is present, else Prettier when a Prettier config is — so layout the implementer left unformatted does not cost an attempt; a formatter that fails is one warning (`validation_format_failed`) and lint runs regardless. On success it records evidence. Filesystem snapshots remain available; SPLITBRIEF never stages, commits or creates index checkpoints.
+**What it does.** After each implementer task, SPLITBRIEF runs typecheck → lint → test inside the run workspace. It stops at the first failure attributable to the task. Commands follow the project's stack. Before lint, the project formatter formats the brief's changed files: Biome when configured, otherwise Prettier. A formatter failure logs `validation_format_failed`; lint still runs. Success records evidence, without staging or committing files.
 
 **Stack coverage.** The registry is `src/core/validation/stacks/`; `detectStack` picks the first row whose marker file exists, in this order:
 
@@ -261,24 +261,28 @@ The second row appears only while a brief is running, and reads `Keep running` o
 - `esc` — open the menu, including with a draft. `esc esc` stops resumably; another Esc returns home after cleanup and saving. Once parked, one Esc returns home.
 - `ctrl+c` — stop active work; another press quits after cleanup and saving. At rest/home, press twice within two seconds to quit.
 - `ctrl+q` or `/quit` — stop safely, save the session, then exit.
-- `/resume` — continue a parked run; the stopped menu also offers Resume, End run and Back to sessions. `/stop` reopens the menu. A run at rest accepts Enter to continue; typed instructions become its steer.
-- `/end` — close a parked run; it keeps the changes it booked, and a run ended before any brief keeps none. After that nothing picks it up.
+- `/resume` — continue a parked run; the stopped menu also offers Resume, End run and Back to sessions. `/stop` reopens the menu. An open run at rest accepts Enter to continue; typed instructions become its steer.
+- `/end` closes the run through [the shared close path](./WORKFLOW.md#apply). End run on a ready workspace run means Discard.
 
-**On-screen.** The byline reports the state and, while the stop menu is closed, the legend row carries the keys (an open menu names its own): `Stopping T<id> · Waiting for processes to exit · <t>` (hint `esc back after stop · ctrl+c quit after stop`) while owned processes remain, then `Finishing cleanup and saving`; `Forcing remaining processes to exit` after the grace window; `Finishing T<id>` with `Pause requested; no next brief will start` for a boundary pause; and finally one of `Paused at T<id> · Partial changes kept` (hint `/resume · /stop options · esc back to sessions · ctrl+c quit`), `Paused after T<id> · <n> of <m> briefs complete`, or `Cancelled by you at T<id> · Changes kept`. A stop that cut no brief names the step its run record stopped at and claims no changes: `Paused at the plan gate`, `Paused at the tasks step`. An ended run reads its closed record the same way, and claims kept changes only when its summary booked some: `Cancelled by you at T<id> · Partial changes kept`, `Cancelled by you at the review · Changes kept`, `Cancelled by you at the plan gate`. No option reverts files: git is still the layer that reverses a run.
+**On-screen.** The byline reports stop progress; the legend shows keys while the stop menu is closed. It reads `Waiting for processes to exit` while owned processes remain, then `Finishing cleanup and saving`. A boundary pause reads `Finishing T<id>` and `Pause requested; no next brief will start`. A mid-brief park reads `Paused at T<id> · Partial changes kept`. A stop outside a brief names its step, such as `Paused at the plan gate`.
+
+Stopping keeps workspace changes. Closing follows [the Apply close path](./WORKFLOW.md#apply). A ready run uses [the result menu](#run-result-menu); its closed outcome appears in [the run block](#run-screen-at-rest).
 
 ### Recovery stops
 
-**What it does.** When SPLITBRIEF cannot safely continue, it writes a durable `pendingRecovery` issue to `state.json`, appends recovery events to `session.jsonl`, and shows one compact decision prompt. Triggers include context overflow before worker dispatch, a spent consult bound (`consult-bound-spent`, `planner-calls-spent`), dependency-blocked tasks, user-edit or approval-promotion conflicts, an implementer that left its isolation directory (a tool call that reached outside it, or a change to your checkout during the call — see [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#recovery)), a refused implementer command line, two consecutive implementer timeouts on one brief, a denied approval, a failed snapshot, and a final review that still fails after its fix cycles. The planner seat raises them too — a failed planner call (`planner-call-failed`), a third round of questions (`plan-questions-exhausted`), a plan that fails its checks again after one repair (`plan-checks-failed`), and a typed answer that does not parse after its repair (`seat-protocol-error`) — and every issue carries the `seat` it belongs to, so the panel and the swap offer name the seat that is actually stuck. Every one of them also fires the `on_halt` hook.
+**What it does.** A recovery stop saves `pendingRecovery` in `state.json`, appends events to `session.jsonl`, and shows a decision prompt. Causes include spent bounds, blocked dependencies, runner failures, protected-write denials, Apply conflicts, partial writes and failed reviews. Planning can also halt on a failed call, excess questions, failed checks or an invalid typed answer. Each issue names its seat and fires `on_halt`. [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#recovery) owns the cause codes and action policy.
 
 **Actions.** Available actions are filtered per issue:
 
 | Action | Current behavior |
 |---|---|
 | `retry-same-worker` | Retries the recorded PLAN/REVIEW step without requiring a task; BUILD resets and reruns only the matching current task. |
-| `continue` | Allowed only for safe unrelated user edits. |
+| `continue` | Grants extra allowance on a spent consult or planner-call bound. |
 | `skip-current-task` | Marks the task skipped, records evidence, and leaves dependents for normal blocked-dependency recovery. |
 | `pause-run` | Leaves the active session resumable with the issue intact. |
-| `end-run` | Closes the run: `state.json` records `closed`, the run lists as `ended`, and nothing reverts. |
+| `end-run` | Closes through [the shared close path](./WORKFLOW.md#apply), preserving unapplied workspace work first. |
+| `accept-as-is` | Records an owner override on a workspace review halt. See [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is). |
+| `restore-backup` | Restores a partial Apply. See [Partial Apply recovery](./APPROVAL-AND-RECOVERY.md#partial-apply-recovery). |
 | `revise` | Queues the operator's correction for the next planner turn, then clears the halt. After a failed final review, it records the correction and sends the review's findings back through one more repair cycle. |
 | `revise-spec` | Kept for an older `constitution-check-failed` halt: it acts as `revise` and queues the note as a correction for the planning session. |
 | `route-bigger-worker` | Resets the current task and reruns it with the larger implementer profile named by the recovery issue. |
@@ -297,11 +301,7 @@ The second row appears only while a brief is running, and reads `Keep running` o
 
 ### Snapshots (advanced run safety)
 
-**What it does.** `/run accept` writes a content-addressed snapshot of the working tree under `.splitbrief/sessions/<id>/snapshots/` (baseline + delta layout) and records the run as accepted in the run ledger. That accepted snapshot is the only snapshot a run writes.
-
-**How to use.** `/run accept` after a run. `/run reject confirm` is its counterpart command, but no phase records a pre-run baseline for it to roll back to, so it answers `No run snapshot to reject.` before an accept and `Run already accepted at snapshot <id>.` after one.
-
-**When to use.** To keep a record of the tree you accepted. It is not a run-undo: git is the layer that reverses a run, and SPLITBRIEF leaves the changes unstaged for exactly that reason.
+**Run result.** A passing workspace review makes the run ready to apply. [The result menu](#run-result-menu) offers Apply, Show diff and Discard. [`/run`](./SLASH-COMMANDS-REFERENCE.md#run-acceptreject) provides the command path and defines compatibility with older snapshot-ledger runs.
 
 **Excluded paths.** `.git/`, `.splitbrief/`, `node_modules/`, `.trees/` are non-negotiably excluded (`ALWAYS_EXCLUDED` invariant in `engine/snapshots/files.ts`). Including them would cause exponential snapshot growth. The run's own isolation worktree lives outside the project tree entirely (`$XDG_STATE_HOME/splitbrief/trees/...`, default `~/.local/state/...`), so the snapshot walker never sees it.
 
@@ -477,13 +477,21 @@ The fraction counts briefs that **passed their checks** — a started brief is n
 - **Steer** — while the run is parked (`Stop now`, or an interrupted call), text you send steers the resumed run, but a blank Enter does not resume a run parked in this process — it answers with `type instructions or /resume`. A continuable run at rest resumes on a blank Enter.
 - **Interrupt** — `ctrl+c` stops the run at once, `esc` opens the stop menu. Neither is reachable by typing.
 
+### Run result menu
+
+A ready workspace run shows an inline result menu above the composer. The rows are **Apply · Show diff · Discard**. Use Up/Down to select and Enter to confirm. Tab switches focus between the menu and composer. Bare letters do not select actions; the composer takes slash commands.
+
+**Show diff** writes the run patch and opens it in your configured external editor. **Apply** uses [`/run accept`](./SLASH-COMMANDS-REFERENCE.md#run-acceptreject). **Discard** uses `/run reject confirm`. Their effects are in [Apply](./WORKFLOW.md#apply). The menu lives in `src/features/workflow/result/`.
+
+An owner override changes the first row to **Apply as is**. Its confirmation lists the open findings and offers **Apply as is** or **Back**. See [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is).
+
 ### Run screen at rest
 
 **What it does.** The workflow screen is the run's home whether anything is running on it or not. Opening a run from `/sessions`, from the home list or from the palette replays its `session.jsonl` into the workflow stores and shows the run exactly where it stopped: the same header rail, the same transcript, the same footer. Nothing navigates to a second screen, and continuing the run flips it back to live in place. There is no summary screen.
 
-**Format (header).** The rail and the collapsed seat line, marked for a run that is not moving: stages the run cleared paint `●` in their role hue, stages it never reached `○` dim, and the stage it stopped on wears the mark its stop earned — `×` in warning tone for a run that is paused, waiting at a gate, or interrupted (a stop you can answer), `✗` in error tone for a run that halted on a recovery or died on an error. The rail has three stages — Plan, Build, Review — and a closed, complete run shows three `●`. A closed run's seat line names the crew that actually ran it, read from its own record; an open run's names the crew it would continue on.
+**Format (header).** The rail has Plan, Build and Review stages; a worktree or staged-copy run adds an Apply stage, pending while the run is ready, done when applied, cancelled when discarded, and marked when Apply halted. Cleared stages show `●`; unreached stages show dim `○`. A paused, waiting or interrupted stage shows `×`. A halted or failed stage shows `✗`. A ready-to-apply or closed complete run shows three `●`. A closed run names its recorded crew; an open run names the crew it will use.
 
-**Format (composer and byline).** An open run takes a correction: the placeholder reads `Type a correction, or ⏎ to continue…`, a bare `⏎` continues it, and typed text rides into the next step's own prompt as a steer. The byline says where it stopped and the one key that moves it:
+**Format (composer and byline).** A ready run shows [the result menu](#run-result-menu). Its composer takes `/commands`; bare Enter does not continue it. An open run takes a correction or bare Enter to continue. The placeholder reads `Type a correction, or ⏎ to continue…`. Typed text becomes the next step's steer. The byline names the stop and its action:
 
 - `Paused at T003 · type a correction or ⏎ to continue`
 - `Waiting at the plan · ⏎ to reopen it` (an older run waiting at its spec or briefs gate reads `Waiting at the plan · ⏎ to continue`: it continues as one planning session)
@@ -493,9 +501,9 @@ The fraction counts briefs that **passed their checks** — a started brief is n
 
 A run nothing can pick up says why before where — `Saved state unreadable · start it again from home` — and takes `/commands` only. A run another process is driving reads `Running in another process`.
 
-**Format (closed run).** A run that was ended or completed takes `/commands` only (`/ for a command · ⏎ for home…`; a keystroke that would start the line with anything but `/` is refused as it is typed, and `⏎` on an empty line goes home) and its ledger is appended to the tail of its own transcript — one scroller, below the last event the run wrote — as a `Closed ─` rule, one outcome sentence, and labelled sections in a fixed order:
+**Format (closed run).** Applied, discarded, ended and older completed runs take `/commands` only. The placeholder reads `/ for a command · ⏎ for home…`. Bare Enter goes home. The ledger appends to the transcript as a `Closed ─` rule, outcome sentence and these sections:
 
-- One outcome sentence led by its glyph: `✓ Ready · 3/3 briefs passed · review 0 blocking, 1 advisory · scope clean · 4 files changed`, `⚠ Needs attention · …`, or `× Ended · Build 2/5 · stopped in T003 · partial changes kept`; a run ended before its first brief reads `× Ended · Plan 0/3 · nothing built`. The fraction counts briefs that passed — never one that merely started or escalated. Whole ` · ` tokens shed from the right when the line overruns; nothing is cut mid-token.
+- One outcome sentence names Applied, Discarded or Ended. Older completed runs keep Ready or Needs attention. The fraction counts briefs that passed. Whole ` · ` tokens drop from the right when the line exceeds its width.
 - `Briefs` — one row per brief in the saved current plan, including a plan ended at its approval gate before evidence was written. The rows use the transcript's grammar: `✓ T001 Add validator module  src/validate.ts · local · 84.2s`, `▲` escalated, `✗` failed, `–` skipped, `×` the brief the run stopped inside (`· stopped · 2 partial files`), `○` a brief that never started.
 - `Earlier work` — present when ledger or spend entries cannot be joined safely to the current plan, as on an older run that rewound its plan. An old T001 remains distinct from a newly compiled T001. The outcome fraction counts only current briefs; the Files section and `/usage` keep the run's earlier work and spend.
 - `Files` — the changed set, sorted, project-relative and middle-cut, with ` · partial` on a file the stopped brief left half-written.
@@ -505,7 +513,7 @@ A closed run whose record was never written says so in one line rather than pain
 
 Saved task status and matching evidence control stopped-brief attribution, including when an older summary names a reused task ID. Earlier work with no saved file list reads `files not recorded`. Overwritten ledger evidence cannot be recovered. Identical task IDs and brief hashes can leave different plan revisions indistinguishable; the display retains the available records without inventing history.
 
-**Format (closed byline).** `Keep it with /run accept, or revert it with /run reject confirm` when the run is ready, `Read the 2 blocking findings in the packet, or revert it with /run reject confirm` when it needs attention, `esc home` on a run that was ended. `/run accept` and `/run reject confirm` re-read the record, so the byline flips to `Accepted · nothing left to do` or `Rejected · its files were restored` as soon as the command lands.
+**Format (closed byline).** An applied run reads `Applied · undo it with /run reject confirm`. A discarded run names `git apply .splitbrief/sessions/<id>/run.patch`. An ended run reads `esc home`. Older completed runs keep their snapshot-ledger bylines. See [`/run`](./SLASH-COMMANDS-REFERENCE.md#run-acceptreject).
 
 **How to use.** `⏎` on a session row opens the run. `esc` leaves a run at rest for home — there is nothing to stop, so no stop sheet opens. When the transcript outgrows its height it scrolls a line at a time with `shift+↑↓` (plain arrows stay with the composer history) or a page with `pgup`/`pgdn`, the legend gains `shift+↑↓ scroll`, and the byline never scrolls away.
 
@@ -580,7 +588,7 @@ splitbrief doctor [--json]
 
 ### `splitbrief resume` / `splitbrief continue`
 
-**What it does.** Picks a run up where it stopped. A run is a durable record: it stays continuable until somebody closes it, so the only refusals are a missing or unreadable `state.json`, no active pointer, and a **closed** run (ended with `/end`, or `complete` with a passing review). It does not replay what is already on disk — the step loop starts at the first artifact the run has not written.
+**What it does.** Picks a run up where it stopped. A run is a durable record: an open run stays continuable, so the only refusals are a missing or unreadable `state.json`, no active pointer, a run whose process is still running or unresponsive, a **ready** run (it takes Apply or Discard), and a **closed** run. [WORKFLOW.md §Run status](./WORKFLOW.md#run-status) owns the status rules. It does not replay finished work — the run picks up at the step its saved state names (`resumeStep`).
 
 ```bash
 splitbrief resume                                   # the most recent run

@@ -135,6 +135,8 @@ export interface InvokeOpts extends UndeclaredWritesPolicy {
   checkoutDir?: string | undefined;
   /** The run's global skills, which the call's tool uses may read and never write. */
   skillRoots?: readonly string[] | undefined;
+  /** The workflow phase the call runs in; warnings the call publishes carry it. */
+  phase?: Phase | undefined;
   /** Carries `ImplementerOptions.allowNoChange` to the call's declared-effect gate. */
   allowNoChange?: boolean | undefined;
 }

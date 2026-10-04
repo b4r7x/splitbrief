@@ -3,7 +3,6 @@ import type { CheckResult, TaskId } from '../../core/schemas/task.js';
 import type {
   RecoveryAction,
   TaskCompletionMethod,
-  UserEditConflictAction,
   CurrentCodeContextMode,
   TaskContextFit,
   Phase,
@@ -26,7 +25,6 @@ import type { ValidationResult } from './validation/result.js';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { ImplementerPublisher } from '../implementers/types.js';
 import type { EmittedChain } from '../../core/schemas/drift-chain.js';
-import type { UserEditConflict } from '../events/workflow-events.js';
 import { formatRecoveryHeadline } from '../../core/recovery/headline.js';
 import { formatResumeCommand } from '../../core/recovery/resume-command.js';
 import { labelError } from '../../utils/format-errors.js';
@@ -493,20 +491,6 @@ export function publishUserMessage(ctx: BusContext, text: string, qa?: AnsweredQ
     phase: ctx.phase,
     text,
     ...(qa !== undefined && qa.length > 0 ? { qa } : {}),
-  });
-}
-
-export function publishUserEditConflict(
-  ctx: BusContext,
-  conflict: UserEditConflict,
-  selectedAction?: UserEditConflictAction,
-): void {
-  ctx.bus.publish({
-    type: 'paused_external_changes',
-    ts: Date.now(),
-    phase: ctx.phase,
-    conflict,
-    ...(selectedAction !== undefined && { selectedAction }),
   });
 }
 

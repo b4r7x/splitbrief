@@ -17,7 +17,7 @@ import { configStore } from '../../../stores/project/config.js';
 import { sessionsStore } from '../../../stores/project/sessions.js';
 import { attachmentsStore } from '../../../stores/workflow/attachments.js';
 import { runWorkflow } from '../../../engine/orchestrator/run/workflow.js';
-import { refreshFileHalt } from '../../../engine/orchestrator/run/init.js';
+import { hasStaleFileHalt } from '../../../engine/orchestrator/run/init.js';
 import {
   applyOfferedSeatSwap,
   type SeatSwapChoice,
@@ -227,7 +227,9 @@ export function useRunLoop({
         );
       const current = hydrated.state;
       const intent = stopStore.get().intent;
-      const closure = intent === 'end-run' ? closeRunIfOpen(session.ref, current) : undefined;
+      const bus = createRecoveryBus({ ...session.ref, sink: addTuiEvent });
+      const closure =
+        intent === 'end-run' ? await closeRunIfOpen({ ...session.ref, bus }, current) : undefined;
       const status = deriveRunStatus({
         state: current,
         liveness: 'not-alive',
@@ -245,7 +247,7 @@ export function useRunLoop({
                   current,
                 );
       if (closure?.closedNow) {
-        createRecoveryBus({ ...session.ref, sink: addTuiEvent }).publish({
+        bus.publish({
           type: 'workflow_cancelled',
           ts: Date.now(),
           phase: next.phase,
@@ -292,22 +294,10 @@ export function useRunLoop({
       let retryProfileOverride: string | undefined;
       let retryProfileOverrideTaskId: TaskId | undefined;
       let switchSeat: SeatSwapChoice | undefined;
-      // A halt about files the operator has since put back is not a question any more: on this
-      // re-entry it travels into the engine, which resolves it and says so in the transcript. One
-      // that still stands is asked as the files read now, and a re-raised halt published its own
-      // prompt. Asked once — a halt this run raises later is fresh by construction.
-      let staleHalt = false;
-      if (stateForRun?.pendingRecovery !== undefined) {
-        const halt = await refreshFileHalt({
-          projectDir: session.ref.projectDir,
-          sessionId: session.ref.sessionId,
-          bus: createRecoveryBus({ ...session.ref, sink: addTuiEvent }),
-          state: stateForRun,
-        });
-        staleHalt = halt.stale;
-        recoveryPromptAlreadyPublished = halt.state !== stateForRun;
-        stateForRun = halt.state;
-      }
+      // A retired file halt is not a question any more: on this re-entry it travels into the
+      // engine, which resolves it and says so in the transcript. Asked once — a halt this run
+      // raises later is fresh by construction.
+      let staleHalt = stateForRun !== undefined && hasStaleFileHalt(stateForRun);
       while (!isWorkflowAborted(controller, abortedRef)) {
         if (stateForRun?.pendingRecovery !== undefined && !staleHalt) {
           const promptPendingRecovery = createRecoveryDriver({
@@ -559,15 +549,20 @@ export function useRunLoop({
     routerStore.updateRun({ run: record, execution: { kind: 'at-rest' } });
     sessionsStore.refresh();
     if (wasStopping) {
-      if (record.status.kind === 'closed') stopStore.end();
-      else {
+      if (record.status.kind === 'closed' || record.status.kind === 'ready-to-apply') {
+        stopStore.end();
+      } else {
         markWorkflowPaused();
         stopStore.park('mid-brief', null, null);
       }
       // A queued leave/quit is delivered by the stop observer before offering actions here. A run
       // whose final review passed before the stop reached it is complete, not stopped: the stop then
-      // stands down, and the closed run's own byline speaks for it.
-      if (record.status.kind === 'closed' && record.status.as === 'complete') {
+      // stands down, and the closed run's own byline speaks for it. A workspace run that passed
+      // review lands on the result menu the same way, with no stop sheet over it.
+      if (
+        (record.status.kind === 'closed' && record.status.as === 'complete') ||
+        record.status.kind === 'ready-to-apply'
+      ) {
         stopStore.reset();
         // End run marks the lifecycle cancelled at the keypress, and no later event lifts that
         // mark; the record says the run completed, and the record wins.

@@ -48,3 +48,13 @@ export const worktreeError = {
       'Isolation worktree directory overlaps the project root or repository git root.',
     ),
 } as const;
+
+export const attemptCleanupError = {
+  failed: (dir: string, cause: unknown) =>
+    error(
+      'isolation-cleanup-failed',
+      `An earlier attempt could not be discarded from the run workspace at ${dir}. No further attempt starts on its files.`,
+      { dir },
+      cause,
+    ),
+} as const;

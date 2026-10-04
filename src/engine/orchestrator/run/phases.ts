@@ -3,6 +3,7 @@ import type { WorkflowContext } from '../types.js';
 import type { EngineEvent } from '../../events/types.js';
 import type { PlanningPhaseResult } from '../planning/types.js';
 import { resumeStep } from '../../../core/sessions/run-status.js';
+import { runApply } from '../apply/run.js';
 import { publishWarning } from '../events.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
 import { runPlanningPhase } from '../planning/run.js';
@@ -48,6 +49,23 @@ export async function runPlanningPhases(
   // picks it up instead.
   const resume = resumeStep(state);
   if (rewindPending === undefined) {
+    if (resume.kind === 'apply') {
+      const applied = await runApply({ wctx, state, setTrackedState });
+      switch (applied.outcome) {
+        case 'applied':
+          return { disposition: 'terminal', state: applied.state, outcome: 'closed' };
+        case 'review':
+          return {
+            disposition: 'ready-for-tasks',
+            state: applied.state,
+            tasks: applied.state.tasks,
+          };
+        case 'needs-confirmation':
+          return { disposition: 'terminal', state: applied.state, outcome: 'input-required' };
+        case 'halted':
+          return { disposition: 'terminal', state: applied.state, outcome: 'halted' };
+      }
+    }
     if (resume.kind === 'brief' || resume.kind === 'review') {
       return { disposition: 'ready-for-tasks', state, tasks: state.tasks };
     }

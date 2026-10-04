@@ -3,7 +3,11 @@ import { chmodSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
-import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeCallbacks,
+  makePlanner,
+  runWorkspaceDir,
+} from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -196,9 +200,9 @@ describe('full workflow Claude Code CLI implementer', { timeout: 90_000 }, () =>
         'claude-sonnet-4-20250514',
       ]),
     );
-    expect(readFileSync(join(projectDir, targetFile), 'utf-8')).toContain(
-      'export const loop = "from-claude-code-cli";',
-    );
+    expect(
+      readFileSync(join(runWorkspaceDir({ projectDir, sessionId }), targetFile), 'utf-8'),
+    ).toContain('export const loop = "from-claude-code-cli";');
     expect(summary).toMatchObject({
       totalTasks: 1,
       completedByLocal: 1,

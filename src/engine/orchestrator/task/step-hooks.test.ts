@@ -49,7 +49,7 @@ describe('runSingleTask — pre_validation hooks', () => {
     );
 
     const implementer = makeImplementer({
-      implement: vi.fn().mockImplementation(async () => {
+      implement: vi.fn().mockImplementation(async ({ projectDir }: { projectDir: string }) => {
         mkdirSync(join(projectDir, 'src'), { recursive: true });
         writeFileSync(join(projectDir, 'src/hello.ts'), 'export const hello = "world";\n');
         return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };

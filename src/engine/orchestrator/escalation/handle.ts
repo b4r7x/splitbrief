@@ -302,7 +302,7 @@ export async function handleRetryAndEscalation(
   let taskStartSnapshot = opts.taskStartSnapshot;
   if (!taskStartSnapshot) {
     try {
-      taskStartSnapshot = await getChangedFilesSnapshot(wctx.projectDir);
+      taskStartSnapshot = await getChangedFilesSnapshot(wctx.workspaceDir);
     } catch (err) {
       publishWarningFromError(
         { bus: wctx.bus, phase: currentState.phase },
@@ -411,11 +411,12 @@ export async function handleRetryAndEscalation(
     }
 
     const snapshot = attemptSnapshot ?? taskStartSnapshot;
-    const changedFiles = await attemptChangedFiles(ctx.projectDir, snapshot);
+    const changedFiles = await attemptChangedFiles(ctx.workspaceDir, snapshot);
     const reason: ConsultReason = blocked !== undefined ? 'blocked' : 'failed';
     const consult = await requestConsult(
       {
         projectDir: ctx.projectDir,
+        workspaceDir: ctx.workspaceDir,
         sessionId: ctx.sessionId,
         bus: ctx.bus,
         planner: ctx.planner,
@@ -442,6 +443,7 @@ export async function handleRetryAndEscalation(
     const applied = await applyConsultAnswer(
       {
         projectDir: ctx.projectDir,
+        workspaceDir: ctx.workspaceDir,
         sessionId: ctx.sessionId,
         bus: ctx.bus,
         config: ctx.config,

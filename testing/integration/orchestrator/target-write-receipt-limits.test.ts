@@ -5,7 +5,6 @@ import {
   readEvidenceLedger,
   writeEvidenceLedger,
 } from '../../../src/core/evidence/ledger-storage.js';
-import { captureChangedFilesBaseline } from '../../../src/engine/orchestrator/changed-files-baseline.js';
 import { captureBundleBaseline } from '../../../src/engine/implementers/bundle-baseline.js';
 import { applyFileBundle } from '../../../src/engine/implementers/apply-file-bundle.js';
 import {
@@ -14,11 +13,9 @@ import {
 } from '../../../src/engine/orchestrator/evidence/task.js';
 import { sha256Hex } from '../../../src/utils/sha256.js';
 import {
-  applyTargetBundle,
   cleanupTargetWriteFixtures,
   createTargetWriteProject,
   freezeDir,
-  runTargetWriteCheck,
   TARGET_WRITE_FILE,
   TARGET_WRITE_SESSION_ID,
   thawDir,
@@ -62,22 +59,6 @@ describe('direct API receipt limits', () => {
       recordedTargetOutput({ projectDir, sessionId: TARGET_WRITE_SESSION_ID }, task).files,
     ).toEqual([{ path: TARGET_WRITE_FILE, sha256: sha256Hex('worker'), mode: 0o644 }]);
     expect(readFileSync(join(projectDir, second), 'utf8')).toBe('unchanged');
-  });
-
-  it('asks about legacy API bytes without a verified mode', async () => {
-    const { projectDir, task } = createTargetWriteProject();
-    const baseline = await captureChangedFilesBaseline(projectDir);
-    const result = await applyTargetBundle({ projectDir, task, content: 'worker' });
-    if (result.status !== 'applied') throw new Error('bundle did not apply');
-    writeApiReceipt({
-      projectDir,
-      task,
-      result: {
-        ...result,
-        applied: result.applied.map(({ afterMode: _mode, ...file }) => file),
-      },
-    });
-    expect((await runTargetWriteCheck({ projectDir, task, baseline })).result.stopped).toBe(true);
   });
 
   it('does not revive untouched receipts when a revised brief writes another file', () => {

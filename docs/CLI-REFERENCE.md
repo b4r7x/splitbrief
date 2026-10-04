@@ -139,7 +139,7 @@ splitbrief start --plain "fix flaky test in user.test.ts"
 
 - `0` — workflow completed (or TUI exited cleanly).
 - `1` — invalid or unwritable config, planner/implementer failure, a pending recovery nobody answered, a final review that ended `failed`, or a run that did not reach `complete` (it is saved `open` or `ended` and can be continued with `splitbrief continue <id>`), or any uncaught error.
-- `2` — an invalid flag combination, such as `--plain` together with `--json`, or an unusable flag value such as an unknown `--skills` id or a `--action` that names no recovery action.
+- `2` — an invalid flag combination, such as `--plain` together with `--json`, or an unusable flag value such as an unknown `--skills` id or a `--action` that names no continue action.
 
 ### Files affected
 
@@ -549,7 +549,7 @@ splitbrief status --project ../other-repo
 splitbrief resume [options]
 ```
 
-Continue the most recent run. A run is a durable record: it stays continuable until somebody closes it, so this refuses exactly three things — no active pointer, a saved state that is missing or unreadable, and a **closed** run (ended with `/end`, or `complete` with a passing review). Every other stop — parked, waiting at a gate, halted on a recovery, stopped by an error, killed outright — is picked up at the step it left off.
+Continue the most recent run. A run is a durable record: an open run stays continuable, so this refuses exactly six things — no active pointer, a run whose process is still running, a run whose process exists but is unresponsive, a saved state that is missing or unreadable, a **ready** run (`Run <id> is ready to apply.`, followed by the `continue <id> --action apply` and `--action discard` lines), and a **closed** run. Every other stop — parked, waiting at a gate, halted on a recovery, stopped by an error, killed outright — is picked up at the step it left off.
 
 Closing a run clears `.splitbrief/active`, so after an `/end` there is nothing for `resume` to find; name an older run with `splitbrief continue <session-id>`. Accepts the same workflow flags as `start`.
 
@@ -618,7 +618,7 @@ splitbrief resume --implementer claude-code --implementer-model claude-sonnet-4-
 
 - The version guard rejects resume with: `saved state is from an older version and cannot be resumed. Please start a new workflow with 'splitbrief start'.`
 - A session with a pending recovery is not refused headlessly. `resume --plain` and `resume --json` print the issue, the recommended action and the `splitbrief continue … --action …` line to stderr and exit `1`; pass that action to `continue` to carry on.
-- Any open run resumes. `deriveRunStatus` (`src/core/sessions/run-status.ts`) decides: a run is open until it is closed, and only two things close it — a final review that passed, and an explicit End run. A closed run is refused with `Run <id> is closed (complete|ended); nothing to resume.` A run killed during validation or escalation re-enters at the start of the brief it was on, with that brief's files restored from its task-start snapshot.
+- Any open run resumes. `deriveRunStatus` (`src/core/sessions/run-status.ts`) decides; [WORKFLOW.md §Run status](./WORKFLOW.md#run-status) owns the rules. A ready run is refused with `Run <id> is ready to apply.` and the two lines that apply or discard it (`splitbrief continue <id> --action apply|discard`). A closed run is refused with `Run <id> is closed (<complete|ended|applied|discarded>); nothing to resume.` A run killed during validation or escalation re-enters at the start of the brief it was on, with that brief's files restored from its task-start snapshot.
 - A short `Resuming: <feature> (phase: <phase>, task N/M)` line prints before the TUI mounts. `N` never exceeds `M`: a run whose briefs have all settled reads `M/M`.
 - The plan approval level comes from `workflow.approve`, else `plan`. Resume overwrites the level the run saved with that value. A run saved by an older release continues as one planning session if it stopped before its plan: its saved mode is ignored, and only the plan card (or nothing, under `approve: none`) opens before the build.
 
@@ -629,10 +629,10 @@ splitbrief resume --implementer claude-code --implementer-model claude-sonnet-4-
 **Synopsis**
 
 ```
-splitbrief continue [session-id-or-number] [--action <skip|retry|switch-seat:<tool>[:<model>]|end-run>] [resume options]
+splitbrief continue [session-id-or-number] [--action <skip|retry|switch-seat:<tool>[:<model>]|end-run|apply|discard>] [resume options]
 ```
 
-Continue a run by name: resolves the active session, a session id, or a numeric alias, then picks the run up where it stopped. With `--action` it first answers the run's pending recovery, so a halted headless run is resolved from the shell instead of a TUI. Any open run continues; only a closed one is refused.
+Continue a run by name, active session, or numeric alias. The run continues from its saved state. Recovery actions first answer the pending recovery. Use `--action apply` or `--action discard` to settle a run whose review passed in its workspace. Any open run can continue. The command refuses a closed run.
 
 ### Options
 
@@ -642,7 +642,7 @@ Continue a run by name: resolves the active session, a session id, or a numeric 
 | `--project <dir>` | path | cwd | Project directory. |
 | `--allow-hooks` | boolean | `false` | Trust hook config without prompting. |
 | `--allow-repo-runners` | boolean | `false` | Trust repo-local shell/agent runner commands from project config for resumed workflow execution. |
-| `--action <skip\|retry\|switch-seat:<tool>[:<model>]\|end-run>` | enum | — | Apply this action to the run's pending recovery, then continue — the headless equivalent of choosing it in the recovery panel. `skip` is `skip-current-task`, `retry` is `retry-same-worker`, `switch-seat:<tool>[:<model>]` moves the blocked seat, and `end-run` closes the run. The first three carry the run on; `end-run` records the close, prints `Run <id> closed. The files it wrote are still on disk.` and stops there. |
+| `--action <skip\|retry\|switch-seat:<tool>[:<model>]\|end-run\|apply\|discard>` | enum | — | Recovery actions answer the pending recovery. `skip` means `skip-current-task`. `retry` means `retry-same-worker`. `switch-seat:<tool>[:<model>]` moves the blocked seat. These three actions continue the run. `end-run` closes the run, prints `Run <id> closed. The files it wrote are still on disk.`, and stops. `apply` runs Apply on a run that is ready to apply. Apply merges the run workspace into the checkout. It prints `Applied <n> files to your checkout.` on stderr and closes the run `applied`. If Apply changes the reviewed candidate, SPLITBRIEF runs its checks and whole-run review again. A run accepted as is needs confirmation on the run screen with `/run accept confirm`. An Apply conflict halts with `Recovery required (apply-conflict)`. `discard` closes the run `discarded`. It keeps the run changes in `run.patch` in the session folder and prints `Run <id> discarded.` and the patch path on stderr. The checkout stays untouched. Apply and Discard keep stdout for the `--plain` and `--json` records. |
 | `--skills <ids>` | string | — | Comma-separated skill ids for every seat, in headless and interactive mode alike. The list applies to that continue only: it is not saved, so a later continue without it uses the selection the run saved when it started. |
 | `--json` | boolean | `false` | Continue the run in headless NDJSON mode. |
 | `--plain` | boolean | `false` | Continue the run in headless plain-line mode. Mutually exclusive with `--json`. |
@@ -660,6 +660,9 @@ splitbrief continue 1
 # Continue a specific session
 splitbrief continue 2026-05-01-add-auth
 
+# Apply a run that is ready to apply
+splitbrief continue 2026-05-01-add-auth --action apply
+
 # Answer a pending recovery without a TUI: skip the blocked brief and carry on
 splitbrief continue 2026-05-01-add-auth --action skip --plain
 
@@ -672,9 +675,9 @@ splitbrief continue 2026-05-01-add-auth --action end-run
 
 ### Exit codes
 
-- `0` — the run continued, or `--action end-run` closed it.
-- `1` — no run to continue, a run that is still running, unusable saved state, a **closed** run, an `--action` the pending recovery does not allow (the refusal names the issue's available actions), or an underlying failure.
-- `2` — `--action` did not name a recovery action: `'<value>' is not a recovery action. Use skip, retry, switch-seat:<tool>[:<model>], or end-run.`
+- `0`: The run continued, `--action end-run` closed it, or `--action apply|discard` settled it.
+- `1`: No run to continue, a running run, unusable saved state, a closed run, or an underlying failure. This code also covers a recovery action the pending recovery does not allow. The refusal names the available actions. It also covers `--action apply|discard` on a run that is not ready to apply.
+- `2`: `--action` did not name a continue action. The message is `'<value>' is not a continue action. Use skip, retry, switch-seat:<tool>[:<model>], end-run, apply, or discard.`
 
 ### Files affected
 
@@ -687,9 +690,9 @@ splitbrief continue 2026-05-01-add-auth --action end-run
 
 ### Behavior notes
 
-- `continue` delegates to `resume`, including `--json` or `--plain` when passed.
-- `--action end-run` is the one action that does not re-enter the run: the close is recorded on `state.json`, the run lists as `ended`, and the command returns 0 without starting anything.
-- `--action` is applied before the run re-enters: the named `RecoveryAction` runs through the same `applyRecoveryAction` transition the panel uses, and the run continues from the state it produced. Without `--action`, a session with a pending recovery is not refused outright — headless prints the issue, the recommended action and the exact `continue --action …` line to stderr and exits `1`, and `resume --plain` behaves the same way.
+- `continue` uses the existing resume path when an action continues the run. This path supports `--json` and `--plain`.
+- `--action end-run` records the close in `state.json`. The run lists as `ended`. The command returns `0` without starting more work. Apply and Discard also return `0` when they settle the run.
+- Recovery actions use the same `applyRecoveryAction` transition as the recovery panel. The run continues from the resulting state. Without `--action`, headless mode prints the pending recovery, recommended action, and exact `continue --action` command to stderr. It exits `1`. `resume --plain` behaves the same way.
 - Both commands compare the crew they are about to run against the crew the session last ran with (`.splitbrief/sessions/<id>/seats.json`). A seat that changed prints one stderr line per seat — `PLAN seat changed <old> → <new>; context will be rebuilt` for the plan seat, `…; the rest of the run uses the new seat` for the others. A moved plan seat also drops the saved planner session, because it cannot be replayed on a different tool, so the run rebuilds planner context from the transcript. The run itself re-records the crew once it starts, so a resume that never gets past preparation keeps the notice for the next attempt, and an in-app resume from the sessions overlay maintains the record the same way (it reports the change as a workflow warning). The record compares the configured ids (`Claude Code CLI · opus · max`), so a model the catalog renames never reads as a seat that moved; it also keeps each seat's tool and model ids and the runner kind the seat ran on, and the notice spells both sides the way the crew rows and the workflow header do (`Claude Code CLI · Opus 5.5 · max`) — a custom API provider that reuses a CLI tool's name is spelled as the provider, not as that CLI. A record written before the ids or the runner kind were kept gains them on the next run without a notice; should that run report a seat change, its notice keeps the recorded labels on both sides.
 
 ---
@@ -730,7 +733,7 @@ Commands in this section share stable `stateId` / `state` identifiers and copyab
 | `.splitbrief/sessions/<id>/state.json` | orchestrator | Persisted machine state for `resume` / `status`. |
 | `.splitbrief/sessions/<id>/seats.json` | `start`, `resume`, `continue` | The crew the session last ran with, so a resume can report a seat change. Rewritten by every run that starts, resumes included; a resume that never starts leaves it alone. |
 | `.splitbrief/sessions/<id>/session.jsonl` | orchestrator | Append-only transcript and event log. |
-| `.splitbrief/sessions/<id>/snapshots/<snap-id>/` | runtime `/run accept` | The working-tree snapshot an accepted run records, plus the run ledger that marks it accepted. Nothing records a pre-run baseline, so `/run reject confirm` has nothing to restore. |
+| `.splitbrief/sessions/<id>/snapshots/<snap-id>/` | runtime `/run accept` | The run's snapshots: the run-start `baseline`, the `workspace-base` a workspace run starts from, the `pre-final-review` snapshot and, for a run without a workspace, the accepted-run snapshot `/run accept` records, plus the run ledger. A workspace run restores from its Apply backup instead ([WORKFLOW.md §Apply](./WORKFLOW.md#apply)). |
 | `~/.splitbrief/trust/hooks.json` | `start`/`resume`/`spec` trust prompt | Hook trust receipts, owner-only, keyed by checkout. Never inside the project. |
 | `$XDG_STATE_HOME/splitbrief/trees/<hash>/<session-id>/` | run isolation | The implementer's per-run worktree, on branch `splitbrief/<session-id>`. Defaults to `~/.local/state/splitbrief/trees/...` when `XDG_STATE_HOME` is unset; `<hash>` is the first 12 hex chars of `sha256(realpath(git-common-dir))` so every linked checkout shares one trees root. Outside `.git/` (direct-writing CLIs refuse paths there) and outside the project root (so project-rooted test globs never walk the second copy). `git worktree list` is how you find one that outlived its run. |
 

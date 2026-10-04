@@ -32,16 +32,21 @@ const scenario = {
 describe('e2e: drift out-of-scope detection', () => {
   const ctx = setupE2eScenario(scenario);
 
-  // The hook writes a file no Task Brief targets, which is the deterministic
-  // drift this scenario measures.
+  // The hook writes a file no Task Brief targets into the run workspace, which is
+  // the deterministic drift this scenario measures. Hooks run in the checkout, so
+  // the hook finds the workspace as the last worktree git lists.
   function installDriftHook(): void {
     mkdirSync(join(ctx.projectDir, '.splitbrief/hooks'), { recursive: true });
     writeFileSync(
       join(ctx.projectDir, DRIFT_SCRIPT),
       [
+        "import { execFileSync } from 'node:child_process';",
         "import { mkdirSync, writeFileSync } from 'node:fs';",
-        "mkdirSync('src', { recursive: true });",
-        "writeFileSync('src/out-of-scope.ts', 'export const drift = true;\\n');",
+        "import { join } from 'node:path';",
+        "const listed = execFileSync('git', ['worktree', 'list', '--porcelain'], { encoding: 'utf8' });",
+        "const workspace = listed.split('\\n').filter((line) => line.startsWith('worktree ')).at(-1).slice('worktree '.length);",
+        "mkdirSync(join(workspace, 'src'), { recursive: true });",
+        "writeFileSync(join(workspace, 'src/out-of-scope.ts'), 'export const drift = true;\\n');",
         '',
       ].join('\n'),
     );
@@ -62,9 +67,8 @@ describe('e2e: drift out-of-scope detection', () => {
       enabled: true,
     });
     expect(driftReport).toBeDefined();
-    // Final-review drift attributes recorded promotions only. The hook wrote
-    // straight to the workspace, so its file is not a run effect and the report
-    // stays free of errors...
+    // The hook wrote into the run workspace while the brief ran, so its file is
+    // part of the run and the final drift report stays free of errors...
     expect(driftReport?.passed).toBe(true);
     expect(driftReport?.errorCount).toBe(0);
     // ...while the per-task drift chain still reports the out-of-scope write.
@@ -74,8 +78,8 @@ describe('e2e: drift out-of-scope detection', () => {
       representativePath: 'src/out-of-scope.ts',
     });
 
-    // The unattributed write is not dropped: the review packet keeps it visible
-    // as uncertain workspace context.
+    // The write is not dropped: the review packet lists it among the workspace
+    // files the run changed.
     const artifact = ctx.events.find((event) => event.type === 'artifact_written');
     if (artifact?.type !== 'artifact_written') throw new Error('no session artifact path recorded');
     const packet = ReviewPacketSchema.parse(
@@ -83,8 +87,7 @@ describe('e2e: drift out-of-scope detection', () => {
         readFileSync(join(dirname(artifact.path), REVIEW_PACKET_JSON_FILE), 'utf8'),
       ) as unknown,
     );
-    expect(packet.changes.provenance?.status).toBe('missing');
-    expect(packet.changes.provenance?.promotedFiles).toEqual([]);
-    expect(packet.changes.provenance?.uncertainFiles).toContain('src/out-of-scope.ts');
+    expect(packet.changes.provenance?.status).toBe('available');
+    expect(packet.changes.provenance?.workspaceFiles).toContain('src/out-of-scope.ts');
   });
 });

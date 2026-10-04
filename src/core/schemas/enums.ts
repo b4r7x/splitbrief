@@ -107,6 +107,8 @@ export const RECOVERY_REASONS = [
   'context-overflow',
   'user-edit-conflict',
   'approval-promotion-conflict',
+  'apply-conflict',
+  'apply-partial',
   'dependency-blocked',
   'scope-violation',
   'implementer-recipe-invalid',
@@ -130,10 +132,12 @@ export type RecoveryReason = z.infer<typeof RecoveryReasonSchema>;
 
 export const RECOVERY_ACTIONS = [
   'retry-same-worker',
+  'restore-backup',
   'route-bigger-worker',
   'switch-seat',
   'planner-split-rebase',
   'revise',
+  'accept-as-is',
   'revise-spec',
   'continue',
   'skip-current-task',
@@ -145,9 +149,11 @@ export type RecoveryAction = z.infer<typeof RecoveryActionSchema>;
 
 export const PROMPTABLE_RECOVERY_ACTIONS: RecoveryAction[] = [
   'retry-same-worker',
+  'restore-backup',
   'route-bigger-worker',
   'switch-seat',
   'revise',
+  'accept-as-is',
   'revise-spec',
   'continue',
   'skip-current-task',
@@ -175,7 +181,6 @@ export const USER_EDIT_CONFLICT_ACTIONS = [
   'abort-workflow',
 ] as const;
 export const UserEditConflictActionSchema = z.enum(USER_EDIT_CONFLICT_ACTIONS);
-export type UserEditConflictAction = z.infer<typeof UserEditConflictActionSchema>;
 
 export const TASK_CONTEXT_FITS = ['fits', 'tight', 'overflow'] as const;
 export const TaskContextFitSchema = z.enum(TASK_CONTEXT_FITS);

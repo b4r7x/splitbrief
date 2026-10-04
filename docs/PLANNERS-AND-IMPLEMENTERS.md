@@ -225,7 +225,7 @@ The implementer is the **weaker model** of the pair. Which transport carries tha
 - a **tool CLI running a smaller model** -- `codex`, `claude-code`, or any other admitted CLI pointed at a smaller model. Write mode `direct`.
 - a **model behind an OpenAI-compatible API** -- a local Ollama or LM Studio daemon, or a custom endpoint you declare. Write mode `extracted-code`.
 
-Neither is the fallback for the other. Both get the same brief, the same prompt contract, and the same promotion and validation treatment. Isolation is the one thing they do not share: per ADR-4 the run's isolation directory is scoped to a direct writer, and `workflow.isolation` is not consulted for an `extracted-code` implementer (see below). SPLITBRIEF does not favour a transport.
+Neither is the fallback for the other. Both get the same brief, the same prompt contract, the same run workspace and the same validation treatment (see below). SPLITBRIEF does not favour a transport.
 
 Defined in `src/engine/implementers/types.ts`:
 
@@ -264,25 +264,25 @@ API profiles can receive a bounded explicit set of up to 32 declared text target
 | Kinds | `api`, `shell` | `cli`, `agent` |
 | Model answers with | API: strict text-file bundle; shell: complete single-file contents | edits already made on disk |
 | Change detection | returned text is compared against captured target baselines | `detectChanges()` against a baseline captured before the call |
-| Works in | project directory; API bundle targets or one legacy shell target | the run's isolation directory, the brief's `files` (see below) |
-| Approval applies | exact target paths before writes; API preflights the whole candidate set | at promotion, over the whole changed set |
+| Works in | the run workspace; API bundle targets or one legacy shell target | the run workspace, the brief's `files` (see below) |
+| Approval applies | exact target paths before writes; API preflights the whole candidate set | after the call, over the attempt's whole changed set in the workspace |
 | Empty result | extraction error | `no-staged-change` outcome + `implementer_wrote_nothing` warning |
 
-### Isolation and promotion
+### Isolation and Apply
 
-A `direct` implementer edits files itself, so it is handed its own working directory instead of the user's checkout. The default isolation is a **git worktree created once per run** -- one directory for the whole run, not a copy per task. Project dependencies are reachable inside it, so the implementer can run the project's own typecheck, lint, and tests against its own work.
+Every implementer works in the run workspace instead of the user's checkout: a `direct` implementer edits files there itself, and SPLITBRIEF writes an `extracted-code` implementer's output there. The default isolation is a **git worktree created once per run** -- one directory for the whole run, not a copy per task. Installed Node dependencies are linked into it, so a Node implementer can run the project's own typecheck, lint, and tests against its own work; other toolchains are covered in [CONFIGURATION.md](./CONFIGURATION.md#implementer-isolation).
 
-Isolation is scoped to direct writers (ADR-4). The task loop acquires a workspace only when the implementer's write mode is `direct` (`runImplementation`, `src/engine/orchestrator/task/run-implementation.ts`), so an `extracted-code` implementer writes through SPLITBRIEF into the project directly and `workflow.isolation` never applies to it -- see [CONFIGURATION.md](./CONFIGURATION.md) §5. Escalation is the one exception: a retry always acquires a workspace (`src/engine/orchestrator/escalation/step.ts`), and for an `extracted-code` implementer that acquisition bypasses the configured strategy and stages the retry in a temporary copy of the project.
+Every attempt of every writer kind acquires the run workspace (`runImplementation`, `src/engine/orchestrator/task/run-implementation.ts`; retries in `src/engine/orchestrator/escalation/step.ts`), and `workflow.isolation` picks its strategy -- see [CONFIGURATION.md](./CONFIGURATION.md#implementer-isolation). An `extracted-code` write is checked against the protected paths before it lands (`approveWrite`).
 
-When a task ends, the changed set is computed against the baseline captured when that task acquired the workspace, not when the isolation directory was created -- git status/diff when the isolation directory is a real checkout, a whole-tree hash diff when it is not (`getChangedFilesSinceSnapshot`, `src/engine/orchestrator/approval/file-snapshots/capture.ts`). The set is gated for approval and then **promoted into the user's real project directory**. Promotion is hash-guarded: a file whose content changed between the approval read and the write is not overwritten, it is reported as a conflict and the whole promotion is refused (`promoteStagedChanges`, `src/engine/orchestrator/approval/staged-project.ts`). Promotion writes regular files only, so a symlink on either side of a promoted path is refused the same way. Changes always land in the real project -- that is the point of the mechanism.
+When an attempt ends, its changed set is computed against the snapshot that attempt took when it acquired the workspace, not when the workspace was created -- git status/diff when the workspace is a real worktree, a whole-tree hash diff when it is not (`getChangedFilesSinceSnapshot`, `src/engine/orchestrator/approval/file-snapshots/capture.ts`). The protected-write gate runs over that set inside the workspace (`gateAttemptChanges`, `src/engine/orchestrator/task/attempt-gate.ts`); a denied file is restored from the attempt snapshot. Nothing is promoted per brief: the briefs' work accumulates in the workspace, the validation stage and the final review assess it there, and the reviewed result reaches the user's real project directory once, at Apply. [WORKFLOW.md §Apply](./WORKFLOW.md#apply) owns how Apply merges and writes.
 
-The run-scoped handle (`createRunIsolation`, `src/engine/orchestrator/isolation/create.ts`) keeps the isolation directory alive across tasks and retries. A worktree workspace is reused between acquisitions through a marker carrying the session id, and each acquisition takes a fresh baseline so a later task reports only its own edits, plus any file the worktree holds that the project never received: that file counts as changed from the project's copy, so it is promoted with the task or raised as a promotion conflict. The worktree is disposed when the run ends: if nothing unpromoted remains it is removed with force and its branch deleted, otherwise it is retained -- it holds work that was never promoted -- and the run reports the retention.
+The run-scoped handle (`createRunIsolation`, `src/engine/orchestrator/isolation/create.ts`) opens the workspace once per run and reuses it across tasks, retries, stops and process restarts, identified by its record and directory. Each acquisition takes its own snapshot, so a later attempt reports only its own edits, and an attempt's cleanup reverts only that attempt. Disposing the handle never removes the workspace: an open or ready run keeps it, and Discard or End run write `run.patch` before they remove it.
 
 A worktree isolates files, not the machine. It shares refs, git config, and hooks with the real repository, and it shares ports, databases, and environment with everything else running. It is not a security boundary.
 
 An isolation strategy that copies the project instead of checking it out must exclude build output and report artifacts as well as the VCS, dependency, and SPLITBRIEF directories. The staged copy derives its file list from git's own ignore rules, so gitignored `dist/`, `coverage/`, and tool output never enter the copy -- otherwise it would move hundreds of megabytes per run.
 
-Whichever mode ran, validation happens in the real project directory after promotion. The implementer's ability to run checks on its own work is a first-pass-rate improvement, not the source of truth about correctness.
+Whichever mode ran, SPLITBRIEF's validation stage runs in the run workspace after each attempt. The implementer's ability to run checks on its own work is a first-pass-rate improvement, not the source of truth about correctness.
 
 ### Prompt contract per mode
 

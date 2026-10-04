@@ -2,7 +2,6 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readEvidenceLedger } from '../../../src/core/evidence/ledger-storage.js';
-import { captureChangedFilesBaseline } from '../../../src/engine/orchestrator/changed-files-baseline.js';
 import { getChangedFilesSnapshot } from '../../../src/engine/orchestrator/approval/file-snapshots/capture.js';
 import { recordedTargetOutput } from '../../../src/engine/orchestrator/evidence/task.js';
 import { runImplementation } from '../../../src/engine/orchestrator/task/run-implementation.js';
@@ -18,7 +17,6 @@ import {
   blockEvidenceWrites,
   cleanupTargetWriteFixtures,
   createTargetWriteProject,
-  runTargetWriteCheck,
   TARGET_WRITE_FILE,
   TARGET_WRITE_SESSION_ID,
   writePromotedReceipt,
@@ -28,24 +26,27 @@ afterEach(() => {
   cleanupTargetWriteFixtures();
 });
 
-describe('direct implementation entry', () => {
-  it('runs production invalidation before a direct API call whose new receipt is lost', async () => {
+describe('isolated implementation entry', () => {
+  it('keeps target ownership when a workspace API call loses its new receipt', async () => {
     const { projectDir, task } = createTargetWriteProject();
     const ref = { projectDir, sessionId: TARGET_WRITE_SESSION_ID };
-    const baseline = await captureChangedFilesBaseline(projectDir);
     writeFileSync(join(projectDir, TARGET_WRITE_FILE), 'old-worker');
     writePromotedReceipt({ projectDir, task, content: 'old-worker' });
     const snapshot = await getChangedFilesSnapshot(projectDir);
     const { bus, events } = makeBusRecorder();
     const implementer = makeImplementer({
-      implement: vi.fn(async () => {
-        // The old receipt is already gone when the call is dispatched: production's own
-        // invalidation ran before this implementation, not the test on its behalf.
+      implement: vi.fn(async ({ projectDir: workspaceDir }) => {
         const entry = readEvidenceLedger(ref)?.tasks.find((candidate) => candidate.id === task.id);
-        expect(entry?.promotedFiles ?? []).toEqual([]);
+        expect(entry?.promotedFiles).toEqual([
+          { path: TARGET_WRITE_FILE, sha256: sha256Hex('old-worker'), mode: 0o644 },
+        ]);
         // From here every receipt write is refused at the filesystem: only the new one is lost.
         blockEvidenceWrites({ ref, keepReadable: true });
-        const applyResult = await applyTargetBundle({ projectDir, task, content: 'latest-worker' });
+        const applyResult = await applyTargetBundle({
+          projectDir: workspaceDir,
+          task,
+          content: 'latest-worker',
+        });
         expect(applyResult.status).toBe('applied');
         return {
           success: true,
@@ -56,7 +57,7 @@ describe('direct implementation entry', () => {
       }),
     });
 
-    await runImplementation({
+    const result = await runImplementation({
       wctx: makeWctx({ projectDir, sessionId: TARGET_WRITE_SESSION_ID, implementer, bus }),
       task,
       state: makeImplState([task]),
@@ -65,24 +66,24 @@ describe('direct implementation entry', () => {
       recordApprovalDenial: () => {},
     });
 
-    // The new implementation output was applied; only its receipt failed to persist.
     expect(implementer.implement).toHaveBeenCalledTimes(1);
-    expect(readFileSync(join(projectDir, TARGET_WRITE_FILE), 'utf8')).toBe('latest-worker');
+    expect(result.workspace.projectDir).not.toBe(projectDir);
+    expect(readFileSync(join(result.workspace.projectDir, TARGET_WRITE_FILE), 'utf8')).toBe(
+      'latest-worker',
+    );
+    expect(readFileSync(join(projectDir, TARGET_WRITE_FILE), 'utf8')).toBe('old-worker');
     expect(events).toContainEqual(
       expect.objectContaining({
         type: 'warning',
         message: expect.stringContaining('failed to persist bundle application evidence'),
       }),
     );
-    // Neither the invalidated old receipt nor the lost new one owns the target.
-    expect(recordedTargetOutput(ref, task).files).toEqual([]);
-
-    // Historical bytes restored after the loss are unowned, so the continuation stops.
-    writeFileSync(join(projectDir, TARGET_WRITE_FILE), 'old-worker');
-    expect((await runTargetWriteCheck({ projectDir, task, baseline })).result.stopped).toBe(true);
+    expect(recordedTargetOutput(ref, task).files).toEqual([
+      { path: TARGET_WRITE_FILE, sha256: sha256Hex('old-worker'), mode: 0o644 },
+    ]);
   });
 
-  it('does not dispatch a direct call when invalidation cannot persist', async () => {
+  it('dispatches a workspace call without invalidating the unchanged target receipt', async () => {
     const { projectDir, task } = createTargetWriteProject();
     const ref = { projectDir, sessionId: TARGET_WRITE_SESSION_ID };
     writePromotedReceipt({ projectDir, task, content: 'original' });
@@ -90,18 +91,17 @@ describe('direct implementation entry', () => {
     const implementer = makeImplementer();
     blockEvidenceWrites({ ref, keepReadable: true });
 
-    await expect(
-      runImplementation({
-        wctx: makeWctx({ projectDir, sessionId: TARGET_WRITE_SESSION_ID, implementer }),
-        task,
-        state: makeImplState([task]),
-        taskStartSnapshot: snapshot,
-        setTrackedState: () => {},
-        recordApprovalDenial: () => {},
-      }),
-    ).rejects.toThrow(/refusing to write through symlink/);
-    expect(implementer.implement).not.toHaveBeenCalled();
-    // The refusal came before the write, so the recorded ownership is untouched.
+    const result = await runImplementation({
+      wctx: makeWctx({ projectDir, sessionId: TARGET_WRITE_SESSION_ID, implementer }),
+      task,
+      state: makeImplState([task]),
+      taskStartSnapshot: snapshot,
+      setTrackedState: () => {},
+      recordApprovalDenial: () => {},
+    });
+    expect(implementer.implement).toHaveBeenCalledTimes(1);
+    expect(result.workspace.projectDir).not.toBe(projectDir);
+    expect(readFileSync(join(projectDir, TARGET_WRITE_FILE), 'utf8')).toBe('original');
     expect(recordedTargetOutput(ref, task).files).toEqual([
       { path: TARGET_WRITE_FILE, sha256: sha256Hex('original'), mode: 0o644 },
     ]);

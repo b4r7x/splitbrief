@@ -1,0 +1,106 @@
+import { error } from '../../../utils/error.js';
+import { type FileSnapshotEntry, writeConfinedEntry } from '../approval/file-snapshots/entry.js';
+import {
+  type ApplyBackup,
+  type ApplyExpectedEntry,
+  readApplyBackup,
+  readBackupBlob,
+} from './backup.js';
+import { readApplyEntry, sameSideEntry, unsafeEntryError } from './states.js';
+
+type ApplyBackupInput = { projectDir: string; sessionId: string; backupId: string };
+
+export type ApplyBackupReconciliation = {
+  written: string[];
+  pending: string[];
+  ambiguous: string[];
+};
+
+function matchesFingerprint(
+  entry: FileSnapshotEntry | null,
+  fingerprint: Pick<ApplyExpectedEntry, 'sha256' | 'mode'> | undefined,
+): boolean {
+  if (entry === null || fingerprint === undefined) return false;
+  const { sha256, mode } = fingerprint;
+  return sameSideEntry(
+    entry,
+    sha256 === null || mode === null ? { kind: 'absent' } : { kind: 'file', sha256, mode },
+  );
+}
+
+async function classifyApplyBackup(
+  projectDir: string,
+  backup: ApplyBackup,
+): Promise<ApplyBackupReconciliation> {
+  const expected = new Map(backup.expected.map((entry) => [entry.path, entry]));
+  const replaced = new Map(backup.replaced.map((entry) => [entry.path, entry]));
+  const created = new Set(backup.created);
+  const paths = [...new Set([...expected.keys(), ...replaced.keys(), ...created])].sort();
+  const result: ApplyBackupReconciliation = { written: [], pending: [], ambiguous: [] };
+  for (const path of paths) {
+    const checkout = await readApplyEntry(projectDir, path);
+    const before =
+      replaced.get(path) ?? (created.has(path) ? { sha256: null, mode: null } : undefined);
+    if (matchesFingerprint(checkout, expected.get(path))) result.written.push(path);
+    else if (matchesFingerprint(checkout, before)) result.pending.push(path);
+    else result.ambiguous.push(path);
+  }
+  return result;
+}
+
+export async function reconcileApplyBackup(
+  input: ApplyBackupInput,
+): Promise<ApplyBackupReconciliation> {
+  const { projectDir, sessionId, backupId } = input;
+  return classifyApplyBackup(projectDir, await readApplyBackup(projectDir, sessionId, backupId));
+}
+
+export async function restoreApplyBackup(input: ApplyBackupInput): Promise<{
+  restored: string[];
+  unchanged: string[];
+  conflicts: string[];
+}> {
+  const { projectDir, sessionId, backupId } = input;
+  const backup = await readApplyBackup(projectDir, sessionId, backupId);
+  const reconciliation = await classifyApplyBackup(projectDir, backup);
+  const replaced = new Map(backup.replaced.map((entry) => [entry.path, entry]));
+  const expected = new Map(backup.expected.map((entry) => [entry.path, entry]));
+  const created = new Set(backup.created);
+  const restored: string[] = [];
+  const unchanged = [...reconciliation.pending];
+  const conflicts = [...reconciliation.ambiguous];
+  for (const path of reconciliation.written) {
+    const before = replaced.get(path);
+    let entry: FileSnapshotEntry;
+    if (before !== undefined) {
+      entry = {
+        kind: 'file',
+        bytes: await readBackupBlob(projectDir, sessionId, backupId, before.sha256),
+        sha256: before.sha256,
+        mode: before.mode,
+      };
+    } else if (created.has(path)) {
+      entry = { kind: 'absent' };
+    } else {
+      throw error('apply-backup-corrupt', `Apply backup has no before entry: ${path}`, { path });
+    }
+    const after = expected.get(path);
+    if (matchesFingerprint(entry, after)) {
+      unchanged.push(path);
+      continue;
+    }
+    const conflict = error('apply-restore-conflict', `Checkout changed before restore: ${path}`, {
+      path,
+    });
+    try {
+      await writeConfinedEntry(projectDir, path, entry, async () => {
+        if (!matchesFingerprint(await readApplyEntry(projectDir, path), after)) throw conflict;
+      });
+      restored.push(path);
+    } catch (cause) {
+      if (cause !== conflict && !unsafeEntryError(cause)) throw cause;
+      conflicts.push(path);
+    }
+  }
+  return { restored: restored.sort(), unchanged: unchanged.sort(), conflicts: conflicts.sort() };
+}

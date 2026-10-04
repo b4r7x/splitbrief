@@ -36,7 +36,7 @@ describe('runSingleTask — baseline-exempt validation', () => {
     const state = implementingState([task]);
 
     const implementer = makeImplementer({
-      implement: vi.fn().mockImplementation(async () => {
+      implement: vi.fn().mockImplementation(async ({ projectDir }: { projectDir: string }) => {
         mkdirSync(join(projectDir, 'src'), { recursive: true });
         writeFileSync(join(projectDir, 'src/main.ts'), 'export const main = 1;\n');
         return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };

@@ -54,10 +54,6 @@ export function extractedCodeApprovalRaceError(file: string): string {
   return `write blocked because ${file} changed during approval`;
 }
 
-export function isExtractedCodeApprovalRaceError(file: string, error?: string): boolean {
-  return error === extractedCodeApprovalRaceError(file);
-}
-
 export async function processImplementerOutput(opts: {
   text: string;
   task: Task;

@@ -14,10 +14,12 @@ import {
 } from '../core/skills/scan-paths.js';
 import { modelCacheStore } from '../stores/discovery/model-cache/state.js';
 import { attachmentsStore } from '../stores/workflow/attachments.js';
+import { deriveRunStatus, isAnsweredApplyRecovery } from '../core/sessions/run-status.js';
 import { continuesHeadless, formatResumeCommand } from '../core/recovery/resume-command.js';
 import { finalReviewFailedCause } from '../core/recovery/headline.js';
 import { formatResetAt } from '../core/recovery/reset-clock.js';
 import { cliError } from './errors.js';
+import { readyToApplyMessage } from './sessions/resolve.js';
 import { installTerminalOutputErrorGuard } from '../lib/terminal/control.js';
 import { writeHeadlessJsonRecord } from '../engine/events/public-json.js';
 import { createQuestionMarkerStripper } from '../engine/parsers/question.js';
@@ -91,7 +93,7 @@ export function emitRecoveryAndFailIfPending({
     throw cliError(`The planner needs your reply.\n${message}\nContinue with: ${resumeCommand}`, 1);
   }
   const issue = state?.pendingRecovery;
-  if (!issue) return;
+  if (!issue || isAnsweredApplyRecovery(issue)) return;
   const resumeCommand = formatResumeCommand(sessionId, issue);
   writeRecord(
     {
@@ -159,10 +161,18 @@ function failIfSessionFailed(
 // above miss it. A user-requested abort never reaches here: the signal check in
 // runHeadless returns first, keeping SIGINT/SIGTERM at exit 0.
 function failIfSessionInterrupted(
+  state: WorkflowState | null,
   projectDir: string,
   sessionId: string,
   writeRecord: RecordWriter,
 ): void {
+  if (
+    state !== null &&
+    deriveRunStatus({ state, liveness: 'not-alive' }).kind === 'ready-to-apply'
+  ) {
+    process.stderr.write(`${readyToApplyMessage(sessionId)}\n`);
+    return;
+  }
   const session = readSession({ projectDir, sessionId });
   if (session === null || session.status === 'complete') return;
   writeRecord({
@@ -261,5 +271,5 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
   failIfFinalReviewFailed(finalState, projectDir, sessionId, writeRecord);
   failIfFinalReviewIncomplete(finalState, sessionId, writeRecord);
   failIfSessionFailed(projectDir, sessionId, writeRecord);
-  failIfSessionInterrupted(projectDir, sessionId, writeRecord);
+  failIfSessionInterrupted(finalState, projectDir, sessionId, writeRecord);
 }

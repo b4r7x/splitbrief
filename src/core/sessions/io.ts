@@ -77,14 +77,27 @@ function startedAtMs(startedAt: string | null): number {
  * The row a derived status produces. A complete row carries its summary by
  * contract; a closed run whose summary never reached disk reads as ended.
  */
-function rowFor(base: SessionRowBase, status: RunStatus, summary: Summary | null): Session {
+export function rowFor(base: SessionRowBase, status: RunStatus, summary: Summary | null): Session {
   if (status.kind === 'closed') {
+    if (status.as === 'applied') {
+      return summary !== null
+        ? { ...base, status: 'complete', summary, apply: 'applied' }
+        : { ...base, status: 'ended', summary, apply: 'applied' };
+    }
+    if (status.as === 'discarded') {
+      return { ...base, status: 'ended', summary, apply: 'discarded' };
+    }
     if (status.as === 'complete' && summary !== null) {
       return { ...base, status: 'complete', summary };
     }
     return { ...base, status: 'ended', summary };
   }
-  if (status.kind === 'running') return { ...base, status: 'open', summary };
+  if (status.kind === 'ready-to-apply') {
+    return { ...base, status: 'open', summary, apply: 'ready' };
+  }
+  if (status.kind === 'running') {
+    return { ...base, status: 'open', summary };
+  }
   return { ...base, status: 'open', summary, stop: status.stop.kind };
 }
 

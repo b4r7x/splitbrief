@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
 import { join } from 'node:path';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { transition } from '../../../core/state/machine.js';
@@ -30,7 +30,6 @@ import type { HooksConfig } from '../../../core/schemas/hooks.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
 import { formatRecoveryHeadline } from '../../../core/recovery/headline.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
-import { CONFIRM_PHRASE } from '../../../core/approval/types.js';
 
 // The consult attempts acquire from the run isolation handle; on the copying
 // strategy under parallel full-suite load that staged-copy IO can push these
@@ -522,72 +521,5 @@ describe('handleRetryAndEscalation', () => {
     expect(formatRecoveryHeadline(finalState.pendingRecovery!)).toBe(
       finalState.pendingRecovery?.message,
     );
-  });
-
-  it('retry promotion conflicts ask for user-edit resolution and do not consult', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({
-      id: 'T001',
-      file: 'src/main.ts',
-      action: 'modify',
-      scope: { inBounds: ['src/main.ts'] },
-    });
-    const state: WorkflowState = { ...makeValidatingState(), tasks: [task] };
-    const onUserEditConflict = vi.fn().mockResolvedValue('pause');
-    const { callbacks } = makeCallbacks({
-      onTieredApproval: vi.fn().mockImplementation(async () => {
-        mkdirSync(join(projectDir, 'src'), { recursive: true });
-        writeFileSync(join(projectDir, '.env.local'), 'export const value = "user";\n');
-        return { decision: 'confirm', phrase: CONFIRM_PHRASE, reason: 'ok' };
-      }),
-      onUserEditConflict,
-    });
-    const { bus, events: busEvents } = makeBusRecorder();
-
-    const implementer = makeImplementer({
-      retry: vi.fn().mockImplementation(async ({ projectDir: runDir }: { projectDir: string }) => {
-        mkdirSync(join(runDir, 'src'), { recursive: true });
-        writeFileSync(join(runDir, '.env.local'), 'export const value = "retry";\n');
-        return { success: true, output: 'fixed', usage: { inputTokens: 20, outputTokens: 10 } };
-      }),
-    });
-    const { planner, prompts } = consultPlanner([]);
-
-    const { result, state: finalState } = await handleRetryAndEscalation({
-      wctx: makeWctx({
-        projectDir,
-        sessionId,
-        config: makeNoValidationConfig({
-          approval: {
-            enabled: true,
-            feedRejectionsToPlanner: false,
-          },
-        }),
-        planner,
-        callbacks,
-        implementer,
-        bus,
-      }),
-      task,
-      initialError: 'validation failed',
-      currentState: state,
-    });
-
-    expect(result.completed).toBe(false);
-    expect(prompts).toEqual([]);
-    expect(onUserEditConflict).not.toHaveBeenCalled();
-    expect(finalState.pendingRecovery).toMatchObject({
-      reason: 'approval-promotion-conflict',
-      taskId: 'T001',
-      files: ['.env.local'],
-    });
-    expect(busEvents.find((event) => event.type === 'paused_external_changes')).toMatchObject({
-      type: 'paused_external_changes',
-      selectedAction: 'pause',
-      conflict: {
-        kind: 'changed-during-approval-promotion',
-        files: ['.env.local'],
-      },
-    });
   });
 });

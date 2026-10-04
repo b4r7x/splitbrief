@@ -14,8 +14,6 @@ import {
   routeBiggerProfileFromDecision,
   runnerHaltRow,
 } from '../recovery/builders/task.js';
-import { isExtractedCodeApprovalRaceError } from '../../implementers/pipeline/extracted-code.js';
-import { handleApprovalTimeUserEditConflict } from '../escalation/approval-conflict.js';
 import { boundedHandBack } from '../escalation/types.js';
 import { retryAndRecord } from './retry.js';
 import { runChainAnalysisSafe } from './analyze-drift.js';
@@ -46,7 +44,7 @@ export async function handleFailedImplementation(opts: {
   let state = opts.state;
 
   if (implState.preApplyApprovalDenied) {
-    implState.workspace?.cleanup();
+    implState.workspace.cleanup();
     return state;
   }
   // A bundle that stopped mid-application already changed the target. Retrying
@@ -62,14 +60,12 @@ export async function handleFailedImplementation(opts: {
       state,
       task,
       result: applyResult,
-      ...(implState.workspace === undefined
-        ? {}
-        : { workspacePath: implState.workspace.projectDir }),
+      workspacePath: implState.workspace.projectDir,
     });
     setTrackedState(state);
     return state;
   }
-  implState.workspace?.cleanup();
+  implState.workspace.cleanup();
   // A signed-out implementer never recovers by retrying, and escalating
   // would silently turn the run into planner-priced work — halt loudly
   // with the login command instead.
@@ -154,16 +150,6 @@ export async function handleFailedImplementation(opts: {
     });
     publishError({ bus: wctx.bus, phase: state.phase, message: issue.message });
     return raisePendingRecovery(wctx, state, issue, setTrackedState);
-  }
-  if (isExtractedCodeApprovalRaceError(task.file, implState.implResult.error)) {
-    state = await handleApprovalTimeUserEditConflict({
-      ctx: wctx,
-      state,
-      task,
-      files: [task.file],
-      setTrackedState,
-    });
-    return state;
   }
   const outcome = implState.implResult.outcome;
   const handBack = boundedHandBack(implState.implResult.output);

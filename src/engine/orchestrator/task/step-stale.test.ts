@@ -11,6 +11,8 @@ import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplStateWithMetadata as implementingState } from '#testing/helpers/factories/workflow-state.js';
 import { consultCallAnswering } from '#testing/helpers/typed-planner.js';
+import { createTestGitRepo } from '#testing/helpers/git.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import {
   cleanupTaskProjects,
   makeTaskWorkflowContext as makeWorkflowContext,
@@ -21,10 +23,16 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { EventBus } from '../../events/types.js';
 import type { Planner } from '../../planners/types.js';
+import { hashTaskBrief } from '../../brief-hash.js';
+import { type ContinuationHolder, createContinuationHolder } from '../continuation.js';
 import { inputHashesNow, specInputFiles } from './stale-inputs.js';
 import { runSingleTask } from './step.js';
 
-afterEach(cleanupTaskProjects);
+const workspaceDirs: string[] = [];
+afterEach(() => {
+  cleanupTaskProjects();
+  for (const dir of workspaceDirs.splice(0)) cleanupTempDir(dir);
+});
 
 const SHARED = 'export const shared = 1;\n';
 const EDITED_SHARED = 'export const shared = 2;\n';
@@ -101,15 +109,19 @@ function runForTask(opts: {
   planner: Planner;
   implementer?: ReturnType<typeof makeImplementer>;
   bus?: EventBus;
+  workspaceDir?: string;
+  continuation?: ContinuationHolder;
 }): Promise<WorkflowState> {
   return runSingleTask({
     wctx: makeWorkflowContext({
       projectDir: opts.projectDir,
       sessionId: opts.sessionId,
+      ...(opts.workspaceDir !== undefined && { workspaceDir: opts.workspaceDir }),
       planner: opts.planner,
       implementer: opts.implementer ?? failingImplementer(),
       callbacks: makeCallbacks().callbacks,
       ...(opts.bus !== undefined && { bus: opts.bus }),
+      ...(opts.continuation !== undefined && { continuation: opts.continuation }),
     }),
     task: opts.task,
     index: opts.state.currentTaskIndex,
@@ -178,6 +190,67 @@ describe('runSingleTask — stale refresh', () => {
     const after = typed.mock.calls.length;
 
     expect(after).toBe(before);
+  });
+
+  it('stale refresh hashes the workspace, not the checkout', async () => {
+    const { projectDir, sessionId } = setupProject({ 'src/shared.ts': SHARED });
+    const workspaceDir = createTempDir('step-stale-workspace');
+    workspaceDirs.push(workspaceDir);
+    createTestGitRepo(workspaceDir, { 'src/shared.ts': SHARED });
+    const task = staleTask(projectDir);
+    const state = implementingState([task, trailingTask()]);
+    const typed = consultCallAnswering(() => guidanceAnswer('Read the new shared file first.'));
+    const planner = makePlanner({ typedCall: typed });
+
+    writeFileSync(join(projectDir, 'src/shared.ts'), EDITED_SHARED);
+    const checkoutEdited = await runForTask({
+      projectDir,
+      sessionId,
+      task,
+      state,
+      planner,
+      workspaceDir,
+    });
+    expect(staleConsultsOf(checkoutEdited)).toHaveLength(0);
+
+    writeFileSync(join(workspaceDir, 'src/shared.ts'), EDITED_OTHER);
+    const workspaceEdited = await runForTask({
+      projectDir,
+      sessionId,
+      task,
+      state: redispatchState(checkoutEdited, 'T002'),
+      planner,
+      workspaceDir,
+    });
+    expect(staleConsultsOf(workspaceEdited)).toHaveLength(1);
+    expect(taskIn(workspaceEdited, 'T002').inputHashes?.['src/shared.ts']).toBe(
+      inputHashesNow(workspaceDir, ['src/shared.ts'])['src/shared.ts'],
+    );
+  });
+
+  it('a resumed cut attempt is not stale against the output it left in the workspace', async () => {
+    const { projectDir, sessionId } = setupProject({ 'src/shared.ts': SHARED });
+    const task = staleTask(projectDir);
+    const state = implementingState([task, trailingTask()]);
+    const typed = consultCallAnswering(() => guidanceAnswer('Read the new shared file first.'));
+    const planner = makePlanner({ typedCall: typed });
+    writeFileSync(join(projectDir, 'src/b.ts'), 'export const partial = true;\n');
+
+    const resumed = await runForTask({
+      projectDir,
+      sessionId,
+      task,
+      state,
+      planner,
+      continuation: createContinuationHolder({
+        step: { kind: 'brief', taskId: task.id, attempt: state.attempt },
+        keepWorkspace: true,
+        briefFingerprint: hashTaskBrief([task]),
+      }),
+    });
+
+    expect(staleConsultsOf(resumed)).toHaveLength(0);
+    expect(typed).not.toHaveBeenCalled();
   });
 
   it('does not consult the same revision twice after guidance refreshed its hashes', async () => {

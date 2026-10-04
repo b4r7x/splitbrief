@@ -12,6 +12,7 @@ import { assertNever } from '../../../utils/type-guards.js';
 const REVIEW_FAILED_ACTIONS = [
   'retry-same-worker',
   'revise',
+  'accept-as-is',
   'pause-run',
   'end-run',
 ] as const satisfies readonly RecoveryAction[];
@@ -116,6 +117,18 @@ const DEPENDENCY_BLOCKED_ACTIONS = [
   'pause-run',
   'end-run',
 ] as const satisfies readonly RecoveryAction[];
+/** Apply re-runs after the owner resolves workspace files, pauses or ends; no task to skip or seat to change. */
+const APPLY_ACTIONS = [
+  'retry-same-worker',
+  'pause-run',
+  'end-run',
+] as const satisfies readonly RecoveryAction[];
+const APPLY_PARTIAL_ACTIONS = [
+  'retry-same-worker',
+  'restore-backup',
+  'pause-run',
+  'end-run',
+] as const satisfies readonly RecoveryAction[];
 
 function copyActions(actions: readonly RecoveryAction[]): RecoveryAction[] {
   return [...actions];
@@ -123,6 +136,10 @@ function copyActions(actions: readonly RecoveryAction[]): RecoveryAction[] {
 
 export function allowedActionsForReason(reason: RecoveryReason): RecoveryAction[] {
   switch (reason) {
+    case 'apply-conflict':
+      return copyActions(APPLY_ACTIONS);
+    case 'apply-partial':
+      return copyActions(APPLY_PARTIAL_ACTIONS);
     case 'user-edit-conflict':
     case 'approval-promotion-conflict':
       return copyActions(CONFLICT_RECOVERY_ACTIONS);

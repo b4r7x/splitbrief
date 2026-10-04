@@ -12,6 +12,23 @@ describe('allowedActionsForReason', () => {
     ]);
   });
 
+  it('apply-conflict re-runs Apply, pauses or ends the run, and has no task to skip', () => {
+    expect(allowedActionsForReason('apply-conflict')).toEqual([
+      'retry-same-worker',
+      'pause-run',
+      'end-run',
+    ]);
+  });
+
+  it('apply-partial also offers the restore from the Apply backup', () => {
+    expect(allowedActionsForReason('apply-partial')).toEqual([
+      'retry-same-worker',
+      'restore-backup',
+      'pause-run',
+      'end-run',
+    ]);
+  });
+
   it('approval-denied shares the scope-violation action set', () => {
     expect(allowedActionsForReason('approval-denied')).toEqual(
       allowedActionsForReason('scope-violation'),
@@ -112,10 +129,11 @@ describe('allowedActionsForReason', () => {
     );
   });
 
-  it('review-failed revises, pauses, ends, or re-issues a review that reached no verdict', () => {
+  it('review-failed revises, accepts as is, pauses, ends, or re-issues a review that reached no verdict', () => {
     expect(allowedActionsForReason('review-failed')).toEqual([
       'retry-same-worker',
       'revise',
+      'accept-as-is',
       'pause-run',
       'end-run',
     ]);

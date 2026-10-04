@@ -5,6 +5,7 @@ import {
   makeCallbacks,
   makeImplementer,
   makeBusRecorder,
+  openRunWorkspace,
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -18,6 +19,9 @@ import { CONFIRM_PHRASE } from '../../../core/approval/types.js';
 import { createValidator } from '../validation/run.js';
 import { runSingleTask } from './step.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import type { ImplementerOptions } from '../../implementers/types.js';
+import { createSnapshot } from '../../snapshots/create.js';
+import { reconcileWorkspaceToBase } from '../isolation/acquisition.js';
 
 afterEach(cleanupTaskProjects);
 
@@ -33,7 +37,7 @@ describe('runSingleTask — approval gates', () => {
     const state = implementingState([task]);
 
     const implementer = makeImplementer({
-      implement: vi.fn().mockImplementation(async () => {
+      implement: vi.fn().mockImplementation(async ({ projectDir }: ImplementerOptions) => {
         mkdirSync(join(projectDir, 'src'), { recursive: true });
         writeFileSync(join(projectDir, 'src/hello.ts'), 'export const hello = 1;\n');
         writeFileSync(join(projectDir, 'src/unrelated.ts'), 'export const unrelated = true;\n');
@@ -44,8 +48,8 @@ describe('runSingleTask — approval gates', () => {
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
 
-    const result = await runSingleTask({
-      wctx: makeWorkflowContext({
+    const wctx = await openRunWorkspace(
+      makeWorkflowContext({
         projectDir,
         sessionId,
         callbacks,
@@ -57,6 +61,9 @@ describe('runSingleTask — approval gates', () => {
         }),
         validator: { ...createValidator(), runValidation },
       }),
+    );
+    const result = await runSingleTask({
+      wctx,
       task,
       index: 0,
       totalTasks: 1,
@@ -79,7 +86,9 @@ describe('runSingleTask — approval gates', () => {
       taskId: 'T001',
       files: ['src/unrelated.ts'],
     });
-    expect(readFileSync(join(projectDir, 'src/unrelated.ts'), 'utf-8')).toContain('unrelated');
+    expect(readFileSync(join(wctx.workspaceDir, 'src/unrelated.ts'), 'utf-8')).toContain(
+      'unrelated',
+    );
   });
 
   it('asks once for a protected write with approval off; a denial discards only that file', async () => {
@@ -88,7 +97,7 @@ describe('runSingleTask — approval gates', () => {
     const state = implementingState([task]);
 
     const implementer = makeImplementer({
-      implement: vi.fn().mockImplementation(async () => {
+      implement: vi.fn().mockImplementation(async ({ projectDir }: ImplementerOptions) => {
         mkdirSync(join(projectDir, 'src'), { recursive: true });
         writeFileSync(join(projectDir, 'src/hello.ts'), 'export const hello = 1;\n');
         writeFileSync(join(projectDir, '.env.local'), 'TOKEN=1\n');
@@ -99,8 +108,8 @@ describe('runSingleTask — approval gates', () => {
     const { callbacks } = makeCallbacks({ onTieredApproval });
     const { bus, events } = makeBusRecorder();
 
-    const result = await runSingleTask({
-      wctx: makeWorkflowContext({
+    const wctx = await openRunWorkspace(
+      makeWorkflowContext({
         projectDir,
         sessionId,
         callbacks,
@@ -111,6 +120,9 @@ describe('runSingleTask — approval gates', () => {
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         }),
       }),
+    );
+    const result = await runSingleTask({
+      wctx,
       task,
       index: 0,
       totalTasks: 1,
@@ -124,8 +136,8 @@ describe('runSingleTask — approval gates', () => {
     expect(onTieredApproval).toHaveBeenCalledWith(
       expect.objectContaining({ tier: 'confirm', actionDescription: 'write .env.local' }),
     );
-    expect(existsSync(join(projectDir, '.env.local'))).toBe(false);
-    expect(readFileSync(join(projectDir, 'src/hello.ts'), 'utf-8')).toBe(
+    expect(existsSync(join(wctx.workspaceDir, '.env.local'))).toBe(false);
+    expect(readFileSync(join(wctx.workspaceDir, 'src/hello.ts'), 'utf-8')).toBe(
       'export const hello = 1;\n',
     );
     expect(result.tasks[0]?.status).toBe('done');
@@ -148,7 +160,7 @@ describe('runSingleTask — approval gates', () => {
     const state = implementingState([task]);
 
     const implementer = makeImplementer({
-      implement: vi.fn().mockImplementation(async () => {
+      implement: vi.fn().mockImplementation(async ({ projectDir }: ImplementerOptions) => {
         mkdirSync(join(projectDir, 'src'), { recursive: true });
         writeFileSync(join(projectDir, 'src/a.ts'), 'export const a = 1;\n');
         writeFileSync(join(projectDir, 'package.json'), '{ "name": "a" }\n');
@@ -187,13 +199,13 @@ describe('runSingleTask — approval gates', () => {
     expect(result.tasks[0]?.status).toBe('done');
   });
 
-  it('does not claim to discard a protected write the user changed during the prompt', async () => {
+  it('discards the workspace protected write and preserves the checkout edit made during the prompt', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001', action: 'create', file: 'src/hello.ts' });
     const state = implementingState([task]);
 
     const implementer = makeImplementer({
-      implement: vi.fn().mockImplementation(async () => {
+      implement: vi.fn().mockImplementation(async ({ projectDir }: ImplementerOptions) => {
         mkdirSync(join(projectDir, 'src'), { recursive: true });
         writeFileSync(join(projectDir, 'src/hello.ts'), 'export const hello = 1;\n');
         writeFileSync(join(projectDir, '.env.local'), 'TOKEN=1\n');
@@ -207,8 +219,8 @@ describe('runSingleTask — approval gates', () => {
     const { callbacks } = makeCallbacks({ onTieredApproval });
     const { bus, events } = makeBusRecorder();
 
-    await runSingleTask({
-      wctx: makeWorkflowContext({
+    const wctx = await openRunWorkspace(
+      makeWorkflowContext({
         projectDir,
         sessionId,
         callbacks,
@@ -219,6 +231,9 @@ describe('runSingleTask — approval gates', () => {
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         }),
       }),
+    );
+    await runSingleTask({
+      wctx,
       task,
       index: 0,
       totalTasks: 1,
@@ -230,7 +245,10 @@ describe('runSingleTask — approval gates', () => {
 
     expect(readFileSync(join(projectDir, '.env.local'), 'utf-8')).toBe('TOKEN=2 # user edit\n');
     const error = events.find((e) => e.type === 'error');
-    expect(error?.message).toContain("SPLITBRIEF discarded this attempt's writes to src/hello.ts.");
+    expect(error?.message).toContain("SPLITBRIEF discarded this attempt's writes to .env.local.");
+    expect(readFileSync(join(wctx.workspaceDir, 'src/hello.ts'), 'utf8')).toBe(
+      'export const hello = 1;\n',
+    );
   });
 
   it('allows actual in-scope changed files to proceed', async () => {
@@ -244,7 +262,7 @@ describe('runSingleTask — approval gates', () => {
     const state = implementingState([task]);
 
     const implementer = makeImplementer({
-      implement: vi.fn().mockImplementation(async () => {
+      implement: vi.fn().mockImplementation(async ({ projectDir }: ImplementerOptions) => {
         mkdirSync(join(projectDir, 'src'), { recursive: true });
         writeFileSync(join(projectDir, 'src/hello.ts'), 'export const hello = "world";\n');
         return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
@@ -306,7 +324,7 @@ describe('runSingleTask — approval gates', () => {
     const state = implementingState([task]);
 
     const implementer = makeImplementer({
-      implement: vi.fn().mockImplementation(async () => {
+      implement: vi.fn().mockImplementation(async ({ projectDir }: ImplementerOptions) => {
         opts.mutate(projectDir);
         return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
       }),
@@ -314,21 +332,36 @@ describe('runSingleTask — approval gates', () => {
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
 
-    const result = await runSingleTask({
-      wctx: makeWorkflowContext({
-        projectDir,
-        sessionId,
-        callbacks,
-        implementer,
-        bus,
-        config: makeConfig({
-          approval: { enabled: true, feedRejectionsToPlanner: false },
-          validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        }),
-        ...(opts.runValidation === undefined
-          ? {}
-          : { validator: { ...createValidator(), runValidation: opts.runValidation } }),
+    const wctx = makeWorkflowContext({
+      projectDir,
+      sessionId,
+      callbacks,
+      implementer,
+      bus,
+      config: makeConfig({
+        approval: { enabled: true, feedRejectionsToPlanner: false },
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       }),
+      ...(opts.runValidation === undefined
+        ? {}
+        : { validator: { ...createValidator(), runValidation: opts.runValidation } }),
+    });
+    const base = await createSnapshot({
+      projectDir,
+      sessionId,
+      phase: 'manual',
+      name: 'workspace-base',
+    });
+    const workspace = await wctx.isolation.open({ config: wctx.config });
+    await reconcileWorkspaceToBase({
+      projectDir,
+      sessionId,
+      snapshotId: base.manifest.id,
+      workspaceDir: workspace.projectDir,
+      keep: workspace.keptFiles,
+    });
+    const result = await runSingleTask({
+      wctx,
       task,
       index: 0,
       totalTasks: 1,

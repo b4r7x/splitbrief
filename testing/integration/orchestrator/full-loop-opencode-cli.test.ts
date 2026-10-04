@@ -4,7 +4,11 @@ import { join } from 'node:path';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { REVIEW_FILE, SANDBOX_DIR, sessionDir } from '../../../src/core/paths.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
-import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeCallbacks,
+  makePlanner,
+  runWorkspaceDir,
+} from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { cleanupTempDir, createTempDir, normalizeMacTmpPath } from '#testing/helpers/temp-dir.js';
@@ -232,9 +236,9 @@ describe('full workflow OpenCode CLI implementer', { timeout: 90_000 }, () => {
     expect(runLog.args[0]).toBe('run');
     expect(runLog.args[runLog.args.length - 1]).toContain(requiredPromptText);
     expect(runLog.args).toEqual(expect.arrayContaining(['--model', 'opencode/test-cheap-model']));
-    expect(readFileSync(join(projectDir, targetFile), 'utf-8')).toContain(
-      'export const loop = "from-opencode-cli";',
-    );
+    expect(
+      readFileSync(join(runWorkspaceDir({ projectDir, sessionId }), targetFile), 'utf-8'),
+    ).toContain('export const loop = "from-opencode-cli";');
     expect(summary).toMatchObject({
       totalTasks: 1,
       completedByLocal: 1,

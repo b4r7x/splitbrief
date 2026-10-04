@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { isolationWorktreePath } from '../../../src/core/paths.js';
 import { execSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { CliImplementerConfig } from '../../../src/core/schemas/implementer-config.js';
 import type { Config } from '../../../src/core/schemas/config.js';
@@ -31,6 +32,7 @@ import {
   makePlanner,
   makeWctx,
   makeWorktreeIsolation,
+  runWorkspaceDir,
 } from '#testing/helpers/orchestrator-factories.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -92,7 +94,7 @@ function opencodeConfig(): CliImplementerConfig {
 const OPENCODE_STREAM = join(import.meta.dirname, '../../fixtures/opencode/stream-json.ndjson');
 
 /**
- * An opencode build whose first run announces a shell call reading the checkout,
+ * An opencode build whose first run announces a shell call writing into the checkout,
  * then keeps running: only the guard ends it before the minute is up. Every later
  * run writes the brief's file where it was started and ends on the captured
  * stream of a completed opencode run.
@@ -107,7 +109,7 @@ function installEscapingOpencodeShim(checkoutFile: string): void {
       type: 'tool',
       callID: 'call_1',
       tool: 'bash',
-      state: { status: 'running', input: { command: `cat ${checkoutFile}` } },
+      state: { status: 'running', input: { command: `printf x > ${checkoutFile}` } },
     },
   });
   writeFileSync(
@@ -171,12 +173,12 @@ describe('isolation halt through the orchestrator', { timeout: 90_000 }, () => {
     expect(state.pendingRecovery).toMatchObject({
       reason: 'implementer-left-isolation',
       taskId: 'T001',
-      message: `T001 left the isolation directory — OpenCode CLI read ${checkoutFile} (your checkout) with bash: cat ${checkoutFile}`,
+      message: `T001 left the isolation directory — OpenCode CLI wrote to ${checkoutFile} (your checkout) with bash: printf x > ${checkoutFile}`,
       availableActions: ['retry-same-worker', 'skip-current-task', 'pause-run', 'end-run'],
       recommendedAction: 'retry-same-worker',
     });
     expect(state.pendingRecovery?.details).toEqual([
-      `OpenCode CLI read ${checkoutFile} (your checkout) with bash: cat ${checkoutFile}`,
+      `OpenCode CLI wrote to ${checkoutFile} (your checkout) with bash: printf x > ${checkoutFile}`,
       'Nothing from this attempt was promoted.',
       'Worker profile: default',
     ]);
@@ -203,7 +205,13 @@ describe('isolation halt through the orchestrator', { timeout: 90_000 }, () => {
 
     expect(finished.state.pendingRecovery).toBeUndefined();
     expect(finished.state.tasks[0]?.status).toBe('done');
-    expect(readFileSync(join(projectDir, TARGET), 'utf8')).toBe(SOURCE);
+    expect(
+      readFileSync(
+        join(isolationWorktreePath(join(realpathSync(projectDir), '.git'), sessionId), TARGET),
+        'utf8',
+      ),
+    ).toBe(SOURCE);
+    expect(existsSync(join(projectDir, TARGET))).toBe(false);
   });
 
   describe('a direct writer that changes the checkout', () => {
@@ -334,7 +342,10 @@ describe('isolation halt through the orchestrator', { timeout: 90_000 }, () => {
       expect(calls).toHaveLength(2);
       expect(finished.pendingRecovery).toBeUndefined();
       expect(finished.tasks[0]?.status).toBe('done');
-      expect(readFileSync(join(projectDir, TARGET), 'utf8')).toBe(SOURCE);
+      expect(readFileSync(join(runWorkspaceDir({ projectDir, sessionId }), TARGET), 'utf8')).toBe(
+        SOURCE,
+      );
+      expect(existsSync(join(projectDir, TARGET))).toBe(false);
       expect(events.some((event) => event.type === 'task_completed')).toBe(true);
     });
 

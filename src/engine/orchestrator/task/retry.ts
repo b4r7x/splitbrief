@@ -106,7 +106,7 @@ export async function retryAndRecord(
       : transitionAndSave(wctx, opts.state, { type: 'COUNT_ATTEMPT', taskId: task.id });
   if (!taskStartSnapshot) {
     try {
-      taskStartSnapshot = await getChangedFilesSnapshot(wctx.projectDir);
+      taskStartSnapshot = await getChangedFilesSnapshot(wctx.workspaceDir);
     } catch (err) {
       publishError({
         bus: wctx.bus,

@@ -5,9 +5,16 @@ import type { ConsultRecord } from '../../../core/schemas/workflow.js';
 import { BOUNDS } from '../../../core/pipeline-spec/bounds.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { truncateByChars } from '../../../utils/truncate.js';
-import { buildPrompt, fenced, instructionsSection, type PromptPart } from './builder.js';
+import {
+  buildPrompt,
+  fenced,
+  instructionsSection,
+  workspaceReadInstructions,
+  type PromptPart,
+} from './builder.js';
 
 export type ConsultPromptInput = Readonly<{
+  workspaceDir: string;
   reason: ConsultReason;
   /** The run's plan: the criteria and checks every task serves. */
   plan: Plan | undefined;
@@ -189,7 +196,9 @@ export function buildConsultPrompt(input: ConsultPromptInput): string {
         },
         reasonSection(input),
         ...attemptLines(input),
-        instructionsSection(RESUME_CONTRACT),
+        instructionsSection(
+          `${RESUME_CONTRACT}\n\n${workspaceReadInstructions(input.workspaceDir)}`,
+        ),
       ],
     });
   }
@@ -212,7 +221,9 @@ export function buildConsultPrompt(input: ConsultPromptInput): string {
   if (input.otherTasks.length > 0) {
     sections.push({ heading: 'Other Tasks', body: otherTaskLines(input.otherTasks).join('\n') });
   }
-  sections.push(instructionsSection(CONSULT_CONTRACT));
+  sections.push(
+    instructionsSection(`${CONSULT_CONTRACT}\n\n${workspaceReadInstructions(input.workspaceDir)}`),
+  );
 
   return buildPrompt({
     title: 'Consult on a failing task',

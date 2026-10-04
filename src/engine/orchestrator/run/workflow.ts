@@ -235,13 +235,13 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
         message: `Isolation worktree unavailable; falling back to a staged copy: ${reason}`,
       });
     },
-    onRetained: (dir, purpose): void => {
+    onRetained: (dir): void => {
       const bus = wctx?.bus ?? workflowBus;
       if (!bus) return;
       publishWarning({
         bus,
         phase: trackedState?.phase ?? workflowPhase ?? createInitialState(feature).phase,
-        message: retainedWorkspaceNotice(dir, purpose),
+        message: retainedWorkspaceNotice(dir),
       });
     },
     warningPublisher: (message: string): void => {
@@ -416,7 +416,10 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     const stoppedState = trackedState;
     if (stoppedState !== undefined) {
       if (signalCancellationReason !== undefined) {
-        const closure = closeRunIfOpen({ projectDir, sessionId }, stoppedState);
+        const closure = await closeRunIfOpen(
+          { projectDir, sessionId, bus: wctx?.bus ?? workflowBus },
+          stoppedState,
+        );
         trackedState = closure.state;
         if (result !== undefined && result.phase !== closure.state.phase) {
           result = { ...result, phase: closure.state.phase };

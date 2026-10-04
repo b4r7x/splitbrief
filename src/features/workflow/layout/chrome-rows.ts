@@ -138,6 +138,7 @@ export const RAIL_SHORT_LABEL: Record<RailStage, string> = {
   plan: 'Pln',
   build: 'Bld',
   review: 'Rvw',
+  apply: 'Apl',
 };
 
 export function railFormBLabel(state: RailStageState, options: { short: boolean }): string {

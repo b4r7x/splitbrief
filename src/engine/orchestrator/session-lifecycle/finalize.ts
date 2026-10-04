@@ -5,7 +5,7 @@ import {
   clearActiveReceipt,
   type ActiveSessionReceipt,
 } from '../../../core/sessions/active-pointer.js';
-import { readSession, saveSummary } from '../../../core/sessions/io.js';
+import { readSession, rowFor, saveSummary } from '../../../core/sessions/io.js';
 import { deriveRunStatus, type RunStatus } from '../../../core/sessions/run-status.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
@@ -56,13 +56,7 @@ function sessionFor(opts: SaveFinalSessionOpts, status: RunStatus): Session {
     stateVersion: WORKFLOW_STATE_VERSION,
     ...(opts.state?.phase !== undefined && { phase: opts.state.phase }),
   };
-  if (status.kind === 'closed') {
-    return status.as === 'complete'
-      ? { ...base, status: 'complete', summary: opts.summary }
-      : { ...base, status: 'ended', summary: opts.summary };
-  }
-  if (status.kind === 'running') return { ...base, status: 'open', summary: opts.summary };
-  return { ...base, status: 'open', summary: opts.summary, stop: status.stop.kind };
+  return rowFor(base, status, opts.summary);
 }
 
 /**

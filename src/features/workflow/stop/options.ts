@@ -55,7 +55,9 @@ function wrapClauses(text: string, width: number): string[] {
   return [...lines, current];
 }
 
-export function stopMenuLayout(rows: readonly StopRow[], cols: number) {
+export function stopMenuLayout<
+  Row extends { readonly label: string; readonly consequence: string },
+>(rows: readonly Row[], cols: number) {
   // The sheet stacks on the composer inside the gutter, so it takes the composer's width and the
   // two boxes share both edges.
   const width = getChromeContentWidth(cols);
@@ -131,23 +133,34 @@ export function readStopMenuRows(): StopRow[] {
   const atRest = route.screen === 'workflow' && route.execution.kind === 'at-rest';
   if (stop.phase === 'parked' || stop.phase === 'ended' || atRest) {
     const closed = stop.phase === 'ended' || (atRest && route.run.status.kind === 'closed');
+    // A ready run cannot be continued: Apply and Discard live in its result menu, and End run
+    // discards it the same way.
+    const ready = atRest && route.run.status.kind === 'ready-to-apply';
     return [
-      ...(!closed
+      ...(ready
         ? [
-            {
-              id: 'resume' as const,
-              label: 'Resume',
-              consequence: 'continue this run; keep the unsent draft',
-            },
             {
               id: 'end-run' as const,
               label: 'End run',
-              consequence: briefsHaveRun(tasksStore.get())
-                ? 'close this run; keep changes'
-                : 'close this run',
+              consequence: 'discard the result; save its changes in run.patch',
             },
           ]
-        : []),
+        : !closed
+          ? [
+              {
+                id: 'resume' as const,
+                label: 'Resume',
+                consequence: 'continue this run; keep the unsent draft',
+              },
+              {
+                id: 'end-run' as const,
+                label: 'End run',
+                consequence: briefsHaveRun(tasksStore.get())
+                  ? 'close this run; keep changes'
+                  : 'close this run',
+              },
+            ]
+          : []),
       {
         id: 'leave',
         label: 'Back to sessions',

@@ -20,26 +20,26 @@ import {
   isolationWorktreeRoot,
   SANDBOX_DIR,
   SESSIONS_DIR,
+  sessionDir,
   SPLITBRIEF_DIR,
   STATE_FILE,
 } from '../../../core/paths.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { createGitClient } from '../../../lib/git/client.js';
-import {
-  getChangedFilesSinceSnapshot,
-  getChangedFilesSnapshot,
-} from '../approval/file-snapshots/capture.js';
-import { gateAndPromoteChangedFiles } from '../approval/gate-and-promote.js';
+import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
+import { gateAttemptChanges } from '../task/attempt-gate.js';
 import { createRunnerSandboxEnv } from '../../runners/sandbox-env.js';
 import { sandboxCredentialValues } from '../../runners/sandbox-credential-values.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
-import { makeBusRecorder, makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
+import { makeCallbacks, makeWctx } from '#testing/helpers/orchestrator-factories.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { cleanupTempDir as removeTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { createSnapshot } from '../../snapshots/create.js';
+import { reconcileWorkspaceToBase } from './acquisition.js';
 import { createRunIsolation } from './create.js';
-import { workspaceOwner } from './retention.js';
+import { removeRunWorkspace } from './remove-worktree.js';
+import { readWorkspaceRecord } from './retention.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
@@ -60,7 +60,7 @@ const REAL_OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 let testStateHome: string;
 
 function acquireDirect(handle: ReturnType<typeof createRunIsolation>) {
-  return handle.acquire({ role: 'implementer', config, writesFiles: 'direct' });
+  return handle.acquire({ role: 'implementer', config });
 }
 
 const isolationRoot = (dir: string): string =>
@@ -124,7 +124,7 @@ afterEach(() => {
 });
 
 describe('createRunIsolation', () => {
-  it('hands two acquisitions in one run the same working directory, carrying unpromoted work as output', {
+  it('hands two acquisitions in one run the same working directory, with an attempt snapshot for each call', {
     timeout: 60_000,
   }, async () => {
     const dir = createTempDir('isolation-two-acq');
@@ -151,76 +151,8 @@ describe('createRunIsolation', () => {
         'b.txt',
       ]);
       expect(await getChangedFilesSinceSnapshot(second.projectDir, second.snapshot)).toEqual([
-        'a.txt',
         'b.txt',
       ]);
-    } finally {
-      cleanupTempDir(dir);
-    }
-  });
-
-  it('a fresh acquisition discards leftovers the project never received', {
-    timeout: 60_000,
-  }, async () => {
-    const dir = createTempDir('isolation-fresh');
-    try {
-      createTestGitRepo(dir, { 'README.md': '# test\n', 'src.txt': 'v1\n' });
-      const warnings: string[] = [];
-      const handle = createRunIsolation({
-        projectDir: dir,
-        sessionId: SESSION_ID,
-        strategy: 'worktree',
-        onFallback: () => {},
-        onRetained: () => {},
-        warningPublisher: (message) => warnings.push(message),
-      });
-
-      const first = await acquireDirect(handle);
-      writeFileSync(join(first.projectDir, 'src.txt'), 'v2\n');
-      writeFileSync(join(first.projectDir, 'new.txt'), 'N\n');
-
-      const retry = await acquireDirect(handle);
-      expect(readFileSync(join(retry.projectDir, 'src.txt'), 'utf8')).toBe('v2\n');
-
-      const fresh = await handle.acquire({
-        role: 'implementer',
-        config,
-        writesFiles: 'direct',
-        fresh: true,
-      });
-      expect(readFileSync(join(fresh.projectDir, 'src.txt'), 'utf8')).toBe('v1\n');
-      expect(existsSync(join(fresh.projectDir, 'new.txt'))).toBe(false);
-      expect(warnings).toEqual([
-        'Discarded 2 unpromoted change(s) an earlier attempt left in the isolation worktree: new.txt, src.txt',
-      ]);
-    } finally {
-      cleanupTempDir(dir);
-    }
-  });
-
-  it('hands an extracted-code implementer a temporary copy even when the strategy is worktree', {
-    timeout: 60_000,
-  }, async () => {
-    const dir = createTempDir('isolation-extracted');
-    try {
-      createTestGitRepo(dir, { 'README.md': '# test\n' });
-      const handle = createRunIsolation({
-        projectDir: dir,
-        sessionId: SESSION_ID,
-        strategy: 'worktree',
-        onFallback: () => {},
-        onRetained: () => {},
-      });
-
-      const ws = await handle.acquire({
-        role: 'implementer',
-        config,
-        writesFiles: 'extracted-code',
-      });
-
-      expect(ws.projectDir).not.toBe(dir);
-      expect(ws.snapshot.baselineFileHashes).toBeDefined();
-      expect(existsSync(isolationRoot(dir))).toBe(false);
     } finally {
       cleanupTempDir(dir);
     }
@@ -395,21 +327,17 @@ describe('createRunIsolation', () => {
       );
       expect(await getChangedFilesSinceSnapshot(first.projectDir, first.snapshot)).toEqual([]);
 
-      // A new process continues the run on the worktree the first one left behind,
-      // so no seed baseline of this process describes the link.
       const continued = isolation();
       const fresh = await continued.acquire({
         role: 'implementer',
         config,
-        writesFiles: 'direct',
-        fresh: true,
       });
       expect(fresh.projectDir).toBe(first.projectDir);
       await continued.dispose();
 
       expect(reasons).toEqual([]);
       expect(retained).toEqual([]);
-      expect(existsSync(isolationWorktree(dir))).toBe(false);
+      expect(existsSync(isolationWorktree(dir))).toBe(true);
     } finally {
       cleanupTempDir(dir);
     }
@@ -508,7 +436,6 @@ describe('createRunIsolation', () => {
         const first = await handle.acquire({
           role: 'implementer',
           config: twoCli,
-          writesFiles: 'direct',
         });
         const codexAuth = join(first.sandboxEnv.HOME as string, '.codex', 'auth.json');
         expect(existsSync(codexAuth)).toBe(true);
@@ -516,12 +443,10 @@ describe('createRunIsolation', () => {
         const planner = await handle.acquire({
           role: 'planner',
           config: twoCli,
-          writesFiles: 'direct',
         });
         const second = await handle.acquire({
           role: 'implementer',
           config: twoCli,
-          writesFiles: 'direct',
         });
 
         expect(existsSync(join(planner.sandboxEnv.HOME as string, '.copilot', 'config.json'))).toBe(
@@ -560,12 +485,11 @@ describe('createRunIsolation', () => {
         const implementer = await handle.acquire({
           role: 'implementer',
           config: apiPlanner,
-          writesFiles: 'direct',
         });
         const codexAuth = join(implementer.sandboxEnv.HOME as string, '.codex', 'auth.json');
         expect(existsSync(codexAuth)).toBe(true);
 
-        await handle.acquire({ role: 'planner', config: apiPlanner, writesFiles: 'direct' });
+        await handle.acquire({ role: 'planner', config: apiPlanner });
 
         expect(readFileSync(codexAuth, 'utf8')).toBe(CODEX_STATE);
       } finally {
@@ -595,7 +519,6 @@ describe('createRunIsolation', () => {
         const implementer = await handle.acquire({
           role: 'implementer',
           config: SAME_TOOL_SPLIT_CHANNELS,
-          writesFiles: 'direct',
         });
         const codexAuth = join(implementer.sandboxEnv.HOME as string, '.codex', 'auth.json');
         expect(existsSync(codexAuth)).toBe(true);
@@ -603,7 +526,6 @@ describe('createRunIsolation', () => {
         const planner = await handle.acquire({
           role: 'planner',
           config: SAME_TOOL_SPLIT_CHANNELS,
-          writesFiles: 'direct',
         });
 
         expect(readFileSync(codexAuth, 'utf8')).toBe(CODEX_STATE);
@@ -636,12 +558,10 @@ describe('createRunIsolation', () => {
         const planner = await handle.acquire({
           role: 'planner',
           config: SAME_TOOL_SPLIT_CHANNELS,
-          writesFiles: 'direct',
         });
         const implementer = await handle.acquire({
           role: 'implementer',
           config: SAME_TOOL_SPLIT_CHANNELS,
-          writesFiles: 'direct',
         });
 
         expect(existsSync(join(planner.sandboxEnv.HOME as string, '.codex', 'auth.json'))).toBe(
@@ -681,7 +601,6 @@ describe('createRunIsolation', () => {
             tool: 'codex',
             authChannel: 'session',
           }),
-          writesFiles: 'direct',
         });
         const copilotProfile = await handle.acquire({
           role: 'implementer',
@@ -690,7 +609,6 @@ describe('createRunIsolation', () => {
             tool: 'copilot',
             authChannel: 'session',
           }),
-          writesFiles: 'direct',
         });
 
         expect(copilotProfile.sandboxEnv).not.toBe(codexProfile.sandboxEnv);
@@ -734,7 +652,7 @@ describe('createRunIsolation', () => {
     }
   });
 
-  it('removes the worktree, its branch and the emptied repository directory when nothing unpromoted remains', {
+  it('keeps the worktree and branch after all work is promoted', {
     timeout: 60_000,
   }, async () => {
     const dir = createTempDir('isolation-retain-accepted');
@@ -758,15 +676,15 @@ describe('createRunIsolation', () => {
       await handle.dispose();
 
       expect(retained).toEqual([]);
-      expect(existsSync(isolationWorktree(dir))).toBe(false);
-      expect(existsSync(isolationRoot(dir))).toBe(false);
-      expect((await createGitClient(dir).branch()).all).not.toContain(`splitbrief/${SLUG}`);
+      expect(existsSync(isolationWorktree(dir))).toBe(true);
+      expect(existsSync(isolationRoot(dir))).toBe(true);
+      expect((await createGitClient(dir).branch()).all).toContain(`splitbrief/${SLUG}`);
     } finally {
       cleanupTempDir(dir);
     }
   });
 
-  it('removes the worktree when a seeded project file keeps changing during the run', {
+  it('keeps the workspace when the checkout log changes during the run', {
     timeout: 60_000,
   }, async () => {
     const dir = createTempDir('isolation-live-log');
@@ -794,8 +712,8 @@ describe('createRunIsolation', () => {
       await handle.dispose();
 
       expect(retained).toEqual([]);
-      expect(existsSync(isolationWorktree(dir))).toBe(false);
-      expect((await createGitClient(dir).branch()).all).not.toContain(`splitbrief/${SLUG}`);
+      expect(existsSync(isolationWorktree(dir))).toBe(true);
+      expect((await createGitClient(dir).branch()).all).toContain(`splitbrief/${SLUG}`);
     } finally {
       cleanupTempDir(dir);
     }
@@ -829,14 +747,14 @@ describe('createRunIsolation', () => {
       const stderrText = stderrSpy.mock.calls.map((call) => String(call[0])).join('');
       expect(stderrText).not.toContain('uncommitted file');
       expect(warningPublisher).not.toHaveBeenCalled();
-      expect(existsSync(isolationWorktree(dir))).toBe(false);
+      expect(existsSync(isolationWorktree(dir))).toBe(true);
     } finally {
       stderrSpy.mockRestore();
       cleanupTempDir(dir);
     }
   });
 
-  it('dispose routes the removal warning through the injected publisher', {
+  it('dispose leaves a workspace with a live session without removal warnings', {
     timeout: 60_000,
   }, async () => {
     const dir = createTempDir('isolation-publisher-wiring');
@@ -861,13 +779,10 @@ describe('createRunIsolation', () => {
 
       await handle.dispose();
 
-      expect(warningPublisher).toHaveBeenCalledOnce();
-      expect(String(warningPublisher.mock.calls[0]?.[0])).toContain(
-        `live session ${liveSessionId}`,
-      );
+      expect(warningPublisher).not.toHaveBeenCalled();
       const stderrText = stderrSpy.mock.calls.map((call) => String(call[0])).join('');
       expect(stderrText).not.toContain('live session');
-      expect(existsSync(isolationWorktree(dir))).toBe(false);
+      expect(existsSync(isolationWorktree(dir))).toBe(true);
     } finally {
       stderrSpy.mockRestore();
       cleanupTempDir(dir);
@@ -895,7 +810,7 @@ describe('createRunIsolation', () => {
 
       await handle.dispose();
 
-      expect(retained).toEqual([ws.projectDir]);
+      expect(retained).toEqual([]);
       expect(existsSync(isolationWorktree(dir))).toBe(true);
     } finally {
       cleanupTempDir(dir);
@@ -950,7 +865,7 @@ describe('createRunIsolation', () => {
           stderrSpy.mockRestore();
         }
 
-        expect(retained).toEqual([ws.projectDir]);
+        expect(retained).toEqual([]);
         expect(readlinkSync(join(dir, '.claude', 'skills', 'current'))).toBe('../../skills/a');
       } finally {
         cleanupTempDir(dir);
@@ -985,13 +900,14 @@ describe('createRunIsolation', () => {
       mkdirSync(npmCache, { recursive: true });
       writeFileSync(join(npmCache, 'cached-package.tgz'), 'cached\n');
       writeFileSync(join(ws.projectDir, 'unpromoted.txt'), 'work\n');
+      await ws.retain?.();
 
       await handle.dispose();
 
       expect(retained).toEqual([ws.projectDir]);
-      expect(cacheExistedAtAnnouncement).toBe(false);
-      expect(existsSync(join(npmCache, 'cached-package.tgz'))).toBe(false);
-      expect(existsSync(npmCache)).toBe(false);
+      expect(cacheExistedAtAnnouncement).toBe(true);
+      expect(existsSync(join(npmCache, 'cached-package.tgz'))).toBe(true);
+      expect(existsSync(npmCache)).toBe(true);
       expect(existsSync(join(ws.projectDir, 'unpromoted.txt'))).toBe(true);
       expect(existsSync(isolationWorktree(dir))).toBe(true);
       expect((await createGitClient(dir).branch()).all).toContain(`splitbrief/${SLUG}`);
@@ -1000,7 +916,7 @@ describe('createRunIsolation', () => {
     }
   });
 
-  it('discards a gate-denied task from the worktree, leaving nothing to retain', {
+  it('discards a gate-denied task from the worktree, keeping the run workspace', {
     timeout: 60_000,
   }, async () => {
     const dir = createTempDir('isolation-gate-denied');
@@ -1015,35 +931,34 @@ describe('createRunIsolation', () => {
         onRetained: (worktreeDir) => retained.push(worktreeDir),
       });
 
-      const taskStartSnapshot = await getChangedFilesSnapshot(dir);
       const ws = await acquireDirect(handle);
       writeFileSync(join(ws.projectDir, 'package.json'), '{"denied":true}\n');
       writeFileSync(join(ws.projectDir, '.env.local'), 'EXTRA=1\n');
 
       const task = makeTask({ id: 'T001', file: 'src/main.ts' });
-      const outcome = await gateAndPromoteChangedFiles({
-        task,
-        state: makeImplState([task]),
-        projectDir: dir,
-        sessionId: SESSION_ID,
-        bus: makeBusRecorder().bus,
-        callbacks: makeCallbacks({
-          onTieredApproval: vi.fn().mockResolvedValue({ decision: 'deny', reason: 'test' }),
-        }).callbacks,
-        config: makeNoValidationConfig({
-          approval: {
-            enabled: true,
-            feedRejectionsToPlanner: false,
-          },
+      const outcome = await gateAttemptChanges({
+        wctx: makeWctx({
+          projectDir: dir,
+          sessionId: SESSION_ID,
+          isolation: handle,
+          callbacks: makeCallbacks({
+            onTieredApproval: vi.fn().mockResolvedValue({ decision: 'deny', reason: 'test' }),
+          }).callbacks,
+          config: makeNoValidationConfig({
+            approval: {
+              enabled: true,
+              feedRejectionsToPlanner: false,
+            },
+          }),
         }),
+        task,
+        phase: 'implementing',
         workspace: ws,
-        taskStartSnapshot,
+        preApprovedFiles: [],
         dependsOnFiles: [],
-        cleanup: ws.cleanup,
-        handleConflict: async (s) => s,
         onApproved: () => {},
       });
-      expect(outcome.outcome).toBe('gate-denied');
+      expect(outcome.outcome).toBe('denied');
 
       // The next acquisition observes the worktree the denial left behind.
       const next = await acquireDirect(handle);
@@ -1053,13 +968,13 @@ describe('createRunIsolation', () => {
       await handle.dispose();
 
       expect(retained).toEqual([]);
-      expect(existsSync(isolationWorktree(dir))).toBe(false);
+      expect(existsSync(isolationWorktree(dir))).toBe(true);
     } finally {
       cleanupTempDir(dir);
     }
   });
 
-  it('puts a seeded project symlink back on the fresh acquisition after its promotion conflicted', {
+  it('puts a seeded project symlink back on the attempt cleanup', {
     timeout: 60_000,
   }, async () => {
     const dir = createTempDir('isolation-link-conflict-fresh');
@@ -1075,36 +990,16 @@ describe('createRunIsolation', () => {
         onRetained: () => {},
       });
 
-      const taskStartSnapshot = await getChangedFilesSnapshot(dir);
       const ws = await acquireDirect(handle);
       const link = join(ws.projectDir, '.claude', 'skills', 'current');
       rmSync(link);
       symlinkSync('../../skills/b', link, 'dir');
-      const task = makeTask({ id: 'T001', file: '.claude/skills/current' });
-      const outcome = await gateAndPromoteChangedFiles({
-        task,
-        state: makeImplState([task]),
-        projectDir: dir,
-        sessionId: SESSION_ID,
-        bus: makeBusRecorder().bus,
-        callbacks: makeCallbacks().callbacks,
-        config: makeNoValidationConfig({
-          approval: { enabled: false, feedRejectionsToPlanner: false },
-        }),
-        workspace: ws,
-        taskStartSnapshot,
-        dependsOnFiles: [],
-        cleanup: ws.cleanup,
-        handleConflict: async (s) => s,
-        onApproved: () => {},
-      });
-      expect(outcome.outcome).toBe('promote-conflict');
+      expect(readlinkSync(join(dir, '.claude', 'skills', 'current'))).toBe('../../skills/a');
 
+      ws.cleanup();
       const next = await handle.acquire({
         role: 'implementer',
         config,
-        writesFiles: 'direct',
-        fresh: true,
       });
       expect(readlinkSync(join(next.projectDir, '.claude', 'skills', 'current'))).toBe(
         '../../skills/a',
@@ -1121,223 +1016,59 @@ describe('createRunIsolation', () => {
     expect(readFileSync(join(root, 'src', 'app.ts'), 'utf8')).toBe('export const app = true;\n');
   }
 
-  it.each([{ outcome: 'promote-conflict', approval: false, fresh: true }])(
-    'keeps worker symlinks of a $outcome task out of the checkout and out of the next attempt',
-    { timeout: 60_000 },
-    async ({ outcome, approval, fresh }) => {
-      const dir = createTempDir('isolation-worker-links');
-      try {
-        createTestGitRepo(dir, {
-          'src/app.ts': 'export const app = true;\n',
-          'src/other.ts': 'export const other = true;\n',
-        });
-        const retained: string[] = [];
-        const handle = createRunIsolation({
-          projectDir: dir,
-          sessionId: SESSION_ID,
-          strategy: 'worktree',
-          onFallback: () => {},
-          onRetained: (worktreeDir) => retained.push(worktreeDir),
-        });
-
-        const taskStartSnapshot = await getChangedFilesSnapshot(dir);
-        const ws = await acquireDirect(handle);
-        // The worker adds a link where nothing was, and puts a link where a file was.
-        symlinkSync('app.ts', join(ws.projectDir, 'src', 'alias.ts'));
-        rmSync(join(ws.projectDir, 'src', 'app.ts'));
-        symlinkSync('other.ts', join(ws.projectDir, 'src', 'app.ts'));
-        const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-        try {
-          const task = makeTask({ id: 'T001', file: 'src/app.ts' });
-          const result = await gateAndPromoteChangedFiles({
-            task,
-            state: makeImplState([task]),
-            projectDir: dir,
-            sessionId: SESSION_ID,
-            bus: makeBusRecorder().bus,
-            callbacks: makeCallbacks({
-              onTieredApproval: vi.fn().mockResolvedValue({ decision: 'deny', reason: 'test' }),
-            }).callbacks,
-            config: makeNoValidationConfig({
-              approval: {
-                enabled: approval,
-                feedRejectionsToPlanner: false,
-              },
-            }),
-            workspace: ws,
-            taskStartSnapshot,
-            dependsOnFiles: [],
-            cleanup: ws.cleanup,
-            handleConflict: async (s) => s,
-            onApproved: () => {},
-          });
-          expect(result.outcome).toBe(outcome);
-          expectCleanSources(dir);
-
-          const next = await handle.acquire({
-            role: 'implementer',
-            config,
-            writesFiles: 'direct',
-            fresh,
-          });
-          expectCleanSources(next.projectDir);
-          await handle.dispose();
-          expect(stderrSpy.mock.calls.map((call) => String(call[0]))).toEqual([]);
-        } finally {
-          stderrSpy.mockRestore();
-        }
-
-        expect(retained).toEqual([]);
-        expect(existsSync(isolationWorktree(dir))).toBe(false);
-      } finally {
-        cleanupTempDir(dir);
-      }
-    },
-  );
-
-  // The checkout's ignored link never reaches the worktree, so the worker writes a
-  // plain directory there, and promotion meets the link only on the checkout side.
-  it.each([
-    { label: 'refuses as a conflict', link: '.git/hooks', outcome: 'promote-conflict' },
-    { label: 'still promotes', link: 'real-ops', outcome: 'allow' },
-  ])(
-    'at a checkout directory link into $link, $label a file the worker wrote under that path',
-    { timeout: 60_000 },
-    async ({ link, outcome }) => {
-      const dir = createTempDir('isolation-ancestor-link');
-      try {
-        createTestGitRepo(dir, { '.gitignore': 'ops\n', 'README.md': '# test\n' });
-        mkdirSync(join(dir, 'real-ops'));
-        symlinkSync(link, join(dir, 'ops'), 'dir');
-        const handle = createRunIsolation({
-          projectDir: dir,
-          sessionId: SESSION_ID,
-          strategy: 'worktree',
-          onFallback: () => {},
-          onRetained: () => {},
-        });
-
-        const taskStartSnapshot = await getChangedFilesSnapshot(dir);
-        const ws = await acquireDirect(handle);
-        writeFileSync(join(ws.projectDir, '.gitignore'), '');
-        mkdirSync(join(ws.projectDir, 'ops'));
-        writeFileSync(join(ws.projectDir, 'ops', 'marker.txt'), '#!/bin/sh\n');
-        const task = makeTask({ id: 'T001', file: 'ops/marker.txt' });
-        const result = await gateAndPromoteChangedFiles({
-          task,
-          state: makeImplState([task]),
-          projectDir: dir,
-          sessionId: SESSION_ID,
-          bus: makeBusRecorder().bus,
-          callbacks: makeCallbacks().callbacks,
-          config: makeNoValidationConfig({
-            approval: { enabled: false, feedRejectionsToPlanner: false },
-          }),
-          workspace: ws,
-          taskStartSnapshot,
-          dependsOnFiles: [],
-          cleanup: ws.cleanup,
-          handleConflict: async (s) => s,
-          onApproved: () => {},
-        });
-
-        expect(result.outcome).toBe(outcome);
-        expect(existsSync(join(dir, '.git', 'hooks', 'marker.txt'))).toBe(false);
-        expect(existsSync(join(dir, 'real-ops', 'marker.txt'))).toBe(outcome === 'allow');
-        await handle.dispose();
-      } finally {
-        cleanupTempDir(dir);
-      }
-    },
-  );
-
-  it('promotes a file the worker committed inside a retained worktree after continuation', {
+  it('keeps worker symlinks of a discarded attempt out of the checkout and out of the next attempt', {
     timeout: 60_000,
   }, async () => {
-    const dir = createTempDir('isolation-retained-commit');
+    const dir = createTempDir('isolation-worker-links');
     try {
-      createTestGitRepo(dir, { 'src/app.ts': 'export const app = "v1";\n' });
-      // The run's session directory exists before isolation is acquired.
-      mkdirSync(join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID), { recursive: true });
-      const task = makeTask({ id: 'T001', file: 'src/app.ts' });
-      const owner = workspaceOwner({ task, attempt: 1, config });
+      createTestGitRepo(dir, {
+        'src/app.ts': 'export const app = true;\n',
+        'src/other.ts': 'export const other = true;\n',
+      });
+      const retained: string[] = [];
       const handle = createRunIsolation({
         projectDir: dir,
         sessionId: SESSION_ID,
         strategy: 'worktree',
         onFallback: () => {},
-        onRetained: () => {},
+        onRetained: (worktreeDir) => retained.push(worktreeDir),
       });
 
-      const ws = await handle.acquire({
-        role: 'implementer',
-        config,
-        writesFiles: 'direct',
-        owner,
-      });
-      await ws.retain?.();
+      const ws = await acquireDirect(handle);
+      // The worker adds a link where nothing was, and puts a link where a file was.
+      symlinkSync('app.ts', join(ws.projectDir, 'src', 'alias.ts'));
+      rmSync(join(ws.projectDir, 'src', 'app.ts'));
+      symlinkSync('other.ts', join(ws.projectDir, 'src', 'app.ts'));
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      try {
+        expectCleanSources(dir);
 
-      // The worker commits inside the retained worktree before the run continues, so
-      // HEAD moves past the retained basis and the file is clean again.
-      writeFileSync(join(ws.projectDir, 'src', 'app.ts'), 'export const app = "v2";\n');
-      execFileSync('git', ['commit', '-am', 'worker output'], {
-        cwd: ws.projectDir,
-        stdio: 'pipe',
-      });
+        ws.cleanup();
+        const next = await handle.acquire({
+          role: 'implementer',
+          config,
+        });
+        expectCleanSources(next.projectDir);
+        await handle.dispose();
+        expect(stderrSpy.mock.calls.map((call) => String(call[0]))).toEqual([]);
+      } finally {
+        stderrSpy.mockRestore();
+      }
 
-      // A new process resumes the retained worktree; the worker writes nothing more.
-      const resumedHandle = createRunIsolation({
-        projectDir: dir,
-        sessionId: SESSION_ID,
-        strategy: 'worktree',
-        onFallback: () => {},
-        onRetained: () => {},
-      });
-      const resumed = await resumedHandle.acquire({
-        role: 'implementer',
-        config,
-        writesFiles: 'direct',
-        owner,
-        resume: true,
-      });
-
-      const outcome = await gateAndPromoteChangedFiles({
-        task,
-        state: makeImplState([task]),
-        projectDir: dir,
-        sessionId: SESSION_ID,
-        bus: makeBusRecorder().bus,
-        callbacks: makeCallbacks().callbacks,
-        config: makeNoValidationConfig({
-          approval: { enabled: true, feedRejectionsToPlanner: false },
-        }),
-        workspace: resumed,
-        taskStartSnapshot: await getChangedFilesSnapshot(dir),
-        dependsOnFiles: [],
-        cleanup: resumed.cleanup,
-        handleConflict: async (s) => s,
-        onApproved: () => {},
-      });
-
-      expect(outcome.outcome).toBe('allow');
-      expect(outcome.outcome === 'allow' ? outcome.changedFiles : []).toEqual(['src/app.ts']);
-      expect(readFileSync(join(dir, 'src', 'app.ts'), 'utf8')).toBe('export const app = "v2";\n');
-
-      await resumedHandle.dispose();
+      expect(retained).toEqual([]);
+      expect(existsSync(isolationWorktree(dir))).toBe(true);
     } finally {
       cleanupTempDir(dir);
     }
   });
 
-  it('names a kept worker edit the project never received as a conflict instead of skipping it', {
+  it('captures kept run work as attempt input and leaves a checkout edit outside it', {
     timeout: 60_000,
   }, async () => {
     const dir = createTempDir('isolation-kept-edit');
     try {
       createTestGitRepo(dir, { 'docs/guide.md': 'v1\n' });
       mkdirSync(join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID), { recursive: true });
-      const task = makeTask({ id: 'T001', file: 'docs/guide.md' });
-      const owner = workspaceOwner({ task, attempt: 0, config });
       const handle = createRunIsolation({
         projectDir: dir,
         sessionId: SESSION_ID,
@@ -1348,9 +1079,6 @@ describe('createRunIsolation', () => {
       const cut = await handle.acquire({
         role: 'implementer',
         config,
-        writesFiles: 'direct',
-        fresh: true,
-        owner,
       });
       writeFileSync(join(cut.projectDir, 'docs', 'guide.md'), 'worker\n');
       // The run stops with the worker's edit unpromoted, and the operator edits
@@ -1358,8 +1086,6 @@ describe('createRunIsolation', () => {
       await handle.dispose();
       writeFileSync(join(dir, 'docs', 'guide.md'), 'operator\n');
 
-      // A new process starts the brief over. The fresh cleanup keeps the
-      // conflicting worker copy, so it is in the worktree this attempt works on.
       const nextHandle = createRunIsolation({
         projectDir: dir,
         sessionId: SESSION_ID,
@@ -1370,36 +1096,9 @@ describe('createRunIsolation', () => {
       const next = await nextHandle.acquire({
         role: 'implementer',
         config,
-        writesFiles: 'direct',
-        fresh: true,
-        owner,
       });
       expect(readFileSync(join(next.projectDir, 'docs', 'guide.md'), 'utf8')).toBe('worker\n');
-      expect(await getChangedFilesSinceSnapshot(next.projectDir, next.snapshot)).toEqual([
-        'docs/guide.md',
-      ]);
-
-      const outcome = await gateAndPromoteChangedFiles({
-        task,
-        state: makeImplState([task]),
-        projectDir: dir,
-        sessionId: SESSION_ID,
-        bus: makeBusRecorder().bus,
-        callbacks: makeCallbacks().callbacks,
-        config: makeNoValidationConfig({
-          approval: { enabled: false, feedRejectionsToPlanner: false },
-        }),
-        workspace: next,
-        taskStartSnapshot: await getChangedFilesSnapshot(dir),
-        dependsOnFiles: [],
-        cleanup: next.cleanup,
-        handleConflict: async (s) => s,
-        onApproved: () => {},
-      });
-      expect(outcome.outcome).toBe('promote-conflict');
-      expect(outcome.outcome === 'promote-conflict' ? outcome.conflictedFiles : []).toEqual([
-        'docs/guide.md',
-      ]);
+      expect(await getChangedFilesSinceSnapshot(next.projectDir, next.snapshot)).toEqual([]);
       expect(readFileSync(join(dir, 'docs', 'guide.md'), 'utf8')).toBe('operator\n');
       await nextHandle.dispose();
     } finally {
@@ -1408,7 +1107,7 @@ describe('createRunIsolation', () => {
   });
 
   itUnix(
-    'names a worker file that replaced a project symlink as changed and puts the link back',
+    'captures a prior replacement of a project symlink as attempt input',
     {
       timeout: 60_000,
     },
@@ -1431,13 +1130,12 @@ describe('createRunIsolation', () => {
         rmSync(join(first.projectDir, 'alias.md'));
         writeFileSync(join(first.projectDir, 'alias.md'), 'worker\n');
         const second = await acquireDirect(handle);
-        expect(await getChangedFilesSinceSnapshot(second.projectDir, second.snapshot)).toEqual([
-          'alias.md',
-        ]);
+        expect(await getChangedFilesSinceSnapshot(second.projectDir, second.snapshot)).toEqual([]);
+        writeFileSync(join(second.projectDir, 'alias.md'), 'attempt\n');
 
         second.cleanup();
         const third = await acquireDirect(handle);
-        expect(readlinkSync(join(third.projectDir, 'alias.md'))).toBe('real.md');
+        expect(readFileSync(join(third.projectDir, 'alias.md'), 'utf8')).toBe('worker\n');
         await handle.dispose();
       } finally {
         cleanupTempDir(dir);
@@ -1446,7 +1144,7 @@ describe('createRunIsolation', () => {
   );
 
   itUnix(
-    'names a worker file that replaced an absolute-target project symlink as changed',
+    'captures a prior replacement of an absolute symlink as attempt input',
     {
       timeout: 60_000,
     },
@@ -1469,9 +1167,7 @@ describe('createRunIsolation', () => {
         rmSync(join(first.projectDir, 'alias.md'));
         writeFileSync(join(first.projectDir, 'alias.md'), 'worker\n');
         const second = await acquireDirect(handle);
-        expect(await getChangedFilesSinceSnapshot(second.projectDir, second.snapshot)).toEqual([
-          'alias.md',
-        ]);
+        expect(await getChangedFilesSinceSnapshot(second.projectDir, second.snapshot)).toEqual([]);
         await handle.dispose();
       } finally {
         cleanupTempDir(dir);
@@ -1497,7 +1193,6 @@ describe('createRunIsolation', () => {
       writeFileSync(join(first.projectDir, 'a.txt'), 'A\n');
       // What promotion does to the real project once the gate allows the task.
       writeFileSync(join(dir, 'a.txt'), 'A\n');
-      first.cleanup();
 
       const second = await acquireDirect(handle);
       expect(readFileSync(join(second.projectDir, 'a.txt'), 'utf8')).toBe('A\n');
@@ -1508,48 +1203,6 @@ describe('createRunIsolation', () => {
       const third = await acquireDirect(handle);
       expect(existsSync(join(third.projectDir, 'b.txt'))).toBe(false);
       expect(readFileSync(join(third.projectDir, 'a.txt'), 'utf8')).toBe('A\n');
-    } finally {
-      cleanupTempDir(dir);
-    }
-  });
-
-  it('retains the worktree and warns when the unpromoted-work scan fails', {
-    timeout: 60_000,
-  }, async ({ skip }) => {
-    const dir = createTempDir('isolation-scan-fail');
-    try {
-      createTestGitRepo(dir, { 'README.md': '# test\n' });
-      const handle = createRunIsolation({
-        projectDir: dir,
-        sessionId: SESSION_ID,
-        strategy: 'worktree',
-        onFallback: () => {},
-        onRetained: () => {},
-      });
-
-      const ws = await acquireDirect(handle);
-      // A worker file the content read cannot open fails the scan.
-      const unreadable = join(ws.projectDir, 'unreadable.txt');
-      writeFileSync(unreadable, 'work\n');
-      chmodSync(unreadable, 0o000);
-      try {
-        readFileSync(unreadable);
-        skip('filesystem permissions are ineffective for this user');
-        return;
-      } catch (cause) {
-        expect(cause).toMatchObject({ code: 'EACCES' });
-      }
-      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-
-      try {
-        await expect(handle.dispose()).resolves.toBeUndefined();
-        const warned = stderrSpy.mock.calls.some((call) => String(call[0]).includes(SESSION_ID));
-        expect(warned).toBe(true);
-        expect(existsSync(isolationWorktree(dir))).toBe(true);
-        expect((await createGitClient(dir).branch()).all).toContain(`splitbrief/${SLUG}`);
-      } finally {
-        stderrSpy.mockRestore();
-      }
     } finally {
       cleanupTempDir(dir);
     }
@@ -1604,9 +1257,12 @@ describe('createRunIsolation', () => {
         await handle.dispose();
 
         expect(retained).toEqual([]);
-        expect(existsSync(isolationWorktree(dir))).toBe(false);
+        const usesWorktree = ws.projectDir === isolationWorktree(dir);
+        expect(existsSync(isolationWorktree(dir))).toBe(usesWorktree);
         const branches = await createGitClient(dir).branch();
-        expect(branches.all.filter((branch) => branch.startsWith('splitbrief/'))).toEqual([]);
+        expect(branches.all.filter((branch) => branch.startsWith('splitbrief/'))).toHaveLength(
+          usesWorktree ? 1 : 0,
+        );
       } finally {
         cleanupTempDir(dir);
       }
@@ -1692,6 +1348,14 @@ describe('createRunIsolation', () => {
         realpathSync(join(dir, 'node_modules', '.bin')),
       );
       expect(await getChangedFilesSinceSnapshot(ws.projectDir, ws.snapshot)).toEqual([]);
+      writeFileSync(join(ws.projectDir, 'earlier.txt'), 'earlier task\n');
+      const second = await acquireDirect(handle);
+      expect(second.projectDir).toBe(ws.projectDir);
+      expect(readFileSync(join(second.projectDir, 'earlier.txt'), 'utf8')).toBe('earlier task\n');
+      expect(readlinkSync(join(second.projectDir, 'node_modules'))).toBe(join(dir, 'node_modules'));
+      expect(second.sandboxEnv.PATH?.split(delimiter)[0]).toBe(
+        realpathSync(join(dir, 'node_modules', '.bin')),
+      );
     } finally {
       cleanupTempDir(dir);
     }
@@ -1720,6 +1384,490 @@ describe('createRunIsolation', () => {
       expect(reasons[0]).toMatch(/node_modules/);
       expect(ws.projectDir).not.toBe(dir);
       expect(existsSync(join(ws.projectDir, 'init.txt'))).toBe(true);
+      writeFileSync(join(ws.projectDir, 'earlier.txt'), 'earlier task\n');
+      const second = await acquireDirect(handle);
+      expect(second.projectDir).toBe(ws.projectDir);
+      expect(readFileSync(join(second.projectDir, 'earlier.txt'), 'utf8')).toBe('earlier task\n');
+      expect(reasons).toHaveLength(1);
+      expect(
+        readdirSync(sessionDir(dir, SESSION_ID)).filter((entry) => entry.startsWith('stage-')),
+      ).toHaveLength(1);
+      await handle.dispose();
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+});
+
+describe('one workspace per run', () => {
+  function worktreeRun(dir: string, onFallback: (reason: string) => void = () => {}) {
+    return createRunIsolation({
+      projectDir: dir,
+      sessionId: SESSION_ID,
+      strategy: 'worktree',
+      onFallback,
+      onRetained: () => {},
+    });
+  }
+
+  const acquire = (handle: ReturnType<typeof createRunIsolation>) =>
+    handle.acquire({ role: 'implementer', config });
+
+  it('acquire twice in one run returns the same workspace', { timeout: 60_000 }, async () => {
+    const dir = createTempDir('isolation-run-same');
+    try {
+      createTestGitRepo(dir, { 'README.md': '# test\n' });
+      const handle = worktreeRun(dir);
+
+      const opened = await handle.open({ config });
+      const first = await acquire(handle);
+      const second = await acquire(handle);
+
+      expect(opened.kind).toBe('worktree');
+      expect(opened.projectDir).toBe(isolationWorktree(dir));
+      expect(opened.head).toBe(
+        execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim(),
+      );
+      expect(first.projectDir).toBe(opened.projectDir);
+      expect(second.projectDir).toBe(opened.projectDir);
+      await handle.dispose();
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it('a checkout edit does not reach the workspace', { timeout: 60_000 }, async () => {
+    const dir = createTempDir('isolation-run-checkout-edit');
+    try {
+      createTestGitRepo(dir, { 'README.md': '# test\n', 'src.txt': 'v1\n' });
+      const handle = worktreeRun(dir);
+
+      const first = await acquire(handle);
+      writeFileSync(join(dir, 'src.txt'), 'operator edit\n');
+      writeFileSync(join(dir, 'operator.txt'), 'new\n');
+      const second = await acquire(handle);
+
+      expect(readFileSync(join(second.projectDir, 'src.txt'), 'utf8')).toBe('v1\n');
+      expect(existsSync(join(second.projectDir, 'operator.txt'))).toBe(false);
+      expect(await getChangedFilesSinceSnapshot(first.projectDir, first.snapshot)).toEqual([]);
+      await handle.dispose();
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it("a retry keeps earlier tasks' changes", { timeout: 60_000 }, async () => {
+    const dir = createTempDir('isolation-run-keeps-earlier');
+    try {
+      createTestGitRepo(dir, { 'README.md': '# test\n', 'src.txt': 'v1\n' });
+      const handle = worktreeRun(dir);
+
+      const firstTask = await acquire(handle);
+      writeFileSync(join(firstTask.projectDir, 'src.txt'), 'task one\n');
+      writeFileSync(join(firstTask.projectDir, 'one.txt'), 'one\n');
+      const retry = await acquire(handle);
+
+      expect(readFileSync(join(retry.projectDir, 'src.txt'), 'utf8')).toBe('task one\n');
+      expect(readFileSync(join(retry.projectDir, 'one.txt'), 'utf8')).toBe('one\n');
+      expect(await getChangedFilesSinceSnapshot(retry.projectDir, retry.snapshot)).toEqual([]);
+      await handle.dispose();
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it('rollback reverts only the current attempt', { timeout: 60_000 }, async () => {
+    const dir = createTempDir('isolation-run-rollback');
+    try {
+      createTestGitRepo(dir, { 'README.md': '# test\n', 'src.txt': 'v1\n' });
+      const handle = worktreeRun(dir);
+
+      const earlier = await acquire(handle);
+      writeFileSync(join(earlier.projectDir, 'src.txt'), 'earlier\n');
+      writeFileSync(join(earlier.projectDir, 'earlier.txt'), 'kept\n');
+      const attempt = await acquire(handle);
+      writeFileSync(join(attempt.projectDir, 'src.txt'), 'v1\n');
+      writeFileSync(join(attempt.projectDir, 'attempt.txt'), 'gone\n');
+      attempt.cleanup();
+      const next = await acquire(handle);
+
+      expect(readFileSync(join(next.projectDir, 'src.txt'), 'utf8')).toBe('earlier\n');
+      expect(readFileSync(join(next.projectDir, 'earlier.txt'), 'utf8')).toBe('kept\n');
+      expect(existsSync(join(next.projectDir, 'attempt.txt'))).toBe(false);
+      expect(readFileSync(join(dir, 'src.txt'), 'utf8')).toBe('v1\n');
+      await handle.dispose();
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it("dispose keeps an open run's worktree", { timeout: 60_000 }, async () => {
+    const dir = createTempDir('isolation-run-dispose-keeps');
+    try {
+      createTestGitRepo(dir, { 'README.md': '# test\n' });
+      const handle = worktreeRun(dir);
+
+      const ws = await acquire(handle);
+      expect(await getChangedFilesSinceSnapshot(ws.projectDir, ws.snapshot)).toEqual([]);
+      await handle.dispose();
+
+      expect(existsSync(isolationWorktree(dir))).toBe(true);
+      expect(readFileSync(join(isolationWorktree(dir), 'README.md'), 'utf8')).toBe('# test\n');
+      const branches = execFileSync('git', ['branch', '--list'], { cwd: dir, encoding: 'utf8' });
+      expect(branches).toContain(SLUG);
+
+      const continued = worktreeRun(dir);
+      const reopened = await continued.open({ config });
+      expect(reopened.projectDir).toBe(ws.projectDir);
+      expect(readFileSync(join(reopened.projectDir, 'README.md'), 'utf8')).toBe('# test\n');
+      await continued.dispose();
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it('staged copy is created once per run', { timeout: 60_000 }, async () => {
+    const dir = createTempDir('isolation-run-staged-once');
+    try {
+      createTestGitRepo(dir, { 'README.md': '# test\n', 'src.txt': 'v1\n' });
+      const handle = createRunIsolation({
+        projectDir: dir,
+        sessionId: SESSION_ID,
+        strategy: 'staged-copy',
+        onFallback: () => {},
+        onRetained: () => {},
+      });
+
+      const opened = await handle.open({ config });
+      const first = await acquire(handle);
+      writeFileSync(join(first.projectDir, 'src.txt'), 'task one\n');
+      const second = await acquire(handle);
+      writeFileSync(join(second.projectDir, 'retry.txt'), 'retry\n');
+      second.cleanup();
+      const third = await acquire(handle);
+
+      expect(opened.kind).toBe('staged-copy');
+      expect(opened.head).toBeNull();
+      expect(new Set([first.projectDir, second.projectDir, third.projectDir])).toEqual(
+        new Set([opened.projectDir]),
+      );
+      expect(readFileSync(join(third.projectDir, 'src.txt'), 'utf8')).toBe('task one\n');
+      expect(existsSync(join(third.projectDir, 'retry.txt'))).toBe(false);
+      const stages = readdirSync(join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID)).filter(
+        (entry) => entry.startsWith('stage-'),
+      );
+      expect(stages).toHaveLength(1);
+      expect(existsSync(isolationRoot(dir))).toBe(false);
+      await handle.dispose();
+      expect(existsSync(opened.projectDir)).toBe(true);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it('a repository without commits falls back to one staged copy', {
+    timeout: 60_000,
+  }, async () => {
+    const dir = createTempDir('isolation-run-no-commit');
+    try {
+      execFileSync('git', ['init', '-q'], { cwd: dir });
+      writeFileSync(join(dir, 'src.txt'), 'v1\n');
+      const reasons: string[] = [];
+      const handle = worktreeRun(dir, (reason) => reasons.push(reason));
+
+      const opened = await handle.open({ config });
+      const first = await acquire(handle);
+      const second = await acquire(handle);
+
+      expect(reasons).toEqual(['repository has no commits']);
+      expect(opened.kind).toBe('staged-copy');
+      expect(first.projectDir).toBe(opened.projectDir);
+      expect(second.projectDir).toBe(opened.projectDir);
+      expect(readFileSync(join(opened.projectDir, 'src.txt'), 'utf8')).toBe('v1\n');
+      await handle.dispose();
+    } finally {
+      removeTempDir(dir);
+    }
+  });
+
+  it('no-git project falls back to one staged copy', { timeout: 60_000 }, async () => {
+    const dir = createTempDir('isolation-run-no-git');
+    try {
+      writeFileSync(join(dir, 'src.txt'), 'v1\n');
+      const reasons: string[] = [];
+      const handle = worktreeRun(dir, (reason) => reasons.push(reason));
+
+      const opened = await handle.open({ config });
+      const first = await acquire(handle);
+      const second = await acquire(handle);
+
+      expect(reasons).toEqual(['project is not a git repository']);
+      expect(opened.kind).toBe('staged-copy');
+      expect(first.projectDir).toBe(opened.projectDir);
+      expect(second.projectDir).toBe(opened.projectDir);
+      expect(readFileSync(join(opened.projectDir, 'src.txt'), 'utf8')).toBe('v1\n');
+      await handle.dispose();
+    } finally {
+      removeTempDir(dir);
+    }
+  });
+
+  it('removeRunWorkspace removes a kept worktree and its branch, or a staged copy root', {
+    timeout: 60_000,
+  }, async () => {
+    const dir = createTempDir('isolation-run-remove');
+    try {
+      createTestGitRepo(dir, { 'README.md': '# test\n' });
+      const worktree = worktreeRun(dir);
+      const kept = await worktree.open({ config });
+      await worktree.dispose();
+
+      await removeRunWorkspace(dir, SESSION_ID, { kind: 'worktree', path: kept.projectDir });
+
+      expect(existsSync(kept.projectDir)).toBe(false);
+      expect(
+        execFileSync('git', ['branch', '--list'], { cwd: dir, encoding: 'utf8' }),
+      ).not.toContain(SLUG);
+
+      const staged = createRunIsolation({
+        projectDir: dir,
+        sessionId: `${SESSION_ID}-staged`,
+        strategy: 'staged-copy',
+        onFallback: () => {},
+        onRetained: () => {},
+      });
+      const copy = await staged.open({ config });
+      await staged.dispose();
+
+      await removeRunWorkspace(dir, `${SESSION_ID}-staged`, {
+        kind: 'staged-copy',
+        path: copy.projectDir,
+      });
+
+      expect(existsSync(dirname(copy.projectDir))).toBe(false);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it('base equals the workspace start after a checkout edit between snapshot and seed', {
+    timeout: 60_000,
+  }, async () => {
+    const dir = createTempDir('isolation-run-base');
+    try {
+      createTestGitRepo(dir, { 'README.md': '# test\n', 'src.txt': 'v1\n' });
+      const baseline = await createSnapshot({
+        projectDir: dir,
+        sessionId: SESSION_ID,
+        phase: 'manual',
+        name: 'earlier-session-baseline',
+      });
+      writeFileSync(join(dir, 'src.txt'), 'dirty at base\n');
+      writeFileSync(join(dir, 'untracked.txt'), 'at base\n');
+      const base = await createSnapshot({
+        projectDir: dir,
+        sessionId: SESSION_ID,
+        phase: 'manual',
+        name: 'workspace-base',
+      });
+      expect(base.manifest.id).not.toBe(baseline.manifest.id);
+      expect(base.isFirstSnapshot).toBe(false);
+      writeFileSync(join(dir, 'src.txt'), 'edited after base\n');
+      rmSync(join(dir, 'untracked.txt'));
+      writeFileSync(join(dir, 'late.txt'), 'after base\n');
+      const handle = worktreeRun(dir);
+
+      const opened = await handle.open({ config });
+      await reconcileWorkspaceToBase({
+        projectDir: dir,
+        sessionId: SESSION_ID,
+        snapshotId: base.manifest.id,
+        workspaceDir: opened.projectDir,
+        keep: opened.keptFiles,
+      });
+
+      expect(readFileSync(join(opened.projectDir, 'src.txt'), 'utf8')).toBe('dirty at base\n');
+      expect(readFileSync(join(opened.projectDir, 'untracked.txt'), 'utf8')).toBe('at base\n');
+      expect(existsSync(join(opened.projectDir, 'late.txt'))).toBe(false);
+      expect(readFileSync(join(dir, 'src.txt'), 'utf8')).toBe('edited after base\n');
+      await handle.dispose();
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+});
+
+describe('run workspace attempts', () => {
+  function isolation(projectDir: string, strategy: 'worktree' | 'staged-copy') {
+    return createRunIsolation({
+      projectDir,
+      sessionId: SESSION_ID,
+      strategy,
+      onFallback: () => {},
+      onRetained: () => {},
+    });
+  }
+
+  it.each(['worktree', 'staged-copy'] as const)(
+    'reuses %s work across processes and ignores legacy owner changes',
+    { timeout: 60_000 },
+    async (strategy) => {
+      const dir = createTempDir('run-workspace-owner');
+      try {
+        createTestGitRepo(dir, { 'src.txt': 'base\n' });
+        const first = isolation(dir, strategy);
+        const opening = first.open({ config });
+        expect(first.open({ config })).toBe(opening);
+        const opened = await opening;
+        const workspace = await first.acquire({ role: 'implementer', config });
+        writeFileSync(join(workspace.projectDir, 'src.txt'), 'partial\n');
+        await workspace.retain?.();
+        await first.dispose();
+        const record = await readWorkspaceRecord({ projectDir: dir, sessionId: SESSION_ID });
+        if (record === null) throw new Error('Missing workspace record');
+        record.owner = {
+          taskId: 'old-task',
+          contract: 'old-contract',
+          attempt: 9,
+          buildSeat: 'old-seat',
+        };
+        writeFileSync(
+          join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID, 'retained-workspace.json'),
+          JSON.stringify(record),
+        );
+        const next = isolation(dir, strategy);
+        const nextConfig: Config = {
+          ...config,
+          implementer: { ...config.implementer, model: 'changed-seat' },
+        };
+        const reopened = await next.open({ config: nextConfig });
+        expect(reopened.projectDir).toBe(opened.projectDir);
+        expect(reopened.keptFiles).toEqual(['src.txt']);
+        const resumed = await next.acquire({
+          role: 'implementer',
+          config: nextConfig,
+          resume: true,
+        });
+        expect(await getChangedFilesSinceSnapshot(resumed.projectDir, resumed.snapshot)).toEqual([
+          'src.txt',
+        ]);
+        expect(
+          (await readWorkspaceRecord({ projectDir: dir, sessionId: SESSION_ID }))?.owner,
+        ).toHaveProperty('runId', SESSION_ID);
+        await next.dispose();
+      } finally {
+        cleanupTempDir(dir);
+      }
+    },
+  );
+
+  it.each(['worktree', 'staged-copy'] as const)(
+    'reverts only the retained cut in %s when a new attempt starts',
+    { timeout: 60_000 },
+    async (strategy) => {
+      const dir = createTempDir('run-workspace-cut');
+      try {
+        createTestGitRepo(dir, { 'src.txt': 'base\n' });
+        const first = isolation(dir, strategy);
+        const earlier = await first.acquire({ role: 'implementer', config });
+        writeFileSync(join(earlier.projectDir, 'src.txt'), 'earlier\n');
+        writeFileSync(join(earlier.projectDir, 'earlier.txt'), 'kept\n');
+        const cut = await first.acquire({ role: 'implementer', config });
+        writeFileSync(join(cut.projectDir, 'src.txt'), 'cut\n');
+        writeFileSync(join(cut.projectDir, 'cut.txt'), 'removed\n');
+        await cut.retain?.();
+        await first.dispose();
+        writeFileSync(join(dir, 'src.txt'), 'operator\n');
+        const next = isolation(dir, strategy);
+        const attempt = await next.acquire({ role: 'implementer', config });
+        expect(attempt.projectDir).toBe(cut.projectDir);
+        expect(readFileSync(join(attempt.projectDir, 'src.txt'), 'utf8')).toBe('earlier\n');
+        expect(readFileSync(join(attempt.projectDir, 'earlier.txt'), 'utf8')).toBe('kept\n');
+        expect(existsSync(join(attempt.projectDir, 'cut.txt'))).toBe(false);
+        expect(await getChangedFilesSinceSnapshot(attempt.projectDir, attempt.snapshot)).toEqual(
+          [],
+        );
+        expect(readFileSync(join(dir, 'src.txt'), 'utf8')).toBe('operator\n');
+        await next.dispose();
+      } finally {
+        cleanupTempDir(dir);
+      }
+    },
+  );
+
+  it.each(['worktree', 'staged-copy'] as const)(
+    'limits %s cleanup to the supplied changed files',
+    { timeout: 60_000 },
+    async (strategy) => {
+      const dir = createTempDir('run-workspace-selected-cleanup');
+      try {
+        createTestGitRepo(dir, { 'src.txt': 'base\n' });
+        const run = isolation(dir, strategy);
+        const attempt = await run.acquire({ role: 'implementer', config });
+        writeFileSync(join(attempt.projectDir, 'src.txt'), 'allowed\n');
+        writeFileSync(join(attempt.projectDir, 'denied.txt'), 'denied\n');
+        attempt.cleanup(['denied.txt']);
+        const next = await run.acquire({ role: 'implementer', config });
+        expect(readFileSync(join(next.projectDir, 'src.txt'), 'utf8')).toBe('allowed\n');
+        expect(existsSync(join(next.projectDir, 'denied.txt'))).toBe(false);
+        await run.dispose();
+        const continued = isolation(dir, strategy);
+        const reopened = await continued.acquire({ role: 'implementer', config, resume: true });
+        expect(readFileSync(join(reopened.projectDir, 'src.txt'), 'utf8')).toBe('allowed\n');
+        expect(await getChangedFilesSinceSnapshot(reopened.projectDir, reopened.snapshot)).toEqual(
+          [],
+        );
+        await continued.dispose();
+      } finally {
+        cleanupTempDir(dir);
+      }
+    },
+  );
+
+  it('reconciles a delta base through baseline blobs and preserves retained and ignored files', {
+    timeout: 60_000,
+  }, async () => {
+    const dir = createTempDir('run-workspace-delta-base');
+    try {
+      createTestGitRepo(dir, {
+        'same.txt': 'baseline\n',
+        'cut.txt': 'base\n',
+        '.gitignore': 'ignored/\n',
+      });
+      await createSnapshot({ projectDir: dir, sessionId: SESSION_ID, phase: 'manual' });
+      writeFileSync(join(dir, 'changed.txt'), 'delta\n');
+      const base = await createSnapshot({
+        projectDir: dir,
+        sessionId: SESSION_ID,
+        phase: 'manual',
+        name: 'workspace-base',
+      });
+      writeFileSync(join(dir, 'same.txt'), 'late\n');
+      const run = isolation(dir, 'worktree');
+      const attempt = await run.acquire({ role: 'implementer', config });
+      writeFileSync(join(attempt.projectDir, 'cut.txt'), 'partial\n');
+      writeFileSync(join(attempt.projectDir, 'added.txt'), 'late\n');
+      mkdirSync(join(attempt.projectDir, 'ignored'));
+      writeFileSync(join(attempt.projectDir, 'ignored', 'cache'), 'cache\n');
+      await attempt.retain?.();
+      await run.dispose();
+      const next = isolation(dir, 'worktree');
+      const opened = await next.open({ config });
+      const gitignore = readFileSync(join(opened.projectDir, '.gitignore'), 'utf8');
+      await reconcileWorkspaceToBase({
+        projectDir: dir,
+        sessionId: SESSION_ID,
+        snapshotId: base.manifest.id,
+        workspaceDir: opened.projectDir,
+        keep: opened.keptFiles,
+      });
+      expect(readFileSync(join(opened.projectDir, 'same.txt'), 'utf8')).toBe('baseline\n');
+      expect(readFileSync(join(opened.projectDir, 'changed.txt'), 'utf8')).toBe('delta\n');
+      expect(readFileSync(join(opened.projectDir, 'cut.txt'), 'utf8')).toBe('partial\n');
+      expect(readFileSync(join(opened.projectDir, 'added.txt'), 'utf8')).toBe('late\n');
+      expect(readFileSync(join(opened.projectDir, 'ignored', 'cache'), 'utf8')).toBe('cache\n');
+      expect(readFileSync(join(opened.projectDir, '.gitignore'), 'utf8')).toBe(gitignore);
+      await next.dispose();
     } finally {
       cleanupTempDir(dir);
     }

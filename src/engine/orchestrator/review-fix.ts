@@ -36,11 +36,15 @@ export function decideReviewOutcome(
   tasks: Task[],
   cap: number,
   cycle: number,
+  recheckFailures: readonly string[] = [],
 ): ReviewOutcome {
   const verdict = review.verdict?.verdict ?? null;
-  const critical = (review.verdict?.findings ?? [])
-    .filter((finding) => finding.severity === 'critical')
-    .map((finding) => finding.text);
+  const critical = [
+    ...(review.verdict?.findings ?? [])
+      .filter((finding) => finding.severity === 'critical')
+      .map((finding) => finding.text),
+    ...recheckFailures,
+  ];
 
   if (
     review.reviewStatus === 'written' &&

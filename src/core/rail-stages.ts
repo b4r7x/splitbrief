@@ -2,7 +2,7 @@ import { PHASES, type Phase } from './schemas/enums.js';
 import { assertNever } from '../utils/type-guards.js';
 
 export const RAIL_STAGES = ['plan', 'build', 'review'] as const;
-export type RailStage = (typeof RAIL_STAGES)[number];
+export type RailStage = (typeof RAIL_STAGES)[number] | 'apply';
 
 export type RailStageStatus = 'done' | 'active' | 'cancelled' | 'failed' | 'pending';
 
@@ -21,7 +21,7 @@ export type RailRole = 'planner' | 'implementer' | 'validator';
 
 export function railStageRole(stage: RailStage): RailRole {
   if (stage === 'build') return 'implementer';
-  if (stage === 'review') return 'validator';
+  if (stage === 'review' || stage === 'apply') return 'validator';
   return 'planner';
 }
 
@@ -65,16 +65,18 @@ export function getRailActiveIndex(phase: Phase): number {
 
 export function getRailStages(
   phase: Phase,
-  options: { cancelled?: boolean; halted?: RailHalt } = {},
+  options: { cancelled?: boolean; halted?: RailHalt; apply?: RailStageStatus } = {},
 ): RailStageState[] {
   const halted = options.halted ?? (options.cancelled === true ? 'cancelled' : undefined);
   const active = getRailActiveIndex(phase);
-  return RAIL_STAGES.map(
+  const stages: RailStageState[] = RAIL_STAGES.map(
     (stage, index): RailStageState => ({
       stage,
       status: index < active ? 'done' : index === active ? (halted ?? 'active') : 'pending',
     }),
   );
+  if (options.apply !== undefined) stages.push({ stage: 'apply', status: options.apply });
+  return stages;
 }
 
 export function getActiveRailStage(phase: Phase): RailStageState | null {

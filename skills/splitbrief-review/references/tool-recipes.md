@@ -1,16 +1,16 @@
-# Tool Recipes
+# Tool recipes
 
-Loaded in Phase 0 to probe the crew and in Phases 2–3 to build the spawn command. Placeholders: `$P` prompt file, `$M` model, `$E` effort, `$D` absolute project dir (`agy --add-dir .` gives agy no workspace), `$LOG` log file, `$DONE` the attempt's `.done` file, `$PID` its `.pid` file.
+Load during preflight to probe the crew, and during build and review to construct spawn commands. Placeholders: `$P` prompt file, `$M` model, `$E` effort, `$D` absolute project dir (`agy --add-dir .` gives agy no workspace), `$LOG` log file, `$DONE` the attempt's `.done` file, `$PID` its `.pid` file.
 
 Every `implementer:` / `reviewer:` line below is generated from the SPLITBRIEF CLI's own adapters (`src/engine/runners/cli-tools/*.ts`, via `npm run skills:sync`): the exact argv the CLI sends for a build call and for a review call, with the prompt, model, effort and project dir replaced by placeholders, wrapped in the detached spawn shape. Do not edit them by hand — `npm run skills:check` fails when they differ from the adapters.
 
 ## Spawn rules (every tool)
 
-- cwd = project root. Every spawn is detached and writes its own terminal state: `nohup sh -c '<argv> > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`. The waiter (`scripts/wait-attempt.sh`, per the wait protocol in the skill's orchestration notes) runs in a separate tool call.
+- Set cwd to the project root. Use references/run-protocol.md for detached spawning, waiting, and process reconciliation.
 - Argv transport caps the prompt at 120 000 bytes; a longer prompt is refused, never truncated. `claude` and `codex` take the prompt on stdin and have no cap.
 - Prompt transport: stdin (`< $P`) for claude and codex; codex's `-` argument makes it read stdin. The rest take `"$(cat $P)"` as the positional argument: refuse to spawn one of them when the prompt's first character is `-` — the tool would read it as an option.
 - Drop the model flag (`-m $M` / `--model $M`) and the effort flag (`--effort $E` / `--variant $E` / `-c model_reasoning_effort=$E`) when the seat carries no model or no effort.
-- Never add flags beyond the recipe; never pass this session's own permission flags down. The one exception is a spawn failure (last section): then the recipe itself is corrected — in the CLI adapter, since the recipe is generated from it.
+- Never add flags beyond the recipe; never pass this session's own permission flags down. A recipe failure halts with the installed tool's diagnosis. Do not improvise flags or edit adapters during the run.
 - Success = exit code 0 AND, for the structured tools, the terminal record named below. Exit 0 without it = failure `ended without a terminal result`.
 - `command -v <binary>` empty → halt `tool not installed`.
 
@@ -18,7 +18,8 @@ Timeouts:
 
 <!-- generated: timeouts -->
 - Implementer 20 minutes per attempt, reviewer 10 minutes. 2 consecutive timeouts on one brief = hard halt.
-- The waiter is its own deadline: `scripts/wait-attempt.sh <run> <T00N> <n> --deadline 1200` kills the process group at 20 minutes. Never wrap a spawn in coreutils `timeout` — it does not exist on stock macOS.
+- The waiter enforces its own deadline: `scripts/wait-attempt.sh <run> <T00N> <n> --deadline 1200` at 20 minutes.
+- At the deadline, it attempts to terminate a separate process group when it can identify one, otherwise only the recorded PID. Never wrap a spawn in coreutils `timeout`. It does not exist on stock macOS.
 <!-- /generated -->
 
 ## claude — Claude Code
@@ -97,7 +98,7 @@ Timeouts:
 - reviewer: `nohup sh -c 'cmd -p --output-format json --trust --skip-onboarding --no-auto-update --permission-mode plan -m $M --effort $E "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
 - reviewer (no model): `nohup sh -c 'cmd -p --output-format json --trust --skip-onboarding --no-auto-update --permission-mode plan "$(cat $P)" > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`
 <!-- /generated -->
-- `--permission-mode auto-accept` is not enough in `-p` mode (verified on 1.50.1: every write and shell tool answers `requires permissions. Use --yolo`); `--yolo` is the headless write flag. The implementer recipe was exercised end-to-end on 1.50.1 on 2026-09-08.
+- `--permission-mode auto-accept` is not enough in `-p` invocation (verified on 1.50.1: every write and shell tool answers `requires permissions. Use --yolo`); `--yolo` is the headless write flag. The implementer recipe was exercised end-to-end on 1.50.1 on 2026-09-08.
 - terminal record: the final `result` line of the NDJSON stream; its `finalText` field is the final text. Exit 8 = the `--max-turns` cap → failure `turn cap hit`.
 
 ## agy — Antigravity CLI
@@ -113,7 +114,18 @@ Timeouts:
 
 ## Halt signatures
 
-Match the phrases as written, case-insensitively, in the last 60 lines of `$LOG`. A bare number is never a signature — NDJSON logs are full of them. An `auth`, `usage` or `missing-model` match halts the run: no retry, no escalation, report with the tool's login or plan page, and with the tool's model listing when it has one.
+Match the phrases as written, case-insensitively, in the last 60 lines of `$LOG`.
+A bare number is never a signature. NDJSON logs contain many numbers.
+
+<!-- generated: seat-recovery -->
+- Transient seat failures permit 3 retries with backoff.
+- A usage match with a reported reset within 10 minutes permits a bounded wait up to that limit.
+- After the wait bound, halt as seat down and ask the user. Longer or unknown resets need the user immediately.
+<!-- /generated -->
+
+An `auth` or `missing-model` match halts the run.
+A `usage` match halts the run unless the bounded reset-wait rule above applies.
+Report the tool's login or plan page, and its model listing when available.
 
 <!-- generated: halt-signatures -->
 | Kind | Signatures |
@@ -124,4 +136,6 @@ Match the phrases as written, case-insensitively, in the last 60 lines of `$LOG`
 | spawn | `requires permissions`, `use --yolo`, `blocked by permissions`, `not allowed in this mode`, `unknown option`, `unknown flag`, `unrecognized argument`, `sandbox required but unavailable` |
 <!-- /generated -->
 
-A `spawn` match is not the implementer's failure: the recipe's permission flags do not match the installed tool version. This is the `recipe-fix` rung of the ladder — correct the recipe in the SPLITBRIEF adapter it is generated from, then re-spawn as the next attempt number with the same prompt the failed spawn used (no new framing, no new error block). It consumes no local retry; `progress.md` records the rung as `recipe-fix`. A second spawn failure on the same brief is a halt.
+A spawn match is seat trouble. Pause with the installed tool's diagnosis and preserve task counters and evidence.
+The user may choose a supported seat. Resume on that explicitly selected seat; never substitute one silently.
+Use a separate waiter with the reviewer deadline for review calls.

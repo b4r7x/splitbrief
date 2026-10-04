@@ -4,17 +4,13 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
 import type { ImplementerOptions, ImplementerResult } from '../../implementers/types.js';
-import type { IsolatedWorkspace } from '../isolation/types.js';
+import type { AttemptWorkspace } from '../isolation/types.js';
 import { createBusTextHandler } from '../events.js';
 import { createStreamingFeed, noopStreamingSink } from './streaming-feed.js';
 import type { StreamingSink } from './streaming-feed.js';
 import { withContinuationLoop } from '../continuation.js';
 import { gateChangedFiles, type GateChangedFilesDenial } from '../approval/gate-files.js';
-import {
-  persistApiApplyEvidence,
-  persistApprovalEvidence,
-  invalidateTargetWriteEvidence,
-} from '../evidence/persistence.js';
+import { persistApiApplyEvidence, persistApprovalEvidence } from '../evidence/persistence.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
 import { taskInputFiles } from './stale-inputs.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
@@ -24,11 +20,7 @@ import { isAbortError } from '../../../utils/abort.js';
 import { consultAttemptError } from '../escalation/consult-guidance.js';
 import { implementerSeatAttempt, runSeatCall } from '../escalation/seat-wait.js';
 import { addUsageAndSave } from '../state-ops.js';
-import {
-  isResumableWorkspaceStop,
-  retentionError,
-  workspaceOwner,
-} from '../isolation/retention.js';
+import { isResumableWorkspaceStop, retentionError } from '../isolation/retention.js';
 import { recordedApiCreatedPaths } from '../evidence/task.js';
 
 /**
@@ -62,7 +54,7 @@ async function changedDeclaredFilesNote(
 export type RunImplementationResult = {
   state: WorkflowState;
   implResult: ImplementerResult;
-  workspace: IsolatedWorkspace | undefined;
+  workspace: AttemptWorkspace;
   preApplyApprovalDenied: boolean;
   preApplyApprovedFiles: string[];
 };
@@ -94,46 +86,41 @@ export async function runImplementation(opts: {
     { bus: wctx.bus, phase: state.phase },
     { role: 'implementer' },
   );
-  const usesIsolation = wctx.implementer.capabilities?.writesFiles === 'direct';
-  // A direct writer narrates between tool calls; that text has one home, the transcript rows
-  // textHandler feeds. The preview under `working on <file>…` is for the code an extractor
-  // streams: it splits lines, not messages, so narration there would repeat and run together.
-  const streamingFeed = createStreamingFeed(
-    task.id,
-    usesIsolation ? noopStreamingSink : (opts.streamingSink ?? noopStreamingSink),
-  );
+  const writesDirectly = wctx.implementer.capabilities?.writesFiles === 'direct';
 
   // A brief reopened by the final review already has code on disk; the fix
   // attempt is framed as a retry carrying the reviewer's findings as the error,
   // and a finding that needs no code change lets it verify and change nothing.
   const reviewFindings = state.reviewFixes?.findings[task.id];
 
-  let workspace: IsolatedWorkspace | undefined;
   let preApplyApprovalDenied = false;
-  let preApplyApprovedFiles: string[] = [];
+  const preApplyApprovedFiles: string[] = [];
 
   const step = { kind: 'brief' as const, taskId: task.id, attempt: state.attempt };
   const seed = wctx.continuation?.take(step, hashTaskBrief([task]));
-  const createdByThisTask = recordedApiCreatedPaths({ projectDir, sessionId }, task);
+  const workspace: AttemptWorkspace = await wctx.isolation.acquire({
+    role: 'implementer',
+    config,
+    resume: seed?.keepWorkspace === true,
+  });
+  const createdByThisTask = recordedApiCreatedPaths(
+    { projectDir, sessionId },
+    task,
+    workspace.projectDir,
+  );
+  // A direct writer narrates between tool calls; that text has one home, the transcript rows
+  // textHandler feeds. The preview under `working on <file>…` is for the code an extractor
+  // streams: it splits lines, not messages, so narration there would repeat and run together.
+  const streamingFeed = createStreamingFeed(
+    task.id,
+    writesDirectly ? noopStreamingSink : (opts.streamingSink ?? noopStreamingSink),
+  );
 
   let loop: { state: WorkflowState; value: ImplementerResult };
   try {
-    // Only a mid-step partial resumes an earlier attempt's worktree. A steer
-    // alone is guidance for a fresh try, so it must not keep leftovers a failed
-    // promotion or a restore already reverted in the project — reseed instead.
-    workspace = usesIsolation
-      ? await wctx.isolation.acquire({
-          role: 'implementer',
-          writesFiles: 'direct',
-          config,
-          fresh: seed?.keepWorkspace !== true,
-          owner: workspaceOwner({ task, attempt: state.attempt, config }),
-          resume: seed?.keepWorkspace === true,
-        })
-      : undefined;
     loop = await withContinuationLoop<ImplementerResult>({
       ctx: {
-        projectDir: workspace?.projectDir ?? projectDir,
+        projectDir: workspace.projectDir,
         sessionId,
         persistRef: { projectDir, sessionId },
         callbacks,
@@ -146,9 +133,6 @@ export async function runImplementation(opts: {
       ...(seed === undefined ? {} : { seed }),
       onStateChange: setTrackedState,
       body: async ({ signal, partial, steer, recordOutput }) => {
-        if (workspace === undefined || workspace.projectDir === projectDir) {
-          invalidateTargetWriteEvidence({ ref: { projectDir, sessionId }, task });
-        }
         // The brief restarts on its own prompt. What the cut attempt already
         // wrote is still on disk, so it is named rather than re-derived.
         const continuation =
@@ -158,38 +142,37 @@ export async function runImplementation(opts: {
                 ...(partial !== undefined && { partial }),
                 ...(steer !== undefined && { steer }),
                 ...(await changedDeclaredFilesNote(
-                  workspace?.projectDir ?? projectDir,
+                  workspace.projectDir,
                   task,
-                  workspace?.snapshot.baselineFileHashes === undefined
+                  workspace.snapshot.baselineFileHashes === undefined
                     ? opts.taskStartSnapshot
                     : workspace.snapshot,
                 )),
               };
         const call: ImplementerOptions = {
           task,
-          projectDir: workspace?.projectDir ?? projectDir,
+          projectDir: workspace.projectDir,
           config,
           context,
           languageContext: buildProjectLanguageContext(
-            projectDir,
+            wctx.workspaceDir,
             state.discoveredValidation?.language,
           ),
           plan: state.plan,
           onOutput: (text, opts) => {
             recordOutput(text);
-            textHandler(text, { messageStart: usesIsolation && opts?.messageStart === true });
+            textHandler(text, { messageStart: writesDirectly && opts?.messageStart === true });
             streamingFeed.onText(text);
           },
           sessionId,
           signal,
-          sandboxEnv: workspace?.sandboxEnv,
-          fileIgnoreProjectDir: workspace ? projectDir : undefined,
-          changeDetection: workspace?.changeDetection,
+          sandboxEnv: workspace.sandboxEnv,
+          fileIgnoreProjectDir: projectDir,
+          changeDetection: workspace.changeDetection,
           ...(continuation !== undefined && { continuation }),
           ...(createdByThisTask.length > 0 && { createdByThisTask }),
           phase: state.phase,
           approveWrite: async (file) => {
-            if (workspace) return { allow: true };
             const decision = await gateChangedFiles({
               changedFiles: [file],
               task,
@@ -212,7 +195,7 @@ export async function runImplementation(opts: {
               );
               return { allow: false, reason: decision.reason ?? 'write denied by approval gate' };
             }
-            preApplyApprovedFiles = decision.changedFiles;
+            preApplyApprovedFiles.push(...decision.changedFiles);
             persistApprovalEvidence({ wctx, state, decision, taskId: task.id });
             return { allow: true };
           },
@@ -266,8 +249,8 @@ export async function runImplementation(opts: {
       },
     });
   } catch (err) {
-    if (isAbortError(err) && isResumableWorkspaceStop(wctx.signal)) await workspace?.retain?.();
-    else if (!retentionError.isFailed(err)) workspace?.cleanup();
+    if (isAbortError(err) && isResumableWorkspaceStop(wctx.signal)) await workspace.retain?.();
+    else if (!retentionError.isFailed(err)) workspace.cleanup();
     throw err;
   } finally {
     streamingFeed.stop();
@@ -284,7 +267,7 @@ export async function runImplementation(opts: {
       state,
       task,
       result: applyResult,
-      ...(workspace === undefined ? {} : { workspacePath: workspace.projectDir }),
+      workspacePath: workspace.projectDir,
     });
   }
 

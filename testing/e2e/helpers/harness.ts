@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, beforeEach } from 'vitest';
+import { afterEach, beforeEach, expect } from 'vitest';
 import YAML from 'yaml';
 import { ConfigSchema, type Config } from '../../../src/core/schemas/config.js';
 import { getApiProviderDescriptor } from '../../../src/core/providers/api-provider-catalog.js';
@@ -11,6 +11,9 @@ import { createEventBus } from '../../../src/engine/events/bus.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import { prepareExecution } from '../../../src/engine/runners/prepare-execution/prepare-execution.js';
 import { releasePreparedSession } from '../../../src/core/sessions/prepare.js';
+import { loadState } from '../../../src/core/state/persistence.js';
+import { continueCommand } from '../../../src/cli/commands/continue/command.js';
+import { parseContinueActionOption } from '../../../src/cli/options.js';
 import { createTestGitRepo } from '../../helpers/git.js';
 import { resetAllStores } from '../../helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '../../helpers/temp-dir.js';
@@ -19,6 +22,7 @@ import { createCassetteRecorder } from '../../helpers/cassette/recorder.js';
 import { createCassetteReplayer, loadCassette } from '../../helpers/cassette/replayer.js';
 import { TEST_WORKFLOW_SINKS } from '../../helpers/orchestrator-context.js';
 import { blockerLines } from './blockers.js';
+import { checkoutEntries } from '../../helpers/checkout.js';
 
 export interface E2eScenario {
   name: string;
@@ -102,10 +106,16 @@ export function setupE2eScenario(scenario: E2eScenario): E2eContext {
   return ctx;
 }
 
+/**
+ * Runs the scenario to its passing review, then applies it the way an operator
+ * does from the shell. The run builds in its own workspace, so the checkout must
+ * be exactly as it started until Apply writes the run into it.
+ */
 export async function runE2eWorkflow(
   ctx: E2eContext,
   scenario: E2eScenario,
 ): ReturnType<typeof runWorkflow> {
+  const checkoutAtStart = checkoutEntries(ctx.projectDir);
   const bus = createEventBus();
   const baseConfig = replaySafeConfig(loadAndOverrideConfig(ctx.projectDir));
   const hooks = baseConfig.hooks;
@@ -140,7 +150,7 @@ export async function runE2eWorkflow(
     });
   }
 
-  return runWorkflow({
+  const summary = await runWorkflow({
     prepared: preparation.execution,
     headless: true,
     sinks: TEST_WORKFLOW_SINKS,
@@ -153,6 +163,17 @@ export async function runE2eWorkflow(
       onComplete: () => undefined,
     },
   });
+
+  const { sessionId } = preparation.execution.session.ref;
+  expect(checkoutEntries(ctx.projectDir), 'the checkout changed before Apply').toEqual(
+    checkoutAtStart,
+  );
+  await continueCommand(sessionId, {
+    projectDir: ctx.projectDir,
+    action: parseContinueActionOption('apply'),
+  });
+  expect(loadState({ projectDir: ctx.projectDir, sessionId })?.closed?.as).toBe('applied');
+  return summary;
 }
 
 function replayRunner(runner: Config['planner'] | Config['implementer']): unknown {

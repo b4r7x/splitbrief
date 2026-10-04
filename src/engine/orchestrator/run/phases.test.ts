@@ -49,6 +49,9 @@ import { runPlanningPhases } from './phases.js';
 import { runTasksAndReview } from './task-execution.js';
 import { readRunSnapshotLedger } from '../../snapshots/run/ledger.js';
 import { persistReadyExecutionState } from '#testing/helpers/persisted-execution.js';
+import { runApply } from '../apply/run.js';
+
+vi.mock('../apply/run.js', () => ({ runApply: vi.fn() }));
 
 const DENY_HOOK_SCRIPT =
   'console.log(JSON.stringify({ decision: "deny", message: "planning blocked" }));\n';
@@ -185,6 +188,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     const result = await runTasksAndReview({
       wctx: {
         projectDir,
+        workspaceDir: projectDir,
         sessionId,
         isolation: makeCopyingIsolation({ projectDir, sessionId }),
         config,
@@ -237,6 +241,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     const result = await runTasksAndReview({
       wctx: {
         projectDir,
+        workspaceDir: projectDir,
         sessionId,
         isolation: makeCopyingIsolation({ projectDir, sessionId }),
         config,
@@ -270,7 +275,11 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     expect(events.find((event) => event.type === 'all_tasks_done')).toBeUndefined();
     expect(events.find((event) => event.type === 'workflow_complete')).toBeUndefined();
     expect(events.find((event) => event.type === 'error')).toBeUndefined();
-    expect(loadState({ projectDir, sessionId })).toBeNull();
+    expect(loadState({ projectDir, sessionId })).toMatchObject({
+      phase: 'idle',
+      tasks: [],
+      workspace: { kind: 'staged-copy' },
+    });
   });
 
   it('reports incomplete when final review fails', async () => {
@@ -288,6 +297,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     const result = await runTasksAndReview({
       wctx: {
         projectDir,
+        workspaceDir: projectDir,
         sessionId,
         isolation: makeCopyingIsolation({ projectDir, sessionId }),
         config: makeNoValidationConfig({ workflow: {} }),
@@ -361,6 +371,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     const result = await runTasksAndReview({
       wctx: {
         projectDir,
+        workspaceDir: projectDir,
         sessionId,
         isolation: makeCopyingIsolation({ projectDir, sessionId }),
         config,
@@ -438,6 +449,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     const result = await runTasksAndReview({
       wctx: {
         projectDir,
+        workspaceDir: projectDir,
         sessionId,
         isolation: makeCopyingIsolation({ projectDir, sessionId }),
         config: makeNoValidationConfig({ workflow: {} }),
@@ -505,6 +517,7 @@ describe('runPlanningPhases', () => {
     const result = await runPlanningPhases({
       wctx: {
         projectDir,
+        workspaceDir: projectDir,
         sessionId,
         isolation: makeCopyingIsolation({ projectDir, sessionId }),
         config: trustedDenyPrePlanningConfig(projectDir),
@@ -548,6 +561,7 @@ describe('runPlanningPhases', () => {
     const result = await runPlanningPhases({
       wctx: {
         projectDir,
+        workspaceDir: projectDir,
         sessionId,
         isolation: makeCopyingIsolation({ projectDir, sessionId }),
         config: trustedDenyPrePlanningConfig(projectDir),
@@ -615,6 +629,7 @@ describe('runPlanningPhases', () => {
       const result = await runPlanningPhases({
         wctx: {
           projectDir,
+          workspaceDir: projectDir,
           sessionId,
           isolation: makeCopyingIsolation({ projectDir, sessionId }),
           config: makeNoValidationConfig({ workflow: {} }),
@@ -666,6 +681,7 @@ describe('runPlanningPhases', () => {
     const result = await runPlanningPhases({
       wctx: {
         projectDir,
+        workspaceDir: projectDir,
         sessionId,
         isolation: makeCopyingIsolation({ projectDir, sessionId }),
         config: makeNoValidationConfig({ workflow: {} }),
@@ -692,6 +708,66 @@ describe('runPlanningPhases', () => {
     expect(implementer.implement).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['applied', 'closed'],
+    ['halted', 'halted'],
+  ] as const)(
+    'an Apply resume runs Apply, never the planner, and reports %s as %s',
+    async (outcome, terminal) => {
+      const { projectDir, sessionId } = setupProject();
+      const planner = makePlanner();
+      const { callbacks } = makeCallbacks();
+      const { bus } = makeBusRecorder();
+      const savedState: WorkflowState = {
+        ...makeImplState([makePassingTask('T001')]),
+        phase: 'complete',
+        reviewStatus: 'passed',
+        workspace: {
+          kind: 'worktree',
+          path: join(projectDir, 'ws'),
+          base: { snapshotId: 'workspace-base', head: null },
+        },
+      };
+      saveState({ projectDir, sessionId }, savedState);
+      vi.mocked(runApply).mockClear();
+      const appliedState: WorkflowState = { ...savedState, stateRevision: 99 };
+      vi.mocked(runApply).mockResolvedValueOnce(
+        outcome === 'applied'
+          ? { outcome, state: appliedState, files: [] }
+          : { outcome, state: appliedState },
+      );
+
+      const result = await runPlanningPhases({
+        wctx: {
+          projectDir,
+          workspaceDir: join(projectDir, 'ws'),
+          sessionId,
+          isolation: makeCopyingIsolation({ projectDir, sessionId }),
+          config: makeNoValidationConfig({ workflow: {} }),
+          callbacks,
+          bus,
+          planner,
+          reviewer: planner,
+          context: defaultContext,
+          implementer: makeImplementer(),
+          metadata: TEST_METADATA,
+          sinks: TEST_SINKS,
+          validator: createValidator(),
+        },
+        state: savedState,
+        savedState,
+        phaseTimings: {},
+        startTime: Date.now(),
+        setTrackedState: vi.fn(),
+      });
+
+      expect(vi.mocked(runApply)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(runApply).mock.calls[0]?.[0].state.workspace).toEqual(savedState.workspace);
+      expect(result).toEqual({ disposition: 'terminal', state: appliedState, outcome: terminal });
+      expect(planner.typedCall).not.toHaveBeenCalled();
+    },
+  );
+
   it('re-entering a failed run forgets the failure it recorded', async () => {
     const { projectDir, sessionId } = setupProject();
     const ref = { projectDir, sessionId };
@@ -711,6 +787,7 @@ describe('runPlanningPhases', () => {
     const result = await runPlanningPhases({
       wctx: {
         projectDir,
+        workspaceDir: projectDir,
         sessionId,
         isolation: makeCopyingIsolation({ projectDir, sessionId }),
         config: makeNoValidationConfig({ workflow: {} }),
@@ -781,6 +858,7 @@ describe('runPlanningPhases', () => {
       const result = await runPlanningPhases({
         wctx: {
           projectDir,
+          workspaceDir: projectDir,
           sessionId,
           isolation: makeCopyingIsolation({ projectDir, sessionId }),
           config: makeNoValidationConfig({ workflow: { approve } }),
@@ -851,6 +929,7 @@ describe('runPlanningPhases', () => {
     const result = await runPlanningPhases({
       wctx: {
         projectDir,
+        workspaceDir: projectDir,
         sessionId,
         isolation: makeCopyingIsolation({ projectDir, sessionId }),
         config: makeNoValidationConfig({ workflow: opts.workflow }),

@@ -161,18 +161,18 @@ Commands that act on the active run: re-run a task, stop, resume or end the run,
 - **Phase guard**: `isLivePhase(phase)`, or an open run at rest on the screen in any phase — a gate it waits at included (`isOpenRunAtRest`, `src/stores/navigation/router.ts`); elsewhere the feedback line reads `"No run to resume in this phase"`.
 - **Args**: none.
 - **Example**: `/resume`
-- **Behavior**: Calls `ctx.resumeRun()`, which reaches `continueRun` (`src/engine/orchestrator/run/continue.ts`) — the one path for both cases. A park this process is holding settles in place: a brief parked mid-call re-enters that brief, a boundary park starts the next one. A run at rest is re-entered on its saved state. With nothing parked the feedback line reads `"Nothing to resume."`, and a closed run is refused with its reason rather than restarted. Typing instructions and pressing Enter continues with that text as the step's steer, composed into the step's own prompt rather than replacing it; a blank Enter resumes a continuable run at rest, while a run parked in this process answers a blank Enter with `type instructions or /resume`.
+- **Behavior**: Calls `ctx.resumeRun()` through `continueRun` (`src/engine/orchestrator/run/continue.ts`). A park held by this process continues in place. A run at rest re-enters its saved step; a closed run is refused. Typed instructions become the step's steer. Bare Enter continues an open run at rest; an in-process park needs instructions or `/resume`. Ready workspace runs instead offer [the result menu](./FEATURES.md#run-result-menu).
 - **Implementation**: catalog at `src/core/runtime/commands/defs/workflow.ts`; the park itself is `stopStore` (`src/stores/workflow/stop.ts`).
 - **See also**: `/end`, `/quit`.
 
 ### `/end`
 
-- **Purpose**: Close the run, keeping every change on disk.
+- **Purpose**: Close the run and preserve unapplied workspace work. See [Apply](./WORKFLOW.md#apply).
 - **Screens**: `workflow`.
 - **Phase guard**: `isLivePhase(phase)`, or an open run at rest on the screen in any phase — a gate it waits at included (`isOpenRunAtRest`, `src/stores/navigation/router.ts`); elsewhere the feedback line reads `"No run to end in this phase"`.
 - **Args**: none.
 - **Example**: `/end`
-- **Behavior**: Calls `ctx.endRun()` — the same transition as the sheet's `End run` row. Execution stops as it does for Stop now, the state records `closed: { at, as: 'ended' }` so the run lists as `ended` and nothing resumes it, and the byline reads `Cancelled by you at T<id> · Changes kept` — `Cancelled by you at the plan gate` when no brief ran — with the hint `esc back to sessions · ctrl+c quit`. With no active run the feedback line reads `"No active run to end."`. Nothing is reverted; git is still the layer that reverses a run.
+- **Behavior**: Calls `ctx.endRun()` through the same close path as the stop menu. End run on a ready workspace run means Discard. Earlier End run closes as `ended`. The close path preserves unapplied work before removing the workspace. With no active run, it reports `No active run to end.`. See [Apply](./WORKFLOW.md#apply).
 - **Implementation**: catalog at `src/core/runtime/commands/defs/workflow.ts`.
 - **See also**: `/resume`, `/run`.
 
@@ -188,12 +188,13 @@ Commands that act on the active run: re-run a task, stop, resume or end the run,
 
 ### `/run accept|reject`
 
-- **Purpose**: Settle what this run wrote. Accepting writes an accepted run snapshot so a later rejection refuses to roll back past it. Rejecting discards what the run wrote by restoring the baseline the run started from. Both halves are backed by real snapshots: a run captures its baseline once, before the first task runs, and records exactly one run snapshot in the run ledger (`src/engine/snapshots/run/ledger.ts`) after the task loop completes and before the final review reads the diff (`ensureRunBaselineSnapshot` / `recordRunSnapshotForRun`, `src/engine/orchestrator/run/snapshots.ts`). A run that stopped before the final review records nothing, so a rejection then reports that there is no run snapshot to reject.
-- **Screens**: `workflow` (live or at rest).
-- **Args**: required. `accept` or `reject` (the `RUN_ACTIONS` tuple in `src/core/runtime/commands/types.ts`); `reject` additionally requires the literal `confirm`. Missing or unknown actions print `"Usage: /run <accept|reject>"`; `/run reject` without confirmation prints `"Usage: /run reject confirm"`.
-- **Example**: `/run accept`, `/run reject confirm`
-- **Behavior**: `accept` prints `"Run accepted at snapshot <id>"` and seals the ledger, so a later `reject confirm` is refused. `reject confirm` is refused while work is active (`"Run rejection is unavailable while work is active."`), when the run recorded no snapshot (`"No run snapshot to reject."`), and when the run was already accepted. Otherwise files the run edited are restored from the baseline and files the run created are deleted — each one only if its current hash still matches the recorded run snapshot; user edits made after that snapshot are reported as conflicts and never overwritten, and restored/deleted counts are reported on success.
-- **Implementation**: catalog at `src/core/runtime/commands/defs/workflow.ts`; snapshot behavior in `src/engine/snapshots/run/lifecycle.ts`; hash-guarded rollback in `src/engine/snapshots/run/rollback.ts`.
+- **Purpose**: Apply or discard a workspace run, or undo a completed Apply. Older runs without a recorded workspace keep the snapshot ledger.
+- **Screens**: `workflow`, at rest. Apply and rejection are unavailable while the run is active.
+- **Args**: `accept` or `reject`. `reject` requires the literal `confirm`. An owner override also requires `accept confirm`.
+- **Example**: `/run accept`, `/run accept confirm`, `/run reject confirm`.
+- **Behavior on a workspace run**: `accept` starts [Apply](./WORKFLOW.md#apply) when the run is ready to apply. It writes no accepted-run snapshot entry. A changed candidate returns to checks and review; continue the run to start them. Before Apply, `reject confirm` means Discard. After Apply, it undoes only Apply's writes through `restoreApplyBackup()`. The restore uses the Apply backup, preserves later edits as conflicts, and leaves the run record closed as `applied`. See [Partial Apply recovery](./APPROVAL-AND-RECOVERY.md#partial-apply-recovery).
+- **Behavior on an older run**: `accept` seals its snapshot ledger and reports the accepted snapshot id. `reject confirm` restores recorded run files from its baseline only while their hashes match the run snapshot. It reports missing snapshots, accepted runs and later edits instead of overwriting them.
+- **Implementation**: `src/core/runtime/commands/defs/workflow.ts`, with ports in `src/app/command-context.ts`. Apply and restore live under `src/engine/orchestrator/apply/`. Older snapshot behavior stays in `src/engine/snapshots/run/lifecycle.ts` and `rollback.ts`.
 
 ---
 
@@ -434,7 +435,7 @@ When the `Ctrl+O` external editor is used instead, `VISUAL` takes precedence ove
 
 ### A run at rest
 
-The workflow screen is the run's home when nothing is running on it too. An **open** run takes a correction: typed text steers the next step and a bare `Enter` continues it. A **closed** run's composer takes commands only — every command valid on `workflow` is typed here as usual, an empty `Enter` goes home, and plain text is refused as it is typed with the dim notice `Only /commands here · ⏎ on an empty line goes home`. `esc` leaves a run at rest for home rather than opening the stop sheet: there is nothing to stop.
+The workflow screen is also the run's home at rest. An open run takes a correction; bare Enter continues it. A ready run uses [the result menu](./FEATURES.md#run-result-menu), with Tab switching focus. Its composer takes slash commands. A closed run also takes slash commands; bare Enter goes home. Escape leaves a run at rest for home without opening the stop menu.
 
 ---
 

@@ -17,6 +17,7 @@ import { labelError } from '../../utils/format-errors.js';
 import { warnError } from '../../lib/warn.js';
 import { isAbortError } from '../../utils/abort.js';
 import { buildFinalReviewPrompt } from '../spec/prompts/review.js';
+import { workspaceReadInstructions } from '../spec/prompts/builder.js';
 import { recordFinalReviewEvidence } from './evidence/reporting.js';
 import { formatValidationEvidenceForPrompt } from './evidence/format-validation.js';
 import { readEvidenceLedger, writeEvidenceLedger } from '../../core/evidence/ledger-storage.js';
@@ -95,6 +96,7 @@ export const finalReviewError = {
 
 export async function runFinalReviewPhase(opts: {
   projectDir: string;
+  workspaceDir: string;
   sessionId: string;
   config: Config;
   callbacks: OrchestratorCallbacks;
@@ -110,10 +112,13 @@ export async function runFinalReviewPhase(opts: {
   phaseTimings?: Record<string, number>;
   setTrackedState?: ((state: WorkflowState) => void) | undefined;
   skillsContext?: string | undefined;
+  /** The integration re-check section when an Apply merge changed the reviewed candidate. */
+  integration?: string | undefined;
 }): Promise<FinalReviewResult> {
   let { state } = opts;
   const {
     projectDir,
+    workspaceDir,
     sessionId,
     config,
     callbacks,
@@ -165,9 +170,10 @@ export async function runFinalReviewPhase(opts: {
   try {
     const baseline = state.changedFilesBaseline;
     if (baseline?.runStartChangedFiles === undefined) throw finalReviewError.missingRunBaseline();
-    const universe = await resolveRunUniverse(projectDir, baseline);
+    const universe = await resolveRunUniverse(workspaceDir, baseline);
     reviewScope = await resolveRunReviewScope({
       ref: { projectDir, sessionId },
+      workspaceDir,
       tasks: state.tasks,
       workspaceFiles: universe.changedFiles,
     });
@@ -211,6 +217,11 @@ export async function runFinalReviewPhase(opts: {
     const drain = drainQueue({ projectDir, sessionId, state, bus });
     state = drain.state;
     const queueText = drain.messages.length > 0 ? formatDrainedMessages(drain.messages) : '';
+    const promptPrefix = [
+      workspaceReadInstructions(workspaceDir),
+      ...(opts.integration !== undefined ? [opts.integration] : []),
+      queueText,
+    ].join('\n\n');
 
     // An API seat reads no file of its own, so it is dispatched only once the
     // packet it is handed carries every required source, whole and untruncated.
@@ -226,7 +237,7 @@ export async function runFinalReviewPhase(opts: {
         driftSection: driftPromptSection,
         validation: { recorded: ledger !== null, evidence: validationPromptSection },
         reviewScope,
-        queueText,
+        queueText: promptPrefix,
         ...(opts.skillsContext !== undefined && { skillsContext: opts.skillsContext }),
         ...(reviewRunner.contextLength !== undefined && {
           contextLength: reviewRunner.contextLength,
@@ -256,7 +267,7 @@ export async function runFinalReviewPhase(opts: {
         validationEvidence: validationPromptSection,
         skillsContext: opts.skillsContext,
       });
-      fullPrompt = queueText ? queueText + basePrompt : basePrompt;
+      fullPrompt = promptPrefix + basePrompt;
     }
 
     const reviewStep = { kind: 'review' as const, cycle: state.reviewFixes?.cycle ?? 0 };
@@ -270,6 +281,7 @@ export async function runFinalReviewPhase(opts: {
           reviewer,
           prompt,
           projectDir,
+          workspaceDir,
           sessionId,
           bus,
           state,
@@ -307,6 +319,7 @@ export async function runFinalReviewPhase(opts: {
                 ? prompt
                 : composeContinuation({ basePrompt: prompt, partial, steer }),
             projectDir,
+            workspaceDir,
             sessionId,
             bus,
             state,

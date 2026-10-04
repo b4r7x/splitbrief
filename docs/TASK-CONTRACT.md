@@ -372,7 +372,7 @@ A blocked bundle applies nothing and starts a consult with reason `blocked` and 
 
 Targets must be declared, confined relative paths and regular UTF-8 text files or explicitly new files. API bundles do not support delete, rename, chmod or binary operations. Omitted declared targets stay untouched; unchanged entries are no-ops. An empty effective change is not successful implementation.
 
-The application captures target baselines before dispatch, parses and preflights the full response and approval set before mutation, then rechecks each baseline before writing. It preserves concurrent user edits by refusing conflicts. If a later write fails or cancellation interrupts application, earlier writes remain; there is no rollback claim. Validation runs once after the whole bundle succeeds, with aggregate diffs and line counts for actual changed paths. A partial result cannot publish successful completion or advance the brief. The ordinary isolation/promotion path, where applicable, still receives actual changed paths rather than a second promotion mechanism.
+The application captures target baselines before dispatch, parses and preflights the full response and approval set before mutation, then rechecks each baseline before writing. It preserves concurrent user edits by refusing conflicts. If a later write fails or cancellation interrupts application, earlier writes remain; there is no rollback claim. Validation runs once after the whole bundle succeeds, with aggregate diffs and line counts for actual changed paths. A partial result cannot publish successful completion or advance the brief. The bundle is applied in the run workspace like every other writer's output; the checkout receives it only through Apply.
 
 The existing task evidence entry has optional `apiApply` with `callId`, `grammar: 'file-bundle-v1'`, `status`, `candidatePaths`, `applied`, `noops`, `untouched`, optional `failedPath` and `code`. Each applied entry records `path`, `action`, nullable `beforeSha256`, `afterSha256`, and optional `afterMode`, without storing baseline contents. Status is `applied`, `rejected`, `partial` or `failed`; a pre-dispatch refusal has a null call ID. Persisted partial effects remain available to retry and recovery. Older evidence without this field means unknown, not applied. If a process crashes before the receipt is persisted, existing task snapshots and disk state support reconciliation, but attribution may remain unknown and require recovery.
 
@@ -382,20 +382,19 @@ Every run writes a per-session evidence ledger to `.splitbrief/sessions/<id>/evi
 (constant `EVIDENCE_FILE`, file mode `0o600`). The ledger is the durable record
 of what each task was supposed to prove and what was actually observed. It is
 written incrementally as tasks reach a terminal state and amended once the
-final review completes. Successful promotions, stopped promotion prefixes, and
-direct API applications update `promotedFiles` from the writer's result before
-validation. This collection keeps only the latest receipt for each target path
+final review completes. API bundle applications in the run workspace update `promotedFiles` (the name
+predates the run workspace) from the writer's result before validation. This collection keeps only the latest receipt for each target path
 across all tasks. `promotedBriefHash` binds it to the single brief definition,
 excluding runtime status and current code. A changed brief resets its receipt
-collection. Historical promotion attempts remain available for review, but
-never authorize current ownership. Before a possible target write, the orchestrator invalidates prior ownership
+collection. Historical `promotionAttempts` from older runs remain available for
+review, but never authorize current ownership. Before a possible target write, the orchestrator invalidates prior ownership
 for the affected paths. If invalidation cannot persist, the writer does not run.
 A missing later receipt therefore cannot revive an earlier version. Unknown
 failed writes also invalidate earlier ownership for their path. Legacy receipts without this identity, or API results
 without a verified mode, cannot prove ownership. Direct writes without writer
 receipts stay unproved; the approval gate does not infer authorship by rereading
 the target. A target that already matches staged bytes takes no write and gains
-no new receipt. An actual promotion that creates an absent target also records
+no new receipt. An actual write that creates an absent target also records
 `created: true` on its writer receipt. The ledger retains that fact separately
 in `apiCreatedPaths`, so a later API attempt can modify its own created anchor.
 Losing a receipt leaves that creation unproved.
@@ -472,11 +471,11 @@ The full ledger is read directly from disk by UI that needs per-task detail.
 ## Deterministic drift report
 
 Before the final review runs, the orchestrator computes a deterministic
-drift report comparing the Task Brief against captured promotion diffs and the
+drift report comparing the Task Brief against the captured brief diffs and the
 evidence ledger. The report is persisted as `drift-report.json` in the session
 directory and is also injected as a section into the final-review prompt.
 
-Final-review attribution comes from `review-changes.json`, which records verified before/after bytes for isolated promotions and their brief hashes. The full Git comparison remains workspace context, including unknown edits and independent changes within the same declared file. A missing expected file in the final drift report can mean that promotion provenance was not recorded, rather than that the file was unchanged. Legacy sessions and direct writes without capture keep that uncertainty visible. The review packet's optional `changes.provenance` describes this evidence without changing the version-1 packet boundary.
+Final-review attribution comes from `review-changes.json`, which records the before/after bytes each passing brief changed in the run workspace, and their brief hashes. The full Git comparison remains workspace context, including unknown edits and independent changes within the same declared file. A missing expected file in the final drift report can mean that the brief's change capture was not recorded, rather than that the file was unchanged. Legacy sessions and direct writes without capture keep that uncertainty visible. The review packet's optional `changes.provenance` describes this evidence without changing the version-1 packet boundary.
 
 ### Shape
 

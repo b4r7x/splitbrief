@@ -38,9 +38,9 @@ The "typing" side. Responsibilities:
 
 1. Receive a self-contained task prompt (signature, types, tests, constraints, implementation steps, code context).
 2. Produce code: either whole-file write or search/replace markers.
-3. Return code to the orchestrator for extraction-based runners (`api`, `shell`), or write files directly in an isolated directory for `cli` / `agent`; SPLITBRIEF inspects filesystem changes afterward and promotes them into the project under a hash guard.
+3. Return code for SPLITBRIEF to write (`api`, `shell`), or write directly (`cli`, `agent`). Both paths use the run workspace.
 
-**Isolation directory**: where a `cli` or `agent` implementer works — the run's git worktree, or a staged copy when a worktree cannot be made. Only promotion carries its work into your checkout. An implementer tool call that names a closed path is stopped, and the brief halts as `implementer-left-isolation` ("T004 left the isolation directory"). A change to the git state of your checkout during the call halts the brief as `checkout-changed` ("Your checkout changed under T004"); a changed file only raises a warning. The boundary is a check SPLITBRIEF makes, not a sandbox: see [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#recovery) for what it sees and what it cannot.
+**Isolation directory**: the run workspace used by every writer. See [Run workspace](#run-workspace) and [isolation checks](./APPROVAL-AND-RECOVERY.md#isolation-checks).
 
 The implementer is *stateless per task*. No conversation is maintained between tasks. This is deliberate: atomic tasks keep the context small enough to fit in an 8K model.
 
@@ -67,7 +67,7 @@ Both the planner and the implementer are configured with a `kind` field. There a
 | `shell` | An arbitrary command. Prompt → stdin, code → stdout. No shell/network sandbox | Any custom script | `extracted-code` | Users who want to plug in a tool we don't know |
 | `agent` | A command that writes files directly to disk. No stdout extraction or shell/network sandbox | A complete coding agent used as an implementer | `direct` | When the tool handles file writing itself |
 
-Write mode follows mechanically from the kind and cannot be chosen: `capabilities.writesFiles` may be restated per profile, but config load rejects any value that differs from the kind's mode. See [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md#write-modes) for what each mode means for isolation and promotion.
+Write mode follows the runner kind. Config rejects a `capabilities.writesFiles` value that differs from the kind's mode. See [Write modes](./PLANNERS-AND-IMPLEMENTERS.md#write-modes). [Run workspace and Apply](./HOW-IT-WORKS.md#run-workspace-and-apply) defines their execution directory.
 
 All four kinds implement the same `Planner` / `Implementer` interface (`src/engine/planners/types.ts`, `src/engine/implementers/types.ts`). The orchestrator doesn't care which kind is active.
 
@@ -98,19 +98,35 @@ The retired phases `researching`, `specifying`, `reviewing-spec`, `clarifying`, 
 
 **Live phases** (Stop now aborts the active call): `planning`, `implementing`, `escalating`, and `final-review`.
 
-**Run status** (`src/core/sessions/run-status.ts`): the one vocabulary for how a run stands — `running` (a process still holds it), `open` (it came to rest and can be picked up) or `closed` (`complete` when the final review passed, `ended` when the user closed it). `deriveRunStatus` is the only place that decides, from the saved state, the lockfile and the artifacts on disk; every listing, guard and screen reads it rather than inferring its own.
+**Run status** (`src/core/sessions/run-status.ts`): `running`, `open`, `ready-to-apply` or `closed`. `deriveRunStatus` supplies the one answer to every listing, guard and screen. [WORKFLOW.md](./WORKFLOW.md#run-status) defines the rules, closure outcomes and older-run compatibility.
 
 **Stop reason**: why an open run came to rest — `paused` (at a boundary or mid-step), `waiting` (at the plan card, or at an older run's spec or briefs gate), `halted` (a pending recovery), `failed` (the run recorded a failure) or `interrupted` (nothing said why). The session listing carries it as `stop` and the row spells it as one word.
 
-**Step** (`StepRef`, `src/core/schemas/run-step.ts`): a place in the run — a planner call (`plan` for a new run; `research`, `spec`, `tasks`, `clarify`, `constitution` and `analyze` name an older run's steps), a gate (`plan`; `spec` and `briefs` for older runs), a brief (`taskId` plus `attempt`) or a review cycle. `resumeStep(state, artifacts)` names the step a run picks up at; Everything before the build continues as the one planning session.
+**Step** (`StepRef`, `src/core/schemas/run-step.ts`): a planner call, gate, brief attempt, review cycle or Apply. Older planner and gate names remain readable. `resumeStep(state)` names the next step. Planning continues as one session.
 
-**Closed**: the one thing that stops a run being continuable. `state.closed` is written by `CLOSE_RUN` — the **End run** row on the stop sheet, the end-run row on the plan card, the `end-run` recovery action, `/end` — and a run that passed its final review closes as `complete`. A closed run keeps every file it wrote; closing reverts nothing.
+**Closed**: a run that cannot continue. Workspace runs close as `applied`, `discarded` or `ended`. Older passed runs keep `complete`. Closing preserves unapplied work through [the shared close path](./WORKFLOW.md#apply).
 
 **Continuing a run**: `continueRun` (`src/engine/orchestrator/run/continue.ts`) is the one path. A park this process still holds settles in place; a run at rest is re-entered on its saved state with what the operator typed riding along as a *steer*, folded into the step's own prompt rather than replacing it. A cold crash mid-generation loses the stream, not the run: the step loop picks up at the first artifact it has not written.
 
 **Continuation / steer**: the operator's words for the step a stop cut. A continuation never replaces the step's prompt — `composeContinuation` (`src/engine/spec/prompts/continuation.ts`) trails the partial and the steer behind the real prompt, and the planner with a native session gets one extra user turn on the conversation it already ran the step on.
 
 **`awaitingContinue`**: the boolean the state carried before `interruptedStep` existed. It still parses and still reads as parked, but `interruptedStep` is the field that says *which* step and *where* the cut landed.
+
+---
+
+## Run workspace
+
+The **run workspace** is one worktree or staged copy shared by all tasks, retries, checks and code reviews. The checkout receives the run result at Apply. [HOW-IT-WORKS.md](./HOW-IT-WORKS.md#run-workspace-and-apply) defines its creation and data flow.
+
+**Workspace-base** is the named snapshot captured when the run workspace is created. Apply uses it as the merge base. It includes captured uncommitted files. See [the three Apply states](./HOW-IT-WORKS.md#run-workspace-and-apply).
+
+**Ready to apply** means the workspace result awaits Apply or Discard. A passing review or owner override can produce this status. It has no unresolved recovery. It is not continued: choose Apply or Discard. See [Run status](./WORKFLOW.md#run-status).
+
+**Apply** merges the checkout's current state into the workspace and writes the assessed candidate into the checkout once. [WORKFLOW.md](./WORKFLOW.md#apply) owns its sequence and safeguards.
+
+**Discard** closes the workspace run without writing its result into the checkout. The shared close path first preserves its work. See [Apply](./WORKFLOW.md#apply).
+
+**Run.patch** is the patch of unapplied workspace work at `.splitbrief/sessions/<id>/run.patch`. Discard and End run preserve it before workspace removal. See [Apply](./WORKFLOW.md#apply) and [patch recovery](./TROUBLESHOOTING.md#symptom-i-discarded-or-ended-a-run-and-need-its-work).
 
 ---
 

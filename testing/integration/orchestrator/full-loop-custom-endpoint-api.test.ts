@@ -5,7 +5,11 @@ import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { REVIEW_FILE, sessionDir } from '../../../src/core/paths.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import { makeOpenAiSseResponse } from '#testing/helpers/faux/openai-sse.js';
-import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeCallbacks,
+  makePlanner,
+  runWorkspaceDir,
+} from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -153,9 +157,9 @@ describe('full workflow custom-endpoint API implementer', { timeout: 90_000 }, (
       _eventSink: (event) => events.push(event),
     });
 
-    expect(readFileSync(join(projectDir, targetFile), 'utf-8')).toContain(
-      'export const loop = "from-custom-endpoint";',
-    );
+    expect(
+      readFileSync(join(runWorkspaceDir({ projectDir, sessionId }), targetFile), 'utf-8'),
+    ).toContain('export const loop = "from-custom-endpoint";');
     expect(summary).toMatchObject({
       totalTasks: 1,
       completedByLocal: 1,

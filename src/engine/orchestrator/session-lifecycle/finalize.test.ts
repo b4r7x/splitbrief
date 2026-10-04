@@ -342,3 +342,54 @@ describe('finalizeEndedRun seat identity', () => {
     });
   });
 });
+
+describe('saveFinalSession for a run with a workspace', () => {
+  const WORKSPACE: NonNullable<WorkflowState['workspace']> = {
+    kind: 'worktree',
+    path: '/tmp/wt',
+    base: { snapshotId: 'workspace-base', head: null },
+  };
+
+  it('records a run ready to apply as open with no stop and keeps the active session', () => {
+    const projectDir = makeProjectDir();
+    const sessionId = 'sess-ready';
+    const active = reactivateExistingSession({ projectDir, sessionId });
+    const state: WorkflowState = { ...completedState(), workspace: WORKSPACE };
+
+    saveFinalSession({
+      projectDir,
+      sessionId,
+      active,
+      feature: 'ready feature',
+      startTime: 1,
+      summary: makeSummary(),
+      state,
+    });
+
+    const row = persisted(projectDir, sessionId);
+    expect(row.status).toBe('open');
+    expect(row.stop).toBeUndefined();
+    expect(shouldPreserveActiveState(state)).toBe(true);
+  });
+
+  it.each([
+    ['applied', 'complete'],
+    ['discarded', 'ended'],
+  ] as const)('records a run closed as %s as %s', (as, status) => {
+    const projectDir = makeProjectDir();
+    const sessionId = `sess-${as}`;
+    const active = reactivateExistingSession({ projectDir, sessionId });
+
+    saveFinalSession({
+      projectDir,
+      sessionId,
+      active,
+      feature: 'closed feature',
+      startTime: 1,
+      summary: makeSummary(),
+      state: { ...completedState(), workspace: WORKSPACE, closed: { at: 'x', as } },
+    });
+
+    expect(persisted(projectDir, sessionId).status).toBe(status);
+  });
+});

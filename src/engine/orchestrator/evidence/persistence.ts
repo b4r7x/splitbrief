@@ -10,8 +10,6 @@ import { mutateEvidenceLedger, readEvidenceLedger } from '../../../core/evidence
 import {
   recordApiApplyEvidence,
   recordLocalTaskEvidence,
-  recordPromotedFilesEvidence,
-  recordPromotionFailureEvidence,
   recordRetryOrEscalationEvidence,
   recordSkippedTaskEvidence,
 } from './task.js';
@@ -21,15 +19,8 @@ import type { ValidationResult } from '../validation/result.js';
 import type { ActionClass, TaskCompletionMethod, TaskStatus } from '../../../core/schemas/enums.js';
 import { hashTaskBrief } from '../../brief-hash.js';
 import type { GateDecision } from '../approval/types.js';
-import type {
-  EvidenceLedger,
-  EvidencePromotedFile,
-  EvidencePromotionAttempt,
-  EvidenceValidationEntry,
-} from '../../../core/schemas/evidence.js';
+import type { EvidenceLedger, EvidenceValidationEntry } from '../../../core/schemas/evidence.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
-import { isInDeclaredSet, taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
-import type { EventBus } from '../../events/types.js';
 
 export function getOrCreateLedger(opts: { ref: SessionRef; state: WorkflowState }): EvidenceLedger {
   const { ref, state } = opts;
@@ -150,7 +141,7 @@ export function persistApiApplyEvidence(opts: {
   state: WorkflowState;
   task: Task;
   result: BundleApplyResult;
-  workspacePath?: string | undefined;
+  workspacePath: string;
 }): void {
   const { wctx, state, task, result } = opts;
   try {
@@ -178,15 +169,14 @@ export function raiseApiApplyRecovery(opts: {
   state: WorkflowState;
   task: Task;
   result: Extract<BundleApplyResult, { status: 'partial' | 'failed' }>;
-  workspacePath?: string | undefined;
+  workspacePath: string;
 }): WorkflowState {
   const { wctx, state, task, result, workspacePath } = opts;
   const landed = result.applied.map((file) => file.path).join(', ');
-  const location = workspacePath === undefined ? '' : ' in the retained worker workspace';
   const message =
     result.status === 'partial'
-      ? `${task.id}: the response stopped at ${result.failedPath} after applying ${landed}; partial changes kept${location}, and the brief did not advance (${result.error})`
-      : `${task.id}: the outcome of writing ${result.failedPath} is uncertain${location}; reconcile this file before continuing (${result.error})`;
+      ? `${task.id}: the response stopped at ${result.failedPath} after applying ${landed}; partial changes kept in the run workspace, and the brief did not advance (${result.error})`
+      : `${task.id}: the outcome of writing ${result.failedPath} is uncertain in the run workspace; reconcile this file before continuing (${result.error})`;
   publishError({ bus: wctx.bus, phase: state.phase, message });
   return raisePendingRecovery(
     wctx,
@@ -199,106 +189,15 @@ export function raiseApiApplyRecovery(opts: {
       files: [...result.applied.map((file) => file.path), result.failedPath],
       affectedTaskIds: [task.id],
       message,
-      details:
-        workspacePath === undefined
-          ? ['Inspect the recorded changes before retrying. They have not been rolled back.']
-          : [
-              `Worker output is retained at ${workspacePath}. These writes were not promoted to the project.`,
-            ],
-      facts: {
-        apiApplyIncomplete: true,
-        ...(workspacePath === undefined ? {} : { workspacePath }),
-      },
+      details: [
+        `The partial writes stay in the run workspace at ${workspacePath}; the checkout is unchanged.`,
+      ],
+      facts: { apiApplyIncomplete: true, workspacePath },
       availableActions: ['retry-same-worker', 'pause-run', 'end-run'],
       recommendedAction: 'pause-run',
       createdAt: nowIso(),
     }),
   );
-}
-
-/**
- * A partial promotion is the one evidence write whose loss cannot be a warning:
- * the caller has to know whether the applied prefix is durably recorded before
- * it decides what to do with the workspace, so the failure is returned.
- */
-export function persistPromotionFailureEvidence(opts: {
-  ref: SessionRef;
-  state: WorkflowState;
-  task: Task;
-  attempt: EvidencePromotionAttempt;
-}): { persisted: true } | { persisted: false; error: unknown } {
-  const { ref, state, task, attempt } = opts;
-  try {
-    mutateEvidenceLedger(ref, (existing) =>
-      recordPromotionFailureEvidence({
-        ledger: existing ?? getOrCreateLedger({ ref, state }),
-        task,
-        attempt,
-        briefHash: hashTaskBrief(state.tasks),
-      }),
-    );
-    return { persisted: true };
-  } catch (err) {
-    return { persisted: false, error: err };
-  }
-}
-
-/** Invalidate before a possible target write, so a lost new receipt cannot revive an old one. */
-export function invalidateTargetWriteEvidence(opts: {
-  ref: SessionRef;
-  task: Task;
-  files?: readonly string[];
-}): void {
-  const patterns = taskDeclaredPatterns(opts.task);
-  const affected = (path: string) =>
-    opts.files === undefined ? isInDeclaredSet(path, patterns) : opts.files.includes(path);
-  const current = readEvidenceLedger(opts.ref);
-  if (!current?.tasks.some((entry) => entry.promotedFiles?.some((file) => affected(file.path)))) {
-    return;
-  }
-  // Failure propagates before the writer runs. The existing ledger lock keeps
-  // unrelated evidence written since the first read intact.
-  mutateEvidenceLedger(opts.ref, (existing) => {
-    const ledger = existing ?? current;
-    return {
-      ...ledger,
-      generatedAt: nowIso(),
-      tasks: ledger.tasks.map((entry) =>
-        entry.promotedFiles === undefined
-          ? entry
-          : {
-              ...entry,
-              promotedFiles: entry.promotedFiles.filter((file) => !affected(file.path)),
-            },
-      ),
-    };
-  });
-}
-
-/**
- * Persist the writer's receipt before validation. A persistence error remains
- * visible as a warning; no target read is used to reconstruct missing evidence.
- */
-export function persistPromotedFilesEvidence(opts: {
-  ref: SessionRef;
-  bus: EventBus;
-  state: WorkflowState;
-  task: Task;
-  files: EvidencePromotedFile[];
-}): void {
-  const { ref, bus, state, task, files } = opts;
-  try {
-    mutateEvidenceLedger(ref, (existing) =>
-      recordPromotedFilesEvidence({
-        ledger: existing ?? getOrCreateLedger({ ref, state }),
-        task,
-        files,
-        briefHash: hashTaskBrief(state.tasks),
-      }),
-    );
-  } catch (err) {
-    publishWarningFromError({ bus, phase: state.phase }, 'failed to record promoted files', err);
-  }
 }
 
 export function persistRejectionEvidence(opts: {

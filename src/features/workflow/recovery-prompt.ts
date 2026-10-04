@@ -81,10 +81,12 @@ const REBASE_CONTINUATION = '(approve / edit / reject the proposal)';
 // is matched only against the actions the issue itself carries.
 const ACTION_KEYS: Record<RecoveryAction, string> = {
   'retry-same-worker': 'r',
+  'restore-backup': 'u',
   'route-bigger-worker': 'b',
   'switch-seat': 'w',
   'planner-split-rebase': 'p',
   revise: 'v',
+  'accept-as-is': 'k',
   'revise-spec': 'v',
   continue: 'c',
   'skip-current-task': 's',
@@ -99,10 +101,12 @@ export function recoveryActionKey(action: RecoveryAction): string {
 
 export const ACTION_ALIASES: Record<RecoveryAction, string[]> = {
   'retry-same-worker': ['r', 'retry', 'retry same worker', 'retry-same-worker'],
+  'restore-backup': ['u', 'restore', 'restore backup', 'restore-backup'],
   'route-bigger-worker': ['b', 'bigger', 'route', 'route bigger', 'route-bigger-worker'],
   'switch-seat': ['w', 'switch', 'switch seat', 'switch-seat'],
   'planner-split-rebase': [],
   revise: ['v', 'revise', 'comment'],
+  'accept-as-is': ['k', 'accept', 'accept as is', 'accept-as-is'],
   'revise-spec': ['v', 'revise', 'revise spec', 'revise-spec'],
   continue: ['c', 'continue', 'cont'],
   'skip-current-task': ['s', 'skip', 'skip task', 'skip-current-task'],
@@ -131,11 +135,15 @@ function formatRecoveryActionText(
   action: RecoveryAction,
   context: RecoveryActionChoiceContext = {},
 ): string {
+  const apply = applyRecoveryActionText(action, context.reason);
+  if (apply !== undefined) return apply;
   switch (action) {
     case 'retry-same-worker':
       return context.seatRetry === undefined
         ? 'retry same worker'
         : `retry ${CREW_SEAT_LABELS[context.seatRetry]}`;
+    case 'restore-backup':
+      return 'restore backup';
     case 'route-bigger-worker': {
       const profile = recoveryFactString(context.facts, 'routeBiggerProfile');
       return profile ? `route to bigger worker · ${profile}` : 'route to bigger worker';
@@ -150,6 +158,8 @@ function formatRecoveryActionText(
       return context.reason === 'review-failed'
         ? 'revise · send the findings back with a correction'
         : 'revise · send the planner a correction';
+    case 'accept-as-is':
+      return 'accept as is · ready to apply with the open findings; Apply lists them and asks once';
     case 'continue':
       return 'continue';
     case 'skip-current-task':
@@ -159,6 +169,25 @@ function formatRecoveryActionText(
     case 'end-run':
       return 'end run · closes this run, changes kept';
   }
+}
+
+function applyRecoveryActionText(
+  action: RecoveryAction,
+  reason: RecoveryActionChoiceContext['reason'],
+): string | undefined {
+  if (reason !== 'apply-conflict' && reason !== 'apply-partial') return undefined;
+  if (action === 'end-run') {
+    return 'end run · closes this run, the checkout keeps what it has now';
+  }
+  if (action === 'restore-backup' && reason === 'apply-partial') {
+    return 'restore backup · puts back the files Apply replaced and removes the ones it created';
+  }
+  if (action !== 'retry-same-worker') return undefined;
+  const consequence =
+    reason === 'apply-conflict'
+      ? 'after you resolve the files in the workspace'
+      : 'writes the files still missing';
+  return `re-run Apply · ${consequence}`;
 }
 
 /** How many of a seat's detected tools the halt offers; a longer list is a settings question. */
@@ -184,6 +213,11 @@ function switchSeatRowKey(index: number, offered: number): string {
  * restarts the brief. On a short panel the facts above the rows are what drops.
  */
 export function recoveryMenuLabel(action: RecoveryAction, issue: RecoveryIssue): string {
+  const apply =
+    action === 'retry-same-worker' || action === 'restore-backup'
+      ? applyRecoveryActionText(action, issue.reason)
+      : undefined;
+  if (apply !== undefined) return apply.charAt(0).toUpperCase() + apply.slice(1);
   const label = recoveryActionLabel(action, {
     reason: issue.reason,
     facts: issue.facts,
@@ -457,6 +491,8 @@ function formatRecoveryHeader(issue: RecoveryIssue): string {
   if (
     issue.reason === 'implementer-left-isolation' ||
     issue.reason === 'checkout-changed' ||
+    issue.reason === 'apply-conflict' ||
+    issue.reason === 'apply-partial' ||
     issue.reason === 'plan-questions-exhausted' ||
     issue.reason === 'plan-checks-failed'
   ) {
@@ -516,14 +552,19 @@ function formatSubjectLines(issue: RecoveryIssue): string[] {
  * The widest halt a builder writes is retry-exhausted: the last error, the attempts, the bigger
  * worker on offer, what the implementer said, what the planner answered, and the planner's
  * verdict. The budget covers all six, so the two voices are never the rows that fall off.
+ * Apply conflicts and partial Apply keep every file detail and the workspace or backup path.
  */
 const MAX_DETAIL_LINES = 6;
 
 function formatDetailLines(issue: RecoveryIssue): string[] {
   const dropQuotedReset = formatResetAt(issue.resetAt) !== undefined;
-  return issue.details
-    .filter((detail) => !detail.startsWith('Worker profile:'))
-    .slice(0, MAX_DETAIL_LINES)
+  const details =
+    issue.reason === 'apply-conflict' || issue.reason === 'apply-partial'
+      ? issue.details
+      : issue.details
+          .filter((detail) => !detail.startsWith('Worker profile:'))
+          .slice(0, MAX_DETAIL_LINES);
+  return details
     .map((detail) => formatDetailLine(detail, issue))
     .map((detail) => (dropQuotedReset ? stripRecoveryResetClause(detail) : detail));
 }

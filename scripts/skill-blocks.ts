@@ -1,30 +1,28 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { PassThrough } from 'node:stream';
+import { z } from 'zod';
 import { BASELINE_RULE } from '../src/core/pipeline-spec/baseline.js';
 import { BOUNDS } from '../src/core/pipeline-spec/bounds.js';
-import {
-  BRIEF_SECTION_ORDER,
-  CLOSING_CONSTRAINTS,
-  sliceRuleText,
-} from '../src/core/pipeline-spec/brief.js';
+import { BRIEF_SECTION_ORDER, sliceRuleText } from '../src/core/pipeline-spec/brief.js';
 import { CAPTURE_LIMITS, GATE_ORDER, NARROWING_RULE } from '../src/core/pipeline-spec/gates.js';
 import { HALT_SIGNATURES } from '../src/core/pipeline-spec/halts.js';
-import { LADDER, RETRY_FRAMINGS } from '../src/core/pipeline-spec/ladder.js';
 import { DEFAULT_LOCAL_RETRIES } from '../src/core/pipeline-spec/retries.js';
-import { REVIEW_CYCLE_CAP, VERDICT_RULES } from '../src/core/pipeline-spec/review.js';
-import { SCOPE_RULE } from '../src/core/pipeline-spec/scope.js';
+import { REVIEW_CYCLE_CAP } from '../src/core/pipeline-spec/review.js';
+import { PROTECTED_PATHS_TEXT } from '../src/core/pipeline-spec/scope.js';
 import { TIMEOUTS } from '../src/core/pipeline-spec/timeouts.js';
 import type { CliEffortChannel } from '../src/core/runners/effort-channel.js';
-import { CONSULT_ANSWER_JSON_SCHEMA } from '../src/core/schemas/consult.js';
+import {
+  CONSULT_ANSWER_JSON_SCHEMA,
+  ConsultAnswerSchema,
+  type ConsultAnswer,
+  ImplementerReportSchema,
+} from '../src/core/schemas/consult.js';
 import type { EffortLevel } from '../src/core/schemas/enums.js';
 import type { Plan } from '../src/core/schemas/plan.js';
-import { taskId, TaskSchema } from '../src/core/schemas/task.js';
+import { TaskSchema } from '../src/core/schemas/task.js';
 import { STACKS } from '../src/core/validation/stacks/registry.js';
 import type { Stack, TestNarrowing } from '../src/core/validation/stacks/types.js';
-import { createStdoutTextSink } from '../src/engine/events/sinks/stdout-text.js';
-import type { EngineEvent } from '../src/engine/events/types.js';
 import { consultAttemptError } from '../src/engine/orchestrator/escalation/consult-guidance.js';
 import { CLI_PROMPT_SENTINEL } from '../src/engine/runners/cli-tools/candidate-contract.js';
 import type {
@@ -39,12 +37,9 @@ import { fallbackInstruction } from '../src/engine/runners/typed-output.js';
 import { READ_ONLY_CONTEXT_HEADING, TASK_BRIEF_HEADINGS } from '../src/engine/spec/headings.js';
 import { formatTaskPrompt } from '../src/engine/spec/prompt-formatter.js';
 import { buildConsultPrompt } from '../src/engine/spec/prompts/consult.js';
-import { buildEscalationPrompt } from '../src/engine/spec/prompts/escalation.js';
 import { buildLanguageContext } from '../src/engine/spec/prompts/language-context.js';
-import { buildFinalReviewPrompt } from '../src/engine/spec/prompts/review.js';
-import { buildImplementerSystemPreamble } from '../src/engine/spec/prompts/system.js';
+import { workspaceRules } from '../src/engine/spec/prompts/system.js';
 import { buildTaskFormatExample } from '../src/engine/spec/prompts/task-format-example.js';
-import { briefContract, criticalRules } from '../src/engine/spec/prompts/tasks.js';
 
 const ctx = buildLanguageContext('typescript');
 
@@ -75,20 +70,12 @@ const ERROR_PLACEHOLDER = '<gate tail>';
 
 type Substitutions = ReadonlyArray<readonly [string, string]>;
 
-// The skill runs in the project tree, with this session as the orchestrator: there is no
-// isolation directory, no promotion step and no SPLITBRIEF process.
-export const PREAMBLE_SUBSTITUTIONS: Substitutions = [
-  [
-    "directly in the isolation directory. Your changes are promoted into the user's project afterwards.",
-    'directly in the working directory.',
-  ],
-  ["SPLITBRIEF runs the project's typecheck", "The orchestrator runs the project's typecheck"],
-  ['SPLITBRIEF and the review seat do that', 'the orchestrator and the review seat do that'],
-];
-
 const CLOSING_LINE_SUBSTITUTIONS: Substitutions = [
   ['directly in the isolation directory.', 'directly in the working directory.'],
-  ['SPLITBRIEF runs the typecheck', 'The orchestrator runs the typecheck'],
+  [
+    'SPLITBRIEF runs the typecheck, lint and test gates',
+    `The orchestrator runs the ${GATE_ORDER.join(', ')} gates`,
+  ],
 ];
 
 function substitute(text: string, substitutions: Substitutions, source: string): string {
@@ -185,20 +172,108 @@ function toolRecipe(toolId: string): string | null {
 }
 
 function preamble(): string {
-  const text = buildImplementerSystemPreamble(ctx, 'direct', '<project dir>');
-  return indent(substitute(text, PREAMBLE_SUBSTITUTIONS, 'implementer preamble'));
+  return indent(
+    [
+      `SYSTEM: Write ${ctx.language} code directly in the working directory.`,
+      workspaceRules('<project dir>'),
+      suggestedFiles(),
+      `Use ${ctx.importConvention}. Follow the project's instruction files.`,
+      'Read the suggested files and the attached context before editing.',
+      'Treat steps as guidance. Keep the accepted criteria and explicit exclusions.',
+      "The orchestrator runs the project's typecheck, lint and affected tests after each task.",
+      'Run at most the focused tests in the brief, once. Leave project gates to the orchestrator.',
+      'In these skills, render checks are unavailable. Do not claim render evidence.',
+      implementerReport(),
+    ].join('\n'),
+  );
 }
 
 function reviewPacket(): string {
+  return indent(`# Implementation review
+
+Read the workspace without editing it. Answer from this packet and the current code.
+
+## Approved plan
+<plan.json, completed tasks and the criteria due at this review>
+
+## Plan context
+<summary, confirmed decisions with task ids, and criterion text>
+
+## Task Briefs
+<completed tasks' Markdown briefs in full; pending tasks listed separately>
+
+## Implementation Diff
+<current run diff against the saved baseline, grouped by task>
+
+## Changed files
+<per-task changed paths and touchedNotSuggested entries with reasons>
+
+## Recorded Validation Output
+<current full-suite output and required checks by id, with commands, exits and artifact paths>
+
+## Consults and user answers
+<consult log, triage log, rejected findings with reasons, and user answers>
+
+## Instructions
+Check the accepted behaviour, exclusions, edge cases, tests and repository rules.
+Quote recorded output for each validation claim. State when evidence is absent.
+Only registered check ids can verify a criterion. Old evidence cannot verify changed code.
+Pending criteria are pending. Do not report them as a plan gap.
+Render checks are unavailable in these skills. A required render criterion stays unverified.
+
+## Typed answer
+Return one JSON object with tasks, criteria and findings.
+Tasks use plan: met, partial or missed. Criteria use status: pass, fail or unverified, with evidence.
+Findings use kind: defect, plan-gap, unverified or question; severity: blocking or minor.
+Use taskId to identify a task. Use checkIds or criterionId for an unverified finding.
+Include exactly one result for each completed task and each criterion due now.
+Use this example shape, with real ids and evidence:
+
+{"tasks":[{"id":"T001","plan":"met","note":"<evidence>"}],"criteria":[{"id":"C1","status":"pass","evidence":"<recorded proof>"}],"findings":[{"id":"F1","kind":"question","severity":"blocking","taskId":"T001","text":"<question>"}]}
+
+Use an empty findings array when there are no findings. The session derives the verdict.`);
+}
+
+function implementerReport(): string {
+  const report = ImplementerReportSchema.parse({
+    status: 'done',
+    filesChanged: ['<file>'],
+    touchedNotSuggested: [{ file: '<file>', reason: '<reason>' }],
+    notes: null,
+  });
+  const blocked = ImplementerReportSchema.parse({
+    status: 'blocked',
+    question: '<question>',
+    filesNeeded: ['<file>'],
+  });
+  return [
+    'The report is advisory. Recorded checks decide whether the task passes.',
+    'End with one JSON object and nothing after it. Use decisions: [] when you propose no deviation.',
+    JSON.stringify({ ...report, decisions: [{ what: '<proposed deviation>', why: '<reason>' }] }),
+    `If blocked, end with ${JSON.stringify(blocked)} instead. The session consults at once.`,
+    'A decision proposes a deviation. The planner confirms how; the user decides changes to what.',
+  ].join('\n');
+}
+
+function briefTemplate(): string {
+  const template = buildTaskFormatExample(ctx)
+    .replace(
+      'What to implement and why. Include all context the implementer needs.',
+      'What to implement and why. Include all context the implementer needs.\n\n' +
+        '**Plan context (read-only):**\n' +
+        '<plan summary>\n' +
+        'Decisions: <confirmed plan decisions, including task ids>\n' +
+        'Criteria this task serves: <criterion ids and text>',
+    )
+    .replace('3. 3-5 steps max\n', '')
+    .replace(
+      'A further path the planner already approved',
+      'A further ordinary file the planner suggests',
+    )
+    .replace('Stop and ask when', 'Stop and report to the planner when');
   return indent(
-    buildFinalReviewPrompt({
-      spec: '<spec.md when it exists; otherwise, per brief: `### T001 — <title>` + its Description, Tests, Scope>',
-      taskBriefs: '<every brief in full>',
-      diff: '<git diff of the changed set against the baseline tree; untracked new files via `git diff --no-index /dev/null <file>`>',
-      driftReport: '<drift.md content, or `No drift: every changed file is owned by a brief.`>',
-      validationEvidence:
-        '<per brief: `### T001 — attempt N` then, per stage, the command on its own line and its captured output fenced>',
-    }),
+    `${template}\n\n**Implementer report:**\n${implementerReport()}\n` +
+      'No proposed deviation: {"status":"done","filesChanged":["<file>"],"touchedNotSuggested":[],"decisions":[],"notes":null}',
   );
 }
 
@@ -208,6 +283,7 @@ function reviewPacket(): string {
  */
 function consultContract(): string {
   const prompt = buildConsultPrompt({
+    workspaceDir: '<the run workspace>',
     reason: 'failed',
     plan: PLACEHOLDER_PLAN,
     task: PLACEHOLDER_TASK,
@@ -232,7 +308,8 @@ function consultContract(): string {
     '',
     `The composed error block is truncated to ${BOUNDS.consultFailingOutputChars} characters.`,
     '',
-    `A lineage is bounded at ${BOUNDS.consultsPerLineage} consults and ${BOUNDS.attemptsPerLineage} attempts, and a run at ${BOUNDS.plannerCallsPerRun} planner calls; a spent bound halts with the planner's last diagnosis and offers continue (with a note), skip the brief, or end the run. Continuing grants ${BOUNDS.extraConsultsPerLineage} more consult and ${BOUNDS.extraAttemptsPerLineage} more attempts, or ${BOUNDS.extraPlannerCallsPerRun} more planner calls.`,
+    "Attach Plan context: the summary, confirmed decisions with task ids, and the task's criterion text.",
+    'Attach proposed decisions from the report. The CLI ships this in S5.',
   ].join('\n');
 }
 
@@ -248,16 +325,48 @@ function table(header: readonly string[], rows: readonly (readonly string[])[]):
   ].join('\n');
 }
 
-function ladderTable(): string {
-  return table(
-    ['Rung', 'Who runs it', 'Attempts', 'Consumes a local retry'],
-    LADDER.map((rung) => [
-      `\`${rung.id}\``,
-      rung.who,
-      rung.count === 'DEFAULT_LOCAL_RETRIES' ? String(DEFAULT_LOCAL_RETRIES) : '1',
-      rung.consumesRetry === false ? 'no' : 'yes',
-    ]),
-  );
+function consultTable(): string {
+  const actions: Record<ConsultAnswer['answer']['action'], string> = {
+    guidance: 'Keep the brief. Attach instructions and context for one more implementer attempt.',
+    'rewrite-task':
+      'Replace the TaskSpec at the same id and the same criteria. Raise its revision.',
+    'split-task': 'Keep all criteria. Re-point pending dependents to all children.',
+    verify: 'Run the named registered checks and validation. Make no implementer call.',
+    'ask-user': 'Ask only when the user alone can answer. Record why, choices and a default.',
+  };
+  return [
+    `Attempt → ${DEFAULT_LOCAL_RETRIES} local retry with the exact errors → a planner consult.`,
+    '',
+    table(
+      ['Action', 'Next step'],
+      ConsultAnswerSchema.shape.answer.def.right.options.map((option) => {
+        const action = option.shape.action.value;
+        if ('tasks' in option.shape) {
+          const limits = z.toJSONSchema(option.shape.tasks);
+          return [
+            `\`${action}\``,
+            `Replace with ${limits.minItems}–${limits.maxItems} subtasks. ${actions[action]}`,
+          ];
+        }
+        return [`\`${action}\``, actions[action]];
+      }),
+    ),
+    '',
+    `Keep lineage counters across splits and resume: ${BOUNDS.consultsPerLineage} consults and ${BOUNDS.attemptsPerLineage} attempts.`,
+    `Keep the run counter: ${BOUNDS.plannerCallsPerRun} planner decisions after planning, including consults and triage.`,
+    'Before dispatch, changed inputs get one stale consult per revision: guidance or rewrite-task.',
+    'A stale consult spends no run planner decision. A blocked report consults at once.',
+    'When a bound is spent, pause and keep the work. Ask: continue with a note / skip / end.',
+    `Continuing grants ${BOUNDS.extraConsultsPerLineage} more consult and ${BOUNDS.extraAttemptsPerLineage} more attempts, or ${BOUNDS.extraPlannerCallsPerRun} more planner decisions.`,
+  ].join('\n');
+}
+
+function seatRecovery(): string {
+  return bullets([
+    `Transient seat failures permit ${BOUNDS.transientRetries} retries with backoff.`,
+    `A usage match with a reported reset within ${BOUNDS.rateLimitResetWaitMs / 60_000} minutes permits a bounded wait up to that limit.`,
+    'After the wait bound, halt as seat down and ask the user. Longer or unknown resets need the user immediately.',
+  ]);
 }
 
 const HALT_KINDS = {
@@ -408,8 +517,12 @@ function closingLine(): string {
   ]);
 }
 
-function scopeRule(): string {
-  return bullets([SCOPE_RULE.allowedSetText, SCOPE_RULE.driftText]);
+function suggestedFiles(): string {
+  return bullets([
+    'Suggested files are guidance. Edit another ordinary project file when needed; name it with a reason in touchedNotSuggested.',
+    `Protected writes always need user confirmation: ${PROTECTED_PATHS_TEXT}.`,
+    'Only an explicit user approval confirms a path and operation. A task request alone grants no confirmation.',
+  ]);
 }
 
 function baselineRule(): string {
@@ -424,66 +537,9 @@ function timeouts(): string {
   const deadline = TIMEOUTS.implementerMs / 1000;
   return bullets([
     `Implementer ${minutes(TIMEOUTS.implementerMs)} minutes per attempt, reviewer ${minutes(TIMEOUTS.reviewerMs)} minutes. ${TIMEOUTS.consecutiveTimeoutsHalt} consecutive timeouts on one brief = hard halt.`,
-    `The waiter is its own deadline: \`scripts/wait-attempt.sh <run> <T00N> <n> --deadline ${deadline}\` kills the process group at ${minutes(TIMEOUTS.implementerMs)} minutes. Never wrap a spawn in coreutils \`timeout\` — it does not exist on stock macOS.`,
+    `The waiter enforces its own deadline: \`scripts/wait-attempt.sh <run> <T00N> <n> --deadline ${deadline}\` at ${minutes(TIMEOUTS.implementerMs)} minutes.`,
+    'At the deadline, it attempts to terminate a separate process group when it can identify one, otherwise only the recorded PID. Never wrap a spawn in coreutils `timeout`. It does not exist on stock macOS.',
   ]);
-}
-
-function plainShapes(): string {
-  const output = new PassThrough();
-  const chunks: string[] = [];
-  output.on('data', (chunk: Buffer) => chunks.push(chunk.toString('utf8')));
-  const sink = createStdoutTextSink({ output });
-  const ts = 0;
-  const events: EngineEvent[] = [
-    { type: 'workflow_started', ts, phase: 'implementing', feature: '<feature>' },
-    {
-      type: 'validate',
-      ts,
-      phase: 'implementing',
-      taskId: taskId('T001'),
-      status: 'done',
-      passed: true,
-      stages: { typecheck: true, lint: true, test: true },
-    },
-    {
-      type: 'task_completed',
-      ts,
-      phase: 'implementing',
-      taskId: taskId('T001'),
-      title: '<title>',
-      method: 'local',
-      retries: 0,
-      duration: 0,
-    },
-    {
-      type: 'validate',
-      ts,
-      phase: 'implementing',
-      taskId: taskId('T002'),
-      status: 'done',
-      passed: true,
-      stages: { typecheck: false, lint: false, test: false },
-    },
-    { type: 'task_full_fail', ts, phase: 'implementing', taskId: taskId('T002'), reason: 'test' },
-    {
-      type: 'cost_update',
-      ts,
-      phase: 'implementing',
-      tokenUsage: {
-        plannerInput: 90_000,
-        plannerOutput: 12_000,
-        implementerInput: 20_000,
-        implementerOutput: 6400,
-        escalationInput: 0,
-        escalationOutput: 0,
-        reviewerInput: 0,
-        reviewerOutput: 0,
-      },
-    },
-    { type: 'workflow_complete', ts, phase: 'complete', review: 'failed', completedTasks: 1 },
-  ];
-  for (const event of events) sink(event);
-  return ['```', chunks.join('').trimEnd(), '```'].join('\n');
 }
 
 function waitProtocol(): string {
@@ -491,60 +547,45 @@ function waitProtocol(): string {
   return [
     `1. **Spawn.** One tool call, detached, writing \`<run>/T00N/attempt-N.{pid,log,done}\`: \`nohup sh -c '<argv> > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID\`. The wait is never in the same tool call as the spawn — never \`nohup … &\` and the wait in one call, and never a command that begins with \`sleep\`.`,
     `2. **Wait.** A separate tool call running \`scripts/wait-attempt.sh <run> <T00N> <n>\`: it blocks until \`.done\` exists or the pid is gone and prints one line, \`T00N attempt N: exit=<code>|timeout|missing-pid[ halt=<kind>]\`. On Claude Code run it with \`run_in_background: true\` — the completion notification names the outcome; elsewhere run it in the foreground. The waiter is its own deadline (\`--deadline ${deadline}\`); no coreutils \`timeout\` wrapper.`,
-    `   Fallback, when the installer dropped \`scripts/\`: \`n=0; until [ -f "$DONE" ] || [ "$n" -ge ${deadline} ]; do sleep 5; n=$((n+5)); done; cat "$DONE" 2>/dev/null || echo exit=timeout\` — same deadline, no halt sniff, so read the halt phrases off the log yourself.`,
-    '3. **Re-read every turn.** Every turn — user message, completion notification, hook follow-up, cron fire — begins with `cat .splitbrief/current-run` → `progress.md` → `scripts/wait-attempt.sh --reconcile <run>`, and rewrites every `running` row to `done` / `retrying` / `halted` before deciding anything. A running row whose pid is alive is never re-spawned.',
+    `   Fallback, when the installer dropped \`scripts/\`: \`n=0; until [ -f "$DONE" ] || [ "$n" -ge ${deadline} ]; do sleep 5; n=$((n+5)); done; cat "$DONE" 2>/dev/null || echo exit=timeout\`. Use the same deadline and read the halt phrases from the log. On timeout, reconcile the recorded PID and its implementer children. Confirm they are gone, or stop them and confirm exit, before recovery or another dispatch.`,
+    "3. **Re-read every turn.** Read `.splitbrief/current-run`, `progress.md` and `scripts/wait-attempt.sh --reconcile <run>`. Read a finished process's log and run its checks before marking the task done. Never re-spawn a live pid. Preserve counters and decisions.",
     '4. **Monitor (Claude Code, optional).** A persistent `Monitor` on `tail -f <run>/events.log` filtering `done|failed|timeout|halted|run: complete` wakes the session on any terminal state. It is a whole-run wake, never the single-completion primitive — the waiter of point 2 stays.',
-    '5. **Stop-hook safety net.** Install `scripts/splitbrief-gate.sh` for the host: Claude Code `settings.json` `hooks.Stop`, Codex `~/.codex/hooks.json` `Stop`, Command Code `.commandcode/settings.json` `Stop`, Copilot `.github/hooks/*.json` `agentStop`, Cursor `.cursor/hooks.json` `stop` with `SPLITBRIEF_HOST=cursor`, Antigravity `hooks.json` `Stop` with `SPLITBRIEF_HOST=antigravity`. It is a safety net — every host caps consecutive continuations.',
-    '6. **`--plain` fast path.** When `command -v splitbrief` and `.splitbrief/config.yaml` both exist, `splitbrief start --plain "<feature>"` (or `splitbrief resume --plain`) is the whole loop in one command; read its lines from the `plain-shapes` block instead of running this protocol.',
+    '5. **Stop-hook safety net.** If the user authorized a host hook, use `scripts/splitbrief-gate.sh`. It checks continuation, not task success. Recorded checks still decide.',
   ].join('\n');
 }
 
 function verdictRules(): string {
   return bullets([
-    `Exactly one verdict word under \`### Verdict\`: ${VERDICT_RULES.words.map((word) => `\`${word}\``).join(' | ')}.`,
-    `No single verdict word → ${VERDICT_RULES.unparseableReask} re-ask, verbatim: "${VERDICT_RULES.reaskSentence}" — a still-unparseable reply is \`${VERDICT_RULES.unparseableVerdict}\`.`,
-    'Any Critical finding overrides a `pass`.',
-    'A Critical finding names a code, test or behavior defect; an evidence-record gap alone is at most a Note and never causes `fail`.',
-    'A finding belongs to the brief whose `files` names it (path substring); an unmatched finding goes to the last brief.',
+    'Derive pass: every task met, every criterion pass, no blocking finding.',
+    'Reject missing, duplicated or unknown task and criterion ids. Unverified criteria block pass.',
+    'At task cadence, cover completed tasks and criteria due so far. Pending criteria are pending, never a gap.',
+    'Generic validation does not prove an unrelated criterion. Evidence must cover the current candidate.',
+    'Repair malformed typed output once. A second failure pauses the seat; it produces no verdict.',
+    'Keep minor findings as notes. The CLI ships typed review and task cadence in S5.',
   ]);
 }
 
 function fixCycle(): string {
   return bullets([
-    `A \`${VERDICT_RULES.unparseableVerdict}\` verdict re-enters implementation: each Critical finding becomes the error block of the next attempt on its owning brief.`,
-    `At most ${REVIEW_CYCLE_CAP} review cycles; the last \`fail\` ends the run as \`STOPPED at review\` with the findings listed.`,
+    'Send blocking findings to the session for triage. Append fix tasks with new ids; done tasks stay done.',
+    'Run registered checks for unverified findings. Answer question findings as the planner before asking the user.',
+    'Keep criteria when repairing a check command. Ask the user before changing the accepted outcome.',
+    `Allow ${REVIEW_CYCLE_CAP} fix cycles across the run, up to ${REVIEW_CYCLE_CAP + 1} reviews at end cadence. Task cadence adds reviews and shares this fix cap.`,
+    'Prepare each fresh review with references/gates.md.',
+    'After the cap, pause for the user. Preserve open findings and never claim verification passed.',
+    'The CLI ships appended fix tasks, triage and planner-first questions in S5.',
   ]);
 }
 
 const BLOCKS: Record<string, () => string> = {
-  'brief-template': () => indent(buildTaskFormatExample(ctx)),
-  'brief-contract': () => briefContract(ctx),
-  'critical-rules': () => criticalRules(ctx),
+  'brief-template': briefTemplate,
   'implementer-preamble': preamble,
-  'closing-constraints': () => CLOSING_CONSTRAINTS.map((line) => `  - ${line}`).join('\n'),
-  'retry-framings': () =>
-    Object.entries(RETRY_FRAMINGS)
-      .map(
-        ([attempt, framing]) =>
-          `| attempt ${attempt}${attempt === String(Object.keys(RETRY_FRAMINGS).length) ? '+' : ''} | \`${framing}\` |`,
-      )
-      .join('\n'),
   'consult-contract': consultContract,
-  'takeover-prompt': () =>
-    indent(
-      buildEscalationPrompt({
-        task: PLACEHOLDER_TASK,
-        lastAttempt: "<the last attempt's final text>",
-        error: ERROR_PLACEHOLDER,
-        languageContext: ctx,
-        isolationDir: '<project dir>',
-        outputMode: 'files',
-      }),
-    ),
   'review-packet': reviewPacket,
   'verdict-rules': verdictRules,
   'fix-cycle': fixCycle,
-  'ladder-table': ladderTable,
+  'consult-table': consultTable,
+  'seat-recovery': seatRecovery,
   'halt-signatures': haltSignatures,
   'halt-signatures-sh': haltSignaturesSh,
   'gate-rules': gateRules,
@@ -552,10 +593,9 @@ const BLOCKS: Record<string, () => string> = {
   'brief-grouping': sliceRuleText,
   'body-order': bodyOrder,
   'closing-line': closingLine,
-  'scope-rule': scopeRule,
+  'suggested-files': suggestedFiles,
   'baseline-rule': baselineRule,
   timeouts,
-  'plain-shapes': plainShapes,
   'wait-protocol': waitProtocol,
 };
 

@@ -746,7 +746,7 @@ describe('WorkflowScreen showing a run at rest', () => {
 
   it('hints at the panel alone on a halt that takes no typed correction', async () => {
     const issue = makeRecoveryIssue({
-      reason: 'user-edit-conflict',
+      reason: 'dependency-blocked',
       phase: 'implementing',
       availableActions: ['pause-run', 'end-run'],
       recommendedAction: 'pause-run',
@@ -799,6 +799,184 @@ describe('WorkflowScreen showing a run at rest', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain('Tab to choose an action…');
     expect(frame).not.toContain('Type a correction, or tab to choose an action…');
+    ui.unmount();
+  });
+
+  function readyRun(override = false, findings = ['missing null check']) {
+    return openRun({
+      status: { kind: 'ready-to-apply', override },
+      hydration: {
+        kind: 'loaded',
+        state: makeWorkflowState({
+          phase: 'complete',
+          reviewStatus: override ? 'failed' : 'passed',
+          workspace: {
+            kind: 'worktree',
+            path: join(projectDir, 'run-workspace'),
+            base: { snapshotId: 'workspace-base', head: null },
+          },
+          ...(override && {
+            acceptedAsIs: { at: '2026-09-14T00:00:00.000Z', findings },
+          }),
+        }),
+      },
+    });
+  }
+
+  it('opens a ready run with the result menu above the composer', async () => {
+    readyRun();
+    const onRuntimeCommand = vi.fn();
+
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={onRuntimeCommand} />);
+    await flushEffects();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Ready to apply');
+    expect(frame).toContain('Show diff');
+    expect(frame).toContain('Discard');
+    expect(frame).not.toContain('Closed');
+
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(onRuntimeCommand).toHaveBeenCalledWith('/run accept');
+    });
+    ui.unmount();
+  });
+
+  it('fits the at-rest byline inside the row past its mark slot', async () => {
+    terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });
+    readyRun(true);
+
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
+    await flushEffects();
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    expect(lines.at(-1)?.trim()).toBe('Choose Apply, Show diff or Discard');
+    ui.unmount();
+  });
+
+  it('takes no result-menu keys while an overlay owns the keyboard', async () => {
+    readyRun();
+    const onRuntimeCommand = vi.fn();
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={onRuntimeCommand} />);
+    await flushEffects();
+    overlayStore.open('help');
+    await flushEffects();
+
+    ui.stdin.write('\r');
+    await tick(30);
+
+    expect(onRuntimeCommand).not.toHaveBeenCalled();
+    ui.unmount();
+  });
+
+  it('reserves the height of the override confirmation it paints', async () => {
+    terminalSizeStore.__testReset({ cols: 60, rows: 40 });
+    const findings = Array.from(
+      { length: 8 },
+      (_, index) => `Open finding ${index + 1} needs a fix`,
+    );
+    readyRun(true, findings);
+
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />, {
+      cols: 60,
+      rows: 40,
+    });
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Apply with 8 open findings?');
+    expect(frame).toContain('Open finding 8 needs a fix');
+    expect(frame).toContain('Back · return to the result menu');
+    expect(frame).toContain('tab type a command');
+    ui.unmount();
+  });
+
+  it('resets confirmation when the menu closes or the ready session changes', async () => {
+    const record = readyRun(true);
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Apply with 1 open finding?');
+
+    routerStore.init({
+      screen: 'workflow',
+      run: { ...record, ref: { ...record.ref, sessionId: 'another-ready-session' } },
+      execution: { kind: 'at-rest' },
+    });
+    await flushEffects();
+    await tick(30);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('open findings; asks once');
+    ui.stdin.write('\r');
+    await tick(30);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Apply with 1 open finding?');
+
+    overlayStore.open('stop-sheet');
+    await flushEffects();
+    overlayStore.close();
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('open findings; asks once');
+    ui.unmount();
+  });
+
+  it('moves focus to the composer with Tab, and an empty Enter there hands it back to the menu', async () => {
+    readyRun();
+    const onRuntimeCommand = vi.fn();
+
+    const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={onRuntimeCommand} />);
+    await flushEffects();
+    ui.stdin.write('\t');
+    await flushEffects();
+    ui.stdin.write('z');
+    await flushEffects();
+    expect(feedbackStore.get().message).toBe(COMMANDS_ONLY_NOTICE);
+
+    ui.stdin.write('\r');
+    await flushEffects();
+    expect(onRuntimeCommand).not.toHaveBeenCalled();
+    expect(runWorkflow).not.toHaveBeenCalled();
+
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(onRuntimeCommand).toHaveBeenCalledWith('/run accept');
+    });
+    ui.unmount();
+  });
+
+  it('asks once before applying a run accepted as is', async () => {
+    readyRun(true);
+    const commands = workflowCommands(
+      makeCtx({
+        acceptRun: async (confirm) =>
+          confirm
+            ? { status: 'applied', files: ['src/form.ts'] }
+            : { status: 'confirm-override', findings: ['missing null check'] },
+        setFeedbackMessage: feedbackStore.setMessage,
+        setFeedbackError: feedbackStore.setError,
+      }),
+    );
+    const onRuntimeCommand = vi.fn((raw: string) =>
+      runCommandInTest({ commands, raw, screen: 'workflow', onError: feedbackStore.setError }),
+    );
+
+    const ui = renderFeature(
+      <WorkflowScreen commands={commands} onRuntimeCommand={onRuntimeCommand} />,
+    );
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Ready to apply as is');
+    ui.stdin.write('\r');
+    await flushEffects();
+    expect(onRuntimeCommand).not.toHaveBeenCalled();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('missing null check');
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(onRuntimeCommand).toHaveBeenCalledWith('/run accept confirm');
+      expect(feedbackStore.get()).toEqual({
+        message: 'Applied 1 file to your checkout.',
+        isError: false,
+      });
+    });
     ui.unmount();
   });
 

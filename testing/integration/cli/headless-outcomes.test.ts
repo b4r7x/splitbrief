@@ -284,8 +284,8 @@ describe('runHeadless — a tiered approval refusal stops the run', () => {
         }),
         _planner: makePlanner(),
         _implementer: makeImplementer({
-          implement: vi.fn().mockImplementation(async () => {
-            writeFileSync(join(projectDir, 'package.json'), '{ "name": "bumped" }\n');
+          implement: vi.fn().mockImplementation(async (opts: { projectDir: string }) => {
+            writeFileSync(join(opts.projectDir, 'package.json'), '{ "name": "bumped" }\n');
             return { success: true, output: '', usage: { inputTokens: 50, outputTokens: 25 } };
           }),
         }),

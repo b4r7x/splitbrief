@@ -8,7 +8,7 @@ An orchestrator for two AI coding tools: one plans and reviews, the other execut
 
 An open-source CLI that runs two coding tools against one job. The stronger tool researches your repo and compiles Task Briefs. The weaker one executes them, one brief at a time, in fresh context. The stronger one then reviews what came back.
 
-Everything between the two belongs to SPLITBRIEF: the [Task Brief contract](./docs/TASK-CONTRACT.md), the isolated directory the implementer writes in, promotion of those changes into your project, validation, retry, the planner consult, and the evidence trail that records what actually happened.
+Everything between the two belongs to SPLITBRIEF: the [Task Brief contract](./docs/TASK-CONTRACT.md), the run workspace the implementer writes in, the one Apply that brings the reviewed result into your project, validation, retry, the planner consult, and the evidence trail that records what actually happened.
 
 ## Why two tools instead of one
 
@@ -64,7 +64,7 @@ You: "add user authentication with JWT"
 └──────────────────────┘
 ```
 
-How the changes land depends on which kind of implementer you picked. A tool that writes files itself (`writesFiles: direct` — the `cli` and `agent` kinds) works in an isolated directory; SPLITBRIEF promotes the result into your project and refuses to overwrite a file that changed while the task was running. A model that returns file contents (`writesFiles: extracted-code` — the `api` and `shell` kinds) never touches your working tree; SPLITBRIEF writes the returned content. API responses use declared text-file bundles with whole-response preflight and exact-path approval; shell extraction remains single-file. Isolation covers files only — same ports, same database, same hooks and config — so it is not a security boundary.
+Every implementer works in one run workspace — a git worktree by default — never in your working tree. A tool that writes files itself (`writesFiles: direct` — the `cli` and `agent` kinds) edits files there; for a model that returns file contents (`writesFiles: extracted-code` — the `api` and `shell` kinds) SPLITBRIEF writes the returned content there. The briefs are validated and reviewed in the workspace. When the review passes, the run is ready to apply: Apply merges your own edits with the result and writes it into your project once, and refuses to overwrite a file that changed during the write. Discard keeps the changes in a patch instead. API responses use declared text-file bundles with whole-response preflight and exact-path approval; shell extraction remains single-file. Isolation covers files only — same ports, same database, same hooks and config — so it is not a security boundary.
 
 The TUI shows planner and implementer working together as a conversation flow — event cards, inline diffs, live token counts.
 

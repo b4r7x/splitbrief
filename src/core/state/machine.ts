@@ -1,4 +1,4 @@
-import { deriveRunStatus } from '../sessions/run-status.js';
+import { awaitsApply, deriveRunStatus } from '../sessions/run-status.js';
 import type { MachineAction, StateAction } from './types.js';
 import {
   WORKFLOW_STATE_VERSION,
@@ -21,6 +21,7 @@ import { transitionError } from './errors.js';
 
 const anytimeActions = [
   'CLOSE_RUN',
+  'RECORD_WORKSPACE',
   'INTERRUPT_STEP',
   'RESUME_STEP',
   'RESTORE_BRIEF_PARK',
@@ -98,8 +99,15 @@ const phaseActions = {
   ],
   'validating-task': [...VALIDATION_OR_ESCALATION_SHARED_ACTIONS, 'VALIDATION_FAIL', 'ESCALATE'],
   escalating: [...VALIDATION_OR_ESCALATION_SHARED_ACTIONS, 'UPDATE_TASK_CODE'],
-  'final-review': ['REVIEW_DONE', 'REVIEW_FIX_START'],
-  complete: ['REVIEW_FIX_START'],
+  'final-review': ['REVIEW_DONE', 'REVIEW_FIX_START', 'RECORD_APPLY_RECHECK'],
+  complete: [
+    'REVIEW_FIX_START',
+    'ACCEPT_AS_IS',
+    'APPLY_REVIEW_START',
+    'APPLY_START',
+    'APPLY_DONE',
+    'APPLY_RESTORED',
+  ],
 } as const satisfies Record<Phase, readonly MachineAction['type'][]>;
 
 function canApplyAction(phase: Phase, action: MachineAction['type']): boolean {
@@ -376,6 +384,8 @@ export function transition(
         phase: 'complete',
         completedAt: now.toISOString(),
         reviewStatus: action.reviewStatus,
+        ...(action.candidate !== undefined && { reviewedCandidate: action.candidate }),
+        ...(action.reviewStatus === 'passed' && { applyReview: undefined }),
       };
 
     case 'REVIEW_FIX_START': {
@@ -397,13 +407,71 @@ export function transition(
       };
     }
 
+    case 'RECORD_WORKSPACE':
+      return { ...state, workspace: action.workspace };
+
+    case 'ACCEPT_AS_IS':
+      return {
+        ...state,
+        acceptedAsIs: { at: now.toISOString(), findings: action.findings },
+        applyReview: undefined,
+      };
+
+    case 'APPLY_REVIEW_START':
+      if (deriveRunStatus({ state, liveness: 'not-alive' }).kind !== 'ready-to-apply') {
+        throw transitionError.invalidActionForPhase(state.phase, action.type);
+      }
+      return {
+        ...state,
+        phase: 'final-review',
+        reviewStatus: undefined,
+        completedAt: undefined,
+        acceptedAsIs: undefined,
+        applyReview: { merged: action.merged, failures: [] },
+        reviewFixes: {
+          cycle: (state.reviewFixes?.cycle ?? 0) + 1,
+          findings: state.reviewFixes?.findings ?? {},
+        },
+      };
+
+    case 'RECORD_APPLY_RECHECK':
+      if (state.applyReview === undefined) {
+        throw transitionError.invalidActionForPhase(state.phase, action.type);
+      }
+      return { ...state, applyReview: { ...state.applyReview, failures: action.failures } };
+
+    case 'APPLY_START':
+      if (!awaitsApply(state)) {
+        throw transitionError.invalidActionForPhase(state.phase, action.type);
+      }
+      return { ...state, applying: { at: now.toISOString(), backupId: action.backupId } };
+
+    case 'APPLY_DONE': {
+      if (state.applying === undefined) {
+        throw transitionError.invalidActionForPhase(state.phase, action.type);
+      }
+      const at = now.toISOString();
+      return {
+        ...state,
+        applying: undefined,
+        applied: { at, backupId: state.applying.backupId, files: action.files },
+        closed: { at, as: 'applied' },
+      };
+    }
+
+    case 'APPLY_RESTORED':
+      if (state.applying === undefined) {
+        throw transitionError.invalidActionForPhase(state.phase, action.type);
+      }
+      return { ...state, applying: undefined };
+
     case 'CLOSE_RUN':
       if (deriveRunStatus({ state, liveness: 'not-alive' }).kind === 'closed') {
         return state;
       }
       return {
         ...state,
-        closed: { at: action.at ?? now.toISOString(), as: 'ended' },
+        closed: { at: action.at ?? now.toISOString(), as: action.as ?? 'ended' },
         interruptedStep: undefined,
         pendingRecovery: undefined,
         pendingPlannerConversation: undefined,

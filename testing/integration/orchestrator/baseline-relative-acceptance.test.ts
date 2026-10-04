@@ -9,6 +9,7 @@ import {
   makeCallbacks,
   makeImplementer,
   makePlanner,
+  runWorkspaceDir,
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -179,9 +180,9 @@ describe('baseline-relative acceptance', { timeout: 90_000 }, () => {
       _eventSink: (event) => events.push(event),
     });
 
-    expect(readFileSync(join(projectDir, targetFile), 'utf-8')).toBe(
-      'export const other = "unrelated";\n',
-    );
+    expect(
+      readFileSync(join(runWorkspaceDir({ projectDir, sessionId }), targetFile), 'utf-8'),
+    ).toBe('export const other = "unrelated";\n');
     expect(summary).toMatchObject({
       totalTasks: 1,
       completedByLocal: 1,

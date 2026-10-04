@@ -13,6 +13,7 @@ import { ensureSessionDir } from '../../../core/paths-io.js';
 import {
   makeBusRecorder,
   makeCallbacks,
+  makeCopyingIsolation,
   makeImplementer,
   makeWctx,
 } from '#testing/helpers/orchestrator-factories.js';
@@ -30,9 +31,12 @@ import { createConfiguredCustomImplementer } from '../../implementers/command-in
 import { createImplementerBase } from '../../implementers/pipeline/run.js';
 import { makeBaseConfig } from '#testing/helpers/factories/implementer-base.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
-import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
+import {
+  getChangedFilesSinceSnapshot,
+  getChangedFilesSnapshot,
+} from '../approval/file-snapshots/capture.js';
 import { createStagedProject } from '../approval/staged-project.js';
-import { applyChangedFiles } from './apply-changed-files.js';
+import { gateAttemptChanges } from './attempt-gate.js';
 import { runImplementation } from './run-implementation.js';
 import type { StreamingSink } from './streaming-feed.js';
 
@@ -220,24 +224,140 @@ async function runIsolatedDirectScenario(approval: 'approved' | 'rejected'): Pro
   expect(readFileSync(outsideSentinel, 'utf8')).toBe('outside-stage-reachable');
   expect(existsSync(join(projectDir, '.env.local'))).toBe(false);
 
-  const applied = await applyChangedFiles({
+  const gate = await gateAttemptChanges({
     wctx,
     task,
-    state: implementation.state,
+    phase: implementation.state.phase,
     workspace,
-    preApplyApprovedFiles: implementation.preApplyApprovedFiles,
-    taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
-    recordApprovalDenial: vi.fn(),
-    handleConflict: async (currentState) => currentState,
+    preApprovedFiles: implementation.preApplyApprovedFiles,
+    dependsOnFiles: [],
+    onApproved: vi.fn(),
   });
 
-  expect(applied.proceed).toBe(approval === 'approved');
-  expect(existsSync(workspace.projectDir)).toBe(false);
-  expect(existsSync(join(projectDir, '.env.local'))).toBe(approval === 'approved');
+  expect(gate.outcome).toBe(approval === 'approved' ? 'allow' : 'denied');
+  expect(existsSync(workspace.projectDir)).toBe(true);
+  expect(existsSync(join(projectDir, '.env.local'))).toBe(false);
+  await wctx.isolation.dispose();
+  expect(existsSync(join(workspace.projectDir, '.env.local'))).toBe(approval === 'approved');
 }
 
 describe('runImplementation configured custom contracts', () => {
-  it('discards output-child writes while applying parsed output to the real target without stage env or session leakage', async () => {
+  it.each(['approved', 'rejected'] as const)(
+    'gates an extracted protected write before application when %s and prompts only once',
+    async (approval) => {
+      const { projectDir } = setupProject(`extracted-protected-${approval}`);
+      const sessionId = 'sess-extracted-protected';
+      ensureSessionDir(projectDir, sessionId);
+      const task = makeTask({ file: '.env.local', action: 'create' });
+      const onTieredApproval = vi
+        .fn()
+        .mockResolvedValue(
+          approval === 'approved'
+            ? { decision: 'confirm', phrase: CONFIRM_PHRASE, reason: 'reviewed' }
+            : { decision: 'deny', reason: 'no' },
+        );
+      const wctx = makeWctx({
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({
+          approval: { enabled: true, feedRejectionsToPlanner: false },
+        }),
+        callbacks: makeCallbacks({ onTieredApproval }).callbacks,
+        implementer: createImplementerBase(
+          makeBaseConfig({
+            invoke: async () =>
+              makeRunnerCallResult({ status: 'completed', text: '```text\nVALUE=2\n```' }),
+          }),
+        ),
+      });
+      try {
+        const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
+        const result = await runImplementation({
+          wctx,
+          task,
+          state: makeImplState([task]),
+          taskStartSnapshot,
+          setTrackedState: vi.fn(),
+          recordApprovalDenial: vi.fn(),
+        });
+        expect(onTieredApproval).toHaveBeenCalledTimes(1);
+        expect(result.preApplyApprovalDenied).toBe(approval === 'rejected');
+        expect(result.preApplyApprovedFiles).toEqual(approval === 'approved' ? ['.env.local'] : []);
+        expect(existsSync(join(projectDir, '.env.local'))).toBe(false);
+        expect(existsSync(join(result.workspace.projectDir, '.env.local'))).toBe(
+          approval === 'approved',
+        );
+        if (approval === 'approved') {
+          expect(result.implResult.success).toBe(true);
+          const gate = await gateAttemptChanges({
+            wctx,
+            task,
+            phase: result.state.phase,
+            workspace: result.workspace,
+            preApprovedFiles: result.preApplyApprovedFiles,
+            dependsOnFiles: [],
+            onApproved: vi.fn(),
+          });
+          expect(gate).toMatchObject({ outcome: 'allow', approvedFiles: ['.env.local'] });
+          expect(readFileSync(join(result.workspace.projectDir, '.env.local'), 'utf8')).toContain(
+            'VALUE=2',
+          );
+          expect(existsSync(join(projectDir, '.env.local'))).toBe(false);
+          expect(onTieredApproval).toHaveBeenCalledTimes(1);
+        }
+      } finally {
+        await wctx.isolation.dispose();
+      }
+    },
+  );
+
+  it("an extracted-code writer's first attempt writes into the run workspace", async () => {
+    const { projectDir } = setupProject('extracted-first-attempt');
+    const sessionId = 'sess-extracted-first';
+    ensureSessionDir(projectDir, sessionId);
+    const file = 'src/value.ts';
+    const original = 'export const value = 1;\n';
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(join(projectDir, file), original);
+    const task = makeTask({ file, action: 'modify' });
+    const receivedDirs: string[] = [];
+    const wctx = makeWctx({
+      projectDir,
+      sessionId,
+      implementer: makeImplementer({
+        capabilities: { writesFiles: 'extracted-code' },
+        implement: async (opts: ImplementerOptions) => {
+          receivedDirs.push(opts.projectDir);
+          writeFileSync(join(opts.projectDir, file), 'export const value = 2;\n');
+          return { success: true, output: 'updated value' };
+        },
+      }),
+    });
+
+    try {
+      const result = await runImplementation({
+        wctx,
+        task,
+        state: makeImplState([task]),
+        taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
+        setTrackedState: vi.fn(),
+        recordApprovalDenial: vi.fn(),
+      });
+
+      expect(result.workspace).toBeDefined();
+      expect(receivedDirs).toEqual([result.workspace?.projectDir]);
+      expect(receivedDirs[0]).not.toBe(projectDir);
+      expect(readFileSync(join(projectDir, file), 'utf8')).toBe(original);
+      if (result.workspace === undefined) throw new Error('Missing run workspace');
+      expect(readFileSync(join(result.workspace.projectDir, file), 'utf8')).toBe(
+        'export const value = 2;\n',
+      );
+    } finally {
+      await wctx.isolation.dispose();
+    }
+  });
+
+  it('discards output-child writes while applying parsed output to the run workspace without stage env or session leakage', async () => {
     const { projectDir, stateDir } = setupProject('t028-output-workflow');
     const task = makeTask({ id: 'T028', file: 'src/output.ts', action: 'create' });
     const state = makeImplState([task]);
@@ -291,11 +411,11 @@ describe('runImplementation configured custom contracts', () => {
     });
 
     expect(result.implResult.success).toBe(true);
-    expect(result.workspace).toBeUndefined();
+    expect(result.workspace.projectDir).not.toBe(projectDir);
     expect(childStages).toHaveLength(1);
     const childStage = childStages[0];
     if (childStage === undefined) throw new Error('Output child stage was not created');
-    const applied = readFileSync(join(projectDir, 'src', 'output.ts'), 'utf8');
+    const applied = readFileSync(join(result.workspace.projectDir, 'src', 'output.ts'), 'utf8');
     expect(applied).toContain(`// cwd:${childStage}`);
     expect(applied).toContain('// allowed:***REDACTED***');
     expect(applied).not.toContain('runtime-source-only');
@@ -303,10 +423,13 @@ describe('runImplementation configured custom contracts', () => {
     expect(applied).toContain('// undeclared:absent');
     expect(applied).toContain('// session-in-prompt:false');
     expect(existsSync(join(projectDir, 'output-child-only.txt'))).toBe(false);
+    expect(existsSync(join(projectDir, 'src/output.ts'))).toBe(false);
+    expect(existsSync(join(result.workspace.projectDir, 'output-child-only.txt'))).toBe(false);
     expect(existsSync(childStage)).toBe(false);
+    await wctx.isolation.dispose();
   });
 
-  it('promotes an approved direct custom-runner outer-stage diff', {
+  it('keeps an approved direct custom-runner outer-stage diff in the run workspace only', {
     timeout: 30_000,
   }, async () => {
     await runIsolatedDirectScenario('approved');
@@ -317,28 +440,22 @@ describe('runImplementation configured custom contracts', () => {
   });
 });
 
-describe('runImplementation worktree freshness', () => {
-  async function capturedFresh(
+describe('runImplementation workspace continuation', () => {
+  async function capturedResume(
     seed: { partial?: string; steer?: string; attempt?: number; keepWorkspace?: true } | undefined,
     stateOverrides?: Partial<WorkflowState>,
   ): Promise<boolean | undefined> {
     const { projectDir } = setupProject('reseed');
     const task = makeTask({ id: 'T040', file: 'src/reseed.ts', action: 'create' });
     const state = makeImplState([task], stateOverrides);
-    const freshArgs: Array<boolean | undefined> = [];
+    const resumeArgs: Array<boolean | undefined> = [];
+    const sharedIsolation = makeCopyingIsolation({ projectDir, sessionId: 'reseed-session' });
     const isolation: RunIsolation = {
+      ...sharedIsolation,
       acquire: async (opts) => {
-        freshArgs.push(opts.fresh);
-        return {
-          projectDir,
-          sandboxEnv: {},
-          snapshot: await getChangedFilesSnapshot(projectDir),
-          targetBaseline: undefined,
-          changeDetection: 'file-hashes',
-          cleanup: () => {},
-        };
+        resumeArgs.push(opts.resume);
+        return sharedIsolation.acquire(opts);
       },
-      dispose: async () => {},
     };
     const continuation =
       seed === undefined
@@ -366,29 +483,26 @@ describe('runImplementation worktree freshness', () => {
       recordApprovalDenial: vi.fn(),
     });
 
-    expect(freshArgs).toHaveLength(1);
-    return freshArgs[0];
+    await isolation.dispose();
+    expect(resumeArgs).toHaveLength(1);
+    return resumeArgs[0];
   }
 
-  it('reseeds a first attempt that carries no continuation seed', async () => {
-    expect(await capturedFresh(undefined)).toBe(true);
+  it('starts an attempt without resuming when it carries no continuation seed', async () => {
+    expect(await capturedResume(undefined)).toBe(false);
   });
 
-  it('reseeds when a correction alone continues the brief', async () => {
-    // A retry-exhausted brief restored its files in the project tree; a typed
-    // correction is guidance, not a mid-step resume, so the worktree must reseed.
-    expect(await capturedFresh({ steer: 'use the smaller helper' })).toBe(true);
+  it('starts an attempt without resuming when a correction alone continues the brief', async () => {
+    expect(await capturedResume({ steer: 'use the smaller helper' })).toBe(false);
   });
 
   it('keeps the worktree for a genuine mid-step park continuation', async () => {
     // A genuine park carries what `resumeContinuation` records: the partial and the keep flag.
-    expect(await capturedFresh({ partial: 'half a brief', keepWorkspace: true })).toBe(false);
+    expect(await capturedResume({ partial: 'half a brief', keepWorkspace: true })).toBe(true);
   });
 
-  it("reseeds when a prior attempt's partial no longer matches the reset attempt", async () => {
-    // The park left a partial at attempt 2; the ladder reset the brief to attempt
-    // 0, so the stale partial does not resume it and the worktree reseeds clean.
-    expect(await capturedFresh({ partial: 'half a brief', attempt: 2 })).toBe(true);
+  it("does not resume when a prior attempt's partial no longer matches the reset attempt", async () => {
+    expect(await capturedResume({ partial: 'half a brief', attempt: 2 })).toBe(false);
   });
 });
 
@@ -459,14 +573,20 @@ describe('runImplementation continuation note', () => {
     writeFileSync(join(projectDir, 'src/reseed.ts'), 'export const reseed = 1;\n');
     const implementer = makeImplementer({ capabilities: { writesFiles: 'direct' } });
     const isolation: RunIsolation = {
-      acquire: async () => ({
-        projectDir,
-        sandboxEnv: {},
-        snapshot: await getChangedFilesSnapshot(projectDir),
-        targetBaseline: undefined,
-        changeDetection: 'file-hashes',
-        cleanup: () => {},
-      }),
+      open: async () => ({ kind: 'worktree', projectDir, head: null, keptFiles: [] }),
+      acquire: async () => {
+        const snapshot = await getChangedFilesSnapshot(projectDir);
+        return {
+          projectDir,
+          sandboxEnv: {},
+          snapshot,
+          targetBaseline: undefined,
+          changeDetection: 'file-hashes',
+          changedFiles: () => getChangedFilesSinceSnapshot(projectDir, snapshot),
+          cleanup: () => {},
+          revert: vi.fn(),
+        };
+      },
       dispose: async () => {},
     };
     const continuation = createContinuationHolder({
@@ -567,14 +687,20 @@ describe('runImplementation live preview', () => {
     const task = makeTask({ id: 'T050', file: 'src/preview.ts', action: 'modify' });
     const { bus, events } = makeBusRecorder();
     const isolation: RunIsolation = {
-      acquire: async () => ({
-        projectDir,
-        sandboxEnv: {},
-        snapshot: await getChangedFilesSnapshot(projectDir),
-        targetBaseline: undefined,
-        changeDetection: 'file-hashes',
-        cleanup: () => {},
-      }),
+      open: async () => ({ kind: 'worktree', projectDir, head: null, keptFiles: [] }),
+      acquire: async () => {
+        const snapshot = await getChangedFilesSnapshot(projectDir);
+        return {
+          projectDir,
+          sandboxEnv: {},
+          snapshot,
+          targetBaseline: undefined,
+          changeDetection: 'file-hashes',
+          changedFiles: () => getChangedFilesSinceSnapshot(projectDir, snapshot),
+          cleanup: () => {},
+          revert: vi.fn(),
+        };
+      },
       dispose: async () => {},
     };
     const implementer = makeImplementer({

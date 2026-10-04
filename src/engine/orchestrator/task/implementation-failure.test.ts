@@ -18,6 +18,7 @@ import {
 import type { ImplementerResult } from '../../implementers/types.js';
 import type { RunImplementationResult } from './run-implementation.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
+import { extractedCodeApprovalRaceError } from '../../implementers/pipeline/extracted-code.js';
 import { handleFailedImplementation } from './implementation-failure.js';
 
 afterEach(cleanupTaskProjects);
@@ -26,7 +27,15 @@ function implState(implResult: ImplementerResult): RunImplementationResult {
   return {
     state: implementingState([makeTask()]),
     implResult,
-    workspace: undefined,
+    workspace: {
+      projectDir: '/unused',
+      sandboxEnv: {},
+      snapshot: { head: 'HEAD', files: [], dirtyFileContents: {} },
+      targetBaseline: undefined,
+      changedFiles: async () => [],
+      cleanup: () => {},
+      revert: async () => {},
+    },
     preApplyApprovalDenied: false,
     preApplyApprovedFiles: [],
   };
@@ -290,5 +299,38 @@ describe('handleFailedImplementation — an effect failure is no scope fence', (
     expect(retry.mock.calls[0]?.[0]?.error).toBe(error);
     expect(readFileSync(join(projectDir, 'src/other.ts'), 'utf-8')).toBe('agent rewrote this\n');
     expect(JSON.stringify(events)).not.toMatch(/revert/i);
+  });
+
+  it('an extracted-code write blocked by a change during approval is an ordinary failed attempt', async () => {
+    const task = makeTask({ id: 'T001', file: 'src/app.ts' });
+    const state = implementingState([task]);
+    const retry = vi.fn().mockResolvedValue({
+      success: false,
+      error: 'still blocked',
+      usage: { inputTokens: 1, outputTokens: 1 },
+    });
+    const { bus, events } = makeBusRecorder();
+    const wctx = makeWorkflowContext({
+      implementer: makeImplementer({ retry }),
+      bus,
+      planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
+    });
+    const error = extractedCodeApprovalRaceError(task.file);
+
+    const next = await handleFailedImplementation({
+      wctx,
+      task,
+      state,
+      implState: implState({ success: false, output: '', error }),
+      taskStartTime: Date.now(),
+      taskStartSnapshot: await getChangedFilesSnapshot(wctx.projectDir),
+      tokensBefore: { ...state.tokenUsage },
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+    });
+
+    expect(retry.mock.calls[0]?.[0]?.error).toBe(error);
+    expect(next.pendingRecovery?.reason).not.toBe('approval-promotion-conflict');
+    expect(events.find((e) => e.type === 'paused_external_changes')).toBeUndefined();
   });
 });

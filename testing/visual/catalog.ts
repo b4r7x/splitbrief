@@ -503,23 +503,6 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
-      id: 'workflow-user-edit-conflict-prompt',
-      title: 'Workflow · safe user edit prompt',
-      surface: screenSurface('workflow'),
-      checkpoint: {
-        id: 'user-edit-conflict-prompt',
-        title: 'A future brief file leads the safe edit prompt',
-        kind: 'question',
-        marker: 'input to T901',
-      },
-      elements: [
-        { id: 'header', title: 'Workflow header' },
-        { id: 'transcript', title: 'Workflow transcript' },
-        { id: 'question-panel', title: 'User edit prompt' },
-        { id: 'composer', title: 'Workflow composer' },
-      ],
-    }),
-    defineScenario({
       id: 'workflow-review',
       title: 'Workflow · review approval',
       surface: screenSurface('workflow'),
@@ -856,6 +839,70 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-ready-to-apply',
+      title: 'Workflow · a reviewed workspace waiting to apply',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'ready-to-apply',
+        title: 'Ready to apply',
+        kind: 'ready',
+        marker: 'Ready to apply',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-ready-override',
+      title: 'Workflow · a reviewed workspace accepted as is',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'ready-override',
+        title: 'Ready to apply as is',
+        kind: 'ready',
+        marker: 'Ready to apply as is',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-closed-applied',
+      title: 'Workflow · applied to the checkout',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'closed-applied',
+        title: 'Applied run',
+        kind: 'success',
+        marker: 'visual-closed-applied',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Closed run ledger' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-closed-discarded',
+      title: 'Workflow · discarded with its changes in run.patch',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'closed-discarded',
+        title: 'Discarded run',
+        kind: 'failure',
+        marker: 'visual-closed-discarded',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Closed run ledger' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-closed-complete-needs-attention',
       title: 'Workflow · closed and needing attention',
       surface: screenSurface('workflow'),
@@ -1001,17 +1048,17 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-retained-workspace',
-      title: 'Workflow · retained workspace notices',
+      title: 'Workflow · kept workspace notice',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'retained-workspace',
-        title: 'Stopped and retired workspace notices',
+        title: 'Kept run workspace notice',
         kind: 'failure',
-        marker: 'reuse',
+        marker: 'Workspace kept',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
-        { id: 'transcript', title: 'Workspace notices' },
+        { id: 'transcript', title: 'Workspace notice' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
@@ -1040,22 +1087,6 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Usage-limit recovery menu',
         kind: 'question',
         marker: 'Change BUILD tool',
-      },
-      elements: [
-        { id: 'header', title: 'Workflow header' },
-        { id: 'question-panel', title: 'Recovery menu panel' },
-        { id: 'composer', title: 'Workflow composer' },
-      ],
-    }),
-    defineScenario({
-      id: 'workflow-recovery-user-edits',
-      title: 'Workflow · user edits that conflict with the active brief',
-      surface: screenSurface('workflow'),
-      checkpoint: {
-        id: 'recovery-user-edits',
-        title: 'User-edit conflict recovery menu',
-        kind: 'question',
-        marker: 'Recovery needed · User edits conflict with T901',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

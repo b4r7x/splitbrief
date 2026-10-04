@@ -1,12 +1,15 @@
 import { z } from 'zod';
 import { ChangedFilesSnapshotSchema } from './workflow.js';
 
-export const WorkspaceOwnerSchema = z.object({
-  taskId: z.string(),
-  contract: z.string(),
-  attempt: z.number().int().nonnegative(),
-  buildSeat: z.string(),
-});
+export const WorkspaceOwnerSchema = z.union([
+  z.object({ runId: z.string(), buildSeat: z.string() }),
+  z.object({
+    taskId: z.string(),
+    contract: z.string(),
+    attempt: z.number().int().nonnegative(),
+    buildSeat: z.string(),
+  }),
+]);
 export type WorkspaceOwner = z.infer<typeof WorkspaceOwnerSchema>;
 
 const DirectoryIdentitySchema = z.object({

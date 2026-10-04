@@ -544,18 +544,21 @@ const STARTED_AT_ISO = GENERATED_AT;
  * The saved state a run leaves behind. Every at-rest scenario carries one, because a run whose
  * state cannot be read is a different scenario with a different byline.
  */
-function savedState(input: {
-  readonly phase: Phase;
-  readonly briefs: readonly { id: string; status: Task['status'] }[];
-  readonly currentTaskIndex?: number;
-}): WorkflowState {
+function savedState(
+  input: {
+    readonly phase: Phase;
+    readonly briefs: readonly { id: string; status: Task['status'] }[];
+    readonly currentTaskIndex?: number;
+  } & Partial<Omit<WorkflowState, 'phase' | 'tasks'>>,
+): WorkflowState {
+  const { phase, briefs, currentTaskIndex, ...rest } = input;
   return {
     stateVersion: 1,
-    phase: input.phase,
+    phase,
     feature: AT_REST_FIXTURE_FEATURE,
-    currentTaskIndex: input.currentTaskIndex ?? 0,
+    currentTaskIndex: currentTaskIndex ?? 0,
     attempt: 0,
-    tasks: input.briefs.map((brief) => {
+    tasks: briefs.map((brief) => {
       const known = Object.values(BRIEFS).find((item) => item.id === brief.id);
       return makeTask({
         id: brief.id,
@@ -573,6 +576,7 @@ function savedState(input: {
     implementerModel: 'qwen2.5-coder:7b',
     awaitingContinue: false,
     messageQueue: [],
+    ...rest,
   };
 }
 
@@ -744,6 +748,97 @@ const CLOSED_READY = record({
     ],
   }),
   summary: READY_SUMMARY,
+  ledger: READY_LEDGER,
+});
+
+/** The reviewed workspace the checkout has not received: the result menu's own run. */
+const RUN_WORKSPACE = {
+  kind: 'worktree' as const,
+  path: '.splitbrief/worktrees/visual/workspace',
+  base: { snapshotId: 'workspace-base', head: null },
+};
+
+const WORKSPACE_BRIEFS = [
+  { id: BRIEFS.validator.id, status: 'done' as const },
+  { id: BRIEFS.wire.id, status: 'done' as const },
+  { id: BRIEFS.routeTests.id, status: 'done' as const },
+];
+
+/** The ready run's record under another session: its packet sits in that session's own folder. */
+function workspaceSummary(sessionId: string): Readonly<Summary> {
+  return {
+    ...READY_SUMMARY,
+    reviewPacket: {
+      ...READY_PACKET,
+      jsonPath: `.splitbrief/sessions/${sessionId}/review-packet.json`,
+      markdownPath: packetMarkdownPath(sessionId),
+    },
+  };
+}
+
+const READY_TO_APPLY = record({
+  sessionId: 'visual-ready-to-apply',
+  status: { kind: 'ready-to-apply', override: false },
+  state: savedState({
+    phase: 'complete',
+    briefs: WORKSPACE_BRIEFS,
+    reviewStatus: 'passed',
+    workspace: RUN_WORKSPACE,
+  }),
+  summary: workspaceSummary('visual-ready-to-apply'),
+  ledger: READY_LEDGER,
+});
+
+const READY_OVERRIDE = record({
+  sessionId: 'visual-ready-override',
+  status: { kind: 'ready-to-apply', override: true },
+  state: savedState({
+    phase: 'complete',
+    briefs: WORKSPACE_BRIEFS,
+    reviewStatus: 'failed',
+    acceptedAsIs: {
+      at: GENERATED_AT,
+      findings: [
+        'src/form.ts re-validates on every keystroke',
+        'docs/validation-errors.md names a retired code',
+      ],
+    },
+    workspace: RUN_WORKSPACE,
+  }),
+  summary: workspaceSummary('visual-ready-override'),
+  ledger: READY_LEDGER,
+});
+
+const CLOSED_APPLIED = record({
+  sessionId: 'visual-closed-applied',
+  status: { kind: 'closed', as: 'applied' },
+  state: savedState({
+    phase: 'complete',
+    briefs: WORKSPACE_BRIEFS,
+    reviewStatus: 'passed',
+    workspace: RUN_WORKSPACE,
+    applied: {
+      at: GENERATED_AT,
+      backupId: 'visual-backup',
+      files: [FILES.formTest, FILES.form, FILES.signupTest, FILES.validate],
+    },
+    closed: { at: GENERATED_AT, as: 'applied' },
+  }),
+  summary: workspaceSummary('visual-closed-applied'),
+  ledger: READY_LEDGER,
+});
+
+const CLOSED_DISCARDED = record({
+  sessionId: 'visual-closed-discarded',
+  status: { kind: 'closed', as: 'discarded' },
+  state: savedState({
+    phase: 'complete',
+    briefs: WORKSPACE_BRIEFS,
+    reviewStatus: 'passed',
+    workspace: RUN_WORKSPACE,
+    closed: { at: GENERATED_AT, as: 'discarded' },
+  }),
+  summary: workspaceSummary('visual-closed-discarded'),
   ledger: READY_LEDGER,
 });
 
@@ -1001,6 +1096,10 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
     route: { record: AT_REST_WAITING_GATE },
   }),
   atRestProjection({ id: 'workflow-closed-complete-ready', route: { record: CLOSED_READY } }),
+  atRestProjection({ id: 'workflow-ready-to-apply', route: { record: READY_TO_APPLY } }),
+  atRestProjection({ id: 'workflow-ready-override', route: { record: READY_OVERRIDE } }),
+  atRestProjection({ id: 'workflow-closed-applied', route: { record: CLOSED_APPLIED } }),
+  atRestProjection({ id: 'workflow-closed-discarded', route: { record: CLOSED_DISCARDED } }),
   atRestProjection({
     id: 'workflow-closed-complete-needs-attention',
     route: { record: CLOSED_NEEDS_ATTENTION },

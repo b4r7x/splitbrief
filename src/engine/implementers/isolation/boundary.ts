@@ -316,26 +316,26 @@ function tildeHomes(boundary: IsolationBoundary, text: string): string {
   );
 }
 
-type Inspection = Readonly<{ breach: IsolationBreach | null; cwd: string }>;
+type Inspection = Readonly<{ breaches: readonly IsolationBreach[]; cwd: string }>;
 
 function inspect(boundary: IsolationBoundary, toolUse: ToolUse, cwd: string): Inspection {
   const scope = { cwd, home: boundary.home, tmpdir: boundary.tmpdir };
   const reading = readToolUse(toolUse, scope);
+  const breaches: IsolationBreach[] = [];
   for (const reference of reading.references) {
     const canonical = crosses(boundary, reference);
     if (canonical === null) continue;
     // Reported as the tool named it; the note says when a link carried it into the checkout.
-    const breach: IsolationBreach = {
+    breaches.push({
       tool: toolUse.name,
       path: tildeHomes(boundary, reference.path),
       access: reference.access,
       where: breachWhere(boundary, canonical),
       changesPackages: reference.changesPackages === true,
       excerpt: tildeHomes(boundary, excerptOf(toolUse)),
-    };
-    return { breach, cwd: reading.cwd };
+    });
   }
-  return { breach: null, cwd: reading.cwd };
+  return { breaches, cwd: reading.cwd };
 }
 
 /**
@@ -347,7 +347,7 @@ export function findIsolationBreach(
   toolUse: ToolUse,
   cwd: string = boundary.isolationDir,
 ): IsolationBreach | null {
-  return inspect(boundary, toolUse, cwd).breach;
+  return inspect(boundary, toolUse, cwd).breaches[0] ?? null;
 }
 
 const ACCESS_VERBS: Readonly<Record<PathAccess, string>> = {
@@ -382,19 +382,25 @@ export function formatIsolationBreach(breach: IsolationBreach): string {
 }
 
 /**
- * The guard that stops a CLI implementer call at its first tool use outside the
- * boundary. When the tool's shell keeps its working directory between tool
+ * The guard that stops a CLI implementer call at its first write outside the
+ * boundary; a read, list or search outside goes to `onOutsideRead` and the call
+ * goes on. When the tool's shell keeps its working directory between tool
  * calls, the next command reads from where the last `cd` left it; every other
  * tool's command reads from the isolation directory.
  */
-export function isolationToolUseGuard(boundary: IsolationBoundary): ToolUseGuard {
+export function isolationToolUseGuard(
+  boundary: IsolationBoundary,
+  { onOutsideRead }: { onOutsideRead: (breach: IsolationBreach) => void },
+): ToolUseGuard {
   let cwd = boundary.isolationDir;
   return (toolUse) => {
     const inspection = inspect(boundary, toolUse, cwd);
-    const { breach } = inspection;
-    if (boundary.keepsShellCwd && breach === null) cwd = inspection.cwd;
-    return breach === null
-      ? null
-      : { code: 'implementer-left-isolation', message: formatIsolationBreach(breach) };
+    const write = inspection.breaches.find((breach) => breach.access === 'write');
+    if (write !== undefined) {
+      return { code: 'implementer-left-isolation', message: formatIsolationBreach(write) };
+    }
+    for (const breach of inspection.breaches) onOutsideRead(breach);
+    if (boundary.keepsShellCwd) cwd = inspection.cwd;
+    return null;
   };
 }

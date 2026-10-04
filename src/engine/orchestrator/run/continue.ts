@@ -1,7 +1,7 @@
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { OwnedResumeState } from '../../../core/state/resume-hydration.js';
-import { deriveRunStatus } from '../../../core/sessions/run-status.js';
+import { deriveRunStatus, type RunStatus } from '../../../core/sessions/run-status.js';
 import { sanitizePasteBody } from '../../../lib/terminal/filtered-stdin/paste.js';
 
 export type ContinueRunOutcome =
@@ -9,7 +9,18 @@ export type ContinueRunOutcome =
   | { kind: 'continued-in-place' }
   /** The run was at rest and was re-entered on its saved state. */
   | { kind: 'restarted'; state: WorkflowState }
-  | { kind: 'refused'; reason: 'missing' | 'invalid' | 'closed'; message: string };
+  | {
+      kind: 'refused';
+      reason: 'missing' | 'invalid' | 'closed' | 'ready-to-apply';
+      message: string;
+    };
+
+const CLOSED_MESSAGE: Record<Extract<RunStatus, { kind: 'closed' }>['as'], string> = {
+  complete: 'This run is complete; start a new one.',
+  ended: 'This run was ended; start a new one.',
+  applied: 'This run was applied; start a new one.',
+  discarded: 'This run was discarded; start a new one.',
+};
 
 export type ContinueRunDeps = Readonly<{
   /**
@@ -56,13 +67,14 @@ export function continueRun(
     liveness: 'not-alive',
   });
   if (status.kind === 'closed') {
+    return { kind: 'refused', reason: 'closed', message: CLOSED_MESSAGE[status.as] };
+  }
+  if (status.kind === 'ready-to-apply') {
     return {
       kind: 'refused',
-      reason: 'closed',
+      reason: 'ready-to-apply',
       message:
-        status.as === 'complete'
-          ? 'This run is complete; start a new one.'
-          : 'This run was ended; start a new one.',
+        'This run is ready to apply; choose Apply or Discard (/run accept, /run reject confirm).',
     };
   }
 

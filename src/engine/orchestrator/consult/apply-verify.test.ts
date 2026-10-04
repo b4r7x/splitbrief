@@ -114,6 +114,7 @@ function harness(opts: {
   return {
     ctx: {
       projectDir: opts.projectDir,
+      workspaceDir: opts.projectDir,
       sessionId: opts.sessionId,
       bus,
       config: makeConfig({}),

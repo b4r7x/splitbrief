@@ -1,9 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
+import { resetAllStores } from '#testing/helpers/stores.js';
+import { routerStore } from '../../../stores/navigation/router.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import {
   STOP_SHEET_FOOTER,
   STOP_SHEET_LEGEND,
   STOP_SHEET_PARKED_LEGEND,
+  readStopMenuRows,
   stopMenuLayout,
   stopSheetFooter,
   stopSheetRows,
@@ -134,5 +138,23 @@ describe('stopMenuLayout', () => {
       'End run · stop execution; close this run;',
       '  keep changes',
     ]);
+  });
+});
+
+describe('readStopMenuRows on a run ready to apply', () => {
+  afterEach(() => {
+    resetAllStores();
+  });
+
+  it('offers End run as a discard that saves run.patch, and no Resume', () => {
+    routerStore.init({
+      screen: 'workflow',
+      run: makeRunRecord({ status: { kind: 'ready-to-apply', override: false } }),
+      execution: { kind: 'at-rest' },
+    });
+
+    const rows = readStopMenuRows();
+    expect(rows.map((row) => row.id)).toEqual(['end-run', 'leave']);
+    expect(rows[0]?.consequence).toBe('discard the result; save its changes in run.patch');
   });
 });

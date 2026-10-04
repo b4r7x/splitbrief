@@ -1,23 +1,34 @@
 import { createHash } from 'node:crypto';
-import { chmod, mkdtemp, readdir, rm, writeFile, mkdir } from 'node:fs/promises';
+import { chmod, mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises';
 import { type Dirent, symlinkSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { simpleGit } from 'simple-git';
-import { collectTrackedFiles, hashFile } from './files.js';
+import { collectTrackedFiles, hashFile, walkProjectEntries } from './files.js';
+
+const readdir = vi.hoisted(() =>
+  vi.fn<(path: string, options: { withFileTypes: true; encoding: 'utf8' }) => Promise<Dirent[]>>(),
+);
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>();
-  return { ...actual, readdir: vi.fn(actual.readdir) };
+  return { ...actual, readdir: readdir.mockImplementation(actual.readdir) };
 });
 
-function fakeDirent(name: string, kind: 'file' | 'dir'): Dirent<NonSharedBuffer> {
+function fakeDirent(name: string, kind: 'file' | 'dir'): Dirent {
   return {
     name,
+    parentPath: '',
+    path: '',
     isDirectory: () => kind === 'dir',
+    isFile: () => kind === 'file',
     isSymbolicLink: () => false,
-  } as unknown as Dirent<NonSharedBuffer>;
+    isBlockDevice: () => false,
+    isCharacterDevice: () => false,
+    isFIFO: () => false,
+    isSocket: () => false,
+  };
 }
 
 let tmp: string;
@@ -47,6 +58,59 @@ describe('hashFile', () => {
     const expected = createHash('sha256').update(content).digest('hex');
     const result = await hashFile(filePath);
     expect(result).toBe(expected);
+  });
+});
+
+describe('walkProjectEntries', () => {
+  it('keeps symlink entries without following them and skips internal directories', async () => {
+    await mkdir(join(tmp, 'src', 'node_modules'), { recursive: true });
+    await mkdir(join(tmp, '.splitbrief'), { recursive: true });
+    await writeFile(join(tmp, 'src', 'file.txt'), 'content');
+    await writeFile(join(tmp, 'src', 'node_modules', 'ignored.txt'), 'ignored');
+    await writeFile(join(tmp, '.splitbrief', 'ignored.txt'), 'ignored');
+    symlinkSync('src/file.txt', join(tmp, 'file-link'));
+    symlinkSync('src', join(tmp, 'directory-link'));
+    symlinkSync('missing', join(tmp, 'broken-link'));
+    symlinkSync('..', join(tmp, 'src', 'loop'));
+
+    const entries = [];
+    for await (const entry of walkProjectEntries(tmp)) entries.push(entry);
+
+    expect(entries.sort((a, b) => a.path.localeCompare(b.path))).toEqual([
+      { path: 'broken-link', kind: 'symlink' },
+      { path: 'directory-link', kind: 'symlink' },
+      { path: 'file-link', kind: 'symlink' },
+      { path: 'src', kind: 'directory' },
+      { path: 'src/file.txt', kind: 'file' },
+      { path: 'src/loop', kind: 'symlink' },
+    ]);
+  });
+
+  it('uses the source project ignore rules for files, symlinks and directories', async () => {
+    await initGitRepo(tmp);
+    await writeFile(join(tmp, '.gitignore'), 'ignored/\nignored-link\n*.log\n!keep.log\n');
+    const workspace = join(tmp, 'workspace');
+    await mkdir(join(workspace, 'ignored', 'nested'), { recursive: true });
+    await mkdir(join(workspace, 'src'), { recursive: true });
+    await writeFile(join(workspace, '.gitignore'), 'src/\nfile-link\n');
+    await writeFile(join(workspace, 'ignored', 'nested', 'file.txt'), 'ignored');
+    await writeFile(join(workspace, 'src', 'file.txt'), 'kept');
+    await writeFile(join(workspace, 'debug.log'), 'ignored');
+    await writeFile(join(workspace, 'keep.log'), 'kept');
+    symlinkSync('src/file.txt', join(workspace, 'file-link'));
+    symlinkSync('src/file.txt', join(workspace, 'ignored-link'));
+
+    const entries = [];
+    for await (const entry of walkProjectEntries(workspace, { ignoreProjectDir: tmp }))
+      entries.push(entry);
+
+    expect(entries.sort((a, b) => a.path.localeCompare(b.path))).toEqual([
+      { path: '.gitignore', kind: 'file' },
+      { path: 'file-link', kind: 'symlink' },
+      { path: 'keep.log', kind: 'file' },
+      { path: 'src', kind: 'directory' },
+      { path: 'src/file.txt', kind: 'file' },
+    ]);
   });
 });
 
@@ -100,7 +164,7 @@ describe('collectTrackedFiles', () => {
   it('collects a directory with more entries than one spread argument list holds', async () => {
     await initGitRepo(tmp);
     const big = Array.from({ length: 200_000 }, (_, index) => fakeDirent(`f${index}`, 'file'));
-    vi.mocked(readdir)
+    readdir
       .mockImplementationOnce(async () => [fakeDirent('big', 'dir')])
       .mockImplementationOnce(async () => big);
 

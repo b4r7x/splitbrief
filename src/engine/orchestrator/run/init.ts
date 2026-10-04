@@ -15,7 +15,6 @@ import { NULL_CACHE, type ModelCacheAccessor } from '../../providers/model/resol
 import type { Attachment } from '../../../core/schemas/attachment.js';
 import type { StreamingSink } from '../task/streaming-feed.js';
 import type { RunIsolation } from '../isolation/types.js';
-import { worktreePromotionConflictIsResolved } from '../isolation/acquisition.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { resolveApproveLevel } from '../../../core/config/runtime/resolve.js';
 import { createInitialState } from '../../../core/state/machine.js';
@@ -37,7 +36,6 @@ import { hashTaskBrief } from '../../brief-hash.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { initLogger } from '../../../core/logger.js';
 import { slugify } from '../../../utils/slugify.js';
-import { nowIso } from '../../../utils/format-time.js';
 import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
 import type {
   OrchestratorCallbacks,
@@ -57,15 +55,7 @@ import {
   publishGitBranchCreated,
 } from '../events.js';
 import {
-  changedFilesSinceBaseline,
-  deserializeChangedFilesBaseline,
-} from '../changed-files-baseline.js';
-import { assessChangedUserEdits } from '../user-edit/detection.js';
-import { classifyUserEditConflict } from '../user-edit/conflicts.js';
-import { buildUserEditConflictRecoveryIssue } from '../recovery/builders/workflow.js';
-import {
   commitWorkflowState,
-  raisePendingRecovery,
   readWorkflowStateHead,
   stateOpsError,
   transitionAndSave,
@@ -88,6 +78,7 @@ import { attachRunSinks } from './init-sinks.js';
 import { createPlannerSeat, createImplementerSeat } from './init-seats.js';
 import { buildSkillsContext } from './skills-context.js';
 import { resumeSeatWait } from '../escalation/seat-wait.js';
+import { runCodeDir } from './task-execution.js';
 
 function plannerUnavailableMessage(plannerConfig: Config['planner'], planner: Planner): string {
   const name = getRunnerDisplayName(plannerConfig);
@@ -449,6 +440,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
   const plannerContext = runtime.plannerContext ?? state.plannerContext;
   const wctx: WorkflowContext = {
     projectDir,
+    workspaceDir: projectDir,
     sessionId,
     config,
     isolation,
@@ -549,119 +541,34 @@ export async function resumeContinuation(input: {
   });
 }
 
-const FILE_HALT_REASONS = new Set(['user-edit-conflict', 'approval-promotion-conflict']);
+const RETIRED_FILE_HALTS = new Set(['user-edit-conflict', 'approval-promotion-conflict']);
 
 /**
- * A halt about files, read against the files as they stand now. It no longer stands while none of
- * its files still differ from the baseline or the gate would not raise it again: the operator who
- * reverted them answered the question by reverting, and an edit to a brief that has not started is
- * that brief's starting point. A user-edit halt the gate would still raise is the halt the gate
- * raises now, never an older reading of the files.
+ * User-edit and approval-promotion halts are always stale. A checkout-changed halt that names only
+ * HEAD and branch moves is stale only when the run has no saved workspace. Other halts still stand.
  */
-export async function reassessFileHalt(input: {
-  projectDir: string;
-  state: WorkflowState;
-  sessionId: string;
-}): Promise<RecoveryIssue | undefined> {
-  const { projectDir, state, sessionId } = input;
-  const issue = state.pendingRecovery;
-  if (issue === undefined || !FILE_HALT_REASONS.has(issue.reason)) return issue;
-  try {
-    if (issue.reason === 'approval-promotion-conflict') {
-      if (issue.facts?.partialPromotion === true) return issue;
-      const workspacePath = issue.facts?.workspacePath;
-      if (typeof workspacePath === 'string') {
-        const resolved = await worktreePromotionConflictIsResolved({
-          projectDir,
-          sessionId,
-          files: issue.files,
-          workspacePath,
-        });
-        if (resolved !== null) return resolved ? undefined : issue;
-      }
-    }
-    if (state.changedFilesBaseline === undefined) return issue;
-    const changed = await changedFilesSinceBaseline(
-      projectDir,
-      deserializeChangedFilesBaseline(state.changedFilesBaseline),
-    );
-    if (!changed.some((file) => issue.files.includes(file))) return undefined;
-    if (issue.reason !== 'user-edit-conflict') return issue;
-    const currentTask = state.tasks[state.currentTaskIndex];
-    if (currentTask === undefined) return issue;
-    const { foreignFiles, briefHoldsOutput } = await assessChangedUserEdits({
-      projectDir,
-      sessionId,
-      task: currentTask,
-      changedFiles: changed,
-    });
-    if (foreignFiles.length === 0) return undefined;
-    const conflict = classifyUserEditConflict({
-      files: foreignFiles,
-      currentTask,
-      briefHoldsOutput,
-      allTasks: state.tasks,
-      currentTaskIndex: state.currentTaskIndex,
-    });
-    if (conflict.safeToContinue) return undefined;
-    return buildUserEditConflictRecoveryIssue({
-      conflict,
-      currentTask,
-      phase: state.phase,
-      createdAt: nowIso(),
-    });
-  } catch {
-    return issue;
-  }
+function isRetiredFileHalt(issue: RecoveryIssue, state: WorkflowState): boolean {
+  if (RETIRED_FILE_HALTS.has(issue.reason)) return true;
+  if (issue.reason !== 'checkout-changed' || state.workspace !== undefined) return false;
+  const changes = issue.message.split(' — ').at(-1)?.split(' · ') ?? [];
+  return changes.every((change) => change === 'HEAD' || change.startsWith('branch '));
 }
 
-/** The parts of a halt the panel shows; a fresh id and timestamp alone are the same reading. */
-function sameHaltReading(a: RecoveryIssue, b: RecoveryIssue): boolean {
-  const reading = (issue: RecoveryIssue) =>
-    JSON.stringify([
-      issue.message,
-      issue.files,
-      issue.details,
-      issue.availableActions,
-      issue.recommendedAction,
-    ]);
-  return reading(a) === reading(b);
+/** A pending file halt on re-entry that is stale; the entry resolves it. */
+export function hasStaleFileHalt(state: WorkflowState): boolean {
+  return state.pendingRecovery !== undefined && isRetiredFileHalt(state.pendingRecovery, state);
 }
 
-/**
- * A pending file halt on re-entry. A stale one is reported back and left for the entry to resolve; one
- * that still stands replaces the saved halt when the files now read differently, and publishes it.
- * The state comes back unchanged (the same object) when nothing was replaced.
- */
-export async function refreshFileHalt(args: {
-  projectDir: string;
-  sessionId: string;
-  bus: EventBus;
-  state: WorkflowState;
-}): Promise<{ stale: boolean; state: WorkflowState }> {
-  const { projectDir, sessionId, bus, state } = args;
-  const saved = state.pendingRecovery;
-  if (saved === undefined) return { stale: false, state };
-  const standing = await reassessFileHalt({ projectDir, state, sessionId });
-  if (standing === undefined) return { stale: true, state };
-  if (sameHaltReading(saved, standing)) return { stale: false, state };
-  return {
-    stale: false,
-    state: raisePendingRecovery({ projectDir, sessionId, bus }, state, standing),
-  };
-}
-
-/** The entry that acts on it: a stale halt is over and the run continues; one that stands is shown as it reads now. */
+/** The entry that acts on it: a stale halt is over and the run continues. */
 async function settleFileHalt(args: {
   projectDir: string;
   sessionId: string;
   bus: EventBus;
   state: WorkflowState;
 }): Promise<WorkflowState> {
-  const { projectDir, sessionId, bus } = args;
-  const issue = args.state.pendingRecovery;
-  const { stale, state } = await refreshFileHalt(args);
-  if (issue === undefined || !stale) return state;
+  const { projectDir, sessionId, bus, state } = args;
+  const issue = state.pendingRecovery;
+  if (issue === undefined || !isRetiredFileHalt(issue, state)) return state;
 
   const resolved = transitionAndSave(
     { projectDir, sessionId },
@@ -793,7 +700,7 @@ async function restartInterruptedTask(args: {
   )?.promotionAttempts?.length;
   if (snapshot !== undefined && !priorPromotion) {
     await restoreInterruptedTaskFiles({
-      wctx: { projectDir, sessionId, bus },
+      wctx: { projectDir, workspaceDir: runCodeDir(projectDir, state.workspace), sessionId, bus },
       phase: state.phase,
       task,
       taskStartSnapshot: snapshot,

@@ -24,6 +24,7 @@ import { reactivateExistingSession } from '../../../core/sessions/active-pointer
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { taskId, type Task } from '../../../core/schemas/task.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import type { EngineEvent, EventBus } from '../../events/types.js';
@@ -795,6 +796,66 @@ describe('initializeWorkflow', () => {
 });
 
 describe('initializeWorkflow — a task interrupted mid-gate', () => {
+  it.each(['worktree', 'staged-copy'] as const)(
+    'restores the interrupted brief in its recorded %s and preserves checkout edits',
+    async (strategy) => {
+      await withTempDir('splitbrief-init-interrupted-worktree', async (projectDir) => {
+        createTestGitRepo(projectDir, { 'src/two.ts': 'original' });
+        const feature = 'resume in the run workspace';
+        const sessionId = 'session-init-interrupted-worktree';
+        const config = makeConfig();
+        const isolation = createRunIsolation({
+          projectDir,
+          sessionId,
+          strategy,
+          onFallback: () => {},
+          onRetained: () => {},
+        });
+        try {
+          const workspace = await isolation.open({ config });
+          expect(workspace.kind).toBe(strategy);
+          writeFileSync(join(workspace.projectDir, 'src/two.ts'), 'pre-task input');
+          const snapshot = (await isolation.acquire({ role: 'implementer', config })).snapshot;
+          writeFileSync(join(workspace.projectDir, 'src/two.ts'), 'half written by the killed run');
+          writeFileSync(join(projectDir, 'src/two.ts'), 'operator edit');
+          const task = makeTask({ id: 'T001', status: 'in_progress', file: 'src/two.ts' });
+          const { init, tracked } = await initializeTestWorkflow({
+            projectDir,
+            sessionId,
+            feature,
+            isolation,
+            savedState: {
+              ...createInitialState(feature),
+              phase: 'validating-task',
+              tasks: [task],
+              currentTaskIndex: 0,
+              attempt: 2,
+              workspace: {
+                kind: workspace.kind,
+                path: workspace.projectDir,
+                base: { snapshotId: 'baseline', head: workspace.head },
+              },
+              changedFilesBaseline: { head: null, fingerprints: {}, activeTaskSnapshot: snapshot },
+            },
+          });
+
+          expect(init.ok).toBe(true);
+          expect(tracked.current).toMatchObject({
+            phase: 'implementing',
+            attempt: 0,
+            tasks: [{ id: 'T001', status: 'pending' }],
+          });
+          expect(readFileSync(join(workspace.projectDir, 'src/two.ts'), 'utf8')).toBe(
+            'pre-task input',
+          );
+          expect(readFileSync(join(projectDir, 'src/two.ts'), 'utf8')).toBe('operator edit');
+        } finally {
+          await isolation.dispose();
+        }
+      });
+    },
+  );
+
   it('restarts the in-flight brief and restores its files from the task-start snapshot', async () => {
     await withTempDir('splitbrief-init-interrupted-task', async (projectDir) => {
       createTestGitRepo(projectDir, { 'src/two.ts': 'original' });
@@ -1297,12 +1358,8 @@ describe('initializeWorkflow — the mode a run starts in', () => {
   });
 });
 
-describe('initializeWorkflow — a halt about files the operator put back', () => {
-  /**
-   * A brief is in flight only when its target output is on record; the same edit to a brief with
-   * no recorded output is that brief's starting input, not a conflict (user-edit/detection.ts
-   * `assessChangedUserEdits`).
-   */
+describe('initializeWorkflow — a file halt saved before the run workspace', () => {
+  /** The brief is in flight with its output on record, so the halt read as standing before S7. */
   function recordBriefOutput(projectDir: string, sessionId: string, task: Task): void {
     ensureSessionDir(projectDir, sessionId);
     const ledger = createEvidenceLedger({ sessionId, feature: 'feat', tasks: [task] });
@@ -1319,19 +1376,17 @@ describe('initializeWorkflow — a halt about files the operator put back', () =
     );
   }
 
-  async function initWithFileHalt(
+  async function initWithHalt(
     projectDir: string,
     sessionId: string,
     feature: string,
-    editAfterBaseline?: string,
-    taskStatus: 'pending' | 'in_progress' = 'pending',
+    halt: Partial<RecoveryIssue>,
+    run: Partial<WorkflowState> = {},
   ) {
     const baseline = serializeChangedFilesBaseline(await captureChangedFilesBaseline(projectDir));
-    const task = makeTask({ id: 'T001', status: taskStatus, file: 'src/edited.ts' });
-    if (taskStatus === 'in_progress') recordBriefOutput(projectDir, sessionId, task);
-    if (editAfterBaseline !== undefined) {
-      writeFileSync(join(projectDir, 'src/edited.ts'), editAfterBaseline);
-    }
+    const task = makeTask({ id: 'T001', status: 'in_progress', file: 'src/edited.ts' });
+    recordBriefOutput(projectDir, sessionId, task);
+    writeFileSync(join(projectDir, 'src/edited.ts'), 'still edited');
     const events: EngineEvent[] = [];
     const result = await initializeTestWorkflow({
       projectDir,
@@ -1344,139 +1399,115 @@ describe('initializeWorkflow — a halt about files the operator put back', () =
         tasks: [task],
         currentTaskIndex: 0,
         changedFilesBaseline: baseline,
+        ...run,
         pendingRecovery: makeRecoveryIssue({
-          reason: 'user-edit-conflict',
           phase: 'implementing',
           taskId: taskId('T001'),
           files: ['src/edited.ts'],
-          availableActions: ['continue', 'pause-run', 'end-run'],
-          recommendedAction: 'continue',
+          availableActions: ['pause-run', 'end-run'],
+          recommendedAction: 'pause-run',
+          ...halt,
         }),
       },
     });
     return { ...result, events };
   }
 
-  it('resolves the halt and continues when the files are back at the baseline', async () => {
-    await withTempDir('splitbrief-init-stale-halt', async (projectDir) => {
-      createTestGitRepo(projectDir, { 'src/edited.ts': 'original' });
-      const sessionId = 'session-init-stale-halt';
+  it.each([
+    { name: 'user-edit conflict', halt: { reason: 'user-edit-conflict' } },
+    {
+      name: 'partial approval promotion conflict',
+      halt: { reason: 'approval-promotion-conflict', facts: { partialPromotion: true } },
+    },
+    {
+      name: 'checkout HEAD and current-branch move',
+      halt: {
+        reason: 'checkout-changed',
+        message: 'Your checkout changed under T001 — HEAD · branch main',
+        details: ['Changed while Codex ran: HEAD · branch main'],
+      },
+    },
+  ] satisfies { name: string; halt: Partial<RecoveryIssue> }[])(
+    'an old pending $name halt resolves on continue with a notice',
+    async ({ halt }) => {
+      await withTempDir('splitbrief-init-old-halt', async (projectDir) => {
+        createTestGitRepo(projectDir, { 'src/edited.ts': 'original' });
+        const sessionId = 'session-init-old-halt';
 
-      const { init, tracked, events } = await initWithFileHalt(
-        projectDir,
-        sessionId,
-        'continue past a halt the operator undid',
-      );
+        const { init, tracked, events } = await initWithHalt(
+          projectDir,
+          sessionId,
+          'continue past a halt the run workspace retired',
+          halt,
+        );
 
-      expect(init.ok).toBe(true);
-      expect(tracked.current?.pendingRecovery).toBeUndefined();
-      expect(loadState({ projectDir, sessionId })?.pendingRecovery).toBeUndefined();
-      expect(events.find((event) => event.type === 'recovery_resolved')).toMatchObject({
-        action: 'continue',
-        outcome: 'continued',
+        expect(init.ok).toBe(true);
+        expect(tracked.current?.pendingRecovery).toBeUndefined();
+        expect(loadState({ projectDir, sessionId })?.pendingRecovery).toBeUndefined();
+        expect(events.find((event) => event.type === 'recovery_resolved')).toMatchObject({
+          action: 'continue',
+          outcome: 'continued',
+        });
+        expect(
+          events
+            .filter((event): event is Extract<EngineEvent, { type: 'warning' }> => {
+              return event.type === 'warning';
+            })
+            .map((event) => event.message),
+        ).toContain('The files the halt named no longer block this brief; continuing.');
       });
-      expect(
-        events
-          .filter((event): event is Extract<EngineEvent, { type: 'warning' }> => {
-            return event.type === 'warning';
-          })
-          .map((event) => event.message),
-      ).toContain('The files the halt named no longer block this brief; continuing.');
-    });
-  });
+    },
+  );
 
-  it('keeps the halt when the file still differs and the brief is in flight', async () => {
-    await withTempDir('splitbrief-init-live-halt', async (projectDir) => {
+  it('keeps a branch-only checkout-changed halt raised in a run that has its own workspace', async () => {
+    await withTempDir('splitbrief-init-workspace-halt', async (projectDir) => {
       createTestGitRepo(projectDir, { 'src/edited.ts': 'original' });
-      const sessionId = 'session-init-live-halt';
+      const sessionId = 'session-init-workspace-halt';
 
-      const { init, tracked, events } = await initWithFileHalt(
+      const { init, tracked, events } = await initWithHalt(
         projectDir,
         sessionId,
-        'keep a halt the operator has not undone',
-        'still edited',
-        'in_progress',
+        'keep a halt about a branch the implementer created',
+        {
+          reason: 'checkout-changed',
+          message: 'Your checkout changed under T001 — branch topic',
+        },
+        {
+          workspace: {
+            kind: 'worktree',
+            path: join(projectDir, '.splitbrief', 'worktrees', 'run'),
+            base: { snapshotId: 'base', head: null },
+          },
+        },
       );
 
       expect(init.ok).toBe(true);
-      expect(tracked.current?.pendingRecovery).toMatchObject({ reason: 'user-edit-conflict' });
+      expect(tracked.current?.pendingRecovery).toMatchObject({ reason: 'checkout-changed' });
       expect(events.find((event) => event.type === 'recovery_resolved')).toBeUndefined();
     });
   });
 
-  it('resolves the halt when the file still differs but the brief it names has not started', async () => {
-    await withTempDir('splitbrief-init-unstarted-halt', async (projectDir) => {
-      createTestGitRepo(projectDir, { 'src/edited.ts': 'original' });
-      const sessionId = 'session-init-unstarted-halt';
-
-      const { init, tracked, events } = await initWithFileHalt(
-        projectDir,
-        sessionId,
-        'continue past a halt on a brief that has not started',
-        'still edited',
-      );
-
-      expect(init.ok).toBe(true);
-      expect(tracked.current?.pendingRecovery).toBeUndefined();
-      expect(loadState({ projectDir, sessionId })?.pendingRecovery).toBeUndefined();
-      expect(events.find((event) => event.type === 'recovery_resolved')).toMatchObject({
-        action: 'continue',
-        outcome: 'continued',
-      });
-    });
-  });
-
   it.each([
-    { status: 'done', resolved: true },
-    { status: 'failed', resolved: false },
-  ] as const)(
-    're-reads a parked dependency-file halt on a $status dependency as resolved: $resolved',
-    async ({ status, resolved }) => {
-      await withTempDir('splitbrief-init-dependency-halt', async (projectDir) => {
+    'Your checkout changed under T001 — HEAD · stash',
+    'Your checkout changed under T001 — branch main · hook pre-commit',
+    'Your checkout changed under T001 — HEAD · branch main · branch topic · 1 more',
+  ])(
+    'keeps a checkout-changed halt that names more than a HEAD or branch move: %s',
+    async (message) => {
+      await withTempDir('splitbrief-init-standing-halt', async (projectDir) => {
         createTestGitRepo(projectDir, { 'src/edited.ts': 'original' });
-        const sessionId = 'session-init-dependency-halt';
-        const feature = 'continue past a halt on a finished dependency';
-        const baseline = serializeChangedFilesBaseline(
-          await captureChangedFilesBaseline(projectDir),
-        );
-        const dependency = makeTask({ id: 'T001', status, file: 'src/edited.ts' });
-        const current = makeTask({ id: 'T002', file: 'src/current.ts', dependsOn: ['T001'] });
-        writeFileSync(join(projectDir, 'src/edited.ts'), 'still edited');
-        const events: EngineEvent[] = [];
+        const sessionId = 'session-init-standing-halt';
 
-        const { init, tracked } = await initializeTestWorkflow({
+        const { init, tracked, events } = await initWithHalt(
           projectDir,
           sessionId,
-          feature,
-          eventSink: (event) => events.push(event),
-          savedState: {
-            ...createInitialState(feature),
-            phase: 'implementing',
-            tasks: [dependency, current],
-            currentTaskIndex: 1,
-            changedFilesBaseline: baseline,
-            pendingRecovery: makeRecoveryIssue({
-              reason: 'user-edit-conflict',
-              phase: 'implementing',
-              taskId: taskId('T002'),
-              files: ['src/edited.ts'],
-              availableActions: ['skip-current-task', 'pause-run', 'end-run'],
-              recommendedAction: 'pause-run',
-            }),
-          },
-        });
+          'keep a halt about a git write Apply does not merge',
+          { reason: 'checkout-changed', message },
+        );
 
         expect(init.ok).toBe(true);
-        if (resolved) {
-          expect(tracked.current?.pendingRecovery).toBeUndefined();
-          expect(events.find((event) => event.type === 'recovery_resolved')).toMatchObject({
-            action: 'continue',
-            outcome: 'continued',
-          });
-        } else {
-          expect(tracked.current?.pendingRecovery).toMatchObject({ reason: 'user-edit-conflict' });
-          expect(events.find((event) => event.type === 'recovery_resolved')).toBeUndefined();
-        }
+        expect(tracked.current?.pendingRecovery).toMatchObject({ reason: 'checkout-changed' });
+        expect(events.find((event) => event.type === 'recovery_resolved')).toBeUndefined();
       });
     },
   );

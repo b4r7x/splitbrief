@@ -9,6 +9,7 @@ import {
   makeCallbacks,
   makeImplementer,
   makePlanner,
+  runWorkspaceDir,
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -65,7 +66,7 @@ function plannerCliGates(preparationId: string): ReadonlyArray<RunnerGate> {
 }
 
 describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
-  it('retries after real validation fails, promotes the staged fix, and writes final review artifacts', async () => {
+  it('retries after real validation fails, keeps the fix in the run workspace, and writes final review artifacts', async () => {
     const projectDir = setupProject();
     const sessionId = 'sess-full-loop-validation-retry';
     const targetFile = 'src/loop.ts';
@@ -112,7 +113,8 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
       retry: vi.fn().mockImplementation(async (opts: RetryOptions) => {
         retryProjectDirs.push(opts.projectDir);
         expect(opts.projectDir).not.toBe(projectDir);
-        expect(readFileSync(join(projectDir, targetFile), 'utf-8')).toBe(badImplementation);
+        expect(readFileSync(join(opts.projectDir, targetFile), 'utf-8')).toBe(badImplementation);
+        expect(existsSync(join(projectDir, targetFile))).toBe(false);
         mkdirSync(join(opts.projectDir, 'src'), { recursive: true });
         writeFileSync(join(opts.projectDir, targetFile), goodImplementation, 'utf-8');
         return {
@@ -159,7 +161,9 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
 
     expect(implementerProjectDirs).toHaveLength(1);
     expect(retryProjectDirs).toHaveLength(1);
-    expect(readFileSync(join(projectDir, targetFile), 'utf-8')).toBe(goodImplementation);
+    expect(
+      readFileSync(join(runWorkspaceDir({ projectDir, sessionId }), targetFile), 'utf-8'),
+    ).toBe(goodImplementation);
     expect(summary).toMatchObject({
       totalTasks: 1,
       completedByLocal: 1,
@@ -289,7 +293,9 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
     });
 
     expect(retryKinds).toEqual(['local', 'consult']);
-    expect(readFileSync(join(projectDir, targetFile), 'utf-8')).toBe(consultImplementation);
+    expect(
+      readFileSync(join(runWorkspaceDir({ projectDir, sessionId }), targetFile), 'utf-8'),
+    ).toBe(consultImplementation);
     expect(summary).toMatchObject({
       totalTasks: 1,
       completedByLocal: 1,

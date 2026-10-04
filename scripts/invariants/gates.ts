@@ -292,7 +292,7 @@ export const gates: readonly Gate[] = [
   {
     id: '49',
     description:
-      'No gate-rejection or reset-to-idle state actions (a run is closed, never reset; gates never reject)',
+      'No gate-rejection or reset-to-idle state actions (gates never reject; a run is closed, never reset: a passing review closes a run without a workspace or makes a workspace run ready to apply, and Apply, Discard or End run close it)',
     command:
       "{ rg -n \"REJECT_SPEC|REJECT_PLAN|REJECT_BRIEFS|'CANCEL'|resetToIdle|ABORT_TURN|CONTINUE_TURN\" src --glob '!**/*.test.ts' --glob '!**/*.test.tsx' || true; } | wc -l",
     expected: 0,

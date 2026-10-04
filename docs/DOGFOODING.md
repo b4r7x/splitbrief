@@ -112,7 +112,7 @@ Inspect visual and flow fixes with the look-and-logic loop in `CLAUDE.md`. In th
 `continue` still serves a run that stopped for a reason other than a tool defect: a resumable stop for diagnosis, a quit, a crash of the host, a provider limit, or a parked recovery. No code changed and no rebuild happened while it was stopped, so the run carries on in the build it started with:
 
 ```bash
-$SB continue $ID                     # picks up at the first artifact not on disk, or the parked step
+$SB continue $ID                     # picks up at the step its saved state names, or the parked step
 $SB continue $ID --action retry      # when the run stopped on a recovery: retry | skip | switch-seat:<tool>[:<model>] | end-run
 ```
 
@@ -120,14 +120,14 @@ What `continue` does with the saved state (`src/engine/orchestrator/run/init.ts`
 
 | Stopped where | On continue |
 |---|---|
-| During a planner step | every step whose artifact exists on disk is skipped; the cut step is re-issued whole, on the resumed native session when the tool has one |
+| During a planner step | the planning session picks up at the step its saved state names (`resumeStep`); the cut call is re-issued whole, on the resumed native session when the tool has one |
 | Parked mid-brief (`esc esc`, `ctrl+c`, `kill -INT`) | the brief continues at the same attempt with its partial edits and a `[Continuation]` note; the worktree is reused |
-| Crashed mid-brief (no `interruptedStep`) | the brief restarts at attempt 0 with its own writes (declared, or recorded as promoted) restored |
+| Crashed mid-brief (no `interruptedStep`) | the brief restarts at attempt 0; its declared files in the run workspace are restored from its task-start snapshot |
 | On a recovery | nothing runs until `--action` or the panel answers it |
 
-Orphaned runner processes from a crash are reaped at the next start (`runner-pids.jsonl`). The code the run itself promotes into the tree does not reach the running orchestrator: a fix the run built for its own benefit takes effect in the next run, after the owner commits and rebuilds.
+Orphaned runner processes from a crash are reaped at the next start (`runner-pids.jsonl`). The code the run builds stays in its run workspace until Apply, and never reaches the running orchestrator: a fix the run built for its own benefit takes effect in the next run, after Apply, the owner's commit and a rebuild.
 
-When the planner's output was lost by the tool but is in the log, rebuild the artifact rather than pay for the call again. This writes into the session directory only, so it is not a code change and the same run continues: concatenate the call's `runner_call_text_delta` rows, repair what the split broke, write the file into the session directory, then `continue --action retry`. The step is memoized by the file's presence.
+When the planner's output was lost by the tool, there is no artifact to rebuild by hand: the planning session is one typed call loop. Retry the planning step (`continue --action retry` on its halt); a loss that repeats is a tool defect that blocks the run (§6).
 
 ## 5. Swapping a seat
 
@@ -145,7 +145,7 @@ Zero tokens. A throwaway git repo whose planner and implementer are local node s
 
 The CLI is spawned from source the way the live harness does it — `node --import tsx src/cli.ts …` through `spawnCli`, detached so the test can signal the CLI's process group — so no build step stands between a fix and the smoke. The engine starts the implementer in a process group of its own, so the signal reaches only the CLI: a `SIGINT` reaches the implementer through the CLI's abort, a `SIGKILL` leaves it running.
 
-The brief runs in the run's isolation worktree, so the marker the test waits on appears under the fixture's own state home, not in the project: nothing reaches the project until the brief's changes are promoted.
+The brief runs in the run's isolation worktree, so the marker the test waits on appears under the fixture's own state home, not in the project: nothing reaches the project before Apply.
 
 ```
 testing/e2e/scenarios/stop-continue.test.ts   (sequential e2e project, 240 s per case)
@@ -156,13 +156,13 @@ testing/e2e/scenarios/stop-continue.test.ts   (sequential e2e project, 240 s per
   4. spawn  node --import tsx src/cli.ts continue --plain --allow-repo-runners --project <fixture>
   5. assert assertPlainStdout, plus the lines `task T001: done (no gates)`, `review: passed`, `done: 1 tasks`
   6. assert state.json: tasks[0].status === 'done', attempt unchanged from the park, no pendingRecovery
-  7. assert session.jsonl has no `paused_external_changes` with conflict kind `current-task-conflict`,
-            no `own_partial_output_kept` warning and no `Discarded …` warning, and src/greet.ts holds the written code
+  7. assert the checkout is as it started; Apply the ready run, expect `Applied 2 files to your checkout.`,
+            state.json closed as `applied`, and src/marker.ts and src/greet.ts in the checkout hold the written code
 ```
 
-Step 7 is what a resumable park earns: the same attempt continues in the same worktree, so the marker it left stands, nothing is discarded, and nothing is mistaken for a user edit. `own_partial_output_kept` belongs to a brief whose output already reached the project, such as an attempt that promoted and then failed validation, which a first attempt parked mid-call never has.
+Steps 6 and 7 are what a resumable park earns: the same attempt continues in the same worktree, so the marker it left stands and nothing is discarded. The checkout receives the brief's files once, at Apply, and not before.
 
-A second case sends `SIGKILL` to the group instead of `SIGINT`: the CLI reports no exit code and writes no `interruptedStep`, and the implementer is left running inside its hold. The test reaps nothing itself — the continuation owns that cleanup, which is what this case exercises: it asserts the orphan is still alive after the kill, then that the continued run's boot has reaped it and released its ledger entry before the brief runs. The continued run then starts the brief fresh, reseeds its worktree (`session.jsonl` carries `Discarded 1 unpromoted change(s) an earlier attempt left in the isolation worktree: src/marker.ts`), and still ends on `task T001: done` with `src/greet.ts` holding the written code. Both cases run inside `npm run test:e2e`; there is no live-seat tier of this smoke.
+A second case sends `SIGKILL` to the group instead of `SIGINT`: the CLI reports no exit code and writes no `interruptedStep`, and the implementer is left running inside its hold. The test reaps nothing itself — the continuation owns that cleanup, which is what this case exercises: it asserts the orphan is still alive after the kill, then that the continued run's boot has reaped it and released its ledger entry before the brief runs. The continued run then starts the brief fresh at attempt 0 in the same worktree, restores the brief's declared files from its task-start snapshot, and still ends on `task T001: done`; Apply then writes both files into the checkout. Both cases run inside `npm run test:e2e`; there is no live-seat tier of this smoke.
 
 ## 8. Record of the 2026-09-21 run
 

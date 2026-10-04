@@ -1,10 +1,16 @@
 import { execSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
-import { checkoutChanges, formatCheckoutChanges, snapshotCheckout } from './checkout-audit.js';
+import {
+  checkoutChanges,
+  formatCheckoutChanges,
+  snapshotCheckout,
+  snapshotWorkspaceGit,
+  workspaceGitChanges,
+} from './checkout-audit.js';
 
 async function withCheckout(run: (dir: string) => Promise<void>): Promise<void> {
   await withTempDir('splitbrief-checkout-audit', async (dir) => {
@@ -51,7 +57,7 @@ describe('checkout audit', () => {
     });
   });
 
-  it('names a new branch, a new tag, a stash and a moved HEAD as git state', async () => {
+  it('names a new branch, a new tag and a stash as git state', async () => {
     await withCheckout(async (dir) => {
       expect(await changesAcross(dir, () => git(dir, 'branch topic'))).toEqual({
         files: [],
@@ -61,14 +67,26 @@ describe('checkout audit', () => {
         files: [],
         state: ['tag v1'],
       });
-      expect(await changesAcross(dir, () => git(dir, 'checkout -q topic'))).toEqual({
-        files: [],
-        state: ['HEAD'],
-      });
       writeFileSync(join(dir, 'src/a.ts'), 'export const a = 3;\n');
       expect(await changesAcross(dir, () => git(dir, 'stash -q'))).toEqual({
         files: ['src/a.ts'],
         state: ['stash'],
+      });
+    });
+  });
+
+  it("lets the checkout's HEAD and its current branch move: Apply merges those", async () => {
+    await withCheckout(async (dir) => {
+      git(dir, 'branch topic');
+      expect(
+        await changesAcross(dir, () => {
+          writeFileSync(join(dir, 'src/a.ts'), 'export const a = 2;\n');
+          git(dir, 'commit -qam user-commit');
+        }),
+      ).toEqual({ files: [], state: [] });
+      expect(await changesAcross(dir, () => git(dir, 'switch -q topic'))).toEqual({
+        files: [],
+        state: [],
       });
     });
   });
@@ -133,6 +151,96 @@ describe('checkout audit', () => {
         files: ['a.txt'],
         state: [],
       });
+    });
+  });
+});
+
+async function withRunWorktree(run: (worktree: string) => Promise<void>): Promise<void> {
+  await withCheckout(async (checkout) => {
+    await withTempDir('splitbrief-run-worktree', async (worktree) => {
+      git(checkout, `worktree add -q -b splitbrief/run-1 ${worktree}`);
+      await run(worktree);
+    });
+  });
+}
+
+async function workspaceChangesAcross(worktree: string, act: () => void): Promise<string[]> {
+  const before = await snapshotWorkspaceGit(worktree);
+  act();
+  return workspaceGitChanges({ before, after: await snapshotWorkspaceGit(worktree) });
+}
+
+describe('run worktree audit', () => {
+  it('finds nothing when the call only edited files and read git status', async () => {
+    await withRunWorktree(async (worktree) => {
+      expect(
+        await workspaceChangesAcross(worktree, () => {
+          writeFileSync(join(worktree, 'src/a.ts'), 'export const a = 2;\n');
+          git(worktree, 'status --porcelain');
+          git(worktree, 'diff');
+        }),
+      ).toEqual([]);
+    });
+  });
+
+  it('names a stage inside the run worktree', async () => {
+    await withRunWorktree(async (worktree) => {
+      writeFileSync(join(worktree, 'src/a.ts'), 'export const a = 2;\n');
+      expect(await workspaceChangesAcross(worktree, () => git(worktree, 'add src/a.ts'))).toEqual([
+        'run worktree index',
+      ]);
+    });
+  });
+
+  it('names a commit on the run branch', async () => {
+    await withRunWorktree(async (worktree) => {
+      writeFileSync(join(worktree, 'src/a.ts'), 'export const a = 2;\n');
+      git(worktree, 'add src/a.ts');
+      expect(
+        await workspaceChangesAcross(worktree, () => git(worktree, 'commit -qm escaped')),
+      ).toEqual(['run worktree branch splitbrief/run-1']);
+    });
+  });
+
+  it('names a run worktree moved off its branch', async () => {
+    await withRunWorktree(async (worktree) => {
+      expect(
+        await workspaceChangesAcross(worktree, () => git(worktree, 'switch -q --detach')),
+      ).toEqual(['run worktree HEAD']);
+    });
+  });
+
+  it('names a skip-worktree flag set on the run worktree index', async () => {
+    await withRunWorktree(async (worktree) => {
+      expect(
+        await workspaceChangesAcross(worktree, () =>
+          git(worktree, 'update-index --skip-worktree src/a.ts'),
+        ),
+      ).toEqual(['run worktree index']);
+    });
+  });
+
+  it('names a run worktree moved to an unborn branch', async () => {
+    await withRunWorktree(async (worktree) => {
+      expect(
+        await workspaceChangesAcross(worktree, () => git(worktree, 'switch -q --orphan fresh')),
+      ).toEqual(['run worktree HEAD', 'run worktree index']);
+    });
+  });
+
+  it('names a run worktree that lost its git', async () => {
+    await withRunWorktree(async (worktree) => {
+      expect(await workspaceChangesAcross(worktree, () => rmSync(join(worktree, '.git')))).toEqual([
+        'run worktree git',
+      ]);
+    });
+  });
+
+  it('reads no git of its own for a staged copy inside the checkout', async () => {
+    await withCheckout(async (checkout) => {
+      const staged = join(checkout, '.splitbrief', 'sessions', 's1', 'stage-1');
+      mkdirSync(staged, { recursive: true });
+      expect(await snapshotWorkspaceGit(staged)).toBeNull();
     });
   });
 });

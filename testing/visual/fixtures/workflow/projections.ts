@@ -18,12 +18,10 @@ import { taskFromSpec } from '../../../../src/engine/spec/plan-tasks.js';
 import { planConfirmations } from '../../../../src/engine/orchestrator/approval/confirm.js';
 import { makeImplState, makeWorkflowState } from '../../../helpers/factories/workflow-state.js';
 import type { EngineEvent, EngineEventOf } from '../../../../src/engine/events/types.js';
-import type { UserEditConflict } from '../../../../src/engine/events/workflow-events.js';
 import type { ClarificationQuestion } from '../../../../src/core/schemas/question.js';
 import type { ReviewArtifact } from '../../../../src/features/workflow/prompt-rows/approval.js';
 import { getWorkflowPromptRows } from '../../../../src/features/workflow/prompt-rows/workflow.js';
 import { formatRecoveryPrompt } from '../../../../src/features/workflow/recovery-prompt.js';
-import { formatUserEditConflictPrompt } from '../../../../src/features/workflow/user-edit-conflict-prompt.js';
 import { projectRunnerCallEvents } from '../../../../src/engine/calls/event-projection.js';
 import type { RunnerCallEvent } from '../../../../src/engine/calls/types.js';
 import {
@@ -118,7 +116,6 @@ export const WORKFLOW_FIXTURE_TEXT = Object.freeze({
   success: 'Visual fixture workflow complete',
   failure: 'Synthetic runner failure: bounded fixture',
   recovery: 'Change BUILD tool',
-  recoveryUserEdits: 'Recovery needed · User edits conflict with T901',
   recoveryPlan: 'Change PLAN tool',
   retryExhausted: 'exhausted its retries',
   consultBound: 'used its consult allowance',
@@ -177,7 +174,6 @@ export interface WorkflowFixtureProjection {
   readonly sidebarVisible: boolean;
   readonly question?: FixtureQuestion;
   readonly questionPreview?: 'overflow-back';
-  readonly userEditConflict?: UserEditConflict;
   readonly approval?: FixtureApproval;
   readonly review?: FixtureReview;
   /** The artifact the document review panel names, when the projection opens that gate. */
@@ -218,7 +214,6 @@ const WORKFLOW_STOPPING_ID = scenarioId('workflow-stopping');
 const WORKFLOW_STOPPED_ID = scenarioId('workflow-stopped');
 const WORKFLOW_FAILURE_ID = scenarioId('workflow-failure');
 const WORKFLOW_RECOVERY_USAGE_LIMIT_ID = scenarioId('workflow-recovery-usage-limit');
-const WORKFLOW_RECOVERY_USER_EDIT_ID = scenarioId('workflow-recovery-user-edits');
 const WORKFLOW_RECOVERY_RETRY_EXHAUSTED_ID = scenarioId('workflow-recovery-retry-exhausted');
 const WORKFLOW_RECOVERY_CONSULT_BOUND_ID = scenarioId('workflow-recovery-consult-bound');
 const WORKFLOW_RECOVERY_REVIEW_FAILED_ID = scenarioId('workflow-recovery-review-failed');
@@ -844,27 +839,6 @@ const USER_EDITED_FILES = [
   'src/app/keys.ts',
 ];
 
-const USER_EDIT_CONFLICT_PROMPT: UserEditConflict = {
-  kind: 'future-task-stale-input',
-  files: ['docs/a.ts', 'docs/b.ts', 'docs/c.ts', 'src/future.ts'],
-  affectedTaskIds: [WORKFLOW_FIXTURE_TASK_ID],
-  currentTaskId: taskId('T900'),
-  fileConflicts: [
-    { file: 'docs/a.ts', kind: 'unrelated', affectedTaskIds: [] },
-    { file: 'docs/b.ts', kind: 'unrelated', affectedTaskIds: [] },
-    { file: 'docs/c.ts', kind: 'unrelated', affectedTaskIds: [] },
-    {
-      file: 'src/future.ts',
-      kind: 'future-task-stale-input',
-      affectedTaskIds: [WORKFLOW_FIXTURE_TASK_ID],
-    },
-  ],
-  safeToContinue: true,
-  availableActions: ['continue-unrelated', 'pause', 'abort-workflow'],
-};
-
-// Edits the run did not make, in no brief's files, found before the one brief starts on a worker it
-// nearly fills. The routing sentence rides on the event as it does in a real run.
 const implementationUserEditsProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-implementation-user-edits'),
   feature: WORKFLOW_FEATURE,
@@ -931,22 +905,6 @@ const implementationUserEditsProjection: WorkflowFixtureProjection = {
       routingReason: 'Selected profile default (tight, estimated 24310/32768 tokens)',
     },
   ],
-};
-
-const userEditConflictPromptProjection: WorkflowFixtureProjection = {
-  scenarioId: scenarioId('workflow-user-edit-conflict-prompt'),
-  feature: 'Review external edits before T900',
-  inputMode: 'question',
-  sidebarVisible: false,
-  events: [
-    {
-      type: 'workflow_started',
-      ts: FIXED_TS,
-      phase: 'implementing',
-      feature: 'Review external edits before T900',
-    },
-  ],
-  userEditConflict: USER_EDIT_CONFLICT_PROMPT,
 };
 
 const reviewProjection: WorkflowFixtureProjection = {
@@ -1436,41 +1394,6 @@ const usageLimitRecoveryProjection: WorkflowFixtureProjection = {
   get resumeState() {
     return haltedResumeState(usageLimitRecoveryIssue());
   },
-};
-
-const userEditRecoveryIssue: RecoveryIssue = {
-  id: 'rec_visual_user_edit_conflict',
-  reason: 'user-edit-conflict',
-  phase: 'implementing',
-  status: 'awaiting-user',
-  taskId: WORKFLOW_FIXTURE_TASK_ID,
-  taskTitle: 'Update session behavior',
-  files: ['src/a.ts', 'src/b.ts', 'src/c.ts', 'src/d.ts'],
-  affectedTaskIds: [WORKFLOW_FIXTURE_TASK_ID],
-  message: 'User edits conflict with T901',
-  details: [
-    'Conflict kind: current-task-conflict',
-    'Safe to continue: no',
-    `src/a.ts: current-task-conflict affects ${WORKFLOW_FIXTURE_TASK_ID}`,
-  ],
-  selectedImplementerProfile: 'default',
-  facts: {
-    conflictKind: 'current-task-conflict',
-    safeToContinue: false,
-    contextLength: 32_768,
-  },
-  availableActions: ['pause-run', 'end-run'],
-  recommendedAction: 'pause-run',
-  createdAt: new Date(FIXED_TS).toISOString(),
-};
-
-const userEditRecoveryProjection: WorkflowFixtureProjection = {
-  scenarioId: WORKFLOW_RECOVERY_USER_EDIT_ID,
-  feature: WORKFLOW_FEATURE,
-  inputMode: 'question',
-  sidebarVisible: false,
-  events: [],
-  resumeState: haltedResumeState(userEditRecoveryIssue),
 };
 
 const FIXTURE_TYPECHECK_ERROR =
@@ -2538,7 +2461,6 @@ const projections = [
   implementationAdjacentNarrationProjection,
   validationProjection,
   implementationUserEditsProjection,
-  userEditConflictPromptProjection,
   reviewProjection,
   approvalConfirmProjection,
   approvalConfirmSecretProjection,
@@ -2558,7 +2480,6 @@ const projections = [
   plannerCommandsRefusedProjection,
   touchedNotSuggestedProjection,
   usageLimitRecoveryProjection,
-  userEditRecoveryProjection,
   retryExhaustedRecoveryProjection,
   consultBoundRecoveryProjection,
   reviewFailedRecoveryProjection,
@@ -2588,8 +2509,6 @@ export const workflowFixtureProjections: ReadonlyMap<ScenarioId, WorkflowFixture
 /** The text the question panel prints: a clarification prompt, or the halt the resumed state carries. */
 export function fixtureQuestionHint(projection: WorkflowFixtureProjection): string | null {
   if (projection.question !== undefined) return projection.question.prompt;
-  if (projection.userEditConflict !== undefined)
-    return formatUserEditConflictPrompt(projection.userEditConflict);
   const halt = projection.resumeState?.pendingRecovery;
   return halt === undefined ? null : formatRecoveryPrompt(halt);
 }

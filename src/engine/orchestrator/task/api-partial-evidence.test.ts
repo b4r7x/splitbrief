@@ -62,12 +62,12 @@ function partialApply() {
 }
 
 /** A seat whose call leaves the applied prefix on disk and reports the stop. */
-function stoppingImplementer(projectDir: string, calls: ImplementerOptions[]) {
+function stoppingImplementer(calls: ImplementerOptions[]) {
   return makeImplementer({
     implement: vi.fn(async (opts: ImplementerOptions): Promise<ImplementerResult> => {
       calls.push(opts);
-      mkdirSync(join(projectDir, 'src'), { recursive: true });
-      writeFileSync(join(projectDir, ANCHOR), LANDED);
+      mkdirSync(join(opts.projectDir, 'src'), { recursive: true });
+      writeFileSync(join(opts.projectDir, ANCHOR), LANDED);
       const applyResult = partialApply();
       return { success: false, output: '', error: applyResult.error, applyResult };
     }),
@@ -132,7 +132,7 @@ describe('partial evidence and resume', () => {
     const { projectDir, sessionId } = setupProject();
     const task = bundleTask();
     const calls: ImplementerOptions[] = [];
-    const implementer = stoppingImplementer(projectDir, calls);
+    const implementer = stoppingImplementer(calls);
     const { bus, events } = makeBusRecorder();
     const wctx = makeWorkflowContext({ projectDir, sessionId, implementer, bus });
 
@@ -142,6 +142,7 @@ describe('partial evidence and resume', () => {
     expect(entry?.apiApply).toEqual({
       callId: 'implementer-7',
       grammar: 'file-bundle-v1',
+      workspacePath: implState.workspace.projectDir,
       status: 'partial',
       candidatePaths: [ANCHOR, SECOND],
       applied: [
@@ -157,11 +158,11 @@ describe('partial evidence and resume', () => {
       failedPath: SECOND,
       code: 'io-failure',
     });
-    // The declared target that never took a change is not a changed file.
-    expect(entry?.changedFiles).toEqual([ANCHOR]);
+    expect(entry?.changedFiles).toEqual([]);
+    expect(entry?.promotedFiles ?? []).toEqual([]);
     expect(entry?.status).toBe('failed');
     expect(entry?.observedEvidence).toContain(
-      `bundle stopped at ${SECOND} after applying 1 of 2 file(s) (io-failure)`,
+      `worker workspace: bundle stopped at ${SECOND} after applying 1 of 2 file(s) (io-failure)`,
     );
 
     const parked = await handleFailedImplementation({
@@ -184,7 +185,10 @@ describe('partial evidence and resume', () => {
       seat: 'build',
       taskId: 'T001',
       files: [ANCHOR, SECOND],
-      facts: { apiApplyIncomplete: true },
+      facts: { apiApplyIncomplete: true, workspacePath: implState.workspace.projectDir },
+      details: [
+        `The partial writes stay in the run workspace at ${implState.workspace.projectDir}; the checkout is unchanged.`,
+      ],
     });
     expect(parked.currentTaskIndex).toBe(implState.state.currentTaskIndex);
     expect(
@@ -192,18 +196,19 @@ describe('partial evidence and resume', () => {
         (event) =>
           event.type === 'error' &&
           event.message ===
-            `T001: the response stopped at ${SECOND} after applying ${ANCHOR}; partial changes kept, and the brief did not advance (${SECOND}: EACCES: permission denied)`,
+            `T001: the response stopped at ${SECOND} after applying ${ANCHOR}; partial changes kept in the run workspace, and the brief did not advance (${SECOND}: EACCES: permission denied)`,
       ),
     ).toBe(true);
-    // Nothing is undone and nothing later is written.
-    expect(readFileSync(join(projectDir, ANCHOR), 'utf-8')).toBe(LANDED);
+    expect(readFileSync(join(implState.workspace.projectDir, ANCHOR), 'utf-8')).toBe(LANDED);
+    expect(existsSync(join(implState.workspace.projectDir, SECOND))).toBe(false);
+    expect(existsSync(join(projectDir, ANCHOR))).toBe(false);
     expect(existsSync(join(projectDir, SECOND))).toBe(false);
   });
 
   it('records no validation for a partial apply and refuses to complete on one', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = bundleTask();
-    const implementer = stoppingImplementer(projectDir, []);
+    const implementer = stoppingImplementer([]);
     const { bus, events } = makeBusRecorder();
     const wctx = makeWorkflowContext({ projectDir, sessionId, implementer, bus });
 
@@ -235,7 +240,7 @@ describe('partial evidence and resume', () => {
     const wctx = makeWorkflowContext({
       projectDir,
       sessionId,
-      implementer: stoppingImplementer(projectDir, first),
+      implementer: stoppingImplementer(first),
     });
     await runAttempt(wctx, task);
     expect(first[0]?.createdByThisTask).toBeUndefined();
@@ -251,8 +256,10 @@ describe('partial evidence and resume', () => {
     // The bundle proposed both paths; only the one that landed is owned.
     expect(second[0]?.createdByThisTask).toEqual([ANCHOR]);
 
+    const resumedCall = second[0];
+    if (resumedCall === undefined) throw new Error('missing resumed workspace call');
     const captured = await captureBundleBaseline({
-      projectDir,
+      projectDir: resumedCall.projectDir,
       task,
       createdByThisTask: second[0]?.createdByThisTask,
     });
@@ -276,11 +283,12 @@ describe('partial evidence and resume', () => {
     const wctx = makeWorkflowContext({
       projectDir,
       sessionId,
-      implementer: stoppingImplementer(projectDir, []),
+      implementer: stoppingImplementer([]),
     });
     const { implState } = await runAttempt(wctx, task);
 
     const userEdit = 'export const a = 1; // the operator fixed this\n';
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
     writeFileSync(join(projectDir, ANCHOR), userEdit);
 
     await handleFailedImplementation({
@@ -357,7 +365,7 @@ describe('partial evidence and resume', () => {
     });
     expect(entry?.changedFiles).toEqual([]);
     expect(entry?.observedEvidence).toContain(
-      'bundle refused before any write (implausible-rewrite)',
+      'worker workspace: bundle refused before any write (implausible-rewrite)',
     );
 
     const second: ImplementerOptions[] = [];

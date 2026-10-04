@@ -1,7 +1,10 @@
 import { existsSync } from 'node:fs';
-import { relative } from 'node:path';
+import { rm, rmdir } from 'node:fs/promises';
+import { basename, dirname, join, relative } from 'node:path';
 import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
-import type { GitClient } from '../../../lib/git/client.js';
+import { createGitClient, type GitClient } from '../../../lib/git/client.js';
+import { isENOENT, isNodeError } from '../../../lib/process/errors.js';
+import { clearWorkspaceRecord, stagedWorkspaceRoot, retentionError } from './retention.js';
 import { isInsideRoot } from '../../../lib/path-confinement.js';
 import { worktreeError } from './errors.js';
 import {
@@ -22,8 +25,7 @@ export type RemoveWorktreeOptions = {
   // itself; without it the slug names a directory under the project root.
   worktreeDir?: string;
   warningPublisher?: WorktreeWarningPublisher;
-  // Isolation dispose proves no unpromoted work before force-removing; git
-  // porcelain can still list promoted edits, so skip that bypass warning.
+  // Run removal has explicit authority to discard the workspace's files.
   suppressUncommittedWarning?: boolean;
 };
 
@@ -36,6 +38,43 @@ function publishWorktreeWarning(
     return;
   }
   process.stderr.write(message.endsWith('\n') ? message : `${message}\n`);
+}
+
+export async function removeRunWorkspace(
+  projectDir: string,
+  sessionId: string,
+  workspace: { kind: 'worktree' | 'staged-copy' | 'checkout'; path: string },
+): Promise<void> {
+  if (workspace.kind === 'checkout') return;
+  if (workspace.kind === 'worktree') {
+    await removeWorktree({
+      projectDir,
+      slug: basename(workspace.path),
+      git: createGitClient(projectDir),
+      deleteBranch: true,
+      worktreeDir: workspace.path,
+      suppressUncommittedWarning: true,
+    });
+    await removeEmptyRepositoryRoot(workspace.path);
+  } else {
+    const root = dirname(workspace.path);
+    if (
+      root !== stagedWorkspaceRoot({ projectDir, sessionId }, basename(root)) ||
+      workspace.path !== join(root, 'workspace')
+    )
+      throw retentionError.unavailable();
+    await rm(root, { recursive: true, force: true });
+  }
+  clearWorkspaceRecord({ projectDir, sessionId });
+}
+
+async function removeEmptyRepositoryRoot(worktreeDir: string): Promise<void> {
+  try {
+    await rmdir(dirname(worktreeDir));
+  } catch (err) {
+    if (isENOENT(err) || (isNodeError(err) && err.code === 'ENOTEMPTY')) return;
+    throw err;
+  }
 }
 
 // An isolation worktree lives outside the project root when the project is

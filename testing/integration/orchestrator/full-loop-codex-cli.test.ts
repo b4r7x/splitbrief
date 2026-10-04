@@ -4,7 +4,11 @@ import { join } from 'node:path';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
-import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeCallbacks,
+  makePlanner,
+  runWorkspaceDir,
+} from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -119,6 +123,7 @@ async function runCodexLoop(opts: {
   events: EngineEvent[];
   runLog: FakeCodexRun;
   projectDir: string;
+  workspaceDir: string;
 }> {
   const projectDir = setupProject(opts.marker);
   const fakeCodex = prependFakeCodexToPath({
@@ -206,13 +211,19 @@ async function runCodexLoop(opts: {
   });
 
   const runLog = JSON.parse(readFileSync(fakeCodex.runLogPath, 'utf-8')) as FakeCodexRun;
-  return { summary, events, runLog, projectDir };
+  return {
+    summary,
+    events,
+    runLog,
+    projectDir,
+    workspaceDir: runWorkspaceDir({ projectDir, sessionId: opts.sessionId }),
+  };
 }
 
 describe('full workflow Codex CLI implementer', { timeout: 90_000 }, () => {
   it('records codex turn usage in the summary with cached input excluded from input tokens', async () => {
     const requiredPromptText = 'Codex CLI backed module';
-    const { summary, events, runLog, projectDir } = await runCodexLoop({
+    const { summary, events, runLog, projectDir, workspaceDir } = await runCodexLoop({
       marker: 'from-codex-cli',
       sessionId: 'sess-full-loop-codex-cli',
       requiredPromptText,
@@ -235,7 +246,7 @@ describe('full workflow Codex CLI implementer', { timeout: 90_000 }, () => {
     );
     expect(runLog.args.at(-1)).toBe('-');
     expect(runLog.prompt).toContain(requiredPromptText);
-    expect(readFileSync(join(projectDir, TARGET_FILE), 'utf-8')).toContain(
+    expect(readFileSync(join(workspaceDir, TARGET_FILE), 'utf-8')).toContain(
       'export const loop = "from-codex-cli";',
     );
     expect(summary).toMatchObject({
@@ -272,7 +283,7 @@ describe('full workflow Codex CLI implementer', { timeout: 90_000 }, () => {
 
   it('records zero implementer input and publishes the usage-not-reported warning when codex reports no usage', async () => {
     const sessionId = 'sess-full-loop-codex-cli-no-usage';
-    const { summary, events, projectDir } = await runCodexLoop({
+    const { summary, events, projectDir, workspaceDir } = await runCodexLoop({
       marker: 'from-codex-cli-no-usage',
       sessionId,
       requiredPromptText: 'Codex CLI backed module without usage',
@@ -281,7 +292,7 @@ describe('full workflow Codex CLI implementer', { timeout: 90_000 }, () => {
       terminalLine: JSON.stringify({ type: 'turn.completed' }),
     });
 
-    expect(readFileSync(join(projectDir, TARGET_FILE), 'utf-8')).toContain(
+    expect(readFileSync(join(workspaceDir, TARGET_FILE), 'utf-8')).toContain(
       'export const loop = "from-codex-cli-no-usage";',
     );
     expect(summary).toMatchObject({

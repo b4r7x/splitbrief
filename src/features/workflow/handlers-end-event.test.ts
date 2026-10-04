@@ -15,6 +15,7 @@ import { createRuntimeCommands } from '../../core/runtime/commands/registry.js';
 import { isOpenRunAtRest, routerStore } from '../../stores/navigation/router.js';
 import { configStore } from '../../stores/project/config.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { stopStore } from '../../stores/workflow/stop.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { clearAllHandlers, requestEndRun, requestResume, setResumeHandler } from './handlers.js';
 import { hydrateRun } from './run-history.js';
@@ -23,6 +24,7 @@ describe('End run at rest', () => {
   let projectDir = '';
 
   afterEach(() => {
+    clearAllHandlers();
     resetAllStores();
     if (projectDir) cleanupTempDir(projectDir);
     projectDir = '';
@@ -52,6 +54,7 @@ describe('End run at rest', () => {
 
     const beforeEnd = Date.now();
     expect(requestEndRun()).toBe(true);
+    await vi.waitFor(() => expect(loadState(ref)?.closed).toBeDefined());
     const afterEnd = Date.now();
     const firstClosed = loadState(ref)?.closed;
     const events = (await readRunEvents(ref)).events;
@@ -70,12 +73,36 @@ describe('End run at rest', () => {
     await hydrateRun(closedRecord);
     expect(lifecycleStore.get().durationMs).toBe((cancellation[0]?.ts ?? 0) - startedAt);
     expect(requestEndRun()).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 50));
     expect(loadState(ref)?.closed).toEqual(firstClosed);
     expect(
       (await readRunEvents(ref)).events.filter((event) => event.type === 'workflow_cancelled'),
     ).toHaveLength(1);
     expect(existsSync(join(projectDir, '.git', 'index'))).toBe(false);
     expect(readdirSync(join(projectDir, '.git', 'objects'))).toEqual(['info', 'pack']);
+  });
+
+  it('refuses Resume while End run at rest is closing', async () => {
+    projectDir = createTempDir('at-rest-end-resume-');
+    execFileSync('git', ['init', projectDir], { stdio: 'ignore' });
+    const ref = { projectDir, sessionId: 'end-before-resume' };
+    ensureSessionDir(projectDir, ref.sessionId);
+    saveState(ref, transition(createInitialState('End before Resume'), { type: 'START' }));
+    const record = readRunRecord(ref);
+    if (record === null) throw new Error('missing run record');
+    routerStore.init({ screen: 'workflow', run: record, execution: { kind: 'at-rest' } });
+    configStore.__testReset({ config: makeConfig() });
+    const resume = vi.fn();
+    setResumeHandler(resume);
+
+    expect(requestEndRun()).toBe(true);
+    expect(requestResume('')).toBe(false);
+    expect(resume).not.toHaveBeenCalled();
+
+    await vi.waitFor(() =>
+      expect(readRunRecord(ref)?.status).toEqual({ kind: 'closed', as: 'ended' }),
+    );
+    expect(stopStore.get().phase).toBe('ended');
   });
 });
 
@@ -124,7 +151,9 @@ describe('/resume and /end on a run at rest at a gate', () => {
     await run('/end');
 
     expect(errors).toEqual([]);
-    expect(readRunRecord(ref)?.status).toEqual({ kind: 'closed', as: 'ended' });
+    await vi.waitFor(() =>
+      expect(readRunRecord(ref)?.status).toEqual({ kind: 'closed', as: 'ended' }),
+    );
   });
 
   it('/resume re-enters it', async () => {

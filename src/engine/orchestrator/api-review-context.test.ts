@@ -330,6 +330,7 @@ async function review(opts: {
   };
   return runFinalReviewPhase({
     projectDir: opts.projectDir,
+    workspaceDir: opts.projectDir,
     sessionId: opts.sessionId,
     config: opts.config,
     callbacks: makeCallbacks().callbacks,

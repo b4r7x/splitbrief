@@ -17,9 +17,12 @@ export async function runChainAnalysisSafe(opts: {
   state: WorkflowState;
   taskStartSnapshot: ChangedFilesSnapshot;
 }): Promise<void> {
-  const { projectDir, sessionId, bus } = opts.wctx;
+  const { projectDir, workspaceDir, sessionId, bus } = opts.wctx;
   try {
-    const taskChangedFiles = await getChangedFilesSinceSnapshot(projectDir, opts.taskStartSnapshot);
+    const taskChangedFiles = await getChangedFilesSinceSnapshot(
+      workspaceDir,
+      opts.taskStartSnapshot,
+    );
     const ledger = readEvidenceLedger({ projectDir, sessionId });
     const runAttributedFiles = new Set(
       (ledger?.tasks ?? []).flatMap((entry) => entry.changedFiles),

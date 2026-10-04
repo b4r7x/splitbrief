@@ -151,7 +151,7 @@ Each CLI subcommand has its own handler in `src/cli/commands/`. They all follow 
 2. `cli/commands/start/register.ts` boots stores, initialises router with the feature, renders `<App/>`.
 3. `<App/>` reads `routerStore` and mounts `<WorkflowScreen/>`.
 4. `useWorkflowRunner()` is triggered in the workflow screen. It calls `runWorkflow(opts)` from `src/engine/orchestrator/run/workflow.ts`. `initializeWorkflow` builds an `EventBus` and subscribes the sinks described in [Event bus + sinks](#5-event-bus--sinks). The bus is threaded through `WorkflowContext.bus`.
-5. `runWorkflow` creates planner + implementer via factories, runs the planning session (one typed plan, checked and written to `plan.json`, rendered to `plan.md` and `tasks.md`), compiles the Task Briefs from it, then runs the task loop and final review. When the implementer writes files itself, the run also gets one isolation worktree up front; each task's changed set is gated and promoted into the project before validation runs there.
+5. `runWorkflow` creates planner and implementer runners, compiles the typed plan, then opens one workspace for execution. Every writer, task validation and code review uses it. [Apply](./WORKFLOW.md#apply) writes the assessed result into the checkout once.
 6. During each phase, the engine emits via `wctx.bus.publish(EngineEvent)`. The bus fans out synchronously to all subscribed sinks:
    - `tuiSink` (`src/features/workflow/tui-sink.ts`) — pass-through to `workflow/actions.addEvent(event)`; workflow sub-stores consume `EngineEvent` directly, so the sink is a named wiring point, not a mapper (UI re-renders).
    - `jsonlSink` (`src/engine/events/sinks/jsonl.ts`) — appends to `.splitbrief/sessions/<id>/session.jsonl` via `appendEngineEvent` in `src/core/sessions/log-writer.ts`.
@@ -162,7 +162,7 @@ Each CLI subcommand has its own handler in `src/cli/commands/`. They all follow 
 7. TUI components subscribe to slices of workflow stores via `store.use(selector)` and re-render only when their slice changes.
 8. For user-gated moments (approval, clarification, continuation, edit conflicts, and protected-write confirmations), the engine `await`s callbacks such as `callbacks.onApprovalNeeded(…)`, `callbacks.onPlannerReply(…)`, `callbacks.onContinuationNeeded(…)`, `callbacks.onUserEditConflict(…)`, and `callbacks.onTieredApproval(…)`. These gating callbacks are **not** the same channel as event emission — events fan out through the `EventBus` (pub/sub, fire-and-forget); gates remain discrete async request/response pairs supplied by the workflow caller (CLI TUI for interactive runs, `runHeadless` stubs for `--json`). The UI fulfils gates by switching input mode and resolving the awaited promise.
 9. **Queue**: during live planner phases, the user may type and press Enter without aborting. The message is appended to `WorkflowState.messageQueue`; workflow lifecycle stores keep the UI queue indicators in sync. The orchestrator drains the queue at safe-points (end of current call) and appends queued messages to the next planner prompt. For planners that implement `injectUserTurn()`, each queued message is also dispatched in parallel as a native user turn into the live session.
-10. **Stop**: `ctrl+c` stops active work and a repeated press quits after cleanup; `esc` opens the inline stop menu, another `esc` performs Stop now, and `Tab` dismisses it — the live rows are Stop now, Pause after this brief and End run (`src/app/keys.ts`, `src/features/workflow/stop/menu.tsx`). Stop now fires an `AbortController` which propagates into the active planner/implementer call (for HTTP) or sends SIGTERM (for subprocesses). The partial response is preserved in `session.jsonl` with `interrupted: true`, the state records `interruptedStep` — the step the stop cut and whether the cut landed `mid-step` or at a `boundary` — and the `phase` does *not* reset. Nothing is reverted: the run parks with what it wrote, `/resume` carries it on, and `/end` dispatches `CLOSE_RUN` so the run lists as `ended`. `ctrl+q` / `/quit` stops and then exits once the session is on disk; other overlays retain their own Escape handling. See [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) §Global keys.
+10. **Stop**: `ctrl+c` stops active work; another press quits after cleanup. `esc` opens the inline stop menu; another `esc` stops resumably. The state records `interruptedStep`, including whether the stop cut a call or landed at a boundary. `/resume` continues it. `/end` uses the shared close path, preserving unapplied workspace work first. See [WORKFLOW.md](./WORKFLOW.md#4-abort--continue--queue) and [Global keys](./SLASH-COMMANDS-REFERENCE.md#global-any-screen).
 11. When the last task passes validation, `runFinalReviewPhase` runs; then `saveFinalSession()` derives the run's status, writes `summary.json`, and releases `.splitbrief/active` only if the run closed. The UI does not unmount: the run settles at rest on the screen it was already on, and the route's `execution` flips to `at-rest`.
 
 ---
@@ -193,7 +193,7 @@ Factory dispatch is async and lazy: backend modules are loaded with memoized dyn
 | `shell` | `planners/shell.ts` | `implementers/shell.ts` | `extracted-code` |
 | `agent` | `planners/agent.ts` | `implementers/agent.ts` | `direct` |
 
-What separates the two roles is model strength, not transport. A CLI tool pointed at a cheap model and a cheap model behind an OpenAI-compatible endpoint are both first-class implementers; the write mode just records who writes the file. `direct` runners work in the run's isolation directory and their output is promoted into the project; `extracted-code` runners return the file body and SPLITBRIEF writes it. See [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md#write-modes).
+Model strength separates the two roles. The write mode records who writes the file. `direct` runners edit the run workspace; `extracted-code` runners return code that SPLITBRIEF writes there. Both use the same validation and Apply path. See [Run workspace and Apply](./HOW-IT-WORKS.md#run-workspace-and-apply).
 
 The shared pipeline for each role lives in planner `base.ts` (`createPlannerBase`) and implementer `pipeline/run.ts` (`createImplementerBase`). Each concrete backend provides `invoke*` functions; the base wraps them with token accounting, artifact resolution, retry, and callback dispatch.
 
@@ -231,7 +231,7 @@ One session = one folder. All per-session state lives inside it. See `docs/CONCE
 
 Single source of truth for `resume`: `state.json` + the session folder it lives in. If `state.json` is missing, corrupt, or from an older `stateVersion`, resume refuses. `session.jsonl` is consulted as a fallback context source when the stored `plannerSessionId` is rejected by the backend (see `docs/WORKFLOW.md` §1.5).
 
-A run's isolation directory is not session state. It lives under `$XDG_STATE_HOME/splitbrief/trees/<hash>/<slug>/` (default `~/.local/state/splitbrief/trees/...`, keyed by a 12-character hash of `realpath(git-common-dir)`), outside both `.splitbrief/` and the repository worktree, and it is a working directory rather than a record — once a task's changes are promoted into the project, the project is the authority on what happened.
+The run workspace holds implementation files; session state records its identity and base snapshot. State and evidence stay under `.splitbrief/sessions/<id>/`. See [workspace data flow](./HOW-IT-WORKS.md#run-workspace-and-apply) for the worktree location and Apply inputs.
 
 **Concurrency model:** at most one foreground active session per project directory. The presence of `.splitbrief/active` is the foreground lock; every run is foreground, and its session lockfile (`src/core/sessions/lockfile.ts`) records the owning process so `continue`/`resume` and the orphan reaper can tell a live session from an abandoned one. Users needing true parallel workflows are expected to use git worktrees, which give each worktree its own `.splitbrief/` and therefore its own lock.
 
@@ -432,9 +432,9 @@ The repository layers many supporting subsystems on top of that core loop:
 - **One planning session** — every run plans in one typed session (`src/engine/orchestrator/planning/session.ts`) that answers a plan `checkPlan` validates, and goes through a shared `runWorkflow` orchestrator (`src/engine/orchestrator/run/workflow.ts`). There are no workflow modes.
 - **EventBus** (`src/engine/events/bus.ts`) — single pub/sub port; sinks include the TUI store, an append-only JSONL log, an opt-in NDJSON-on-stdout sink for `--json` headless runs, and a workflow-hook dispatcher.
 - **Plan checks** — `checkPlan` (`src/engine/spec/plan-checks.ts`) plus the context fit admit a plan; a failing plan goes back to the planner once, and one plan card (`reviewing-plan`) asks for human approval unless `workflow.approve: none`. The final deterministic `drift-report.json` / `drift_report` event is produced during final review; per-task cross-scope accumulation is `drift-chains.json` / `drift_chain_detected`.
-- **Snapshots** (`src/engine/snapshots/`) — content-addressed working-tree snapshots stored under `.splitbrief/sessions/<id>/snapshots/` with a baseline + delta layout. The run ledger under `src/engine/snapshots/run/` is what `/run accept` and `/run reject confirm` operate on.
-- **Run isolation and promotion** (`src/engine/orchestrator/isolation/`, `src/engine/orchestrator/approval/`) — an implementer that writes files itself works in a git worktree created once per run under `$XDG_STATE_HOME/splitbrief/trees/<hash>/<session-id>/` (default `~/.local/state/...`) — outside `.git/` because direct-writing CLIs refuse paths there, and outside the project root so a project-rooted test glob cannot reach a second copy of the source tree — with project dependencies reachable so it can run the project's own checks; `createRunIsolation` (`src/engine/orchestrator/isolation/create.ts`) is the run-scoped handle that acquires the worktree per task (falling back to a staged copy when the worktree cannot be created) and disposes it at the end of the run: the worktree is removed with force and its branch deleted when nothing unpromoted remains, retained with a retention notice otherwise. Approved changes are promoted into the real project directory under a hash guard (`gate-and-promote.ts`, `staged-project.ts`). A worktree isolates files, not the machine — it shares refs, config, and hooks with the repository and is not a security boundary. What SPLITBRIEF checks instead lives in `src/engine/implementers/isolation/`: a tripwire on the implementer's tool calls, which halts the brief as `implementer-left-isolation`, and a per-call audit of the checkout's files and shared git state, which warns on a changed file and halts the brief as `checkout-changed` on a changed git state.
-- **Protected-path confirmation** (`src/engine/orchestrator/approval/tiered-approval.ts` dispatches `gateAction`; `types.ts`, `confirm.ts`, `events.ts`) — declared/promoted file-write requests are classified as `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, `sensitive_change`, or `package_change`; a write to a protected path (`destructive`, `sensitive_change`, `package_change`) asks once per path per run, unless the approved plan listed it, and no other write asks. There are no sticky grants and no `approvals.json`.
+- **Snapshots** (`src/engine/snapshots/`) — content-addressed working-tree snapshots stored under `.splitbrief/sessions/<id>/snapshots/` with a baseline + delta layout. The run ledger under `src/engine/snapshots/run/` is what `/run accept` and `/run reject confirm` operate on for a run without a workspace; a workspace run uses Apply and its backup instead ([SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md#run-acceptreject)).
+- **Run workspace and Apply** (`src/engine/orchestrator/isolation/`, `src/engine/orchestrator/apply/`) create and retain one run directory. `apply/` contains `states.ts`, `merge.ts`, `backup.ts`, `write.ts`, `restore.ts`, `patch.ts` and the `run.ts` driver. [HOW-IT-WORKS.md](./HOW-IT-WORKS.md#run-workspace-and-apply) owns the data flow; [WORKFLOW.md](./WORKFLOW.md#apply) owns the Apply sequence. The implementer boundary and audit remain under `src/engine/implementers/isolation/`.
+- **Protected-path confirmation** (`src/engine/orchestrator/task/attempt-gate.ts`, `src/engine/orchestrator/approval/`) checks attempt changes inside the workspace. `tiered-approval.ts`, `types.ts`, `confirm.ts` and `events.ts` own confirmation. See [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#protected-path-confirmation).
 - **Repo-map context** (`src/engine/codebase/`) — token-budgeted PageRank-based codebase summary fed to every planner call.
 - **Hooks** (`src/engine/hooks/`) — `pre_*` (sync) and `post_*` / `on_*` (fire-and-forget) commands declared in config and dispatched on matching events.
 
@@ -501,7 +501,7 @@ src/
 │   │                              halts, review, baseline, scope,
 │   │                              divergences, planner-documents,
 │   │                              steps (older runs' step table)
-│   ├── recovery/                  headline, action-label, resume-command, user-edit-actions
+│   ├── recovery/                  headline, action-label, resume-command
 │   ├── scope/                     declared-set: a brief's files plus its Scope
 │   │                              bullets, and the one matcher over them
 │   ├── project-meta.ts            Project name / git origin discovery
@@ -572,13 +572,13 @@ src/
 │   │                              per-call checkout audit),
 │   │                              command-invoke, types
 │   ├── orchestrator/
-│   │   ├── isolation/             run-scoped isolation handle (createRunIsolation:
-│   │   │                          acquire per task, conditional retention on
-│   │   │                          dispose), worktree + staged-copy strategies
+│   │   ├── apply/                 states, merge, backup, write, restore,
+│   │   │                          patch + run driver
+│   │   ├── isolation/             createRunIsolation: open once per run,
+│   │   │                          acquire attempt handles, retain open runs;
+│   │   │                          worktree + staged-copy strategies
 │   │   ├── approval/              action classifier,
-│   │   │                          gate-files + gate-and-promote (gate the
-│   │   │                          changed set, then promote it into the
-│   │   │                          project under a hash guard),
+│   │   │                          gate-files (per-file protected gate),
 │   │   │                          staged-project, planner-artifact,
 │   │   │                          file-snapshots, the write gate
 │   │   │                          (`tiered-approval`, `types`,
@@ -588,7 +588,7 @@ src/
 │   │   ├── continuation.ts        withContinuationLoop (pause/resume gate)
 │   │   ├── drift/                 per-task drift and chained drift state
 │   │   ├── escalation/            local retries, retry step, seat wait,
-│   │   │                          evidence, approval-conflict handling
+│   │   │                          evidence, retry validation
 │   │   ├── events.ts              publish* helpers for typed events
 │   │   ├── evidence/              ledger, persistence, reporting,
 │   │   │                          task/approval evidence, review packets
@@ -605,7 +605,8 @@ src/
 │   │   │                          refreshAndPersistCode
 │   │   ├── summary/               buildSummary (build.ts), artifact rollups, task metrics
 │   │   ├── task/                  loop, step, retry, stale-inputs,
-│   │   │                          rollback, commit, routing, pre-task helpers
+│   │   │                          attempt-gate, rollback, commit, routing,
+│   │   │                          pre-task helpers
 │   │   ├── tokens.ts              Token-usage accumulation
 │   │   ├── transcript/            Fallback resume context + compaction
 │   │   │                          without native session resume
@@ -860,9 +861,17 @@ Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orch
 `src/engine/events/schema.ts` defines the type-dispatched event contract as `EngineEventSchema` (the `EngineEvent` alias is `z.infer`d in `src/engine/events/types.ts`). Every `EngineEvent` carries `ts: number`; most carry `phase: Phase`. The phase-less variants are `snapshot_restored`, `snapshot_restore_conflict`, and `approval_mode_changed`. The grouped summary below is a navigation aid; use the source contract for the exact, exhaustive event list and field shapes. For key event shapes with full field definitions, see [ENGINE.md](./ENGINE.md).
 
 **Workflow lifecycle (7):**
-`workflow_started`, `workflow_resumed`, `workflow_complete`, `workflow_cancelled`, `workflow_config`, `paused_external_changes`, `turn_interrupted` — the pause event. It carries `source` (`user` | `watchdog`), `at`, where the stop landed — `mid-step` inside a call, `boundary` where it cut nothing: between two briefs, or at a gate — and `step`, the step the stop parked, as `interruptedStep.step` records it. Every park publishes it: a stop from the stop sheet (`parkStoppedRun`, `src/engine/orchestrator/state-ops.ts`), a stop inside a planner call, a park in place and a pause between briefs. The transcript row names a gate stop by its gate (`Paused at the plan gate`), because a gate runs no turn to retry.
+`workflow_started`, `workflow_resumed`, `workflow_complete`, `workflow_cancelled`, `workflow_config`, `turn_interrupted` — the pause event. It carries `source` (`user` | `watchdog`), `at`, where the stop landed — `mid-step` inside a call, `boundary` where it cut nothing: between two briefs, or at a gate — and `step`, the step the stop parked, as `interruptedStep.step` records it. Every park publishes it: a stop from the stop sheet (`parkStoppedRun`, `src/engine/orchestrator/state-ops.ts`), a stop inside a planner call, a park in place and a pause between briefs. The transcript row names a gate stop by its gate (`Paused at the plan gate`), because a gate runs no turn to retry.
+
+`paused_external_changes` is replay-only. Older logs still load it; new runs produce no user-edit pause event.
 
 **Recovery:**
+
+S7 adds `apply-conflict` and `apply-partial`, built by `recovery/builders/apply.ts`. The new actions are `accept-as-is` and `restore-backup`. [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#recovery) owns their policy and behavior.
+
+The state actions are `RECORD_WORKSPACE`, `ACCEPT_AS_IS`, `APPLY_REVIEW_START`, `APPLY_START`, `APPLY_DONE` and `APPLY_RESTORED`. `CLOSE_RUN` also accepts `as: 'discarded'`. Their effects are in [WORKFLOW.md](./WORKFLOW.md#apply).
+
+S7 deletes `orchestrator/user-edit/`, `approval/gate-and-promote.ts`, `task/apply-changed-files.ts`, `escalation/approval-conflict.ts` and `core/recovery/user-edit-actions.ts`. The old halt enums and event schemas remain readers for saved sessions. [Retired file halts](./APPROVAL-AND-RECOVERY.md#retired-file-halts) describes continuation.
 `recovery_prompted`, `recovery_action_selected`, `recovery_action_failed`, `recovery_resolved`. The last three carry an optional `seat` (`plan` | `build` | `review`), the seat the halt stopped, so a transcript row names it; a log written before the field existed replays without it and its row names no seat.
 
 **Planner stream:**
@@ -956,7 +965,7 @@ All per-session state lives under `.splitbrief/sessions/<session-id>/`. Path con
 
 Also relative to project root, **outside** `.splitbrief/`:
 
-- `$XDG_STATE_HOME/splitbrief/trees/<hash>/<slug>/` — the run's implementer isolation worktree (`src/engine/orchestrator/isolation/`). Defaults to `~/.local/state/splitbrief/trees/...`; outside `.git/` (direct-writing CLIs refuse paths there) and outside the project tree so a project-rooted test glob cannot walk into the second copy. See [HOW-IT-WORKS.md §Isolation and promotion](./HOW-IT-WORKS.md#isolation-and-promotion).
+- `$XDG_STATE_HOME/splitbrief/trees/<hash>/<slug>/` is the run worktree. See [workspace data flow](./HOW-IT-WORKS.md#run-workspace-and-apply) for its location rules.
 - `./.splitbrief/skills/`, `./.claude/skills/`, `./.agents/skills/`, `~/.splitbrief/skills/`, `~/.claude/skills/`, `~/.agents/skills/`, `~/.codex/skills/`, `~/.config/opencode/skills/`, `AGENTS.md` — skill sources, read-only to SPLITBRIEF. The order is the discovery precedence order (project before global, first root wins per skill id); the list lives in `src/core/skills/scan-paths.ts`.
 
 Single source of truth for continuing a run: `state.json` + the session folder it lives in. If `state.json` is missing or stateVersion-mismatched, `resume` refuses; so does a run whose `state.json` records `closed`. Everything else is picked up at `resumeStep`. `session.jsonl` is the fallback context source for backends without native session resume (`src/engine/orchestrator/transcript/rebuild.ts`).
@@ -980,7 +989,7 @@ The `kind` discriminant is required in every planner / reviewer / implementer co
 
 Each backend implements `Planner` / `Implementer` via a `base.ts`-built shared pipeline; only `invoke*` differs per backend. The orchestrator branches on `PlannerCapabilities` (declared per backend), never on backend identity. See Part 1 §Capability matrix for the full capability table and fallback strategy.
 
-The two implementer write modes are peers. `extracted-code` returns the whole file as text and SPLITBRIEF writes it through the pre-write approval gate; `direct` edits files itself inside the run's isolation directory (a git worktree by default) and the changed set is promoted into the project under a hash guard. Both get the same brief, the same prompt contract, and the same post-promotion validation. Details in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md#write-modes).
+The two implementer write modes are peers. Both write into the same run workspace and receive the same brief, validation and final review. [HOW-IT-WORKS.md](./HOW-IT-WORKS.md#run-workspace-and-apply) defines the data flow.
 
 ---
 

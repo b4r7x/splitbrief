@@ -20,6 +20,12 @@ if [ -z "$COMMAND" ]; then
   exit 0
 fi
 
+# The orchestrating session commits at an agreed checkpoint by prefixing the
+# command with this marker (CLAUDE.md, "Commits"). Subagents never use it.
+case "$COMMAND" in
+  "SPLITBRIEF_OWNER_COMMIT=1 "*) exit 0 ;;
+esac
+
 read -r -a TOKENS <<< "$COMMAND"
 N=${#TOKENS[@]}
 i=0

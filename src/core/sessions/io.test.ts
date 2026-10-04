@@ -293,6 +293,43 @@ describe('rows derived from state.json', () => {
     expect(sessions[0]?.summary).toBeNull();
   });
 
+  it('lists a run ready to apply as open, ready to apply, with no stop', () => {
+    tmp = createTempDir('sessions-io-test');
+    const sessionId = '2024-01-01-ready';
+    saveState(
+      { projectDir: tmp, sessionId },
+      makeImplState([makeTask()], {
+        phase: 'complete',
+        reviewStatus: 'passed',
+        workspace: { kind: 'worktree', path: '/tmp/wt', base: { snapshotId: 'b', head: null } },
+      }),
+    );
+
+    const row = listSessions(tmp)[0];
+    expect(row?.status).toBe('open');
+    expect(row?.apply).toBe('ready');
+    expect(row).not.toHaveProperty('stop');
+  });
+
+  it.each([
+    ['applied', 'ended'],
+    ['discarded', 'ended'],
+  ] as const)('lists a run closed as %s with its Apply outcome', (as, status) => {
+    tmp = createTempDir('sessions-io-test');
+    const sessionId = `2024-01-01-${as}`;
+    saveState(
+      { projectDir: tmp, sessionId },
+      makeImplState([makeTask()], {
+        phase: 'complete',
+        reviewStatus: 'passed',
+        workspace: { kind: 'worktree', path: '/tmp/wt', base: { snapshotId: 'b', head: null } },
+        closed: { at: '2024-01-01T00:00:00.000Z', as },
+      }),
+    );
+
+    expect(listSessions(tmp)[0]).toMatchObject({ status, apply: as });
+  });
+
   it('names the stop reason a halted run left on its state', () => {
     tmp = createTempDir('sessions-io-test');
     const sessionId = '2024-01-01-halted';

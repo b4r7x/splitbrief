@@ -30,7 +30,7 @@ It owns:
 - durable workflow sessions,
 - Task Brief quality,
 - task sizing and routing,
-- isolation and promotion,
+- isolation and Apply,
 - checkpoint boundaries,
 - conflict detection,
 - validation,
@@ -93,7 +93,7 @@ The implementer is by definition the weaker side. If its own assessment decided 
 
 Correctness is owned by two things:
 
-- SPLITBRIEF's deterministic validation pipeline — typecheck → lint → test, stopping at the first failure attributable to the task, run against the user's real project directory after changes are promoted (`src/engine/orchestrator/task/step.ts`),
+- SPLITBRIEF's deterministic validation pipeline — typecheck → lint → test, stopping at the first failure attributable to the task, run in the run workspace after each brief (`src/engine/orchestrator/task/step.ts`),
 - the planner's review of the finished change.
 
 An implementer implements; it does not run the project gates. The direct-writer preamble (`src/engine/spec/prompts/system.ts`) tells it that SPLITBRIEF runs typecheck, lint, format and test after the call, so it runs at most the focused test files the brief lists, once, and no project-wide gate, whole suite, screenshot or render tool. The P01 run showed why: one brief spent 13% of its tool calls on edits and 87% on reads, gates and renders. Whatever an implementer reports about its own validation lands in the evidence trail as a claim by the agent, never as a verdict.
@@ -195,7 +195,7 @@ The implemented behavior is:
 - fall back predictably when validation fails, including recovery-time rerouting to a named larger profile for the current task,
 - never parallel-write the same checkout in v1.
 
-## Isolation and promotion
+## Isolation and Apply
 
 An implementer with `writesFiles: direct` needs somewhere to write that is not the user's working tree. That somewhere is a **git worktree, created once per run** — not a copy of the project per task.
 
@@ -205,7 +205,7 @@ An implementer with `writesFiles: direct` needs somewhere to write that is not t
 - Worktree is the default, not the only option. A user may configure a different isolation strategy.
 - The per-task recursive copy into the system temp directory (`createStagedProject`) is no longer the default path.
 
-Promotion is the non-negotiable half. Work that stays inside an isolated checkout is not a delivered change: accepted changes are written into the user's real project directory. Promotion is hash-guarded (`promoteStagedChanges` in `src/engine/orchestrator/approval/staged-project.ts`) — if a file moved under SPLITBRIEF's feet between snapshot and promotion, promotion stops and reports the conflict instead of overwriting it.
+Apply is the non-negotiable half. Work that stays inside the run workspace is not a delivered change: the reviewed result is written into the user's real project directory once, when the owner applies it. Apply never overwrites a file that moved under SPLITBRIEF's feet; [WORKFLOW.md §Apply](./WORKFLOW.md#apply) owns the algorithm.
 
 **A worktree is not a security boundary.** It isolates files, not the runtime — same ports, same database, same credentials on disk — and it shares hooks and config with the real repository by design. An implementer running in a worktree is code running with the user's privileges. Runner kinds `shell` and `agent` execute arbitrary commands with no shell or network sandbox, and the worktree does not change that. Documentation and UI must say so plainly rather than implying containment.
 
@@ -240,19 +240,19 @@ SPLITBRIEF must distinguish:
 - files changed by the user while SPLITBRIEF was waiting, prompting, validating, or applying,
 - files changed by another process after a snapshot/checkpoint.
 
-The default behavior is to pause on conflicts, not overwrite.
+The default behavior is never to overwrite. Briefs build in the run workspace, so a checkout edit never halts a brief; Apply merges the checkout into the run's result and stops on a conflict instead of overwriting.
 
 Examples:
 
 ```text
 User edits unrelated file:
-  continue, but show it in TUI as external change.
+  continue; the call logs checkout_changed_during_call, and Apply carries the edit through.
 
-User edits the same file as pending task:
-  pause and offer rebase/regenerate/skip/abort.
+User edits a file a pending brief will change:
+  continue; Apply merges the edit with the brief's result.
 
-User edits file after implementer output but before promote/apply:
-  block promotion and show conflict.
+User edits a file the run also changed, and the two cannot merge:
+  Apply halts as apply-conflict and names the file and the workspace.
 ```
 
 The right UX is not "SPLITBRIEF detected external changes, continue yes/no" only. The TUI should show which files changed, which tasks are affected, and what the safe choices mean.

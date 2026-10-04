@@ -267,35 +267,28 @@ export function planSync(root: string): SyncReport {
     report.issues.push(...validateFrontmatter(skill, fm));
     const body = text.replace(FRONTMATTER_RE, '');
     const mentioned = mentionedReferences(body);
-    if (skill !== SCRIPT_SOURCE_SKILL) {
-      const wanted = mentionedScripts(body);
-      for (const file of wanted) {
-        if (!scripts.has(file)) {
-          report.issues.push({
-            skill,
-            message: `scripts/${file} is not in the ${SCRIPT_SOURCE_SKILL} library`,
-          });
-          continue;
-        }
-        report.actions.push({ skill, file: `scripts/${file}`, kind: 'copy' });
-        const paths = mirrorPaths(root, skill, `scripts/${file}`);
-        if (mirrorDrifted(paths.source, paths.target)) {
-          report.drift.push(`${skill}/scripts/${file}`);
-        }
+    const wanted = mentionedScripts(body);
+    for (const file of wanted) {
+      if (!scripts.has(file)) {
+        report.issues.push({
+          skill,
+          message: `scripts/${file} is not in the ${SCRIPT_SOURCE_SKILL} library`,
+        });
+        continue;
       }
+      if (skill === SCRIPT_SOURCE_SKILL) continue;
+      report.actions.push({ skill, file: `scripts/${file}`, kind: 'copy' });
+      const paths = mirrorPaths(root, skill, `scripts/${file}`);
+      if (mirrorDrifted(paths.source, paths.target)) {
+        report.drift.push(`${skill}/scripts/${file}`);
+      }
+    }
+    if (skill !== SCRIPT_SOURCE_SKILL) {
       for (const file of listFiles(join(root, skill, 'scripts'))) {
         if (wanted.includes(file)) continue;
         report.actions.push({ skill, file: `scripts/${file}`, kind: 'stale' });
         report.drift.push(`${skill}/scripts/${file}`);
       }
-    }
-    if (skill === CANONICAL_SKILL) {
-      for (const file of library) {
-        if (!mentioned.includes(file)) {
-          report.warnings.push(`${skill}: references/${file} is never mentioned in SKILL.md`);
-        }
-      }
-      continue;
     }
     const mirrorDir = join(root, skill, 'references');
     for (const file of mentioned) {
@@ -306,10 +299,19 @@ export function planSync(root: string): SyncReport {
         });
         continue;
       }
+      if (skill === CANONICAL_SKILL) continue;
       report.actions.push({ skill, file, kind: 'copy' });
       if (mirrorDrifted(join(libraryDir, file), join(mirrorDir, file))) {
         report.drift.push(`${skill}/references/${file}`);
       }
+    }
+    if (skill === CANONICAL_SKILL) {
+      for (const file of library) {
+        if (!mentioned.includes(file)) {
+          report.warnings.push(`${skill}: references/${file} is never mentioned in SKILL.md`);
+        }
+      }
+      continue;
     }
     for (const file of listMarkdown(mirrorDir)) {
       if (!mentioned.includes(file)) {
@@ -328,6 +330,7 @@ export function applySync(root: string, report: SyncReport): void {
       rmSync(target, { force: true });
       continue;
     }
+    if (!mirrorDrifted(source, target)) continue;
     mkdirSync(dirname(target), { recursive: true });
     writeFileSync(target, readFileSync(source, 'utf8'));
     chmodSync(target, statSync(source).mode);

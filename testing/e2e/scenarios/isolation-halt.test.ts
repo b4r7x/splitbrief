@@ -7,7 +7,9 @@ import { WorkflowStateSchema } from '../../../src/core/schemas/workflow.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { spawnCli } from '../helpers/live-cli-harness.js';
+import { checkoutEntries } from '#testing/helpers/checkout.js';
 import {
+  applyRun,
   createStopContinueFixture,
   ESCAPED_BRANCH,
   escapingImplementerScript,
@@ -44,6 +46,7 @@ function cli(target: StopContinueFixture, args: readonly string[]) {
 describe('e2e: a checkout whose git state changes during an implementer call', () => {
   it('halts the headless run with the evidence, and continue --action retry finishes it', async () => {
     fixture = createStopContinueFixture(escapingImplementerScript);
+    const checkoutAtStart = checkoutEntries(fixture.projectDir);
 
     const halted = await cli(fixture, ['start', 'smoke']);
 
@@ -75,6 +78,11 @@ describe('e2e: a checkout whose git state changes during an implementer call', (
 
     expect(continued.exitCode, continued.stderr).toBe(0);
     expect(continued.stdout).toContain('task T001: done');
+    expect(checkoutEntries(fixture.projectDir)).toEqual(checkoutAtStart);
+
+    const applied = await applyRun(fixture, sessionId);
+
+    expect(applied.exitCode, applied.stderr).toBe(0);
     expect(readFileSync(fixture.greetPath, 'utf-8')).toBe(GREET_SOURCE);
   }, 150_000);
 });

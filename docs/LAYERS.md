@@ -135,7 +135,7 @@ export async function commitTaskResult(taskId: TaskId) { ... }
 - `core/pipeline-spec/` — the typed pipeline contract: retry ladder, gate order, capture limits, halt signatures, brief body order and the brief grouping rule, scope and baseline rules, timeouts, the CLI ↔ skill divergence table. Pure data read by the engine and rendered into `skills/` by `scripts/skill-blocks.ts`
 - `core/scope/` — `declared-set.ts`, the one matcher that decides whether a changed path is inside a brief's declared set
 - `core/validation/stacks/` — the five validation stacks (TypeScript, JavaScript, Python, Go, Rust) and their registry: markers, commands, test patterns, narrowing, allowed commands
-- `core/recovery/` — how a pending recovery reads and what it offers: the headline, the pasteable resume command, and the user-edit → recovery-action mapping
+- `core/recovery/` — how a pending recovery reads and what it offers: the headline, the action labels, the pasteable resume command, and the words a saved user-edit conflict from an older run still reads with
 
 **Prohibited imports:** `engine/`, `stores/`, `features/`, `components/`, `hooks/`, `cli/`. `core/` may import `utils/`, `lib/`, and other `core/` siblings.
 

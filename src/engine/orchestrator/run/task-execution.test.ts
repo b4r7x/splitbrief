@@ -28,6 +28,8 @@ import type {
 } from '../../implementers/types.js';
 import type { ContinuationHolder } from '../continuation.js';
 import { deriveRunStatus } from '../../../core/sessions/run-status.js';
+import { loadState } from '../../../core/state/persistence.js';
+import { listSnapshots, readManifest } from '../../snapshots/manifest.js';
 import { createStdoutTextSink } from '../../events/sinks/stdout-text.js';
 import { runTasksAndReview } from './task-execution.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
@@ -124,10 +126,10 @@ function runOptions(opts: {
     makeImplementer({
       // Each brief writes the file it declared, so a run with more than one brief
       // does not read as an undeclared write.
-      implement: vi.fn().mockImplementation(async (call: { task: Task }) => {
+      implement: vi.fn().mockImplementation(async (call: ImplementerOptions) => {
         const file = call.task.file ?? 'src/alpha.ts';
-        mkdirSync(join(opts.projectDir, dirname(file)), { recursive: true });
-        writeFileSync(join(opts.projectDir, file), `export const value = ${Date.now()};\n`);
+        mkdirSync(join(call.projectDir, dirname(file)), { recursive: true });
+        writeFileSync(join(call.projectDir, file), `export const value = ${Date.now()};\n`);
         return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
       }),
     });
@@ -172,6 +174,83 @@ function runOptions(opts: {
     },
   };
 }
+
+describe('runTasksAndReview workspace', () => {
+  it('the build start records the workspace once with its base snapshot', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const stop = new AbortController();
+    stop.abort();
+    const first = runOptions({
+      projectDir,
+      sessionId,
+      state: reviewedState([], head, 0),
+      reviewText: '### Verdict\npass\n',
+      onComplete: vi.fn(),
+      signal: stop.signal,
+    });
+
+    try {
+      const result = await runTasksAndReview(first.options);
+      const workspace = result.state.workspace;
+      expect(workspace).toBeDefined();
+      if (workspace === undefined) throw new Error('Missing recorded workspace');
+      expect(loadState({ projectDir, sessionId })?.workspace).toEqual(workspace);
+      expect(await readManifest(projectDir, sessionId, workspace.base.snapshotId)).toMatchObject({
+        name: 'workspace-base',
+        phase: 'manual',
+      });
+      const snapshots = await listSnapshots(projectDir, sessionId);
+      expect(
+        snapshots.manifests.filter((manifest) => manifest.name === 'workspace-base'),
+      ).toHaveLength(1);
+      expect(
+        first.events
+          .filter((event) => event.type === 'snapshot_created')
+          .map((event) => event.name),
+      ).toEqual(['run-baseline', 'workspace-base']);
+
+      const continued = await runTasksAndReview({ ...first.options, state: result.state });
+      expect(continued.state.workspace).toEqual(workspace);
+      expect(await listSnapshots(projectDir, sessionId)).toEqual(snapshots);
+      expect(first.events.filter((event) => event.type === 'snapshot_created')).toHaveLength(2);
+    } finally {
+      await first.options.wctx.isolation.dispose();
+    }
+  });
+
+  it('a moved workspace halts the continued run', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const { options, implementer } = runOptions({
+      projectDir,
+      sessionId,
+      state: reviewedState([makeTask()], head, 0),
+      reviewText: '### Verdict\npass\n',
+      onComplete: vi.fn(),
+    });
+    try {
+      const opened = await options.wctx.isolation.open({ config: options.wctx.config });
+      const recordedPath = `${opened.projectDir}-gone`;
+      const state: WorkflowState = {
+        ...options.state,
+        workspace: {
+          kind: opened.kind,
+          path: recordedPath,
+          base: { snapshotId: 'baseline', head: opened.head },
+        },
+      };
+
+      const continued = runTasksAndReview({ ...options, state });
+      await expect(continued).rejects.toMatchObject({
+        kind: 'run-workspace-moved',
+        message: expect.stringContaining(recordedPath),
+      });
+      await expect(continued).rejects.toThrow(opened.projectDir);
+      expect(implementer.implement).not.toHaveBeenCalled();
+    } finally {
+      await options.wctx.isolation.dispose();
+    }
+  });
+});
 
 describe('runTasksAndReview boundary pause', { timeout: 120_000 }, () => {
   it('parks between briefs, records the brief it stopped before, and continues into it', async () => {
@@ -262,6 +341,8 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
     });
     expect(events.find((e) => e.type === 'error' && e.code === 'review_failed')).toBeDefined();
     expect(result.state.pendingRecovery?.reason).toBe('review-failed');
+    expect(result.state.pendingRecovery?.availableActions).toContain('accept-as-is');
+    expect(result.state.reviewedCandidate).toBeDefined();
   });
 
   it('re-enters the owning brief on a Critical finding and completes when the re-review passes', async () => {
@@ -471,15 +552,15 @@ describe('runTasksAndReview review fix with nothing to change', { timeout: 120_0
 const REVIEW_FIX_INSTRUCTION = 'These findings come from the final review.';
 
 /** A direct writer that writes its brief's file and records every retry prompt it is given. */
-function promptRecordingImplementer(projectDir: string, prompts: string[]): Implementer {
-  const write = (task: Task): void => {
+function promptRecordingImplementer(prompts: string[]): Implementer {
+  const write = (task: Task, projectDir: string): void => {
     const file = task.file ?? 'src/alpha.ts';
     mkdirSync(join(projectDir, dirname(file)), { recursive: true });
     writeFileSync(join(projectDir, file), `export const value = ${Date.now()};\n`);
   };
   return makeImplementer({
     implement: vi.fn().mockImplementation(async (call: ImplementerOptions) => {
-      write(call.task);
+      write(call.task, call.projectDir);
       return { success: true, output: 'code' };
     }),
     retry: vi.fn().mockImplementation(async (call: RetryOptions) => {
@@ -492,7 +573,7 @@ function promptRecordingImplementer(projectDir: string, prompts: string[]): Impl
           writesFiles: 'direct',
         }),
       );
-      write(call.task);
+      write(call.task, call.projectDir);
       return { success: true, output: 'fixed' };
     }),
   });
@@ -509,7 +590,7 @@ describe('runTasksAndReview review fix instruction', { timeout: 120_000 }, () =>
       state: reviewedState(tasks, head, tasks.length),
       reviewText: (call) => (call === 1 ? CRITICAL_FAIL : '### Verdict\npass\n'),
       onComplete: vi.fn(),
-      implementer: promptRecordingImplementer(projectDir, prompts),
+      implementer: promptRecordingImplementer(prompts),
     });
 
     await runTasksAndReview(options);
@@ -537,7 +618,7 @@ describe('runTasksAndReview review fix instruction', { timeout: 120_000 }, () =>
       state: reviewedState(tasks, head, 0),
       reviewText: '### Verdict\npass\n',
       onComplete: vi.fn(),
-      implementer: promptRecordingImplementer(projectDir, prompts),
+      implementer: promptRecordingImplementer(prompts),
       config: makeConfig({
         validation: { typecheck: true, lint: false, test: false, typecheckCommand: 'noop' },
       }),
@@ -761,7 +842,7 @@ describe('runTasksAndReview repair pause', { timeout: 120_000 }, () => {
   it('parks a repair after the first fixed brief, keeps the next step and cycle, and continues the same repair in place', async () => {
     const { projectDir, sessionId, head } = setupProject();
     const parks: { partial: string; at: string }[] = [];
-    const continuation = { take: vi.fn(), hold: vi.fn() };
+    const continuation = { take: vi.fn(), hold: vi.fn(), resumesAttempt: vi.fn(() => false) };
     const onComplete = vi.fn();
     const { events, implementer, options } = runOptions({
       projectDir,
@@ -922,5 +1003,107 @@ describe('runTasksAndReview repair pause', { timeout: 120_000 }, () => {
       'T001',
     ]);
     expect(events.filter((e) => e.type === 'review_fix_started')).toHaveLength(1);
+  });
+});
+
+const MERGED_HUNK = '@@ -1 +1 @@\n-export const value = 1;\n+export const value = 2;\n';
+
+/** A run Apply sent back to review because the merge changed the reviewed candidate. */
+function integrationReviewState(tasks: Task[], head: string, cycle: number): WorkflowState {
+  return {
+    ...resumedReviewState(tasks, head, cycle),
+    applyReview: { merged: [{ path: 'src/alpha.ts', checkoutHunks: MERGED_HUNK }], failures: [] },
+  };
+}
+
+describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
+  it('non-overlapping edit merges and the whole run diff is re-reviewed', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' })];
+    const { reviewPrompts, options } = runOptions({
+      projectDir,
+      sessionId,
+      state: integrationReviewState(tasks, head, 1),
+      reviewText: '### Verdict\npass\n',
+      onComplete: vi.fn(),
+    });
+
+    try {
+      const result = await runTasksAndReview(options);
+
+      expect(reviewPrompts).toHaveLength(1);
+      expect(reviewPrompts[0]).toContain('## Merged at Apply');
+      expect(reviewPrompts[0]).toContain('src/alpha.ts');
+      expect(reviewPrompts[0]).toContain(MERGED_HUNK);
+      expect(result.state.reviewStatus).toBe('passed');
+      expect(result.state.applyReview).toBeUndefined();
+      expect(result.state.reviewedCandidate).toBeDefined();
+      expect(deriveRunStatus({ state: result.state, liveness: 'not-alive' })).toEqual({
+        kind: 'ready-to-apply',
+        override: false,
+      });
+    } finally {
+      await options.wctx.isolation.dispose();
+    }
+  });
+
+  it('changed candidate after green checks requires fresh results', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [
+      makeTask({
+        id: 'T001',
+        file: 'src/alpha.ts',
+        status: 'done',
+        checks: [{ id: 'C1', kind: 'cmd', value: 'false', required: true }],
+        checkResults: [{ id: 'C1', passed: true }],
+      }),
+    ];
+    const validator = createValidator();
+    const runValidation = vi.spyOn(validator, 'runValidation');
+    const { events, reviewPrompts, options } = runOptions({
+      projectDir,
+      sessionId,
+      state: {
+        ...integrationReviewState(tasks, head, 2),
+        plan: {
+          summary: 'Re-check the merged candidate.',
+          decisions: [],
+          criteria: [],
+          checks: [{ id: 'P1', kind: 'cmd', value: 'false', required: true }],
+          validation: null,
+        },
+      },
+      reviewText: '### Verdict\npass\n',
+      onComplete: vi.fn(),
+      validator,
+    });
+
+    try {
+      const result = await runTasksAndReview(options);
+
+      const workspacePath = result.state.workspace?.path;
+      expect(workspacePath).toBeDefined();
+      expect(runValidation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          projectDir: workspacePath,
+          task: expect.objectContaining({ id: 'T001' }),
+        }),
+      );
+      expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'C1', passed: false }]);
+      expect(reviewPrompts[0]).toContain('C1');
+      expect(reviewPrompts[0]).toContain('P1');
+      expect(result.state.applyReview?.failures).toEqual([
+        expect.stringMatching(/^T001 check C1 did not pass/),
+        expect.stringMatching(/^plan check P1 did not pass/),
+      ]);
+      expect(result.state.reviewStatus).toBe('failed');
+      expect(result.state.pendingRecovery?.reason).toBe('review-failed');
+      expect(events.find((e) => e.type === 'workflow_complete')).toMatchObject({
+        review: 'failed',
+        blocking: 2,
+      });
+    } finally {
+      await options.wctx.isolation.dispose();
+    }
   });
 });

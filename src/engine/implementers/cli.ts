@@ -33,7 +33,11 @@ import { isInternalGitStatusPath } from '../../core/paths.js';
 import { taskFiles, type Task } from '../../core/schemas/task.js';
 import { undeclaredFiles } from '../../core/scope/declared-set.js';
 import { stderrUsageLimit } from '../runners/usage-limit.js';
-import { createIsolationBoundary, isolationToolUseGuard } from './isolation/boundary.js';
+import {
+  createIsolationBoundary,
+  formatIsolationBreach,
+  isolationToolUseGuard,
+} from './isolation/boundary.js';
 
 const isCliExecutableUnavailable = matches('cli-executable-unavailable');
 
@@ -237,7 +241,20 @@ export function createCliImplementer(
             warnMs: config.idleWarnMs,
             killMs: config.idleKillMs,
           },
-          toolUseGuard: boundary === undefined ? undefined : isolationToolUseGuard(boundary),
+          toolUseGuard:
+            boundary === undefined
+              ? undefined
+              : isolationToolUseGuard(boundary, {
+                  onOutsideRead: (breach) => {
+                    if (opts.phase === undefined) return;
+                    options?.publisher?.publishWarning({
+                      phase: opts.phase,
+                      taskId: opts.task.id,
+                      message: `Task ${opts.task.id} ${formatIsolationBreach(breach)}`,
+                      safety: { category: 'implementer', code: 'isolation_outside_read' },
+                    });
+                  },
+                }),
         });
         if (timeoutSignal?.aborted === true && !signal?.aborted && deadlineMs !== undefined) {
           throw processError.timeout({

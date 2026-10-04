@@ -799,6 +799,8 @@ export interface ReviewFailedRecoveryOptions extends RecoveryBuilderBase {
   detail?: string | undefined;
   /** Why the review reached no verdict, when it reached none. */
   failure?: NoVerdictReviewFailure | undefined;
+  /** A reviewed workspace can be accepted with its open findings instead of repaired. */
+  acceptAsIs?: boolean | undefined;
 }
 
 const REVIEW_SEAT_REMEDY =
@@ -857,7 +859,12 @@ function buildNoVerdictReviewIssue(
 export function buildReviewFailedRecoveryIssue(opts: ReviewFailedRecoveryOptions): RecoveryIssue {
   if (opts.failure !== undefined) return buildNoVerdictReviewIssue(opts, opts.failure);
   const blocking = opts.blocking ?? 0;
-  const actions = orderedActions(['revise', 'pause-run', 'end-run']);
+  const actions = orderedActions([
+    'revise',
+    opts.acceptAsIs === true ? 'accept-as-is' : undefined,
+    'pause-run',
+    'end-run',
+  ]);
   return createRecoveryIssue({
     id: opts.id,
     seat: 'build',

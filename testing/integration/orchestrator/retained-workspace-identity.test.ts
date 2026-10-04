@@ -13,11 +13,9 @@ import {
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
-import { makeTask } from '#testing/helpers/factories/task.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
 import { sessionDir } from '../../../src/core/paths.js';
 import { createRunIsolation } from '../../../src/engine/orchestrator/isolation/create.js';
-import { workspaceOwner } from '../../../src/engine/orchestrator/isolation/retention.js';
 import { promoteStagedChanges } from '../../../src/engine/orchestrator/approval/staged-project.js';
 import { getChangedFilesSinceSnapshot } from '../../../src/engine/orchestrator/approval/file-snapshots/capture.js';
 
@@ -32,13 +30,10 @@ function fixture() {
   const sessionId = 'retained';
   ensureSessionDir(projectDir, sessionId);
   const config = makeNoValidationConfig();
-  const task = makeTask({ file: 'partial.ts' });
   return {
     projectDir,
     sessionId,
     config,
-    task,
-    owner: workspaceOwner({ task, attempt: 1, config }),
   };
 }
 function isolation(ref: { projectDir: string; sessionId: string }) {
@@ -56,8 +51,6 @@ async function parked() {
   const workspace = await first.acquire({
     role: 'implementer',
     config: f.config,
-    writesFiles: 'direct',
-    owner: f.owner,
   });
   writeFileSync(join(workspace.projectDir, 'partial.ts'), 'silent partial');
   await workspace.retain?.();
@@ -73,8 +66,6 @@ it('reacquires actual bytes and the original approval baseline without overwriti
   const workspace = await next.acquire({
     role: 'implementer',
     config: f.config,
-    writesFiles: 'direct',
-    owner: f.owner,
     resume: true,
   });
   expect(workspace.projectDir).toBe(f.workspace.projectDir);
@@ -95,59 +86,29 @@ it('reacquires actual bytes and the original approval baseline without overwriti
   expect(existsSync(join(f.projectDir, '.git/index'))).toBe(false);
 });
 
-it.each([
-  'contract',
-  'seat',
-  'attempt',
-  'fresh',
-  'missing',
-  'recreated',
-  'root-recreated',
-] as const)('refuses stale output after %s changes', async (change) => {
-  const f = await parked();
-  let owner = f.owner;
-  if (change === 'contract')
-    owner = workspaceOwner({
-      task: { ...f.task, description: 'Different contract' },
-      attempt: 1,
-      config: f.config,
-    });
-  if (change === 'seat')
-    owner = workspaceOwner({
-      task: f.task,
-      attempt: 1,
-      config: {
-        ...f.config,
-        implementer: { ...f.config.implementer, model: 'different-model' },
-      },
-    });
-  if (change === 'attempt') owner = workspaceOwner({ task: f.task, attempt: 2, config: f.config });
-  if (change === 'missing') rmSync(f.workspace.projectDir, { recursive: true, force: true });
-  if (change === 'recreated') {
-    renameSync(f.workspace.projectDir, `${f.workspace.projectDir}-old`);
-    mkdirSync(f.workspace.projectDir);
-    writeFileSync(join(f.workspace.projectDir, 'partial.ts'), 'replacement directory');
-  }
-  if (change === 'root-recreated') {
-    const root = dirname(f.workspace.projectDir);
-    renameSync(root, `${root}-old`);
-    mkdirSync(root);
-    renameSync(join(`${root}-old`, 'workspace'), f.workspace.projectDir);
-  }
-  const next = isolation(f);
-  const workspace = await next.acquire({
-    role: 'implementer',
-    config: f.config,
-    writesFiles: 'direct',
-    owner,
-    resume: true,
-    fresh: change === 'fresh',
-  });
-  expect(workspace.projectDir).not.toBe(f.workspace.projectDir);
-  expect(readFileSync(join(workspace.projectDir, 'partial.ts'), 'utf8')).toBe('input');
-  workspace.cleanup();
-  await next.dispose();
-});
+it.each(['missing', 'recreated', 'root-recreated'] as const)(
+  'refuses unavailable workspace after %s changes',
+  async (change) => {
+    const f = await parked();
+    if (change === 'missing') rmSync(f.workspace.projectDir, { recursive: true, force: true });
+    if (change === 'recreated') {
+      renameSync(f.workspace.projectDir, `${f.workspace.projectDir}-old`);
+      mkdirSync(f.workspace.projectDir);
+      writeFileSync(join(f.workspace.projectDir, 'partial.ts'), 'replacement directory');
+    }
+    if (change === 'root-recreated') {
+      const root = dirname(f.workspace.projectDir);
+      renameSync(root, `${root}-old`);
+      mkdirSync(root);
+      renameSync(join(`${root}-old`, 'workspace'), f.workspace.projectDir);
+    }
+    const next = isolation(f);
+    await expect(
+      next.acquire({ role: 'implementer', config: f.config, resume: true }),
+    ).rejects.toThrow('automatic continuation is blocked');
+    await next.dispose();
+  },
+);
 
 it.each(['session', 'project', 'escape'] as const)(
   'rejects a %s ownership record without touching the referenced bytes',
@@ -163,8 +124,6 @@ it.each(['session', 'project', 'escape'] as const)(
       isolation(f).acquire({
         role: 'implementer',
         config: f.config,
-        writesFiles: 'direct',
-        owner: f.owner,
         resume: true,
       }),
     ).rejects.toThrow();
@@ -172,14 +131,12 @@ it.each(['session', 'project', 'escape'] as const)(
   },
 );
 
-it('keeps bytes when persistence fails and blocks automatic reuse of the active record', async () => {
+it('keeps bytes when persistence fails and reuses the existing run record', async () => {
   const f = fixture();
   const run = isolation(f);
   const workspace = await run.acquire({
     role: 'implementer',
     config: f.config,
-    writesFiles: 'direct',
-    owner: f.owner,
   });
   writeFileSync(join(workspace.projectDir, 'partial.ts'), 'valuable unsaved partial');
   const file = join(sessionDir(f.projectDir, f.sessionId), 'retained-workspace.json');
@@ -194,15 +151,10 @@ it('keeps bytes when persistence fails and blocks automatic reuse of the active 
   );
   rmSync(file, { recursive: true });
   writeFileSync(file, activeRecord);
-  await expect(
-    isolation(f).acquire({
-      role: 'implementer',
-      config: f.config,
-      writesFiles: 'direct',
-      owner: f.owner,
-      resume: true,
-    }),
-  ).rejects.toThrow('automatic continuation is blocked');
+  const next = isolation(f);
+  const reused = await next.acquire({ role: 'implementer', config: f.config, resume: true });
+  expect(reused.projectDir).toBe(workspace.projectDir);
+  await next.dispose();
 });
 
 it('recognizes an alias of the owning project without accepting another project', async () => {
@@ -215,8 +167,6 @@ it('recognizes an alias of the owning project without accepting another project'
   const workspace = await next.acquire({
     role: 'implementer',
     config: f.config,
-    writesFiles: 'direct',
-    owner: f.owner,
     resume: true,
   });
   expect(readFileSync(join(workspace.projectDir, 'partial.ts'), 'utf8')).toBe('silent partial');
@@ -224,15 +174,13 @@ it('recognizes an alias of the owning project without accepting another project'
   await next.dispose();
 });
 
-it('does not archive original file bytes for staged continuation', async () => {
+it('keeps staged rollback bytes outside the continuation record', async () => {
   const f = fixture();
   writeFileSync(join(f.projectDir, 'partial.ts'), 'x'.repeat(7 * 1024 * 1024));
   const run = isolation(f);
   const workspace = await run.acquire({
     role: 'implementer',
     config: f.config,
-    writesFiles: 'direct',
-    owner: f.owner,
   });
   writeFileSync(
     join(workspace.projectDir, 'partial.ts'),
@@ -247,6 +195,9 @@ it('does not archive original file bytes for staged continuation', async () => {
   expect(
     readFileSync(join(sessionDir(f.projectDir, f.sessionId), 'retained-workspace.json')).length,
   ).toBeLessThan(16 * 1024);
+  expect(
+    readFileSync(join(dirname(workspace.projectDir), 'attempt-base', 'partial.ts')).length,
+  ).toBe(7 * 1024 * 1024);
 });
 
 it('rejects oversized metadata without changing the retained bytes', async () => {
@@ -257,8 +208,6 @@ it('rejects oversized metadata without changing the retained bytes', async () =>
     isolation(f).acquire({
       role: 'implementer',
       config: f.config,
-      writesFiles: 'direct',
-      owner: f.owner,
       resume: true,
     }),
   ).rejects.toThrow('automatic continuation is blocked');
@@ -278,8 +227,6 @@ it('preserves bytes and reports unavailable continuation when metadata exceeds t
   const workspace = await run.acquire({
     role: 'implementer',
     config: f.config,
-    writesFiles: 'direct',
-    owner: f.owner,
   });
   const file = join(sessionDir(f.projectDir, f.sessionId), 'retained-workspace.json');
   const activeRecord = readFileSync(file, 'utf8');
@@ -299,37 +246,21 @@ it('preserves bytes and reports unavailable continuation when metadata exceeds t
   expect(readFileSync(join(workspace.projectDir, 'partial.ts'), 'utf8')).toBe(
     'oversized metadata must not delete this',
   );
-  await expect(
-    isolation(f).acquire({
-      role: 'implementer',
-      config: f.config,
-      writesFiles: 'direct',
-      owner: f.owner,
-      resume: true,
-    }),
-  ).rejects.toThrow('automatic continuation is blocked');
-  await expect(
-    isolation(f).acquire({
-      role: 'implementer',
-      config: f.config,
-      writesFiles: 'direct',
-      owner: { ...f.owner, buildSeat: 'changed-seat' },
-      resume: true,
-    }),
-  ).rejects.toThrow('automatic continuation is blocked');
+  const next = isolation(f);
+  const reused = await next.acquire({ role: 'implementer', config: f.config, resume: true });
+  expect(reused.projectDir).toBe(workspace.projectDir);
+  await next.dispose();
   expect(readFileSync(join(workspace.projectDir, 'partial.ts'), 'utf8')).toBe(
     'oversized metadata must not delete this',
   );
 });
 
-it('retires completed ownership so a later Stop can start a fresh acquisition', async () => {
+it('keeps run ownership after promotion and cleanup', async () => {
   const f = fixture();
   const run = isolation(f);
   const workspace = await run.acquire({
     role: 'implementer',
     config: f.config,
-    writesFiles: 'direct',
-    owner: f.owner,
   });
   writeFileSync(join(workspace.projectDir, 'partial.ts'), 'approved output');
   const applied = await promoteStagedChanges({
@@ -339,18 +270,26 @@ it('retires completed ownership so a later Stop can start a fresh acquisition', 
     targetBaseline: workspace.targetBaseline,
   });
   expect(applied.promotedFiles).toEqual(['partial.ts']);
-  workspace.cleanup();
   await run.dispose();
   const next = isolation(f);
   const resumed = await next.acquire({
     role: 'implementer',
     config: f.config,
-    writesFiles: 'direct',
-    owner: f.owner,
     resume: true,
   });
-  expect(resumed.projectDir).not.toBe(workspace.projectDir);
+  expect(resumed.projectDir).toBe(workspace.projectDir);
   expect(readFileSync(join(resumed.projectDir, 'partial.ts'), 'utf8')).toBe('approved output');
   resumed.cleanup();
+  await next.dispose();
+});
+
+it('preserves a retained staged attempt when its rollback directory is unavailable', async () => {
+  const f = await parked();
+  rmSync(join(dirname(f.workspace.projectDir), 'attempt-base'), { recursive: true, force: true });
+  const next = isolation(f);
+  await expect(next.acquire({ role: 'implementer', config: f.config })).rejects.toThrow(
+    'automatic continuation is blocked',
+  );
+  expect(readFileSync(join(f.workspace.projectDir, 'partial.ts'), 'utf8')).toBe('silent partial');
   await next.dispose();
 });

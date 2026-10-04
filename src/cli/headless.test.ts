@@ -256,6 +256,36 @@ describe('emitRecoveryAndFailIfPending — a usage-limit halt', () => {
   });
 });
 
+describe('emitRecoveryAndFailIfPending — an answered partial Apply', () => {
+  const partial = makeRecoveryIssue({
+    reason: 'apply-partial',
+    phase: 'complete',
+    message: 'Apply stopped part way',
+    availableActions: ['retry-same-worker', 'restore-backup', 'pause-run', 'end-run'],
+    recommendedAction: 'retry-same-worker',
+  });
+
+  it.each(['retry-same-worker', 'restore-backup'] as const)(
+    'lets a partial Apply answered with %s reach the run, which carries it out',
+    (selectedAction) => {
+      const state = {
+        ...createInitialState('apply me'),
+        pendingRecovery: { ...partial, status: 'applying' as const, selectedAction },
+      };
+      expect(() =>
+        emitRecoveryAndFailIfPending({ state, sessionId: 'sess-apply', writeRecord: vi.fn() }),
+      ).not.toThrow();
+    },
+  );
+
+  it('still stops on a partial Apply nobody answered', () => {
+    const state = { ...createInitialState('apply me'), pendingRecovery: partial };
+    expect(() =>
+      emitRecoveryAndFailIfPending({ state, sessionId: 'sess-apply', writeRecord: vi.fn() }),
+    ).toThrow('Recovery required (apply-partial)');
+  });
+});
+
 describe('runHeadless — with a reviewer configured', () => {
   let stdoutChunks: string[];
   let stdoutSpy: ReturnType<typeof vi.spyOn>;
@@ -545,5 +575,41 @@ describe('runHeadless — the run\u2019s terminal outcome sets the exit code', (
     const error = await runAndCatch(projectDir, sessionId);
 
     expect(error).toMatchObject({ exitCode: 1, message: 'Workflow was cancelled.' });
+  });
+
+  it('a run that passed review in a workspace ends ready to apply and exits 0', async () => {
+    const { projectDir, sessionId } = seedFinishedSession('ready', {
+      reviewStatus: 'passed',
+      workspace: {
+        kind: 'worktree',
+        path: '/nonexistent/splitbrief-ready-workspace',
+        base: { snapshotId: 'workspace-base', head: null },
+      },
+    });
+    saveSummary(
+      { projectDir, sessionId },
+      {
+        id: sessionId,
+        feature: 'finish me',
+        startedAt: Date.now(),
+        completedAt: null,
+        stateVersion: 4,
+        status: 'open',
+        summary: null,
+      },
+    );
+
+    await runHeadless({
+      prepared: preparedHeadlessExecution({ projectDir, sessionId, feature: 'finish me' }),
+    });
+
+    expect(stderrSpy.mock.calls.map((call: unknown[]) => String(call[0])).join('')).toContain(
+      [
+        `Run ${sessionId} is ready to apply.`,
+        `Apply with: splitbrief continue ${sessionId} --action apply`,
+        `Discard with: splitbrief continue ${sessionId} --action discard`,
+      ].join('\n'),
+    );
+    expect(records()).toEqual([]);
   });
 });

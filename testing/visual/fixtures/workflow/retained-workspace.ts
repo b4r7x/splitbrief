@@ -5,9 +5,9 @@ import type { WorkflowFixtureProjection } from './projections.js';
 
 const retainedWorkspaceEpoch = 1_783_958_400_000;
 
-export const retainedWorkspaceNotices = (['continuation', 'manual-removal'] as const).map(
-  (purpose) => retainedWorkspaceNotice('.splitbrief/sessions/stopped/stage/workspace', purpose),
-);
+export const retainedWorkspaceNotices = [
+  retainedWorkspaceNotice('.splitbrief/sessions/stopped/stage/workspace'),
+];
 
 export const retainedWorkspaceProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-retained-workspace'),

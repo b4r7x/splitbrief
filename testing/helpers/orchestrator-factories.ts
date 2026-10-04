@@ -14,6 +14,8 @@ import { createRunIsolation } from '../../src/engine/orchestrator/isolation/crea
 import type { RunIsolation } from '../../src/engine/orchestrator/isolation/types.js';
 import { defaultContext, makeNoValidationConfig } from './factories/config.js';
 import { typedCallFromTasks } from './typed-planner.js';
+import { loadState } from '../../src/core/state/persistence.js';
+import type { SessionRef } from '../../src/core/types/session-ref.js';
 
 export const TEST_METADATA = {
   plannerTool: 'claude-code',
@@ -52,6 +54,19 @@ export function makeWorktreeIsolation(opts: {
   });
 }
 
+/** The context a run hands its task loop: the run workspace opened, code read and validated there. */
+export async function openRunWorkspace(wctx: WorkflowContext): Promise<WorkflowContext> {
+  const opened = await wctx.isolation.open({ config: wctx.config });
+  return { ...wctx, workspaceDir: opened.projectDir };
+}
+
+/** The run workspace a run recorded in its state: where its code lives until Apply. */
+export function runWorkspaceDir(ref: SessionRef): string {
+  const path = loadState(ref)?.workspace?.path;
+  if (path === undefined) throw new Error(`Run ${ref.sessionId} recorded no workspace.`);
+  return path;
+}
+
 export function makeWctx(
   overrides: Partial<WorkflowContext> & { projectDir: string; sessionId: string },
 ): WorkflowContext {
@@ -71,6 +86,7 @@ export function makeWctx(
     metadata: TEST_METADATA,
     sinks: TEST_SINKS,
     validator: createValidator(),
+    workspaceDir: overrides.projectDir,
     ...overrides,
   };
 }

@@ -43,6 +43,10 @@ export function retryExhaustedCause(
  */
 export function formatRecoveryHeadline(issue: RecoveryIssue, now: number = Date.now()): string {
   switch (issue.reason) {
+    case 'apply-conflict':
+      return `Apply found ${countNoun(issue.files.length, 'conflicting file')}`;
+    case 'apply-partial':
+      return 'Apply stopped part way';
     case 'runner-usage-limit': {
       const reset = formatResetAt(issue.resetAt, now);
       return `Usage limit on ${toolName(issue)}${reset === undefined ? '' : ` · ${reset}`}`;

@@ -153,7 +153,7 @@ Events worth acting on: `artifact_written`, `recovery_prompted{reason}`, `task_r
 A stalled-call event requires inspection of the terminal and the child's activity. Silence alone does not prove a tool defect.
 Do not wait through repeated identical failures without classification. If the cause is uncertain, park and diagnose it.
 
-**Live progress is in the run's isolation worktree**, `~/.local/state/splitbrief/trees/<repo-key>/<session>`, not the project checkout. Nothing lands in the project until a brief's changes are promoted after green validation, so `git status` in the project genuinely does not move between promotions.
+**Live progress is in the run workspace.** The worktree lives at `~/.local/state/splitbrief/trees/<repo-key>/<session>` by default. Tasks and validation use that workspace or the run's staged copy. The project checkout receives the assessed result once, at Apply. Before Apply, `git status` in the checkout does not show the run's implementation changes.
 
 ## Answering prompts
 
@@ -163,7 +163,7 @@ Every row below is keyboard work in the pane — that is the point, not a conven
 |---|---|
 | Planner question | `↑↓` choose, `⏎` next, `tab` writes a free answer, last `⏎` sends |
 | Plan card | read `plan.md` / `plan.json` in the session dir first; `y` approves the plan and also confirms every protected operation listed on the card (`Approving also confirms: …`), so check each listed write against the task before `y` |
-| Inline external-edit prompt (`[c] continue`) | verify the changed files match authorized user edits, then send `c`; nobody edits the checkout for a fix while a run lives |
+| Result menu (ready to apply: `Apply` · `Show diff` · `Discard`) | `↑↓` choose, `⏎` takes the row, `tab` moves focus to the composer; open `Show diff` and check the run patch against the plan before `Apply`; an override run shows `Apply as is` and asks once more |
 | Bordered recovery panel (each row shows its key) | send the action letter through the terminal; `⏎` takes the highlighted row, `tab` types a correction when the halt takes one. `r` is Try again; `w` opens the halted seat's picker |
 | Protected-path write approval (manifest, lockfile, CI config, env or key file, `.git`, `.splitbrief`) | allow only when the task explicitly asks for that operation; otherwise deny — a denial is normal. A write prompt for an ordinary project file is a tool defect: stop resumably and classify it (Stop triggers) |
 | Stop sheet | `esc` opens, `esc` again stops resumably, `ctrl+c` twice quits after the stop settles |

@@ -15,7 +15,8 @@ export type StopReason =
 export type RunStatus =
   | { kind: 'running' }
   | { kind: 'open'; stop: StopReason; resumeAt: StepRef }
-  | { kind: 'closed'; as: 'complete' | 'ended' };
+  | { kind: 'ready-to-apply'; override: boolean }
+  | { kind: 'closed'; as: 'complete' | 'ended' | 'applied' | 'discarded' };
 
 const PHASE_GATE: Partial<Record<Phase, GateName>> = {
   'reviewing-spec': 'spec',
@@ -53,12 +54,13 @@ function recordsNoPlanGate(state: WorkflowState): boolean {
 const PLANNING_STEP: StepRef = { kind: 'planner', call: 'plan' };
 
 /**
- * Where a run picks up. First match wins: its planning session's questions, the gate
- * it is parked at, the brief it was building, the review it reached, else its
- * planning session.
+ * Where a run picks up. First match wins: its planning session's questions, a
+ * reviewed workspace waiting for Apply, the gate it is parked at, the brief it
+ * was building, the review it reached, else its planning session.
  */
 export function resumeStep(state: WorkflowState): StepRef {
   if (state.pendingPlannerConversation !== undefined) return PLANNING_STEP;
+  if (awaitsApply(state)) return { kind: 'apply' };
   const gate = parkedGate(state);
   if (gate !== undefined) return { kind: 'gate', gate };
 
@@ -79,10 +81,33 @@ export function resumeStep(state: WorkflowState): StepRef {
   }
 }
 
+/** A run whose workspace holds a reviewed result the checkout has not received yet. */
+export function awaitsApply(state: WorkflowState): boolean {
+  return (
+    (state.workspace?.kind === 'worktree' || state.workspace?.kind === 'staged-copy') &&
+    state.phase === 'complete' &&
+    (state.reviewStatus === 'passed' || state.acceptedAsIs !== undefined) &&
+    state.applied === undefined &&
+    state.closed === undefined
+  );
+}
+
+export function isAnsweredApplyRecovery(issue: RecoveryIssue): issue is RecoveryIssue & {
+  reason: 'apply-partial';
+  status: 'applying';
+  selectedAction: 'retry-same-worker' | 'restore-backup';
+} {
+  return (
+    issue.reason === 'apply-partial' &&
+    issue.status === 'applying' &&
+    (issue.selectedAction === 'retry-same-worker' || issue.selectedAction === 'restore-backup')
+  );
+}
+
 /**
  * How a run stands, from the state it saved and whether a process still holds it.
- * A run stays open until it is explicitly closed: passing the final review closes
- * it as complete, ending it closes it as ended, and everything else is continuable.
+ * A passing review closes a run without a workspace; a run with a worktree or
+ * staged copy becomes ready to apply, and Apply, Discard or End close it.
  */
 export function deriveRunStatus(
   input: Readonly<{
@@ -91,8 +116,20 @@ export function deriveRunStatus(
   }>,
 ): RunStatus {
   const { state } = input;
-  if (state.closed !== undefined) return { kind: 'closed', as: 'ended' };
-  if (state.phase === 'complete' && state.reviewStatus === 'passed') {
+  if (state.closed !== undefined) return { kind: 'closed', as: state.closed.as };
+  if (
+    awaitsApply(state) &&
+    state.pendingRecovery === undefined &&
+    state.interruptedStep === undefined &&
+    state.applying === undefined
+  ) {
+    return { kind: 'ready-to-apply', override: state.reviewStatus !== 'passed' };
+  }
+  if (
+    state.phase === 'complete' &&
+    state.reviewStatus === 'passed' &&
+    (state.workspace === undefined || state.workspace.kind === 'checkout')
+  ) {
     return { kind: 'closed', as: 'complete' };
   }
   if (input.liveness === 'alive') return { kind: 'running' };

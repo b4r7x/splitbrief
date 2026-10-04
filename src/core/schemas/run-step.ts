@@ -45,6 +45,7 @@ export const StepRefSchema = z.discriminatedUnion('kind', [
     attempt: z.number().int().nonnegative(),
   }),
   z.object({ kind: z.literal('review'), cycle: z.number().int().nonnegative() }),
+  z.object({ kind: z.literal('apply') }),
 ]);
 
 export type StepRef = z.infer<typeof StepRefSchema>;

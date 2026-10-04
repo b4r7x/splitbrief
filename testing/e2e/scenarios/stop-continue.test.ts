@@ -2,11 +2,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { afterEach, describe, expect, it } from 'vitest';
-import { SESSION_LOG_FILE, STATE_FILE, sessionDir } from '../../../src/core/paths.js';
-import {
-  type SessionLogEventEntry,
-  SessionLogEventEntrySchema,
-} from '../../../src/core/schemas/session-log.js';
+import { STATE_FILE, sessionDir } from '../../../src/core/paths.js';
 import {
   type PersistedWorkflowState,
   WorkflowStateSchema,
@@ -14,16 +10,18 @@ import {
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
 import { readRunnerPids } from '../../../src/core/sessions/runner-pids.js';
 import { canSignalProcess } from '../../../src/lib/process/liveness.js';
-import { isRecord } from '../../../src/utils/type-guards.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { spawnCli } from '../helpers/live-cli-harness.js';
+import { checkoutEntries } from '#testing/helpers/checkout.js';
 import { assertPlainStdout } from '../helpers/run-dir-assertions.js';
 import {
+  applyRun,
   createStopContinueFixture,
   endImplementerHold,
   GREET_FILE,
   GREET_SOURCE,
   MARKER_FILE,
+  MARKER_SOURCE,
   type StopContinueFixture,
 } from '../helpers/stop-continue-fixture.js';
 
@@ -107,8 +105,8 @@ function continueRun(target: StopContinueFixture): Promise<{
 }
 
 /**
- * The brief runs in the run's isolation worktree, and nothing reaches the project until its
- * changes are promoted — so the marker's first appearance is there, inside the implementer's hold.
+ * The brief runs in the run's isolation worktree, and nothing reaches the project until the run
+ * is applied — so the marker's first appearance is there, inside the implementer's hold.
  */
 async function waitForIsolatedMarker(
   target: StopContinueFixture,
@@ -142,48 +140,6 @@ function readState(target: StopContinueFixture, sessionId: string): PersistedWor
   return WorkflowStateSchema.parse(JSON.parse(readFileSync(file, 'utf-8')));
 }
 
-function readEvents(
-  target: StopContinueFixture,
-  sessionId: string,
-): readonly SessionLogEventEntry[] {
-  const file = join(sessionDir(target.projectDir, sessionId), SESSION_LOG_FILE);
-  const entries: SessionLogEventEntry[] = [];
-  for (const line of readFileSync(file, 'utf-8').split('\n')) {
-    if (line.trim() === '') continue;
-    const parsed = SessionLogEventEntrySchema.safeParse(JSON.parse(line));
-    if (parsed.success) entries.push(parsed.data);
-  }
-  return entries;
-}
-
-function warningsWithCode(
-  events: readonly SessionLogEventEntry[],
-  code: string,
-): readonly SessionLogEventEntry[] {
-  return events.filter(
-    (entry) => entry.type === 'warning' && isRecord(entry.data) && entry.data.code === code,
-  );
-}
-
-function warningMessages(events: readonly SessionLogEventEntry[]): readonly string[] {
-  const messages: string[] = [];
-  for (const entry of events) {
-    if (entry.type !== 'warning' || !isRecord(entry.data)) continue;
-    if (typeof entry.data.message === 'string') messages.push(entry.data.message);
-  }
-  return messages;
-}
-
-function currentTaskConflicts(
-  events: readonly SessionLogEventEntry[],
-): readonly SessionLogEventEntry[] {
-  return events.filter((entry) => {
-    if (entry.type !== 'paused_external_changes' || !isRecord(entry.data)) return false;
-    const conflict = entry.data.conflict;
-    return isRecord(conflict) && conflict.kind === 'current-task-conflict';
-  });
-}
-
 function expectFinishedPlainRun(stdout: string): void {
   assertPlainStdout(stdout);
   const lines = stdout.split('\n').map((line) => line.trim());
@@ -192,10 +148,41 @@ function expectFinishedPlainRun(stdout: string): void {
   expect(lines).toContain('done: 1 tasks');
 }
 
+function expectStoppedWorkInWorkspace(
+  target: StopContinueFixture,
+  checkoutAtStart: Record<string, string>,
+): void {
+  const marker = findIsolatedMarker(target.isolationTreesDir);
+  if (marker === null) throw new Error(`no ${MARKER_FILE} left in the run workspace`);
+  expect(readFileSync(marker, 'utf-8')).toBe(MARKER_SOURCE);
+  expect(checkoutEntries(target.projectDir)).toEqual(checkoutAtStart);
+}
+
+/**
+ * The finished run waits for Apply with the checkout as it started; Apply then
+ * writes the brief's two files into it.
+ */
+async function expectAppliedOnce(
+  target: StopContinueFixture,
+  sessionId: string,
+  checkoutAtStart: Record<string, string>,
+): Promise<void> {
+  expect(checkoutEntries(target.projectDir)).toEqual(checkoutAtStart);
+
+  const applied = await applyRun(target, sessionId);
+  expect(applied.exitCode, applied.stderr).toBe(0);
+  expect(applied.stderr).toContain('Applied 2 files to your checkout.');
+
+  expect(readState(target, sessionId).closed?.as).toBe('applied');
+  expect(readFileSync(target.markerPath, 'utf-8')).toBe(MARKER_SOURCE);
+  expect(readFileSync(target.greetPath, 'utf-8')).toBe(GREET_SOURCE);
+}
+
 describe('stop → continue → finish', { timeout: 240_000 }, () => {
   it('parks a brief cut by SIGINT and continues it to a passing review', async () => {
     fixture = createStopContinueFixture();
     const target = fixture;
+    const checkoutAtStart = checkoutEntries(target.projectDir);
 
     const parked = await startAndSignal(target, 'SIGINT');
     expect(parked.exitCode).toBe(0);
@@ -205,7 +192,8 @@ describe('stop → continue → finish', { timeout: 240_000 }, () => {
     expect(parkedState.tasks[0]?.status).toBe('in_progress');
     expect(parkedState.pendingRecovery).toBeUndefined();
     const parkedAttempt = parkedState.attempt;
-    expect(existsSync(target.greetPath)).toBe(false);
+    // The stopped brief keeps its partial in the run workspace; the checkout never saw it.
+    expectStoppedWorkInWorkspace(target, checkoutAtStart);
 
     const resumed = await continueRun(target);
     expect(resumed.exitCode, resumed.stderr).toBe(0);
@@ -216,22 +204,13 @@ describe('stop → continue → finish', { timeout: 240_000 }, () => {
     expect(finalState.attempt).toBe(parkedAttempt);
     expect(finalState.pendingRecovery).toBeUndefined();
 
-    const events = readEvents(target, parked.sessionId);
-    expect(currentTaskConflicts(events)).toHaveLength(0);
-    // The brief runs in the isolation worktree, so its cut partial never reaches the project and
-    // there is no own output there to keep. A resumable park continues the same attempt in the
-    // same worktree: the marker it left stands, and nothing is discarded or asked about.
-    expect(warningsWithCode(events, 'own_partial_output_kept')).toHaveLength(0);
-    expect(warningMessages(events).filter((message) => message.startsWith('Discarded'))).toEqual(
-      [],
-    );
-
-    expect(readFileSync(target.greetPath, 'utf-8')).toBe(GREET_SOURCE);
+    await expectAppliedOnce(target, parked.sessionId, checkoutAtStart);
   });
 
   it('restarts a brief killed by SIGKILL from its task-start snapshot', async () => {
     fixture = createStopContinueFixture();
     const target = fixture;
+    const checkoutAtStart = checkoutEntries(target.projectDir);
 
     const killed = await startAndSignal(target, 'SIGKILL');
     expect(killed.exitCode).toBeNull();
@@ -246,6 +225,8 @@ describe('stop → continue → finish', { timeout: 240_000 }, () => {
         `implementer ${pid} died before the continuation could reap it`,
       ).toBe(true);
     }
+
+    expectStoppedWorkInWorkspace(target, checkoutAtStart);
 
     const killedState = readState(target, killed.sessionId);
     expect(killedState.interruptedStep).toBeUndefined();
@@ -267,16 +248,10 @@ describe('stop → continue → finish', { timeout: 240_000 }, () => {
       [],
     );
 
-    const events = readEvents(target, killed.sessionId);
-    expect(warningMessages(events)).toContainEqual(
-      `Discarded 1 unpromoted change(s) an earlier attempt left in the isolation worktree: ${MARKER_FILE}`,
-    );
-    expect(warningsWithCode(events, 'own_partial_output_kept')).toHaveLength(0);
-
     const finalState = readState(target, killed.sessionId);
     expect(finalState.tasks[0]?.status).toBe('done');
     expect(finalState.attempt).toBe(0);
     expect(finalState.pendingRecovery).toBeUndefined();
-    expect(readFileSync(target.greetPath, 'utf-8')).toBe(GREET_SOURCE);
+    await expectAppliedOnce(target, killed.sessionId, checkoutAtStart);
   });
 });

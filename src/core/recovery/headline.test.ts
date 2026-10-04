@@ -60,6 +60,23 @@ describe('formatRecoveryHeadline', () => {
     }
   });
 
+  it('names the Apply halts by the files they stopped on', () => {
+    const apply = { phase: 'complete' as const, taskId: undefined, affectedTaskIds: [] };
+    expect(
+      formatRecoveryHeadline(
+        makeRecoveryIssue({ ...apply, reason: 'apply-conflict', files: ['a.txt', 'b.txt'] }),
+      ),
+    ).toBe('Apply found 2 conflicting files');
+    expect(
+      formatRecoveryHeadline(
+        makeRecoveryIssue({ ...apply, reason: 'apply-conflict', files: ['a.txt'] }),
+      ),
+    ).toBe('Apply found 1 conflicting file');
+    expect(formatRecoveryHeadline(makeRecoveryIssue({ ...apply, reason: 'apply-partial' }))).toBe(
+      'Apply stopped part way',
+    );
+  });
+
   it('falls back to the sentence-cased reason and the task', () => {
     expect(formatRecoveryHeadline(makeRecoveryIssue({ reason: 'validation-failed' }))).toBe(
       'Validation failed on T001',

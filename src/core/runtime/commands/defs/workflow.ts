@@ -4,7 +4,7 @@ import {
   type RuntimeCommandDef,
   type RuntimeCommandContext,
 } from '../types.js';
-import { includes } from '../../../../utils/type-guards.js';
+import { assertNever, includes } from '../../../../utils/type-guards.js';
 import { canRedoTask, isLivePhase } from '../../../phases.js';
 import { toErrorMessage } from '../../../../utils/format-errors.js';
 import { countNoun, pluralize } from '../../../../utils/pluralize.js';
@@ -109,7 +109,7 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
       kind: 'arg',
       name: '/run',
       label: 'run',
-      description: 'Accept or reject what this run wrote',
+      description: 'Apply or discard this run, or undo its Apply',
       category: 'workflow',
       args: { kind: 'closed', options: RUN_ACTIONS },
       validScreens: ['workflow'],
@@ -125,9 +125,39 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
         }
         if (action === 'accept') {
           try {
-            const result = await ctx.acceptRunSnapshot();
-            ctx.refreshRun();
-            ctx.setFeedbackMessage(`Run accepted at snapshot ${result.snapshotId}`);
+            const result = await ctx.acceptRun(confirmation === 'confirm');
+            switch (result.status) {
+              case 'snapshot-accepted':
+                ctx.setFeedbackMessage(`Run accepted at snapshot ${result.snapshotId}`);
+                ctx.refreshRun();
+                break;
+              case 'applied':
+                ctx.refreshRun();
+                ctx.setFeedbackMessage(
+                  `Applied ${countNoun(result.files.length, 'file')} to your checkout.`,
+                );
+                break;
+              case 'review':
+                ctx.refreshRun();
+                ctx.setFeedbackMessage(
+                  'Your checkout changed files this run changed too; the merged result needs its checks and review again. Continue the run to start them.',
+                );
+                break;
+              case 'confirm-override':
+                ctx.setFeedbackError(
+                  `Accepted as is with ${countNoun(result.findings.length, 'open finding')}: ${result.findings.join('; ')}. Nothing verified them. /run accept confirm applies the run.`,
+                );
+                break;
+              case 'halted':
+                ctx.refreshRun();
+                ctx.setFeedbackError('Apply stopped; resolve it in the recovery menu.');
+                break;
+              case 'unavailable':
+                ctx.setFeedbackError(result.message);
+                break;
+              default:
+                assertNever(result);
+            }
           } catch (err) {
             ctx.setFeedbackError(toErrorMessage(err));
           }
@@ -142,21 +172,47 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
           return;
         }
         try {
-          const result = await ctx.rejectRunSnapshot();
-          if (result.status === 'empty') {
-            ctx.setFeedbackError('No run snapshot to reject.');
-            return;
-          }
-          if (result.status === 'accepted') {
-            ctx.setFeedbackError(`Run already accepted at snapshot ${result.snapshotId}.`);
-            return;
-          }
-          ctx.refreshRun();
-          const message = formatRejectRunMessage(result);
-          if (result.conflictedPaths.length > 0 || result.missingSnapshotFiles.length > 0) {
-            ctx.setFeedbackError(message);
-          } else {
-            ctx.setFeedbackMessage(message);
+          const result = await ctx.rejectRun();
+          switch (result.status) {
+            case 'empty':
+              ctx.setFeedbackError('No run snapshot to reject.');
+              break;
+            case 'accepted':
+              ctx.setFeedbackError(`Run already accepted at snapshot ${result.snapshotId}.`);
+              break;
+            case 'rejected': {
+              ctx.refreshRun();
+              const message = formatRejectRunMessage(result);
+              if (result.conflictedPaths.length > 0 || result.missingSnapshotFiles.length > 0) {
+                ctx.setFeedbackError(message);
+              } else {
+                ctx.setFeedbackMessage(message);
+              }
+              break;
+            }
+            case 'discarded':
+              ctx.refreshRun();
+              ctx.setFeedbackMessage(
+                'Run discarded; its changes are saved in run.patch in the session folder.',
+              );
+              break;
+            case 'undone': {
+              ctx.refreshRun();
+              const message = `Apply undone: put back ${countNoun(result.restored.length, 'file')}`;
+              if (result.conflicts.length > 0) {
+                ctx.setFeedbackError(
+                  `${message}; left as you changed them: ${result.conflicts.join(', ')}.`,
+                );
+              } else {
+                ctx.setFeedbackMessage(`${message}.`);
+              }
+              break;
+            }
+            case 'unavailable':
+              ctx.setFeedbackError(result.message);
+              break;
+            default:
+              assertNever(result);
           }
         } catch (err) {
           ctx.setFeedbackError(toErrorMessage(err));

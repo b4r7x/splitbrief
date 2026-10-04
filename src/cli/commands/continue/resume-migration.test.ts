@@ -34,6 +34,18 @@ describe('resume migration boundary', () => {
     ).toThrow(/Run session-1 is closed \(ended\); nothing to resume\./);
   });
 
+  it('refuses to resume a run that is ready to apply and names Apply and Discard', () => {
+    const ready = resumableState({
+      phase: 'complete',
+      reviewStatus: 'passed',
+      workspace: { kind: 'worktree', path: '/tmp/wt', base: { snapshotId: 'b', head: null } },
+    });
+
+    expect(() => assertResumableState(ready, 'session-1')).toThrow(
+      'Run session-1 is ready to apply.\nApply with: splitbrief continue session-1 --action apply\nDiscard with: splitbrief continue session-1 --action discard',
+    );
+  });
+
   it('carries recovery identity fields into preparation instead of deriving them from artifacts', async () => {
     const recovery = {
       epochId: 'epoch-1',

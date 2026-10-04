@@ -1,8 +1,11 @@
 import {
+  chmodSync,
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -14,6 +17,7 @@ import {
   applyGenerated,
   applySync,
   mentionedReferences,
+  mentionedScripts,
   parseFrontmatter,
   planGenerated,
   planSync,
@@ -64,9 +68,9 @@ afterEach(() => {
 describe('parseFrontmatter', () => {
   it('reads a scalar description and the argument hint', () => {
     const fm = parseFrontmatter(
-      '---\nname: a-b\ndescription: One line.\nmetadata:\n  author: x\n  argument-hint: "[mode] <task>"\n---\nbody',
+      '---\nname: a-b\ndescription: One line.\nmetadata:\n  author: x\n  argument-hint: "[flag] <task>"\n---\nbody',
     );
-    expect(fm).toEqual({ name: 'a-b', description: 'One line.', argumentHint: '[mode] <task>' });
+    expect(fm).toEqual({ name: 'a-b', description: 'One line.', argumentHint: '[flag] <task>' });
   });
 
   it('joins a folded description block', () => {
@@ -129,6 +133,19 @@ describe('mentionedReferences', () => {
 });
 
 describe('planSync + applySync', () => {
+  it('reports missing references and scripts named by their source skills', () => {
+    const root = makeSkillsRoot();
+    writeSkill(root, 'splitbrief', 'references/missing.md');
+    writeSkill(root, 'splitbrief-run', 'scripts/missing.sh');
+    expect(planSync(root).issues).toEqual([
+      { skill: 'splitbrief', message: 'references/missing.md is not in the splitbrief library' },
+      {
+        skill: 'splitbrief-run',
+        message: 'scripts/missing.sh is not in the splitbrief-run library',
+      },
+    ]);
+  });
+
   it('copies mentioned library files, flags stale mirrors and missing sources', () => {
     const root = makeSkillsRoot();
     writeSkill(root, 'splitbrief', 'uses references/gates.md only', {
@@ -178,6 +195,87 @@ describe('planSync + applySync', () => {
     writeSkill(root, 'splitbrief', 'references/gates.md', { 'gates.md': 'NEW' });
     writeSkill(root, 'splitbrief-run', 'references/gates.md', { 'gates.md': 'OLD' });
     expect(planSync(root).drift).toEqual(['splitbrief-run/references/gates.md']);
+  });
+
+  it("copies only each entry point's explicit reference list", () => {
+    const root = makeSkillsRoot();
+    const library = {
+      'family-map.md': 'MAP',
+      'planning.md': 'PLAN',
+      'run-protocol.md': 'RUN',
+      'recovery.md': 'RECOVER',
+      'review-format.md': 'REVIEW',
+    };
+    writeSkill(
+      root,
+      'splitbrief',
+      Object.keys(library)
+        .map((file) => `references/${file}`)
+        .join('\n'),
+      library,
+    );
+    const entries = {
+      'splitbrief-brief': ['family-map.md', 'planning.md'],
+      'splitbrief-run': ['family-map.md', 'run-protocol.md', 'recovery.md', 'review-format.md'],
+      'splitbrief-review': ['family-map.md', 'recovery.md', 'review-format.md'],
+    };
+    for (const [skill, refs] of Object.entries(entries)) {
+      writeSkill(root, skill, refs.map((file) => `references/${file}`).join('\n'), {
+        'old.md': 'STALE',
+      });
+    }
+    expect(runSyncCli(root, false, () => {})).toBe(0);
+    for (const [skill, refs] of Object.entries(entries)) {
+      expect(readdirSync(join(root, skill, 'references')).sort()).toEqual([...refs].sort());
+      for (const file of refs) {
+        expect(readFileSync(join(root, skill, 'references', file), 'utf8')).toBe(
+          readFileSync(join(root, 'splitbrief', 'references', file), 'utf8'),
+        );
+      }
+    }
+    expect(runSyncCli(root, true, () => {})).toBe(0);
+  });
+
+  it('installs each pipeline skill alone with its complete reference and script dependencies', () => {
+    const source = new URL('../skills/', import.meta.url);
+    expect(readdirSync(new URL('splitbrief/references/', source)).sort()).toEqual([
+      'brief-format.md',
+      'family-map.md',
+      'gates.md',
+      'implementer-prompt.md',
+      'planning.md',
+      'recovery.md',
+      'review-format.md',
+      'run-protocol.md',
+      'tool-recipes.md',
+    ]);
+    const root = makeSkillsRoot();
+    for (const skill of ['splitbrief', 'splitbrief-brief', 'splitbrief-run', 'splitbrief-review']) {
+      const installed = join(root, skill);
+      cpSync(new URL(skill, source), installed, { recursive: true });
+      const entry = readFileSync(join(installed, 'SKILL.md'), 'utf8');
+      const refs = mentionedReferences(entry);
+      const scripts = mentionedScripts(entry);
+      expect(readdirSync(join(installed, 'references')).sort()).toEqual(refs);
+      const texts = [
+        entry,
+        ...refs.map((file) => readFileSync(join(installed, 'references', file), 'utf8')),
+      ];
+      for (const text of texts) {
+        for (const file of mentionedReferences(text)) {
+          expect(refs, `${skill}: references/${file}`).toContain(file);
+        }
+        for (const file of mentionedScripts(text)) {
+          expect(scripts, `${skill}: scripts/${file}`).toContain(file);
+        }
+      }
+      for (const file of scripts) {
+        const script = join(installed, 'scripts', file);
+        const original = new URL(`splitbrief-run/scripts/${file}`, source);
+        expect(readFileSync(script)).toEqual(readFileSync(original));
+        expect(statSync(script).mode & 0o111).toBe(statSync(original).mode & 0o111);
+      }
+    }
   });
 });
 
@@ -276,6 +374,19 @@ describe('SKILL.md and script regions', () => {
     expect(readFileSync(mirror, 'utf8')).toBe('#!/bin/sh\nexit 0\n');
     expect(statSync(mirror).mode & 0o111).toBe(0o111);
     expect(runSyncCli(root, true, () => {})).toBe(0);
+  });
+
+  it('repairs a script mirror that lost its executable bits', () => {
+    const root = makeSkillsRoot();
+    writeSkill(root, 'splitbrief', 'scripts/wait.sh');
+    writeSkill(root, 'splitbrief-run', 'scripts/wait.sh');
+    writeScript(root, 'splitbrief-run', 'wait.sh', '#!/bin/sh\nexit 0\n');
+    expect(runSyncCli(root, false, () => {})).toBe(0);
+    const mirror = join(root, 'splitbrief/scripts/wait.sh');
+    chmodSync(mirror, 0o644);
+    expect(runSyncCli(root, true, () => {})).toBe(1);
+    expect(runSyncCli(root, false, () => {})).toBe(0);
+    expect(statSync(mirror).mode & 0o111).toBe(0o111);
   });
 
   it('shell generated regions are checked', () => {

@@ -11,7 +11,7 @@ import { readActive } from '../../../core/sessions/active-pointer.js';
 import type { WorkflowOpts } from '../../../core/types/config-options.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import type { RecoveryActionOption } from '../../options.js';
+import type { ContinueActionOption, RecoveryActionOption } from '../../options.js';
 import { resolveRunConfig } from '../../build-overrides.js';
 import { CONFIG_RELATIVE_PATH } from '../../../core/config/load/document.js';
 import { loadConfig, writeConfig, writeConfigDocument } from '../../../core/config/load/io.js';
@@ -20,6 +20,7 @@ import { createEventBus } from '../../../engine/events/bus.js';
 import { applyRecoveryAction } from '../../../engine/orchestrator/recovery/actions.js';
 import { deriveConfigEdits } from '../../../stores/project/config-persistence.js';
 import { resumeSavedSession } from './resume.js';
+import { settleReadyRun } from './settle.js';
 import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';
 
 export interface ContinueDeps {
@@ -55,11 +56,11 @@ async function resolveTargetSession(
 }
 
 type ContinueOpts = { projectDir: string } & WorkflowOpts & {
-    action?: RecoveryActionOption | undefined;
+    action?: ContinueActionOption | undefined;
   };
 
 /**
- * `--action` answers the pending recovery before the run re-enters: the same
+ * A recovery action answers the pending recovery before the run re-enters: the same
  * transition the TUI panel applies, taken from the resume line an earlier halt
  * printed. A blocked action is the operator's error, not the run's.
  */
@@ -149,15 +150,36 @@ export async function continueCommand(
     throw cliError(`session '${sessionId}' is still running — stop it before continuing.`, 1);
   }
 
-  const resumed =
-    opts.action === undefined
-      ? { state: hydrated.state }
-      : applyPendingRecoveryAction({
-          sessionId,
-          state: hydrated.state,
-          action: opts.action,
-          opts,
-        });
+  let resumed: { state: WorkflowState; config?: Config };
+  const action = opts.action;
+  if (action?.action === 'apply' || action?.action === 'discard') {
+    if (record.status.kind !== 'ready-to-apply') {
+      throw cliError(
+        `Run ${sessionId} is not ready to apply; --action ${action.action} settles a run whose review passed in its workspace.`,
+        1,
+      );
+    }
+    const next = await settleReadyRun({
+      projectDir: opts.projectDir,
+      sessionId,
+      state: hydrated.state,
+      action: action.action,
+      config: resolveRunConfig({ projectDir: opts.projectDir, opts }),
+      json: opts.json === true,
+    });
+    if (next === undefined) return;
+    resumed = { state: next };
+  } else {
+    resumed =
+      action === undefined
+        ? { state: hydrated.state }
+        : applyPendingRecoveryAction({
+            sessionId,
+            state: hydrated.state,
+            action,
+            opts,
+          });
+  }
 
   // `end-run` is the one action that does not carry the run on: the close is
   // recorded and there is nothing left to re-enter.

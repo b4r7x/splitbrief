@@ -161,10 +161,21 @@ export function applyRecoveryAction(opts: ApplyRecoveryActionOptions): ApplyReco
     case 'revise':
     case 'revise-spec':
       return applyReviseRecoveryAction(opts, issue);
+    case 'accept-as-is':
+      return applyAcceptAsIsRecoveryAction(opts, issue);
     case 'skip-current-task':
       return applySkipCurrentTaskRecoveryAction(opts, issue);
-    case 'retry-same-worker':
+    case 'restore-backup': {
+      const state = markRecoveryApplying(opts, issue);
+      return { ok: true, action: opts.action, issue, state, status: 'continued' };
+    }
+    case 'retry-same-worker': {
+      if (issue.reason === 'apply-partial') {
+        const state = markRecoveryApplying(opts, issue);
+        return { ok: true, action: opts.action, issue, state, status: 'continued' };
+      }
       return applyRetrySameWorkerRecoveryAction(opts, issue);
+    }
     case 'route-bigger-worker':
       return applyRouteBiggerWorkerRecoveryAction(opts, issue);
     case 'switch-seat':
@@ -385,6 +396,50 @@ function applyReviseRecoveryAction(
   return { ok: true, action: opts.action, issue, state, status: 'continued' };
 }
 
+function readCriticalFindings(
+  ref: { projectDir: string; sessionId: string },
+  state: WorkflowState,
+): string[] {
+  return [
+    ...parseFinalReview(readSpecFileOrEmpty(ref, REVIEW_FILE))
+      .findings.filter((finding) => finding.severity === 'critical')
+      .map((finding) => finding.text),
+    ...(state.applyReview?.failures ?? []),
+  ];
+}
+
+/** Record the open findings as accepted as is and resolve the recovery halt. */
+function applyAcceptAsIsRecoveryAction(
+  opts: ApplyRecoveryActionOptions,
+  issue: RecoveryIssue,
+): ApplyRecoveryActionResult {
+  const findings = readCriticalFindings(
+    { projectDir: opts.projectDir, sessionId: opts.sessionId },
+    opts.state,
+  );
+  let state = markRecoveryApplying(opts, issue);
+  state = transitionAndSave(
+    opts,
+    state,
+    { type: 'ACCEPT_AS_IS', findings },
+    { expectedRevision: state.stateRevision ?? 0 },
+  );
+  state = transitionAndSave(
+    opts,
+    state,
+    { type: 'RESOLVE_PENDING_RECOVERY' },
+    { expectedRevision: state.stateRevision ?? 0 },
+  );
+  publishRecoveryResolved({
+    bus: opts.bus,
+    phase: state.phase,
+    issue,
+    action: opts.action,
+    outcome: 'continued',
+  });
+  return { ok: true, action: opts.action, issue, state, status: 'continued' };
+}
+
 /**
  * A failed final review sent back with the operator's words: the correction is the user turn it
  * is, and one more repair cycle reopens the briefs the review's Critical findings belong to with
@@ -397,11 +452,8 @@ function applyReviewCorrectionAction(
 ): ApplyRecoveryActionResult {
   const ref = { projectDir: opts.projectDir, sessionId: opts.sessionId };
   const correction = opts.comment?.trim() ?? '';
-  const review = parseFinalReview(readSpecFileOrEmpty(ref, REVIEW_FILE));
   const fixes = correctionFixes({
-    critical: review.findings
-      .filter((finding) => finding.severity === 'critical')
-      .map((finding) => finding.text),
+    critical: readCriticalFindings(ref, opts.state),
     correction,
     tasks: opts.state.tasks,
   });

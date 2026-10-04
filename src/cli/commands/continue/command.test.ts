@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import YAML from 'yaml';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -11,15 +11,18 @@ import { writeConfig } from '../../../core/config/load/io.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { skillsStore } from '../../../stores/project/skills.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../../core/paths.js';
+import { CONFIG_FILE, SPLITBRIEF_DIR, sessionDir } from '../../../core/paths.js';
 import type { PrepareExecutionInput } from '../../../engine/runners/prepare-execution/prepare-execution.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
+import { type ApplyRun, withApplyRun } from '#testing/helpers/apply-run.js';
+import { readSession } from '../../../core/sessions/io.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
-import { parseRecoveryActionOption } from '../../options.js';
+import { parseContinueActionOption } from '../../options.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 
 type HeadlessRun = {
@@ -310,7 +313,7 @@ describe('continueCommand', () => {
 
       await continueCommand(
         sessionId,
-        { projectDir, json: true, action: parseRecoveryActionOption(testCase.action) },
+        { projectDir, json: true, action: parseContinueActionOption(testCase.action) },
         deps,
       );
 
@@ -386,7 +389,7 @@ describe('continueCommand', () => {
     try {
       await continueCommand(
         sessionId,
-        { projectDir, json: true, action: parseRecoveryActionOption('switch-seat:claude-code') },
+        { projectDir, json: true, action: parseContinueActionOption('switch-seat:claude-code') },
         deps,
       );
     } finally {
@@ -440,7 +443,7 @@ describe('continueCommand', () => {
 
     await continueCommand(
       sessionId,
-      { projectDir, json: true, action: parseRecoveryActionOption('end-run') },
+      { projectDir, json: true, action: parseContinueActionOption('end-run') },
       deps,
     );
 
@@ -470,7 +473,7 @@ describe('continueCommand', () => {
     await expect(
       continueCommand(
         sessionId,
-        { projectDir, json: true, action: parseRecoveryActionOption('skip') },
+        { projectDir, json: true, action: parseContinueActionOption('skip') },
         deps,
       ),
     ).rejects.toMatchObject({ exitCode: 1, message: expect.stringContaining('is not available') });
@@ -586,4 +589,217 @@ describe('continueCommand', () => {
 
     expect(renderRuns).toHaveLength(1);
   });
+});
+
+describe('continueCommand --action apply|discard', () => {
+  const SESSION_ID = '2026-10-04-ready-run';
+  const FIVE = 'one\ntwo\nthree\nfour\nfive\n';
+  const read = (root: string, file: string): string => readFileSync(join(root, file), 'utf8');
+
+  beforeEach(() => {
+    resetAllStores();
+    headlessRuns = [];
+    renderRuns = [];
+    deps = createDeps();
+  });
+
+  function saveReady(run: ApplyRun, overrides: Partial<WorkflowState> = {}): void {
+    saveState(
+      { projectDir: run.dir, sessionId: SESSION_ID },
+      makeWorkflowState({
+        phase: 'complete',
+        reviewStatus: 'passed',
+        workspace: run.workspace,
+        ...overrides,
+      }),
+    );
+  }
+
+  /** What the command wrote to each stream; stdout belongs to the NDJSON records alone. */
+  function captureOutput(): { stdout: () => string; stderr: () => string; restore: () => void } {
+    const out = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const err = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const text = (spy: typeof out): string =>
+      spy.mock.calls.map((call) => String(call[0])).join('');
+    let written = { stdout: '', stderr: '' };
+    return {
+      stdout: () => written.stdout,
+      stderr: () => written.stderr,
+      restore: () => {
+        written = { stdout: text(out), stderr: text(err) };
+        out.mockRestore();
+        err.mockRestore();
+      },
+    };
+  }
+
+  function settle(run: ApplyRun, action: 'apply' | 'discard'): Promise<void> {
+    return continueCommand(
+      SESSION_ID,
+      { projectDir: run.dir, json: true, action: parseContinueActionOption(action) },
+      deps,
+    );
+  }
+
+  it('applies a ready run: the checkout takes its files and the run closes applied', async () => {
+    await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
+      writeFileSync(join(run.ws, 'a.txt'), 'ONE\ntwo\nthree\nfour\nfive\n');
+      writeFileSync(join(run.ws, 'b.txt'), 'created by the run\n');
+      saveReady(run);
+      const output = captureOutput();
+
+      try {
+        await settle(run, 'apply');
+      } finally {
+        output.restore();
+      }
+
+      expect(output.stderr()).toContain('Applied 2 files to your checkout.');
+      expect(output.stdout()).toBe('');
+
+      expect(read(run.dir, 'a.txt')).toBe('ONE\ntwo\nthree\nfour\nfive\n');
+      expect(read(run.dir, 'b.txt')).toBe('created by the run\n');
+      expect(loadState({ projectDir: run.dir, sessionId: SESSION_ID })?.closed?.as).toBe('applied');
+      expect(readSession({ projectDir: run.dir, sessionId: SESSION_ID })?.apply).toBe('applied');
+      expect(headlessRuns).toHaveLength(0);
+      expect(renderRuns).toHaveLength(0);
+    });
+  });
+
+  it('discards a ready run: run.patch keeps its work and the checkout stays as it was', async () => {
+    await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
+      writeFileSync(join(run.ws, 'b.txt'), 'created by the run\n');
+      saveReady(run);
+      const output = captureOutput();
+
+      try {
+        await settle(run, 'discard');
+      } finally {
+        output.restore();
+      }
+
+      expect(output.stderr()).toContain(`Run ${SESSION_ID} discarded.`);
+      expect(output.stderr()).toContain('run.patch; apply them with git apply.');
+      expect(output.stdout()).toBe('');
+      expect(read(run.dir, 'a.txt')).toBe(FIVE);
+      expect(existsSync(join(run.dir, 'b.txt'))).toBe(false);
+      const patch = read(sessionDir(run.dir, SESSION_ID), 'run.patch');
+      expect(patch).toContain('+created by the run');
+      expect(loadState({ projectDir: run.dir, sessionId: SESSION_ID })?.closed?.as).toBe(
+        'discarded',
+      );
+      expect(readSession({ projectDir: run.dir, sessionId: SESSION_ID })?.apply).toBe('discarded');
+      expect(existsSync(run.ws)).toBe(false);
+      expect(headlessRuns).toHaveLength(0);
+    });
+  });
+
+  it('says no patch was written when the run workspace is already gone', async () => {
+    await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
+      saveReady(run);
+      rmSync(run.ws, { recursive: true, force: true });
+      const output = captureOutput();
+
+      try {
+        await settle(run, 'discard');
+      } finally {
+        output.restore();
+      }
+
+      expect(output.stderr()).toContain('is gone; no run patch was written.');
+      expect(output.stderr()).not.toContain('run.patch;');
+      expect(existsSync(join(sessionDir(run.dir, SESSION_ID), 'run.patch'))).toBe(false);
+      expect(loadState({ projectDir: run.dir, sessionId: SESSION_ID })?.closed?.as).toBe(
+        'discarded',
+      );
+    });
+  });
+
+  it('carries the run into its checks and review when the checkout changed a file the run changed', async () => {
+    await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
+      writeFileSync(join(run.ws, 'a.txt'), 'ONE\ntwo\nthree\nfour\nfive\n');
+      writeFileSync(join(run.dir, 'a.txt'), 'one\ntwo\nthree\nfour\nFIVE\n');
+      saveReady(run);
+      const output = captureOutput();
+
+      try {
+        await settle(run, 'apply');
+      } finally {
+        output.restore();
+      }
+
+      expect(output.stderr()).toContain(
+        'the merged result goes through its checks and review again.',
+      );
+      expect(output.stdout()).toBe('');
+      expect(read(run.dir, 'a.txt')).toBe('one\ntwo\nthree\nfour\nFIVE\n');
+      expect(headlessRuns).toHaveLength(1);
+      expect(headlessRuns[0]?.state?.applyReview).toBeDefined();
+    });
+  });
+
+  it('halts with the conflict and its resume line when both sides changed the same line', async () => {
+    await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
+      writeFileSync(join(run.ws, 'a.txt'), 'RUN\ntwo\nthree\nfour\nfive\n');
+      writeFileSync(join(run.dir, 'a.txt'), 'USER\ntwo\nthree\nfour\nfive\n');
+      saveReady(run);
+
+      await expect(
+        continueCommand(
+          SESSION_ID,
+          { projectDir: run.dir, plain: true, action: parseContinueActionOption('apply') },
+          deps,
+        ),
+      ).rejects.toMatchObject({
+        exitCode: 1,
+        message: expect.stringContaining('Recovery required (apply-conflict)'),
+      });
+      expect(read(run.dir, 'a.txt')).toBe('USER\ntwo\nthree\nfour\nfive\n');
+      expect(headlessRuns).toHaveLength(0);
+    });
+  });
+
+  it('asks for the confirmation on the run screen before it applies a run accepted as is', async () => {
+    await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
+      writeFileSync(join(run.ws, 'b.txt'), 'created by the run\n');
+      saveReady(run, {
+        reviewStatus: 'failed',
+        acceptedAsIs: { at: '2026-10-04T00:00:00.000Z', findings: ['missing test'] },
+      });
+
+      await expect(settle(run, 'apply')).rejects.toMatchObject({
+        exitCode: 1,
+        message: expect.stringContaining('/run accept confirm'),
+      });
+      expect(existsSync(join(run.dir, 'b.txt'))).toBe(false);
+      expect(loadState({ projectDir: run.dir, sessionId: SESSION_ID })?.closed).toBeUndefined();
+    });
+  });
+
+  it.each(['apply', 'discard'] as const)(
+    'refuses --action %s on a run that is not ready to apply',
+    async (action) => {
+      const projectDir = makeTmpProject();
+      const sessionId = `2025-04-01-not-ready-${action}`;
+      const sessDir = makeSessionDir(projectDir, sessionId);
+      writeLockfile(sessDir, { exitedAt: Date.now(), sessionId });
+      saveState(
+        { projectDir, sessionId },
+        { ...createInitialState('test-feature'), phase: 'implementing', tasks: [makeTask()] },
+      );
+
+      await expect(
+        continueCommand(
+          sessionId,
+          { projectDir, json: true, action: parseContinueActionOption(action) },
+          deps,
+        ),
+      ).rejects.toMatchObject({
+        exitCode: 1,
+        message: expect.stringContaining('is not ready to apply'),
+      });
+      expect(loadState({ projectDir, sessionId })?.closed).toBeUndefined();
+      expect(headlessRuns).toHaveLength(0);
+    },
+  );
 });

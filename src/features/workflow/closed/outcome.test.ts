@@ -11,6 +11,29 @@ import { getRailStages } from '../../../core/rail-stages.js';
 import { outcomeLeading, outcomeLine, outcomeMarker, OUTCOME_LEADING_CELLS } from './outcome.js';
 
 describe('outcomeLine', () => {
+  it('states an applied run and the files it wrote', () => {
+    expect(outcomeLine(makeView({ outcome: { kind: 'applied' } }), WIDE)).toBe(
+      'Applied · 3/3 briefs passed · review 0 blocking, 1 advisory · scope clean · 4 files applied',
+    );
+  });
+
+  it('states a discarded run and where its changes went', () => {
+    const view = makeView({
+      outcome: { kind: 'discarded' },
+      files: { ...makeView().files, patch: true },
+    });
+    expect(outcomeLine(view, WIDE)).toBe(
+      'Discarded · 3/3 briefs passed · 4 files saved in run.patch',
+    );
+  });
+
+  it('says an ended run with a workspace saved its changes in run.patch', () => {
+    const view = endedInBuild();
+    expect(outcomeLine({ ...view, files: { ...view.files, patch: true } }, WIDE)).toContain(
+      'changes saved in run.patch',
+    );
+  });
+
   it('states a ready run in one sentence', () => {
     expect(outcomeLine(makeView(), WIDE)).toBe(
       'Ready · 3/3 briefs passed · review 0 blocking, 1 advisory · scope clean · 4 files changed',
@@ -40,7 +63,12 @@ describe('outcomeLine', () => {
         missingArtifacts: 0,
       },
       scope: { kind: 'checked', passed: false, score: 0.6, errors: 1, warnings: 1 },
-      files: { changed: ['a', 'b', 'c', 'd', 'e'], partial: new Set(), stoppedAt: null },
+      files: {
+        changed: ['a', 'b', 'c', 'd', 'e'],
+        partial: new Set(),
+        stoppedAt: null,
+        patch: false,
+      },
     });
     expect(outcomeLine(view, WIDE)).toBe(
       'Needs attention · 3/3 briefs passed · 1 failed · review failed 2 blocking, 1 advisory · scope 2 deviations · 5 files changed',
@@ -64,7 +92,7 @@ describe('outcomeLine', () => {
 
   it('drops the brief when the run stopped between briefs', () => {
     const view = endedInBuild({
-      files: { changed: ['src/validate.ts'], partial: new Set(), stoppedAt: null },
+      files: { changed: ['src/validate.ts'], partial: new Set(), stoppedAt: null, patch: false },
     });
     expect(outcomeLine(view, WIDE)).toBe('Ended · Build 2/5 · changes kept');
   });
@@ -98,7 +126,7 @@ describe('outcomeLine', () => {
           },
         ],
       },
-      files: { changed: ['src/old.ts'], partial: new Set(), stoppedAt: null },
+      files: { changed: ['src/old.ts'], partial: new Set(), stoppedAt: null, patch: false },
     });
     expect(outcomeLine(view, WIDE)).toBe('Ended · Plan · no current briefs · changes kept');
   });
@@ -122,7 +150,9 @@ describe('outcomeLine', () => {
   });
 
   it('keeps an unrecorded changed set unrecorded once the build has started', () => {
-    const view = endedInBuild({ files: { changed: null, partial: new Set(), stoppedAt: null } });
+    const view = endedInBuild({
+      files: { changed: null, partial: new Set(), stoppedAt: null, patch: false },
+    });
     expect(outcomeLine(view, WIDE)).toBe('Ended · Build 2/5 · files not recorded');
   });
 
@@ -144,13 +174,15 @@ describe('outcomeLine', () => {
 
   it('reads a legacy run with no changed set as unrecorded, never as empty', () => {
     const view = makeView({
-      files: { changed: null, partial: new Set(), stoppedAt: null },
+      files: { changed: null, partial: new Set(), stoppedAt: null, patch: false },
     });
     expect(outcomeLine(view, WIDE)).toContain('files not recorded');
   });
 
   it('distinguishes a run that changed nothing from one that never ran a brief', () => {
-    const empty = makeView({ files: { changed: [], partial: new Set(), stoppedAt: null } });
+    const empty = makeView({
+      files: { changed: [], partial: new Set(), stoppedAt: null, patch: false },
+    });
     expect(outcomeLine(empty, WIDE)).toContain('no files changed');
     const none = makeView({
       briefs: {
@@ -163,7 +195,7 @@ describe('outcomeLine', () => {
         rows: [],
         earlierRows: [],
       },
-      files: { changed: [], partial: new Set(), stoppedAt: null },
+      files: { changed: [], partial: new Set(), stoppedAt: null, patch: false },
     });
     expect(outcomeLine(none, WIDE)).toContain('no briefs · ');
     expect(outcomeLine(none, WIDE)).toContain('nothing built');
@@ -203,6 +235,8 @@ describe('outcomeMarker', () => {
     ['ready', 'check', 'success'],
     ['needs-attention', 'statusWarning', 'warning'],
     ['ended', 'statusCancelled', 'warning'],
+    ['applied', 'check', 'success'],
+    ['discarded', 'statusCancelled', 'warning'],
   ] as const)('marks a %s run with %s', (kind, name, tone) => {
     expect(outcomeMarker(makeView({ outcome: { kind } }))).toEqual({ glyph: name, tone });
   });

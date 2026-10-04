@@ -57,7 +57,10 @@ const STOP_WORDS: Record<StopKind, string> = {
 };
 
 /** The one word a run's state spells, on every surface that names it. */
-export function sessionStatusWord(session: Pick<Session, 'status' | 'stop'>): string {
+export function sessionStatusWord(session: Pick<Session, 'status' | 'stop' | 'apply'>): string {
+  if (session.apply === 'ready') return 'ready to apply';
+  if (session.apply === 'applied') return 'applied';
+  if (session.apply === 'discarded') return 'discarded';
   switch (session.status) {
     case 'complete':
       return 'complete';
@@ -72,7 +75,10 @@ export function sessionStatusWord(session: Pick<Session, 'status' | 'stop'>): st
   }
 }
 
-function statusIcon(session: Pick<Session, 'status' | 'stop'>): string {
+function statusIcon(session: Pick<Session, 'status' | 'stop' | 'apply'>): string {
+  if (session.apply === 'ready') return glyph('statusOpen');
+  if (session.apply === 'applied') return glyph('check');
+  if (session.apply === 'discarded') return glyph('statusCancelled');
   switch (session.status) {
     case 'complete':
       return glyph('check');
@@ -89,9 +95,12 @@ function statusIcon(session: Pick<Session, 'status' | 'stop'>): string {
 }
 
 function statusColor(
-  session: Pick<Session, 'status' | 'stop'>,
+  session: Pick<Session, 'status' | 'stop' | 'apply'>,
   theme: SessionDisplayColors,
 ): string {
+  if (session.apply === 'ready') return theme.accent;
+  if (session.apply === 'applied') return theme.success;
+  if (session.apply === 'discarded') return theme.textDim;
   if (session.status === 'complete') return theme.success;
   if (session.status === 'ended') return theme.textDim;
   if (session.stop === undefined) return theme.accent;
@@ -100,7 +109,7 @@ function statusColor(
 }
 
 export function getSessionStatusDisplay(
-  session: Pick<Session, 'status' | 'stop'>,
+  session: Pick<Session, 'status' | 'stop' | 'apply'>,
   theme: SessionDisplayColors,
 ): SessionStatusDisplay {
   return {

@@ -29,7 +29,7 @@ describe('buildSystemPreamble', () => {
 const DIRECT_WRITER_RULES = [
   'Start from the files the Task Brief suggests. If the change needs another project file (a caller, a test, a shared component), edit it and name it in your report with the reason. Never edit dependency manifests, lockfiles, CI configuration, env or key files, .git or .splitbrief unless the brief explicitly asks for that operation.',
   'The Task Brief inlines the read-only code of the context files it lists. Read the files it suggests before you edit them, and search only for a symbol the brief names.',
-  "SPLITBRIEF runs the project's typecheck, lint, format and test gates after you finish, and its verdict is the authority. Do not run them, and do not run the whole test suite, screenshot or render tools, or repeated git diffs.",
+  "SPLITBRIEF runs the project's typecheck, lint and test gates after you finish, and its verdict is the authority. Do not run them, and do not run the whole test suite, screenshot or render tools, or repeated git diffs.",
   'Run at most the focused test files the brief lists under Tests, once, after your edits. If one fails and you cannot fix it, stop and report the failure.',
   "When the brief's Tests or Evidence ask you to run a project-wide gate or to render screenshots, SPLITBRIEF and the review seat do that. Implement the change and its tests, then report.",
 ];

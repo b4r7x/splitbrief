@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+import { SESSIONS_DIR, SPLITBRIEF_DIR } from '../../../core/paths.js';
 import type { StepRef } from '../../../core/schemas/run-step.js';
 import type { RunStatus, StopReason } from '../../../core/sessions/run-status.js';
 import type { SummaryView } from './view-model.js';
@@ -55,6 +57,13 @@ function bylineFor(view: SummaryView): Byline {
     return { reason: null, action: `Rejected${SOFT_SEP}its files were restored` };
   }
   const kind = view.outcome.kind;
+  if (kind === 'applied') {
+    return { reason: null, action: `Applied${SOFT_SEP}undo it with /run reject confirm` };
+  }
+  if (kind === 'discarded') {
+    const patchPath = join(SPLITBRIEF_DIR, SESSIONS_DIR, view.run.sessionId, 'run.patch');
+    return { reason: null, action: `Bring the changes back with git apply ${patchPath}` };
+  }
   if (kind === 'ready') {
     return { reason: null, action: `Keep it with /run accept${ALTERNATIVE}${REVERT}` };
   }
@@ -70,6 +79,7 @@ export const AT_REST_PLACEHOLDER = {
   open: 'Type a correction, or ⏎ to continue…',
   inputRequired: 'Type your answer, or ⏎ to continue…',
   closed: `/ for a command${SOFT_SEP}⏎ for home…`,
+  ready: `/ for a command${SOFT_SEP}tab for the result menu…`,
 } as const;
 
 const UNREADABLE_BYLINE: Byline = {
@@ -91,7 +101,18 @@ export function openRunByline(
 ): string {
   const { status, width } = input;
   if (status.kind === 'running') return fitByline(RUNNING_BYLINE, width);
-  if (status.kind === 'closed') return fitByline({ reason: null, action: HOME_AGAIN }, width);
+  if (status.kind === 'ready-to-apply') {
+    return fitByline(
+      {
+        reason: status.override ? 'Ready to apply as is' : 'Ready to apply',
+        action: 'Choose Apply, Show diff or Discard',
+      },
+      width,
+    );
+  }
+  if (status.kind === 'closed') {
+    return fitByline({ reason: null, action: HOME_AGAIN }, width);
+  }
   if (!input.continuable) return fitByline(UNREADABLE_BYLINE, width);
   return fitByline(openByline(status.stop, status.resumeAt), width);
 }

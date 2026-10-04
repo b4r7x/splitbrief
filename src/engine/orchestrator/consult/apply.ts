@@ -27,6 +27,7 @@ import type { ValidationCommandRunner, Validator } from '../validation/types.js'
 
 export type ConsultApplyContext = Readonly<{
   projectDir: string;
+  workspaceDir: string;
   sessionId: string;
   bus: EventBus;
   config: Config;
@@ -139,7 +140,7 @@ async function applyRewrite(
     {
       type: 'REPLACE_TASK',
       taskId: task.id,
-      task: taskFromSpec(action.task, ctx.projectDir),
+      task: taskFromSpec(action.task, ctx.workspaceDir),
     },
   );
   ctx.onStateChange?.(state);
@@ -159,7 +160,7 @@ async function applySplit(
     await restoreAttemptFiles({ wctx: ctx, phase: ctx.state.phase, attemptSnapshot: attempt });
   }
   const inserted = insertTasks(action.tasks, ctx.state.tasks, (spec) =>
-    taskFromSpec(spec, ctx.projectDir),
+    taskFromSpec(spec, ctx.workspaceDir),
   );
   const state = transitionAndSave(
     { projectDir: ctx.projectDir, sessionId: ctx.sessionId },
@@ -235,7 +236,7 @@ async function applyVerify(
   const changedFiles = ctx.changedFiles ?? [];
   const validationResults = await ctx.validator.runValidation({
     task,
-    projectDir: ctx.projectDir,
+    projectDir: ctx.workspaceDir,
     config: ctx.config,
     bus: ctx.bus,
     phase: ctx.state.phase,
@@ -247,7 +248,7 @@ async function applyVerify(
   const checkRuns = await runChecks(action.checkIds, {
     task,
     plan,
-    projectDir: ctx.projectDir,
+    projectDir: ctx.workspaceDir,
     config: ctx.config,
     bus: ctx.bus,
     phase: ctx.state.phase,

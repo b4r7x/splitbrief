@@ -60,6 +60,7 @@ function contextFor(
   return {
     ctx: {
       projectDir,
+      workspaceDir: projectDir,
       sessionId,
       bus,
       config: makeConfig({}),
@@ -287,6 +288,38 @@ describe('applyConsultAnswer', () => {
     expect(events.filter((event) => event.type === 'task_replaced')).toMatchObject([
       { taskId: 'T003', revision: 2 },
     ]);
+  });
+
+  it('a rewritten task records workspace hashes', async () => {
+    const { projectDir, sessionId } = setupRepo(dirs);
+    const workspaceDir = createTempDir('consult-apply-workspace');
+    dirs.push(workspaceDir);
+    createTestGitRepo(workspaceDir, {
+      'src/greet.ts': ATTEMPT_GREET,
+      'src/context.ts': 'export const context = false;\n',
+    });
+    const task = makeTask({ id: 'T003', file: 'src/greet.ts', criteria: ['C1'] });
+    const { ctx } = contextFor(projectDir, sessionId, task);
+
+    const result = await applyConsultAnswer(
+      { ...ctx, workspaceDir },
+      task,
+      rewrite(
+        makeTaskSpec({
+          id: 'T003',
+          criteria: ['C1'],
+          suggestedFiles: ['src/greet.ts'],
+          contextFiles: ['src/context.ts'],
+        }),
+      ),
+      null,
+    );
+
+    if (result.action !== 'rewrite-task') throw new Error(`expected rewrite, got ${result.action}`);
+    expect(result.task.inputHashes).toEqual({
+      'src/greet.ts': sha256Hex(ATTEMPT_GREET),
+      'src/context.ts': sha256Hex('export const context = false;\n'),
+    });
   });
 
   it('split-task rolls the attempt back, inserts the subtasks and publishes tasks_inserted', async () => {

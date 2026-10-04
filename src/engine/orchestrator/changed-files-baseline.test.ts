@@ -45,6 +45,7 @@ function changed(a: Record<string, string>, b: Record<string, string>): string[]
   return [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((file) => a[file] !== b[file]);
 }
 function recordHead(dir: string): void {
+  mkdirSync(join(dir, '.git'), { recursive: true });
   const revisions = history.get(dir) ?? [];
   revisions.push(contents(dir));
   history.set(dir, revisions);
@@ -171,7 +172,7 @@ describe('captureChangedFilesBaseline', () => {
       const dir = createTempDir('changed-files-baseline-root-link');
       seedProject(dir);
       try {
-        mkdirSync(join(dir, '.git'));
+        mkdirSync(join(dir, '.git'), { recursive: true });
         symlinkSync('.', join(dir, 'root-link'));
         symlinkSync('.git', join(dir, 'git-link'));
 
@@ -413,6 +414,7 @@ describe('changedFilesSinceBaseline committed leg', () => {
   it('includes a first commit made after an unborn run start', async () => {
     const dir = createTempDir('changed-files-baseline-unborn');
     try {
+      mkdirSync(join(dir, '.git'));
       const baseline = await captureChangedFilesBaseline(dir);
       expect(baseline.head).toBeNull();
 

@@ -10,7 +10,7 @@ import {
   parseNumberOption,
   parseOutputFormatOption,
   parsePositiveIntegerOption,
-  parseRecoveryActionOption,
+  parseContinueActionOption,
   parseSeatSpecOption,
   parseSkillIdsOption,
 } from './options.js';
@@ -104,22 +104,27 @@ describe('parseSeatSpecOption', () => {
   });
 });
 
-describe('parseRecoveryActionOption', () => {
+describe('parseContinueActionOption', () => {
   it('maps the three continue actions to their RecoveryAction ids', () => {
-    expect(parseRecoveryActionOption('skip')).toEqual({ action: 'skip-current-task' });
-    expect(parseRecoveryActionOption('retry')).toEqual({ action: 'retry-same-worker' });
-    expect(parseRecoveryActionOption('switch-seat:codex')).toEqual({
+    expect(parseContinueActionOption('skip')).toEqual({ action: 'skip-current-task' });
+    expect(parseContinueActionOption('retry')).toEqual({ action: 'retry-same-worker' });
+    expect(parseContinueActionOption('switch-seat:codex')).toEqual({
       action: 'switch-seat',
       candidate: { tool: 'codex' },
     });
-    expect(parseRecoveryActionOption('switch-seat:codex:gpt-5')).toEqual({
+    expect(parseContinueActionOption('switch-seat:codex:gpt-5')).toEqual({
       action: 'switch-seat',
       candidate: { tool: 'codex', model: 'gpt-5' },
     });
   });
 
+  it('maps apply and discard to the two ways a ready run settles', () => {
+    expect(parseContinueActionOption('apply')).toEqual({ action: 'apply' });
+    expect(parseContinueActionOption('discard')).toEqual({ action: 'discard' });
+  });
+
   it('exits 2 on an action it does not offer', () => {
-    expect(() => parseRecoveryActionOption('abort')).toThrowError(
+    expect(() => parseContinueActionOption('abort')).toThrowError(
       expect.objectContaining({ exitCode: 2 }),
     );
   });

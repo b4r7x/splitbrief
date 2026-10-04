@@ -148,12 +148,6 @@ export function createTestGitRepo(dir: string, files: RepoFiles = {}): void {
   writeIndex(dir, indexEntries);
 }
 
-export function detachHead(dir: string): void {
-  const git = (args: string) => execSync(`git ${args}`, { cwd: dir, stdio: 'pipe' });
-  const sha = execSync('git rev-parse HEAD', { cwd: dir, encoding: 'utf-8' }).trim();
-  git(`checkout --detach ${sha}`);
-}
-
 export function startConflictingMerge(dir: string): void {
   const git = (args: string) => execSync(`git ${args}`, { cwd: dir, stdio: 'pipe' });
   git('init -b main');

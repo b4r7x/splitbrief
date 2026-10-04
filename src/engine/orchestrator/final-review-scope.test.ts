@@ -20,16 +20,14 @@ import {
   SPEC_FILE,
   sessionDir,
 } from '../../core/paths.js';
-import { readReviewChanges, REVIEW_CHANGES_FILE } from '../../core/evidence/review-changes.js';
+import { REVIEW_CHANGES_FILE } from '../../core/evidence/review-changes.js';
 import { ReviewPacketSchema } from '../../core/schemas/review-packet.js';
-import { captureAcquisitionBaseline, readConfinedEntry } from './approval/file-snapshots/entry.js';
 import { getChangedFilesSnapshot } from './approval/file-snapshots/capture.js';
-import * as staged from './approval/staged-project.js';
-import { gateAndPromoteChangedFiles } from './approval/gate-and-promote.js';
-import { capturePromotedReviewChanges } from './evidence/review-capture.js';
+import { captureTaskReviewChanges } from './evidence/review-capture.js';
+import { getOrCreateLedger } from './evidence/persistence.js';
+import { writeEvidenceLedger } from '../../core/evidence/ledger-storage.js';
 import { resolveRunReviewScope } from './evidence/review-packet/run-scope.js';
 import { runFinalReviewPhase } from './final-review.js';
-import { sha256Hex } from '../../utils/sha256.js';
 
 const cleanups: Array<() => void> = [];
 const file = 'src/mixed.ts';
@@ -55,25 +53,18 @@ function project() {
   return { ...ref, ref, task };
 }
 
-async function promote(p: ReturnType<typeof project>, text = worker, extra?: string) {
+async function completeTask(p: ReturnType<typeof project>, text = worker, extra?: string) {
   const taskStartSnapshot = await getChangedFilesSnapshot(p.projectDir);
-  const workspace = await staged.createStagedProject({ projectDir: p.projectDir });
-  cleanups.push(workspace.cleanup);
-  writeFileSync(join(workspace.projectDir, file), text);
-  if (extra !== undefined) writeFileSync(join(workspace.projectDir, extra), 'export {};\n');
-  const outcome = await gateAndPromoteChangedFiles({
-    ...p,
-    workspace,
+  writeFileSync(join(p.projectDir, file), text);
+  if (extra !== undefined) writeFileSync(join(p.projectDir, extra), 'export {};\n');
+  await captureTaskReviewChanges({
+    ref: p.ref,
+    workspaceDir: p.projectDir,
+    task: p.task,
     taskStartSnapshot,
-    state: makeImplState([p.task]),
-    bus: makeBusRecorder().bus,
-    callbacks: makeCallbacks().callbacks,
-    config: makeNoValidationConfig({ approval: { enabled: false, feedRejectionsToPlanner: true } }),
-    dependsOnFiles: [],
-    handleConflict: async (state) => state,
-    onApproved: () => {},
   });
-  expect(outcome.outcome).toBe('allow');
+  // A passed task leaves its evidence ledger, which the review packet requires.
+  writeEvidenceLedger(p.ref, getOrCreateLedger({ ref: p.ref, state: makeImplState([p.task]) }));
 }
 
 async function review(p: ReturnType<typeof project>, api = false) {
@@ -81,6 +72,7 @@ async function review(p: ReturnType<typeof project>, api = false) {
   writeSpecFile(p.ref, SPEC_FILE, 'Enable feature; preserve operator fixes.', null);
   const result = await runFinalReviewPhase({
     ...p,
+    workspaceDir: p.projectDir,
     state: makeImplState([{ ...p.task, status: 'done' }], {
       changedFilesBaseline: { head: null, runStartChangedFiles: [file], fingerprints: {} },
     }),
@@ -129,12 +121,12 @@ async function review(p: ReturnType<typeof project>, api = false) {
   return { prompt: prompts[0] ?? '', packet };
 }
 
-describe('final review promotion provenance', () => {
+describe('final review task completion provenance', () => {
   it.each([false, true])(
     'separates mixed-file and independent operator hunks for API=%s',
     async (api) => {
       const p = project();
-      await promote(p);
+      await completeTask(p);
       const { prompt, packet } = await review(p, api);
       const implementation =
         prompt.split('## Implementation Diff')[1]?.split('## Workspace Context')[0] ?? '';
@@ -165,34 +157,14 @@ describe('final review promotion provenance', () => {
     },
   );
 
-  it('does not attribute operator bytes saved immediately after the writer completes', async () => {
-    const p = project();
-    const promoteOriginal = staged.promoteStagedChanges;
-    vi.spyOn(staged, 'promoteStagedChanges').mockImplementation(async (opts) => {
-      const result = await promoteOriginal(opts);
-      writeFileSync(join(p.projectDir, file), 'operator replaced worker\n');
-      return result;
-    });
-    await promote(p);
-    expect(readReviewChanges(p.ref)?.changes).toMatchObject([
-      { kind: 'unknown', reason: 'output-changed' },
-    ]);
-    const { prompt, packet } = await review(p);
-    expect(prompt).toContain('operator replaced worker');
-    expect(packet.changes.provenance).toMatchObject({
-      promotedFiles: [],
-      uncertainFiles: [file, 'src/tool-fix.ts'],
-    });
-  });
-
   it('keeps overlapping edits after capture explicit without erasing the run effect', async () => {
     const p = project();
-    await promote(p);
+    await completeTask(p);
     writeFileSync(join(p.projectDir, file), 'operator changed the same feature line\n');
     const { prompt, packet } = await review(p);
     expect(prompt).toContain('+export const feature = true;');
     expect(prompt).toContain('operator changed the same feature line');
-    expect(prompt).toContain('Changes after the last recorded promotion; authorship unknown');
+    expect(prompt).toContain('Changes after the last recorded task completion; authorship unknown');
     expect(packet.changes.provenance?.uncertainFiles).toContain(file);
   });
 
@@ -211,31 +183,15 @@ describe('final review promotion provenance', () => {
     },
   );
 
-  it('refuses captured inputs that do not match the acquisition baseline', async () => {
+  it('names a completed task file no brief suggested in the Changed Files section', async () => {
     const p = project();
-    const baseline = await captureAcquisitionBaseline(p.projectDir);
-    writeFileSync(join(p.projectDir, file), 'operator race');
-    const before = new Map([[file, await readConfinedEntry(p.projectDir, file)]]);
-    writeFileSync(join(p.projectDir, file), worker);
-    const after = await readConfinedEntry(p.projectDir, file);
-    await capturePromotedReviewChanges({
+    await completeTask(p, worker, 'src/shared.ts');
+    const scope = await resolveRunReviewScope({
       ref: p.ref,
-      task: p.task,
-      baseline,
-      before,
-      files: [
-        { path: file, sha256: sha256Hex(worker), mode: after.kind === 'file' ? after.mode : null },
-      ],
+      workspaceDir: p.ref.projectDir,
+      tasks: [p.task],
+      workspaceFiles: [],
     });
-    expect(readReviewChanges(p.ref)?.changes).toMatchObject([
-      { kind: 'unknown', reason: 'input-unverified' },
-    ]);
-  });
-
-  it('names a promoted file no brief suggested in the Changed Files section', async () => {
-    const p = project();
-    await promote(p, worker, 'src/shared.ts');
-    const scope = await resolveRunReviewScope({ ref: p.ref, tasks: [p.task], workspaceFiles: [] });
     expect(scope.description).toContain(
       'Files touched, not suggested by any brief: src/shared.ts.',
     );
@@ -244,26 +200,22 @@ describe('final review promotion provenance', () => {
   it('retains deletion and mode changes in the captured review diff', async () => {
     const p = project();
     for (const next of ['mode', 'delete']) {
-      const baseline = await captureAcquisitionBaseline(p.projectDir);
-      const before = new Map([[file, await readConfinedEntry(p.projectDir, file)]]);
+      const taskStartSnapshot = await getChangedFilesSnapshot(p.projectDir);
       if (next === 'mode') chmodSync(join(p.projectDir, file), 0o755);
       else rmSync(join(p.projectDir, file));
-      const after = await readConfinedEntry(p.projectDir, file);
-      await capturePromotedReviewChanges({
+      await captureTaskReviewChanges({
         ref: p.ref,
+        workspaceDir: p.projectDir,
         task: p.task,
-        baseline,
-        before,
-        files: [
-          {
-            path: file,
-            sha256: after.kind === 'file' ? after.sha256 : null,
-            mode: after.kind === 'file' ? after.mode : null,
-          },
-        ],
+        taskStartSnapshot,
       });
     }
-    const scope = await resolveRunReviewScope({ ref: p.ref, tasks: [p.task], workspaceFiles: [] });
+    const scope = await resolveRunReviewScope({
+      ref: p.ref,
+      workspaceDir: p.ref.projectDir,
+      tasks: [p.task],
+      workspaceFiles: [],
+    });
     expect(scope.diff).toContain('new mode 100755');
     expect(scope.diff).toContain('deleted file mode 100755');
     expect(scope.provenance.promotedFiles).toEqual([file]);
@@ -271,9 +223,10 @@ describe('final review promotion provenance', () => {
 
   it('does not adopt evidence for a rewound brief that reuses an ID', async () => {
     const p = project();
-    await promote(p);
+    await completeTask(p);
     const scope = await resolveRunReviewScope({
       ref: p.ref,
+      workspaceDir: p.ref.projectDir,
       tasks: [{ ...p.task, description: 'different brief' }],
       workspaceFiles: [file],
     });

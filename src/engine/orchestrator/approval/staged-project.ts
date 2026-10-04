@@ -1,5 +1,5 @@
 import { rmSync, type Stats } from 'node:fs';
-import { cp, copyFile, lstat, mkdir, mkdtemp, symlink } from 'node:fs/promises';
+import { cp, copyFile, lstat, mkdir, mkdtemp, readdir, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, relative } from 'node:path';
 import type { Config } from '../../../core/schemas/config.js';
@@ -7,6 +7,8 @@ import type { EvidencePromotedFile } from '../../../core/schemas/evidence.js';
 import { INTERNAL_SKIP_DIRS, SPLITBRIEF_DIR, TREES_DIR } from '../../../core/paths.js';
 import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
 import { listTrackedAndUntrackedFiles } from '../../../lib/git/files.js';
+import { GIT_EMPTY_TREE_HASH } from '../../../lib/git/refs.js';
+import { isGitRepo } from '../../../lib/git/repository.js';
 import {
   assertPathConfined,
   assertWritablePathConfined,
@@ -105,19 +107,24 @@ async function copyProjectFiles(
   const links: Record<string, string> = {};
   const entries = await listTrackedAndUntrackedFiles(projectDir);
   if (entries === null) {
-    await cp(projectDir, stagedProjectDir, {
-      recursive: true,
-      verbatimSymlinks: true,
-      filter: async (source) => {
-        if (isStagedCopyExcluded(basename(source))) return false;
-        if (!(await lstat(source)).isSymbolicLink()) return true;
-        const file = relative(projectDir, source);
-        const link = await readProjectSymlink(projectDir, file);
-        if (link === null) return false;
-        links[file] = link;
-        return true;
-      },
-    });
+    // Copied entry by entry: an owned staged root lives inside the project, and a
+    // whole-directory copy into its own subdirectory is refused.
+    for (const name of await readdir(projectDir)) {
+      if (isStagedCopyExcluded(name)) continue;
+      await cp(join(projectDir, name), join(stagedProjectDir, name), {
+        recursive: true,
+        verbatimSymlinks: true,
+        filter: async (source) => {
+          if (isStagedCopyExcluded(basename(source))) return false;
+          if (!(await lstat(source)).isSymbolicLink()) return true;
+          const file = relative(projectDir, source);
+          const link = await readProjectSymlink(projectDir, file);
+          if (link === null) return false;
+          links[file] = link;
+          return true;
+        },
+      });
+    }
     return links;
   }
   for (const entry of entries) {
@@ -154,9 +161,9 @@ export async function createStagedProject(input: {
   // the snapshot describes the tree the worker receives: any other source
   // symlink is recorded as absent, not refused — this strategy is the fallback
   // for exactly those sources.
-  const snapshot = await getChangedFilesSnapshot(projectDir, undefined, {
-    symlinkedEntriesAsAbsent: true,
-  });
+  const snapshot = (await isGitRepo(projectDir))
+    ? await getChangedFilesSnapshot(projectDir, undefined, { symlinkedEntriesAsAbsent: true })
+    : { head: GIT_EMPTY_TREE_HASH, files: [], dirtyFileContents: {} };
   const stagedRoot =
     ownedRoot ?? (await mkdtemp(join(tmpdir(), `${SPLITBRIEF_IDENTITY.slug}-stage-`)));
   try {

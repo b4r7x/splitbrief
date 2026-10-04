@@ -1,6 +1,6 @@
-import { lstatSync } from 'node:fs';
+import { existsSync, lstatSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { getCommittedFilesSince } from '../../lib/git/diff.js';
 import { getCurrentChangedFiles } from '../../lib/git/files.js';
 import { getCurrentCommitSha, resolveRunStartBase } from '../../lib/git/refs.js';
@@ -19,6 +19,7 @@ import type {
 import { readProjectSymlink } from './approval/file-snapshots/entry.js';
 import { recordedTargetOutput } from './evidence/task.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
+import { captureStagedSnapshot, changedStagedFiles } from './isolation/staged-snapshot.js';
 
 export type ChangedFilesBaseline = {
   head: string | null;
@@ -77,10 +78,13 @@ export function unreadableChangedFiles(baseline: ChangedFilesBaseline): string[]
 }
 
 async function captureHead(projectDir: string): Promise<string | null> {
+  if (!existsSync(join(projectDir, '.git'))) return null;
   return (await hasCommits(projectDir)) ? getCurrentCommitSha(projectDir) : null;
 }
 
 async function candidateChangedFiles(projectDir: string, head: string | null): Promise<string[]> {
+  if (!existsSync(join(projectDir, '.git')))
+    return (await captureStagedSnapshot(projectDir, projectDir)).files;
   const base = await resolveRunStartBase({ projectDir, head });
   const working = userVisibleChangedFiles(await getCurrentChangedFiles(projectDir));
   const committed =
@@ -198,9 +202,14 @@ export async function inferTaskOwnChangedFiles(
   ref: SessionRef,
   task: Task,
   head: string | null,
+  codeDir: string,
+  snapshot?: ChangedFilesSnapshot,
 ): Promise<string[]> {
   const recorded = new Set(recordedTargetOutput(ref, task).files.map((file) => file.path));
   const patterns = taskDeclaredPatterns(task);
-  const changedFiles = await candidateChangedFiles(ref.projectDir, head);
+  const changedFiles =
+    snapshot?.baselineFileHashes === undefined
+      ? await candidateChangedFiles(codeDir, head)
+      : await changedStagedFiles(codeDir, snapshot);
   return changedFiles.filter((file) => recorded.has(file) || isInDeclaredSet(file, patterns));
 }

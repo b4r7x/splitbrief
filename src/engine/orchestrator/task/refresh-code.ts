@@ -6,6 +6,8 @@ import { matches } from '../../../utils/error.js';
 import { anchorAction } from '../../spec/plan-tasks.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { transitionAndSave } from '../state-ops.js';
+import type { ContinuationHolder } from '../continuation.js';
+import { hashTaskBrief } from '../../brief-hash.js';
 
 const isPathEscape = matches('path-confined-escape');
 
@@ -45,8 +47,8 @@ async function readContextCode(task: Task, projectDir: string): Promise<Record<s
 }
 
 /**
- * The brief as it is dispatched: the code of its files as the checkout holds them now, and the
- * action its anchor takes now, since an earlier brief may have created the anchor since the plan.
+ * The brief as it is dispatched: the code of its files as the given directory holds them now, and
+ * the action its anchor takes now, since an earlier brief may have created the anchor since the plan.
  */
 export async function refreshCurrentCode(task: Task, projectDir: string): Promise<Task> {
   const currentCode = await readConfined(projectDir, task.file);
@@ -82,12 +84,21 @@ function hasCode(task: Task): boolean {
   );
 }
 
+/**
+ * A brief that resumes its cut attempt keeps the code it was dispatched with: the workspace now
+ * also holds that attempt's own output, which is not the brief's input.
+ */
 export async function refreshAndPersistCode(
   task: Task,
-  ref: SessionRef,
+  ref: SessionRef & { continuation?: ContinuationHolder | undefined },
   state: WorkflowState,
+  workspaceDir: string,
 ): Promise<{ task: Task; state: WorkflowState }> {
-  const refreshed = await refreshCurrentCode(task, ref.projectDir);
+  const step = { kind: 'brief' as const, taskId: task.id, attempt: state.attempt };
+  if (ref.continuation?.resumesAttempt(step, hashTaskBrief([task])) === true) {
+    return { task, state };
+  }
+  const refreshed = await refreshCurrentCode(task, workspaceDir);
   if (hasCode(refreshed) || hasCode(task) || refreshed.action !== task.action) {
     state = transitionAndSave(ref, state, {
       type: 'UPDATE_TASK_CODE',

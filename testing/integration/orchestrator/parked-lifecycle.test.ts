@@ -284,7 +284,8 @@ it.each(['end', 'rewind', 'failure'] as const)('discards initial output for %s',
     setCurrentTask: () => {},
   });
   await wctx.isolation.dispose();
-  expect(existsSync(workspace)).toBe(false);
+  expect(existsSync(workspace)).toBe(true);
+  expect(existsSync(join(workspace, 'partial.ts'))).toBe(false);
 });
 
 it('leaves a partial API application on its receipt and recovery path during Stop', async () => {

@@ -1,9 +1,5 @@
 import type { Config } from '../../core/schemas/config.js';
-import type {
-  BriefReviewPromptKind,
-  Phase,
-  UserEditConflictAction,
-} from '../../core/schemas/enums.js';
+import type { BriefReviewPromptKind, Phase } from '../../core/schemas/enums.js';
 import type { TaskId } from '../../core/schemas/task.js';
 import type { StepCut } from '../../core/schemas/run-step.js';
 import type { ContinuationHolder } from './continuation.js';
@@ -21,13 +17,12 @@ import type {
   TieredApprovalRequest,
   TieredApprovalResponse,
 } from '../../core/approval/types.js';
-import type { UserEditConflict } from '../events/workflow-events.js';
-import type { RoutingDecision } from './context-routing/types.js';
+import type { ApprovalReviewInput } from '../runners/types.js';
 import type { ModelCacheAccessor } from '../providers/model/resolution.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { StreamingSink } from './task/streaming-feed.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
-import type { ApprovalReviewInput } from '../runners/types.js';
+import type { RoutingDecision } from './context-routing/types.js';
 import type { PlannerConversation } from '../../core/schemas/workflow.js';
 import type { PlannerReplyAnswer } from '../../core/schemas/question.js';
 export interface OrchestratorCallbacks {
@@ -40,9 +35,6 @@ export interface OrchestratorCallbacks {
     input: ApprovalReviewInput,
     confirms: readonly string[],
   ) => Promise<ApprovalReviewResult>;
-  onUserEditConflict?:
-    | ((conflict: UserEditConflict) => Promise<UserEditConflictAction>)
-    | undefined;
   /**
    * Parks the run until the operator continues it, resolving with their steer.
    * `at` says what they are looking at: a call cut in flight, or a run held
@@ -83,6 +75,7 @@ export interface WorkflowSinks {
 
 export interface WorkflowContext {
   projectDir: string;
+  workspaceDir: string;
   sessionId: string;
   config: Config;
   getApprovalEnabled?: (() => boolean) | undefined;

@@ -151,6 +151,7 @@ describe('runFinalReviewPhase continuation', () => {
 
     await runFinalReviewPhase({
       projectDir,
+      workspaceDir: projectDir,
       sessionId,
       config: makeNoValidationConfig(),
       callbacks,
@@ -189,6 +190,7 @@ describe('runFinalReviewPhase continuation', () => {
 
     await runFinalReviewPhase({
       projectDir,
+      workspaceDir: projectDir,
       sessionId,
       config: makeNoValidationConfig(),
       callbacks: makeCallbacks().callbacks,
@@ -230,6 +232,7 @@ describe('runFinalReviewPhase continuation', () => {
 
     await runFinalReviewPhase({
       projectDir,
+      workspaceDir: projectDir,
       sessionId,
       config: makeNoValidationConfig(),
       callbacks,
@@ -269,6 +272,7 @@ describe('runFinalReviewPhase', () => {
 
     await runFinalReviewPhase({
       projectDir,
+      workspaceDir: projectDir,
       sessionId,
       config: makeNoValidationConfig(),
       callbacks,
@@ -310,6 +314,7 @@ describe('runFinalReviewPhase', () => {
 
     const result = await runFinalReviewPhase({
       projectDir,
+      workspaceDir: projectDir,
       sessionId,
       config: makeNoValidationConfig(),
       callbacks,
@@ -384,6 +389,7 @@ describe('runFinalReviewPhase', () => {
 
     await runFinalReviewPhase({
       projectDir,
+      workspaceDir: projectDir,
       sessionId,
       config: makeNoValidationConfig(),
       callbacks,
@@ -418,6 +424,7 @@ describe('runFinalReviewPhase', () => {
 
     const { state } = await runFinalReviewPhase({
       projectDir,
+      workspaceDir: projectDir,
       sessionId,
       config: makeNoValidationConfig(),
       callbacks,
@@ -470,6 +477,7 @@ describe('runFinalReviewPhase', () => {
 
     await runFinalReviewPhase({
       projectDir,
+      workspaceDir: projectDir,
       sessionId,
       config: makeNoValidationConfig(),
       callbacks,
@@ -500,6 +508,7 @@ describe('runFinalReviewPhase', () => {
 
     await runFinalReviewPhase({
       projectDir: fallbackProjectDir,
+      workspaceDir: fallbackProjectDir,
       sessionId: fallbackSessionId,
       config: makeNoValidationConfig(),
       callbacks,
@@ -534,6 +543,7 @@ describe('runFinalReviewPhase', () => {
 
     const result = await runFinalReviewPhase({
       projectDir,
+      workspaceDir: projectDir,
       sessionId,
       config: makeNoValidationConfig(),
       callbacks,
@@ -584,6 +594,7 @@ describe('runFinalReviewPhase', () => {
 
     await runFinalReviewPhase({
       projectDir,
+      workspaceDir: projectDir,
       sessionId,
       config: makeNoValidationConfig(),
       callbacks,
@@ -622,6 +633,7 @@ describe('runFinalReviewPhase', () => {
 
     await runFinalReviewPhase({
       projectDir,
+      workspaceDir: projectDir,
       sessionId,
       config: makeNoValidationConfig({ reviewer: REVIEWER_RUNNER }),
       callbacks,
@@ -653,6 +665,7 @@ describe('runFinalReviewPhase', () => {
 
     await runFinalReviewPhase({
       projectDir,
+      workspaceDir: projectDir,
       sessionId,
       config: makeNoValidationConfig({
         reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-6-astra' },
@@ -695,6 +708,7 @@ describe('runFinalReviewPhase', () => {
 
     const result = await runFinalReviewPhase({
       projectDir,
+      workspaceDir: projectDir,
       sessionId,
       config: makeNoValidationConfig(),
       callbacks,
@@ -728,6 +742,7 @@ describe('runFinalReviewPhase', () => {
 
     const result = await runFinalReviewPhase({
       projectDir,
+      workspaceDir: projectDir,
       sessionId,
       config: makeNoValidationConfig(),
       callbacks,
@@ -761,6 +776,7 @@ describe('runFinalReviewPhase', () => {
 
     await runFinalReviewPhase({
       projectDir,
+      workspaceDir: projectDir,
       sessionId,
       config: makeNoValidationConfig(),
       callbacks,
@@ -798,6 +814,7 @@ describe('runFinalReviewPhase', () => {
 
     await runFinalReviewPhase({
       projectDir,
+      workspaceDir: projectDir,
       sessionId,
       config: makeNoValidationConfig(),
       callbacks,
@@ -862,6 +879,7 @@ describe('runFinalReviewPhase', () => {
 
     await runFinalReviewPhase({
       projectDir,
+      workspaceDir: projectDir,
       sessionId,
       config: makeNoValidationConfig(),
       callbacks,
@@ -905,6 +923,7 @@ describe('runFinalReviewPhase', () => {
 
     await runFinalReviewPhase({
       projectDir,
+      workspaceDir: projectDir,
       sessionId,
       config: makeNoValidationConfig(),
       callbacks,
@@ -953,6 +972,7 @@ describe('runFinalReviewPhase', () => {
 
     await runFinalReviewPhase({
       projectDir,
+      workspaceDir: projectDir,
       sessionId,
       config: makeNoValidationConfig(),
       callbacks,
@@ -1026,6 +1046,7 @@ describe('runFinalReviewPhase', () => {
 
     await runFinalReviewPhase({
       projectDir,
+      workspaceDir: projectDir,
       sessionId,
       config: makeNoValidationConfig(),
       callbacks,
@@ -1070,6 +1091,7 @@ describe('runFinalReviewPhase', () => {
 
     await runFinalReviewPhase({
       projectDir,
+      workspaceDir: projectDir,
       sessionId,
       config: makeNoValidationConfig(),
       callbacks,
@@ -1123,6 +1145,7 @@ describe('runFinalReviewPhase', () => {
 
     await runFinalReviewPhase({
       projectDir,
+      workspaceDir: projectDir,
       sessionId,
       config: makeNoValidationConfig(),
       callbacks,
@@ -1166,6 +1189,7 @@ describe('runFinalReviewPhase', () => {
 
     const result = await runFinalReviewPhase({
       projectDir,
+      workspaceDir: projectDir,
       sessionId,
       config: makeNoValidationConfig(),
       callbacks,
@@ -1193,6 +1217,7 @@ describe('runFinalReviewPhase', () => {
 
     const result = await runFinalReviewPhase({
       projectDir,
+      workspaceDir: projectDir,
       sessionId,
       config: makeNoValidationConfig(),
       callbacks,
@@ -1230,6 +1255,7 @@ describe('runFinalReviewPhase', () => {
 
     const result = await runFinalReviewPhase({
       projectDir,
+      workspaceDir: projectDir,
       sessionId,
       config: makeNoValidationConfig(),
       callbacks,
@@ -1263,6 +1289,7 @@ describe('runFinalReviewPhase', () => {
 
     const result = await runFinalReviewPhase({
       projectDir,
+      workspaceDir: projectDir,
       sessionId,
       config: makeNoValidationConfig(),
       callbacks,

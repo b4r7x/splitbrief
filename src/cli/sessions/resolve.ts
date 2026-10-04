@@ -10,6 +10,10 @@ export function assertSessionExists(projectDir: string, sessionId: string): void
   }
 }
 
+export function readyToApplyMessage(sessionId: string): string {
+  return `Run ${sessionId} is ready to apply.\nApply with: splitbrief continue ${sessionId} --action apply\nDiscard with: splitbrief continue ${sessionId} --action discard`;
+}
+
 export function assertResumableState(state: WorkflowState, sessionId: string): void {
   if (state.stateVersion !== WORKFLOW_STATE_VERSION) {
     throw cliError(
@@ -21,5 +25,8 @@ export function assertResumableState(state: WorkflowState, sessionId: string): v
   const status = deriveRunStatus({ state, liveness: 'not-alive' });
   if (status.kind === 'closed') {
     throw cliError(`Run ${sessionId} is closed (${status.as}); nothing to resume.`, 1);
+  }
+  if (status.kind === 'ready-to-apply') {
+    throw cliError(readyToApplyMessage(sessionId), 1);
   }
 }

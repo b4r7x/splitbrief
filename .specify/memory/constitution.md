@@ -1,6 +1,31 @@
 <!--
 Sync Impact Report
-- Version change: 2.3.0 → 2.4.0 (MINOR: II's mechanism text changes —
+- Version change: 2.4.0 → 2.5.0 (MINOR: V and VI change mechanism, not
+  principle — worktree and staged-copy runs use one run workspace, the
+  checkout changes only at Apply, and Apply, Discard or ending the run
+  close it; the Apply integration re-review is a fix cycle of the one
+  final review. Same precedent as 2.4.0)
+- Modified principles (2.5.0):
+  - V. Validate Before Checkpoint (worktree and staged-copy runs validate
+    in the run workspace; a passed final review or owner-accepted
+    override makes the run ready to apply; Apply confirms open findings
+    for an override and preserves failed and unverified verdicts; Apply,
+    Discard or ending the run close it; unapplied work is written to a
+    patch before any close that does not apply it; checkout runs and
+    older runs without a recorded workspace retain their prior rules)
+  - VI. Identity & Anti-Goals (exception 3: the Apply integration
+    re-review reads the whole run diff again and counts as a fix cycle,
+    so it is not a second review moment)
+- Updated sections (2.5.0): Development Workflow (the run workspace bullet:
+  the assessed result is applied once, at Apply, instead of promoted per
+  task)
+- Templates requiring updates (2.5.0):
+  - .specify/templates/plan-template.md ✅ compatible
+  - .specify/templates/spec-template.md ✅ compatible
+  - .specify/templates/tasks-template.md ✅ compatible
+- Follow-up TODOs (2.5.0): none
+
+Prior pass — 2.3.0 → 2.4.0 (MINOR: II's mechanism text changes —
   one planning session replaces the fixed research → spec → plan → tasks
   chain, and the configured implementer model's measured context replaces
   the 7B/8K and 27B/16K prompt figures. The weaker implementer stays)
@@ -222,9 +247,12 @@ never a substitute for either. A task MUST NOT be accepted because the
 implementer reports success.
 
 Every task implementation MUST pass the validation pipeline before being
-accepted as complete. The pipeline runs in the user's real project
-directory, after the changes are promoted there, in order of speed and
-cost:
+accepted as complete. Worktree and staged-copy runs validate in the run
+workspace, one git worktree or staged copy per run, whether configured
+directly or used as a fallback. The pipeline does not write the run's
+result to the user's real project directory until Apply. Checkout runs
+and older runs without a recorded workspace validate in the user's real
+project directory. The stages run in order of speed and cost:
 1. TypeScript typecheck (`tsc --noEmit`)
 2. Lint (ESLint or Biome, auto-detected)
 3. Affected tests (matched by file naming convention)
@@ -248,8 +276,21 @@ assigned (Principle I).
 A run is a durable, continuable record until the user closes it. Stopping
 one — a park, a gate, a halt, an error, or a killed process — MUST NOT
 discard it: the run keeps its place and picks up at the first step it has
-not finished. Exactly two things close a run: passing that final review,
-and the user explicitly ending it. Closing MUST NOT revert what the run
+not finished. In worktree and staged-copy runs, an assessed result is one
+whose final review passed or whose open review findings the owner
+accepted as an override with "Accept as is". An assessed result makes
+the run ready to apply. The override MUST preserve failed and unverified
+verdicts and MUST NOT claim that verification passed. Apply MUST list
+the open findings and require the owner's confirmation before writing
+an override. Three things close the run: Apply, which writes the assessed
+result to the user's real project directory once; Discard; and the user
+explicitly ending it with `CLOSE_RUN`. Before Apply writes, it merges
+the checkout's current state into the run workspace; when that merge
+changes the reviewed result, the checks run again and the review seat
+reviews the whole run diff again. Work that a close does not apply MUST
+be written to a patch before the run closes. Checkout runs and older
+runs without a recorded workspace close on passing that final review or
+the user explicitly ending them. Closing MUST NOT revert what the run
 wrote.
 
 ### VI. Identity & Anti-Goals
@@ -299,7 +340,10 @@ Explicit anti-goals that MUST NOT be implemented:
    of anything other than the run diff — would cross into the anti-goals
    and MUST be rejected. Interrupt-and-continue of the single review call
    is the same continuation mechanism every other seat uses and does not
-   create a second moment.
+   create a second moment. Neither does the Apply integration re-review:
+   when the merge at Apply changes the reviewed result, the review seat
+   reads the whole run diff again, and that re-review counts as one fix
+   cycle of the final review against its cycle cap.
 
 ## Technical Constraints
 
@@ -322,12 +366,13 @@ Explicit anti-goals that MUST NOT be implemented:
   to enable incremental delivery and independent testing
 - When product-level commits are enabled, each commit MUST correspond
   to one completed task or checkpoint
-- An implementer that writes files directly works in a git worktree
-  created once per run, with the project's dependencies made available
-  inside it so validation can run there; changes are promoted back into
-  the user's real project directory, guarded against clobbering edits
-  made in the meantime. A worktree isolates files — not runtime, not
-  security: it shares hooks and config with the repository.
+- In worktree and staged-copy runs, an implementer that writes files
+  directly works in the run workspace created once per run, with the
+  project's dependencies made available inside it so validation can run
+  there; the assessed result defined in Principle V is applied
+  to the user's real project directory once, at Apply, guarded against
+  clobbering edits made in the meantime. A worktree isolates files — not
+  runtime, not security: it shares hooks and config with the repository.
   Same-directory parallel writes remain out of scope
 - Tests are written alongside or after implementation (not TDD)
   unless explicitly requested for a specific feature
@@ -353,4 +398,4 @@ MUST be documented in the plan.md Complexity Tracking table with:
 the violation, why it is needed, and why the simpler alternative
 was rejected.
 
-**Version**: 2.4.0 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-10-02
+**Version**: 2.5.0 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-10-03

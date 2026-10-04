@@ -59,6 +59,7 @@ describe('abort during implementer phase terminates the task loop cleanly', {
     const { state: finalState } = await runTaskLoop({
       wctx: {
         projectDir,
+        workspaceDir: projectDir,
         sessionId,
         isolation: makeCopyingIsolation({ projectDir, sessionId }),
         config: makeNoValidationConfig({ workflow: { maxRetries: 1 } }),

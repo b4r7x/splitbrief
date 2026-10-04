@@ -15,6 +15,7 @@ import { getCurrentBranch } from '../../lib/git/refs.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { buildReadinessReport } from './checks/build.js';
+import { buildIsolationChecks } from './checks/isolation.js';
 import { probeValidationBaseline } from './checks/validation.js';
 import {
   aggregateReadinessStatus,
@@ -154,10 +155,26 @@ export async function collectReadiness(
   };
 
   let report = buildReadinessReport(input);
+  let isolationChecks: ReadinessCheck[];
+  try {
+    isolationChecks = buildIsolationChecks(options.projectDir);
+  } catch (err) {
+    isolationChecks = [
+      {
+        id: 'isolation.check-failed',
+        severity: 'warning',
+        summary: 'Worktree compatibility could not be checked.',
+        details: [toErrorMessage(err, { preserveLineBreaks: true })],
+      },
+    ];
+  }
+  if (isolationChecks.length > 0) {
+    mergeChecks(report, { id: 'repo', title: 'Repository' }, isolationChecks);
+  }
   if (options.probeValidation === true && loaded.config) {
     const probeChecks = await probeValidationBaseline(loaded.config, options.projectDir);
     if (probeChecks.length > 0) {
-      mergeProbeChecks(report, probeChecks);
+      mergeChecks(report, { id: 'validation', title: 'Validation' }, probeChecks);
     }
   }
   if (loaded.config && options.interaction && options.probeRunnerAdmission) {
@@ -181,17 +198,21 @@ export async function collectReadiness(
   };
 }
 
-function mergeProbeChecks(report: ReadinessReport, probeChecks: ReadinessCheck[]): void {
-  const validationSection = report.sections.find((section) => section.id === 'validation');
-  if (validationSection) {
-    validationSection.checks.push(...probeChecks);
+function mergeChecks(
+  report: ReadinessReport,
+  section: { id: string; title: string },
+  checks: ReadinessCheck[],
+): void {
+  const existing = report.sections.find((candidate) => candidate.id === section.id);
+  if (existing) {
+    existing.checks.push(...checks);
   } else {
-    report.sections.push({ id: 'validation', title: 'Validation', checks: probeChecks });
+    report.sections.push({ id: section.id, title: section.title, checks });
   }
-  const checks = flattenReadinessChecks(report.sections);
-  report.counts = countReadinessChecks(checks);
+  const all = flattenReadinessChecks(report.sections);
+  report.counts = countReadinessChecks(all);
   report.status = aggregateReadinessStatus(report.counts);
-  report.nextAction = selectNextAction(checks, report.status);
+  report.nextAction = selectNextAction(all, report.status);
 }
 
 function loadReadinessConfig(

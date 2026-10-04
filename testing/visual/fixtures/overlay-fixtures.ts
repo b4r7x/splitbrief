@@ -275,12 +275,44 @@ export function seedSessions(): void {
       totalTime: 82_000,
     }),
   });
-  // The sessions overlay re-reads the project directory on mount, so the
+  const readySession = makeSession({
+    id: 'visual-session-ready',
+    feature: 'Validate the signup form',
+    startedAt: 1_735_728_000_000,
+    status: 'open',
+    apply: 'ready',
+  });
+  const appliedSession = makeSession({
+    id: 'visual-session-applied',
+    feature: 'Add the export command',
+    startedAt: 1_735_724_000_000,
+    completedAt: 1_735_724_120_000,
+    status: 'complete',
+    apply: 'applied',
+    summary: makeSummary({
+      feature: 'Add the export command',
+      totalTasks: 2,
+      completedByLocal: 2,
+      totalTime: 120_000,
+    }),
+  });
+  const discardedSession = makeSession({
+    id: 'visual-session-discarded',
+    feature: 'Try the cache rewrite',
+    startedAt: 1_735_720_000_000,
+    completedAt: 1_735_720_090_000,
+    status: 'ended',
+    apply: 'discarded',
+  });
+  // The sessions overlay re-reads the project directory on mount, so every
   // session has to exist on disk to survive to the capture.
-  const dir = join(sessionsRoot(VISUAL_FIXTURE_PROJECT_DIR), session.id);
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, 'summary.json'), JSON.stringify(session));
-  sessionsStore.__testReset({ sessions: [session], totalCount: 1 });
+  const sessions = [session, readySession, appliedSession, discardedSession];
+  for (const item of sessions) {
+    const dir = join(sessionsRoot(VISUAL_FIXTURE_PROJECT_DIR), item.id);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'summary.json'), JSON.stringify(item));
+  }
+  sessionsStore.__testReset({ sessions, totalCount: sessions.length });
 }
 
 function seedEditor(plan = makePlanProposal({ summary: 'Add greeting helper' })): void {

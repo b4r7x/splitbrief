@@ -37,7 +37,7 @@ export async function validateAndCommit(opts: ValidateAndCommitOptions) {
 
   const validationResults = await ctx.validator.runValidation({
     task,
-    projectDir: ctx.projectDir,
+    projectDir: ctx.workspaceDir,
     config: ctx.config,
     bus: ctx.bus,
     phase: state.phase,

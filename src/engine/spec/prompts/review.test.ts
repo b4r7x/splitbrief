@@ -1,12 +1,75 @@
-import { describe, it, expect } from 'vitest';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
+import { createTestGitRepo } from '#testing/helpers/git.js';
+import { makeBusRecorder, makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
+import { setupProject } from '#testing/helpers/planning-phase.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { REVIEW_FILE, sessionDir } from '../../../core/paths.js';
+import { getChangedFilesSnapshot } from '../../orchestrator/approval/file-snapshots/capture.js';
+import { runFinalReviewPhase } from '../../orchestrator/final-review.js';
 import { parseFinalReview } from '../../parsers/final-review.js';
 import { buildFinalReviewPrompt } from './review.js';
 
 const SPEC = '## Spec\nAdd a hello function.';
 const TASK_BRIEFS = '## Task T001\nAdd the hello export.';
 const DIFF = '+export function hello() { return "hello"; }';
+const dirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of dirs.splice(0)) cleanupTempDir(dir);
+});
 
 describe('buildFinalReviewPrompt', () => {
+  it('dispatches the workspace directory instruction and keeps review records in the checkout', async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const workspaceDir = createTempDir('review-workspace');
+    dirs.push(workspaceDir);
+    createTestGitRepo(projectDir);
+    createTestGitRepo(workspaceDir);
+    const baseline = await getChangedFilesSnapshot(workspaceDir);
+    const state = {
+      ...makeImplState([makeTask({ status: 'done' })]),
+      changedFilesBaseline: { head: baseline.head, fingerprints: {}, runStartChangedFiles: [] },
+    };
+    const reviewer = {
+      review: vi.fn().mockResolvedValue({
+        text: '### Verdict\npass\n### Findings\nNone.',
+        usage: { inputTokens: 1, outputTokens: 1 },
+      }),
+    };
+    const result = await runFinalReviewPhase({
+      projectDir,
+      workspaceDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks: makeCallbacks().callbacks,
+      bus: makeBusRecorder().bus,
+      state,
+      reviewer,
+      summaryBase: {
+        feature: 'review workspace',
+        startTime: Date.now(),
+        plannerTool: 'claude-code',
+        implementerTool: 'ollama',
+      },
+      taskBreakdowns: [],
+    });
+
+    expect(result.reviewStatus).toBe('written');
+    expect(reviewer.review).toHaveBeenCalledWith(
+      expect.stringContaining(`The run workspace is \`${workspaceDir}\`.`),
+      workspaceDir,
+      expect.any(Object),
+    );
+    expect(reviewer.review.mock.calls[0]?.[0]).toContain('Read project files from this directory');
+    expect(existsSync(join(sessionDir(projectDir, sessionId), REVIEW_FILE))).toBe(true);
+    expect(existsSync(join(workspaceDir, '.splitbrief'))).toBe(false);
+  });
+
   it('returns a string without a drift section when driftReport is omitted', () => {
     const result = buildFinalReviewPrompt({ spec: SPEC, taskBriefs: TASK_BRIEFS, diff: DIFF });
     expect(result).not.toContain('Deterministic Drift Report');

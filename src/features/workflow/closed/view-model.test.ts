@@ -154,6 +154,59 @@ describe('outcome kind', () => {
   });
 });
 
+const WORKSPACE = {
+  kind: 'worktree' as const,
+  path: '/tmp/run-workspace',
+  base: { snapshotId: 'workspace-base', head: null },
+};
+
+function workspaceHydration(phase: Phase): RunRecord['hydration'] {
+  return { kind: 'loaded', state: makeWorkflowState({ phase, workspace: WORKSPACE }) };
+}
+
+describe('a run with a workspace', () => {
+  it('reads an applied run as applied, with every stage and Apply done', () => {
+    const view = derive(readySummary(), {
+      status: { kind: 'closed', as: 'applied' },
+      hydration: workspaceHydration('complete'),
+    });
+    expect(view.outcome.kind).toBe('applied');
+    expect(view.rail.map((state) => state.status)).toEqual(['done', 'done', 'done', 'done']);
+    expect(view.files.patch).toBe(false);
+  });
+
+  it('reads a discarded run as discarded, its changes saved in run.patch', () => {
+    const view = derive(readySummary(), {
+      status: { kind: 'closed', as: 'discarded' },
+      hydration: workspaceHydration('complete'),
+    });
+    expect(view.outcome.kind).toBe('discarded');
+    expect(view.rail.map((state) => state.status)).toEqual(['done', 'done', 'done', 'cancelled']);
+    expect(view.files.patch).toBe(true);
+  });
+
+  it('says an ended run left its changes in run.patch', () => {
+    const view = derive(makeSummary({ phase: 'implementing' }), {
+      status: ENDED,
+      hydration: workspaceHydration('implementing'),
+    });
+    expect(view.outcome.kind).toBe('ended');
+    expect(view.files.patch).toBe(true);
+    expect(view.rail.map((state) => state.status)).toEqual([
+      'done',
+      'cancelled',
+      'pending',
+      'pending',
+    ]);
+  });
+
+  it('writes no patch for a run without a workspace', () => {
+    expect(derive(makeSummary({ phase: 'implementing' }), { status: ENDED }).files.patch).toBe(
+      false,
+    );
+  });
+});
+
 describe('phase resolution', () => {
   it('prefers the phase the saved state names', () => {
     const summary = makeSummary({ phase: 'planning', totalTasks: 4 });

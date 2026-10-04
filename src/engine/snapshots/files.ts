@@ -21,53 +21,56 @@ export async function hashFile(filePath: string): Promise<string | null> {
 
 export const ALWAYS_EXCLUDED = INTERNAL_SKIP_DIRS;
 
-type DirectoryListing = { files: string[]; dirs: string[] };
+type ProjectEntry = { path: string; kind: 'file' | 'symlink' | 'directory' };
 
-async function listDirectory(projectDir: string, rel: string): Promise<DirectoryListing> {
-  const dir = rel === '' ? projectDir : join(projectDir, rel);
-  const entries = await readdir(dir, { withFileTypes: true, encoding: 'utf8' });
-  const listing: DirectoryListing = { files: [], dirs: [] };
-  for (const entry of entries) {
-    const name = entry.name as string;
-    if (ALWAYS_EXCLUDED.includes(name) || entry.isSymbolicLink()) continue;
-    const childRel = rel === '' ? name : `${rel}/${name}`;
-    if (entry.isDirectory()) listing.dirs.push(childRel);
-    else listing.files.push(childRel);
+export async function* walkProjectEntries(
+  projectDir: string,
+  opts: CollectTrackedFilesOptions = {},
+): AsyncGenerator<ProjectEntry> {
+  const ignoreDir = opts.ignoreProjectDir ?? projectDir;
+  let level = [''];
+  while (level.length > 0) {
+    const candidates: ProjectEntry[] = [];
+    for (const rel of level) {
+      for (const entry of await readdir(join(projectDir, rel), {
+        withFileTypes: true,
+        encoding: 'utf8',
+      })) {
+        if (ALWAYS_EXCLUDED.includes(entry.name)) continue;
+        const kind = entry.isDirectory()
+          ? 'directory'
+          : entry.isSymbolicLink()
+            ? 'symlink'
+            : entry.isFile()
+              ? 'file'
+              : null;
+        if (kind === null) continue;
+        const path = rel === '' ? entry.name : `${rel}/${entry.name}`;
+        candidates.push({ path, kind });
+      }
+    }
+    const ignored = new Set(
+      await checkIgnoredPaths(
+        ignoreDir,
+        candidates.map((entry) => (entry.kind === 'directory' ? `${entry.path}/` : entry.path)),
+      ),
+    );
+    level = [];
+    for (const entry of candidates) {
+      if (ignored.has(entry.kind === 'directory' ? `${entry.path}/` : entry.path)) continue;
+      if (entry.kind === 'directory') level.push(entry.path);
+      yield entry;
+    }
   }
-  return listing;
 }
 
-/**
- * Breadth-first, one `git check-ignore` per depth for the directories found
- * there: an ignored tree — node_modules, .venv, target, build, whatever the
- * stack ignores — is never entered. Files are filtered the same way at the end.
- */
 export async function collectTrackedFiles(
   projectDir: string,
   opts: CollectTrackedFilesOptions = {},
 ): Promise<string[]> {
-  const ignoreDir = opts.ignoreProjectDir ?? projectDir;
   const files: string[] = [];
-  let level = [''];
-  while (level.length > 0) {
-    const dirs: string[] = [];
-    for (const rel of level) {
-      const listing = await listDirectory(projectDir, rel);
-      for (const file of listing.files) files.push(file);
-      for (const dir of listing.dirs) dirs.push(dir);
-    }
-    const ignoredDirs = new Set(
-      await checkIgnoredPaths(
-        ignoreDir,
-        dirs.map((dir) => `${dir}/`),
-      ),
-    );
-    level = dirs.filter((dir) => !ignoredDirs.has(`${dir}/`));
+  for await (const entry of walkProjectEntries(projectDir, opts)) {
+    if (entry.kind === 'file') files.push(entry.path);
   }
-  if (files.length === 0) return [];
-
-  const ignored = new Set(await checkIgnoredPaths(ignoreDir, files));
-  const filtered = files.filter((rel) => !ignored.has(rel));
-  filtered.sort();
-  return filtered;
+  return files.sort();
 }

@@ -48,9 +48,19 @@ export type StateAction =
       contextCodeByFile?: Record<string, string>;
     }
   | { type: 'ALL_DONE' }
-  | { type: 'REVIEW_DONE'; reviewStatus: ReviewStatus }
+  | { type: 'REVIEW_DONE'; reviewStatus: ReviewStatus; candidate?: Record<string, string> }
   | { type: 'REVIEW_FIX_START'; fixes: Record<string, string[]>; cycle: number }
-  | { type: 'CLOSE_RUN'; at?: string }
+  | { type: 'RECORD_WORKSPACE'; workspace: NonNullable<WorkflowState['workspace']> }
+  | { type: 'ACCEPT_AS_IS'; findings: string[] }
+  | {
+      type: 'APPLY_REVIEW_START';
+      merged: { path: string; checkoutHunks: string }[];
+    }
+  | { type: 'RECORD_APPLY_RECHECK'; failures: string[] }
+  | { type: 'APPLY_START'; backupId: string }
+  | { type: 'APPLY_DONE'; files: string[] }
+  | { type: 'APPLY_RESTORED' }
+  | { type: 'CLOSE_RUN'; at?: string; as?: 'discarded' }
   | {
       type: 'INTERRUPT_STEP';
       step: StepRef;

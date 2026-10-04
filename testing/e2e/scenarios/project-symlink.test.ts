@@ -10,7 +10,10 @@ import { dirname, join, relative, sep } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { spawnCli } from '../helpers/live-cli-harness.js';
+import { checkoutEntries } from '#testing/helpers/checkout.js';
+import { readActive } from '../../../src/core/sessions/active-pointer.js';
 import {
+  applyRun,
   createStopContinueFixture,
   GREET_FILE,
   GREET_SOURCE,
@@ -51,10 +54,11 @@ writeFileSync(${JSON.stringify(GREET_FILE)}, ${JSON.stringify(GREET_SOURCE)});
 }
 
 describe('e2e: a checkout holding an untracked symlink that stays inside the project', () => {
-  it('builds the brief in the isolation worktree and promotes it, with no halt and no warning', async () => {
+  it('builds the brief in the isolation worktree and applies it, with no halt and no warning', async () => {
     fixture = createStopContinueFixture(writingImplementerScript);
     mkdirSync(join(fixture.projectDir, '.claude', 'skills'), { recursive: true });
     symlinkSync(LINK_TARGET, join(fixture.projectDir, LINK), 'dir');
+    const checkoutAtStart = checkoutEntries(fixture.projectDir);
 
     const run = await spawnCli({
       args: [
@@ -88,6 +92,13 @@ describe('e2e: a checkout holding an untracked symlink that stays inside the pro
     );
     expect(view.cwd.startsWith(`${treesDir}${sep}`)).toBe(true);
     expect(view.link).toBe(LINK_TARGET);
+    expect(checkoutEntries(fixture.projectDir)).toEqual(checkoutAtStart);
+
+    const sessionId = readActive(fixture.projectDir);
+    if (sessionId === null) throw new Error(`the run left no active session: ${output}`);
+    const applied = await applyRun(fixture, sessionId);
+
+    expect(applied.exitCode, applied.stderr).toBe(0);
     expect(readFileSync(fixture.greetPath, 'utf-8')).toBe(GREET_SOURCE);
     expect(lstatSync(join(fixture.projectDir, LINK)).isSymbolicLink()).toBe(true);
     expect(readlinkSync(join(fixture.projectDir, LINK))).toBe(LINK_TARGET);

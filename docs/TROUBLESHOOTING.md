@@ -62,7 +62,7 @@ During `start`, `spec`, `resume`, and other planner/implementer invocations, dis
 | CLI stdout, stderr, or protocol event stream exceeded the configured byte or line budget. | `output-budget-breach` | The tool wrote more than 64 MB of output and was stopped. Narrow what it was asked to print, then retry. |
 | Implementer completed without staging the expected working-tree change. | `no-staged-change` | Make the requested change in the staged project, then retry. |
 | Implementer tool call reached outside the isolation directory. | `implementer-left-isolation` | The implementer reached outside its isolation directory and was stopped. Check your checkout, then retry, switch the seat or skip the brief. |
-| The git state of your checkout changed during an implementer call. | `checkout-changed` | Your checkout's git state changed while the implementer ran, and SPLITBRIEF reverted nothing. Check the named changes, then retry, switch the seat or skip the brief. |
+| Git state changed during an implementer call. [Isolation checks](./APPROVAL-AND-RECOVERY.md#isolation-checks) defines which changes halt. | `checkout-changed` | Your checkout's git state changed while the implementer ran, and SPLITBRIEF reverted nothing. Check the named changes, then retry, switch the seat or skip the brief. |
 
 Other runner outcomes (`spawn-not-found`, `protocol-failure`, `incompatible-version`, `unauthenticated`, and others) overlap readiness families above or are documented in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
 
@@ -399,8 +399,8 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 SPLITBRIEF tries to fix it before it tells you. Each Critical finding is mapped to the brief whose `files` its paths name, those briefs re-enter implementation with the finding text as the error block, gates and drift run again, and the review is re-run. At most **two** such cycles per run (`REVIEW_CYCLE_CAP`). What you are looking at is the state after those cycles.
 
 **Fix:**
-1. Read `.splitbrief/sessions/<id>/review.md` — the Critical findings are the blocking list, in the reviewer's own words. The summary's outcome line reads `⚠ Needs attention · … · review failed <n> blocking, <n> advisory · …`, its `Packet` row names the `review-packet.md` to open, and its byline says `Read the <n> blocking findings in the packet, or revert it with /run reject confirm`.
-2. Fix the findings yourself, or re-brief them: the working tree still holds every change the run made, so this is ordinary code review from here.
+1. Read `.splitbrief/sessions/<id>/review.md` — the Critical findings are the blocking list, in the reviewer's own words. The recovery panel's headline reads `Final review failed with <n> blocking findings`, and the run's `Packet` row names the `review-packet.md` to open.
+2. Choose **Send a correction** to send the findings back for one more fix cycle, with your note beside them. On a worktree or staged-copy run, **Accept as is** records an owner override and makes the result ready to apply with the open findings; see [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is). Nothing reaches your checkout before Apply.
 3. A finding whose paths name no brief cannot be routed back, so it is never auto-fixed — those are the ones to read first.
 4. An unparseable verdict is re-asked once; a second unparseable reply is reported as `review: failed (unparseable verdict)`. That is a reviewer-output problem, not a code problem — check the reviewer's output format before re-running.
 5. Headless runs exit `1` on a failed review even when every task reached `done`, and `--plain` writes `review: failed (<n> blocking)` followed by the closing `done:` line. In CI, treat that exit as "the diff needs a human", not as an infrastructure failure.
@@ -420,7 +420,7 @@ SPLITBRIEF tries to fix it before it tells you. Each Critical finding is mapped 
 **Fix:**
 1. Inspect `.splitbrief/sessions/<id>/drift-report.json` for in-bounds and out-of-bounds touched paths.
 2. If the changes are legitimate (the brief was incomplete), keep them. A brief's files are suggestions: an ordinary write outside them is recorded as `write_out_of_scope`, not refused ([APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#protected-path-confirmation)).
-3. If the changes are wrong, revert them with git — the run leaves them unstaged, and no pre-run snapshot exists for `/run reject confirm` to restore.
+3. Correct unwanted changes in the run workspace before Apply, or discard the run. After Apply, [`/run reject confirm`](./SLASH-COMMANDS-REFERENCE.md#run-acceptreject) undoes its guarded writes.
 4. For repeat offenders, raise the implementer model or tighten the brief's scope language.
 
 **Prevention:** Always check the drift report before accepting a task or making any manual commit. Treat unexpected out-of-bounds files as a planning bug, not implementation noise.
@@ -431,11 +431,13 @@ SPLITBRIEF tries to fix it before it tells you. Each Critical finding is mapped 
 
 ### Symptom: the run halted with "T00N left the isolation directory"
 
-**Likely cause:** The implementer reached outside the isolation directory it was given. One of its tool calls named a closed path — `find ~`, `grep -r ~/Projects`, a read of your checkout, `npm install` through the linked `node_modules` — and the tripwire stopped the call. The halt's sentence carries the evidence: `T004 left the isolation directory — Google Antigravity CLI searched ~ with run_command: find ~ -name "process-invoke.ts" 2>/dev/null`. When the git state of your checkout also changed during the stopped call, the evidence ends with `; ran while your checkout changed: branch main`. A tool whose shell does not start in the isolation directory is the usual source: it cannot find the project and searches the disk for it. agy did so before SPLITBRIEF gave it the isolation directory with `--add-dir`: it ran its commands from `~/.gemini/antigravity-cli/scratch`.
+**Likely cause:** One of the implementer's tool calls wrote outside the isolation directory it was given — into your checkout, into its linked `node_modules` through a package-manager install, or anywhere else on the disk — and the tripwire stopped the call. The halt's sentence carries the evidence: `T004 left the isolation directory — Google Antigravity CLI wrote to ~/Projects/app/src/index.ts (your checkout) with run_command: touch ~/Projects/app/src/index.ts`. When the git state of your checkout also changed during the stopped call, the evidence ends with `; ran while your checkout changed: tag v1.2`.
+
+A read, list or search outside the isolation directory does not halt. The tripwire logs it as an `isolation_outside_read` warning and the call goes on: `Task T004 searched ~ with run_command: find ~ -name "process-invoke.ts" 2>/dev/null`. The warning is in the transcript, in `session.jsonl` and in the review packet's warnings list. A tool whose shell does not start in the isolation directory is the usual source: it cannot find the project and searches the disk for it. See [Isolation checks](./APPROVAL-AND-RECOVERY.md#isolation-checks).
 
 **Fix:**
 1. Read the evidence on the recovery panel or in the `Recovery required (implementer-left-isolation): …` line a headless run printed.
-2. If the evidence reads `ran while your checkout changed`, look at each named change in your checkout first. SPLITBRIEF reverts nothing there: a moved branch, a stash, a hook or a git config change stays until you undo it. Nothing from the halted attempt was promoted.
+2. If the evidence reads `ran while your checkout changed`, look at each named change in your checkout first. SPLITBRIEF reverts nothing there: a new tag, a stash, a hook or a git config change stays until you undo it. The halted attempt writes nothing into your checkout; its output stays in the run workspace.
 3. Choose **Try again** (`splitbrief continue <session> --action retry`) to run the brief again; the implementer prompt names the isolation directory and tells the implementer to stay in it. Choose **Change BUILD tool** when the same tool keeps leaving, or **Skip task** to move on.
 4. If the evidence reads `ran a package-manager command`, the brief needs a dependency change: make it in your checkout yourself (`npm install <pkg>`), then retry. A package-manager install, ci, add, remove or update from the isolation directory writes into your checkout's shared `node_modules`, so it always halts. A write to a tool cache there (`node_modules/.vite`, `node_modules/.cache`) does not halt. A write to `node_modules/.bin` or to a package manager's lockfile marker halts.
 
@@ -447,17 +449,17 @@ SPLITBRIEF tries to fix it before it tells you. Each Critical finding is mapped 
 
 ### Symptom: the run halted with "Your checkout changed under T00N"
 
-**Likely cause:** The git state of your checkout changed while an implementer call ran. A branch, a tag or `HEAD` moved, the stash changed, a hook or the git config changed, or the installed `node_modules` set changed. The halt's sentence names each change: `Your checkout changed under T004 — branch main · hook pre-commit`. The audit sees what changed, not who changed it. A commit, a branch switch or a stash of yours, a hook that is still running, or an agent that adds a worktree to the same repository halts the brief too. The implementer can also be the cause, when it went around its isolation directory.
+**Likely cause:** Git state that the run shares with your checkout changed while an implementer call ran: a branch other than the current one, a tag, the stash, a hook, the git config or the installed `node_modules` set. A change to the run worktree's own `HEAD`, branch or index halts too. The halt's sentence names each change: `Your checkout changed under T004 — tag v1.2 · hook pre-commit`, or `Your checkout changed under T004 — run worktree branch splitbrief/<session-id>` when something committed inside the run worktree. The audit sees what changed, not who changed it: a hook that is still running, or another agent that creates or moves an audited branch ref in the same repository, halts the brief too. See [Isolation checks](./APPROVAL-AND-RECOVERY.md#isolation-checks).
 
-A changed file does not halt the brief, because an editor save changes files too. The run publishes the `checkout_changed_during_call` warning and continues: `Task T004: your checkout changed while agent ran — src/app.ts; nothing there was reverted`. The warning is in the transcript, in `session.jsonl` and in the review packet's warnings list.
+A commit, a branch switch or a pull in your checkout does not halt the brief: a move of the checkout's `HEAD` or current branch is Apply's work. Apply merges it with the run's result, and an overlap it cannot merge stops Apply with an `apply-conflict` halt instead ([Apply conflicts](./APPROVAL-AND-RECOVERY.md#apply-conflicts)). A changed file does not halt the brief either, because an editor save changes files too. The run publishes the `checkout_changed_during_call` warning and continues: `Task T004: your checkout changed while Google Antigravity CLI ran — src/app.ts; nothing there was reverted`. The warning is in the transcript, in `session.jsonl` and in the review packet's warnings list.
 
 **Fix:**
 1. Read the evidence on the recovery panel or in the `Recovery required (checkout-changed): …` line a headless run printed.
-2. Look at each named change in your checkout. SPLITBRIEF reverts nothing there: a new branch, a moved `HEAD`, a stash, a hook or a git config change stays until you undo it. Nothing from the halted attempt was promoted.
+2. Look at each named change in your checkout or in the run worktree. SPLITBRIEF reverts nothing there: a new tag, a stash, a hook or a git config change stays until you undo it. The halted attempt writes nothing into your checkout.
 3. If the change is yours, choose **Try again** (`splitbrief continue <session> --action retry`).
 4. If the change is not yours, undo it. Then choose **Try again**, **Change BUILD tool** or **Skip task**.
 
-**Prevention:** While a brief runs, do not commit, switch branches or stash in the checkout. Do not start agents that add worktrees to the same repository. Make these changes while the run is at rest.
+**Prevention:** Do not stage or commit inside the run worktree. While a brief runs, do not create tags or other branches, stash, or change hooks or the git config, and do not start agents that create or move branches in the same repository. Commits and branch switches in your checkout are safe; Apply merges them.
 
 **See also:** [APPROVAL-AND-RECOVERY.md §Recovery](./APPROVAL-AND-RECOVERY.md#recovery), `src/engine/implementers/isolation/checkout-audit.ts`.
 
@@ -579,7 +581,7 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 **Likely cause:** Older builds spent `esc esc` on an interrupt ladder with a 2-second armed window, and quitting was a ladder of its own. The interrupt ladder is gone: `esc` opens the **Stop options** sheet, and `ctrl+c` stops a live run in one press. Quitting still asks once: from home or on a run at rest, the first `ctrl+c` shows `Press ctrl+c again to quit` and the second press within two seconds exits.
 
 **Fix:**
-1. `esc` opens the **Stop options** sheet, with or without a draft: `Stop now` (stop execution, keep partial changes while a brief runs), `Pause after this brief` (finish `T<id>` including its checks and review, start no next brief), `End run` (stop and close the run, keep changes once a brief has run). `↑↓ · ⏎ · esc`, no letter keys. `esc` from the sheet is Stop now — it goes back to sessions once the run is parked or at rest — and `Tab` dismisses the sheet without stopping. No option reverts files.
+1. `esc` opens the **Stop options** sheet, with or without a draft: `Stop now` (stop execution; keep partial changes — they stay in the run workspace), `Pause after this brief` (finish `T<id>` including checks and review; start no next brief), `End run` (stop execution; close this run; keep changes — a worktree or staged-copy run saves them in `run.patch` before its workspace goes). `↑↓ · ⏎ · esc`, no letter keys. `esc` from the sheet is Stop now — it goes back to sessions once the run is parked or at rest — and `Tab` dismisses the sheet without stopping. No option writes the run's changes into your checkout; only Apply does.
 2. `ctrl+c` is Stop now, immediately, one press. It aborts the in-flight call along with any retry, consult or per-task review call, and parks the run as `Paused at T<id> · Partial changes kept`.
 3. `ctrl+q` or `/quit` stops safely, saves the session, then exits.
 4. With text in the composer, `esc` opens the same sheet and leaves the draft in place — the composer swallows no part of the key.
@@ -890,15 +892,10 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 
 ### Symptom: `/run reject confirm` has nothing to reject
 
-**Likely cause:** No pre-run baseline exists. `/run accept` is the only command that records a run snapshot, so the rejection finds either no ledger (`No run snapshot to reject.`) or the accepted snapshot (`Run already accepted at snapshot <id>.`).
+**Likely cause:** The run has no recorded workspace and uses the older snapshot ledger. It may have no snapshot or may already be accepted.
 
-**Fix:**
-1. Undo the run with git: the default leaves every change unstaged, so `git diff` shows what the run did and `git checkout -- <paths>` reverts it.
-2. To keep part of the run, stage the files you want before reverting the rest.
+**Fix:** Read the command's diagnostic and the [older-run behavior](./SLASH-COMMANDS-REFERENCE.md#run-acceptreject). A workspace run instead uses Discard before Apply and backup restore after Apply.
 
-**Prevention:** Commit or stash your own edits before starting a run, so the run's changes are the only unstaged ones in the tree.
-
-**See also:** [docs/WORKFLOW.md](./WORKFLOW.md).
 
 ---
 
@@ -967,15 +964,34 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 
 ## Run isolation
 
+### Symptom: the run halted with "Apply found <n> conflicting files"
+
+**Likely cause:** Your checkout and the run workspace both changed a file, and Apply cannot merge the two versions safely. The `apply-conflict` halt names every file and the workspace path.
+
+**Fix:** Follow [Apply conflicts](./APPROVAL-AND-RECOVERY.md#apply-conflicts) to choose each file's result in the workspace. Then choose **Re-run Apply**. Checks and whole-run review assess a changed candidate before the checkout write.
+
+### Symptom: the run halted with "Apply stopped part way"
+
+**Likely cause:** A write failed or the process stopped after `APPLY_START`. The `apply-partial` halt names the backup; the saved `applying` record points to it.
+
+**Fix:** Open the same run. The `apply-partial` recovery offers **Re-run Apply** or **Restore backup**. Follow [Partial Apply recovery](./APPROVAL-AND-RECOVERY.md#partial-apply-recovery). Keep the backup until recovery finishes. A later checkout edit is a conflict, not permission to overwrite it.
+
+### Symptom: I discarded or ended a run and need its work
+
+**Likely cause:** The run closed without Apply. Its notice names the patch: `Run changes not applied are saved in .splitbrief/sessions/<id>/run.patch; apply them with git apply.` A discarded run's byline repeats it: `Bring the changes back with git apply .splitbrief/sessions/<id>/run.patch`. When the workspace was already gone, the notice reads `The run workspace at <path> is gone; no run patch was written.`
+
+**Fix:** Inspect that patch. Use `git apply .splitbrief/sessions/<id>/run.patch` to bring the saved changes into a suitable checkout. Discarded and ended runs stay closed. If patch creation failed, the run remains open and keeps its workspace; resolve the reported failure, then close again.
+
+
 ### Symptom: The implementer cannot run the project's own checks inside a worktree-isolated run
 
 **Likely cause:** Only Node dependencies are made reachable in a run-isolation worktree (a `node_modules` link, with its `.bin` prepended to the workspace PATH). A project whose toolchain lives elsewhere — a Python virtualenv, a Go module cache, a Rust target directory — has nothing to resolve inside the worktree, and a `staged-copy` isolation has no dependencies at all. Separately, a repository that does not ignore `node_modules` at all cannot take the link — SPLITBRIEF will not change your ignore rules to make it fit — so the run falls back to `staged-copy` on its own. The common `node_modules/` pattern is fine: the link is excluded through the repository's `.git/info/exclude` and the worktree is kept.
 
 **Fix:**
-1. Nothing is broken: validation runs in the real project directory after promotion, so the run's verdict never depends on the implementer's own checks.
-2. To give the implementer its own toolchain anyway, add a `node_modules` entry to `.gitignore` so the link can be excluded from change detection, or set `workflow.isolation: staged-copy` and accept the first-pass-rate loss.
+1. Read the readiness warning. Validation runs inside the workspace, so its tooling must assess the workspace candidate.
+2. Make the configured validation commands and dependencies available inside the workspace. A staged copy does not supply missing dependencies. See [Implementer isolation](./CONFIGURATION.md#implementer-isolation).
 
-**Prevention:** Treat dependency reachability inside isolation as a first-pass-rate improvement, never the authority on correctness.
+**Prevention:** Resolve readiness warnings before trusting workspace checks. Linked packages or editable installs can read checkout sources instead of the candidate.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md).
 
@@ -995,14 +1011,14 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 
 ### Symptom: A run-isolation worktree is left behind after an interrupted run
 
-**Likely cause:** Run isolation retained the worktree on purpose. When a run ends with work that was never promoted — an interrupted task, a retry that never landed — SPLITBRIEF keeps the worktree and its `splitbrief/<session-id>` branch so that work can be recovered. It also keeps the worktree when the worktree strategy could not prove the worktree clean, so a retained directory does not always mean a failed run. The checkout lives under `$XDG_STATE_HOME/splitbrief/trees/<hash>/<session-id>/` (default `~/.local/state/splitbrief/trees/...`), outside both `.git/` and the project root.
+**Likely cause:** An open or ready run retains its workspace across stops and restarts. Discard and End run preserve a patch before removal. A failed patch write keeps the workspace. A failed removal reports its path. See [Apply](./WORKFLOW.md#apply).
 
 **Fix:**
 1. Find the path: `git worktree list` (look for `splitbrief/<session-id>`).
 2. Inspect what it holds: `cd` to that path and run `git status` (and compare against the project directory).
-3. If the work is wanted, promote it manually or resume the session; if it is disposable, remove both the worktree and its branch: `git worktree remove <path> --force` then `git branch -D splitbrief/<session-id>`.
+3. Continue the same run. If it is ready, use [the result menu](./FEATURES.md#run-result-menu). If you closed it, inspect the reported `run.patch` before removing any retained directory.
 
-**Prevention:** A fully accepted run removes its worktree and branch itself; retained directories are the signal that something did not reach the project. `git worktree list` shows them.
+**Prevention:** Use Discard or End run to preserve unapplied work through the shared close path. Read any patch or removal warning before deleting a directory.
 
 ---
 

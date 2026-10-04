@@ -2,20 +2,9 @@ import { execFileSync } from 'node:child_process';
 import { chmod, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
-import { makeTask } from '#testing/helpers/factories/task.js';
-import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
-import {
-  makeBusRecorder,
-  makeCallbacks,
-  makeWctx,
-} from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { captureAcquisitionBaseline } from '../approval/file-snapshots/entry.js';
-import { gateAndPromoteChangedFiles } from '../approval/gate-and-promote.js';
 import { promoteStagedChanges } from '../approval/staged-project.js';
-import { restoreExhaustedTaskFiles } from '../task/rollback.js';
 import { prepareWorktreeAcquisition } from './acquisition.js';
 
 const roots: string[] = [];
@@ -37,63 +26,29 @@ async function fixture(initialize = true) {
     await writeFile(join(dir, 'app.ts'), 'original\n');
     await writeFile(join(dir, 'keep.ts'), 'keep\n');
   }
-  const acquire = (fresh = false) =>
+  const acquire = () =>
     prepareWorktreeAcquisition({
       projectDir,
       sessionId: 'parked-run',
       worktreeDir,
-      seedSnapshot: null,
       initialTargetBaseline: undefined,
-      fresh,
     });
   if (initialize) {
     await prepareWorktreeAcquisition({
       projectDir,
       sessionId: 'parked-run',
       worktreeDir,
-      seedSnapshot: null,
       initialTargetBaseline: await captureAcquisitionBaseline(projectDir),
-      fresh: false,
     });
   }
-  const promote = async (files: string[], fresh = false) =>
+  const promote = async (files: string[]) =>
     promoteStagedChanges({
       targetProjectDir: projectDir,
       stagedProjectDir: worktreeDir,
       files,
-      targetBaseline: (await acquire(fresh)).targetBaseline,
+      targetBaseline: (await acquire()).targetBaseline,
     });
-  // One brief attempt through the promotion chokepoint every caller uses.
-  const attempt = async (write: string) => {
-    const { targetBaseline } = await acquire(true);
-    const snapshot = await getChangedFilesSnapshot(worktreeDir);
-    await writeFile(join(worktreeDir, 'app.ts'), write);
-    const task = makeTask({ id: 'T010', file: 'app.ts' });
-    return gateAndPromoteChangedFiles({
-      task,
-      state: makeImplState([task]),
-      projectDir,
-      sessionId: 'parked-run',
-      workspace: {
-        projectDir: worktreeDir,
-        sandboxEnv: {},
-        snapshot,
-        targetBaseline,
-        changeDetection: 'file-hashes',
-        cleanup: () => {},
-      },
-      taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
-      bus: makeBusRecorder().bus,
-      callbacks: makeCallbacks().callbacks,
-      config: makeNoValidationConfig({
-        approval: { enabled: false, feedRejectionsToPlanner: true },
-      }),
-      dependsOnFiles: [],
-      handleConflict: async (s) => s,
-      onApproved: () => {},
-    });
-  };
-  return { projectDir, worktreeDir, acquire, promote, attempt };
+  return { projectDir, worktreeDir, acquire, promote };
 }
 
 describe('retained worktree acquisition', () => {
@@ -105,26 +60,24 @@ describe('retained worktree acquisition', () => {
       projectDir,
       sessionId: 'parked-run',
       worktreeDir,
-      seedSnapshot: null,
       initialTargetBaseline: await captureAcquisitionBaseline(projectDir),
-      fresh: false,
     });
     await writeFile(join(projectDir, '.gitignore'), 'node_modules/\ncoverage/\n');
 
     await acquire();
-    expect(await readFile(join(worktreeDir, '.gitignore'), 'utf8')).toContain('coverage/');
+    expect(await readFile(join(worktreeDir, '.gitignore'), 'utf8')).not.toContain('coverage/');
     expect(await readFile(join(worktreeDir, '.gitignore'), 'utf8')).toContain('.splitbrief/');
     expect(await readFile(join(projectDir, '.gitignore'), 'utf8')).toBe(
       'node_modules/\ncoverage/\n',
     );
   });
 
-  it('loads operator edits into an unchanged worker copy on cold resume', async () => {
+  it('keeps operator edits outside an unchanged workspace on cold resume', async () => {
     const { projectDir, worktreeDir, acquire } = await fixture();
     await writeFile(join(projectDir, 'app.ts'), 'operator\n');
 
     const workspace = await acquire();
-    expect(await readFile(join(worktreeDir, 'app.ts'), 'utf8')).toBe('operator\n');
+    expect(await readFile(join(worktreeDir, 'app.ts'), 'utf8')).toBe('original\n');
     await writeFile(join(worktreeDir, 'app.ts'), 'operator plus worker\n');
     const result = await promoteStagedChanges({
       targetProjectDir: projectDir,
@@ -132,8 +85,8 @@ describe('retained worktree acquisition', () => {
       files: ['app.ts'],
       targetBaseline: workspace.targetBaseline,
     });
-    expect(result.conflictedFiles).toEqual([]);
-    expect(await readFile(join(projectDir, 'app.ts'), 'utf8')).toBe('operator plus worker\n');
+    expect(result.conflictedFiles).toEqual(['app.ts']);
+    expect(await readFile(join(projectDir, 'app.ts'), 'utf8')).toBe('operator\n');
   });
 
   it('keeps worker-only partial output promotable after a cold resume', async () => {
@@ -146,39 +99,36 @@ describe('retained worktree acquisition', () => {
     expect(await readFile(join(projectDir, 'app.ts'), 'utf8')).toBe('worker partial\n');
   });
 
-  it.each([false, true])(
-    'preserves both edits and keeps the conflict across repeated resumes, fresh=%s',
-    async (fresh) => {
-      const { projectDir, worktreeDir, acquire, promote } = await fixture();
-      await writeFile(join(worktreeDir, 'app.ts'), 'worker partial\n');
-      await writeFile(join(projectDir, 'app.ts'), 'operator\n');
+  it('preserves both edits and keeps the conflict across repeated resumes', async () => {
+    const { projectDir, worktreeDir, acquire, promote } = await fixture();
+    await writeFile(join(worktreeDir, 'app.ts'), 'worker partial\n');
+    await writeFile(join(projectDir, 'app.ts'), 'operator\n');
 
-      for (let attempt = 0; attempt < 2; attempt++) {
-        expect((await acquire(fresh)).discarded).toEqual([]);
-        const result = await promote(['app.ts'], fresh);
-        expect(result.conflictedFiles).toEqual(['app.ts']);
-        expect(await readFile(join(projectDir, 'app.ts'), 'utf8')).toBe('operator\n');
-        expect(await readFile(join(worktreeDir, 'app.ts'), 'utf8')).toBe('worker partial\n');
-      }
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await acquire();
+      const result = await promote(['app.ts']);
+      expect(result.conflictedFiles).toEqual(['app.ts']);
+      expect(await readFile(join(projectDir, 'app.ts'), 'utf8')).toBe('operator\n');
+      expect(await readFile(join(worktreeDir, 'app.ts'), 'utf8')).toBe('worker partial\n');
+    }
 
-      // The operator reconciles both copies. The next acquisition can promote
-      // further work without resetting the run or removing its workspace.
-      await writeFile(join(projectDir, 'app.ts'), 'merged\n');
-      await writeFile(join(worktreeDir, 'app.ts'), 'merged\n');
-      const workspace = await acquire();
-      await writeFile(join(worktreeDir, 'app.ts'), 'merged and finished\n');
-      const result = await promoteStagedChanges({
-        targetProjectDir: projectDir,
-        stagedProjectDir: worktreeDir,
-        files: ['app.ts'],
-        targetBaseline: workspace.targetBaseline,
-      });
-      expect(result.conflictedFiles).toEqual([]);
-      expect(await readFile(join(projectDir, 'app.ts'), 'utf8')).toBe('merged and finished\n');
-    },
-  );
+    // The operator reconciles both copies. The next acquisition can promote
+    // further work without resetting the run or removing its workspace.
+    await writeFile(join(projectDir, 'app.ts'), 'merged\n');
+    await writeFile(join(worktreeDir, 'app.ts'), 'merged\n');
+    const workspace = await acquire();
+    await writeFile(join(worktreeDir, 'app.ts'), 'merged and finished\n');
+    const result = await promoteStagedChanges({
+      targetProjectDir: projectDir,
+      stagedProjectDir: worktreeDir,
+      files: ['app.ts'],
+      targetBaseline: workspace.targetBaseline,
+    });
+    expect(result.conflictedFiles).toEqual([]);
+    expect(await readFile(join(projectDir, 'app.ts'), 'utf8')).toBe('merged and finished\n');
+  });
 
-  it('syncs operator additions, deletion, binary bytes and modes while preserving a partial', async () => {
+  it('keeps operator additions, deletion, binary bytes and modes outside the workspace', async () => {
     const { projectDir, worktreeDir, acquire, promote } = await fixture();
     await writeFile(join(worktreeDir, 'keep.ts'), 'worker partial\n');
     await rm(join(projectDir, 'app.ts'));
@@ -186,46 +136,13 @@ describe('retained worktree acquisition', () => {
     await chmod(join(projectDir, 'new.bin'), 0o755);
 
     await acquire();
-    await expect(readFile(join(worktreeDir, 'app.ts'))).rejects.toMatchObject({ code: 'ENOENT' });
-    expect(await readFile(join(worktreeDir, 'new.bin'))).toEqual(Buffer.from([0xff, 0x00, 0xfe]));
-    if (process.platform !== 'win32') {
-      expect((await stat(join(worktreeDir, 'new.bin'))).mode & 0o777).toBe(0o755);
-    }
+    expect(await readFile(join(worktreeDir, 'app.ts'), 'utf8')).toBe('original\n');
+    await expect(readFile(join(worktreeDir, 'new.bin'))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await readFile(join(projectDir, 'new.bin'))).toEqual(Buffer.from([0xff, 0x00, 0xfe]));
+    expect((await stat(join(projectDir, 'new.bin'))).mode & 0o777).toBe(0o755);
     expect(await readFile(join(worktreeDir, 'keep.ts'), 'utf8')).toBe('worker partial\n');
     expect((await promote(['keep.ts'])).conflictedFiles).toEqual([]);
     expect(await readFile(join(projectDir, 'keep.ts'), 'utf8')).toBe('worker partial\n');
-  });
-
-  it('lets a retry promote over the target rewrite of a file the first attempt promoted', async () => {
-    const { projectDir, attempt } = await fixture();
-    expect((await attempt('attempt one\n')).outcome).toBe('allow');
-    // The lint stage formats the promoted file in the target after promotion.
-    await writeFile(join(projectDir, 'app.ts'), 'attempt one, formatted\n');
-
-    const retry = await attempt('attempt two\n');
-
-    expect(retry.outcome).toBe('allow');
-    expect(await readFile(join(projectDir, 'app.ts'), 'utf8')).toBe('attempt two\n');
-  });
-
-  it('lets a restarted brief promote after recovery restored its earlier promotion', async () => {
-    const { projectDir, worktreeDir, attempt } = await fixture();
-    const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
-    expect((await attempt('attempt one\n')).outcome).toBe('allow');
-    // The paused attempt's output never reached the target and stays in the worktree.
-    await writeFile(join(worktreeDir, 'app.ts'), 'attempt two, paused\n');
-    await restoreExhaustedTaskFiles({
-      wctx: makeWctx({ projectDir, sessionId: 'parked-run' }),
-      phase: 'implementing',
-      taskChangedFiles: ['app.ts'],
-      taskStartSnapshot,
-    });
-    expect(await readFile(join(projectDir, 'app.ts'), 'utf8')).toBe('original\n');
-
-    const restarted = await attempt('attempt two\n');
-
-    expect(restarted.outcome).toBe('allow');
-    expect(await readFile(join(projectDir, 'app.ts'), 'utf8')).toBe('attempt two\n');
   });
 
   it('preserves ambiguous legacy partials without manufacturing a fresh target baseline', async () => {
@@ -234,7 +151,7 @@ describe('retained worktree acquisition', () => {
     await writeFile(join(projectDir, 'app.ts'), 'operator\n');
 
     for (let attempt = 0; attempt < 2; attempt++) {
-      await acquire(true);
+      await acquire();
       expect((await promote(['app.ts'])).conflictedFiles).toEqual(['app.ts']);
       expect(await readFile(join(projectDir, 'app.ts'), 'utf8')).toBe('operator\n');
       expect(await readFile(join(worktreeDir, 'app.ts'), 'utf8')).toBe('legacy partial\n');

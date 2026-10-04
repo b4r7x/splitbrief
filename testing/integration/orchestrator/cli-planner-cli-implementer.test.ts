@@ -8,7 +8,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cleanupTempDir, createTempDir, normalizeMacTmpPath } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
+import { makeCallbacks, runWorkspaceDir } from '#testing/helpers/orchestrator-factories.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import { resolveCustomExecutable } from '../../../src/engine/runners/resolve-cli-executable.js';
 import {
@@ -272,9 +272,12 @@ describe('CLI planner to CLI implementer workflow', { timeout: 90_000 }, () => {
       expect.arrayContaining(['--model', 'opencode/test-cheap-model']),
     );
 
-    expect(readFileSync(join(projectDir, 'src/cli-planner-implementer.ts'), 'utf-8')).toContain(
-      marker,
-    );
+    expect(
+      readFileSync(
+        join(runWorkspaceDir({ projectDir, sessionId }), 'src/cli-planner-implementer.ts'),
+        'utf-8',
+      ),
+    ).toContain(marker);
     expect(summary).toMatchObject({
       totalTasks: 1,
       completedByLocal: 1,

@@ -449,7 +449,7 @@ export function tokensView(summary: Summary): SummaryView['tokens'] {
   };
 }
 
-export function filesView(summary: Summary): SummaryView['files'] {
+export function filesView(summary: Summary): Omit<SummaryView['files'], 'patch'> {
   const stoppedAt = summary.stoppedAt;
   const partialFiles = uniqueSorted(
     (stoppedAt?.partialFiles ?? []).map((file) => sanitizeTerminalDisplayText(file)),

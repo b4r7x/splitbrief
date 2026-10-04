@@ -49,3 +49,7 @@ export function skillsSection(skillsContext: string | undefined): PromptPart[] {
 export function instructionsSection(body: string): PromptSection {
   return { heading: 'Instructions', body };
 }
+
+export function workspaceReadInstructions(workspaceDir: string): string {
+  return `The run workspace is \`${workspaceDir}\`. Read project files from this directory and resolve project-relative code paths there.`;
+}

@@ -36,6 +36,14 @@ function breachOf(boundary: IsolationBoundary, name: string, input: Record<strin
   return breach === null ? null : formatIsolationBreach(breach);
 }
 
+function loggingGuard(boundary: IsolationBoundary) {
+  const reads: string[] = [];
+  const guard = isolationToolUseGuard(boundary, {
+    onOutsideRead: (breach) => reads.push(formatIsolationBreach(breach)),
+  });
+  return { guard, reads };
+}
+
 describe('isolation boundary on the 2026-09-23 antigravity trail', () => {
   // The run's worktree and checkout. agy's `run_command` names no directory, so its commands
   // read from the worktree.
@@ -54,19 +62,19 @@ describe('isolation boundary on the 2026-09-23 antigravity trail', () => {
   });
 
   it('carries a cd into the next tool call only for Claude Code, whose shell keeps it', () => {
-    const claude = isolationToolUseGuard(boundaryFor('claude-code'));
+    const claude = loggingGuard(boundaryFor('claude-code')).guard;
     expect(claude({ name: 'Bash', input: { command: 'cd packages/core && npm test' } })).toBeNull();
-    expect(claude({ name: 'Bash', input: { command: 'cat ../shared/src/types.ts' } })).toBeNull();
-    const agy = isolationToolUseGuard(boundaryFor('antigravity'));
+    expect(claude({ name: 'Bash', input: { command: 'touch ../shared/src/types.ts' } })).toBeNull();
+    const agy = loggingGuard(boundaryFor('antigravity')).guard;
     expect(
       agy({ name: 'run_command', input: { CommandLine: 'cd packages/core && npm test' } }),
     ).toBeNull();
     expect(
-      agy({ name: 'run_command', input: { CommandLine: 'cat ../shared/src/types.ts' } }),
+      agy({ name: 'run_command', input: { CommandLine: 'touch ../shared/src/types.ts' } }),
     ).toEqual({
       code: 'implementer-left-isolation',
       message:
-        'read ~/.local/state/splitbrief/trees/5b1e0c7d2a94/shared/src/types.ts with run_command: cat ../shared/src/types.ts',
+        'wrote to ~/.local/state/splitbrief/trees/5b1e0c7d2a94/shared/src/types.ts with run_command: touch ../shared/src/types.ts',
     });
   });
 
@@ -367,29 +375,42 @@ describe('isolation boundary around a linked node_modules', () => {
     await withLinkedWorktree((boundary, dir) => {
       mkdirSync(join(dir, 'worktree', 'packages', 'core'), { recursive: true });
       mkdirSync(join(dir, 'worktree', 'packages', 'shared', 'src'), { recursive: true });
-      const guard = isolationToolUseGuard(boundary);
+      const { guard } = loggingGuard(boundary);
       expect(
         guard({ name: 'Bash', input: { command: 'cd packages/core && npm test' } }),
       ).toBeNull();
       expect(
         guard({ name: 'Bash', input: { command: "sed -i '' s/a/b/ ../shared/src/types.ts" } }),
       ).toBeNull();
-      expect(guard({ name: 'Bash', input: { command: 'cat ../../../checkout/src/a.ts' } })).toEqual(
-        {
-          code: 'implementer-left-isolation',
-          message: `read ${join(boundary.checkoutDir, 'src', 'a.ts')} (your checkout) with Bash: cat ../../../checkout/src/a.ts`,
-        },
-      );
+      expect(
+        guard({ name: 'Bash', input: { command: 'touch ../../../checkout/src/a.ts' } }),
+      ).toEqual({
+        code: 'implementer-left-isolation',
+        message: `wrote to ${join(boundary.checkoutDir, 'src', 'a.ts')} (your checkout) with Bash: touch ../../../checkout/src/a.ts`,
+      });
     });
   });
 
   it('keeps the directory a cd out of the isolation directory left the shell in', async () => {
     await withLinkedWorktree((boundary, dir) => {
-      const guard = isolationToolUseGuard(boundary);
+      const { guard } = loggingGuard(boundary);
       expect(guard({ name: 'Bash', input: { command: `cd ${dir}` } })).toBeNull();
-      expect(guard({ name: 'Bash', input: { command: 'cat checkout/src/a.ts' } })).toEqual({
+      expect(guard({ name: 'Bash', input: { command: 'touch checkout/src/a.ts' } })).toEqual({
         code: 'implementer-left-isolation',
-        message: `read ${join(dir, 'checkout', 'src', 'a.ts')} (your checkout) with Bash: cat checkout/src/a.ts`,
+        message: `wrote to ${join(dir, 'checkout', 'src', 'a.ts')} (your checkout) with Bash: touch checkout/src/a.ts`,
+      });
+    });
+  });
+
+  it('keeps the directory a logged read left the shell in, so a write after it still halts', async () => {
+    await withLinkedWorktree((boundary, dir) => {
+      const { guard, reads } = loggingGuard(boundary);
+      expect(
+        guard({ name: 'Bash', input: { command: `cd ${dir} && cat checkout/src/a.ts` } }),
+      ).toBeNull();
+      expect(reads).toHaveLength(1);
+      expect(guard({ name: 'Bash', input: { command: 'touch checkout/src/b.ts' } })).toMatchObject({
+        code: 'implementer-left-isolation',
       });
     });
   });
@@ -506,7 +527,7 @@ describe('isolation boundary around a linked node_modules', () => {
     });
   });
 
-  it('stops any use of the checkout itself, even a read', async () => {
+  it('finds any use of the checkout itself, even a read', async () => {
     await withLinkedWorktree((boundary, dir) => {
       const file = join(dir, 'checkout', 'src', 'a.ts');
       expect(breachOf(boundary, 'Read', { file_path: file })).toBe(
@@ -517,12 +538,61 @@ describe('isolation boundary around a linked node_modules', () => {
 
   it('turns a breach into the call failure the process guard reports', async () => {
     await withLinkedWorktree((boundary) => {
-      const guard = isolationToolUseGuard(boundary);
+      const { guard } = loggingGuard(boundary);
       expect(guard({ name: 'Bash', input: { command: 'npm test' } })).toBeNull();
-      expect(guard({ name: 'Bash', input: { command: 'ls /home/probe' } })).toEqual({
+      expect(guard({ name: 'Bash', input: { command: 'touch /home/probe/x' } })).toEqual({
         code: 'implementer-left-isolation',
-        message: 'listed ~ with Bash: ls ~',
+        message: 'wrote to ~/x with Bash: touch ~/x',
       });
+    });
+  });
+
+  it('a read of the checkout is logged, not a halt', async () => {
+    await withLinkedWorktree((boundary, dir) => {
+      const file = join(dir, 'checkout', 'src', 'a.ts');
+      const { guard, reads } = loggingGuard(boundary);
+      expect(
+        guard({ name: 'Bash', input: { command: `grep -rn needle ${boundary.checkoutDir}` } }),
+      ).toBeNull();
+      expect(guard({ name: 'Read', input: { file_path: file } })).toBeNull();
+      expect(guard({ name: 'Bash', input: { command: 'ls /home/probe' } })).toBeNull();
+      expect(reads).toEqual([
+        `searched ${boundary.checkoutDir} (your checkout) with Bash: grep -rn needle ${boundary.checkoutDir}`,
+        `read ${file} (your checkout) with Read`,
+        'listed ~ with Bash: ls ~',
+      ]);
+    });
+  });
+
+  it('a write outside still halts', async () => {
+    await withLinkedWorktree((boundary, dir) => {
+      const file = join(dir, 'checkout', 'src', 'a.ts');
+      const { guard, reads } = loggingGuard(boundary);
+      expect(guard({ name: 'Write', input: { file_path: file, content: 'x' } })).toEqual({
+        code: 'implementer-left-isolation',
+        message: `wrote to ${file} (your checkout) with Write`,
+      });
+      expect(
+        guard({
+          name: 'Bash',
+          input: { command: `cat ${file} && touch ${join(dir, 'checkout', 'src', 'b.ts')}` },
+        }),
+      ).toMatchObject({
+        code: 'implementer-left-isolation',
+        message: expect.stringMatching(/^wrote to /),
+      });
+      expect(reads).toEqual([]);
+    });
+  });
+
+  it('a package install still halts', async () => {
+    await withLinkedWorktree((boundary) => {
+      const { guard, reads } = loggingGuard(boundary);
+      expect(guard({ name: 'Bash', input: { command: 'npm install lodash' } })).toMatchObject({
+        code: 'implementer-left-isolation',
+        message: expect.stringContaining('ran a package-manager command with Bash'),
+      });
+      expect(reads).toEqual([]);
     });
   });
 });

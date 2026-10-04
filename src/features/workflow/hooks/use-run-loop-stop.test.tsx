@@ -567,6 +567,39 @@ describe('run-loop stop completion', () => {
     });
   });
 
+  it.each([
+    ['Stop now', requestStopNow],
+    ['a seat change', requestSeatChangeAtBoundary],
+  ] as const)(
+    'stands the stop down for the result menu when the review passes as %s lands on a workspace run',
+    async (_stop, request) => {
+      const prepared = prepare({
+        ...finalReviewState(),
+        workspace: {
+          kind: 'worktree',
+          path: join(projectDir, 'run-workspace'),
+          base: { snapshotId: 'workspace-base', head: null },
+        },
+      });
+      const engine = vi.fn<RunWorkflowFn>(async (options) => {
+        await stopAsked();
+        return passFinalReview(options);
+      });
+      mount(prepared, engine);
+      await vi.waitFor(() => expect(engine).toHaveBeenCalledTimes(1));
+      request();
+      await vi.waitFor(() =>
+        expect(routerStore.get()).toMatchObject({
+          execution: { kind: 'at-rest' },
+          run: { status: { kind: 'ready-to-apply', override: false } },
+        }),
+      );
+      await vi.waitFor(() => expect(mounted?.lastFrame()).toBe('normal'));
+      expect(overlayStore.get().active).toBe('none');
+      expect(stopStore.get()).toMatchObject({ intent: 'none', phase: 'idle' });
+    },
+  );
+
   it.each(['home', 'quit'] as const)(
     'delivers a queued %s when the final review passes before the stop lands',
     async (destination) => {

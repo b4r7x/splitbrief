@@ -23,6 +23,7 @@ import { tokensStore } from '../../../src/stores/workflow/tokens.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import { seedValidationProject } from '#testing/helpers/validation-project.js';
 import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
+import { ensureConfigGitignore } from '../../../src/core/config/load/document.js';
 
 const dirs: string[] = [];
 
@@ -50,6 +51,7 @@ describe('run with no reviewer configured', () => {
     const projectDir = createTempDir('orch-int-unconfigured-reviewer');
     dirs.push(projectDir);
     createTestGitRepo(projectDir);
+    ensureConfigGitignore(projectDir);
     seedValidationProject(projectDir, IMPLEMENTED_MARKER);
     const sessionId = 'sess-unconfigured-reviewer';
     const targetFile = 'src/loop.ts';
@@ -164,6 +166,7 @@ describe('run with no reviewer configured', () => {
       'cost_update',
       'artifact_written',
       'artifact_written',
+      'snapshot_created',
       'snapshot_created',
       'tasks_planned',
       'validation_baseline',

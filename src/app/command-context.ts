@@ -15,8 +15,12 @@ import { getWorkflowSidebarWidth } from '../features/workflow/layout/rect.js';
 import { resolveCopyValue } from '../features/workflow/copy/resolve.js';
 import { getSections } from '../stores/workflow/actions/sections.js';
 import type { Config } from '../core/schemas/config.js';
+import type { WorkflowState } from '../core/schemas/workflow.js';
+import type { RunRecord } from '../core/sessions/run-record.js';
+import type { SessionRef } from '../core/types/session-ref.js';
 import type { Screen } from '../core/navigation/types.js';
 import { configStore } from '../stores/project/config.js';
+import { sessionsStore } from '../stores/project/sessions.js';
 import { overlayStore } from '../stores/ui/overlay.js';
 import { composerDraftStore } from '../stores/ui/composer-draft.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
@@ -34,13 +38,15 @@ import { conversationScrollStore } from '../stores/workflow/conversation-scroll.
 import { getDefaultDetectionService } from '../engine/detection/service.js';
 import { refreshDetectionForCurrentConfig } from '../engine/detection/store-publication.js';
 import { detectionStore } from '../stores/project/detection.js';
-import { readActive } from '../core/sessions/active-pointer.js';
+import { readActive, readActiveRecord } from '../core/sessions/active-pointer.js';
 import type { TaskRedoRequest } from '../core/state/build-rewind-action.js';
 import type {
+  AcceptRunResult,
   AttachImageResult,
   CopyResult,
   CopyTarget,
   QueueClearCommandResult,
+  RejectRunResult,
   RuntimeCommandContext,
   ScrollCommandTarget,
   ScrollConversationResult,
@@ -54,6 +60,12 @@ import { modelCacheStore } from '../stores/discovery/model-cache/state.js';
 import { createCommandContext } from '../core/runtime/commands/context-factory.js';
 import { copyToClipboard } from '../lib/clipboard/clipboard.js';
 import { acceptRunSnapshot, rejectRunSnapshot } from '../engine/snapshots/run/lifecycle.js';
+import { runApply } from '../engine/orchestrator/apply/run.js';
+import { restoreApplyBackup } from '../engine/orchestrator/apply/restore.js';
+import { createRecoveryBus } from '../engine/orchestrator/recovery/bus.js';
+import { closeRunIfOpen } from '../engine/orchestrator/run/close.js';
+import { finalizeEndedRun } from '../engine/orchestrator/session-lifecycle/finalize.js';
+import { addTuiEvent } from '../features/workflow/tui-sink.js';
 import { readRunRecord } from '../core/sessions/run-record-io.js';
 import { writeUiPrefs } from '../core/ui-prefs.js';
 import { error } from '../utils/error.js';
@@ -87,6 +99,126 @@ const appCommandContextError = {
 function routeSessionId(route: RouteData, projectDir: string): string | null {
   if (route.screen === 'workflow') return route.run.ref.sessionId;
   return readActive(projectDir);
+}
+
+function runCommandState(
+  record: RunRecord,
+):
+  | { kind: 'snapshot' }
+  | { kind: 'workspace'; state: WorkflowState }
+  | { kind: 'unavailable'; message: string } {
+  const { hydration } = record;
+  if (hydration.kind === 'invalid') {
+    return { kind: 'unavailable', message: `Cannot read this run: ${hydration.message}` };
+  }
+  if (hydration.kind === 'missing') return { kind: 'snapshot' };
+  const { state } = hydration;
+  return state.workspace?.kind === 'worktree' || state.workspace?.kind === 'staged-copy'
+    ? { kind: 'workspace', state }
+    : { kind: 'snapshot' };
+}
+
+function isRunAtRest(ref: SessionRef): boolean {
+  const route = routerStore.get();
+  return (
+    route.screen === 'workflow' &&
+    route.execution.kind === 'at-rest' &&
+    route.run.ref.projectDir === ref.projectDir &&
+    route.run.ref.sessionId === ref.sessionId
+  );
+}
+
+function prepareRunFinalization(ref: SessionRef, config: Config): (state: WorkflowState) => void {
+  const active = readActiveRecord(ref.projectDir);
+  const receipt =
+    active?.kind === 'v1' && active.receipt.sessionId === ref.sessionId
+      ? active.receipt
+      : undefined;
+  return (state) => {
+    finalizeEndedRun({ ref, active: receipt, config, state });
+    sessionsStore.refresh();
+  };
+}
+
+async function acceptRun(
+  projectDir: string,
+  sessionId: string,
+  confirm: boolean,
+): Promise<AcceptRunResult> {
+  const record = readRunRecord({ projectDir, sessionId });
+  const run = runCommandState(record);
+  if (run.kind === 'unavailable') return { status: 'unavailable', message: run.message };
+  if (run.kind === 'snapshot') {
+    return { status: 'snapshot-accepted', ...(await acceptRunSnapshot(projectDir, sessionId)) };
+  }
+  const { state } = run;
+  if (record.status.kind === 'closed') {
+    return {
+      status: 'unavailable',
+      message:
+        record.status.as === 'applied'
+          ? 'Run already applied.'
+          : `Run is closed (${record.status.as}).`,
+    };
+  }
+  if (!isRunAtRest(record.ref) || record.status.kind === 'running') {
+    return { status: 'unavailable', message: 'Apply is unavailable while the run is active.' };
+  }
+  if (record.status.kind !== 'ready-to-apply') {
+    return { status: 'unavailable', message: 'Run is not ready to apply.' };
+  }
+  const config = configStore.get().config;
+  if (config === null) {
+    return { status: 'unavailable', message: 'Apply requires a project configuration.' };
+  }
+  const finalize = prepareRunFinalization(record.ref, config);
+  const bus = createRecoveryBus({ projectDir, sessionId, sink: addTuiEvent });
+  const result = await runApply({
+    wctx: { projectDir, sessionId, bus },
+    state,
+    overrideConfirmed: confirm,
+  });
+  if (result.outcome === 'halted') return { status: 'halted' };
+  if (result.outcome === 'review') return { status: 'review' };
+  if (result.outcome === 'needs-confirmation') {
+    return { status: 'confirm-override', findings: result.state.acceptedAsIs?.findings ?? [] };
+  }
+  finalize(result.state);
+  return { status: 'applied', files: result.files };
+}
+
+async function rejectRun(projectDir: string, sessionId: string): Promise<RejectRunResult> {
+  const record = readRunRecord({ projectDir, sessionId });
+  const run = runCommandState(record);
+  if (run.kind === 'unavailable') return { status: 'unavailable', message: run.message };
+  if (run.kind === 'snapshot') return rejectRunSnapshot(projectDir, sessionId);
+  const { state } = run;
+  if (!isRunAtRest(record.ref) || record.status.kind === 'running') {
+    return {
+      status: 'unavailable',
+      message: 'Run rejection is unavailable while the run is active.',
+    };
+  }
+  if (record.status.kind === 'closed') {
+    if (record.status.as === 'applied' && state.applied !== undefined) {
+      const result = await restoreApplyBackup({
+        projectDir,
+        sessionId,
+        backupId: state.applied.backupId,
+      });
+      return { status: 'undone', ...result };
+    }
+    return { status: 'unavailable', message: `Run is closed (${record.status.as}).` };
+  }
+  const config = configStore.get().config;
+  if (config === null) {
+    return { status: 'unavailable', message: 'Discard requires a project configuration.' };
+  }
+  const finalize = prepareRunFinalization(record.ref, config);
+  const bus = createRecoveryBus({ projectDir, sessionId, sink: addTuiEvent });
+  const closure = await closeRunIfOpen({ projectDir, sessionId, bus }, state, 'discarded');
+  if (closure.closedNow) finalize(closure.state);
+  return { status: 'discarded' };
 }
 
 function plannerSupportsImages(config: Config | null): boolean {
@@ -252,8 +384,8 @@ export function buildCommandContext({
     plannerSupportsImages: () => plannerSupportsImages(configStore.get().config),
     detachImage,
     listAttachments,
-    acceptRunSnapshot,
-    rejectRunSnapshot,
+    acceptRun,
+    rejectRun,
     refreshRun: () => {
       const route = routerStore.get();
       if (route.screen !== 'workflow') return;

@@ -8,19 +8,26 @@ import { recordTaskUsage } from '../tokens.js';
 import { toErrorMessage, labelError } from '../../../utils/format-errors.js';
 import { isAbortError } from '../../../utils/abort.js';
 import { publishError, publishWarning } from '../events.js';
-import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
+import { addUsageAndSave, raisePendingRecovery, transitionAndSave } from '../state-ops.js';
 import { refreshAndPersistCode } from './refresh-code.js';
 import { validateCommitAndAdvance } from './commit.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import type { GateDecision } from '../approval/types.js';
-import { detectValidationFailureUserEdit } from '../user-edit/detection.js';
-import { handleApprovalTimeUserEditConflict } from '../escalation/approval-conflict.js';
-import { persistTaskEvidence, persistRejectionEvidence } from '../evidence/persistence.js';
+import {
+  persistTaskEvidence,
+  persistRejectionEvidence,
+  persistApprovalEvidence,
+} from '../evidence/persistence.js';
+import { captureTaskReviewChanges } from '../evidence/review-capture.js';
+import { denialMessage } from './attempt-gate.js';
+import { buildApprovalDeniedRecoveryIssue } from '../recovery/builders/task.js';
+import { nowIso } from '../../../utils/format-time.js';
 import { retryAndRecord, consultHandedBackToLoop } from './retry.js';
 import { runPreTaskHooksAndPublish } from './pre-task.js';
 import { isResumableWorkspaceStop, retentionError } from '../isolation/retention.js';
 import { runImplementation } from './run-implementation.js';
-import { applyChangedFiles } from './apply-changed-files.js';
+import { gateAttemptChanges } from './attempt-gate.js';
+import { resolveDependsOnFiles } from './resolve-deps.js';
 import { runChainAnalysisSafe } from './analyze-drift.js';
 import { restoreExhaustedTaskFiles } from './rollback.js';
 import { handleFailedImplementation } from './implementation-failure.js';
@@ -30,6 +37,7 @@ import { lineageIdOf } from '../../../core/state/task-insert.js';
 import { requestConsult } from '../consult/request.js';
 import { applyConsultAnswer } from '../consult/apply.js';
 import { guidanceInstructions } from '../escalation/consult-guidance.js';
+import { hashTaskBrief } from '../../brief-hash.js';
 
 function recordApprovalDenial(opts: {
   wctx: WorkflowContext;
@@ -131,13 +139,18 @@ async function refreshStaleTask(
   if (state.lineages?.[lineageIdOf(task)]?.staleConsultedRevision[task.id] === revision) {
     return { kind: 'dispatch', state, task, guidance: undefined };
   }
-  if (!inputsMoved(opts.wctx.projectDir, task)) {
+  const step = { kind: 'brief' as const, taskId: task.id, attempt: state.attempt };
+  if (
+    opts.wctx.continuation?.resumesAttempt(step, hashTaskBrief([task])) === true ||
+    !inputsMoved(opts.wctx.workspaceDir, task)
+  ) {
     return { kind: 'dispatch', state, task, guidance: undefined };
   }
   const files = taskInputFiles(task);
   const refreshed = await requestConsult(
     {
       projectDir: opts.wctx.projectDir,
+      workspaceDir: opts.wctx.workspaceDir,
       sessionId: opts.wctx.sessionId,
       bus: opts.wctx.bus,
       planner: opts.wctx.planner,
@@ -167,6 +180,7 @@ async function refreshStaleTask(
   const applied = await applyConsultAnswer(
     {
       projectDir: opts.wctx.projectDir,
+      workspaceDir: opts.wctx.workspaceDir,
       sessionId: opts.wctx.sessionId,
       bus: opts.wctx.bus,
       config: opts.wctx.config,
@@ -199,7 +213,7 @@ async function refreshStaleTask(
       {
         type: 'SET_TASK_INPUT_HASHES',
         taskId: task.id,
-        inputHashes: inputHashesNow(opts.wctx.projectDir, files),
+        inputHashes: inputHashesNow(opts.wctx.workspaceDir, files),
       },
     );
     opts.setTrackedState(state);
@@ -228,7 +242,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
 
   let task = opts.task;
   if (!opts.taskCodeRefreshed) {
-    ({ task, state } = await refreshAndPersistCode(opts.task, wctx, state));
+    ({ task, state } = await refreshAndPersistCode(opts.task, wctx, state, wctx.workspaceDir));
     setTrackedState(state);
   }
 
@@ -311,10 +325,12 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   state = addUsageAndSave(wctx, implState.state, 'implementer', implState.implResult.usage);
   setTrackedState(state);
 
+  // A stop keeps the attempt's output whole; a bundle left half-applied goes to its recovery.
+  const applyStatus = implState.implResult.applyResult?.status;
   if (
     implState.workspace !== undefined &&
     wctx.signal?.aborted &&
-    implState.implResult.applyResult === undefined
+    (applyStatus === undefined || applyStatus === 'applied')
   ) {
     if (
       isResumableWorkspaceStop(wctx.signal) &&
@@ -345,28 +361,45 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     return failedState;
   }
 
-  const applyResult = await applyChangedFiles({
+  const gate = await gateAttemptChanges({
     wctx,
     task,
-    state,
+    phase: state.phase,
     workspace: implState.workspace,
-    preApplyApprovedFiles: implState.preApplyApprovedFiles,
-    taskStartSnapshot,
-    recordApprovalDenial: (s, decision, message) =>
-      recordApprovalDenial({ wctx, state: s, task, denials: decision.denials, message }),
-    handleConflict: (s, files) =>
-      handleApprovalTimeUserEditConflict({
-        ctx: wctx,
-        state: s,
-        task,
-        files,
-        setTrackedState,
-        workspacePath: implState.workspace?.projectDir,
-      }),
+    preApprovedFiles: implState.preApplyApprovedFiles,
+    dependsOnFiles: resolveDependsOnFiles(state.tasks, task),
+    onApproved: (decision) => persistApprovalEvidence({ wctx, state, decision, taskId: task.id }),
   });
-  if (!applyResult.proceed) return applyResult.state;
-  state = applyResult.state;
-  const taskChangedFiles = applyResult.taskChangedFiles;
+  if (gate.outcome === 'aborted') return state;
+  if (gate.denial !== undefined) {
+    recordApprovalDenial({
+      wctx,
+      state,
+      task,
+      denials: gate.denial.decision.denials,
+      message: denialMessage({
+        subject: 'Task',
+        denial: gate.denial,
+        blocked: gate.outcome === 'denied',
+      }),
+    });
+  }
+  if (gate.outcome === 'denied') {
+    const { decision } = gate.denial;
+    const issue = buildApprovalDeniedRecoveryIssue({
+      task,
+      phase: state.phase,
+      deniedFiles: decision.deniedFiles,
+      ...(decision.reason !== undefined && { denialReason: decision.reason }),
+      tool: getRunnerDisplayName(config.implementer),
+      createdAt: nowIso(),
+    });
+    state = raisePendingRecovery(wctx, state, issue);
+    setTrackedState(state);
+    return state;
+  }
+
+  const taskChangedFiles = gate.approvedFiles;
 
   state = transitionAndSave({ projectDir, sessionId }, state, { type: 'TASK_SENT' });
   setTrackedState(state);
@@ -390,7 +423,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   try {
     validationResults = await wctx.validator.runValidation({
       task,
-      projectDir,
+      projectDir: wctx.workspaceDir,
       config,
       bus: wctx.bus,
       phase: state.phase,
@@ -425,6 +458,12 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     applyResult: implState.implResult.applyResult,
   });
   if (commitResult.completed) {
+    await captureTaskReviewChanges({
+      ref: { projectDir, sessionId },
+      workspaceDir: wctx.workspaceDir,
+      task,
+      taskStartSnapshot,
+    });
     state = commitResult.state;
     setTrackedState(state);
     opts.onTaskAcceptedFiles?.(taskChangedFiles);
@@ -466,20 +505,6 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   }
 
   if (wctx.signal?.aborted) return state;
-
-  const userEdit = await detectValidationFailureUserEdit({
-    projectDir,
-    sessionId,
-    bus: wctx.bus,
-    state,
-    task,
-    taskIndex: index,
-    taskChangedFiles,
-    taskStartSnapshot,
-    setTrackedState,
-  });
-  if (userEdit.diverted) return userEdit.state;
-  state = userEdit.state;
 
   const errorText = formatValidationError(validationResults, acceptance);
   const retry = await retryAndRecord({

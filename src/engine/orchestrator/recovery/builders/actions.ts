@@ -1,7 +1,6 @@
 import type { RecoveryAction, RecoveryReason } from '../../../../core/schemas/enums.js';
 import { PROMPTABLE_RECOVERY_ACTIONS } from '../../../../core/schemas/enums.js';
 import { allowedActionsForReason } from '../../../../core/schemas/recovery/policy.js';
-import type { UserEditConflict } from '../../../events/workflow-events.js';
 
 const ACTION_ORDER = PROMPTABLE_RECOVERY_ACTIONS;
 
@@ -38,14 +37,6 @@ export function chooseRecommended(
     if (actions.includes(preference)) return preference;
   }
   return actions[0] ?? 'pause-run';
-}
-
-export function chooseUserEditRecommendation(
-  conflict: UserEditConflict,
-  actions: RecoveryAction[],
-): RecoveryAction {
-  if (conflict.safeToContinue && actions.includes('continue')) return 'continue';
-  return chooseRecommended(actions, ['pause-run']);
 }
 
 export function hasRouteBigger(opts: {

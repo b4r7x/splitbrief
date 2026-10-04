@@ -295,3 +295,117 @@ describe('resumeStep', () => {
     expect(resumeStep(asked)).toEqual({ kind: 'planner', call: 'plan' });
   });
 });
+
+describe('a run with a workspace', () => {
+  const WORKTREE: NonNullable<WorkflowState['workspace']> = {
+    kind: 'worktree',
+    path: '/tmp/project/.splitbrief/worktrees/run',
+    base: { snapshotId: 'workspace-base', head: 'abc123' },
+  };
+  const AT = '2026-10-03T00:00:00.000Z';
+  const passed = (overrides: Partial<WorkflowState> = {}): Partial<WorkflowState> => ({
+    phase: 'complete',
+    reviewStatus: 'passed',
+    workspace: WORKTREE,
+    ...overrides,
+  });
+
+  it('ready-to-apply for a passed worktree run', () => {
+    expect(statusOf(passed())).toEqual({ kind: 'ready-to-apply', override: false });
+  });
+
+  it('ready-to-apply for a passed staged-copy run', () => {
+    expect(statusOf(passed({ workspace: { ...WORKTREE, kind: 'staged-copy' } }))).toEqual({
+      kind: 'ready-to-apply',
+      override: false,
+    });
+  });
+
+  it('an applied record without a closure does not become ready again', () => {
+    expect(
+      statusOf(passed({ applied: { at: AT, backupId: 'apply-1', files: ['src/a.ts'] } })).kind,
+    ).toBe('open');
+  });
+
+  it('a pending apply-conflict halt reads open halted, not ready', () => {
+    const issue = makeRecoveryIssue();
+    expect(statusOf(passed({ pendingRecovery: issue }))).toEqual({
+      kind: 'open',
+      stop: { kind: 'halted', issue },
+      resumeAt: { kind: 'apply' },
+    });
+  });
+
+  it('an applying run resumes at the apply step', () => {
+    const applying = passed({ applying: { at: AT, backupId: 'apply-1' } });
+    expect(statusOf(applying)).toEqual({
+      kind: 'open',
+      stop: { kind: 'interrupted' },
+      resumeAt: { kind: 'apply' },
+    });
+    expect(resumeStep(state(applying))).toEqual({ kind: 'apply' });
+  });
+
+  it('ready-to-apply with override for accepted-as-is', () => {
+    expect(
+      statusOf(passed({ reviewStatus: 'failed', acceptedAsIs: { at: AT, findings: ['F1'] } })),
+    ).toEqual({ kind: 'ready-to-apply', override: true });
+  });
+
+  it('a failed review without an override stays open', () => {
+    expect(statusOf(passed({ reviewStatus: 'failed' })).kind).toBe('open');
+  });
+
+  it('closed applied after APPLY_DONE', () => {
+    const ready = state(passed());
+    const applying = transition(ready, { type: 'APPLY_START', backupId: 'apply-1' });
+    const applied = transition(applying, { type: 'APPLY_DONE', files: ['src/a.ts'] });
+    expect(deriveRunStatus({ state: applied, liveness: 'not-alive' })).toEqual({
+      kind: 'closed',
+      as: 'applied',
+    });
+  });
+
+  it('closed discarded', () => {
+    const discarded = transition(state(passed()), { type: 'CLOSE_RUN', as: 'discarded' });
+    expect(deriveRunStatus({ state: discarded, liveness: 'not-alive' })).toEqual({
+      kind: 'closed',
+      as: 'discarded',
+    });
+  });
+
+  it('old passed run without workspace stays closed complete', () => {
+    expect(statusOf({ phase: 'complete', reviewStatus: 'passed' })).toEqual({
+      kind: 'closed',
+      as: 'complete',
+    });
+  });
+
+  it('old interrupted run stays open', () => {
+    expect(statusOf({ phase: 'implementing' })).toMatchObject({
+      kind: 'open',
+      stop: { kind: 'interrupted' },
+    });
+  });
+
+  it('checkout-kind workspace closes on pass', () => {
+    expect(statusOf(passed({ workspace: { ...WORKTREE, kind: 'checkout' } }))).toEqual({
+      kind: 'closed',
+      as: 'complete',
+    });
+  });
+
+  it('ready outranks liveness', () => {
+    expect(statusOf(passed(), 'alive')).toEqual({ kind: 'ready-to-apply', override: false });
+  });
+
+  it('an interrupted step on a ready run reads open paused', () => {
+    expect(
+      statusOf(
+        passed({
+          interruptedStep: { step: { kind: 'apply' }, source: 'user', cut: 'mid-step', at: AT },
+        }),
+      ),
+    ).toMatchObject({ kind: 'open', stop: { kind: 'paused' }, resumeAt: { kind: 'apply' } });
+  });
+});

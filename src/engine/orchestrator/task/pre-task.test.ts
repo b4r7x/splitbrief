@@ -6,6 +6,8 @@ import {
   cleanupTaskProjects,
   makeTaskWorkflowContext as makeWorkflowContext,
 } from '#testing/helpers/orchestrator-task-context.js';
+import { hashTaskBrief } from '../../brief-hash.js';
+import { createContinuationHolder } from '../continuation.js';
 import { runPreTaskHooksAndPublish } from './pre-task.js';
 
 const capture = vi.hoisted(() => ({ snapshotFails: false }));
@@ -53,5 +55,35 @@ describe('runPreTaskHooksAndPublish', () => {
         (e) => e.type === 'error' && e.message.startsWith('Failed to capture task baseline'),
       ),
     ).toBe(true);
+  });
+
+  it('a resumed cut attempt keeps the task-start snapshot its brief began from', async () => {
+    const task = makeTask({ id: 'T001' });
+    const started = { head: 'abc123', files: ['src/before.ts'], dirtyFileContents: {} };
+    const state = {
+      ...implementingState([task]),
+      changedFilesBaseline: {
+        head: 'abc123',
+        runStartChangedFiles: [],
+        fingerprints: {},
+        activeTaskSnapshot: started,
+      },
+    };
+    const continuation = createContinuationHolder({
+      step: { kind: 'brief', taskId: task.id, attempt: state.attempt },
+      keepWorkspace: true,
+      briefFingerprint: hashTaskBrief([task]),
+    });
+
+    const result = await runPreTaskHooksAndPublish({
+      wctx: makeWorkflowContext({ continuation }),
+      task,
+      state,
+      index: 0,
+      totalTasks: 1,
+      setTrackedState: vi.fn(),
+    });
+
+    expect(result.proceed && result.taskStartSnapshot).toEqual(started);
   });
 });

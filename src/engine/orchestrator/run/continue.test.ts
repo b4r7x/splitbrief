@@ -161,3 +161,21 @@ describe('continueRun', () => {
     });
   });
 });
+
+describe('continueRun on a run ready to apply', () => {
+  it('refuses and offers Apply or Discard', () => {
+    const state: WorkflowState = {
+      ...openState(),
+      phase: 'complete',
+      reviewStatus: 'passed',
+      workspace: { kind: 'worktree', path: '/tmp/wt', base: { snapshotId: 'b', head: null } },
+    };
+    const { deps, restarted } = makeDeps({ loaded: { kind: 'loaded', state } });
+
+    const outcome = continueRun({ ref: REF, deps });
+
+    expect(outcome).toMatchObject({ kind: 'refused', reason: 'ready-to-apply' });
+    expect(outcome.kind === 'refused' && outcome.message).toMatch(/Apply.*Discard/);
+    expect(restarted).toEqual([]);
+  });
+});

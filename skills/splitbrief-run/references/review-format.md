@@ -1,89 +1,100 @@
-# Review Format
+# Review format
 
-The review seat is one stateless, read-only call. Lifted from the SPLITBRIEF CLI (`src/engine/spec/prompts/review.ts`, `src/engine/parsers/final-review.ts`). A reviewer tool receives the packet as its prompt; when `review: session`, the session answers the same prompt from the packet file, never from memory of the run.
+Use one stateless read-only call per review. The session reviews from the packet when no reviewer is configured.
+The CLI ships typed review, cadence, triage and planner-first questions in S5.
 
-## 1. Packet (`<run dir>/review-packet.md`)
+## Review procedure
+
+1. Select tasks and criteria using references/run-protocol.md for cadence or one-task scope.
+2. Run current validation and required checks with references/gates.md.
+3. Write the packet below from the current candidate.
+4. Spawn one stateless read-only reviewer with references/tool-recipes.md, or review in this session.
+5. Use references/run-protocol.md for waiting, with `review` as the task id and the reviewer deadline.
+6. Save the typed answer in `review.json` and render `review.md`.
+7. Derive the verdict from exact coverage and current evidence using the generated rules below.
+8. Send unresolved findings to planner triage in references/recovery.md.
+
+Write review-packet.md with this shape:
 
 <!-- generated: review-packet -->
-    # Final Implementation Review
+    # Implementation review
 
-    You are reviewing a completed implementation against its specification. Your job is to verify that the implementation satisfies the spec and identify any issues. Treat error-level drift findings as review blockers unless you can clearly explain why they are false positives.
+    Read the workspace without editing it. Answer from this packet and the current code.
 
-    ## Specification
-    <spec.md when it exists; otherwise, per brief: `### T001 — <title>` + its Description, Tests, Scope>
+    ## Approved plan
+    <plan.json, completed tasks and the criteria due at this review>
+
+    ## Plan context
+    <summary, confirmed decisions with task ids, and criterion text>
 
     ## Task Briefs
-    <every brief in full>
+    <completed tasks' Markdown briefs in full; pending tasks listed separately>
 
     ## Implementation Diff
-    ```diff
-    <git diff of the changed set against the baseline tree; untracked new files via `git diff --no-index /dev/null <file>`>
-    ```
+    <current run diff against the saved baseline, grouped by task>
 
-    ## Deterministic Drift Report
-    <drift.md content, or `No drift: every changed file is owned by a brief.`>
+    ## Changed files
+    <per-task changed paths and touchedNotSuggested entries with reasons>
 
     ## Recorded Validation Output
-    The orchestrator ran these validation commands and recorded their output. This section is the authoritative record of validation results for this run.
+    <current full-suite output and required checks by id, with commands, exits and artifact paths>
 
-    <per brief: `### T001 — attempt N` then, per stage, the command on its own line and its captured output fenced>
+    ## Consults and user answers
+    <consult log, triage log, rejected findings with reasons, and user answers>
 
     ## Instructions
-    Review the implementation diff against every acceptance criterion and requirement in the spec and task briefs. Be thorough but fair -- minor style differences are acceptable; missing functionality or incorrect behavior is not.
+    Check the accepted behaviour, exclusions, edge cases, tests and repository rules.
+    Quote recorded output for each validation claim. State when evidence is absent.
+    Only registered check ids can verify a criterion. Old evidence cannot verify changed code.
+    Pending criteria are pending. Do not report them as a plan gap.
+    Render checks are unavailable in these skills. A required render criterion stays unverified.
 
-    Validation claims are evidence-bound. Any statement about test, typecheck, or lint results must quote the relevant line verbatim from the Recorded Validation Output section (for example the test runner's own summary line); never report counts or totals that do not appear there. If you run additional checks yourself, present them separately as reviewer observations -- they do not replace the recorded results. If no Recorded Validation Output section is present, state that validation output was not recorded instead of asserting results.
+    ## Typed answer
+    Return one JSON object with tasks, criteria and findings.
+    Tasks use plan: met, partial or missed. Criteria use status: pass, fail or unverified, with evidence.
+    Findings use kind: defect, plan-gap, unverified or question; severity: blocking or minor.
+    Use taskId to identify a task. Use checkIds or criterionId for an unverified finding.
+    Include exactly one result for each completed task and each criterion due now.
+    Use this example shape, with real ids and evidence:
 
-    ## Review Checklist
-    1. **Acceptance Criteria**: Check each criterion from the spec and task briefs. Is it satisfied by the implementation?
-    2. **Functional Requirements**: Are all inputs handled? Is processing correct? Are outputs as specified?
-    3. **Error Handling**: Are error cases handled as specified?
-    4. **Edge Cases**: Are boundary conditions addressed?
-    5. **Type Safety**: Are types correct and complete?
-    6. **Code Quality**: Are there obvious bugs, security issues, or performance problems?
+    {"tasks":[{"id":"T001","plan":"met","note":"<evidence>"}],"criteria":[{"id":"C1","status":"pass","evidence":"<recorded proof>"}],"findings":[{"id":"F1","kind":"question","severity":"blocking","taskId":"T001","text":"<question>"}]}
 
-    ## Output Format
-    Respond with exactly this structure:
-
-    ### Verdict
-    One of: `pass` | `pass_with_notes` | `fail`
-
-    ### Criteria Results
-    For each acceptance criterion from the spec:
-    - **[PASS]** or **[FAIL]** Criterion description -- brief explanation
-
-    ### Findings
-    List any issues found, categorized as:
-    - **Critical**: Breaks functionality or violates a requirement (causes `fail` verdict)
-    - **Warning**: Works but has potential issues (allowed in `pass_with_notes`)
-    - **Note**: Minor observations, suggestions for improvement (informational only)
-    A **Critical** finding must name a defect in the code, the tests, or the behavior the diff produces. A missing entry in the evidence ledger (expected versus observed evidence), missing renders, screenshots or critiques, and missing process records are at most **Note**s: SPLITBRIEF records only its own validation facts and no seat can add render evidence to the ledger, so an evidence gap alone never causes `fail`.
-    Write `None.` after the label of a category with no findings, or leave the label out.
-
-    ### Summary
-    One-paragraph overall assessment.
+    Use an empty findings array when there are no findings. The session derives the verdict.
 <!-- /generated -->
 
-## 2. Parsing the reply (`review.md`)
+Include approved plan.json, all confirmed decisions, criterion text, relevant briefs and the current run diff.
+Group changes by task. Include touchedNotSuggested paths and their reasons, check results, consults, triage and user answers.
+Use baseline bytes and hashes for the run diff. Exclude unchanged pre-existing edits and run artifacts.
+Save the current full-suite and required-check output with commands, exits, ids and artifact paths.
+Reject an oversized packet rather than silently dropping files or evidence.
+For a malformed answer, attach the invalid answer and parser errors to the permitted fresh repair call.
+
+## Typed reply and derived pass
+
+Write review.json with tasks, criteria and findings. Render review.md from that answer.
+
+| Field | Typed entries |
+|---|---|
+| tasks | `{id, plan: met / partial / missed, note}` |
+| criteria | `{id, status: pass / fail / unverified, evidence}` |
+| findings | `{id, kind: defect / plan-gap / unverified / question, severity: blocking / minor, text}` |
+| finding references | taskId, file, line, acceptance, checkIds, criterionId when applicable |
+
+Unverified findings name non-empty valid checkIds or a criterionId with registered checks.
+The session never guesses a check from a finding's text. The reviewer cannot supply arbitrary commands.
 
 <!-- generated: verdict-rules -->
-- Exactly one verdict word under `### Verdict`: `pass` | `pass_with_notes` | `fail`.
-- No single verdict word → 1 re-ask, verbatim: "Your reply had no single verdict. Repeat the full review with exactly one verdict word under ### Verdict." — a still-unparseable reply is `fail`.
-- Any Critical finding overrides a `pass`.
-- A Critical finding names a code, test or behavior defect; an evidence-record gap alone is at most a Note and never causes `fail`.
-- A finding belongs to the brief whose `files` names it (path substring); an unmatched finding goes to the last brief.
+- Derive pass: every task met, every criterion pass, no blocking finding.
+- Reject missing, duplicated or unknown task and criterion ids. Unverified criteria block pass.
+- At task cadence, cover completed tasks and criteria due so far. Pending criteria are pending, never a gap.
+- Generic validation does not prove an unrelated criterion. Evidence must cover the current candidate.
+- Repair malformed typed output once. A second failure pauses the seat; it produces no verdict.
+- Keep minor findings as notes. The CLI ships typed review and task cadence in S5.
 <!-- /generated -->
 
-Criteria are every line matching `- **[PASS]** …` / `- **[FAIL]** …` anywhere in the reply. A finding is a line that carries its label, behind a `-`, `*` or `1.` bullet or none (`- **Critical**: …`, `**Critical:** …`, `**Critical — title**`, `### Critical: …`), or a bullet under a label that stands alone (the sub-bullets of an empty `- **Critical**:`, the bullets under a `**Critical**` line or a `### Critical` heading). `None.`, `None of note`, `N/A`, `Not applicable`, `Nothing to report`, `No critical issues found`, `0`, a dash or nothing after a label is an empty category, not a finding, also inside emphasis, inline code or parentheses.
+A pass with minor findings is `pass_with_notes`.
 
-## 3. Fix cycle mapping
+## Review by this session
 
-Each Critical finding is assigned to the brief whose `files` names it (path substring match); unmatched findings go to the last brief. Warnings and Notes are reported, never fixed automatically. Standalone, the same cycle is `splitbrief-run impl=<seat> error: <run dir>/review.md <run dir>/briefs`.
-
-<!-- generated: fix-cycle -->
-- A `fail` verdict re-enters implementation: each Critical finding becomes the error block of the next attempt on its owning brief.
-- At most 2 review cycles; the last `fail` ends the run as `STOPPED at review` with the findings listed.
-<!-- /generated -->
-
-## 4. Review by the session
-
-Write the packet file first, then answer it in one pass reading only that file and the working tree. Never cite what you remember from the run; cite the packet. The reply is written to `review.md` exactly as a tool's reply would be.
+Read review-packet.md and the current workspace in one fresh pass. Never cite memory of earlier attempts.
+Write the same typed answer a reviewer CLI would return. Keep every evidence claim tied to the current candidate.

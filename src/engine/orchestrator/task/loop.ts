@@ -13,7 +13,6 @@ import { resolveImplementerProfiles } from '../../../core/config/accessors/imple
 import {
   captureChangedFilesBaseline,
   deserializeChangedFilesBaseline,
-  refreshChangedFilesBaseline,
   serializeChangedFilesBaseline,
   unreadableChangedFiles,
   withActiveTaskSnapshot,
@@ -22,14 +21,12 @@ import {
 import { configForProfile, createTaskImplementer } from './routing.js';
 import { publishError, publishTasksPlanned, publishWarning } from '../events.js';
 import { checkDependencyGate } from './dependency-gate.js';
-import { checkUserEditConflicts } from '../user-edit/detection.js';
 import { selectRoutingProfile } from './routing-selection.js';
-import { absorbAcceptedFiles, reconcileAfterTask } from './post-task.js';
+import { absorbAcceptedFiles } from './post-task.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { error } from '../../../utils/error.js';
 import { buildImplementerUnavailableRecoveryIssue } from '../recovery/builders/task.js';
-import { deriveRunStatus } from '../../../core/sessions/run-status.js';
 
 type RunTaskLoopOptions = {
   wctx: WorkflowContext;
@@ -103,7 +100,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
   let changedFilesBaseline: ChangedFilesBaseline =
     state.changedFilesBaseline !== undefined
       ? deserializeChangedFilesBaseline(state.changedFilesBaseline)
-      : await captureChangedFilesBaseline(projectDir);
+      : await captureChangedFilesBaseline(wctx.workspaceDir);
   const unreadableFiles = unreadableChangedFiles(changedFilesBaseline);
   if (unreadableFiles.length > 0) {
     publishWarning({
@@ -113,7 +110,6 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       safety: { category: 'user-edit', code: 'unreadable_changed_files' },
     });
   }
-  const acknowledgedUserEditFiles = new Set<string>();
   // Republished on every entry, including resume and detached re-attach, so a client that missed
   // the first announcement still learns the plan before the next task starts.
   publishTasksPlanned({ bus: wctx.bus, phase: state.phase }, state.tasks);
@@ -123,7 +119,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       bus: wctx.bus,
       phase: state.phase,
       task: firstTask,
-      projectDir,
+      projectDir: wctx.workspaceDir,
       config,
       discoveredValidation: state.discoveredValidation,
       persistedBaseline: state.validationBaseline,
@@ -155,35 +151,13 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     if (depGate.stopped) return { state, taskBreakdowns, status: 'stopped' };
 
     syncBaselineIntoState();
-    const preEditGate = await checkUserEditConflicts({
-      projectDir,
-      sessionId,
-      callbacks: wctx.callbacks,
-      bus: wctx.bus,
-      state,
-      setTrackedState,
-      task,
-      taskIndex: i,
-      baseline: changedFilesBaseline,
-      acknowledgedUserEditFiles,
-    });
-    state = preEditGate.state;
-    if (preEditGate.stopped) {
-      return { state, taskBreakdowns, status: preEditGate.cancelled ? 'cancelled' : 'stopped' };
-    }
-    // An acknowledged edit is the new floor: folding it in here is what keeps the next entry
-    // from asking about the same bytes again. No task snapshot exists yet, so none is lost.
-    if (preEditGate.absorbedFiles.length > 0) {
-      changedFilesBaseline = await refreshChangedFilesBaseline({
-        projectDir,
-        baseline: changedFilesBaseline,
-        absorbedFiles: new Set(preEditGate.absorbedFiles),
-      });
-      state = commitTrackedState(syncBaselineIntoState());
-    }
-
     let refreshedTask = task;
-    ({ task: refreshedTask, state } = await refreshAndPersistCode(task, wctx, state));
+    ({ task: refreshedTask, state } = await refreshAndPersistCode(
+      task,
+      wctx,
+      state,
+      wctx.workspaceDir,
+    ));
     setTrackedState(state);
 
     const routing = await selectRoutingProfile({
@@ -281,37 +255,15 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       completedTask,
       refreshedTask,
       taskAcceptedFiles,
-      acknowledgedUserEditFiles,
     });
-    // On disk, not only tracked: a stop at this boundary parks from the persisted head, which
-    // would otherwise lack this brief's files (read back as a user edit) and its usage.
+    // A stop at this boundary parks from the persisted head, which would otherwise lack this
+    // brief's files and usage.
     persistTaskBreakdowns();
 
     if (wctx.signal?.aborted || state.currentTaskIndex <= i) {
       setCurrentTask(undefined);
       return { state, taskBreakdowns, status: 'stopped' };
     }
-
-    const reconcile = await reconcileAfterTask({
-      wctx,
-      state,
-      setTrackedState,
-      task: refreshedTask,
-      taskIndex: i,
-      baseline: changedFilesBaseline,
-      acknowledgedUserEditFiles,
-    });
-    state = reconcile.state;
-    changedFilesBaseline = reconcile.baseline;
-    if (reconcile.stop) {
-      if (deriveRunStatus({ state, liveness: 'not-alive' }).kind !== 'closed') {
-        persistTaskBreakdowns();
-      }
-      setCurrentTask(undefined);
-      return { state, taskBreakdowns, status: reconcile.cancelled ? 'cancelled' : 'stopped' };
-    }
-
-    persistTaskBreakdowns();
 
     if (wctx.sinks.consumeBoundaryPause?.()) {
       setCurrentTask(undefined);

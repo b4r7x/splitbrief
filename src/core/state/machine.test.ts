@@ -17,6 +17,7 @@ import { taskId, type Task } from '../schemas/task.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { DEFAULT_LOCAL_RETRIES } from '../pipeline-spec/retries.js';
+import { deriveRunStatus } from '../sessions/run-status.js';
 
 function makeQueuedMessage(overrides: Partial<QueuedMessage> = {}): QueuedMessage {
   return {
@@ -1246,5 +1247,181 @@ describe('consult and split state operations', () => {
     expect(waiting.seatWait).toEqual({ seat: 'plan', resetAt: '2026-05-01T10:00:00.000Z' });
 
     expect(transition(waiting, { type: 'CLEAR_SEAT_WAIT' }).seatWait).toBeUndefined();
+  });
+});
+
+describe('the run workspace and Apply', () => {
+  const WORKSPACE: NonNullable<WorkflowState['workspace']> = {
+    kind: 'worktree',
+    path: '/tmp/project/.splitbrief/worktrees/run',
+    base: { snapshotId: 'workspace-base', head: null },
+  };
+  const NOW = { now: new Date('2026-10-03T10:00:00Z') };
+  const ready = (): WorkflowState => ({
+    ...createInitialState('feat'),
+    phase: 'complete',
+    reviewStatus: 'passed',
+    workspace: WORKSPACE,
+  });
+
+  it('RECORD_WORKSPACE records the workspace in any phase', () => {
+    const state = { ...createInitialState('feat'), phase: 'implementing' as const };
+    expect(transition(state, { type: 'RECORD_WORKSPACE', workspace: WORKSPACE }).workspace).toEqual(
+      WORKSPACE,
+    );
+  });
+
+  it('ACCEPT_AS_IS records the open findings on a failed review', () => {
+    const failed = { ...ready(), reviewStatus: 'failed' as const };
+    const next = transition(failed, { type: 'ACCEPT_AS_IS', findings: ['F1', 'F2'] }, NOW);
+    expect(next.acceptedAsIs).toEqual({ at: '2026-10-03T10:00:00.000Z', findings: ['F1', 'F2'] });
+  });
+
+  it('APPLY_REVIEW_START only from ready', () => {
+    const merged = [{ path: 'src/a.ts', checkoutHunks: '@@ -1 +1 @@\n-a\n+b\n' }];
+    const accepted = transition(
+      { ...ready(), reviewFixes: { cycle: 1, findings: {} } },
+      { type: 'ACCEPT_AS_IS', findings: ['F1'] },
+    );
+    const next = transition(accepted, { type: 'APPLY_REVIEW_START', merged });
+    expect(next.phase).toBe('final-review');
+    expect(next.reviewStatus).toBeUndefined();
+    expect(next.applyReview).toEqual({ merged, failures: [] });
+    expect(next.acceptedAsIs).toBeUndefined();
+    expect(next.reviewFixes?.cycle).toBe(2);
+    const passed = transition(next, {
+      type: 'REVIEW_DONE',
+      reviewStatus: 'passed',
+      candidate: { 'src/a.ts': 'file:abc' },
+    });
+    expect(passed.applyReview).toBeUndefined();
+    expect(passed.reviewedCandidate).toEqual({ 'src/a.ts': 'file:abc' });
+
+    const failed = { ...ready(), reviewStatus: 'failed' as const };
+    expect(() => transition(failed, { type: 'APPLY_REVIEW_START', merged: [] })).toThrow(
+      'Cannot apply APPLY_REVIEW_START',
+    );
+    const noWorkspace = { ...ready(), workspace: undefined };
+    expect(() => transition(noWorkspace, { type: 'APPLY_REVIEW_START', merged: [] })).toThrow(
+      'Cannot apply APPLY_REVIEW_START',
+    );
+  });
+
+  it('RECORD_APPLY_RECHECK replaces failures and preserves them after a failed review', () => {
+    const merged = [{ path: 'src/a.ts', checkoutHunks: 'checkout diff' }];
+    const state = transition(ready(), { type: 'APPLY_REVIEW_START', merged });
+    const failures = [
+      'T001 check C1 did not pass (fail): error',
+      'plan check P1 did not pass (fail): error',
+    ];
+    const recorded = transition(state, { type: 'RECORD_APPLY_RECHECK', failures });
+
+    expect(recorded.phase).toBe('final-review');
+    expect(recorded.applyReview).toEqual({ merged, failures });
+    expect(state.applyReview?.failures).toEqual([]);
+    expect(WorkflowStateSchema.parse(recorded).applyReview?.failures).toEqual(failures);
+
+    const failed = transition(recorded, { type: 'REVIEW_DONE', reviewStatus: 'failed' });
+    expect(failed.applyReview?.failures).toEqual(failures);
+    const accepted = transition(failed, { type: 'ACCEPT_AS_IS', findings: failures }, NOW);
+    expect(accepted.acceptedAsIs?.findings).toEqual(failures);
+    expect(accepted.applyReview).toBeUndefined();
+
+    const rerun = transition(recorded, { type: 'RECORD_APPLY_RECHECK', failures: [] });
+    expect(rerun.applyReview).toEqual({ merged, failures: [] });
+  });
+
+  it('RECORD_APPLY_RECHECK refuses a final review without applyReview', () => {
+    const state: WorkflowState = { ...ready(), phase: 'final-review' };
+    expect(() => transition(state, { type: 'RECORD_APPLY_RECHECK', failures: [] })).toThrow(
+      'Cannot apply RECORD_APPLY_RECHECK while workflow is in final-review.',
+    );
+  });
+
+  it.each(['implementing', 'complete'] as const)(
+    'RECORD_APPLY_RECHECK refuses the %s phase',
+    (phase) => {
+      const state: WorkflowState = { ...ready(), phase, applyReview: { merged: [], failures: [] } };
+      expect(() => transition(state, { type: 'RECORD_APPLY_RECHECK', failures: [] })).toThrow(
+        `Cannot apply RECORD_APPLY_RECHECK while workflow is in ${phase}.`,
+      );
+    },
+  );
+
+  it('APPLY_START marks the run applying, from ready or from an applying run', () => {
+    const applying = transition(ready(), { type: 'APPLY_START', backupId: 'apply-1' }, NOW);
+    expect(applying.applying).toEqual({ at: '2026-10-03T10:00:00.000Z', backupId: 'apply-1' });
+    const retried = transition(applying, { type: 'APPLY_START', backupId: 'apply-2' }, NOW);
+    expect(retried.applying?.backupId).toBe('apply-2');
+  });
+
+  it('APPLY_START refuses a run that is not ready', () => {
+    const noWorkspace = { ...ready(), workspace: undefined };
+    expect(() => transition(noWorkspace, { type: 'APPLY_START', backupId: 'b' })).toThrow(
+      'Cannot apply APPLY_START',
+    );
+  });
+
+  it.each([
+    { type: 'APPLY_START', backupId: 'apply-2' },
+    { type: 'APPLY_REVIEW_START', merged: [] },
+  ] satisfies StateAction[])('$type refuses an applied record without a closure', (action) => {
+    const applied = {
+      ...ready(),
+      applied: { at: NOW.now.toISOString(), backupId: 'apply-1', files: ['src/a.ts'] },
+    };
+    expect(() => transition(applied, action)).toThrow(`Cannot apply ${action.type}`);
+  });
+
+  it('APPLY_DONE records the applied files and closes the run as applied', () => {
+    const applying = transition(ready(), { type: 'APPLY_START', backupId: 'apply-1' }, NOW);
+    const applied = transition(applying, { type: 'APPLY_DONE', files: ['src/a.ts'] }, NOW);
+    expect(applied.applying).toBeUndefined();
+    expect(applied.applied).toEqual({
+      at: '2026-10-03T10:00:00.000Z',
+      backupId: 'apply-1',
+      files: ['src/a.ts'],
+    });
+    expect(applied.closed).toEqual({ at: '2026-10-03T10:00:00.000Z', as: 'applied' });
+    expect(() => transition(applied, { type: 'APPLY_START', backupId: 'b' })).toThrow(
+      'this run is closed',
+    );
+  });
+
+  it('APPLY_DONE refuses a run that never started Apply', () => {
+    expect(() => transition(ready(), { type: 'APPLY_DONE', files: [] })).toThrow(
+      'Cannot apply APPLY_DONE',
+    );
+  });
+
+  it('APPLY_RESTORED drops the applying record and leaves the run ready to apply', () => {
+    const applying = transition(ready(), { type: 'APPLY_START', backupId: 'apply-1' }, NOW);
+    const restored = transition(applying, { type: 'APPLY_RESTORED' }, NOW);
+    expect(restored.applying).toBeUndefined();
+    expect(restored.applied).toBeUndefined();
+    expect(restored.closed).toBeUndefined();
+    expect(deriveRunStatus({ state: restored, liveness: 'not-alive' }).kind).toBe('ready-to-apply');
+  });
+
+  it('APPLY_RESTORED refuses a run that never started Apply', () => {
+    expect(() => transition(ready(), { type: 'APPLY_RESTORED' })).toThrow(
+      'Cannot apply APPLY_RESTORED',
+    );
+  });
+
+  it('CLOSE_RUN on a ready run closes as discarded when asked', () => {
+    expect(transition(ready(), { type: 'CLOSE_RUN', as: 'discarded' }, NOW).closed).toEqual({
+      at: '2026-10-03T10:00:00.000Z',
+      as: 'discarded',
+    });
+    expect(transition(ready(), { type: 'CLOSE_RUN' }).closed?.as).toBe('ended');
+  });
+
+  it('the persisted schema accepts the workspace, Apply and override fields', () => {
+    const applying = transition(ready(), { type: 'APPLY_START', backupId: 'apply-1' }, NOW);
+    const applied = transition(applying, { type: 'APPLY_DONE', files: ['src/a.ts'] }, NOW);
+    const accepted = { ...applied, acceptedAsIs: { at: 'x', findings: ['F1'] } };
+    expect(WorkflowStateSchema.safeParse(accepted).success).toBe(true);
+    expect(WorkflowStateSchema.safeParse(applying).success).toBe(true);
   });
 });

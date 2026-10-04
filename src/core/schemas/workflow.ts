@@ -201,7 +201,28 @@ const WorkflowStateFields = {
       at: z.string(),
     })
     .optional(),
-  closed: z.object({ at: z.string(), as: z.literal('ended') }).optional(),
+  workspace: z
+    .object({
+      kind: z.enum(['worktree', 'staged-copy', 'checkout']),
+      path: z.string(),
+      base: z.object({ snapshotId: z.string(), head: z.string().nullable() }),
+    })
+    .optional(),
+  applying: z.object({ at: z.string(), backupId: z.string() }).optional(),
+  applied: z
+    .object({ at: z.string(), backupId: z.string(), files: z.array(z.string()) })
+    .optional(),
+  acceptedAsIs: z.object({ at: z.string(), findings: z.array(z.string()) }).optional(),
+  /** The run diff of the workspace the last final review judged: path → entry key. */
+  reviewedCandidate: z.record(z.string(), z.string()).optional(),
+  /** Set while an integration review runs after Apply changed the candidate. */
+  applyReview: z
+    .object({
+      merged: z.array(z.object({ path: z.string(), checkoutHunks: z.string() })),
+      failures: z.array(z.string()),
+    })
+    .optional(),
+  closed: z.object({ at: z.string(), as: z.enum(['ended', 'applied', 'discarded']) }).optional(),
   lastFailure: z.object({ step: StepRefSchema, message: z.string(), at: z.string() }).optional(),
   external: z.record(z.string(), z.unknown()).optional(),
 };

@@ -11,9 +11,11 @@ import {
   formatMiddotList,
   formatRecoveryActionLines,
   formatRecoveryPrompt,
+  getRecoveryPromptActions,
   isActionRowLine,
   parseRecoveryActionAnswer,
   passHeadlinePrefix,
+  recoveryMenuLabel,
   recommendedRowPrefix,
   switchSeatCandidateForAnswer,
 } from './recovery-prompt.js';
@@ -719,5 +721,96 @@ describe('recovery prompt', () => {
     expect(visible).toContain('Recovery needed · Final review failed with 2 blocking findings');
     expect(visible).not.toContain('Nothing was sent');
     expect(visible).not.toContain('retry');
+  });
+
+  it('offers the Apply halts a re-run of Apply, never a brief or a retry of a worker', async () => {
+    const conflict: RecoveryIssue = {
+      id: 'rec_apply_conflict',
+      reason: 'apply-conflict',
+      phase: 'complete',
+      status: 'awaiting-user',
+      files: ['a.txt', 'gone.txt'],
+      affectedTaskIds: [],
+      message: 'Apply found 2 conflicting files',
+      details: [
+        'a.txt · both sides changed the same lines',
+        'gone.txt · deleted on one side, changed on the other',
+      ],
+      availableActions: ['retry-same-worker', 'pause-run', 'end-run'],
+      recommendedAction: 'pause-run',
+      createdAt: '2026-10-04T09:00:00.000Z',
+    };
+    const partial: RecoveryIssue = {
+      ...conflict,
+      id: 'rec_apply_partial',
+      reason: 'apply-partial',
+      message: 'Apply stopped part way',
+      details: ['Wrote 1 of 2 files; b.txt failed: disk full'],
+    };
+
+    expect(recoveryMenuLabel('retry-same-worker', conflict)).toBe(
+      'Re-run Apply · after you resolve the files in the workspace',
+    );
+    expect(recoveryMenuLabel('retry-same-worker', partial)).toBe(
+      'Re-run Apply · writes the files still missing',
+    );
+    const offered: RecoveryIssue = {
+      ...partial,
+      availableActions: ['retry-same-worker', 'restore-backup', 'pause-run', 'end-run'],
+      recommendedAction: 'retry-same-worker',
+    };
+    expect(recoveryMenuLabel('restore-backup', offered)).toBe(
+      'Restore backup · puts back the files Apply replaced and removes the ones it created',
+    );
+    expect(getRecoveryPromptActions(offered)).toContain('restore-backup');
+    const partialVisible = await renderPromptBody(formatRecoveryPrompt(offered));
+    expect(partialVisible).toContain('restore backup');
+    for (const answer of ['u', 'restore', 'restore backup', 'restore-backup']) {
+      expect(parseRecoveryActionAnswer(answer, offered)).toBe('restore-backup');
+    }
+    expect(parseRecoveryActionAnswer('restore', conflict)).toBeNull();
+    const reconciled: RecoveryIssue = {
+      ...offered,
+      details: [
+        'Apply was cut off: wrote 3 of 9 files',
+        ...['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'].map((name) => `${name}.txt · not written`),
+        'Backup of the replaced files: /tmp/backup',
+      ],
+    };
+    const wide = formatRecoveryPrompt(reconciled);
+    expect(wide).toContain('i.txt · not written');
+    expect(wide).toContain('Backup of the replaced files: /tmp/backup');
+    const visible = await renderPromptBody(formatRecoveryPrompt(conflict));
+    expect(visible).toContain('Recovery needed · Apply found 2 conflicting files');
+    expect(visible).toContain('a.txt · both sides changed the same lines');
+    expect(visible).toContain('re-run Apply');
+    expect(visible).not.toContain('retry same worker');
+    expect(visible).not.toContain('restarts this brief');
+  });
+
+  it('lists every file of a wide Apply conflict with the place to resolve it', async () => {
+    const files = ['a.txt', 'b.txt', 'c.txt', 'd.txt', 'e.txt', 'f.txt', 'g.txt'];
+    const issue: RecoveryIssue = {
+      id: 'rec_apply_wide',
+      reason: 'apply-conflict',
+      phase: 'complete',
+      status: 'awaiting-user',
+      files,
+      affectedTaskIds: [],
+      message: 'Apply found 7 conflicting files',
+      details: [
+        "Resolve each file in /tmp/ws: keep the run's version, copy your checkout's version over it, or edit it; then choose Re-run Apply.",
+        ...files.map((file) => `${file} · both sides changed the same lines`),
+      ],
+      availableActions: ['retry-same-worker', 'pause-run', 'end-run'],
+      recommendedAction: 'pause-run',
+      createdAt: '2026-10-04T09:00:00.000Z',
+    };
+
+    const prompt = formatRecoveryPrompt(issue);
+
+    for (const file of files)
+      expect(prompt).toContain(`${file} · both sides changed the same lines`);
+    expect(prompt).toContain('Resolve each file in /tmp/ws');
   });
 });

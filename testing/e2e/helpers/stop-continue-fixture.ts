@@ -9,6 +9,7 @@ import type { Config } from '../../../src/core/schemas/config.js';
 import { canSignalProcess } from '../../../src/lib/process/liveness.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
+import { spawnCli } from './live-cli-harness.js';
 
 /** The brief's anchor: written by the orchestrator from the implementer's reply. */
 export const GREET_FILE = 'src/greet.ts';
@@ -147,8 +148,8 @@ export type StopContinueFixture = Readonly<{
   stateHome: string;
   /**
    * Where the run's isolation worktrees land under this fixture's state home. The implementer
-   * writes there, and nothing reaches `projectDir` until the brief's changes are promoted, so
-   * this is the only place a mid-brief write is visible.
+   * writes there, and nothing reaches `projectDir` until the run is applied, so this is the
+   * only place a write before Apply is visible.
    */
   isolationTreesDir: string;
   markerPath: string;
@@ -218,6 +219,31 @@ writeFileSync(${JSON.stringify(GREET_FILE)}, ${JSON.stringify(GREET_SOURCE)});
 
 /** The branch the escaping implementer leaves in the checkout on its first attempt. */
 export const ESCAPED_BRANCH = 'escaped';
+
+const APPLY_TIMEOUT_MS = 60_000;
+
+/** Applies a run that is ready to apply the way an operator does from the shell. */
+export function applyRun(
+  fixture: StopContinueFixture,
+  sessionId: string,
+): ReturnType<typeof spawnCli> {
+  return spawnCli({
+    args: [
+      '--import',
+      'tsx',
+      'src/cli.ts',
+      'continue',
+      sessionId,
+      '--action',
+      'apply',
+      '--plain',
+      '--project',
+      fixture.projectDir,
+    ],
+    stateHome: fixture.stateHome,
+    timeoutMs: APPLY_TIMEOUT_MS,
+  });
+}
 
 /**
  * A throwaway repository whose planner and implementer are local node scripts,

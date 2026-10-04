@@ -10,6 +10,7 @@ export type RunReviewerCallOptions = {
   reviewer: Reviewer;
   prompt: string;
   projectDir: string;
+  workspaceDir: string;
   sessionId: string;
   bus: EventBus;
   state: WorkflowState;
@@ -25,10 +26,10 @@ export type RunReviewerCallResult = {
 export async function runReviewerCall(
   opts: RunReviewerCallOptions,
 ): Promise<RunReviewerCallResult> {
-  const { reviewer, prompt, projectDir, sessionId, bus, metadata } = opts;
+  const { reviewer, prompt, projectDir, workspaceDir, sessionId, bus, metadata } = opts;
   // Cancellation is the caller's: the interactive path runs this inside
   // `withContinuationLoop`, which owns the per-call abort handler.
-  const result = await reviewer.review(prompt, projectDir, {
+  const result = await reviewer.review(prompt, workspaceDir, {
     onOutput: createBusTextHandler({ bus, phase: opts.state.phase }, { content: 'markdown' }),
     signal: opts.signal,
   });

@@ -1,75 +1,33 @@
 ---
 name: splitbrief-brief
 description: >
-  Use when a task should be compiled into self-contained Product Task Briefs
-  without executing them — "splitbrief brief", "write the briefs", "compile
-  task briefs for <tool>", "prepare briefs I can hand to another agent". Reads
-  the project's instruction files and gates, groups the work one coherent
-  outcome per brief in dependency order, and writes them under .splitbrief/runs/.
-  To execute the briefs afterwards: splitbrief-run. For the whole pipeline in
-  one go: splitbrief.
+  Plan only and write briefs; stop before implementation:
+  "splitbrief brief", "write briefs", "prepare briefs for another agent".
+  This session researches the outcome, asks bounded questions, and renders a typed plan
+  with one self-contained Markdown brief per behaviour.
 metadata:
   author: b4r7x
   version: "1.0.0"
-  argument-hint: "[quick|standard|plan] [--ask] <task | file>"
+  argument-hint: "[impl=<tool>[:<model>][@<effort>]] [review=<tool>[:<model>][@<effort>]] [cadence=end|task] [--ask [--yes]] <task | file>"
 ---
 
 # splitbrief-brief
 
-Phase 0 and Phase 1 of the splitbrief pipeline (map: references/family-map.md). Output: a briefs directory any executor can consume — `splitbrief-run`, the SPLITBRIEF CLI, a human, or a tool prompted by hand.
+Run the planning procedure for task text or a file containing the request.
+Write run artifacts only. Spawn no implementer or reviewer and edit no source files.
+An implementer seat is optional; record an absent seat as `unselected`.
 
-## Arguments
+Stop after the typed plan and briefs pass admission and the optional approval is recorded.
+Print the run directory, criteria, task ids, suggested files, dependencies, batches, and baseline validation results.
+Print `next: splitbrief-run impl=<seat> cadence=<end|task> <run dir>`.
+Keep the plan and briefs on disk for later execution.
 
-`[mode]` — `quick` (default) | `standard` | `plan`. `standard` writes `spec.md` and `plan-notes.md` before the briefs; `plan` prints the plan block and the briefs and writes nothing.
-`--ask` — pause at the plan block before writing.
-`<task | file>` — task text, or a path that exists on disk read as the task.
+## References
 
-No crew is needed. Nothing is spawned.
+Read the applicable references before acting. This explicit list supplies the dependencies for an isolated install.
 
-## Mandates
-
-1. **The brief stands alone.** Code context is copied verbatim from the files it describes (references/brief-format.md); nothing is summarized from memory.
-2. **Gates are resolved now, not later.** Every brief's `### Tests` ends with the resolved validation commands (references/gates.md) so whoever executes it runs the same checks the review will quote.
-3. **One brief, one outcome.** Group the work by the rule in the block below and order the briefs by dependency.
-4. **Nothing touches git.** The briefs carry the never-commit constraint; this skill writes only under `.splitbrief/`.
-
-<!-- generated: brief-grouping -->
-One brief delivers one coherent, reviewable outcome. List every path that outcome writes under `files`. Keep the tests, callers, wiring, fixtures and necessary documentation with the behavior they cover; a file boundary alone never makes a separate brief. Combine related corrections that share a contract, mechanism or code context; a mechanical rename carries all its callers and pinned strings. Split independent outcomes, or a complex mechanism, when separate validation, context or recovery makes the work easier to execute correctly. Two assertions that can pass separately do not require separate briefs, and no file-count or line-count threshold decides a boundary. Keep each brief self-contained for its actual runner, with every acceptance criterion and repository constraint it needs, and within the real model context and prompt transport limits, system text, skills and retry feedback included. Do not aim for a number of briefs. Order the dependencies so each brief leaves its affected checks green.
-<!-- /generated -->
-
-## Phase 0 — Preflight
-
-1. Read the instruction files (`CLAUDE.md`, `AGENTS.md`, `.cursor/rules/*`, `.github/copilot-instructions.md`); their rules become Constraints.
-2. Resolve gates per references/gates.md; run the baseline once and record it. Choose the run dir now — `.splitbrief/runs/$(date +%Y-%m-%d-%H%M%S)-<slug>/` (on collision append `-2`, `-3`, …) — create it, and record the baseline fingerprints in `baseline-sha.txt` there (references/gates.md) so `splitbrief-run` can use them.
-3. Read the files the task touches at the exports-and-structure level; group the work into briefs by outcome.
-4. Print the plan block:
-
-    ## SPLITBRIEF preflight — <slug> (brief only)
-    task: <first line>
-    mode: quick
-    gates: typecheck `npx tsc --noEmit` (manifest) · lint none · test `npm test` (default)
-    baseline: typecheck PASS · test PASS (12 passed)
-    briefs: 2 → T001 src/slugify.ts +1 (create) · T002 src/index.ts (modify, after T001)
-    run dir: .splitbrief/runs/2026-09-08-153000-slugify/
-    gitignore: .splitbrief/ ignored   (or: NOT ignored — add it to .gitignore or expect the run dir in git status)
-
-5. `plan` → print the briefs, `rm -r` the run dir, and stop. `--ask` → wait. Otherwise write `plan.md` (the block) and `.splitbrief/current-run` (the run dir path), then continue.
-
-## Phase 1 — Briefs
-
-`standard`: write `spec.md` (Overview, Acceptance Criteria — each verifiable, Functional Requirements, Out of Scope) and `plan-notes.md` (Summary, `### New Files` / `### Modified Files` path lines with an indented purpose each, Key Implementation Details, Testing Strategy). Both modes: write `briefs/T001.md` … and `briefs/index.md` exactly per references/brief-format.md — template, nine-section contract, critical rules, skill additions. Read every file a brief names before writing its read-only context and Signature sections.
-
-## Hand-back
-
-    ## SPLITBRIEF briefs — <slug>
-    run dir: .splitbrief/runs/2026-09-08-153000-slugify/
-    | Brief | Files | Action | Depends on |
-    |---|---|---|---|
-    | T001 | src/slugify.ts +1 | create | — |
-    | T002 | src/index.ts | modify | T001 |
-    gates recorded: typecheck · test (lint: none)
-    next: splitbrief-run impl=<tool>[:<model>] .splitbrief/runs/2026-09-08-153000-slugify/briefs
-
-## Orchestration notes
-
-Read files, run the gate commands, write files — nothing else. `--ask` uses the host's question facility (Claude Code: `AskUserQuestion`; other hosts: a plain question, resume on the next message).
+- references/family-map.md for entry selection, arguments, and engine command mapping.
+- references/planning.md for the planning session, typed plan, and decisions ledger.
+- references/brief-format.md for the Markdown contract and field placement.
+- references/gates.md for validation, baselines, and change evidence.
+- references/implementer-prompt.md for the completion report embedded in each brief.

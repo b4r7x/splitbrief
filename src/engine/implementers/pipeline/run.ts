@@ -61,10 +61,19 @@ import {
   checkoutChanges,
   formatCheckoutChanges,
   snapshotCheckout,
+  snapshotWorkspaceGit,
+  workspaceGitChanges,
   type CheckoutSnapshot,
+  type WorkspaceGitSnapshot,
 } from '../isolation/checkout-audit.js';
 
 const MAX_RETRY_TEMPERATURE = 2;
+
+/** The checkout and the call's own workspace git state, read as one pair. */
+type CheckoutRead = Readonly<{
+  checkout: CheckoutSnapshot;
+  workspace: WorkspaceGitSnapshot | null;
+}>;
 
 export interface ImplementerBaseConfig {
   extractsCode: boolean;
@@ -356,16 +365,21 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
   }
 
   /**
-   * The checkout as the isolation audit reads it, or nothing when the read
-   * failed: an audit that cannot see the checkout says so and lets the call
-   * stand, rather than inventing an escape.
+   * The checkout and the call's own workspace as the isolation audit reads
+   * them, or nothing when either read failed: an audit that cannot see the
+   * checkout says so and lets the call stand, rather than inventing an escape.
    */
   async function readCheckout(
     opts: ImplementerOptions,
     checkoutDir: string,
-  ): Promise<CheckoutSnapshot | undefined> {
+    workspaceDir: string,
+  ): Promise<CheckoutRead | undefined> {
     try {
-      return await snapshotCheckout(checkoutDir);
+      const [checkout, workspace] = await Promise.all([
+        snapshotCheckout(checkoutDir),
+        snapshotWorkspaceGit(workspaceDir),
+      ]);
+      return { checkout, workspace };
     } catch (err) {
       if (opts.phase) {
         baseConfig.publisher?.publishWarning({
@@ -380,22 +394,29 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
   }
 
   /**
-   * The git state that changed in the checkout across one implementer call — a
-   * change that went around the isolation directory instead of through
-   * promotion. The window is the call alone, so edits between calls never
-   * count. A changed file is only reported: an editor save changes files too,
-   * and the audit cannot tell who made it. A stopped call only reports its state
-   * change: the run is already halting.
+   * The git state that changed in the checkout or the call's own workspace
+   * across one implementer call — a change that went around the isolation
+   * directory instead of through promotion. The window is the call alone, so
+   * edits between calls never count. A changed file is only reported: an editor
+   * save changes files too, and the audit cannot tell who made it. A stopped
+   * call only reports its state change: the run is already halting.
    */
   async function checkoutEscape(
     opts: ImplementerOptions,
     checkoutDir: string | undefined,
-    before: CheckoutSnapshot | undefined,
+    before: CheckoutRead | undefined,
   ): Promise<string[]> {
     if (checkoutDir === undefined || before === undefined) return [];
-    const after = await readCheckout(opts, checkoutDir);
+    const after = await readCheckout(opts, checkoutDir, opts.projectDir);
     if (after === undefined) return [];
-    const { files, state } = checkoutChanges({ before, after });
+    const { files, state: checkoutState } = checkoutChanges({
+      before: before.checkout,
+      after: after.checkout,
+    });
+    const state = [
+      ...checkoutState,
+      ...workspaceGitChanges({ before: before.workspace, after: after.workspace }),
+    ];
     if (files.length > 0 && opts.phase) {
       baseConfig.publisher?.publishWarning({
         phase: opts.phase,
@@ -463,15 +484,13 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
       implBuffer?.append(text);
     };
 
-    // A direct writer handed its own copy of the project may not touch the one it came from.
+    // A writer handed its own workspace may not touch the checkout it came from.
     const checkoutDir =
-      !baseConfig.extractsCode &&
-      opts.fileIgnoreProjectDir !== undefined &&
-      opts.fileIgnoreProjectDir !== projectDir
+      opts.fileIgnoreProjectDir !== undefined && opts.fileIgnoreProjectDir !== projectDir
         ? opts.fileIgnoreProjectDir
         : undefined;
     const checkoutBefore =
-      checkoutDir === undefined ? undefined : await readCheckout(opts, checkoutDir);
+      checkoutDir === undefined ? undefined : await readCheckout(opts, checkoutDir, projectDir);
 
     if (phase) baseConfig.publisher?.publishRunning({ phase, taskId: task.id, file: task.file });
     const startTime = Date.now();
@@ -492,6 +511,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         config,
         onOutput: wrappedOnOutput,
         systemPreamble,
+        phase,
         ...(temperature !== undefined && { temperature }),
         signal: opts.signal,
         onCallEvent: (event) => {
@@ -508,7 +528,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
       const escaped = await checkoutEscape(opts, checkoutDir, checkoutBefore);
       if (opts.signal?.aborted) {
         implBuffer?.flushInterrupted();
-        return { success: false, output: '', error: ABORTED_OUTCOME_TEXT };
+        return { success: false, output: '', error: ABORTED_OUTCOME_TEXT, outcome: 'user-abort' };
       }
       if (escaped.length > 0) {
         failTask(opts);

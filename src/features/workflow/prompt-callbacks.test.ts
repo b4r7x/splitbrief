@@ -1,8 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildPromptCallbacks } from './prompt-callbacks.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
-import type { UserEditConflict } from '../../engine/events/workflow-events.js';
-import { taskId } from '../../core/schemas/task.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { stopStore } from '../../stores/workflow/stop.js';
 import { tasksStore } from '../../stores/workflow/tasks.js';
@@ -32,16 +30,6 @@ function makeCallbacksWithInputMode(inputMode: UseInputModeResult) {
     controller: new AbortController(),
   });
 }
-
-const conflict: UserEditConflict = {
-  kind: 'current-task-conflict',
-  files: ['src/a.ts'],
-  affectedTaskIds: [taskId('T001')],
-  currentTaskId: taskId('T001'),
-  fileConflicts: [],
-  safeToContinue: false,
-  availableActions: ['continue-unrelated', 'pause', 'abort-workflow'],
-};
 
 describe('buildPromptCallbacks onApprovalNeeded', () => {
   afterEach(() => {
@@ -130,28 +118,6 @@ describe('buildPromptCallbacks onApprovalNeeded', () => {
 
     expect(setReviewMode).toHaveBeenCalledWith('');
     expect(reviewStore.get().source).toBeNull();
-  });
-});
-
-describe('buildPromptCallbacks onUserEditConflict', () => {
-  it('maps the "continue" answer to the continue-unrelated action', async () => {
-    const result = await makeCallbacks('continue').onUserEditConflict?.(conflict);
-    expect(result).toBe('continue-unrelated');
-  });
-
-  it('maps a whitespace-only answer to pause', async () => {
-    const result = await makeCallbacks('   ').onUserEditConflict?.(conflict);
-    expect(result).toBe('pause');
-  });
-
-  it('falls back to pause for an unrecognised answer', async () => {
-    const result = await makeCallbacks('???').onUserEditConflict?.(conflict);
-    expect(result).toBe('pause');
-  });
-
-  it('maps the "abort" answer to abort-workflow', async () => {
-    const result = await makeCallbacks('abort').onUserEditConflict?.(conflict);
-    expect(result).toBe('abort-workflow');
   });
 });
 

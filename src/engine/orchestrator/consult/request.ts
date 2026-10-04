@@ -29,6 +29,7 @@ import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
 
 export type ConsultContext = Readonly<{
   projectDir: string;
+  workspaceDir: string;
   sessionId: string;
   bus: EventBus;
   planner: Pick<Planner, 'capabilities' | 'typedCall'>;
@@ -100,9 +101,11 @@ function promptInput(
   state: WorkflowState,
   input: ConsultRequestInput,
   diff: string,
+  workspaceDir: string,
 ): ConsultPromptInput {
   const lineage = state.lineages?.[lineageIdOf(input.task)];
   return {
+    workspaceDir,
     reason: input.reason,
     plan: state.plan,
     task: input.task,
@@ -158,8 +161,8 @@ export async function requestConsult(
     ctx.onStateChange?.(next);
   };
 
-  const diff = await attemptDiff(ctx.projectDir, input.snapshot, input.changedFiles);
-  const prompt = promptInput(ctx.state, input, diff);
+  const diff = await attemptDiff(ctx.workspaceDir, input.snapshot, input.changedFiles);
+  const prompt = promptInput(ctx.state, input, diff, ctx.workspaceDir);
   const compose = (turn: PlannerSessionTurn): string =>
     buildConsultPrompt({ ...prompt, resumed: turn.onSession });
   const call = {

@@ -37,9 +37,13 @@ export function makeCtx(overrides: Partial<RuntimeCommandContext> = {}): Runtime
     attachImage: () => ({ ok: false, reason: 'not-image' }),
     detachImage: () => false,
     listAttachments: () => [],
-    acceptRunSnapshot: async () => ({ snapshotId: 'snap-accepted', isFirstSnapshot: false }),
+    acceptRun: async () => ({
+      status: 'snapshot-accepted',
+      snapshotId: 'snap-accepted',
+      isFirstSnapshot: false,
+    }),
     refreshRun: noop,
-    rejectRunSnapshot: async () => ({
+    rejectRun: async () => ({
       status: 'rejected',
       snapshotId: 'snap-run',
       restoredPaths: [],

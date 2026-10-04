@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { CliImplementerConfig } from '../../core/schemas/implementer-config.js';
@@ -8,6 +8,7 @@ import { prependPath, trustedShimGate } from '#testing/helpers/command-shim.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createCliImplementer } from './cli.js';
+import type { ImplementerPublisher } from './types.js';
 
 const OPENCODE_STREAM = join(
   import.meta.dirname,
@@ -81,8 +82,22 @@ function installShim(command: string): ReturnType<typeof trustedShimGate> {
   return trustedShimGate({ dir: shimDir, tool: 'opencode' });
 }
 
-async function implement(command: string, skillRoots?: readonly string[]) {
-  const implementer = createCliImplementer(opencode, { trustedCli: installShim(command) });
+async function implement(
+  command: string,
+  skillRoots?: readonly string[],
+  publishWarning: ImplementerPublisher['publishWarning'] = () => {},
+) {
+  const publisher: ImplementerPublisher = {
+    publishRunning: () => {},
+    publishCallEvent: () => {},
+    publishDone: () => {},
+    publishFailed: () => {},
+    publishWarning,
+  };
+  const implementer = createCliImplementer(opencode, {
+    trustedCli: installShim(command),
+    publisher,
+  });
   return implementer.implement({
     task: makeTask({ id: 'T001', action: 'create', file: 'src/greet.ts' }),
     projectDir: isolationDir,
@@ -94,6 +109,7 @@ async function implement(command: string, skillRoots?: readonly string[]) {
       ...(skillRoots !== undefined && { skillRoots }),
     },
     onOutput: () => {},
+    phase: 'implementing',
   });
 }
 
@@ -104,10 +120,24 @@ describe("createCliImplementer — the run's attached skills", { timeout: 30_000
     expect(result).toMatchObject({ success: true });
   });
 
-  it('halts the same read when no skill is attached', async () => {
-    const result = await implement(`cat ${join(skillDir, 'references', 'api.md')}`);
+  it('logs the same read for the review when no skill is attached, and the call goes on', async () => {
+    const publishWarning = vi.fn();
+    const result = await implement(
+      `cat ${join(skillDir, 'references', 'api.md')}`,
+      undefined,
+      publishWarning,
+    );
 
-    expect(result).toMatchObject({ success: false, outcome: 'implementer-left-isolation' });
+    expect(result).toMatchObject({ success: true });
+    expect(publishWarning).toHaveBeenCalledOnce();
+    expect(publishWarning).toHaveBeenCalledWith({
+      phase: 'implementing',
+      taskId: 'T001',
+      message: expect.stringMatching(
+        /^Task T001 read \S+\/references\/api\.md with bash: cat \S+$/,
+      ),
+      safety: { category: 'implementer', code: 'isolation_outside_read' },
+    });
   });
 
   it('hands a Claude Code implementer the attached skills as read-only directories', async () => {

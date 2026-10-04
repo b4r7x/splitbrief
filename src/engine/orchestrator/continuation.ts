@@ -105,6 +105,11 @@ export type ContinuationHolder = {
   take: (step: StepRef, briefFingerprint?: string) => ContinuationSeed | undefined;
   /** Holds a steer for the step the run is about to start. */
   hold: (step: StepRef, steer: string | undefined) => void;
+  /**
+   * The step continues its cut attempt in the kept workspace. Its brief was refreshed when that
+   * attempt was dispatched; the workspace now also holds the attempt's own output.
+   */
+  resumesAttempt: (step: StepRef, briefFingerprint: string) => boolean;
 };
 
 /**
@@ -119,6 +124,7 @@ function sameStep(a: StepRef, b: StepRef): boolean {
   if (a.kind === 'gate') return b.kind === 'gate' && a.gate === b.gate;
   if (a.kind === 'brief')
     return b.kind === 'brief' && a.taskId === b.taskId && a.attempt === b.attempt;
+  if (a.kind === 'apply') return true;
   return b.kind === 'review' && a.cycle === b.cycle;
 }
 
@@ -149,6 +155,13 @@ export function createContinuationHolder(
     },
     hold(step, steer) {
       pending = steer === undefined ? undefined : { step, steer };
+    },
+    resumesAttempt(step, briefFingerprint) {
+      return (
+        pending?.keepWorkspace === true &&
+        sameStep(pending.step, step) &&
+        pending.briefFingerprint === briefFingerprint
+      );
     },
   };
 }

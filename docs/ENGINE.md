@@ -41,7 +41,7 @@ The orchestrator is split by concern under `src/engine/orchestrator/`:
 - **`approval/`** — The write gate for declared file writes. Classifies changed paths by risk (in-scope, out-of-scope, control-plane, package change, CI or secret file) and asks only for a write to a protected path; `confirm.ts` also turns an approved plan's `protectedOperations` into confirmations (`planConfirmations`).
 - **`drift/`** — Brief drift detection. Checks whether implementer output drifted from the Task Brief and reports a score. `chain.ts` tracks chains of drifting tasks.
 - **`evidence/`** — Collects evidence of task completion for the final review. The `review-packet/` subfolder assembles all evidence into a structured packet for the review seat. The review text is parsed into a structured verdict, per-criterion marks and categorised findings by `parseFinalReview()` in `src/engine/parsers/final-review.ts`; an unrecognised review degrades to an unknown verdict. The verdict, criteria counts and finding counts land in the packet's final-review section and are rolled up into `summary.json` (`reviewPacket.finalReviewVerdict`, `reviewPacket.finalReviewFindingCounts`).
-- **`user-edit/`** — Detects when the user edits files outside of SPLITBRIEF during a running workflow. `conflicts.ts` handles merge conflicts between user edits and implementer output. The pre-task gate no longer stops the run on an inspection failure: a failed changed-file scan degrades to a warning and the task proceeds, and a conflict is raised only from a scan that produced a file list.
+- **`apply/`** — Writes a ready run into the checkout once (`runApply`, `run.ts`): a three-way merge of the workspace base, the checkout and the run workspace (`merge.ts`), the backup before the first write (`backup.ts`), one hash-guarded write (`write.ts`), backup restore (`restore.ts`) and the `run.patch` that Discard and End run keep (`patch.ts`). A checkout edit during a run is not a halt: Apply merges it. See [WORKFLOW.md §Apply](./WORKFLOW.md#apply).
 
 ---
 
@@ -162,7 +162,6 @@ Two separate communication mechanisms serve different purposes.
 **Callbacks** — Await-able request/response pairs on `WorkflowContext.callbacks` (`OrchestratorCallbacks` in `src/engine/orchestrator/types.ts`). For moments where the workflow must stop and wait for the user:
 
 - `onApprovalNeeded(type, filePath)` — the plan card (`'plan'`, over `plan.md`)
-- `onUserEditConflict(conflict)` — a user edit collides with in-flight work
 - `onPlannerReply(reply)` — the planner asked a round of typed questions; the session waits for the answers
 - `onContinuationNeeded(partialResponse)` — planner call was interrupted, should we continue?
 - `onTieredApproval(request)` — a declared implementer write to a protected path needs confirmation
@@ -214,7 +213,7 @@ One API owns the file. `src/core/state/state-file.ts` reads and classifies it an
 
 A persisted changed-files baseline has two provenance states: `head: null` records a known unborn start, and a SHA records the exact run-start commit. State without a baseline is rejected at final review (`finalReviewError.missingRunBaseline`) rather than reconstructed from commit subjects.
 
-`runStartChangedFiles` is immutable run-start provenance, while rolling fingerprints retain absorbed `"missing"` tombstones. A symlink that stays inside the project is recorded by its target (`"symlink:<target>"`), the way git records it. An entry SPLITBRIEF refuses to read — any other symlink, a directory, an unreadable file — is recorded as `"unreadable"` rather than thrown. Right after baseline capture and before validation priming, the task loop publishes one warning naming those project-relative paths (code `unreadable_changed_files`); the entries are excluded from user-edit detection and never opened.
+`runStartChangedFiles` is immutable run-start provenance, while rolling fingerprints retain absorbed `"missing"` tombstones. A symlink that stays inside the project is recorded by its target (`"symlink:<target>"`), the way git records it. An entry SPLITBRIEF refuses to read — any other symlink, a directory, an unreadable file — is recorded as `"unreadable"` rather than thrown. Right after baseline capture and before validation priming, the task loop publishes one warning naming those project-relative paths (code `unreadable_changed_files`); the entries are never opened.
 
 **`jsonlSink`** — appends bounded events to `session.jsonl` via `src/core/sessions/log-writer.ts`. This is the audit log and transcript source. Stateless backends (those that don't support session resume natively) rebuild planner context from the JSONL log on resume.
 

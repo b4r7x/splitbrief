@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import { writeConfigYaml } from '#testing/helpers/config-io.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { createTestGitRepo, detachHead, startConflictingMerge } from '#testing/helpers/git.js';
 import {
   LOCKFILE,
   sessionDir,
@@ -23,9 +22,16 @@ import { flattenReadinessChecks } from './status.js';
 // Stands in for the git binary so repository posture is read from a scripted
 // repository instead of a fixture that writes commits. `commands` records every
 // git invocation readiness makes.
-const scriptedGit = vi.hoisted(() => ({
-  repo: undefined as { isRepo: boolean; branch: string } | undefined,
-  commands: [] as string[][],
+const scriptedGit = vi.hoisted<{
+  repo: { isRepo: boolean; branch: string } | undefined;
+  commands: string[][];
+  files: { path: string }[];
+  notAdded: string[];
+}>(() => ({
+  repo: undefined,
+  commands: [],
+  files: [],
+  notAdded: [],
 }));
 
 vi.mock('../../lib/git/client.js', async (importOriginal) => {
@@ -33,8 +39,7 @@ vi.mock('../../lib/git/client.js', async (importOriginal) => {
   return {
     ...actual,
     getGitForDir: (dir: string) => {
-      const repo = scriptedGit.repo;
-      if (repo === undefined) return actual.getGitForDir(dir);
+      const repo = scriptedGit.repo ?? { isRepo: false, branch: 'main' };
       const record = (args: string[]) => scriptedGit.commands.push(args);
       return {
         checkIsRepo: async () => {
@@ -43,11 +48,11 @@ vi.mock('../../lib/git/client.js', async (importOriginal) => {
         },
         revparse: async (args: string[]) => {
           record(['rev-parse', ...args]);
-          return '.git';
+          return join(dir, '.git');
         },
         status: async () => {
           record(['status']);
-          return { files: [], not_added: [] };
+          return { files: scriptedGit.files, not_added: scriptedGit.notAdded };
         },
         raw: async (args: string[]) => {
           record(args);
@@ -58,6 +63,13 @@ vi.mock('../../lib/git/client.js', async (importOriginal) => {
       };
     },
   };
+});
+
+beforeEach(() => {
+  scriptedGit.repo = undefined;
+  scriptedGit.commands = [];
+  scriptedGit.files = [];
+  scriptedGit.notAdded = [];
 });
 
 function writeSessionState(projectDir: string, sessionId: string, phase: string): void {
@@ -229,15 +241,77 @@ describe('collectReadiness git posture', () => {
 
   beforeEach(() => {
     tempDir = createTempDir('collect-git-posture');
+    scriptedGit.repo = { isRepo: true, branch: 'main' };
   });
 
   afterEach(() => {
     cleanupTempDir(tempDir);
   });
 
+  it('puts the workspace-links warning in the repository section', async () => {
+    const config = makeConfig({
+      planner: {
+        kind: 'api',
+        provider: 'ollama',
+        apiBase: 'http://localhost:11434/v1',
+        model: 'planner',
+        contextLength: 65536,
+      },
+      validation: {
+        typecheckCommand: 'node -e "process.exit(0)"',
+        lintCommand: 'node -e "process.exit(0)"',
+        testCommand: 'node -e "process.exit(0)"',
+      },
+    });
+    writeConfigYaml(tempDir, config);
+    writeFileSync(join(tempDir, 'package.json'), JSON.stringify({ name: 'mono' }));
+    const { report: baseline } = await collectReadiness({ projectDir: tempDir, config });
+    expect(baseline.counts.warning).toBe(0);
+    expect(baseline.counts.blocker).toBe(0);
+    expect(baseline.status).toBe('ready');
+    writeFileSync(
+      join(tempDir, 'package.json'),
+      JSON.stringify({ name: 'mono', workspaces: ['packages/*'] }),
+    );
+
+    const { report } = await collectReadiness({ projectDir: tempDir, config });
+
+    const repo = report.sections.find((section) => section.id === 'repo');
+    const check = repo?.checks.find((c) => c.id === 'isolation.workspace-links');
+    expect(check?.severity).toBe('warning');
+    expect(report.counts).toEqual({ ...baseline.counts, warning: baseline.counts.warning + 1 });
+    expect(report.status).toBe('ready-with-warnings');
+    expect(report.nextAction).toEqual({
+      kind: 'continue',
+      label: 'Continue',
+      reason: 'Only warnings were found.',
+    });
+  });
+
+  it('reports a failed isolation check when pnpm workspace YAML is invalid', async () => {
+    writeFileSync(join(tempDir, 'pnpm-workspace.yaml'), 'packages: [\n');
+
+    const { report } = await collectReadiness({ projectDir: tempDir });
+
+    const repo = report.sections.find((section) => section.id === 'repo');
+    const failure = repo?.checks.find((check) => check.id === 'isolation.check-failed');
+    expect(failure).toMatchObject({ severity: 'warning' });
+    expect(failure?.details?.join('\n')).toContain('line 2');
+  });
+
+  it('reports a failed isolation check when the pnpm workspace file cannot be read', async () => {
+    mkdirSync(join(tempDir, 'pnpm-workspace.yaml'));
+
+    const { report } = await collectReadiness({ projectDir: tempDir });
+
+    const repo = report.sections.find((section) => section.id === 'repo');
+    const failure = repo?.checks.find((check) => check.id === 'isolation.check-failed');
+    expect(failure).toMatchObject({ severity: 'warning' });
+    expect(failure?.details?.join('\n')).toContain('EISDIR');
+  });
+
   it('warns when the repository is on a detached HEAD', async () => {
-    createTestGitRepo(tempDir);
-    detachHead(tempDir);
+    scriptedGit.repo = { isRepo: true, branch: 'HEAD' };
 
     const { report } = await collectReadiness({ projectDir: tempDir });
 
@@ -248,8 +322,6 @@ describe('collectReadiness git posture', () => {
   });
 
   it('does not warn about a detached HEAD when on a branch', async () => {
-    createTestGitRepo(tempDir);
-
     const { report } = await collectReadiness({ projectDir: tempDir });
 
     expect(
@@ -258,7 +330,8 @@ describe('collectReadiness git posture', () => {
   });
 
   it('blocks when a merge is in progress', async () => {
-    startConflictingMerge(tempDir);
+    mkdirSync(join(tempDir, '.git'));
+    writeFileSync(join(tempDir, '.git', 'MERGE_HEAD'), 'a'.repeat(40));
 
     const { report } = await collectReadiness({ projectDir: tempDir });
 
@@ -270,12 +343,18 @@ describe('collectReadiness git posture', () => {
   });
 
   it('counts only the operator edits in the dirty worktree, not the isolation worktree or state dir', async () => {
-    createTestGitRepo(tempDir, { 'src/edited.ts': 'export const a = 1;\n' });
+    mkdirSync(join(tempDir, 'src'));
     writeFileSync(join(tempDir, 'src', 'edited.ts'), 'export const a = 2;\n');
     mkdirSync(join(tempDir, TREES_DIR, 'sess-1', 'src'), { recursive: true });
     writeFileSync(join(tempDir, TREES_DIR, 'sess-1', 'src', 'edited.ts'), 'export const a = 3;\n');
     mkdirSync(join(tempDir, SPLITBRIEF_DIR), { recursive: true });
     writeFileSync(join(tempDir, SPLITBRIEF_DIR, CONFIG_FILE), 'version: 3\n');
+    scriptedGit.files = [
+      { path: 'src/edited.ts' },
+      { path: `${TREES_DIR}/` },
+      { path: `${SPLITBRIEF_DIR}/` },
+    ];
+    scriptedGit.notAdded = [`${TREES_DIR}/`, `${SPLITBRIEF_DIR}/`];
 
     const { report } = await collectReadiness({ projectDir: tempDir });
 
@@ -287,7 +366,6 @@ describe('collectReadiness git posture', () => {
   });
 
   it('ignores only the explicit session being resumed', async () => {
-    createTestGitRepo(tempDir);
     const sessionId = '2026-04-18-resume-session';
     writeSessionState(tempDir, sessionId, 'implementing');
     writeActive({ projectDir: tempDir, sessionId });

@@ -162,7 +162,7 @@ src/core/pipeline-spec/      # the typed pipeline contract: ladder.ts, retries.t
                              #   planner-documents.ts — pure data and readers, no I/O
 src/core/scope/              # declared-set.ts — the one path ↔ Scope matcher every consumer calls
 src/core/validation/stacks/  # typescript · javascript · python · go · rust rows + registry.ts
-src/core/recovery/           # headline.ts, action-label.ts, resume-command.ts, user-edit-actions.ts
+src/core/recovery/           # headline.ts, action-label.ts, resume-command.ts, reset-clock.ts, user-edit-conflict-words.ts
 ```
 
 `pipeline-spec/` is read by the orchestrator instead of literals, and `scripts/skill-blocks.ts` renders the skills' countable rules from the same modules — see [`SKILLS.md`](./SKILLS.md).
@@ -596,7 +596,7 @@ orchestrator/
 │   ├── step.ts              # entry — single-task execution
 │   ├── pre-task.ts          # internal — pre-hook dispatch, task-start event, snapshot
 │   ├── run-implementation.ts # internal — continuation loop, streaming, staging
-│   ├── apply-changed-files.ts # internal — post-impl approval, promotion, conflict detection
+│   ├── attempt-gate.ts      # internal — protected-write gate over an attempt's workspace changes
 │   ├── analyze-drift.ts     # internal — per-task drift chain analysis after task attempts
 │   ├── rollback.ts          # internal — restore task files after denied validation or exhausted retries
 │   └── resolve-deps.ts     # internal — dependency resolution

@@ -11,6 +11,7 @@ import {
   TEST_SINKS,
 } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { sessionDir } from '../../../core/paths.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
@@ -59,7 +60,7 @@ afterEach(() => {
 });
 
 describe('workflow closure', () => {
-  it('retries End run after a newer open failed-review state is saved', () => {
+  it('retries End run after a newer open failed-review state is saved', async () => {
     const projectDir = createTempDir('workflow-closure-open-race-');
     dirs.push(projectDir);
     const ref = { projectDir, sessionId: 'failed-review-closure-race' };
@@ -76,7 +77,7 @@ describe('workflow closure', () => {
     };
     saveState(ref, state);
     race.writeOpenAfterRead = true;
-    const closure = closeRunIfOpen(ref, state);
+    const closure = await closeRunIfOpen(ref, state);
     expect(race.writeOpenAfterRead).toBe(false);
     expect(closure.closedNow).toBe(true);
     expect(closure.state.stateRevision).toBe(2);
@@ -85,7 +86,7 @@ describe('workflow closure', () => {
     expect(readRunRecord(ref)?.status).toEqual({ kind: 'closed', as: 'ended' });
   });
 
-  it('keeps a passed closure written after End run reads an open state', async () => {
+  it('End run overtaken by a passing review closes the ready run with a patch', async () => {
     const projectDir = createTempDir('workflow-closure-race-');
     dirs.push(projectDir);
     execFileSync('git', ['init', projectDir], { stdio: 'ignore' });
@@ -136,14 +137,14 @@ describe('workflow closure', () => {
       _eventSink: (event) => events.push(event),
     });
     expect(race.writePassedAfterRead).toBe(false);
-    expect(readRunRecord(ref)?.status).toEqual({ kind: 'closed', as: 'complete' });
-    expect(readSession(ref)?.status).toBe('complete');
-    expect(readSession(ref)?.summary?.phase).toBe('complete');
+    expect(readRunRecord(ref)?.status).toEqual({ kind: 'closed', as: 'discarded' });
+    expect(readSession(ref)?.status).toBe('ended');
     expect(loadState(ref)?.reviewStatus).toBe('passed');
-    expect(events.filter((event) => event.type === 'workflow_cancelled')).toHaveLength(0);
+    expect(existsSync(join(sessionDir(projectDir, ref.sessionId), 'run.patch'))).toBe(true);
+    expect(events.filter((event) => event.type === 'workflow_cancelled')).toHaveLength(1);
     expect(
       (await readRunEvents(ref)).events.filter((event) => event.type === 'workflow_cancelled'),
-    ).toHaveLength(0);
+    ).toHaveLength(1);
     expect(existsSync(join(projectDir, '.git', 'index'))).toBe(false);
     expect(readdirSync(join(projectDir, '.git', 'objects'))).toEqual(['info', 'pack']);
   });
@@ -153,7 +154,7 @@ describe('workflow closure', () => {
     { at: 'completion callback', review: 'passed' },
     { at: 'completion event', review: 'failed' },
   ] as const)(
-    'preserves the $review review when End run lands at the $at',
+    'End run at the $at keeps the $review review and closes the run with a patch',
     async ({ at, review }) => {
       const projectDir = createTempDir('workflow-closure-');
       dirs.push(projectDir);
@@ -219,24 +220,17 @@ describe('workflow closure', () => {
         { review },
       ]);
       expect(firstClosure).not.toBeNull();
-      const passed = review === 'passed';
       const saved = loadState(ref);
-      if (passed) expect(saved).toEqual(firstClosure);
-      else {
-        expect(saved?.closed?.as).toBe('ended');
-        expect(saved?.reviewStatus).toBe('failed');
-        expect(saved?.pendingRecovery).toBeUndefined();
-      }
-      expect(readRunRecord(ref)?.status).toEqual({
-        kind: 'closed',
-        as: passed ? 'complete' : 'ended',
-      });
-      expect(events.filter((event) => event.type === 'workflow_cancelled')).toHaveLength(
-        passed ? 0 : 1,
-      );
+      const closedAs = review === 'passed' ? 'discarded' : 'ended';
+      expect(saved?.closed?.as).toBe(closedAs);
+      expect(saved?.reviewStatus).toBe(review);
+      expect(saved?.pendingRecovery).toBeUndefined();
+      expect(readRunRecord(ref)?.status).toEqual({ kind: 'closed', as: closedAs });
+      expect(existsSync(join(sessionDir(projectDir, ref.sessionId), 'run.patch'))).toBe(true);
+      expect(events.filter((event) => event.type === 'workflow_cancelled')).toHaveLength(1);
       expect(
         (await readRunEvents(ref)).events.filter((event) => event.type === 'workflow_cancelled'),
-      ).toHaveLength(passed ? 0 : 1);
+      ).toHaveLength(1);
       expect(existsSync(join(projectDir, '.git', 'index'))).toBe(false);
       expect(readdirSync(join(projectDir, '.git', 'objects'))).toEqual(['info', 'pack']);
     },

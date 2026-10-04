@@ -11,6 +11,7 @@ import {
   makeCallbacks,
   makeImplementer,
   makePlanner,
+  runWorkspaceDir,
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -163,7 +164,9 @@ describe('resume planning continuation with a direct-writing implementer', {
     // The run was parked inside the old planning chain, so it continues on one planning session.
     expect(typed.prompts).toHaveLength(1);
     expect(implementer.implement).toHaveBeenCalledTimes(1);
-    expect(readFileSync(join(projectDir, targetFile), 'utf-8')).toBe(implementation);
+    expect(
+      readFileSync(join(runWorkspaceDir({ projectDir, sessionId }), targetFile), 'utf-8'),
+    ).toBe(implementation);
     expect(summary.totalTasks).toBe(1);
     expect(summary.completedByLocal).toBe(1);
     expect(loadState({ projectDir, sessionId })).toMatchObject({

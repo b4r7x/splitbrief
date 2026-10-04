@@ -10,6 +10,7 @@ import {
   makeCallbacks,
   makeBusRecorder,
   makeWctx,
+  openRunWorkspace,
 } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
@@ -295,8 +296,8 @@ describe('runTaskLoop configured custom routing', { timeout: 90_000 }, () => {
       const { callbacks } = makeCallbacks();
       const { bus, events } = makeBusRecorder();
 
-      const result = await runTaskLoop({
-        wctx: makeWctx({
+      const wctx = await openRunWorkspace(
+        makeWctx({
           projectDir,
           sessionId,
           config,
@@ -316,6 +317,9 @@ describe('runTaskLoop configured custom routing', { timeout: 90_000 }, () => {
             return dynamicImplementer;
           },
         }),
+      );
+      const result = await runTaskLoop({
+        wctx,
         initialState: makeImplState([task]),
         setTrackedState: () => {},
         setCurrentTask: () => {},
@@ -327,7 +331,7 @@ describe('runTaskLoop configured custom routing', { timeout: 90_000 }, () => {
       });
       expect(readFileSync(selectedMarkerPath, 'utf8')).toBe(executionRecord(selected));
       expect(existsSync(fallbackMarkerPath)).toBe(false);
-      expect(readFileSync(join(projectDir, taskFile), 'utf8').trimEnd()).toBe(
+      expect(readFileSync(join(wctx.workspaceDir, taskFile), 'utf8').trimEnd()).toBe(
         expectedSource(selected).trimEnd(),
       );
       expect(events.find((event) => event.type === 'task_started')).toMatchObject({

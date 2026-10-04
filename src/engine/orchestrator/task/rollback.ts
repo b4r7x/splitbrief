@@ -4,11 +4,11 @@ import { publishWarning, publishWarningFromError } from '../events.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import { restoreDirtyFilesFromSnapshot } from '../approval/file-snapshots/restore.js';
 import { inferTaskOwnChangedFiles } from '../changed-files-baseline.js';
-import { recordTargetRestore } from '../isolation/acquisition.js';
 import type { WorkflowContext } from '../types.js';
+import { changedStagedFiles, restoreStagedFiles } from '../isolation/staged-snapshot.js';
 
 /** The restore path runs before a WorkflowContext exists on resume, so it asks for only what it reads. */
-type RestoreContext = Pick<WorkflowContext, 'projectDir' | 'sessionId' | 'bus'>;
+type RestoreContext = Pick<WorkflowContext, 'projectDir' | 'workspaceDir' | 'sessionId' | 'bus'>;
 
 async function restoreTaskFilesFromSnapshot(opts: {
   wctx: RestoreContext;
@@ -20,11 +20,20 @@ async function restoreTaskFilesFromSnapshot(opts: {
 }): Promise<void> {
   if (opts.taskChangedFiles.length === 0) return;
   try {
-    const { restoredFiles } = await restoreDirtyFilesFromSnapshot(
-      opts.wctx.projectDir,
-      opts.taskStartSnapshot,
-      opts.taskChangedFiles,
-    );
+    const restoredFiles =
+      opts.taskStartSnapshot.baselineFileHashes !== undefined
+        ? await restoreStagedFiles(
+            opts.wctx.workspaceDir,
+            opts.taskStartSnapshot,
+            opts.taskChangedFiles,
+          )
+        : (
+            await restoreDirtyFilesFromSnapshot(
+              opts.wctx.workspaceDir,
+              opts.taskStartSnapshot,
+              opts.taskChangedFiles,
+            )
+          ).restoredFiles;
     if (restoredFiles.length > 0) {
       publishWarning({
         bus: opts.wctx.bus,
@@ -32,11 +41,6 @@ async function restoreTaskFilesFromSnapshot(opts: {
         message: opts.restoredMessage(restoredFiles),
       });
     }
-    await recordTargetRestore({
-      projectDir: opts.wctx.projectDir,
-      sessionId: opts.wctx.sessionId,
-      files: restoredFiles,
-    });
   } catch (err) {
     publishWarningFromError({ bus: opts.wctx.bus, phase: opts.phase }, opts.failureMessage, err);
   }
@@ -82,10 +86,9 @@ export async function restoreAttemptFiles(opts: {
 }): Promise<void> {
   let attemptChangedFiles: string[];
   try {
-    attemptChangedFiles = await getChangedFilesSinceSnapshot(
-      opts.wctx.projectDir,
-      opts.attemptSnapshot,
-    );
+    attemptChangedFiles = await (opts.attemptSnapshot.baselineFileHashes === undefined
+      ? getChangedFilesSinceSnapshot
+      : changedStagedFiles)(opts.wctx.workspaceDir, opts.attemptSnapshot);
   } catch (err) {
     publishWarningFromError(
       { bus: opts.wctx.bus, phase: opts.phase },
@@ -122,7 +125,13 @@ export async function restoreInterruptedTaskFiles(opts: {
   try {
     // A snapshot head the operator rewrote between the kill and the resume no
     // longer resolves; the run still restarts the brief.
-    taskChangedFiles = await inferTaskOwnChangedFiles(wctx, task, taskStartSnapshot.head);
+    taskChangedFiles = await inferTaskOwnChangedFiles(
+      wctx,
+      task,
+      taskStartSnapshot.head,
+      wctx.workspaceDir,
+      taskStartSnapshot,
+    );
   } catch (err) {
     publishWarningFromError({ bus: wctx.bus, phase }, failureMessage, err);
     return;

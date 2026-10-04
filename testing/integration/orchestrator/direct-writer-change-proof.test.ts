@@ -37,6 +37,7 @@ import {
   makePlanner,
   makeWctx,
   makeWorktreeIsolation,
+  runWorkspaceDir,
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
@@ -373,7 +374,7 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
     result.workspace?.cleanup();
   });
 
-  it('promotes a direct write made in the run worktree into the project', async () => {
+  it('keeps a direct write made in the run worktree in the run worktree, not the checkout', async () => {
     const projectDir = setupProject();
     const fixture = createShimFixture(projectDir, 'valid-change');
     const sessionId = 'sess-direct-writer-worktree';
@@ -413,15 +414,16 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
       );
       expect(statSync(join(shimCwd, '.git')).isFile()).toBe(true);
       expect(result.tasks[0]?.status).toBe('done');
-      expect(readFileSync(join(projectDir, TARGET_SRC), 'utf-8')).toBe(
+      expect(readFileSync(join(shimCwd, TARGET_SRC), 'utf-8')).toBe(
         `export const marker = "${MARKER}";\n`,
       );
+      expect(existsSync(join(projectDir, TARGET_SRC))).toBe(false);
     } finally {
       await isolation.dispose();
     }
   });
 
-  it('promotes a rewrite of a file the run worktree was already dirty in', async () => {
+  it('completes a rewrite of a file the run worktree was already dirty in, in the run worktree', async () => {
     const projectDir = setupProject();
     // The worktree is seeded with the source checkout's uncommitted work, so a
     // dirty unrelated file is already in its git status before the implementer
@@ -468,15 +470,22 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
       });
 
       expect(result.tasks[0]?.status).toBe('done');
-      expect(readFileSync(join(projectDir, TARGET_SRC), 'utf-8')).toBe(
-        `export const marker = "${MARKER}";\n`,
-      );
+      expect(
+        readFileSync(
+          join(
+            isolationWorktreePath(join(realpathSync(projectDir), '.git'), sessionId),
+            TARGET_SRC,
+          ),
+          'utf-8',
+        ),
+      ).toBe(`export const marker = "${MARKER}";\n`);
+      expect(existsSync(join(projectDir, TARGET_SRC))).toBe(false);
     } finally {
       await isolation.dispose();
     }
   });
 
-  it('promotes a valid source and test change through approval without unrelated promotion', async () => {
+  it('completes a valid source and test change in the run workspace and leaves the checkout alone', async () => {
     const projectDir = setupProject();
     const fixture = createShimFixture(projectDir, 'valid-change');
     const sessionId = 'sess-direct-writer-valid';
@@ -563,9 +572,10 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
       ? readFileSync(join(fixture.captureDir, 'cwd.txt'), 'utf-8')
       : '';
     expect(shimCwd).not.toBe(projectDir);
-    expect(readFileSync(join(projectDir, TARGET_SRC), 'utf-8')).toBe(
-      `export const marker = "${MARKER}";\n`,
-    );
+    expect(
+      readFileSync(join(runWorkspaceDir({ projectDir, sessionId }), TARGET_SRC), 'utf-8'),
+    ).toBe(`export const marker = "${MARKER}";\n`);
+    expect(existsSync(join(projectDir, TARGET_SRC))).toBe(false);
     expect(existsSync(join(projectDir, SANDBOX_DIR))).toBe(false);
     expect(summary).toMatchObject({
       totalTasks: 1,

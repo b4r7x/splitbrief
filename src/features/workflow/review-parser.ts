@@ -43,7 +43,7 @@ interface EditorProcess {
 
 export type SpawnEditor = (command: string, args: string[]) => EditorProcess;
 
-const spawnEditorProcess: SpawnEditor = (command, args) =>
+export const spawnEditorProcess: SpawnEditor = (command, args) =>
   spawn(command, args, { stdio: 'inherit' });
 
 interface RunEditorOptions {
@@ -53,7 +53,7 @@ interface RunEditorOptions {
   spawnEditor: SpawnEditor;
 }
 
-function runEditor({
+export function runEditor({
   command,
   args,
   filePath,

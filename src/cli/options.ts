@@ -91,16 +91,22 @@ export type RecoveryActionOption = Readonly<{
   candidate?: SeatSwapCandidate;
 }>;
 
+export type ContinueActionOption =
+  | RecoveryActionOption
+  | Readonly<{ action: 'apply' }>
+  | Readonly<{ action: 'discard' }>;
+
 /**
- * The halts `splitbrief continue` can answer without the panel, in the words the
- * resume line prints: `skip`, `retry`, `switch-seat:<tool>[:<model>]`, `end-run`.
- * The first three carry the run on; `end-run` closes it and the command stops there.
+ * `skip`, `retry`, and `switch-seat:<tool>[:<model>]` answer a pending recovery.
+ * `end-run` closes the run. `apply` and `discard` settle a run that is ready to apply.
  */
-export function parseRecoveryActionOption(value: string): RecoveryActionOption {
+export function parseContinueActionOption(value: string): ContinueActionOption {
   const spec = value.trim();
   if (spec === 'skip') return { action: 'skip-current-task' };
   if (spec === 'retry') return { action: 'retry-same-worker' };
   if (spec === 'end-run') return { action: 'end-run' };
+  if (spec === 'apply') return { action: 'apply' };
+  if (spec === 'discard') return { action: 'discard' };
   if (spec.startsWith('switch-seat:')) {
     const seat = parseSeatSpecOption(spec.slice('switch-seat:'.length));
     return {
@@ -109,7 +115,7 @@ export function parseRecoveryActionOption(value: string): RecoveryActionOption {
     };
   }
   throw cliError(
-    `'${value}' is not a recovery action. Use skip, retry, switch-seat:<tool>[:<model>], or end-run.`,
+    `'${value}' is not a continue action. Use skip, retry, switch-seat:<tool>[:<model>], end-run, apply, or discard.`,
     2,
   );
 }
@@ -274,8 +280,8 @@ export function addWorkflowOptions(cmd: Command): Command {
     )
     .option(
       '--action <action>',
-      '`continue` only: apply this action to the pending recovery — skip, retry, switch-seat:<tool>[:<model>], or end-run',
-      parseRecoveryActionOption,
+      '`continue` only: skip, retry, switch-seat:<tool>[:<model>], or end-run answer recovery; apply and discard settle a run that is ready to apply',
+      parseContinueActionOption,
     )
     .hook('preAction', (command) => {
       assertOutputModeExclusive(command.opts<OutputModeOpts>());

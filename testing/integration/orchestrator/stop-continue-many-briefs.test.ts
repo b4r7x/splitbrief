@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { Writable } from 'node:stream';
 import { loadState } from '../../../src/core/state/persistence.js';
 import { readSession } from '../../../src/core/sessions/io.js';
+import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
 import { createEventBus } from '../../../src/engine/events/bus.js';
 import { createStdoutTextSink } from '../../../src/engine/events/sinks/stdout-text.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
@@ -167,9 +168,12 @@ describe('a thirteen-brief run stopped between briefs and continued', { timeout:
     expect(final.pendingRecovery).toBeUndefined();
 
     const session = readSession(ref);
-    if (session?.status !== 'complete') {
-      throw new Error(`summary status is '${session?.status}', expected 'complete'`);
-    }
+    if (session === null || session.summary === null) throw new Error('Missing run summary');
+    expect(session.status).toBe('open');
+    expect(deriveRunStatus({ state: final, liveness: 'not-alive' })).toEqual({
+      kind: 'ready-to-apply',
+      override: false,
+    });
     expect(session.summary.totalTasks).toBe(BRIEF_COUNT);
     expect(session.summary.completedByLocal).toBe(BRIEF_COUNT);
     expect(session.summary.failed).toBe(0);

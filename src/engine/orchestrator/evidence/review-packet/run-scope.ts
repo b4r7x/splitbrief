@@ -24,6 +24,7 @@ function bytes(entry: ReviewFileEntry): { bytes: Buffer; mode: number } | null {
 
 export async function resolveRunReviewScope(opts: {
   ref: SessionRef;
+  workspaceDir: string;
   tasks: readonly Task[];
   workspaceFiles: readonly string[];
 }): Promise<RunReviewScope> {
@@ -53,7 +54,7 @@ export async function resolveRunReviewScope(opts: {
         after: bytes(change.after),
       });
       if (diff !== '') {
-        diffs.push(`# Promotion by ${change.taskId}\n${diff}`);
+        diffs.push(`# Changes by ${change.taskId}\n${diff}`);
         promotedFiles.add(change.path);
       }
       lastOutputs.set(change.path, change.after);
@@ -63,7 +64,7 @@ export async function resolveRunReviewScope(opts: {
   }
   for (const [path, expected] of lastOutputs) {
     try {
-      const current = await readConfinedEntry(opts.ref.projectDir, path);
+      const current = await readConfinedEntry(opts.workspaceDir, path);
       const matches =
         expected === null
           ? current.kind === 'absent'
@@ -101,17 +102,17 @@ export async function resolveRunReviewScope(opts: {
     laterDiff:
       laterDiffs.length === 0
         ? ''
-        : `# Changes after the last recorded promotion; authorship unknown\n${laterDiffs.join('\n')}`,
+        : `# Changes after the last recorded task completion; authorship unknown\n${laterDiffs.join('\n')}`,
     provenance,
     description: [
-      `Promotion evidence: ${status} (${REVIEW_CHANGES_FILE}).`,
-      'Implementation Diff contains verified target transitions, in promotion order. Each compares the input accepted by the promotion with the exact bytes it wrote. Pre-existing operator edits in that input are not run changes.',
+      `Task completion evidence: ${status} (${REVIEW_CHANGES_FILE}).`,
+      "Implementation Diff contains changes recorded at task completion inside the run workspace, in completion order. Each compares the file at the task's start with the file when the task passed. Pre-existing operator edits in that input are not run changes.",
       'These are historical effects, not a claim that every effect survives in the current workspace. Check the complete Workspace Context for later edits, reversions and interactions across files.',
       `Files with recorded run effects: ${provenance.promotedFiles.join(', ') || 'none recorded'}.`,
       `Files touched, not suggested by any brief: ${uniqueSorted(notSuggested).join(', ') || 'none'}.`,
       `Files with uncertain attribution or later edits: ${provenance.uncertainFiles.join(', ') || 'none observed'}.`,
       'Unknown attribution is not proof of either implementer or operator authorship. Missing or invalid evidence, direct writes without capture and obsolete brief records remain unknown; they are not evidence of an empty run.',
-      'Deterministic drift covers the recorded promotions only. A missing expected file in that report can mean missing provenance; inspect the workspace and task evidence before judging it.',
+      'Deterministic drift covers the recorded task changes only. A missing expected file in that report can mean missing provenance; inspect the workspace and task evidence before judging it.',
     ].join('\n\n'),
   };
 }

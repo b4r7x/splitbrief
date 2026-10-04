@@ -75,9 +75,13 @@ function observedChangedFiles(entry: EvidenceTask, task: Task): string[] {
   return entry.apiApply.applied.map((file) => file.path);
 }
 
-function provenCreatedPaths(entry: EvidenceTask | undefined): string[] {
+function provenCreatedPaths(
+  entry: EvidenceTask | undefined,
+  workspacePath?: string | undefined,
+): string[] {
   const paths = new Set(entry?.apiCreatedPaths ?? []);
-  if (entry?.apiApply?.workspacePath === undefined) {
+  const receiptPath = entry?.apiApply?.workspacePath;
+  if (receiptPath === undefined || receiptPath === workspacePath) {
     for (const file of entry?.apiApply?.applied ?? []) {
       if (file.action === 'create' && file.beforeSha256 === null) paths.add(file.path);
     }
@@ -85,10 +89,20 @@ function provenCreatedPaths(entry: EvidenceTask | undefined): string[] {
   return [...paths];
 }
 
-/** A missing or unreadable receipt proves no ownership, so capture remains fail-closed. */
-export function recordedApiCreatedPaths(ref: SessionRef, task: Task): string[] {
+/**
+ * A missing or unreadable receipt proves no ownership, so capture remains fail-closed. A receipt
+ * written in the run workspace proves what the task created there.
+ */
+export function recordedApiCreatedPaths(
+  ref: SessionRef,
+  task: Task,
+  workspacePath: string,
+): string[] {
   try {
-    return provenCreatedPaths(readEvidenceLedger(ref)?.tasks.find((entry) => entry.id === task.id));
+    return provenCreatedPaths(
+      readEvidenceLedger(ref)?.tasks.find((entry) => entry.id === task.id),
+      workspacePath,
+    );
   } catch {
     return [];
   }

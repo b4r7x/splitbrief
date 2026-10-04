@@ -259,8 +259,8 @@ function createPreviewCommandContext(): RuntimeCommandContext {
     plannerSupportsImages: () => false,
     detachImage,
     listAttachments,
-    acceptRunSnapshot: unavailableInPreview,
-    rejectRunSnapshot: unavailableInPreview,
+    acceptRun: unavailableInPreview,
+    rejectRun: unavailableInPreview,
     refreshRun: () => {
       const route = routerStore.get();
       if (route.screen !== 'workflow') return;

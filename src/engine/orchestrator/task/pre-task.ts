@@ -4,6 +4,7 @@ import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/
 import type { WorkflowContext } from '../types.js';
 import type { EngineEvent } from '../../events/types.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
+import { hashTaskBrief } from '../../brief-hash.js';
 import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
 import { buildSnapshotFailedRecoveryIssue } from '../recovery/builders/task.js';
 import { nowIso } from '../../../utils/format-time.js';
@@ -95,9 +96,20 @@ export async function runPreTaskHooksAndPublish(opts: {
     },
   );
 
+  const activeTaskSnapshot = state.changedFilesBaseline?.activeTaskSnapshot;
+  if (
+    activeTaskSnapshot !== undefined &&
+    wctx.continuation?.resumesAttempt(
+      { kind: 'brief', taskId: task.id, attempt: state.attempt },
+      hashTaskBrief([task]),
+    ) === true
+  ) {
+    return { proceed: true, state, taskStartSnapshot: activeTaskSnapshot };
+  }
+
   let taskStartSnapshot: ChangedFilesSnapshot;
   try {
-    taskStartSnapshot = await getChangedFilesSnapshot(projectDir, (dir) =>
+    taskStartSnapshot = await getChangedFilesSnapshot(wctx.workspaceDir, (dir) =>
       publishWarning({
         bus: wctx.bus,
         phase: state.phase,

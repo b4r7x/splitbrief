@@ -206,15 +206,13 @@ describe('createImplementerBase — prompt write contracts', () => {
     });
 
     expect(seenPrompt).toContain(
-      `Edit ${task.file} directly in the isolation directory. SPLITBRIEF runs the typecheck, lint, format and test gates after you hand back, so run at most the focused test files the brief lists, once. End your reply with the one JSON report object the rules describe: status done with the files you changed, or status blocked with your question and the files you need.`,
+      `Edit ${task.file} directly in the isolation directory. SPLITBRIEF runs the typecheck, lint and test gates after you hand back, so run at most the focused test files the brief lists, once. End your reply with the one JSON report object the rules describe: status done with the files you changed, or status blocked with your question and the files you need.`,
     );
     expect(seenPrompt).not.toContain('Output ONLY the complete file contents');
     expect(seenPrompt).not.toContain('Output the complete file contents');
     expect(seenPrompt).not.toContain('markdown code fences');
     // The whole prompt, preamble through footer, gives the gates to SPLITBRIEF and fences nothing.
-    expect(seenPrompt).toContain(
-      "SPLITBRIEF runs the project's typecheck, lint, format and test gates",
-    );
+    expect(seenPrompt).toContain("SPLITBRIEF runs the project's typecheck, lint and test gates");
     expect(seenPrompt).not.toMatch(/run the brief's typecheck|Run the validation commands/);
     expect(seenPrompt).not.toMatch(/Edit ONLY|out of bounds\.|outside scope/);
   });
@@ -896,6 +894,19 @@ describe('createImplementerBase — isolation audit', () => {
     ]);
   });
 
+  it('reports a call that throws on a stop as user-abort', async () => {
+    const controller = new AbortController();
+    const invoke = vi.fn().mockImplementation(async () => {
+      controller.abort();
+      throw new DOMException('This operation was aborted', 'AbortError');
+    });
+    const implementer = createImplementerBase(makeBaseConfig({ extractsCode: false, invoke }));
+
+    const result = await implementer.implement({ ...isolatedCall(), signal: controller.signal });
+
+    expect(result).toMatchObject({ success: false, error: 'Aborted', outcome: 'user-abort' });
+  });
+
   it('lets a call that stayed in its isolation directory stand', async () => {
     const invoke = vi.fn().mockImplementation(async () => {
       writeFileSync(join(isolationDir, 'src.ts'), 'export {};\n');
@@ -906,6 +917,22 @@ describe('createImplementerBase — isolation audit', () => {
     const result = await implementer.implement(isolatedCall());
 
     expect(result.success).toBe(true);
+  });
+
+  it('audits an extracted-code writer the same way', async () => {
+    const invoke = vi.fn().mockImplementation(async () => {
+      execSync('git branch topic', { cwd: projectDir, stdio: 'pipe' });
+      return makeRunnerCallResult({ status: 'completed', text: 'done', usage: null });
+    });
+    const implementer = createImplementerBase(makeBaseConfig({ extractsCode: true, invoke }));
+
+    const result = await implementer.implement(isolatedCall());
+
+    expect(result).toMatchObject({
+      success: false,
+      outcome: 'checkout-changed',
+      error: 'branch topic',
+    });
   });
 
   it('audits nothing for a call that runs in the checkout itself', async () => {
@@ -922,6 +949,94 @@ describe('createImplementerBase — isolation audit', () => {
       fileIgnoreProjectDir: projectDir,
     });
 
+    expect(result.success).toBe(true);
+  });
+});
+
+describe('createImplementerBase — git writes during a run worktree call', () => {
+  let worktreeDir: string;
+
+  beforeEach(() => {
+    worktreeDir = createTempDir('impl-base-worktree');
+    execSync(`git worktree add -q -b splitbrief/run-1 ${worktreeDir}`, {
+      cwd: projectDir,
+      stdio: 'pipe',
+    });
+  });
+
+  afterEach(() => {
+    cleanupTempDir(worktreeDir);
+  });
+
+  async function callThat(act: () => void) {
+    const invoke = vi.fn().mockImplementation(async () => {
+      writeFileSync(join(worktreeDir, 'src.ts'), 'export {};\n');
+      act();
+      return makeRunnerCallResult({ status: 'completed', text: 'done', usage: null });
+    });
+    const implementer = createImplementerBase(makeBaseConfig({ extractsCode: false, invoke }));
+    return implementer.implement({
+      task: makeTask(),
+      projectDir: worktreeDir,
+      fileIgnoreProjectDir: projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+  }
+
+  const inWorktree = (command: string) => () =>
+    execSync(`git ${command}`, { cwd: worktreeDir, stdio: 'pipe' });
+  const inCheckout = (command: string) => () =>
+    execSync(`git ${command}`, { cwd: projectDir, stdio: 'pipe' });
+
+  it('halts on a stash taken in the worktree', async () => {
+    writeFileSync(join(worktreeDir, 'init.txt'), 'edited before the stash\n');
+
+    const result = await callThat(inWorktree('stash -q'));
+
+    expect(result).toMatchObject({ outcome: 'checkout-changed', error: 'stash' });
+  });
+
+  it('halts on a hook change', async () => {
+    const result = await callThat(() =>
+      writeFileSync(join(projectDir, '.git', 'hooks', 'pre-commit'), '#!/bin/sh\n'),
+    );
+
+    expect(result).toMatchObject({ outcome: 'checkout-changed', error: 'hook pre-commit' });
+  });
+
+  it('halts on a topic branch created from the worktree', async () => {
+    const result = await callThat(inWorktree('branch topic'));
+
+    expect(result).toMatchObject({ outcome: 'checkout-changed', error: 'branch topic' });
+  });
+
+  it('halts on git add inside the run worktree', async () => {
+    const result = await callThat(inWorktree('add src.ts'));
+
+    expect(result).toMatchObject({ outcome: 'checkout-changed', error: 'run worktree index' });
+  });
+
+  it('halts on git commit inside the run worktree', async () => {
+    const result = await callThat(() => {
+      inWorktree('add src.ts')();
+      inWorktree('commit -qm escaped')();
+    });
+
+    expect(result).toMatchObject({
+      outcome: 'checkout-changed',
+      error: 'run worktree branch splitbrief/run-1 · run worktree index',
+    });
+  });
+
+  it("lets a user commit on the checkout's current branch stand", async () => {
+    const result = await callThat(() => {
+      writeFileSync(join(projectDir, 'init.txt'), 'the user edits\n');
+      inCheckout('commit -qam user-commit')();
+    });
+
+    expect(result.outcome).not.toBe('checkout-changed');
     expect(result.success).toBe(true);
   });
 });
