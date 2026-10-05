@@ -140,7 +140,7 @@ Outcome events include `task_retry`, `task_escalating`, `consult_answered`, `tas
 
 **What it does.** After all tasks reach a terminal state, the review seat — the `reviewer` runner when one is configured, the planner when none is — reviews the entire diff against the Task Brief and any supporting spec. The deterministic drift report (see below) is rendered into the prompt under `## Deterministic Drift Report` so the reviewer sees both signals at once.
 
-**How to use.** Always runs. Output is written to `.splitbrief/sessions/<id>/review.md`. Fires `workflow_complete` and writes `summary.json`.
+**How to use.** Always runs at end cadence; with `workflow.review: task`, one scoped review also runs after every brief that passed its validation. The seat answers one typed `ReviewVerdict` (`src/core/schemas/review.ts`), SPLITBRIEF derives `pass`, `pass-with-notes` or `fail` and writes the record to `.splitbrief/sessions/<id>/review.json` (rendered as `review.md`). A failed review goes to one planner triage call whose fix tasks are appended with fresh ids; at most 2 fix cycles run (at most 3 reviews), and after the cap the run halts on `review-failed` with **fix again with a note**, **accept as is** on a workspace run, or end. Fires `workflow_complete` and writes `summary.json`.
 
 **When to use.** No opt-out — final review is the closing safety check before the workflow is marked complete.
 
@@ -188,7 +188,7 @@ Full schema: [TASK-CONTRACT.md](./TASK-CONTRACT.md).
 | `plan.json` | The checked plan: the one source the briefs compile from |
 | `plan.md` | Rendering of `plan.json`: summary, protected operations, batches. The body of the plan card |
 | `tasks.md` | Rendering of the compiled Task Briefs |
-| `review.md`, `summary.json`, `evidence.json` | Written later in the run |
+| `review.json`, `review.md`, `summary.json`, `evidence.json` | Written later in the run |
 
 A run from an older release keeps the files it wrote (`research.md`, `spec.md`, `brief-quality.json`, …); they are read, never written again.
 
@@ -338,7 +338,7 @@ Persisted as `drift-chains.json`. Surfaces as `chainDriftSummary` in `summary.js
 
 ### Slash commands palette
 
-**What it does.** Runtime commands use slash names (`/help`, `/usage`, etc.), but the same registry backs composer `/` input and the command palette. Type `/` to open the inline picker; the dispatcher resolves names by exact match (including aliases) then by fuzzy match. Every one of the 23 commands carries exactly one of five categories — Navigate, Crew, Workflow, View, Input & output — and the palette and help overlay render those as section headers when no query is typed. Commands that take an argument prefill `/<name> ` in the composer instead of running bare, so no row errors on Enter.
+**What it does.** Runtime commands use slash names (`/help`, `/usage`, etc.), but the same registry backs composer `/` input and the command palette. Type `/` to open the inline picker; the dispatcher resolves names by exact match (including aliases) then by fuzzy match. Every one of the 22 commands carries exactly one of five categories — Navigate, Crew, Workflow, View, Input & output — and the palette and help overlay render those as section headers when no query is typed. Commands that take an argument prefill `/<name> ` in the composer instead of running bare, so no row errors on Enter.
 
 **Navigate**
 
@@ -363,7 +363,6 @@ Persisted as `drift-chains.json`. Surfaces as `chainDriftSummary` in `summary.js
 
 | Command | Purpose |
 |---|---|
-| `/redo-task <task-id>` | Reset a task to pending and re-run it |
 | `/queue [show\|clear]` | Show or clear the message queue |
 | `/run <accept\|reject>` | Accept or reject what this run wrote (rejection needs `/run reject confirm`) |
 | `/resume` | Continue a paused or stopped run |
@@ -463,7 +462,7 @@ Start the local server yourself, configure its address, and use Retry to check t
 OpenAI Codex CLI · implementing · last event 3s ago
 ```
 
-The fraction counts briefs that **passed their checks** — a started brief is not a settled one, and an escalated brief is never counted as settled. Attempts are stated as attempts (`attempt 2 of 8`, where the maximum is the lineage's `BOUNDS.attemptsPerLineage`), never as retries. The ETA is an average of the briefs that finished, printed in whole minutes, and it appears only after two briefs finished; with none it reads `ETA unavailable: no brief finished yet`, with one `ETA unavailable: one brief finished so far`, and a seat swap retires it with `ETA unavailable: worker changed`. The activity line names the seat, the operation and recent activity; while a gate command runs it names the command instead (`npm test · running 41s`). The freshness line is the one place the block states silence, and it counts every second: `last event 8s ago`, and once the idle watchdog has warned that a seat on a call has sent nothing — five minutes by default (`RUNNER_IDLE_WARN_MS`, tunable per runner as `idleWarnMs`) — `No update for 5m 12s` in the warning colour. A gate command is no seat's silence, so while one runs the line keeps reading `last event …`. The same five facts regroup rather than disappear as the terminal narrows: two rows at 120 columns and wider, four at 80, five below that. During the final review no brief runs: the block shows no attempt and no ETA (two rows at 120 columns and wider, three below), the byline quotes no ETA, and the composer invites `Queue a message for the reviewer…`. A brief the final review reopens counts as not passed until its fix attempt passes.
+The fraction counts briefs that **passed their checks** — a started brief is not a settled one, and an escalated brief is never counted as settled. Attempts are stated as attempts (`attempt 2 of 8`, where the maximum is the lineage's `BOUNDS.attemptsPerLineage`), never as retries. The ETA is an average of the briefs that finished, printed in whole minutes, and it appears only after two briefs finished; with none it reads `ETA unavailable: no brief finished yet`, with one `ETA unavailable: one brief finished so far`, and a seat swap retires it with `ETA unavailable: worker changed`. The activity line names the seat, the operation and recent activity; while a gate command runs it names the command instead (`npm test · running 41s`). The freshness line is the one place the block states silence, and it counts every second: `last event 8s ago`, and once the idle watchdog has warned that a seat on a call has sent nothing — five minutes by default (`RUNNER_IDLE_WARN_MS`, tunable per runner as `idleWarnMs`) — `No update for 5m 12s` in the warning colour. A gate command is no seat's silence, so while one runs the line keeps reading `last event …`. The same five facts regroup rather than disappear as the terminal narrows: two rows at 120 columns and wider, four at 80, five below that. During the final review no brief runs: the block shows no attempt and no ETA (two rows at 120 columns and wider, three below), the byline quotes no ETA, and the composer invites `Queue a message for the reviewer…`. An appended fix task counts as not passed until its attempt passes.
 
 ### Input footer
 

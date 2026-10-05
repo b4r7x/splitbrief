@@ -70,6 +70,7 @@ function consultInput(overrides: Partial<ConsultPromptInput> = {}): ConsultPromp
       filesChanged: ['src/greet.ts'],
       touchedNotSuggested: [],
       notes: null,
+      decisions: [],
     },
     earlierConsults: [EARLIER_CONSULT],
     otherTasks: [
@@ -137,6 +138,35 @@ describe('buildConsultPrompt', () => {
     expect(prompt).toContain('stale — The task went stale');
     expect(prompt).toContain('Only guidance or a rewritten task can answer this reason.');
   });
+
+  it.each([false, true])(
+    'shows the ledger and the confirm action for a reported deviation, resumed=%s',
+    (resumed) => {
+      const prompt = buildConsultPrompt(
+        consultInput({
+          resumed,
+          reason: 'deviation',
+          plan: {
+            ...plan,
+            decisions: [{ text: 'Use node:crypto', taskId: taskId('T003') }],
+          },
+          report: {
+            status: 'done',
+            filesChanged: ['src/greet.ts'],
+            touchedNotSuggested: [],
+            notes: null,
+            decisions: [{ what: 'Used node:crypto', why: 'The dependency is standard' }],
+          },
+        }),
+      );
+
+      expect(prompt).toContain('deviation — The implementer finished but reported a deviation');
+      expect(prompt).toContain(resumed ? '## Confirmed Decisions' : '### Decisions');
+      expect(prompt).toContain('- Use node:crypto (T003)');
+      expect(prompt).toContain('`confirm`');
+      expect(prompt).toContain('A change of what is built is `ask-user`');
+    },
+  );
 
   it('sends the short resumed turn without the static context', () => {
     const full = buildConsultPrompt(consultInput());

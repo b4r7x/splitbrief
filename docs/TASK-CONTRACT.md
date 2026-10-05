@@ -35,13 +35,15 @@ The planning session's answer is typed. Its schemas live in `src/core/schemas/pl
 | Plan field | Type | Meaning |
 |---|---|---|
 | `summary` | string | One paragraph the plan card shows first |
-| `decisions` | string[] | Choices the planner made |
+| `decisions` | string[] | Choices the planner made; `state.plan` stores the ledger as `{ text, taskId }` entries, and a plain string reads as `taskId: null` |
 | `criteria` | `{ id, text, checkIds }[]` | Acceptance criteria, each served by named checks |
 | `checks` | `{ id, kind: 'test' \| 'cmd' \| 'render', value, required }[]` | The checks the criteria and tasks name |
 | `validation` | `{ language, typecheck, lint, test, testPattern }` or null | Becomes `state.discoveredValidation` (`typecheckCommand`, `lintCommand`, `testCommand`, `testPattern`, `language`) |
 | `tasks` | `TaskSpec[]` | The tasks |
 
 `state.plan` (`PlanSchema`) keeps the plan without its tasks; the tasks live in `state.tasks`.
+
+**The decisions ledger.** An entry is `{ text, taskId }`. A plan's own decision carries `taskId: null`. When the implementer proposes a deviation in its report (`ImplementerReport.decisions`, `{ what, why }`), the planner confirms it with the `confirm` consult answer and `CONFIRM_DECISIONS` appends `{ text: '<what> — <why>', taskId }`, naming the task that reported it. The ledger reaches every later brief's read-only Plan context, every consult and the review; the planner confirms a change of how only when the accepted criteria stay intact, and the user decides any change to what is built.
 
 **`TaskSpec`.**
 
@@ -56,7 +58,7 @@ The planning session's answer is typed. Its schemas live in `src/core/schemas/pl
 | `contextFiles` | string[] | `contextFiles` (read-only: never in `scope`, never a write target) |
 | `exclusions` | string[] | `exclusions`; `scope.outOfBounds` |
 | `protectedOperations` | `{ path, operation: 'write' }[]` or null | `protectedOperations` (absent when null) |
-| `steps` | string[] or null | `implementationSteps` (empty when null) |
+| `steps` | string[] or null | `implementationSteps` (empty when null); advisory — the implementer may reach the same accepted behaviour another way |
 | `dependsOn` | `TNNN[]` | `dependsOn` |
 | `batch` | integer ≥ 1 | `batch` |
 
@@ -141,7 +143,7 @@ type Task = {
   dependsOn: TaskId[];               // IDs of tasks that must complete first
   tests: string[];                   // test cases / acceptance criteria
   constraints: string[];             // additional constraints or requirements
-  implementationSteps: string[];     // step-by-step guide for the implementer
+  implementationSteps: string[];     // step-by-step guide for the implementer; advisory, not a fence
   typeDefs: string;                  // language-specific type declarations / signatures
   signature?: string;                // optional: function/interface signature hint
   currentCode?: string;              // optional: captured existing code of the anchor at task start
@@ -167,6 +169,10 @@ type Task = {
   revision?: number;                 // 1 at compile; raised by each consult rewrite
   inputHashes?: Record<string, string>;  // content hashes of this revision's suggested + context files
   checkResults?: Array<{ id: string; passed: boolean }>;  // a consult's verify answer, merged per check id
+  fix?: {                            // set on a task the review triage appended
+    cycle: number;                   // the fix cycle that created it
+    findings: Array<{ id: string; text: string; acceptance: string | null }>;  // the verdict's findings, verbatim
+  };
 };
 ```
 
@@ -211,6 +217,44 @@ The retry counter lives at **`state.attempt`** (top-level on `WorkflowState`), n
 
 - **ID stability**: a task's `id` is the one the plan gives it (`T001`, `T002`, …). A revision before approval compiles the tasks again from the revised `plan.json`; once the plan is approved, an id never changes and is never reused within the session.
 - **Terminal states**: `done | escalated | failed | skipped` — once set, the status does not move backwards within a session. `RESET_TASK` explicitly transitions to `pending` and is the only way out of a terminal state.
+
+## The typed review contract
+
+The review seat is a stateless, read-only call. It does not write `review.md`; it answers one typed `ReviewVerdict` (`src/core/schemas/review.ts`) through `requestTyped`, and SPLITBRIEF derives and renders the rest.
+
+```ts
+type ReviewVerdict = {
+  tasks: Array<{ id: TaskId; plan: 'met' | 'partial' | 'missed'; note: string }>;
+  criteria: Array<{ id: string; status: 'pass' | 'fail' | 'unverified'; evidence: string }>;
+  findings: Array<{
+    id: string;
+    kind: 'defect' | 'plan-gap' | 'unverified' | 'question';
+    severity: 'blocking' | 'minor';
+    taskId: string | null;
+    file: string | null;
+    line: number | null;
+    text: string;
+    acceptance: string | null;
+    checkIds: string[] | null;
+    criterionId: string | null;
+  }>;
+};
+```
+
+Coverage is a contract rule: the answer carries exactly one result for every task and criterion in scope, and an `unverified` finding names non-empty `checkIds` or a `criterionId` whose criterion has registered checks. A missing, duplicated or invented id, or a `partial`/`missed` task or `fail` criterion with no blocking finding naming it, fails the schema and the seat gets its one repair. The checks behind an unverified claim run through `runChecks`; a `render` check is not runnable and stays unverified. `deriveReviewOutcome` turns the answer plus those results into `pass`, `pass-with-notes` or `fail`. The record lives in `state.review` and `review.json`; `review.md` is its rendering from `renderReviewMarkdown` (`src/core/review/render.ts`). A session saved before the typed review still reads through `parseFinalReview()` (`src/engine/parsers/final-review.ts`).
+
+A failed review goes to one planner triage call, which answers one typed `TriageResult`:
+
+```ts
+type TriageResult = {
+  fixTasks: Array<TaskSpec & { findingIds: string[] }>;
+  rejected: Array<{ findingId: string; reason: string }>;
+  verify: Array<{ findingId: string; checkIds: string[] }>;
+  ask: { question: string; whyOnlyUserCanAnswer: string } | null;
+};
+```
+
+Unless `ask` suspends the rule, each blocking finding and pending triage input is answered by exactly one `fixTasks` entry (naming the findings it fixes), `rejected` entry, or `verify` entry; a `verify` check id must be a plan check, and a fix task names only known criteria. A fix task is appended to `state.tasks` with a new `T###` id and `batch` = the highest plan batch + the fix cycle, and `task.fix` carries its cycle and its findings verbatim. Done tasks stay done; nothing is reopened. A task with `fix` may verify existing code and change nothing — the recorded checks still decide completion. A missing `touchedNotSuggested` reason never overturns a passing check: such reasons are recorded for the reviewer, not required for a pass. Rejected findings reach the next review's packet; `verify` runs its named checks before any fix call.
 
 ## Advanced read-only consumer examples
 
@@ -281,7 +325,12 @@ If two tools need to coordinate, they agree on a key (e.g., `external.vcs-sync`)
 |---|---|
 | `Task.files` | the slice is `[task.file]` |
 | `Task.currentCodeByFile` | only the anchor's `currentCode` was captured |
-| `WorkflowState.reviewFixes` | no review fix cycle has run |
+| `Task.fix` | the task is a plan task, not a fix task the review triage appended |
+| `WorkflowState.reviewFixes` | no review fix cycle has run. Parse-only now: `fixCycles` is the live home, and `reviewFixes.cycle` is read only when `fixCycles` is absent |
+| `WorkflowState.fixCycles` | no fix cycle has run; a state that carries only the older parse-only counter reads that instead |
+| `WorkflowState.review` | no typed review has resolved; `review.json` is the review's other home |
+| `WorkflowState.triage` | the review never went to triage |
+| `WorkflowState.pendingTriage` | no operator or Apply input waits for a triage |
 | `WorkflowState.reviewStatus` | the final review has not resolved |
 | `WorkflowState.validationBaseline` | the run-start gate probe is re-run on resume instead of reused |
 | `WorkflowState.interruptedStep` | nothing recorded where the run was cut; `cut` says which — `mid-step` inside a call, `boundary` where it cut nothing: between two briefs, or at a gate — and a record written before `cut` existed falls back to the presence of a `partialRef` |

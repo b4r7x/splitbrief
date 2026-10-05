@@ -31,6 +31,7 @@ import { createConfiguredCustomImplementer } from '../../implementers/command-in
 import { createImplementerBase } from '../../implementers/pipeline/run.js';
 import { makeBaseConfig } from '#testing/helpers/factories/implementer-base.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
+import { fixBriefDescription, type FixFinding } from '../../../core/review/fix-task.js';
 import {
   getChangedFilesSinceSnapshot,
   getChangedFilesSnapshot,
@@ -633,7 +634,7 @@ describe('runImplementation plan context', () => {
     const state = makeImplState([task], {
       plan: {
         summary: 'Greet people by name',
-        decisions: ['PLAN-DECISION: keep the greeting in one module'],
+        decisions: [{ text: 'PLAN-DECISION: keep the greeting in one module', taskId: null }],
         criteria: [{ id: 'C1', text: 'PLAN-CRITERION: a name gets a greeting', checkIds: [] }],
         checks: [],
         validation: null,
@@ -760,5 +761,65 @@ describe('runImplementation live preview', () => {
       'export const preview = 1;',
       '```',
     ]);
+  });
+});
+
+describe('runImplementation fix tasks', () => {
+  it('dispatches a fix task with allowNoChange and the findings verbatim in its brief', async () => {
+    const { projectDir } = setupProject('fix-task');
+    const sessionId = 'fix-task-session';
+    ensureSessionDir(projectDir, sessionId);
+    const findings: FixFinding[] = [
+      {
+        id: 'F1',
+        text: 'src/shared/widget.ts drops the error',
+        acceptance: 'The error is rethrown',
+      },
+    ];
+    const task = makeTask({
+      id: 'T002',
+      file: 'src/shared/widget.ts',
+      action: 'modify',
+      description: fixBriefDescription(
+        'Rethrow the widget error instead of swallowing it.',
+        findings,
+      ),
+      fix: { cycle: 1, findings },
+    });
+    const prompts: string[] = [];
+    const allowNoChange: boolean[] = [];
+    const invoke = vi
+      .fn()
+      .mockImplementation(async (call: { prompt: string; allowNoChange?: boolean }) => {
+        prompts.push(call.prompt);
+        allowNoChange.push(call.allowNoChange === true);
+        return makeRunnerCallResult({
+          status: 'completed',
+          text: 'nothing to change',
+          usage: null,
+        });
+      });
+    const implementer = createImplementerBase(makeBaseConfig({ extractsCode: false, invoke }));
+
+    const result = await runImplementation({
+      wctx: makeWctx({ projectDir, sessionId, implementer }),
+      task,
+      state: makeImplState([task]),
+      taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
+      setTrackedState: vi.fn(),
+      recordApprovalDenial: vi.fn(),
+    });
+
+    expect(result.implResult.success).toBe(true);
+    expect(allowNoChange).toEqual([true]);
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain('src/shared/widget.ts drops the error');
+    expect(prompts[0]).toContain('Acceptance: The error is rethrown');
+    expect(prompts[0]).toContain(
+      'Evidence, ledger, review and session files are not your job; SPLITBRIEF records them. You may edit any ordinary project file the fix needs.',
+    );
+    expect(prompts[0]).toContain(
+      'If no finding needs a code change, change nothing and report that.',
+    );
   });
 });

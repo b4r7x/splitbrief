@@ -20,7 +20,11 @@ import {
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
+import {
+  passingReviewVerdict,
+  planFromTasks,
+  typedCallPlanAndReview,
+} from '#testing/helpers/typed-planner.js';
 
 const TASKS = [
   makeTask({
@@ -92,8 +96,16 @@ describe('user commits during a run', { timeout: 120_000 }, () => {
         throw new Error('no brief in this run needs a retry');
       }),
     });
-    const review = vi.fn(async () => ({ text: '### Verdict\npass\n', usage: null }));
-    const planner = makePlanner({ typedCall: typedCallFromTasks(TASKS), review });
+    let reviewCalls = 0;
+    const planner = makePlanner({
+      typedCall: typedCallPlanAndReview(
+        () => planFromTasks(TASKS),
+        (prompt) => {
+          reviewCalls += 1;
+          return passingReviewVerdict(prompt);
+        },
+      ),
+    });
     const bus = createEventBus();
     const events: EngineEvent[] = [];
     bus.subscribe((event) => events.push(event));
@@ -120,7 +132,7 @@ describe('user commits during a run', { timeout: 120_000 }, () => {
       ['T002', 'done'],
     ]);
     expect(new Set(callDirs)).toEqual(new Set([workspace.path]));
-    expect(review).toHaveBeenCalledTimes(1);
+    expect(reviewCalls).toBe(1);
     expect(deriveRunStatus({ state: final, liveness: 'not-alive' })).toEqual({
       kind: 'ready-to-apply',
       override: false,

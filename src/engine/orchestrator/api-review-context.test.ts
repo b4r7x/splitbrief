@@ -20,6 +20,11 @@ import {
 } from '../../core/paths.js';
 import { createEvidenceLedger } from '../../core/evidence/ledger-state.js';
 import { writeEvidenceLedger } from '../../core/evidence/ledger-storage.js';
+import {
+  passingReviewVerdict,
+  planFromTasks,
+  typedCallPlanAndReview,
+} from '#testing/helpers/typed-planner.js';
 import type { Config } from '../../core/schemas/config.js';
 import { buildApiReviewContext, type ApiReviewContextInput } from './api-review-context.js';
 import { runFinalReviewPhase } from './final-review.js';
@@ -319,10 +324,13 @@ async function review(opts: {
   skillsContext?: string;
 }) {
   const reviewer = makePlanner({
-    review: async (prompt: string) => {
-      opts.prompts.push(prompt);
-      return { text: '### Verdict\npass\n\n### Summary\nGood.\n', usage: null };
-    },
+    typedCall: typedCallPlanAndReview(
+      () => planFromTasks([]),
+      (prompt) => {
+        opts.prompts.push(prompt);
+        return passingReviewVerdict(prompt);
+      },
+    ),
   });
   const state = {
     ...makeImplState([makeTask({ id: 'T001', status: 'done' })]),
@@ -369,7 +377,7 @@ describe('a REVIEW seat that reads no files of its own', () => {
       true,
     );
     expect(result.reviewStatus).toBe('written');
-    expect(result.verdict?.verdict).toBe('pass');
+    expect(result.verdict?.outcome.kind).toBe('pass');
     expect(result.failure).toBeUndefined();
     expect(existsSync(join(sessionDir(ref.projectDir, ref.sessionId), REVIEW_FILE))).toBe(true);
   });

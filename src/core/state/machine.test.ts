@@ -9,6 +9,7 @@ import {
 } from './selectors.js';
 import {
   WorkflowStateSchema,
+  fixCyclesOf,
   type LineageRecord,
   type QueuedMessage,
   type WorkflowState,
@@ -40,6 +41,51 @@ describe('createInitialState', () => {
   });
 });
 describe('transition', () => {
+  it.each(['implementing', 'validating-task', 'escalating'] as const)(
+    'preserves the task phase across a consult question in %s',
+    (phase) => {
+      const state = { ...createInitialState('feat'), phase, tasks: [makeTask()] };
+      const conversation = {
+        call: 'plan' as const,
+        text: 'Which approach?',
+        questions: [],
+        answers: [{ reply: 'Which approach?', answer: 'Keep it' }],
+        answered: true,
+      };
+      const asked = transition(state, { type: 'SET_PLANNER_CONVERSATION', conversation });
+      expect(asked.phase).toBe(phase);
+      const cleared = transition(asked, { type: 'CLEAR_PLANNER_CONVERSATION' });
+      expect(cleared.phase).toBe(phase);
+      expect(cleared.pendingPlannerConversation).toBeUndefined();
+      expect(cleared.userAnswers).toEqual(conversation.answers);
+    },
+  );
+
+  it('keeps fix identity and verbatim findings through a rewrite and split', () => {
+    const fix = {
+      cycle: 1,
+      findings: [{ id: 'F1', text: 'VERBATIM defect', acceptance: 'keep the error' }],
+    };
+    const task = makeTask({ id: 'T001', fix });
+    const state = { ...createInitialState('feat'), phase: 'implementing' as const, tasks: [task] };
+    const rewritten = transition(state, {
+      type: 'REPLACE_TASK',
+      taskId: task.id,
+      task: makeTask({ id: 'T001', description: 'New approach' }),
+    });
+    expect(rewritten.tasks[0]?.fix).toEqual(fix);
+    expect(rewritten.tasks[0]?.description).toContain('VERBATIM defect');
+    const split = transition(rewritten, {
+      type: 'INSERT_TASKS',
+      parentId: task.id,
+      tasks: [makeTask({ id: 'T002' }), makeTask({ id: 'T003' })],
+    });
+    for (const child of split.tasks) {
+      expect(child.fix).toEqual(fix);
+      expect(child.description).toContain('VERBATIM defect');
+      expect(child.description).toContain('Acceptance: keep the error');
+    }
+  });
   it.each(['quick', 'standard', 'speckit'] as const)(
     'START enters the one planning session for %s',
     (mode) => {
@@ -886,95 +932,23 @@ describe('transition', () => {
     );
   });
 
-  it('REVIEW_FIX_START resets the named tasks to pending and returns to implementing', () => {
-    const tasks = [
-      makeTask({ id: 'T001', status: 'done' }),
-      makeTask({ id: 'T002', status: 'done' }),
-      makeTask({ id: 'T003', status: 'done' }),
-    ];
+  it('passing or skipping a fix brief advances past the briefs that already passed', () => {
     const state: WorkflowState = {
       ...createInitialState('feat'),
-      phase: 'final-review',
-      tasks,
+      phase: 'implementing',
+      tasks: [
+        ...['T001', 'T002', 'T003'].map((id) => makeTask({ id, status: 'done' })),
+        makeTask({ id: 'T004', file: 'src/fix.ts' }),
+      ],
       currentTaskIndex: 3,
-      attempt: 2,
     };
-
-    const next = transition(state, {
-      type: 'REVIEW_FIX_START',
-      cycle: 1,
-      fixes: { T002: ['missing null guard'], T003: ['unhandled error'] },
-    });
-
-    expect(next.phase).toBe('implementing');
-    expect(next.tasks.map((t) => t.status)).toEqual(['done', 'pending', 'pending']);
-    expect(next.currentTaskIndex).toBe(1);
-    expect(next.attempt).toBe(0);
-    expect(next.reviewFixes).toEqual({
-      cycle: 1,
-      findings: { T002: ['missing null guard'], T003: ['unhandled error'] },
-    });
-  });
-
-  it('REVIEW_FIX_START reopens a failed review and clears its verdict, never a passed one', () => {
-    const complete: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'complete',
-      tasks: [makeTask({ id: 'T001', status: 'done' })],
-      currentTaskIndex: 1,
-      completedAt: '2026-09-24T00:00:00.000Z',
-      reviewFixes: { cycle: 2, findings: {} },
-    };
-    const fix: StateAction = { type: 'REVIEW_FIX_START', cycle: 3, fixes: { T001: ['rethrow'] } };
-
-    const reopened = transition({ ...complete, reviewStatus: 'failed' }, fix);
-
-    expect(reopened.phase).toBe('implementing');
-    expect(reopened.tasks[0]?.status).toBe('pending');
-    expect(reopened.reviewStatus).toBeUndefined();
-    expect(reopened.completedAt).toBeUndefined();
-    expect(reopened.reviewFixes).toEqual({ cycle: 3, findings: { T001: ['rethrow'] } });
-    expect(() => transition({ ...complete, reviewStatus: 'passed' }, fix)).toThrow();
-  });
-
-  it('passing or skipping a reopened brief moves the index past briefs that already passed', () => {
-    const reopened: WorkflowState = transition(
-      {
-        ...createInitialState('feat'),
-        phase: 'final-review',
-        tasks: ['T001', 'T002', 'T003', 'T004'].map((id) => makeTask({ id, status: 'done' })),
-        currentTaskIndex: 4,
-      },
-      { type: 'REVIEW_FIX_START', cycle: 1, fixes: { T001: ['a'], T004: ['b'] } },
-    );
-    const started = transition(reopened, { type: 'START_TASK', taskId: taskId('T001') });
+    const started = transition(state, { type: 'START_TASK', taskId: taskId('T004') });
     const sent = transition(started, { type: 'TASK_SENT' });
 
-    expect(transition(sent, { type: 'VALIDATION_PASS' }).currentTaskIndex).toBe(3);
-    expect(
-      transition(started, { type: 'SKIP_TASK', taskId: taskId('T001') }).currentTaskIndex,
-    ).toBe(3);
-    expect(
-      transition(
-        { ...reopened, currentTaskIndex: 1 },
-        { type: 'START_TASK', taskId: taskId('T004') },
-      ).currentTaskIndex,
-    ).toBe(3);
-  });
-
-  it('VALIDATION_PASS drops the completed task from reviewFixes findings', () => {
-    const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'validating-task',
-      tasks,
-      currentTaskIndex: 0,
-      reviewFixes: { cycle: 1, findings: { T001: ['fix me'], T002: ['fix me too'] } },
-    };
-
-    const next = transition(state, { type: 'VALIDATION_PASS' });
-
-    expect(next.reviewFixes?.findings).toEqual({ T002: ['fix me too'] });
+    expect(transition(sent, { type: 'VALIDATION_PASS' }).currentTaskIndex).toBe(4);
+    expect(transition(state, { type: 'SKIP_TASK', taskId: taskId('T004') }).currentTaskIndex).toBe(
+      4,
+    );
   });
 });
 
@@ -1250,6 +1224,282 @@ describe('consult and split state operations', () => {
   });
 });
 
+describe('fix cycles, review and triage records', () => {
+  function failedReviewState(overrides: Partial<WorkflowState> = {}): WorkflowState {
+    return {
+      ...createInitialState('feat'),
+      phase: 'complete',
+      reviewStatus: 'failed',
+      completedAt: '2026-10-03T09:00:00.000Z',
+      ...overrides,
+    };
+  }
+
+  it('INSERT_TASKS with a null parent appends the tasks and leaves the run untouched', () => {
+    const tasks = [
+      makeTask({ id: 'T001', status: 'done' }),
+      makeTask({ id: 'T002', status: 'done' }),
+    ];
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'final-review',
+      tasks,
+      currentTaskIndex: 2,
+    };
+    const fix = makeTask({ id: 'T003', file: 'src/fix.ts' });
+
+    const next = transition(state, { type: 'INSERT_TASKS', parentId: null, tasks: [fix] });
+
+    expect(next.tasks.map((task) => task.id)).toEqual(['T001', 'T002', 'T003']);
+    expect(next.tasks[0]).toBe(tasks[0]);
+    expect(next.tasks[1]).toBe(tasks[1]);
+    expect(next.currentTaskIndex).toBe(2);
+    expect(next.lineages).toBeUndefined();
+  });
+
+  it('START_FIX_CYCLE counts the cycle, reopens no task and takes the first open brief', () => {
+    const tasks = [
+      makeTask({ id: 'T001', status: 'done' }),
+      makeTask({ id: 'T002', status: 'done' }),
+      makeTask({ id: 'T003' }),
+    ];
+    const state = failedReviewState({
+      tasks,
+      currentTaskIndex: 3,
+      fixCycles: { used: 1, allowance: 2, notes: [] },
+      pendingTriage: { inputs: [] },
+    });
+
+    const next = transition(state, { type: 'START_FIX_CYCLE' });
+
+    expect(next.phase).toBe('implementing');
+    expect(next.fixCycles).toEqual({ used: 2, allowance: 2, notes: [] });
+    expect(next.reviewStatus).toBeUndefined();
+    expect(next.completedAt).toBeUndefined();
+    expect(next.pendingTriage).toBeUndefined();
+    expect(next.currentTaskIndex).toBe(2);
+    expect(next.tasks.map((task) => task.status)).toEqual(['done', 'done', 'pending']);
+  });
+
+  it('START_FIX_CYCLE counts from the legacy review cycle when fixCycles is absent', () => {
+    const state = failedReviewState({ reviewFixes: { cycle: 1, findings: {} } });
+
+    const next = transition(state, { type: 'START_FIX_CYCLE' });
+
+    expect(next.fixCycles).toEqual({ used: 2, allowance: 2, notes: [] });
+  });
+
+  it('START_FIX_CYCLE refuses a completed run whose review passed', () => {
+    const state = failedReviewState({ reviewStatus: 'passed' });
+
+    expect(() => transition(state, { type: 'START_FIX_CYCLE' })).toThrow(
+      'Cannot apply START_FIX_CYCLE',
+    );
+  });
+
+  it('REVIEW_DONE records a scheduled failure terminal while implementing', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+      tasks: [makeTask({ id: 'T001', status: 'done' }), makeTask({ id: 'T002' })],
+      currentTaskIndex: 1,
+    };
+
+    const next = transition(state, { type: 'REVIEW_DONE', reviewStatus: 'failed' });
+
+    expect(next.phase).toBe('complete');
+    expect(next.reviewStatus).toBe('failed');
+    expect(next.completedAt).toBeDefined();
+    expect(next.tasks[1]?.status).toBe('pending');
+  });
+
+  it('RECORD_REVIEW stores a scheduled review recorded while implementing', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+      tasks: [makeTask({ id: 'T001', status: 'done' })],
+      currentTaskIndex: 1,
+    };
+    const review: NonNullable<WorkflowState['review']> = {
+      cycle: 0,
+      verdict: {
+        tasks: [{ id: taskId('T001'), plan: 'met', note: '' }],
+        criteria: [{ id: 'C1', status: 'pass', evidence: '' }],
+        findings: [],
+      },
+      outcome: 'pass',
+      verification: [],
+      at: '2026-10-04T10:00:00.000Z',
+    };
+
+    const recorded = transition(state, { type: 'RECORD_REVIEW', review });
+
+    expect(recorded.phase).toBe('implementing');
+    expect(recorded.review).toEqual(review);
+    expect(WorkflowStateSchema.safeParse(recorded).success).toBe(true);
+  });
+
+  it('RECORD_TRIAGE appends a triage recorded while implementing', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+      tasks: [makeTask({ id: 'T001', status: 'done' })],
+      currentTaskIndex: 1,
+    };
+    const record: NonNullable<WorkflowState['triage']>[number] = {
+      cycle: 1,
+      at: '2026-10-04T10:01:00.000Z',
+      inputIds: ['F1'],
+      result: { fixTasks: [], rejected: [], verify: [], ask: null },
+    };
+
+    const next = transition(state, { type: 'RECORD_TRIAGE', record });
+
+    expect(next.phase).toBe('implementing');
+    expect(next.triage).toEqual([record]);
+  });
+
+  it('QUEUE_TRIAGE parks a planner question asked while implementing', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+      tasks: [makeTask({ id: 'T001', status: 'done' })],
+      currentTaskIndex: 1,
+    };
+    const inputs = [
+      {
+        id: 'A1',
+        kind: 'answer' as const,
+        source: 'user' as const,
+        text: 'It is intended',
+        file: null,
+      },
+    ];
+
+    const next = transition(state, { type: 'QUEUE_TRIAGE', inputs });
+
+    expect(next.phase).toBe('implementing');
+    expect(next.pendingTriage).toEqual({ inputs });
+  });
+
+  it('START_FIX_CYCLE counts the cycle and takes the first open brief while implementing', () => {
+    const tasks = [
+      makeTask({ id: 'T001', status: 'done' }),
+      makeTask({ id: 'T002' }),
+      makeTask({ id: 'T003' }),
+    ];
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+      tasks,
+      currentTaskIndex: 2,
+      fixCycles: { used: 0, allowance: 2, notes: [] },
+      pendingTriage: { inputs: [] },
+    };
+
+    const next = transition(state, { type: 'START_FIX_CYCLE' });
+
+    expect(next.phase).toBe('implementing');
+    expect(next.fixCycles).toEqual({ used: 1, allowance: 2, notes: [] });
+    expect(next.currentTaskIndex).toBe(1);
+    expect(next.pendingTriage).toBeUndefined();
+    expect(next.tasks.map((task) => task.status)).toEqual(['done', 'pending', 'pending']);
+  });
+
+  it('REVIEW_CORRECTION queues the correction and grants one more cycle at the cap', () => {
+    const state = failedReviewState({
+      fixCycles: { used: 2, allowance: 2, notes: ['earlier note'] },
+    });
+
+    const next = transition(state, {
+      type: 'REVIEW_CORRECTION',
+      text: 'Use the shared greeting helper',
+    });
+
+    expect(next.phase).toBe('final-review');
+    expect(next.reviewStatus).toBeUndefined();
+    expect(next.completedAt).toBeUndefined();
+    expect(next.pendingTriage).toEqual({
+      inputs: [
+        {
+          id: 'U1',
+          kind: 'defect',
+          source: 'user',
+          text: 'Use the shared greeting helper',
+          file: null,
+        },
+      ],
+    });
+    expect(next.fixCycles).toEqual({
+      used: 2,
+      allowance: 3,
+      notes: ['earlier note', 'Use the shared greeting helper'],
+    });
+  });
+
+  it('REVIEW_CORRECTION below the cap queues no input and keeps the allowance', () => {
+    const state = failedReviewState({
+      fixCycles: { used: 1, allowance: 2, notes: [] },
+    });
+
+    const next = transition(state, { type: 'REVIEW_CORRECTION', text: '' });
+
+    expect(next.phase).toBe('final-review');
+    expect(next.pendingTriage).toEqual({ inputs: [] });
+    expect(next.fixCycles).toEqual({ used: 1, allowance: 2, notes: [] });
+  });
+
+  it('REVIEW_CORRECTION refuses a completed run whose review passed', () => {
+    const state = failedReviewState({ reviewStatus: 'passed' });
+
+    expect(() => transition(state, { type: 'REVIEW_CORRECTION', text: 'x' })).toThrow(
+      'Cannot apply REVIEW_CORRECTION',
+    );
+  });
+
+  it('RECORD_REVIEW stores the review and RECORD_TRIAGE appends to the log', () => {
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'final-review' };
+    const review: NonNullable<WorkflowState['review']> = {
+      cycle: 1,
+      verdict: { tasks: [], criteria: [], findings: [] },
+      outcome: 'fail',
+      verification: [{ id: 'F1', status: 'fail', output: 'check K1 did not pass' }],
+      at: '2026-10-03T10:00:00.000Z',
+    };
+    const record: NonNullable<WorkflowState['triage']>[number] = {
+      cycle: 1,
+      at: '2026-10-03T10:01:00.000Z',
+      inputIds: ['U1'],
+      result: { fixTasks: [], rejected: [], verify: [], ask: null },
+    };
+
+    const recorded = transition(state, { type: 'RECORD_REVIEW', review });
+    expect(recorded.review).toEqual(review);
+
+    const triaged = transition(recorded, { type: 'RECORD_TRIAGE', record });
+    const again = transition(triaged, { type: 'RECORD_TRIAGE', record: { ...record, cycle: 2 } });
+    expect(again.triage?.map((entry) => entry.cycle)).toEqual([1, 2]);
+    expect(WorkflowStateSchema.safeParse(again).success).toBe(true);
+  });
+
+  it('QUEUE_TRIAGE parks the inputs on pendingTriage', () => {
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'final-review' };
+    const inputs = [
+      {
+        id: 'I1',
+        kind: 'question' as const,
+        source: 'apply' as const,
+        text: 'The merge kept both greetings',
+        file: null,
+      },
+    ];
+
+    const next = transition(state, { type: 'QUEUE_TRIAGE', inputs });
+
+    expect(next.pendingTriage).toEqual({ inputs });
+  });
+});
+
 describe('the run workspace and Apply', () => {
   const WORKSPACE: NonNullable<WorkflowState['workspace']> = {
     kind: 'worktree',
@@ -1288,7 +1538,7 @@ describe('the run workspace and Apply', () => {
     expect(next.reviewStatus).toBeUndefined();
     expect(next.applyReview).toEqual({ merged, failures: [] });
     expect(next.acceptedAsIs).toBeUndefined();
-    expect(next.reviewFixes?.cycle).toBe(2);
+    expect(next.fixCycles).toEqual({ used: 2, allowance: 2, notes: [] });
     const passed = transition(next, {
       type: 'REVIEW_DONE',
       reviewStatus: 'passed',
@@ -1305,6 +1555,56 @@ describe('the run workspace and Apply', () => {
     expect(() => transition(noWorkspace, { type: 'APPLY_REVIEW_START', merged: [] })).toThrow(
       'Cannot apply APPLY_REVIEW_START',
     );
+  });
+
+  it('APPLY_REVIEW_START with a triage queues the inputs and leaves the fix cycle to START_FIX_CYCLE', () => {
+    const merged = [{ path: 'a.txt', checkoutHunks: 'checkout diff' }];
+    const integrated = [{ path: 'a.txt', checkoutHash: 'hash-a' }];
+    const triage = [
+      {
+        id: 'A1',
+        kind: 'defect' as const,
+        source: 'apply' as const,
+        text: 'Apply merge conflict in a.txt: resolve the conflict markers',
+        file: 'a.txt',
+      },
+    ];
+    const state = transition(
+      { ...ready(), reviewFixes: { cycle: 1, findings: {} } },
+      { type: 'APPLY_REVIEW_START', merged, integrated, triage },
+    );
+
+    expect(state.phase).toBe('final-review');
+    expect(state.applyReview).toEqual({ merged, failures: [] });
+    expect(state.applyIntegrated).toEqual(integrated);
+    expect(state.pendingTriage).toEqual({ inputs: triage });
+    expect(fixCyclesOf(state).used).toBe(1);
+    expect(WorkflowStateSchema.parse(state).pendingTriage?.inputs).toEqual(triage);
+
+    const fixed = transition(state, { type: 'START_FIX_CYCLE' });
+    expect(fixed.fixCycles).toEqual({ used: 2, allowance: 2, notes: [] });
+    expect(fixed.pendingTriage).toBeUndefined();
+  });
+
+  it('APPLY_REVIEW_START appends integrated paths to the ones already recorded', () => {
+    const first = transition(ready(), {
+      type: 'APPLY_REVIEW_START',
+      merged: [],
+      integrated: [{ path: 'a.txt', checkoutHash: 'a' }],
+    });
+    const next = transition(
+      { ...first, phase: 'complete' as const, reviewStatus: 'passed' as const },
+      {
+        type: 'APPLY_REVIEW_START',
+        merged: [],
+        integrated: [{ path: 'b.txt', checkoutHash: 'b' }],
+      },
+    );
+
+    expect(next.applyIntegrated).toEqual([
+      { path: 'a.txt', checkoutHash: 'a' },
+      { path: 'b.txt', checkoutHash: 'b' },
+    ]);
   });
 
   it('RECORD_APPLY_RECHECK replaces failures and preserves them after a failed review', () => {

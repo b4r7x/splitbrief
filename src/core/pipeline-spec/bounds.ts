@@ -5,6 +5,7 @@ export const BOUNDS = {
   extraConsultsPerLineage: 1,
   extraAttemptsPerLineage: 4,
   extraPlannerCallsPerRun: 5,
+  extraFixCyclesPerRun: 1,
   consultFailingOutputChars: 4000,
   rateLimitResetWaitMs: 600_000,
   transientRetries: 3,

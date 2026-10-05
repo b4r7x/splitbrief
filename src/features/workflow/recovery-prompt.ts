@@ -156,7 +156,7 @@ function formatRecoveryActionText(
     case 'revise':
     case 'revise-spec':
       return context.reason === 'review-failed'
-        ? 'revise · send the findings back with a correction'
+        ? 'fix again · add a note, grant one more fix cycle'
         : 'revise · send the planner a correction';
     case 'accept-as-is':
       return 'accept as is · ready to apply with the open findings; Apply lists them and asks once';

@@ -285,7 +285,7 @@ describe('full workflow OpenCode CLI implementer', { timeout: 90_000 }, () => {
       ]),
     );
     expect(readFileSync(join(sessionDir(projectDir, sessionId), REVIEW_FILE), 'utf-8')).toContain(
-      'OpenCode CLI implementer passed validation.',
+      '### Verdict\n\npass',
     );
   }, 90_000);
 });

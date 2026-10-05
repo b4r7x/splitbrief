@@ -25,7 +25,11 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
+import {
+  passingReviewVerdict,
+  planFromTasks,
+  typedCallPlanAndReview,
+} from '#testing/helpers/typed-planner.js';
 
 const TASKS = [
   makeTask({
@@ -106,7 +110,14 @@ async function runUntil(stopBeforeReview: boolean): Promise<Ref> {
       return { success: true, output: 'written', usage: { inputTokens: 10, outputTokens: 5 } };
     }),
   });
-  const review = vi.fn(async () => ({ text: '### Verdict\npass\n', usage: null }));
+  let reviewCalls = 0;
+  const review = typedCallPlanAndReview(
+    () => planFromTasks(TASKS),
+    (prompt) => {
+      reviewCalls += 1;
+      return passingReviewVerdict(prompt);
+    },
+  );
   await runWorkflow({
     prepared: makePreparedExecution({
       ...ref,
@@ -120,10 +131,10 @@ async function runUntil(stopBeforeReview: boolean): Promise<Ref> {
     sinks: TEST_SINKS,
     eventBus: createEventBus(),
     signal: controller.signal,
-    _planner: makePlanner({ typedCall: typedCallFromTasks(TASKS), review }),
+    _planner: makePlanner({ typedCall: review }),
     _implementer: implementer,
   });
-  expect(review).toHaveBeenCalledTimes(stopBeforeReview ? 0 : 1);
+  expect(reviewCalls).toBe(stopBeforeReview ? 0 : 1);
   return ref;
 }
 

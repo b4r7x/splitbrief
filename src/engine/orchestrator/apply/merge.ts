@@ -56,7 +56,10 @@ async function canWriteWorkspaceEntry(workspaceDir: string, path: string): Promi
   return true;
 }
 
-export async function mergeApplyStates(states: ApplyStates): Promise<ApplyMerge> {
+export async function mergeApplyStates(
+  states: ApplyStates,
+  integrated?: ReadonlyMap<string, string>,
+): Promise<ApplyMerge> {
   const paths = [
     ...new Set([...states.base.keys(), ...states.ours.keys(), ...states.theirs.keys()]),
   ].sort();
@@ -67,6 +70,14 @@ export async function mergeApplyStates(states: ApplyStates): Promise<ApplyMerge>
     const ours = states.ours.get(path) ?? { kind: 'absent' };
     const theirs = states.theirs.get(path) ?? { kind: 'absent' };
     const conflict = { path, base, ours, theirs };
+    if (
+      integrated !== undefined &&
+      theirs.kind === 'file' &&
+      integrated.get(path) === theirs.sha256
+    ) {
+      result.promote.push(path);
+      continue;
+    }
     if (ours.kind === 'symlink' || theirs.kind === 'symlink') {
       if (!sameSideEntry(ours, theirs)) {
         result.conflicts.push({ ...conflict, kind: 'unsupported-entry' });

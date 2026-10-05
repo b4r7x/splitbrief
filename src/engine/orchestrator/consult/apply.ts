@@ -22,7 +22,7 @@ import type { OrchestratorCallbacks, WorkflowSinks } from '../types.js';
 import type { ValidationAcceptance } from '../validation/acceptance.js';
 import { formatValidationError } from '../validation/format-error.js';
 import type { ValidationResult } from '../validation/result.js';
-import { runChecks, type CheckRunResult } from '../validation/run-checks.js';
+import { checkRegistry, runChecks, type CheckRunResult } from '../validation/run-checks.js';
 import type { ValidationCommandRunner, Validator } from '../validation/types.js';
 
 export type ConsultApplyContext = Readonly<{
@@ -47,6 +47,7 @@ type RewriteAction = ConsultAnswer['answer'] & { action: 'rewrite-task' };
 type SplitAction = ConsultAnswer['answer'] & { action: 'split-task' };
 type VerifyAction = ConsultAnswer['answer'] & { action: 'verify' };
 type AskUserAction = ConsultAnswer['answer'] & { action: 'ask-user' };
+type ConfirmAction = ConsultAnswer['answer'] & { action: 'confirm' };
 
 /** What the answer did, with the task or tasks it left behind. */
 export type ConsultApplyOutcome =
@@ -54,6 +55,7 @@ export type ConsultApplyOutcome =
   | Readonly<{ action: 'rewrite-task'; task: Task }>
   | Readonly<{ action: 'split-task'; tasks: Task[] }>
   | Readonly<{ action: 'completed'; task: Task }>
+  | Readonly<{ action: 'confirm'; decisions: ConfirmAction['decisions'] }>
   | Readonly<{
       action: 'ask-user';
       question: string;
@@ -85,21 +87,39 @@ function droppedCriteria(task: Task, specs: readonly TaskSpec[]): string[] {
   return (task.criteria ?? []).filter((criterion) => !kept.has(criterion));
 }
 
+function droppedCriteriaChecks(
+  task: Task,
+  plan: Plan | undefined,
+  specs: readonly TaskSpec[],
+): string[] {
+  const carried = new Set((task.checks ?? []).map((check) => check.id));
+  const kept = new Set(specs.flatMap((spec) => spec.checks.map((check) => check.id)));
+  return criteriaCheckIds(task, plan).filter(
+    (checkId) => carried.has(checkId) && !kept.has(checkId),
+  );
+}
+
 /** The planner's brief-breaking answer, or null when the replacement keeps the task's contract. */
-function guardViolation(task: Task, action: RewriteAction | SplitAction): string | null {
+function guardViolation(
+  task: Task,
+  plan: Plan | undefined,
+  action: RewriteAction | SplitAction,
+): string | null {
   if (action.action === 'rewrite-task') {
-    if (action.task.id !== task.id) {
-      return `the rewritten task changes its id to ${action.task.id}`;
-    }
     if (!sameCriteria(task, action.task)) return 'the rewritten task changes its criteria';
+    const dropped = droppedCriteriaChecks(task, plan, [action.task]);
+    if (dropped.length > 0) {
+      return `the rewritten task drops the checks its criteria require: ${dropped.join(', ')}`;
+    }
     return null;
-  }
-  if (task.parentId !== undefined) {
-    return `${task.id} is already a subtask of a split and cannot be split again`;
   }
   const dropped = droppedCriteria(task, action.tasks);
   if (dropped.length > 0) {
     return `the subtasks together drop ${dropped.join(', ')}`;
+  }
+  const droppedChecks = droppedCriteriaChecks(task, plan, action.tasks);
+  if (droppedChecks.length > 0) {
+    return `the subtasks together drop the checks their criteria require: ${droppedChecks.join(', ')}`;
   }
   return null;
 }
@@ -168,9 +188,11 @@ async function applySplit(
     { type: 'INSERT_TASKS', parentId: task.id, tasks: inserted },
   );
   ctx.onStateChange?.(state);
-  const tasks = inserted.map(
-    (child) => state.tasks.find((candidate) => candidate.id === child.id) ?? child,
-  );
+  const tasks = inserted.map((child) => {
+    const saved = state.tasks.find((candidate) => candidate.id === child.id);
+    if (saved === undefined) throw consultApplyError.taskMissing(child.id);
+    return saved;
+  });
   publishTasksInserted(
     { bus: ctx.bus, phase: state.phase },
     task.id,
@@ -197,10 +219,7 @@ function verifySelectionError(
   checkIds: readonly string[],
 ): string | null {
   if (checkIds.length === 0) return 'the verify selection names no check';
-  const known = new Set([
-    ...(task.checks ?? []).map((check) => check.id),
-    ...(plan?.checks ?? []).map((check) => check.id),
-  ]);
+  const known = checkRegistry({ task, plan });
   const unknown = checkIds.filter((checkId) => !known.has(checkId));
   if (unknown.length > 0) return `the verify selection names unknown checks: ${unknown.join(', ')}`;
   const missing = criteriaCheckIds(task, plan).filter((checkId) => !checkIds.includes(checkId));
@@ -324,6 +343,21 @@ function replyAnswer(
   return reply.text.trim() === '' ? defaultAnswer(question) : reply.text;
 }
 
+/** The planner's confirm: the decisions extend the run's ledger on the reporting task. */
+function applyConfirm(
+  ctx: ConsultApplyContext,
+  task: Task,
+  action: ConfirmAction,
+): ConsultApplyOutcome {
+  const state = transitionAndSave(
+    { projectDir: ctx.projectDir, sessionId: ctx.sessionId },
+    ctx.state,
+    { type: 'CONFIRM_DECISIONS', taskId: task.id, decisions: action.decisions },
+  );
+  ctx.onStateChange?.(state);
+  return { action: 'confirm', decisions: action.decisions };
+}
+
 async function applyAskUser(
   ctx: ConsultApplyContext,
   action: AskUserAction,
@@ -337,7 +371,16 @@ async function applyAskUser(
     answered: false,
   };
   const reply = await waitForPlannerReply(ctx, asked);
-  return { action: 'guidance', instructions: replyAnswer(question, reply), context: null };
+  if (reply === undefined && question.default === undefined)
+    return { action: 'failed', reason: 'The planner question remains unanswered.' };
+  const answered = replyAnswer(question, reply);
+  const recorded = transitionAndSave(ctx, ctx.state, {
+    type: 'SET_PLANNER_CONVERSATION',
+    conversation: { ...asked, answered: true, answers: [{ reply: asked.text, answer: answered }] },
+  });
+  const cleared = transitionAndSave(ctx, recorded, { type: 'CLEAR_PLANNER_CONVERSATION' });
+  ctx.onStateChange?.(cleared);
+  return { action: 'guidance', instructions: answered, context: null };
 }
 
 /**
@@ -345,7 +388,7 @@ async function applyAskUser(
  * block carries; a rewrite or a split rolls the current attempt back and replaces the task;
  * verify completes the task when its selection covers the criteria and the validation and
  * checks pass; ask-user puts the planner's one question to the operator and hands the answer
- * back as guidance; an answer that would drop a criterion or split a subtask becomes ask-user.
+ * back as guidance; an answer that would drop a criterion or one of its checks becomes ask-user.
  *
  * `attempt` is the current attempt's start snapshot; null means no attempt ran (a stale
  * refresh before dispatch), so there is nothing to roll back.
@@ -358,7 +401,7 @@ export async function applyConsultAnswer(
 ): Promise<ConsultApplyOutcome> {
   const action = answer.answer;
   if (action.action === 'rewrite-task' || action.action === 'split-task') {
-    const violation = guardViolation(task, action);
+    const violation = guardViolation(task, ctx.state.plan, action);
     if (violation !== null) return guardAskUser(task, action, violation);
   }
   switch (action.action) {
@@ -372,6 +415,8 @@ export async function applyConsultAnswer(
       return applyVerify(ctx, task, action);
     case 'ask-user':
       return applyAskUser(ctx, action);
+    case 'confirm':
+      return applyConfirm(ctx, task, action);
     default:
       return assertNever(action);
   }

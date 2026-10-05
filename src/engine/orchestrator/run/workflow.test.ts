@@ -71,7 +71,9 @@ import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
 import {
   planFromTasks,
   planQuestionsFrom,
+  passingReviewVerdict,
   typedCallAnswering,
+  typedCallPlanAndReview,
 } from '#testing/helpers/typed-planner.js';
 
 let dirs: string[] = [];
@@ -1371,20 +1373,23 @@ describe('runWorkflow — smoke', () => {
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       _eventSink: (event) => events.push(event),
       _planner: makePlanner({
-        typedCall: typedCallFromTasks([
-          makeTask({
-            id: 'T001',
-            title: 'Reviewable task',
-            file: 'src/reviewable.ts',
-            scope: { inBounds: ['src/reviewable.ts'], outOfBounds: ['other files'] },
-            evidence: ['task_completed event shows the task ran'],
-            typeDefs: 'type ReviewableTask = { file: string }',
-          }),
-        ]),
-        review: vi.fn().mockImplementation(async (_prompt, _dir, cbs: PlannerOutputCallbacks) => {
-          emitReviewCall(cbs, 'test-planner');
-          return { text: '# Review\n\n### Verdict\npass\n', usage: null };
-        }),
+        typedCall: typedCallPlanAndReview(
+          () =>
+            planFromTasks([
+              makeTask({
+                id: 'T001',
+                title: 'Reviewable task',
+                file: 'src/reviewable.ts',
+                scope: { inBounds: ['src/reviewable.ts'], outOfBounds: ['other files'] },
+                evidence: ['task_completed event shows the task ran'],
+                typeDefs: 'type ReviewableTask = { file: string }',
+              }),
+            ]),
+          (prompt, _call, callbacks) => {
+            emitReviewCall(callbacks, 'test-planner');
+            return passingReviewVerdict(prompt);
+          },
+        ),
       }),
       _implementer: makeImplementer(),
     });
@@ -1426,10 +1431,14 @@ describe('runWorkflow — smoke', () => {
       _planner: planner,
       _implementer: makeImplementer(),
       _reviewer: {
-        review: vi.fn().mockImplementation(async (_prompt, _dir, cbs: PlannerOutputCallbacks) => {
-          emitReviewCall(cbs, 'test-reviewer');
-          return { text: '# Review\n\n### Verdict\npass\n', usage: null };
-        }),
+        review: vi.fn(),
+        typedCall: typedCallPlanAndReview(
+          () => planFromTasks([]),
+          (prompt, _call, callbacks) => {
+            emitReviewCall(callbacks, 'test-reviewer');
+            return passingReviewVerdict(prompt);
+          },
+        ),
       },
     });
 

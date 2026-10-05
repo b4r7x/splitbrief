@@ -11,6 +11,12 @@ import {
   TEST_SINKS,
 } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import {
+  failedReviewVerdict,
+  passingReviewVerdict,
+  planFromTasks,
+  typedCallPlanAndReview,
+} from '#testing/helpers/typed-planner.js';
 import { sessionDir } from '../../../core/paths.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { createInitialState } from '../../../core/state/machine.js';
@@ -127,11 +133,14 @@ describe('workflow closure', () => {
       callbacks: makeCallbacks().callbacks,
       signal: controller.signal,
       _planner: makePlanner({
-        review: async () => {
-          race.writePassedAfterRead = true;
-          controller.abort(WORKFLOW_USER_CANCELLED_ABORT_REASON);
-          return { text: '### Verdict\npass\n', usage: null };
-        },
+        typedCall: typedCallPlanAndReview(
+          () => planFromTasks([]),
+          (prompt) => {
+            race.writePassedAfterRead = true;
+            controller.abort(WORKFLOW_USER_CANCELLED_ABORT_REASON);
+            return passingReviewVerdict(prompt);
+          },
+        ),
       }),
       _implementer: makeImplementer(),
       _eventSink: (event) => events.push(event),
@@ -205,10 +214,13 @@ describe('workflow closure', () => {
         }).callbacks,
         signal: controller.signal,
         _planner: makePlanner({
-          review: async () => ({
-            text: `### Verdict\n${review === 'passed' ? 'pass' : 'fail'}\n`,
-            usage: null,
-          }),
+          typedCall: typedCallPlanAndReview(
+            () => planFromTasks([]),
+            (prompt) =>
+              review === 'passed'
+                ? passingReviewVerdict(prompt)
+                : failedReviewVerdict(prompt, 'the closure fixture fails the review'),
+          ),
         }),
         _implementer: makeImplementer(),
         _eventSink: (event) => {

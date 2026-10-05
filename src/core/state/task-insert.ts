@@ -15,10 +15,10 @@ export function nextTaskIds(tasks: readonly Task[], count: number): TaskId[] {
   return Array.from({ length: count }, (_, index) => formatTaskId(highest + index + 1));
 }
 
-export function insertTasks(
-  specs: readonly TaskSpec[],
+export function insertTasks<Spec extends TaskSpec>(
+  specs: readonly Spec[],
   tasks: readonly Task[],
-  convert: (spec: TaskSpec) => Task,
+  convert: (spec: Spec) => Task,
 ): Task[] {
   const ids = nextTaskIds(tasks, specs.length);
   const assigned = new Map<string, TaskId>();

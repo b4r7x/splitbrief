@@ -1,3 +1,5 @@
+import { readReviewRecord } from '../../../core/review/store.js';
+import { reviewOutcomeOf } from '../../../core/review/verdict.js';
 import { randomUUID } from 'node:crypto';
 import { phaseRole } from '../../../core/phases.js';
 import type { RecoveryAction } from '../../../core/schemas/enums.js';
@@ -31,7 +33,6 @@ import { readSpecFileOrEmpty } from '../../../core/paths-io.js';
 import { REVIEW_FILE } from '../../../core/paths.js';
 import { appendMessage } from '../../../core/sessions/log-writer.js';
 import { parseFinalReview } from '../../parsers/final-review.js';
-import { correctionFixes } from '../review-fix.js';
 
 export type RecoveryActionBlockedCode =
   | 'no-pending-recovery'
@@ -43,8 +44,7 @@ export type RecoveryActionBlockedCode =
   | 'profile-not-found'
   | 'seat-swap-unavailable'
   | 'candidate-not-offered'
-  | 'planner-proposal-required'
-  | 'nothing-to-correct';
+  | 'planner-proposal-required';
 
 export type RecoveryActionAppliedStatus =
   | 'continued'
@@ -237,6 +237,35 @@ function applyConsultGrantRecoveryAction(
   opts: ApplyRecoveryActionOptions,
   issue: RecoveryIssue,
 ): ApplyRecoveryActionResult {
+  if (issue.reason === 'planner-calls-spent' && issue.taskId === undefined) {
+    let state = markRecoveryApplying(opts, issue);
+    state = transitionAndSave(
+      opts,
+      state,
+      {
+        type: 'GRANT_ALLOWANCE',
+        target: 'planner',
+        taskId: null,
+        note: opts.comment?.trim() || 'continued',
+      },
+      { expectedRevision: state.stateRevision ?? 0 },
+    );
+    state = transitionAndSave(
+      opts,
+      state,
+      { type: 'RESOLVE_PENDING_RECOVERY' },
+      { expectedRevision: state.stateRevision ?? 0 },
+    );
+    publishRecoveryResolved({
+      bus: opts.bus,
+      phase: state.phase,
+      issue,
+      action: opts.action,
+      outcome: 'continued',
+    });
+    return { ok: true, action: opts.action, issue, state, status: 'continued' };
+  }
+
   const taskId = issue.taskId ?? opts.state.tasks[opts.state.currentTaskIndex]?.id;
   if (taskId === undefined) {
     return blockRecoveryAction({
@@ -400,6 +429,20 @@ function readCriticalFindings(
   ref: { projectDir: string; sessionId: string },
   state: WorkflowState,
 ): string[] {
+  const review = state.review ?? readReviewRecord(ref);
+  if (review !== null && review !== undefined) {
+    const outcome = reviewOutcomeOf(review);
+    return [
+      ...outcome.blocking.map((finding) => finding.text),
+      ...outcome.criteria
+        .filter((criterion) => criterion.status !== 'pass')
+        .map(
+          (criterion) => `Criterion ${criterion.id}: ${criterion.status} — ${criterion.evidence}`,
+        ),
+      ...outcome.coverageErrors,
+      ...(state.applyReview?.failures ?? []),
+    ];
+  }
   return [
     ...parseFinalReview(readSpecFileOrEmpty(ref, REVIEW_FILE))
       .findings.filter((finding) => finding.severity === 'critical')
@@ -441,10 +484,10 @@ function applyAcceptAsIsRecoveryAction(
 }
 
 /**
- * A failed final review sent back with the operator's words: the correction is the user turn it
- * is, and one more repair cycle reopens the briefs the review's Critical findings belong to with
- * the correction beside them. The cycle is past the automatic cap, so the review that follows
- * either passes or halts here again.
+ * A failed final review sent back with the operator's words: the correction is queued as a
+ * triage input and the run moves back to final-review, where the review loop triages the
+ * saved review plus that input and makes no new review call. The cycle cap grants one more
+ * fix cycle when the correction arrives at it.
  */
 function applyReviewCorrectionAction(
   opts: ApplyRecoveryActionOptions,
@@ -452,31 +495,15 @@ function applyReviewCorrectionAction(
 ): ApplyRecoveryActionResult {
   const ref = { projectDir: opts.projectDir, sessionId: opts.sessionId };
   const correction = opts.comment?.trim() ?? '';
-  const fixes = correctionFixes({
-    critical: readCriticalFindings(ref, opts.state),
-    correction,
-    tasks: opts.state.tasks,
-  });
-  if (Object.keys(fixes).length === 0) {
-    return blockRecoveryAction({
-      ...opts,
-      issue,
-      code: 'nothing-to-correct',
-      message: `${REVIEW_FILE} names no Critical finding a brief owns. Type what the fix should change.`,
-      publishSelected: true,
-    });
-  }
-
   let state = markRecoveryApplying(opts, issue);
   if (correction !== '') {
     appendMessage(ref, { role: 'user', phase: state.phase, text: correction });
     publishUserMessage({ bus: opts.bus, phase: state.phase }, correction);
   }
-  const cycle = (state.reviewFixes?.cycle ?? 0) + 1;
   state = transitionAndSave(
     opts,
     state,
-    { type: 'REVIEW_FIX_START', fixes, cycle },
+    { type: 'REVIEW_CORRECTION', text: correction },
     { expectedRevision: state.stateRevision ?? 0 },
   );
   state = transitionAndSave(
@@ -485,13 +512,6 @@ function applyReviewCorrectionAction(
     { type: 'RESOLVE_PENDING_RECOVERY' },
     { expectedRevision: state.stateRevision ?? 0 },
   );
-  opts.bus.publish({
-    type: 'review_fix_started',
-    ts: Date.now(),
-    phase: state.phase,
-    cycle,
-    taskIds: state.tasks.filter((task) => fixes[task.id] !== undefined).map((task) => task.id),
-  });
   publishRecoveryResolved({
     bus: opts.bus,
     phase: state.phase,

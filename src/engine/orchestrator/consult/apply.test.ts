@@ -2,8 +2,8 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ConsultAnswer } from '../../../core/schemas/consult.js';
-import type { TaskSpec } from '../../../core/schemas/plan.js';
-import { taskId, type Task } from '../../../core/schemas/task.js';
+import type { Plan, TaskSpec } from '../../../core/schemas/plan.js';
+import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import { saveState } from '../../../core/state/persistence.js';
@@ -46,6 +46,7 @@ function contextFor(
   projectDir: string,
   sessionId: string,
   task: Task,
+  plan?: Plan,
 ): { ctx: ConsultApplyContext; states: WorkflowState[]; events: EngineEvent[] } {
   const state: WorkflowState = {
     ...transition(createInitialState('Fix the greeting'), { type: 'START' }),
@@ -53,6 +54,7 @@ function contextFor(
     tasks: [task],
     currentTaskIndex: 0,
     attempt: 1,
+    ...(plan !== undefined && { plan }),
   };
   saveState({ projectDir, sessionId }, state);
   const { bus, events } = makeBusRecorder();
@@ -199,52 +201,83 @@ describe('applyConsultAnswer', () => {
     expect(states).toHaveLength(0);
   });
 
-  it('a split of a subtask becomes ask-user', async () => {
-    const { projectDir, sessionId } = setupRepo(dirs);
-    const task = makeTask({
-      id: 'T005',
-      parentId: taskId('T002'),
-      file: 'src/greet.ts',
-      criteria: ['C1'],
-      status: 'failed',
-    });
-    const { ctx, states } = contextFor(projectDir, sessionId, task);
-    const attempt = await getChangedFilesSnapshot(projectDir);
-
-    const result = await applyConsultAnswer(
-      ctx,
-      task,
-      split([
-        makeTaskSpec({ id: 'T005', criteria: ['C1'], suggestedFiles: ['src/a.ts'] }),
-        makeTaskSpec({ id: 'T006', criteria: ['C1'], suggestedFiles: ['src/b.ts'] }),
-      ]),
-      attempt,
-    );
-
-    expect(questionOf(result)).toContain('subtask');
-    expect(states).toHaveLength(0);
-  });
-
-  it('a rewrite that changes the id becomes ask-user', async () => {
+  it('a rewrite that repairs a check command under the same id is applied', async () => {
     const { projectDir, sessionId } = setupRepo(dirs);
     const task = makeTask({
       id: 'T003',
       file: 'src/greet.ts',
       criteria: ['C1'],
+      checks: [{ id: 'K1', kind: 'test', value: 'src/greet.test.ts', required: true }],
       status: 'failed',
     });
-    const { ctx, states } = contextFor(projectDir, sessionId, task);
+    const plan: Plan = {
+      summary: 'Fix the greeting',
+      decisions: [],
+      criteria: [{ id: 'C1', text: 'A greeting is returned', checkIds: ['K1'] }],
+      checks: [{ id: 'K1', kind: 'test', value: 'src/greet.test.ts', required: true }],
+      validation: null,
+    };
+    const { ctx, states } = contextFor(projectDir, sessionId, task, plan);
     const attempt = await getChangedFilesSnapshot(projectDir);
 
     const result = await applyConsultAnswer(
       ctx,
       task,
-      rewrite(makeTaskSpec({ id: 'T009', criteria: ['C1'], suggestedFiles: ['src/greet.ts'] })),
+      rewrite(
+        makeTaskSpec({
+          id: 'T003',
+          criteria: ['C1'],
+          checks: [{ id: 'K1', kind: 'cmd', value: 'npm run greet-test', required: true }],
+          suggestedFiles: ['src/greet.ts'],
+        }),
+      ),
       attempt,
     );
 
-    const guarded = questionOf(result);
-    expect(guarded).toContain('T009');
+    if (result.action !== 'rewrite-task') throw new Error(`expected rewrite, got ${result.action}`);
+    expect(result.task.checks).toEqual([
+      { id: 'K1', kind: 'cmd', value: 'npm run greet-test', required: true },
+    ]);
+    expect(states).toHaveLength(1);
+  });
+
+  it('a rewrite that drops a check its criteria require becomes ask-user', async () => {
+    const { projectDir, sessionId } = setupRepo(dirs);
+    const task = makeTask({
+      id: 'T003',
+      file: 'src/greet.ts',
+      criteria: ['C1'],
+      checks: [{ id: 'K1', kind: 'test', value: 'src/greet.test.ts', required: true }],
+      status: 'failed',
+    });
+    const plan: Plan = {
+      summary: 'Fix the greeting',
+      decisions: [],
+      criteria: [{ id: 'C1', text: 'A greeting is returned', checkIds: ['K1'] }],
+      checks: [{ id: 'K1', kind: 'test', value: 'src/greet.test.ts', required: true }],
+      validation: null,
+    };
+    const { ctx, states } = contextFor(projectDir, sessionId, task, plan);
+    const attempt = await getChangedFilesSnapshot(projectDir);
+    writeFileSync(join(projectDir, 'src/greet.ts'), ATTEMPT_GREET);
+
+    const result = await applyConsultAnswer(
+      ctx,
+      task,
+      rewrite(
+        makeTaskSpec({
+          id: 'T003',
+          criteria: ['C1'],
+          checks: [],
+          suggestedFiles: ['src/greet.ts'],
+        }),
+      ),
+      attempt,
+    );
+
+    expect(questionOf(result)).toContain('K1');
+    // The guard runs before the rollback: the attempt's write is still on disk.
+    expect(readFileSync(join(projectDir, 'src/greet.ts'), 'utf-8')).toBe(ATTEMPT_GREET);
     expect(states).toHaveLength(0);
   });
 
@@ -361,5 +394,29 @@ describe('applyConsultAnswer', () => {
     expect(events.filter((event) => event.type === 'tasks_inserted')).toMatchObject([
       { parentId: 'T003', taskIds: ['T004', 'T005'] },
     ]);
+  });
+
+  it('split-task fails when the saved run has no parent to split', async () => {
+    const { projectDir, sessionId } = setupRepo(dirs);
+    const task = makeTask({ id: 'T003', file: 'src/greet.ts', criteria: ['C1'], status: 'failed' });
+    const { ctx, states, events } = contextFor(projectDir, sessionId, task);
+    const missing = makeTask({
+      id: 'T007',
+      file: 'src/greet.ts',
+      criteria: ['C1'],
+      status: 'failed',
+    });
+    const attempt = await getChangedFilesSnapshot(projectDir);
+
+    await expect(
+      applyConsultAnswer(
+        ctx,
+        missing,
+        split([makeTaskSpec({ id: 'T007', criteria: ['C1'], suggestedFiles: ['src/a.ts'] })]),
+        attempt,
+      ),
+    ).rejects.toMatchObject({ kind: 'consult-apply-task-missing' });
+    expect(states.at(-1)?.tasks.map((saved) => saved.id)).toEqual(['T003']);
+    expect(events.filter((event) => event.type === 'tasks_inserted')).toHaveLength(0);
   });
 });

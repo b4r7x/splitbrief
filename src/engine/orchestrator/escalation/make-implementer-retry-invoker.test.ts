@@ -24,11 +24,13 @@ describe('makeImplementerRetryInvoker', () => {
     const { implementer, getReceived } = makeRecordingImplementer();
     const languageContext = buildLanguageContext('typescript');
     const config = makeConfig();
-    const task = makeTask();
+    const task = makeTask({
+      fix: { cycle: 1, findings: [{ id: 'F1', text: 'Keep the error', acceptance: null }] },
+    });
     const signal = new AbortController().signal;
     const plan = {
       summary: 'Route every write through the registry.',
-      decisions: ['Keep the registry as the one source of truth'],
+      decisions: [{ text: 'Keep the registry as the one source of truth', taskId: null }],
       criteria: [],
       checks: [],
       validation: null,
@@ -87,6 +89,7 @@ describe('makeImplementerRetryInvoker', () => {
       changeDetection: 'file-hashes',
       createdByThisTask: ['src/owned.ts'],
       plan,
+      allowNoChange: true,
     });
   });
 
@@ -125,5 +128,6 @@ describe('makeImplementerRetryInvoker', () => {
     expect(argImpl.getReceived()).toBeUndefined();
     expect(override.getReceived()?.config.implementer.model).toBe('override-model');
     expect(override.getReceived()?.kind).toBe('local');
+    expect(override.getReceived()?.allowNoChange).toBe(false);
   });
 });

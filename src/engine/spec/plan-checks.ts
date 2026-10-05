@@ -97,6 +97,62 @@ export function pathsNotFiles(task: TaskSpec, projectDir: string): string[] {
   );
 }
 
+export function checkTaskIdentities(
+  tasks: readonly Pick<TaskSpec, 'id' | 'batch' | 'dependsOn'>[],
+  preceding: readonly Pick<TaskSpec, 'id' | 'batch' | 'dependsOn'>[] = [],
+): PlanCheckError[] {
+  const errors: PlanCheckError[] = [];
+  const fail = (code: PlanCheckCode, message: string) => errors.push({ code, message });
+  const duplicateTaskIds = duplicates(tasks.map((task) => task.id));
+  for (const id of duplicateTaskIds) fail('duplicate-task-id', `Task id ${id} is used twice.`);
+  const proposed = new Set(tasks.map((task) => task.id));
+  const earlier = preceding.filter((task) => !proposed.has(task.id));
+  const batchOf = new Map([...earlier, ...tasks].map((task) => [task.id, task.batch]));
+  let unknownDependency = false;
+  for (const [index, task] of tasks.entries()) {
+    const previous = tasks[index - 1];
+    if (previous !== undefined && previous.batch > task.batch) {
+      fail(
+        'batch-out-of-order',
+        `Task ${task.id} (batch ${task.batch}) comes after ${previous.id} (batch ${previous.batch}); list the tasks in batch order.`,
+      );
+    }
+    for (const id of task.dependsOn) {
+      const batch = batchOf.get(id);
+      if (batch === undefined) {
+        unknownDependency = true;
+        fail('unknown-dependency', `Task ${task.id} depends on unknown task ${id}.`);
+      } else if (batch > task.batch) {
+        fail(
+          'dependency-later-batch',
+          `Task ${task.id} (batch ${task.batch}) depends on ${id} in later batch ${batch}.`,
+        );
+      }
+    }
+  }
+  if (duplicateTaskIds.length === 0 && !unknownDependency) {
+    try {
+      topoSort([...earlier.map((task) => ({ ...task, dependsOn: [] })), ...tasks]);
+      const listed = new Set<string>(earlier.map((task) => task.id));
+      for (const task of tasks) {
+        for (const id of task.dependsOn.filter((dep) => batchOf.get(dep) === task.batch)) {
+          if (!listed.has(id)) {
+            fail(
+              'dependency-later-task',
+              `Task ${task.id} depends on ${id}, which is listed after it; list ${id} first.`,
+            );
+          }
+        }
+        listed.add(task.id);
+      }
+    } catch (err) {
+      if (!isCycle(err)) throw err;
+      fail('dependency-cycle', err.message);
+    }
+  }
+  return errors;
+}
+
 /**
  * The deterministic checks a plan passes before anyone approves it. `taskFits` is BUILD's fit per
  * task id, estimated with the task's fresh code: `overflow` blocks, and so does a task that no
@@ -113,12 +169,10 @@ export function checkPlan(
   if (plan.tasks.length === 0) fail('empty-plan', 'The plan has no task.');
   if (plan.criteria.length === 0) fail('empty-plan', 'The plan has no criterion.');
 
-  const taskIds = plan.tasks.map((task) => task.id);
   const checkIds = [...plan.checks, ...plan.tasks.flatMap((task) => task.checks)].map(
     (check) => check.id,
   );
-  const duplicateTaskIds = duplicates(taskIds);
-  for (const id of duplicateTaskIds) fail('duplicate-task-id', `Task id ${id} is used twice.`);
+  errors.push(...checkTaskIdentities(plan.tasks));
   for (const id of duplicates(checkIds))
     fail('duplicate-check-id', `Check id ${id} is used twice.`);
   for (const id of duplicates(plan.criteria.map((criterion) => criterion.id)))
@@ -137,17 +191,8 @@ export function checkPlan(
   }
 
   const criterionIds = plan.criteria.map((criterion) => criterion.id);
-  const batchOf = new Map(plan.tasks.map((task) => [task.id, task.batch]));
-  let unknownDependency = false;
   const written = new Set<string>();
-  for (const [index, task] of plan.tasks.entries()) {
-    const previous = plan.tasks[index - 1];
-    if (previous !== undefined && previous.batch > task.batch) {
-      fail(
-        'batch-out-of-order',
-        `Task ${task.id} (batch ${task.batch}) comes after ${previous.id} (batch ${previous.batch}); list the tasks in batch order.`,
-      );
-    }
+  for (const task of plan.tasks) {
     if (task.criteria.length === 0)
       fail('task-without-criterion', `Task ${task.id} serves no criterion.`);
     if (task.intent.trim() === '') fail('task-without-intent', `Task ${task.id} has no intent.`);
@@ -200,39 +245,6 @@ export function checkPlan(
           `Task ${task.id} writes ${file}, a protected path, without listing it in protectedOperations; list { path: "${file}", operation: "write" }.`,
         );
       }
-    }
-    for (const id of task.dependsOn) {
-      const batch = batchOf.get(id);
-      if (batch === undefined) {
-        unknownDependency = true;
-        fail('unknown-dependency', `Task ${task.id} depends on unknown task ${id}.`);
-      } else if (batch > task.batch) {
-        fail(
-          'dependency-later-batch',
-          `Task ${task.id} (batch ${task.batch}) depends on ${id} in later batch ${batch}.`,
-        );
-      }
-    }
-  }
-
-  if (duplicateTaskIds.length === 0 && !unknownDependency) {
-    try {
-      topoSort(plan.tasks);
-      const listed = new Set<string>();
-      for (const task of plan.tasks) {
-        for (const id of task.dependsOn.filter((dep) => batchOf.get(dep) === task.batch)) {
-          if (!listed.has(id)) {
-            fail(
-              'dependency-later-task',
-              `Task ${task.id} depends on ${id}, which is listed after it; list ${id} first.`,
-            );
-          }
-        }
-        listed.add(task.id);
-      }
-    } catch (err) {
-      if (!isCycle(err)) throw err;
-      fail('dependency-cycle', err.message);
     }
   }
 

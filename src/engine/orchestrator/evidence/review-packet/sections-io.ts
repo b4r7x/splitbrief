@@ -1,3 +1,8 @@
+import {
+  reviewFindingCounts,
+  reviewOutcomeOf,
+  reviewOutcomeWord,
+} from '../../../../core/review/verdict.js';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -20,6 +25,7 @@ import { uniqueSorted } from '../../../../utils/collections.js';
 import { extractFrontmatter } from '../../../../utils/frontmatter.js';
 import type { DriftReport } from '../../../../core/schemas/drift.js';
 import { parseFinalReview, type ParsedFinalReview } from '../../../parsers/final-review.js';
+import { readReviewRecord } from '../../../../core/review/store.js';
 import { addMissing } from './missing-artifacts.js';
 
 const REVIEW_EXCERPT_MAX = 500;
@@ -121,18 +127,32 @@ export async function buildFinalReview(opts: {
         ? `Planner final review failed; ${REVIEW_FILE} may be absent.`
         : `${REVIEW_FILE} was not available.`;
   const body = await readReviewBody(projectDir, sessionId);
-  const parsed = body === null ? null : parseFinalReview(body);
+  // The typed record is the verdict's home; only a session saved before it has
+  // to fall back to the rendered markdown.
+  const record = readReviewRecord({ projectDir, sessionId });
+  const parsed = record === null && body !== null ? parseFinalReview(body) : null;
+  const outcome = record === null ? null : reviewOutcomeOf(record);
   return {
     path: REVIEW_FILE,
     status,
     evidenceStatus: ledger?.finalReview?.status ?? null,
     statusText,
     excerpt: body === null ? null : reviewExcerpt(body),
-    verdict: parsed?.verdict ?? null,
-    criteriaPassed: parsed?.criteria.filter((criterion) => criterion.passed).length ?? 0,
-    criteriaFailed: parsed?.criteria.filter((criterion) => !criterion.passed).length ?? 0,
+    verdict: outcome === null ? (parsed?.verdict ?? null) : reviewOutcomeWord(outcome),
+    criteriaPassed:
+      outcome === null
+        ? (parsed?.criteria.filter((criterion) => criterion.passed).length ?? 0)
+        : outcome.criteria.filter((criterion) => criterion.status === 'pass').length,
+    criteriaFailed:
+      outcome === null
+        ? (parsed?.criteria.filter((criterion) => !criterion.passed).length ?? 0)
+        : outcome.criteria.filter((criterion) => criterion.status !== 'pass').length,
     findingCounts:
-      parsed === null ? { critical: 0, warning: 0, note: 0 } : countFindings(parsed.findings),
+      outcome === null
+        ? parsed === null
+          ? { critical: 0, warning: 0, note: 0 }
+          : countFindings(parsed.findings)
+        : reviewFindingCounts(outcome),
   };
 }
 

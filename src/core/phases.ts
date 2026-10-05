@@ -60,7 +60,3 @@ export function isImplementerPhase(phase: Phase): boolean {
 export function isTerminalPhase(phase: Phase): boolean {
   return phase === 'complete';
 }
-
-export function canRedoTask(phase: Phase): boolean {
-  return isImplementerPhase(phase);
-}

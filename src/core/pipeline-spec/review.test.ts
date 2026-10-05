@@ -11,4 +11,9 @@ describe('review spec', () => {
     expect(VERDICT_RULES.unparseableVerdict).toBe('fail');
     expect(VERDICT_RULES.reaskSentence).toContain('exactly one verdict word');
   });
+
+  it('keeps no automatic finding owner for the typed review to replace', () => {
+    expect(VERDICT_RULES).not.toHaveProperty('findingOwner');
+    expect(VERDICT_RULES).not.toHaveProperty('unmatchedFindingOwner');
+  });
 });

@@ -1,6 +1,24 @@
 <!--
 Sync Impact Report
-- Version change: 2.4.0 → 2.5.0 (MINOR: V and VI change mechanism, not
+- Version change: 2.5.0 → 2.6.0 (MINOR: VI's mechanism text changes — the
+  configured review cadence replaces the single review moment; a per-batch
+  review and any review outside the configured cadence stay forbidden)
+- Modified principles (2.6.0):
+  - VI. Identity & Anti-Goals (exception 3: the review runs at the
+    configured cadence — `workflow.review` is `end`, one review after the
+    final brief, or `task`, which adds one after each completed brief; a
+    fix cycle's re-review of the whole run diff continues that cadence; a
+    schema repair is a new call inside the same review, because the
+    reviewer holds no session (Principle I); the Apply integration
+    re-review clause is kept)
+- Updated sections (2.6.0): none
+- Templates requiring updates (2.6.0):
+  - .specify/templates/plan-template.md ✅ compatible
+  - .specify/templates/spec-template.md ✅ compatible
+  - .specify/templates/tasks-template.md ✅ compatible
+- Follow-up TODOs (2.6.0): none
+
+Prior pass — 2.4.0 → 2.5.0 (MINOR: V and VI change mechanism, not
   principle — worktree and staged-copy runs use one run workspace, the
   checkout changes only at Apply, and Apply, Discard or ending the run
   close it; the Apply integration re-review is a fix cycle of the one
@@ -335,15 +353,21 @@ Explicit anti-goals that MUST NOT be implemented:
    is invoked by SPLITBRIEF and never by the planner, so nothing wraps an
    agent in an agent; and it exchanges no messages with the other seats —
    it reads a diff and returns a verdict — so there is no coordination
-   layer. A reviewer that could plan, write files, hold a session, or be
-   given a second review moment in a run — a per-task review, or a review
-   of anything other than the run diff — would cross into the anti-goals
-   and MUST be rejected. Interrupt-and-continue of the single review call
-   is the same continuation mechanism every other seat uses and does not
-   create a second moment. Neither does the Apply integration re-review:
-   when the merge at Apply changes the reviewed result, the review seat
-   reads the whole run diff again, and that re-review counts as one fix
-   cycle of the final review against its cycle cap.
+   layer. The one review cadence is the configured `workflow.review`:
+   `end` reviews once, after the final brief; `task` also reviews after
+   every completed brief, with the final review at the end. A re-review of
+   the whole run diff after each fix cycle continues that cadence, not a
+   further review moment, and a schema repair of a malformed typed answer
+   is part of the same review — a new call, because the reviewer holds no
+   session (Principle I). A per-batch review, a review of anything other
+   than the run diff, or any review outside the configured cadence would
+   cross into the anti-goals and MUST be rejected. Interrupt-and-continue
+   of the single review call is the same continuation mechanism every
+   other seat uses and does not create a second moment. Neither does the
+   Apply integration re-review: when the merge at Apply changes the
+   reviewed result, the review seat reads the whole run diff again, and
+   that re-review counts as one fix cycle of the final review against its
+   cycle cap.
 
 ## Technical Constraints
 
@@ -398,4 +422,4 @@ MUST be documented in the plan.md Complexity Tracking table with:
 the violation, why it is needed, and why the simpler alternative
 was rejected.
 
-**Version**: 2.5.0 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-10-03
+**Version**: 2.6.0 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-10-05

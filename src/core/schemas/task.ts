@@ -130,6 +130,18 @@ export const TaskSchema = z.object({
   revision: z.number().int().min(1).optional(),
   /** Content hashes of the input files of this revision, keyed by path. */
   inputHashes: z.record(z.string(), z.string()).optional(),
+  fix: z
+    .object({
+      cycle: z.number().int().min(1),
+      findings: z.array(
+        z.object({
+          id: z.string(),
+          text: z.string(),
+          acceptance: z.string().nullable(),
+        }),
+      ),
+    })
+    .optional(),
 });
 
 export type Task = z.infer<typeof TaskSchema>;

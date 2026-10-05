@@ -94,7 +94,11 @@ function buildTaskSections(
     const matchingCriteria = plan.criteria.filter((c) => task.criteria?.includes(c.id));
     sections.push('', '### Plan context (read-only)', plan.summary);
     if (plan.decisions.length > 0) {
-      sections.push('', 'Decisions:', ...plan.decisions.map((d) => `- ${d}`));
+      sections.push(
+        '',
+        'Decisions:',
+        ...plan.decisions.map((d) => `- ${d.text}${d.taskId === null ? '' : ` (${d.taskId})`}`),
+      );
     }
     if (matchingCriteria.length > 0) {
       sections.push(
@@ -108,6 +112,7 @@ function buildTaskSections(
     sections.push(
       '',
       TASK_BRIEF_HEADINGS.implementationSteps.heading,
+      'Guidance only: another approach that passes the checks is fine.',
       ...task.implementationSteps.map((s, i) => `${i + 1}. ${s}`),
     );
   }

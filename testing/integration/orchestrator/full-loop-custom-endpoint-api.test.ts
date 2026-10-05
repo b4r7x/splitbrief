@@ -172,7 +172,7 @@ describe('full workflow custom-endpoint API implementer', { timeout: 90_000 }, (
       expect.arrayContaining(['task_completed', 'all_tasks_done', 'workflow_complete']),
     );
     expect(readFileSync(join(sessionDir(projectDir, sessionId), REVIEW_FILE), 'utf-8')).toContain(
-      'Custom-endpoint API implementer passed validation.',
+      '### Verdict\n\npass',
     );
   }, 90_000);
 });

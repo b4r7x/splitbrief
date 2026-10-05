@@ -107,8 +107,8 @@ describe('buildPaletteSources command items', () => {
     const commands: RuntimeCommandDef[] = [
       {
         kind: 'arg',
-        name: '/redo-task',
-        description: 'Reset a task',
+        name: '/guarded',
+        description: 'Guarded command',
         category: 'workflow',
         args: { kind: 'free', hint: '<task-id>' },
         validScreens: ['workflow'],
@@ -134,7 +134,7 @@ describe('buildPaletteSources command items', () => {
       buildCommandSources(commands, noop, { screen: 'workflow', phase: 'implementing' }).map(
         (item) => item.label,
       ),
-    ).toEqual(['/redo-task', '/visible']);
+    ).toEqual(['/guarded', '/visible']);
   });
 
   it('carries the accepted values of an argument command as its own hint cell', () => {
@@ -150,10 +150,10 @@ describe('buildPaletteSources command items', () => {
       },
       {
         kind: 'arg',
-        name: '/redo-task',
-        description: 'Reset a task',
+        name: '/note',
+        description: 'Note command',
         category: 'workflow',
-        args: { kind: 'free', hint: '<task-id>' },
+        args: { kind: 'free', hint: '<text>' },
         validScreens: ['home'],
         handler: noop,
       },
@@ -161,7 +161,7 @@ describe('buildPaletteSources command items', () => {
 
     expect(items.map((item) => [item.description, item.hint])).toEqual([
       ['Workflow mode', '[instant|quick]'],
-      ['Reset a task', '<task-id>'],
+      ['Note command', '<text>'],
     ]);
   });
 

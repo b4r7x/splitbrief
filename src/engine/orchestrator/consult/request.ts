@@ -1,8 +1,8 @@
 import {
   CONSULT_ANSWER_JSON_SCHEMA,
-  ConsultAnswerSchema,
+  DEVIATION_CONSULT_ANSWER_JSON_SCHEMA,
   STALE_CONSULT_ANSWER_JSON_SCHEMA,
-  StaleConsultAnswerSchema,
+  consultAnswerSchemaFor,
   type ConsultAnswer,
   type ConsultReason,
   type ImplementerReport,
@@ -193,20 +193,29 @@ export async function requestConsult(
     async (signal) => {
       const attemptSession = { ...session, state, signal };
       try {
-        const answer: PlannerSessionAnswer<ConsultAnswer> =
-          input.reason === 'stale'
-            ? await askPlannerSession(attemptSession, {
-                ...call,
-                schema: StaleConsultAnswerSchema,
-                jsonSchema: STALE_CONSULT_ANSWER_JSON_SCHEMA,
-                schemaName: 'stale_consult_answer',
-              })
-            : await askPlannerSession(attemptSession, {
-                ...call,
-                schema: ConsultAnswerSchema,
-                jsonSchema: CONSULT_ANSWER_JSON_SCHEMA,
-                schemaName: 'consult_answer',
-              });
+        let answer: PlannerSessionAnswer<ConsultAnswer>;
+        if (input.reason === 'stale') {
+          answer = await askPlannerSession(attemptSession, {
+            ...call,
+            schema: consultAnswerSchemaFor(input.task, 'stale'),
+            jsonSchema: STALE_CONSULT_ANSWER_JSON_SCHEMA,
+            schemaName: 'stale_consult_answer',
+          });
+        } else if (input.reason === 'deviation') {
+          answer = await askPlannerSession(attemptSession, {
+            ...call,
+            schema: consultAnswerSchemaFor(input.task, 'deviation'),
+            jsonSchema: DEVIATION_CONSULT_ANSWER_JSON_SCHEMA,
+            schemaName: 'deviation_consult_answer',
+          });
+        } else {
+          answer = await askPlannerSession(attemptSession, {
+            ...call,
+            schema: consultAnswerSchemaFor(input.task),
+            jsonSchema: CONSULT_ANSWER_JSON_SCHEMA,
+            schemaName: 'consult_answer',
+          });
+        }
         const value: ConsultRun = { kind: 'answer', answer };
         if ('error' in answer.result) {
           return { ok: false, failure: { message: answer.result.error.message }, value };

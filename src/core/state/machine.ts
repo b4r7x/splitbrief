@@ -1,13 +1,16 @@
+import { fixBriefDescription } from '../review/fix-task.js';
 import { awaitsApply, deriveRunStatus } from '../sessions/run-status.js';
 import type { MachineAction, StateAction } from './types.js';
 import {
   WORKFLOW_STATE_VERSION,
+  fixCyclesOf,
+  plannerCallsOf,
   type ConsultRecord,
   type LineageRecord,
-  type PlannerCalls,
   type WorkflowState,
 } from '../schemas/workflow.js';
 import { isTaskCompleted, type Task, type TaskId } from '../schemas/task.js';
+import type { TriageInput } from '../schemas/review.js';
 import type { Phase, TaskStatus } from '../schemas/enums.js';
 import { ZERO_TOKEN_USAGE } from '../schemas/tokens.js';
 import { isQueuedMessageClearable, isQueuedMessagePendingDelivery } from '../queue-state.js';
@@ -43,6 +46,7 @@ const anytimeActions = [
   'REPLACE_TASK',
   'INSERT_TASKS',
   'RECORD_CONSULT',
+  'CONFIRM_DECISIONS',
   'COUNT_ATTEMPT',
   'COUNT_PLANNER_CALL',
   'GRANT_ALLOWANCE',
@@ -96,12 +100,28 @@ const phaseActions = {
     'RESET_TASK',
     'ANALYZE_START',
     'ALL_DONE',
+    'REVIEW_DONE',
+    'RECORD_REVIEW',
+    'RECORD_TRIAGE',
+    'START_FIX_CYCLE',
+    'REVIEW_CORRECTION',
+    'QUEUE_TRIAGE',
   ],
   'validating-task': [...VALIDATION_OR_ESCALATION_SHARED_ACTIONS, 'VALIDATION_FAIL', 'ESCALATE'],
   escalating: [...VALIDATION_OR_ESCALATION_SHARED_ACTIONS, 'UPDATE_TASK_CODE'],
-  'final-review': ['REVIEW_DONE', 'REVIEW_FIX_START', 'RECORD_APPLY_RECHECK'],
+  'final-review': [
+    'REVIEW_DONE',
+    'RECORD_APPLY_RECHECK',
+    'RECORD_REVIEW',
+    'RECORD_TRIAGE',
+    'START_FIX_CYCLE',
+    'QUEUE_TRIAGE',
+  ],
   complete: [
-    'REVIEW_FIX_START',
+    'START_FIX_CYCLE',
+    'REVIEW_CORRECTION',
+    'RECORD_TRIAGE',
+    'QUEUE_TRIAGE',
     'ACCEPT_AS_IS',
     'APPLY_REVIEW_START',
     'APPLY_START',
@@ -166,10 +186,6 @@ function withLineage(
   };
 }
 
-function plannerCallsOf(state: WorkflowState): PlannerCalls {
-  return state.plannerCalls ?? { used: 0, allowance: BOUNDS.plannerCallsPerRun };
-}
-
 function stripCurrentCode(state: WorkflowState, taskId: TaskId): WorkflowState {
   return {
     ...state,
@@ -186,12 +202,6 @@ function stripCurrentCode(state: WorkflowState, taskId: TaskId): WorkflowState {
   };
 }
 
-function stripReviewFinding(state: WorkflowState, taskId: TaskId): WorkflowState {
-  if (state.reviewFixes?.findings[taskId] === undefined) return state;
-  const { [taskId]: _resolved, ...findings } = state.reviewFixes.findings;
-  return { ...state, reviewFixes: { ...state.reviewFixes, findings } };
-}
-
 /** The next brief the task loop runs: a passed brief after `from` is skipped, never current. */
 function nextOpenTaskIndex(state: WorkflowState, from: number): number {
   const index = state.tasks.findIndex((t, i) => i >= from && !isTaskCompleted(t.status));
@@ -202,11 +212,10 @@ function advanceTask(state: WorkflowState, status: TaskStatus): WorkflowState {
   const currentId = state.tasks[state.currentTaskIndex]?.id;
   const withStatus = currentId ? setTaskStatus(state, currentId, status) : state;
   const stripped = currentId ? stripCurrentCode(withStatus, currentId) : withStatus;
-  const cleaned = currentId ? stripReviewFinding(stripped, currentId) : stripped;
   return {
-    ...cleaned,
+    ...stripped,
     phase: 'implementing',
-    currentTaskIndex: nextOpenTaskIndex(cleaned, state.currentTaskIndex + 1),
+    currentTaskIndex: nextOpenTaskIndex(stripped, state.currentTaskIndex + 1),
     attempt: 0,
   };
 }
@@ -388,24 +397,88 @@ export function transition(
         ...(action.reviewStatus === 'passed' && { applyReview: undefined }),
       };
 
-    case 'REVIEW_FIX_START': {
-      // A failed review reopens on the operator's correction; a passed one closed the run.
+    case 'RECORD_REVIEW':
+      return { ...state, review: action.review };
+
+    case 'RECORD_TRIAGE':
+      return { ...state, triage: [...(state.triage ?? []), action.record] };
+
+    case 'START_FIX_CYCLE': {
       if (state.phase === 'complete' && state.reviewStatus !== 'failed') {
         throw transitionError.invalidActionForPhase(state.phase, action.type);
       }
-      const fixIds = new Set(Object.keys(action.fixes));
-      const firstIndex = state.tasks.findIndex((t) => fixIds.has(t.id));
+      const fixCycles = fixCyclesOf(state);
       return {
         ...state,
         phase: 'implementing',
-        tasks: state.tasks.map((t) => (fixIds.has(t.id) ? { ...t, status: 'pending' } : t)),
-        currentTaskIndex: firstIndex >= 0 ? firstIndex : state.currentTaskIndex,
-        attempt: 0,
-        reviewFixes: { cycle: action.cycle, findings: action.fixes },
-        completedAt: undefined,
+        currentTaskIndex: nextOpenTaskIndex(state, 0),
+        fixCycles: { ...fixCycles, used: fixCycles.used + 1 },
         reviewStatus: undefined,
+        completedAt: undefined,
+        pendingTriage: undefined,
       };
     }
+
+    case 'REVIEW_CORRECTION': {
+      const scheduled = state.phase === 'implementing' && state.review?.scope === 'task';
+      if (!scheduled && (state.phase !== 'complete' || state.reviewStatus !== 'failed')) {
+        throw transitionError.invalidActionForPhase(state.phase, action.type);
+      }
+      const fixCycles = fixCyclesOf(state);
+      const inputs: TriageInput[] =
+        action.text.trim() === ''
+          ? []
+          : [
+              {
+                id: `U${(state.triage?.length ?? 0) + 1}`,
+                kind: 'defect',
+                source: 'user',
+                text: action.text,
+                file: null,
+              },
+            ];
+      return {
+        ...state,
+        phase: scheduled ? 'implementing' : 'final-review',
+        reviewStatus: undefined,
+        completedAt: undefined,
+        pendingTriage: {
+          inputs: [...(state.pendingTriage?.inputs ?? []), ...inputs],
+          ...(state.pendingTriage?.question !== undefined && {
+            question: state.pendingTriage.question,
+          }),
+        },
+        ...(fixCycles.used >= fixCycles.allowance && {
+          fixCycles: {
+            ...fixCycles,
+            allowance: fixCycles.allowance + BOUNDS.extraFixCyclesPerRun,
+            notes: [...fixCycles.notes, action.text],
+          },
+        }),
+      };
+    }
+
+    case 'QUEUE_TRIAGE':
+      return {
+        ...state,
+        pendingTriage: {
+          inputs: action.inputs,
+          ...(action.question !== undefined && { question: action.question }),
+        },
+        userAnswers: [
+          ...(state.userAnswers ?? []),
+          ...action.inputs
+            .filter(
+              (input) =>
+                input.kind === 'answer' &&
+                !state.pendingTriage?.inputs.some((previous) => previous.id === input.id),
+            )
+            .map((input) => ({
+              reply: state.pendingTriage?.question?.question ?? input.id,
+              answer: input.text,
+            })),
+        ],
+      };
 
     case 'RECORD_WORKSPACE':
       return { ...state, workspace: action.workspace };
@@ -417,10 +490,11 @@ export function transition(
         applyReview: undefined,
       };
 
-    case 'APPLY_REVIEW_START':
+    case 'APPLY_REVIEW_START': {
       if (deriveRunStatus({ state, liveness: 'not-alive' }).kind !== 'ready-to-apply') {
         throw transitionError.invalidActionForPhase(state.phase, action.type);
       }
+      const fixCycles = fixCyclesOf(state);
       return {
         ...state,
         phase: 'final-review',
@@ -428,11 +502,14 @@ export function transition(
         completedAt: undefined,
         acceptedAsIs: undefined,
         applyReview: { merged: action.merged, failures: [] },
-        reviewFixes: {
-          cycle: (state.reviewFixes?.cycle ?? 0) + 1,
-          findings: state.reviewFixes?.findings ?? {},
-        },
+        ...(action.integrated !== undefined && {
+          applyIntegrated: [...(state.applyIntegrated ?? []), ...action.integrated],
+        }),
+        ...(action.triage !== undefined
+          ? { pendingTriage: { inputs: action.triage } }
+          : { fixCycles: { ...fixCycles, used: fixCycles.used + 1 } }),
       };
+    }
 
     case 'RECORD_APPLY_RECHECK':
       if (state.applyReview === undefined) {
@@ -526,17 +603,25 @@ export function transition(
       return {
         ...state,
         phase:
-          action.conversation.call === 'research'
-            ? 'researching'
-            : action.conversation.call === 'spec'
-              ? 'specifying'
-              : 'planning',
+          state.phase === 'implementing' ||
+          state.phase === 'validating-task' ||
+          state.phase === 'escalating'
+            ? state.phase
+            : action.conversation.call === 'research'
+              ? 'researching'
+              : action.conversation.call === 'spec'
+                ? 'specifying'
+                : 'planning',
         pendingPlannerConversation: action.conversation,
       };
 
     case 'CLEAR_PLANNER_CONVERSATION':
       return {
         ...state,
+        userAnswers: [
+          ...(state.userAnswers ?? []),
+          ...(state.pendingPlannerConversation?.answers ?? []),
+        ],
         pendingPlannerConversation: undefined,
         interruptedStep: undefined,
         awaitingContinue: false,
@@ -571,6 +656,10 @@ export function transition(
       const replacement: Task = {
         ...action.task,
         id: previous.id,
+        ...(previous.fix !== undefined && {
+          fix: previous.fix,
+          description: fixBriefDescription(action.task.description, previous.fix.findings),
+        }),
         ...(previous.parentId !== undefined && { parentId: previous.parentId }),
         criteria: previous.criteria,
         status: 'pending',
@@ -584,11 +673,21 @@ export function transition(
     }
 
     case 'INSERT_TASKS': {
+      if (action.parentId === null) {
+        return { ...state, tasks: [...state.tasks, ...action.tasks] };
+      }
       const parentIndex = state.tasks.findIndex((t) => t.id === action.parentId);
       const parent = parentIndex < 0 ? undefined : state.tasks[parentIndex];
       if (parent === undefined) return state;
       const lineageKey = lineageIdOf(parent);
-      const children = action.tasks.map((task) => ({ ...task, parentId: lineageKey }));
+      const children = action.tasks.map((task) => ({
+        ...task,
+        parentId: lineageKey,
+        ...(parent.fix !== undefined && {
+          fix: parent.fix,
+          description: fixBriefDescription(task.description, parent.fix.findings),
+        }),
+      }));
       const childIds = children.map((task) => task.id);
       const remaining = state.tasks
         .filter((task) => task.id !== parent.id)
@@ -640,6 +739,23 @@ export function transition(
       }));
     }
 
+    case 'CONFIRM_DECISIONS': {
+      if (state.plan === undefined) return state;
+      return {
+        ...state,
+        plan: {
+          ...state.plan,
+          decisions: [
+            ...state.plan.decisions,
+            ...action.decisions.map((decision) => ({
+              text: `${decision.what} — ${decision.why}`,
+              taskId: action.taskId,
+            })),
+          ],
+        },
+      };
+    }
+
     case 'COUNT_ATTEMPT':
       return withLineage(state, lineageKeyFor(state, action.taskId), (lineage) => ({
         ...lineage,
@@ -652,14 +768,17 @@ export function transition(
     }
 
     case 'GRANT_ALLOWANCE': {
-      const granted = withLineage(state, lineageKeyFor(state, action.taskId), (lineage) => ({
-        ...lineage,
-        ...(action.target === 'lineage' && {
-          consultAllowance: lineage.consultAllowance + BOUNDS.extraConsultsPerLineage,
-          attemptAllowance: lineage.attemptAllowance + BOUNDS.extraAttemptsPerLineage,
-        }),
-        notes: [...lineage.notes, action.note],
-      }));
+      const granted =
+        action.taskId === null
+          ? state
+          : withLineage(state, lineageKeyFor(state, action.taskId), (lineage) => ({
+              ...lineage,
+              ...(action.target === 'lineage' && {
+                consultAllowance: lineage.consultAllowance + BOUNDS.extraConsultsPerLineage,
+                attemptAllowance: lineage.attemptAllowance + BOUNDS.extraAttemptsPerLineage,
+              }),
+              notes: [...lineage.notes, action.note],
+            }));
       if (action.target !== 'planner') return granted;
       const plannerCalls = plannerCallsOf(granted);
       return {

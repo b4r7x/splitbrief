@@ -1,3 +1,6 @@
+import { defaultContext } from '#testing/helpers/factories/config.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
+import { formatTaskPrompt } from '../prompt-formatter.js';
 import { describe, it, expect } from 'vitest';
 import { buildLanguageContext } from './language-context.js';
 import { buildImplementerSystemPreamble, buildSystemPreamble } from './system.js';
@@ -32,6 +35,8 @@ const DIRECT_WRITER_RULES = [
   "SPLITBRIEF runs the project's typecheck, lint and test gates after you finish, and its verdict is the authority. Do not run them, and do not run the whole test suite, screenshot or render tools, or repeated git diffs.",
   'Run at most the focused test files the brief lists under Tests, once, after your edits. If one fails and you cannot fix it, stop and report the failure.',
   "When the brief's Tests or Evidence ask you to run a project-wide gate or to render screenshots, SPLITBRIEF and the review seat do that. Implement the change and its tests, then report.",
+  'Guidance only: another approach that passes the checks is fine.',
+  'Report deviations as decisions with what and why; use [] when none.',
 ];
 
 describe('buildImplementerSystemPreamble', () => {
@@ -54,7 +59,7 @@ describe('buildImplementerSystemPreamble', () => {
     );
 
     expect(prompt).toContain(
-      '{"status":"done","filesChanged":["<file>"],"touchedNotSuggested":[{"file":"<file>","reason":"<reason>"}],"notes":null}',
+      '{"status":"done","filesChanged":["<file>"],"touchedNotSuggested":[{"file":"<file>","reason":"<reason>"}],"notes":null,"decisions":[]}',
     );
     expect(prompt).toContain(
       '{"status":"blocked","question":"<question>","filesNeeded":["<file>"]}',
@@ -64,11 +69,12 @@ describe('buildImplementerSystemPreamble', () => {
   });
 
   it('treats the suggested files as a start and names the protected paths', () => {
-    const prompt = buildImplementerSystemPreamble(
-      buildLanguageContext('typescript'),
-      'direct',
-      '/work',
-    );
+    const prompt =
+      buildImplementerSystemPreamble(buildLanguageContext('typescript'), 'direct', '/work') +
+      formatTaskPrompt({
+        task: makeTask({ implementationSteps: ['Build the greeting'] }),
+        context: defaultContext,
+      });
     for (const sentence of DIRECT_WRITER_RULES) {
       expect(prompt.split(sentence)).toHaveLength(2);
     }

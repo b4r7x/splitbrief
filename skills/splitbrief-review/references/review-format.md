@@ -1,7 +1,6 @@
 # Review format
 
 Use one stateless read-only call per review. The session reviews from the packet when no reviewer is configured.
-The CLI ships typed review, cadence, triage and planner-first questions in S5.
 
 ## Review procedure
 
@@ -89,7 +88,7 @@ The session never guesses a check from a finding's text. The reviewer cannot sup
 - At task cadence, cover completed tasks and criteria due so far. Pending criteria are pending, never a gap.
 - Generic validation does not prove an unrelated criterion. Evidence must cover the current candidate.
 - Repair malformed typed output once. A second failure pauses the seat; it produces no verdict.
-- Keep minor findings as notes. The CLI ships typed review and task cadence in S5.
+- Keep minor findings as notes.
 <!-- /generated -->
 
 A pass with minor findings is `pass_with_notes`.

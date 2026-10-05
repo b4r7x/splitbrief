@@ -2,10 +2,117 @@ import { vi, type Mock } from 'vitest';
 import type { PlanProposal, PlanResult } from '../../src/core/schemas/plan.js';
 import type { ClarificationQuestion } from '../../src/core/schemas/question.js';
 import type { ConsultAnswer } from '../../src/core/schemas/consult.js';
-import { taskFiles, type Task } from '../../src/core/schemas/task.js';
-import type { Planner, TypedCallContext } from '../../src/engine/planners/types.js';
-import type { TypedSeatCall } from '../../src/engine/runners/typed-output.js';
+import type { ReviewVerdict, TriageResult } from '../../src/core/schemas/review.js';
+import { taskFiles, taskId, type Task } from '../../src/core/schemas/task.js';
+import type {
+  Planner,
+  PlannerOutputCallbacks,
+  TypedCallContext,
+} from '../../src/engine/planners/types.js';
+import type { TypedSchemaInput, TypedSeatCall } from '../../src/engine/runners/typed-output.js';
 import { makeRunnerCallResult } from './factories/runner-call.js';
+
+const REVIEW_PROMPT_MARKER = '# Final Implementation Review';
+const TRIAGE_PROMPT_MARKER = '# Review triage';
+
+function isReviewPrompt(prompt: string): boolean {
+  return prompt.includes(REVIEW_PROMPT_MARKER);
+}
+
+type TypedInvokeInput = { prompt: string; schema?: TypedSchemaInput | undefined };
+
+/**
+ * The reviewer seat receives the verdict schema natively, so a mock answers it
+ * by that schema's name; the prompt marker keeps a fallback seat answerable too.
+ */
+function isReviewCall(input: TypedInvokeInput): boolean {
+  return input.schema?.name === 'review_verdict' || isReviewPrompt(input.prompt);
+}
+
+/** The triage call runs on the planner seat, so a fallback transport names it by its prompt. */
+function isTriageCall(input: TypedInvokeInput): boolean {
+  return input.schema?.name === 'triage_result' || input.prompt.includes(TRIAGE_PROMPT_MARKER);
+}
+
+/** The finding ids the triage prompt lists, so a default answer can reject each one. */
+export function triageFindingIds(prompt: string): string[] {
+  const section = prompt.split('## Blocking Findings')[1]?.split('\n## ')[0] ?? '';
+  return [...section.matchAll(/^- \*\*(\S+)\*\*/gm)].map((match) => match[1] ?? '');
+}
+
+/** The triage answer a fake seat sends when a test scripts none: every finding rejected. */
+export function rejectingTriageResult(prompt: string): TriageResult {
+  return {
+    fixTasks: [],
+    rejected: triageFindingIds(prompt).map((findingId) => ({
+      findingId,
+      reason: 'The finding names no defect in the code the run changed.',
+    })),
+    verify: [],
+    ask: null,
+  };
+}
+
+function mockTypedOutput(seat: TypedCallContext['seat']): TypedSeatCall['typedOutput'] {
+  return seat === 'reviewer' ? 'strict-native' : 'fallback';
+}
+
+function promptIds(prompt: string, label: string): string[] {
+  const match = new RegExp(`^${label} (.+)$`, 'm').exec(prompt);
+  const value = match?.[1]?.trim() ?? 'none';
+  if (value === '' || value === 'none') return [];
+  return value
+    .split(',')
+    .map((id) => id.trim())
+    .filter((id) => id !== '');
+}
+
+/**
+ * The verdict a fake review seat answers with when a test scripts none: every
+ * id the prompt's Required Results lists, each met and passed, no findings.
+ */
+export function passingReviewVerdict(prompt: string): ReviewVerdict {
+  return {
+    tasks: promptIds(prompt, 'Task ids:').map((id) => ({
+      id: taskId(id),
+      plan: 'met' as const,
+      note: '',
+    })),
+    criteria: promptIds(prompt, 'Criterion ids:').map((id) => ({
+      id,
+      status: 'pass' as const,
+      evidence: '',
+    })),
+    findings: [],
+  };
+}
+
+/** A passing verdict carrying one blocking finding, so the review fails. */
+export function failedReviewVerdict(
+  prompt: string,
+  text: string,
+  finding?: Partial<ReviewVerdict['findings'][number]>,
+): ReviewVerdict {
+  const base = passingReviewVerdict(prompt);
+  return {
+    ...base,
+    findings: [
+      {
+        id: 'F1',
+        kind: 'defect',
+        severity: 'blocking',
+        taskId: null,
+        file: null,
+        line: null,
+        text,
+        acceptance: null,
+        checkIds: null,
+        criterionId: null,
+        ...finding,
+      },
+    ],
+  };
+}
 
 /**
  * A planner seat whose typed calls answer from a script, in order: a `PlanResult` is sent as the
@@ -22,9 +129,15 @@ export function scriptedTypedCall(script: Array<PlanResult | string | Error>): {
     contexts.push(ctx);
     return {
       seat: ctx.seat,
-      typedOutput: 'fallback',
+      typedOutput: mockTypedOutput(ctx.seat),
       canResume: false,
-      invoke: async ({ prompt }) => {
+      invoke: async ({ prompt, schema }) => {
+        if (isReviewCall({ prompt, schema })) {
+          return makeRunnerCallResult({
+            status: 'completed',
+            text: JSON.stringify(passingReviewVerdict(prompt)),
+          });
+        }
         prompts.push(prompt);
         const next = script.shift();
         if (next === undefined) throw new Error('the planner was asked once too often');
@@ -106,7 +219,8 @@ export function planQuestionsFrom(
 
 /**
  * A planner seat whose typed calls all answer with what `answer` returns, sent as the `{ result }`
- * object. What `answer` throws, the call throws.
+ * object. What `answer` throws, the call throws. A review call is answered with a passing verdict
+ * instead, so a run that reaches its final review parses.
  */
 export function typedCallAnswering(
   answer: (prompt: string, ctx: TypedCallContext) => PlanResult | Promise<PlanResult>,
@@ -114,15 +228,110 @@ export function typedCallAnswering(
 ): Mock<Planner['typedCall']> {
   return vi.fn((ctx: TypedCallContext) => ({
     seat: ctx.seat,
-    typedOutput: 'fallback' as const,
+    typedOutput: mockTypedOutput(ctx.seat),
     canResume: false,
-    invoke: async ({ prompt }: { prompt: string }) =>
-      makeRunnerCallResult({
-        status: 'completed',
-        text: JSON.stringify({ result: await answer(prompt, ctx) }),
-        usage: usage ?? null,
-      }),
+    invoke: async ({ prompt, schema }: TypedInvokeInput) =>
+      isTriageCall({ prompt, schema })
+        ? makeRunnerCallResult({
+            status: 'completed',
+            text: JSON.stringify(rejectingTriageResult(prompt)),
+            usage: usage ?? null,
+          })
+        : isReviewCall({ prompt, schema })
+          ? makeRunnerCallResult({
+              status: 'completed',
+              text: JSON.stringify(passingReviewVerdict(prompt)),
+              usage: usage ?? null,
+            })
+          : makeRunnerCallResult({
+              status: 'completed',
+              text: JSON.stringify({ result: await answer(prompt, ctx) }),
+              usage: usage ?? null,
+            }),
   }));
+}
+
+/**
+ * A planner seat whose typed calls answer the plan with `plan`, the review with
+ * `review` and the triage with `triage`, so a test can script verdicts and fix
+ * tasks without touching the plan-session grammar. The review callback receives
+ * the seat callbacks, for tests that assert call events.
+ */
+export function typedCallPlanReviewAndTriage(
+  plan: () => PlanResult,
+  review: (
+    prompt: string,
+    call: number,
+    callbacks: PlannerOutputCallbacks,
+  ) => ReviewVerdict | string,
+  triage: (prompt: string, call: number) => TriageResult | string,
+  usage?:
+    | Readonly<{
+        plan?: Readonly<{ inputTokens: number; outputTokens: number }> | undefined;
+        review?: Readonly<{ inputTokens: number; outputTokens: number }> | undefined;
+        triage?: Readonly<{ inputTokens: number; outputTokens: number }> | undefined;
+      }>
+    | undefined,
+): Mock<Planner['typedCall']> {
+  let reviewCalls = 0;
+  let triageCalls = 0;
+  return vi.fn((ctx: TypedCallContext) => ({
+    seat: ctx.seat,
+    typedOutput: mockTypedOutput(ctx.seat),
+    canResume: false,
+    invoke: async ({ prompt, schema }: TypedInvokeInput) => {
+      if (isTriageCall({ prompt, schema })) {
+        const answered = triage(prompt, ++triageCalls);
+        return makeRunnerCallResult({
+          status: 'completed',
+          text: typeof answered === 'string' ? answered : JSON.stringify(answered),
+          usage: usage?.triage ?? null,
+        });
+      }
+      if (!isReviewCall({ prompt, schema })) {
+        return makeRunnerCallResult({
+          status: 'completed',
+          text: JSON.stringify({ result: plan() }),
+          usage: usage?.plan ?? null,
+        });
+      }
+      const answered = review(prompt, ++reviewCalls, ctx.callbacks);
+      return makeRunnerCallResult({
+        status: 'completed',
+        text: typeof answered === 'string' ? answered : JSON.stringify(answered),
+        usage: usage?.review ?? null,
+      });
+    },
+  }));
+}
+
+/**
+ * A planner seat whose typed calls answer the plan with `plan` and the review with
+ * `review`, so a test can script verdicts without touching the plan-session grammar.
+ * A triage call is answered by rejecting each blocking finding, which sends the run
+ * through its fix cycles to the cap. The review callback receives the seat callbacks,
+ * for tests that assert call events.
+ */
+export function typedCallPlanAndReview(
+  plan: () => PlanResult,
+  review: (
+    prompt: string,
+    call: number,
+    callbacks: PlannerOutputCallbacks,
+  ) => ReviewVerdict | string,
+  usage?:
+    | Readonly<{
+        plan?: Readonly<{ inputTokens: number; outputTokens: number }> | undefined;
+        review?: Readonly<{ inputTokens: number; outputTokens: number }> | undefined;
+      }>
+    | undefined,
+): Mock<Planner['typedCall']> {
+  return typedCallPlanReviewAndTriage(
+    plan,
+    review,
+    (prompt) => rejectingTriageResult(prompt),
+    usage,
+  );
 }
 
 /** A planner seat whose every typed call returns the plan the scripted briefs stand for. */
@@ -143,14 +352,26 @@ export function consultCallAnswering(
 ): Mock<Planner['typedCall']> {
   return vi.fn((ctx: TypedCallContext) => ({
     seat: ctx.seat,
-    typedOutput: 'fallback' as const,
+    typedOutput: mockTypedOutput(ctx.seat),
     canResume: false,
-    invoke: async ({ prompt }: { prompt: string }) =>
-      makeRunnerCallResult({
-        status: 'completed',
-        text: JSON.stringify(answer(prompt, ctx)),
-        usage: usage ?? null,
-      }),
+    invoke: async ({ prompt, schema }: TypedInvokeInput) =>
+      isTriageCall({ prompt, schema })
+        ? makeRunnerCallResult({
+            status: 'completed',
+            text: JSON.stringify(rejectingTriageResult(prompt)),
+            usage: usage ?? null,
+          })
+        : isReviewCall({ prompt, schema })
+          ? makeRunnerCallResult({
+              status: 'completed',
+              text: JSON.stringify(passingReviewVerdict(prompt)),
+              usage: usage ?? null,
+            })
+          : makeRunnerCallResult({
+              status: 'completed',
+              text: JSON.stringify(answer(prompt, ctx)),
+              usage: usage ?? null,
+            }),
   }));
 }
 
@@ -168,8 +389,9 @@ export function guidanceConsult(instructions = 'Try a different approach.'): Con
 
 /**
  * A planner seat that answers both kinds of typed call: the plan session gets `plan` as
- * its `{ result }` object, and a consult call — recognized by the consult prompt's title —
- * gets `consult` through `consultCallAnswering` as its raw answer object.
+ * its `{ result }` object, a consult call — recognized by the consult prompt's title —
+ * gets `consult` through `consultCallAnswering` as its raw answer object, and a review
+ * call gets a passing verdict.
  */
 export function typedCallPlanAndConsult(
   plan: () => PlanResult,
@@ -181,14 +403,26 @@ export function typedCallPlanAndConsult(
     const call = consultCall(ctx);
     return {
       ...call,
-      invoke: async ({ prompt }: { prompt: string }) =>
-        prompt.includes('# Consult')
-          ? call.invoke({ prompt })
-          : makeRunnerCallResult({
+      invoke: async ({ prompt, schema }: TypedInvokeInput) =>
+        isReviewCall({ prompt, schema })
+          ? makeRunnerCallResult({
               status: 'completed',
-              text: JSON.stringify({ result: plan() }),
+              text: JSON.stringify(passingReviewVerdict(prompt)),
               usage: usage ?? null,
-            }),
+            })
+          : isTriageCall({ prompt, schema })
+            ? makeRunnerCallResult({
+                status: 'completed',
+                text: JSON.stringify(rejectingTriageResult(prompt)),
+                usage: usage ?? null,
+              })
+            : prompt.includes('# Consult')
+              ? call.invoke({ prompt })
+              : makeRunnerCallResult({
+                  status: 'completed',
+                  text: JSON.stringify({ result: plan() }),
+                  usage: usage ?? null,
+                }),
     };
   });
 }

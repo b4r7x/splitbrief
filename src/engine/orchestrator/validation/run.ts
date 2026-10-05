@@ -152,7 +152,7 @@ async function formatChangedFiles(opts: {
 
 export function planStage(
   stage: ValidationStage,
-  task: Task,
+  task: Pick<Task, 'file' | 'files'>,
   ctx: StageContext,
   changedFiles: readonly string[],
 ): StagePlan {

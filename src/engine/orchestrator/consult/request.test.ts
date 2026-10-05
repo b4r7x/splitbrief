@@ -1,11 +1,13 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { setupProject } from '#testing/helpers/planning-phase.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { taskId } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
@@ -81,6 +83,35 @@ function guidanceAnswer(diagnosis: string, nativeSessionId: string | null): Scri
         action: 'guidance',
         instructions: 'Use the named export.',
         context: null,
+      },
+    }),
+    nativeSessionId,
+  };
+}
+
+function rewriteAnswer(id: string, nativeSessionId: string | null): ScriptedConsult {
+  return {
+    text: JSON.stringify({
+      answer: {
+        diagnosis: 'The brief was wrong',
+        action: 'rewrite-task',
+        task: makeTaskSpec({ id, suggestedFiles: ['src/greet.ts'] }),
+      },
+    }),
+    nativeSessionId,
+  };
+}
+
+function splitAnswer(nativeSessionId: string | null): ScriptedConsult {
+  return {
+    text: JSON.stringify({
+      answer: {
+        diagnosis: 'The brief was too big',
+        action: 'split-task',
+        tasks: [
+          makeTaskSpec({ id: 'T003', suggestedFiles: ['src/a.ts'] }),
+          makeTaskSpec({ id: 'T004', suggestedFiles: ['src/b.ts'] }),
+        ],
       },
     }),
     nativeSessionId,
@@ -382,6 +413,111 @@ describe('requestConsult', () => {
 
     expect(planner.prompts[0]).toContain('-export const greet = "old";');
     expect(planner.prompts[0]).toContain('+export const greet = "new";');
+  });
+
+  it.each(['failed', 'stale', 'deviation'] as const)(
+    'repairs a rewritten task id change once for %s and takes the fixed answer',
+    async (reason) => {
+      const { projectDir, sessionId } = setupProject(dirs);
+      const { bus } = makeBusRecorder();
+      const planner = consultPlanner(
+        [rewriteAnswer('T009', null), guidanceAnswer('Answer', null)],
+        true,
+      );
+      const state = consultState();
+      saveState({ projectDir, sessionId }, state);
+      const seen: WorkflowState[] = [];
+
+      const result = await requestConsult(
+        {
+          projectDir,
+          workspaceDir: projectDir,
+          sessionId,
+          bus,
+          planner: planner.planner,
+          state,
+          onStateChange: (next) => seen.push(next),
+        },
+        {
+          task: state.tasks[0]!,
+          reason,
+          failingOutput: 'the failure',
+          snapshot: emptySnapshot(),
+          changedFiles: [],
+        },
+      );
+
+      expect('answer' in result && result.answer.answer.action).toBe('guidance');
+      expect(planner.prompts).toHaveLength(2);
+      expect(planner.prompts[1]).toContain('a rewrite-task must keep the task id T003');
+      expect(planner.prompts[1]).toContain('the answer changes it to T009');
+      expect(planner.prompts[1]).toContain('failed validation');
+      expect(seen.at(-1)?.lineages?.T003?.consults).toBe(1);
+    },
+  );
+
+  it.each(['failed', 'stale', 'deviation'] as const)(
+    'fails the seat protocol when the rewritten task changes its id again for %s',
+    async (reason) => {
+      const { projectDir, sessionId } = setupProject(dirs);
+      const { bus } = makeBusRecorder();
+      const planner = consultPlanner(
+        [rewriteAnswer('T009', null), rewriteAnswer('T009', null)],
+        true,
+      );
+      const state = consultState();
+      saveState({ projectDir, sessionId }, state);
+
+      const result = await requestConsult(
+        { projectDir, workspaceDir: projectDir, sessionId, bus, planner: planner.planner, state },
+        {
+          task: state.tasks[0]!,
+          reason,
+          failingOutput: 'the failure',
+          snapshot: emptySnapshot(),
+          changedFiles: [],
+        },
+      );
+
+      expect('error' in result).toBe(true);
+      if (!('error' in result)) throw new Error('expected a seat-protocol error');
+      expect(result.error.kind).toBe('seat-protocol-error');
+      expect(result.error.message).toContain('after 2 attempt(s)');
+      expect(result.error.data.errors).toContain('a rewrite-task must keep the task id T003');
+      expect(planner.prompts).toHaveLength(2);
+    },
+  );
+
+  it('repairs a split of a subtask once, naming the violation', async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const { bus } = makeBusRecorder();
+    const planner = consultPlanner([splitAnswer(null), guidanceAnswer('Answer', null)], true);
+    const subtask = makeTask({
+      id: 'T003',
+      parentId: taskId('T002'),
+      status: 'failed',
+      revision: 1,
+      criteria: ['C1'],
+    });
+    const state = { ...consultState(), tasks: [subtask] };
+    saveState({ projectDir, sessionId }, state);
+
+    const result = await requestConsult(
+      { projectDir, workspaceDir: projectDir, sessionId, bus, planner: planner.planner, state },
+      {
+        task: subtask,
+        reason: 'failed',
+        failingOutput: 'the failure',
+        snapshot: emptySnapshot(),
+        changedFiles: [],
+      },
+    );
+
+    expect('answer' in result).toBe(true);
+    expect(planner.prompts).toHaveLength(2);
+    expect(planner.prompts[1]).toContain(
+      'T003 is already a subtask of a split and cannot be split again',
+    );
   });
 
   it('retries a thrown transient call and rethrows the same error after the last retry', async () => {

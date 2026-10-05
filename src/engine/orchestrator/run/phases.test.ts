@@ -22,7 +22,12 @@ import {
 } from '#testing/helpers/planning-phase.js';
 import { PLANNER_DOCUMENT_FIXTURES } from '#testing/helpers/factories/planner-documents.js';
 import { makePlanProposal } from '#testing/helpers/factories/plan.js';
-import { scriptedTypedCall } from '#testing/helpers/typed-planner.js';
+import {
+  planFromTasks,
+  passingReviewVerdict,
+  scriptedTypedCall,
+  typedCallPlanAndReview,
+} from '#testing/helpers/typed-planner.js';
 import {
   ANALYZE_FILE,
   CLARIFICATIONS_FILE,
@@ -440,8 +445,15 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     expect(savedState.phase).toBe('final-review');
     saveState({ projectDir, sessionId }, savedState);
 
+    let reviewCalls = 0;
     const planner = makePlanner({
-      review: vi.fn().mockResolvedValue({ text: '### Verdict\npass\n', usage: null }),
+      typedCall: typedCallPlanAndReview(
+        () => planFromTasks([]),
+        (prompt) => {
+          reviewCalls += 1;
+          return passingReviewVerdict(prompt);
+        },
+      ),
     });
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
@@ -481,7 +493,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     });
 
     expect(result.completed).toBe(true);
-    expect(planner.review).toHaveBeenCalledTimes(1);
+    expect(reviewCalls).toBe(1);
     expect(callbacks.onComplete).toHaveBeenCalledTimes(1);
     expect(events.find((event) => event.type === 'workflow_complete')).toBeDefined();
     expect(loadState({ projectDir, sessionId })?.phase).toBe('complete');

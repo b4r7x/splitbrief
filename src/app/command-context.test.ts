@@ -15,13 +15,10 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { routerStore } from '../stores/navigation/router.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import type { EngineEventOf } from '../engine/events/types.js';
-import type { TaskRedoRequest } from '../core/state/build-rewind-action.js';
 import {
   setClearQueueHandler,
-  setRewindHandler,
   clearAllHandlers,
   requestClearQueue,
-  requestRewind,
 } from '../features/workflow/handlers.js';
 import {
   activityBatchKey,
@@ -54,7 +51,6 @@ let projectDir = '';
 const originalPlatform = process.platform;
 
 const workflowPorts: WorkflowCommandPorts = {
-  requestRewind,
   requestClearQueue,
   findLatestActivityBatchKey: () => findLatestExpandableActivityBatchKey(getSections()),
   findLatestDiffKey: () => findLatestRenderableDiffKey(getSections()),
@@ -134,15 +130,6 @@ describe('buildCommandContext', () => {
 
     expect(readClipboardExecCalls()).toHaveLength(0);
     expect(result).toBe('empty');
-  });
-
-  it('routes task redo through the live rewind handler', () => {
-    const requests: TaskRedoRequest[] = [];
-    setRewindHandler((request) => requests.push(request));
-
-    build().requestTaskRedo('T-1');
-
-    expect(requests).toEqual([{ target: 'task', taskId: 'T-1' }]);
   });
 
   it('scrolls the conversation to the bottom through the conversation scroll store', () => {

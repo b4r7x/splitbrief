@@ -1,15 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createInitialState } from '../../core/state/machine.js';
 import { loadState } from '../../core/state/persistence.js';
-import { ensureSessionDir, readSpecFile } from '../../core/paths-io.js';
-import { REVIEW_FILE } from '../../core/paths.js';
+import { ensureSessionDir } from '../../core/paths-io.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import {
-  makeBusRecorder,
-  makePlanner,
-  TEST_METADATA,
-} from '#testing/helpers/orchestrator-factories.js';
-import type { PlannerOutputCallbacks } from '../planners/types.js';
+import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
+import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
+import type { Reviewer } from '../reviewers/types.js';
+import type { TypedCallContext } from '../planners/types.js';
+import type { RunnerCallResult } from '../calls/types.js';
+import { ReviewVerdictSchema, type ReviewVerdict } from '../../core/schemas/review.js';
+import { taskId } from '../../core/schemas/task.js';
 import { runReviewerCall } from './review-call.js';
 
 let dirs: string[] = [];
@@ -27,30 +27,60 @@ afterEach(() => {
   dirs = [];
 });
 
+const VERDICT: ReviewVerdict = {
+  tasks: [{ id: taskId('T001'), plan: 'met', note: '' }],
+  criteria: [],
+  findings: [],
+};
+
+/** A stateless review seat whose typed call is what the test scripts. */
+function typedReviewer(
+  invoke: (opts: {
+    prompt: string;
+    signal?: AbortSignal | undefined;
+    onOutput?: ((text: string) => void) | undefined;
+  }) => Promise<RunnerCallResult>,
+): Reviewer {
+  return {
+    review: vi.fn(),
+    typedCall: (ctx: TypedCallContext) => ({
+      seat: ctx.seat,
+      typedOutput: 'fallback',
+      canResume: false,
+      invoke: ({ prompt }) =>
+        invoke({
+          prompt,
+          signal: ctx.callbacks.signal,
+          onOutput: ctx.callbacks.onOutput,
+        }),
+    }),
+  };
+}
+
 describe('runReviewerCall', () => {
-  it('writes review.md and attributes the usage to the reviewer bucket', async () => {
+  it('returns the typed verdict and attributes the usage to the reviewer bucket', async () => {
     const { projectDir, sessionId } = setupProjectDir();
     const { bus } = makeBusRecorder();
-    const reviewer = makePlanner({
-      review: vi.fn().mockResolvedValue({
-        text: '# Review\n\nLooks good.\n',
+    const reviewer = typedReviewer(async () =>
+      makeRunnerCallResult({
+        status: 'completed',
+        text: JSON.stringify(VERDICT),
         usage: { inputTokens: 41, outputTokens: 17 },
       }),
-    });
+    );
 
     const result = await runReviewerCall({
       reviewer,
       prompt: 'review the diff',
+      schema: ReviewVerdictSchema,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
       bus,
       state: createInitialState('feature'),
-      metadata: TEST_METADATA,
     });
 
-    expect(result.text).toBe('# Review\n\nLooks good.\n');
-    expect(readSpecFile({ projectDir, sessionId }, REVIEW_FILE)).toContain('Looks good.');
+    expect('value' in result.result && result.result.value).toEqual(VERDICT);
     expect(result.state.tokenUsage).toMatchObject({
       reviewerInput: 41,
       reviewerOutput: 17,
@@ -64,16 +94,15 @@ describe('runReviewerCall', () => {
   it('streams the review body to the bus instead of publishing an artifact card', async () => {
     const { projectDir, sessionId } = setupProjectDir();
     const { bus, events } = makeBusRecorder();
-    const reviewer = makePlanner({
-      review: vi.fn().mockImplementation(async (_prompt, _dir, callbacks) => {
-        callbacks.onOutput?.('partial review text');
-        return { text: 'partial review text', usage: null };
-      }),
+    const reviewer = typedReviewer(async ({ onOutput }) => {
+      onOutput?.('partial review text');
+      return makeRunnerCallResult({ status: 'completed', text: JSON.stringify(VERDICT) });
     });
 
     await runReviewerCall({
       reviewer,
       prompt: 'review the diff',
+      schema: ReviewVerdictSchema,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -94,27 +123,23 @@ describe('runReviewerCall', () => {
     const { bus } = makeBusRecorder();
     const controller = new AbortController();
     const started = Promise.withResolvers<void>();
-    const reviewer = makePlanner({
-      review: vi
-        .fn()
-        .mockImplementation((_prompt: string, _dir: string, callbacks: PlannerOutputCallbacks) => {
-          started.resolve();
-          return new Promise<never>((_resolve, reject) => {
-            const signal = callbacks.signal;
-            if (!signal) {
-              reject(new Error('runReviewerCall did not forward the caller signal'));
-              return;
-            }
-            signal.addEventListener('abort', () => {
-              reject(new DOMException('The user aborted a request.', 'AbortError'));
-            });
-          });
-        }),
+    const reviewer = typedReviewer(({ signal }) => {
+      started.resolve();
+      return new Promise<never>((_resolve, reject) => {
+        if (!signal) {
+          reject(new Error('runReviewerCall did not forward the caller signal'));
+          return;
+        }
+        signal.addEventListener('abort', () => {
+          reject(new DOMException('The user aborted a request.', 'AbortError'));
+        });
+      });
     });
 
     const call = runReviewerCall({
       reviewer,
       prompt: 'review the diff',
+      schema: ReviewVerdictSchema,
       projectDir,
       workspaceDir: projectDir,
       sessionId,

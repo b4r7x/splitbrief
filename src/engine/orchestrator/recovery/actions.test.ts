@@ -6,15 +6,79 @@ import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
+import { ensureSessionDir, writeSpecFile } from '../../../core/paths-io.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import type { Task } from '../../../core/schemas/task.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { applyRecoveryAction } from './actions.js';
-import { buildDependencyBlockedRecoveryIssue } from './builders/task.js';
+import { buildConsultBoundRecoveryIssue } from './builders/consult.js';
+import {
+  buildDependencyBlockedRecoveryIssue,
+  buildReviewFailedRecoveryIssue,
+} from './builders/task.js';
 
 const createdAt = '2026-04-28T12:00:00.000Z';
+
+describe('typed review overrides', () => {
+  it('records effective typed blockers and unresolved criteria instead of edited markdown', () => {
+    const ref = setupSession('typed-override');
+    const issue = buildReviewFailedRecoveryIssue({
+      blocking: 1,
+      phase: 'complete',
+      createdAt,
+      acceptAsIs: true,
+    });
+    const state: WorkflowState = {
+      ...makeImplState([]),
+      phase: 'complete',
+      reviewStatus: 'failed',
+      pendingRecovery: issue,
+      review: {
+        cycle: 0,
+        at: createdAt,
+        outcome: 'fail',
+        verification: [],
+        verdict: {
+          tasks: [],
+          criteria: [{ id: 'C1', status: 'unverified', evidence: 'Render pending' }],
+          findings: [
+            {
+              id: 'F1',
+              kind: 'unverified',
+              severity: 'minor',
+              taskId: null,
+              file: null,
+              line: null,
+              text: 'Need proof',
+              acceptance: null,
+              checkIds: ['K1'],
+              criterionId: null,
+            },
+          ],
+        },
+      },
+    };
+    saveState(ref, state);
+    writeSpecFile(
+      ref,
+      'review.md',
+      '### Verdict\n\nfail\n\n### Findings\n\n**Critical**\n\n- STALE markdown blocker',
+    );
+    const result = applyRecoveryAction({
+      ...ref,
+      state,
+      action: 'accept-as-is',
+      bus: makeBusRecorder().bus,
+    });
+    expect(result.ok).toBe(true);
+    expect(result.state.acceptedAsIs?.findings).toEqual([
+      'Need proof',
+      'Criterion C1: unverified — Render pending',
+    ]);
+  });
+});
 
 let dirs: string[] = [];
 
@@ -366,6 +430,131 @@ describe('applyRecoveryAction: the run-level answers', () => {
     expect(result.state.closed?.as).toBe('ended');
     expect(result.state.pendingRecovery).toBeUndefined();
     expect(loadState({ projectDir, sessionId })?.closed?.as).toBe('ended');
+  });
+
+  it('continue on a task-less planner-calls-spent issue grants five calls without resetting a task', () => {
+    const { projectDir, sessionId } = setupSession('recovery-planner-calls');
+    const base = makeImplState([makeTask({ id: 'T001', status: 'in_progress' })]);
+    const spent = { ...base, plannerCalls: { used: 10, allowance: 10 } };
+    const issue = buildConsultBoundRecoveryIssue({
+      reason: 'planner-calls-spent',
+      lastDiagnosis: 'The review needs triage',
+      plannerCalls: 10,
+      plannerCallAllowance: 10,
+      phase: 'implementing',
+      createdAt,
+    });
+    saveState({ projectDir, sessionId }, { ...spent, pendingRecovery: issue });
+    const state = loadState({ projectDir, sessionId });
+    if (state === null) throw new Error('expected the halt to persist');
+    const { bus, events } = makeBusRecorder();
+
+    const result = applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state,
+      action: 'continue',
+      bus,
+      comment: 'grant it',
+    });
+
+    expect(issue.taskId).toBeUndefined();
+    expect(issue.affectedTaskIds).toEqual([]);
+    expect(issue.details).toContain('Continuing grants five more planner calls.');
+    expect(result).toMatchObject({ ok: true, status: 'continued' });
+    if (!result.ok) return;
+    expect(result.state.plannerCalls).toEqual({ used: 10, allowance: 15 });
+    expect(result.state.tasks).toEqual(state.tasks);
+    expect(result.state.pendingRecovery).toBeUndefined();
+    expect(events.map((event) => event.type)).not.toContain('task_reset');
+    expect(events.map((event) => event.type)).toEqual(
+      expect.arrayContaining(['recovery_action_selected', 'recovery_resolved']),
+    );
+  });
+});
+
+describe('applyRecoveryAction: revise on a failed review', () => {
+  function failedReviewHalt(projectDir: string, sessionId: string): WorkflowState {
+    const issue = buildReviewFailedRecoveryIssue({
+      id: 'rec_review_correction',
+      blocking: 1,
+      phase: 'complete',
+      createdAt,
+    });
+    const state = {
+      ...makeImplState([makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' })]),
+      phase: 'complete' as const,
+      reviewStatus: 'failed' as const,
+      fixCycles: { used: 2, allowance: 2, notes: [] },
+      pendingRecovery: issue,
+    };
+    saveState({ projectDir, sessionId }, state);
+    const loaded = loadState({ projectDir, sessionId });
+    if (loaded === null) throw new Error('expected the halt to persist');
+    return loaded;
+  }
+
+  it('queues the correction as a triage input and moves the run back to final-review', () => {
+    const { projectDir, sessionId } = setupSession('recovery-review-correction');
+    const state = failedReviewHalt(projectDir, sessionId);
+    const { bus, events } = makeBusRecorder();
+
+    const result = applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state,
+      action: 'revise',
+      bus,
+      comment: 'log the error, then rethrow it',
+    });
+
+    expect(result).toMatchObject({ ok: true, status: 'continued' });
+    if (!result.ok) return;
+    expect(result.state.phase).toBe('final-review');
+    expect(result.state.reviewStatus).toBeUndefined();
+    expect(result.state.pendingRecovery).toBeUndefined();
+    expect(result.state.pendingTriage).toEqual({
+      inputs: [
+        {
+          id: 'U1',
+          kind: 'defect',
+          source: 'user',
+          text: 'log the error, then rethrow it',
+          file: null,
+        },
+      ],
+    });
+    // The cap grants one more cycle and records the operator's note.
+    expect(result.state.fixCycles).toEqual({
+      used: 2,
+      allowance: 3,
+      notes: ['log the error, then rethrow it'],
+    });
+    // The correction never resets a brief; the fix work is triaged into new tasks.
+    expect(result.state.tasks[0]?.status).toBe('done');
+    expect(events.map((event) => event.type)).toContain('user_message');
+    expect(events.map((event) => event.type)).not.toContain('review_fix_started');
+    expect(events.map((event) => event.type)).not.toContain('task_reset');
+  });
+
+  it('resolves even when no correction text is given', () => {
+    const { projectDir, sessionId } = setupSession('recovery-review-correction-empty');
+    const state = failedReviewHalt(projectDir, sessionId);
+    const { bus } = makeBusRecorder();
+
+    const result = applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state,
+      action: 'revise',
+      bus,
+    });
+
+    expect(result).toMatchObject({ ok: true, status: 'continued' });
+    if (!result.ok) return;
+    expect(result.state.phase).toBe('final-review');
+    expect(result.state.pendingTriage).toEqual({ inputs: [] });
+    expect(result.state.pendingRecovery).toBeUndefined();
   });
 });
 

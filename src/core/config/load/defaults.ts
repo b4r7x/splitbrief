@@ -28,6 +28,7 @@ export function createDefaultConfig(): Config {
     },
     workflow: {
       approve: 'plan',
+      review: 'end',
       isolation: 'worktree',
       compactionFormat: 'auto',
     },

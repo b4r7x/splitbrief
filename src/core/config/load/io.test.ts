@@ -291,6 +291,7 @@ describe('config loading', () => {
 
       expect(loadConfig(dir).config.workflow).toEqual({
         approve: 'plan',
+        review: 'end',
         git: { createBranch: true },
         isolation: 'worktree',
         driftChainThreshold: 0.4,

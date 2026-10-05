@@ -121,8 +121,11 @@ export function withReviewerCallPublishing(
   ctx: PlannerCallPublisherContext,
 ): Reviewer {
   const review = reviewer.review.bind(reviewer);
+  const typedCall = reviewer.typedCall.bind(reviewer);
   return {
     review: (prompt, projectDir, callbacks) =>
       review(prompt, projectDir, withPlannerOutputCallbacks(callbacks, ctx)),
+    typedCall: (typedCtx) =>
+      typedCall({ ...typedCtx, callbacks: withPlannerOutputCallbacks(typedCtx.callbacks, ctx) }),
   };
 }

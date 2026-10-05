@@ -10,6 +10,9 @@ import {
 } from './enums.js';
 import { TaskSchema, TaskIdSchema } from './task.js';
 import { PlanSchema } from './plan.js';
+import { ReviewVerdictSchema, TriageInputSchema, TriageResultSchema } from './review.js';
+import { REVIEW_CYCLE_CAP } from '../pipeline-spec/review.js';
+import { BOUNDS } from '../pipeline-spec/bounds.js';
 import { CONSULT_REASONS, ConsultAnswerSchema } from './consult.js';
 import { TokenUsageSchema, TaskTokenUsageSchema } from './tokens.js';
 import { RecoveryIssueSchema } from './recovery/schemas.js';
@@ -104,6 +107,7 @@ const CONSULT_ACTION_KINDS = [
   'split-task',
   'verify',
   'ask-user',
+  'confirm',
 ] as const;
 
 export const ConsultRecordSchema = z.object({
@@ -134,6 +138,57 @@ export const PlannerCallsSchema = z.object({
   allowance: nonnegativeInteger,
 });
 export type PlannerCalls = z.infer<typeof PlannerCallsSchema>;
+
+export function plannerCallsOf(state: Pick<WorkflowState, 'plannerCalls'>): PlannerCalls {
+  return state.plannerCalls ?? { used: 0, allowance: BOUNDS.plannerCallsPerRun };
+}
+
+export const FixCyclesSchema = z.object({
+  used: nonnegativeInteger,
+  allowance: nonnegativeInteger,
+  notes: z.array(z.string()),
+});
+export type FixCycles = z.infer<typeof FixCyclesSchema>;
+
+export const ReviewRecordSchema = z.object({
+  scope: z.enum(['task', 'final']).optional(),
+  cycle: z.number().int(),
+  verdict: ReviewVerdictSchema,
+  outcome: z.enum(['pass', 'pass-with-notes', 'fail']),
+  verification: z.array(
+    z.object({
+      id: z.string(),
+      status: z.enum(['pass', 'fail', 'unverified']),
+      output: z.string(),
+    }),
+  ),
+  at: z.string(),
+});
+export type ReviewRecord = z.infer<typeof ReviewRecordSchema>;
+
+export const TriageRecordSchema = z.object({
+  reviewAt: z.string().optional(),
+  cycle: z.number().int(),
+  at: z.string(),
+  inputIds: z.array(z.string()),
+  result: TriageResultSchema,
+  /** The plan checks the triage's verify entries named, run before any fix. */
+  verification: z
+    .array(
+      z.object({
+        id: z.string(),
+        status: z.enum(['pass', 'fail', 'unverified']),
+        output: z.string(),
+      }),
+    )
+    .optional(),
+});
+export type TriageRecord = z.infer<typeof TriageRecordSchema>;
+
+export const PendingTriageSchema = z.object({
+  inputs: z.array(TriageInputSchema),
+  question: TriageResultSchema.shape.ask.optional(),
+});
 
 export const SeatWaitSchema = z.object({
   seat: z.enum(CREW_SEAT_IDS),
@@ -172,6 +227,7 @@ const WorkflowStateFields = {
   messageQueue: z.array(QueuedMessageSchema).default([]),
   lineages: z.record(z.string(), LineageRecordSchema).optional(),
   plannerCalls: PlannerCallsSchema.optional(),
+  userAnswers: PlannerConversationSchema.shape.answers.optional(),
   seatWait: SeatWaitSchema.optional(),
   rewindPending: z
     .object({
@@ -191,6 +247,10 @@ const WorkflowStateFields = {
       findings: z.record(z.string(), z.array(z.string())),
     })
     .optional(),
+  fixCycles: FixCyclesSchema.optional(),
+  review: ReviewRecordSchema.optional(),
+  triage: z.array(TriageRecordSchema).optional(),
+  pendingTriage: PendingTriageSchema.optional(),
   reviewStatus: z.enum(REVIEW_STATUSES).optional(),
   interruptedStep: z
     .object({
@@ -222,6 +282,8 @@ const WorkflowStateFields = {
       failures: z.array(z.string()),
     })
     .optional(),
+  /** The checkout hash Apply recorded for each text conflict whose markers it wrote into the workspace. */
+  applyIntegrated: z.array(z.object({ path: z.string(), checkoutHash: z.string() })).optional(),
   closed: z.object({ at: z.string(), as: z.enum(['ended', 'applied', 'discarded']) }).optional(),
   lastFailure: z.object({ step: StepRefSchema, message: z.string(), at: z.string() }).optional(),
   external: z.record(z.string(), z.unknown()).optional(),
@@ -292,3 +354,13 @@ export type WorkflowStateAssembly = Omit<
 export type WorkflowState = WorkflowStateAssembly;
 export type QueuedMessage = z.infer<typeof QueuedMessageSchema>;
 export type PersistedChangedFilesBaseline = z.infer<typeof ChangedFilesBaselineSchema>;
+
+export function fixCyclesOf(state: Pick<WorkflowState, 'fixCycles' | 'reviewFixes'>): FixCycles {
+  return (
+    state.fixCycles ?? {
+      used: state.reviewFixes?.cycle ?? 0,
+      allowance: REVIEW_CYCLE_CAP,
+      notes: [],
+    }
+  );
+}

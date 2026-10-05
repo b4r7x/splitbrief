@@ -69,4 +69,3 @@ Ask the user before changing what is built.
 Append confirmed entries to `plan.decisions` as `T001: <what> — <why>` strings.
 Render the updated plan and refresh every later brief's read-only Plan context.
 Include the ledger in consults and reviews. Preserve it on continuation and fixes.
-The CLI ships this ledger in S5.

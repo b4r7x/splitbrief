@@ -72,6 +72,7 @@ export const ConfigSchema = z.object({
   }),
   workflow: z.strictObject({
     approve: ApproveLevelSchema.optional(),
+    review: z.enum(['end', 'task']).optional(),
     /** Retired: loads with one notice and changes nothing. */
     maxRetries: z.unknown().optional(),
     git: GitWorkflowConfigSchema.optional(),

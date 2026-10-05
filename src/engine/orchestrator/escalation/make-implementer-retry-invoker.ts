@@ -51,6 +51,7 @@ export function makeImplementerRetryInvoker(opts: {
         fileIgnoreProjectDir,
         changeDetection,
         plan: seat.state.plan,
+        allowNoChange: task.fix !== undefined,
         ...(createdByThisTask === undefined ? {} : { createdByThisTask }),
       });
       return implementerSeatAttempt(

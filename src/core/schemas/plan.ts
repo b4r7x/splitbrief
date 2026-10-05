@@ -88,11 +88,24 @@ export type PlanAnswer = z.infer<typeof PlanAnswerSchema>;
 const { $schema: _draftRef, ...planAnswerJsonSchema } = z.toJSONSchema(PlanAnswerSchema);
 export const PLAN_ANSWER_JSON_SCHEMA = planAnswerJsonSchema;
 
-export const PlanSchema = PlanProposalSchema.pick({
-  summary: true,
-  decisions: true,
-  criteria: true,
-  checks: true,
-  validation: true,
+/** One ledger entry: the decision text and the task that reported it, or null for a plan decision. */
+const PlanDecisionSchema = z.object({
+  text: z.string(),
+  taskId: TaskIdSchema.nullable(),
+});
+export type PlanDecision = z.infer<typeof PlanDecisionSchema>;
+
+/** A proposal's plain strings and the ledger's entries both land as entries; old strings keep null. */
+const PlanDecisionEntrySchema = z.preprocess(
+  (value) => (typeof value === 'string' ? { text: value, taskId: null } : value),
+  PlanDecisionSchema,
+);
+
+export const PlanSchema = z.object({
+  summary: PlanProposalSchema.shape.summary,
+  decisions: z.array(PlanDecisionEntrySchema),
+  criteria: PlanProposalSchema.shape.criteria,
+  checks: PlanProposalSchema.shape.checks,
+  validation: PlanProposalSchema.shape.validation,
 });
 export type Plan = z.infer<typeof PlanSchema>;

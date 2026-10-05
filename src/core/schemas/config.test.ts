@@ -135,6 +135,27 @@ describe('ConfigSchema user config contracts', () => {
     ).toBe(true);
   });
 
+  it("defaults workflow.review to 'end' and admits only the end and task cadences", () => {
+    expect(createDefaultConfig().workflow.review).toBe('end');
+
+    expect(
+      ConfigSchema.parse({
+        ...validConfig,
+        workflow: { ...validConfig.workflow, review: 'task' },
+      }).workflow.review,
+    ).toBe('task');
+
+    expect(
+      hasIssueAtPath(
+        issuesFor({
+          ...validConfig,
+          workflow: { ...validConfig.workflow, review: 'batch' },
+        }),
+        'workflow.review',
+      ),
+    ).toBe(true);
+  });
+
   it('round-trips an explicit workflow.isolation strategy', () => {
     expect(
       ConfigSchema.parse({

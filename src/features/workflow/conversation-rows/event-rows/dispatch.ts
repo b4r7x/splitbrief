@@ -454,6 +454,8 @@ function consultAnsweredAction(event: EngineEventOf<'consult_answered'>): string
         : `verify ${event.checkIds.join(', ')}`;
     case 'ask-user':
       return 'asks you';
+    case 'confirm':
+      return `confirmed the deviation${SOFT_SEP}${event.diagnosis}`;
     default:
       return assertNever(event.action);
   }

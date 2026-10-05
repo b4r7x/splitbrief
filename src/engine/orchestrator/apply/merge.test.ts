@@ -18,6 +18,7 @@ import {
 } from '../../../core/paths.js';
 import { type ApplyRun, withApplyRun } from '#testing/helpers/apply-run.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { sha256Hex } from '../../../utils/sha256.js';
 import { readManifest } from '../../snapshots/manifest.js';
 import { mergeApplyStates } from './merge.js';
 import { captureApplyStates } from './states.js';
@@ -63,6 +64,50 @@ describe('git-merge-three-states', { timeout: 60_000 }, () => {
       expect(result.promote).toEqual(['a.txt']);
       expect(read(run.ws, 'a.txt')).toBe(lines('ONE', 'two', 'three', 'four', 'FIVE'));
       expect(read(run.dir, 'a.txt')).toBe(lines('one', 'two', 'three', 'four', 'FIVE'));
+    });
+  });
+
+  it('promotes a recorded integrated path without merging while the checkout hash holds', async () => {
+    await withRun({ 'a.txt': FIVE }, async (run) => {
+      const theirs = lines('one', 'two', 'THEIRS', 'four', 'five');
+      const resolved = lines('one', 'two', 'RESOLVED', 'four', 'five');
+      writeFileSync(join(run.ws, 'a.txt'), resolved);
+      writeFileSync(join(run.dir, 'a.txt'), theirs);
+      const states = await captureApplyStates({
+        projectDir: run.dir,
+        sessionId: SESSION_ID,
+        workspace: run.workspace,
+      });
+
+      const result = await mergeApplyStates(states, new Map([['a.txt', sha256Hex(theirs)]]));
+
+      expect(result.conflicts).toEqual([]);
+      expect(result.promote).toEqual(['a.txt']);
+      expect(read(run.ws, 'a.txt')).toBe(resolved);
+      expect(read(run.dir, 'a.txt')).toBe(theirs);
+    });
+  });
+
+  it('merges an integrated path normally once the checkout hash changed', async () => {
+    await withRun({ 'a.txt': FIVE }, async (run) => {
+      const ours = lines('one', 'two', 'RESOLVED', 'four', 'five');
+      writeFileSync(join(run.ws, 'a.txt'), ours);
+      writeFileSync(join(run.dir, 'a.txt'), lines('one', 'two', 'THEIRS', 'four', 'five'));
+      const states = await captureApplyStates({
+        projectDir: run.dir,
+        sessionId: SESSION_ID,
+        workspace: run.workspace,
+      });
+
+      const result = await mergeApplyStates(
+        states,
+        new Map([['a.txt', sha256Hex(lines('one', 'two', 'RECORDED', 'four', 'five'))]]),
+      );
+
+      expect(result.promote).toEqual([]);
+      expect(result.conflicts).toMatchObject([{ path: 'a.txt', kind: 'text' }]);
+      expect(result.conflicts[0]?.markers).toBeDefined();
+      expect(read(run.ws, 'a.txt')).toBe(ours);
     });
   });
 

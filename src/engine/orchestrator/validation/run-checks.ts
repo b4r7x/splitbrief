@@ -28,7 +28,8 @@ export type CheckRunResult = {
 };
 
 export type RunChecksOptions = {
-  task: Task;
+  task?: Task | undefined;
+  tasks?: readonly Task[] | undefined;
   plan?: Plan | undefined;
   projectDir: string;
   config: Config;
@@ -40,10 +41,15 @@ export type RunChecksOptions = {
   runCommand?: ValidationCommandRunner | undefined;
 };
 
-function resolveCheck(task: Task, plan: Plan | undefined, checkId: string): Check | undefined {
-  return (
-    task.checks?.find((check) => check.id === checkId) ??
-    plan?.checks.find((check) => check.id === checkId)
+export function checkRegistry(
+  opts: Pick<RunChecksOptions, 'task' | 'tasks' | 'plan'>,
+): Map<string, Check> {
+  return new Map(
+    [
+      ...(opts.plan?.checks ?? []),
+      ...(opts.tasks ?? []).flatMap((task) => task.checks ?? []),
+      ...(opts.task?.checks ?? []),
+    ].map((check) => [check.id, check]),
   );
 }
 
@@ -82,7 +88,11 @@ async function runTestCheck(
   run: ValidationCommandRunner,
   stageContext: ReturnType<typeof buildStageContext>,
 ): Promise<CheckRunResult> {
-  const checkTask: Task = { ...opts.task, file: check.value, files: [check.value] };
+  const checkTask: Pick<Task, 'file' | 'files'> = {
+    ...opts.task,
+    file: check.value,
+    files: [check.value],
+  };
   const planned = planStage('test', checkTask, stageContext, [check.value]);
   if (planned.kind === 'skip') {
     return { checkId: check.id, status: 'not-runnable', output: planned.reason };
@@ -155,12 +165,13 @@ export async function runChecks(
     notices: { bus: opts.bus, phase: opts.phase },
   });
   const packageScripts = readPackageScripts(opts.projectDir);
+  const registry = checkRegistry(opts);
   const results: CheckRunResult[] = [];
   const seen = new Set<string>();
   for (const checkId of checkIds) {
     if (seen.has(checkId)) continue;
     seen.add(checkId);
-    const check = resolveCheck(opts.task, opts.plan, checkId);
+    const check = registry.get(checkId);
     if (check === undefined) {
       results.push({ checkId, status: 'unknown', output: `no check ${checkId}` });
     } else if (check.kind === 'render') {

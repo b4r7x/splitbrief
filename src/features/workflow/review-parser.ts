@@ -263,9 +263,7 @@ export function createReviewInputHandler(
       }
       const phase = lifecycle.phase;
       if (isImplementerPhase(phase)) {
-        feedbackStore.setError(
-          'Input disabled during task implementation. Press Ctrl-C to abort, or /redo-task <id> after the task finishes.',
-        );
+        feedbackStore.setError('Input disabled during task implementation. Press Ctrl-C to stop.');
         return;
       }
       if (isLivePhase(phase)) {

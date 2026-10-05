@@ -1,17 +1,25 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { makeBusRecorder, makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makePlanner,
+  makeBusRecorder,
+  makeCallbacks,
+} from '#testing/helpers/orchestrator-factories.js';
 import { setupProject } from '#testing/helpers/planning-phase.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import {
+  planFromTasks,
+  passingReviewVerdict,
+  typedCallPlanAndReview,
+} from '#testing/helpers/typed-planner.js';
 import { REVIEW_FILE, sessionDir } from '../../../core/paths.js';
 import { getChangedFilesSnapshot } from '../../orchestrator/approval/file-snapshots/capture.js';
 import { runFinalReviewPhase } from '../../orchestrator/final-review.js';
-import { parseFinalReview } from '../../parsers/final-review.js';
 import { buildFinalReviewPrompt } from './review.js';
 
 const SPEC = '## Spec\nAdd a hello function.';
@@ -24,6 +32,94 @@ afterEach(() => {
 });
 
 describe('buildFinalReviewPrompt', () => {
+  it('carries the plan, the per-task diff groups, the touched-not-suggested files, the check results, the consult log and the user answers', () => {
+    const result = buildFinalReviewPrompt({
+      spec: SPEC,
+      taskBriefs: TASK_BRIEFS,
+      diff: DIFF,
+      diffByTask: [
+        { taskId: 'T001', diff: '+export function hello() { return "hello"; }' },
+        { taskId: null, diff: '+export const operatorFix = true;' },
+      ],
+      plan: {
+        criteria: [{ id: 'C1', text: 'The greeting is returned', checkIds: ['K1'] }],
+        decisions: [{ text: 'Keep the greeting pure', taskId: 'T001' }],
+        tasks: [
+          {
+            id: 'T001',
+            title: 'Hello module',
+            intent: 'Add the hello export',
+            criteria: ['C1'],
+            suggestedFiles: ['src/hello.ts'],
+            exclusions: ['docs/**'],
+          },
+        ],
+      },
+      touchedNotSuggested: [{ taskId: 'T001', files: ['src/shared.ts'] }],
+      checkResults: '- T001 check K1: pass',
+      consultLog: '- 2026-01-01T00:00:00.000Z T001: failing → guidance: try another approach',
+      triageLog: '- F2: already fixed',
+      planningAnswers: '- Which greeting? → hello',
+      taskIds: ['T001'],
+      criterionIds: ['C1'],
+    });
+
+    expect(result).toContain('## Plan');
+    expect(result).toContain('C1: The greeting is returned (checks: K1)');
+    expect(result).toContain('T001 Hello module: Add the hello export');
+    expect(result).toContain('Suggested files: src/hello.ts');
+    expect(result).toContain('Exclusions: docs/**');
+    expect(result).toContain('### Decisions');
+    expect(result).toContain('- Keep the greeting pure (T001)');
+    expect(result).toContain('## Implementation Diff');
+    expect(result).toContain('### Changes by T001');
+    expect(result).toContain('### Changes by not attributed');
+    expect(result).toContain('## Touched, Not Suggested');
+    expect(result).toContain('src/shared.ts');
+    expect(result).toContain('## Recorded Check Results');
+    expect(result).toContain('T001 check K1: pass');
+    expect(result).toContain('## Consult Log');
+    expect(result).toContain('try another approach');
+    expect(result).toContain('## Triage Log');
+    expect(result).toContain('## Planning Answers');
+    expect(result).toContain('- Which greeting? → hello');
+  });
+
+  it('states the required result ids, and none when the caller names none', () => {
+    const named = buildFinalReviewPrompt({
+      spec: SPEC,
+      taskBriefs: TASK_BRIEFS,
+      diff: DIFF,
+      plan: {
+        criteria: [{ id: 'C1', text: 'The greeting is returned', checkIds: [] }],
+        tasks: [],
+      },
+    });
+    expect(named).toContain('## Required Results');
+    expect(named).toContain('Task ids: none');
+    expect(named).toContain('Criterion ids: C1');
+
+    const bare = buildFinalReviewPrompt({ spec: SPEC, taskBriefs: TASK_BRIEFS, diff: DIFF });
+    expect(bare).toContain('Task ids: none');
+    expect(bare).toContain('Criterion ids: none');
+    expect(bare).toContain('one result per listed id');
+    expect(bare).toContain(
+      'Every task not met and every failed criterion needs a blocking finding naming it.',
+    );
+    expect(bare).toContain(
+      'Mark a criterion unverified when no recorded evidence proves it, and name its checkIds.',
+    );
+    expect(bare).toContain('Never claim a render was verified.');
+  });
+
+  it('drops the containment sentence that made a missing render at most a Note', () => {
+    const result = buildFinalReviewPrompt({ spec: SPEC, taskBriefs: TASK_BRIEFS, diff: DIFF });
+
+    expect(result).not.toContain('A **Critical** finding must name a defect');
+    expect(result).not.toContain('an evidence gap alone never causes `fail`');
+    expect(result).not.toContain('Write `None.` after the label of a category with no findings');
+  });
+
   it('dispatches the workspace directory instruction and keeps review records in the checkout', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
     const workspaceDir = createTempDir('review-workspace');
@@ -35,12 +131,16 @@ describe('buildFinalReviewPrompt', () => {
       ...makeImplState([makeTask({ status: 'done' })]),
       changedFilesBaseline: { head: baseline.head, fingerprints: {}, runStartChangedFiles: [] },
     };
-    const reviewer = {
-      review: vi.fn().mockResolvedValue({
-        text: '### Verdict\npass\n### Findings\nNone.',
-        usage: { inputTokens: 1, outputTokens: 1 },
-      }),
-    };
+    const prompts: string[] = [];
+    const reviewer = makePlanner({
+      typedCall: typedCallPlanAndReview(
+        () => planFromTasks([]),
+        (prompt) => {
+          prompts.push(prompt);
+          return passingReviewVerdict(prompt);
+        },
+      ),
+    });
     const result = await runFinalReviewPhase({
       projectDir,
       workspaceDir,
@@ -60,12 +160,8 @@ describe('buildFinalReviewPrompt', () => {
     });
 
     expect(result.reviewStatus).toBe('written');
-    expect(reviewer.review).toHaveBeenCalledWith(
-      expect.stringContaining(`The run workspace is \`${workspaceDir}\`.`),
-      workspaceDir,
-      expect.any(Object),
-    );
-    expect(reviewer.review.mock.calls[0]?.[0]).toContain('Read project files from this directory');
+    expect(prompts[0]).toContain(`The run workspace is \`${workspaceDir}\`.`);
+    expect(prompts[0]).toContain('Read project files from this directory');
     expect(existsSync(join(sessionDir(projectDir, sessionId), REVIEW_FILE))).toBe(true);
     expect(existsSync(join(workspaceDir, '.splitbrief'))).toBe(false);
   });
@@ -78,24 +174,6 @@ describe('buildFinalReviewPrompt', () => {
     expect(result).toContain(
       'Treat error-level drift findings as review blockers unless you can clearly explain why they are false positives.',
     );
-  });
-
-  it('tells the reviewer to write None. for an empty category, which the parser reads as no finding', () => {
-    const result = buildFinalReviewPrompt({ spec: SPEC, taskBriefs: TASK_BRIEFS, diff: DIFF });
-
-    expect(result).toContain(
-      'Write `None.` after the label of a category with no findings, or leave the label out.',
-    );
-    expect(parseFinalReview('### Findings\n- **Critical**: None.').findings).toEqual([]);
-  });
-
-  it('keeps evidence-record gaps out of Critical findings, stated once', () => {
-    const result = buildFinalReviewPrompt({ spec: SPEC, taskBriefs: TASK_BRIEFS, diff: DIFF });
-    const rule =
-      'A **Critical** finding must name a defect in the code, the tests, or the behavior the diff produces.';
-
-    expect(result.split(rule)).toHaveLength(2);
-    expect(result).toContain('an evidence gap alone never causes `fail`');
   });
 
   it('includes a drift section heading and content when driftReport is provided', () => {

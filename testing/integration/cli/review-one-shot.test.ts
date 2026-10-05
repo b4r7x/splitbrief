@@ -16,7 +16,13 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { createDefaultConfig } from '../../../src/core/config/load/defaults.js';
 import { toYaml } from '../../../src/core/config/load/transform.js';
-import { CONFIG_FILE, REVIEWS_DIR, REVIEW_FILE, SPLITBRIEF_DIR } from '../../../src/core/paths.js';
+import {
+  CONFIG_FILE,
+  REVIEWS_DIR,
+  REVIEW_FILE,
+  REVIEW_JSON_FILE,
+  SPLITBRIEF_DIR,
+} from '../../../src/core/paths.js';
 import { AUTOMATIC_MODEL } from '../../../src/core/providers/automatic-model.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
 import { registerReviewCommand } from '../../../src/cli/commands/review.js';
@@ -31,16 +37,25 @@ vi.mock('../../../src/engine/runners/probe-availability.js', () => ({
   ) => (await import('#testing/helpers/start-command.js')).probeRunnerAvailabilityMock(...args),
 }));
 
-const REVIEW_TEXT = [
-  '### Verdict',
-  'pass_with_notes',
-  '',
-  '### Findings',
-  '- **Warning**: the changed line has no test.',
-  '',
-  '### Summary',
-  'One reviewer call over the working tree.',
-].join('\n');
+// The typed answer the review seat returns; the command renders review.md from it.
+const REVIEW_TEXT = JSON.stringify({
+  tasks: [],
+  criteria: [],
+  findings: [
+    {
+      id: 'F1',
+      kind: 'defect',
+      severity: 'minor',
+      taskId: null,
+      file: null,
+      line: null,
+      text: 'the changed line has no test.',
+      acceptance: null,
+      checkIds: null,
+      criterionId: null,
+    },
+  ],
+});
 
 const CHANGED_LINE = 'the-line-the-reviewer-must-see';
 
@@ -283,16 +298,22 @@ describe('CLI integration: splitbrief review', () => {
       'none — review for correctness, scope creep, and test coverage of the diff',
     );
     expect(stdout).toContain('pass_with_notes');
-    // The streamed review is markdown: its line breaks survive to stdout.
-    expect(stdout).toContain('### Verdict\npass_with_notes');
+    // The rendered review is markdown: its line breaks survive to stdout.
+    expect(stdout).toContain('### Verdict\n\npass_with_notes');
     expect(existsSync(join(tmp, SPLITBRIEF_DIR, 'sessions'))).toBe(false);
 
     const reviewsRoot = join(tmp, SPLITBRIEF_DIR, REVIEWS_DIR);
     const stamps = readdirSync(reviewsRoot);
     expect(stamps).toHaveLength(1);
-    expect(readFileSync(join(reviewsRoot, stamps[0] ?? '', REVIEW_FILE), 'utf-8')).toContain(
-      'pass_with_notes',
+    const stampDir = join(reviewsRoot, stamps[0] ?? '');
+    expect(readFileSync(join(stampDir, REVIEW_FILE), 'utf-8')).toContain(
+      '### Verdict\n\npass_with_notes',
     );
+    // The typed record is the verdict's home; the markdown beside it is its rendering.
+    expect(JSON.parse(readFileSync(join(stampDir, REVIEW_JSON_FILE), 'utf-8'))).toMatchObject({
+      outcome: 'pass-with-notes',
+      cycle: 0,
+    });
   });
 
   it('reviews through an inline shell reviewer without admitting any other runner', async () => {

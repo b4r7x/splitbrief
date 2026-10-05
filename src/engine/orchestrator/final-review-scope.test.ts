@@ -12,6 +12,11 @@ import {
   TEST_METADATA,
 } from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import {
+  failedReviewVerdict,
+  planFromTasks,
+  typedCallPlanAndReview,
+} from '#testing/helpers/typed-planner.js';
 import { ensureSessionDir, writeSpecFile } from '../../core/paths-io.js';
 import {
   DRIFT_REPORT_FILE,
@@ -94,13 +99,13 @@ async function review(p: ReturnType<typeof project>, api = false) {
     bus: makeBusRecorder().bus,
     callbacks: makeCallbacks().callbacks,
     reviewer: makePlanner({
-      review: async (prompt) => {
-        prompts.push(prompt);
-        return {
-          text: '### Verdict\nfail\n\n### Findings\n- **Critical**: Test review failure.\n',
-          usage: null,
-        };
-      },
+      typedCall: typedCallPlanAndReview(
+        () => planFromTasks([]),
+        (prompt) => {
+          prompts.push(prompt);
+          return failedReviewVerdict(prompt, 'Test review failure.', { taskId: 'T001' });
+        },
+      ),
     }),
     metadata: TEST_METADATA,
     summaryBase: {
@@ -111,7 +116,7 @@ async function review(p: ReturnType<typeof project>, api = false) {
     },
     taskBreakdowns: [],
   });
-  expect(result.verdict?.verdict).toBe('fail');
+  expect(result.verdict?.outcome.kind).toBe('fail');
   expect(prompts).toHaveLength(1);
   const packet = ReviewPacketSchema.parse(
     JSON.parse(

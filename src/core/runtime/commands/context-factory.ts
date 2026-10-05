@@ -21,7 +21,6 @@ interface CommandContextFactoryOptions {
   toggleSkill: RuntimeCommandContext['toggleSkill'];
   refreshSkills: RuntimeCommandContext['refreshSkills'];
   getCurrentPhase: () => Phase;
-  requestTaskRedo: (taskId: string) => boolean;
   resumeRun: () => boolean;
   endRun: () => boolean;
   getQueueDepth: () => number;
@@ -76,7 +75,6 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
     toggleSkill: opts.toggleSkill,
     refreshSkills: opts.refreshSkills,
     getCurrentPhase: opts.getCurrentPhase,
-    requestTaskRedo: opts.requestTaskRedo,
     resumeRun: opts.resumeRun,
     endRun: opts.endRun,
     getQueueDepth: opts.getQueueDepth,

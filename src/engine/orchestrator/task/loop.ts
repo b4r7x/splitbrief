@@ -27,6 +27,7 @@ import { nowIso } from '../../../utils/format-time.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { error } from '../../../utils/error.js';
 import { buildImplementerUnavailableRecoveryIssue } from '../recovery/builders/task.js';
+import { runScheduledReview } from '../run/review.js';
 
 type RunTaskLoopOptions = {
   wctx: WorkflowContext;
@@ -97,6 +98,16 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     });
     return { state, taskBreakdowns, status: 'stopped' };
   }
+  if (state.pendingTriage !== undefined && state.review?.scope === 'task') {
+    const pending = await runScheduledReview({
+      wctx,
+      state,
+      setTrackedState,
+      callbacks: wctx.callbacks,
+    });
+    state = pending.state;
+    if (pending.status === 'stopped') return { state, taskBreakdowns, status: 'stopped' };
+  }
   let changedFilesBaseline: ChangedFilesBaseline =
     state.changedFilesBaseline !== undefined
       ? deserializeChangedFilesBaseline(state.changedFilesBaseline)
@@ -136,8 +147,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     if (wctx.signal?.aborted) return { state, taskBreakdowns, status: 'stopped' };
     const task = state.tasks[i];
     if (!task) continue;
-    // A review-fix re-entry starts at the first brief it reopened; the briefs
-    // after it that already passed are not re-run.
+    // A fix cycle starts at its first appended brief; briefs that already passed are not re-run.
     if (isTaskCompleted(task.status)) continue;
 
     const depGate = await checkDependencyGate({
@@ -263,6 +273,23 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     if (wctx.signal?.aborted || state.currentTaskIndex <= i) {
       setCurrentTask(undefined);
       return { state, taskBreakdowns, status: 'stopped' };
+    }
+
+    // The configured cadence: with workflow.review 'task' every brief that passed its
+    // validation is reviewed before the loop moves on; a failing review's fix tasks are
+    // appended and the re-read bound runs them.
+    if ((config.workflow.review ?? 'end') === 'task') {
+      const scheduled = await runScheduledReview({
+        wctx,
+        state,
+        setTrackedState,
+        callbacks: wctx.callbacks,
+      });
+      state = scheduled.state;
+      if (scheduled.status === 'stopped') {
+        setCurrentTask(undefined);
+        return { state, taskBreakdowns, status: 'stopped' };
+      }
     }
 
     if (wctx.sinks.consumeBoundaryPause?.()) {

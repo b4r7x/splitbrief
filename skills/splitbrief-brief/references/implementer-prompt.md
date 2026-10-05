@@ -2,7 +2,6 @@
 
 The implementer receives a self-contained Markdown brief and fresh code context.
 It sees Plan context, not this session's conversation. Give it the report contract at the end.
-The CLI ships proposed decisions in ImplementerReport in S5.
 
 ## 1. Preamble
 

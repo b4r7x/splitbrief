@@ -1,7 +1,12 @@
 import { DRIFT_REPORT_FILE, EVIDENCE_FILE, SPEC_FILE, TASKS_FILE } from '../../core/paths.js';
 import { estimateTokens } from '../../core/tokens/estimate.js';
 import { apiPlanningInputBudget, type ApiContextManifestEntry } from '../planners/api-context.js';
-import { buildFinalReviewPrompt } from '../spec/prompts/review.js';
+import {
+  buildFinalReviewPrompt,
+  type ReviewPlanData,
+  type ReviewTaskDiff,
+  type ReviewTouchedNotSuggested,
+} from '../spec/prompts/review.js';
 
 /** The packet's own names for the sections that are no file of their own. */
 const RUN_DIFF = 'run diff';
@@ -70,6 +75,17 @@ export type ApiReviewContextInput = Readonly<{
   validation: Readonly<{ recorded: boolean; evidence: string | undefined }>;
   reviewScope?: Readonly<{ diff: string; description: string }> | undefined;
   queueText?: string | undefined;
+  /** The ids the verdict must answer for, as the prompt's Required Results states them. */
+  taskIds?: readonly string[] | undefined;
+  criterionIds?: readonly string[] | undefined;
+  /** The plan as data: the criteria with their checks, and the briefs. */
+  plan?: ReviewPlanData | undefined;
+  diffByTask?: readonly ReviewTaskDiff[] | undefined;
+  touchedNotSuggested?: readonly ReviewTouchedNotSuggested[] | undefined;
+  checkResults?: string | undefined;
+  consultLog?: string | undefined;
+  triageLog?: string | undefined;
+  planningAnswers?: string | undefined;
   /** The run's skills block; counted against the seat like every other part it carries. */
   skillsContext?: string | undefined;
   /** The reviewer seat's configured window; its allocation is derived from it. */
@@ -231,6 +247,17 @@ export function buildApiReviewContext(input: ApiReviewContextInput): ApiReviewCo
     taskBriefs,
     diff: input.reviewScope?.diff ?? input.fullDiff,
     ...(input.reviewScope !== undefined && { workspaceDiff: input.fullDiff }),
+    ...(input.diffByTask !== undefined && { diffByTask: input.diffByTask }),
+    ...(input.plan !== undefined && { plan: input.plan }),
+    ...(input.touchedNotSuggested !== undefined && {
+      touchedNotSuggested: input.touchedNotSuggested,
+    }),
+    ...(input.checkResults !== undefined && { checkResults: input.checkResults }),
+    ...(input.consultLog !== undefined && { consultLog: input.consultLog }),
+    ...(input.triageLog !== undefined && { triageLog: input.triageLog }),
+    ...(input.planningAnswers !== undefined && { planningAnswers: input.planningAnswers }),
+    ...(input.taskIds !== undefined && { taskIds: input.taskIds }),
+    ...(input.criterionIds !== undefined && { criterionIds: input.criterionIds }),
     changeCoverage: coverage,
     driftReport: drift,
     validationEvidence: validation,

@@ -360,7 +360,7 @@ describe('api implementer — OpenAI-compatible path', () => {
       onOutput: vi.fn(),
       plan: {
         summary: 'Route every write through the registry.',
-        decisions: ['Keep the registry as the one source of truth'],
+        decisions: [{ text: 'Keep the registry as the one source of truth', taskId: null }],
         criteria: [],
         checks: [],
         validation: null,

@@ -23,7 +23,11 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { assertPlainStdout } from '../../e2e/helpers/run-dir-assertions.js';
-import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
+import {
+  passingReviewVerdict,
+  planFromTasks,
+  typedCallPlanAndReview,
+} from '#testing/helpers/typed-planner.js';
 
 const BRIEF_COUNT = 13;
 const STOP_AFTER = 'T005';
@@ -93,10 +97,15 @@ describe('a thirteen-brief run stopped between briefs and continued', { timeout:
         throw new Error('no brief in this run needs a retry');
       }),
     });
-    const review = vi.fn(async () => ({ text: '### Verdict\npass\n', usage: null }));
+    let reviewCalls = 0;
     const planner = makePlanner({
-      typedCall: typedCallFromTasks(TASKS),
-      review,
+      typedCall: typedCallPlanAndReview(
+        () => planFromTasks(TASKS),
+        (prompt) => {
+          reviewCalls += 1;
+          return passingReviewVerdict(prompt);
+        },
+      ),
     });
 
     const stop = new AbortController();
@@ -129,7 +138,7 @@ describe('a thirteen-brief run stopped between briefs and continued', { timeout:
     expect(builds).toEqual(TASK_IDS.slice(0, 5));
     // The park names the next brief as the step to pick up, at its first attempt.
     expect(parked.interruptedStep?.step).toEqual({ kind: 'brief', taskId: 'T006', attempt: 0 });
-    expect(review).not.toHaveBeenCalled();
+    expect(reviewCalls).toBe(0);
     expect(firstEvents.some((event) => event.type === 'workflow_complete')).toBe(false);
     expect(firstPlain.text()).not.toMatch(/^done: /m);
 
@@ -158,7 +167,7 @@ describe('a thirteen-brief run stopped between briefs and continued', { timeout:
       .filter((event) => event.type === 'task_started')
       .map((event) => event.taskId);
     expect(resumedStarts).toEqual(TASK_IDS.slice(5));
-    expect(review).toHaveBeenCalledTimes(1);
+    expect(reviewCalls).toBe(1);
 
     const final = loadState(ref);
     if (final === null) throw new Error('the continued run saved no state');

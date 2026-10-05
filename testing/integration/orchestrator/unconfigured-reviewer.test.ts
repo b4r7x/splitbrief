@@ -3,7 +3,6 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import type { ImplementerOptions } from '../../../src/engine/implementers/types.js';
-import type { PlannerOutputCallbacks } from '../../../src/engine/planners/types.js';
 import { REVIEW_FILE, sessionDir } from '../../../src/core/paths.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import {
@@ -22,7 +21,11 @@ import { addEvent } from '../../../src/stores/workflow/actions/event.js';
 import { tokensStore } from '../../../src/stores/workflow/tokens.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import { seedValidationProject } from '#testing/helpers/validation-project.js';
-import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
+import {
+  passingReviewVerdict,
+  planFromTasks,
+  typedCallPlanAndReview,
+} from '#testing/helpers/typed-planner.js';
 import { ensureConfigGitignore } from '../../../src/core/config/load/document.js';
 
 const dirs: string[] = [];
@@ -57,30 +60,31 @@ describe('run with no reviewer configured', () => {
     const targetFile = 'src/loop.ts';
     const events: EngineEvent[] = [];
 
+    let reviewCalls = 0;
     const planner = makePlanner({
-      typedCall: typedCallFromTasks(
-        [
-          makeTask({
-            id: 'T001',
-            action: 'create',
-            file: targetFile,
-            title: 'Create validated module',
-            description: 'Create a module that satisfies the project validation script.',
-            implementationSteps: ['Create src/loop.ts with the marker export.'],
-            tests: ['node validate.mjs passes'],
-            scope: { inBounds: [targetFile], outOfBounds: ['unrelated files'] },
-            evidence: ['validation passes before workflow_complete'],
-            typeDefs: 'export const loop: string',
-          }),
-        ],
-        PLAN_USAGE,
+      typedCall: typedCallPlanAndReview(
+        () =>
+          planFromTasks([
+            makeTask({
+              id: 'T001',
+              action: 'create',
+              file: targetFile,
+              title: 'Create validated module',
+              description: 'Create a module that satisfies the project validation script.',
+              implementationSteps: ['Create src/loop.ts with the marker export.'],
+              tests: ['node validate.mjs passes'],
+              scope: { inBounds: [targetFile], outOfBounds: ['unrelated files'] },
+              evidence: ['validation passes before workflow_complete'],
+              typeDefs: 'export const loop: string',
+            }),
+          ]),
+        (prompt, _call, callbacks) => {
+          reviewCalls += 1;
+          callbacks.onOutput(REVIEW_TEXT);
+          return passingReviewVerdict(prompt);
+        },
+        { plan: PLAN_USAGE, review: REVIEW_USAGE },
       ),
-      review: vi
-        .fn()
-        .mockImplementation(async (_prompt: string, _dir: string, cb: PlannerOutputCallbacks) => {
-          cb.onOutput(REVIEW_TEXT);
-          return { text: REVIEW_TEXT, usage: REVIEW_USAGE };
-        }),
     });
 
     const implementer = makeImplementer({
@@ -148,9 +152,9 @@ describe('run with no reviewer configured', () => {
       },
     });
 
-    expect(planner.review).toHaveBeenCalledTimes(1);
+    expect(reviewCalls).toBe(1);
     expect(readFileSync(join(sessionDir(projectDir, sessionId), REVIEW_FILE), 'utf-8')).toContain(
-      REVIEW_TEXT,
+      '### Verdict\n\npass',
     );
 
     // Seat resolution happens at init, so a new event there would show here too.
@@ -213,12 +217,12 @@ describe('run with no reviewer configured', () => {
 
     // A run without a reviewer bills the review tokens on the strong side's single cost line.
     // Each planner call books its own usage, so the planning half is one charge per call.
-    const plannerCalls = vi.mocked(planner.typedCall).mock.calls.length;
+    const planningCalls = vi.mocked(planner.typedCall).mock.calls.length - reviewCalls;
     const providerCosts = summary.costBreakdown?.providerCosts ?? {};
     expect(Object.keys(providerCosts)).toEqual([PLANNER_PROVIDER]);
     expect(providerCosts[PLANNER_PROVIDER]).toMatchObject({
-      inputTokens: PLAN_USAGE.inputTokens * plannerCalls + REVIEW_USAGE.inputTokens,
-      outputTokens: PLAN_USAGE.outputTokens * plannerCalls + REVIEW_USAGE.outputTokens,
+      inputTokens: PLAN_USAGE.inputTokens * planningCalls + REVIEW_USAGE.inputTokens,
+      outputTokens: PLAN_USAGE.outputTokens * planningCalls + REVIEW_USAGE.outputTokens,
     });
     expect(summary.costBreakdown?.actualReviewerCost).toBeUndefined();
 

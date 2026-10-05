@@ -765,49 +765,110 @@ describe('runApply integration review', { timeout: 60_000 }, () => {
       expect(saved.applyReview?.merged).toEqual([
         { path: 'a.txt', checkoutHunks: expect.stringContaining('+FIVE') },
       ]);
-      expect(saved.reviewFixes?.cycle).toBe(1);
+      expect(saved.fixCycles?.used).toBe(1);
       expect(deriveRunStatus({ state: saved, liveness: 'not-alive' }).kind).toBe('open');
     });
   });
 
-  it('overlapping user edit asks once before checks and re-review', async () => {
+  it('a text conflict writes markers, queues the triage and leaves the checkout untouched', async () => {
+    await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
+      const theirs = lines('one', 'two', 'THEIRS', 'four', 'five');
+      writeFileSync(join(run.ws, 'a.txt'), lines('one', 'two', 'OURS', 'four', 'five'));
+      const state = await reviewedReadyState(run);
+      writeFileSync(join(run.dir, 'a.txt'), theirs);
+      vi.mocked(stagedProject.promoteStagedChanges).mockClear();
+
+      const result = await apply(run, state);
+
+      expect(result.outcome).toBe('review');
+      expect(vi.mocked(stagedProject.promoteStagedChanges)).not.toHaveBeenCalled();
+      expect(read(run.dir, 'a.txt')).toBe(theirs);
+      const written = read(run.ws, 'a.txt');
+      expect(written).toContain('<<<<<<< ours');
+      expect(written).toContain('OURS');
+      expect(written).toContain('||||||| base');
+      expect(written).toContain('=======');
+      expect(written).toContain('THEIRS');
+      expect(written).toContain('>>>>>>> theirs');
+
+      const saved = savedState(run);
+      expect(saved.phase).toBe('final-review');
+      expect(saved.applyReview?.merged).toEqual([
+        { path: 'a.txt', checkoutHunks: expect.stringContaining('+THEIRS') },
+      ]);
+      expect(saved.applyIntegrated).toEqual([{ path: 'a.txt', checkoutHash: sha256Hex(theirs) }]);
+      expect(saved.pendingTriage).toEqual({
+        inputs: [
+          {
+            id: 'A1',
+            kind: 'defect',
+            source: 'apply',
+            text: "Apply merge conflict in a.txt: resolve the conflict markers, keeping both the run's change and the checkout's change unless they compete",
+            file: 'a.txt',
+          },
+        ],
+      });
+      expect(saved.fixCycles).toBeUndefined();
+    });
+  });
+
+  it('a binary conflict keeps the apply-conflict halt with no triage and no marker write', async () => {
+    await withApplyRun({ 'bin.dat': 'a\0base\n' }, { sessionId: SESSION_ID }, async (run) => {
+      writeFileSync(join(run.ws, 'bin.dat'), 'a\0ours\n');
+      const state = await reviewedReadyState(run);
+      writeFileSync(join(run.dir, 'bin.dat'), 'a\0theirs\n');
+
+      const result = await apply(run, state);
+
+      expect(result.outcome).toBe('halted');
+      expect(vi.mocked(stagedProject.promoteStagedChanges)).not.toHaveBeenCalled();
+      expect(read(run.ws, 'bin.dat')).toBe('a\0ours\n');
+      expect(read(run.dir, 'bin.dat')).toBe('a\0theirs\n');
+      const saved = savedState(run);
+      expect(saved.phase).toBe('complete');
+      expect(saved.pendingRecovery?.reason).toBe('apply-conflict');
+      expect(saved.pendingRecovery?.files).toEqual(['bin.dat']);
+      expect(saved.pendingRecovery?.details).toContain(
+        'bin.dat · both sides changed a binary file',
+      );
+      expect(saved.pendingTriage).toBeUndefined();
+      expect(saved.applyIntegrated).toBeUndefined();
+      expect(saved.applyReview).toBeUndefined();
+    });
+  });
+
+  it('a later Apply promotes the integrated path once the markers are resolved', async () => {
     await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
       writeFileSync(join(run.ws, 'a.txt'), lines('one', 'two', 'OURS', 'four', 'five'));
       const state = await reviewedReadyState(run);
       writeFileSync(join(run.dir, 'a.txt'), lines('one', 'two', 'THEIRS', 'four', 'five'));
-      const { bus, events } = makeBusRecorder();
 
-      const asked = await runApply({
-        wctx: { projectDir: run.dir, sessionId: run.sessionId, bus },
-        state,
+      expect((await apply(run, state)).outcome).toBe('review');
+      const resolved = lines('one', 'two', 'OURS+THEIRS', 'four', 'five');
+      writeFileSync(join(run.ws, 'a.txt'), resolved);
+
+      const queued = savedState(run);
+      const fixed = transition(queued, { type: 'START_FIX_CYCLE' });
+      const finished = transition(transition(fixed, { type: 'ALL_DONE' }), {
+        type: 'REVIEW_DONE',
+        reviewStatus: 'passed',
+        candidate: await captureReviewedCandidate({
+          projectDir: run.dir,
+          sessionId: run.sessionId,
+          workspace: run.workspace,
+        }),
       });
+      saveState({ projectDir: run.dir, sessionId: run.sessionId }, finished);
+      vi.mocked(stagedProject.promoteStagedChanges).mockClear();
 
-      expect(asked.outcome).toBe('halted');
-      const halted = savedState(run);
-      expect(halted.pendingRecovery?.reason).toBe('apply-conflict');
-      expect(halted.pendingRecovery?.files).toEqual(['a.txt']);
-      expect(halted.phase).toBe('complete');
-      expect(halted.applyReview).toBeUndefined();
-      expect(events.filter((event) => event.type === 'error')).toHaveLength(1);
+      const result = await apply(run, finished);
 
-      writeFileSync(join(run.ws, 'a.txt'), lines('one', 'two', 'THEIRS', 'four', 'five'));
-      const chosen = applyRecoveryAction({
-        projectDir: run.dir,
-        sessionId: run.sessionId,
-        state: halted,
-        action: 'retry-same-worker',
-        bus,
-      });
-      if (!chosen.ok) throw new Error(chosen.message);
-
-      const result = await apply(run, chosen.state);
-
-      expect(result.outcome).toBe('review');
-      expect(read(run.dir, 'a.txt')).toBe(lines('one', 'two', 'THEIRS', 'four', 'five'));
-      const saved = savedState(run);
-      expect(saved.phase).toBe('final-review');
-      expect(saved.pendingRecovery).toBeUndefined();
-      expect(saved.applyReview?.merged.map((entry) => entry.path)).toEqual(['a.txt']);
+      expect(result.outcome).toBe('applied');
+      expect(read(run.dir, 'a.txt')).toBe(resolved);
+      expect(read(run.ws, 'a.txt')).toBe(resolved);
+      const promote = vi.mocked(stagedProject.promoteStagedChanges);
+      expect(promote).toHaveBeenCalledTimes(1);
+      expect([...(promote.mock.calls[0]?.[0].files ?? [])]).toEqual(['a.txt']);
     });
   });
 

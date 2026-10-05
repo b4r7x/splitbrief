@@ -1,3 +1,8 @@
+import {
+  reviewFindingCounts,
+  reviewOutcomeOf,
+  reviewOutcomeWord,
+} from '../../../core/review/verdict.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { CallUsageEvidence } from '../../../core/schemas/usage-evidence.js';
@@ -5,6 +10,7 @@ import type { RunnerKind } from '../../../core/schemas/enums.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { readSpecFileOrEmpty } from '../../../core/paths-io.js';
 import { REVIEW_FILE } from '../../../core/paths.js';
+import { readReviewRecord } from '../../../core/review/store.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { hashTaskBrief } from '../../brief-hash.js';
 import { parseFinalReview } from '../../parsers/final-review.js';
@@ -56,7 +62,19 @@ type BuildSummaryOptions = SummaryBase & {
 };
 
 function readReviewOutcome(projectDir: string, sessionId: string): Summary['review'] {
-  const markdown = readSpecFileOrEmpty({ projectDir, sessionId }, REVIEW_FILE);
+  const ref = { projectDir, sessionId };
+  const record = readReviewRecord(ref);
+  if (record !== null) {
+    const outcome = reviewOutcomeOf(record);
+    const counts = reviewFindingCounts(outcome);
+    return {
+      verdict: reviewOutcomeWord(outcome),
+      critical: counts.critical,
+      warnings: counts.warning,
+      notes: counts.note,
+    };
+  }
+  const markdown = readSpecFileOrEmpty(ref, REVIEW_FILE);
   if (markdown === '') return undefined;
   const { verdict, findings } = parseFinalReview(markdown);
   return {

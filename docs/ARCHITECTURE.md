@@ -404,7 +404,7 @@ See [CHANGELOG.md](../CHANGELOG.md) for release history and amendments.
 - Multi-agent coordination — we have exactly two roles. See `docs/VISION.md`.
 - Parallel task execution — tasks run sequentially so validation and git stay linear.
 - Concurrent foreground workflows in the same project directory — one active session at a time, enforced by the `.splitbrief/active` lock.
-- Mid-task interjection at the implementer level — small models lose coherence when their self-contained task prompt is perturbed. User messages during implementing are not queued into the implementer; the user aborts and uses `/redo-task` instead.
+- Mid-task interjection at the implementer level — small models lose coherence when their self-contained task prompt is perturbed. User messages during implementing are not queued into the implementer; the user stops the run instead.
 - A SPLITBRIEF-defined tool-call protocol for the implementer — an `extracted-code` implementer answers with the file body in plain text; a `direct` implementer uses whatever tools its own harness already gives it. We do not define a third calling convention in between.
 - Full message-level rewind (Claude Code "double-Esc" style) and Cursor-style code snapshot undo — see `docs/FUTURE.md`.
 - Anything Windows-specific — not tested there.
@@ -941,7 +941,8 @@ All per-session state lives under `.splitbrief/sessions/<session-id>/`. Path con
         ├── plan.json               The checked plan (PLAN_JSON_FILE)
         ├── plan.md                 The plan card's body, rendered from plan.json
         ├── spec.md / research.md   Older runs only
-        ├── review.md               Final-review markdown
+        ├── review.json             The typed review record (ReviewVerdict, outcome, verification)
+        ├── review.md               Final-review markdown, rendered from review.json
         ├── clarifications.md       Older runs only
         ├── constitution-check.json Older runs only
         ├── analyze.json            Older runs only
@@ -1157,9 +1158,9 @@ Registered in `src/cli.ts`. [`CLI-REFERENCE.md`](./CLI-REFERENCE.md) is the cano
 
 ---
 
-## 10. Runtime commands (full list, 23)
+## 10. Runtime commands (full list, 22)
 
-The registry holds 23 commands in five categories. `/mode`, `/revise-spec`, `/revise-plan` and `/approval` are removed: typing one prints a one-line pointer (`REMOVED_COMMANDS`, `src/core/runtime/commands/types.ts`). Defined in `src/core/runtime/commands/defs/`, one module per category, concatenated by `createRuntimeCommands` in `src/core/runtime/commands/registry.ts`. The `kind` field is `'noarg'` (no args) or `'arg'` (positional input); every command declares a `category` from `COMMAND_CATEGORIES` (`src/core/runtime/commands/types.ts`), which is the order the command palette groups them in. Commands are callable from composer `/` input and the command palette. Aliases resolve to their canonical command and may pin an argument; no command declares one today.
+The registry holds 22 commands in five categories. `/mode`, `/revise-spec`, `/revise-plan` and `/approval` are removed: typing one prints a one-line pointer (`REMOVED_COMMANDS`, `src/core/runtime/commands/types.ts`). Defined in `src/core/runtime/commands/defs/`, one module per category, concatenated by `createRuntimeCommands` in `src/core/runtime/commands/registry.ts`. The `kind` field is `'noarg'` (no args) or `'arg'` (positional input); every command declares a `category` from `COMMAND_CATEGORIES` (`src/core/runtime/commands/types.ts`), which is the order the command palette groups them in. Commands are callable from composer `/` input and the command palette. Aliases resolve to their canonical command and may pin an argument; no command declares one today.
 
 **Navigate**
 
@@ -1185,7 +1186,6 @@ The registry holds 23 commands in five categories. `/mode`, `/revise-spec`, `/re
 | Runtime command | Description |
 |---|---|
 | `/run <accept\|reject>` | Accept or reject what this run wrote |
-| `/redo-task <task-id>` | Reset a task to pending and re-run it |
 | `/queue [show\|clear]` | Show or clear the message queue |
 | `/stop` | Open stop and session options |
 | `/resume` | Continue a paused or stopped run |

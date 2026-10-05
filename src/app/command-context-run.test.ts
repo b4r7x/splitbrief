@@ -36,7 +36,6 @@ function build() {
   return buildCommandContext({
     exit: () => {},
     workflow: {
-      requestRewind: () => false,
       requestClearQueue: () => ({ status: 'cleared', count: 0 }),
       findLatestActivityBatchKey: () => null,
       findLatestDiffKey: () => null,

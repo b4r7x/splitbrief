@@ -8,7 +8,7 @@ import { buildLanguageContext } from './prompts/language-context.js';
 import { estimateTokens } from '../../core/tokens/estimate.js';
 import { makeTask as makeBaseTask } from '#testing/helpers/factories/task.js';
 import { defaultContext } from '#testing/helpers/factories/config.js';
-import type { Task } from '../../core/schemas/task.js';
+import { taskId, type Task } from '../../core/schemas/task.js';
 
 const context = defaultContext;
 
@@ -431,7 +431,9 @@ describe('formatRetryPrompt', () => {
 describe('plan context', () => {
   const plan = {
     summary: 'Bound the pipeline with named constants.',
-    decisions: ['MAX_ROUNDS is 2 and lives in src/core/pipeline-spec/bounds.ts.'],
+    decisions: [
+      { text: 'MAX_ROUNDS is 2 and lives in src/core/pipeline-spec/bounds.ts.', taskId: null },
+    ],
     criteria: [
       { id: 'C1', text: 'The bounds module exports MAX_ROUNDS.', checkIds: ['K1'] },
       { id: 'C2', text: 'The review screen shows the round count.', checkIds: ['K2'] },
@@ -487,5 +489,27 @@ describe('plan context', () => {
     expect(prompt).toContain('MAX_ROUNDS is 2');
     expect(prompt).toContain('The review screen shows the round count.');
     expect(prompt).not.toContain('The bounds module exports MAX_ROUNDS.');
+  });
+
+  it('shows a confirmed decision with the task that reported it', () => {
+    const task = makeTask({ criteria: ['C1'] });
+    const prompt = formatTaskPrompt({
+      task,
+      context,
+      plan: {
+        ...plan,
+        decisions: [{ text: 'Use node:crypto', taskId: taskId('T003') }],
+      },
+    });
+
+    expect(prompt).toContain('- Use node:crypto (T003)');
+  });
+
+  it('says the implementation steps are guidance', () => {
+    const task = makeTask({ implementationSteps: ['Create the module', 'Wire the export'] });
+    const prompt = formatTaskPrompt({ task, context });
+
+    expect(prompt).toContain('Guidance only: another approach that passes the checks is fine.');
+    expect(prompt).toContain('1. Create the module');
   });
 });

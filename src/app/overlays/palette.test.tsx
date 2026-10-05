@@ -60,7 +60,6 @@ function createTestCommands(): RuntimeCommandDef[] {
     toggleSkill: () => ({ status: 'unknown' }),
     refreshSkills: async () => {},
     getCurrentPhase: () => lifecycleStore.get().phase,
-    requestTaskRedo: () => true,
     getQueueDepth: () => lifecycleStore.get().queueDepth,
     clearQueue: () => ({ status: 'cleared', count: 0 }),
     attachImage: () => ({ ok: false, reason: 'not-found' }),

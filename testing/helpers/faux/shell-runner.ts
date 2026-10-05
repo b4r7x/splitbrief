@@ -39,33 +39,28 @@ export const CODE_RESPONSE = [
   '```',
 ].join('\n');
 
-// The review seat's answer when the planner holds it: one verdict word under
-// `### Verdict`, so the final review parses instead of halting the run.
-export const REVIEW_MARKDOWN = [
-  '# Final review',
-  '',
-  '### Verdict',
-  'pass',
-  '',
-  '### Criteria Results',
-  '- **[PASS]** Task brief satisfied -- the module exports the expected greeting.',
-  '',
-  '### Findings',
-  '',
-  '### Summary',
-  'The implementation matches the brief.',
-].join('\n');
-
-// The shell planner answers from stdin: planning calls get the brief markdown,
-// the final review (its prompt is titled "Final Implementation Review") gets a
-// verdict. A static echo cannot hold the review seat.
+/**
+ * The shell planner answers from stdin: planning calls get the brief markdown,
+ * the final review (its prompt is titled "Final Implementation Review") gets a
+ * typed verdict JSON built from the prompt's own Required Results ids, so the
+ * review clears coverage without a markdown verdict to parse.
+ */
 export function shellPlannerArgs(): string[] {
   const script = [
     "let prompt = '';",
     "try { prompt = require('node:fs').readFileSync(0, 'utf-8'); } catch {}",
-    `const review = ${JSON.stringify(`${REVIEW_MARKDOWN}\n`)};`,
     `const tasks = ${JSON.stringify(`${TASK_MARKDOWN}\n`)};`,
-    "process.stdout.write(prompt.includes('Final Implementation Review') ? review : tasks);",
+    'const ids = (label) => {',
+    "  const match = prompt.match(new RegExp('^' + label + ' (.+)$', 'm'));",
+    "  const value = match ? match[1].trim() : 'none';",
+    "  return value === 'none' || value === '' ? [] : value.split(',').map((id) => id.trim()).filter(Boolean);",
+    '};',
+    "if (prompt.includes('# Final Implementation Review')) {",
+    "  const verdict = { tasks: ids('Task ids:').map((id) => ({ id, plan: 'met', note: '' })), criteria: ids('Criterion ids:').map((id) => ({ id, status: 'pass', evidence: '' })), findings: [] };",
+    '  process.stdout.write(JSON.stringify(verdict));',
+    '} else {',
+    '  process.stdout.write(tasks);',
+    '}',
   ].join('\n');
   return ['-e', script];
 }

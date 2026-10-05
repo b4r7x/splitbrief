@@ -1,4 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { setupProject } from '#testing/helpers/planning-phase.js';
+import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { writeSpecFile } from '../../../core/paths-io.js';
+import { describe, it, expect, afterEach } from 'vitest';
 import { buildSummary } from './build.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
@@ -21,7 +24,76 @@ function makeState(overrides?: Partial<SummaryState>): SummaryState {
   };
 }
 
+const dirs: string[] = [];
+afterEach(() => {
+  for (const dir of dirs.splice(0)) cleanupTempDir(dir);
+});
+
 describe('buildSummary', () => {
+  it.each(['pass', 'unverified'] as const)(
+    'uses effective verification for typed findings: %s',
+    (status) => {
+      const ref = setupProject(dirs);
+      writeSpecFile(
+        ref,
+        'review.json',
+        JSON.stringify({
+          cycle: 0,
+          at: '2026-01-01T00:00:00Z',
+          outcome: 'fail',
+          verdict: {
+            tasks: [],
+            criteria: [],
+            findings: [
+              {
+                id: 'F1',
+                kind: 'unverified',
+                severity: status === 'pass' ? 'blocking' : 'minor',
+                taskId: null,
+                file: null,
+                line: null,
+                text: 'Proof needed',
+                acceptance: null,
+                checkIds: ['K1'],
+                criterionId: null,
+              },
+            ],
+          },
+          verification: [{ id: 'finding:F1', status, output: 'Recorded check' }],
+        }),
+      );
+      const summary = buildSummary({
+        ...ref,
+        feature: 'auth',
+        state: makeState(),
+        startTime: Date.now(),
+        plannerTool: 'claude-code',
+        implementerTool: 'ollama',
+      });
+      expect(summary.review).toEqual(
+        status === 'pass'
+          ? { verdict: 'pass_with_notes', critical: 0, warnings: 1, notes: 0 }
+          : { verdict: 'fail', critical: 1, warnings: 0, notes: 0 },
+      );
+    },
+  );
+
+  it('reports corrupt typed review data instead of using old Markdown', () => {
+    const ref = setupProject(dirs);
+    writeSpecFile(ref, 'review.json', '{}');
+    writeSpecFile(ref, 'review.md', '### Verdict\npass');
+    expect(() =>
+      buildSummary({
+        ...ref,
+        feature: 'auth',
+        state: makeState(),
+        startTime: Date.now(),
+        plannerTool: 'claude-code',
+        implementerTool: 'ollama',
+      }),
+    ).toThrow('Invalid typed review');
+  });
+
   it('all tasks completed locally → escalationRate 0', () => {
     const summary = buildSummary({
       feature: 'auth',

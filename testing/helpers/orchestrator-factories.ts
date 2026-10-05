@@ -13,7 +13,7 @@ import { createValidator } from '../../src/engine/orchestrator/validation/run.js
 import { createRunIsolation } from '../../src/engine/orchestrator/isolation/create.js';
 import type { RunIsolation } from '../../src/engine/orchestrator/isolation/types.js';
 import { defaultContext, makeNoValidationConfig } from './factories/config.js';
-import { typedCallFromTasks } from './typed-planner.js';
+import { passingReviewVerdict, planFromTasks, typedCallPlanAndReview } from './typed-planner.js';
 import { loadState } from '../../src/core/state/persistence.js';
 import type { SessionRef } from '../../src/core/types/session-ref.js';
 
@@ -104,6 +104,8 @@ export function makeCallbacks(overrides?: Partial<OrchestratorCallbacks>): {
 }
 
 export function makePlanner(overrides?: Partial<Planner>): Planner {
+  const task = makeTask();
+  const usage = { inputTokens: 100, outputTokens: 50 };
   return {
     escalateFull: vi
       .fn()
@@ -112,7 +114,13 @@ export function makePlanner(overrides?: Partial<Planner>): Planner {
     getVersion: vi.fn().mockResolvedValue('1.0'),
     review: vi.fn().mockResolvedValue({ text: '### Verdict\npass\n', usage: null }),
     summarize: vi.fn().mockResolvedValue({ text: '', usage: null }),
-    typedCall: typedCallFromTasks([makeTask()], { inputTokens: 100, outputTokens: 50 }),
+    // The reviewer mock answers `review_verdict` with a passing verdict built from the
+    // prompt's own `Task ids:` / `Criterion ids:` lines; the planner mock plans the task.
+    typedCall: typedCallPlanAndReview(
+      () => planFromTasks([task]),
+      (prompt) => passingReviewVerdict(prompt),
+      { plan: usage, review: usage },
+    ),
     capabilities: {
       supportsConversationalPlanning: false,
       supportsSessionResume: false,

@@ -5,7 +5,7 @@ import {
   type RuntimeCommandContext,
 } from '../types.js';
 import { assertNever, includes } from '../../../../utils/type-guards.js';
-import { canRedoTask, isLivePhase } from '../../../phases.js';
+import { isLivePhase } from '../../../phases.js';
 import { toErrorMessage } from '../../../../utils/format-errors.js';
 import { countNoun, pluralize } from '../../../../utils/pluralize.js';
 import { formatRejectRunMessage } from '../messages.js';
@@ -20,27 +20,6 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
       category: 'workflow',
       validScreens: ['workflow'],
       handler: () => ctx.openOverlay('stop-sheet'),
-    },
-    {
-      kind: 'arg',
-      name: '/redo-task',
-      label: 'redo task',
-      description: 'Reset a task to pending and re-run it',
-      category: 'workflow',
-      args: { kind: 'free', hint: '<task-id>' },
-      validScreens: ['workflow'],
-      guard: (c) =>
-        canRedoTask(c.phase) ? undefined : 'Tasks can only be redone while implementing',
-      handler: (args) => {
-        const id = args?.trim();
-        if (!id) {
-          ctx.setFeedbackError('/redo-task requires a task ID. Usage: /redo-task T001');
-          return;
-        }
-        if (!ctx.requestTaskRedo(id)) {
-          ctx.setFeedbackError('Cannot redo task: no active workflow.');
-        }
-      },
     },
     {
       kind: 'noarg',

@@ -140,7 +140,7 @@ function setupFailedReview(): { prepared: PreparedExecution; state: WorkflowStat
     phase: 'complete',
     reviewStatus: 'failed',
     completedAt: '2026-09-24T00:00:00.000Z',
-    reviewFixes: { cycle: 2, findings: {} },
+    fixCycles: { used: 2, allowance: 2, notes: [] },
     pendingRecovery: buildReviewFailedRecoveryIssue({
       blocking: 1,
       phase: 'complete',
@@ -583,7 +583,7 @@ describe('createRecoveryDriver', () => {
     ]);
   });
 
-  it('sends a failed review back through one more repair with the correction typed on the panel', async () => {
+  it('sends a failed review back through one more fix cycle with the correction typed on the panel', async () => {
     const { prepared, state } = setupFailedReview();
     const { inputMode, feedbackAtPrompt } = makeInputMode(['keep the error, log it and rethrow']);
 
@@ -595,22 +595,30 @@ describe('createRecoveryDriver', () => {
     if (!result.shouldRun) return;
     expect(result.steer).toBeUndefined();
     expect(result.state.pendingRecovery).toBeUndefined();
-    expect(result.state.phase).toBe('implementing');
+    expect(result.state.phase).toBe('final-review');
     expect(result.state.reviewStatus).toBeUndefined();
-    expect(result.state.tasks[0]?.status).toBe('pending');
-    expect(result.state.reviewFixes).toEqual({
-      cycle: 3,
-      findings: {
-        T001: [
-          'src/alpha.ts drops the error',
-          'Operator correction: keep the error, log it and rethrow',
-        ],
-      },
+    expect(result.state.pendingTriage).toEqual({
+      inputs: [
+        {
+          id: 'U1',
+          kind: 'defect',
+          source: 'user',
+          text: 'keep the error, log it and rethrow',
+          file: null,
+        },
+      ],
     });
+    // The correction arrives at the cap, so it grants one more fix cycle and is recorded.
+    expect(result.state.fixCycles).toEqual({
+      used: 2,
+      allowance: 3,
+      notes: ['keep the error, log it and rethrow'],
+    });
+    // The correction never resets a brief; the fix work is a new appended task.
+    expect(result.state.tasks[0]?.status).toBe('done');
     const log = sessionLog(prepared);
     expect(log).toContain('"type":"user_message"');
     expect(log).toContain('keep the error, log it and rethrow');
-    expect(log).toContain('"type":"review_fix_started"');
   });
 
   it('takes the words a failed review was continued with as its correction, without asking', async () => {
@@ -624,9 +632,14 @@ describe('createRecoveryDriver', () => {
     if (!result.shouldRun) return;
     expect(result.correctionTaken).toBe(true);
     expect(result.steer).toBeUndefined();
-    expect(result.state.phase).toBe('implementing');
-    expect(result.state.reviewFixes?.findings['T001']).toContain(
-      'Operator correction: log the error and rethrow',
-    );
+    expect(result.state.phase).toBe('final-review');
+    expect(result.state.pendingTriage?.inputs).toContainEqual({
+      id: 'U1',
+      kind: 'defect',
+      source: 'user',
+      text: 'log the error and rethrow',
+      file: null,
+    });
+    expect(result.state.tasks[0]?.status).toBe('done');
   });
 });

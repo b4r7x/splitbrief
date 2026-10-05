@@ -29,6 +29,23 @@ type ValidateCommitOptions = {
   applyResult?: BundleApplyResult | undefined;
 };
 
+/**
+ * SCOPE_RULE's suggested set: this brief's declared set plus the files of every
+ * brief already done. What a task wrote outside that set is what the review
+ * names as touched, not suggested.
+ */
+export function touchedNotSuggestedFiles(opts: {
+  task: Task;
+  tasks: readonly Task[];
+  taskChangedFiles: readonly string[];
+}): string[] {
+  const suggested = [
+    ...taskDeclaredPatterns(opts.task),
+    ...opts.tasks.filter((t) => isTaskCompleted(t.status)).flatMap((t) => taskFiles(t)),
+  ];
+  return opts.taskChangedFiles.filter((file) => !isInDeclaredSet(file, suggested));
+}
+
 export async function validateCommitAndAdvance(
   opts: ValidateCommitOptions,
 ): Promise<{ state: WorkflowState; completed: boolean }> {
@@ -82,14 +99,11 @@ export async function validateCommitAndAdvance(
       ...(implementerProfile !== undefined && { implementerProfile }),
     },
   );
-  // SCOPE_RULE's suggested set: this brief's declared set plus the files of every brief already done.
-  const suggested = [
-    ...taskDeclaredPatterns(task),
-    ...state.tasks.filter((t) => isTaskCompleted(t.status)).flatMap((t) => taskFiles(t)),
-  ];
-  const touchedNotSuggested = (opts.taskChangedFiles ?? []).filter(
-    (file) => !isInDeclaredSet(file, suggested),
-  );
+  const touchedNotSuggested = touchedNotSuggestedFiles({
+    task,
+    tasks: state.tasks,
+    taskChangedFiles: opts.taskChangedFiles ?? [],
+  });
   if (touchedNotSuggested.length > 0) {
     bus.publish({
       type: 'task_touched_not_suggested',

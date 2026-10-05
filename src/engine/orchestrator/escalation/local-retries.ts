@@ -216,7 +216,7 @@ export async function runLocalRetries(
     }
     // An implementer that stopped to ask for a decision is answered by the
     // planner, not by another attempt with the same brief.
-    if (outcome.blocked !== undefined) {
+    if (outcome.blocked !== undefined || outcome.deviation !== undefined) {
       return {
         ...outcome,
         state,

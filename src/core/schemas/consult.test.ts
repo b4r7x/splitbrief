@@ -5,6 +5,8 @@ import { isRecord } from '../../utils/type-guards.js';
 import {
   CONSULT_ANSWER_JSON_SCHEMA,
   ConsultAnswerSchema,
+  DEVIATION_CONSULT_ANSWER_JSON_SCHEMA,
+  DeviationConsultAnswerSchema,
   ImplementerReportSchema,
   STALE_CONSULT_ANSWER_JSON_SCHEMA,
   StaleConsultAnswerSchema,
@@ -91,6 +93,41 @@ describe('StaleConsultAnswerSchema', () => {
   });
 });
 
+describe('DeviationConsultAnswerSchema', () => {
+  const takes = (value: unknown): boolean => DeviationConsultAnswerSchema.safeParse(value).success;
+  const confirm = answer({
+    action: 'confirm',
+    decisions: [{ what: 'Used node:crypto', why: 'The dependency is standard' }],
+  });
+
+  it('takes confirm, guidance, rewrite-task and ask-user but not split-task or verify', () => {
+    expect(takes(confirm)).toBe(true);
+    expect(takes(answer({ action: 'guidance', instructions: 'Narrow it', context: null }))).toBe(
+      true,
+    );
+    expect(takes(answer({ action: 'rewrite-task', task: makeTaskSpec() }))).toBe(true);
+    expect(
+      takes(
+        answer({
+          action: 'ask-user',
+          question: 'Keep it?',
+          whyOnlyUserCanAnswer: 'It changes what is built',
+          choices: null,
+          default: null,
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      takes(
+        answer({ action: 'split-task', tasks: [makeTaskSpec(), makeTaskSpec({ id: 'T002' })] }),
+      ),
+    ).toBe(false);
+    expect(takes(answer({ action: 'verify', checkIds: ['K1'], reason: 'Stale check' }))).toBe(
+      false,
+    );
+  });
+});
+
 describe('consult answer JSON schemas', () => {
   const schemas = [
     { name: 'consult', jsonSchema: CONSULT_ANSWER_JSON_SCHEMA, accepted: actions },
@@ -129,12 +166,20 @@ describe('typed seat contracts', () => {
     const contracts = {
       consult: CONSULT_ANSWER_JSON_SCHEMA,
       staleConsult: STALE_CONSULT_ANSWER_JSON_SCHEMA,
+      deviationConsult: DEVIATION_CONSULT_ANSWER_JSON_SCHEMA,
       plan: PLAN_ANSWER_JSON_SCHEMA,
       implementerReport: z.toJSONSchema(ImplementerReportSchema),
     };
     for (const [name, jsonSchema] of Object.entries(contracts)) {
       expect(hasAllOf(jsonSchema), name).toBe(false);
     }
+  });
+
+  it('offers the deviation consult the confirm action as one closed variant', () => {
+    const variant = variantFor(DEVIATION_CONSULT_ANSWER_JSON_SCHEMA, 'confirm');
+    expect(variant).toBeDefined();
+    expect(variant?.additionalProperties).toBe(false);
+    expect(variantFor(DEVIATION_CONSULT_ANSWER_JSON_SCHEMA, 'split-task')).toBeUndefined();
   });
 });
 
@@ -145,6 +190,7 @@ describe('ImplementerReportSchema', () => {
       filesChanged: ['src/hello.ts'],
       touchedNotSuggested: [{ file: 'src/hello.test.ts', reason: 'The check needed a fixture' }],
       notes: null,
+      decisions: [],
     };
     expect(ImplementerReportSchema.parse(done)).toEqual(done);
     const blocked = {
@@ -153,5 +199,30 @@ describe('ImplementerReportSchema', () => {
       filesNeeded: ['src/store.ts'],
     };
     expect(ImplementerReportSchema.parse(blocked)).toEqual(blocked);
+  });
+
+  it('defaults a missing decision list to empty and a missing reason to empty text', () => {
+    const done = {
+      status: 'done',
+      filesChanged: ['src/hello.ts'],
+      touchedNotSuggested: [{ file: 'src/hello.test.ts' }],
+      notes: null,
+    };
+    expect(ImplementerReportSchema.parse(done)).toEqual({
+      ...done,
+      touchedNotSuggested: [{ file: 'src/hello.test.ts', reason: '' }],
+      decisions: [],
+    });
+  });
+
+  it('parses a reported decision as what the implementer did and why', () => {
+    const done = {
+      status: 'done',
+      filesChanged: ['src/hello.ts'],
+      touchedNotSuggested: [],
+      notes: null,
+      decisions: [{ what: 'Used node:crypto', why: 'The dependency is standard' }],
+    };
+    expect(ImplementerReportSchema.parse(done)).toEqual(done);
   });
 });

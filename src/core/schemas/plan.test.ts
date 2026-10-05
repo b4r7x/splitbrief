@@ -73,6 +73,21 @@ describe('PlanSchema', () => {
       'validation',
     ]);
   });
+
+  it('loads a plain decision as an entry with no task, and keeps a task id it already has', () => {
+    const loaded = PlanSchema.parse(
+      makePlanProposal({ decisions: ['Keep the greeting in one module'] }),
+    );
+    expect(loaded.decisions).toEqual([{ text: 'Keep the greeting in one module', taskId: null }]);
+
+    const ledger = PlanSchema.parse({
+      ...makePlanProposal(),
+      decisions: [{ text: 'Use node:crypto — the dependency is standard', taskId: 'T003' }],
+    });
+    expect(ledger.decisions).toEqual([
+      { text: 'Use node:crypto — the dependency is standard', taskId: 'T003' },
+    ]);
+  });
 });
 
 describe('TaskSchema', () => {

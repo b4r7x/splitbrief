@@ -14,7 +14,7 @@ import { isAbortError } from '../../../utils/abort.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { publishError } from '../events.js';
 import { handleRetryAndEscalation } from '../escalation/handle.js';
-import type { BlockedReport } from '../escalation/step.js';
+import type { BlockedReport, DeviationReport } from '../escalation/step.js';
 import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { recordTaskUsage } from '../tokens.js';
@@ -49,6 +49,7 @@ export type RetryAndRecordOptions = {
   initialFailure?: RetryAttemptFailure | undefined;
   /** The first attempt's blocked report, when it stopped asking for a decision. */
   initialBlocked?: BlockedReport | undefined;
+  initialDeviation?: DeviationReport | undefined;
   tokensBefore: TokenUsage;
   taskBreakdowns: TaskTokenUsage[];
   setTrackedState: (s: WorkflowState) => void;
@@ -131,6 +132,7 @@ export async function retryAndRecord(
       ...(retryProfileOverride !== undefined && { profileOverrideTaskId: task.id }),
       ...(opts.initialFailure !== undefined && { initialFailure: opts.initialFailure }),
       ...(opts.initialBlocked !== undefined && { initialBlocked: opts.initialBlocked }),
+      ...(opts.initialDeviation !== undefined && { initialDeviation: opts.initialDeviation }),
     }));
   } catch (err) {
     if (retentionError.isFailed(err) || retentionError.isUnavailable(err)) throw err;

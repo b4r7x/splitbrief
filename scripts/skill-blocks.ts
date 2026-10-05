@@ -294,6 +294,7 @@ function consultContract(): string {
       status: 'done',
       filesChanged: ['<file>'],
       touchedNotSuggested: [],
+      decisions: [],
       notes: null,
     },
     earlierConsults: [],
@@ -309,7 +310,7 @@ function consultContract(): string {
     `The composed error block is truncated to ${BOUNDS.consultFailingOutputChars} characters.`,
     '',
     "Attach Plan context: the summary, confirmed decisions with task ids, and the task's criterion text.",
-    'Attach proposed decisions from the report. The CLI ships this in S5.',
+    'Attach proposed decisions from the report.',
   ].join('\n');
 }
 
@@ -333,6 +334,7 @@ function consultTable(): string {
     'split-task': 'Keep all criteria. Re-point pending dependents to all children.',
     verify: 'Run the named registered checks and validation. Make no implementer call.',
     'ask-user': 'Ask only when the user alone can answer. Record why, choices and a default.',
+    confirm: 'Accept the reported deviation, record its decisions, and validate the same attempt.',
   };
   return [
     `Attempt → ${DEFAULT_LOCAL_RETRIES} local retry with the exact errors → a planner consult.`,
@@ -561,7 +563,7 @@ function verdictRules(): string {
     'At task cadence, cover completed tasks and criteria due so far. Pending criteria are pending, never a gap.',
     'Generic validation does not prove an unrelated criterion. Evidence must cover the current candidate.',
     'Repair malformed typed output once. A second failure pauses the seat; it produces no verdict.',
-    'Keep minor findings as notes. The CLI ships typed review and task cadence in S5.',
+    'Keep minor findings as notes.',
   ]);
 }
 
@@ -573,7 +575,6 @@ function fixCycle(): string {
     `Allow ${REVIEW_CYCLE_CAP} fix cycles across the run, up to ${REVIEW_CYCLE_CAP + 1} reviews at end cadence. Task cadence adds reviews and shares this fix cap.`,
     'Prepare each fresh review with references/gates.md.',
     'After the cap, pause for the user. Preserve open findings and never claim verification passed.',
-    'The CLI ships appended fix tasks, triage and planner-first questions in S5.',
   ]);
 }
 

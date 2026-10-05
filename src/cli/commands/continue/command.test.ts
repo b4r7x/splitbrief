@@ -738,10 +738,10 @@ describe('continueCommand --action apply|discard', () => {
     });
   });
 
-  it('halts with the conflict and its resume line when both sides changed the same line', async () => {
+  it('halts with the conflict and its resume line when both sides changed a binary file', async () => {
     await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
-      writeFileSync(join(run.ws, 'a.txt'), 'RUN\ntwo\nthree\nfour\nfive\n');
-      writeFileSync(join(run.dir, 'a.txt'), 'USER\ntwo\nthree\nfour\nfive\n');
+      writeFileSync(join(run.ws, 'a.txt'), 'RUN\0\ntwo\nthree\nfour\nfive\n');
+      writeFileSync(join(run.dir, 'a.txt'), 'USER\0\ntwo\nthree\nfour\nfive\n');
       saveReady(run);
 
       await expect(
@@ -754,7 +754,7 @@ describe('continueCommand --action apply|discard', () => {
         exitCode: 1,
         message: expect.stringContaining('Recovery required (apply-conflict)'),
       });
-      expect(read(run.dir, 'a.txt')).toBe('USER\ntwo\nthree\nfour\nfive\n');
+      expect(read(run.dir, 'a.txt')).toBe('USER\0\ntwo\nthree\nfour\nfive\n');
       expect(headlessRuns).toHaveLength(0);
     });
   });

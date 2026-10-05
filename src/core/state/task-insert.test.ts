@@ -43,6 +43,24 @@ describe('insertTasks', () => {
     expect(inserted[0]?.dependsOn).toEqual(['T010']);
     expect(inserted[1]?.dependsOn).toEqual(['T011']);
   });
+
+  it('continues the id sequence for a fix task a later cycle appends', () => {
+    const existing = [makeTask({ id: 'T009' }), makeTask({ id: 'T010' })];
+    const first = insertTasks(
+      [makeTaskSpec({ id: 'T001', suggestedFiles: ['src/fix-a.ts'] })],
+      existing,
+      convert,
+    );
+    const second = insertTasks(
+      [makeTaskSpec({ id: 'T001', suggestedFiles: ['src/fix-b.ts'] })],
+      [...existing, ...first],
+      convert,
+    );
+
+    expect(first.map((task) => task.id)).toEqual(['T011']);
+    expect(second.map((task) => task.id)).toEqual(['T012']);
+    expect(second[0]?.parentId).toBeUndefined();
+  });
 });
 
 describe('lineageIdOf', () => {

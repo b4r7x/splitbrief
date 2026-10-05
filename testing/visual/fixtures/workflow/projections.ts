@@ -100,6 +100,7 @@ export const WORKFLOW_FIXTURE_REVIEW_PANEL_FILE =
 export const WORKFLOW_FIXTURE_SECOND_FILE = 'testing/visual/fixtures/workflow/registry.ts';
 export const WORKFLOW_FIXTURE_TASK_ID_2 = taskId('T902');
 export const WORKFLOW_FIXTURE_TASK_ID_3 = taskId('T903');
+export const WORKFLOW_FIXTURE_FIX_TASK_ID = taskId('T904');
 
 export const WORKFLOW_FIXTURE_TEXT = Object.freeze({
   idle: 'no events yet',
@@ -119,7 +120,8 @@ export const WORKFLOW_FIXTURE_TEXT = Object.freeze({
   recoveryPlan: 'Change PLAN tool',
   retryExhausted: 'exhausted its retries',
   consultBound: 'used its consult allowance',
-  reviewFailed: 'Send a correction',
+  reviewFailed: 'Fix again',
+  reviewFixTask: 'Fix the finding the review raised',
   leftIsolation: 'Recovery needed · T901 left the isolation directory',
   checkoutChanged: 'Recovery needed · Your checkout changed under T901',
   apiContext: 'Nothing was sent to PLAN',
@@ -285,7 +287,8 @@ const planningProjection: WorkflowFixtureProjection = {
 
 // One slice per brief, three briefs, so the build-progress block has a fraction to report and the
 // task header has a second file to count.
-const FIXTURE_TASKS_PLANNED: EngineEvent = {
+type TasksPlannedEvent = Extract<EngineEvent, { type: 'tasks_planned' }>;
+const FIXTURE_TASKS_PLANNED: TasksPlannedEvent = {
   type: 'tasks_planned',
   ts: FIXED_TS + 50,
   phase: 'implementing',
@@ -685,14 +688,13 @@ function everyBriefPassed(): EngineEvent[] {
   ];
 }
 
-/** Every brief passed once; the final review reopened the second, and its fix attempt is building. */
+/** Every brief passed once; the review triage appended a fix task, and its build is starting. */
 const reviewFixProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_REVIEW_FIX_ID,
   feature: WORKFLOW_FEATURE,
   inputMode: 'normal',
   sidebarVisible: true,
   get events(): EngineEvent[] {
-    const second = FIXTURE_PLANNED_BRIEFS[1];
     return [
       ...everyBriefPassed(),
       {
@@ -700,16 +702,32 @@ const reviewFixProjection: WorkflowFixtureProjection = {
         ts: FIXED_TS + 400,
         phase: 'implementing',
         cycle: 1,
-        taskIds: [second.id],
+        taskIds: [WORKFLOW_FIXTURE_FIX_TASK_ID],
+      },
+      {
+        type: 'tasks_planned',
+        ts: FIXED_TS + 405,
+        phase: 'implementing',
+        total: 4,
+        tasks: [
+          ...FIXTURE_TASKS_PLANNED.tasks,
+          {
+            id: WORKFLOW_FIXTURE_FIX_TASK_ID,
+            title: WORKFLOW_FIXTURE_TEXT.reviewFixTask,
+            index: 3,
+            file: WORKFLOW_FIXTURE_SECOND_FILE,
+            action: 'modify',
+          },
+        ],
       },
       {
         type: 'task_started',
         ts: FIXED_TS + 410,
         phase: 'implementing',
-        taskId: second.id,
-        title: second.title,
-        index: second.index,
-        total: 3,
+        taskId: WORKFLOW_FIXTURE_FIX_TASK_ID,
+        title: WORKFLOW_FIXTURE_TEXT.reviewFixTask,
+        index: 3,
+        total: 4,
         file: WORKFLOW_FIXTURE_SECOND_FILE,
         action: 'modify',
         tool: 'ollama',

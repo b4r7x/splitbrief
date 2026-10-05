@@ -1,10 +1,12 @@
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { recoveryFactString } from '../../../core/schemas/recovery/facts.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { TriageInput } from '../../../core/schemas/review.js';
 import { awaitsApply, isAnsweredApplyRecovery } from '../../../core/sessions/run-status.js';
 import { diffFileEntries } from '../../../lib/git/entry-diff.js';
 import { error, matches } from '../../../utils/error.js';
 import { countNoun } from '../../../utils/pluralize.js';
+import { sha256Hex } from '../../../utils/sha256.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import {
   createBusTextHandler,
@@ -18,8 +20,9 @@ import {
 } from '../recovery/builders/apply.js';
 import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
 import type { WorkflowContext } from '../types.js';
+import { writeConfinedEntry } from '../approval/file-snapshots/entry.js';
 import { applyBackupDir } from './backup.js';
-import { type ApplyMerge, mergeApplyStates } from './merge.js';
+import { type ApplyConflict, type ApplyMerge, mergeApplyStates } from './merge.js';
 import { reconcileApplyBackup, restoreApplyBackup } from './restore.js';
 import {
   candidateOf,
@@ -36,6 +39,12 @@ type ApplyResult =
   | { outcome: 'halted'; state: WorkflowState }
   | { outcome: 'review'; state: WorkflowState }
   | { outcome: 'needs-confirmation'; state: WorkflowState };
+
+type TextMarkerConflict = ApplyConflict & {
+  markers: Buffer;
+  ours: Extract<SideEntry, { kind: 'file' }>;
+  theirs: Extract<SideEntry, { kind: 'file' }>;
+};
 
 export async function runApply(input: {
   wctx: Pick<WorkflowContext, 'projectDir' | 'sessionId' | 'bus'>;
@@ -137,9 +146,13 @@ export async function runApply(input: {
     sessionId: wctx.sessionId,
     workspace,
   });
+  const integratedMap =
+    state.applyIntegrated === undefined
+      ? undefined
+      : new Map(state.applyIntegrated.map((entry) => [entry.path, entry.checkoutHash]));
   let merged: ApplyMerge;
   try {
-    merged = await mergeApplyStates(states);
+    merged = await mergeApplyStates(states, integratedMap);
   } catch (cause) {
     if (
       (matches('apply-checkout-changed')(cause) || matches('apply-workspace-changed')(cause)) &&
@@ -156,34 +169,12 @@ export async function runApply(input: {
     }
     throw cause;
   }
-  if (merged.conflicts.length > 0) {
-    return halt(
-      buildApplyConflictRecoveryIssue({
-        conflicts: merged.conflicts,
-        workspacePath: workspace.path,
-        createdAt: new Date().toISOString(),
-      }),
-    );
-  }
-  const after = await captureApplyStates({
-    projectDir: wctx.projectDir,
-    sessionId: wctx.sessionId,
-    workspace,
-  });
-  const reviewed = state.reviewedCandidate ?? candidateOf(states);
-  const now = candidateOf(after);
   const absent: SideEntry = { kind: 'absent' };
-  const changed = [...new Set([...Object.keys(reviewed), ...Object.keys(now)])]
-    .filter((path) => now[path] !== reviewed[path])
-    .filter(
-      (path) =>
-        reviewed[path] !== undefined ||
-        !sameSideEntry(after.ours.get(path) ?? absent, states.theirs.get(path) ?? absent),
-    )
-    .sort();
-  if (changed.length > 0) {
-    const mergedEntries: { path: string; checkoutHunks: string }[] = [];
-    for (const path of changed) {
+  const buildMergedEntries = async (
+    paths: readonly string[],
+  ): Promise<{ path: string; checkoutHunks: string }[]> => {
+    const entries: { path: string; checkoutHunks: string }[] = [];
+    for (const path of paths) {
       const baseEntry = states.base.get(path) ?? absent;
       const theirsEntry = states.theirs.get(path) ?? absent;
       let checkoutHunks = '';
@@ -207,9 +198,77 @@ export async function runApply(input: {
           after: theirs === null ? null : { bytes: theirs.bytes, mode: theirs.mode },
         });
       }
-      mergedEntries.push({ path, checkoutHunks });
+      entries.push({ path, checkoutHunks });
     }
-    state = transitionAndSave(wctx, state, { type: 'APPLY_REVIEW_START', merged: mergedEntries });
+    return entries;
+  };
+  if (merged.conflicts.length > 0) {
+    const textConflicts = merged.conflicts.filter(
+      (conflict): conflict is TextMarkerConflict =>
+        conflict.kind === 'text' &&
+        conflict.markers !== undefined &&
+        conflict.ours.kind === 'file' &&
+        conflict.theirs.kind === 'file',
+    );
+    if (textConflicts.length === merged.conflicts.length) {
+      const integrated: { path: string; checkoutHash: string }[] = [];
+      const triage: TriageInput[] = [];
+      for (const [index, conflict] of textConflicts.entries()) {
+        await writeConfinedEntry(workspace.path, conflict.path, {
+          kind: 'file',
+          bytes: conflict.markers,
+          sha256: sha256Hex(conflict.markers),
+          mode: conflict.ours.mode,
+        });
+        integrated.push({ path: conflict.path, checkoutHash: conflict.theirs.sha256 });
+        triage.push({
+          id: `A${index + 1}`,
+          kind: 'defect',
+          source: 'apply',
+          text: `Apply merge conflict in ${conflict.path}: resolve the conflict markers, keeping both the run's change and the checkout's change unless they compete`,
+          file: conflict.path,
+        });
+      }
+      state = transitionAndSave(wctx, state, {
+        type: 'APPLY_REVIEW_START',
+        merged: await buildMergedEntries(textConflicts.map((conflict) => conflict.path)),
+        integrated,
+        triage,
+      });
+      setTrackedState?.(state);
+      createBusTextHandler({ bus: wctx.bus, phase: state.phase })(
+        `Apply wrote conflict markers for ${countNoun(textConflicts.length, 'file')} both sides changed (${textConflicts.map((conflict) => conflict.path).join(', ')}); the triage turns them into fix tasks before Apply runs again.`,
+      );
+      return { outcome: 'review', state };
+    }
+    return halt(
+      buildApplyConflictRecoveryIssue({
+        conflicts: merged.conflicts,
+        workspacePath: workspace.path,
+        createdAt: new Date().toISOString(),
+      }),
+    );
+  }
+  const after = await captureApplyStates({
+    projectDir: wctx.projectDir,
+    sessionId: wctx.sessionId,
+    workspace,
+  });
+  const reviewed = state.reviewedCandidate ?? candidateOf(states);
+  const now = candidateOf(after);
+  const changed = [...new Set([...Object.keys(reviewed), ...Object.keys(now)])]
+    .filter((path) => now[path] !== reviewed[path])
+    .filter(
+      (path) =>
+        reviewed[path] !== undefined ||
+        !sameSideEntry(after.ours.get(path) ?? absent, states.theirs.get(path) ?? absent),
+    )
+    .sort();
+  if (changed.length > 0) {
+    state = transitionAndSave(wctx, state, {
+      type: 'APPLY_REVIEW_START',
+      merged: await buildMergedEntries(changed),
+    });
     setTrackedState?.(state);
     createBusTextHandler({ bus: wctx.bus, phase: state.phase })(
       `Your checkout changed ${countNoun(changed.length, 'file')} this run also changed (${changed.join(', ')}); the merged result goes through its checks and the review again before Apply.`,

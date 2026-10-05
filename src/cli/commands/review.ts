@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { Command } from 'commander';
 import ansis from 'ansis';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
@@ -11,18 +11,32 @@ import type { CLIOverrides } from '../../core/config/runtime/overrides/schema.js
 import {
   REVIEWS_DIR,
   REVIEW_FILE,
+  REVIEW_JSON_FILE,
   SPLITBRIEF_DIR,
   isInternalGitStatusPath,
 } from '../../core/paths.js';
+import {
+  deriveReviewOutcome,
+  reviewOutcomeOf,
+  reviewOutcomeWord,
+  verdictCoverageErrors,
+  type ReviewScope,
+} from '../../core/review/verdict.js';
+import { parseReviewRecord } from '../../core/review/store.js';
+import { renderReviewMarkdown } from '../../core/review/render.js';
+import { REVIEW_VERDICT_JSON_SCHEMA, ReviewVerdictSchema } from '../../core/schemas/review.js';
+import type { ReviewRecord } from '../../core/schemas/workflow.js';
 import { parseFinalReview } from '../../engine/parsers/final-review.js';
 import { createReviewer } from '../../engine/runners/factory.js';
 import { prepareReviewExecution } from '../../engine/runners/prepare-execution/prepare-execution.js';
 import { createCustomRunnerRuntime } from '../../engine/runners/custom-runner-runtime.js';
+import { requestTyped } from '../../engine/runners/typed-output.js';
 import type { ArtifactApprovalReview } from '../../engine/runners/types.js';
 import { buildFinalReviewPrompt } from '../../engine/spec/prompts/review.js';
-import { confinedWriteFile } from '../../lib/confined-fs.js';
+import { confinedReadFile, confinedWriteFile } from '../../lib/confined-fs.js';
 import { getCurrentDiff, getDiffSince } from '../../lib/git/diff.js';
 import { sanitizeTerminalDisplayText, stripTerminalControls } from '../../utils/display-text.js';
+import { nowIso } from '../../utils/format-time.js';
 import {
   promptCustomRunnerArtifactApproval,
   promptCustomRunnerDisclosure,
@@ -69,11 +83,32 @@ function seatOverrides(seat: SeatSpec | undefined): CLIOverrides {
   };
 }
 
-function printReview(text: string, relativePath: string): void {
-  const parsed = parseFinalReview(text);
-  console.log(`\n${ansis.bold('Verdict:')} ${parsed.verdict ?? 'not reported'}`);
-  for (const finding of parsed.findings) {
-    console.log(`  ${finding.severity}: ${stripTerminalControls(finding.text)}`);
+/** The typed record beside the review; a directory saved without one reads by markdown. */
+function readRecordedReview(projectDir: string, relativeDir: string): ReviewRecord | null {
+  const text = confinedReadFile(projectDir, join(relativeDir, REVIEW_JSON_FILE));
+  if (text === null) return null;
+  return parseReviewRecord(text);
+}
+
+function printReview(projectDir: string, relativePath: string): void {
+  const record = readRecordedReview(projectDir, dirname(relativePath));
+  if (record === null) {
+    const parsed = parseFinalReview(confinedReadFile(projectDir, relativePath) ?? '');
+    console.log(`\n${ansis.bold('Verdict:')} ${parsed.verdict ?? 'not reported'}`);
+    for (const finding of parsed.findings) {
+      console.log(`  ${finding.severity}: ${stripTerminalControls(finding.text)}`);
+    }
+  } else {
+    const outcome = reviewOutcomeOf(record);
+    const word = reviewOutcomeWord(outcome);
+    console.log(`\n${ansis.bold('Verdict:')} ${word}`);
+    for (const [severity, findings] of [
+      ['critical', outcome.blocking],
+      ['warning', outcome.minor],
+    ] as const) {
+      for (const finding of findings)
+        console.log(`  ${severity}: ${stripTerminalControls(finding.text)}`);
+    }
   }
   console.log(ansis.dim(relativePath));
 }
@@ -184,20 +219,52 @@ export function registerReviewCommand(program: Command, deps: ReviewCommandDeps 
           : `changes since ${stripTerminalControls(baseRef)}`;
       console.log(`Reviewing ${subject} (reviewer: ${getRunnerCatalogDisplayName(seat.runner)})\n`);
 
-      const result = await withCliErrors(() =>
-        reviewer.review(
-          buildFinalReviewPrompt({ spec: NO_SPECIFICATION, taskBriefs: NO_TASK_BRIEFS, diff }),
-          projectDir,
-          {
-            onOutput(text: string) {
-              process.stdout.write(sanitizeTerminalDisplayText(text, { preserveLineBreaks: true }));
-            },
-          },
-        ),
-      );
+      // The same typed contract the run's final review uses; a one-shot review
+      // has no plan, so the required-results ids are empty.
+      const scope: ReviewScope = { taskIds: [], criterionIds: [] };
+      const verdictSchema = ReviewVerdictSchema.superRefine((candidate, ctx) => {
+        for (const message of verdictCoverageErrors(candidate, scope)) {
+          ctx.addIssue({ code: 'custom', message });
+        }
+      });
+      const verdict = await withCliErrors(async () => {
+        const typed = await requestTyped({
+          prompt: buildFinalReviewPrompt({
+            spec: NO_SPECIFICATION,
+            taskBriefs: NO_TASK_BRIEFS,
+            diff,
+          }),
+          schema: verdictSchema,
+          jsonSchema: REVIEW_VERDICT_JSON_SCHEMA,
+          schemaName: 'review_verdict',
+          call: reviewer.typedCall({
+            projectDir,
+            seat: 'reviewer',
+            callbacks: { onOutput: () => {} },
+          }),
+        });
+        if ('error' in typed) throw typed.error;
+        return typed.value;
+      });
 
-      const relativePath = join(SPLITBRIEF_DIR, REVIEWS_DIR, stamp, REVIEW_FILE);
-      confinedWriteFile(projectDir, relativePath, result.text);
-      printReview(result.text, relativePath);
+      const outcome = deriveReviewOutcome(verdict, scope, new Map());
+      const record: ReviewRecord = {
+        cycle: 0,
+        verdict,
+        outcome: outcome.kind,
+        verification: [],
+        at: nowIso(),
+      };
+      const relativeDir = join(SPLITBRIEF_DIR, REVIEWS_DIR, stamp);
+      confinedWriteFile(
+        projectDir,
+        join(relativeDir, REVIEW_JSON_FILE),
+        `${JSON.stringify(record)}\n`,
+      );
+      const markdown = renderReviewMarkdown(verdict, outcome);
+      const relativePath = join(relativeDir, REVIEW_FILE);
+      confinedWriteFile(projectDir, relativePath, markdown);
+      process.stdout.write(sanitizeTerminalDisplayText(markdown, { preserveLineBreaks: true }));
+      printReview(projectDir, relativePath);
     });
 }

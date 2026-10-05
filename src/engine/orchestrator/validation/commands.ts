@@ -16,7 +16,7 @@ type TestTarget = { run: true; targets: string[] } | { run: false; skipReason: s
 /** The tests of the brief's declared files and of every file the attempt changed. */
 export function resolveTestTarget(opts: {
   resolved: ResolvedCommand;
-  task: Task;
+  task: Pick<Task, 'file' | 'files'>;
   changedFiles: readonly string[];
   projectDir: string;
   config: Config;

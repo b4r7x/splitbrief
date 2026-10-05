@@ -6,7 +6,6 @@ import {
   requestEndRun,
   requestQuit,
   requestResume,
-  requestRewind,
 } from '../features/workflow/handlers.js';
 import { findLatestExpandableActivityBatchKey } from '../features/workflow/conversation-rows/activity-batch-key.js';
 import { findLatestRenderableDiffKey } from '../core/sections/event-sections.js';
@@ -39,7 +38,6 @@ import { getDefaultDetectionService } from '../engine/detection/service.js';
 import { refreshDetectionForCurrentConfig } from '../engine/detection/store-publication.js';
 import { detectionStore } from '../stores/project/detection.js';
 import { readActive, readActiveRecord } from '../core/sessions/active-pointer.js';
-import type { TaskRedoRequest } from '../core/state/build-rewind-action.js';
 import type {
   AcceptRunResult,
   AttachImageResult,
@@ -83,7 +81,6 @@ export interface ConversationScrollMetrics {
 // reach into. `useRuntimeCommands` (below, in this module) wires the real
 // `features/workflow/**` implementations into these ports; the page files never see them.
 export interface WorkflowCommandPorts {
-  requestRewind: (request: TaskRedoRequest) => boolean;
   requestClearQueue: () => QueueClearCommandResult | Promise<QueueClearCommandResult>;
   findLatestActivityBatchKey: () => string | null;
   findLatestDiffKey: () => string | null;
@@ -374,7 +371,6 @@ export function buildCommandContext({
     toggleSkill,
     refreshSkills,
     getCurrentPhase: () => lifecycleStore.get().phase,
-    requestTaskRedo: (taskId) => workflow.requestRewind({ target: 'task', taskId }),
     resumeRun: () => requestResume(''),
     endRun: requestEndRun,
     getQueueDepth: () => lifecycleStore.get().queueDepth,
@@ -440,7 +436,6 @@ export function useRuntimeCommands({
       ? buildCommandContext({
           exit,
           workflow: {
-            requestRewind,
             requestClearQueue,
             findLatestActivityBatchKey: () => findLatestExpandableActivityBatchKey(getSections()),
             findLatestDiffKey: () => findLatestRenderableDiffKey(getSections()),

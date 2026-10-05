@@ -1,5 +1,5 @@
 import { loadState } from '../../../core/state/persistence.js';
-import type { ImplementerReport } from '../../../core/schemas/consult.js';
+import { ImplementerReportSchema, type ImplementerReport } from '../../../core/schemas/consult.js';
 import { formatValidationError } from '../validation/format-error.js';
 import { addUsageAndSave } from '../state-ops.js';
 import { refreshAndPersistCode } from '../task/refresh-code.js';
@@ -23,9 +23,13 @@ import { error } from '../../../utils/error.js';
 /** The direct writer's blocked report: the attempt stopped asking for a decision. */
 export type BlockedReport = Extract<ImplementerReport, { status: 'blocked' }>;
 
+/** The direct writer's reported deviation: a done report proposing ledger decisions. */
+export type DeviationReport = Extract<ImplementerReport, { status: 'done' }>;
+
 /** A retry outcome, with the blocked report an attempt handed back when it stopped to ask. */
 export type RetryStepResult = RetryStepOutcome & {
   blocked?: BlockedReport | undefined;
+  deviation?: DeviationReport | undefined;
 };
 
 /**
@@ -43,6 +47,20 @@ function blockedReportOf(result: RetryInvokeResult): BlockedReport | undefined {
     ? blocked.filesNeeded.filter((file): file is string => typeof file === 'string')
     : [];
   return { status: 'blocked', question, filesNeeded };
+}
+
+/**
+ * The deviation behind a result, read from the pipeline's own report. A result
+ * that carries none — every non-direct writer, every done report that proposes
+ * no decision — changes nothing.
+ */
+function deviationReportOf(result: RetryInvokeResult): DeviationReport | undefined {
+  if (!('report' in result)) return undefined;
+  const parsed = ImplementerReportSchema.safeParse(result.report);
+  if (!parsed.success || parsed.data.status !== 'done' || parsed.data.decisions.length === 0) {
+    return undefined;
+  }
+  return parsed.data;
 }
 
 export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepResult> {
@@ -240,6 +258,8 @@ async function runRetryStepAttempt(
     });
   }
   const actualChangedFiles = gate.approvedFiles;
+  const deviation = deviationReportOf(retryResult);
+  if (deviation !== undefined) return { state, task, lastError, attempts, deviation };
   const commitResult = await validateAndCommit({
     ctx: retryCtx,
     task,

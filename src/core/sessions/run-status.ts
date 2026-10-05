@@ -2,7 +2,7 @@ import { opensPlanGate } from '../pipeline-spec/steps.js';
 import type { Phase } from '../schemas/enums.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
 import type { GateName, StepRef } from '../schemas/run-step.js';
-import type { WorkflowState } from '../schemas/workflow.js';
+import { fixCyclesOf, type WorkflowState } from '../schemas/workflow.js';
 
 export type StopReason =
   | { kind: 'input-required' }
@@ -75,7 +75,7 @@ export function resumeStep(state: WorkflowState): StepRef {
     }
     case 'final-review':
     case 'complete':
-      return { kind: 'review', cycle: state.reviewFixes?.cycle ?? 0 };
+      return { kind: 'review', cycle: fixCyclesOf(state).used };
     default:
       return PLANNING_STEP;
   }

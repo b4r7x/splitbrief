@@ -401,6 +401,26 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
 
   const taskChangedFiles = gate.approvedFiles;
 
+  const report = implState.implResult.report;
+  if (report !== undefined && report.status === 'done' && report.decisions.length > 0) {
+    const consulted = await retryAndRecord({
+      wctx,
+      task,
+      state,
+      taskStartTime,
+      taskStartSnapshot,
+      initialError: 'The implementer reported a deviation',
+      initialDeviation: report,
+      initialChangedFiles: taskChangedFiles,
+      tokensBefore,
+      taskBreakdowns,
+      setTrackedState,
+    });
+    if (consultHandedBackToLoop(consulted.state, task))
+      return (await rerunReplacedTask(opts, consulted.state)) ?? consulted.state;
+    return consulted.state;
+  }
+
   state = transitionAndSave({ projectDir, sessionId }, state, { type: 'TASK_SENT' });
   setTrackedState(state);
 

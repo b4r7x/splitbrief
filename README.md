@@ -163,7 +163,6 @@ With `workflow.approve: plan` (the default) the plan card waits for your approva
 
 | Command | What it does |
 |---------|-------------|
-| `/redo-task <id>` | Reset a specific task and re-run it |
 | `/queue show` | Show queued messages |
 | `/queue clear` | Clear the message queue |
 

@@ -67,6 +67,7 @@ export const PLAN_JSON_FILE = 'plan.json';
 export const TASKS_FILE = 'tasks.md';
 export const RESEARCH_FILE = 'research.md';
 export const REVIEW_FILE = 'review.md';
+export const REVIEW_JSON_FILE = 'review.json';
 export const STATE_FILE = 'state.json';
 /** Seat identities the session started on; sits beside state.json (`core/state/seats.ts`). */
 export const SEATS_FILE = 'seats.json';

@@ -27,7 +27,9 @@ describe('estimateFormattedTaskPromptTokens', () => {
     const task = makeTask();
     const plan = {
       summary: 'Route every write through the registry.',
-      decisions: ['Keep the registry as the one source of truth. '.repeat(400)],
+      decisions: [
+        { text: 'Keep the registry as the one source of truth. '.repeat(400), taskId: null },
+      ],
       criteria: [],
       checks: [],
       validation: null,
@@ -45,7 +47,9 @@ describe('estimateFormattedTaskPromptTokens', () => {
       plan,
     });
 
-    expect(withPlan - withoutPlan).toBeGreaterThan(estimateTokens(plan.decisions[0] ?? '') - 10);
+    expect(withPlan - withoutPlan).toBeGreaterThan(
+      estimateTokens(plan.decisions[0]?.text ?? '') - 10,
+    );
   });
 
   it('includes the system preamble in the formatted task prompt estimate', () => {

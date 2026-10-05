@@ -119,7 +119,7 @@ An explicit plan approval confirms only the listed protected paths and operation
 There is no batch review cadence. Batches group validation, with a full suite at each declared boundary.
 Before every review, run the full suite and all required registered checks on the current candidate.
 Allow 2 fix cycles globally. At end cadence, this permits up to 3 reviews; task cadence adds reviews and shares the cap.
-The CLI ships task cadence, the decisions ledger, typed review, triage and planner-first review questions in S5.
+The CLI runs the end/task cadence, the decisions ledger, typed review with a derived pass, planner triage and planner-first review questions.
 The skills follow that agreed design now. Render checks are unavailable in the skills.
 
 ## Engine command mapping
@@ -144,9 +144,9 @@ Standalone skill records cannot serve as engine session state for `resume`.
 | Ordinary files as guidance; protected confirmation | `src/core/pipeline-spec/scope.ts`; DESIGN §5 hard rules |
 | One local retry and planner consult | `src/core/pipeline-spec/retries.ts`; `src/core/schemas/consult.ts`; `src/engine/orchestrator/consult/` |
 | Stale refresh and persistent lineage bounds | `src/engine/orchestrator/task/stale-inputs.ts`; `src/core/pipeline-spec/bounds.ts` |
-| Proposed decisions and confirmed Plan context | ImplementerReport decisions and plan.decisions; TRACE §4, the CLI ships this in S5 |
-| End/task cadence and completed-task coverage | TRACE §4; the CLI ships this in S5 |
-| Typed review, derived pass and appended fixes | DESIGN §§4, 7; planner triage; the CLI ships this in S5 |
+| Proposed decisions and confirmed Plan context | ImplementerReport decisions and `plan.decisions`; TRACE §4 |
+| End/task cadence and completed-task coverage | `workflow.review` (`src/core/schemas/config.ts`); TRACE §4 |
+| Typed review, derived pass and appended fixes | `src/core/schemas/review.ts`, `src/core/review/verdict.ts`; planner triage; DESIGN §§4, 7 |
 | Validation stages, narrowing and capture | `src/core/pipeline-spec/gates.ts`; `src/core/validation/stage-command.ts` and `stacks/` |
 | Registered checks and full-suite batch boundaries | Plan and TaskSpec checks/batch; the CLI ships this in S6 |
 | Spawn recipes, halts and deadlines | `src/engine/runners/cli-tools/`; `src/core/pipeline-spec/halts.ts`, `timeouts.ts` |
@@ -219,7 +219,6 @@ Use `# generated: <id>` and `# /generated` in shell scripts.
 Unused renderers have been removed. `consult-table` renders only into canonical `recovery.md`; `wait-protocol` renders only into `run-protocol.md`.
 The consult table derives its actions from ConsultAnswerSchema and its bounds from BOUNDS.
 `seat-recovery` renders the transient retry count and reset-wait bound into `tool-recipes.md` from BOUNDS.
-The decisions extension and typed review carry S5 labels until the CLI ships them.
 
 Change either side, run `npm run skills:sync`, and the skills follow; `npm run skills:check` (part of `release-check`) fails when a generated block, a mirror, or a frontmatter rule is out of date.
 

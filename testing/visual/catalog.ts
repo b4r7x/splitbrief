@@ -362,13 +362,13 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-review-fix',
-      title: 'Workflow · a brief the final review reopened',
+      title: 'Workflow · the fix task the review triage appended',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'review-fix',
-        title: 'Review fix cycle',
+        title: 'Review triage fix task',
         kind: 'implementation',
-        marker: '2/3 briefs passed',
+        marker: '3/4 briefs passed',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -1251,7 +1251,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'review-failed',
         title: 'Review-failed recovery menu',
         kind: 'question',
-        marker: 'Send a correction',
+        marker: 'Fix again',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

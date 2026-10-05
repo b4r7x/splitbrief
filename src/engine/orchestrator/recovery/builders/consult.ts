@@ -1,7 +1,7 @@
 import type { Phase, RecoveryReason } from '../../../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../../../core/schemas/recovery/schemas.js';
 import type { Task } from '../../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../../core/schemas/workflow.js';
+import { plannerCallsOf, type WorkflowState } from '../../../../core/schemas/workflow.js';
 import { BOUNDS } from '../../../../core/pipeline-spec/bounds.js';
 import { lineageIdOf } from '../../../../core/state/task-insert.js';
 import { availableActionsForReason } from './actions.js';
@@ -34,9 +34,14 @@ function consultBudget(state: WorkflowState, task: Task): ConsultBudget {
     consultAllowance: lineage?.consultAllowance ?? BOUNDS.consultsPerLineage,
     attempts: lineage?.attempts ?? 0,
     attemptAllowance: lineage?.attemptAllowance ?? BOUNDS.attemptsPerLineage,
-    plannerCalls: state.plannerCalls?.used ?? 0,
-    plannerCallAllowance: state.plannerCalls?.allowance ?? BOUNDS.plannerCallsPerRun,
+    plannerCalls: plannerCallsOf(state).used,
+    plannerCallAllowance: plannerCallsOf(state).allowance,
   };
+}
+
+export function plannerCallsSpent(state: WorkflowState): boolean {
+  const plannerCalls = plannerCallsOf(state);
+  return plannerCalls.used >= plannerCalls.allowance;
 }
 
 /** The bound a consult would exceed: the lineage's consults or attempts, else the run's planner calls. */
@@ -45,7 +50,7 @@ export function consultBoundSpent(state: WorkflowState, task: Task): ConsultBoun
   if (budget.consults >= budget.consultAllowance || budget.attempts >= budget.attemptAllowance) {
     return { reason: 'consult-bound-spent', ...budget };
   }
-  if (budget.plannerCalls >= budget.plannerCallAllowance) {
+  if (plannerCallsSpent(state)) {
     return { reason: 'planner-calls-spent', ...budget };
   }
   return undefined;
@@ -57,7 +62,7 @@ export function attemptBoundSpent(state: WorkflowState, task: Task): ConsultBoun
   if (budget.attempts >= budget.attemptAllowance) {
     return { reason: 'consult-bound-spent', ...budget };
   }
-  if (budget.plannerCalls >= budget.plannerCallAllowance) {
+  if (plannerCallsSpent(state)) {
     return { reason: 'planner-calls-spent', ...budget };
   }
   return undefined;
@@ -66,7 +71,7 @@ export function attemptBoundSpent(state: WorkflowState, task: Task): ConsultBoun
 export interface ConsultBoundRecoveryOptions extends RecoveryBuilderBase {
   reason: ConsultBoundReason;
   phase: Phase;
-  task: Task;
+  task?: Task | undefined;
   /** The last planner diagnosis, or the error that stopped the last attempt. */
   lastDiagnosis: string;
   consults?: number | undefined;
@@ -103,15 +108,15 @@ export function buildConsultBoundRecoveryIssue(opts: ConsultBoundRecoveryOptions
   });
   return createRecoveryIssue({
     id: opts.id,
-    seat: 'build',
+    seat: opts.task === undefined ? 'plan' : 'build',
     reason: opts.reason,
     phase: opts.phase,
     task: opts.task,
-    files: taskFiles(opts.task),
-    affectedTaskIds: [opts.task.id],
+    files: opts.task === undefined ? [] : taskFiles(opts.task),
+    affectedTaskIds: opts.task === undefined ? [] : [opts.task.id],
     message:
       opts.reason === 'consult-bound-spent'
-        ? `${opts.task.id} used its consult allowance`
+        ? `${opts.task?.id ?? 'The lineage'} used its consult allowance`
         : 'The run used its planner-call allowance',
     details: [`Last diagnosis: ${opts.lastDiagnosis}`, remedyLine(opts.reason), countersLine(opts)],
     facts: compactFacts({
@@ -123,7 +128,10 @@ export function buildConsultBoundRecoveryIssue(opts: ConsultBoundRecoveryOptions
       plannerCalls: opts.plannerCalls,
       plannerCallAllowance: opts.plannerCallAllowance,
     }),
-    availableActions: actions,
+    availableActions:
+      opts.task === undefined
+        ? actions.filter((action) => action !== 'skip-current-task')
+        : actions,
     recommendedAction: 'continue',
     ...(opts.attempts !== undefined && { attempts: opts.attempts }),
     createdAt: opts.createdAt,

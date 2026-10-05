@@ -255,7 +255,6 @@ export interface RuntimeCommandContext {
   toggleSkill: (id: string) => SkillToggleResult;
   refreshSkills: () => Promise<void>;
   getCurrentPhase: () => Phase;
-  requestTaskRedo: (taskId: string) => boolean;
   resumeRun: () => boolean;
   endRun: () => boolean;
   getQueueDepth: () => number;

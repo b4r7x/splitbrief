@@ -533,7 +533,7 @@ A task's validation is judged against the run's baseline, not absolute repositor
 
 Automatic staging, commits, and index checkpoints are not supported; commit changes manually.
 
-Plan approval, retries, git, isolation and transcript compaction. Every run plans in one session ([WORKFLOW.md](./WORKFLOW.md#3-the-planning-session)); there are no workflow modes.
+Plan approval, review cadence, retries, git, isolation and transcript compaction. Every run plans in one session ([WORKFLOW.md](./WORKFLOW.md#3-the-planning-session)); there are no workflow modes.
 
 ### Schema
 
@@ -541,6 +541,9 @@ Plan approval, retries, git, isolation and transcript compaction. Every run plan
 workflow: {
   // Plan approval
   approve?:               'plan' | 'none'; // default plan
+
+  // Review cadence
+  review?:                'end' | 'task'; // default end
 
   // Git
   git?: {
@@ -574,6 +577,7 @@ workflow: {
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `approve` | enum | `plan` | `plan`: the plan card waits for your approval before the build starts. `none`: the plan goes straight to the build. The retired values `all`, `spec` and `default` load as `plan` with one notice (§16). Approving the plan never overrides a failed plan check, and a write to a protected path still asks during the build under either value. |
+| `review` | enum | `end` | `end`: one review after the final brief. `task`: also one scoped review after every brief that passes its validation, covering the completed briefs and the criteria whose serving briefs are all completed; a pending criterion is never in scope. The final review always covers every brief and every criterion, and the fix-cycle cap is global, so a task-cadence review that passes spends no cycle. |
 | `maxRetries` (`max_retries`) | retired | absent | Loads with one notice and changes nothing: `workflow.max_retries was retired and is ignored: the lineage attempt allowance bounds the ladder now. Delete workflow.max_retries.` The ladder is one local retry then the planner's consult; the lineage's bounds and grant live in `BOUNDS` (`src/core/pipeline-spec/bounds.ts`). |
 | `git.commitStrategy` | retired | absent | Legacy `none` is accepted with a deprecation warning and removed from the loaded config; `checkpoint` and `per-task` are rejected. Omit the field. |
 | `git.createBranch` | boolean | `false` | Auto-create `splitbrief/<slug>` branch at workflow start. |
@@ -617,6 +621,14 @@ workflow:
   approve: plan
 ```
 
+Review after every brief instead of only at the end:
+
+```yaml
+workflow:
+  approve: plan
+  review: task
+```
+
 Plan approval with drift tuning:
 
 ```yaml
@@ -638,7 +650,7 @@ workflow:
 - `git.createBranch: true` — when running SPLITBRIEF in CI or against `main` and you don't want the changes landing on the current branch.
 - `isolation: worktree` creates a run workspace with installed Node dependencies linked. Choose `staged-copy` when a linked worktree cannot serve the project. Both strategies need checks that can run inside the workspace.
 
-**See also:** [WORKFLOW.md](./WORKFLOW.md), [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#the-plan-card). The plan approval level is set with `workflow.approve` only.
+**See also:** [WORKFLOW.md](./WORKFLOW.md), [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#the-plan-card). The plan approval level is set with `workflow.approve`, the review cadence with `workflow.review`.
 
 ---
 

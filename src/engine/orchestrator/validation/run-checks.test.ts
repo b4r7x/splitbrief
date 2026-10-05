@@ -61,6 +61,48 @@ describe('runChecks', () => {
     expect(results).toEqual([{ checkId: 'K404', status: 'unknown', output: 'no check K404' }]);
   });
 
+  it('runs a plan check when the run has no current task', async () => {
+    const plan = makePlan([
+      { id: 'C1-check', kind: 'test', value: 'src/a.test.ts', required: true },
+    ]);
+    const runner = makeCommandRunner({ stdout: '1 passed', stderr: '', code: 0 });
+    const results = await runChecks(
+      ['C1-check'],
+      options({ task: undefined, plan, runCommand: runner }),
+    );
+
+    expect(results).toEqual([{ checkId: 'C1-check', status: 'pass', output: '1 passed' }]);
+    expect(runner.calls).toHaveLength(1);
+    expect(runner.calls[0]?.cmd).toBe('npm');
+    expect(runner.calls[0]?.args).toEqual(['test', '--', 'src/a.test.ts']);
+  });
+
+  it('reports a plan render check as not runnable without a task', async () => {
+    const plan = makePlan([
+      { id: 'C2-render', kind: 'render', value: 'overlay-picker', required: false },
+    ]);
+    const runner = makeCommandRunner();
+    const results = await runChecks(
+      ['C2-render'],
+      options({ task: undefined, plan, runCommand: runner }),
+    );
+
+    expect(results).toEqual([
+      { checkId: 'C2-render', status: 'not-runnable', output: 'render checks are not runnable' },
+    ]);
+    expect(runner.calls).toHaveLength(0);
+  });
+
+  it('reports an id the plan does not name as unknown without a task', async () => {
+    const plan = makePlan([{ id: 'C1-check', kind: 'cmd', value: 'tsc --noEmit', required: true }]);
+    const results = await runChecks(
+      ['K404'],
+      options({ task: undefined, plan, runCommand: makeCommandRunner() }),
+    );
+
+    expect(results).toEqual([{ checkId: 'K404', status: 'unknown', output: 'no check K404' }]);
+  });
+
   it('resolves task checks and plan checks in order, running each once', async () => {
     const task = taskWith([
       { id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true },

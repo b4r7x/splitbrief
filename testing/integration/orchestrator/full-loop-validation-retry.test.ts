@@ -3,7 +3,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import type { RetryOptions, ImplementerOptions } from '../../../src/engine/implementers/types.js';
-import { REVIEW_FILE, reviewPacketJsonPath, sessionDir } from '../../../src/core/paths.js';
+import {
+  REVIEW_FILE,
+  REVIEW_JSON_FILE,
+  reviewPacketJsonPath,
+  sessionDir,
+} from '../../../src/core/paths.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import {
   makeCallbacks,
@@ -185,8 +190,12 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
       ]),
     );
     expect(readFileSync(join(sessionDir(projectDir, sessionId), REVIEW_FILE), 'utf-8')).toContain(
-      'Validation passed after one local retry.',
+      '### Verdict\n\npass',
     );
+    // The typed record is the verdict's home; the markdown above is its rendering.
+    expect(
+      JSON.parse(readFileSync(join(sessionDir(projectDir, sessionId), REVIEW_JSON_FILE), 'utf-8')),
+    ).toMatchObject({ outcome: 'pass', cycle: 0 });
     expect(existsSync(reviewPacketJsonPath({ projectDir, sessionId }))).toBe(true);
   }, 90_000);
 
@@ -308,7 +317,7 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
     });
     expect(events.map((event) => event.type)).toContain('workflow_complete');
     expect(readFileSync(join(sessionDir(projectDir, sessionId), REVIEW_FILE), 'utf-8')).toContain(
-      'The consult produced a passing implementation.',
+      '### Verdict\n\npass',
     );
   }, 90_000);
 });

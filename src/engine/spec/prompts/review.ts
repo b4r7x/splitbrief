@@ -19,32 +19,122 @@ const REVIEW_CHECKLIST = `1. **Acceptance Criteria**: Check each criterion from 
 5. **Type Safety**: Are types correct and complete?
 6. **Code Quality**: Are there obvious bugs, security issues, or performance problems?`;
 
-const REVIEW_OUTPUT = `Respond with exactly this structure:
-
-### Verdict
-One of: \`pass\` | \`pass_with_notes\` | \`fail\`
-
-### Criteria Results
-For each acceptance criterion from the spec:
-- **[PASS]** or **[FAIL]** Criterion description -- brief explanation
-
-### Findings
-List any issues found, categorized as:
-- **Critical**: Breaks functionality or violates a requirement (causes \`fail\` verdict)
-- **Warning**: Works but has potential issues (allowed in \`pass_with_notes\`)
-- **Note**: Minor observations, suggestions for improvement (informational only)
-A **Critical** finding must name a defect in the code, the tests, or the behavior the diff produces. A missing entry in the evidence ledger (expected versus observed evidence), missing renders, screenshots or critiques, and missing process records are at most **Note**s: SPLITBRIEF records only its own validation facts and no seat can add render evidence to the ledger, so an evidence gap alone never causes \`fail\`.
-Write \`None.\` after the label of a category with no findings, or leave the label out.
-
-### Summary
-One-paragraph overall assessment.`;
+const REQUIRED_RESULTS = `Answer with one result per listed id, in the schema you were given. Every task not met and every failed criterion needs a blocking finding naming it. Mark a criterion unverified when no recorded evidence proves it, and name its checkIds. Never claim a render was verified. Finding kinds are defect, plan-gap, unverified and question; minor findings are notes.`;
 
 const VALIDATION_EVIDENCE_PREAMBLE = `The orchestrator ran these validation commands and recorded their output. This section is the authoritative record of validation results for this run.`;
+
+/** The plan's own data: the criteria and the briefs the verdict must answer for. */
+export type ReviewPlanData = {
+  criteria: readonly { id: string; text: string; checkIds: readonly string[] }[];
+  /** The decisions ledger the plan recorded; what the implementation may not deviate from. */
+  decisions?: readonly { text: string; taskId: string | null }[] | undefined;
+  tasks: readonly {
+    id: string;
+    title: string;
+    intent: string;
+    criteria: readonly string[];
+    suggestedFiles: readonly string[];
+    exclusions: readonly string[];
+  }[];
+};
+
+/** One run-diff group; `null` is the fallback group for changes no task owns. */
+export type ReviewTaskDiff = { taskId: string | null; diff: string };
+
+/** What a task wrote outside the set any brief suggested. */
+export type ReviewTouchedNotSuggested = { taskId: string; files: readonly string[] };
+
+function planBody(plan: ReviewPlanData): string {
+  const lines = ['### Criteria', ''];
+  if (plan.criteria.length === 0) {
+    lines.push('None.');
+  } else {
+    for (const criterion of plan.criteria) {
+      const checks =
+        criterion.checkIds.length === 0
+          ? 'no registered checks'
+          : `checks: ${criterion.checkIds.join(', ')}`;
+      lines.push(`- ${criterion.id}: ${criterion.text} (${checks})`);
+    }
+  }
+  lines.push('', '### Tasks', '');
+  if (plan.tasks.length === 0) {
+    lines.push('None.');
+  } else {
+    for (const task of plan.tasks) {
+      lines.push(`- ${task.id} ${task.title}: ${task.intent}`);
+      lines.push(`  - Criteria: ${task.criteria.join(', ') || 'none'}`);
+      lines.push(`  - Suggested files: ${task.suggestedFiles.join(', ') || 'none'}`);
+      lines.push(`  - Exclusions: ${task.exclusions.join(', ') || 'none'}`);
+    }
+  }
+  lines.push('', '### Decisions', '');
+  const decisions = plan.decisions ?? [];
+  if (decisions.length === 0) {
+    lines.push('None.');
+  } else {
+    for (const decision of decisions) {
+      lines.push(`- ${decision.text}${decision.taskId === null ? '' : ` (${decision.taskId})`}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+function diffBody(entries: readonly ReviewTaskDiff[], fallback: string): string {
+  if (entries.length === 0) return fenced(fallback, 'diff');
+  const lines: string[] = [];
+  for (const entry of entries) {
+    lines.push(
+      `### Changes by ${entry.taskId ?? 'not attributed'}`,
+      '',
+      fenced(entry.diff, 'diff'),
+    );
+  }
+  return lines.join('\n');
+}
+
+function touchedBody(entries: readonly ReviewTouchedNotSuggested[]): string {
+  const lines: string[] = [];
+  for (const entry of entries) {
+    if (entry.files.length === 0) continue;
+    lines.push(`- ${entry.taskId}: ${entry.files.join(', ')}`);
+  }
+  return lines.length === 0 ? 'None.' : lines.join('\n');
+}
+
+function requiredResultsBody(taskIds: readonly string[], criterionIds: readonly string[]): string {
+  return [
+    REQUIRED_RESULTS,
+    '',
+    `Task ids: ${taskIds.join(', ') || 'none'}`,
+    `Criterion ids: ${criterionIds.join(', ') || 'none'}`,
+  ].join('\n');
+}
 
 export function buildFinalReviewPrompt(opts: {
   spec: string;
   taskBriefs: string;
   diff: string;
+  /**
+   * The run diff grouped by the task that recorded it, with one group for edits
+   * no task owns. Falls back to the whole run diff when the caller has no groups.
+   */
+  diffByTask?: readonly ReviewTaskDiff[] | undefined;
+  /** The plan as data: the criteria with their checks, and the briefs. */
+  plan?: ReviewPlanData | undefined;
+  /** Per-task files the briefs did not suggest. */
+  touchedNotSuggested?: readonly ReviewTouchedNotSuggested[] | undefined;
+  /** The recorded check runs, one line per check id. */
+  checkResults?: string | undefined;
+  /** The run's consult records, in order. */
+  consultLog?: string | undefined;
+  /** The rejected findings of every recorded triage. */
+  triageLog?: string | undefined;
+  /** What the operator answered during planning. */
+  planningAnswers?: string | undefined;
+  /** The ids the verdict must answer for; derived from `plan` when omitted. */
+  taskIds?: readonly string[] | undefined;
+  criterionIds?: readonly string[] | undefined;
   driftReport?: string | undefined;
   validationEvidence?: string | undefined;
   /**
@@ -56,17 +146,47 @@ export function buildFinalReviewPrompt(opts: {
   workspaceDiff?: string | undefined;
   skillsContext?: string | undefined;
 }): string {
+  const taskIds = opts.taskIds ?? opts.plan?.tasks.map((task) => task.id) ?? [];
+  const criterionIds =
+    opts.criterionIds ?? opts.plan?.criteria.map((criterion) => criterion.id) ?? [];
   const sections: PromptPart[] = [
     { heading: 'Specification', body: opts.spec },
     { heading: 'Task Briefs', body: opts.taskBriefs },
     ...skillsSection(opts.skillsContext),
   ];
+  if (opts.plan !== undefined) {
+    sections.push({ heading: 'Plan', body: planBody(opts.plan) });
+  }
   if (opts.changeCoverage) {
     sections.push({ heading: 'Changed Files', body: opts.changeCoverage });
   }
-  sections.push({ heading: 'Implementation Diff', body: fenced(opts.diff, 'diff') });
+  sections.push({
+    heading: 'Implementation Diff',
+    body:
+      opts.diffByTask === undefined
+        ? fenced(opts.diff, 'diff')
+        : diffBody(opts.diffByTask, opts.diff),
+  });
   if (opts.workspaceDiff !== undefined) {
     sections.push({ heading: 'Workspace Context', body: fenced(opts.workspaceDiff, 'diff') });
+  }
+  if (opts.touchedNotSuggested !== undefined) {
+    sections.push({
+      heading: 'Touched, Not Suggested',
+      body: touchedBody(opts.touchedNotSuggested),
+    });
+  }
+  if (opts.checkResults) {
+    sections.push({ heading: 'Recorded Check Results', body: opts.checkResults });
+  }
+  if (opts.consultLog) {
+    sections.push({ heading: 'Consult Log', body: opts.consultLog });
+  }
+  if (opts.triageLog) {
+    sections.push({ heading: 'Triage Log', body: opts.triageLog });
+  }
+  if (opts.planningAnswers) {
+    sections.push({ heading: 'Planning Answers', body: opts.planningAnswers });
   }
   if (opts.driftReport) {
     sections.push({ heading: 'Deterministic Drift Report', body: opts.driftReport });
@@ -84,7 +204,7 @@ export function buildFinalReviewPrompt(opts: {
         : `${REVIEW_INSTRUCTIONS}\n\n${PROVENANCE_INSTRUCTIONS}`,
     ),
     { heading: 'Review Checklist', body: REVIEW_CHECKLIST },
-    { heading: 'Output Format', body: REVIEW_OUTPUT },
+    { heading: 'Required Results', body: requiredResultsBody(taskIds, criterionIds) },
   );
   return buildPrompt({
     title: 'Final Implementation Review',

@@ -102,7 +102,13 @@ function installFakeCodexPlanner(binDir: string): string {
     'const prompt = process.argv[process.argv.length - 1] === "-" ? readFileSync(0, "utf-8") : "";',
     'const threadId = process.argv[process.argv.length - 2] ?? "fake-codex-thread";',
     'if (prompt.includes("Final Implementation Review")) {',
-    '  console.log(JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: "# Final review\\n\\nCLI planner and CLI implementer completed.\\n\\n### Verdict\\npass" } }));',
+    '  const ids = (label) => {',
+    "    const match = prompt.match(new RegExp('^' + label + ' (.+)$', 'm'));",
+    "    const value = match ? match[1].trim() : 'none';",
+    "    return value === 'none' || value === '' ? [] : value.split(',').map((id) => id.trim()).filter(Boolean);",
+    '  };',
+    "  const verdict = { tasks: ids('Task ids:').map((id) => ({ id, plan: 'met', note: '' })), criteria: ids('Criterion ids:').map((id) => ({ id, status: 'pass', evidence: '' })), findings: [] };",
+    '  console.log(JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: JSON.stringify(verdict) } }));',
     '  console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 17, output_tokens: 9 } }));',
     '  process.exit(0);',
     '}',
@@ -306,6 +312,6 @@ describe('CLI planner to CLI implementer workflow', { timeout: 90_000 }, () => {
         join(sessionDir(projectDir, 'sess-cli-planner-cli-implementer'), REVIEW_FILE),
         'utf-8',
       ),
-    ).toContain('CLI planner and CLI implementer completed.');
+    ).toContain('### Verdict\n\npass');
   }, 90_000);
 });

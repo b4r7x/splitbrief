@@ -48,7 +48,7 @@ describe('HelpOverlay', () => {
         currentScreen="home"
         commands={[
           command('/skills', ['home']),
-          command('/redo-task', ['workflow']),
+          command('/stop', ['workflow']),
           command('/home', ['workflow']),
         ]}
       />,
@@ -57,27 +57,27 @@ describe('HelpOverlay', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('/skills');
-    expect(frame).not.toContain('/redo-task');
+    expect(frame).not.toContain('/stop');
     expect(frame).not.toContain('/home');
 
     ui.unmount();
   });
 
   it('hides a command whose guard blocks it and shows it once the guard passes', async () => {
-    const redoTask: RuntimeCommandDef = {
-      ...command('/redo-task', ['home']),
-      guard: (ctx) => (ctx.phase === 'implementing' ? undefined : 'no task is running'),
+    const guarded: RuntimeCommandDef = {
+      ...command('/guarded', ['home']),
+      guard: (ctx) => (ctx.phase === 'implementing' ? undefined : 'only while implementing'),
     };
 
-    const blocked = renderFeature(<HelpOverlay currentScreen="home" commands={[redoTask]} />);
+    const blocked = renderFeature(<HelpOverlay currentScreen="home" commands={[guarded]} />);
     await tick(20);
-    expect(blocked.lastFrame() ?? '').not.toContain('/redo-task');
+    expect(blocked.lastFrame() ?? '').not.toContain('/guarded');
     blocked.unmount();
 
     lifecycleStore.__testReset({ phase: 'implementing' });
-    const allowed = renderFeature(<HelpOverlay currentScreen="home" commands={[redoTask]} />);
+    const allowed = renderFeature(<HelpOverlay currentScreen="home" commands={[guarded]} />);
     await tick(20);
-    expect(allowed.lastFrame() ?? '').toContain('/redo-task');
+    expect(allowed.lastFrame() ?? '').toContain('/guarded');
     allowed.unmount();
   });
 

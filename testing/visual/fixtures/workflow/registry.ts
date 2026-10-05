@@ -98,7 +98,7 @@ const checkpointPredicates = [
   [checkpointId('implementation-narration'), includesAll('briefs passed')],
   [checkpointId('implementation-adjacent-narration'), includesAll('briefs passed')],
   [checkpointId('implementation-retry'), includesAll('briefs passed')],
-  [checkpointId('review-fix'), includesAll('2/3 briefs passed')],
+  [checkpointId('review-fix'), includesAll()],
   [checkpointId('review-fix-no-change'), includesAll('no change needed')],
   [checkpointId('final-review'), includesAll('3/3 briefs passed')],
   [checkpointId('implementation-escalated'), includesAll('briefs passed')],

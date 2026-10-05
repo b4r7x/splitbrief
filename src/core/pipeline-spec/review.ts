@@ -8,8 +8,6 @@ export const VERDICT_RULES = {
   unparseableReask: 1,
   unparseableVerdict: 'fail',
   criticalOverridesPass: true,
-  findingOwner: 'path-substring-of-files',
-  unmatchedFindingOwner: 'last-brief',
   reaskSentence:
     'Your reply had no single verdict. Repeat the full review with exactly one verdict word under ### Verdict.',
 } as const;

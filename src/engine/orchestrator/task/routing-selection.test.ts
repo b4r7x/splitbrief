@@ -116,7 +116,9 @@ describe('selectRoutingProfile context cache', () => {
       ...state,
       plan: {
         summary: 'Route every write through the registry.',
-        decisions: ['Keep the registry as the one source of truth. '.repeat(400)],
+        decisions: [
+          { text: 'Keep the registry as the one source of truth. '.repeat(400), taskId: null },
+        ],
         criteria: [],
         checks: [],
         validation: null,

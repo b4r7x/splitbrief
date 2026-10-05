@@ -1,8 +1,15 @@
-import type { PlanProposal, TaskSpec } from '../../core/schemas/plan.js';
+import type { PlanDecision, PlanProposal, TaskSpec } from '../../core/schemas/plan.js';
 import { formatCheck } from './plan-tasks.js';
 
 function section(heading: string, lines: readonly string[]): string[] {
   return lines.length === 0 ? [] : [heading, '', ...lines, ''];
+}
+
+/** One decisions line: a proposal's plain string, or a ledger entry with its task id. */
+function decisionLine(decision: PlanDecision | string): string {
+  return typeof decision === 'string'
+    ? `- ${decision}`
+    : `- ${decision.text}${decision.taskId === null ? '' : ` (${decision.taskId})`}`;
 }
 
 function taskLines(task: TaskSpec): string[] {
@@ -44,10 +51,7 @@ export function formatPlanMarkdown(plan: PlanProposal): string {
       '## Protected operations',
       planProtectedOperations(plan).map((op) => `- ${op.taskId}: ${op.operation} ${op.path}`),
     ),
-    ...section(
-      '## Decisions',
-      plan.decisions.map((decision) => `- ${decision}`),
-    ),
+    ...section('## Decisions', plan.decisions.map(decisionLine)),
     ...section(
       '## Criteria',
       plan.criteria.map(

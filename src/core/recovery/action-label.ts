@@ -48,7 +48,9 @@ export function recoveryActionLabel(
     // An old run's `revise-spec` sends its note to the planning session, as `revise` does.
     case 'revise':
     case 'revise-spec':
-      return 'Send a correction';
+      return context.reason === 'review-failed'
+        ? 'Fix again · add a note, grant one more fix cycle'
+        : 'Send a correction';
     case 'accept-as-is':
       return 'Accept as is';
     case 'continue':

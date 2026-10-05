@@ -258,6 +258,13 @@ describe('the planning session on the live path', () => {
     expect(run.result.disposition).toBe('ready-for-tasks');
     expect(run.result.state.phase).toBe('implementing');
     expect(run.result.state.pendingPlannerConversation).toBeUndefined();
+    expect(run.result.state.userAnswers).toEqual([
+      {
+        reply: expect.stringContaining('Round 1: which module?'),
+        answer: expect.stringContaining('src/a.ts'),
+      },
+    ]);
+    expect(loadState(run)?.userAnswers).toEqual(run.result.state.userAnswers);
     expect(run.result.state.plan?.summary).toBe('Greet people by name');
     expect(run.result.state.tasks.map((task) => task.file)).toEqual(['src/hello.ts']);
     expect(parsePlanJson(readSpecFileOrEmpty(run, PLAN_JSON_FILE))).toEqual({

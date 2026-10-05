@@ -31,7 +31,6 @@ import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeCtx, runCommandInTest } from '#testing/helpers/runtime-commands.js';
 import { workflowCommands } from '../../core/runtime/commands/defs/workflow.js';
-import { requestRewind } from '../../features/workflow/handlers.js';
 import { hydrateResume } from '../../features/workflow/resume-hydration.js';
 
 const runWorkflow = vi.fn<(opts: RunWorkflowOptions) => Promise<Summary>>();
@@ -554,81 +553,6 @@ describe('WorkflowScreen showing a run at rest', () => {
     ui.unmount();
   });
 
-  it('resets a brief of a halted run on /redo-task and continues it in place', async () => {
-    const issue = makeRecoveryIssue({
-      reason: 'user-edit-conflict',
-      phase: 'implementing',
-      availableActions: ['pause-run', 'end-run'],
-      recommendedAction: 'pause-run',
-    });
-    const halted = makeWorkflowState({
-      phase: 'implementing',
-      tasks: [makeTask({ status: 'in_progress' })],
-      pendingRecovery: issue,
-    });
-    const record = openRun({
-      status: {
-        kind: 'open',
-        stop: { kind: 'halted', issue },
-        resumeAt: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
-      },
-      hydration: { kind: 'loaded', state: halted },
-    });
-    saveState(record.ref, halted);
-    const prepareResume = vi.fn(async () => ({
-      kind: 'prepared' as const,
-      execution: preparedExecution(projectDir, 'continued run'),
-    }));
-    const commands = workflowCommands(
-      makeCtx({
-        requestTaskRedo: (id) => requestRewind({ target: 'task', taskId: id }),
-        setFeedbackError: feedbackStore.setError,
-      }),
-    );
-
-    const ui = renderFeature(
-      <WorkflowScreen
-        commands={commands}
-        onRuntimeCommand={(raw) =>
-          runCommandInTest({
-            commands,
-            raw,
-            screen: 'workflow',
-            phase: 'implementing',
-            onError: feedbackStore.setError,
-          })
-        }
-        deps={{
-          runWorkflow,
-          sessionSelect: {
-            loadResumeState: hydrateResume,
-            prepareResume,
-            hydrateRun: async () => {},
-          },
-        }}
-      />,
-    );
-    await flushEffects();
-
-    ui.stdin.write('/redo-task T001');
-    await flushEffects();
-    ui.stdin.write('\r');
-    await vi.waitFor(() => {
-      expect(prepareResume).toHaveBeenCalled();
-    });
-
-    const saved = hydrateResume(record.ref);
-    if (saved.kind !== 'loaded') throw new Error('expected the reset state on disk');
-    expect(saved.state.phase).toBe('implementing');
-    expect(saved.state.tasks[0]?.status).toBe('pending');
-    expect(prepareResume).toHaveBeenCalledWith(
-      { ref: record.ref, state: saved.state },
-      expect.anything(),
-    );
-    expect(feedbackStore.get().isError).toBe(false);
-    ui.unmount();
-  });
-
   /** A run at rest on a final review that failed after its repair cycles ran out. */
   function renderFailedReviewRun() {
     const issue = {
@@ -642,7 +566,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     const halted = makeWorkflowState({
       phase: 'complete',
       reviewStatus: 'failed',
-      reviewFixes: { cycle: 2, findings: {} },
+      fixCycles: { used: 2, allowance: 2, notes: [] },
       tasks: [makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' })],
       currentTaskIndex: 1,
       pendingRecovery: issue,
@@ -702,12 +626,15 @@ describe('WorkflowScreen showing a run at rest', () => {
 
     const entered = runWorkflow.mock.calls[0]?.[0];
     expect(entered?.steer).toBeUndefined();
-    expect(entered?.savedState?.phase).toBe('implementing');
+    expect(entered?.savedState?.phase).toBe('final-review');
     expect(entered?.savedState?.pendingRecovery).toBeUndefined();
-    expect(entered?.savedState?.reviewFixes?.findings['T001']).toEqual([
-      'src/alpha.ts drops the error',
-      'Operator correction: log the error, then rethrow it',
-    ]);
+    expect(entered?.savedState?.pendingTriage?.inputs).toContainEqual({
+      id: 'U1',
+      kind: 'defect',
+      source: 'user',
+      text: 'log the error, then rethrow it',
+      file: null,
+    });
     const log = readFileSync(
       join(sessionDir(projectDir, record.ref.sessionId), 'session.jsonl'),
       'utf-8',
@@ -724,7 +651,7 @@ describe('WorkflowScreen showing a run at rest', () => {
 
     ui.stdin.write('\r');
     await vi.waitFor(() => {
-      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Send a correction');
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Fix again');
     });
     ui.stdin.write('\t');
     await flushEffects();
@@ -736,10 +663,14 @@ describe('WorkflowScreen showing a run at rest', () => {
     });
 
     const entered = runWorkflow.mock.calls[0]?.[0];
-    expect(entered?.savedState?.phase).toBe('implementing');
-    expect(entered?.savedState?.reviewFixes?.findings['T001']).toContain(
-      'Operator correction: log the error, then rethrow it',
-    );
+    expect(entered?.savedState?.phase).toBe('final-review');
+    expect(entered?.savedState?.pendingTriage?.inputs).toContainEqual({
+      id: 'U1',
+      kind: 'defect',
+      source: 'user',
+      text: 'log the error, then rethrow it',
+      file: null,
+    });
     expect(feedbackStore.get().isError).toBe(false);
     ui.unmount();
   });

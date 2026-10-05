@@ -1,4 +1,8 @@
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { runPlanningPhase } from './planning/run.js';
+import { createInitialState, transition } from '../../core/state/machine.js';
+import { scriptedTypedCall } from '#testing/helpers/typed-planner.js';
+import { TEST_SINKS } from '#testing/helpers/orchestrator-factories.js';
+import { describe, it, expect, afterEach } from 'vitest';
 import { execSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -11,10 +15,17 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
+import {
+  planFromTasks,
+  passingReviewVerdict,
+  failedReviewVerdict,
+  typedCallPlanAndReview,
+} from '#testing/helpers/typed-planner.js';
 import { ensureSessionDir, writeSpecFile } from '../../core/paths-io.js';
 import {
   sessionDir,
   REVIEW_FILE,
+  REVIEW_JSON_FILE,
   PLAN_FILE,
   SPEC_FILE,
   TASKS_FILE,
@@ -25,12 +36,12 @@ import {
 import { hashTaskBrief } from '../brief-hash.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { loadState } from '../../core/state/persistence.js';
+import { ReviewRecordSchema } from '../../core/schemas/workflow.js';
+import { taskId, type Task } from '../../core/schemas/task.js';
+import type { ReviewVerdict } from '../../core/schemas/review.js';
 import { finalReviewError, runFinalReviewPhase } from './final-review.js';
 import { createContinuationHolder } from './continuation.js';
-import { decideReviewOutcome } from './review-fix.js';
-import { REVIEW_CYCLE_CAP, VERDICT_RULES } from '../../core/pipeline-spec/review.js';
 import { getRunnerCatalogDisplayName } from '../../core/config/accessors/runner-config.js';
-import type { Task } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
 import type { Summary } from '../../core/schemas/summary.js';
@@ -101,6 +112,31 @@ function packetStatus(projectDir: string, sessionId: string): string {
   return ReviewPacketSchema.parse(JSON.parse(readFileSync(packetPath, 'utf-8'))).finalReview.status;
 }
 
+function readReviewRecord(projectDir: string, sessionId: string) {
+  const path = join(sessionDir(projectDir, sessionId), REVIEW_JSON_FILE);
+  return ReviewRecordSchema.parse(JSON.parse(readFileSync(path, 'utf-8')));
+}
+
+/** A review seat that scripts its verdicts and records each prompt it was handed. */
+function makeReviewer(
+  review: (prompt: string, call: number) => ReviewVerdict = (prompt) =>
+    passingReviewVerdict(prompt),
+  usage?: Readonly<{ inputTokens: number; outputTokens: number }> | undefined,
+): { reviewer: ReturnType<typeof makePlanner>; prompts: string[] } {
+  const prompts: string[] = [];
+  const reviewer = makePlanner({
+    typedCall: typedCallPlanAndReview(
+      () => planFromTasks([]),
+      (prompt, call) => {
+        prompts.push(prompt);
+        return review(prompt, call);
+      },
+      usage === undefined ? undefined : { review: usage },
+    ),
+  });
+  return { reviewer, prompts };
+}
+
 // The final review attributes run effects from review-changes.json, never from
 // the working tree: a scenario where a task wrote a file must record the
 // promotion the way the promotion gate does.
@@ -139,13 +175,7 @@ describe('runFinalReviewPhase continuation', () => {
   it('re-issues the whole review prompt with the note, never a session resume', async () => {
     const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nAdd auth.\n', null);
-    const prompts: string[] = [];
-    const reviewer = makePlanner({
-      review: async (prompt: string) => {
-        prompts.push(prompt);
-        return { text: '### Verdict\npass\n', usage: null };
-      },
-    });
+    const { reviewer, prompts } = makeReviewer();
     const { bus } = makeBusRecorder();
     const { callbacks } = makeCallbacks();
 
@@ -180,13 +210,7 @@ describe('runFinalReviewPhase continuation', () => {
   it('reviews a run planned on one session against its plan document', async () => {
     const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, PLAN_FILE, '# Plan\n\nGreet people by name.\n', null);
-    const prompts: string[] = [];
-    const reviewer = makePlanner({
-      review: async (prompt: string) => {
-        prompts.push(prompt);
-        return { text: '### Verdict\npass\n', usage: null };
-      },
-    });
+    const { reviewer, prompts } = makeReviewer();
 
     await runFinalReviewPhase({
       projectDir,
@@ -213,45 +237,8 @@ describe('runFinalReviewPhase continuation', () => {
     });
 
     expect(prompts[0]).toContain('Greet people by name.');
-  });
-
-  it('asks for a missing verdict without repeating the continuation note', async () => {
-    const { projectDir, sessionId, runStartHead } = setupProject();
-    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nAdd auth.\n', null);
-    const prompts: string[] = [];
-    let calls = 0;
-    const reviewer = makePlanner({
-      review: async (prompt: string) => {
-        prompts.push(prompt);
-        calls += 1;
-        return { text: calls === 1 ? 'no verdict here' : '### Verdict\npass\n', usage: null };
-      },
-    });
-    const { bus } = makeBusRecorder();
-    const { callbacks } = makeCallbacks();
-
-    await runFinalReviewPhase({
-      projectDir,
-      workspaceDir: projectDir,
-      sessionId,
-      config: makeNoValidationConfig(),
-      callbacks,
-      bus,
-      state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
-      reviewer,
-      metadata: TEST_METADATA,
-      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-      continuation: createContinuationHolder({
-        step: { kind: 'review', cycle: 0 },
-        steer: 'ignore the formatting nits',
-      }),
-      summaryBase: { ...SUMMARY_BASE, projectDir, sessionId },
-      taskBreakdowns: [],
-    });
-
-    expect(prompts).toHaveLength(2);
-    expect(prompts[0]).toContain('ignore the formatting nits');
-    expect(prompts[1]).not.toContain('ignore the formatting nits');
+    expect(prompts[0]).toContain('C1: A name gets a greeting (checks: K1)');
+    expect(prompts[0]).toContain('Criterion ids: C1');
   });
 });
 
@@ -261,11 +248,9 @@ describe('runFinalReviewPhase', () => {
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nAdd auth.\n', null);
     let tracked: WorkflowState | undefined;
     let phaseAtReview: WorkflowState['phase'] | undefined;
-    const reviewer = makePlanner({
-      review: async () => {
-        phaseAtReview = tracked?.phase;
-        return { text: '### Verdict\npass\n', usage: null };
-      },
+    const { reviewer } = makeReviewer((prompt) => {
+      phaseAtReview = tracked?.phase;
+      return passingReviewVerdict(prompt);
     });
     const { bus } = makeBusRecorder();
     const { callbacks } = makeCallbacks();
@@ -290,24 +275,24 @@ describe('runFinalReviewPhase', () => {
     expect(phaseAtReview).toBe('final-review');
   });
 
-  it('runs the reviewer, writes review.md, and returns the parsed verdict', async () => {
+  it('runs the reviewer, writes review.json and the rendered review.md, and returns the outcome', async () => {
     const { projectDir, sessionId, runStartHead } = setupProject();
     // A non-trivial spec so the review prompt is well-formed.
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nAdd auth.\n', null);
 
-    const reviewText = '### Verdict\npass\n\n### Findings\nNone.';
-    const reviewPrompts: string[] = [];
-    const review = async (prompt: string) => {
-      reviewPrompts.push(prompt);
-      return { text: reviewText, usage: { inputTokens: 200, outputTokens: 40 } };
-    };
     const completions: Summary[] = [];
     const onComplete = (s: Summary) => {
       completions.push(s);
     };
     const { callbacks } = makeCallbacks({ onComplete });
     const { bus, events } = makeBusRecorder();
-    const reviewer = makePlanner({ review });
+    const { reviewer } = makeReviewer(
+      (prompt, call) =>
+        call === 1
+          ? failedReviewVerdict(prompt, 'src/alpha.ts drops the error', { taskId: 'T001' })
+          : passingReviewVerdict(prompt),
+      { inputTokens: 200, outputTokens: 40 },
+    );
 
     const state = allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead);
     const phaseTimings: Record<string, number> = {};
@@ -327,17 +312,24 @@ describe('runFinalReviewPhase', () => {
       phaseTimings,
     });
 
-    expect(reviewPrompts).toHaveLength(1);
-    expect(reviewPrompts[0]).toContain('Add auth');
+    expect(result.reviewStatus).toBe('written');
+    expect(result.verdict?.outcome.kind).toBe('fail');
+    expect(result.verdict?.outcome.blocking).toHaveLength(1);
+    expect(result.state.phase).toBe('final-review');
+    expect(completions).toEqual([]);
 
     const reviewPath = join(sessionDir(projectDir, sessionId), REVIEW_FILE);
     expect(existsSync(reviewPath)).toBe(true);
-    expect(readFileSync(reviewPath, 'utf-8')).toContain(reviewText);
+    const markdown = readFileSync(reviewPath, 'utf-8');
+    expect(markdown).toContain('### Verdict\n\nfail');
+    expect(markdown).toContain('src/alpha.ts drops the error');
 
-    expect(result.reviewStatus).toBe('written');
-    expect(result.verdict?.verdict).toBe('pass');
-    expect(result.state.phase).toBe('final-review');
-    expect(completions).toEqual([]);
+    // The typed record is the verdict's one home: review.json and state.review.
+    const record = readReviewRecord(projectDir, sessionId);
+    expect(record.outcome).toBe('fail');
+    expect(record.verdict.tasks).toEqual([{ id: taskId('T001'), plan: 'met', note: '' }]);
+    expect(record.cycle).toBe(0);
+    expect(result.state.review).toEqual(record);
 
     const statusEvents = events.filter((e) => e.type === 'planner_status');
     expect(statusEvents.length).toBeGreaterThanOrEqual(2);
@@ -349,9 +341,317 @@ describe('runFinalReviewPhase', () => {
     expect(existsSync(packetPath)).toBe(true);
     const packet = ReviewPacketSchema.parse(JSON.parse(readFileSync(packetPath, 'utf-8')));
     expect(packet.finalReview.status).toBe('written');
+    expect(packet.finalReview.verdict).toBe('fail');
     expect(existsSync(join(sessionDir(projectDir, sessionId), REVIEW_PACKET_MARKDOWN_FILE))).toBe(
       true,
     );
+  });
+
+  it('passes a minor-only verdict with notes', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nAdd auth.\n', null);
+    const { reviewer } = makeReviewer((prompt) => ({
+      ...passingReviewVerdict(prompt),
+      findings: [
+        {
+          id: 'F1',
+          kind: 'defect',
+          severity: 'minor',
+          taskId: 'T001',
+          file: 'src/alpha.ts',
+          line: 3,
+          text: 'the naming is loose',
+          acceptance: null,
+          checkIds: null,
+          criterionId: null,
+        },
+      ],
+    }));
+
+    const result = await runFinalReviewPhase({
+      projectDir,
+      workspaceDir: projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks: makeCallbacks().callbacks,
+      bus: makeBusRecorder().bus,
+      state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+      reviewer,
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+    });
+
+    expect(result.reviewStatus).toBe('written');
+    expect(result.verdict?.outcome.kind).toBe('pass-with-notes');
+    expect(result.verdict?.outcome.minor).toHaveLength(1);
+    const markdown = readFileSync(join(sessionDir(projectDir, sessionId), REVIEW_FILE), 'utf-8');
+    expect(markdown).toContain('### Verdict\n\npass_with_notes');
+    expect(readReviewRecord(projectDir, sessionId).outcome).toBe('pass-with-notes');
+  });
+
+  it('repairs a verdict missing a task once, then fails the seat', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nAdd auth.\n', null);
+    const { reviewer, prompts } = makeReviewer((prompt) => ({
+      ...passingReviewVerdict(prompt),
+      tasks: [],
+    }));
+
+    const { bus, events } = makeBusRecorder();
+    const result = await runFinalReviewPhase({
+      projectDir,
+      workspaceDir: projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks: makeCallbacks().callbacks,
+      bus,
+      state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+      reviewer,
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+    });
+
+    // The reviewer's own one repair, then the seat answer still fails coverage.
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain('Task T001 is missing from the verdict.');
+    expect(result.reviewStatus).toBe('failed');
+    expect(result.verdict).toBeNull();
+    expect(result.failure).toMatchObject({
+      kind: 'seat-protocol-error',
+      error: { kind: 'seat-protocol-error' },
+    });
+    expect(existsSync(join(sessionDir(projectDir, sessionId), REVIEW_FILE))).toBe(false);
+    expect(existsSync(join(sessionDir(projectDir, sessionId), REVIEW_JSON_FILE))).toBe(false);
+    expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
+  });
+
+  it('uses the repaired verdict when the one repair completes the coverage', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nAdd auth.\n', null);
+    const { reviewer, prompts } = makeReviewer((prompt, call) =>
+      call === 1 ? { ...passingReviewVerdict(prompt), tasks: [] } : passingReviewVerdict(prompt),
+    );
+
+    const result = await runFinalReviewPhase({
+      projectDir,
+      workspaceDir: projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks: makeCallbacks().callbacks,
+      bus: makeBusRecorder().bus,
+      state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+      reviewer,
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+    });
+
+    expect(prompts).toHaveLength(2);
+    expect(result.reviewStatus).toBe('written');
+    expect(result.verdict?.outcome.kind).toBe('pass');
+  });
+
+  it('counts an unverified criterion as pass when its current task check passes', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, PLAN_FILE, '# Plan\n\nGreet people by name.\n', null);
+    writeFileSync(
+      join(projectDir, 'package.json'),
+      JSON.stringify({ name: 'review-check', version: '1.0.0', scripts: { test: 'echo ok' } }),
+    );
+    const { reviewer } = makeReviewer((prompt) => ({
+      ...passingReviewVerdict(prompt),
+      criteria: passingReviewVerdict(prompt).criteria.map((criterion) => ({
+        ...criterion,
+        status: 'unverified' as const,
+      })),
+    }));
+
+    const result = await runFinalReviewPhase({
+      projectDir,
+      workspaceDir: projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks: makeCallbacks().callbacks,
+      bus: makeBusRecorder().bus,
+      state: {
+        ...allTasksDoneState(
+          [
+            makeTask({
+              id: 'T001',
+              status: 'done',
+              checks: [{ id: 'K1', kind: 'cmd', value: 'npm test', required: true }],
+            }),
+          ],
+          runStartHead,
+        ),
+        plan: {
+          summary: 'Greet people by name.',
+          decisions: [],
+          criteria: [{ id: 'C1', text: 'A name gets a greeting', checkIds: ['K1'] }],
+          checks: [],
+          validation: null,
+        },
+      },
+      reviewer,
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+    });
+
+    const record = readReviewRecord(projectDir, sessionId);
+    expect(record.verification).toEqual([
+      { id: 'criterion:C1', status: 'pass', output: expect.stringContaining('K1: pass') },
+    ]);
+    expect(record.outcome).toBe('pass');
+    expect(result.verdict?.outcome.kind).toBe('pass');
+  });
+
+  it('keeps a render-checked criterion unverified, and that fails the review', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, PLAN_FILE, '# Plan\n\nRender the gallery.\n', null);
+    const { reviewer } = makeReviewer((prompt) => {
+      const base = passingReviewVerdict(prompt);
+      return {
+        ...base,
+        criteria: base.criteria.map((criterion) => ({
+          ...criterion,
+          status: 'unverified' as const,
+        })),
+      };
+    });
+
+    const result = await runFinalReviewPhase({
+      projectDir,
+      workspaceDir: projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks: makeCallbacks().callbacks,
+      bus: makeBusRecorder().bus,
+      state: {
+        ...allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+        plan: {
+          summary: 'Render the gallery.',
+          decisions: [],
+          criteria: [{ id: 'C1', text: 'The gallery renders', checkIds: ['K1'] }],
+          checks: [{ id: 'K1', kind: 'render', value: 'gallery/hello', required: false }],
+          validation: null,
+        },
+      },
+      reviewer,
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+    });
+
+    const record = readReviewRecord(projectDir, sessionId);
+    expect(record.verification).toEqual([
+      {
+        id: 'criterion:C1',
+        status: 'unverified',
+        output: expect.stringContaining('render checks are not runnable'),
+      },
+    ]);
+    expect(record.outcome).toBe('fail');
+    expect(result.verdict?.outcome.unverifiedCriteria).toEqual(['C1']);
+  });
+
+  it('turns an unverified finding with a passing check into a note', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, PLAN_FILE, '# Plan\n\nGreet people by name.\n', null);
+    writeFileSync(
+      join(projectDir, 'package.json'),
+      JSON.stringify({ name: 'review-check', version: '1.0.0', scripts: { test: 'echo ok' } }),
+    );
+    const { reviewer } = makeReviewer((prompt) => ({
+      ...passingReviewVerdict(prompt),
+      findings: [
+        {
+          id: 'F1',
+          kind: 'unverified',
+          severity: 'blocking',
+          taskId: null,
+          file: null,
+          line: null,
+          text: 'the greeting path needs a check',
+          acceptance: null,
+          checkIds: ['K1'],
+          criterionId: null,
+        },
+      ],
+    }));
+
+    const result = await runFinalReviewPhase({
+      projectDir,
+      workspaceDir: projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks: makeCallbacks().callbacks,
+      bus: makeBusRecorder().bus,
+      state: {
+        ...allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+        plan: {
+          summary: 'Greet people by name.',
+          decisions: [],
+          criteria: [{ id: 'C1', text: 'A name gets a greeting', checkIds: ['K1'] }],
+          checks: [{ id: 'K1', kind: 'cmd', value: 'npm test', required: true }],
+          validation: null,
+        },
+      },
+      reviewer,
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+    });
+
+    const record = readReviewRecord(projectDir, sessionId);
+    expect(record.verification).toEqual([
+      { id: 'finding:F1', status: 'pass', output: expect.stringContaining('K1: pass') },
+    ]);
+    expect(record.outcome).toBe('pass-with-notes');
+    expect(result.verdict?.outcome.minor).toHaveLength(1);
+    expect(result.verdict?.outcome.blocking).toHaveLength(0);
+  });
+
+  it('verifies nothing for an unverified finding that names no check and no criterion', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nAdd auth.\n', null);
+    const { reviewer, prompts } = makeReviewer((prompt) => ({
+      ...passingReviewVerdict(prompt),
+      findings: [
+        {
+          id: 'F1',
+          kind: 'unverified',
+          severity: 'blocking',
+          taskId: null,
+          file: null,
+          line: null,
+          text: 'I could not verify this',
+          acceptance: null,
+          checkIds: [],
+          criterionId: null,
+        },
+      ],
+    }));
+
+    const result = await runFinalReviewPhase({
+      projectDir,
+      workspaceDir: projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks: makeCallbacks().callbacks,
+      bus: makeBusRecorder().bus,
+      state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+      reviewer,
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+    });
+
+    // The coverage rule sends that finding back once; it never verifies.
+    expect(prompts).toHaveLength(2);
+    expect(result.reviewStatus).toBe('failed');
   });
 
   it('feeds the recorded validation output into the review prompt for verbatim quoting', async () => {
@@ -377,15 +677,9 @@ describe('runFinalReviewPhase', () => {
     );
     writeEvidenceLedger({ projectDir, sessionId }, ledger);
 
-    const reviewPrompts: string[] = [];
+    const { reviewer, prompts } = makeReviewer();
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
-    const reviewer = makePlanner({
-      review: async (prompt: string) => {
-        reviewPrompts.push(prompt);
-        return { text: 'ok', usage: null };
-      },
-    });
 
     await runFinalReviewPhase({
       projectDir,
@@ -401,12 +695,165 @@ describe('runFinalReviewPhase', () => {
       taskBreakdowns: [],
     });
 
-    expect(reviewPrompts[0]).toContain('## Recorded Validation Output');
-    expect(reviewPrompts[0]).toContain('- test (`npm test`): passed');
-    expect(reviewPrompts[0]).toContain('Tests  4 passed (4)');
-    expect(reviewPrompts[0]).toContain(
+    expect(prompts[0]).toContain('## Recorded Validation Output');
+    expect(prompts[0]).toContain('- test (`npm test`): passed');
+    expect(prompts[0]).toContain('Tests  4 passed (4)');
+    expect(prompts[0]).toContain(
       'quote the relevant line verbatim from the Recorded Validation Output section',
     );
+  });
+
+  it('carries the plan, diff groups, touched files, check results, consult log and answers into the prompt', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, PLAN_FILE, '# Plan\n\nGreet people by name.\n', null);
+    const tasks = [
+      makeTask({
+        id: 'T001',
+        file: 'src/alpha.ts',
+        status: 'done',
+        criteria: ['C1'],
+        suggestedFiles: ['src/alpha.ts'],
+        exclusions: ['docs/**'],
+        checkResults: [{ id: 'K1', passed: true }],
+      }),
+      makeTask({
+        id: 'T002',
+        file: 'src/beta.ts',
+        status: 'done',
+        criteria: ['C2'],
+        suggestedFiles: ['src/beta.ts', 'src/shared.ts'],
+      }),
+    ];
+    const task = tasks[0] as Task;
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(join(projectDir, 'src/alpha.ts'), 'export const alpha = true;\n');
+    await recordPromotion({ projectDir, sessionId, task, path: 'src/alpha.ts' });
+    const ledger = withUpdatedTask(
+      createEvidenceLedger({ sessionId, feature: 'feat', tasks }),
+      task.id,
+      (entry) => ({ ...entry, status: 'done', changedFiles: ['src/alpha.ts', 'src/shared.ts'] }),
+    );
+
+    const planningCall = scriptedTypedCall([
+      {
+        kind: 'questions',
+        questions: [{ id: 'greeting', text: 'Which greeting?', choices: null, default: 'hi' }],
+      },
+      planFromTasks(tasks),
+    ]);
+    const planned = await runPlanningPhase({
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig(),
+        callbacks: makeCallbacks({
+          onPlannerReply: async () => 'hello',
+          onApprovalNeeded: async () => ({ approved: true }),
+        }).callbacks,
+        bus: makeBusRecorder().bus,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+      },
+      planner: makePlanner({ typedCall: planningCall.typedCall }),
+      state: transition(createInitialState('Greet people'), { type: 'START' }),
+      feature: 'Greet people',
+    });
+    expect(planned.state.pendingPlannerConversation).toBeUndefined();
+    writeEvidenceLedger({ projectDir, sessionId }, ledger);
+    const { reviewer, prompts } = makeReviewer();
+    await runFinalReviewPhase({
+      projectDir,
+      workspaceDir: projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks: makeCallbacks().callbacks,
+      bus: makeBusRecorder().bus,
+      state: {
+        ...planned.state,
+        ...allTasksDoneState(tasks, runStartHead),
+        plan: {
+          summary: 'Greet people by name.',
+          decisions: [{ text: 'Keep the greeting pure', taskId: null }],
+          criteria: [
+            { id: 'C1', text: 'A name gets a greeting', checkIds: ['K1'] },
+            { id: 'C2', text: 'Empty names are refused', checkIds: [] },
+          ],
+          checks: [],
+          validation: null,
+        },
+        lineages: {
+          T001: {
+            consults: 1,
+            attempts: 1,
+            consultAllowance: 3,
+            attemptAllowance: 2,
+            staleConsultedRevision: {},
+            consultRecords: [
+              {
+                reason: 'failed',
+                action: 'guidance',
+                diagnosis: 'the greeting handled empty names',
+                at: '2026-01-01T00:00:00.000Z',
+                taskId: taskId('T001'),
+                revision: 1,
+                answer: {
+                  answer: {
+                    diagnosis: 'the greeting handled empty names',
+                    action: 'guidance',
+                    instructions: 'guard the empty name',
+                    context: null,
+                  },
+                },
+              },
+            ],
+            replacedParents: [],
+            notes: [],
+          },
+        },
+        triage: [
+          {
+            cycle: 1,
+            at: '2026-01-02T00:00:00Z',
+            reviewAt: '2026-01-01T00:00:00Z',
+            inputIds: ['F9'],
+            result: {
+              fixTasks: [],
+              rejected: [],
+              verify: [{ findingId: 'F9', checkIds: ['K9'] }],
+              ask: null,
+            },
+            verification: [
+              { id: 'finding:F9', status: 'fail', output: 'K9: fail — EXACT triage output' },
+            ],
+          },
+        ],
+      },
+      reviewer,
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+    });
+
+    const prompt = prompts[0] ?? '';
+    expect(prompt).toContain('## Plan');
+    expect(prompt).toContain('C1: A name gets a greeting (checks: K1)');
+    expect(prompt).toContain('Keep the greeting pure');
+    expect(prompt).toContain('T001');
+    expect(prompt).toContain('### Changes by T001');
+    expect(prompt).toContain('## Touched, Not Suggested');
+    expect(prompt).toContain('src/shared.ts');
+    expect(prompt).toContain('## Touched, Not Suggested\n- T001: src/shared.ts');
+    expect(prompt).toContain('## Recorded Check Results');
+    expect(prompt).toContain('T001 check K1: pass');
+    expect(prompt).toContain('## Consult Log');
+    expect(prompt).toContain('the greeting handled empty names');
+    expect(prompt).toContain('## Planning Answers');
+    expect(prompt).toContain('1. Which greeting? (default: hi) → hello');
+    expect(prompt).toContain('EXACT triage output');
+    expect(prompt).toContain('candidate reviewed at 2026-01-01T00:00:00Z');
+    expect(prompt).toContain('Task ids: T001, T002');
+    expect(prompt).toContain('Criterion ids: C1, C2');
+    expect(prompt).not.toContain('A **Critical** finding must name a defect');
   });
 
   it('persists the review usage through the continuation loop on the sinks path', async () => {
@@ -415,12 +862,7 @@ describe('runFinalReviewPhase', () => {
 
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
-    const reviewer = makePlanner({
-      review: async () => ({
-        text: '### Verdict\npass\n',
-        usage: { inputTokens: 200, outputTokens: 40 },
-      }),
-    });
+    const { reviewer } = makeReviewer(undefined, { inputTokens: 200, outputTokens: 40 });
 
     const { state } = await runFinalReviewPhase({
       projectDir,
@@ -459,15 +901,9 @@ describe('runFinalReviewPhase', () => {
       null,
     );
 
-    const reviewPrompts: string[] = [];
+    const { reviewer, prompts } = makeReviewer();
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
-    const reviewer = makePlanner({
-      review: async (prompt: string) => {
-        reviewPrompts.push(prompt);
-        return { text: 'ok', usage: null };
-      },
-    });
     const task = makeTask({
       id: 'T001',
       title: 'State fallback task title',
@@ -489,7 +925,7 @@ describe('runFinalReviewPhase', () => {
       taskBreakdowns: [],
     });
 
-    expect(reviewPrompts[0]).toContain(
+    expect(prompts[0]).toContain(
       'Persisted-only acceptance marker: verify password pepper migration.',
     );
 
@@ -504,7 +940,6 @@ describe('runFinalReviewPhase', () => {
       '',
       null,
     );
-    reviewPrompts.length = 0;
 
     await runFinalReviewPhase({
       projectDir: fallbackProjectDir,
@@ -520,23 +955,27 @@ describe('runFinalReviewPhase', () => {
       taskBreakdowns: [],
     });
 
-    expect(reviewPrompts[0]).toContain('State fallback marker: rotate audit log checksum.');
+    expect(prompts[1]).toContain('State fallback marker: rotate audit log checksum.');
   });
 
   it('does not complete the workflow when the reviewer throws', async () => {
     const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
 
-    const review = async () => {
-      throw new Error('reviewer crashed');
-    };
     const completions: Summary[] = [];
     const onComplete = (s: Summary) => {
       completions.push(s);
     };
     const { callbacks } = makeCallbacks({ onComplete });
     const { bus, events } = makeBusRecorder();
-    const reviewer = makePlanner({ review });
+    const reviewer = makePlanner({
+      typedCall: typedCallPlanAndReview(
+        () => planFromTasks([]),
+        () => {
+          throw new Error('reviewer crashed');
+        },
+      ),
+    });
 
     const state = allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead);
     const phaseTimings: Record<string, number> = {};
@@ -584,11 +1023,13 @@ describe('runFinalReviewPhase', () => {
       createEvidenceLedger({ sessionId, feature: 'feat', tasks: [task] }),
     );
 
-    const reviewer = makePlanner({
-      review: vi.fn(async () => {
+    const typedCall = typedCallPlanAndReview(
+      () => planFromTasks([]),
+      () => {
         throw new Error('reviewer unreachable');
-      }),
-    });
+      },
+    );
+    const reviewer = makePlanner({ typedCall });
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
 
@@ -606,7 +1047,7 @@ describe('runFinalReviewPhase', () => {
       taskBreakdowns: [],
     });
 
-    expect(reviewer.review).toHaveBeenCalledTimes(1);
+    expect(typedCall).toHaveBeenCalledTimes(1);
     expect(packetStatus(projectDir, sessionId)).toBe('failed');
     expect(readEvidenceLedger({ projectDir, sessionId })?.finalReview?.status).toBe('failed');
     expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
@@ -623,10 +1064,8 @@ describe('runFinalReviewPhase', () => {
       createEvidenceLedger({ sessionId, feature: 'feat', tasks: [task] }),
     );
 
-    const reviewer = makePlanner({
-      review: async () => {
-        throw new Error('reviewer unreachable');
-      },
+    const { reviewer } = makeReviewer(() => {
+      throw new Error('reviewer unreachable');
     });
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
@@ -654,9 +1093,7 @@ describe('runFinalReviewPhase', () => {
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
-    const reviewer = makePlanner({
-      review: async () => ({ text: 'VERDICT: pass\n', usage: { inputTokens: 1, outputTokens: 1 } }),
-    });
+    const { reviewer } = makeReviewer(undefined, { inputTokens: 1, outputTokens: 1 });
     const state = {
       ...allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
       plannerTool: 'claude-code',
@@ -699,10 +1136,13 @@ describe('runFinalReviewPhase', () => {
     });
     const { bus, events } = makeBusRecorder();
     const reviewer = makePlanner({
-      review: async () => {
-        controller.abort(new DOMException('The user aborted a request.', 'AbortError'));
-        throw new DOMException('The user aborted a request.', 'AbortError');
-      },
+      typedCall: typedCallPlanAndReview(
+        () => planFromTasks([]),
+        () => {
+          controller.abort(new DOMException('The user aborted a request.', 'AbortError'));
+          throw new DOMException('The user aborted a request.', 'AbortError');
+        },
+      ),
     });
     const phaseTimings: Record<string, number> = {};
 
@@ -735,9 +1175,7 @@ describe('runFinalReviewPhase', () => {
 
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
-    const reviewer = makePlanner({
-      review: vi.fn().mockResolvedValue({ text: 'ok', usage: null }),
-    });
+    const { reviewer } = makeReviewer();
     const state = allTasksDoneState([], runStartHead);
 
     const result = await runFinalReviewPhase({
@@ -754,7 +1192,8 @@ describe('runFinalReviewPhase', () => {
     });
 
     expect(result.state.tasks).toEqual([]);
-    expect(result.reviewText).toBe('ok');
+    expect(result.reviewStatus).toBe('written');
+    expect(result.verdict?.outcome.kind).toBe('pass');
   });
 
   it('writes active briefHash into the drift report artifact', async () => {
@@ -762,9 +1201,7 @@ describe('runFinalReviewPhase', () => {
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
-    const reviewer = makePlanner({
-      review: vi.fn().mockResolvedValue({ text: 'ok', usage: null }),
-    });
+    const { reviewer } = makeReviewer();
     const task = makeTask({ id: 'T001', file: 'src/hello.ts', status: 'done' });
     const tasks = [task];
 
@@ -810,7 +1247,7 @@ describe('runFinalReviewPhase', () => {
       },
     });
     const { bus, events } = makeBusRecorder();
-    const review = vi.fn().mockResolvedValue({ text: 'ok', usage: null });
+    const { reviewer, prompts } = makeReviewer();
 
     await runFinalReviewPhase({
       projectDir,
@@ -820,7 +1257,7 @@ describe('runFinalReviewPhase', () => {
       callbacks,
       bus,
       state,
-      reviewer: makePlanner({ review }),
+      reviewer,
       summaryBase: SUMMARY_BASE,
       taskBreakdowns: [],
     });
@@ -828,7 +1265,7 @@ describe('runFinalReviewPhase', () => {
     const errorEvent = events.find((event) => event.type === 'error');
     const message = errorEvent && 'message' in errorEvent ? errorEvent.message : '';
     expect(message).toContain(finalReviewError.missingRunBaseline().message);
-    expect(review).not.toHaveBeenCalled();
+    expect(prompts).toHaveLength(0);
     expect(existsSync(join(sessionDir(projectDir, sessionId), DRIFT_REPORT_FILE))).toBe(false);
     expect(existsSync(join(sessionDir(projectDir, sessionId), REVIEW_FILE))).toBe(false);
     expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
@@ -873,9 +1310,7 @@ describe('runFinalReviewPhase', () => {
     };
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
-    const reviewer = makePlanner({
-      review: vi.fn().mockResolvedValue({ text: 'ok', usage: null }),
-    });
+    const { reviewer } = makeReviewer();
 
     await runFinalReviewPhase({
       projectDir,
@@ -910,15 +1345,9 @@ describe('runFinalReviewPhase', () => {
     const marker = 'UNTRACKED_REVIEW_MARKER_42';
     writeFileSync(join(projectDir, 'src/hello.ts'), `export const x = "${marker}";\n`);
 
-    const reviewPrompts: string[] = [];
+    const { reviewer, prompts } = makeReviewer();
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
-    const reviewer = makePlanner({
-      review: async (prompt: string) => {
-        reviewPrompts.push(prompt);
-        return { text: 'ok', usage: null };
-      },
-    });
     const tasks = [makeTask({ id: 'T001', file: 'src/hello.ts', status: 'done' })];
 
     await runFinalReviewPhase({
@@ -935,7 +1364,7 @@ describe('runFinalReviewPhase', () => {
       taskBreakdowns: [],
     });
 
-    expect(reviewPrompts[0]).toContain(marker);
+    expect(prompts[0]).toContain(marker);
   });
 
   it('derives the review diff and drift universe from recorded promotions when the tree is clean', async () => {
@@ -956,15 +1385,9 @@ describe('runFinalReviewPhase', () => {
       stdio: 'pipe',
     });
 
-    const reviewPrompts: string[] = [];
+    const { reviewer, prompts } = makeReviewer();
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
-    const reviewer = makePlanner({
-      review: async (prompt: string) => {
-        reviewPrompts.push(prompt);
-        return { text: 'ok', usage: null };
-      },
-    });
     const task = makeTask({ id: 'T001', file: 'src/feature.ts', status: 'done' });
     const tasks = [task];
 
@@ -984,7 +1407,8 @@ describe('runFinalReviewPhase', () => {
       taskBreakdowns: [],
     });
 
-    expect(reviewPrompts[0]).toContain(committedMarker);
+    expect(prompts[0]).toContain(committedMarker);
+    expect(prompts[0]).toContain('### Changes by T001');
 
     const drift = JSON.parse(
       readFileSync(join(sessionDir(projectDir, sessionId), DRIFT_REPORT_FILE), 'utf8'),
@@ -1024,15 +1448,9 @@ describe('runFinalReviewPhase', () => {
       stdio: 'pipe',
     });
 
-    const reviewPrompts: string[] = [];
+    const { reviewer, prompts } = makeReviewer();
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
-    const reviewer = makePlanner({
-      review: async (prompt: string) => {
-        reviewPrompts.push(prompt);
-        return { text: 'ok', usage: null };
-      },
-    });
     const task = makeTask({ id: 'T001', file: 'src/post-run.ts', status: 'done' });
     await recordPromotion({ projectDir, sessionId, task, path: 'src/post-run.ts' });
     const state: WorkflowState = {
@@ -1057,8 +1475,8 @@ describe('runFinalReviewPhase', () => {
       taskBreakdowns: [],
     });
 
-    expect(reviewPrompts[0]).toContain(postRunMarker);
-    expect(reviewPrompts[0]).not.toContain(preRunMarker);
+    expect(prompts[0]).toContain(postRunMarker);
+    expect(prompts[0]).not.toContain(preRunMarker);
     const drift = JSON.parse(
       readFileSync(join(sessionDir(projectDir, sessionId), DRIFT_REPORT_FILE), 'utf8'),
     );
@@ -1077,15 +1495,9 @@ describe('runFinalReviewPhase', () => {
       stdio: 'pipe',
     });
 
-    const reviewPrompts: string[] = [];
+    const { reviewer, prompts } = makeReviewer();
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
-    const reviewer = makePlanner({
-      review: async (prompt: string) => {
-        reviewPrompts.push(prompt);
-        return { text: 'ok', usage: null };
-      },
-    });
     const task = makeTask({ id: 'T001', file: 'src/from-unborn.ts', status: 'done' });
     await recordPromotion({ projectDir, sessionId, task, path: 'src/from-unborn.ts' });
 
@@ -1109,7 +1521,7 @@ describe('runFinalReviewPhase', () => {
       taskBreakdowns: [],
     });
 
-    expect(reviewPrompts[0]).toContain(marker);
+    expect(prompts[0]).toContain(marker);
     const drift = JSON.parse(
       readFileSync(join(sessionDir(projectDir, sessionId), DRIFT_REPORT_FILE), 'utf8'),
     );
@@ -1126,15 +1538,9 @@ describe('runFinalReviewPhase', () => {
       `${'x'.repeat(101_000)}\n${prohibitedMarker}\n`,
     );
 
-    const reviewPrompts: string[] = [];
+    const { reviewer, prompts } = makeReviewer();
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
-    const reviewer = makePlanner({
-      review: async (prompt: string) => {
-        reviewPrompts.push(prompt);
-        return { text: 'ok', usage: null };
-      },
-    });
     const task = makeTask({
       id: 'T001',
       file: 'src/large.ts',
@@ -1165,149 +1571,38 @@ describe('runFinalReviewPhase', () => {
         message: expect.stringContaining(prohibitedMarker),
       }),
     );
-    const promptDiff = reviewPrompts[0]
+    const promptDiff = prompts[0]
       ?.split('## Implementation Diff\n')[1]
-      ?.split('\n## Deterministic Drift Report')[0];
+      ?.split('\n## Workspace Context')[0];
     expect(promptDiff).toContain(prohibitedMarker);
     expect(promptDiff).not.toContain('diff truncated');
   });
+});
 
-  it('unparseable verdict is re-asked once', async () => {
+describe('review record', () => {
+  it('counts the fix cycle already spent when it records the review', async () => {
     const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
+    const { reviewer } = makeReviewer();
 
-    const prompts: string[] = [];
-    const replies = ['I think it is fine.', '### Verdict\npass\n'];
-    const reviewer = makePlanner({
-      review: async (prompt: string) => {
-        prompts.push(prompt);
-        return { text: replies[prompts.length - 1] ?? '', usage: null };
+    const result = await runFinalReviewPhase({
+      projectDir,
+      workspaceDir: projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks: makeCallbacks().callbacks,
+      bus: makeBusRecorder().bus,
+      state: {
+        ...allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+        fixCycles: { used: 2, allowance: 2, notes: [] },
       },
-    });
-    const { callbacks } = makeCallbacks();
-    const { bus } = makeBusRecorder();
-
-    const result = await runFinalReviewPhase({
-      projectDir,
-      workspaceDir: projectDir,
-      sessionId,
-      config: makeNoValidationConfig(),
-      callbacks,
-      bus,
-      state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
       reviewer,
-      metadata: TEST_METADATA,
       summaryBase: SUMMARY_BASE,
       taskBreakdowns: [],
     });
 
-    expect(prompts).toHaveLength(2);
-    expect(prompts[1]).toContain(VERDICT_RULES.reaskSentence);
-    expect(result.reviewStatus).toBe('written');
-    expect(result.verdict?.verdict).toBe('pass');
-  });
-
-  it('leaves a twice-unparseable verdict unparseable', async () => {
-    const { projectDir, sessionId, runStartHead } = setupProject();
-    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
-
-    const review = vi.fn().mockResolvedValue({ text: 'looks fine to me', usage: null });
-    const { callbacks } = makeCallbacks();
-    const { bus } = makeBusRecorder();
-
-    const result = await runFinalReviewPhase({
-      projectDir,
-      workspaceDir: projectDir,
-      sessionId,
-      config: makeNoValidationConfig(),
-      callbacks,
-      bus,
-      state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
-      reviewer: makePlanner({ review }),
-      metadata: TEST_METADATA,
-      summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
-    });
-
-    expect(review).toHaveBeenCalledTimes(2);
-    expect(result.reviewStatus).toBe('unparseable');
-    expect(decideReviewOutcome(result, [], REVIEW_CYCLE_CAP, 0)).toEqual({
-      kind: 'fail',
-      blocking: 0,
-    });
-  });
-
-  it('fail with Critical re-enters owning briefs', async () => {
-    const { projectDir, sessionId, runStartHead } = setupProject();
-    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
-    const tasks = [
-      makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' }),
-      makeTask({ id: 'T002', file: 'src/beta.ts', status: 'done' }),
-    ];
-    const reviewer = makePlanner({
-      review: async () => ({
-        text: '### Verdict\nfail\n\n### Findings\n- **Critical**: src/beta.ts leaks the token\n',
-        usage: null,
-      }),
-    });
-    const { callbacks } = makeCallbacks();
-    const { bus } = makeBusRecorder();
-
-    const result = await runFinalReviewPhase({
-      projectDir,
-      workspaceDir: projectDir,
-      sessionId,
-      config: makeNoValidationConfig(),
-      callbacks,
-      bus,
-      state: allTasksDoneState(tasks, runStartHead),
-      reviewer,
-      metadata: TEST_METADATA,
-      summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
-    });
-
-    expect(result.reviewStatus).toBe('written');
-    expect(decideReviewOutcome(result, tasks, REVIEW_CYCLE_CAP, 0)).toEqual({
-      kind: 'fix',
-      fixes: { T002: ['src/beta.ts leaks the token'] },
-    });
-  });
-
-  it('cap 2 cycles', async () => {
-    const { projectDir, sessionId, runStartHead } = setupProject();
-    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
-    const tasks = [makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' })];
-    const reviewer = makePlanner({
-      review: async () => ({
-        text: '### Verdict\nfail\n\n### Findings\n- **Critical**: src/alpha.ts still crashes\n',
-        usage: null,
-      }),
-    });
-    const { callbacks } = makeCallbacks();
-    const { bus } = makeBusRecorder();
-
-    const result = await runFinalReviewPhase({
-      projectDir,
-      workspaceDir: projectDir,
-      sessionId,
-      config: makeNoValidationConfig(),
-      callbacks,
-      bus,
-      state: allTasksDoneState(tasks, runStartHead),
-      reviewer,
-      metadata: TEST_METADATA,
-      summaryBase: SUMMARY_BASE,
-      taskBreakdowns: [],
-    });
-
-    expect(REVIEW_CYCLE_CAP).toBe(2);
-    for (const cycle of [0, 1]) {
-      expect(decideReviewOutcome(result, tasks, REVIEW_CYCLE_CAP, cycle).kind).toBe('fix');
-    }
-    expect(decideReviewOutcome(result, tasks, REVIEW_CYCLE_CAP, REVIEW_CYCLE_CAP)).toEqual({
-      kind: 'fail',
-      blocking: 1,
-    });
+    const record = readReviewRecord(projectDir, sessionId);
+    expect(record.cycle).toBe(2);
+    expect(result.state.review?.cycle).toBe(2);
   });
 });

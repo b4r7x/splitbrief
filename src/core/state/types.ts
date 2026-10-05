@@ -5,6 +5,7 @@ import type { ConsultAnswer, ConsultReason } from '../schemas/consult.js';
 import type { CrewSeatId } from '../crew/identity.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
 import type { Plan } from '../schemas/plan.js';
+import type { TriageInput } from '../schemas/review.js';
 import type { StepCut, StepRef } from '../schemas/run-step.js';
 
 export type MachineAction = StateAction;
@@ -49,12 +50,22 @@ export type StateAction =
     }
   | { type: 'ALL_DONE' }
   | { type: 'REVIEW_DONE'; reviewStatus: ReviewStatus; candidate?: Record<string, string> }
-  | { type: 'REVIEW_FIX_START'; fixes: Record<string, string[]>; cycle: number }
+  | { type: 'RECORD_REVIEW'; review: NonNullable<WorkflowState['review']> }
+  | { type: 'RECORD_TRIAGE'; record: NonNullable<WorkflowState['triage']>[number] }
+  | { type: 'START_FIX_CYCLE' }
+  | { type: 'REVIEW_CORRECTION'; text: string }
+  | {
+      type: 'QUEUE_TRIAGE';
+      inputs: NonNullable<WorkflowState['pendingTriage']>['inputs'];
+      question?: NonNullable<WorkflowState['pendingTriage']>['question'];
+    }
   | { type: 'RECORD_WORKSPACE'; workspace: NonNullable<WorkflowState['workspace']> }
   | { type: 'ACCEPT_AS_IS'; findings: string[] }
   | {
       type: 'APPLY_REVIEW_START';
       merged: { path: string; checkoutHunks: string }[];
+      integrated?: NonNullable<WorkflowState['applyIntegrated']>;
+      triage?: TriageInput[];
     }
   | { type: 'RECORD_APPLY_RECHECK'; failures: string[] }
   | { type: 'APPLY_START'; backupId: string }
@@ -83,7 +94,7 @@ export type StateAction =
   | { type: 'REWIND_TO_PLAN'; comment?: string }
   | { type: 'RESET_TASK'; taskId: TaskId }
   | { type: 'REPLACE_TASK'; taskId: TaskId; task: Task }
-  | { type: 'INSERT_TASKS'; parentId: TaskId; tasks: Task[] }
+  | { type: 'INSERT_TASKS'; parentId: TaskId | null; tasks: Task[] }
   | {
       type: 'RECORD_CONSULT';
       taskId: TaskId;
@@ -91,9 +102,15 @@ export type StateAction =
       reason: ConsultReason;
       answer: ConsultAnswer;
     }
+  | { type: 'CONFIRM_DECISIONS'; taskId: TaskId; decisions: { what: string; why: string }[] }
   | { type: 'COUNT_ATTEMPT'; taskId: TaskId }
   | { type: 'COUNT_PLANNER_CALL' }
-  | { type: 'GRANT_ALLOWANCE'; target: 'lineage' | 'planner'; taskId: TaskId; note: string }
+  | {
+      type: 'GRANT_ALLOWANCE';
+      target: 'lineage' | 'planner';
+      taskId: TaskId | null;
+      note: string;
+    }
   | { type: 'SET_TASK_INPUT_HASHES'; taskId: TaskId; inputHashes: Record<string, string> }
   | { type: 'RECORD_CHECK_RESULTS'; taskId: TaskId; results: CheckResult[] }
   | { type: 'SET_SEAT_WAIT'; seat: CrewSeatId; resetAt: string }

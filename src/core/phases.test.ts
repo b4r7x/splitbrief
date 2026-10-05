@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { phaseTokenRole, phaseRole, canRedoTask } from './phases.js';
-import { PHASES, type Phase } from './schemas/enums.js';
+import { phaseTokenRole, phaseRole } from './phases.js';
 import { attributePhaseTokenDelta } from './state/token-attribution.js';
 import type { TokenUsage } from './schemas/tokens.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
@@ -40,40 +39,6 @@ describe('phase roles', () => {
       output: 0,
       cacheRead: 0,
       cacheCreate: 0,
-    });
-  });
-});
-
-const CAN_REDO_TASK: { allowed: Phase[]; denied: Phase[] } = {
-  allowed: ['implementing', 'validating-task', 'escalating'],
-  denied: [
-    'idle',
-    'researching',
-    'specifying',
-    'reviewing-spec',
-    'clarifying',
-    'constitution-check',
-    'planning',
-    'reviewing-plan',
-    'reviewing-briefs',
-    'analyzing',
-    'final-review',
-    'complete',
-  ],
-};
-
-describe('phase guard coverage', () => {
-  describe('canRedoTask', () => {
-    it.each(CAN_REDO_TASK.allowed)('returns true for %s', (phase) => {
-      expect(canRedoTask(phase)).toBe(true);
-    });
-    it.each(CAN_REDO_TASK.denied)('returns false for %s', (phase) => {
-      expect(canRedoTask(phase)).toBe(false);
-    });
-    it('covers all phases', () => {
-      expect([...CAN_REDO_TASK.allowed, ...CAN_REDO_TASK.denied].sort()).toEqual(
-        [...PHASES].sort(),
-      );
     });
   });
 });

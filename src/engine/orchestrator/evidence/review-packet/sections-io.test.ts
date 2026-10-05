@@ -1,3 +1,5 @@
+import { setupProject } from '#testing/helpers/planning-phase.js';
+import { writeSpecFile } from '../../../../core/paths-io.js';
 import { describe, it, expect, afterEach } from 'vitest';
 import { execSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -5,7 +7,7 @@ import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import type { DriftReport } from '../../../../core/schemas/drift.js';
-import { REVIEW_FILE, sessionDir } from '../../../../core/paths.js';
+import { REVIEW_FILE, REVIEW_JSON_FILE, sessionDir } from '../../../../core/paths.js';
 import type { ReviewPacket } from '../../../../core/schemas/review-packet.js';
 import { buildFinalReview, resolveChangedFiles } from './sections-io.js';
 import { renderReviewPacketMarkdown } from './render.js';
@@ -197,6 +199,68 @@ ${body}`,
 }
 
 describe('buildFinalReview', () => {
+  it.each(['pass', 'unverified'] as const)(
+    'counts effective criterion and finding verification: %s',
+    async (status) => {
+      const ref = setupProject(dirs);
+      writeReview(ref.projectDir, ref.sessionId, '### Verdict\nfail');
+      writeSpecFile(
+        ref,
+        'review.json',
+        JSON.stringify({
+          cycle: 0,
+          at: '2026-01-01T00:00:00Z',
+          outcome: 'fail',
+          verdict: {
+            tasks: [],
+            criteria: [{ id: 'C1', status: 'unverified', evidence: 'Recorded check' }],
+            findings: [
+              {
+                id: 'F1',
+                kind: 'unverified',
+                severity: status === 'pass' ? 'blocking' : 'minor',
+                taskId: null,
+                file: null,
+                line: null,
+                text: 'Proof needed',
+                acceptance: null,
+                checkIds: ['K1'],
+                criterionId: null,
+              },
+            ],
+          },
+          verification: [
+            { id: 'criterion:C1', status: 'pass', output: 'Recorded check' },
+            { id: 'finding:F1', status, output: 'Recorded check' },
+          ],
+        }),
+      );
+      const section = await buildFinalReview({
+        ...ref,
+        requestedStatus: 'written',
+        ledger: null,
+        missing: [],
+      });
+      expect(section.criteriaPassed).toBe(1);
+      expect(section.criteriaFailed).toBe(0);
+      expect(section.verdict).toBe(status === 'pass' ? 'pass_with_notes' : 'fail');
+      expect(section.findingCounts).toEqual({
+        critical: status === 'pass' ? 0 : 1,
+        warning: status === 'pass' ? 1 : 0,
+        note: 0,
+      });
+    },
+  );
+
+  it('reports corrupt typed review data instead of using old Markdown', async () => {
+    const ref = setupProject(dirs);
+    writeReview(ref.projectDir, ref.sessionId, '### Verdict\npass');
+    writeSpecFile(ref, 'review.json', '{}');
+    await expect(
+      buildFinalReview({ ...ref, requestedStatus: 'written', ledger: null, missing: [] }),
+    ).rejects.toThrow('Invalid typed review');
+  });
+
   it('lands a fail verdict with one critical finding in the packet', async () => {
     const { projectDir } = makeProject();
     const sessionId = 'review-fail-session';
@@ -252,6 +316,70 @@ fail
 
     expect(section.verdict).toBe('pass_with_notes');
     expect(section.findingCounts).toEqual({ critical: 0, warning: 1, note: 0 });
+  });
+
+  it('reads the typed review record when review.json exists, never the markdown beside it', async () => {
+    const { projectDir } = makeProject();
+    const sessionId = 'review-json-session';
+    writeReview(
+      projectDir,
+      sessionId,
+      `### Verdict
+pass
+
+### Findings
+- **Warning**: the markdown is stale
+`,
+    );
+    writeFileSync(
+      join(sessionDir(projectDir, sessionId), REVIEW_JSON_FILE),
+      JSON.stringify({
+        cycle: 1,
+        verdict: {
+          tasks: [{ id: 'T001', plan: 'met', note: '' }],
+          criteria: [
+            { id: 'C1', status: 'pass', evidence: 'the recorded run shows it' },
+            { id: 'C2', status: 'unverified', evidence: '' },
+          ],
+          findings: [
+            {
+              id: 'F1',
+              kind: 'defect',
+              severity: 'blocking',
+              taskId: 'T001',
+              file: null,
+              line: null,
+              text: 'drops the error',
+              acceptance: null,
+              checkIds: null,
+              criterionId: null,
+            },
+          ],
+        },
+        outcome: 'fail',
+        verification: [
+          {
+            id: 'criterion:C2',
+            status: 'unverified',
+            output: 'K2: not-runnable — render checks are not runnable',
+          },
+        ],
+        at: '2026-01-01T00:00:00.000Z',
+      }),
+    );
+
+    const section = await buildFinalReview({
+      projectDir,
+      sessionId,
+      requestedStatus: 'written',
+      ledger: null,
+      missing: [],
+    });
+
+    expect(section.verdict).toBe('fail');
+    expect(section.criteriaPassed).toBe(1);
+    expect(section.criteriaFailed).toBe(1);
+    expect(section.findingCounts).toEqual({ critical: 1, warning: 0, note: 0 });
   });
 
   it('yields the defaults when the review file is absent', async () => {

@@ -12,6 +12,12 @@ import {
   makePlanner,
   makeWctx,
 } from '#testing/helpers/orchestrator-factories.js';
+import {
+  failedReviewVerdict,
+  passingReviewVerdict,
+  planFromTasks,
+  typedCallPlanAndReview,
+} from '#testing/helpers/typed-planner.js';
 import { ensureSessionDir, writeSpecFile } from '../../core/paths-io.js';
 import { REVIEW_FILE, SPEC_FILE, TASKS_FILE, sessionDir } from '../../core/paths.js';
 import { createEvidenceLedger } from '../../core/evidence/ledger-state.js';
@@ -22,6 +28,7 @@ import { allowedActionsForReason } from '../../core/schemas/recovery/policy.js';
 import { RecoveryIssueSchema, type RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
 import { deriveRunStatus } from '../../core/sessions/run-status.js';
 import type { Config } from '../../core/schemas/config.js';
+import type { ReviewVerdict } from '../../core/schemas/review.js';
 import type { Task } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { defaultCliAuthChannel } from '../../core/runners/cli-tool-catalog.js';
@@ -239,14 +246,14 @@ function diffOfLength(path: string, chars: number): string {
   return head + 'x'.repeat(chars - head.length);
 }
 
-const PASS_REVIEW = '### Verdict\npass\n\n### Summary\nGood.\n';
-const CRITICAL_REVIEW =
-  '### Verdict\nfail\n\n### Findings\n- **Critical**: src/login.ts leaks the token\n';
+const PASS_REVIEW = (prompt: string): ReviewVerdict => passingReviewVerdict(prompt);
+const CRITICAL_REVIEW = (prompt: string): ReviewVerdict =>
+  failedReviewVerdict(prompt, 'src/login.ts leaks the token', { taskId: 'T001' });
 
 async function review(opts: {
   ref: { projectDir: string; sessionId: string };
   config: Config;
-  reviews?: string[] | undefined;
+  reviews?: Array<(prompt: string) => ReviewVerdict | string> | undefined;
   throws?: unknown;
   cycle?: number | undefined;
 }): Promise<{
@@ -259,15 +266,16 @@ async function review(opts: {
   const { bus, events } = makeBusRecorder();
   let reviewCalls = 0;
   const reviewer = makePlanner({
-    review: async () => {
-      reviewCalls += 1;
-      if (opts.throws !== undefined) throw opts.throws;
-      const texts = opts.reviews ?? [PASS_REVIEW];
-      return {
-        text: texts[Math.min(reviewCalls - 1, texts.length - 1)] ?? PASS_REVIEW,
-        usage: null,
-      };
-    },
+    typedCall: typedCallPlanAndReview(
+      () => planFromTasks([]),
+      (prompt) => {
+        reviewCalls += 1;
+        if (opts.throws !== undefined) throw opts.throws;
+        const replies = opts.reviews ?? [PASS_REVIEW];
+        const reply = replies[Math.min(reviewCalls - 1, replies.length - 1)] ?? PASS_REVIEW;
+        return reply(prompt);
+      },
+    ),
   });
   const implementer = makeImplementer();
   const tasks: Task[] = [makeTask({ id: 'T001', file: 'src/login.ts', status: 'done' })];
@@ -400,26 +408,26 @@ describe('a REVIEW that reached no verdict', () => {
     expect(events.find((event) => event.type === 'workflow_complete')).toBeUndefined();
   });
 
-  it('treats a reply that names no verdict as a call that did not land', async () => {
+  it('halts on the review seat with a protocol error when a reply names no verdict twice', async () => {
     const ref = setupRun('review-unparseable', { ledger: true });
 
     const { result, reviewCalls } = await review({
       ref,
       config: makeNoValidationConfig(),
-      reviews: ['### Summary\nIt is fine, I suppose.\n'],
+      reviews: [() => '### Summary\nIt is fine, I suppose.\n'],
     });
 
-    // The reviewer gets its one re-ask before the run gives up on the verdict.
+    // The reviewer gets its one repair before the run gives up on the verdict.
     expect(reviewCalls).toBe(2);
     expect(result.state.pendingRecovery?.seat).toBe('review');
-    expect(result.state.pendingRecovery?.facts?.reviewFailureKind).toBe('call-failed');
+    expect(result.state.pendingRecovery?.reason).toBe('seat-protocol-error');
     expect(result.state.pendingRecovery?.facts?.blocking).toBeUndefined();
     expect(result.state.phase).toBe('final-review');
   });
 });
 
 describe('a REVIEW that reached a verdict', () => {
-  it('keeps a parsed fail on the build seat, with its count, a correction, accept as is and its two exits', async () => {
+  it('keeps a fail on the build seat, with its count, a correction, accept as is and its two exits', async () => {
     const ref = setupRun('review-substantive', { ledger: true });
 
     const { result, events } = await review({
@@ -440,21 +448,6 @@ describe('a REVIEW that reached a verdict', () => {
       review: 'failed',
       blocking: 1,
     });
-  });
-
-  it('still opens the bounded BUILD repair on a Critical finding', async () => {
-    const ref = setupRun('review-repair', { ledger: true });
-
-    const { result, events } = await review({
-      ref,
-      config: makeNoValidationConfig(),
-      reviews: [CRITICAL_REVIEW, PASS_REVIEW],
-    });
-
-    expect(events.find((event) => event.type === 'review_fix_started')).toMatchObject({ cycle: 1 });
-    expect(taskLoop.calls).toBe(2);
-    expect(result.completed).toBe(true);
-    expect(result.state.reviewStatus).toBe('passed');
   });
 });
 

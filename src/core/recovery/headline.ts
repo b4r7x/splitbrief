@@ -22,6 +22,16 @@ export function finalReviewFailedCause(blocking: number): string {
   return `Final review failed with ${countNoun(blocking, 'blocking finding')}`;
 }
 
+/** A final review the fix-cycle cap stopped: the run has spent every cycle it may. */
+export function finalReviewCapCause(cycles: number): string {
+  return `Final review failed after ${countNoun(cycles, 'fix cycle')}`;
+}
+
+/** A final review that failed on claims no check could verify, with nothing for the planner to fix. */
+export function finalReviewUnverifiedCause(criteria: number): string {
+  return `Final review failed with ${countNoun(criteria, 'unverified criterion')}`;
+}
+
 /** What stopped a retry-exhausted brief, in the one wording the transcript, the panel and the byline share. */
 export function retryExhaustedCause(
   cause: Readonly<{
@@ -91,6 +101,10 @@ export function formatRecoveryHeadline(issue: RecoveryIssue, now: number = Date.
       return 'Plan still fails its checks after one repair';
     case 'review-failed': {
       // A final review halt names no brief: it judged the whole run, or it judged nothing.
+      const cycles = recoveryFactNumber(issue.facts, 'fixCycles');
+      if (cycles !== undefined) return finalReviewCapCause(cycles);
+      const unverified = recoveryFactNumber(issue.facts, 'unverified');
+      if (unverified !== undefined) return finalReviewUnverifiedCause(unverified);
       const blocking = recoveryFactNumber(issue.facts, 'blocking');
       if (blocking !== undefined) return finalReviewFailedCause(blocking);
       return recoveryFactString(issue.facts, 'reviewFailureKind') === undefined

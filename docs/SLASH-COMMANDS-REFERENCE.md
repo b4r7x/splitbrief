@@ -14,11 +14,11 @@ Type `/` in the TUI to open the command picker. Dispatch inside `src/core/runtim
 
 Each command declares `validScreens`. The screens are `home`, `workflow`, and `setup` (`src/core/navigation/types.ts`). Invoking a command on the wrong screen surfaces an error through the `feedbackStore`. The constant `ALL_SCREENS` (`src/core/navigation/types.ts`) is shorthand for "available everywhere".
 
-Each command may also declare a `guard`, which returns one true sentence when the command cannot run right now (wrong phase, no vision on the PLAN seat) and `undefined` otherwise. The command palette and the composer `/` picker hide guarded-out rows; help lists every command valid for the screen. The one rewind predicate is `canRedoTask(phase)` (`src/core/phases.ts`, called from `src/core/runtime/commands/defs/workflow.ts`): true only during `implementing`, `validating-task`, or `escalating`. A change to the plan is requested on the plan card, not with a command.
+Each command may also declare a `guard`, which returns one true sentence when the command cannot run right now (wrong phase, no vision on the PLAN seat) and `undefined` otherwise. The command palette and the composer `/` picker hide guarded-out rows; help lists every command valid for the screen. A change to the plan is requested on the plan card, not with a command.
 
 Handlers reach the engine and stores through the `RuntimeCommandContext` interface in `src/core/runtime/commands/types.ts`, assembled by `createCommandContext` in `src/core/runtime/commands/context-factory.ts`; the TUI (`src/app/command-context.ts`) only supplies the callbacks. The registry itself never imports stores directly; this keeps the command list testable in isolation (see `src/core/runtime/commands/dispatch.test.ts`).
 
-The slash commands — enumerated by [`src/core/runtime/commands/defs/`](https://github.com/b4r7x/splitbrief/blob/main/src/core/runtime/commands/defs), the single source of truth — are 23 commands. Every one declares a `category` from the closed set in `src/core/runtime/commands/types.ts` — `navigate`, `crew`, `workflow`, `view`, `io` — and is in exactly one; the command palette and the sections below group by it.
+The slash commands — enumerated by [`src/core/runtime/commands/defs/`](https://github.com/b4r7x/splitbrief/blob/main/src/core/runtime/commands/defs), the single source of truth — are 22 commands. Every one declares a `category` from the closed set in `src/core/runtime/commands/types.ts` — `navigate`, `crew`, `workflow`, `view`, `io` — and is in exactly one; the command palette and the sections below group by it.
 
 ---
 
@@ -131,18 +131,7 @@ Commands that decide who does the work and how: the three seats and tool detecti
 
 ## Workflow
 
-Commands that act on the active run: re-run a task, stop, resume or end the run, manage the queue, and settle the run's written changes. `category: 'workflow'` in the registry. Most are restricted to the `workflow` screen, and `/redo-task` additionally gates on the current `Phase`. A change to the plan is requested on the plan card (`c` Request changes); there is no rewind command.
-
-### `/redo-task <id>`
-
-- **Purpose**: Reset a single task to `pending` and re-run it. Does not trigger replanning — the task loop picks the task up on its next iteration with a fresh implementer call.
-- **Screens**: `workflow`.
-- **Phase guard**: `canRedoTask` — `implementing`, `validating-task`, or `escalating` only; elsewhere the feedback line reads `"Tasks can only be redone while implementing"`.
-- **Args**: required task ID, e.g. `T001`. Calling without an ID prints `"/redo-task requires a task ID. Usage: /redo-task T001"`.
-- **Example**: `/redo-task T003`
-- **Behavior**: On failure (no active workflow, missing ID, wrong phase) an error appears on the feedback line. On success the lifecycle store transitions and the existing implementer subprocess for that task is replaced on the next loop iteration.
-- **Implementation**: catalog at `src/core/runtime/commands/defs/workflow.ts`; reset dispatched via `requestTaskRedo(taskId)` in `src/app/command-context.ts`.
-- **See also**: `/tasks`.
+Commands that act on the active run: stop, resume or end the run, manage the queue, and settle the run's written changes. `category: 'workflow'` in the registry. Most are restricted to the `workflow` screen. A change to the plan is requested on the plan card (`c` Request changes); there is no rewind command.
 
 ### `/stop`
 
@@ -478,7 +467,6 @@ Alphabetical, for fast lookup.
 - [`/palette`](#palette) — open the command palette.
 - [`/queue`](#queue-showclear) — inspect or clear the planner message queue.
 - [`/quit`](#quit) — exit the application.
-- [`/redo-task`](#redo-task-id) — reset and re-run a single task.
 - [`/refresh`](#refresh) — re-run tool detection.
 - [`/resume`](#resume) — continue a paused or stopped run.
 - [`/run`](#run-acceptreject) — accept or roll back what this run wrote.

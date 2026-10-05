@@ -286,7 +286,7 @@ describe('createImplementerBase — prompt write contracts', () => {
       onOutput: vi.fn(),
       plan: {
         summary: 'Greet people by name',
-        decisions: ['PLAN-DECISION: keep the greeting in one module'],
+        decisions: [{ text: 'PLAN-DECISION: keep the greeting in one module', taskId: null }],
         criteria: [{ id: 'C1', text: 'A name gets a greeting', checkIds: [] }],
       },
     };
@@ -326,6 +326,7 @@ describe('createImplementerBase — typed implementer report', () => {
     filesChanged: ['src/hello.ts'],
     touchedNotSuggested: [],
     notes: null,
+    decisions: [],
   } as const;
   const blockedReport = {
     status: 'blocked',

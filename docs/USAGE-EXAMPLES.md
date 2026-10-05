@@ -172,7 +172,7 @@ phase: final-review
 
 The planner may ask up to three questions per round, for at most two rounds; every question has a default, and `⏎` through the panel takes them. The plan lists the protected writes it needs; approving the card confirms them, so `write package.json` does not ask again during the build. A protected write the plan did not list still asks.
 
-**Variations:** Give the planner more context with `@file` arguments, or attach project skills with `/skills` (recipe 22).
+**Variations:** Give the planner more context with `@file` arguments, or attach project skills with `/skills` (recipe 21).
 
 **See also:** [docs/TASK-CONTRACT.md](./TASK-CONTRACT.md#the-plan-contract), recipe 9.
 
@@ -336,7 +336,7 @@ A confirmation holds for that path for the rest of the run. A plan that lists th
 
 **Variations:** A `--json` or `--plain` run has no reply channel, so a protected write fails closed there with `APPROVAL_REQUIRED`, even when the plan lists it: an unattended approval confirms nothing. Run that change interactively.
 
-**See also:** [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#protected-path-confirmation), recipe 26.
+**See also:** [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#protected-path-confirmation), recipe 25.
 
 ---
 
@@ -504,41 +504,11 @@ T003 ✓
 
 Denied tasks land in the evidence ledger as `skipped: <reason>`. There is no `/skip-task` slash command today — denying via hook is the supported path.
 
-**Variations:** To re-run a skipped task later, see recipe 15.
-
-**See also:** [docs/HOOKS-CONFIG.md](./HOOKS-CONFIG.md), recipe 24.
+**See also:** [docs/HOOKS-CONFIG.md](./HOOKS-CONFIG.md), recipe 23.
 
 ---
 
-### 15. Redo a completed task
-
-**When:** a task succeeded but the result wasn't what you wanted, and you want the implementer to try it again.
-
-**Run:**
-
-```
-> /redo-task T003
-```
-
-**You'll see:**
-
-```
-task_reset T003
-T003 (re-run): pending → in_progress
-implementer_generate_done
-validate · tsc ✓ lint ✓ test ✓
-task_completed T003
-```
-
-`/redo-task` only resets the single task — it doesn't re-plan. A change to the brief itself is made on the plan card, before the build.
-
-**Variations:** Redo is gated to `implementing`, `validating-task`, and `escalating` phases. The slash command takes the task ID; calling without one prints a usage error.
-
-**See also:** [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) `/redo-task`, [docs/WORKFLOW.md](./WORKFLOW.md) §1.1.
-
----
-
-### 16. Skip the plan card
+### 15. Skip the plan card
 
 **When:** you trust the plan checks and want the build to start as soon as the plan passes them.
 
@@ -570,7 +540,7 @@ With `approve: none` the card never opens. A plan that fails its checks still go
 
 ---
 
-### 17. Stop a run cleanly
+### 16. Stop a run cleanly
 
 **When:** something is wrong and you want to stop without losing the partial transcript or the changes already written.
 
@@ -608,7 +578,7 @@ No option writes the run's changes into your checkout or reverts it: the briefs 
 
 ## Headless / CI
 
-### 18. Run in CI without TUI
+### 17. Run in CI without TUI
 
 **When:** you want SPLITBRIEF to run unattended in GitHub Actions or another CI runner.
 
@@ -633,11 +603,11 @@ splitbrief start --json --allow-hooks "regenerate API client from openapi.yaml" 
 
 **Variations:** `CI=1` env var auto-disables fullscreen mode even without `--json`.
 
-**See also:** recipes 19–21.
+**See also:** recipes 18–20.
 
 ---
 
-### 19. Parse cost in CI
+### 18. Parse cost in CI
 
 **When:** you want to extract the final cost from a CI run and post it as a build comment.
 
@@ -670,7 +640,7 @@ The same data lives in `.splitbrief/sessions/<id>/summary.json` once the run fin
 
 ---
 
-### 20. Read a headless run without a JSON parser
+### 19. Read a headless run without a JSON parser
 
 **When:** CI or a shell script needs the shape of a run — which phase, which task, what the review said — and piping NDJSON through `jq` is more machinery than the job deserves.
 
@@ -712,17 +682,17 @@ splitbrief start --plain "..." | grep -c '^task .*: failed' # tasks that did not
 splitbrief start --plain "..." | tail -1                    # the closing line
 ```
 
-Cost is reported in tokens, not dollars: the event stream carries token counts, and the price catalog lives outside the run. For dollars, use `--json` (recipe 19) or read `summary.json` after the run.
+Cost is reported in tokens, not dollars: the event stream carries token counts, and the price catalog lives outside the run. For dollars, use `--json` (recipe 18) or read `summary.json` after the run.
 
 `--plain` and `--json` are two renderings of one stream and cannot share stdout — passing both exits `2` with `--plain and --json cannot be combined; choose one output mode.`
 
 **Variations:** `splitbrief resume --plain` and `splitbrief continue --plain` render a resumed run the same way. A resume that lands on a different crew than the one that started the run prints `PLAN seat changed <old> → <new>; context will be rebuilt` to stderr first, so redirect stderr if you want stdout alone.
 
-**See also:** [docs/CLI-REFERENCE.md](./CLI-REFERENCE.md) §Plain output stream, recipe 19.
+**See also:** [docs/CLI-REFERENCE.md](./CLI-REFERENCE.md) §Plain output stream, recipe 18.
 
 ---
 
-### 21. Answer a halted run without a TUI
+### 20. Answer a halted run without a TUI
 
 **When:** a `--json` or `--plain` run stopped on a recovery issue in CI, and you want to resolve it from the shell instead of opening the recovery panel.
 
@@ -765,7 +735,7 @@ done: 2 tasks
 
 ---
 
-### 22. Prime every seat with project skills
+### 21. Prime every seat with project skills
 
 **When:** the repo carries skills — house conventions, a testing standard, a security checklist — and you want a scripted run to use them without opening the picker.
 
@@ -798,7 +768,7 @@ with exit `2`.
 
 ## Power user
 
-### 23. Define project-level coding rules
+### 22. Define project-level coding rules
 
 **When:** you want every seat — planner, implementer and reviewer — to follow project conventions (no React Context, ESM `.js` suffix, etc.).
 
@@ -824,13 +794,13 @@ Interactively, select the skill with `/skills house-rules` before you start.
 
 **You'll see:** nothing extra. The rules reach every turn of the planning session, each implementer brief and the final review under one `## Active Project Skills` section, and the reviewer judges the result against them.
 
-**Variations:** There is no constitution check: the speckit mode that ran it was removed. A rule that must hold mechanically belongs in a lint rule or a `post_task` hook (recipe 24).
+**Variations:** There is no constitution check: the speckit mode that ran it was removed. A rule that must hold mechanically belongs in a lint rule or a `post_task` hook (recipe 23).
 
-**See also:** recipe 22, [docs/FEATURES.md](./FEATURES.md#skills).
+**See also:** recipe 21, [docs/FEATURES.md](./FEATURES.md#skills).
 
 ---
 
-### 24. Run pre/post task shell hooks
+### 23. Run pre/post task shell hooks
 
 **When:** you want to format with Prettier and run Biome after every task without modifying the validation pipeline.
 
@@ -884,7 +854,7 @@ The receipt goes to `~/.splitbrief/trust/hooks.json`, keyed by this checkout —
 
 ## TUI quick reference
 
-### 25. Open the command palette
+### 24. Open the command palette
 
 **When:** you want to discover or quickly invoke any of the slash commands from anywhere in the TUI.
 
@@ -934,7 +904,7 @@ Captured at 80x24 on the workflow screen, in a project with two skills (the `Ski
 
 ---
 
-### 26. Confirm a destructive file write
+### 25. Confirm a destructive file write
 
 **When:** a file write is classified as `destructive` (a control-plane path under `.git/**` or `.splitbrief/**`). A protected write always asks; no setting turns it off.
 
@@ -974,7 +944,7 @@ Captured at 80x24 on the workflow screen, in a project with two skills (the `Ski
 
 ---
 
-### 27. Adapt the plan from a rejection
+### 26. Adapt the plan from a rejection
 
 **When:** the implementer proposed an action you rejected, and you want the planner to take that rejection into account on the next run. Planner and implementer roles: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
 
@@ -1011,7 +981,7 @@ On the next turn of the planning session (for example after a correction at the 
 
 ## One-shot review
 
-### 28. Review a diff without starting a run
+### 27. Review a diff without starting a run
 
 **When:** the code is already written — by you, a teammate, or another agent — and you want SPLITBRIEF's review seat on it without a plan, a session, or a state machine.
 

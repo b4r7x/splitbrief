@@ -1,8 +1,11 @@
-import { cpSync, mkdirSync, readFileSync } from 'node:fs';
+import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { sessionDir } from '../../core/paths.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
+import { REVIEW_FILE, sessionDir } from '../../core/paths.js';
+import { buildSummary } from '../../engine/orchestrator/summary/build.js';
 import { readRunRecord } from '../../core/sessions/run-record-io.js';
 import { deriveRunStatus } from '../../core/sessions/run-status.js';
 import { WorkflowStateSchema } from '../../core/schemas/workflow.js';
@@ -66,6 +69,31 @@ describe('a run the old step chain made', () => {
       kind: 'open',
       stop: { kind: 'interrupted' },
       resumeAt: { kind: 'brief', taskId: 'T008', attempt: 1 },
+    });
+  });
+
+  it('summarizes a session saved before review.json through its review.md', () => {
+    writeFileSync(
+      join(sessionDir(projectDir, SESSION_ID), REVIEW_FILE),
+      '### Verdict\npass_with_notes\n\n### Findings\n- **Warning**: the retry path is untested\n',
+    );
+
+    const summary = buildSummary({
+      feature: 'legacy review',
+      startTime: Date.now() - 1000,
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+      state: makeImplState([makeTask({ id: 'T001', status: 'done' })]),
+      projectDir,
+      sessionId: SESSION_ID,
+      taskBreakdowns: [],
+    });
+
+    expect(summary.review).toEqual({
+      verdict: 'pass_with_notes',
+      critical: 0,
+      warnings: 1,
+      notes: 0,
     });
   });
 

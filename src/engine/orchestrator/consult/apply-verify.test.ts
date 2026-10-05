@@ -326,7 +326,9 @@ describe('applyConsultAnswer ask-user', () => {
         default: 'memory',
       },
     ]);
-    expect(states).toHaveLength(0);
+    expect(states.at(-1)?.phase).toBe('escalating');
+    expect(states.at(-1)?.pendingPlannerConversation).toBeUndefined();
+    expect(states.at(-1)?.userAnswers).toEqual([{ reply: 'Which store?', answer: 'redis' }]);
   });
 
   it('takes the default when the operator answers with a bare Enter', async () => {
@@ -357,6 +359,7 @@ describe('applyConsultAnswer ask-user', () => {
     const result = await applyConsultAnswer(ctx, task, askUser('memory'), attempt);
 
     expect(result).toEqual({ action: 'guidance', instructions: 'memory', context: null });
-    expect(states).toHaveLength(0);
+    expect(states.at(-1)?.phase).toBe('escalating');
+    expect(states.at(-1)?.userAnswers).toEqual([{ reply: 'Which store?', answer: 'memory' }]);
   });
 });

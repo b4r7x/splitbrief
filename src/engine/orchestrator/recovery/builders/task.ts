@@ -24,7 +24,12 @@ import type { ValidationResult } from '../../validation/result.js';
 import type { RoutingDecision } from '../../context-routing/types.js';
 import { runnerAuthDisplayName, runnerLoginInstruction } from '../../../runners/auth-failure.js';
 import { parseUsageLimitReset, usageLimitAdvice } from '../../../runners/usage-limit.js';
-import { finalReviewFailedCause, retryExhaustedCause } from '../../../../core/recovery/headline.js';
+import {
+  finalReviewCapCause,
+  finalReviewFailedCause,
+  finalReviewUnverifiedCause,
+  retryExhaustedCause,
+} from '../../../../core/recovery/headline.js';
 import { stripRecoveryResetClause } from '../../../../core/recovery/reset-clock.js';
 import { HAND_BACK_PANEL_CHARS } from '../../../../core/pipeline-spec/ladder.js';
 import { uniqueSortedIds, uniqueSorted } from '../../../../utils/collections.js';
@@ -790,7 +795,10 @@ export function buildSnapshotFailedRecoveryIssue(
 }
 
 /** A review that judged nothing on a seat that can still run; a blocked seat halts as its runner. */
-type NoVerdictReviewFailure = Exclude<FinalReviewFailure, { kind: 'seat-blocked' }>;
+type NoVerdictReviewFailure = Exclude<
+  FinalReviewFailure,
+  { kind: 'seat-blocked' | 'seat-protocol-error' }
+>;
 
 export interface ReviewFailedRecoveryOptions extends RecoveryBuilderBase {
   phase?: Phase | undefined;
@@ -801,6 +809,10 @@ export interface ReviewFailedRecoveryOptions extends RecoveryBuilderBase {
   failure?: NoVerdictReviewFailure | undefined;
   /** A reviewed workspace can be accepted with its open findings instead of repaired. */
   acceptAsIs?: boolean | undefined;
+  /** The fix cycles spent when the cap stopped the review; fixes the halt's words. */
+  fixCycles?: number | undefined;
+  /** Criteria no check could verify, when the review failed with nothing to fix. */
+  unverified?: number | undefined;
 }
 
 const REVIEW_SEAT_REMEDY =
@@ -865,6 +877,12 @@ export function buildReviewFailedRecoveryIssue(opts: ReviewFailedRecoveryOptions
     'pause-run',
     'end-run',
   ]);
+  const message =
+    opts.fixCycles !== undefined
+      ? finalReviewCapCause(opts.fixCycles)
+      : opts.unverified !== undefined
+        ? finalReviewUnverifiedCause(opts.unverified)
+        : finalReviewFailedCause(blocking);
   return createRecoveryIssue({
     id: opts.id,
     seat: 'build',
@@ -872,9 +890,13 @@ export function buildReviewFailedRecoveryIssue(opts: ReviewFailedRecoveryOptions
     phase: opts.phase ?? 'final-review',
     files: [],
     affectedTaskIds: [],
-    message: finalReviewFailedCause(blocking),
+    message,
     details: [opts.detail].filter((detail): detail is string => detail !== undefined),
-    facts: compactFacts({ blocking }),
+    facts: compactFacts({
+      blocking,
+      fixCycles: opts.fixCycles,
+      unverified: opts.unverified,
+    }),
     availableActions: actions,
     recommendedAction: 'pause-run',
     createdAt: opts.createdAt,

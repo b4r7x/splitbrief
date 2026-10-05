@@ -41,6 +41,8 @@ const REASON_TEXT: Record<ConsultReason, string> = {
   blocked: 'The implementer stopped and needs a decision that is not its own to make.',
   stale:
     'The task went stale: files it captured moved under it since the brief was compiled. Only guidance or a rewritten task can answer this reason.',
+  deviation:
+    'The implementer finished but reported a deviation from the brief. Confirm the deviation, or correct it before the attempt is validated.',
 };
 
 const CONSULT_CONTRACT = `You are the run's planner. SPLITBRIEF asks you, not the user, for the decision that unblocks this task. This call is read-only: do not write, edit or delete any file, and do not run commands that change the project.
@@ -52,9 +54,11 @@ Answer with exactly one JSON object \`{ "answer": { "diagnosis": …, "action": 
 - \`verify\` — \`checkIds\` and \`reason\`: re-run exactly those checks before any retry, for when the failure may predate this task's own edits.
 - \`ask-user\` — \`question\`, \`whyOnlyUserCanAnswer\`, \`choices\` (or null) and \`default\` (or null): only when no other action can unblock the task and the user alone holds the missing decision.
 
-The criteria rule: a rewrite or a split never drops a criterion id; a split never splits a subtask. Every criterion id the task serves stays with its replacement, or with the union of the split tasks, and each replacement keeps a complete, verifiable brief.`;
+The criteria rule: a rewrite or a split never drops a criterion id; a split never splits a subtask. Every criterion id the task serves stays with its replacement, or with the union of the split tasks, and each replacement keeps a complete, verifiable brief. The checks rule: a defective check command may be repaired under the same check id, but a rewrite or a split never drops a check id that one of the task's criteria names; removing the requirement it checks needs \`ask-user\`.`;
 
-const RESUME_CONTRACT = `Answer again with exactly one JSON object in the consult shape: \`answer.diagnosis\` and exactly one action. The call stays read-only. The criteria rule still holds: a rewrite or a split never drops a criterion id, and a split never splits a subtask.`;
+const RESUME_CONTRACT = `Answer again with exactly one JSON object in the consult shape: \`answer.diagnosis\` and exactly one action. The call stays read-only. The criteria rule still holds: a rewrite or a split never drops a criterion id, and a split never splits a subtask. The checks rule still holds too: a defective check command may be repaired under the same check id, but removing a check id a served criterion names needs \`ask-user\`.`;
+
+const DEVIATION_CONTRACT = `This consult carries a reported deviation. The report's \`decisions\` list is what the implementer did differently from the brief and why. \`confirm\` — with the exact \`decisions\` list you accept — records them in the plan ledger and keeps the implementation; use it only for a change of how that keeps every accepted criterion intact. A change of what is built is \`ask-user\`.`;
 
 function checkLine(check: Check): string {
   return `\`${check.id}\` (${check.kind} \`${check.value}\`${check.required ? '' : ', optional'})`;
@@ -63,6 +67,17 @@ function checkLine(check: Check): string {
 function bullets(label: string, values: readonly string[]): string[] {
   if (values.length === 0) return [];
   return [`**${label}:**`, ...values.map((value) => `- ${value}`)];
+}
+
+function decisionLines(plan: Plan): string[] {
+  const decisions =
+    plan.decisions.length === 0
+      ? ['None.']
+      : plan.decisions.map(
+          (decision) =>
+            `- ${decision.text}${decision.taskId === null ? '' : ` (${decision.taskId})`}`,
+        );
+  return decisions;
 }
 
 function planSection(plan: Plan): PromptPart {
@@ -77,6 +92,9 @@ function planSection(plan: Plan): PromptPart {
       '',
       '### Checks',
       ...plan.checks.map((check) => `- ${checkLine(check)}`),
+      '',
+      '### Decisions',
+      ...decisionLines(plan),
     ].join('\n'),
   };
 }
@@ -133,6 +151,8 @@ function consultAnswerDetail(answer: ConsultRecord['answer']): string {
       return `verify ${action.checkIds.join(', ')}: ${action.reason}`;
     case 'ask-user':
       return `asked the user: ${action.question}`;
+    case 'confirm':
+      return `confirmed ${action.decisions.map((decision) => `${decision.what} — ${decision.why}`).join('; ')}`;
     default:
       return assertNever(action);
   }
@@ -156,7 +176,11 @@ function reportLines(report: ImplementerReport | null): string[] {
     report.status === 'blocked'
       ? `Blocked: ${report.question}\nFiles needed: ${report.filesNeeded.join(', ') || 'none named'}`
       : `Files changed: ${report.filesChanged.join(', ') || 'none named'}\nTouched not suggested: ${
-          report.touchedNotSuggested.map((entry) => `${entry.file} (${entry.reason})`).join(', ') ||
+          report.touchedNotSuggested
+            .map((entry) => `${entry.file}${entry.reason === '' ? '' : ` (${entry.reason})`}`)
+            .join(', ') || 'none'
+        }\nDecisions: ${
+          report.decisions.map((decision) => `${decision.what} — ${decision.why}`).join('; ') ||
           'none'
         }\nNotes: ${report.notes ?? 'none'}`;
   return ['## Implementer Report', fenced(detail)];
@@ -185,11 +209,20 @@ function reasonSection(input: ConsultPromptInput): PromptPart {
  * reason and the new attempt's evidence.
  */
 export function buildConsultPrompt(input: ConsultPromptInput): string {
+  const contract =
+    input.reason === 'deviation'
+      ? `${CONSULT_CONTRACT}\n\n${DEVIATION_CONTRACT}`
+      : CONSULT_CONTRACT;
+  const resumeContract =
+    input.reason === 'deviation' ? `${RESUME_CONTRACT}\n\n${DEVIATION_CONTRACT}` : RESUME_CONTRACT;
   if (input.resumed === true) {
     return buildPrompt({
       title: 'Consult continued',
       intro: `The planner session already holds this run's plan and brief. ${input.task.id} needs another answer (reason: ${input.reason}).`,
       sections: [
+        ...(input.plan === undefined
+          ? []
+          : [{ heading: 'Confirmed Decisions', body: decisionLines(input.plan).join('\n') }]),
         {
           heading: 'Task',
           body: `**${input.task.id}** (revision ${input.task.revision ?? 1}) — ${input.task.title}`,
@@ -197,7 +230,7 @@ export function buildConsultPrompt(input: ConsultPromptInput): string {
         reasonSection(input),
         ...attemptLines(input),
         instructionsSection(
-          `${RESUME_CONTRACT}\n\n${workspaceReadInstructions(input.workspaceDir)}`,
+          `${resumeContract}\n\n${workspaceReadInstructions(input.workspaceDir)}`,
         ),
       ],
     });
@@ -222,7 +255,7 @@ export function buildConsultPrompt(input: ConsultPromptInput): string {
     sections.push({ heading: 'Other Tasks', body: otherTaskLines(input.otherTasks).join('\n') });
   }
   sections.push(
-    instructionsSection(`${CONSULT_CONTRACT}\n\n${workspaceReadInstructions(input.workspaceDir)}`),
+    instructionsSection(`${contract}\n\n${workspaceReadInstructions(input.workspaceDir)}`),
   );
 
   return buildPrompt({

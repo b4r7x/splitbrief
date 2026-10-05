@@ -417,7 +417,7 @@ describe('runHeadless — with a reviewer configured', () => {
     });
 
     // `/bin/cat` echoes the prompt back, so the verdict never parses: the review
-    // fails after its re-ask and the run exits 1 with a review-failed recovery.
+    // fails after its repair and the run exits 1 with a seat-protocol-error recovery.
     const error = await runHeadless({
       prepared,
       _planner: planner,
@@ -430,7 +430,7 @@ describe('runHeadless — with a reviewer configured', () => {
     );
     expect(error).toMatchObject({
       exitCode: 1,
-      message: expect.stringContaining('Recovery required (review-failed)'),
+      message: expect.stringContaining('Recovery required (seat-protocol-error)'),
     });
 
     const lines = stdoutChunks
@@ -450,7 +450,10 @@ describe('runHeadless — with a reviewer configured', () => {
     const halted = loadState({ projectDir, sessionId });
     expect(halted?.reviewStatus).toBeUndefined();
     expect(halted?.phase).toBe('final-review');
-    expect(halted?.pendingRecovery).toMatchObject({ reason: 'review-failed', seat: 'review' });
+    expect(halted?.pendingRecovery).toMatchObject({
+      reason: 'seat-protocol-error',
+      seat: 'review',
+    });
   }, 30_000);
 });
 

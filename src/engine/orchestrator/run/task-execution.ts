@@ -1,32 +1,19 @@
+import { haltVerdictlessReview, triageFailedReview } from './review.js';
 import { isTaskCompleted, type Task } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { fixCyclesOf, type WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { StepRef } from '../../../core/schemas/run-step.js';
 import type { WorkflowContext } from '../types.js';
-import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 
 import { buildSummary, type SummaryBase } from '../summary/build.js';
-import { publishError } from '../events.js';
 import { runTaskLoop } from '../task/loop.js';
-import {
-  REVIEW_UNAVAILABLE,
-  runFinalReviewPhase,
-  type FinalReviewFailure,
-  type FinalReviewResult,
-} from '../final-review.js';
-import { decideReviewOutcome } from '../review-fix.js';
+import { runFinalReviewPhase } from '../final-review.js';
 import { type CheckRunResult, runChecks } from '../validation/run-checks.js';
 import { formatValidationError } from '../validation/format-error.js';
 import { captureReviewedCandidate } from '../apply/states.js';
-import { REVIEW_CYCLE_CAP } from '../../../core/pipeline-spec/review.js';
-import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
-import { buildReviewFailedRecoveryIssue } from '../recovery/builders/task.js';
-import { reviewSeatDetails } from '../recovery/builders/details.js';
-import { plannerCallHaltIssue } from '../recovery/planner-call-failure.js';
-import { finalReviewFailedCause } from '../../../core/recovery/headline.js';
-import { nowIso } from '../../../utils/format-time.js';
+import { transitionAndSave } from '../state-ops.js';
 import { ensureRunBaselineSnapshot, recordRunSnapshotForRun } from './snapshots.js';
-import { REVIEW_FILE, SNAPSHOT_BASELINE_ID } from '../../../core/paths.js';
+import { SNAPSHOT_BASELINE_ID } from '../../../core/paths.js';
 import type { PlanningPhaseResult } from '../planning/types.js';
 import { createSnapshot } from '../../snapshots/create.js';
 import { reconcileWorkspaceToBase } from '../isolation/acquisition.js';
@@ -48,21 +35,6 @@ export type RunTasksAndReviewOptions = {
 };
 
 /**
- * Why this review reached no verdict, when it reached none. A result from before
- * the typed failure existed says only that nothing was written; that is a call
- * that did not land, carried under the one stable code rather than guessed at.
- */
-function noVerdictFailure(review: FinalReviewResult): FinalReviewFailure | undefined {
-  if (review.failure !== undefined) return review.failure;
-  if (review.reviewStatus === 'written') return undefined;
-  return {
-    kind: 'call-failed',
-    code: REVIEW_UNAVAILABLE,
-    message: 'The final review reached no verdict, so nothing was judged.',
-  };
-}
-
-/**
  * Pause after this brief, held in place. The state records the brief the run
  * will start next, so leaving the screen persists as a boundary park and the
  * run picks up there; `/resume` settles the promise and the loop carries on.
@@ -78,7 +50,7 @@ async function parkAtBoundary(args: {
   const nextTask = args.state.tasks[args.state.currentTaskIndex];
   const step: StepRef =
     nextTask === undefined
-      ? { kind: 'review', cycle: args.state.reviewFixes?.cycle ?? 0 }
+      ? { kind: 'review', cycle: fixCyclesOf(args.state).used }
       : { kind: 'brief', taskId: nextTask.id, attempt: 0 };
 
   let state = transitionAndSave(ref, args.state, {
@@ -366,169 +338,112 @@ export async function runTasksAndReview(
       : undefined;
   };
 
-  // The review owns the run's exit: a `fail` it can attribute to briefs sends
-  // those briefs back through implementation and asks again, up to the cap.
-  // The budget is durable: a resumed final review restarts from the cycles its
-  // earlier invocations already spent, so continuing never mints new ones.
-  for (let cycle = state.reviewFixes?.cycle ?? 0; ; cycle++) {
-    const candidate = await captureCandidate();
-    const recheck = await recheckMergedCandidate({ wctx, state, setTrackedState });
-    state = recheck.state;
-    const integration =
-      state.applyReview === undefined
-        ? undefined
-        : buildIntegrationSection(state.applyReview.merged, recheck.failures, recheck.notRun);
-    const review = await runFinalReviewPhase({
-      projectDir: wctx.projectDir,
-      workspaceDir: wctx.workspaceDir,
-      sessionId: wctx.sessionId,
-      config: wctx.config,
-      callbacks,
-      bus: wctx.bus,
-      state,
-      reviewer: wctx.reviewer,
-      metadata: wctx.metadata,
-      signal: wctx.signal,
-      sinks: wctx.sinks,
-      ...(wctx.continuation !== undefined && { continuation: wctx.continuation }),
-      summaryBase,
-      taskBreakdowns,
-      phaseTimings,
-      setTrackedState,
-      ...(wctx.context.skillsContext !== undefined && {
-        skillsContext: wctx.context.skillsContext,
-      }),
-      ...(integration !== undefined && { integration }),
-    });
-    state = review.state;
-    setTrackedState(state);
-    if (wctx.signal?.aborted) {
-      return { summary: summaryNow(), completed: false, cancelled: false, state };
-    }
+  const stopHere = () => ({
+    summary: summaryNow(),
+    completed: false,
+    cancelled: false,
+    state,
+  });
 
-    // A review that judged nothing is not a review that failed: it has no
-    // blocker count to report, no brief to send back and no repair cycle to
-    // spend. The run stays on this phase, halted on the review seat, until that
-    // seat is answered — a fabricated `0 blocking findings` would close it.
-    const failure = noVerdictFailure(review);
-    // A seat out of quota or signed out halts the way a planner call does; the
-    // review already published the tool's own words, so no second error row. A
-    // review that follows the planner runs on the plan seat's tool, so its swap
-    // moves the plan seat and the review keeps following it.
-    if (failure?.kind === 'seat-blocked') {
-      const reviewer = resolveReviewerRunner(wctx.config);
-      const followsPlan = reviewer.source === 'planner';
-      const issue = await plannerCallHaltIssue({
+  // The review owns the run's exit. A failing review goes to one planner triage call: its
+  // fix tasks are appended, one fix cycle is spent and the task loop runs them, then the
+  // review asks again. At the cap, or with nothing for a triage to answer, the run halts.
+  for (;;) {
+    if (wctx.signal?.aborted) return stopHere();
+    let candidate: Record<string, string> | undefined;
+    let recheckFailures: readonly string[] = [];
+
+    if (state.pendingTriage === undefined || state.review === undefined) {
+      candidate = await captureCandidate();
+      const recheck = await recheckMergedCandidate({ wctx, state, setTrackedState });
+      state = recheck.state;
+      recheckFailures = recheck.failures;
+      const integration =
+        state.applyReview === undefined
+          ? undefined
+          : buildIntegrationSection(state.applyReview.merged, recheck.failures, recheck.notRun);
+      const review = await runFinalReviewPhase({
         projectDir: wctx.projectDir,
-        diagnosis: failure.diagnosis,
-        phase: state.phase,
-        seat: 'review',
-        swap: { seat: followsPlan ? 'plan' : 'review', runner: reviewer.runner },
-        details: reviewSeatDetails(followsPlan),
-      });
-      state = raisePendingRecovery({ ...ref, bus: wctx.bus }, state, issue, setTrackedState);
-      return { summary: summaryNow(), completed: false, cancelled: false, state };
-    }
-    if (failure !== undefined) {
-      const issue = buildReviewFailedRecoveryIssue({
-        phase: state.phase,
-        failure,
-        createdAt: nowIso(),
-      });
-      publishError({
+        workspaceDir: wctx.workspaceDir,
+        sessionId: wctx.sessionId,
+        config: wctx.config,
+        callbacks,
         bus: wctx.bus,
-        phase: state.phase,
-        message: issue.message,
-        safety: { category: 'recovery', code: 'review_failed' },
-      });
-      state = raisePendingRecovery({ ...ref, bus: wctx.bus }, state, issue, setTrackedState);
-      return { summary: summaryNow(), completed: false, cancelled: false, state };
-    }
-
-    const decision = decideReviewOutcome(
-      review,
-      state.tasks,
-      REVIEW_CYCLE_CAP,
-      cycle,
-      recheck.failures,
-    );
-    const completedTasks = state.tasks.filter((task) => isTaskCompleted(task.status)).length;
-    if (decision.kind === 'pass') {
-      state = transitionAndSave(ref, state, {
-        type: 'REVIEW_DONE',
-        reviewStatus: 'passed',
-        ...(candidate !== undefined && { candidate }),
-      });
-      setTrackedState(state);
-      wctx.bus.publish({
-        type: 'workflow_complete',
-        ts: Date.now(),
-        phase: state.phase,
-        review: 'passed',
-        completedTasks,
-      });
-      const summary = summaryNow();
-      callbacks.onComplete(summary);
-      return { summary, completed: true, cancelled: false, state };
-    }
-
-    if (decision.kind === 'fail') {
-      state = transitionAndSave(ref, state, {
-        type: 'REVIEW_DONE',
-        reviewStatus: 'failed',
-        ...(candidate !== undefined && { candidate }),
-      });
-      setTrackedState(state);
-      wctx.bus.publish({
-        type: 'workflow_complete',
-        ts: Date.now(),
-        phase: state.phase,
-        review: 'failed',
-        blocking: decision.blocking,
-        completedTasks,
-      });
-      publishError({
-        bus: wctx.bus,
-        phase: state.phase,
-        message: `${finalReviewFailedCause(decision.blocking)}; see ${REVIEW_FILE}`,
-        safety: { category: 'recovery', code: 'review_failed' },
-      });
-      state = raisePendingRecovery(
-        { ...ref, bus: wctx.bus },
         state,
-        buildReviewFailedRecoveryIssue({
-          blocking: decision.blocking,
-          phase: state.phase,
-          createdAt: nowIso(),
-          acceptAsIs:
-            state.workspace?.kind === 'worktree' || state.workspace?.kind === 'staged-copy',
-        }),
+        reviewer: wctx.reviewer,
+        metadata: wctx.metadata,
+        signal: wctx.signal,
+        sinks: wctx.sinks,
+        ...(wctx.continuation !== undefined && { continuation: wctx.continuation }),
+        summaryBase,
+        taskBreakdowns,
+        phaseTimings,
         setTrackedState,
-      );
-      return { summary: summaryNow(), completed: false, cancelled: false, state };
+        ...(wctx.context.skillsContext !== undefined && {
+          skillsContext: wctx.context.skillsContext,
+        }),
+        ...(integration !== undefined && { integration }),
+      });
+      state = review.state;
+      setTrackedState(state);
+      if (wctx.signal?.aborted) return stopHere();
+
+      // A review that judged nothing is not a review that failed: it has no
+      // blocker count to report, no brief to send back and no repair cycle to
+      // spend. The run stays on this phase, halted on the review seat, until that
+      // seat is answered — a fabricated `0 blocking findings` would close it.
+      const halted = await haltVerdictlessReview({ wctx, state, setTrackedState, review });
+      if (halted !== undefined) {
+        state = halted;
+        return stopHere();
+      }
+
+      const outcome = review.verdict?.outcome;
+      // A candidate whose fresh Apply re-checks failed is never passed: the review
+      // word cannot overrule the checks run against the merged workspace.
+      if (
+        outcome !== undefined &&
+        outcome.kind !== 'fail' &&
+        recheck.failures.length === 0 &&
+        state.pendingTriage === undefined
+      ) {
+        state = transitionAndSave(ref, state, {
+          type: 'REVIEW_DONE',
+          reviewStatus: 'passed',
+          ...(candidate !== undefined && { candidate }),
+        });
+        setTrackedState(state);
+        wctx.bus.publish({
+          type: 'workflow_complete',
+          ts: Date.now(),
+          phase: state.phase,
+          review: 'passed',
+          completedTasks: state.tasks.filter((task) => isTaskCompleted(task.status)).length,
+        });
+        const summary = summaryNow();
+        callbacks.onComplete(summary);
+        return { summary, completed: true, cancelled: false, state };
+      }
     }
 
-    const nextCycle = cycle + 1;
-    state = transitionAndSave(ref, state, {
-      type: 'REVIEW_FIX_START',
-      fixes: decision.fixes,
-      cycle: nextCycle,
+    // A judged failure: the review this pass ran, or the saved one an operator correction
+    // queued. Its blocking findings and the pending inputs are the triage's inputs.
+    const triaged = await triageFailedReview({
+      wctx,
+      state,
+      setTrackedState,
+      callbacks,
+      candidate,
+      recheckFailures,
     });
-    setTrackedState(state);
-    wctx.bus.publish({
-      type: 'review_fix_started',
-      ts: Date.now(),
-      phase: state.phase,
-      cycle: nextCycle,
-      taskIds: state.tasks.filter((t) => decision.fixes[t.id] !== undefined).map((t) => t.id),
-    });
+    state = triaged.state;
+    if (triaged.stopped) return stopHere();
 
     let rerun = await runTaskLoop({ wctx, initialState: state, setTrackedState, setCurrentTask });
     state = rerun.state;
     taskBreakdowns = rerun.taskBreakdowns;
-    // A boundary pause inside a repair parks the run exactly like the main
-    // loop: the park keeps the next brief or review step and the cycles
-    // already spent, and continuing re-enters this same repair.
+    // A boundary pause inside a fix cycle parks the run exactly like the main loop:
+    // the park keeps the next brief or review step, and continuing re-enters it.
     while (rerun.status === 'paused') {
       const parked = await parkAtBoundary({ wctx, state, setTrackedState });
       state = parked.state;

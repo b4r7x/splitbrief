@@ -11,9 +11,16 @@ import { uniqueSorted } from '../../../../utils/collections.js';
 import { hashTaskBrief } from '../../../brief-hash.js';
 import { readConfinedEntry } from '../../approval/file-snapshots/entry.js';
 
+export type RunReviewTaskDiff = {
+  taskId: string;
+  diff: string;
+};
+
 export type RunReviewScope = {
   diff: string;
   laterDiff: string;
+  /** The recorded run diff split into one group per task, in completion order. */
+  byTask: RunReviewTaskDiff[];
   description: string;
   provenance: ReviewProvenance;
 };
@@ -41,6 +48,7 @@ export async function resolveRunReviewScope(opts: {
   const uncertainFiles = new Set<string>();
   const lastOutputs = new Map<string, ReviewFileEntry>();
   const diffs: string[] = [];
+  const taskDiffs = new Map<string, string[]>();
   const laterDiffs: string[] = [];
   for (const change of recorded?.changes ?? []) {
     if (change.kind === 'unknown' || taskHashes.get(change.taskId) !== change.briefHash) {
@@ -55,6 +63,7 @@ export async function resolveRunReviewScope(opts: {
       });
       if (diff !== '') {
         diffs.push(`# Changes by ${change.taskId}\n${diff}`);
+        taskDiffs.set(change.taskId, [...(taskDiffs.get(change.taskId) ?? []), diff]);
         promotedFiles.add(change.path);
       }
       lastOutputs.set(change.path, change.after);
@@ -99,6 +108,10 @@ export async function resolveRunReviewScope(opts: {
   };
   return {
     diff: diffs.join('\n'),
+    byTask: [...taskDiffs.entries()].map(([taskId, parts]) => ({
+      taskId,
+      diff: parts.join('\n'),
+    })),
     laterDiff:
       laterDiffs.length === 0
         ? ''
