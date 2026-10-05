@@ -339,7 +339,7 @@ function consultTable(): string {
     '',
     table(
       ['Action', 'Next step'],
-      ConsultAnswerSchema.shape.answer.def.right.options.map((option) => {
+      ConsultAnswerSchema.shape.answer.options.map((option) => {
         const action = option.shape.action.value;
         if ('tasks' in option.shape) {
           const limits = z.toJSONSchema(option.shape.tasks);
