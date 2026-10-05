@@ -9,6 +9,7 @@ import type { Config } from '../../../src/core/schemas/config.js';
 import { canSignalProcess } from '../../../src/lib/process/liveness.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
+import { passingVerdict } from '#testing/helpers/typed-planner.js';
 import { spawnCli } from './live-cli-harness.js';
 
 /** The brief's anchor: written by the orchestrator from the implementer's reply. */
@@ -68,22 +69,13 @@ const PLAN_ANSWER = {
   },
 };
 
-const REVIEW_REPLY = `### Verdict
-
-pass
-
-### Criteria Results
-
-- **[PASS]** greet returns a greeting -- the helper is present.
-
-### Findings
-
-- **Note**: Fixture run.
-
-### Summary
-
-The fixture implementation matches its brief.
-`;
+/** The review's typed answer: the plan's every task met and every criterion passed. */
+const REVIEW_REPLY = JSON.stringify(
+  passingVerdict({
+    taskIds: PLAN_ANSWER.result.tasks.map((task) => task.id),
+    criterionIds: PLAN_ANSWER.result.criteria.map((criterion) => criterion.id),
+  }),
+);
 
 /**
  * Both planner calls of a run reach this one script: the typed plan and the

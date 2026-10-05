@@ -3,6 +3,7 @@ import type { PlanProposal, PlanResult } from '../../src/core/schemas/plan.js';
 import type { ClarificationQuestion } from '../../src/core/schemas/question.js';
 import type { ConsultAnswer } from '../../src/core/schemas/consult.js';
 import type { ReviewVerdict, TriageResult } from '../../src/core/schemas/review.js';
+import type { ReviewScope } from '../../src/core/review/verdict.js';
 import { taskFiles, taskId, type Task } from '../../src/core/schemas/task.js';
 import type {
   Planner,
@@ -67,24 +68,24 @@ function promptIds(prompt: string, label: string): string[] {
     .filter((id) => id !== '');
 }
 
+/** The verdict that passes `scope`: every task met, every criterion passed, no findings. */
+export function passingVerdict(scope: ReviewScope): ReviewVerdict {
+  return {
+    tasks: scope.taskIds.map((id) => ({ id: taskId(id), plan: 'met' as const, note: '' })),
+    criteria: scope.criterionIds.map((id) => ({ id, status: 'pass' as const, evidence: '' })),
+    findings: [],
+  };
+}
+
 /**
  * The verdict a fake review seat answers with when a test scripts none: every
  * id the prompt's Required Results lists, each met and passed, no findings.
  */
 export function passingReviewVerdict(prompt: string): ReviewVerdict {
-  return {
-    tasks: promptIds(prompt, 'Task ids:').map((id) => ({
-      id: taskId(id),
-      plan: 'met' as const,
-      note: '',
-    })),
-    criteria: promptIds(prompt, 'Criterion ids:').map((id) => ({
-      id,
-      status: 'pass' as const,
-      evidence: '',
-    })),
-    findings: [],
-  };
+  return passingVerdict({
+    taskIds: promptIds(prompt, 'Task ids:'),
+    criterionIds: promptIds(prompt, 'Criterion ids:'),
+  });
 }
 
 /** A passing verdict carrying one blocking finding, so the review fails. */
