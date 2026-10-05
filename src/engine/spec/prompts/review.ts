@@ -38,8 +38,7 @@ export type ReviewPlanData = {
   }[];
 };
 
-/** One run-diff group; `null` is the fallback group for changes no task owns. */
-export type ReviewTaskDiff = { taskId: string | null; diff: string };
+export type ReviewFileDiff = { path: string; taskIds: readonly string[]; diff: string };
 
 /** What a task wrote outside the set any brief suggested. */
 export type ReviewTouchedNotSuggested = { taskId: string; files: readonly string[] };
@@ -80,14 +79,16 @@ function planBody(plan: ReviewPlanData): string {
   return lines.join('\n');
 }
 
-function diffBody(entries: readonly ReviewTaskDiff[], fallback: string): string {
-  if (entries.length === 0) return fenced(fallback, 'diff');
+function diffBody(entries: readonly ReviewFileDiff[], laterDiff: string | undefined): string {
   const lines: string[] = [];
   for (const entry of entries) {
+    lines.push(`### ${entry.path} — ${entry.taskIds.join(', ')}`, '', fenced(entry.diff, 'diff'));
+  }
+  if (laterDiff) {
     lines.push(
-      `### Changes by ${entry.taskId ?? 'not attributed'}`,
+      '### Changes after the last recorded task completion; authorship unknown',
       '',
-      fenced(entry.diff, 'diff'),
+      fenced(laterDiff, 'diff'),
     );
   }
   return lines.join('\n');
@@ -111,15 +112,15 @@ function requiredResultsBody(taskIds: readonly string[], criterionIds: readonly 
   ].join('\n');
 }
 
-export function buildFinalReviewPrompt(opts: {
+export type FinalReviewPromptInput = {
   spec: string;
   taskBriefs: string;
-  diff: string;
-  /**
-   * The run diff grouped by the task that recorded it, with one group for edits
-   * no task owns. Falls back to the whole run diff when the caller has no groups.
-   */
-  diffByTask?: readonly ReviewTaskDiff[] | undefined;
+  /** The one-shot review diff, used only when files are undefined. */
+  diff?: string | undefined;
+  files?: readonly ReviewFileDiff[] | undefined;
+  laterDiff?: string | undefined;
+  workspaceContext?: readonly ReviewFileDiff[] | undefined;
+  trimmed?: string | undefined;
   /** The plan as data: the criteria with their checks, and the briefs. */
   plan?: ReviewPlanData | undefined;
   /** Per-task files the briefs did not suggest. */
@@ -142,10 +143,10 @@ export function buildFinalReviewPrompt(opts: {
    * files of its own is told the scope it is judging instead of inferring it.
    */
   changeCoverage?: string | undefined;
-  /** Whole current workspace diff, retained beside the separately attributed effects. */
-  workspaceDiff?: string | undefined;
   skillsContext?: string | undefined;
-}): string {
+};
+
+export function buildFinalReviewPrompt(opts: FinalReviewPromptInput): string {
   const taskIds = opts.taskIds ?? opts.plan?.tasks.map((task) => task.id) ?? [];
   const criterionIds =
     opts.criterionIds ?? opts.plan?.criteria.map((criterion) => criterion.id) ?? [];
@@ -163,12 +164,18 @@ export function buildFinalReviewPrompt(opts: {
   sections.push({
     heading: 'Implementation Diff',
     body:
-      opts.diffByTask === undefined
-        ? fenced(opts.diff, 'diff')
-        : diffBody(opts.diffByTask, opts.diff),
+      opts.files === undefined
+        ? fenced(opts.diff ?? '', 'diff')
+        : diffBody(opts.files, opts.laterDiff),
   });
-  if (opts.workspaceDiff !== undefined) {
-    sections.push({ heading: 'Workspace Context', body: fenced(opts.workspaceDiff, 'diff') });
+  if (opts.workspaceContext !== undefined && opts.workspaceContext.length > 0) {
+    sections.push({
+      heading: 'Workspace Context',
+      body: fenced(opts.workspaceContext.map((file) => file.diff).join('\n'), 'diff'),
+    });
+  }
+  if (opts.trimmed !== undefined) {
+    sections.push({ heading: 'Trimmed for Size', body: opts.trimmed });
   }
   if (opts.touchedNotSuggested !== undefined) {
     sections.push({
@@ -199,7 +206,7 @@ export function buildFinalReviewPrompt(opts: {
   }
   sections.push(
     instructionsSection(
-      opts.workspaceDiff === undefined
+      opts.files === undefined
         ? REVIEW_INSTRUCTIONS
         : `${REVIEW_INSTRUCTIONS}\n\n${PROVENANCE_INSTRUCTIONS}`,
     ),

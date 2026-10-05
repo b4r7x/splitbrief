@@ -2,6 +2,7 @@ import { isTaskCompleted } from '../../../core/schemas/task.js';
 import { fixCyclesOf, plannerCallsOf, type WorkflowState } from '../../../core/schemas/workflow.js';
 import { reviewOutcomeOf } from '../../../core/review/verdict.js';
 import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
+import { getRunnerCatalogDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { REVIEW_FILE } from '../../../core/paths.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { error } from '../../../utils/error.js';
@@ -13,6 +14,7 @@ import {
   type FinalReviewResult,
 } from '../final-review.js';
 import { buildReviewFailedRecoveryIssue } from '../recovery/builders/task.js';
+import { buildReviewInputTooLargeRecoveryIssue } from '../recovery/builders/review-input.js';
 import { buildConsultBoundRecoveryIssue } from '../recovery/builders/consult.js';
 import { reviewSeatDetails } from '../recovery/builders/details.js';
 import { plannerCallHaltIssue } from '../recovery/planner-call-failure.js';
@@ -147,6 +149,24 @@ export async function haltVerdictlessReview(args: {
   const { wctx, setTrackedState } = args;
   const ref = { projectDir: wctx.projectDir, sessionId: wctx.sessionId, bus: wctx.bus };
   const failure = noVerdictFailure(args.review);
+  if (failure?.kind === 'input-too-large') {
+    const issue = buildReviewInputTooLargeRecoveryIssue({
+      phase: args.state.phase,
+      failure,
+      tool: getRunnerCatalogDisplayName(resolveReviewerRunner(wctx.config).runner),
+      acceptAsIs:
+        args.state.phase === 'final-review' &&
+        (args.state.workspace?.kind === 'worktree' || args.state.workspace?.kind === 'staged-copy'),
+      createdAt: nowIso(),
+    });
+    publishError({
+      bus: wctx.bus,
+      phase: args.state.phase,
+      message: issue.message,
+      safety: { category: 'recovery', code: 'review_input_too_large' },
+    });
+    return raisePendingRecovery(ref, args.state, issue, setTrackedState);
+  }
   // A seat out of quota or signed out halts the way a planner call does; the review
   // already published the tool's own words, so no second error row. A review that
   // follows the planner runs on the plan seat's tool, so its swap moves the plan seat

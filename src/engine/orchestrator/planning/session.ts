@@ -73,6 +73,7 @@ import { askPlannerSession } from '../planner-session.js';
 import { buildPlanSessionHaltRecoveryIssue } from '../recovery/builders/planner.js';
 import { buildSeatProtocolErrorRecoveryIssue } from '../recovery/builders/seat-protocol.js';
 import { loadSeatSwapContext } from '../recovery/seat-swap-context.js';
+import { closeRunIfOpen } from '../run/close.js';
 import { addUsageAndSave, raisePendingRecovery, transitionAndSave } from '../state-ops.js';
 import type { PlannerCallbacksContext } from '../types.js';
 import { plannerRejectionContext, waitForPlannerReply } from './call-loop.js';
@@ -678,7 +679,7 @@ export async function runPlanApproval(
           break;
         }
         if (result.action === 'end-run') {
-          current = transitionAndSave(ref, current, { type: 'CLOSE_RUN' });
+          current = (await closeRunIfOpen({ projectDir, sessionId, bus }, current)).state;
           publishPlannerStatus(bus, current, 'done');
           bus.publish({ type: 'plan_rejected', ts: Date.now(), phase: current.phase });
           return { disposition: 'terminal', state: current, outcome: 'closed' };

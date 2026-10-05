@@ -638,7 +638,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
       'review.md',
       '### Verdict\nfail\n\n### Findings\n- **Critical**: Old Markdown defect',
     );
-    const corrected = applyRecoveryAction({
+    const corrected = await applyRecoveryAction({
       projectDir,
       sessionId,
       state: old,
@@ -893,7 +893,7 @@ describe('runTasksAndReview review halt', { timeout: 120_000 }, () => {
     expect(halted.state.review).toBeDefined();
 
     const { bus } = makeBusRecorder();
-    const corrected = applyRecoveryAction({
+    const corrected = await applyRecoveryAction({
       projectDir,
       sessionId,
       state: halted.state,

@@ -529,9 +529,9 @@ describe('runApply', { timeout: 60_000 }, () => {
       return () =>
         vi.mocked(entry.writeConfinedEntry).mockImplementation(actualEntry.writeConfinedEntry);
     };
-    const choose = (run: ApplyRun, action: 'retry-same-worker' | 'restore-backup') => {
+    const choose = async (run: ApplyRun, action: 'retry-same-worker' | 'restore-backup') => {
       const { bus } = makeBusRecorder();
-      const chosen = applyRecoveryAction({
+      const chosen = await applyRecoveryAction({
         projectDir: run.dir,
         sessionId: run.sessionId,
         state: savedState(run),
@@ -558,7 +558,7 @@ describe('runApply', { timeout: 60_000 }, () => {
           healed();
           writeFileSync(join(run.dir, 'b.txt'), 'user after apply\n');
 
-          const restart = choose(run, 'restore-backup');
+          const restart = await choose(run, 'restore-backup');
           const { bus, events } = makeBusRecorder();
           const result = await runApply({
             wctx: { projectDir: run.dir, sessionId: run.sessionId, bus },
@@ -635,7 +635,7 @@ describe('runApply', { timeout: 60_000 }, () => {
             const healed = await failOn(run, 'b.txt');
             await apply(run);
             healed();
-            let cut = choose(run, 'restore-backup');
+            let cut = await choose(run, 'restore-backup');
             await restoreApplyBackup({
               projectDir: run.dir,
               sessionId: run.sessionId,
@@ -646,7 +646,7 @@ describe('runApply', { timeout: 60_000 }, () => {
               saveState({ projectDir: run.dir, sessionId: run.sessionId }, cut);
             }
 
-            const result = await apply(run, choose(run, 'restore-backup'));
+            const result = await apply(run, await choose(run, 'restore-backup'));
 
             expect(result.outcome).toBe('halted');
             expect(read(run.dir, 'a.txt')).toBe('base a\n');
@@ -674,10 +674,10 @@ describe('runApply', { timeout: 60_000 }, () => {
           await apply(run);
           healed();
           expect(read(run.dir, 'b.txt')).toBe('ours b\n');
-          choose(run, 'restore-backup');
+          await choose(run, 'restore-backup');
           writeFileSync(join(run.dir, 'a.txt'), 'base a\n');
 
-          const result = await apply(run, choose(run, 'restore-backup'));
+          const result = await apply(run, await choose(run, 'restore-backup'));
 
           expect(result.outcome).toBe('halted');
           expect(read(run.dir, 'a.txt')).toBe('base a\n');
@@ -706,7 +706,7 @@ describe('runApply', { timeout: 60_000 }, () => {
           const backupId = savedState(run).applying?.backupId ?? '';
           vi.mocked(stagedProject.promoteStagedChanges).mockClear();
 
-          const result = await apply(run, choose(run, 'retry-same-worker'));
+          const result = await apply(run, await choose(run, 'retry-same-worker'));
 
           expect(result.outcome).toBe('applied');
           const promote = vi.mocked(stagedProject.promoteStagedChanges);
@@ -898,7 +898,12 @@ describe('runApply integration review', { timeout: 60_000 }, () => {
       saveState(ref, failed);
       const { bus, events } = makeBusRecorder();
 
-      const accepted = applyRecoveryAction({ ...ref, state: failed, action: 'accept-as-is', bus });
+      const accepted = await applyRecoveryAction({
+        ...ref,
+        state: failed,
+        action: 'accept-as-is',
+        bus,
+      });
 
       if (!accepted.ok) throw new Error(accepted.message);
       expect(accepted.state.acceptedAsIs?.findings).toEqual(['a.txt drops the error']);

@@ -249,7 +249,15 @@ describe('the packet an API review seat is handed', () => {
   it('refuses unsupported captured effects even when the current workspace is text', () => {
     const packet = refused({
       reviewScope: {
-        diff: 'diff --git a/logo.png b/logo.png\nBinary files a/logo.png and b/logo.png differ\n',
+        files: [
+          {
+            path: 'logo.png',
+            taskIds: ['T001'],
+            diff: 'diff --git a/logo.png b/logo.png\nBinary files a/logo.png and b/logo.png differ\n',
+          },
+        ],
+        laterDiff: '',
+        workspaceContext: [],
         description: 'Recorded promotion.',
       },
     });
@@ -261,7 +269,11 @@ describe('the packet an API review seat is handed', () => {
     const packet = refused({
       contextLength: 10_000,
       reviewScope: {
-        diff: diffOfLength('src/login.ts', 100_001),
+        files: [
+          { path: 'src/login.ts', taskIds: ['T001'], diff: diffOfLength('src/login.ts', 100_001) },
+        ],
+        laterDiff: '',
+        workspaceContext: [],
         description: 'Recorded promotion.',
       },
     });

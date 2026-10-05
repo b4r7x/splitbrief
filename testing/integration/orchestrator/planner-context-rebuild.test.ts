@@ -244,7 +244,7 @@ describe('planner context rebuild from the transcript', { timeout: 90_000 }, () 
     expect(halted?.plannerSessionId).toBeNull();
     if (halted === null) throw new Error('expected the halted state to persist');
     rmSync(codexFreshFails);
-    const retried = applyRecoveryAction({
+    const retried = await applyRecoveryAction({
       ...ref,
       state: halted,
       action: 'retry-same-worker',

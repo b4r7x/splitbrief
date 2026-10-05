@@ -17,11 +17,19 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeBusRecorder,
+  makeCallbacks,
+  makePlanner,
+  makeWctx,
+} from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createSnapshot } from '../../snapshots/create.js';
 import { reconcileWorkspaceToBase } from '../isolation/acquisition.js';
 import { createRunIsolation } from '../isolation/create.js';
+import { applyRecoveryAction } from '../recovery/actions.js';
+import { buildReviewFailedRecoveryIssue } from '../recovery/builders/task.js';
+import { runPlanApproval } from '../planning/session.js';
 import { closeRunIfOpen } from './close.js';
 
 const removal = vi.hoisted(() => ({ patchExisted: [] as boolean[] }));
@@ -173,6 +181,66 @@ describe('closeRunIfOpen on a workspace run before Apply', () => {
     expect(closure.state.closed?.as).toBe('discarded');
     expect(loadState(ref)?.closed?.as).toBe('discarded');
     expect(existsSync(join(sessionDir(ref.projectDir, ref.sessionId), 'run.patch'))).toBe(true);
+  });
+
+  it('End run from a recovery halt writes run.patch and removes the workspace', {
+    timeout: 60_000,
+  }, async () => {
+    const { ref, state, workspaceDir } = await openWorkspaceRun('worktree');
+    const halted: WorkflowState = {
+      ...state,
+      phase: 'final-review',
+      pendingRecovery: buildReviewFailedRecoveryIssue({
+        phase: 'final-review',
+        failure: { kind: 'call-failed', code: 'non-zero-exit', message: 'CLI exited with code 1' },
+        createdAt: '2026-10-05T00:00:00.000Z',
+      }),
+    };
+    saveState(ref, halted);
+    const { bus, events } = makeBusRecorder();
+
+    const result = await applyRecoveryAction({ ...ref, state: halted, action: 'end-run', bus });
+
+    expect(result).toMatchObject({ ok: true, status: 'closed' });
+    expect(result.state.closed?.as).toBe('ended');
+    expect(loadState(ref)?.closed?.as).toBe('ended');
+    expect(loadState(ref)?.pendingRecovery).toBeUndefined();
+    expect(existsSync(join(sessionDir(ref.projectDir, ref.sessionId), 'run.patch'))).toBe(true);
+    expect(removal.patchExisted).toEqual([true]);
+    expect(existsSync(workspaceDir)).toBe(false);
+    expect(
+      events.some(
+        (event) =>
+          event.type === 'warning' &&
+          event.message.includes(join(SPLITBRIEF_DIR, 'sessions', SESSION_ID, 'run.patch')),
+      ),
+    ).toBe(true);
+  });
+
+  it('End run on the plan card of a run that kept its workspace writes run.patch and removes it', {
+    timeout: 60_000,
+  }, async () => {
+    const { ref, state, workspaceDir } = await openWorkspaceRun('worktree');
+    const atCard: WorkflowState = { ...state, phase: 'reviewing-plan', tasks: [] };
+    saveState(ref, atCard);
+    const { callbacks } = makeCallbacks({
+      onApprovalNeeded: vi.fn().mockResolvedValue({ approved: false, action: 'end-run' }),
+    });
+
+    const result = await runPlanApproval(
+      {
+        wctx: makeWctx({ ...ref, bus: makeBusRecorder().bus, callbacks }),
+        planner: makePlanner(),
+        state: atCard,
+        feature: atCard.feature,
+      },
+      atCard,
+    );
+
+    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'closed' });
+    expect(loadState(ref)?.closed?.as).toBe('ended');
+    expect(existsSync(join(sessionDir(ref.projectDir, ref.sessionId), 'run.patch'))).toBe(true);
+    expect(existsSync(workspaceDir)).toBe(false);
   });
 
   it('a failed patch write keeps the run open and the workspace in place', {

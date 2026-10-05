@@ -839,7 +839,7 @@ describe('runFinalReviewPhase', () => {
     expect(prompt).toContain('C1: A name gets a greeting (checks: K1)');
     expect(prompt).toContain('Keep the greeting pure');
     expect(prompt).toContain('T001');
-    expect(prompt).toContain('### Changes by T001');
+    expect(prompt).toMatch(/^### \S+ — T001$/m);
     expect(prompt).toContain('## Touched, Not Suggested');
     expect(prompt).toContain('src/shared.ts');
     expect(prompt).toContain('## Touched, Not Suggested\n- T001: src/shared.ts');
@@ -1408,7 +1408,7 @@ describe('runFinalReviewPhase', () => {
     });
 
     expect(prompts[0]).toContain(committedMarker);
-    expect(prompts[0]).toContain('### Changes by T001');
+    expect(prompts[0]).toMatch(/^### \S+ — T001$/m);
 
     const drift = JSON.parse(
       readFileSync(join(sessionDir(projectDir, sessionId), DRIFT_REPORT_FILE), 'utf8'),

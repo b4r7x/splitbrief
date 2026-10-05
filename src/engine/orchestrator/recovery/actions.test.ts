@@ -22,7 +22,7 @@ import {
 const createdAt = '2026-04-28T12:00:00.000Z';
 
 describe('typed review overrides', () => {
-  it('records effective typed blockers and unresolved criteria instead of edited markdown', () => {
+  it('records effective typed blockers and unresolved criteria instead of edited markdown', async () => {
     const ref = setupSession('typed-override');
     const issue = buildReviewFailedRecoveryIssue({
       blocking: 1,
@@ -66,7 +66,7 @@ describe('typed review overrides', () => {
       'review.md',
       '### Verdict\n\nfail\n\n### Findings\n\n**Critical**\n\n- STALE markdown blocker',
     );
-    const result = applyRecoveryAction({
+    const result = await applyRecoveryAction({
       ...ref,
       state,
       action: 'accept-as-is',
@@ -141,7 +141,7 @@ function configWithProfiles(): Config {
 }
 
 describe('applyRecoveryAction: reason policy', () => {
-  it('blocks actions that violate the reason policy even when advertised in state', () => {
+  it('blocks actions that violate the reason policy even when advertised in state', async () => {
     const { projectDir, sessionId } = setupSession('policy-block');
     const task = makeTask({ id: 'T200', status: 'in_progress' });
     const issue: RecoveryIssue = {
@@ -162,7 +162,7 @@ describe('applyRecoveryAction: reason policy', () => {
     const state = { ...makeImplState([task]), pendingRecovery: issue };
     const { bus } = makeBusRecorder();
 
-    const result = applyRecoveryAction({
+    const result = await applyRecoveryAction({
       projectDir,
       sessionId,
       state,
@@ -179,14 +179,14 @@ describe('applyRecoveryAction: reason policy', () => {
 });
 
 describe('applyRecoveryAction: route-bigger-worker blocked', () => {
-  it('blocks when the recovery issue does not name a bigger profile', () => {
+  it('blocks when the recovery issue does not name a bigger profile', async () => {
     const { projectDir, sessionId } = setupSession('route-bigger-missing-fact');
     const task = makeTask({ id: 'T101', status: 'in_progress' });
     const issue = routeBiggerIssue(task, {});
     const state = { ...makeImplState([task]), pendingRecovery: issue };
     const { bus } = makeBusRecorder();
 
-    const result = applyRecoveryAction({
+    const result = await applyRecoveryAction({
       projectDir,
       sessionId,
       state,
@@ -204,14 +204,14 @@ describe('applyRecoveryAction: route-bigger-worker blocked', () => {
     expect(result.state.pendingRecovery).toBe(issue);
   });
 
-  it('blocks when the named bigger profile is not in config', () => {
+  it('blocks when the named bigger profile is not in config', async () => {
     const { projectDir, sessionId } = setupSession('route-bigger-unknown-profile');
     const task = makeTask({ id: 'T102', status: 'in_progress' });
     const issue = routeBiggerIssue(task, { routeBiggerProfile: 'frontier-big' });
     const state = { ...makeImplState([task]), pendingRecovery: issue };
     const { bus } = makeBusRecorder();
 
-    const result = applyRecoveryAction({
+    const result = await applyRecoveryAction({
       projectDir,
       sessionId,
       state,
@@ -229,14 +229,14 @@ describe('applyRecoveryAction: route-bigger-worker blocked', () => {
     expect(result.state.pendingRecovery).toBe(issue);
   });
 
-  it('blocks when config is undefined', () => {
+  it('blocks when config is undefined', async () => {
     const { projectDir, sessionId } = setupSession('route-bigger-no-config');
     const task = makeTask({ id: 'T103', status: 'in_progress' });
     const issue = routeBiggerIssue(task, { routeBiggerProfile: 'cloud-capable' });
     const state = { ...makeImplState([task]), pendingRecovery: issue };
     const { bus } = makeBusRecorder();
 
-    const result = applyRecoveryAction({
+    const result = await applyRecoveryAction({
       projectDir,
       sessionId,
       state,
@@ -254,7 +254,7 @@ describe('applyRecoveryAction: route-bigger-worker blocked', () => {
 });
 
 describe('applyRecoveryAction: unsafe continue blocked', () => {
-  it('blocks ordinary continue for an unsafe conflict even if an issue was malformed to advertise it', () => {
+  it('blocks ordinary continue for an unsafe conflict even if an issue was malformed to advertise it', async () => {
     const { projectDir, sessionId } = setupSession('continue-unsafe-conflict');
     const conflictTask = makeTask({ id: 'T031', file: 'src/current.ts' });
     const persistedIssue = makeRecoveryIssue({
@@ -276,7 +276,7 @@ describe('applyRecoveryAction: unsafe continue blocked', () => {
     const state = { ...base, pendingRecovery: issue };
     const { bus, events } = makeBusRecorder();
 
-    const result = applyRecoveryAction({
+    const result = await applyRecoveryAction({
       projectDir,
       sessionId,
       state,
@@ -321,12 +321,12 @@ describe('applyRecoveryAction: the run-level answers', () => {
     };
   }
 
-  it('revise queues the comment and clears the halt', () => {
+  it('revise queues the comment and clears the halt', async () => {
     const { projectDir, sessionId } = setupSession('recovery-revise');
     const state = plannerHaltState(projectDir, sessionId, reviseIssue('brief-review-no-progress'));
     const { bus, events } = makeBusRecorder();
 
-    const result = applyRecoveryAction({
+    const result = await applyRecoveryAction({
       projectDir,
       sessionId,
       state,
@@ -346,12 +346,18 @@ describe('applyRecoveryAction: the run-level answers', () => {
     );
   });
 
-  it('revise with no comment still resolves the halt and queues nothing', () => {
+  it('revise with no comment still resolves the halt and queues nothing', async () => {
     const { projectDir, sessionId } = setupSession('recovery-revise-empty');
     const state = plannerHaltState(projectDir, sessionId, reviseIssue('brief-review-no-progress'));
     const { bus } = makeBusRecorder();
 
-    const result = applyRecoveryAction({ projectDir, sessionId, state, action: 'revise', bus });
+    const result = await applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state,
+      action: 'revise',
+      bus,
+    });
 
     expect(result).toMatchObject({ ok: true, status: 'continued' });
     expect(result.state.messageQueue).toHaveLength(0);
@@ -360,7 +366,7 @@ describe('applyRecoveryAction: the run-level answers', () => {
 
   // No spec step is left to rewind to: an old run's constitution halt sends its note to the one
   // planning session as a queued correction.
-  it('revise-spec on an old constitution halt queues the note and clears the halt', () => {
+  it('revise-spec on an old constitution halt queues the note and clears the halt', async () => {
     const { projectDir, sessionId } = setupSession('recovery-revise-spec');
     const issue = {
       ...reviseIssue('constitution-check-failed'),
@@ -369,7 +375,7 @@ describe('applyRecoveryAction: the run-level answers', () => {
     const state = plannerHaltState(projectDir, sessionId, issue);
     const { bus } = makeBusRecorder();
 
-    const result = applyRecoveryAction({
+    const result = await applyRecoveryAction({
       projectDir,
       sessionId,
       state,
@@ -385,7 +391,7 @@ describe('applyRecoveryAction: the run-level answers', () => {
     expect(loadState({ projectDir, sessionId })?.messageQueue).toHaveLength(1);
   });
 
-  it('switch-seat on a plan-seat halt resolves it without resetting a brief', () => {
+  it('switch-seat on a plan-seat halt resolves it without resetting a brief', async () => {
     const { projectDir, sessionId } = setupSession('recovery-plan-seat-swap');
     const issue: RecoveryIssue = {
       id: 'rec_planner_call_failed',
@@ -405,7 +411,7 @@ describe('applyRecoveryAction: the run-level answers', () => {
     const state = plannerHaltState(projectDir, sessionId, issue);
     const { bus } = makeBusRecorder();
 
-    const result = applyRecoveryAction({
+    const result = await applyRecoveryAction({
       projectDir,
       sessionId,
       state,
@@ -419,12 +425,18 @@ describe('applyRecoveryAction: the run-level answers', () => {
     expect(result.state.tasks[0]?.status).toBe(state.tasks[0]?.status);
   });
 
-  it('end-run closes the run and refuses every later transition', () => {
+  it('end-run closes the run and refuses every later transition', async () => {
     const { projectDir, sessionId } = setupSession('recovery-end-run');
     const state = plannerHaltState(projectDir, sessionId, reviseIssue('brief-review-no-progress'));
     const { bus } = makeBusRecorder();
 
-    const result = applyRecoveryAction({ projectDir, sessionId, state, action: 'end-run', bus });
+    const result = await applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state,
+      action: 'end-run',
+      bus,
+    });
 
     expect(result).toMatchObject({ ok: true, status: 'closed' });
     expect(result.state.closed?.as).toBe('ended');
@@ -432,7 +444,7 @@ describe('applyRecoveryAction: the run-level answers', () => {
     expect(loadState({ projectDir, sessionId })?.closed?.as).toBe('ended');
   });
 
-  it('continue on a task-less planner-calls-spent issue grants five calls without resetting a task', () => {
+  it('continue on a task-less planner-calls-spent issue grants five calls without resetting a task', async () => {
     const { projectDir, sessionId } = setupSession('recovery-planner-calls');
     const base = makeImplState([makeTask({ id: 'T001', status: 'in_progress' })]);
     const spent = { ...base, plannerCalls: { used: 10, allowance: 10 } };
@@ -449,7 +461,7 @@ describe('applyRecoveryAction: the run-level answers', () => {
     if (state === null) throw new Error('expected the halt to persist');
     const { bus, events } = makeBusRecorder();
 
-    const result = applyRecoveryAction({
+    const result = await applyRecoveryAction({
       projectDir,
       sessionId,
       state,
@@ -494,12 +506,12 @@ describe('applyRecoveryAction: revise on a failed review', () => {
     return loaded;
   }
 
-  it('queues the correction as a triage input and moves the run back to final-review', () => {
+  it('queues the correction as a triage input and moves the run back to final-review', async () => {
     const { projectDir, sessionId } = setupSession('recovery-review-correction');
     const state = failedReviewHalt(projectDir, sessionId);
     const { bus, events } = makeBusRecorder();
 
-    const result = applyRecoveryAction({
+    const result = await applyRecoveryAction({
       projectDir,
       sessionId,
       state,
@@ -537,12 +549,12 @@ describe('applyRecoveryAction: revise on a failed review', () => {
     expect(events.map((event) => event.type)).not.toContain('task_reset');
   });
 
-  it('resolves even when no correction text is given', () => {
+  it('resolves even when no correction text is given', async () => {
     const { projectDir, sessionId } = setupSession('recovery-review-correction-empty');
     const state = failedReviewHalt(projectDir, sessionId);
     const { bus } = makeBusRecorder();
 
-    const result = applyRecoveryAction({
+    const result = await applyRecoveryAction({
       projectDir,
       sessionId,
       state,
@@ -559,7 +571,7 @@ describe('applyRecoveryAction: revise on a failed review', () => {
 });
 
 describe('applyRecoveryAction: planner-split-rebase blocked', () => {
-  it('blocks planner-split-rebase until a proposal approval flow exists', () => {
+  it('blocks planner-split-rebase until a proposal approval flow exists', async () => {
     const { projectDir, sessionId } = setupSession('planner-proposal-required');
     const task = makeTask({ id: 'T037' });
     const persistedIssue = buildDependencyBlockedRecoveryIssue({
@@ -577,7 +589,7 @@ describe('applyRecoveryAction: planner-split-rebase blocked', () => {
     const state = { ...base, pendingRecovery: issue };
     const { bus, events } = makeBusRecorder();
 
-    const result = applyRecoveryAction({
+    const result = await applyRecoveryAction({
       projectDir,
       sessionId,
       state,
@@ -618,7 +630,7 @@ function usageLimitIssue(task: Task): RecoveryIssue {
 }
 
 describe('applyRecoveryAction: switch-seat', () => {
-  it('resets the task onto the chosen tool and returns the switched config', () => {
+  it('resets the task onto the chosen tool and returns the switched config', async () => {
     const { projectDir, sessionId } = setupSession('switch-seat-apply');
     const task = makeTask({ id: 'T400', status: 'in_progress' });
     const issue = usageLimitIssue(task);
@@ -627,7 +639,7 @@ describe('applyRecoveryAction: switch-seat', () => {
     const state = { ...base, pendingRecovery: issue };
     const { bus, events } = makeBusRecorder();
 
-    const result = applyRecoveryAction({
+    const result = await applyRecoveryAction({
       projectDir,
       sessionId,
       state,
@@ -649,7 +661,7 @@ describe('applyRecoveryAction: switch-seat', () => {
     );
   });
 
-  it('takes the first offered tool when no candidate is named', () => {
+  it('takes the first offered tool when no candidate is named', async () => {
     const { projectDir, sessionId } = setupSession('switch-seat-default');
     const task = makeTask({ id: 'T401', status: 'in_progress' });
     const issue = usageLimitIssue(task);
@@ -657,7 +669,7 @@ describe('applyRecoveryAction: switch-seat', () => {
     saveState({ projectDir, sessionId }, { ...base, pendingRecovery: issue });
     const { bus } = makeBusRecorder();
 
-    const result = applyRecoveryAction({
+    const result = await applyRecoveryAction({
       projectDir,
       sessionId,
       state: { ...base, pendingRecovery: issue },
@@ -671,7 +683,7 @@ describe('applyRecoveryAction: switch-seat', () => {
     expect(result.switchedSeat?.candidate).toEqual({ tool: 'claude-code' });
   });
 
-  it('blocks a tool the issue never offered', () => {
+  it('blocks a tool the issue never offered', async () => {
     const { projectDir, sessionId } = setupSession('switch-seat-not-offered');
     const task = makeTask({ id: 'T402', status: 'in_progress' });
     const issue = usageLimitIssue(task);
@@ -679,7 +691,7 @@ describe('applyRecoveryAction: switch-seat', () => {
     saveState({ projectDir, sessionId }, { ...base, pendingRecovery: issue });
     const { bus } = makeBusRecorder();
 
-    const result = applyRecoveryAction({
+    const result = await applyRecoveryAction({
       projectDir,
       sessionId,
       state: { ...base, pendingRecovery: issue },
@@ -692,7 +704,7 @@ describe('applyRecoveryAction: switch-seat', () => {
     expect(result).toMatchObject({ ok: false, code: 'candidate-not-offered' });
   });
 
-  it('blocks when the halt carried no seat-swap offer', () => {
+  it('blocks when the halt carried no seat-swap offer', async () => {
     const { projectDir, sessionId } = setupSession('switch-seat-no-offer');
     const task = makeTask({ id: 'T403', status: 'in_progress' });
     const { switchSeat: _offer, ...withoutOffer } = usageLimitIssue(task);
@@ -700,7 +712,7 @@ describe('applyRecoveryAction: switch-seat', () => {
     saveState({ projectDir, sessionId }, { ...base, pendingRecovery: withoutOffer });
     const { bus } = makeBusRecorder();
 
-    const result = applyRecoveryAction({
+    const result = await applyRecoveryAction({
       projectDir,
       sessionId,
       state: { ...base, pendingRecovery: withoutOffer },
@@ -713,7 +725,7 @@ describe('applyRecoveryAction: switch-seat', () => {
   });
 });
 
-it('records CLI recovery evidence with no workflow mode, even for a run that saved one', () => {
+it('records CLI recovery evidence with no workflow mode, even for a run that saved one', async () => {
   const ref = setupSession('skip-saved-mode');
   const state = makeImplState([makeTask({ status: 'failed' })], {
     mode: 'speckit',
@@ -721,7 +733,7 @@ it('records CLI recovery evidence with no workflow mode, even for a run that sav
   });
   saveState(ref, state);
   const { bus } = makeBusRecorder();
-  const result = applyRecoveryAction({ ...ref, state, action: 'skip-current-task', bus });
+  const result = await applyRecoveryAction({ ...ref, state, action: 'skip-current-task', bus });
   expect(result.ok).toBe(true);
   expect(readEvidenceLedger(ref)).not.toHaveProperty('mode');
 });

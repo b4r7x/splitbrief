@@ -99,6 +99,8 @@ export function formatRecoveryHeadline(issue: RecoveryIssue, now: number = Date.
       return 'Planner still asks questions after 2 rounds';
     case 'plan-checks-failed':
       return 'Plan still fails its checks after one repair';
+    case 'review-input-too-large':
+      return `Review input too large for ${toolName(issue)}`;
     case 'review-failed': {
       // A final review halt names no brief: it judged the whole run, or it judged nothing.
       const cycles = recoveryFactNumber(issue.facts, 'fixCycles');

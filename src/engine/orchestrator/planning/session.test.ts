@@ -415,7 +415,7 @@ describe('the planning session on the live path', () => {
       expect(first.result.state.pendingRecovery?.reason).toBe('plan-questions-exhausted');
       const saved = loadState(first);
       if (saved === null) throw new Error('state not saved');
-      const applied = applyRecoveryAction({
+      const applied = await applyRecoveryAction({
         ...first,
         state: saved,
         action,

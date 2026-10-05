@@ -159,7 +159,9 @@ function formatRecoveryActionText(
         ? 'fix again · add a note, grant one more fix cycle'
         : 'revise · send the planner a correction';
     case 'accept-as-is':
-      return 'accept as is · ready to apply with the open findings; Apply lists them and asks once';
+      return context.reason === 'review-input-too-large'
+        ? 'skip review · ready to apply unreviewed; your note is recorded and Apply asks once'
+        : 'accept as is · ready to apply with the open findings; Apply lists them and asks once';
     case 'continue':
       return 'continue';
     case 'skip-current-task':
@@ -493,6 +495,7 @@ function formatRecoveryHeader(issue: RecoveryIssue): string {
     issue.reason === 'checkout-changed' ||
     issue.reason === 'apply-conflict' ||
     issue.reason === 'apply-partial' ||
+    issue.reason === 'review-input-too-large' ||
     issue.reason === 'plan-questions-exhausted' ||
     issue.reason === 'plan-checks-failed'
   ) {
@@ -541,6 +544,7 @@ function formatUsageLimitHeadline(issue: RecoveryIssue): string | undefined {
 
 function formatSubjectLines(issue: RecoveryIssue): string[] {
   const lines: string[] = [];
+  if (issue.reason === 'review-input-too-large') lines.push(issue.message);
   if (issue.taskId && issue.taskTitle) lines.push(`Task ${issue.taskId} · ${issue.taskTitle}`);
   if (issue.files.length > 0) lines.push(`Files ${formatMiddotList(issue.files, 3)}`);
   const affected = issue.affectedTaskIds.filter((taskId) => taskId !== issue.taskId);

@@ -7,6 +7,7 @@ export const RUNNER_OUTCOME_STATES = [
   'incompatible-version',
   'unauthenticated',
   'usage-limit',
+  'input-too-large',
   'timeout',
   'no-progress-cut',
   'user-abort',
@@ -50,6 +51,8 @@ function defaultRemediation(state: RunnerFailureOutcomeState): string {
       return 'Authenticate the CLI, then retry.';
     case 'usage-limit':
       return 'Wait for the usage limit to reset, switch the seat to another tool, or end the run.';
+    case 'input-too-large':
+      return 'The prompt is larger than the tool accepts; a retry sends the same prompt. Narrow the input or end the run.';
     case 'timeout':
       return 'Retry the command or increase its configured timeout.';
     case 'no-progress-cut':

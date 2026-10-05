@@ -584,6 +584,7 @@ export async function invokeProcessCli(
  * reads the tool's own words.
  */
 const HALT_FAILURES: Readonly<Record<HaltKind, { code: string; phrases: readonly string[] }>> = {
+  'input-too-large': { code: 'input-too-large', phrases: HALT_SIGNATURES.inputTooLarge },
   auth: { code: 'unauthenticated', phrases: HALT_SIGNATURES.auth },
   usage: { code: 'usage-limit', phrases: HALT_SIGNATURES.usage },
   'missing-model': { code: 'missing-model', phrases: HALT_SIGNATURES.missingModel },

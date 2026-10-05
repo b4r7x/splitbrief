@@ -797,7 +797,7 @@ export function buildSnapshotFailedRecoveryIssue(
 /** A review that judged nothing on a seat that can still run; a blocked seat halts as its runner. */
 type NoVerdictReviewFailure = Exclude<
   FinalReviewFailure,
-  { kind: 'seat-blocked' | 'seat-protocol-error' }
+  { kind: 'seat-blocked' | 'seat-protocol-error' | 'input-too-large' }
 >;
 
 export interface ReviewFailedRecoveryOptions extends RecoveryBuilderBase {

@@ -920,6 +920,7 @@ describe('T-017 stable CLI outcome taxonomy', () => {
       'incompatible-version',
       'unauthenticated',
       'usage-limit',
+      'input-too-large',
       'timeout',
       'user-abort',
       'signal-exit',
@@ -938,6 +939,12 @@ describe('T-017 stable CLI outcome taxonomy', () => {
       'no-progress-cut',
     ]);
     expect([...RUNNER_OUTCOME_STATES].sort()).toEqual([...covered].sort());
+  });
+
+  it('maps input-too-large to input-too-large', () => {
+    expect(runnerCallOutcome(callResult('failed', 'input-too-large')).state).toBe(
+      'input-too-large',
+    );
   });
 
   it('maps no-staged-change to no-staged-change', () => {

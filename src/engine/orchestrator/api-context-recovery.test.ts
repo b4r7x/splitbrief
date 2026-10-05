@@ -558,17 +558,17 @@ describe('answering a halt that names no brief', () => {
         });
   }
 
-  it('leaves the halt pending across a pause, then clears it without resetting a brief', () => {
+  it('leaves the halt pending across a pause, then clears it without resetting a brief', async () => {
     const { ref, state } = halted('retry-review-seat', contextIssue('review'));
     const { bus, events } = makeBusRecorder();
 
-    const paused = applyRecoveryAction({ ...ref, state, action: 'pause-run', bus, config });
+    const paused = await applyRecoveryAction({ ...ref, state, action: 'pause-run', bus, config });
 
     expect(paused).toMatchObject({ ok: true, status: 'paused' });
     // The pause parks it; nothing on the way back in clears it.
     expect(loadState(ref)?.pendingRecovery?.status).toBe('paused');
 
-    const retried = applyRecoveryAction({
+    const retried = await applyRecoveryAction({
       ...ref,
       state: paused.state,
       action: 'retry-same-worker',
@@ -584,11 +584,11 @@ describe('answering a halt that names no brief', () => {
     expect(loadState(ref)?.pendingRecovery).toBeUndefined();
   });
 
-  it('clears a plan-seat halt the same way', () => {
+  it('clears a plan-seat halt the same way', async () => {
     const { ref, state } = halted('retry-plan-seat', contextIssue('plan'));
     const { bus, events } = makeBusRecorder();
 
-    const retried = applyRecoveryAction({
+    const retried = await applyRecoveryAction({
       ...ref,
       state,
       action: 'retry-same-worker',
@@ -601,7 +601,7 @@ describe('answering a halt that names no brief', () => {
     expect(events.some((event) => event.type === 'task_reset')).toBe(false);
   });
 
-  it('clears a review call that did not land the same way', () => {
+  it('clears a review call that did not land the same way', async () => {
     const issue = buildReviewFailedRecoveryIssue({
       failure: { kind: 'call-failed', code: 'review-unavailable', message: 'socket hang up' },
       createdAt: CREATED_AT,
@@ -609,7 +609,7 @@ describe('answering a halt that names no brief', () => {
     const { ref, state } = halted('retry-review-call', issue);
     const { bus, events } = makeBusRecorder();
 
-    const retried = applyRecoveryAction({
+    const retried = await applyRecoveryAction({
       ...ref,
       state,
       action: 'retry-same-worker',
@@ -621,12 +621,12 @@ describe('answering a halt that names no brief', () => {
     expect(events.some((event) => event.type === 'task_reset')).toBe(false);
   });
 
-  it('refuses the retry a substantive review failure never offered', () => {
+  it('refuses the retry a substantive review failure never offered', async () => {
     const issue = buildReviewFailedRecoveryIssue({ blocking: 2, createdAt: CREATED_AT });
     const { ref, state } = halted('retry-substantive', issue);
     const { bus } = makeBusRecorder();
 
-    const blocked = applyRecoveryAction({
+    const blocked = await applyRecoveryAction({
       ...ref,
       state,
       action: 'retry-same-worker',
@@ -640,7 +640,7 @@ describe('answering a halt that names no brief', () => {
     expect(allowedActionsForReason('review-failed')).toContain('retry-same-worker');
   });
 
-  it('still replays the brief when the halt names one', () => {
+  it('still replays the brief when the halt names one', async () => {
     const task = makeTask({ id: 'T001', status: 'in_progress' });
     const seatless = contextIssue('review');
     const issue: RecoveryIssue = { ...seatless, taskId: task.id, taskTitle: task.title };
@@ -651,7 +651,7 @@ describe('answering a halt that names no brief', () => {
     });
     const { bus, events } = makeBusRecorder();
 
-    const retried = applyRecoveryAction({
+    const retried = await applyRecoveryAction({
       ...ref,
       state,
       action: 'retry-same-worker',
@@ -674,7 +674,7 @@ describe('a corrected review seat', () => {
     expect(refused.result.state.pendingRecovery?.seat).toBe('review');
 
     const { bus } = makeBusRecorder();
-    const cleared = applyRecoveryAction({
+    const cleared = await applyRecoveryAction({
       ...ref,
       state: refused.result.state,
       action: 'retry-same-worker',
@@ -780,7 +780,7 @@ describe('a REVIEW seat out of quota', () => {
     const follows = await limited('review-swap-follows', followsPlan);
     const own = await limited('review-swap-own', ownSeat);
 
-    const movedPlan = applyRecoveryAction({
+    const movedPlan = await applyRecoveryAction({
       ...follows.ref,
       state: follows.result.state,
       action: 'switch-seat',
@@ -788,7 +788,7 @@ describe('a REVIEW seat out of quota', () => {
       bus: makeBusRecorder().bus,
       config: followsPlan,
     });
-    const movedReview = applyRecoveryAction({
+    const movedReview = await applyRecoveryAction({
       ...own.ref,
       state: own.result.state,
       action: 'switch-seat',

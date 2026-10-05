@@ -30,6 +30,13 @@ import {
 
 export const REVIEW_PACKET_VERSION = 1;
 
+export const REVIEW_INPUT_TRIMS = [
+  'full-file-context',
+  'undeclared-file-diffs',
+  'task-evidence',
+] as const;
+export type ReviewInputTrim = (typeof REVIEW_INPUT_TRIMS)[number];
+
 const ReviewPacketArtifactSourceSchema = z.object({
   path: z.string(),
   present: z.boolean(),
@@ -378,6 +385,13 @@ export const ReviewPacketSchema = z.object({
   escalations: ReviewPacketEscalationsSchema,
   cost: ReviewPacketCostSchema,
   finalReview: ReviewPacketFinalReviewSchema,
+  reviewInput: z
+    .object({
+      chars: z.number().int().nonnegative(),
+      maxChars: z.number().int().positive(),
+      dropped: z.array(z.object({ trim: z.enum(REVIEW_INPUT_TRIMS), items: z.array(z.string()) })),
+    })
+    .optional(),
   reviewerChecklist: z.array(z.string()),
   missingArtifacts: z.array(z.string()),
 });

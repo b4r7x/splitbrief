@@ -191,7 +191,7 @@ describe('isolation halt through the orchestrator', { timeout: 90_000 }, () => {
     );
     expect(events.some((event) => event.type === 'task_retry')).toBe(false);
 
-    const retried = applyRecoveryAction({
+    const retried = await applyRecoveryAction({
       projectDir,
       sessionId,
       state,
@@ -320,7 +320,7 @@ describe('isolation halt through the orchestrator', { timeout: 90_000 }, () => {
       const sessionId = 'sess-isolation-audit-retry';
       const { state, calls } = await haltedRun(projectDir, sessionId);
 
-      const retried = applyRecoveryAction({
+      const retried = await applyRecoveryAction({
         projectDir,
         sessionId,
         state,
@@ -384,7 +384,7 @@ describe('isolation halt through the orchestrator', { timeout: 90_000 }, () => {
       const sessionId = 'sess-isolation-audit-skip';
       const { state, calls } = await haltedRun(projectDir, sessionId);
 
-      const skipped = applyRecoveryAction({
+      const skipped = await applyRecoveryAction({
         projectDir,
         sessionId,
         state,

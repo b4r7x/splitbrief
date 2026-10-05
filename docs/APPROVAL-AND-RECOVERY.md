@@ -210,6 +210,7 @@ An unreadable audit publishes `isolation_audit_failed` and lets the call stand. 
 | `approval-denied` | The operator denied the brief's writes at the approval gate | `retry-same-worker`, `skip-current-task`, `pause-run`, `end-run` | `pause-run` |
 | `snapshot-failed` | The task-start snapshot could not be captured, so scope and attempt rollback cannot be enforced for this brief | `retry-same-worker`, `pause-run`, `end-run` | `retry-same-worker` |
 | `review-failed` | The final review still reported blocking findings after the last fix cycle; or it reached no verdict (the call failed, or the seat could not read the packet) | Blocking findings: `revise`, `accept-as-is`* on a workspace run, `pause-run`, `end-run`. No verdict: `retry-same-worker`, `pause-run`, `end-run` | `pause-run`; `retry-same-worker` when the review call failed |
+| `review-input-too-large` | The review prompt is larger than the reviewer tool accepts, after the size guard trimmed it; or the tool refused it (`input_too_large`) | `accept-as-is`* (**Skip review**, on a workspace run at the final review), `end-run` | `end-run` |
 | `planner-call-failed` | The planner call failed for a reason that is neither a sign-out nor a quota limit | `retry-same-worker`, `switch-seat`*, `pause-run`, `end-run` | `retry-same-worker` |
 | `planner-returned-no-briefs` | No producer now (older runs only). The retired `tasks` call parsed no Task Brief | `retry-same-worker`, `revise`, `end-run` | `retry-same-worker` |
 | `constitution-check-failed` | No producer now (older runs only). The spec broke a hard constitution principle | `revise-spec`, `end-run` | `revise-spec` |
@@ -278,6 +279,16 @@ An `apply-conflict` halt lists every conflicted file and the workspace path. For
 A workspace run's `review-failed` halt offers **Accept as is**. It records an owner override and the open findings, then makes the result ready to apply. It preserves failed and unverified verdicts. It does not claim that verification passed.
 
 Apply lists those findings and requires one explicit confirmation. The result menu calls this **Apply as is**. The command is `/run accept confirm`. Returning to the menu without confirmation writes nothing. A changed candidate still follows the Apply checks and review cycle.
+
+## Review input too large
+
+A reviewer tool can have an input cap. The cap is a tool fact (`maxInputChars`, `src/core/runners/cli-tool-catalog.ts`). Codex takes at most 1,048,576 characters. A tool with no recorded cap gets no guard.
+
+The review prompt carries one diff per file for the whole run. Each file is headed by the tasks that touched it. The Workspace Context carries only files with no recorded run effect. No section repeats another.
+
+SPLITBRIEF measures the prompt before the review call (`fitReviewPrompt`, `src/engine/orchestrator/evidence/review-packet/fit.ts`). An oversized prompt is trimmed in this order: whole new files (the reviewer reads them in the workspace), then the diffs of files no brief declares, then the recorded validation output and the drift report. The prompt names what it dropped in a `Trimmed for Size` section. The transcript shows one `Review input trimmed` warning, and `review-packet.json` records the measurement under `reviewInput`.
+
+When the trimmed prompt is still over the cap, the run halts with `review-input-too-large` and makes no call. The same halt follows when the tool itself refuses the input (`input_too_large`). The halt names the size, the cap and the largest file diffs. It offers no retry, because a retry sends the same input. **Skip review** records your note and makes a workspace run ready to apply with no review. It never claims a verification, and Apply asks for one confirmation, as for [Accept as is](#accept-as-is). **End run** saves the changes in `run.patch` and removes the workspace.
 
 ## Partial Apply recovery
 

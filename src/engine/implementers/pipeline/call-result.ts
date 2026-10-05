@@ -86,6 +86,7 @@ function failureStateFromCode(code: string): RunnerFailureOutcomeState | null {
     case 'incompatible-version':
     case 'unauthenticated':
     case 'usage-limit':
+    case 'input-too-large':
     case 'timeout':
     case 'no-progress-cut':
     case 'user-abort':
@@ -173,6 +174,12 @@ export function typedRunnerCallErrorMessage(err: unknown): string | null {
   const callError = data.error;
   if (!isRecord(callError)) return null;
   return typeof callError.message === 'string' ? callError.message : null;
+}
+
+export function typedRunnerCallErrorCode(err: unknown): string | null {
+  const callError = errorData(err)?.error;
+  if (!isRecord(callError)) return null;
+  return typeof callError.code === 'string' ? callError.code : null;
 }
 
 /** The role of the call a failed runner call's error names; a thrown provider error names none. */

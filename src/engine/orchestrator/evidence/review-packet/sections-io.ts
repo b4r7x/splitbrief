@@ -25,7 +25,7 @@ import { uniqueSorted } from '../../../../utils/collections.js';
 import { extractFrontmatter } from '../../../../utils/frontmatter.js';
 import type { DriftReport } from '../../../../core/schemas/drift.js';
 import { parseFinalReview, type ParsedFinalReview } from '../../../parsers/final-review.js';
-import { readReviewRecord } from '../../../../core/review/store.js';
+import { readFinalReviewRecord } from '../../../../core/review/store.js';
 import { addMissing } from './missing-artifacts.js';
 
 const REVIEW_EXCERPT_MAX = 500;
@@ -126,12 +126,10 @@ export async function buildFinalReview(opts: {
       : status === 'failed'
         ? `Planner final review failed; ${REVIEW_FILE} may be absent.`
         : `${REVIEW_FILE} was not available.`;
-  const body = await readReviewBody(projectDir, sessionId);
-  // The typed record is the verdict's home; only a session saved before it has
-  // to fall back to the rendered markdown.
-  const record = readReviewRecord({ projectDir, sessionId });
-  const parsed = record === null && body !== null ? parseFinalReview(body) : null;
-  const outcome = record === null ? null : reviewOutcomeOf(record);
+  const review = readFinalReviewRecord({ projectDir, sessionId });
+  const body = review.kind === 'task-only' ? null : await readReviewBody(projectDir, sessionId);
+  const parsed = review.kind === 'none' && body !== null ? parseFinalReview(body) : null;
+  const outcome = review.kind === 'final' ? reviewOutcomeOf(review.record) : null;
   return {
     path: REVIEW_FILE,
     status,

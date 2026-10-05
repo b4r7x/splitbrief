@@ -392,6 +392,22 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 
 ---
 
+### Symptom: the run halted with "Review input too large for OpenAI Codex CLI"
+
+**Likely cause:** The final review prompt is larger than the reviewer tool accepts. Codex takes at most 1,048,576 characters. SPLITBRIEF already trimmed whole new files, the diffs of files no brief declares and the recorded evidence, and the rest of the run diff is still over the cap. The same halt follows when the tool itself answers `input_too_large`.
+
+**Fix:**
+1. Read the halt details. They name the prompt size, the cap and the largest file diffs.
+2. Choose **Skip review** to make a workspace run ready to apply with no review. Your note is recorded, and Apply asks for one confirmation. Nothing is reported as verified.
+3. Or choose **End run**. The changes are saved in `.splitbrief/sessions/<id>/run.patch`, and the workspace is removed.
+4. A retry is not offered, because it would send the same input. For the next run, give the review seat a tool with a larger input (`/crew review`), or keep the run smaller.
+
+**Prevention:** Smaller runs. Keep generated or vendored files out of the briefs' declared files.
+
+**See also:** [Review input too large](./APPROVAL-AND-RECOVERY.md#review-input-too-large).
+
+---
+
 ### Symptom: the reviewer said `fail` — what now
 
 **Likely cause:** The reviewer read the whole diff and returned the verdict `fail` with Critical findings. This is a verdict, not a runner failure: the review happened, and it says the work is not done.

@@ -116,6 +116,7 @@ export const RECOVERY_REASONS = [
   'checkout-changed',
   'runner-timeout-repeated',
   'review-failed',
+  'review-input-too-large',
   'approval-denied',
   'snapshot-failed',
   'planner-call-failed',

@@ -102,6 +102,12 @@ export async function buildReviewPacket(opts: BuildReviewPacketOptions): Promise
     escalations: buildEscalations({ state: opts.state, ledger, events }),
     cost: buildCost(opts.summary, events),
     finalReview,
+    ...(opts.reviewInput !== undefined && {
+      reviewInput: {
+        ...opts.reviewInput,
+        dropped: opts.reviewInput.dropped.map((drop) => ({ ...drop, items: [...drop.items] })),
+      },
+    }),
     reviewerChecklist: [...REVIEWER_CHECKLIST],
     missingArtifacts: [...missing].sort((a, b) => a.localeCompare(b)),
   };

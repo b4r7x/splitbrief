@@ -52,7 +52,9 @@ export function recoveryActionLabel(
         ? 'Fix again · add a note, grant one more fix cycle'
         : 'Send a correction';
     case 'accept-as-is':
-      return 'Accept as is';
+      return context.reason === 'review-input-too-large'
+        ? 'Skip review · add a note'
+        : 'Accept as is';
     case 'continue':
       return 'Continue';
     case 'skip-current-task':

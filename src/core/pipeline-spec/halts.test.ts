@@ -25,6 +25,19 @@ describe('classifyHaltSignature', () => {
     expect(classifyHaltSignature(['error: unknown flag --yolo'])).toBe('spawn');
   });
 
+  // Captured live from `codex exec` (gpt-6.1-sol) on 2026-10-05: the final review prompt was over
+  // the tool's input cap. A retry rebuilds the same prompt, so this is a halt, not a turn failure.
+  it('classifies the input-cap refusal, structured and plain-text, as input-too-large', () => {
+    expect(
+      classifyHaltSignature([
+        'Error: turn/start: turn/start failed: Input exceeds the maximum length of 1048576 characters. (code -32602), data: {"input_error_code":"input_too_large","max_chars":1048576,"actual_chars":1106026}',
+      ]),
+    ).toBe('input-too-large');
+    expect(classifyHaltSignature(['Input exceeds the maximum length of 1048576 characters.'])).toBe(
+      'input-too-large',
+    );
+  });
+
   it('a run whose own output names billing or a rate limit is not a usage halt', () => {
     expect(classifyHaltSignature(['writing src/billing/webhook.ts', 'tsc: 1 error'])).toBeNull();
     expect(classifyHaltSignature(['added a rate limit to the handler'])).toBeNull();

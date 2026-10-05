@@ -175,7 +175,7 @@ describe('runSingleTask — recovery', () => {
     );
 
     // Skip the exhausted task via the real recovery action, then run task 2.
-    const skipResult = applyRecoveryAction({
+    const skipResult = await applyRecoveryAction({
       projectDir,
       sessionId,
       state: afterTaskOne,
@@ -281,7 +281,7 @@ describe('runSingleTask — signed-out runner', () => {
     });
 
     // After the user logs in externally, the retry action resumes the same task.
-    const retryResult = applyRecoveryAction({
+    const retryResult = await applyRecoveryAction({
       projectDir,
       sessionId,
       state: result,
@@ -446,7 +446,7 @@ describe('runSingleTask — usage-limited runner', () => {
     expectResetNamedOnce(events);
 
     // Once the limit has reset, the retry action resumes the same task.
-    const retryResult = applyRecoveryAction({
+    const retryResult = await applyRecoveryAction({
       projectDir,
       sessionId,
       state: result,

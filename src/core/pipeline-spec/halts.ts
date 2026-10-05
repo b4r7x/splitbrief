@@ -1,4 +1,4 @@
-export type HaltKind = 'auth' | 'usage' | 'missing-model' | 'spawn';
+export type HaltKind = 'input-too-large' | 'auth' | 'usage' | 'missing-model' | 'spawn';
 
 /**
  * Phrases that end a run instead of entering the retry ladder. Lowercase, matched
@@ -13,6 +13,7 @@ export type HaltKind = 'auth' | 'usage' | 'missing-model' | 'spawn';
  * ("requires permissions", "use --yolo") and an auth halt is a 401 spelling.
  */
 export const HALT_SIGNATURES = {
+  inputTooLarge: ['input_too_large', 'input exceeds the maximum length'],
   auth: [
     'access token could not be refreshed',
     'log out and sign in again',
@@ -65,6 +66,7 @@ export const HALT_SIGNATURES = {
 export const HALT_TAIL_LINES = 60;
 
 const HALT_GROUPS: readonly (readonly [HaltKind, readonly string[]])[] = [
+  ['input-too-large', HALT_SIGNATURES.inputTooLarge],
   ['auth', HALT_SIGNATURES.auth],
   ['usage', HALT_SIGNATURES.usage],
   ['missing-model', HALT_SIGNATURES.missingModel],

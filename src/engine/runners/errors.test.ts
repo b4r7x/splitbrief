@@ -49,6 +49,7 @@ describe('runner outcome taxonomy', () => {
       'incompatible-version',
       'unauthenticated',
       'usage-limit',
+      'input-too-large',
       'timeout',
       'no-progress-cut',
       'user-abort',

@@ -620,6 +620,25 @@ describe('invokeProcessCli', () => {
     expect(undiagnosed.error?.code).toBe('non-zero-exit');
   });
 
+  it('exit 1 with the codex input-cap refusal on stderr classifies input-too-large, not a bare exit', async () => {
+    // Captured live from `codex exec` on 2026-10-05; the halt read "CLI exited with code 1"
+    // and offered a retry that rebuilds the same oversized prompt.
+    const line =
+      'Error: turn/start: turn/start failed: Input exceeds the maximum length of 1048576 characters. (code -32602), data: {"input_error_code":"input_too_large","max_chars":1048576,"actual_chars":1106026}';
+    const result = await run(
+      adapter({ kind: 'stdin' }),
+      invocation({
+        script: `process.stderr.write(${JSON.stringify(`${line}\n`)});process.exit(1)`,
+      }),
+    );
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      error: { code: 'input-too-large', message: line },
+    });
+    expect(runnerCallOutcome(result).state).toBe('input-too-large');
+  });
+
   it("exit 1 with 'Not logged in' on stderr classifies unauthenticated", async () => {
     const result = await run(
       adapter({ kind: 'stdin' }),

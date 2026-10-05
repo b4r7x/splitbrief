@@ -10,7 +10,7 @@ import type { RunnerKind } from '../../../core/schemas/enums.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { readSpecFileOrEmpty } from '../../../core/paths-io.js';
 import { REVIEW_FILE } from '../../../core/paths.js';
-import { readReviewRecord } from '../../../core/review/store.js';
+import { readFinalReviewRecord } from '../../../core/review/store.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { hashTaskBrief } from '../../brief-hash.js';
 import { parseFinalReview } from '../../parsers/final-review.js';
@@ -63,9 +63,10 @@ type BuildSummaryOptions = SummaryBase & {
 
 function readReviewOutcome(projectDir: string, sessionId: string): Summary['review'] {
   const ref = { projectDir, sessionId };
-  const record = readReviewRecord(ref);
-  if (record !== null) {
-    const outcome = reviewOutcomeOf(record);
+  const review = readFinalReviewRecord(ref);
+  if (review.kind === 'task-only') return undefined;
+  if (review.kind === 'final') {
+    const outcome = reviewOutcomeOf(review.record);
     const counts = reviewFindingCounts(outcome);
     return {
       verdict: reviewOutcomeWord(outcome),

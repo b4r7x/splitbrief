@@ -16,6 +16,11 @@ const REVIEW_FAILED_ACTIONS = [
   'pause-run',
   'end-run',
 ] as const satisfies readonly RecoveryAction[];
+/** A retry rebuilds the same input; skip with a recorded note, never a verification, or end. */
+const REVIEW_INPUT_ACTIONS = [
+  'accept-as-is',
+  'end-run',
+] as const satisfies readonly RecoveryAction[];
 const TASK_RECOVERY_ACTIONS = [
   'retry-same-worker',
   'route-bigger-worker',
@@ -171,6 +176,8 @@ export function allowedActionsForReason(reason: RecoveryReason): RecoveryAction[
       return copyActions(SNAPSHOT_FAILED_ACTIONS);
     case 'review-failed':
       return copyActions(REVIEW_FAILED_ACTIONS);
+    case 'review-input-too-large':
+      return copyActions(REVIEW_INPUT_ACTIONS);
     case 'planner-call-failed':
     case 'seat-protocol-error':
       return copyActions(PLANNER_CALL_ACTIONS);

@@ -208,6 +208,8 @@ export type CliToolDeclarationBase<Id extends string = string> = Readonly<{
   /** How the tool's effort intent reaches it, when it has a channel at all. */
   effortChannel: CliEffortChannel;
   typedOutput: TypedOutputSupport;
+  /** Largest accepted prompt in characters; omitted when unknown, which means no cap. */
+  maxInputChars?: number | undefined;
   auth: CliAuthPolicy;
   billing: RunnerBillingPosture;
   isSubscription: boolean;
@@ -423,6 +425,8 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
   }),
   codex: activeCliToolDeclaration({
     id: 'codex',
+    // Codex refused a longer turn with input_too_large, captured 2026-10-05.
+    maxInputChars: 1_048_576,
     displayName: 'OpenAI Codex CLI',
     command: 'codex',
     executableAliases: ['codex'],

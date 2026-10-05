@@ -171,6 +171,9 @@ export function createRecoveryDriver(
     // `revise` carries the operator's words to the planner, so the panel asks for
     // them before it applies: an empty answer resolves the halt with no note.
     const promptRecoveryComment = async (action: RecoveryAction): Promise<string> => {
+      if (action === 'accept-as-is' && issue.reason === 'review-input-too-large') {
+        return inputMode.setQuestionMode('Why skip the review? (enter records none)');
+      }
       if (action !== 'revise' && action !== 'revise-spec') return '';
       return inputMode.setQuestionMode(
         issue.reason === 'review-failed'
@@ -209,7 +212,7 @@ export function createRecoveryDriver(
       }
 
       const retryProfileOverrideTaskId = issue.taskId ?? state.tasks[state.currentTaskIndex]?.id;
-      const result = applyRecoveryAction({
+      const result = await applyRecoveryAction({
         projectDir,
         sessionId,
         state,
@@ -243,7 +246,11 @@ export function createRecoveryDriver(
         // The close is on the state; the run loop finalizes the session from it —
         // one summary, one receipt release, through the same path every other
         // ending takes.
-        feedbackStore.setMessage('Run ended. The files it wrote are still on disk.');
+        feedbackStore.setMessage(
+          result.state.workspace === undefined || result.state.workspace.kind === 'checkout'
+            ? 'Run ended. The files it wrote are still on disk.'
+            : 'Run ended.',
+        );
         return { shouldRun: false, state: result.state };
       }
 

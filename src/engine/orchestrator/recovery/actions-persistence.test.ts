@@ -85,7 +85,7 @@ function contextOverflowRoutingDecision(taskId: Task['id']): RoutingDecision {
 }
 
 describe('applyRecoveryAction: persisted success effects', () => {
-  it('continues only a safe user-edit conflict and clears pending recovery', () => {
+  it('continues only a safe user-edit conflict and clears pending recovery', async () => {
     const { projectDir, sessionId } = setupSession('continue-safe-conflict');
     const task = makeTask({ id: 'T030', file: 'src/next.ts' });
     const issue = makeRecoveryIssue({
@@ -101,7 +101,7 @@ describe('applyRecoveryAction: persisted success effects', () => {
     const state = { ...implementingState([task]), pendingRecovery: issue };
     const { bus, events } = makeBus(projectDir, sessionId);
 
-    const result = applyRecoveryAction({
+    const result = await applyRecoveryAction({
       projectDir,
       sessionId,
       state,
@@ -119,7 +119,7 @@ describe('applyRecoveryAction: persisted success effects', () => {
     expect(readSessionLog(projectDir, sessionId)).toContain('"type":"recovery_resolved"');
   });
 
-  it('pauses with the recovery issue still pending and selected action persisted', () => {
+  it('pauses with the recovery issue still pending and selected action persisted', async () => {
     const { projectDir, sessionId } = setupSession('pause-run');
     const task = makeTask({ id: 'T032' });
     const issue = buildRetryExhaustedRecoveryIssue({
@@ -132,7 +132,7 @@ describe('applyRecoveryAction: persisted success effects', () => {
     const state = { ...implementingState([task]), pendingRecovery: issue };
     const { bus, events } = makeBus(projectDir, sessionId);
 
-    const result = applyRecoveryAction({
+    const result = await applyRecoveryAction({
       projectDir,
       sessionId,
       state,
@@ -156,7 +156,7 @@ describe('applyRecoveryAction: persisted success effects', () => {
     );
   });
 
-  it('ends the run without mutating task status', () => {
+  it('ends the run without mutating task status', async () => {
     const { projectDir, sessionId } = setupSession('end-run');
     const completedTask = makeTask({ id: 'T032', status: 'done' });
     const task = makeTask({ id: 'T033', status: 'in_progress' });
@@ -170,7 +170,7 @@ describe('applyRecoveryAction: persisted success effects', () => {
     const state = { ...implementingState([completedTask, task], 1), pendingRecovery: issue };
     const { bus, events } = makeBus(projectDir, sessionId);
 
-    const result = applyRecoveryAction({
+    const result = await applyRecoveryAction({
       projectDir,
       sessionId,
       state,
@@ -196,7 +196,7 @@ describe('applyRecoveryAction: persisted success effects', () => {
     );
   });
 
-  it('skips the current task, records evidence, clears recovery, and does not overwrite user edits', () => {
+  it('skips the current task, records evidence, clears recovery, and does not overwrite user edits', async () => {
     const { projectDir, sessionId } = setupSession('skip-task');
     mkdirSync(join(projectDir, 'src'), { recursive: true });
     const filePath = join(projectDir, 'src/user.ts');
@@ -213,7 +213,7 @@ describe('applyRecoveryAction: persisted success effects', () => {
     const state = { ...implementingState([task]), pendingRecovery: issue };
     const { bus, events } = makeBus(projectDir, sessionId);
 
-    const result = applyRecoveryAction({
+    const result = await applyRecoveryAction({
       projectDir,
       sessionId,
       state,
@@ -235,7 +235,7 @@ describe('applyRecoveryAction: persisted success effects', () => {
     );
   });
 
-  it('blocks skip with a dedicated skip-evidence-failed code when evidence cannot be written', () => {
+  it('blocks skip with a dedicated skip-evidence-failed code when evidence cannot be written', async () => {
     const { projectDir, sessionId } = setupSession('skip-evidence-fail');
     mkdirSync(evidenceLedgerPath({ projectDir, sessionId }), { recursive: true });
 
@@ -250,7 +250,7 @@ describe('applyRecoveryAction: persisted success effects', () => {
     const state = { ...implementingState([task]), pendingRecovery: issue };
     const { bus } = makeBus(projectDir, sessionId);
 
-    const result = applyRecoveryAction({
+    const result = await applyRecoveryAction({
       projectDir,
       sessionId,
       state,
@@ -261,7 +261,7 @@ describe('applyRecoveryAction: persisted success effects', () => {
     expect(result).toMatchObject({ ok: false, code: 'skip-evidence-failed' });
   });
 
-  it('prepares retry-same-worker by resetting only the current task without advancing', () => {
+  it('prepares retry-same-worker by resetting only the current task without advancing', async () => {
     const { projectDir, sessionId } = setupSession('retry-same-worker');
     const task = makeTask({ id: 'T035', status: 'in_progress' });
     const issue = buildRetryExhaustedRecoveryIssue({
@@ -280,7 +280,7 @@ describe('applyRecoveryAction: persisted success effects', () => {
     };
     const { bus, events } = makeBus(projectDir, sessionId);
 
-    const result = applyRecoveryAction({
+    const result = await applyRecoveryAction({
       projectDir,
       sessionId,
       state,
@@ -303,7 +303,7 @@ describe('applyRecoveryAction: persisted success effects', () => {
     );
   });
 
-  it('prepares route-bigger-worker by resetting the current task with the selected profile', () => {
+  it('prepares route-bigger-worker by resetting the current task with the selected profile', async () => {
     const { projectDir, sessionId } = setupSession('route-bigger-worker');
     const task = makeTask({ id: 'T036', file: 'src/large.ts' });
     const issue = buildContextOverflowRecoveryIssue({
@@ -316,7 +316,7 @@ describe('applyRecoveryAction: persisted success effects', () => {
     saveState({ projectDir, sessionId }, state);
     const { bus, events } = makeBus(projectDir, sessionId);
 
-    const result = applyRecoveryAction({
+    const result = await applyRecoveryAction({
       projectDir,
       sessionId,
       state,
@@ -366,7 +366,7 @@ describe('applyRecoveryAction: persisted success effects', () => {
 describe('applyRecoveryAction: the phase of what it publishes', () => {
   it.each(['retry-same-worker', 'skip-current-task'] as const)(
     '%s stamps the events after the action with the phase the run moved to',
-    (action) => {
+    async (action) => {
       const { projectDir, sessionId } = setupSession(`recovery-phase-${action}`);
       const task = makeTask({ id: 'T040', status: 'in_progress' });
       const issue = buildRetryExhaustedRecoveryIssue({ task, createdAt, allowRetryOverride: true });
@@ -378,7 +378,7 @@ describe('applyRecoveryAction: the phase of what it publishes', () => {
       saveState({ projectDir, sessionId }, state);
       const { bus, events } = makeBus(projectDir, sessionId);
 
-      const result = applyRecoveryAction({ projectDir, sessionId, state, action, bus });
+      const result = await applyRecoveryAction({ projectDir, sessionId, state, action, bus });
 
       expect(result.state.phase).toBe('implementing');
       expect(

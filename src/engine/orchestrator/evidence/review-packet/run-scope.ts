@@ -7,20 +7,20 @@ import type { Task } from '../../../../core/schemas/task.js';
 import { isInDeclaredSet, taskDeclaredPatterns } from '../../../../core/scope/declared-set.js';
 import type { SessionRef } from '../../../../core/types/session-ref.js';
 import { diffFileEntries } from '../../../../lib/git/entry-diff.js';
+import { splitDiffByFile } from '../../../../lib/git/diff-sections.js';
 import { uniqueSorted } from '../../../../utils/collections.js';
 import { hashTaskBrief } from '../../../brief-hash.js';
 import { readConfinedEntry } from '../../approval/file-snapshots/entry.js';
 
-export type RunReviewTaskDiff = {
-  taskId: string;
-  diff: string;
-};
+export type RunReviewFile = { path: string; taskIds: string[]; diff: string };
 
 export type RunReviewScope = {
-  diff: string;
+  /** One diff per file the run's tasks changed, sorted by path. */
+  files: RunReviewFile[];
+  /** Current workspace vs the last recorded output; raw diffs, without a heading. */
   laterDiff: string;
-  /** The recorded run diff split into one group per task, in completion order. */
-  byTask: RunReviewTaskDiff[];
+  /** Workspace diffs of files with no recorded run effect. */
+  workspaceContext: RunReviewFile[];
   description: string;
   provenance: ReviewProvenance;
 };
@@ -34,6 +34,8 @@ export async function resolveRunReviewScope(opts: {
   workspaceDir: string;
   tasks: readonly Task[];
   workspaceFiles: readonly string[];
+  /** The whole workspace diff, from the base to the workspace. */
+  workspaceDiff: string;
 }): Promise<RunReviewScope> {
   let status: ReviewProvenance['status'] = 'available';
   let recorded: ReturnType<typeof readReviewChanges> = null;
@@ -47,28 +49,43 @@ export async function resolveRunReviewScope(opts: {
   const promotedFiles = new Set<string>();
   const uncertainFiles = new Set<string>();
   const lastOutputs = new Map<string, ReviewFileEntry>();
-  const diffs: string[] = [];
-  const taskDiffs = new Map<string, string[]>();
+  const changesByPath = new Map<
+    string,
+    { before: ReviewFileEntry; after: ReviewFileEntry; taskIds: Set<string> }
+  >();
+  const files: RunReviewFile[] = [];
   const laterDiffs: string[] = [];
   for (const change of recorded?.changes ?? []) {
     if (change.kind === 'unknown' || taskHashes.get(change.taskId) !== change.briefHash) {
       uncertainFiles.add(change.path);
       continue;
     }
+    const merged = changesByPath.get(change.path);
+    if (merged === undefined) {
+      changesByPath.set(change.path, {
+        before: change.before,
+        after: change.after,
+        taskIds: new Set([change.taskId]),
+      });
+    } else {
+      merged.after = change.after;
+      merged.taskIds.add(change.taskId);
+    }
+  }
+  for (const [path, change] of [...changesByPath].sort(([a], [b]) => a.localeCompare(b))) {
+    lastOutputs.set(path, change.after);
     try {
       const diff = await diffFileEntries({
-        path: change.path,
+        path,
         before: bytes(change.before),
         after: bytes(change.after),
       });
       if (diff !== '') {
-        diffs.push(`# Changes by ${change.taskId}\n${diff}`);
-        taskDiffs.set(change.taskId, [...(taskDiffs.get(change.taskId) ?? []), diff]);
-        promotedFiles.add(change.path);
+        files.push({ path, taskIds: [...change.taskIds], diff });
+        promotedFiles.add(path);
       }
-      lastOutputs.set(change.path, change.after);
     } catch {
-      uncertainFiles.add(change.path);
+      uncertainFiles.add(path);
     }
   }
   for (const [path, expected] of lastOutputs) {
@@ -82,13 +99,15 @@ export async function resolveRunReviewScope(opts: {
             (current.mode & 0o777) === expected.mode;
       if (!matches) {
         uncertainFiles.add(path);
-        laterDiffs.push(
-          await diffFileEntries({
-            path,
-            before: bytes(expected),
-            after: current.kind === 'file' ? current : null,
-          }),
-        );
+        if (promotedFiles.has(path)) {
+          laterDiffs.push(
+            await diffFileEntries({
+              path,
+              before: bytes(expected),
+              after: current.kind === 'file' ? current : null,
+            }),
+          );
+        }
       }
     } catch {
       uncertainFiles.add(path);
@@ -107,20 +126,16 @@ export async function resolveRunReviewScope(opts: {
     uncertainFiles: uniqueSorted([...uncertainFiles]),
   };
   return {
-    diff: diffs.join('\n'),
-    byTask: [...taskDiffs.entries()].map(([taskId, parts]) => ({
-      taskId,
-      diff: parts.join('\n'),
-    })),
-    laterDiff:
-      laterDiffs.length === 0
-        ? ''
-        : `# Changes after the last recorded task completion; authorship unknown\n${laterDiffs.join('\n')}`,
+    files,
+    laterDiff: laterDiffs.join('\n'),
+    workspaceContext: splitDiffByFile(opts.workspaceDiff)
+      .filter(({ before, after }) => !promotedFiles.has(after) && !promotedFiles.has(before))
+      .map(({ after, diff }) => ({ path: after, taskIds: [], diff })),
     provenance,
     description: [
       `Task completion evidence: ${status} (${REVIEW_CHANGES_FILE}).`,
-      "Implementation Diff contains changes recorded at task completion inside the run workspace, in completion order. Each compares the file at the task's start with the file when the task passed. Pre-existing operator edits in that input are not run changes.",
-      'These are historical effects, not a claim that every effect survives in the current workspace. Check the complete Workspace Context for later edits, reversions and interactions across files.',
+      'Implementation Diff has one diff per file, from before the first task that touched it to after the last one, headed by the tasks that touched it. Pre-existing operator edits in that input are not run changes.',
+      'These are historical effects, not a claim that every effect survives in the current workspace. Workspace Context carries only files with no recorded run effect. Later edits are shown separately; authorship is unknown. Check the current workspace for reversions and interactions across files.',
       `Files with recorded run effects: ${provenance.promotedFiles.join(', ') || 'none recorded'}.`,
       `Files touched, not suggested by any brief: ${uniqueSorted(notSuggested).join(', ') || 'none'}.`,
       `Files with uncertain attribution or later edits: ${provenance.uncertainFiles.join(', ') || 'none observed'}.`,

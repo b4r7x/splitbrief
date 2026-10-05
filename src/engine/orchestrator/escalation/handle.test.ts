@@ -266,7 +266,7 @@ describe('handleRetryAndEscalation', () => {
     });
     expect(halted.pendingRecovery?.reason).toBe('consult-bound-spent');
 
-    const applied = applyRecoveryAction({
+    const applied = await applyRecoveryAction({
       projectDir,
       sessionId,
       state: halted,

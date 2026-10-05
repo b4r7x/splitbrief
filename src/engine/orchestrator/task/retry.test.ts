@@ -733,7 +733,7 @@ describe('retryAndRecord — a planner out of quota on the consult', () => {
     const { projectDir, sessionId, result } = await consultHalted();
     const { bus, events } = makeBusRecorder();
 
-    const moved = applyRecoveryAction({
+    const moved = await applyRecoveryAction({
       projectDir,
       sessionId,
       state: result.state,

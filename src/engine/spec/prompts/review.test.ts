@@ -32,14 +32,21 @@ afterEach(() => {
 });
 
 describe('buildFinalReviewPrompt', () => {
-  it('carries the plan, the per-task diff groups, the touched-not-suggested files, the check results, the consult log and the user answers', () => {
+  it('carries the plan, one diff per file with its tasks, the touched-not-suggested files, the check results, the consult log and the user answers', () => {
     const result = buildFinalReviewPrompt({
       spec: SPEC,
       taskBriefs: TASK_BRIEFS,
       diff: DIFF,
-      diffByTask: [
-        { taskId: 'T001', diff: '+export function hello() { return "hello"; }' },
-        { taskId: null, diff: '+export const operatorFix = true;' },
+      files: [
+        {
+          path: 'src/hello.ts',
+          taskIds: ['T001'],
+          diff: '+export function hello() { return "hello"; }',
+        },
+      ],
+      laterDiff: '+export const operatorFix = true;',
+      workspaceContext: [
+        { path: 'src/tool-fix.ts', taskIds: [], diff: '+export const independentFix = true;' },
       ],
       plan: {
         criteria: [{ id: 'C1', text: 'The greeting is returned', checkIds: ['K1'] }],
@@ -72,8 +79,14 @@ describe('buildFinalReviewPrompt', () => {
     expect(result).toContain('### Decisions');
     expect(result).toContain('- Keep the greeting pure (T001)');
     expect(result).toContain('## Implementation Diff');
-    expect(result).toContain('### Changes by T001');
-    expect(result).toContain('### Changes by not attributed');
+    expect(result).toContain('### src/hello.ts — T001');
+    expect(result).toContain(
+      '### Changes after the last recorded task completion; authorship unknown',
+    );
+    expect(result.split('## Workspace Context')[1]).toContain(
+      '+export const independentFix = true;',
+    );
+    expect(result.split('+export function hello() { return "hello"; }')).toHaveLength(2);
     expect(result).toContain('## Touched, Not Suggested');
     expect(result).toContain('src/shared.ts');
     expect(result).toContain('## Recorded Check Results');

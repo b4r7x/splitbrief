@@ -96,7 +96,7 @@ describe('runScheduledReview saved recovery', () => {
     expect(halted.state.pendingRecovery?.availableActions).not.toContain('accept-as-is');
     expect(events.filter((event) => event.type === 'workflow_complete')).toEqual([]);
     expect(triagePrompts).toEqual([]);
-    const corrected = applyRecoveryAction({
+    const corrected = await applyRecoveryAction({
       ...ref,
       state: halted.state,
       action: 'revise',

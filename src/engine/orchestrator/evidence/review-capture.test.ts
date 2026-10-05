@@ -24,7 +24,7 @@ const SHARED = 'src/shared.ts';
 afterEach(cleanupTaskProjects);
 
 describe('captureTaskReviewChanges', () => {
-  it('review diff is non-empty and attributed to the correct tasks', {
+  it('review diff is one diff for the shared file, attributed to both tasks', {
     timeout: 60_000,
   }, async () => {
     const { projectDir, sessionId } = setupTaskProject();
@@ -79,13 +79,14 @@ describe('captureTaskReviewChanges', () => {
       workspaceDir,
       tasks: state.tasks,
       workspaceFiles: [SHARED],
+      workspaceDiff: '',
     });
-    const [, byFirst = '', bySecond = ''] = scope.diff.split(/^# Changes by /m);
-    expect(byFirst).toMatch(/^T001\n/);
-    expect(byFirst).toContain('+export const a = 1;');
-    expect(bySecond).toMatch(/^T002\n/);
-    expect(bySecond).toContain('+export const b = 2;');
-    expect(bySecond).not.toContain('+export const a = 1;');
+    expect(scope.files.map((entry) => [entry.path, entry.taskIds])).toEqual([
+      [SHARED, ['T001', 'T002']],
+    ]);
+    const diff = scope.files[0]?.diff ?? '';
+    expect(diff.split('+export const a = 1;')).toHaveLength(2);
+    expect(diff.split('+export const b = 2;')).toHaveLength(2);
     expect(scope.provenance.uncertainFiles).toEqual([]);
     await isolation.dispose();
   });
@@ -182,10 +183,11 @@ describe('captureTaskReviewChanges', () => {
       workspaceDir,
       tasks: [task],
       workspaceFiles: [SHARED],
+      workspaceDiff: '',
     });
 
     expect(scope.laterDiff).toBe('');
     expect(scope.provenance.uncertainFiles).toEqual([]);
-    expect(scope.diff).toContain('+export const a = 1;');
+    expect(scope.files[0]?.diff).toContain('+export const a = 1;');
   });
 });

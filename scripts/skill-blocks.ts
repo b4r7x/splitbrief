@@ -372,6 +372,7 @@ function seatRecovery(): string {
 }
 
 const HALT_KINDS = {
+  inputTooLarge: 'input-too-large',
   auth: 'auth',
   usage: 'usage',
   missingModel: 'missing-model',

@@ -305,7 +305,7 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
     expect(result.state.pendingTriage).toBeDefined();
     expect(result.state.pendingRecovery?.availableActions).not.toContain('accept-as-is');
     expect(result.state.tasks.map((task) => task.status)).toEqual(['done', 'pending']);
-    const corrected = applyRecoveryAction({
+    const corrected = await applyRecoveryAction({
       projectDir,
       sessionId,
       state: result.state,

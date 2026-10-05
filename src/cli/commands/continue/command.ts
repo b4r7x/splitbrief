@@ -16,7 +16,7 @@ import { resolveRunConfig } from '../../build-overrides.js';
 import { CONFIG_RELATIVE_PATH } from '../../../core/config/load/document.js';
 import { loadConfig, writeConfig, writeConfigDocument } from '../../../core/config/load/io.js';
 import { CREW_SEAT_IDS, CREW_SEAT_LABELS, type CrewSeatId } from '../../../core/crew/identity.js';
-import { createEventBus } from '../../../engine/events/bus.js';
+import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js';
 import { applyRecoveryAction } from '../../../engine/orchestrator/recovery/actions.js';
 import { deriveConfigEdits } from '../../../stores/project/config-persistence.js';
 import { resumeSavedSession } from './resume.js';
@@ -64,19 +64,25 @@ type ContinueOpts = { projectDir: string } & WorkflowOpts & {
  * transition the TUI panel applies, taken from the resume line an earlier halt
  * printed. A blocked action is the operator's error, not the run's.
  */
-function applyPendingRecoveryAction(args: {
+async function applyPendingRecoveryAction(args: {
   sessionId: string;
   state: WorkflowState;
   action: RecoveryActionOption;
   opts: ContinueOpts;
-}): { state: WorkflowState; config?: Config } {
+}): Promise<{ state: WorkflowState; config?: Config }> {
   const projectDir = args.opts.projectDir;
-  const result = applyRecoveryAction({
+  const result = await applyRecoveryAction({
     projectDir,
     sessionId: args.sessionId,
     state: args.state,
     action: args.action.action,
-    bus: createEventBus(),
+    bus: createRecoveryBus({
+      projectDir,
+      sessionId: args.sessionId,
+      sink: (event) => {
+        if (event.type === 'warning') process.stderr.write(`${event.message}\n`);
+      },
+    }),
     config: resolveRunConfig({ projectDir, opts: args.opts }),
     ...(args.action.candidate !== undefined && { candidate: args.action.candidate }),
   });
@@ -173,7 +179,7 @@ export async function continueCommand(
     resumed =
       action === undefined
         ? { state: hydrated.state }
-        : applyPendingRecoveryAction({
+        : await applyPendingRecoveryAction({
             sessionId,
             state: hydrated.state,
             action,
@@ -184,7 +190,11 @@ export async function continueCommand(
   // `end-run` is the one action that does not carry the run on: the close is
   // recorded and there is nothing left to re-enter.
   if (resumed.state.closed !== undefined) {
-    console.log(`Run ${sessionId} closed. The files it wrote are still on disk.`);
+    console.log(
+      resumed.state.workspace === undefined || resumed.state.workspace.kind === 'checkout'
+        ? `Run ${sessionId} closed. The files it wrote are still on disk.`
+        : `Run ${sessionId} closed.`,
+    );
     return;
   }
 

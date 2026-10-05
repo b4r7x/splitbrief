@@ -1,10 +1,11 @@
 import { DRIFT_REPORT_FILE, EVIDENCE_FILE, SPEC_FILE, TASKS_FILE } from '../../core/paths.js';
 import { estimateTokens } from '../../core/tokens/estimate.js';
+import { splitDiffByFile } from '../../lib/git/diff-sections.js';
 import { apiPlanningInputBudget, type ApiContextManifestEntry } from '../planners/api-context.js';
 import {
   buildFinalReviewPrompt,
   type ReviewPlanData,
-  type ReviewTaskDiff,
+  type ReviewFileDiff,
   type ReviewTouchedNotSuggested,
 } from '../spec/prompts/review.js';
 
@@ -26,23 +27,7 @@ const SUBSTITUTED_REQUEST =
 const NO_VALIDATION_RECORDED =
   'Recorded commands: none. This run’s evidence ledger contains no test, typecheck or lint stage, so there is no validation result to quote. Report validation as not run, and never assert a result the record does not contain.';
 
-// A path with a space is spelled plainly; one with a non-ASCII or control byte
-// is C-quoted, and a coverage check that could not read it would refuse a file
-// the diff does carry.
-const DIFF_HEADER_RE = /^diff --git (?:a\/(.+) b\/(.+)|"a\/(.+)" "b\/(.+)")$/m;
 const BINARY_BODY_RE = /^(?:Binary files .* differ|GIT binary patch)$/m;
-const OCTAL_ESCAPE_RE = /\\([0-7]{3})/g;
-const LITERAL_ESCAPE_RE = /\\([\\"])/g;
-
-/** The path a C-quoted header names, back in the spelling git status uses. */
-function unquoteHeaderPath(raw: string): string {
-  const bytes = raw
-    .replace(LITERAL_ESCAPE_RE, '$1')
-    .replace(OCTAL_ESCAPE_RE, (_, digits: string) =>
-      String.fromCharCode(Number.parseInt(digits, 8)),
-    );
-  return Buffer.from(bytes, 'latin1').toString('utf8');
-}
 
 export type ApiReviewContext =
   | Readonly<{
@@ -73,14 +58,20 @@ export type ApiReviewContextInput = Readonly<{
   driftSection: string | undefined;
   /** Whether the ledger was read at all, beside what it recorded. */
   validation: Readonly<{ recorded: boolean; evidence: string | undefined }>;
-  reviewScope?: Readonly<{ diff: string; description: string }> | undefined;
+  reviewScope?:
+    | Readonly<{
+        files: readonly ReviewFileDiff[];
+        laterDiff: string;
+        workspaceContext: readonly ReviewFileDiff[];
+        description: string;
+      }>
+    | undefined;
   queueText?: string | undefined;
   /** The ids the verdict must answer for, as the prompt's Required Results states them. */
   taskIds?: readonly string[] | undefined;
   criterionIds?: readonly string[] | undefined;
   /** The plan as data: the criteria with their checks, and the briefs. */
   plan?: ReviewPlanData | undefined;
-  diffByTask?: readonly ReviewTaskDiff[] | undefined;
   touchedNotSuggested?: readonly ReviewTouchedNotSuggested[] | undefined;
   checkResults?: string | undefined;
   consultLog?: string | undefined;
@@ -99,12 +90,7 @@ type Part = { name: string; body: string };
 function readDiffCoverage(diff: string): { covered: Set<string>; binary: Set<string> } {
   const covered = new Set<string>();
   const binary = new Set<string>();
-  for (const section of diff.split(/^(?=diff --git )/m)) {
-    const header = DIFF_HEADER_RE.exec(section);
-    if (header === null) continue;
-    const quoted = header[1] === undefined;
-    const before = quoted ? unquoteHeaderPath(header[3] ?? '') : (header[1] ?? '');
-    const after = quoted ? unquoteHeaderPath(header[4] ?? '') : (header[2] ?? '');
+  for (const { before, after, diff: section } of splitDiffByFile(diff)) {
     covered.add(before);
     covered.add(after);
     if (BINARY_BODY_RE.test(section)) binary.add(after);
@@ -195,7 +181,8 @@ export function buildApiReviewContext(input: ApiReviewContextInput): ApiReviewCo
 
   // A change the diff cannot show is a change this seat cannot review.
   const { covered, binary } = readDiffCoverage(input.fullDiff);
-  for (const path of readDiffCoverage(input.reviewScope?.diff ?? '').binary) binary.add(path);
+  const recordedDiff = input.reviewScope?.files.map((file) => file.diff).join('\n') ?? '';
+  for (const path of readDiffCoverage(recordedDiff).binary) binary.add(path);
   for (const path of binary) {
     manifest.push({ path, kind: 'required', state: 'unsupported' });
     missingSections.push(path);
@@ -210,10 +197,16 @@ export function buildApiReviewContext(input: ApiReviewContextInput): ApiReviewCo
   // An empty diff is the whole truth of a run that changed nothing; it is a
   // missing source only when a file the run universe names is absent from it.
   manifest.push({ path: RUN_DIFF, kind: 'required', state: 'included' });
-  parts.push({ name: RUN_DIFF, body: input.fullDiff });
+  parts.push({
+    name: RUN_DIFF,
+    body: input.reviewScope?.workspaceContext.map((file) => file.diff).join('\n') ?? input.fullDiff,
+  });
   if (input.reviewScope !== undefined) {
     manifest.push({ path: 'recorded promotions', kind: 'required', state: 'included' });
-    parts.push({ name: 'recorded promotions', body: input.reviewScope.diff });
+    parts.push({
+      name: 'recorded promotions',
+      body: [recordedDiff, input.reviewScope.laterDiff].filter(Boolean).join('\n'),
+    });
   }
 
   const coverage = coverageBody(input);
@@ -245,9 +238,13 @@ export function buildApiReviewContext(input: ApiReviewContextInput): ApiReviewCo
   const prompt = buildFinalReviewPrompt({
     spec,
     taskBriefs,
-    diff: input.reviewScope?.diff ?? input.fullDiff,
-    ...(input.reviewScope !== undefined && { workspaceDiff: input.fullDiff }),
-    ...(input.diffByTask !== undefined && { diffByTask: input.diffByTask }),
+    ...(input.reviewScope === undefined
+      ? { diff: input.fullDiff }
+      : {
+          files: input.reviewScope.files,
+          laterDiff: input.reviewScope.laterDiff,
+          workspaceContext: input.reviewScope.workspaceContext,
+        }),
     ...(input.plan !== undefined && { plan: input.plan }),
     ...(input.touchedNotSuggested !== undefined && {
       touchedNotSuggested: input.touchedNotSuggested,

@@ -58,29 +58,37 @@ function project() {
   return { ...ref, ref, task };
 }
 
-async function completeTask(p: ReturnType<typeof project>, text = worker, extra?: string) {
+async function completeTask(
+  p: ReturnType<typeof project>,
+  text = worker,
+  extra?: string,
+  task = p.task,
+) {
   const taskStartSnapshot = await getChangedFilesSnapshot(p.projectDir);
   writeFileSync(join(p.projectDir, file), text);
   if (extra !== undefined) writeFileSync(join(p.projectDir, extra), 'export {};\n');
   await captureTaskReviewChanges({
     ref: p.ref,
     workspaceDir: p.projectDir,
-    task: p.task,
+    task,
     taskStartSnapshot,
   });
   // A passed task leaves its evidence ledger, which the review packet requires.
-  writeEvidenceLedger(p.ref, getOrCreateLedger({ ref: p.ref, state: makeImplState([p.task]) }));
+  writeEvidenceLedger(p.ref, getOrCreateLedger({ ref: p.ref, state: makeImplState([task]) }));
 }
 
-async function review(p: ReturnType<typeof project>, api = false) {
+async function review(p: ReturnType<typeof project>, api = false, tasks = [p.task]) {
   const prompts: string[] = [];
   writeSpecFile(p.ref, SPEC_FILE, 'Enable feature; preserve operator fixes.', null);
   const result = await runFinalReviewPhase({
     ...p,
     workspaceDir: p.projectDir,
-    state: makeImplState([{ ...p.task, status: 'done' }], {
-      changedFilesBaseline: { head: null, runStartChangedFiles: [file], fingerprints: {} },
-    }),
+    state: makeImplState(
+      tasks.map((task) => ({ ...task, status: 'done' as const })),
+      {
+        changedFilesBaseline: { head: null, runStartChangedFiles: [file], fingerprints: {} },
+      },
+    ),
     config: makeNoValidationConfig(
       api
         ? {
@@ -135,11 +143,15 @@ describe('final review task completion provenance', () => {
       const { prompt, packet } = await review(p, api);
       const implementation =
         prompt.split('## Implementation Diff')[1]?.split('## Workspace Context')[0] ?? '';
+      expect(implementation).toContain(`### ${file} — T001`);
       expect(implementation).toContain('+export const feature = true;');
       expect(implementation).not.toContain('operatorFix');
       expect(implementation).not.toContain('independentFix');
-      expect(prompt.split('## Workspace Context')[1]).toContain('operatorFix');
-      expect(prompt).toContain('independentFix');
+      // The context carries only files with no recorded run effect, so no hunk is shown twice.
+      const context = prompt.split('## Workspace Context')[1] ?? '';
+      expect(context).toContain('independentFix');
+      expect(context).not.toContain(`b/${file}`);
+      expect(prompt.split('+export const feature = true;')).toHaveLength(2);
       expect(prompt).toContain('including when they share a declared file');
       expect(packet.changes.provenance).toMatchObject({
         status: 'available',
@@ -170,6 +182,7 @@ describe('final review task completion provenance', () => {
     expect(prompt).toContain('+export const feature = true;');
     expect(prompt).toContain('operator changed the same feature line');
     expect(prompt).toContain('Changes after the last recorded task completion; authorship unknown');
+    expect(prompt.split('operator changed the same feature line')).toHaveLength(2);
     expect(packet.changes.provenance?.uncertainFiles).toContain(file);
   });
 
@@ -196,34 +209,98 @@ describe('final review task completion provenance', () => {
       workspaceDir: p.ref.projectDir,
       tasks: [p.task],
       workspaceFiles: [],
+      workspaceDiff: '',
     });
     expect(scope.description).toContain(
       'Files touched, not suggested by any brief: src/shared.ts.',
     );
   });
 
-  it('retains deletion and mode changes in the captured review diff', async () => {
+  it('retains mode changes and deletions in the run diff of a file', async () => {
     const p = project();
-    for (const next of ['mode', 'delete']) {
+    const scoped = () =>
+      resolveRunReviewScope({
+        ref: p.ref,
+        workspaceDir: p.ref.projectDir,
+        tasks: [p.task],
+        workspaceFiles: [],
+        workspaceDiff: '',
+      });
+    const capture = async (change: () => void) => {
       const taskStartSnapshot = await getChangedFilesSnapshot(p.projectDir);
-      if (next === 'mode') chmodSync(join(p.projectDir, file), 0o755);
-      else rmSync(join(p.projectDir, file));
+      change();
       await captureTaskReviewChanges({
         ref: p.ref,
         workspaceDir: p.projectDir,
         task: p.task,
         taskStartSnapshot,
       });
-    }
+    };
+    await capture(() => chmodSync(join(p.projectDir, file), 0o755));
+    expect((await scoped()).files[0]?.diff).toContain('new mode 100755');
+    await capture(() => rmSync(join(p.projectDir, file)));
+    const scope = await scoped();
+    expect(scope.files.map((entry) => [entry.path, entry.taskIds])).toEqual([[file, ['T001']]]);
+    expect(scope.files[0]?.diff).toContain('deleted file mode 100644');
+    expect(scope.provenance.promotedFiles).toEqual([file]);
+  });
+
+  it('shows a file two tasks touched once, attributed to both, with each hunk once', async () => {
+    const p = project();
+    const second = makeTask({ id: 'T002', file, action: 'modify', status: 'in_progress' });
+    await completeTask(p);
+    await completeTask(p, `${worker}export const extra = 2;\n`, undefined, second);
+
     const scope = await resolveRunReviewScope({
       ref: p.ref,
       workspaceDir: p.ref.projectDir,
-      tasks: [p.task],
-      workspaceFiles: [],
+      tasks: [p.task, second],
+      workspaceFiles: [file],
+      workspaceDiff: '',
     });
-    expect(scope.diff).toContain('new mode 100755');
-    expect(scope.diff).toContain('deleted file mode 100755');
-    expect(scope.provenance.promotedFiles).toEqual([file]);
+    expect(scope.files.map((entry) => [entry.path, entry.taskIds])).toEqual([
+      [file, ['T001', 'T002']],
+    ]);
+    const diff = scope.files[0]?.diff ?? '';
+    expect(diff.split('+export const feature = true;')).toHaveLength(2);
+    expect(diff.split('+export const extra = 2;')).toHaveLength(2);
+
+    const { prompt } = await review(p, false, [p.task, second]);
+    expect(prompt.split(`### ${file} — T001, T002`)).toHaveLength(2);
+    expect(prompt.split('+export const feature = true;')).toHaveLength(2);
+    expect(prompt.split('+export const extra = 2;')).toHaveLength(2);
+  });
+
+  it('shows a later edit of a file whose run effect cancelled out once', async () => {
+    const p = project();
+    const second = makeTask({ id: 'T002', file, action: 'modify', status: 'in_progress' });
+    await completeTask(p);
+    await completeTask(p, operator, undefined, second);
+    writeFileSync(join(p.projectDir, file), `${operator}export const later = 'edit';\n`);
+
+    const { prompt } = await review(p, false, [p.task, second]);
+
+    expect(prompt.split("export const later = 'edit';")).toHaveLength(2);
+  });
+
+  it('keeps a file whose run effect cancelled out uncertain when it was edited afterwards', async () => {
+    const p = project();
+    const second = makeTask({ id: 'T002', file, action: 'modify', status: 'in_progress' });
+    await completeTask(p);
+    await completeTask(p, operator, undefined, second);
+    writeFileSync(join(p.projectDir, file), 'export const restored = true;\n');
+
+    const scope = await resolveRunReviewScope({
+      ref: p.ref,
+      workspaceDir: p.ref.projectDir,
+      tasks: [p.task, second],
+      workspaceFiles: [],
+      workspaceDiff: '',
+    });
+
+    expect(scope.files).toEqual([]);
+    expect(scope.laterDiff).toBe('');
+    expect(scope.provenance.uncertainFiles).toContain(file);
   });
 
   it('does not adopt evidence for a rewound brief that reuses an ID', async () => {
@@ -234,8 +311,9 @@ describe('final review task completion provenance', () => {
       workspaceDir: p.ref.projectDir,
       tasks: [{ ...p.task, description: 'different brief' }],
       workspaceFiles: [file],
+      workspaceDiff: '',
     });
-    expect(scope.diff).toBe('');
+    expect(scope.files).toEqual([]);
     expect(scope.provenance.uncertainFiles).toEqual([file]);
   });
 });

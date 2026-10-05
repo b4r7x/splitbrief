@@ -29,6 +29,7 @@ import {
   publishUserMessage,
 } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
+import { closeRunIfOpen } from '../run/close.js';
 import { readSpecFileOrEmpty } from '../../../core/paths-io.js';
 import { REVIEW_FILE } from '../../../core/paths.js';
 import { appendMessage } from '../../../core/sessions/log-writer.js';
@@ -104,7 +105,9 @@ export interface ApplyRecoveryActionOptions {
   comment?: string | undefined;
 }
 
-export function applyRecoveryAction(opts: ApplyRecoveryActionOptions): ApplyRecoveryActionResult {
+export async function applyRecoveryAction(
+  opts: ApplyRecoveryActionOptions,
+): Promise<ApplyRecoveryActionResult> {
   const issue = opts.state.pendingRecovery;
   if (!issue) {
     return {
@@ -353,29 +356,26 @@ function applyPauseRecoveryAction(
 }
 
 /**
- * The one way a halt ends a run: the close is written to the state, so the run
- * reads `closed · ended` afterwards instead of resetting to a phase it never
- * returned to. Nothing the implementer wrote is reverted.
+ * Recovery's End run uses the stop sheet's close path, which writes the run patch
+ * and removes the workspace.
  */
-function applyEndRunRecoveryAction(
+async function applyEndRunRecoveryAction(
   opts: ApplyRecoveryActionOptions,
   issue: RecoveryIssue,
-): ApplyRecoveryActionResult {
-  let state = markRecoveryApplying(opts, issue);
-  state = transitionAndSave(
-    opts,
+): Promise<ApplyRecoveryActionResult> {
+  const state = markRecoveryApplying(opts, issue);
+  const closure = await closeRunIfOpen(
+    { projectDir: opts.projectDir, sessionId: opts.sessionId, bus: opts.bus },
     state,
-    { type: 'CLOSE_RUN' },
-    { expectedRevision: state.stateRevision ?? 0 },
   );
   publishRecoveryResolved({
     bus: opts.bus,
-    phase: state.phase,
+    phase: closure.state.phase,
     issue,
     action: opts.action,
     outcome: 'aborted',
   });
-  return { ok: true, action: opts.action, issue, state, status: 'closed' };
+  return { ok: true, action: opts.action, issue, state: closure.state, status: 'closed' };
 }
 
 /**
@@ -456,11 +456,23 @@ function applyAcceptAsIsRecoveryAction(
   opts: ApplyRecoveryActionOptions,
   issue: RecoveryIssue,
 ): ApplyRecoveryActionResult {
-  const findings = readCriticalFindings(
-    { projectDir: opts.projectDir, sessionId: opts.sessionId },
-    opts.state,
-  );
+  const comment = opts.comment?.trim() ?? '';
+  const findings =
+    issue.reason === 'review-input-too-large'
+      ? [issue.message, ...(comment === '' ? [] : [comment])]
+      : readCriticalFindings(
+          { projectDir: opts.projectDir, sessionId: opts.sessionId },
+          opts.state,
+        );
   let state = markRecoveryApplying(opts, issue);
+  if (issue.reason === 'review-input-too-large') {
+    state = transitionAndSave(
+      opts,
+      state,
+      { type: 'REVIEW_DONE', reviewStatus: 'failed' },
+      { expectedRevision: state.stateRevision ?? 0 },
+    );
+  }
   state = transitionAndSave(
     opts,
     state,
