@@ -4,16 +4,24 @@ import type { FinalReviewFailure } from '../../final-review.js';
 import { orderedActions } from './actions.js';
 import { compactFacts, createRecoveryIssue, type RecoveryBuilderBase } from './issue.js';
 
-export function reviewInputTooLargeMessage(
-  failure: Extract<FinalReviewFailure, { kind: 'input-too-large' }>,
+export function inputTooLargeSentence(
+  subject: string,
+  figures: { chars: number; maxChars: number | null },
   tool: string,
 ): string {
-  const { chars, maxChars } = failure;
-  return `Review input is ${chars.toLocaleString('en-US')} characters; ${tool} ${
+  const { chars, maxChars } = figures;
+  return `${subject} is ${chars.toLocaleString('en-US')} characters; ${tool} ${
     maxChars === null
       ? 'refused it as too large'
       : `takes at most ${maxChars.toLocaleString('en-US')}`
   }`;
+}
+
+export function reviewInputTooLargeMessage(
+  failure: Extract<FinalReviewFailure, { kind: 'input-too-large' }>,
+  tool: string,
+): string {
+  return inputTooLargeSentence('Review input', failure, tool);
 }
 
 export function buildReviewInputTooLargeRecoveryIssue(

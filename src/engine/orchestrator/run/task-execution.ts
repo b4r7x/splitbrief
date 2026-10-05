@@ -4,14 +4,32 @@ import { fixCyclesOf, type WorkflowState } from '../../../core/schemas/workflow.
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { StepRef } from '../../../core/schemas/run-step.js';
 import type { WorkflowContext } from '../types.js';
+import { recordSteer } from '../continuation.js';
 
 import { buildSummary, type SummaryBase } from '../summary/build.js';
 import { runTaskLoop } from '../task/loop.js';
 import { runFinalReviewPhase } from '../final-review.js';
-import { type CheckRunResult, runChecks } from '../validation/run-checks.js';
+import {
+  type CheckRunResult,
+  checkRegistry,
+  planApprovesNpmScripts,
+  runChecks,
+} from '../validation/run-checks.js';
+import {
+  classifyRequiredChecks,
+  haltRequiredChecksUnrunnable,
+  runPreReview,
+} from './pre-review-checks.js';
+import type { UnrunnableCheck } from '../recovery/builders/checks.js';
+import { recordCheckRuns } from '../evidence/record-checks.js';
 import { formatValidationError } from '../validation/format-error.js';
 import { captureReviewedCandidate } from '../apply/states.js';
 import { transitionAndSave } from '../state-ops.js';
+import type { TriageInput } from '../../../core/schemas/review.js';
+import { haltUnansweredTriage, runTriage, startFixCycle } from '../triage.js';
+import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import { normalizeProjectRelativePath } from '../../../utils/path-patterns.js';
+import { failingFilesFromOutput, lastTaskChangingFile } from '../task/file-owner.js';
 import { ensureRunBaselineSnapshot, recordRunSnapshotForRun } from './snapshots.js';
 import { SNAPSHOT_BASELINE_ID } from '../../../core/paths.js';
 import type { PlanningPhaseResult } from '../planning/types.js';
@@ -77,6 +95,7 @@ async function parkAtBoundary(args: {
   if (wctx.signal?.aborted) return { state, continued: false };
   state = transitionAndSave(ref, state, { type: 'RESUME_STEP' });
   setTrackedState(state);
+  recordSteer({ ...ref, bus: wctx.bus }, state.phase, steer);
   wctx.continuation?.hold(step, steer.trim() === '' ? undefined : steer);
   return { state, continued: true };
 }
@@ -106,12 +125,20 @@ function buildIntegrationSection(
 
 async function recheckMergedCandidate(
   opts: Pick<RunTasksAndReviewOptions, 'wctx' | 'state' | 'setTrackedState'>,
-): Promise<{ state: WorkflowState; failures: string[]; notRun: string[] }> {
+): Promise<{
+  state: WorkflowState;
+  failures: string[];
+  notRun: string[];
+  inputs: TriageInput[];
+  unrunnable: UnrunnableCheck[];
+}> {
   let { state } = opts;
   const failures: string[] = [];
   const notRun: string[] = [];
+  const inputs: TriageInput[] = [];
+  const unrunnable = new Map<string, UnrunnableCheck>();
   const applyReview = state.applyReview;
-  if (applyReview === undefined) return { state, failures, notRun };
+  if (applyReview === undefined) return { state, failures, notRun, inputs, unrunnable: [] };
 
   const { wctx, setTrackedState } = opts;
   const ref = { projectDir: wctx.projectDir, sessionId: wctx.sessionId };
@@ -123,19 +150,58 @@ async function recheckMergedCandidate(
   const checkOptions = {
     plan: state.plan,
     projectDir: wctx.workspaceDir,
+    sessionId: wctx.sessionId,
+    checkoutDir: wctx.projectDir,
     config: wctx.config,
     bus: wctx.bus,
     phase: state.phase,
-    planApproved: true,
+    npmScriptsApproved: planApprovesNpmScripts({ config: wctx.config, state }),
     discoveredValidation: state.discoveredValidation,
     signal: wctx.signal,
   };
+  const ledger = readEvidenceLedger({ projectDir: wctx.projectDir, sessionId: wctx.sessionId });
+  const registry = checkRegistry({ plan: state.plan, tasks: state.tasks });
+  const pushFiles = (files: readonly (string | null)[], text: string): void => {
+    for (const file of files) {
+      const owner = file === null ? undefined : lastTaskChangingFile(ledger, state.tasks, file);
+      inputs.push({
+        id: `A${inputs.length + 1}`,
+        kind: 'defect',
+        source: 'check',
+        file,
+        text: `${text} ${owner === undefined ? 'No task changed it.' : `Last changed by ${owner}.`}`,
+      });
+    }
+  };
+  const pushOutput = (output: string, text: string): void => {
+    const named = failingFilesFromOutput(output, wctx.workspaceDir);
+    pushFiles(named.length > 0 ? named : [null], text);
+  };
+  const pushRun = (run: CheckRunResult, text: string): void => {
+    const check = registry.get(run.checkId);
+    const named = failingFilesFromOutput(run.output, wctx.workspaceDir);
+    const files =
+      named.length > 0
+        ? named
+        : check?.kind === 'test'
+          ? [normalizeProjectRelativePath(check.value)]
+          : [null];
+    pushFiles(files, text);
+  };
   const collectRuns = (owner: string, runs: readonly CheckRunResult[]) => {
+    const required = classifyRequiredChecks(
+      runs.filter((run) => registry.get(run.checkId)?.required === true),
+    );
+    for (const check of required.unrunnable) {
+      if (unrunnable.has(check.checkId) === false) unrunnable.set(check.checkId, check);
+    }
     for (const run of runs) {
-      if (run.status === 'not-runnable') {
+      if (unrunnable.has(run.checkId) || run.status === 'not-runnable') {
         notRun.push(`${owner} check ${run.checkId} not run: ${run.output}`);
       } else if (run.status !== 'pass') {
-        failures.push(`${owner} check ${run.checkId} did not pass (${run.status}): ${run.output}`);
+        const text = `${owner} check ${run.checkId} did not pass (${run.status}): ${run.output}`;
+        failures.push(text);
+        pushRun(run, text);
       }
     }
   };
@@ -152,12 +218,27 @@ async function recheckMergedCandidate(
     });
     const acceptance = wctx.validator.decideAcceptance({ results, changedFiles: mergedPaths });
     if (!acceptance.accepted) {
-      failures.push(`${task.id} validation: ${formatValidationError(results, acceptance)}`);
+      const text = `${task.id} validation: ${formatValidationError(results, acceptance)}`;
+      failures.push(text);
+      const blocking = results
+        .filter((result) => !result.passed && acceptance.blockingStages.includes(result.stage))
+        .map((result) => result.error ?? result.output ?? '')
+        .join('\n');
+      pushOutput(blocking, text);
     }
     const runs = await runChecks(
       (task.checks ?? []).map((check) => check.id),
       { ...checkOptions, task },
     );
+    await recordCheckRuns({
+      projectDir: wctx.projectDir,
+      sessionId: wctx.sessionId,
+      workspaceDir: wctx.workspaceDir,
+      state,
+      task,
+      validation: results,
+      runs,
+    });
     if ((task.checks ?? []).length > 0) {
       state = transitionAndSave(ref, state, {
         type: 'RECORD_CHECK_RESULTS',
@@ -175,11 +256,19 @@ async function recheckMergedCandidate(
       plan.checks.map((check) => check.id),
       { ...checkOptions, task: lastTask },
     );
+    await recordCheckRuns({
+      projectDir: wctx.projectDir,
+      sessionId: wctx.sessionId,
+      workspaceDir: wctx.workspaceDir,
+      state,
+      task: lastTask,
+      runs,
+    });
     collectRuns('plan', runs);
   }
   state = transitionAndSave(ref, state, { type: 'RECORD_APPLY_RECHECK', failures });
   setTrackedState(state);
-  return { state, failures, notRun };
+  return { state, failures, notRun, inputs, unrunnable: [...unrunnable.values()] };
 }
 
 export async function runTasksAndReview(
@@ -345,6 +434,30 @@ export async function runTasksAndReview(
     state,
   });
 
+  // Runs the appended fix tasks. A boundary pause inside a fix cycle parks the run
+  // exactly like the main loop: the park keeps the next brief or review step, and
+  // continuing re-enters it. Returns the stop result when the loop did not complete.
+  const runFixTasks = async () => {
+    let rerun = await runTaskLoop({ wctx, initialState: state, setTrackedState, setCurrentTask });
+    state = rerun.state;
+    taskBreakdowns = rerun.taskBreakdowns;
+    while (rerun.status === 'paused') {
+      const parked = await parkAtBoundary({ wctx, state, setTrackedState });
+      state = parked.state;
+      if (!parked.continued) break;
+      rerun = await runTaskLoop({ wctx, initialState: state, setTrackedState, setCurrentTask });
+      state = rerun.state;
+      taskBreakdowns = rerun.taskBreakdowns;
+    }
+    if (rerun.status === 'complete') return undefined;
+    return {
+      summary: summaryNow(),
+      completed: false,
+      cancelled: rerun.status === 'cancelled',
+      state,
+    };
+  };
+
   // The review owns the run's exit. A failing review goes to one planner triage call: its
   // fix tasks are appended, one fix cycle is spent and the task loop runs them, then the
   // review asks again. At the cap, or with nothing for a triage to answer, the run halts.
@@ -358,6 +471,64 @@ export async function runTasksAndReview(
       const recheck = await recheckMergedCandidate({ wctx, state, setTrackedState });
       state = recheck.state;
       recheckFailures = recheck.failures;
+
+      if (recheck.unrunnable.length > 0) {
+        state = haltRequiredChecksUnrunnable({
+          wctx,
+          state,
+          checks: recheck.unrunnable,
+          setTrackedState,
+        });
+        return stopHere();
+      }
+
+      // A fresh Apply re-check failure is a check-sourced defect: it reaches the
+      // triage before any review call, so a review word can never overrule a check
+      // run against the merged workspace. Its fix tasks run through the same
+      // re-run block the pre-review's fix-queued path uses, then the loop
+      // re-verifies the candidate and reviews it.
+      if (recheck.inputs.length > 0) {
+        const triaged = await runTriage(
+          {
+            projectDir: wctx.projectDir,
+            workspaceDir: wctx.workspaceDir,
+            sessionId: wctx.sessionId,
+            bus: wctx.bus,
+            config: wctx.config,
+            planner: wctx.planner,
+            callbacks: wctx.callbacks,
+            sinks: wctx.sinks,
+            state,
+            ...(wctx.signal !== undefined && { signal: wctx.signal }),
+            onStateChange: (next) => {
+              state = next;
+              setTrackedState(next);
+            },
+          },
+          { inputs: recheck.inputs },
+        );
+        if (triaged.kind !== 'triaged') {
+          state = haltUnansweredTriage({
+            wctx,
+            state,
+            outcome: triaged,
+            setTrackedState,
+            diagnosis: 'The Apply re-check found failures to triage.',
+            source: 'Apply re-check',
+          });
+          return stopHere();
+        }
+        state = startFixCycle({
+          wctx,
+          state,
+          setTrackedState,
+          taskIds: triaged.tasks.map((task) => task.id),
+        });
+        const stopped = await runFixTasks();
+        if (stopped !== undefined) return stopped;
+        continue;
+      }
+
       const integration =
         state.applyReview === undefined
           ? undefined
@@ -383,10 +554,21 @@ export async function runTasksAndReview(
           skillsContext: wctx.context.skillsContext,
         }),
         ...(integration !== undefined && { integration }),
+        preReview: (s) => runPreReview({ wctx, state: s, setTrackedState }),
       });
       state = review.state;
       setTrackedState(state);
       if (wctx.signal?.aborted) return stopHere();
+
+      // A pre-review that halted raised its own recovery; one that queued fix work
+      // runs those tasks here and re-enters the loop, where the candidate is
+      // verified and reviewed again.
+      if (review.preReview === 'stopped') return stopHere();
+      if (review.preReview === 'fix-queued') {
+        const stopped = await runFixTasks();
+        if (stopped !== undefined) return stopped;
+        continue;
+      }
 
       // A review that judged nothing is not a review that failed: it has no
       // blocker count to report, no brief to send back and no repair cycle to
@@ -439,26 +621,7 @@ export async function runTasksAndReview(
     state = triaged.state;
     if (triaged.stopped) return stopHere();
 
-    let rerun = await runTaskLoop({ wctx, initialState: state, setTrackedState, setCurrentTask });
-    state = rerun.state;
-    taskBreakdowns = rerun.taskBreakdowns;
-    // A boundary pause inside a fix cycle parks the run exactly like the main loop:
-    // the park keeps the next brief or review step, and continuing re-enters it.
-    while (rerun.status === 'paused') {
-      const parked = await parkAtBoundary({ wctx, state, setTrackedState });
-      state = parked.state;
-      if (!parked.continued) break;
-      rerun = await runTaskLoop({ wctx, initialState: state, setTrackedState, setCurrentTask });
-      state = rerun.state;
-      taskBreakdowns = rerun.taskBreakdowns;
-    }
-    if (rerun.status !== 'complete') {
-      return {
-        summary: summaryNow(),
-        completed: false,
-        cancelled: rerun.status === 'cancelled',
-        state,
-      };
-    }
+    const stopped = await runFixTasks();
+    if (stopped !== undefined) return stopped;
   }
 }

@@ -37,7 +37,7 @@ export function getOrCreateLedger(opts: { ref: SessionRef; state: WorkflowState 
   );
 }
 
-export function persistTaskEvidence(opts: {
+export async function persistTaskEvidence(opts: {
   wctx: WorkflowContext;
   state: WorkflowState;
   task: Task;
@@ -56,7 +56,7 @@ export function persistTaskEvidence(opts: {
     changedFiles?: string[] | undefined;
     exemptStages?: readonly EvidenceValidationEntry['stage'][] | undefined;
   };
-}): void {
+}): Promise<void> {
   const { wctx, state, task, recordKind, details } = opts;
   try {
     const briefHash = hashTaskBrief(state.tasks);

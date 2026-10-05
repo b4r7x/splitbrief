@@ -35,3 +35,14 @@ export function insertTasks<Spec extends TaskSpec>(
     };
   });
 }
+
+/** `inserted` placed directly after `afterTaskId`; appended when that task is absent. */
+export function insertTasksAfter(
+  tasks: readonly Task[],
+  inserted: readonly Task[],
+  afterTaskId: TaskId,
+): Task[] {
+  const at = tasks.findIndex((task) => task.id === afterTaskId);
+  if (at < 0) return [...tasks, ...inserted];
+  return [...tasks.slice(0, at + 1), ...inserted, ...tasks.slice(at + 1)];
+}

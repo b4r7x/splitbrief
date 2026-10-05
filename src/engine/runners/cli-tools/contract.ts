@@ -281,6 +281,8 @@ export type CliPlannerBuildArgsInput = Readonly<{
   installedVersion?: string | undefined;
   /** The run's global skills, which the call may read and never write. */
   skillRoots?: readonly string[] | undefined;
+  /** Image file paths the seat can take as images, when its tool has a flag for them. */
+  imagePaths?: readonly string[] | undefined;
   /** The JSON Schema the final answer must match; absent for a text call. */
   schema?: CliSchemaInput | undefined;
 }>;

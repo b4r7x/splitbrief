@@ -6,12 +6,17 @@ import { hookTrustRefusal, runTrustedHook } from './dispatch.js';
 import type { HookContext, HookOutcome } from './types.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 
-export function createHookSink(hooks: HooksConfig, ctx: HookContext, bus: EventBus): EventSink {
+export function createHookSink(
+  hooks: HooksConfig,
+  getCtx: () => HookContext,
+  bus: EventBus,
+): EventSink {
   return (event) => {
     const hookEvent = eventToHookKey(event);
     if (!hookEvent) return;
     const entries = hooks[hookEvent] ?? [];
     if (entries.length === 0) return;
+    const ctx = getCtx();
     void runEntriesAndReport({ hooks, entries, hookEvent, event, ctx, bus });
   };
 }

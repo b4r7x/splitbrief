@@ -328,6 +328,26 @@ describe('runLocalRetries — outcomes no further attempt can fix', () => {
     expect(outcome.lastFailure?.outcome).toBe('implementer-recipe-invalid');
   });
 
+  it('an initial input-too-large failure halts without a retry', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const retry = vi.fn();
+    const implementer = makeImplementer({ retry });
+    const { bus } = makeBusRecorder();
+    const ctx = makeLocalRetriesCtx({ projectDir, sessionId, implementer, bus });
+
+    const outcome = await runLocalRetries({
+      ctx,
+      task: makeTask(),
+      state: makeValidatingState(),
+      lastError: 'Input exceeds the maximum length of 1048576 characters.',
+      initialFailure: { outcome: 'input-too-large', runner: ctx.config.implementer },
+    });
+
+    expect(retry).not.toHaveBeenCalled();
+    expect(outcome.attempts).toBe(0);
+    expect(outcome.lastFailure?.outcome).toBe('input-too-large');
+  });
+
   it('an implementer that left its isolation directory spends no further retry', async () => {
     const { projectDir, sessionId } = setupProject();
     const retry = vi.fn().mockResolvedValue({
@@ -393,7 +413,7 @@ describe('runLocalRetries — outcomes no further attempt can fix', () => {
     expect(retry).toHaveBeenCalledTimes(1);
     expect(outcome.result).toBeUndefined();
     expect(outcome.attempts).toBe(1);
-    expect(outcome.lastError).toBe('type error');
+    expect(outcome.lastError).toBe('agy exited without changing any files');
     expect(outcome.lastFailure).toMatchObject({
       outcome: 'no-staged-change',
       handBack: 'I could not find the prop.',

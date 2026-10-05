@@ -13,6 +13,7 @@ import { reviewStore } from '../../../src/stores/workflow/review.js';
 import { terminalSequences } from '../../../src/lib/terminal/control.js';
 import { setActiveTerminalHandover } from '../../../src/lib/terminal/editor-handover.js';
 import { setQueueHandler, clearAllHandlers } from '../../../src/features/workflow/handlers.js';
+import { composerDraftStore } from '../../../src/stores/ui/composer-draft.js';
 import {
   createReviewInputHandler,
   openReviewFileExternally,
@@ -77,6 +78,7 @@ beforeEach(async () => {
   resetWorkflow();
   feedbackStore.reset();
   clearAllHandlers();
+  composerDraftStore.reset();
   vi.clearAllMocks();
   lifecycleStore.__testReset();
   reviewStore.clearReview();
@@ -90,23 +92,40 @@ afterEach(async () => {
   await rm(tmpDir, { recursive: true, force: true });
 });
 
-describe('createReviewInputHandler – implementer-phase guard (Bug #5)', () => {
+describe('createReviewInputHandler – queueing during a brief', () => {
   it.each<Phase>(['implementing', 'validating-task', 'escalating'])(
-    'sets error feedback when submitting during the %s phase',
+    'queues typed text during the %s phase instead of refusing it',
     async (phase) => {
       setPhase(phase);
       const enqueue = vi.fn(() => ({ status: 'accepted' as const, messageId: 'msg-1' }));
       setQueueHandler(enqueue);
 
       const { handleInput } = createReviewInputHandler(makeInputMode('normal'));
-      await handleInput('some text');
+      await handleInput('make the diff smaller');
 
-      const { message, isError } = feedbackStore.get();
-      expect(isError).toBe(true);
-      expect(message).toContain('Input disabled during task implementation');
-      expect(enqueue).not.toHaveBeenCalled();
+      expect(enqueue).toHaveBeenCalledWith('make the diff smaller', phase);
+      expect(feedbackStore.get()).toMatchObject({ isError: false });
     },
   );
+
+  it('restores the draft when the queue refuses the text', async () => {
+    setPhase('implementing');
+    const enqueue = vi.fn(() => ({
+      status: 'rejected' as const,
+      reason: 'queue-full' as const,
+      message: 'Queue full (50 messages). Wait for the current phase to complete.',
+    }));
+    setQueueHandler(enqueue);
+
+    const { handleInput } = createReviewInputHandler(makeInputMode('normal'));
+    await handleInput('keep every word');
+
+    expect(feedbackStore.get()).toMatchObject({
+      isError: true,
+      message: 'Queue full (50 messages). Wait for the current phase to complete.',
+    });
+    expect(composerDraftStore.get().request?.value).toBe('keep every word');
+  });
 });
 
 describe('createReviewInputHandler – pending un-parked boundary interrupt', () => {

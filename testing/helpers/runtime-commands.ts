@@ -30,6 +30,7 @@ export function makeCtx(overrides: Partial<RuntimeCommandContext> = {}): Runtime
     refreshSkills: async () => {},
     getCurrentPhase: () => 'idle',
     resumeRun: noopTrue,
+    steerRun: noopTrue,
     endRun: noopTrue,
     getQueueDepth: () => 0,
     clearQueue: () => ({ status: 'cleared', count: 0 }),

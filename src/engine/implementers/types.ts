@@ -43,7 +43,12 @@ export interface ImplementerPublisher {
     duration: number;
     noChange?: boolean | undefined;
   }): void;
-  publishFailed(opts: { phase: Phase; taskId: TaskId; model?: string | undefined }): void;
+  publishFailed(opts: {
+    phase: Phase;
+    taskId: TaskId;
+    model?: string | undefined;
+    error: string;
+  }): void;
   publishWarning(opts: {
     phase: Phase;
     taskId: TaskId;
@@ -128,6 +133,8 @@ export interface InvokeOpts extends UndeclaredWritesPolicy {
   signal?: AbortSignal | undefined;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   sandboxEnv?: NodeJS.ProcessEnv | undefined;
+  /** Baseline the caller's workspace declares; sniffed from the directory when absent. */
+  changeDetection?: ChangeDetectionKind | undefined;
   /**
    * The checkout the run promotes into, when this call works in an isolation
    * directory of its own. The call's tool uses may not reach it.

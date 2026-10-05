@@ -691,6 +691,37 @@ describe('createCliImplementer (exact-effect gate fixtures)', () => {
     expect(result.error).toContain('without changing any files');
   });
 
+  it('counts a file dirty before the call and edited by it when the workspace declares file hashes', async () => {
+    writeFileSync(join(projectDir, 'notes.md'), 'dirty before the call', 'utf8');
+    const shimPath = join(shimDir, 'claude');
+    writeFileSync(
+      shimPath,
+      [
+        '#!/bin/bash',
+        'cat > /dev/null',
+        "printf '%s' 'edited by the call' > notes.md",
+        `printf '%s\\n' '{"type":"result","result":"done"}'`,
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    chmodSync(shimPath, 0o755);
+
+    const implementer = createCliImplementer(cliClaudeImplementer);
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config: makeClaudeConfig(),
+      context: { ...defaultContext, dir: projectDir },
+      onOutput: () => {},
+      changeDetection: 'file-hashes',
+    });
+
+    expect(result.outcome).not.toBe('no-staged-change');
+    expect(result.success).toBe(true);
+    expect(readFileSync(join(projectDir, 'notes.md'), 'utf8')).toBe('edited by the call');
+  });
+
   it('passes on the git-status path when the child writes to its sandbox home beside the declared file', async () => {
     const target = join(projectDir, 'src/hello.ts');
     const sandboxHomeFile = join(

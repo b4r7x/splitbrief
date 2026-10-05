@@ -211,11 +211,12 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         plan: opts.plan,
       }));
 
-  function failTask(opts: ImplementerOptions): void {
+  function failTask(opts: ImplementerOptions, error: string): void {
     if (!opts.phase) return;
     baseConfig.publisher?.publishFailed({
       phase: opts.phase,
       taskId: opts.task.id,
+      error,
       ...(opts.config.implementer.model !== undefined && { model: opts.config.implementer.model }),
     });
   }
@@ -226,7 +227,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
     usage: TokenDelta | null,
     applyResult: Exclude<BundleApplyResult, { status: 'applied' }>,
   ): ImplementerResult {
-    failTask(opts);
+    failTask(opts, applyResult.error);
     return {
       success: false,
       output,
@@ -521,6 +522,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
           if (phase) baseConfig.publisher?.publishCallEvent({ phase, taskId: task.id, event });
         },
         sandboxEnv: opts.sandboxEnv,
+        ...(opts.changeDetection !== undefined && { changeDetection: opts.changeDetection }),
         undeclaredWrites: opts.undeclaredWrites,
         ...(opts.allowNoChange === true && { allowNoChange: true }),
         ...(checkoutDir !== undefined && { checkoutDir }),
@@ -534,38 +536,43 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         return { success: false, output: '', error: ABORTED_OUTCOME_TEXT, outcome: 'user-abort' };
       }
       if (escaped.length > 0) {
-        failTask(opts);
+        const error = formatCheckoutChanges(escaped);
+        failTask(opts, error);
         return {
           success: false,
           output: errorOutput(err),
-          error: formatCheckoutChanges(escaped),
+          error,
           outcome: 'checkout-changed',
         };
       }
       if (shouldThrow(err)) throw err;
       const output = errorOutput(err);
-      failTask(opts);
       // API backends throw their provider errors instead of returning a
       // failed call result, so limits and dead credentials are classified
       // here too. The raw provider detail is kept over the rewritten hint:
       // the recovery needs the reset time the provider's own words carry.
       const limitDetail = usageLimitDetailFromError(err);
       if (limitDetail !== null) {
+        failTask(opts, limitDetail);
         return { success: false, output, error: limitDetail, outcome: 'usage-limit' };
       }
       const classification = typedRunnerCallErrorMessage(err) ?? toErrorMessage(err);
       if (isAuthFailureError(err) || isAuthFailureDiagnostic(classification)) {
+        const error = runnerOwnWords(err) ?? classification;
+        failTask(opts, error);
         return {
           success: false,
           output,
-          error: runnerOwnWords(err) ?? classification,
+          error,
           outcome: 'unauthenticated',
         };
       }
+      const error = formatErrorWithHint(classification);
+      failTask(opts, error);
       return {
         success: false,
         output,
-        error: formatErrorWithHint(classification),
+        error,
       };
     }
 
@@ -576,41 +583,45 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
     const escaped = await checkoutEscape(opts, checkoutDir, checkoutBefore);
     if (escaped.length > 0) {
       implBuffer?.flush();
-      failTask(opts);
+      const changes = formatCheckoutChanges(escaped);
       // A call the tripwire already stopped keeps its own evidence ahead of what the audit found.
       if (
         callResult.status !== 'completed' &&
         callResult.error.code === 'implementer-left-isolation'
       ) {
+        const error = `${callResult.error.message}; ran while your checkout changed: ${changes}`;
+        failTask(opts, error);
         return {
           success: false,
           output: outputText,
-          error: `${callResult.error.message}; ran while your checkout changed: ${formatCheckoutChanges(escaped)}`,
+          error,
           outcome: 'implementer-left-isolation',
           ...usageField,
         };
       }
+      failTask(opts, changes);
       return {
         success: false,
         output: outputText,
-        error: formatCheckoutChanges(escaped),
+        error: changes,
         outcome: 'checkout-changed',
         ...usageField,
       };
     }
 
     if (callResult.status !== 'completed') {
+      const error = runnerCallFailureMessage(callResult, opts.signal);
       if (callResult.status === 'aborted' && opts.signal?.aborted) {
         implBuffer?.flushInterrupted();
       } else {
         implBuffer?.flush();
-        failTask(opts);
+        failTask(opts, error);
       }
       const outcome = runnerCallOutcome(callResult);
       return {
         success: false,
         output: outputText,
-        error: runnerCallFailureMessage(callResult, opts.signal),
+        error,
         ...(outcome.state !== 'success' && { outcome: outcome.state }),
         ...usageField,
       };
@@ -653,7 +664,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
           approveWrite: opts.approveWrite,
         });
         if (!result.success) {
-          failTask(opts);
+          failTask(opts, result.error);
           return { success: false, output: outputText, error: result.error, ...usageField };
         }
         if (phase) {
@@ -685,7 +696,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
               },
             });
           }
-          failTask(opts);
+          failTask(opts, changes.output);
           return {
             success: false,
             output: outputText,
@@ -696,11 +707,12 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         }
       }
     } catch (err) {
-      failTask(opts);
+      const error = toErrorMessage(err);
+      failTask(opts, error);
       return {
         success: false,
         output: outputText,
-        error: toErrorMessage(err),
+        error,
         ...usageField,
       };
     }
@@ -746,7 +758,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
       const prompt =
         retryOpts.continuation === undefined
           ? base
-          : composeContinuation({ basePrompt: base, ...retryOpts.continuation });
+          : composeContinuation({ basePrompt: base, ...retryOpts.continuation, discarded: true });
       const temperature =
         retryOpts.kind === 'consult'
           ? retryOpts.config.implementer.temperature

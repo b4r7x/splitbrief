@@ -184,6 +184,22 @@ describe('loadState', () => {
     expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toBeNull();
   });
 
+  it('loads an old v4 snapshot with the retired decision-confirm field without rewriting it', () => {
+    const dir = makeTmp();
+    const stateDir = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID);
+    mkdirSync(stateDir, { recursive: true });
+    const legacy = {
+      ...createInitialState('old-decision-confirms'),
+      decisionConfirms: { used: 20, allowance: 20 },
+    };
+    const snapshot = JSON.stringify(legacy);
+    const statePath = join(stateDir, 'state.json');
+    writeFileSync(statePath, snapshot);
+
+    expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toEqual(legacy);
+    expect(readFileSync(statePath, 'utf-8')).toBe(snapshot);
+  });
+
   it.each([
     [
       'missing phase',

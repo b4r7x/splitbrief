@@ -1,6 +1,7 @@
 import { sanitizeTerminalDiagnosticText } from '../../utils/display-text.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { boundConsumerPayload } from '../../core/payload-bounds.js';
+import { BOUNDS } from '../../core/pipeline-spec/bounds.js';
 import type { RunnerCallRecorder } from './recorder.js';
 import { UNKNOWN_UPSTREAM_RAW_PREVIEW_MAX_LENGTH } from './schema.js';
 import type {
@@ -14,7 +15,9 @@ export const RUNNER_CALL_OUTPUT_MAX_BYTES = 1024 * 1024;
 export const RUNNER_CALL_STDERR_MAX_BYTES = 64 * 1024;
 export const RUNNER_CALL_TOOL_PAYLOAD_MAX_BYTES = 256 * 1024;
 export const RUNNER_CALL_ARTIFACT_TEXT_MAX_BYTES = 256 * 1024;
-export const RUNNER_CALL_TOOL_USE_MAX_ITEMS = 256;
+export const RUNNER_CALL_TOOL_USE_MAX_ITEMS = BOUNDS.toolUseCountLimit;
+export const RUNNER_CALL_TOOL_USE_SUMMARY_MAX_ITEMS = 8;
+export const RUNNER_CALL_TOOL_USE_SUMMARY_INPUT_CHARS = 120;
 export const RUNNER_CALL_ARTIFACT_MAX_ITEMS = 64;
 export const RUNNER_CALL_WARNING_MAX_ITEMS = 256;
 export const RUNNER_CALL_UNKNOWN_UPSTREAM_MAX_ITEMS = 128;
@@ -105,6 +108,35 @@ export function runnerCallLimitWarning(limit: RunnerCallOutputLimit): RunnerCall
     source: 'system',
     surface: 'activity',
     message: limit.message,
+  };
+}
+
+export function runnerCallToolUseSummary(toolUses: readonly RunnerCallToolUse[]): string {
+  const recent = toolUses.slice(-RUNNER_CALL_TOOL_USE_SUMMARY_MAX_ITEMS);
+  const lines = recent.map((toolUse) => {
+    const input = JSON.stringify(toolUse.input);
+    const bounded =
+      input.length > RUNNER_CALL_TOOL_USE_SUMMARY_INPUT_CHARS
+        ? `${input.slice(0, RUNNER_CALL_TOOL_USE_SUMMARY_INPUT_CHARS)}...`
+        : input;
+    return `- ${toolUse.name}: ${bounded}`;
+  });
+  if (lines.length === 0) return '';
+  const summary = `Recent tool calls:\n${lines.join('\n')}`;
+  return summary.length > BOUNDS.consultFailingOutputChars
+    ? summary.slice(0, BOUNDS.consultFailingOutputChars)
+    : summary;
+}
+
+export function runnerCallToolUseCountLimit(
+  toolUses: readonly RunnerCallToolUse[],
+): RunnerCallOutputLimit {
+  const summary = runnerCallToolUseSummary(toolUses);
+  return {
+    code: 'runner_call_tool_use_count_limit',
+    message: `runner call tool results exceeded ${RUNNER_CALL_TOOL_USE_MAX_ITEMS} items and was truncated${
+      summary.length > 0 ? `\n${summary}` : ''
+    }`,
   };
 }
 

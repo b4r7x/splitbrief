@@ -35,7 +35,7 @@ afterEach(() => {
 });
 
 function ctx() {
-  return { projectDir, sessionId: 'sess-1' };
+  return { projectDir, workspaceDir: projectDir, sessionId: 'sess-1' };
 }
 
 function trust(hooks: HooksConfig): HooksConfig {
@@ -124,7 +124,7 @@ describe('createHookSink', () => {
   it('does nothing when no hooks are configured for the event', async () => {
     const { bus, warnings, all } = makeBus();
     const hooks: HooksConfig = {};
-    const sink = createHookSink(hooks, ctx(), bus);
+    const sink = createHookSink(hooks, ctx, bus);
     sink(taskCompletedEvent);
     await waitForNoActivity(all);
     expect(warnings).toHaveLength(0);
@@ -134,7 +134,7 @@ describe('createHookSink', () => {
   it('stays silent when a post_task hook succeeds', async () => {
     const { bus, warnings, all } = makeBus();
     const hooks = trust({ post_task: [makeAllowHook('allow-hook')] });
-    const sink = createHookSink(hooks, ctx(), bus);
+    const sink = createHookSink(hooks, ctx, bus);
     sink(taskCompletedEvent);
     await waitForNoActivity(all);
     expect(warnings).toHaveLength(0);
@@ -145,7 +145,7 @@ describe('createHookSink', () => {
     const hooks = trust({
       post_task: [makeCommandHookEntry({ command: 'false', name: 'fails', on_failure: 'warn' })],
     });
-    const sink = createHookSink(hooks, ctx(), bus);
+    const sink = createHookSink(hooks, ctx, bus);
     sink(taskCompletedEvent);
     await waitForWarnings(warnings, 1);
     expect(warnings).toHaveLength(1);
@@ -160,7 +160,7 @@ describe('createHookSink', () => {
         makeCommandHookEntry({ command: 'false', name: 'hook-b', on_failure: 'warn' }),
       ],
     });
-    const sink = createHookSink(hooks, ctx(), bus);
+    const sink = createHookSink(hooks, ctx, bus);
     sink(taskCompletedEvent);
     await waitForWarnings(warnings, 2);
     expect(warnings).toHaveLength(2);
@@ -173,7 +173,7 @@ describe('createHookSink', () => {
     const hooks = trust({
       post_task: [denyViaStdoutHook('deny-cmd', 'not allowed')],
     });
-    const sink = createHookSink(hooks, ctx(), bus);
+    const sink = createHookSink(hooks, ctx, bus);
     sink(taskCompletedEvent);
     await waitForWarnings(warnings, 1);
     expect(warnings).toHaveLength(1);
@@ -187,7 +187,7 @@ describe('createHookSink', () => {
         makeCommandHookEntry({ command: 'false', name: 'marker', on_failure: 'warn' }),
       ],
     });
-    const sink = createHookSink(hooks, ctx(), bus);
+    const sink = createHookSink(hooks, ctx, bus);
     const runningEvent: EngineEvent = {
       type: 'validate',
       ts: 1,
@@ -210,7 +210,7 @@ describe('createHookSink', () => {
         makeCommandHookEntry({ command: 'false', name: 'marker', on_failure: 'warn' }),
       ],
     });
-    const sink = createHookSink(hooks, ctx(), bus);
+    const sink = createHookSink(hooks, ctx, bus);
     const doneEvent: EngineEvent = {
       type: 'validate',
       ts: 1,
@@ -231,7 +231,7 @@ describe('createHookSink', () => {
     const hooks = trust({
       on_complete: [makeCommandHookEntry({ command: 'false', name: 'marker', on_failure: 'warn' })],
     });
-    const sink = createHookSink(hooks, ctx(), bus);
+    const sink = createHookSink(hooks, ctx, bus);
     const completeEvent: EngineEvent = { type: 'workflow_complete', ts: 1, phase: 'idle' };
     sink(completeEvent);
     await waitForWarnings(warnings, 1);
@@ -246,7 +246,7 @@ describe('createHookSink', () => {
       on_halt: [makeCommandHookEntry({ command: 'node', args: ['-e', script], name: 'halt' })],
     });
     const { bus } = makeBus();
-    const sink = createHookSink(hooks, ctx(), bus);
+    const sink = createHookSink(hooks, ctx, bus);
 
     sink(recoveryPromptedEvent);
     await waitForFile(marker);
@@ -265,12 +265,39 @@ describe('createHookSink', () => {
     });
   });
 
+  it('resolves the workspace at fire time for a post_task hook', async () => {
+    const marker = join(projectDir, 'workspace-payload.json');
+    const script = `let s='';process.stdin.on('data',(c)=>{s+=c}).on('end',()=>{require('node:fs').writeFileSync(${JSON.stringify(marker)},s)})`;
+    const hooks = trust({
+      post_task: [makeCommandHookEntry({ command: 'node', args: ['-e', script], name: 'ws' })],
+    });
+    const { bus } = makeBus();
+    const worktree = join(projectDir, 'worktree');
+    let workspaceDir = projectDir;
+    const sink = createHookSink(
+      hooks,
+      () => ({ projectDir, workspaceDir, sessionId: 'sess-1' }),
+      bus,
+    );
+
+    workspaceDir = worktree;
+    sink(taskCompletedEvent);
+    await waitForFile(marker);
+
+    const payload = JSON.parse(readFileSync(marker, 'utf-8')) as {
+      workspaceDir: string;
+      context: { workspaceDir: string };
+    };
+    expect(payload.workspaceDir).toBe(worktree);
+    expect(payload.context.workspaceDir).toBe(worktree);
+  });
+
   it('dispatches on_error for error event', async () => {
     const { bus, warnings } = makeBus();
     const hooks = trust({
       on_error: [makeCommandHookEntry({ command: 'false', name: 'marker', on_failure: 'warn' })],
     });
-    const sink = createHookSink(hooks, ctx(), bus);
+    const sink = createHookSink(hooks, ctx, bus);
     const errorEvent: EngineEvent = { type: 'error', ts: 1, phase: 'idle', message: 'err' };
     sink(errorEvent);
     await waitForWarnings(warnings, 1);
@@ -293,7 +320,7 @@ describe('createHookSink', () => {
       `import { writeFileSync } from 'node:fs';\nwriteFileSync(${JSON.stringify(marker)}, 'ran');\n`,
     );
     const { bus, warnings } = makeBus();
-    const sink = createHookSink(hooks, ctx(), bus);
+    const sink = createHookSink(hooks, ctx, bus);
 
     sink(taskCompletedEvent);
     await waitForWarnings(warnings, 1);
@@ -314,7 +341,7 @@ describe('createHookSink', () => {
       post_task: [makeCommandHookEntry({ command: 'node', args: ['post.mjs'] })],
     });
     const { bus, warnings } = makeBus();
-    const sink = createHookSink(hooks, ctx(), bus);
+    const sink = createHookSink(hooks, ctx, bus);
 
     sink(taskCompletedEvent);
     await waitForWarnings(warnings, 1);
@@ -341,7 +368,7 @@ describe('createHookSink', () => {
       ],
     });
     const { bus, warnings, all } = makeBus();
-    const sink = createHookSink(hooks, ctx(), bus);
+    const sink = createHookSink(hooks, ctx, bus);
 
     const gitCommitEvent: EngineEvent = {
       type: 'git_commit',

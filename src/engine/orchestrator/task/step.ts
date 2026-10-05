@@ -8,7 +8,12 @@ import { recordTaskUsage } from '../tokens.js';
 import { toErrorMessage, labelError } from '../../../utils/format-errors.js';
 import { isAbortError } from '../../../utils/abort.js';
 import { publishError, publishWarning } from '../events.js';
-import { addUsageAndSave, raisePendingRecovery, transitionAndSave } from '../state-ops.js';
+import {
+  addUsageAndSave,
+  raisePendingRecovery,
+  rebaseOnPersistedWorkflowState,
+  transitionAndSave,
+} from '../state-ops.js';
 import { refreshAndPersistCode } from './refresh-code.js';
 import { validateCommitAndAdvance } from './commit.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
@@ -33,12 +38,16 @@ import { restoreExhaustedTaskFiles } from './rollback.js';
 import { handleFailedImplementation } from './implementation-failure.js';
 import { runPreValidationGate } from './pre-validation-gate.js';
 import { inputHashesNow, inputsMoved, taskInputFiles } from './stale-inputs.js';
+import { runTaskChecksAfterAcceptance } from './task-checks.js';
 import { lineageIdOf } from '../../../core/state/task-insert.js';
 import { requestConsult } from '../consult/request.js';
 import { applyConsultAnswer } from '../consult/apply.js';
+import { commitQueueMessagesConsulted, readQueueForConsult } from '../queue/drain.js';
+import { formatMessage } from '../queue/prompt.js';
 import { consultAttemptError, guidanceInstructions } from '../escalation/consult-guidance.js';
 import { hashTaskBrief } from '../../brief-hash.js';
 import { confirmAttemptDecisions } from '../consult/decision-confirm.js';
+import { recordCheckRuns } from '../evidence/record-checks.js';
 
 function recordApprovalDenial(opts: {
   wctx: WorkflowContext;
@@ -148,6 +157,13 @@ async function refreshStaleTask(
     return { kind: 'dispatch', state, task, guidance: undefined };
   }
   const files = taskInputFiles(task);
+  const queued = readQueueForConsult({
+    projectDir: opts.wctx.projectDir,
+    sessionId: opts.wctx.sessionId,
+    state,
+  });
+  const userText =
+    queued.messages.length === 0 ? undefined : queued.messages.map(formatMessage).join('\n\n');
   const refreshed = await requestConsult(
     {
       projectDir: opts.wctx.projectDir,
@@ -168,6 +184,7 @@ async function refreshStaleTask(
       failingOutput: `The task's inputs changed since the brief was compiled: ${files.join(', ')}`,
       snapshot: noAttemptSnapshot(),
       changedFiles: [],
+      ...(userText !== undefined && { userText }),
     },
   );
   if ('error' in refreshed) {
@@ -177,6 +194,15 @@ async function refreshStaleTask(
       message: `Stale refresh for ${task.id} skipped: ${refreshed.error.message}`,
     });
     return { kind: 'dispatch', state, task, guidance: undefined };
+  }
+  if (queued.messages.length > 0) {
+    state = commitQueueMessagesConsulted({
+      projectDir: opts.wctx.projectDir,
+      sessionId: opts.wctx.sessionId,
+      state,
+      ids: queued.messages.map((message) => message.id),
+    }).state;
+    opts.setTrackedState(state);
   }
   const applied = await applyConsultAnswer(
     {
@@ -302,6 +328,8 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     });
   } catch (err) {
     if (retentionError.isFailed(err) || retentionError.isUnavailable(err)) throw err;
+    state = rebaseOnPersistedWorkflowState(wctx, state);
+    setTrackedState(state);
     if (isAbortError(err) || wctx.signal?.aborted) return state;
     if (carriedFailure !== undefined) {
       state = transitionAndSave(wctx, state, { type: 'CLEAR_CARRIED_FAILURE', taskId: task.id });
@@ -507,12 +535,27 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     if (isAbortError(err) || wctx.signal?.aborted) return state;
     throw err;
   }
+  await recordCheckRuns({
+    projectDir,
+    sessionId,
+    workspaceDir: wctx.workspaceDir,
+    state,
+    task,
+    validation: validationResults,
+  });
   if (wctx.signal?.aborted) return state;
 
   const acceptance = wctx.validator.decideAcceptance({
     results: validationResults,
     changedFiles: taskChangedFiles,
   });
+
+  // The brief's own checks run on the candidate its validation just passed and
+  // are recorded against it, so the review and the checks log read one register.
+  if (acceptance.accepted) {
+    const checked = await runTaskChecksAfterAcceptance({ wctx, state, task, setTrackedState });
+    state = checked.state;
+  }
 
   const commitResult = await validateCommitAndAdvance({
     task,
@@ -552,7 +595,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       ...(wctx.implementerProfile !== undefined && { implementerProfile: wctx.implementerProfile }),
       ...(wctx.routingDecision !== undefined && { routingDecision: wctx.routingDecision }),
     });
-    persistTaskEvidence({
+    await persistTaskEvidence({
       wctx,
       state,
       task,

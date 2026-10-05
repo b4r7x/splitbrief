@@ -195,6 +195,9 @@ export type TypedOutputSupport =
   | Readonly<{ kind: 'native' | 'strict-native'; since: string }>
   | Readonly<{ kind: 'fallback' }>;
 
+/** How a seat receives an image: a path-taking flag, a prompt text reference, or not at all. */
+export type ImageInputSupport = 'flag' | 'path' | 'none';
+
 export type CliToolDeclarationBase<Id extends string = string> = Readonly<{
   id: Id;
   displayName: string;
@@ -208,6 +211,7 @@ export type CliToolDeclarationBase<Id extends string = string> = Readonly<{
   /** How the tool's effort intent reaches it, when it has a channel at all. */
   effortChannel: CliEffortChannel;
   typedOutput: TypedOutputSupport;
+  imageInput: ImageInputSupport;
   /** Largest accepted prompt in characters; omitted when unknown, which means no cap. */
   maxInputChars?: number | undefined;
   auth: CliAuthPolicy;
@@ -393,6 +397,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     supportsEffort: true,
     effortChannel: 'effort-flag',
     typedOutput: { kind: 'native', since: '2.1.287' },
+    imageInput: 'path',
     auth: authPolicy('api-key-or-session', [
       authChannel({
         id: 'session',
@@ -436,6 +441,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     supportsEffort: true,
     effortChannel: 'effort-flag',
     typedOutput: { kind: 'strict-native', since: '0.157.1' },
+    imageInput: 'flag',
     auth: authPolicy('api-key-or-session', [
       authChannel({
         id: 'session',
@@ -476,6 +482,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     supportsEffort: false,
     effortChannel: 'variant',
     typedOutput: { kind: 'fallback' },
+    imageInput: 'none',
     auth: authPolicy('provider-dependent', [
       authChannel({
         id: 'provider-dependent',
@@ -514,6 +521,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     supportsEffort: true,
     effortChannel: 'effort-flag',
     typedOutput: { kind: 'fallback' },
+    imageInput: 'none',
     auth: authPolicy('session', [
       authChannel({
         id: 'session',
@@ -548,6 +556,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     supportsEffort: false,
     effortChannel: 'variant',
     typedOutput: { kind: 'fallback' },
+    imageInput: 'none',
     auth: authPolicy('provider-dependent', [
       authChannel({
         id: 'provider-dependent',
@@ -582,6 +591,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     supportsEffort: false,
     effortChannel: 'model-id',
     typedOutput: { kind: 'fallback' },
+    imageInput: 'none',
     auth: authPolicy('api-key-or-session', [
       authChannel({
         id: 'session',
@@ -623,6 +633,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     supportsEffort: true,
     effortChannel: 'effort-flag',
     typedOutput: { kind: 'fallback' },
+    imageInput: 'none',
     // `cmd --help` names no API-key environment variable — only `CMD_LOCAL_ONLY`,
     // a BYOK routing switch and not a credential — so declaring an api-key
     // channel would fabricate a credential channel that does not exist.
@@ -669,6 +680,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     supportsEffort: true,
     effortChannel: 'effort-flag',
     typedOutput: { kind: 'native', since: '1.2.14' },
+    imageInput: 'none',
     auth: authPolicy('session', [
       authChannel({
         id: 'session',

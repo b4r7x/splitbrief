@@ -17,6 +17,12 @@ import {
   stateOpsError,
 } from '../state-ops.js';
 
+export function filesStillOnDiskSuffix(workspace: WorkflowState['workspace']): string {
+  return workspace === undefined || workspace.kind === 'checkout'
+    ? ' The files it wrote are still on disk.'
+    : '';
+}
+
 export async function closeRunIfOpen(
   scope: SessionRef & { bus?: EventBus | undefined },
   state: WorkflowState,

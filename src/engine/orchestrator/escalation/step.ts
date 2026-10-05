@@ -186,11 +186,7 @@ async function runRetryStepAttempt(
     return {
       state,
       task,
-      // An attempt that changed nothing failed on the error it was given, not on its own words.
-      lastError:
-        retryResult.outcome === 'no-staged-change'
-          ? lastError
-          : (retryResult.error ?? retryFailureFallback),
+      lastError: retryResult.error ?? retryFailureFallback,
       attempts,
       ...(retryResult.outcome !== undefined && {
         lastFailure: {

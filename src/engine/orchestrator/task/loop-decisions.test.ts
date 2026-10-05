@@ -264,10 +264,8 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       { text: `${HOW.what} — ${HOW.why}`, taskId: 'T001' },
     ]);
 
-    // The decision-confirm spent its own counter; only the failed consult spent a consult.
     expect(result.state.lineages?.T001).toMatchObject({ consults: 2 });
     expect(result.state.plannerCalls?.used).toBe(1);
-    expect(result.state.decisionConfirms?.used).toBe(1);
   });
 
   it('confirms only the decisions the ledger does not hold yet', async () => {
@@ -300,7 +298,6 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       { text: `${HOW.what} — ${HOW.why}`, taskId: 'T001' },
       { text: `${HOW_TOO.what} — ${HOW_TOO.why}`, taskId: 'T001' },
     ]);
-    expect(result.state.decisionConfirms?.used).toBe(2);
     expect(result.state.plannerCalls?.used ?? 0).toBe(0);
   });
 
@@ -332,7 +329,6 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     expect(events.some((event) => event.type === 'task_escalating')).toBe(false);
     expect(result.state.lineages?.T001?.consults).toBe(2);
     expect(result.state.plannerCalls).toEqual({ used: 10, allowance: 10 });
-    expect(result.state.decisionConfirms).toEqual({ used: 1, allowance: 20 });
     expect(events).toContainEqual(
       expect.objectContaining({
         type: 'consult_answered',
@@ -387,7 +383,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     expect(result.state.plannerCalls?.used ?? 0).toBe(0);
   });
 
-  it('validates unconfirmed decisions with a warning when the decision-confirm allowance is spent', async () => {
+  it("confirms a brief's decisions however many confirms the briefs before it spent", async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001', file: 'src/a.ts' });
     const implementer = decidingImplementer([[HOW]]);
@@ -395,10 +391,13 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     const { planner, prompts } = scriptedPlanner({ confirm: () => confirm([HOW]) });
     const { bus, events } = makeBusRecorder();
 
+    // An older session saved the retired run-wide counter as spent; it no longer bounds a brief.
     const result = await runLoop({
       projectDir,
       sessionId,
-      state: stateWithPlan([task], { decisionConfirms: { used: 20, allowance: 20 } }),
+      state: stateWithPlan([task], {
+        decisionConfirms: { used: 20, allowance: 20 },
+      } as Partial<WorkflowState>),
       implementer,
       validator,
       planner,
@@ -406,11 +405,12 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     });
 
     expect(result.status).toBe('complete');
-    expect(prompts).toHaveLength(0);
-    expect(validator.runValidation).toHaveBeenCalledTimes(1);
-    expect(result.state.plan?.decisions).toEqual([]);
-    expect(events).toContainEqual(
-      expect.objectContaining({ type: 'warning', message: expect.stringContaining('T001') }),
+    expect(prompts.filter(isDecisionConfirm)).toHaveLength(1);
+    expect(result.state.plan?.decisions).toEqual([
+      { text: `${HOW.what} — ${HOW.why}`, taskId: 'T001' },
+    ]);
+    expect(events).not.toContainEqual(
+      expect.objectContaining({ type: 'warning', message: expect.stringContaining('allowance') }),
     );
   });
 
@@ -462,7 +462,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     expect(result.state.lineages?.T001?.consults).toBe(1);
   });
 
-  it('validates with a warning when the decision-confirm answer is malformed, and counts the call', async () => {
+  it('validates with a warning when the decision-confirm answer is malformed', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001', file: 'src/a.ts' });
     const implementer = decidingImplementer([[HOW]]);
@@ -491,7 +491,6 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     expect(result.status).toBe('complete');
     expect(validator.runValidation).toHaveBeenCalledTimes(1);
     expect(result.state.plan?.decisions).toEqual([]);
-    expect(result.state.decisionConfirms?.used).toBe(1);
     expect(result.state.plannerCalls?.used ?? 0).toBe(0);
     expect(events).toContainEqual(
       expect.objectContaining({ type: 'warning', message: expect.stringContaining('T001') }),

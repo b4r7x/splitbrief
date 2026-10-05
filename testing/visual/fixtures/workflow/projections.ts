@@ -116,6 +116,8 @@ export const WORKFLOW_FIXTURE_TEXT = Object.freeze({
   questionAnswer: 'Reviewer/planner seat',
   success: 'Visual fixture workflow complete',
   failure: 'Synthetic runner failure: bounded fixture',
+  implementerFailure:
+    'Edit bundle did not apply: testing/visual/fixtures/workflow/projections.ts hunk 2 no longer matches\nHint: the next attempt reads the current file',
   recovery: 'Change BUILD tool',
   recoveryPlan: 'Change PLAN tool',
   retryExhausted: 'exhausted its retries',
@@ -640,6 +642,14 @@ const implementationRetryProjection: WorkflowFixtureProjection = {
       action: 'modify',
       tool: 'ollama',
       model: FIXED_RUNNER_MODEL,
+    },
+    {
+      type: 'implementer_generate_failed',
+      ts: FIXED_TS + 300,
+      phase: 'implementing',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      model: FIXED_RUNNER_MODEL,
+      error: WORKFLOW_FIXTURE_TEXT.implementerFailure,
     },
     {
       type: 'task_retry',

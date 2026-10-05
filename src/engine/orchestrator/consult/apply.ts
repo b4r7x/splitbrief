@@ -18,11 +18,18 @@ import { waitForPlannerReply } from '../planning/call-loop.js';
 import { transitionAndSave } from '../state-ops.js';
 import { validateCommitAndAdvance } from '../task/commit.js';
 import { restoreAttemptFiles } from '../task/rollback.js';
+import { runTaskChecksAfterAcceptance } from '../task/task-checks.js';
 import type { OrchestratorCallbacks, WorkflowSinks } from '../types.js';
 import type { ValidationAcceptance } from '../validation/acceptance.js';
 import { formatValidationError } from '../validation/format-error.js';
 import type { ValidationResult } from '../validation/result.js';
-import { checkRegistry, runChecks, type CheckRunResult } from '../validation/run-checks.js';
+import {
+  checkRegistry,
+  planApprovesNpmScripts,
+  runChecks,
+  type CheckRunResult,
+} from '../validation/run-checks.js';
+import { recordCheckRuns } from '../evidence/record-checks.js';
 import type { ValidationCommandRunner, Validator } from '../validation/types.js';
 
 export type ConsultApplyContext = Readonly<{
@@ -268,28 +275,57 @@ async function applyVerify(
     task,
     plan,
     projectDir: ctx.workspaceDir,
+    sessionId: ctx.sessionId,
+    checkoutDir: ctx.projectDir,
     config: ctx.config,
     bus: ctx.bus,
     phase: ctx.state.phase,
-    planApproved: true,
+    npmScriptsApproved: planApprovesNpmScripts({ config: ctx.config, state: ctx.state }),
     discoveredValidation: ctx.state.discoveredValidation,
     signal: ctx.signal,
     ...(ctx.runCommand !== undefined && { runCommand: ctx.runCommand }),
   });
-  const checkResults: CheckResult[] = checkRuns.map((run) => ({
-    id: run.checkId,
-    passed: run.status === 'pass',
-  }));
-  const recorded = transitionAndSave(
-    { projectDir: ctx.projectDir, sessionId: ctx.sessionId },
-    ctx.state,
-    { type: 'RECORD_CHECK_RESULTS', taskId: task.id, results: checkResults },
-  );
-  ctx.onStateChange?.(recorded);
-  publishChecksRun({ bus: ctx.bus, phase: recorded.phase }, task.id, checkResults);
 
   const failures = verifyFailures(validationResults, acceptance, checkRuns);
-  if (failures.length > 0) return { action: 'failed', reason: failures.join('\n\n') };
+  if (failures.length > 0) {
+    await recordCheckRuns({
+      projectDir: ctx.projectDir,
+      sessionId: ctx.sessionId,
+      workspaceDir: ctx.workspaceDir,
+      state: ctx.state,
+      task,
+      validation: validationResults,
+      runs: checkRuns,
+    });
+    const failedResults: CheckResult[] = checkRuns.map((run) => ({
+      id: run.checkId,
+      passed: run.status === 'pass',
+    }));
+    const failed = transitionAndSave(
+      { projectDir: ctx.projectDir, sessionId: ctx.sessionId },
+      ctx.state,
+      { type: 'RECORD_CHECK_RESULTS', taskId: task.id, results: failedResults },
+    );
+    ctx.onStateChange?.(failed);
+    publishChecksRun({ bus: ctx.bus, phase: failed.phase }, task.id, failedResults);
+    return { action: 'failed', reason: failures.join('\n\n') };
+  }
+
+  await recordCheckRuns({
+    projectDir: ctx.projectDir,
+    sessionId: ctx.sessionId,
+    workspaceDir: ctx.workspaceDir,
+    state: ctx.state,
+    task,
+    validation: validationResults,
+  });
+  const checked = await runTaskChecksAfterAcceptance({
+    wctx: ctx,
+    state: ctx.state,
+    task,
+    alreadyRun: checkRuns,
+    ...(ctx.onStateChange !== undefined && { setTrackedState: ctx.onStateChange }),
+  });
 
   const commit = await validateCommitAndAdvance({
     task,
@@ -298,7 +334,7 @@ async function applyVerify(
     sessionId: ctx.sessionId,
     config: ctx.config,
     bus: ctx.bus,
-    state: recorded,
+    state: checked.state,
     method: 'consulted',
     transitionType: 'VALIDATION_PASS',
     taskChangedFiles: [...changedFiles],

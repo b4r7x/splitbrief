@@ -6,7 +6,7 @@ import { createEvidenceLedger } from '../../../../core/evidence/ledger-state.js'
 import type { EvidenceLedger } from '../../../../core/schemas/evidence.js';
 import { taskId } from '../../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../../core/schemas/workflow.js';
-import { buildChanges, buildRun, buildValidation } from './sections.js';
+import { buildChanges, buildChecks, buildRun, buildValidation } from './sections.js';
 import { renderReviewPacketMarkdown } from './render.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 
@@ -14,56 +14,14 @@ function stateWith(...tasks: ReturnType<typeof makeTask>[]): WorkflowState {
   return { ...createInitialState('feat'), tasks };
 }
 
-function ledgerWithEvidence(
-  task: ReturnType<typeof makeTask>,
-  expectedEvidence: string[],
-  observedEvidence: string[],
-): EvidenceLedger {
-  const ledger = createEvidenceLedger({ sessionId: 's', feature: 'feat', tasks: [task] });
-  return {
-    ...ledger,
-    tasks: ledger.tasks.map((entry) => ({ ...entry, expectedEvidence, observedEvidence })),
-  };
+function ledgerFor(task: ReturnType<typeof makeTask>): EvidenceLedger {
+  return createEvidenceLedger({ sessionId: 's', feature: 'feat', tasks: [task] });
 }
-
-describe('buildValidation missingExpectedEvidence matching', () => {
-  it('keeps a long expectation missing when only a terse observed substring is present', () => {
-    const task = makeTask({ id: 'T001' });
-    const ledger = ledgerWithEvidence(
-      task,
-      ['handles concurrent writes without corrupting the ledger'],
-      ['ledger'],
-    );
-
-    const result = buildValidation(stateWith(task), ledger);
-
-    expect(result.tasks[0]?.missingExpectedEvidence).toEqual([
-      'handles concurrent writes without corrupting the ledger',
-    ]);
-    expect(result.missingEvidenceWarnings).toEqual([
-      'T001 expected evidence SPLITBRIEF did not record (informational; SPLITBRIEF records only its own facts; not a failure on its own): handles concurrent writes without corrupting the ledger',
-    ]);
-  });
-
-  it('satisfies an expectation only when an observed item contains the full expected text', () => {
-    const task = makeTask({ id: 'T001' });
-    const ledger = ledgerWithEvidence(
-      task,
-      ['test passes'],
-      ['integration test passes after retry'],
-    );
-
-    const result = buildValidation(stateWith(task), ledger);
-
-    expect(result.tasks[0]?.missingExpectedEvidence).toEqual([]);
-    expect(result.missingEvidenceWarnings).toEqual([]);
-  });
-});
 
 describe('buildValidation baselineExempt carry-through', () => {
   it('carries the baselineExempt flag from the ledger entry and omits it when absent', () => {
     const task = makeTask({ id: 'T001' });
-    const base = ledgerWithEvidence(task, [], []);
+    const base = ledgerFor(task);
     const ledger: EvidenceLedger = {
       ...base,
       tasks: base.tasks.map((entry) => ({
@@ -96,13 +54,9 @@ describe('buildValidation baselineExempt carry-through', () => {
               { stage: 'typecheck', passed: true },
               { stage: 'lint', passed: false, baselineExempt: true },
             ],
-            expectedEvidence: [],
-            observedEvidence: [],
-            missingExpectedEvidence: [],
           },
         ],
         finalReviewEvidenceStatus: null,
-        missingEvidenceWarnings: [],
       },
     });
 
@@ -110,6 +64,58 @@ describe('buildValidation baselineExempt carry-through', () => {
 
     expect(rendered).toContain('T001 done: 1/2 validation stages passed');
     expect(rendered).toContain('1 baseline-exempt: lint');
+  });
+});
+
+describe('buildChecks', () => {
+  it('lists the ledger checks and the isolation outside-read paths', () => {
+    const task = makeTask({ id: 'T001' });
+    const base = createEvidenceLedger({ sessionId: 's', feature: 'feat', tasks: [task] });
+    const ledger: EvidenceLedger = {
+      ...base,
+      tasks: base.tasks.map((entry) => ({
+        ...entry,
+        checks: [
+          {
+            id: 'K1',
+            command: 'npm test',
+            exitCode: 0,
+            output: 'ok',
+            artifacts: [{ path: '/tmp/shot.png', sha256: 'abc' }],
+            workspaceSnapshotId: 'snap-1',
+            ts: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+      })),
+    };
+    const checks = buildChecks({
+      ledger,
+      events: [
+        {
+          ts: '2026-01-01T00:00:00.000Z',
+          type: 'warning',
+          taskId: taskId('T001'),
+          code: 'isolation_outside_read',
+          message: 'Task T001 searched ~ with run_command: find ~ -name x',
+        },
+      ],
+    });
+
+    expect(checks.entries).toEqual([
+      {
+        taskId: 'T001',
+        id: 'K1',
+        command: 'npm test',
+        exitCode: 0,
+        output: 'ok',
+        artifacts: [{ path: '/tmp/shot.png', sha256: 'abc' }],
+        workspaceSnapshotId: 'snap-1',
+        ts: '2026-01-01T00:00:00.000Z',
+      },
+    ]);
+    expect(checks.outsideReadPaths).toEqual([
+      'Task T001 searched ~ with run_command: find ~ -name x',
+    ]);
   });
 });
 

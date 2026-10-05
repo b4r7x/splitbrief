@@ -462,6 +462,7 @@ validation: {
   testPattern?:      string; // optional, non-empty
   timeoutMs?:        number; // optional, int >= 1000, milliseconds
   stack?: 'typescript' | 'javascript' | 'python' | 'go' | 'rust'; // optional
+  render?:           string; // optional, non-empty
 }
 ```
 
@@ -478,6 +479,7 @@ validation: {
 | `testPattern` | string | — | Optional glob for finding test files (e.g. `*_test.go`, `test_*.py`). Overrides the stack's own patterns. |
 | `timeoutMs` | number | `600000` | Per-stage timeout in milliseconds (minimum `1000`) for each validation command, applying to the run-start baseline probe, the `doctor --probe-validation` diagnostic, and per-task validation. One red or slow stage can hold the loop for this long before the probe moves on. |
 | `stack` | enum | detected | Pin the validation stack instead of detecting it: `typescript`, `javascript`, `python`, `go`, or `rust`. Use it when a repo carries more than one marker file and the detection order picks the wrong one, or when the markers are missing entirely. |
+| `render` | string | — | The command a `render` check runs. `{id}` (the check value, one argv element) is substituted into the parsed argv, and `{out}` becomes a fresh directory under `<workspace>/.test-artifacts/ui/`; the command runs with cwd = the workspace and is not filtered by the planner command policy. Every `.png` under `{out}` is copied to `.splitbrief/sessions/<id>/renders/<check-id>/` and logged with its sha256. A `render` check whose value is not a `[a-z0-9-]` slug is refused; with no `render` command the check is `not-runnable`. |
 
 YAML — TypeScript project (default):
 
@@ -500,6 +502,16 @@ validation:
   lintCommand: cargo clippy --no-deps
   testCommand: cargo test
   testPattern: "*_test.rs"
+```
+
+YAML — a `render` check with `{id}` and `{out}` placeholders:
+
+```yaml
+validation:
+  typecheck: true
+  lint: true
+  test: true
+  render: npm run tui-shots -- --scenario {id} --output {out}
 ```
 
 ### How commands are resolved

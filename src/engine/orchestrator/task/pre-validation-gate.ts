@@ -17,7 +17,7 @@ export async function runPreValidationGate(opts: {
   setTrackedState: (s: WorkflowState) => void;
 }): Promise<{ proceed: boolean; state: WorkflowState }> {
   const { wctx, task, taskChangedFiles, taskStartSnapshot, setTrackedState } = opts;
-  const { projectDir, sessionId } = wctx;
+  const { projectDir, workspaceDir, sessionId } = wctx;
   let state = opts.state;
 
   if (!wctx.config.hooks) return { proceed: true, state };
@@ -33,6 +33,7 @@ export async function runPreValidationGate(opts: {
   };
   const preVal = await runPreHooks(wctx.config.hooks, 'pre_validation', preValidationPayload, {
     projectDir,
+    workspaceDir,
     sessionId,
   });
   if (preVal.allow) return { proceed: true, state };
@@ -58,7 +59,7 @@ export async function runPreValidationGate(opts: {
     taskId: task.id,
   });
   setTrackedState(state);
-  persistTaskEvidence({
+  await persistTaskEvidence({
     wctx,
     state,
     task,

@@ -1289,6 +1289,22 @@ describe('fix cycles, review and triage records', () => {
     expect(next.fixCycles).toEqual({ used: 2, allowance: 2, notes: [] });
   });
 
+  it('START_FIX_CYCLE clears the scheduled review and its triage', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+      tasks: [makeTask({ id: 'T001', status: 'done' }), makeTask({ id: 'T002' })],
+      currentTaskIndex: 1,
+      pendingScheduledReview: { afterTaskId: taskId('T001') },
+      pendingTriage: { inputs: [], reviewAfterTaskId: taskId('T001') },
+    };
+
+    const next = transition(state, { type: 'START_FIX_CYCLE' });
+
+    expect(next.pendingScheduledReview).toBeUndefined();
+    expect(next.pendingTriage).toBeUndefined();
+  });
+
   it('START_FIX_CYCLE refuses a completed run whose review passed', () => {
     const state = failedReviewState({ reviewStatus: 'passed' });
 

@@ -177,6 +177,26 @@ describe('ConfigSchema user config contracts', () => {
     ).toBe(true);
   });
 
+  it('admits an optional validation.render command and rejects an empty one', () => {
+    const render = 'npm run tui-shots -- --scenario {id} --output {out}';
+    expect(
+      ConfigSchema.parse({
+        ...validConfig,
+        validation: { ...validConfig.validation, render },
+      }).validation.render,
+    ).toBe(render);
+
+    expect(
+      hasIssueAtPath(
+        issuesFor({
+          ...validConfig,
+          validation: { ...validConfig.validation, render: '' },
+        }),
+        'validation.render',
+      ),
+    ).toBe(true);
+  });
+
   it('validates implementer profile names and default profile references', () => {
     expect(
       hasIssueAtPath(

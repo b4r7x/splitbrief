@@ -84,8 +84,12 @@ type TaskFailureContext = Pick<
   | 'initialExemptStages'
 >;
 
-function recordFailedTask(opts: TaskFailureContext, state: WorkflowState, attempts: number): void {
-  persistTaskEvidence({
+function recordFailedTask(
+  opts: TaskFailureContext,
+  state: WorkflowState,
+  attempts: number,
+): Promise<void> {
+  return persistTaskEvidence({
     wctx: opts.wctx,
     state,
     task: opts.task,
@@ -160,7 +164,7 @@ export async function handleTaskPlannerCallFailure(
           details: consultHaltDetails(task.id),
         });
   const nextState = raisePendingRecovery(wctx, recoveryBaseState, issue, setTrackedState);
-  recordFailedTask(opts, nextState, recoveryBaseState.attempt);
+  await recordFailedTask(opts, nextState, recoveryBaseState.attempt);
   return nextState;
 }
 
@@ -260,7 +264,7 @@ export async function retryAndRecord(
       });
       nextState = raisePendingRecovery(wctx, nextState, issue, setTrackedState);
     }
-    recordFailedTask(opts, nextState, result.attempts);
+    await recordFailedTask(opts, nextState, result.attempts);
     return { state: nextState, completed: false };
   }
   const model = result.model ?? nextState.implementerModel ?? wctx.config.implementer.model;
@@ -280,7 +284,7 @@ export async function retryAndRecord(
   });
   const escalated = classifyTaskCompletionMethod(result.method) === 'escalated';
   const status: TaskStatus = escalated ? 'escalated' : 'done';
-  persistTaskEvidence({
+  await persistTaskEvidence({
     wctx,
     state: nextState,
     task,

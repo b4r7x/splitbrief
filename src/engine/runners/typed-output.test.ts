@@ -227,6 +227,76 @@ describe('extractLastJsonObject', () => {
 });
 
 describe('requestTyped', () => {
+  it.each(['native', 'fallback'] satisfies TypedOutputCapability[])(
+    'refuses an oversized first %s prompt before invoking the seat',
+    async (typedOutput) => {
+      const prompt = 'Answer the question';
+      const maxInputChars = prompt.length - 1;
+      const { call, invokes } = makeSeatCall({
+        typedOutput,
+        results: [completed('{"answer":"a","count":1}')],
+      });
+      const sentPrompt =
+        typedOutput === 'native' ? prompt : prompt + fallbackInstruction(jsonSchema);
+
+      await expect(
+        requestTyped(options({ call: { ...call, maxInputChars }, prompt })),
+      ).rejects.toMatchObject({
+        kind: 'input-too-large',
+        data: {
+          error: {
+            code: 'input-too-large',
+            message: expect.stringContaining(
+              `"max_chars":${maxInputChars},"actual_chars":${sentPrompt.length}`,
+            ),
+          },
+        },
+      });
+      expect(invokes).toHaveLength(0);
+    },
+  );
+
+  it.each([
+    { typedOutput: 'native', canResume: false },
+    { typedOutput: 'fallback', canResume: false },
+    { typedOutput: 'native', canResume: true },
+    { typedOutput: 'fallback', canResume: true },
+  ] satisfies Pick<TypedSeatCall, 'typedOutput' | 'canResume'>[])(
+    'refuses an oversized $typedOutput repair with canResume=$canResume before a second invocation',
+    async ({ typedOutput, canResume }) => {
+      const prompt = 'Answer the question';
+      const firstPrompt =
+        typedOutput === 'native' ? prompt : prompt + fallbackInstruction(jsonSchema);
+      const maxInputChars = firstPrompt.length;
+      const { call, invokes } = makeSeatCall({
+        typedOutput,
+        canResume,
+        results: [
+          makeRunnerCallResult({
+            status: 'completed',
+            text: '{"answer":1}',
+            nativeSessionId: 's1',
+          }),
+          completed('{"answer":"a","count":1}'),
+        ],
+      });
+
+      await expect(
+        requestTyped(options({ call: { ...call, maxInputChars }, prompt })),
+      ).rejects.toMatchObject({
+        kind: 'input-too-large',
+        data: {
+          error: {
+            code: 'input-too-large',
+            message: expect.stringContaining(`"max_chars":${maxInputChars}`),
+          },
+        },
+      });
+      expect(invokes).toHaveLength(1);
+      expect(invokes[0]?.prompt).toBe(firstPrompt);
+    },
+  );
+
   it('sends the schema natively and trusts the structured answer', async () => {
     const { call, invokes } = makeSeatCall({
       typedOutput: 'native',

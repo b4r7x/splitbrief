@@ -1,10 +1,12 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
+import { makeConfig } from '#testing/helpers/validation-fixtures.js';
 import {
   checkCommandRefusal,
   sanitizeDiscoveredValidation,
   unsafeCommandReason,
 } from './sanitize-discovered-validation.js';
+import type { Config } from '../../../core/schemas/config.js';
 import type { DiscoveredValidation } from '../../../core/schemas/workflow.js';
 
 const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
@@ -21,6 +23,22 @@ function sanitize(discovered: DiscoveredValidation | null | undefined) {
 
 function warnings(): string[] {
   return recorder.events.flatMap((event) => (event.type === 'warning' ? [event.message] : []));
+}
+
+function sanitizeResolving(
+  discovered: DiscoveredValidation,
+  validation: Partial<Config['validation']>,
+) {
+  return sanitizeDiscoveredValidation(
+    discovered,
+    { bus: recorder.bus, phase: 'researching' },
+    {
+      projectDir: '/tmp/splitbrief-fixture',
+      config: makeConfig(validation),
+      manifest: {},
+      stack: null,
+    },
+  );
 }
 
 describe('sanitizeDiscoveredValidation', () => {
@@ -267,10 +285,40 @@ describe('sanitizeDiscoveredValidation', () => {
     expect(warnings()).toEqual(
       refused.map((pattern) =>
         expect.stringContaining(
-          `${pattern} from the planner (it contains ".." or a path separator)`,
+          `${pattern} from the planner: a test pattern may not contain ".." or a path separator`,
         ),
       ),
     );
+  });
+
+  it('names the real rule from isTestPatternSafe when it refuses a testPattern', () => {
+    const result = sanitize({ language: 'typescript', testPattern: '**/*.test.{ts,tsx}' });
+    expect(result).toEqual({ language: 'typescript' });
+    const [reason = ''] = warnings();
+    expect(reason).toContain('a test pattern may not contain ".." or a path separator');
+    expect(reason).toContain("stack's test file patterns apply");
+  });
+
+  it('publishes nothing when the stage resolves to the refused command', () => {
+    const result = sanitizeResolving(
+      { typecheckCommand: 'npm run typecheck' },
+      { typecheckCommand: 'npm run typecheck' },
+    );
+    expect(result).toBeUndefined();
+    expect(warnings()).toEqual([]);
+  });
+
+  it('publishes one warning when the resolved command differs', () => {
+    const result = sanitizeResolving(
+      { typecheckCommand: 'npm run typecheck' },
+      { typecheckCommand: 'tsc --noEmit' },
+    );
+    expect(result).toBeUndefined();
+    expect(warnings()).toEqual([
+      expect.stringMatching(
+        /^The typecheck stage .*npm run typecheck from the planner.*package script/,
+      ),
+    ]);
   });
 
   it('preserves language and testPattern even when all commands are blocked', () => {
@@ -423,65 +471,76 @@ describe('sanitizeDiscoveredValidation — script runners', () => {
 describe('checkCommandRefusal', () => {
   const packageScripts = {
     packageJsonExists: true,
-    scripts: { lint: 'biome check', test: 'vitest run' },
+    scripts: { lint: 'biome check', test: 'vitest run', typecheck: 'tsc --noEmit' },
   };
-  const approved = { planApproved: true, packageScripts };
+  const scriptsApproved = { npmScriptsApproved: true, packageScripts };
 
   it('keeps the discovered-validation reason for reuse', () => {
     expect(unsafeCommandReason('npm run lint')).toBe('runs a package script or binary');
     expect(unsafeCommandReason('npm test')).toBeNull();
   });
 
-  it('refuses every plan check until the plan is approved', () => {
-    const commands = ['npm run lint', 'npm test', 'tsc --noEmit', 'npx --no-install tsc'];
-    for (const command of commands) {
-      expect(checkCommandRefusal(command, { planApproved: false, packageScripts })).toBe(
-        'runs before the plan is approved',
-      );
-    }
+  it('refuses npm run without the plan approval through the discovered-validation policy', () => {
+    const withoutApproval = { npmScriptsApproved: false, packageScripts };
+    expect(checkCommandRefusal('npm run lint', withoutApproval)).toBe(
+      'runs a package script or binary',
+    );
+    expect(checkCommandRefusal('npm run typecheck', withoutApproval)).toBe(
+      'runs a package script or binary',
+    );
   });
 
   it('admits an npm run script only when package.json defines it', () => {
-    expect(checkCommandRefusal('npm run lint', approved)).toBeNull();
-    expect(checkCommandRefusal('npm run deploy', approved)).toBe(
+    expect(checkCommandRefusal('npm run lint', scriptsApproved)).toBeNull();
+    expect(checkCommandRefusal('npm run typecheck', scriptsApproved)).toBeNull();
+    expect(checkCommandRefusal('npm run deploy', scriptsApproved)).toBe(
       'runs the npm script deploy, which package.json does not define',
     );
     expect(
       checkCommandRefusal('npm run lint', {
-        planApproved: true,
+        npmScriptsApproved: true,
         packageScripts: { packageJsonExists: false, scripts: {} },
       }),
     ).toBe('runs an npm script, but package.json was not found');
   });
 
   it('refuses npm run without a script name or behind a shell operator', () => {
-    expect(checkCommandRefusal('npm run', approved)).toBe('runs npm run without a script name');
-    expect(checkCommandRefusal('npm run lint && echo done', approved)).toBe(
+    expect(checkCommandRefusal('npm run', scriptsApproved)).toBe(
+      'runs npm run without a script name',
+    );
+    expect(checkCommandRefusal('npm run lint && echo done', scriptsApproved)).toBe(
       'contains a shell operator',
     );
   });
 
-  it('admits npx only as an installed stack tool', () => {
-    expect(checkCommandRefusal('npx --no-install tsc --noEmit', approved)).toBeNull();
-    expect(checkCommandRefusal('npx --no-install vitest run', approved)).toBeNull();
-    expect(checkCommandRefusal('npx tsc --noEmit', approved)).toBe('runs npx without --no-install');
-    expect(checkCommandRefusal('npx --no-install evil-tool', approved)).toBe(
-      'runs a program outside the stack tools through npx',
-    );
-    expect(checkCommandRefusal('npx --no-install node -e "process.exit(0)"', approved)).toBe(
-      'runs a program outside the stack tools through npx',
-    );
+  it('admits npx only as an installed stack tool at every approve level', () => {
+    for (const approved of [true, false]) {
+      const opts = { npmScriptsApproved: approved, packageScripts };
+      expect(checkCommandRefusal('npx --no-install tsc --noEmit', opts)).toBeNull();
+      expect(checkCommandRefusal('npx --no-install vitest run', opts)).toBeNull();
+      expect(checkCommandRefusal('npx tsc --noEmit', opts)).toBe('runs npx without --no-install');
+      expect(checkCommandRefusal('npx some-package', opts)).toBe('runs npx without --no-install');
+      expect(checkCommandRefusal('npx --no-install evil-tool', opts)).toBe(
+        'runs a program outside the stack tools through npx',
+      );
+      expect(checkCommandRefusal('npx --no-install node -e "process.exit(0)"', opts)).toBe(
+        'runs a program outside the stack tools through npx',
+      );
+    }
   });
 
   it('keeps the discovered-validation policy for every other command', () => {
-    expect(checkCommandRefusal('npm test', approved)).toBeNull();
-    expect(checkCommandRefusal('tsc --noEmit', approved)).toBeNull();
-    expect(checkCommandRefusal('node scripts/deploy.ts', approved)).toBe(
+    expect(checkCommandRefusal('npm test', scriptsApproved)).toBeNull();
+    expect(checkCommandRefusal('tsc --noEmit', scriptsApproved)).toBeNull();
+    expect(
+      checkCommandRefusal('tsc --noEmit', { npmScriptsApproved: false, packageScripts }),
+    ).toBeNull();
+    expect(checkCommandRefusal('node scripts/deploy.ts', scriptsApproved)).toBe(
       'runs a script or inline code',
     );
-    expect(checkCommandRefusal('curl https://example.com', approved)).toBe(
+    expect(checkCommandRefusal('curl https://example.com', scriptsApproved)).toBe(
       'runs a program outside the allowlist',
     );
-    expect(checkCommandRefusal('', approved)).toBe('names no program');
+    expect(checkCommandRefusal('', scriptsApproved)).toBe('names no program');
   });
 });

@@ -815,6 +815,26 @@ describe('InputFooter', () => {
     terminalSizeStore.reset();
   });
 
+  it('names the brief the queue waits for while a brief is building', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', queueDepth: 1 });
+    tasksStore.__testReset({
+      currentTask: 1,
+      totalTasks: 2,
+      tasks: [
+        { id: 'T001', title: 'T1', status: 'in_progress' as const },
+        { id: 'T002', title: 'T2', status: 'pending' as const },
+      ],
+    });
+
+    const ui = renderFeature(<InputFooter />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('queued for after T001');
+    ui.unmount();
+    terminalSizeStore.reset();
+  });
+
   it('byline stage labels are Title Case', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     lifecycleStore.__testReset({ phase: 'planning', status: 'complete' });

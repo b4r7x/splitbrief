@@ -1,14 +1,23 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { rendersDir } from '../../../core/paths.js';
 import type { Plan } from '../../../core/schemas/plan.js';
 import type { Check, Task } from '../../../core/schemas/task.js';
 import { processError } from '../../../lib/process/errors.js';
+import * as commandRunner from '../../../lib/process/spawn/run-command.js';
+import { saveState } from '../../../core/state/persistence.js';
+import { makePlanner, makeWctx } from '#testing/helpers/orchestrator-factories.js';
+import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
+import { runPreReview } from '../run/pre-review-checks.js';
+import { sha256Hex } from '../../../utils/sha256.js';
 import { createEventBus } from '../../events/bus.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeCommandRunner, makeConfig } from '#testing/helpers/validation-fixtures.js';
-import { runChecks, type RunChecksOptions } from './run-checks.js';
+import { planApprovesNpmScripts, runChecks, type RunChecksOptions } from './run-checks.js';
+import type { ValidationCommandRunner } from './types.js';
+import { createValidator } from './run.js';
 
 function makePlan(checks: Check[]): Plan {
   return {
@@ -33,13 +42,16 @@ describe('runChecks', () => {
     writeFileSync(join(projectDir, 'tsconfig.json'), '{}');
     writeFileSync(
       join(projectDir, 'package.json'),
-      JSON.stringify({ scripts: { test: 'vitest run', lint: 'biome check' } }),
+      JSON.stringify({
+        scripts: { test: 'vitest run', lint: 'biome check', typecheck: 'tsc --noEmit' },
+      }),
     );
     mkdirSync(join(projectDir, 'src'), { recursive: true });
     writeFileSync(join(projectDir, 'src', 'a.test.ts'), '');
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     cleanupTempDir(projectDir);
   });
 
@@ -47,12 +59,18 @@ describe('runChecks', () => {
     return {
       task: makeTask(),
       projectDir,
+      checkoutDir: projectDir,
       config: makeConfig({}),
       bus,
       phase: 'implementing',
-      planApproved: true,
+      npmScriptsApproved: true,
       ...overrides,
     } satisfies RunChecksOptions;
+  }
+
+  function configWith(approve: 'plan' | 'none') {
+    const base = makeConfig({});
+    return { ...base, workflow: { ...base.workflow, approve } };
   }
 
   it('reports an id that names no task or plan check as unknown', async () => {
@@ -71,13 +89,21 @@ describe('runChecks', () => {
       options({ task: undefined, plan, runCommand: runner }),
     );
 
-    expect(results).toEqual([{ checkId: 'C1-check', status: 'pass', output: '1 passed' }]);
+    expect(results).toEqual([
+      {
+        checkId: 'C1-check',
+        status: 'pass',
+        output: '1 passed',
+        command: 'npm test -- src/a.test.ts',
+        exitCode: 0,
+      },
+    ]);
     expect(runner.calls).toHaveLength(1);
     expect(runner.calls[0]?.cmd).toBe('npm');
     expect(runner.calls[0]?.args).toEqual(['test', '--', 'src/a.test.ts']);
   });
 
-  it('reports a plan render check as not runnable without a task', async () => {
+  it('reports a plan render check as not runnable when validation.render is unset', async () => {
     const plan = makePlan([
       { id: 'C2-render', kind: 'render', value: 'overlay-picker', required: false },
     ]);
@@ -88,7 +114,132 @@ describe('runChecks', () => {
     );
 
     expect(results).toEqual([
-      { checkId: 'C2-render', status: 'not-runnable', output: 'render checks are not runnable' },
+      { checkId: 'C2-render', status: 'not-runnable', output: 'validation.render is not set' },
+    ]);
+    expect(runner.calls).toHaveLength(0);
+  });
+
+  it.each(['cmd', 'render'] as const)(
+    'reports a missing executable for a required %s check as not runnable',
+    async (kind) => {
+      const task = taskWith([
+        {
+          id: 'K1',
+          kind,
+          value: kind === 'cmd' ? 'tsc --noEmit' : 'overlay-picker',
+          required: true,
+        },
+      ]);
+      for (const missing of [
+        processError.notFound('tsc'),
+        Object.assign(new Error('missing'), { code: 'ENOENT' }),
+      ]) {
+        const results = await runChecks(
+          ['K1'],
+          options({
+            task,
+            config: makeConfig({ render: 'render {id} {out}' }),
+            runCommand: makeCommandRunner(missing),
+          }),
+        );
+
+        expect(results[0]?.status).toBe('not-runnable');
+        expect(results[0]?.output).toBe(`${kind === 'cmd' ? 'tsc' : 'render'} not found`);
+      }
+    },
+  );
+
+  it('retains both executions of a render with the same PNG filename and different bytes', async () => {
+    const sessionId = 'sess-render-history';
+    const task = taskWith([{ id: 'K1', kind: 'render', value: 'overlay-picker', required: true }]);
+    let execution = 0;
+    const runner: ValidationCommandRunner = async (_cmd, args) => {
+      const out = args[1];
+      if (out === undefined) throw new Error('Missing render output directory');
+      execution += 1;
+      mkdirSync(join(out, 'nested'), { recursive: true });
+      writeFileSync(join(out, 'nested', 'shot.png'), `png-${execution}`);
+      return { stdout: '', stderr: '', code: 0 };
+    };
+    const opts = options({
+      task,
+      sessionId,
+      config: makeConfig({ render: 'render {id} {out}' }),
+      runCommand: runner,
+    });
+    const first = await runChecks(['K1'], opts);
+    const second = await runChecks(['K1'], opts);
+    const firstArtifact = first[0]?.artifacts?.[0];
+    const secondArtifact = second[0]?.artifacts?.[0];
+    if (firstArtifact === undefined || secondArtifact === undefined)
+      throw new Error('Missing retained renders');
+
+    expect(readFileSync(firstArtifact.path, 'utf8')).toBe('png-1');
+    expect(readFileSync(secondArtifact.path, 'utf8')).toBe('png-2');
+    expect(firstArtifact.path).not.toBe(secondArtifact.path);
+    expect(firstArtifact.path).toContain(`${rendersDir({ projectDir, sessionId }, 'K1')}/`);
+    expect(secondArtifact.path).toContain(`${rendersDir({ projectDir, sessionId }, 'K1')}/`);
+    expect(sha256Hex(readFileSync(firstArtifact.path))).toBe(firstArtifact.sha256);
+    expect(sha256Hex(readFileSync(secondArtifact.path))).toBe(secondArtifact.sha256);
+  });
+
+  it('runs a render check, substitutes {id} and {out}, and copies its PNGs', async () => {
+    const sessionId = 'sess-render';
+    const task = taskWith([{ id: 'K1', kind: 'render', value: 'overlay-picker', required: true }]);
+    const outDirs: string[] = [];
+    const runner: ValidationCommandRunner = async (_cmd, args) => {
+      const out = args[1] as string;
+      outDirs.push(out);
+      mkdirSync(out, { recursive: true });
+      writeFileSync(join(out, 'shot.png'), Buffer.from('png-bytes'));
+      return { stdout: 'rendered', stderr: '', code: 0 };
+    };
+    const results = await runChecks(
+      ['K1'],
+      options({
+        task,
+        sessionId,
+        config: makeConfig({ render: 'render {id} {out}' }),
+        runCommand: runner,
+      }),
+    );
+
+    const copied = results[0]?.artifacts?.[0]?.path;
+    if (copied === undefined) throw new Error('Missing retained render');
+    expect(dirname(dirname(copied))).toBe(rendersDir({ projectDir, sessionId }, 'K1'));
+    expect(results).toEqual([
+      {
+        checkId: 'K1',
+        status: 'pass',
+        output: 'rendered',
+        command: `render overlay-picker ${outDirs[0]}`,
+        exitCode: 0,
+        artifacts: [{ path: copied, sha256: sha256Hex(Buffer.from('png-bytes')) }],
+      },
+    ]);
+    expect(outDirs[0]).toContain('/.test-artifacts/ui/');
+    expect(readFileSync(copied, 'utf8')).toBe('png-bytes');
+  });
+
+  it('refuses a render id that is not a scenario slug and never runs it', async () => {
+    const task = taskWith([{ id: 'K1', kind: 'render', value: 'gallery/hello', required: true }]);
+    const runner = makeCommandRunner();
+    const results = await runChecks(
+      ['K1'],
+      options({
+        task,
+        sessionId: 'sess-render',
+        config: makeConfig({ render: 'render {id} {out}' }),
+        runCommand: runner,
+      }),
+    );
+
+    expect(results).toEqual([
+      {
+        checkId: 'K1',
+        status: 'refused',
+        output: 'render id "gallery/hello" must match ^[a-z0-9-]+$',
+      },
     ]);
     expect(runner.calls).toHaveLength(0);
   });
@@ -116,9 +267,21 @@ describe('runChecks', () => {
     );
 
     expect(results).toEqual([
-      { checkId: 'K1', status: 'pass', output: 'tsc --noEmit' },
-      { checkId: 'K2', status: 'not-runnable', output: 'render checks are not runnable' },
-      { checkId: 'K3', status: 'pass', output: 'cargo test' },
+      {
+        checkId: 'K1',
+        status: 'pass',
+        output: 'tsc --noEmit',
+        command: 'tsc --noEmit',
+        exitCode: 0,
+      },
+      { checkId: 'K2', status: 'not-runnable', output: 'validation.render is not set' },
+      {
+        checkId: 'K3',
+        status: 'pass',
+        output: 'cargo test',
+        command: 'cargo test',
+        exitCode: 0,
+      },
     ]);
     expect(runner.calls.map((call) => call.cmd)).toEqual(['tsc', 'cargo']);
   });
@@ -128,7 +291,15 @@ describe('runChecks', () => {
     const runner = makeCommandRunner({ stdout: '1 passed', stderr: '', code: 0 });
     const results = await runChecks(['K1'], options({ task, runCommand: runner }));
 
-    expect(results).toEqual([{ checkId: 'K1', status: 'pass', output: '1 passed' }]);
+    expect(results).toEqual([
+      {
+        checkId: 'K1',
+        status: 'pass',
+        output: '1 passed',
+        command: 'npm test -- src/a.test.ts',
+        exitCode: 0,
+      },
+    ]);
     expect(runner.calls).toHaveLength(1);
     expect(runner.calls[0]?.cmd).toBe('npm');
     expect(runner.calls[0]?.args).toEqual(['test', '--', 'src/a.test.ts']);
@@ -144,6 +315,8 @@ describe('runChecks', () => {
 
     expect(results[0]?.status).toBe('fail');
     expect(results[0]?.output).toContain('1 test failed');
+    expect(results[0]?.command).toBe('npm test -- src/a.test.ts');
+    expect(results[0]?.exitCode).toBe(1);
   });
 
   it('marks a test check with no affected test file as not runnable', async () => {
@@ -159,11 +332,77 @@ describe('runChecks', () => {
     expect(runner.calls).toHaveLength(0);
   });
 
+  it.each([
+    {
+      source: 'configured',
+      testCommand: 'missing-vitest run',
+      missing: processError.notFound('missing-vitest'),
+    },
+    {
+      source: 'configured',
+      testCommand: 'missing-vitest run',
+      missing: Object.assign(new Error('spawn missing-vitest ENOENT'), { code: 'ENOENT' }),
+    },
+    { source: 'detected', testCommand: undefined, missing: processError.notFound('npm') },
+  ])(
+    'reports a test check whose $source executable is missing as not runnable, naming it',
+    async ({ testCommand, missing }) => {
+      const task = taskWith([{ id: 'K1', kind: 'test', value: 'src/a.test.ts', required: true }]);
+      const results = await runChecks(
+        ['K1'],
+        options({
+          task,
+          config: makeConfig(testCommand === undefined ? {} : { testCommand }),
+          runCommand: makeCommandRunner(missing),
+        }),
+      );
+
+      expect(results[0]?.status).toBe('not-runnable');
+      expect(results[0]?.output).toContain(testCommand === undefined ? 'npm' : 'missing-vitest');
+      expect(results[0]?.exitCode).toBeUndefined();
+    },
+  );
+
+  it('halts a required test check whose executable is missing before the review, with no fix task', async () => {
+    vi.spyOn(commandRunner, 'runCommand').mockRejectedValue(
+      processError.notFound('missing-vitest'),
+    );
+    const plan = makePlan([{ id: 'K-test', kind: 'test', value: 'src/a.test.ts', required: true }]);
+    const planner = makePlanner({ typedCall: vi.fn() });
+    const sessionId = 'sess-missing-test-bin';
+    const state = makeImplState([], { plan, phase: 'final-review' });
+    saveState({ projectDir, sessionId }, state);
+    const wctx = makeWctx({
+      projectDir,
+      sessionId,
+      planner,
+      bus,
+      config: makeConfig({ typecheck: false, lint: false, testCommand: 'missing-vitest run' }),
+      validator: createValidator(),
+    });
+
+    const result = await runPreReview({ wctx, state, setTrackedState: vi.fn() });
+
+    expect(result.kind).toBe('stopped');
+    expect(result.state.pendingRecovery).toMatchObject({ reason: 'required-checks-unrunnable' });
+    expect(result.state.pendingRecovery?.message).toContain('K-test');
+    expect(planner.typedCall).not.toHaveBeenCalled();
+    expect(result.state.tasks).toEqual(state.tasks);
+  });
+
   it('runs a cmd check in the workspace and reports its failure text', async () => {
     const task = taskWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }]);
     const pass = makeCommandRunner({ stdout: 'clean', stderr: '', code: 0 });
     const passed = await runChecks(['K1'], options({ task, runCommand: pass }));
-    expect(passed).toEqual([{ checkId: 'K1', status: 'pass', output: 'clean' }]);
+    expect(passed).toEqual([
+      {
+        checkId: 'K1',
+        status: 'pass',
+        output: 'clean',
+        command: 'tsc --noEmit',
+        exitCode: 0,
+      },
+    ]);
     expect(pass.calls[0]?.cmd).toBe('tsc');
     expect(pass.calls[0]?.args).toEqual(['--noEmit']);
 
@@ -178,6 +417,31 @@ describe('runChecks', () => {
     const failed = await runChecks(['K1'], options({ task, runCommand: fail }));
     expect(failed[0]?.status).toBe('fail');
     expect(failed[0]?.output).toContain('error TS1005');
+    expect(failed[0]?.command).toBe('tsc --noEmit');
+    expect(failed[0]?.exitCode).toBe(2);
+  });
+
+  it('logs the command and exit code of a failing cmd check', async () => {
+    const task = taskWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }]);
+    const runner = makeCommandRunner(
+      processError.exitCode({
+        command: 'tsc',
+        code: 1,
+        stderr: 'src/a.ts(1,1): error TS1005',
+        output: '',
+      }),
+    );
+    const results = await runChecks(['K1'], options({ task, runCommand: runner }));
+
+    expect(results).toEqual([
+      {
+        checkId: 'K1',
+        status: 'fail',
+        output: 'src/a.ts(1,1): error TS1005',
+        command: 'tsc --noEmit',
+        exitCode: 1,
+      },
+    ]);
   });
 
   it('refuses a cmd check the policy rejects and never runs it', async () => {
@@ -195,18 +459,95 @@ describe('runChecks', () => {
     expect(runner.calls).toHaveLength(0);
   });
 
-  it('refuses a cmd check before the plan is approved', async () => {
-    const task = taskWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }]);
+  it('approves npm scripts only when the config and the persisted run level are plan', () => {
+    expect(planApprovesNpmScripts({ config: configWith('plan'), state: { approve: 'plan' } })).toBe(
+      true,
+    );
+    expect(planApprovesNpmScripts({ config: configWith('none'), state: { approve: 'none' } })).toBe(
+      false,
+    );
+    expect(
+      planApprovesNpmScripts({ config: configWith('plan'), state: { approve: undefined } }),
+    ).toBe(false);
+  });
+
+  it('runs an npm run check only when the plan approves the scripts', async () => {
+    const task = taskWith([{ id: 'K1', kind: 'cmd', value: 'npm run typecheck', required: true }]);
+    const runner = makeCommandRunner();
+    const approved = await runChecks(['K1'], options({ task, runCommand: runner }));
+
+    expect(approved).toEqual([
+      {
+        checkId: 'K1',
+        status: 'pass',
+        output: 'npm run typecheck',
+        command: 'npm run typecheck',
+        exitCode: 0,
+      },
+    ]);
+    expect(runner.calls[0]?.cmd).toBe('npm');
+    expect(runner.calls[0]?.args).toEqual(['run', 'typecheck']);
+
+    const refused = await runChecks(
+      ['K1'],
+      options({
+        task,
+        npmScriptsApproved: planApprovesNpmScripts({
+          config: configWith('none'),
+          state: { approve: 'none' },
+        }),
+        runCommand: makeCommandRunner(),
+      }),
+    );
+
+    expect(refused).toEqual([
+      { checkId: 'K1', status: 'refused', output: 'runs a package script or binary' },
+    ]);
+  });
+
+  it('refuses an npm run check whose script package.json does not define', async () => {
+    const task = taskWith([{ id: 'K1', kind: 'cmd', value: 'npm run deploy', required: true }]);
+    const results = await runChecks(['K1'], options({ task, runCommand: makeCommandRunner() }));
+
+    expect(results).toEqual([
+      {
+        checkId: 'K1',
+        status: 'refused',
+        output: 'runs the npm script deploy, which package.json does not define',
+      },
+    ]);
+  });
+
+  it('runs a stack tool under approve: none and npx only with --no-install', async () => {
+    const task = taskWith([
+      { id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true },
+      { id: 'K2', kind: 'cmd', value: 'npx some-package', required: true },
+      { id: 'K3', kind: 'cmd', value: 'npx --no-install tsc', required: true },
+    ]);
     const runner = makeCommandRunner();
     const results = await runChecks(
-      ['K1'],
-      options({ task, planApproved: false, runCommand: runner }),
+      ['K1', 'K2', 'K3'],
+      options({ task, npmScriptsApproved: false, runCommand: runner }),
     );
 
     expect(results).toEqual([
-      { checkId: 'K1', status: 'refused', output: 'runs before the plan is approved' },
+      {
+        checkId: 'K1',
+        status: 'pass',
+        output: 'tsc --noEmit',
+        command: 'tsc --noEmit',
+        exitCode: 0,
+      },
+      { checkId: 'K2', status: 'refused', output: 'runs npx without --no-install' },
+      {
+        checkId: 'K3',
+        status: 'pass',
+        output: 'npx --no-install tsc',
+        command: 'npx --no-install tsc',
+        exitCode: 0,
+      },
     ]);
-    expect(runner.calls).toHaveLength(0);
+    expect(runner.calls.map((call) => call.cmd)).toEqual(['tsc', 'npx']);
   });
 
   it('bounds cmd check output to the validation capture limit', async () => {

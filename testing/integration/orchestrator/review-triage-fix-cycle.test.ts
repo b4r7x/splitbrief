@@ -109,7 +109,11 @@ describe('review triage fix cycle', { timeout: 90_000 }, () => {
           return {
             fixTasks: [
               {
-                ...makeTaskSpec({ id: 'T002', suggestedFiles: ['src/shared/widget.ts'] }),
+                ...makeTaskSpec({
+                  id: 'T002',
+                  suggestedFiles: ['src/shared/widget.ts'],
+                  checks: [{ id: 'K2', kind: 'cmd', value: 'node --version', required: true }],
+                }),
                 findingIds: ['F1'],
               },
             ],

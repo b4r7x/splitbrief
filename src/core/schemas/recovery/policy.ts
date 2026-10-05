@@ -21,6 +21,16 @@ const REVIEW_INPUT_ACTIONS = [
   'accept-as-is',
   'end-run',
 ] as const satisfies readonly RecoveryAction[];
+/**
+ * A required check that cannot run is a policy problem, not a finding: the run
+ * cannot judge the candidate and no fix task answers it, so the seat re-issues
+ * the checks once the policy is corrected, or the run pauses or ends.
+ */
+const REQUIRED_CHECK_ACTIONS = [
+  'retry-same-worker',
+  'pause-run',
+  'end-run',
+] as const satisfies readonly RecoveryAction[];
 const TASK_RECOVERY_ACTIONS = [
   'retry-same-worker',
   'route-bigger-worker',
@@ -178,6 +188,8 @@ export function allowedActionsForReason(reason: RecoveryReason): RecoveryAction[
       return copyActions(REVIEW_FAILED_ACTIONS);
     case 'review-input-too-large':
       return copyActions(REVIEW_INPUT_ACTIONS);
+    case 'required-checks-unrunnable':
+      return copyActions(REQUIRED_CHECK_ACTIONS);
     case 'planner-call-failed':
     case 'seat-protocol-error':
       return copyActions(PLANNER_CALL_ACTIONS);

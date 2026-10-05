@@ -64,6 +64,7 @@ import {
   createContinuationHolder,
   readInterruptedPartial,
   readUnresumedBriefCut,
+  recordSteer,
   type ContinuationHolder,
 } from '../continuation.js';
 import { resumeStep } from '../../../core/sessions/run-status.js';
@@ -146,6 +147,7 @@ export type InitializeWorkflowArgs = {
   summaryBase: SummaryBase;
   metadata: SpecMetadata;
   setTrackedState: (s: WorkflowState) => void;
+  getTrackedState?: (() => WorkflowState | undefined) | undefined;
   resumeHolder: ResumeContextHolder;
   isolation: RunIsolation;
   savedState?: WorkflowState | undefined;
@@ -202,7 +204,13 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     allowRepoRunners: runtime.allowRepoRunners,
   });
 
-  const bus = attachRunSinks({ opts, config, projectDir, sessionId });
+  const bus = attachRunSinks({
+    opts,
+    config,
+    projectDir,
+    sessionId,
+    getTrackedState: args.getTrackedState,
+  });
   if (config.approval?.enabled === false) {
     bus.publish({ type: 'approval_mode_changed', ts: Date.now(), mode: 'yolo' });
   }
@@ -497,8 +505,7 @@ function publishResumedSteer(input: {
   const steer = input.steer?.trim();
   if (state === undefined || steer === undefined || steer === '') return;
   if (sessionConversation(state)?.answered === false) return;
-  appendMessage({ projectDir, sessionId }, { role: 'user', phase: state.phase, text: steer });
-  publishUserMessage({ bus, phase: state.phase }, steer);
+  recordSteer({ bus, projectDir, sessionId }, state.phase, steer);
 }
 
 /**

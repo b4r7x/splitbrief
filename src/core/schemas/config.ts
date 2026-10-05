@@ -69,6 +69,7 @@ export const ConfigSchema = z.object({
     testPattern: z.string().min(1).optional(),
     timeoutMs: z.number().int().min(1000).optional(),
     stack: z.enum(STACK_IDS).optional(),
+    render: z.string().min(1).optional(),
   }),
   workflow: z.strictObject({
     approve: ApproveLevelSchema.optional(),

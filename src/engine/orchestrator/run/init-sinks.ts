@@ -1,4 +1,5 @@
 import type { Config } from '../../../core/schemas/config.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { createEventBus } from '../../events/bus.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
 import { createStdoutJsonSink } from '../../events/sinks/stdout-json.js';
@@ -7,6 +8,7 @@ import { createLoggerSink } from '../../events/sinks/logger.js';
 import { createCallEvidenceSink } from '../summary/call-evidence.js';
 import type { EventBus } from '../../events/types.js';
 import { createHookSink } from '../../hooks/sink.js';
+import type { HookContext } from '../../hooks/types.js';
 import type { RunWorkflowOptions } from './init.js';
 
 const initSinkUnsubscribers = new WeakMap<EventBus, Array<() => void>>();
@@ -16,11 +18,12 @@ export type AttachRunSinksInput = {
   config: Config;
   projectDir: string;
   sessionId: string;
+  getTrackedState?: (() => WorkflowState | undefined) | undefined;
 };
 
 /** Returns the run's bus with every configured sink subscribed; sinks from a prior run on the same bus are unsubscribed first. */
 export function attachRunSinks(input: AttachRunSinksInput): EventBus {
-  const { opts, config, projectDir, sessionId } = input;
+  const { opts, config, projectDir, sessionId, getTrackedState } = input;
   const bus = opts.eventBus ?? createEventBus();
   const prev = initSinkUnsubscribers.get(bus);
   if (prev) {
@@ -48,7 +51,19 @@ export function attachRunSinks(input: AttachRunSinksInput): EventBus {
   }
   if (opts._eventSink) unsubs.push(bus.subscribe(opts._eventSink));
   if (config.hooks)
-    unsubs.push(bus.subscribe(createHookSink(config.hooks, { projectDir, sessionId }, bus)));
+    unsubs.push(
+      bus.subscribe(
+        createHookSink(
+          config.hooks,
+          (): HookContext => ({
+            projectDir,
+            workspaceDir: getTrackedState?.()?.workspace?.path ?? projectDir,
+            sessionId,
+          }),
+          bus,
+        ),
+      ),
+    );
   initSinkUnsubscribers.set(bus, unsubs);
   return bus;
 }

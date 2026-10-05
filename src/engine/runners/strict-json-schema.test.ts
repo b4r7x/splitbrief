@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import {
+  CONSULT_ANSWER_JSON_SCHEMA,
+  DEVIATION_CONSULT_ANSWER_JSON_SCHEMA,
+  STALE_CONSULT_ANSWER_JSON_SCHEMA,
+} from '../../core/schemas/consult.js';
 import { PLAN_ANSWER_JSON_SCHEMA } from '../../core/schemas/plan.js';
 import { isStrictJsonSchema } from './strict-json-schema.js';
 
@@ -27,6 +32,23 @@ describe('isStrictJsonSchema', () => {
 
   it('accepts the planning session answer, so planners use the native transport', () => {
     expect(isStrictJsonSchema(PLAN_ANSWER_JSON_SCHEMA)).toBe(true);
+  });
+
+  it('accepts the consult answers, so a codex consult uses the native transport', () => {
+    expect(isStrictJsonSchema(CONSULT_ANSWER_JSON_SCHEMA)).toBe(true);
+    expect(isStrictJsonSchema(STALE_CONSULT_ANSWER_JSON_SCHEMA)).toBe(true);
+    expect(isStrictJsonSchema(DEVIATION_CONSULT_ANSWER_JSON_SCHEMA)).toBe(true);
+  });
+
+  it('emits the consult answers as anyOf, which OpenAI strict mode takes', () => {
+    // Live probe 2026-10-06 (codex --output-schema): HTTP 400 "'oneOf' is not permitted".
+    for (const schema of [
+      CONSULT_ANSWER_JSON_SCHEMA,
+      STALE_CONSULT_ANSWER_JSON_SCHEMA,
+      DEVIATION_CONSULT_ANSWER_JSON_SCHEMA,
+    ]) {
+      expect(JSON.stringify(schema)).not.toContain('"oneOf"');
+    }
   });
 
   it('accepts a strict object reached through $ref', () => {
@@ -57,7 +79,25 @@ describe('isStrictJsonSchema', () => {
     ],
     ['an object without properties', { type: 'object', additionalProperties: false }],
     ['a root union', { anyOf: [leaf, leaf] }],
-    ['a oneOf', { ...leaf, properties: { kind: { oneOf: [leaf, { type: 'null' }] } } }],
+    [
+      'a oneOf, even of closed objects',
+      {
+        ...leaf,
+        properties: {
+          kind: {
+            oneOf: [
+              leaf,
+              {
+                type: 'object',
+                properties: { extra: { type: 'string' } },
+                required: ['extra'],
+                additionalProperties: false,
+              },
+            ],
+          },
+        },
+      },
+    ],
     ['an allOf', { ...leaf, properties: { kind: { allOf: [leaf] } } }],
     [
       'an optional key behind $ref',

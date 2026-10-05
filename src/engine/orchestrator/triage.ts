@@ -8,9 +8,10 @@ import {
   TriageResultSchema,
   type TriageResult,
 } from '../../core/schemas/review.js';
-import type { Task } from '../../core/schemas/task.js';
+import type { Task, TaskId } from '../../core/schemas/task.js';
 import {
   fixCyclesOf,
+  plannerCallsOf,
   type PlannerConversation,
   type ReviewRecord,
   type TriageRecord,
@@ -24,17 +25,20 @@ import type { EventBus } from '../events/types.js';
 import type { Planner } from '../planners/types.js';
 import type { SeatProtocolError } from '../runners/typed-output.js';
 import { checkTaskIdentities } from '../spec/plan-checks.js';
-import { plannerCallsSpent } from './recovery/builders/consult.js';
+import { buildConsultBoundRecoveryIssue, plannerCallsSpent } from './recovery/builders/consult.js';
+import { buildReviewFailedRecoveryIssue } from './recovery/builders/task.js';
+import { buildSeatProtocolErrorRecoveryIssue } from './recovery/builders/seat-protocol.js';
 import { taskFromSpec } from '../spec/plan-tasks.js';
 import { buildTriagePrompt, type TriagePromptInput } from '../spec/prompts/triage.js';
 import { checkVerificationOutput, checkVerificationStatus } from './final-review.js';
-import { publishRunnerCallEvent } from './events.js';
+import { publishError, publishRunnerCallEvent } from './events.js';
 import { runSeatCall, seatFailureFromError } from './escalation/seat-wait.js';
 import { waitForPlannerReply } from './planning/call-loop.js';
 import { askPlannerSession, type PlannerSessionAnswer } from './planner-session.js';
-import { addUsageAndSave, transitionAndSave } from './state-ops.js';
-import type { OrchestratorCallbacks, WorkflowSinks } from './types.js';
-import { checkRegistry, runChecks } from './validation/run-checks.js';
+import { addUsageAndSave, raisePendingRecovery, transitionAndSave } from './state-ops.js';
+import type { OrchestratorCallbacks, WorkflowContext, WorkflowSinks } from './types.js';
+import { checkRegistry, planApprovesNpmScripts, runChecks } from './validation/run-checks.js';
+import { recordCheckRuns } from './evidence/record-checks.js';
 import type { ValidationCommandRunner } from './validation/types.js';
 
 export type TriageContext = Readonly<{
@@ -53,8 +57,10 @@ export type TriageContext = Readonly<{
 }>;
 
 export type TriageRequestInput = Readonly<{
-  review: ReviewRecord;
+  review?: ReviewRecord | undefined;
   inputs: readonly TriageInput[];
+  batch?: number | undefined;
+  afterTaskId?: TaskId | undefined;
 }>;
 
 export type TriageRequestOutcome =
@@ -173,9 +179,9 @@ function promptInput(
     plan: state.plan,
     tasks: state.tasks,
     findings,
-    verdict: input.review.verdict,
+    verdict: input.review?.verdict,
     inputs: input.inputs,
-    verification: input.review.verification,
+    verification: input.review?.verification ?? [],
     earlierConsults: Object.values(state.lineages ?? {}).flatMap(
       (lineage) => lineage.consultRecords,
     ),
@@ -197,15 +203,24 @@ async function runTriageVerification(
       plan: state.plan,
       tasks: state.tasks,
       projectDir: ctx.workspaceDir,
+      sessionId: ctx.sessionId,
+      checkoutDir: ctx.projectDir,
       config: ctx.config,
       bus: ctx.bus,
       phase: state.phase,
-      planApproved: true,
+      npmScriptsApproved: planApprovesNpmScripts({ config: ctx.config, state }),
       ...(state.discoveredValidation !== undefined && {
         discoveredValidation: state.discoveredValidation,
       }),
       ...(ctx.signal !== undefined && { signal: ctx.signal }),
       ...(ctx.runCommand !== undefined && { runCommand: ctx.runCommand }),
+    });
+    await recordCheckRuns({
+      projectDir: ctx.projectDir,
+      sessionId: ctx.sessionId,
+      workspaceDir: ctx.workspaceDir,
+      state,
+      runs,
     });
     entries.push({
       id: verificationKey('finding', entry.findingId),
@@ -238,7 +253,7 @@ export async function requestTriage(
     ctx.onStateChange?.(next);
   };
 
-  const findings = reviewOutcomeOf(input.review).blocking;
+  const findings = input.review === undefined ? [] : reviewOutcomeOf(input.review).blocking;
   const prompt = promptInput(state, ctx, input, findings);
   const compose = (): string => buildTriagePrompt(prompt);
   const call = {
@@ -305,7 +320,7 @@ export async function requestTriage(
       record: {
         cycle: fixCyclesOf(state).used + 1,
         at: nowIso(),
-        reviewAt: input.review.at,
+        ...(input.review !== undefined && { reviewAt: input.review.at }),
         inputIds: [
           ...findings.map((finding) => finding.id),
           ...input.inputs.map((entry) => entry.id),
@@ -322,10 +337,10 @@ export async function requestTriage(
 
 function findingFor(
   id: string,
-  review: ReviewRecord,
+  review: ReviewRecord | undefined,
   inputs: readonly TriageInput[],
 ): FixFinding | undefined {
-  const finding = review.verdict.findings.find((candidate) => candidate.id === id);
+  const finding = review?.verdict.findings.find((candidate) => candidate.id === id);
   if (finding !== undefined) {
     return { id: finding.id, text: finding.text, acceptance: finding.acceptance };
   }
@@ -347,13 +362,15 @@ function maxPlanBatch(tasks: readonly Task[]): number {
 export function applyTriage(
   ctx: Pick<TriageContext, 'projectDir' | 'sessionId' | 'workspaceDir'>,
   state: WorkflowState,
-  review: ReviewRecord,
+  review: ReviewRecord | undefined,
   inputs: readonly TriageInput[],
   result: TriageResult,
+  batch?: number | undefined,
+  afterTaskId?: TaskId | undefined,
 ): Readonly<{ state: WorkflowState; tasks: Task[] }> {
   if (result.fixTasks.length === 0) return { state, tasks: [] };
   const cycle = fixCyclesOf(state).used + 1;
-  const batch = maxPlanBatch(state.tasks) + cycle;
+  const fixBatch = batch ?? maxPlanBatch(state.tasks) + cycle;
   const converted = insertTasks(result.fixTasks, state.tasks, (spec) => {
     const task = taskFromSpec(spec, ctx.workspaceDir);
     const findings = spec.findingIds.flatMap((id) => {
@@ -362,7 +379,7 @@ export function applyTriage(
     });
     return {
       ...task,
-      batch,
+      batch: fixBatch,
       fix: { cycle, findings },
       description: fixBriefDescription(task.description, findings),
     };
@@ -370,6 +387,7 @@ export function applyTriage(
   const next = transitionAndSave({ projectDir: ctx.projectDir, sessionId: ctx.sessionId }, state, {
     type: 'INSERT_TASKS',
     parentId: null,
+    ...(afterTaskId !== undefined && { afterTaskId }),
     tasks: converted,
   });
   return {
@@ -415,7 +433,15 @@ export async function runTriage(
       if ('error' in requested) return { kind: 'error', error: requested.error };
       const result = requested.result;
       if (result.ask === null) {
-        const applied = applyTriage(ctx, state, input.review, inputs, result);
+        const applied = applyTriage(
+          ctx,
+          state,
+          input.review,
+          inputs,
+          result,
+          input.batch,
+          input.afterTaskId,
+        );
         apply(applied.state);
         return { kind: 'triaged', tasks: applied.tasks };
       }
@@ -434,4 +460,72 @@ export async function runTriage(
     ];
     apply(transitionAndSave(ref, state, { type: 'QUEUE_TRIAGE', inputs }));
   }
+}
+
+/**
+ * A check-sourced triage that could not answer — the planner-call bound, a seat
+ * protocol error, or a question the run cannot answer — halts on the plan seat.
+ * `source` names the check run that found the failures.
+ */
+export function haltUnansweredTriage(args: {
+  wctx: WorkflowContext;
+  state: WorkflowState;
+  outcome: Exclude<TriageOutcome, { kind: 'triaged' }>;
+  setTrackedState: (s: WorkflowState) => void;
+  diagnosis: string;
+  source: string;
+}): WorkflowState {
+  const { wctx, state, outcome } = args;
+  const phase = state.phase;
+  const plannerCalls = plannerCallsOf(state);
+  const issue =
+    outcome.kind === 'bound-spent'
+      ? buildConsultBoundRecoveryIssue({
+          reason: 'planner-calls-spent',
+          lastDiagnosis: args.diagnosis,
+          plannerCalls: plannerCalls.used,
+          plannerCallAllowance: plannerCalls.allowance,
+          phase,
+          createdAt: nowIso(),
+        })
+      : outcome.kind === 'error'
+        ? buildSeatProtocolErrorRecoveryIssue({ error: outcome.error, phase, createdAt: nowIso() })
+        : buildReviewFailedRecoveryIssue({
+            phase,
+            detail: `The ${args.source} triage asked a question this run has no way to answer.`,
+            createdAt: nowIso(),
+          });
+  publishError({ bus: wctx.bus, phase, message: issue.message });
+  return raisePendingRecovery(
+    { projectDir: wctx.projectDir, sessionId: wctx.sessionId, bus: wctx.bus },
+    state,
+    issue,
+    args.setTrackedState,
+  );
+}
+
+/** Triaged fix work spends one fix cycle; appended tasks announce it. */
+export function startFixCycle(args: {
+  wctx: WorkflowContext;
+  state: WorkflowState;
+  setTrackedState: (s: WorkflowState) => void;
+  taskIds: readonly TaskId[];
+}): WorkflowState {
+  const { wctx } = args;
+  const state = transitionAndSave(
+    { projectDir: wctx.projectDir, sessionId: wctx.sessionId },
+    args.state,
+    { type: 'START_FIX_CYCLE' },
+  );
+  args.setTrackedState(state);
+  if (args.taskIds.length > 0) {
+    wctx.bus.publish({
+      type: 'review_fix_started',
+      ts: Date.now(),
+      phase: state.phase,
+      cycle: fixCyclesOf(state).used,
+      taskIds: [...args.taskIds],
+    });
+  }
+  return state;
 }

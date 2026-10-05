@@ -20,7 +20,7 @@ const event: EngineEvent = {
   action: 'create',
 };
 
-const ctx = { projectDir: '/tmp', sessionId: 'sess-1' };
+const ctx = { projectDir: '/tmp', workspaceDir: '/tmp/workspace', sessionId: 'sess-1' };
 
 function mkEntry(overrides?: Parameters<typeof makeCommandHookEntry>[0]) {
   return makeCommandHookEntry({ command: 'echo', ...overrides });
@@ -28,6 +28,12 @@ function mkEntry(overrides?: Parameters<typeof makeCommandHookEntry>[0]) {
 
 const reportArgvScript =
   'process.stdout.write(JSON.stringify({ decision: "deny", message: process.argv.slice(2).join(" ") }))';
+
+const reportStdinScript = [
+  "import { readFileSync } from 'node:fs';",
+  "const payload = JSON.parse(readFileSync(0, 'utf8'));",
+  "process.stdout.write(JSON.stringify({ decision: 'deny', message: payload.workspaceDir }));",
+].join('\n');
 
 async function withTempScript<T>(
   source: string,
@@ -215,6 +221,14 @@ describe('runHook', () => {
       );
       expect(outcome.kind).toBe('deny');
       if (outcome.kind === 'deny') expect(outcome.message).toBe('--mode=implementing');
+    });
+  });
+
+  it('carries the run workspace in the hook stdin payload', async () => {
+    await withTempScript(reportStdinScript, async (scriptPath) => {
+      const outcome = await runHook(mkEntry({ command: 'node', args: [scriptPath] }), event, ctx);
+      expect(outcome.kind).toBe('deny');
+      if (outcome.kind === 'deny') expect(outcome.message).toBe(ctx.workspaceDir);
     });
   });
 });

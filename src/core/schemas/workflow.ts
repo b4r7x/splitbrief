@@ -63,6 +63,13 @@ export const QueuedMessageSchema = z.object({
   deliveredViaNative: z.boolean(),
   nativeDeliveryState: z.enum(['pending', 'injecting', 'delivered']).default('pending'),
   drainedAt: z.string().optional(),
+  deliveredTo: z
+    .object({
+      implementer: z.string().optional(),
+      consult: z.string().optional(),
+      reviewer: z.string().optional(),
+    })
+    .optional(),
   origin: z.enum(['user-input', 'clarification']).optional(),
   question: z.string().optional(),
 });
@@ -131,6 +138,7 @@ export const LineageRecordSchema = z.object({
   replacedParents: z.array(TaskSchema).default([]),
   notes: z.array(z.string()).default([]),
   carriedFailure: z.string().optional(),
+  corrections: z.array(z.string()).optional(),
 });
 export type LineageRecord = z.infer<typeof LineageRecordSchema>;
 
@@ -144,11 +152,6 @@ export function plannerCallsOf(state: Pick<WorkflowState, 'plannerCalls'>): Plan
   return state.plannerCalls ?? { used: 0, allowance: BOUNDS.plannerCallsPerRun };
 }
 
-/** The run's decision-confirm counter, with the initial allowance for a run without one. */
-export function decisionConfirmsOf(state: Pick<WorkflowState, 'decisionConfirms'>): PlannerCalls {
-  return state.decisionConfirms ?? { used: 0, allowance: BOUNDS.decisionConfirmsPerRun };
-}
-
 export const FixCyclesSchema = z.object({
   used: nonnegativeInteger,
   allowance: nonnegativeInteger,
@@ -158,6 +161,7 @@ export type FixCycles = z.infer<typeof FixCyclesSchema>;
 
 export const ReviewRecordSchema = z.object({
   scope: z.enum(['task', 'final']).optional(),
+  afterTaskId: TaskIdSchema.optional(),
   cycle: z.number().int(),
   verdict: ReviewVerdictSchema,
   outcome: z.enum(['pass', 'pass-with-notes', 'fail']),
@@ -194,6 +198,7 @@ export type TriageRecord = z.infer<typeof TriageRecordSchema>;
 export const PendingTriageSchema = z.object({
   inputs: z.array(TriageInputSchema),
   question: TriageResultSchema.shape.ask.optional(),
+  reviewAfterTaskId: TaskIdSchema.optional(),
 });
 
 export const SeatWaitSchema = z.object({
@@ -233,6 +238,7 @@ const WorkflowStateFields = {
   messageQueue: z.array(QueuedMessageSchema).default([]),
   lineages: z.record(z.string(), LineageRecordSchema).optional(),
   plannerCalls: PlannerCallsSchema.optional(),
+  // Read and ignore this field for old sessions.
   decisionConfirms: PlannerCallsSchema.optional(),
   userAnswers: PlannerConversationSchema.shape.answers.optional(),
   seatWait: SeatWaitSchema.optional(),
@@ -248,6 +254,7 @@ const WorkflowStateFields = {
   discoveredValidation: DiscoveredValidationSchema.optional(),
   plan: PlanSchema.optional(),
   validationBaseline: ValidationBaselineSchema.optional(),
+  fullSuiteBaseline: z.partialRecord(ValidationStageSchema, z.array(z.string())).optional(),
   reviewFixes: z
     .object({
       cycle: z.number().int(),
@@ -258,6 +265,10 @@ const WorkflowStateFields = {
   review: ReviewRecordSchema.optional(),
   triage: z.array(TriageRecordSchema).optional(),
   pendingTriage: PendingTriageSchema.optional(),
+  pendingScheduledReview: z.object({ afterTaskId: TaskIdSchema }).optional(),
+  pendingBoundary: z
+    .object({ batch: z.number().int().positive(), afterTaskId: TaskIdSchema })
+    .optional(),
   reviewStatus: z.enum(REVIEW_STATUSES).optional(),
   interruptedStep: z
     .object({

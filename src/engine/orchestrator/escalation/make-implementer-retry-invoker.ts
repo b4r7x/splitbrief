@@ -3,6 +3,7 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { Implementer, RetryOptions } from '../../implementers/types.js';
 import type { LanguageContext } from '../../spec/prompts/language-context.js';
 import type { ProjectContext } from '../../../core/state/types.js';
+import { briefCorrections } from '../../../core/state/machine.js';
 import type { SeatAttempt } from '../../runners/transient.js';
 import { addUsageAndSave } from '../state-ops.js';
 import { implementerSeatAttempt, runSeatCall } from './seat-wait.js';
@@ -34,6 +35,7 @@ export function makeImplementerRetryInvoker(opts: {
   }) => {
     const effectiveConfig = opts.config ?? config;
     const produce = async (attemptSignal: AbortSignal): Promise<SeatAttempt<RetryInvokeResult>> => {
+      const corrections = briefCorrections(seat.state, task.id);
       const result = await (opts.implementer ?? implementer).retry({
         task,
         projectDir,
@@ -51,6 +53,7 @@ export function makeImplementerRetryInvoker(opts: {
         fileIgnoreProjectDir,
         changeDetection,
         plan: seat.state.plan,
+        ...(corrections.length > 0 && { continuation: { steer: corrections.join('\n\n') } }),
         allowNoChange: task.fix !== undefined,
         ...(createdByThisTask === undefined ? {} : { createdByThisTask }),
       });

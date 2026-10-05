@@ -307,7 +307,7 @@ Stopping keeps workspace changes. Closing follows [the Apply close path](./WORKF
 
 ### Drift detection (final review)
 
-**What it does.** Before final review, the orchestrator computes a deterministic drift report comparing the Task Brief against the actual git diff and the evidence ledger. Findings include out-of-scope file edits, missing target files, orphan diffs, out-of-bounds substring matches, missing observed evidence, and failed tasks that nevertheless left changes.
+**What it does.** Before final review, the orchestrator computes a deterministic drift report comparing the Task Brief against the actual git diff and the captured brief diffs. Findings include out-of-scope file edits, missing target files, orphan diffs, out-of-bounds substring matches, and failed tasks that nevertheless left changes.
 
 **How to use.** Always runs. Persisted as `.splitbrief/sessions/<id>/drift-report.json`; rendered into the final review prompt under `## Deterministic Drift Report`. Event: `drift_report` carrying `passed`, `score`, `errorCount`, `warningCount`. Visible in a closed run’s `Run` block's `Scope` row — `score 1.00`, `score 0.60 · 1 error · 1 warning`, or `not checked`. That row is the only place the screen names the concept.
 
@@ -326,9 +326,9 @@ workflow:
 
 Persisted as `drift-chains.json`. Surfaces as `chainDriftSummary` in `summary.json`.
 
-### Evidence ledger
+### Checks log
 
-**What it does.** Per-task validation, retry, consult, and final-review log. Captures expected evidence (from `task.evidence` ++ `task.tests`) alongside observed evidence strings the orchestrator emits (`typecheck passed`, `lint passed`, `test passed`, `diff written for <n> files`, `task reached done`, `task reached escalated`, `final review written`, `skipped: <reason>`). A stage that did not run is recorded as `test skipped (<reason>)` with `skipped: true` on the entry — never as passed — and a skipped test stage counts as missing evidence in the drift report. Every entry carries `briefHash` so post-hoc audits can detect brief mutations. The review packet lists the expected evidence the ledger did not record under `validation.missingEvidenceWarnings`, labeled informational. That list is never a review blocker on its own: SPLITBRIEF records only its own facts, so the reviewer files such a gap as a Note at most.
+**What it does.** Per-task validation, retry, consult, batch, pre-review and final-review log. Each task entry carries a `checks` array, one entry per check run: the stage runs and the registered `test`, `cmd` and `render` checks, each with its id, command, exit code, a bounded output tail, its artifact paths and their sha256, the workspace snapshot it ran against, and its time. The log replaces the prose evidence matching — an older `evidence.json` still loads, with its retired `expectedEvidence`/`observedEvidence` fields optional and ignored. Every entry carries `briefHash` so post-hoc audits can detect brief mutations. The review packet prints a `## Checks Log` section with each entry and each path the run read outside the workspace (`isolation_outside_read`), or `No checks recorded.`
 
 **How to use.** Always runs. Persisted at `.splitbrief/sessions/<id>/evidence.json` (mode 0o600). A closed run reads it twice over: it seeds the `Briefs` section with every planned brief, and its validated count closes the Run block's `Review` row (`3/3 briefs validated`).
 
@@ -366,6 +366,7 @@ Persisted as `drift-chains.json`. Surfaces as `chainDriftSummary` in `summary.js
 | `/queue [show\|clear]` | Show or clear the message queue |
 | `/run <accept\|reject>` | Accept or reject what this run wrote (rejection needs `/run reject confirm`) |
 | `/resume` | Continue a paused or stopped run |
+| `/steer <correction>` | Stop now and continue the run with your correction |
 | `/end` | Close the run, keeping every change on disk |
 | `/stop` | Open the inline session-options menu (Stop now, Pause after this brief, End run) |
 
@@ -468,12 +469,12 @@ The fraction counts briefs that **passed their checks** — a started brief is n
 
 **What it does.** One byline under the composer carrying the run's live state.
 
-**Format.** The lead is the live status — `⠙ Implementing… 1:12`, `⠙ Planning… 0:41` during the planning session (`Compiling briefs…` only on an older run's briefs call), `Waiting for you`, `Still working — silent 3m 0s` (only `Still working` while the build block is on screen, whose freshness line states the silence; where no block is painted — during planning, or while the stop menu takes its rows — the byline carries the count), a stop state such as `Paused at T003 · Partial changes kept`, or the closing `Stopped by you` / `Build failed`. After it, in this order and dropped from the right as the width shrinks: a hint, `<n> queued`, the ETA, `y copy` when the focused region has something to copy, and the worktree name. The elapsed time is the step's own. During planning the step is the planner call that is open, counted from the moment that call opened; the first call after the run starts or resumes counts from that start, so the preparation before it stays on the clock. In the build and the final review the step is the stage. A resume starts the clock again, and the minutes the run spent waiting on you — a planner question, an approval gate — are subtracted, so answering a question does not make the next brief look slow.
+**Format.** The lead is the live status — `⠙ Implementing… 1:12`, `⠙ Planning… 0:41` during the planning session (`Compiling briefs…` only on an older run's briefs call), `Waiting for you`, `Still working — silent 3m 0s` (only `Still working` while the build block is on screen, whose freshness line states the silence; where no block is painted — during planning, or while the stop menu takes its rows — the byline carries the count), a stop state such as `Paused at T003 · Partial changes kept`, or the closing `Stopped by you` / `Build failed`. After it, in this order and dropped from the right as the width shrinks: a hint, the queued text, the ETA, `y copy` when the focused region has something to copy, and the worktree name. Queued text reads `<n> queued` while the planner or reviewer owns the queue, and `queued for after T00N` while a brief is building, naming the brief the text waits for. The elapsed time is the step's own. During planning the step is the planner call that is open, counted from the moment that call opened; the first call after the run starts or resumes counts from that start, so the preparation before it stays on the clock. In the build and the final review the step is the stage. A resume starts the clock again, and the minutes the run spent waiting on you — a planner question, an approval gate — are subtracted, so answering a question does not make the next brief look slow.
 
 **Steer, queue, interrupt.** The composer means a different thing in each state, and its placeholder says which:
 
-- **Queue** — while a planning call is running, the placeholder reads `Queue a message for the planner…`; while a brief is building, it reads `Queue a message for after this brief…`; text you send waits for the next safe boundary. `/queue show` and `/queue clear` inspect and discard what is pending.
-- **Steer** — while the run is parked (`Stop now`, or an interrupted call), text you send steers the resumed run, but a blank Enter does not resume a run parked in this process — it answers with `type instructions or /resume`. A continuable run at rest resumes on a blank Enter.
+- **Queue** — while a planning call is running, the placeholder reads `Queue a message for the planner…`; while a brief is building, it reads `Queue a message for after this brief…`; text you send waits for the next safe boundary. At that boundary it is delivered as the next brief's implementer steer and to the next consult on that task. `/queue show` and `/queue clear` inspect and discard what is pending.
+- **Steer** — while the run is parked (`Stop now`, or an interrupted call), text you send steers the resumed run, but a blank Enter does not resume a run parked in this process — it answers with `type instructions or /resume`. A continuable run at rest resumes on a blank Enter. `/steer <correction>` is the explicit form: it stops the run now and continues it with the correction, holding the text through the stop race.
 - **Interrupt** — `ctrl+c` stops the run at once, `esc` opens the stop menu. Neither is reachable by typing.
 
 ### Run result menu
@@ -659,7 +660,7 @@ Offered only when the PLAN seat can receive images; on a seat without vision the
 ## See also
 
 - [WORKFLOW.md](./WORKFLOW.md) — phase state machine, abort/queue/continue, resume semantics.
-- [TASK-CONTRACT.md](./TASK-CONTRACT.md) — Task Brief v1, evidence ledger, drift report.
+- [TASK-CONTRACT.md](./TASK-CONTRACT.md) — Task Brief v1, checks log, drift report.
 - [CONFIGURATION.md](./CONFIGURATION.md) — every config field, default, and validation rule.
 - [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) — slash command reference, dispatch, phase guards.
 - [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) — workflow hooks: events, schemas, trust, security.

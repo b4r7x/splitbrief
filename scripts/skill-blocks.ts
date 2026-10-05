@@ -359,8 +359,9 @@ function consultTable(): string {
     'Before dispatch, changed inputs get one stale consult per revision: guidance or rewrite-task.',
     'A stale consult spends no run planner decision. A blocked report consults at once.',
     'A hand-back with new decisions gets one decision-confirm before validation: confirm (how) or ask-user (what).',
-    `It is no consult: it spends the run's ${BOUNDS.decisionConfirmsPerRun} decision-confirms, never a consult or a planner decision.`,
-    'With those spent, warn, leave the decisions out of the ledger and validate; it never pauses.',
+    "Decision-confirm runs at most once per attempt, bounded by the brief's attempts.",
+    'It spends no run counter, never a lineage consult or a planner decision.',
+    'A failed or malformed confirm answer warns, leaves the decisions out of the ledger and validates. It never pauses.',
     'When a bound is spent, pause and keep the work. Ask: continue with a note / skip / end.',
     `Continuing grants ${BOUNDS.extraConsultsPerLineage} more consult and ${BOUNDS.extraAttemptsPerLineage} more attempts, or ${BOUNDS.extraPlannerCallsPerRun} more planner decisions, and replays the brief as a retry with the last failing output.`,
   ].join('\n');

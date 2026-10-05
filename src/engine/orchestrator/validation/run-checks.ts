@@ -1,3 +1,8 @@
+import { randomUUID } from 'node:crypto';
+import { copyFile, mkdir, readFile, readdir } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { resolveApproveLevel } from '../../../core/config/runtime/resolve.js';
+import { rendersDir } from '../../../core/paths.js';
 import { STAGE_TIMEOUT_MS } from '../../../core/pipeline-spec/gates.js';
 import { readPackageJson } from '../../../core/project-meta.js';
 import type { PackageScriptsReadinessInput } from '../../../core/readiness/checks/validation.js';
@@ -5,26 +10,33 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { Plan } from '../../../core/schemas/plan.js';
 import type { Check, Task } from '../../../core/schemas/task.js';
-import type { DiscoveredValidation } from '../../../core/schemas/workflow.js';
+import type { DiscoveredValidation, WorkflowState } from '../../../core/schemas/workflow.js';
 import { isENOENT, processError } from '../../../lib/process/errors.js';
 import { runCommand } from '../../../lib/process/spawn/run-command.js';
 import { parseShellCommand } from '../../../utils/parse-shell-command.js';
-import { redactSecrets } from '../../../utils/redact.js';
-import { truncateByChars } from '../../../utils/truncate.js';
+import { sha256Hex } from '../../../utils/sha256.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import type { EventBus } from '../../events/types.js';
 import { checkCommandRefusal } from '../planning/sanitize-discovered-validation.js';
 import type { ValidationResult } from './result.js';
 import { buildStageContext, planStage } from './run.js';
-import { MAX_VALIDATION_OUTPUT_CHARS, runValidationStep } from './stage.js';
+import { boundedOutputTail, runValidationStep } from './stage.js';
 import type { ValidationCommandRunner } from './types.js';
 
 export type CheckRunStatus = 'pass' | 'fail' | 'not-runnable' | 'refused' | 'unknown';
+
+export type CheckRunArtifact = {
+  path: string;
+  sha256: string;
+};
 
 export type CheckRunResult = {
   checkId: string;
   status: CheckRunStatus;
   output: string;
+  command?: string | undefined;
+  exitCode?: number | undefined;
+  artifacts?: CheckRunArtifact[] | undefined;
 };
 
 export type RunChecksOptions = {
@@ -32,14 +44,23 @@ export type RunChecksOptions = {
   tasks?: readonly Task[] | undefined;
   plan?: Plan | undefined;
   projectDir: string;
+  sessionId?: string | undefined;
+  checkoutDir?: string | undefined;
   config: Config;
   bus: EventBus;
   phase: Phase;
-  planApproved: boolean;
+  npmScriptsApproved: boolean;
   discoveredValidation?: DiscoveredValidation | undefined;
   signal?: AbortSignal | undefined;
   runCommand?: ValidationCommandRunner | undefined;
 };
+
+export function planApprovesNpmScripts(opts: {
+  config: Config;
+  state: Pick<WorkflowState, 'approve'>;
+}): boolean {
+  return resolveApproveLevel(opts.config) === 'plan' && opts.state.approve === 'plan';
+}
 
 export function checkRegistry(
   opts: Pick<RunChecksOptions, 'task' | 'tasks' | 'plan'>,
@@ -51,10 +72,6 @@ export function checkRegistry(
       ...(opts.task?.checks ?? []),
     ].map((check) => [check.id, check]),
   );
-}
-
-function boundedOutput(text: string): string {
-  return redactSecrets(truncateByChars(text, MAX_VALIDATION_OUTPUT_CHARS));
 }
 
 function checkStatus(result: ValidationResult): CheckRunStatus {
@@ -109,7 +126,21 @@ async function runTestCheck(
     stack: stageContext.stack,
     signal: opts.signal,
   });
-  return { checkId: check.id, status: checkStatus(result), output: checkOutput(result) };
+  if (result.missingExecutable !== undefined) {
+    return {
+      checkId: check.id,
+      status: 'not-runnable',
+      output: `${result.missingExecutable} not found`,
+      command: result.command,
+    };
+  }
+  return {
+    checkId: check.id,
+    status: checkStatus(result),
+    output: checkOutput(result),
+    ...(result.command !== undefined && { command: result.command }),
+    ...(result.exitCode !== undefined && { exitCode: result.exitCode }),
+  };
 }
 
 async function runCommandCheck(
@@ -119,7 +150,7 @@ async function runCommandCheck(
   packageScripts: PackageScriptsReadinessInput,
 ): Promise<CheckRunResult> {
   const refusal = checkCommandRefusal(check.value, {
-    planApproved: opts.planApproved,
+    npmScriptsApproved: opts.npmScriptsApproved,
     packageScripts,
   });
   if (refusal !== null) return { checkId: check.id, status: 'refused', output: refusal };
@@ -135,22 +166,127 @@ async function runCommandCheck(
       signal: opts.signal,
     });
     const output = [stdout, stderr].filter((part) => part.trim().length > 0).join('\n');
-    return { checkId: check.id, status: 'pass', output: boundedOutput(output) };
+    return {
+      checkId: check.id,
+      status: 'pass',
+      output: boundedOutputTail(output),
+      command: check.value,
+      exitCode: 0,
+    };
   } catch (err: unknown) {
     if (processError.isExitCode(err)) {
       const output = [err.data.output, err.data.stderr]
         .filter((part) => part.trim().length > 0)
         .join('\n');
-      return { checkId: check.id, status: 'fail', output: boundedOutput(output) };
+      return {
+        checkId: check.id,
+        status: 'fail',
+        output: boundedOutputTail(output),
+        command: check.value,
+        ...(err.data.code !== null && { exitCode: err.data.code }),
+      };
     }
     if (processError.isTimeout(err)) {
-      return { checkId: check.id, status: 'fail', output: boundedOutput(err.message) };
+      return {
+        checkId: check.id,
+        status: 'fail',
+        output: boundedOutputTail(err.message),
+        command: check.value,
+      };
     }
     if (isENOENT(err) || processError.isNotFound(err)) {
-      return { checkId: check.id, status: 'fail', output: `${cmd} not found` };
+      return {
+        checkId: check.id,
+        status: 'not-runnable',
+        output: `${cmd} not found`,
+        command: check.value,
+      };
     }
     throw err;
   }
+}
+
+const RENDER_ID_PATTERN = /^[a-z0-9-]+$/;
+
+async function runRenderCheck(
+  check: Check,
+  opts: RunChecksOptions,
+  run: ValidationCommandRunner,
+): Promise<CheckRunResult> {
+  const template = opts.config.validation.render;
+  if (template === undefined) {
+    return { checkId: check.id, status: 'not-runnable', output: 'validation.render is not set' };
+  }
+  if (!RENDER_ID_PATTERN.test(check.value)) {
+    return {
+      checkId: check.id,
+      status: 'refused',
+      output: `render id "${check.value}" must match ^[a-z0-9-]+$`,
+    };
+  }
+  const [cmd, ...templateArgs] = parseShellCommand(template);
+  if (cmd === undefined) {
+    return { checkId: check.id, status: 'refused', output: 'names no program' };
+  }
+  const executionId = randomUUID();
+  const outDir = join(opts.projectDir, '.test-artifacts', 'ui', `render-${executionId}`);
+  await mkdir(outDir, { recursive: true });
+  const args = templateArgs.map((arg) => {
+    if (arg === '{id}') return check.value;
+    if (arg === '{out}') return outDir;
+    return arg;
+  });
+  const command = [cmd, ...args].join(' ');
+  let exitCode: number;
+  let text: string;
+  try {
+    const { stdout, stderr } = await run(cmd, args, {
+      cwd: opts.projectDir,
+      timeout: validationTimeout(opts.config),
+      label: `check ${check.id}`,
+      signal: opts.signal,
+    });
+    exitCode = 0;
+    text = [stdout, stderr].filter((part) => part.trim().length > 0).join('\n');
+  } catch (err: unknown) {
+    if (processError.isExitCode(err)) {
+      exitCode = err.data.code ?? 1;
+      text = [err.data.output, err.data.stderr].filter((part) => part.trim().length > 0).join('\n');
+    } else if (processError.isTimeout(err)) {
+      return { checkId: check.id, status: 'fail', output: boundedOutputTail(err.message), command };
+    } else if (isENOENT(err) || processError.isNotFound(err)) {
+      return { checkId: check.id, status: 'not-runnable', output: `${cmd} not found`, command };
+    } else {
+      throw err;
+    }
+  }
+  const destDir =
+    opts.checkoutDir !== undefined && opts.sessionId !== undefined
+      ? join(
+          rendersDir({ projectDir: opts.checkoutDir, sessionId: opts.sessionId }, check.id),
+          executionId,
+        )
+      : undefined;
+  const artifacts: CheckRunArtifact[] = [];
+  if (destDir !== undefined) {
+    await mkdir(destDir, { recursive: true });
+    const entries = await readdir(outDir, { recursive: true });
+    const pngs = entries.filter((name) => name.toLowerCase().endsWith('.png')).sort();
+    for (const rel of pngs) {
+      const dest = join(destDir, rel);
+      await mkdir(dirname(dest), { recursive: true });
+      await copyFile(join(outDir, rel), dest);
+      artifacts.push({ path: dest, sha256: sha256Hex(await readFile(dest)) });
+    }
+  }
+  return {
+    checkId: check.id,
+    status: exitCode === 0 ? 'pass' : 'fail',
+    output: boundedOutputTail(text),
+    command,
+    exitCode,
+    artifacts,
+  };
 }
 
 export async function runChecks(
@@ -175,7 +311,7 @@ export async function runChecks(
     if (check === undefined) {
       results.push({ checkId, status: 'unknown', output: `no check ${checkId}` });
     } else if (check.kind === 'render') {
-      results.push({ checkId, status: 'not-runnable', output: 'render checks are not runnable' });
+      results.push(await runRenderCheck(check, opts, run));
     } else if (check.kind === 'cmd') {
       results.push(await runCommandCheck(check, opts, run, packageScripts));
     } else {

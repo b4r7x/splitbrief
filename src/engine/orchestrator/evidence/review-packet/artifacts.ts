@@ -174,6 +174,8 @@ export async function readPacketEvents(
       optionalString(data.reason) ??
       optionalString(data.routingReason);
     const outcome = optionalString(data.outcome) ?? optionalString(data.contextFit);
+    const category = optionalString(data.category);
+    const code = optionalString(data.code);
     const event: PacketEvent = {
       ts: entry.ts,
       type: entry.type,
@@ -181,6 +183,8 @@ export async function readPacketEvents(
       ...(entry.taskId !== undefined && { taskId: entry.taskId }),
       ...(optionalString(data.issueId) !== undefined && { issueId: optionalString(data.issueId) }),
       ...(reason !== undefined && { reason }),
+      ...(category !== undefined && { category }),
+      ...(code !== undefined && { code }),
       ...(files !== undefined && { files }),
       ...(affectedTaskIds !== undefined && { affectedTaskIds }),
       ...(availableActions !== undefined && { availableActions }),

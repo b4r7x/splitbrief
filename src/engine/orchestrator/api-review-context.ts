@@ -2,6 +2,7 @@ import { DRIFT_REPORT_FILE, EVIDENCE_FILE, SPEC_FILE, TASKS_FILE } from '../../c
 import { estimateTokens } from '../../core/tokens/estimate.js';
 import { splitDiffByFile } from '../../lib/git/diff-sections.js';
 import { apiPlanningInputBudget, type ApiContextManifestEntry } from '../planners/api-context.js';
+import { renderWholeChecksLog } from './evidence/review-packet/render.js';
 import {
   buildFinalReviewPrompt,
   type ReviewPlanData,
@@ -22,10 +23,6 @@ const NO_TOOLS_NOTICE =
 /** What stands in for a specification in a run that wrote none. */
 const SUBSTITUTED_REQUEST =
   'This run wrote no specification. The original feature request below is the requirement this implementation is measured against.';
-
-/** The ledger's own record that nothing ran, which is evidence, not absence. */
-const NO_VALIDATION_RECORDED =
-  'Recorded commands: none. This run’s evidence ledger contains no test, typecheck or lint stage, so there is no validation result to quote. Report validation as not run, and never assert a result the record does not contain.';
 
 const BINARY_BODY_RE = /^(?:Binary files .* differ|GIT binary patch)$/m;
 
@@ -77,6 +74,8 @@ export type ApiReviewContextInput = Readonly<{
   consultLog?: string | undefined;
   triageLog?: string | undefined;
   planningAnswers?: string | undefined;
+  /** The render scenarios the checks log recorded, attached or as a manifest. */
+  renders?: string | undefined;
   /** The run's skills block; counted against the seat like every other part it carries. */
   skillsContext?: string | undefined;
   /** The reviewer seat's configured window; its allocation is derived from it. */
@@ -216,9 +215,11 @@ export function buildApiReviewContext(input: ApiReviewContextInput): ApiReviewCo
   const drift = required(DRIFT_REPORT_FILE, input.driftSection ?? '');
   // The ledger's own record that nothing ran is complete evidence of a skipped
   // check; a ledger nobody could read is not.
-  const validation = required(
+  const checksLog = required(
     EVIDENCE_FILE,
-    input.validation.recorded ? (input.validation.evidence ?? NO_VALIDATION_RECORDED) : '',
+    input.validation.recorded
+      ? (input.validation.evidence ?? renderWholeChecksLog({ entries: [], outsideReadPaths: [] }))
+      : '',
   );
 
   const queueText = input.queueText ?? '';
@@ -253,11 +254,12 @@ export function buildApiReviewContext(input: ApiReviewContextInput): ApiReviewCo
     ...(input.consultLog !== undefined && { consultLog: input.consultLog }),
     ...(input.triageLog !== undefined && { triageLog: input.triageLog }),
     ...(input.planningAnswers !== undefined && { planningAnswers: input.planningAnswers }),
+    ...(input.renders !== undefined && { renders: input.renders }),
     ...(input.taskIds !== undefined && { taskIds: input.taskIds }),
     ...(input.criterionIds !== undefined && { criterionIds: input.criterionIds }),
     changeCoverage: coverage,
     driftReport: drift,
-    validationEvidence: validation,
+    checksLog,
     skillsContext: input.skillsContext,
   });
   const text = queueText + prompt;

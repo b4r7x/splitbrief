@@ -1,6 +1,6 @@
 import type { Task } from '../../../core/schemas/task.js';
 import { isTaskCompleted, taskFiles } from '../../../core/schemas/task.js';
-import type { EvidenceLedger, EvidenceTask } from '../../../core/schemas/evidence.js';
+import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
 import type { DriftFinding, DriftReport } from '../../../core/schemas/drift.js';
 import {
   PLAN_FILE,
@@ -29,25 +29,6 @@ export type AnalyzeBriefDriftInput = {
 
 function isFailedOrSkipped(status: Task['status']): boolean {
   return status === 'failed' || status === 'skipped';
-}
-
-// Bookkeeping the orchestrator stamps on every completed task ('task reached
-// done', 'diff written for …', 'final review written') would satisfy the
-// missing-evidence check by construction — a gauge fed by its own stamps can
-// never fire. Only validation outcomes and implementer-reported evidence
-// count as observed.
-const SELF_STAMPED_EVIDENCE =
-  /^(?:task reached done$|task reached escalated$|diff written for |final review written$|skipped: |[a-z]+ skipped \()/;
-
-function isInformativeEvidence(evidence: string): boolean {
-  return !SELF_STAMPED_EVIDENCE.test(evidence);
-}
-
-// A test stage the validator skipped proves nothing, so a task whose only test
-// record is a skipped one is missing evidence even when other stages spoke.
-function testEvidenceWasSkipped(entry: EvidenceTask): boolean {
-  const tests = entry.validation.filter((v) => v.stage === 'test');
-  return tests.length > 0 && tests.every((v) => v.skipped === true);
 }
 
 // Root-level planner phase outputs. The planner writes these into the project
@@ -232,21 +213,6 @@ export function analyzeBriefDrift(input: AnalyzeBriefDriftInput): DriftReport {
       code: 'orphan_diff',
       message: `Diff contains ${runProducedFiles.length} file(s) but every task is failed or skipped.`,
     });
-  }
-
-  if (input.ledger) {
-    for (const entry of input.ledger.tasks) {
-      if (!isTaskCompleted(entry.status)) continue;
-      if (entry.expectedEvidence.length === 0) continue;
-      if (!entry.observedEvidence.some(isInformativeEvidence) || testEvidenceWasSkipped(entry)) {
-        findings.push({
-          severity: 'warning',
-          code: 'missing_evidence',
-          taskId: entry.id,
-          message: `Task ${entry.id} expected evidence but none was observed.`,
-        });
-      }
-    }
   }
 
   let score = 1;

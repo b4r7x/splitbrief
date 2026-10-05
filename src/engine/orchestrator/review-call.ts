@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import type { Attachment } from '../../core/schemas/attachment.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { Reviewer } from '../reviewers/types.js';
 import type { EventBus } from '../events/types.js';
@@ -17,6 +18,8 @@ export type RunReviewerCallOptions = {
   sessionId: string;
   bus: EventBus;
   state: WorkflowState;
+  /** The render images the reviewer takes, when its seat accepts them. */
+  images?: readonly Attachment[] | undefined;
   signal?: AbortSignal | undefined;
 };
 
@@ -41,6 +44,7 @@ export async function runReviewerCall(
       onOutput: createBusTextHandler({ bus, phase: opts.state.phase }, { content: 'markdown' }),
       signal: opts.signal,
     },
+    ...(opts.images !== undefined && { images: [...opts.images] }),
   });
   const result = await requestTyped({
     prompt,

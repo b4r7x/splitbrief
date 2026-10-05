@@ -35,6 +35,7 @@ function haltsLocalRetries(outcome: RunnerFailureOutcomeState): boolean {
   return (
     outcome === 'unauthenticated' ||
     outcome === 'usage-limit' ||
+    outcome === 'tool-use-limit' ||
     recoveryBuilderForRunnerOutcome(outcome) !== undefined
   );
 }
@@ -140,6 +141,16 @@ export async function runLocalRetries(
 
   if (isAbortedOutcome(lastError, ctx.signal)) {
     return { state, task, lastError, attempts, result: failedRetry(attempts) };
+  }
+
+  if (opts.initialFailure?.outcome === 'tool-use-limit') {
+    return { state, task, lastError, attempts, lastFailure: opts.initialFailure };
+  }
+
+  // An input the tool refuses as too large is reproduced by every further
+  // attempt; the builder halts the ladder instead of spending a retry on it.
+  if (opts.initialFailure?.outcome === 'input-too-large') {
+    return { state, task, lastError, attempts, lastFailure: opts.initialFailure };
   }
 
   // The first attempt can be the one the watchdog cut; record it before the

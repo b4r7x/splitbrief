@@ -84,6 +84,35 @@ describe('continuationBlock', () => {
     expect(block).not.toContain('interrupted');
   });
 
+  it('states that the previous attempt was discarded on a retry with no partial', () => {
+    expect(continuationBlock({ steer: 'fix it', discarded: true })).toBe(
+      '[Continuation] Your previous attempt was discarded; its error is above. The user says: fix it',
+    );
+    const withNote = continuationBlock({
+      steer: 'fix it',
+      extra: 'src/a.ts changed',
+      discarded: true,
+    });
+    expect(
+      withNote.startsWith(
+        '[Continuation] Your previous attempt was discarded; its error is above.',
+      ),
+    ).toBe(true);
+    expect(withNote).not.toContain('No output from an earlier attempt');
+  });
+
+  it('still reports the interruption when a retry left a partial', () => {
+    const block = continuationBlock({
+      partial: 'half a file',
+      steer: 'finish it',
+      discarded: true,
+    });
+
+    expect(
+      block.startsWith('[Continuation] The previous attempt of this step was interrupted.'),
+    ).toBe(true);
+  });
+
   it('never replaces the base prompt', () => {
     const prompt = composeContinuation({ basePrompt: 'BASE', steer: 'x' });
     expect(prompt.startsWith('BASE\n\n[Continuation]')).toBe(true);

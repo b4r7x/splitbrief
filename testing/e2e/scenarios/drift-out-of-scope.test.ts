@@ -33,18 +33,17 @@ describe('e2e: drift out-of-scope detection', () => {
   const ctx = setupE2eScenario(scenario);
 
   // The hook writes a file no Task Brief targets into the run workspace, which is
-  // the deterministic drift this scenario measures. Hooks run in the checkout, so
-  // the hook finds the workspace as the last worktree git lists.
+  // the deterministic drift this scenario measures. The hook reads the workspace
+  // path from the stdin payload's `workspaceDir` instead of guessing it.
   function installDriftHook(): void {
     mkdirSync(join(ctx.projectDir, '.splitbrief/hooks'), { recursive: true });
     writeFileSync(
       join(ctx.projectDir, DRIFT_SCRIPT),
       [
-        "import { execFileSync } from 'node:child_process';",
-        "import { mkdirSync, writeFileSync } from 'node:fs';",
+        "import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';",
         "import { join } from 'node:path';",
-        "const listed = execFileSync('git', ['worktree', 'list', '--porcelain'], { encoding: 'utf8' });",
-        "const workspace = listed.split('\\n').filter((line) => line.startsWith('worktree ')).at(-1).slice('worktree '.length);",
+        "const payload = JSON.parse(readFileSync(0, 'utf8'));",
+        'const workspace = payload.workspaceDir;',
         "mkdirSync(join(workspace, 'src'), { recursive: true });",
         "writeFileSync(join(workspace, 'src/out-of-scope.ts'), 'export const drift = true;\\n');",
         '',

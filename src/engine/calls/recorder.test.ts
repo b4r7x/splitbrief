@@ -372,6 +372,37 @@ describe('createRunnerCallRecorder', () => {
     ).toHaveLength(1);
   });
 
+  it('ends an implementer call at the tool-use bound and names the last calls', () => {
+    const events: RunnerCallEvent[] = [];
+    let limitCalls = 0;
+    const recorder = createRunnerCallRecorder({
+      context: { ...context, callId: 'call-impl', role: 'implementer' },
+      startedAt: 1,
+      onLimit: () => {
+        limitCalls += 1;
+      },
+      onEvent: (event) => events.push(event),
+    });
+    const total = RUNNER_CALL_TOOL_USE_MAX_ITEMS + 20;
+    for (let index = 0; index < total; index += 1) {
+      recorder.toolUseDone({
+        toolUse: { id: `tool-${index}`, name: 'Read', input: { path: `file-${index}.ts` } },
+      });
+    }
+
+    const result = recorder.finishCompleted({ endedAt: 20 });
+
+    expect(limitCalls).toBe(1);
+    expect(result.status).toBe('truncated');
+    expect(result.partial).toBe(true);
+    expect(result.error?.code).toBe('runner_call_tool_use_count_limit');
+    expect(result.error?.message).toContain(`file-${total - 1}.ts`);
+    expect(result.error?.message).not.toContain('file-0.ts');
+    expect(result.warnings).toEqual([
+      expect.objectContaining({ code: 'runner_call_tool_use_count_limit' }),
+    ]);
+  });
+
   // A tool announcement replays input that `toolUseDone` carries again, so a run with hundreds of
   // tool starts spends the delta budget on a diagnostic and must not lose its result to it. The
   // streamed stage is the result's own text and still does.

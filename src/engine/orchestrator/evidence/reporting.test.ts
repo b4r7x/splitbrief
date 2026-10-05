@@ -25,7 +25,6 @@ describe('recordFinalReviewEvidence', () => {
     });
     const updated = recordFinalReviewEvidence({ ledger: local, status: 'written' });
     expect(updated.finalReview?.status).toBe('written');
-    expect(updated.tasks[0]?.observedEvidence).toContain('final review written');
   });
 
   it('does not claim a final review was written when the review failed', () => {
@@ -39,7 +38,6 @@ describe('recordFinalReviewEvidence', () => {
     });
     const updated = recordFinalReviewEvidence({ ledger: local, status: 'failed' });
     expect(updated.finalReview?.status).toBe('failed');
-    expect(updated.tasks[0]?.observedEvidence).not.toContain('final review written');
   });
 });
 

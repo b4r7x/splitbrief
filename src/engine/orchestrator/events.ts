@@ -22,6 +22,7 @@ import type {
   ValidationStageSkips,
 } from '../events/types.js';
 import type { ValidationResult } from './validation/result.js';
+import type { ValidationAcceptance } from './validation/acceptance.js';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { ImplementerPublisher } from '../implementers/types.js';
 import type { EmittedChain } from '../../core/schemas/drift-chain.js';
@@ -69,7 +70,7 @@ export function publishRunnerCallEvent(
 
 const EMPTY_STAGES: ValidationStages = { typecheck: false, lint: false, test: false };
 
-type ValidationPhase =
+type ValidationBaselinePhase =
   | { phase: 'start'; commands?: ValidationStageCommands | undefined }
   | {
       phase: 'progress';
@@ -82,8 +83,13 @@ type ValidationPhase =
       phase: 'result';
       results: ValidationResult[];
       startTime: number;
-      exempt?: boolean | undefined;
     };
+
+type ValidationPhase =
+  | Exclude<ValidationBaselinePhase, { phase: 'result' }>
+  | (Extract<ValidationBaselinePhase, { phase: 'result' }> & {
+      acceptance: ValidationAcceptance;
+    });
 
 export function createBusTextHandler(
   ctx: BusContext,
@@ -233,7 +239,6 @@ export function publishValidation(ctx: BusContext, taskId: TaskId, opts: Validat
   const attempted: ValidationStageAttempts = { ...EMPTY_STAGES };
   const skipped: ValidationStageSkips = {};
   const skippedReason: Record<string, string> = {};
-  let failedError: string | undefined;
   let passed = true;
   const commands: ValidationStageCommands = {};
   for (const r of opts.results) {
@@ -249,14 +254,16 @@ export function publishValidation(ctx: BusContext, taskId: TaskId, opts: Validat
     else if (r.stage === 'test') stages.test = r.passed;
     if (!r.passed) {
       passed = false;
-      if (failedError === undefined) failedError = r.error;
     }
   }
   const hasSkips = Object.keys(skipped).length > 0;
+  const failedError = opts.results.find(
+    (r) => !r.passed && opts.acceptance.blockingStages.includes(r.stage),
+  )?.error;
   // An exempt-accepted task failed only on stages the baseline already failed: the run passed on
   // its own terms, so it publishes `passed` with the exemption named, never a failure the task
   // did not cause.
-  const exempt = !passed && opts.exempt === true;
+  const exempt = !passed && opts.acceptance.accepted && opts.acceptance.exemptStages.length > 0;
   ctx.bus.publish({
     type: 'validate',
     ts: Date.now(),
@@ -275,7 +282,7 @@ export function publishValidation(ctx: BusContext, taskId: TaskId, opts: Validat
   });
 }
 
-export function publishValidationBaseline(ctx: BusContext, opts: ValidationPhase): void {
+export function publishValidationBaseline(ctx: BusContext, opts: ValidationBaselinePhase): void {
   if (opts.phase === 'start') {
     ctx.bus.publish({
       type: 'validation_baseline',
@@ -652,13 +659,19 @@ export function publishImplementerGenerateDone(
   ctx.bus.publish(event);
 }
 
-function publishImplementerGenerateFailed(ctx: BusContext, taskId: TaskId, model?: string): void {
+function publishImplementerGenerateFailed(
+  ctx: BusContext,
+  taskId: TaskId,
+  model?: string,
+  error?: string,
+): void {
   ctx.bus.publish({
     type: 'implementer_generate_failed',
     ts: Date.now(),
     phase: ctx.phase,
     taskId,
     ...(model !== undefined && { model }),
+    ...(error !== undefined && { error: redactSecrets(error) }),
   });
 }
 
@@ -669,8 +682,8 @@ export function createImplementerPublisher(bus: EventBus): ImplementerPublisher 
     publishCallEvent: ({ phase, taskId, event }) =>
       publishRunnerCallEvent({ bus, phase, taskId }, event),
     publishDone: ({ phase, ...opts }) => publishImplementerGenerateDone({ bus, phase }, opts),
-    publishFailed: ({ phase, taskId, model }) =>
-      publishImplementerGenerateFailed({ bus, phase }, taskId, model),
+    publishFailed: ({ phase, taskId, model, error }) =>
+      publishImplementerGenerateFailed({ bus, phase }, taskId, model, error),
     publishWarning: ({ phase, taskId, message, safety }) =>
       publishWarning({ bus, phase, taskId, message, safety }),
   };

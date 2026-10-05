@@ -3,7 +3,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { WorkflowContext } from '../types.js';
 import { runSingleTask } from './step.js';
-import { commitWorkflowState, raisePendingRecovery } from '../state-ops.js';
+import { commitWorkflowState, raisePendingRecovery, transitionAndSave } from '../state-ops.js';
 import { refreshAndPersistCode } from './refresh-code.js';
 import {
   getRunnerDisplayName,
@@ -28,6 +28,8 @@ import { toErrorMessage } from '../../../utils/format-errors.js';
 import { error } from '../../../utils/error.js';
 import { buildImplementerUnavailableRecoveryIssue } from '../recovery/builders/task.js';
 import { runScheduledReview } from '../run/review.js';
+import { recordCheckRuns } from '../evidence/record-checks.js';
+import { isBatchBoundary, runBatchBoundary } from './batch-boundary.js';
 
 type RunTaskLoopOptions = {
   wctx: WorkflowContext;
@@ -98,7 +100,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     });
     return { state, taskBreakdowns, status: 'stopped' };
   }
-  if (state.pendingTriage !== undefined && state.review?.scope === 'task') {
+  if (state.pendingScheduledReview !== undefined) {
     const pending = await runScheduledReview({
       wctx,
       state,
@@ -138,6 +140,47 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     });
     if (primedBaseline !== undefined && state.validationBaseline === undefined) {
       state = { ...state, validationBaseline: primedBaseline };
+      setTrackedState(state);
+    }
+    if (state.fullSuiteBaseline === undefined) {
+      const suite = await wctx.validator.runFullSuite({
+        bus: wctx.bus,
+        phase: state.phase,
+        projectDir: wctx.workspaceDir,
+        config,
+        discoveredValidation: state.discoveredValidation,
+        signal: wctx.signal,
+      });
+      state = syncBaselineIntoState({ ...state, fullSuiteBaseline: suite.failures });
+      setTrackedState(state);
+      await recordCheckRuns({
+        projectDir,
+        sessionId,
+        workspaceDir: wctx.workspaceDir,
+        state,
+        validation: suite.results,
+      });
+    }
+  }
+  const pendingBoundary = state.pendingBoundary;
+  if (pendingBoundary !== undefined) {
+    const anchor = state.tasks.find((task) => task.id === pendingBoundary.afterTaskId);
+    if (anchor !== undefined && isTaskCompleted(anchor.status)) {
+      const boundary = await runBatchBoundary({
+        wctx,
+        state,
+        completedTask: anchor,
+        setTrackedState,
+      });
+      state = boundary.state;
+      if (boundary.status === 'stopped') {
+        setCurrentTask(undefined);
+        return { state, taskBreakdowns, status: 'stopped' };
+      }
+    } else {
+      state = transitionAndSave({ projectDir, sessionId }, state, {
+        type: 'CLEAR_PENDING_BOUNDARY',
+      });
       setTrackedState(state);
     }
   }
@@ -284,9 +327,24 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
         state,
         setTrackedState,
         callbacks: wctx.callbacks,
+        ...(completedTask !== undefined && { afterTaskId: completedTask.id }),
       });
       state = scheduled.state;
       if (scheduled.status === 'stopped') {
+        setCurrentTask(undefined);
+        return { state, taskBreakdowns, status: 'stopped' };
+      }
+    }
+
+    if (completedTask !== undefined && isBatchBoundary(state.tasks, i)) {
+      const boundary = await runBatchBoundary({
+        wctx,
+        state,
+        completedTask,
+        setTrackedState,
+      });
+      state = boundary.state;
+      if (boundary.status === 'stopped') {
         setCurrentTask(undefined);
         return { state, taskBreakdowns, status: 'stopped' };
       }

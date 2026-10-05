@@ -82,6 +82,8 @@ function runnerCallStatusMessage(status: Exclude<RunnerCallResult['status'], 'co
 
 function failureStateFromCode(code: string): RunnerFailureOutcomeState | null {
   switch (code) {
+    case 'runner_call_tool_use_count_limit':
+      return 'tool-use-limit';
     case 'spawn-not-found':
     case 'incompatible-version':
     case 'unauthenticated':
@@ -103,6 +105,7 @@ function failureStateFromCode(code: string): RunnerFailureOutcomeState | null {
     case 'checkout-changed':
     case 'runner-timeout-repeated':
     case 'missing-model':
+    case 'tool-use-limit':
       return code;
     default:
       return null;

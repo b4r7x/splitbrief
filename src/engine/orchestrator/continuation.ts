@@ -206,8 +206,8 @@ export interface WithContinuationLoopOpts<T> {
  * recorded once in the transcript and the session log. They still travel on as
  * the steer the retried call composes into its own prompt.
  */
-function recordSteer(
-  ctx: ContinuationLoopCtx,
+export function recordSteer(
+  ctx: Pick<ContinuationLoopCtx, 'projectDir' | 'sessionId' | 'persistRef' | 'bus'>,
   phase: WorkflowState['phase'],
   text: string | undefined,
 ): void {

@@ -138,7 +138,14 @@ describe('runHeadless — recovery stops', () => {
     saveState({ projectDir, sessionId }, state);
 
     const failingPlanner = makePlanner({
-      review: vi.fn().mockRejectedValue(new Error('planner review crashed')),
+      typedCall: (ctx) => ({
+        seat: ctx.seat,
+        typedOutput: 'strict-native',
+        canResume: false,
+        invoke: async () => {
+          throw new Error('planner review crashed');
+        },
+      }),
     });
 
     await expect(

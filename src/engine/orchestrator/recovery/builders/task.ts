@@ -23,6 +23,8 @@ import type { Task, TaskId } from '../../../../core/schemas/task.js';
 import type { ValidationResult } from '../../validation/result.js';
 import type { RoutingDecision } from '../../context-routing/types.js';
 import { runnerAuthDisplayName, runnerLoginInstruction } from '../../../runners/auth-failure.js';
+import { inputTooLargeFigures } from '../../../runners/input-limit.js';
+import { inputTooLargeSentence } from './review-input.js';
 import { parseUsageLimitReset, usageLimitAdvice } from '../../../runners/usage-limit.js';
 import {
   finalReviewCapCause,
@@ -708,6 +710,60 @@ export function buildCheckoutChangedRecoveryIssue(
   });
 }
 
+/**
+ * The prompt SPLITBRIEF built for the implementer is larger than its tool
+ * accepts. Every retry sends the same prompt, so the ladder stops and the
+ * operator narrows the brief or ends the run. The message reuses the review
+ * input-cap wording, named for the implementer's own tool.
+ */
+export function buildRunnerInputTooLargeRecoveryIssue(
+  opts: RunnerFailureRecoveryOptions,
+): RecoveryIssue {
+  const displayName = runnerAuthDisplayName(opts.runner);
+  const figures = inputTooLargeFigures(opts.toolMessage);
+  const chars = figures.chars ?? opts.toolMessage.length;
+  const routeBigger = hasRouteBigger(opts);
+  const actions = orderedActions([
+    routeBigger ? 'route-bigger-worker' : undefined,
+    'pause-run',
+    'end-run',
+  ]);
+  return createRecoveryIssue({
+    id: opts.id,
+    seat: 'build',
+    reason: 'context-overflow',
+    phase: opts.phase ?? 'implementing',
+    task: opts.task,
+    files: taskFiles(opts.task),
+    affectedTaskIds: [opts.task.id],
+    message: inputTooLargeSentence(
+      'Implementer input',
+      { chars, maxChars: figures.maxChars },
+      displayName,
+    ),
+    details: [
+      `${displayName} reported: ${opts.toolMessage}`,
+      'A retry sends the same prompt. Narrow the brief or end the run.',
+      ...attemptDetails(opts.attempts, opts.maxAttempts),
+      ...implementerDetails(opts.selectedImplementerProfile),
+      ...routeBiggerDetails(opts),
+    ],
+    ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
+    ...(opts.maxAttempts !== undefined ? { maxAttempts: opts.maxAttempts } : {}),
+    selectedImplementerProfile: opts.selectedImplementerProfile,
+    facts: compactFacts({
+      tool: displayName,
+      chars,
+      maxChars: figures.maxChars ?? undefined,
+      routeBiggerProfile: opts.routeBiggerProfile,
+      canRouteBigger: routeBigger ? true : undefined,
+    }),
+    availableActions: actions,
+    recommendedAction: chooseRecommended(actions, ['route-bigger-worker', 'pause-run']),
+    createdAt: opts.createdAt,
+  });
+}
+
 const RUNNER_DEFECT_BUILDERS: Partial<
   Record<RunnerFailureOutcomeState, (opts: RunnerFailureRecoveryOptions) => RecoveryIssue>
 > = {
@@ -716,6 +772,7 @@ const RUNNER_DEFECT_BUILDERS: Partial<
   'checkout-changed': buildCheckoutChangedRecoveryIssue,
   'missing-model': buildMissingModelRecoveryIssue,
   'runner-timeout-repeated': buildRepeatedTimeoutRecoveryIssue,
+  'input-too-large': buildRunnerInputTooLargeRecoveryIssue,
 };
 
 /**

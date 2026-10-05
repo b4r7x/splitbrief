@@ -205,6 +205,7 @@ describe('review input effects', () => {
     tempDir = mkdtempSync(join(tmpdir(), 'review-effects-test-'));
     feedbackStore.reset();
     reviewStore.reset();
+    composerDraftStore.reset();
     clearAllHandlers();
     lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
     vi.stubEnv('VISUAL', 'mock-editor');
@@ -347,6 +348,38 @@ describe('review input effects', () => {
       expect(feedbackStore.get()).toEqual(feedback);
     },
   );
+
+  it('queues a correction typed during a brief instead of refusing it', async () => {
+    lifecycleStore.__testReset({ phase: 'implementing' });
+    const effects = makeEffects(async () => ({ status: 'accepted' as const, messageId: 'm-1' }));
+
+    await createReviewInputHandler(makeInputMode('normal'), effects).handleInput(
+      '  smaller diffs  ',
+    );
+
+    expect(effects.enqueue).toHaveBeenCalledWith('smaller diffs', 'implementing');
+    expect(feedbackStore.get()).toEqual({
+      message: 'Message queued for the next planner turn.',
+      isError: false,
+    });
+  });
+
+  it('restores the draft when the queue refuses a correction typed during a brief', async () => {
+    lifecycleStore.__testReset({ phase: 'implementing' });
+    const effects = makeEffects(async () => ({
+      status: 'rejected' as const,
+      reason: 'queue-full' as const,
+      message: 'Queue full (50 messages). Wait for the current phase to complete.',
+    }));
+
+    await createReviewInputHandler(makeInputMode('normal'), effects).handleInput('keep me');
+
+    expect(feedbackStore.get()).toEqual({
+      message: 'Queue full (50 messages). Wait for the current phase to complete.',
+      isError: true,
+    });
+    expect(composerDraftStore.get().request?.value).toBe('keep me');
+  });
 
   it('keeps the registered queue handler when no effects are supplied', async () => {
     lifecycleStore.__testReset({ phase: 'specifying' });

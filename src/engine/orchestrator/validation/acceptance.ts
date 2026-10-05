@@ -1,7 +1,7 @@
 import type { ValidationStage } from '../../../core/schemas/enums.js';
 import type { ValidationStageCommands } from '../../events/types.js';
 import { normalizeProjectRelativePath } from '../../../utils/path-patterns.js';
-import { extractFailureKeys } from './extract-failure-keys.js';
+import { stageFailureKeys } from './extract-failure-keys.js';
 import type { ValidationResult } from './result.js';
 
 type ValidationFailureKeys = Partial<Record<ValidationStage, ReadonlySet<string>>>;
@@ -41,7 +41,7 @@ function failuresAreKnown(
 ): boolean {
   const baseline = baselineFailureKeys?.[result.stage];
   if (baseline === undefined) return true;
-  return isSubset(extractFailureKeys(result.error ?? result.output ?? ''), baseline);
+  return isSubset(stageFailureKeys(result), baseline);
 }
 
 export function decideValidationAcceptance(opts: {

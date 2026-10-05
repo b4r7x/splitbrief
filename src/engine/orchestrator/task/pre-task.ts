@@ -28,7 +28,7 @@ export async function runPreTaskHooksAndPublish(opts: {
   setTrackedState: (s: WorkflowState) => void;
 }): Promise<PreTaskResult> {
   const { wctx, task, index, totalTasks, setTrackedState } = opts;
-  const { projectDir, sessionId, config } = wctx;
+  const { projectDir, workspaceDir, sessionId, config } = wctx;
   let state = opts.state;
 
   if (wctx.config.hooks) {
@@ -48,6 +48,7 @@ export async function runPreTaskHooksAndPublish(opts: {
     };
     const pre = await runPreHooks(wctx.config.hooks, 'pre_task', preTaskPayload, {
       projectDir,
+      workspaceDir,
       sessionId,
     });
     if (!pre.allow) {
@@ -65,7 +66,7 @@ export async function runPreTaskHooksAndPublish(opts: {
         taskId: task.id,
       });
       setTrackedState(state);
-      persistTaskEvidence({
+      await persistTaskEvidence({
         wctx,
         state,
         task,

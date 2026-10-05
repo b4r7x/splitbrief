@@ -22,6 +22,7 @@ interface CommandContextFactoryOptions {
   refreshSkills: RuntimeCommandContext['refreshSkills'];
   getCurrentPhase: () => Phase;
   resumeRun: () => boolean;
+  steerRun: (text: string) => boolean;
   endRun: () => boolean;
   getQueueDepth: () => number;
   clearQueue: () => QueueClearCommandResult | Promise<QueueClearCommandResult>;
@@ -76,6 +77,7 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
     refreshSkills: opts.refreshSkills,
     getCurrentPhase: opts.getCurrentPhase,
     resumeRun: opts.resumeRun,
+    steerRun: opts.steerRun,
     endRun: opts.endRun,
     getQueueDepth: opts.getQueueDepth,
     clearQueue: opts.clearQueue,

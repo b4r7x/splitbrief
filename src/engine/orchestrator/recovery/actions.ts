@@ -468,11 +468,24 @@ function applyAcceptAsIsRecoveryAction(
           opts.state,
         );
   let state = markRecoveryApplying(opts, issue);
-  if (issue.reason === 'review-input-too-large') {
+  // A scheduled task review is skipped on its own: the run stays implementing,
+  // the note is recorded and the pending marker clears so the next brief starts.
+  // The final review has no such marker and its accept-as-is closes the run.
+  const scheduledTaskReview =
+    issue.reason === 'review-input-too-large' && opts.state.phase === 'implementing';
+  if (issue.reason === 'review-input-too-large' && !scheduledTaskReview) {
     state = transitionAndSave(
       opts,
       state,
       { type: 'REVIEW_DONE', reviewStatus: 'failed' },
+      { expectedRevision: state.stateRevision ?? 0 },
+    );
+  }
+  if (scheduledTaskReview) {
+    state = transitionAndSave(
+      opts,
+      state,
+      { type: 'CLEAR_SCHEDULED_REVIEW' },
       { expectedRevision: state.stateRevision ?? 0 },
     );
   }

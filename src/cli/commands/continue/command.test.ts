@@ -441,14 +441,65 @@ describe('continueCommand', () => {
       },
     );
 
-    await continueCommand(
-      sessionId,
-      { projectDir, json: true, action: parseContinueActionOption('end-run') },
-      deps,
-    );
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    let logged: string[] = [];
+    try {
+      await continueCommand(
+        sessionId,
+        { projectDir, json: true, action: parseContinueActionOption('end-run') },
+        deps,
+      );
+    } finally {
+      logged = logSpy.mock.calls.map((call) => call.join(' '));
+      logSpy.mockRestore();
+    }
 
     expect(headlessRuns).toHaveLength(0);
     expect(loadState({ projectDir, sessionId })?.closed).toMatchObject({ as: 'ended' });
+    expect(logged.join('\n')).toContain('The files it wrote are still on disk.');
+  });
+
+  it('closes a worktree run without saying its files are still on disk', async () => {
+    const projectDir = makeTmpProject();
+    const sessionId = '2025-04-01-action-end-run-worktree';
+    const sessDir = makeSessionDir(projectDir, sessionId);
+    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId });
+    saveState(
+      { projectDir, sessionId },
+      {
+        ...createInitialState('test-feature'),
+        phase: 'implementing',
+        tasks: [makeTask({ id: 'T001' })],
+        workspace: {
+          kind: 'worktree',
+          path: join(projectDir, '.trees', 'test-run'),
+          base: { snapshotId: 'snapshot-1', head: null },
+        },
+        pendingRecovery: makeRecoveryIssue({
+          status: 'paused',
+          availableActions: ['pause-run', 'end-run'],
+          recommendedAction: 'pause-run',
+        }),
+      },
+    );
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    let logged: string[] = [];
+    try {
+      await continueCommand(
+        sessionId,
+        { projectDir, json: true, action: parseContinueActionOption('end-run') },
+        deps,
+      );
+    } finally {
+      logged = logSpy.mock.calls.map((call) => call.join(' '));
+      logSpy.mockRestore();
+    }
+
+    expect(loadState({ projectDir, sessionId })?.closed).toMatchObject({ as: 'ended' });
+    expect(logged.join('\n')).toContain(`Run ${sessionId} closed.`);
+    expect(logged.join('\n')).not.toContain('still on disk');
+    expect(headlessRuns).toHaveLength(0);
   });
 
   it('exits 1 when the named action is not one the halt offers', async () => {

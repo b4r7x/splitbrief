@@ -2,8 +2,24 @@ import type { QueuedMessage, WorkflowState } from './schemas/workflow.js';
 
 export function isQueuedMessagePendingDelivery(message: QueuedMessage): boolean {
   return (
-    !message.drainedAt && !message.deliveredViaNative && message.nativeDeliveryState === 'pending'
+    message.deliveredTo?.implementer === undefined &&
+    !message.drainedAt &&
+    !message.deliveredViaNative &&
+    message.nativeDeliveryState === 'pending'
   );
+}
+
+export function isQueuedMessagePendingConsult(message: QueuedMessage): boolean {
+  const deliveredToImplementer =
+    message.deliveredTo?.implementer !== undefined ||
+    message.drainedAt !== undefined ||
+    message.deliveredViaNative ||
+    message.nativeDeliveryState === 'delivered';
+  return deliveredToImplementer && message.deliveredTo?.consult === undefined;
+}
+
+export function isQueuedMessagePendingReviewer(message: QueuedMessage): boolean {
+  return isQueuedMessagePendingDelivery(message) && message.deliveredTo?.reviewer === undefined;
 }
 
 export function isQueuedMessageClearable(message: QueuedMessage): boolean {

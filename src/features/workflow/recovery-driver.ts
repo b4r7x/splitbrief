@@ -15,6 +15,7 @@ import { createRecoveryBus } from '../../engine/orchestrator/recovery/bus.js';
 import { publishRecoveryPrompted } from '../../engine/orchestrator/events.js';
 import { applyRecoveryAction } from '../../engine/orchestrator/recovery/actions.js';
 import type { SeatSwapChoice } from '../../engine/orchestrator/run/seat-swap.js';
+import { filesStillOnDiskSuffix } from '../../engine/orchestrator/run/close.js';
 import type { PreparedExecution } from '../../engine/runners/prepared-execution.js';
 import { configStore } from '../../stores/project/config.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
@@ -246,11 +247,7 @@ export function createRecoveryDriver(
         // The close is on the state; the run loop finalizes the session from it —
         // one summary, one receipt release, through the same path every other
         // ending takes.
-        feedbackStore.setMessage(
-          result.state.workspace === undefined || result.state.workspace.kind === 'checkout'
-            ? 'Run ended. The files it wrote are still on disk.'
-            : 'Run ended.',
-        );
+        feedbackStore.setMessage(`Run ended.${filesStillOnDiskSuffix(result.state.workspace)}`);
         return { shouldRun: false, state: result.state };
       }
 

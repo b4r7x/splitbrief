@@ -29,6 +29,7 @@ type PublisherEvent =
       phase: string;
       taskId: string;
       model?: string | undefined;
+      error?: string | undefined;
     };
 
 let projectDir: string;
@@ -146,6 +147,84 @@ describe('createImplementerBase — bus events', () => {
     const failed = events.find((event) => event.type === 'implementer_generate_failed');
     expect(failed).toBeDefined();
     expect(failed && 'model' in failed).toBe(false);
+  });
+
+  // Run 2026-10-05-s6-central-checks-and-renders-plus-the-carried-in--3, T010 attempts 2 and 3:
+  // the CLI call recorded `runner_call_completed`, then the effect check turned it into a failed
+  // `no-staged-change` result, and `implementer_generate_failed` said only `{ model }`.
+  it('a call that completed and then failed its effect check names the cause on implementer_generate_failed', async () => {
+    const cause = 'Tool implementer (opencode) exited without changing any files';
+    const invoke = vi.fn().mockResolvedValue(
+      makeRunnerCallResult({
+        status: 'failed',
+        text: 'Fixed.\n\n{"status":"done","filesChanged":[],"touchedNotSuggested":[],"notes":null,"decisions":[]}',
+        error: { code: 'no-staged-change', message: cause },
+        partial: true,
+      }),
+    );
+    const task = makeTask({ id: 'T010', file: 'src/core/pipeline-spec/bounds.ts' });
+    const events: PublisherEvent[] = [];
+    const implementer = createImplementerBase(
+      makeBaseConfig({ extractsCode: false, invoke, publisher: makePublisher(events) }),
+    );
+
+    const result = await implementer.retry({
+      task,
+      projectDir,
+      config: makeConfig({
+        implementer: { kind: 'cli', tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash' },
+      }),
+      context: defaultContext,
+      onOutput: vi.fn(),
+      phase: 'implementing',
+      error: 'TS2322 in src/engine/implementers/pipeline/call-result.ts',
+      attempt: 1,
+      kind: 'local',
+    });
+
+    expect(result).toMatchObject({ success: false, outcome: 'no-staged-change' });
+    expect(events.find((event) => event.type === 'implementer_generate_failed')).toEqual({
+      type: 'implementer_generate_failed',
+      phase: 'implementing',
+      taskId: 'T010',
+      model: 'opencode-go/deepseek-v4.1-flash',
+      error: result.error,
+    });
+    expect(result.error).toContain(cause);
+  });
+
+  it('a completed call whose change check finds nothing names that cause on implementer_generate_failed', async () => {
+    const invoke = vi
+      .fn()
+      .mockResolvedValue(makeRunnerCallResult({ status: 'completed', text: 'done' }));
+    const detectChanges = vi.fn().mockResolvedValue({
+      changed: false,
+      output: 'Tool implementer (opencode) exited without changing any files',
+      reason: 'no-files-changed',
+    });
+    const events: PublisherEvent[] = [];
+    const implementer = createImplementerBase(
+      makeBaseConfig({
+        extractsCode: false,
+        invoke,
+        detectChanges,
+        publisher: makePublisher(events),
+      }),
+    );
+
+    const result = await implementer.implement({
+      task: makeTask({ id: 'T011', file: 'src/a.ts' }),
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+      phase: 'implementing',
+    });
+
+    expect(result).toMatchObject({ success: false, outcome: 'no-staged-change' });
+    expect(events.find((event) => event.type === 'implementer_generate_failed')).toMatchObject({
+      error: 'Tool implementer (opencode) exited without changing any files',
+    });
   });
 
   it('does not publish implementer_generate_failed when invoke aborts after running', async () => {

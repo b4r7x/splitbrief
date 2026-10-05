@@ -32,7 +32,7 @@ afterEach(() => {
 });
 
 function ctx() {
-  return { projectDir, sessionId: 'sess-1' };
+  return { projectDir, workspaceDir: projectDir, sessionId: 'sess-1' };
 }
 
 function trust(hooks: HooksConfig): HooksConfig {

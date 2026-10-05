@@ -43,8 +43,11 @@ describe('seatEffortChannel', () => {
 });
 
 describe('seatSupportsImages', () => {
-  it('accepts images on every CLI seat and on no shell seat', () => {
+  it('reads the image channel each CLI tool declares', () => {
     expect(seatSupportsImages({ runner: claudeCode })).toBe(true);
+    expect(seatSupportsImages({ runner: codex })).toBe(true);
+    expect(seatSupportsImages({ runner: opencode })).toBe(false);
+    expect(seatSupportsImages({ runner: cursor })).toBe(false);
     expect(seatSupportsImages({ runner: shell })).toBe(false);
   });
 

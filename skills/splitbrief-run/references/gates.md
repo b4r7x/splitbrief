@@ -96,7 +96,7 @@ Allow no package installs, git writes, protected mutations without confirmation,
 Render checks are unavailable in these skills. Keep a required render criterion unverified.
 Run typecheck, lint, affected tests and task checks after every task.
 Run the full suite at each planner-declared batch boundary. Triage failure into appended fix tasks with new ids.
-Run the full suite and all required checks before every review. The CLI ships batch/check execution in S6.
+Run the full suite and all required checks before every review.
 Log check ids, commands, output, exits and artifact paths in validation.md.
 Re-run checks when the candidate changes. Earlier green output cannot verify changed code.
 

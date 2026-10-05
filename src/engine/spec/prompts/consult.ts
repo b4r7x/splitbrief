@@ -29,6 +29,8 @@ export type ConsultPromptInput = Readonly<{
   earlierConsults: readonly ConsultRecord[];
   /** Every task of the run except the one being consulted about. */
   otherTasks: readonly Task[];
+  /** Text the operator queued during an earlier brief, delivered with the task it concerns. */
+  userText?: string | undefined;
   /**
    * The planner's session already holds this run's plan and brief: send the new attempt's
    * evidence as a short turn instead of the whole prompt.
@@ -212,6 +214,13 @@ function reasonSection(input: ConsultPromptInput): PromptPart {
   return { heading: 'Reason', body: `${input.reason} — ${REASON_TEXT[input.reason]}` };
 }
 
+/** What the operator typed while earlier briefs ran, when it concerns this task. */
+function operatorNotesPart(input: ConsultPromptInput): PromptPart[] {
+  const text = input.userText?.trim();
+  if (text === undefined || text === '') return [];
+  return [{ heading: 'Operator Notes', body: text }];
+}
+
 /**
  * The consult prompt. A fresh session reads the whole prompt: the plan, the task and its
  * revisions, the attempt's evidence, the lineage's earlier answers and the reason. A session
@@ -230,6 +239,7 @@ export function buildConsultPrompt(input: ConsultPromptInput): string {
           body: taskBody(input.task),
         },
         reasonSection(input),
+        ...operatorNotesPart(input),
         ...attemptLines(input),
         instructionsSection(
           `${DECISION_CONFIRM_CONTRACT}\n\n${workspaceReadInstructions(input.workspaceDir)}`,
@@ -250,6 +260,7 @@ export function buildConsultPrompt(input: ConsultPromptInput): string {
           body: `**${input.task.id}** (revision ${input.task.revision ?? 1}) — ${input.task.title}`,
         },
         reasonSection(input),
+        ...operatorNotesPart(input),
         ...attemptLines(input),
         instructionsSection(
           `${RESUME_CONTRACT}\n\n${workspaceReadInstructions(input.workspaceDir)}`,
@@ -266,6 +277,7 @@ export function buildConsultPrompt(input: ConsultPromptInput): string {
   });
   for (const revision of input.revisions) sections.push(revisionSection(revision));
   sections.push(reasonSection(input));
+  sections.push(...operatorNotesPart(input));
   sections.push(...attemptLines(input));
   if (input.earlierConsults.length > 0) {
     sections.push({

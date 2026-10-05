@@ -8,8 +8,11 @@ import {
 import type { ActionClass } from '../../../core/schemas/enums.js';
 import type { GateActionInput, GateDecision } from './types.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
-import type { Task } from '../../../core/schemas/task.js';
+import type { Check, Task } from '../../../core/schemas/task.js';
+import type { Plan } from '../../../core/schemas/plan.js';
 import { protectedWriteClass } from './action-classifier.js';
+import { parseShellCommand } from '../../../utils/parse-shell-command.js';
+import { checkRegistry } from '../validation/run-checks.js';
 
 /** A confirmation the run already granted holds for the same path and operation. */
 function confirmedEarlierInRun(input: GateActionInput, actionClass: ActionClass): boolean {
@@ -21,15 +24,36 @@ function confirmedEarlierInRun(input: GateActionInput, actionClass: ActionClass)
   );
 }
 
+function npmScriptConfirmations(
+  checks: Iterable<Check>,
+): NonNullable<GateDecision['confirmApprovals']> {
+  return [...checks].flatMap((check) => {
+    if (check.kind !== 'cmd') return [];
+    const [token, sub, script] = parseShellCommand(check.value);
+    const cmd = token?.toLowerCase().replace(/@[^@]*$/, '');
+    if (cmd !== 'npm' || sub !== 'run' || script === undefined) return [];
+    return [
+      {
+        tier: 'confirm' as const,
+        actionClass: 'validation' as const,
+        actionDescription: check.value,
+        reason: 'check on the approved plan',
+      },
+    ];
+  });
+}
+
 /**
  * The protected writes an approved plan lists, as the confirmations `confirmedEarlierInRun` reads:
- * the same ActionClass and `write <path>` the write gate asks about.
+ * the same ActionClass and `write <path>` the write gate asks about. The plan's run-level checks
+ * join the task checks, so an approved `npm run` check on the plan is confirmed too.
  */
 export function planConfirmations(
   tasks: readonly Task[],
   projectDir: string,
+  plan?: Plan,
 ): NonNullable<GateDecision['confirmApprovals']> {
-  return tasks.flatMap((task) =>
+  const protectedWrites = tasks.flatMap((task) =>
     (task.protectedOperations ?? []).flatMap((operation) => {
       const actionClass = protectedWriteClass(operation.path, projectDir);
       return actionClass === null
@@ -44,6 +68,7 @@ export function planConfirmations(
           ];
     }),
   );
+  return [...protectedWrites, ...npmScriptConfirmations(checkRegistry({ tasks, plan }).values())];
 }
 
 export type ConfirmTierInput = {

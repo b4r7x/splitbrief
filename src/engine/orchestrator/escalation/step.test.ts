@@ -774,14 +774,14 @@ describe('runRetryStep — a failed attempt keeps its story', () => {
     });
   }
 
-  it('keeps the incoming error and carries the hand-back when the attempt changed nothing', async () => {
+  it('names its own cause, never the incoming error, and carries the hand-back when the attempt changed nothing', async () => {
     const outcome = await runFailingRetry({
       outcome: 'no-staged-change',
       error: 'agy exited without changing any files',
       output: 'I could not find the prop.',
     });
 
-    expect(outcome.lastError).toBe('tsc: Type X is not assignable to Y');
+    expect(outcome.lastError).toBe('agy exited without changing any files');
     expect(outcome.lastFailure).toMatchObject({
       outcome: 'no-staged-change',
       handBack: 'I could not find the prop.',

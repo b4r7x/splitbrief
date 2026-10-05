@@ -24,7 +24,7 @@ describe('write / read EvidenceLedger', () => {
     expect(readEvidenceLedger({ projectDir: tmpDir.get(), sessionId: 'nonexistent' })).toBeNull();
   });
 
-  it('round-trips and preserves sequential mutations', () => {
+  it('round-trips and preserves sequential mutations to the checks log', () => {
     const task = makeTask();
     const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
     writeEvidenceLedger({ projectDir: tmpDir.get(), sessionId: 'sess-1' }, ledger);
@@ -35,7 +35,7 @@ describe('write / read EvidenceLedger', () => {
         ...current,
         tasks: current.tasks.map((entry) => ({
           ...entry,
-          observedEvidence: [...entry.observedEvidence, 'workflow evidence'],
+          checks: [...(entry.checks ?? []), { id: 'workflow', ts: '2026-01-01T00:00:00.000Z' }],
         })),
       };
     });
@@ -45,14 +45,38 @@ describe('write / read EvidenceLedger', () => {
         ...current,
         tasks: current.tasks.map((entry) => ({
           ...entry,
-          observedEvidence: [...entry.observedEvidence, 'mcp evidence'],
+          checks: [...(entry.checks ?? []), { id: 'mcp', ts: '2026-01-01T00:00:01.000Z' }],
         })),
       };
     });
 
     const read = readEvidenceLedger({ projectDir: tmpDir.get(), sessionId: 'sess-1' });
     expect(read?.sessionId).toBe('sess-1');
-    expect(read?.tasks[0]?.observedEvidence).toEqual(['workflow evidence', 'mcp evidence']);
+    expect(read?.tasks[0]?.checks?.map((entry) => entry.id)).toEqual(['workflow', 'mcp']);
+  });
+
+  it('loads an old evidence.json that still carries the retired fields', () => {
+    const ref = { projectDir: tmpDir.get(), sessionId: 'sess-legacy' };
+    const task = makeTask();
+    const ledger = createEvidenceLedger({
+      sessionId: 'sess-legacy',
+      feature: 'feat',
+      tasks: [task],
+    });
+    const legacy = {
+      ...ledger,
+      tasks: ledger.tasks.map((entry) => ({
+        ...entry,
+        expectedEvidence: ['the greeting returns'],
+        observedEvidence: ['task reached done'],
+      })),
+    };
+    writeEvidenceLedger(ref, legacy);
+
+    const read = readEvidenceLedger(ref);
+
+    expect(read?.tasks[0]?.id).toBe(task.id);
+    expect(read?.tasks[0]?.observedEvidence).toEqual(['task reached done']);
   });
 });
 
@@ -82,7 +106,7 @@ describe('evidence ledger lock', () => {
         ...current,
         tasks: current.tasks.map((entry) => ({
           ...entry,
-          observedEvidence: [...entry.observedEvidence, 'outer'],
+          checks: [...(entry.checks ?? []), { id: 'outer', ts: '2026-01-01T00:00:00.000Z' }],
         })),
       };
     });
@@ -93,12 +117,12 @@ describe('evidence ledger lock', () => {
         ...current,
         tasks: current.tasks.map((entry) => ({
           ...entry,
-          observedEvidence: [...entry.observedEvidence, 'after'],
+          checks: [...(entry.checks ?? []), { id: 'after', ts: '2026-01-01T00:00:01.000Z' }],
         })),
       };
     });
 
     const read = readEvidenceLedger(ref);
-    expect(read?.tasks[0]?.observedEvidence).toEqual(['outer', 'after']);
+    expect(read?.tasks[0]?.checks?.map((entry) => entry.id)).toEqual(['outer', 'after']);
   });
 });

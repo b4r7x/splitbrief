@@ -294,7 +294,14 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     const state = makeImplState([task]);
     const executionState = persistReadyExecutionState({ projectDir, sessionId }, state);
     const planner = makePlanner({
-      review: vi.fn().mockRejectedValue(new Error('review failed')),
+      typedCall: (ctx) => ({
+        seat: ctx.seat,
+        typedOutput: 'strict-native',
+        canResume: false,
+        invoke: async () => {
+          throw new Error('review failed');
+        },
+      }),
     });
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();

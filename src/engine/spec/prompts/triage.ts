@@ -18,7 +18,7 @@ export type TriagePromptInput = Readonly<{
   tasks: readonly Task[];
   /** The review's blocking findings, by id, in review order. */
   findings: readonly Finding[];
-  verdict: ReviewVerdict;
+  verdict: ReviewVerdict | undefined;
   /** The operator inputs waiting for an answer. */
   inputs: readonly TriageInput[];
   /** The checks the review re-ran for its unverified claims, and what they found. */
@@ -37,7 +37,11 @@ export type TriagePromptInput = Readonly<{
   cycle: number;
 }>;
 
-const TRIAGE_CONTRACT = `You are the run's planner. A final review of this run failed; SPLITBRIEF asks you to turn its blocking findings into the work that fixes them. This call is read-only: do not write, edit or delete any file, and do not run commands that change the project.
+function triageContract(hasReview: boolean): string {
+  const lead = hasReview
+    ? 'A final review of this run failed; SPLITBRIEF asks you to turn its blocking findings into the work that fixes them.'
+    : 'A full-suite check at a batch boundary reported new failures; SPLITBRIEF asks you to turn its pending inputs into the work that fixes them.';
+  return `You are the run's planner. ${lead} This call is read-only: do not write, edit or delete any file, and do not run commands that change the project.
 
 Answer with exactly one JSON object in the triage shape: \`{ "fixTasks": [...], "rejected": [...], "verify": [...], "ask": … }\`.
 - \`fixTasks\` — 0 or more complete TaskSpecs, each carrying \`findingIds\` that name the findings it fixes. A fix task may edit any ordinary project file a finding needs, including a file no earlier task suggested.
@@ -46,6 +50,7 @@ Answer with exactly one JSON object in the triage shape: \`{ "fixTasks": [...], 
 - \`ask\` — \`{ "question", "whyOnlyUserCanAnswer" }\` or null. Use it only when the finding cannot be answered from the plan and the decisions: a change to what is built, not how.
 
 The coverage rule: every blocking finding id and every pending input id appears in exactly one \`fixTasks[].findingIds\`, \`rejected[].findingId\` or \`verify[].findingId\`, unless \`ask\` is set. A review question is a finding like any other: answer it from the plan and the decisions when they answer it — reject it with that answer as the reason — and use \`ask\` only when only the user holds the answer.`;
+}
 
 function checkLine(check: Plan['checks'][number]): string {
   return `\`${check.id}\` (${check.kind} \`${check.value}\`${check.required ? '' : ', optional'})`;
@@ -153,9 +158,12 @@ function triageLines(records: readonly TriageRecord[]): string | undefined {
  */
 export function buildTriagePrompt(input: TriagePromptInput): string {
   const sections: PromptPart[] = [];
+  const hasReview = input.verdict !== undefined;
   if (input.plan !== undefined) sections.push(planSection(input.plan));
   sections.push(taskSection(input.tasks));
-  sections.push({ heading: 'Review Results', body: JSON.stringify(input.verdict, null, 2) });
+  if (input.verdict !== undefined) {
+    sections.push({ heading: 'Review Results', body: JSON.stringify(input.verdict, null, 2) });
+  }
   sections.push({ heading: 'Blocking Findings', body: findingLines(input.findings) });
   sections.push({ heading: 'Pending Inputs', body: inputLines(input.inputs) });
   const verification = verificationLines(input.verification);
@@ -175,13 +183,16 @@ export function buildTriagePrompt(input: TriagePromptInput): string {
   }
   sections.push({ heading: 'Fix Cycle', body: `This triage starts fix cycle ${input.cycle}.` });
   sections.push(
-    instructionsSection(`${TRIAGE_CONTRACT}\n\n${workspaceReadInstructions(input.workspaceDir)}`),
+    instructionsSection(
+      `${triageContract(hasReview)}\n\n${workspaceReadInstructions(input.workspaceDir)}`,
+    ),
   );
 
   return buildPrompt({
     title: 'Review triage',
-    intro:
-      'The final review found blocking findings or a pending correction. Decide what work fixes them.',
+    intro: hasReview
+      ? 'The final review found blocking findings or a pending correction. Decide what work fixes them.'
+      : 'A batch-boundary full suite found new failures. Decide what work fixes them.',
     sections,
   });
 }

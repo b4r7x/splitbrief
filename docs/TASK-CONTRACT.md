@@ -43,7 +43,7 @@ The planning session's answer is typed. Its schemas live in `src/core/schemas/pl
 
 `state.plan` (`PlanSchema`) keeps the plan without its tasks; the tasks live in `state.tasks`.
 
-**The decisions ledger.** An entry is `{ text, taskId }`. A plan's own decision carries `taskId: null`. When the implementer proposes a deviation in its report (`ImplementerReport.decisions`, `{ what, why }`), the planner confirms it with a decision-confirm before the attempt is validated (a cheap call with its own run counter, not a consult; see [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md)), and its `confirm` answer makes `CONFIRM_DECISIONS` append `{ text: '<what> — <why>', taskId }`, naming the task that reported it. The ledger reaches every later brief's read-only Plan context, every consult and the review; the planner confirms a change of how only when the accepted criteria stay intact, and the user decides any change to what is built.
+**The decisions ledger.** An entry is `{ text, taskId }`. A plan's own decision carries `taskId: null`. When the implementer proposes a deviation in its report (`ImplementerReport.decisions`, `{ what, why }`), the planner confirms it with a decision-confirm before the attempt is validated (at most once per attempt, bounded by the brief's attempts, with no run counter; see [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md)), and its `confirm` answer makes `CONFIRM_DECISIONS` append `{ text: '<what> — <why>', taskId }`, naming the task that reported it. The ledger reaches every later brief's read-only Plan context, every consult and the review; the planner confirms a change of how only when the accepted criteria stay intact, and the user decides any change to what is built.
 
 **`TaskSpec`.**
 
@@ -241,7 +241,7 @@ type ReviewVerdict = {
 };
 ```
 
-Coverage is a contract rule: the answer carries exactly one result for every task and criterion in scope, and an `unverified` finding names non-empty `checkIds` or a `criterionId` whose criterion has registered checks. A missing, duplicated or invented id, or a `partial`/`missed` task or `fail` criterion with no blocking finding naming it, fails the schema and the seat gets its one repair. The checks behind an unverified claim run through `runChecks`; a `render` check is not runnable and stays unverified. `deriveReviewOutcome` turns the answer plus those results into `pass`, `pass-with-notes` or `fail`. The record lives in `state.review` and `review.json`; `review.md` is its rendering from `renderReviewMarkdown` (`src/core/review/render.ts`). A session saved before the typed review still reads through `parseFinalReview()` (`src/engine/parsers/final-review.ts`).
+Coverage is a contract rule: the answer carries exactly one result for every task and criterion in scope, and an `unverified` finding names non-empty `checkIds` or a `criterionId` whose criterion has registered checks. A missing, duplicated or invented id, or a `partial`/`missed` task or `fail` criterion with no blocking finding naming it, fails the schema and the seat gets its one repair. The checks behind an unverified claim run through `runChecks`, a `render` check running the configured `validation.render` command; a render criterion stays unverified when no image reached the reviewer. `deriveReviewOutcome` turns the answer plus those results into `pass`, `pass-with-notes` or `fail`. The record lives in `state.review` and `review.json`; `review.md` is its rendering from `renderReviewMarkdown` (`src/core/review/render.ts`). A session saved before the typed review still reads through `parseFinalReview()` (`src/engine/parsers/final-review.ts`).
 
 A failed review goes to one planner triage call, which answers one typed `TriageResult`:
 
@@ -425,11 +425,11 @@ The application captures target baselines before dispatch, parses and preflights
 
 The existing task evidence entry has optional `apiApply` with `callId`, `grammar: 'file-bundle-v1'`, `status`, `candidatePaths`, `applied`, `noops`, `untouched`, optional `failedPath` and `code`. Each applied entry records `path`, `action`, nullable `beforeSha256`, `afterSha256`, and optional `afterMode`, without storing baseline contents. Status is `applied`, `rejected`, `partial` or `failed`; a pre-dispatch refusal has a null call ID. Persisted partial effects remain available to retry and recovery. Older evidence without this field means unknown, not applied. If a process crashes before the receipt is persisted, existing task snapshots and disk state support reconciliation, but attribution may remain unknown and require recovery.
 
-## Evidence ledger
+## Checks log
 
 Every run writes a per-session evidence ledger to `.splitbrief/sessions/<id>/evidence.json`
-(constant `EVIDENCE_FILE`, file mode `0o600`). The ledger is the durable record
-of what each task was supposed to prove and what was actually observed. It is
+(constant `EVIDENCE_FILE`, file mode `0o600`). The ledger is the durable record of
+what each check actually did, per task, alongside the writer receipts below. It is
 written incrementally as tasks reach a terminal state and amended once the
 final review completes. API bundle applications in the run workspace update `promotedFiles` (the name
 predates the run workspace) from the writer's result before validation. This collection keeps only the latest receipt for each target path
@@ -468,8 +468,17 @@ type EvidenceLedger = {
     changedFiles: string[];
     validation: Array<{ stage: 'typecheck' | 'lint' | 'test'; passed: boolean;
                         skipped?: boolean; skippedReason?: string; errorSummary?: string }>;
-    expectedEvidence: string[];   // task.evidence ++ task.tests
-    observedEvidence: string[];   // produced by orchestrator
+    checks?: Array<{             // one entry per check run: a stage, the suite, or a registered check
+      id: string;                // the stage name or the registered check id
+      command?: string;
+      exitCode?: number;
+      output?: string;           // bounded, redacted tail
+      artifacts?: Array<{ path: string; sha256: string }>;
+      workspaceSnapshotId?: string;
+      ts: string;
+    }>;
+    expectedEvidence?: string[];  // retired; an older file's value loads and is ignored
+    observedEvidence?: string[];  // retired; an older file's value loads and is ignored
     escalated: boolean;
     briefHash?: string | null;  // absent on sessions written before this spec; readers must treat absent and `null` identically.
     promotedBriefHash?: string; // hashTaskBrief([task]); independent of the whole-plan briefHash
@@ -481,23 +490,17 @@ type EvidenceLedger = {
 };
 ```
 
-### Observed evidence vocabulary
+### Check kinds and policy
 
-Strings appended to `observedEvidence` are stable. UI and tests may match on them.
+A check is one of three kinds. A `test` check runs the named test file or pattern through the validation stage's own resolved command and narrowing. A `cmd` check runs its value as a command: `npm run <script>` is allowed only under an approved plan and only when `package.json` defines the script, and `npx` is allowed only as `npx --no-install <stack tool>`. `checkCommandRefusal` (`src/engine/orchestrator/planning/sanitize-discovered-validation.ts`) decides this; `planApprovesNpmScripts` reads the configured approval level and the run's recorded plan approval, and without approval every other command falls to `unsafeCommandReason`. The plan card lists approved `npm run` checks as confirmations (`planConfirmations`, `src/engine/orchestrator/approval/confirm.ts`). A `render` check runs the user's `validation.render` command — `{id}` is the check's value, one argv element matching `^[a-z0-9-]+$`, and `{out}` is a fresh directory under `<workspace>/.test-artifacts/ui/`, with cwd the workspace; it is not filtered by the planner command policy. Every `.png` under `{out}` is copied to `.splitbrief/sessions/<id>/renders/<check-id>/` and logged with its sha256. With no `validation.render` the check is `not-runnable` with `validation.render is not set`.
 
-Only the orchestrator appends to `observedEvidence`; no seat can add render or process evidence to it. An `expectedEvidence` entry with no matching observed string is therefore informational. The review packet labels it that way, and the final review files it as a Note at most, never as a Critical finding.
+A check's status is `pass`, `fail`, `not-runnable`, `refused` or `unknown`. A required check that cannot run — any status but `pass` or `fail` — halts before the review with `required-checks-unrunnable`, listing every check id; it never becomes a fix task. A required check that ran and failed enters the pre-review triage as a `defect`, keyed to the file it names. The scheduler runs typecheck, lint, the affected tests and the task's own checks after every task; the full suite at each batch boundary; and the full suite plus every required check before every review. Each run appends one entry to the task's `checks` log; the review packet prints them under `## Checks Log` with every path read outside the workspace.
 
-| String | When it is appended |
-|---|---|
-| `task reached done` | Task transitions to `done` (a local attempt, a consult-guided attempt, or a consult `verify`) |
-| `task reached escalated` | Task transitions to `escalated` (older runs only) |
-| `typecheck passed` / `lint passed` / `test passed` | Validation stage reported `passed: true` |
-| `diff written for <file>` | Task produced exactly one changed file |
-| `diff written for <n> files` | Task produced more than one changed file |
-| `<stage> skipped` / `<stage> skipped (<reason>)` | The stage resolved to no command; it is recorded as skipped, never as passed |
-| `final review written` | Final review succeeded; appended to every completed task |
-| `skipped: <reason>` | `pre_task` hook denied the task |
-| `skipped: dependency failed: ...` | `handleSkippedTask(...)` skipped the task because a dependency was already failed or skipped |
+A `test`, `cmd` or `render` check whose executable is missing is `not-runnable` with `<executable> not found`. It never becomes `fail` and never enters triage.
+
+The reviewer prompt limits the Checks Log to 30,000 characters for a CLI seat. It selects outside reads first, then the latest execution of each check id if that execution failed. Next, it selects the other latest executions, then earlier failures, then the rest. The log keeps the selected entries in their recorded order. An omission line names the count and the path of `evidence.json`.
+
+If size limits remove the Checks Log, its replacement names `evidence.json` for checks and `session.jsonl` for `isolation_outside_read` warnings. An API seat gets the whole log. The API review packet refuses with `insufficient-context` if the orchestrator cannot assemble the log. It also refuses if the whole input does not fit. Both seats get every `isolation_outside_read` path.
 
 ### Summary rollup
 

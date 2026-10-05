@@ -184,7 +184,7 @@ describe('enqueue', () => {
     expect(state?.messageQueue).toHaveLength(50);
   });
 
-  it('rejects input outside planner live phases at the shared queue boundary', async () => {
+  it('accepts input during a brief and queues it durably for the boundary', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
     let state: WorkflowState | undefined = {
       ...makeResearchingState(),
@@ -205,7 +205,39 @@ describe('enqueue', () => {
       serialize: createWriteSequencer(),
     });
 
-    const result = await handler('should not queue', 'implementing');
+    const result = await handler('keep this for after', 'implementing');
+
+    expect(result).toMatchObject({ status: 'accepted' });
+    expect(state?.messageQueue.map((m) => m.text)).toEqual(['keep this for after']);
+    expect(events.find((event) => event.type === 'message_queued')).toBeDefined();
+    // Durable: the persisted head carries it, so a restart still drains it once.
+    expect(loadState({ projectDir, sessionId })?.messageQueue.map((m) => m.text)).toEqual([
+      'keep this for after',
+    ]);
+  });
+
+  it('still rejects a phase that is not live at the shared queue boundary', async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    let state: WorkflowState | undefined = {
+      ...makeResearchingState(),
+      phase: 'idle',
+    };
+    const { bus, events } = makeBusRecorder();
+    const planner = makePlanner();
+
+    const handler = createQueueHandler({
+      projectDir,
+      sessionId,
+      getState: () => state,
+      setState: (s) => {
+        state = s;
+      },
+      bus,
+      planner,
+      serialize: createWriteSequencer(),
+    });
+
+    const result = await handler('should not queue', 'idle');
 
     expect(result).toMatchObject({ status: 'rejected', reason: 'phase-unavailable' });
     expect(state?.messageQueue).toHaveLength(0);
@@ -215,8 +247,7 @@ describe('enqueue', () => {
       type: 'warning',
       category: 'queue',
       code: 'phase_unavailable',
-      message:
-        'Queue is only available while the planner is running; current phase is implementing.',
+      message: 'Queue is only available while a run is live; current phase is idle.',
     });
   });
 

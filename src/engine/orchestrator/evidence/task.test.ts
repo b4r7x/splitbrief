@@ -5,6 +5,7 @@ import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
 import { evidenceLedgerPath, writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { EvidenceLedgerSchema, type EvidenceLedger } from '../../../core/schemas/evidence.js';
 import {
+  checkEntries,
   recordLocalTaskEvidence,
   recordPromotedFilesEvidence,
   recordPromotionFailureEvidence,
@@ -26,7 +27,7 @@ function failing(stage: 'typecheck' | 'lint' | 'test', error: string): Validatio
 }
 
 describe('recordLocalTaskEvidence', () => {
-  it('records validation pass and observedEvidence', () => {
+  it('records legacy validation without adding to the checks log', () => {
     const task = makeTask();
     const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
     const updated = recordLocalTaskEvidence({
@@ -36,9 +37,36 @@ describe('recordLocalTaskEvidence', () => {
       validation: [passing('typecheck'), passing('lint')],
     });
     expect(updated.tasks[0]?.status).toBe('done');
-    expect(updated.tasks[0]?.observedEvidence).toContain('typecheck passed');
-    expect(updated.tasks[0]?.observedEvidence).toContain('lint passed');
-    expect(updated.tasks[0]?.observedEvidence).toContain('task reached done');
+    expect(updated.tasks[0]?.validation.map((entry) => entry.stage)).toEqual(['typecheck', 'lint']);
+    expect(updated.tasks[0]?.checks).toEqual([]);
+  });
+
+  it('records a check run with its command, exit code, artifacts and snapshot', () => {
+    const entries = checkEntries({
+      workspaceSnapshotId: 'snap-1',
+      runs: [
+        {
+          checkId: 'K1',
+          status: 'pass',
+          output: 'ok',
+          command: 'npm test',
+          exitCode: 0,
+          artifacts: [{ path: '/tmp/shot.png', sha256: 'abc' }],
+        },
+      ],
+    });
+
+    expect(entries).toEqual([
+      {
+        id: 'K1',
+        command: 'npm test',
+        exitCode: 0,
+        output: 'ok',
+        artifacts: [{ path: '/tmp/shot.png', sha256: 'abc' }],
+        workspaceSnapshotId: 'snap-1',
+        ts: expect.any(String),
+      },
+    ]);
   });
 
   it('keeps the validation command and recorded output so the review can quote them', () => {
@@ -87,21 +115,6 @@ describe('recordLocalTaskEvidence', () => {
     });
   });
 
-  it('records a pre-existing-failure line for an exempt stage alongside passing lines', () => {
-    const task = makeTask();
-    const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
-    const updated = recordLocalTaskEvidence({
-      ledger,
-      task,
-      status: 'done',
-      validation: [failing('typecheck', 'error'), passing('lint')],
-      exemptStages: ['typecheck'],
-    });
-    expect(updated.tasks[0]?.observedEvidence).toContain('typecheck failed (pre-existing)');
-    expect(updated.tasks[0]?.observedEvidence).toContain('lint passed');
-    expect(updated.tasks[0]?.observedEvidence).not.toContain('typecheck passed');
-  });
-
   it('skipped stage records skipped, not passed', () => {
     const task = makeTask();
     const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
@@ -117,27 +130,21 @@ describe('recordLocalTaskEvidence', () => {
       skipped: true,
       skippedReason: 'no affected test file found',
     });
-    expect(updated.tasks[0]?.observedEvidence).toContain(
-      'test skipped (no affected test file found)',
-    );
-    expect(updated.tasks[0]?.observedEvidence).not.toContain('test passed');
+    expect(updated.tasks[0]?.checks).toEqual([]);
+    expect(
+      checkEntries({ validation: [skippedStage('test', 'no affected test file found')] }),
+    ).toEqual([
+      { id: 'test', output: 'skipped test: no affected test file found', ts: expect.any(String) },
+    ]);
   });
 
-  it('diff written for 2 files', () => {
+  it('records the changed files without a prose diff label', () => {
     const task = makeTask({ file: 'src/a.ts', files: ['src/a.ts', 'src/a.test.ts'] });
     const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
     const updated = recordLocalTaskEvidence({ ledger, task, status: 'done', validation: [] });
 
     expect(updated.tasks[0]?.changedFiles).toEqual(['src/a.ts', 'src/a.test.ts']);
-    expect(updated.tasks[0]?.observedEvidence).toContain('diff written for 2 files');
-  });
-
-  it('keeps naming the single declared file when only one file changed', () => {
-    const task = makeTask();
-    const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
-    const updated = recordLocalTaskEvidence({ ledger, task, status: 'done', validation: [] });
-
-    expect(updated.tasks[0]?.observedEvidence).toContain(`diff written for ${task.file}`);
+    expect(updated.tasks[0]?.checks).toEqual([]);
   });
 
   it('exhausted task records failed status and keeps every validation attempt', () => {
@@ -191,6 +198,54 @@ describe('recordLocalTaskEvidence', () => {
   });
 });
 
+describe('checks log failed-stage diagnostics', () => {
+  it('records the command, exit code and stderr tail of a stderr-only failed stage', () => {
+    const entries = checkEntries({
+      validation: [
+        {
+          passed: false,
+          stage: 'typecheck',
+          command: 'npm run typecheck',
+          exitCode: 2,
+          output: '',
+          error: "src/a.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.",
+        },
+      ],
+    });
+
+    expect(entries).toEqual([
+      {
+        id: 'typecheck',
+        command: 'npm run typecheck',
+        exitCode: 2,
+        output: "src/a.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.",
+        ts: expect.any(String),
+      },
+    ]);
+  });
+
+  it('keeps the end of a long failed-stage diagnostic, not its beginning', () => {
+    const tail = 'src/a.ts(9,9): error TS1005: expected a semicolon';
+    const entries = checkEntries({
+      validation: [
+        {
+          passed: false,
+          stage: 'lint',
+          command: 'npm run lint',
+          exitCode: 1,
+          output: '',
+          error: `${'x'.repeat(9000)}${tail}`,
+        },
+      ],
+    });
+
+    const output = entries[0]?.output ?? '';
+    expect(output.length).toBeLessThanOrEqual(4096);
+    expect(output.endsWith(tail)).toBe(true);
+    expect(output.startsWith('x')).toBe(true);
+  });
+});
+
 describe('recordRetryOrEscalationEvidence', () => {
   it('records escalation', () => {
     const task = makeTask();
@@ -203,7 +258,7 @@ describe('recordRetryOrEscalationEvidence', () => {
       validation: [failing('typecheck', 'error')],
     });
     expect(updated.tasks[0]?.escalated).toBe(true);
-    expect(updated.tasks[0]?.observedEvidence).toContain('task reached escalated');
+    expect(updated.tasks[0]?.validation[0]).toMatchObject({ stage: 'typecheck', passed: false });
   });
 
   it('records an escalated task without changed-file evidence when no files changed', () => {
@@ -217,7 +272,7 @@ describe('recordRetryOrEscalationEvidence', () => {
     });
 
     expect(updated.tasks[0]?.changedFiles).toEqual([]);
-    expect(updated.tasks[0]?.observedEvidence).not.toContain(`diff written for ${task.file}`);
+    expect(updated.tasks[0]?.checks).toEqual([]);
   });
 
   it('flags and reports an exempt stage on the escalation path too', () => {
@@ -232,7 +287,7 @@ describe('recordRetryOrEscalationEvidence', () => {
       exemptStages: ['lint'],
     });
     expect(updated.tasks[0]?.validation[0]).toMatchObject({ passed: false, baselineExempt: true });
-    expect(updated.tasks[0]?.observedEvidence).toContain('lint failed (pre-existing)');
+    expect(updated.tasks[0]?.checks).toEqual([]);
   });
 });
 
@@ -242,7 +297,7 @@ describe('recordSkippedTaskEvidence', () => {
     const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
     const updated = recordSkippedTaskEvidence({ ledger, task, reason: 'dep failed' });
     expect(updated.tasks[0]?.status).toBe('skipped');
-    expect(updated.tasks[0]?.observedEvidence).toContain('skipped: dep failed');
+    expect(updated.tasks[0]?.checks).toEqual([]);
   });
 });
 

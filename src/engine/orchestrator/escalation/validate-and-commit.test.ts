@@ -79,6 +79,7 @@ describe('validateAndCommit', () => {
     const controller = new AbortController();
     const validator: Validator = {
       primeBaseline: vi.fn().mockResolvedValue(undefined),
+      runFullSuite: vi.fn().mockResolvedValue({ results: [], failures: {}, newFailures: {} }),
       runValidation: vi.fn().mockImplementation(async () => {
         controller.abort(new DOMException('The user aborted a request.', 'AbortError'));
         return [{ stage: 'test' as const, passed: true }];
@@ -119,6 +120,7 @@ describe('validateAndCommit', () => {
     const task = makeTask({ id: 'T012', file: 'src/exempt.ts' });
     const validator: Validator = {
       primeBaseline: vi.fn().mockResolvedValue(undefined),
+      runFullSuite: vi.fn().mockResolvedValue({ results: [], failures: {}, newFailures: {} }),
       runValidation: vi
         .fn()
         .mockResolvedValue([
@@ -153,6 +155,7 @@ describe('validateAndCommit', () => {
     const task = makeTask({ id: 'T013', file: 'src/blocks.ts' });
     const validator: Validator = {
       primeBaseline: vi.fn().mockResolvedValue(undefined),
+      runFullSuite: vi.fn().mockResolvedValue({ results: [], failures: {}, newFailures: {} }),
       runValidation: vi
         .fn()
         .mockResolvedValue([

@@ -6,10 +6,15 @@ import { normalizeCustomCommand } from '../../../core/config/custom-commands.js'
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState, ChangedFilesSnapshot } from '../../../core/schemas/workflow.js';
+import type { Task } from '../../../core/schemas/task.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
+import { loadState, saveState } from '../../../core/state/persistence.js';
+import { transitionAndSave } from '../state-ops.js';
+import { enqueueUserMessage } from '../queue/submit.js';
+import { clearPendingQueue } from '../queue/clear.js';
 import {
   makeBusRecorder,
   makeCallbacks,
@@ -33,6 +38,7 @@ import { makeBaseConfig } from '#testing/helpers/factories/implementer-base.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { fixBriefDescription, type FixFinding } from '../../../core/review/fix-task.js';
 import {
+  captureProjectFileHashes,
   getChangedFilesSinceSnapshot,
   getChangedFilesSnapshot,
 } from '../approval/file-snapshots/capture.js';
@@ -360,6 +366,7 @@ describe('runImplementation configured custom contracts', () => {
 
   it('discards output-child writes while applying parsed output to the run workspace without stage env or session leakage', async () => {
     const { projectDir, stateDir } = setupProject('t028-output-workflow');
+    ensureSessionDir(projectDir, 't028-session-must-not-reach-child');
     const task = makeTask({ id: 'T028', file: 'src/output.ts', action: 'create' });
     const state = makeImplState([task]);
     const childStages: string[] = [];
@@ -447,6 +454,7 @@ describe('runImplementation workspace continuation', () => {
     stateOverrides?: Partial<WorkflowState>,
   ): Promise<boolean | undefined> {
     const { projectDir } = setupProject('reseed');
+    ensureSessionDir(projectDir, 'reseed-session');
     const task = makeTask({ id: 'T040', file: 'src/reseed.ts', action: 'create' });
     const state = makeImplState([task], stateOverrides);
     const resumeArgs: Array<boolean | undefined> = [];
@@ -564,9 +572,200 @@ describe('runImplementation seat trouble', () => {
   });
 });
 
+describe('runImplementation correction at a stop', () => {
+  const correction = 'Keep the helper in src/retry.ts.';
+
+  function stoppingWctx(input: {
+    projectDir: string;
+    sessionId: string;
+    implementer: Implementer;
+    signal?: AbortSignal;
+  }) {
+    const abort: { call: (() => void) | null } = { call: null };
+    const wctx = makeWctx({
+      projectDir: input.projectDir,
+      sessionId: input.sessionId,
+      implementer: input.implementer,
+      callbacks: makeCallbacks({ onContinuationNeeded: async () => correction }).callbacks,
+      sinks: {
+        setAbortHandler: (handler) => {
+          abort.call = handler;
+        },
+        setQueueHandler: () => {},
+      },
+      ...(input.signal !== undefined && { signal: input.signal }),
+    });
+    return { wctx, abort };
+  }
+
+  const stopped = () => new DOMException('The operation was aborted', 'AbortError');
+
+  it('persists the correction when it is given, beside usage written after it', async () => {
+    const { projectDir } = setupProject('stop-correction-usage');
+    const sessionId = 'stop-correction-usage-session';
+    ensureSessionDir(projectDir, sessionId);
+    const task = makeTask({ id: 'T061', file: 'src/retry.ts', action: 'create' });
+    const discardedUsage = { inputTokens: 7, outputTokens: 3 };
+    const holder: { abort: { call: (() => void) | null } } = { abort: { call: null } };
+    const implement = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        holder.abort.call?.();
+        throw stopped();
+      })
+      .mockResolvedValueOnce({
+        success: false,
+        output: 'busy',
+        error: 'HTTP 503 Service Unavailable',
+        outcome: 'non-zero-exit',
+        usage: discardedUsage,
+      })
+      .mockResolvedValueOnce({ success: true, output: '' });
+    const { wctx, abort } = stoppingWctx({
+      projectDir,
+      sessionId,
+      implementer: makeImplementer({ implement }),
+    });
+    holder.abort = abort;
+    const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
+
+    vi.useFakeTimers();
+    const pending = runImplementation({
+      wctx,
+      task,
+      state: makeImplState([task]),
+      taskStartSnapshot,
+      setTrackedState: vi.fn(),
+      recordApprovalDenial: vi.fn(),
+    });
+    let settled = false;
+    void pending.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    while (!settled) {
+      await vi.advanceTimersByTimeAsync(vi.getTimerCount() === 0 ? 1 : 2_000);
+    }
+    vi.useRealTimers();
+    const result = await pending;
+
+    expect(implement).toHaveBeenCalledTimes(3);
+    const durable = loadState({ projectDir, sessionId });
+    for (const saved of [result.state, durable]) {
+      expect(saved?.lineages?.T061?.corrections).toEqual([correction]);
+      expect(saved?.tokenUsage.implementerInput).toBe(discardedUsage.inputTokens);
+    }
+  });
+
+  it('keeps the correction when the run stops again before the brief returns', async () => {
+    const { projectDir } = setupProject('stop-correction-abort');
+    const sessionId = 'stop-correction-abort-session';
+    ensureSessionDir(projectDir, sessionId);
+    const task = makeTask({ id: 'T062', file: 'src/retry.ts', action: 'create' });
+    const run = new AbortController();
+    const holder: { abort: { call: (() => void) | null } } = { abort: { call: null } };
+    const implement = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        holder.abort.call?.();
+        throw stopped();
+      })
+      .mockImplementationOnce(async () => {
+        run.abort();
+        throw stopped();
+      });
+    const { wctx, abort } = stoppingWctx({
+      projectDir,
+      sessionId,
+      implementer: makeImplementer({ implement }),
+      signal: run.signal,
+    });
+    holder.abort = abort;
+
+    await expect(
+      runImplementation({
+        wctx,
+        task,
+        state: makeImplState([task]),
+        taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
+        setTrackedState: vi.fn(),
+        recordApprovalDenial: vi.fn(),
+      }),
+    ).rejects.toThrow();
+
+    expect(implement).toHaveBeenCalledTimes(2);
+    expect(loadState({ projectDir, sessionId })?.lineages?.T062?.corrections).toEqual([correction]);
+  });
+});
+
 describe('runImplementation continuation note', () => {
-  it('names the declared files that already differ from the commit the brief started on', async () => {
+  async function taskStartBaseline(projectDir: string): Promise<ChangedFilesSnapshot> {
+    return {
+      ...(await getChangedFilesSnapshot(projectDir)),
+      baselineFileHashes: await captureProjectFileHashes(projectDir),
+    };
+  }
+
+  async function workspaceBaseline(
+    projectDir: string,
+    baselineFileHashes: Record<string, string | null>,
+  ): Promise<ChangedFilesSnapshot> {
+    return { ...(await getChangedFilesSnapshot(projectDir)), baselineFileHashes };
+  }
+
+  function noteIsolation(projectDir: string, snapshot: ChangedFilesSnapshot): RunIsolation {
+    return {
+      open: async () => ({ kind: 'worktree', projectDir, head: null, keptFiles: [] }),
+      acquire: async () => ({
+        projectDir,
+        sandboxEnv: {},
+        snapshot,
+        targetBaseline: undefined,
+        changeDetection: 'file-hashes',
+        changedFiles: () => getChangedFilesSinceSnapshot(projectDir, snapshot),
+        cleanup: () => {},
+        revert: vi.fn(),
+      }),
+      dispose: async () => {},
+    };
+  }
+
+  async function runNote(
+    projectDir: string,
+    sessionId: string,
+    task: Task,
+    taskStartSnapshot: ChangedFilesSnapshot,
+    workspaceSnapshot: ChangedFilesSnapshot,
+  ): Promise<ImplementerOptions['continuation']> {
+    const implementer = makeImplementer({ capabilities: { writesFiles: 'direct' } });
+    const continuation = createContinuationHolder({
+      step: { kind: 'brief', taskId: task.id, attempt: 0 },
+      steer: 'use the registry',
+    });
+    await runImplementation({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        implementer,
+        isolation: noteIsolation(projectDir, workspaceSnapshot),
+        continuation,
+      }),
+      task,
+      state: makeImplState([task]),
+      taskStartSnapshot,
+      setTrackedState: vi.fn(),
+      recordApprovalDenial: vi.fn(),
+    });
+    return vi.mocked(implementer.implement).mock.calls[0]?.[0].continuation;
+  }
+
+  it('names the declared files that changed since the brief started', async () => {
     const { projectDir } = setupProject('reseed-note');
+    ensureSessionDir(projectDir, 'reseed-note-session');
     const task = makeTask({ id: 'T041', file: 'src/reseed.ts', action: 'create' });
     const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
     // Written after the task-start snapshot and before the call, as a reset brief finds it.
@@ -614,7 +813,53 @@ describe('runImplementation continuation note', () => {
     expect(vi.mocked(implementer.implement).mock.calls[0]?.[0].continuation).toEqual({
       steer: 'use the registry',
       extra:
-        'These declared files already differ from the commit this brief started on: src/reseed.ts',
+        'These declared files changed since this brief started (an earlier attempt of this brief left them): src/reseed.ts',
+    });
+  });
+
+  it('ignores a declared file an earlier task changed before the brief started', async () => {
+    const { projectDir } = setupProject('reseed-note-earlier');
+    const sessionId = 'reseed-note-earlier-session';
+    ensureSessionDir(projectDir, sessionId);
+    const task = makeTask({ id: 'T042', file: 'src/reseed.ts', action: 'modify' });
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(join(projectDir, 'src/reseed.ts'), 'export const reseed = 1;\n');
+    const taskStartSnapshot = await taskStartBaseline(projectDir);
+    const workspaceSnapshot = await workspaceBaseline(projectDir, {});
+
+    const continuation = await runNote(
+      projectDir,
+      sessionId,
+      task,
+      taskStartSnapshot,
+      workspaceSnapshot,
+    );
+
+    expect(continuation).toEqual({ steer: 'use the registry' });
+  });
+
+  it('lists a declared file a previous attempt changed after the brief started', async () => {
+    const { projectDir } = setupProject('reseed-note-attempt');
+    const sessionId = 'reseed-note-attempt-session';
+    ensureSessionDir(projectDir, sessionId);
+    const task = makeTask({ id: 'T043', file: 'src/reseed.ts', action: 'create' });
+    const taskStartSnapshot = await taskStartBaseline(projectDir);
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(join(projectDir, 'src/reseed.ts'), 'export const reseed = 1;\n');
+    const workspaceSnapshot = await workspaceBaseline(projectDir, {});
+
+    const continuation = await runNote(
+      projectDir,
+      sessionId,
+      task,
+      taskStartSnapshot,
+      workspaceSnapshot,
+    );
+
+    expect(continuation).toEqual({
+      steer: 'use the registry',
+      extra:
+        'These declared files changed since this brief started (an earlier attempt of this brief left them): src/reseed.ts',
     });
   });
 });
@@ -685,6 +930,7 @@ describe('runImplementation live preview', () => {
     chunks: readonly string[],
   ): Promise<{ sink: StreamingSink; narration: string }> {
     const { projectDir } = setupProject('live-preview');
+    ensureSessionDir(projectDir, 'live-preview-session');
     const task = makeTask({ id: 'T050', file: 'src/preview.ts', action: 'modify' });
     const { bus, events } = makeBusRecorder();
     const isolation: RunIsolation = {
@@ -821,5 +1067,154 @@ describe('runImplementation fix tasks', () => {
     expect(prompts[0]).toContain(
       'If no finding needs a code change, change nothing and report that.',
     );
+  });
+});
+
+describe('runImplementation corrections against the persisted head', () => {
+  it('keeps a correction already saved when the seed brings another', async () => {
+    const { projectDir } = setupProject('seed-correction-head');
+    const sessionId = 'seed-correction-head-session';
+    ensureSessionDir(projectDir, sessionId);
+    const task = makeTask({ id: 'T070', file: 'src/seeded.ts', action: 'create' });
+    const stale = makeImplState([task]);
+    saveState({ projectDir, sessionId }, stale);
+    transitionAndSave({ projectDir, sessionId }, stale, {
+      type: 'RECORD_CORRECTION',
+      taskId: task.id,
+      text: 'first correction',
+    });
+    const implementer = makeImplementer();
+
+    const result = await runImplementation({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        implementer,
+        continuation: createContinuationHolder({
+          step: { kind: 'brief', taskId: task.id, attempt: stale.attempt },
+          steer: 'second correction',
+        }),
+      }),
+      task,
+      state: stale,
+      taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
+      setTrackedState: vi.fn(),
+      recordApprovalDenial: vi.fn(),
+    });
+
+    for (const saved of [result.state, loadState({ projectDir, sessionId })]) {
+      expect(saved?.lineages?.T070?.corrections).toEqual(['first correction', 'second correction']);
+    }
+    const steer = vi.mocked(implementer.implement).mock.calls[0]?.[0].continuation?.steer;
+    expect(steer).toContain('first correction');
+    expect(steer).toContain('second correction');
+  });
+
+  it('carries queued text once per call and records it once', async () => {
+    const { projectDir } = setupProject('queued-correction-once');
+    const sessionId = 'queued-correction-once-session';
+    ensureSessionDir(projectDir, sessionId);
+    const task = makeTask({ id: 'T071', file: 'src/queued.ts', action: 'create' });
+    const initial = makeImplState([task]);
+    saveState({ projectDir, sessionId }, initial);
+    const { bus } = makeBusRecorder();
+    const state = enqueueUserMessage({
+      projectDir,
+      sessionId,
+      state: initial,
+      text: 'name the helper parseAmount',
+      phase: 'implementing',
+      bus,
+    }).state;
+    const implementer = makeImplementer();
+
+    await runImplementation({
+      wctx: makeWctx({ projectDir, sessionId, implementer, bus }),
+      task,
+      state,
+      taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
+      setTrackedState: vi.fn(),
+      recordApprovalDenial: vi.fn(),
+    });
+
+    const steer = vi.mocked(implementer.implement).mock.calls[0]?.[0].continuation?.steer ?? '';
+    expect(steer.split('name the helper parseAmount')).toHaveLength(2);
+    const corrections = loadState({ projectDir, sessionId })?.lineages?.T071?.corrections ?? [];
+    expect(corrections).toHaveLength(1);
+    expect(corrections[0]).toContain('name the helper parseAmount');
+  });
+
+  it('leaves queued text pending and unrecorded when the run stops before the call', async () => {
+    const { projectDir } = setupProject('queued-correction-stopped');
+    const sessionId = 'queued-correction-stopped-session';
+    ensureSessionDir(projectDir, sessionId);
+    const task = makeTask({ id: 'T073', file: 'src/stopped.ts', action: 'create' });
+    const initial = makeImplState([task]);
+    saveState({ projectDir, sessionId }, initial);
+    const { bus } = makeBusRecorder();
+    const state = enqueueUserMessage({
+      projectDir,
+      sessionId,
+      state: initial,
+      text: 'wait for me',
+      phase: 'implementing',
+      bus,
+    }).state;
+    const run = new AbortController();
+    run.abort();
+    const implementer = makeImplementer();
+
+    await expect(
+      runImplementation({
+        wctx: makeWctx({ projectDir, sessionId, implementer, bus, signal: run.signal }),
+        task,
+        state,
+        taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
+        setTrackedState: vi.fn(),
+        recordApprovalDenial: vi.fn(),
+      }),
+    ).rejects.toThrow();
+
+    expect(implementer.implement).not.toHaveBeenCalled();
+    const saved = loadState({ projectDir, sessionId });
+    expect(saved?.lineages?.T073?.corrections).toBeUndefined();
+    expect(saved?.messageQueue.map((message) => message.text)).toEqual(['wait for me']);
+    expect(saved?.messageQueue[0]?.drainedAt).toBeUndefined();
+  });
+
+  it('records no correction for queued text the user cleared before it was delivered', async () => {
+    const { projectDir } = setupProject('queued-correction-cleared');
+    const sessionId = 'queued-correction-cleared-session';
+    ensureSessionDir(projectDir, sessionId);
+    const task = makeTask({ id: 'T072', file: 'src/cleared.ts', action: 'create' });
+    const initial = makeImplState([task]);
+    saveState({ projectDir, sessionId }, initial);
+    const { bus } = makeBusRecorder();
+    const state = enqueueUserMessage({
+      projectDir,
+      sessionId,
+      state: initial,
+      text: 'never mind',
+      phase: 'implementing',
+      bus,
+    }).state;
+    let cleared = false;
+    const setTrackedState = vi.fn((tracked: WorkflowState) => {
+      if (cleared) return;
+      cleared = true;
+      clearPendingQueue({ projectDir, sessionId, state: tracked, bus });
+    });
+
+    await runImplementation({
+      wctx: makeWctx({ projectDir, sessionId, implementer: makeImplementer(), bus }),
+      task,
+      state,
+      taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
+      setTrackedState,
+      recordApprovalDenial: vi.fn(),
+    });
+
+    expect(cleared).toBe(true);
+    expect(loadState({ projectDir, sessionId })?.lineages?.T072?.corrections).toBeUndefined();
   });
 });

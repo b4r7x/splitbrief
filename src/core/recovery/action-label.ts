@@ -29,6 +29,7 @@ export function recoveryActionLabel(
 ): string {
   switch (action) {
     case 'retry-same-worker':
+      if (context.reason === 'required-checks-unrunnable') return 'Run the checks again';
       return context.seatRetry === undefined
         ? 'Try again'
         : `Try again with ${CREW_SEAT_LABELS[context.seatRetry]}`;
@@ -53,7 +54,7 @@ export function recoveryActionLabel(
         : 'Send a correction';
     case 'accept-as-is':
       return context.reason === 'review-input-too-large'
-        ? 'Skip review · add a note'
+        ? 'Skip review with a note'
         : 'Accept as is';
     case 'continue':
       return 'Continue';

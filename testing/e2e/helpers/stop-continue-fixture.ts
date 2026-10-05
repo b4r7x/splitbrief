@@ -300,7 +300,8 @@ function fixtureConfig(): Config {
       // the brief fits: without this the run halts on context-overflow before the script runs.
       contextLength: 200_000,
     },
-    validation: { typecheck: false, lint: false, test: false },
+    // The plan's `test` checks are prose; a command that exits 0 lets them run without a project test script.
+    validation: { typecheck: false, lint: false, test: false, testCommand: 'node --version' },
     workflow: { approve: 'none', maxRetries: 1 },
   });
 }

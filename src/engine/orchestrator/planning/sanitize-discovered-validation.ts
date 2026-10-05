@@ -1,4 +1,5 @@
 import type { PackageScriptsReadinessInput } from '../../../core/readiness/checks/validation.js';
+import type { Config } from '../../../core/schemas/config.js';
 import {
   VALIDATION_STAGES,
   type Phase,
@@ -6,12 +7,16 @@ import {
 } from '../../../core/schemas/enums.js';
 import type { DiscoveredValidation } from '../../../core/schemas/workflow.js';
 import { isPackageManager } from '../../../core/trust/path-classification.js';
+import type { ManifestCommands } from '../../../core/validation/manifest-commands.js';
 import { pythonStack } from '../../../core/validation/stacks/python.js';
 import { STACKS } from '../../../core/validation/stacks/registry.js';
+import type { Stack } from '../../../core/validation/stacks/types.js';
+import { resolveStageCommand } from '../../../core/validation/stage-command.js';
 import { isTestPatternSafe } from '../../../core/validation/test-discovery.js';
 import { parseShellCommand } from '../../../utils/parse-shell-command.js';
 import type { EventBus } from '../../events/types.js';
 import { publishWarning } from '../events.js';
+import { formatValidationCommand } from '../validation/commands.js';
 
 const PACKAGE_MANAGERS = ['npm', 'npx', 'node', 'pnpm', 'yarn', 'bun', 'make', 'just'];
 
@@ -207,14 +212,13 @@ export function unsafeCommandReason(raw: string): string | null {
 export function checkCommandRefusal(
   command: string,
   {
-    planApproved,
+    npmScriptsApproved,
     packageScripts,
-  }: { planApproved: boolean; packageScripts: PackageScriptsReadinessInput },
+  }: { npmScriptsApproved: boolean; packageScripts: PackageScriptsReadinessInput },
 ): string | null {
   const tokens = parseShellCommand(command);
   const cmd = tokens[0];
   if (!cmd) return 'names no program';
-  if (!planApproved) return 'runs before the plan is approved';
   const family = commandFamily(cmd);
   if (family === 'npx') {
     const tool = tokens[1] === '--no-install' ? tokens[2] : undefined;
@@ -223,7 +227,7 @@ export function checkCommandRefusal(
       ? null
       : 'runs a program outside the stack tools through npx';
   }
-  if (family === 'npm' && tokens[1] === 'run') {
+  if (npmScriptsApproved && family === 'npm' && tokens[1] === 'run') {
     const script = tokens[2];
     if (script === undefined) return 'runs npm run without a script name';
     if (tokens.some((token) => SHELL_OPERATORS.test(token))) return 'contains a shell operator';
@@ -250,9 +254,17 @@ const REFUSED_WARNING = {
   code: 'discovered_validation_refused',
 } as const;
 
+type StageResolutionContext = {
+  projectDir: string;
+  config: Config;
+  manifest: ManifestCommands;
+  stack: Stack | null;
+};
+
 export function sanitizeDiscoveredValidation(
   discovered: DiscoveredValidation | null | undefined,
   notices: { bus: EventBus; phase: Phase },
+  resolution?: StageResolutionContext,
 ): DiscoveredValidation | undefined {
   if (!discovered) return undefined;
 
@@ -266,7 +278,7 @@ export function sanitizeDiscoveredValidation(
       sanitized.testPattern = discovered.testPattern;
     } else {
       refuse(
-        `The test stage does not take the file pattern ${discovered.testPattern} from the planner (it contains ".." or a path separator) and uses config or the stack's test file patterns.`,
+        `The test stage does not take the file pattern ${discovered.testPattern} from the planner: a test pattern may not contain ".." or a path separator, so the stack's test file patterns apply.`,
       );
     }
   }
@@ -277,13 +289,20 @@ export function sanitizeDiscoveredValidation(
     const refusal = unsafeCommandReason(value);
     if (refusal === null) {
       sanitized[field] = value;
-    } else {
-      // A refusal empties only the discovered rung: config and the manifest outrank it and
-      // the stack default follows it, so the stage may still run this very command.
-      refuse(
-        `The ${stage} stage does not take ${value} from the planner (it ${refusal}) and uses config, the manifest or the stack default.`,
-      );
+      continue;
     }
+    // A refusal empties only the discovered rung: config and the manifest outrank it and
+    // the stack default follows it, so the stage may still run this very command.
+    const resolved =
+      resolution === undefined
+        ? null
+        : resolveStageCommand({ ...resolution, stage, discovered: undefined });
+    if (resolved !== null && formatValidationCommand(resolved.cmd, resolved.args) === value) {
+      continue;
+    }
+    refuse(
+      `The ${stage} stage does not take ${value} from the planner (it ${refusal}) and uses config, the manifest or the stack default.`,
+    );
   }
 
   return Object.keys(sanitized).length > 0 ? sanitized : undefined;

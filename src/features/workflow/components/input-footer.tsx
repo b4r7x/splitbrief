@@ -18,7 +18,11 @@ import {
 import { colorForTone } from '../display/tone-color.js';
 import { deriveBuildProgress, etaText, runnerSilenceMs } from '../display/build-progress.js';
 import { formatTime } from '../../../utils/format-time.js';
-import { selectTaskListView, tasksStore } from '../../../stores/workflow/tasks.js';
+import {
+  selectRunningBrief,
+  selectTaskListView,
+  tasksStore,
+} from '../../../stores/workflow/tasks.js';
 import { operationsStore } from '../../../stores/workflow/operations/state.js';
 import { useStopByline } from '../stop/use-stop-byline.js';
 import { useSpinnerFrame } from '../../../hooks/use-spinner-frame.js';
@@ -194,7 +198,17 @@ export function InputFooter({
                       }
                     : { lead: stageLead, leadColor: null, hintText: null };
 
-  const queuedText = lifecycle.queueDepth > 0 ? `${lifecycle.queueDepth} queued` : null;
+  // During a brief the composer is queueing for the boundary that brief owns, so the footer names
+  // it: "queued for after T003" says where the text lands, where a bare count would not. Outside a
+  // brief — planning, final review, a run at rest — the queue is the planner's or reviewer's and
+  // the count is the whole truth.
+  const runningBriefId = selectRunningBrief(tasks).current?.id ?? null;
+  const queuedText =
+    lifecycle.queueDepth > 0
+      ? runningBriefId !== null
+        ? `queued for after ${runningBriefId}`
+        : `${lifecycle.queueDepth} queued`
+      : null;
 
   // The build block states this estimate above the composer; the byline quotes that derivation
   // rather than running a second one, and says nothing while there is none — naming the reason

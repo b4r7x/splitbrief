@@ -36,6 +36,7 @@ export async function resolveRunReviewScope(opts: {
   workspaceFiles: readonly string[];
   /** The whole workspace diff, from the base to the workspace. */
   workspaceDiff: string;
+  mergedPaths?: readonly string[];
 }): Promise<RunReviewScope> {
   let status: ReviewProvenance['status'] = 'available';
   let recorded: ReturnType<typeof readReviewChanges> = null;
@@ -46,6 +47,10 @@ export async function resolveRunReviewScope(opts: {
     status = 'invalid';
   }
   const taskHashes = new Map(opts.tasks.map((task) => [task.id, hashTaskBrief([task])]));
+  const mergedPaths = new Set(opts.mergedPaths ?? []);
+  const mergedDiffs = new Map(
+    splitDiffByFile(opts.workspaceDiff).map(({ after, diff }) => [after, diff]),
+  );
   const promotedFiles = new Set<string>();
   const uncertainFiles = new Set<string>();
   const lastOutputs = new Map<string, ReviewFileEntry>();
@@ -75,11 +80,14 @@ export async function resolveRunReviewScope(opts: {
   for (const [path, change] of [...changesByPath].sort(([a], [b]) => a.localeCompare(b))) {
     lastOutputs.set(path, change.after);
     try {
-      const diff = await diffFileEntries({
-        path,
-        before: bytes(change.before),
-        after: bytes(change.after),
-      });
+      const override = mergedPaths.has(path) ? mergedDiffs.get(path) : undefined;
+      const diff =
+        override ??
+        (await diffFileEntries({
+          path,
+          before: bytes(change.before),
+          after: bytes(change.after),
+        }));
       if (diff !== '') {
         files.push({ path, taskIds: [...change.taskIds], diff });
         promotedFiles.add(path);
@@ -89,6 +97,7 @@ export async function resolveRunReviewScope(opts: {
     }
   }
   for (const [path, expected] of lastOutputs) {
+    if (mergedPaths.has(path)) continue;
     try {
       const current = await readConfinedEntry(opts.workspaceDir, path);
       const matches =

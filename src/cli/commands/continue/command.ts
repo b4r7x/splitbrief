@@ -22,6 +22,7 @@ import { deriveConfigEdits } from '../../../stores/project/config-persistence.js
 import { resumeSavedSession } from './resume.js';
 import { settleReadyRun } from './settle.js';
 import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';
+import { filesStillOnDiskSuffix } from '../../../engine/orchestrator/run/close.js';
 
 export interface ContinueDeps {
   initStores: typeof initStores;
@@ -190,11 +191,7 @@ export async function continueCommand(
   // `end-run` is the one action that does not carry the run on: the close is
   // recorded and there is nothing left to re-enter.
   if (resumed.state.closed !== undefined) {
-    console.log(
-      resumed.state.workspace === undefined || resumed.state.workspace.kind === 'checkout'
-        ? `Run ${sessionId} closed. The files it wrote are still on disk.`
-        : `Run ${sessionId} closed.`,
-    );
+    console.log(`Run ${sessionId} closed.${filesStillOnDiskSuffix(resumed.state.workspace)}`);
     return;
   }
 

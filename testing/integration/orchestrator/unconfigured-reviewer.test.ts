@@ -183,6 +183,7 @@ describe('run with no reviewer configured', () => {
       'validate',
       'validate',
       'validate',
+      'checks_run',
       'task_completed',
       'task_tokens',
       'snapshot_created',

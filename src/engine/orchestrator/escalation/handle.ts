@@ -20,6 +20,8 @@ import {
 import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
 import { requestConsult } from '../consult/request.js';
 import { applyConsultAnswer } from '../consult/apply.js';
+import { commitQueueMessagesConsulted, readQueueForConsult } from '../queue/drain.js';
+import { formatMessage } from '../queue/prompt.js';
 import {
   getChangedFilesSinceSnapshot,
   getChangedFilesSnapshot,
@@ -374,6 +376,7 @@ export async function handleRetryAndEscalation(
     };
     const pre = await runPreHooks(ctx.config.hooks, 'pre_escalation', preEscalationPayload, {
       projectDir: ctx.projectDir,
+      workspaceDir: ctx.workspaceDir,
       sessionId: ctx.sessionId,
     });
     if (!pre.allow) {
@@ -430,6 +433,13 @@ export async function handleRetryAndEscalation(
     const snapshot = attemptSnapshot ?? taskStartSnapshot;
     const changedFiles = await attemptChangedFiles(ctx.workspaceDir, snapshot);
     const reason: ConsultReason = blocked !== undefined ? 'blocked' : 'failed';
+    const queued = readQueueForConsult({
+      projectDir: ctx.projectDir,
+      sessionId: ctx.sessionId,
+      state,
+    });
+    const userText =
+      queued.messages.length === 0 ? undefined : queued.messages.map(formatMessage).join('\n\n');
     const consult = await requestConsult(
       {
         projectDir: ctx.projectDir,
@@ -450,10 +460,19 @@ export async function handleRetryAndEscalation(
         report: blocked ?? null,
         snapshot,
         changedFiles,
+        ...(userText !== undefined && { userText }),
       },
     );
     if ('error' in consult) {
       return seatProtocolHalt(ctx, state, consult.error, attempts, handBack);
+    }
+    if (queued.messages.length > 0) {
+      state = commitQueueMessagesConsulted({
+        projectDir: ctx.projectDir,
+        sessionId: ctx.sessionId,
+        state,
+        ids: queued.messages.map((message) => message.id),
+      }).state;
     }
     lastDiagnosis = consult.answer.answer.diagnosis;
 

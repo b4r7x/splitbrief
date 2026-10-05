@@ -33,7 +33,7 @@ export function fitReviewPrompt(
     prompt: FinalReviewPromptInput;
     maxChars: number | undefined;
     declared: (path: string) => boolean;
-    evidencePaths: Readonly<{ validation: string; drift: string }>;
+    evidencePaths: Readonly<{ validation: string; sessionLog: string; drift: string }>;
   }>,
 ): ReviewInputFit {
   const prompt = { ...input.prompt };
@@ -68,11 +68,18 @@ export function fitReviewPrompt(
         }
         break;
       case 'task-evidence':
-        for (const [key, label, path] of [
-          ['validationEvidence', 'Recorded Validation Output', input.evidencePaths.validation],
-          ['driftReport', 'Deterministic Drift Report', input.evidencePaths.drift],
+        for (const [key, label, omitted] of [
+          [
+            'checksLog',
+            'Checks Log',
+            `Omitted for size; read ${input.evidencePaths.validation} for the checks and the isolation_outside_read warnings in ${input.evidencePaths.sessionLog}`,
+          ],
+          [
+            'driftReport',
+            'Deterministic Drift Report',
+            `Omitted for size; read ${input.evidencePaths.drift}`,
+          ],
         ] as const) {
-          const omitted = `Omitted for size; read ${path}`;
           const evidence = prompt[key];
           if (evidence === undefined || evidence.length <= omitted.length) continue;
           items.push(label);

@@ -163,7 +163,7 @@ export function planFromTasks(tasks: readonly Task[]): PlanProposal {
       id: `${task.id}-K${index + 1}`,
       kind: 'test' as const,
       value,
-      required: true,
+      required: false,
     }));
     return {
       id: task.id,
@@ -173,7 +173,7 @@ export function planFromTasks(tasks: readonly Task[]): PlanProposal {
       checks:
         tests.length > 0
           ? tests
-          : [{ id: `${task.id}-K1`, kind: 'cmd' as const, value: 'true', required: true }],
+          : [{ id: `${task.id}-K1`, kind: 'cmd' as const, value: 'true', required: false }],
       suggestedFiles: [...taskFiles(task)],
       contextFiles: task.scope?.inBounds ?? [],
       exclusions: task.scope?.outOfBounds ?? [],

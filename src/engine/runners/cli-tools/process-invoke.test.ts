@@ -543,15 +543,7 @@ describe('invokeProcessCli', () => {
     });
 
     expect(opencodeProtocolEvents(envelope)).toEqual([
-      {
-        type: 'result',
-        status: 'failed',
-        text: '',
-        usage: null,
-        nativeSessionId: null,
-        error: { code: 'opencode-error', message: `UnknownError: ${detail}` },
-        partial: true,
-      },
+      { type: 'warning', code: 'opencode-error', message: `UnknownError: ${detail}` },
     ]);
   });
 
@@ -618,6 +610,160 @@ describe('invokeProcessCli', () => {
       },
     });
     expect(undiagnosed.error?.code).toBe('non-zero-exit');
+  });
+
+  // Reconstructed from run 2026-10-05-s6-central-checks-and-renders-plus-the-carried-in--3
+  // (T006 implementer-6 at 18:35:32Z, T025 implementer-31 at 00:09:55Z) over the line shapes of
+  // testing/fixtures/opencode/stream-json.ndjson: a tool step finished, the next provider call
+  // failed with an error line, OpenCode retried it and went on streaming. The old adapter ended the
+  // call on the error line and dropped its text, so the provider message here is illustrative.
+  const OPENCODE_SESSION = 'ses_ef2ac0fd0ffe17uu23hHuymsa3';
+  const openCodeLine = (record: Record<string, unknown>): string =>
+    JSON.stringify({ timestamp: 1791225332985, sessionID: OPENCODE_SESSION, ...record });
+  const stepStart = openCodeLine({ type: 'step_start', part: { type: 'step-start' } });
+  const toolStep = [
+    stepStart,
+    openCodeLine({
+      type: 'tool_use',
+      part: {
+        type: 'tool',
+        id: 'call_01_k7a6wkux102lafremdh2e8vw',
+        tool: 'bash',
+        state: {
+          status: 'completed',
+          input: { command: 'grep -n checkCommandRefusal src/engine/orchestrator/planning' },
+          output: '207:export function checkCommandRefusal(',
+        },
+      },
+    }),
+    openCodeLine({
+      type: 'step_finish',
+      part: {
+        type: 'step-finish',
+        reason: 'tool-calls',
+        tokens: { input: 6071, output: 264, reasoning: 12, cache: { read: 172160, write: 0 } },
+      },
+    }),
+  ];
+  const providerError = openCodeLine({
+    type: 'error',
+    error: {
+      name: 'APIError',
+      data: { message: 'Upstream stream ended unexpectedly', statusCode: 502, isRetryable: true },
+    },
+  });
+  const handBack =
+    'Implemented the refusal check.\n\n{"status":"done","filesChanged":["src/engine/orchestrator/planning/sanitize-discovered-validation.ts"],"touchedNotSuggested":[],"notes":null,"decisions":[]}';
+  const finalStep = [
+    stepStart,
+    openCodeLine({ type: 'text', part: { type: 'text', text: handBack } }),
+    openCodeLine({
+      type: 'step_finish',
+      part: { type: 'step-finish', reason: 'stop', tokens: { input: 1200, output: 310 } },
+    }),
+  ];
+  const opencodeStream = (lines: readonly string[], opts: { exitCode: number; stderr?: string }) =>
+    invocation({
+      script: [
+        `process.stdout.write(Buffer.from('${Buffer.from(`${lines.join('\n')}\n`, 'utf8').toString('base64')}','base64').toString('utf8'))`,
+        ...(opts.stderr === undefined
+          ? []
+          : [`process.stderr.write(${JSON.stringify(opts.stderr)})`]),
+        `process.exitCode=${opts.exitCode}`,
+      ].join(';'),
+      args: ['<PROMPT>'],
+      promptTransport: opencodeImplementerAdapter.promptTransport,
+    });
+  const warningsOf = (events: readonly RunnerCallEvent[]) =>
+    events.flatMap((event) => (event.type === 'call_warning' ? [event.warning] : []));
+
+  it('an OpenCode error line followed by more output is a warning with the provider text, and the call completes', async () => {
+    const events: RunnerCallEvent[] = [];
+    const result = await run(
+      opencodeImplementerAdapter,
+      opencodeStream([...toolStep, providerError, ...finalStep], { exitCode: 0 }),
+      'fixture prompt',
+      (event) => events.push(event),
+    );
+
+    expect(result).toMatchObject({ status: 'completed', text: handBack, error: null });
+    expect(result.nativeSessionId).toBe(OPENCODE_SESSION);
+    expect(warningsOf(events)).toContainEqual(
+      expect.objectContaining({
+        code: 'opencode-error',
+        message: 'APIError: Upstream stream ended unexpectedly',
+      }),
+    );
+    expect(JSON.stringify(events)).not.toContain('CLI emitted output after its terminal result');
+  });
+
+  it('an OpenCode error line that ends the stream is the call failure in the provider words', async () => {
+    const result = await run(
+      opencodeImplementerAdapter,
+      opencodeStream([...toolStep, providerError], { exitCode: 0 }),
+      'fixture prompt',
+    );
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      nativeSessionId: OPENCODE_SESSION,
+      error: { code: 'opencode-error', message: 'APIError: Upstream stream ended unexpectedly' },
+    });
+  });
+
+  // Reconstructed from the same run, T026 implementer-33 at 00:50:18Z: OpenCode printed its whole
+  // hand-back (summary and JSON report, 00:50:18.439Z) and exited 1 a tenth of a second later with
+  // no error line and no step finish after it.
+  it('exit 1 right after a complete OpenCode hand-back keeps the hand-back and warns about the exit', async () => {
+    const events: RunnerCallEvent[] = [];
+    const result = await run(
+      opencodeImplementerAdapter,
+      opencodeStream([...toolStep, stepStart, finalStep[1] ?? ''], { exitCode: 1 }),
+      'fixture prompt',
+      (event) => events.push(event),
+    );
+
+    expect(result).toMatchObject({ status: 'completed', text: handBack, error: null });
+    expect(warningsOf(events)).toContainEqual(
+      expect.objectContaining({
+        code: 'non_zero_exit_after_answer',
+        message: expect.stringContaining('code 1'),
+      }),
+    );
+  });
+
+  it('exit 1 with no final answer after the last tool call still fails on the exit code', async () => {
+    const result = await run(
+      opencodeImplementerAdapter,
+      opencodeStream(
+        [
+          stepStart,
+          openCodeLine({ type: 'text', part: { type: 'text', text: 'Let me read the files.' } }),
+          ...toolStep.slice(1),
+        ],
+        { exitCode: 1 },
+      ),
+      'fixture prompt',
+    );
+
+    expect(result).toMatchObject({ status: 'failed', error: { code: 'non-zero-exit' } });
+  });
+
+  it('exit 1 after a hand-back with a halt line on stderr still halts in the tool words', async () => {
+    const line = "You've hit your usage limit. Try again later.";
+    const result = await run(
+      opencodeImplementerAdapter,
+      opencodeStream([...toolStep, stepStart, finalStep[1] ?? ''], {
+        exitCode: 1,
+        stderr: `${line}\n`,
+      }),
+      'fixture prompt',
+    );
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      error: { code: 'usage-limit', message: line },
+    });
   });
 
   it('exit 1 with the codex input-cap refusal on stderr classifies input-too-large, not a bare exit', async () => {

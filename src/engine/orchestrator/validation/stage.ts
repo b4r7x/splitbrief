@@ -1,6 +1,6 @@
 import { isENOENT, processError } from '../../../lib/process/errors.js';
 import { redactSecrets } from '../../../utils/redact.js';
-import { truncateByChars, truncateByTailLines } from '../../../utils/truncate.js';
+import { truncateByTailLines } from '../../../utils/truncate.js';
 import type { ValidationStage } from '../../../core/schemas/enums.js';
 import { CAPTURE_LIMITS } from '../../../core/pipeline-spec/gates.js';
 import type { Stack } from '../../../core/validation/stacks/types.js';
@@ -9,25 +9,24 @@ import { extractNamedChangedFiles } from './extract-named-changed-files.js';
 import type { ValidationResult } from './result.js';
 import type { ValidationCommandRunner } from './types.js';
 
+export type ValidationStepResult = ValidationResult & {
+  missingExecutable?: string | undefined;
+};
+
 export const MAX_VALIDATION_OUTPUT_CHARS = CAPTURE_LIMITS.outputChars;
 export const MAX_TEST_TAIL_LINES = CAPTURE_LIMITS.testTailLines;
 
-function sanitizeValidationOutput(text: string): string {
-  return redactSecrets(truncateByChars(text, MAX_VALIDATION_OUTPUT_CHARS));
-}
-
-// Test runners print their pass/fail summary last; keeping the head of a long
-// stream would truncate away the only quotable line, so test output keeps the
-// tail.
-function sanitizeTestOutput(text: string): string {
-  const tail = truncateByTailLines(text, MAX_TEST_TAIL_LINES);
-  return redactSecrets(
-    tail.length <= MAX_VALIDATION_OUTPUT_CHARS ? tail : tail.slice(-MAX_VALIDATION_OUTPUT_CHARS),
-  );
+// A failing runner prints the diagnostic it wants quoted last, so the captured
+// output is a tail, never the head.
+export function boundedOutputTail(text: string): string {
+  const tail =
+    text.length <= MAX_VALIDATION_OUTPUT_CHARS ? text : text.slice(-MAX_VALIDATION_OUTPUT_CHARS);
+  return redactSecrets(tail);
 }
 
 function sanitizeStageOutput(stage: ValidationStage, text: string): string {
-  return stage === 'test' ? sanitizeTestOutput(text) : sanitizeValidationOutput(text);
+  const tail = stage === 'test' ? truncateByTailLines(text, MAX_TEST_TAIL_LINES) : text;
+  return boundedOutputTail(tail);
 }
 
 function selectFailureDetail(stage: ValidationStage, stdout: string, stderr: string): string {
@@ -60,7 +59,7 @@ export async function runValidationStep(opts: {
   stack?: Stack | null | undefined;
   signal?: AbortSignal | undefined;
   changedFiles?: readonly string[] | undefined;
-}): Promise<ValidationResult> {
+}): Promise<ValidationStepResult> {
   const {
     stage,
     cmd,
@@ -82,7 +81,7 @@ export async function runValidationStep(opts: {
       signal,
     });
     const green = [stdout, stderr].filter((part) => part.trim().length > 0).join('\n');
-    return { passed: true, stage, output: sanitizeStageOutput(stage, green), command };
+    return { passed: true, stage, output: sanitizeStageOutput(stage, green), command, exitCode: 0 };
   } catch (err: unknown) {
     if (isENOENT(err) || processError.isNotFound(err)) {
       if (source === 'config') {
@@ -92,6 +91,7 @@ export async function runValidationStep(opts: {
           error: `Configured ${stage} command not found: ${cmd}`,
           output: '',
           command,
+          missingExecutable: cmd,
         };
       }
       const notFoundReason = `${cmd} not found, skipping ${stage}`;
@@ -102,13 +102,14 @@ export async function runValidationStep(opts: {
         skippedReason: notFoundReason,
         output: notFoundReason,
         command,
+        missingExecutable: cmd,
       };
     }
     if (processError.isTimeout(err)) {
       return {
         passed: false,
         stage,
-        error: sanitizeValidationOutput(err.message),
+        error: boundedOutputTail(err.message),
         output: '',
         command,
       };
@@ -135,8 +136,9 @@ export async function runValidationStep(opts: {
         passed: false,
         stage,
         output: sanitizeStageOutput(stage, stdout),
-        error: sanitizeValidationOutput(errText),
+        error: boundedOutputTail(errText),
         command,
+        ...(err.data.code !== null && { exitCode: err.data.code }),
         ...(changedFiles !== undefined && {
           failureFiles: extractNamedChangedFiles(rawOutput, changedFiles),
         }),

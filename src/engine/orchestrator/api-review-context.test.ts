@@ -162,8 +162,9 @@ describe('the packet an API review seat is handed', () => {
     expect(skipped.text).toContain('- test (`npm test`): skipped (no test command)');
 
     const silent = complete({ validation: { recorded: true, evidence: undefined } });
-    expect(silent.text).toContain('Recorded commands: none.');
-    expect(silent.text).toContain('Report validation as not run');
+    expect(silent.text).toContain('## Checks Log');
+    expect(silent.text).toContain('- No checks recorded.');
+    expect(silent.text).toContain('state that validation output was not recorded');
     expect(silent.manifest).toContainEqual({
       path: 'evidence.json',
       kind: 'required',

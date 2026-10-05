@@ -110,6 +110,7 @@ describe('workflow closure', () => {
       resumeState: state,
       active: reactivateExistingSession(ref),
       config: makeConfig({
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         planner: {
           kind: 'shell',
           command: process.execPath,
@@ -182,6 +183,7 @@ describe('workflow closure', () => {
         resumeState: state,
         active: reactivateExistingSession(ref),
         config: makeConfig({
+          validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
           planner: {
             kind: 'shell',
             command: process.execPath,

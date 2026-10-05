@@ -8,6 +8,7 @@ import { fitReviewPrompt } from './fit.js';
 const PREFIX = 'Read the workspace at /tmp/ws.\n\n';
 const EVIDENCE = {
   validation: '/tmp/session/evidence.json',
+  sessionLog: '/tmp/session/session.jsonl',
   drift: '/tmp/session/drift-report.json',
 };
 const declared = (path: string): boolean => path.startsWith('src/declared');
@@ -100,7 +101,7 @@ describe('fitReviewPrompt', () => {
     const result = fitPrompt(
       input({
         files: [modified('src/declared.ts', 'd'.repeat(2_000))],
-        validationEvidence: 'v'.repeat(15_000),
+        checksLog: 'v'.repeat(15_000),
         driftReport: 'r'.repeat(200),
       }),
       10_000,
@@ -110,11 +111,12 @@ describe('fitReviewPrompt', () => {
     expect(result.dropped).toEqual([
       {
         trim: 'task-evidence',
-        items: ['Recorded Validation Output', 'Deterministic Drift Report'],
+        items: ['Checks Log', 'Deterministic Drift Report'],
       },
     ]);
     expect(result.prompt).not.toContain('v'.repeat(100));
     expect(result.prompt).toContain(EVIDENCE.validation);
+    expect(result.prompt).toContain(EVIDENCE.sessionLog);
     expect(result.prompt).toContain(EVIDENCE.drift);
     expect(result.prompt).toContain('d'.repeat(2_000));
   });

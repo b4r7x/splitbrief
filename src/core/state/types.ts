@@ -58,6 +58,7 @@ export type StateAction =
       type: 'QUEUE_TRIAGE';
       inputs: NonNullable<WorkflowState['pendingTriage']>['inputs'];
       question?: NonNullable<WorkflowState['pendingTriage']>['question'];
+      reviewAfterTaskId?: TaskId;
     }
   | { type: 'RECORD_WORKSPACE'; workspace: NonNullable<WorkflowState['workspace']> }
   | { type: 'ACCEPT_AS_IS'; findings: string[] }
@@ -94,7 +95,7 @@ export type StateAction =
   | { type: 'REWIND_TO_PLAN'; comment?: string }
   | { type: 'RESET_TASK'; taskId: TaskId }
   | { type: 'REPLACE_TASK'; taskId: TaskId; task: Task }
-  | { type: 'INSERT_TASKS'; parentId: TaskId | null; tasks: Task[] }
+  | { type: 'INSERT_TASKS'; parentId: TaskId | null; afterTaskId?: TaskId; tasks: Task[] }
   | {
       type: 'RECORD_CONSULT';
       taskId: TaskId;
@@ -103,9 +104,9 @@ export type StateAction =
       answer: ConsultAnswer;
     }
   | { type: 'CONFIRM_DECISIONS'; taskId: TaskId; decisions: { what: string; why: string }[] }
+  | { type: 'RECORD_CORRECTION'; taskId: TaskId; text: string }
   | { type: 'COUNT_ATTEMPT'; taskId: TaskId }
   | { type: 'COUNT_PLANNER_CALL' }
-  | { type: 'COUNT_DECISION_CONFIRM' }
   | { type: 'CLEAR_CARRIED_FAILURE'; taskId: TaskId }
   | {
       type: 'GRANT_ALLOWANCE';
@@ -114,6 +115,10 @@ export type StateAction =
       note: string;
       failingOutput?: string;
     }
+  | { type: 'START_SCHEDULED_REVIEW'; afterTaskId: TaskId }
+  | { type: 'CLEAR_SCHEDULED_REVIEW' }
+  | { type: 'SET_PENDING_BOUNDARY'; batch: number; afterTaskId: TaskId }
+  | { type: 'CLEAR_PENDING_BOUNDARY' }
   | { type: 'SET_TASK_INPUT_HASHES'; taskId: TaskId; inputHashes: Record<string, string> }
   | { type: 'RECORD_CHECK_RESULTS'; taskId: TaskId; results: CheckResult[] }
   | { type: 'SET_SEAT_WAIT'; seat: CrewSeatId; resetAt: string }
@@ -123,7 +128,7 @@ export type StateAction =
   | { type: 'MARK_INJECTING_NATIVE'; id: string; attempt?: number }
   | { type: 'MARK_DELIVERED_NATIVE'; id: string }
   | { type: 'MARK_NATIVE_DELIVERY_FAILED'; id: string }
-  | { type: 'DRAIN_QUEUE'; ids?: string[] }
+  | { type: 'DRAIN_QUEUE'; ids?: string[]; destination?: 'implementer' | 'consult' | 'reviewer' }
   | { type: 'CLEAR_QUEUE' }
   | { type: 'SET_PENDING_RECOVERY'; issue: RecoveryIssue }
   | { type: 'PAUSE_PENDING_RECOVERY' }

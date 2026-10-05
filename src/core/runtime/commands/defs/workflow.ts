@@ -35,6 +35,25 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
       },
     },
     {
+      kind: 'arg',
+      name: '/steer',
+      label: 'steer',
+      description: 'Stop now and continue with your correction',
+      category: 'workflow',
+      args: { kind: 'free', hint: 'correction' },
+      validScreens: ['workflow'],
+      guard: (c) =>
+        c.openRunAtRest || isLivePhase(c.phase) ? undefined : 'No run to steer in this phase',
+      handler: (args) => {
+        const text = args?.trim() ?? '';
+        if (text === '') {
+          ctx.setFeedbackError('Usage: /steer <correction>');
+          return;
+        }
+        if (!ctx.steerRun(text)) ctx.setFeedbackError('Nothing to steer.');
+      },
+    },
+    {
       kind: 'noarg',
       name: '/end',
       label: 'end run',

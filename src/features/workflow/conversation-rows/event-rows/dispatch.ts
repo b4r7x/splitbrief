@@ -1,15 +1,20 @@
 import { formatScoreSummary } from '../../../../core/formatting.js';
 import { CREW_SEAT_LABELS } from '../../../../core/crew/identity.js';
-import { formatModelName } from '../../../../core/model-display.js';
 import { arrowSep, SOFT_SEP } from '../../../../core/separators.js';
 import type { EngineEvent, EngineEventOf } from '../../../../engine/events/types.js';
 import { glyph } from '../../../../lib/glyphs.js';
+import {
+  getTerminalCellWidth,
+  truncateTerminalDisplayText,
+} from '../../../../utils/display-text.js';
 import { assertNever } from '../../../../utils/type-guards.js';
 import { pluralize, countNoun } from '../../../../utils/pluralize.js';
 import { runnerActivityBatchRowBlock } from '../activity-rows.js';
 import { borderedCardRowsBlock } from '../bordered-card-block.js';
 import { calloutRowsBlock } from '../callout-block.js';
 import { formatExternalChangesValue } from '../event-format.js';
+import { wrapWidthFor } from '../row-markers.js';
+import { sanitizeRowDisplayText } from '../row-format/text.js';
 import type { ConversationRowBlock, ConversationRowTone, RowBuildContext } from '../types.js';
 import {
   cardRowsBlock,
@@ -264,15 +269,25 @@ export function eventRowBlock(options: {
       return runningImplementerRowBlock(keyPrefix, event, ctx);
     case 'implementer_generate_done':
       return implementerDoneRowBlock(keyPrefix, event, ctx, expanded);
-    case 'implementer_generate_failed':
+    case 'implementer_generate_failed': {
+      const label = `${CREW_SEAT_LABELS.build} failed`;
+      const cause = event.error
+        ?.split('\n')
+        .map((line) => line.trim())
+        .find((line) => line.length > 0);
+      const valueWidth = wrapWidthFor('card', ctx.width) - getTerminalCellWidth(`${label}  `);
       return cardRowsBlock({
         keyPrefix,
-        label: 'failed',
-        value: event.model === undefined ? undefined : formatModelName(event.model),
+        label,
+        value:
+          cause && valueWidth > 0
+            ? truncateTerminalDisplayText(sanitizeRowDisplayText(cause), valueWidth)
+            : undefined,
         width: ctx.width,
         labelTone: 'error',
         valueTone: 'textDim',
       });
+    }
     case 'validate':
       return validateRowBlock(keyPrefix, event, ctx.width);
     case 'validation_baseline':
@@ -365,13 +380,22 @@ export function eventRowBlock(options: {
         valueTone: 'textDim',
       });
     case 'warning':
-      return calloutRowsBlock({
-        keyPrefix,
-        label: 'warning',
-        value: event.message,
-        width: ctx.width,
-        severity: 'warning',
-      });
+      return event.code === 'discovered_validation_refused'
+        ? cardRowsBlock({
+            keyPrefix,
+            label: 'warning',
+            value: event.message,
+            width: ctx.width,
+            labelTone: 'textDim',
+            valueTone: 'textDim',
+          })
+        : calloutRowsBlock({
+            keyPrefix,
+            label: 'warning',
+            value: event.message,
+            width: ctx.width,
+            severity: 'warning',
+          });
     case 'error':
       return calloutRowsBlock({
         keyPrefix,

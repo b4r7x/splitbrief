@@ -48,7 +48,7 @@ const ConfirmActionSchema = z.object({
 });
 
 export const ConsultAnswerSchema = z.object({
-  answer: z.discriminatedUnion('action', [
+  answer: z.union([
     GuidanceActionSchema,
     RewriteTaskActionSchema,
     SplitTaskActionSchema,
@@ -85,11 +85,11 @@ export function consultAnswerSchemaFor(task: Task, reason: ConsultReason = 'fail
 }
 
 export const StaleConsultAnswerSchema = z.object({
-  answer: z.discriminatedUnion('action', [GuidanceActionSchema, RewriteTaskActionSchema]),
+  answer: z.union([GuidanceActionSchema, RewriteTaskActionSchema]),
 });
 
 export const DeviationConsultAnswerSchema = z.object({
-  answer: z.discriminatedUnion('action', [ConfirmActionSchema, AskUserActionSchema]),
+  answer: z.union([ConfirmActionSchema, AskUserActionSchema]),
 });
 
 export const ImplementerReportSchema = z.discriminatedUnion('status', [

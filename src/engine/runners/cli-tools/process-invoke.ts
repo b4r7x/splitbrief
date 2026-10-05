@@ -109,11 +109,13 @@ export async function invokeProcessCli(
   }
   let callbackFailed = false;
   let timeoutController: AbortController | undefined;
+  const limitController = new AbortController();
   let recorder: RunnerCallRecorder;
   try {
     recorder = createRunnerCallRecorder({
       context: context.callContext,
       credentialValues,
+      onLimit: () => limitController.abort(),
       onEvent: (event) => {
         try {
           context.onEvent?.(event);
@@ -217,6 +219,7 @@ export async function invokeProcessCli(
     ...(context.invocation.signal === undefined ? [] : [context.invocation.signal]),
     timeoutController.signal,
     guardController.signal,
+    limitController.signal,
   ]);
   // Halt phrases are the tool's own words for giving up, so only its
   // diagnostic channel and the last line it printed are candidates: the
@@ -451,21 +454,35 @@ export async function invokeProcessCli(
       });
     }
 
-    // A tool that fails its turn also exits non-zero; its parsed failure
-    // terminal carries the tool's own diagnosis and outranks the bare exit
-    // code — that diagnosis is what lets a quota or auth failure be classified
-    // instead of hiding behind "CLI exited with code 1". A terminal claiming
-    // success against a failure exit is contradictory, so that combination
-    // stays on the exit code, fail-closed.
+    // A failure exit preserves a text-exit answer only when it ends the stream without a halt.
+    // Parsed failures keep their diagnosis; structured success against a failure exit fails closed.
     if (isFailureExit(adapter.outputContract, closed.exitCode) && terminal.status === 'completed') {
-      return fail({
-        recorder,
-        status: 'failed',
-        error: haltFailure(haltLines()) ?? {
-          code: 'non-zero-exit',
-          message: `CLI exited with code ${closed.exitCode ?? 'unknown'}`,
-        },
-      });
+      const halt = haltFailure(haltLines());
+      if (halt !== null) return fail({ recorder, status: 'failed', error: halt });
+      const last = protocolEvents.at(-1);
+      if (
+        adapter.outputContract.kind === 'text-exit' &&
+        terminal.text.length > 0 &&
+        last?.type === 'text' &&
+        (last.channel === 'assistant' || last.channel === 'result')
+      ) {
+        recorder.warning({
+          warning: {
+            code: 'non_zero_exit_after_answer',
+            source: 'system',
+            message: `CLI exited with code ${closed.exitCode ?? 'unknown'} after its final answer; the answer is kept`,
+          },
+        });
+      } else {
+        return fail({
+          recorder,
+          status: 'failed',
+          error: {
+            code: 'non-zero-exit',
+            message: `CLI exited with code ${closed.exitCode ?? 'unknown'}`,
+          },
+        });
+      }
     }
 
     if (terminal.text.length > 0) {

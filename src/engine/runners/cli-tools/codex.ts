@@ -119,6 +119,7 @@ function plannerBaseArgs(input: CodexPlannerBuildInput): string[] {
     '--ask-for-approval',
     'never',
     'exec',
+    ...(input.imagePaths ?? []).flatMap((path) => ['--image', path]),
     '--ignore-user-config',
     ...(escalate ? [] : ['--ignore-rules']),
     ...(input.oneShot === true ? ['--ephemeral'] : []),

@@ -42,6 +42,7 @@ function createTestCommands(): RuntimeCommandDef[] {
     navigate: (to) => routerStore.navigate({ to }),
     quit: () => {},
     resumeRun: () => true,
+    steerRun: () => true,
     endRun: () => true,
     refreshRun: () => {},
     setFeedbackMessage: feedbackStore.setMessage,

@@ -81,7 +81,7 @@ For each selected pending task whose dependencies are done:
 8. Record touched files and reasons, then run task validation and registered checks with references/gates.md.
 9. Mark the task done only after its checks pass. Update and print progress.
 10. At a declared batch boundary, apply the full-suite gate and triage any new failures.
-11. At task cadence, enter review for completed work before dispatching another task.
+11. At task cadence, run the full suite and all required checks, then enter review for completed work before dispatching another task.
 
 Take an attempt-start snapshot of candidate bytes for recovery; preserve accepted earlier task changes.
 Record command, exit, terminal result, report, changed paths, check results, and outcome in the evidence trail.

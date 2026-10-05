@@ -41,6 +41,8 @@ let abortHandlers: AbortHandler[] = [];
 let pendingBoundaryInterrupt = false;
 let pendingBoundaryPause = false;
 let pendingSeatChange = false;
+let pendingSteer: string | null = null;
+let steerUnsubscribe: (() => void) | undefined;
 let departure: { kind: 'home' | 'quit'; run: () => void } | null = null;
 let unsubscribeDeparture: (() => void) | undefined;
 
@@ -58,6 +60,13 @@ export function clearAllHandlers(): void {
   pendingBoundaryInterrupt = false;
   pendingBoundaryPause = false;
   pendingSeatChange = false;
+  clearPendingSteer();
+}
+
+function clearPendingSteer(): void {
+  pendingSteer = null;
+  steerUnsubscribe?.();
+  steerUnsubscribe = undefined;
 }
 
 export function createAbortHandlerScope(): (h: AbortHandler | null) => void {
@@ -169,6 +178,48 @@ export function resumeParkedRun(steer: string): boolean {
   if (stopStore.get().phase !== 'parked') return false;
   stopStore.resume(steer);
   markWorkflowResumed();
+  return true;
+}
+
+/**
+ * `/steer <text>`: stop now and continue with the text as the correction. A run already parked
+ * resumes here; a live call is stopped and the text held until its park lands, so a steer typed
+ * during the stop race is not lost. A run at rest has nothing to stop and continues with the text.
+ */
+export function requestSteer(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed === '') return false;
+  if (stopStore.get().phase === 'parked') {
+    stopStore.resume(trimmed);
+    markWorkflowResumed();
+    return true;
+  }
+  const stop = stopStore.get();
+  if (stop.intent !== 'none' && stop.intent !== 'pause-after-brief' && stop.phase !== 'failed') {
+    feedbackStore.setMessage('Finish stopping before steering.');
+    return false;
+  }
+  if (!handlers.stop && abortHandlers.length === 0 && !handlers.cancel) {
+    return requestResume(trimmed);
+  }
+  pendingSteer = trimmed;
+  steerUnsubscribe?.();
+  steerUnsubscribe = stopStore.subscribe(() => {
+    if (pendingSteer === null || stopStore.get().phase !== 'parked') return;
+    const steer = pendingSteer;
+    clearPendingSteer();
+    stopStore.resume(steer);
+    markWorkflowResumed();
+  });
+  if (!requestStopNow()) {
+    clearPendingSteer();
+    return false;
+  }
+  if (stopStore.get().phase === 'parked') {
+    clearPendingSteer();
+    stopStore.resume(trimmed);
+    markWorkflowResumed();
+  }
   return true;
 }
 

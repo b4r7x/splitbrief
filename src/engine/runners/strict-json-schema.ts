@@ -23,8 +23,9 @@ function strictNode(node: unknown): boolean {
 /**
  * Whether OpenAI strict mode, which codex `--output-schema` uses (live probe, 0.157.1), takes the
  * schema. It answers HTTP 400 for an object that is open, lacks `properties` or has a key outside
- * `required`, and it takes only an object at the root. `oneOf`, `allOf` and `not` count as
- * rejected; a `$ref` target is checked where `$defs` declares it.
+ * `required`, and it takes only an object at the root. The live probe on 2026-10-06 rejected
+ * `oneOf` and accepted `anyOf` of closed objects. `oneOf`, `allOf` and `not` count as rejected;
+ * a `$ref` target is checked where `$defs` declares it.
  */
 export function isStrictJsonSchema(json: Readonly<Record<string, unknown>>): boolean {
   return json.type === 'object' && strictNode(json);

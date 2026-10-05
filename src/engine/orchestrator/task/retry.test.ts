@@ -116,6 +116,7 @@ describe('retryAndRecord — retry budget', () => {
     });
     const validator: Validator = {
       primeBaseline: vi.fn().mockResolvedValue(undefined),
+      runFullSuite: vi.fn().mockResolvedValue({ results: [], failures: {}, newFailures: {} }),
       runValidation: vi.fn().mockResolvedValue([{ stage: 'test' as const, passed: true }]),
       decideAcceptance: ({ results, changedFiles }) =>
         decideValidationAcceptance({
@@ -182,6 +183,7 @@ describe('retryAndRecord — retry budget', () => {
     });
     const validator: Validator = {
       primeBaseline: vi.fn().mockResolvedValue(undefined),
+      runFullSuite: vi.fn().mockResolvedValue({ results: [], failures: {}, newFailures: {} }),
       runValidation: vi
         .fn()
         .mockResolvedValue([
@@ -227,7 +229,6 @@ describe('retryAndRecord — retry budget', () => {
         changedFiles: ['src/task.ts'],
       },
     ]);
-    expect(ledger?.tasks[0]?.observedEvidence).toContain('test failed (pre-existing)');
   });
 
   it('spends the local retries then the consult budget, persisting the bound halt', async () => {

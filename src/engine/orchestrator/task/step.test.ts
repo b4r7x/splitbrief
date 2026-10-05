@@ -5,7 +5,9 @@ import {
   makeCallbacks,
   makeImplementer,
   makeBusRecorder,
+  makePlanner,
 } from '#testing/helpers/orchestrator-factories.js';
+import { consultCallAnswering, guidanceConsult } from '#testing/helpers/typed-planner.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeImplStateWithMetadata as implementingState } from '#testing/helpers/factories/workflow-state.js';
@@ -15,10 +17,14 @@ import {
   setupTaskProject as setupProject,
 } from '#testing/helpers/orchestrator-task-context.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
+import { taskId } from '../../../core/schemas/task.js';
 import type { ImplementerOptions } from '../../implementers/types.js';
 import { createValidator } from '../validation/run.js';
 import { runSingleTask } from './step.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import { loadState, saveState } from '../../../core/state/persistence.js';
+import { createContinuationHolder } from '../continuation.js';
+import { enqueueUserMessage } from '../queue/submit.js';
 
 afterEach(cleanupTaskProjects);
 
@@ -270,5 +276,199 @@ describe('runSingleTask — completion, abort and approval evidence', { timeout:
         reason: 'approved manifest write',
       }),
     );
+  });
+});
+
+describe('runSingleTask — checks log per validation attempt', { timeout: 60_000 }, () => {
+  it('logs every attempt’s validation against the candidate it ran on', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({
+      id: 'T001',
+      action: 'create',
+      file: 'src/main.ts',
+      scope: { inBounds: ['src/main.ts'] },
+    });
+    const state = {
+      ...implementingState([task]),
+      changedFilesBaseline: { head: null, runStartChangedFiles: [], fingerprints: {} },
+    };
+    const write = (content: string) => {
+      mkdirSync(join(projectDir, 'src'), { recursive: true });
+      writeFileSync(join(projectDir, 'src/main.ts'), content);
+    };
+    let retries = 0;
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async () => {
+        write('export const main = 1;\n');
+        return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
+      }),
+      retry: vi.fn().mockImplementation(async () => {
+        retries += 1;
+        write(`export const main = ${retries + 1};\n`);
+        return { success: true, output: 'fixed', usage: { inputTokens: 10, outputTokens: 5 } };
+      }),
+    });
+    let validations = 0;
+    const runValidation = vi.fn().mockImplementation(async () => {
+      validations += 1;
+      return validations < 3
+        ? [{ stage: 'test' as const, passed: false, error: `red ${validations}` }]
+        : [{ stage: 'test' as const, passed: true }];
+    });
+
+    const result = await runSingleTask({
+      wctx: makeWorkflowContext({
+        projectDir,
+        sessionId,
+        implementer,
+        planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
+        validator: { ...createValidator(), runValidation },
+      }),
+      task,
+      index: 0,
+      totalTasks: 1,
+      state,
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.tasks[0]?.status).toBe('done');
+    expect(runValidation).toHaveBeenCalledTimes(3);
+    const logged = (readEvidenceLedger({ projectDir, sessionId })?.tasks[0]?.checks ?? []).filter(
+      (entry) => entry.id === 'test',
+    );
+    // One record per execution, each stamped with the candidate that execution judged.
+    expect(logged.map((entry) => entry.output)).toEqual(['red 1', 'red 2', undefined]);
+    expect(new Set(logged.map((entry) => entry.workspaceSnapshotId)).size).toBe(3);
+  });
+});
+
+describe('runSingleTask — a brief keeps its corrections on every attempt', {
+  timeout: 60_000,
+}, () => {
+  const correction = 'keep the exported name';
+
+  function correctedContext(
+    projectDir: string,
+    sessionId: string,
+    implement: () => Promise<never>,
+  ) {
+    const retry = vi.fn().mockResolvedValue({
+      success: false,
+      output: '',
+      error: 'still red',
+      usage: { inputTokens: 1, outputTokens: 1 },
+    });
+    const wctx = makeWorkflowContext({
+      projectDir,
+      sessionId,
+      implementer: makeImplementer({ implement: vi.fn().mockImplementation(implement), retry }),
+      continuation: createContinuationHolder({
+        step: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
+        steer: correction,
+      }),
+    });
+    return { wctx, retry };
+  }
+
+  it('keeps a correction saved during the call when the implementer then throws', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001' });
+    const { wctx, retry } = correctedContext(projectDir, sessionId, async () => {
+      throw new Error('socket hang up');
+    });
+
+    const result = await runSingleTask({
+      wctx,
+      task,
+      index: 0,
+      totalTasks: 1,
+      state: implementingState([task]),
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    for (const saved of [result, loadState({ projectDir, sessionId })]) {
+      expect(saved?.lineages?.T001?.corrections).toEqual([correction]);
+    }
+    expect(retry).toHaveBeenCalled();
+    for (const [call] of retry.mock.calls) {
+      expect(call.continuation?.steer).toContain(correction);
+    }
+  });
+
+  it('returns the saved correction when the call is stopped by an abort error', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001' });
+    const { wctx } = correctedContext(projectDir, sessionId, async () => {
+      throw new DOMException('The operation was aborted', 'AbortError');
+    });
+
+    const result = await runSingleTask({
+      wctx,
+      task,
+      index: 0,
+      totalTasks: 1,
+      state: implementingState([task]),
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.lineages?.T001?.corrections).toEqual([correction]);
+  });
+
+  it('carries a message queued before the brief into every retry of it', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001' });
+    const initial = implementingState([task]);
+    saveState({ projectDir, sessionId }, initial);
+    const { bus } = makeBusRecorder();
+    const queued = enqueueUserMessage({
+      projectDir,
+      sessionId,
+      state: initial,
+      text: 'name the helper parseAmount',
+      phase: 'implementing',
+      bus,
+    }).state;
+    const implement = vi.fn().mockResolvedValue({
+      success: false,
+      output: '',
+      error: 'tsc: Type X is not assignable to Y',
+      usage: { inputTokens: 1, outputTokens: 1 },
+    });
+    const retry = vi.fn().mockResolvedValue({
+      success: false,
+      output: '',
+      error: 'still red',
+      usage: { inputTokens: 1, outputTokens: 1 },
+    });
+
+    await runSingleTask({
+      wctx: makeWorkflowContext({
+        projectDir,
+        sessionId,
+        bus,
+        implementer: makeImplementer({ implement, retry }),
+      }),
+      task,
+      index: 0,
+      totalTasks: 1,
+      state: queued,
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(implement.mock.calls[0]?.[0].continuation?.steer).toContain(
+      'name the helper parseAmount',
+    );
+    expect(retry).toHaveBeenCalled();
+    for (const [call] of retry.mock.calls) {
+      expect(call.continuation?.steer?.split('name the helper parseAmount')).toHaveLength(2);
+    }
   });
 });

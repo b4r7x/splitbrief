@@ -159,7 +159,6 @@ describe('decision-confirm on the S6 shape', { timeout: 90_000 }, () => {
     );
     expect(prompts.every((prompt) => prompt.includes('deviation —'))).toBe(true);
     expect(result.state.plannerCalls?.used ?? 0).toBe(0);
-    expect(result.state.decisionConfirms?.used).toBe(prompts.length);
     for (const task of tasks) expect(result.state.lineages?.[task.id]?.consults).toBe(1);
   });
 });

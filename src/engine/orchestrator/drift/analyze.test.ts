@@ -8,7 +8,6 @@ import { SCOPE_ENTRY_CASES } from '#testing/helpers/scope-entries.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { createEvidenceLedger, withUpdatedTask } from '../../../core/evidence/ledger-state.js';
-import { recordRetryOrEscalationEvidence } from '../evidence/task.js';
 import {
   captureChangedFilesBaseline,
   inferTaskAcceptedChangedFiles,
@@ -530,91 +529,6 @@ describe('analyzeBriefDrift', () => {
         .filter((finding) => finding.code === 'out_of_scope_file')
         .map((finding) => finding.file),
     ).toEqual(['src/extra-a.ts', 'src/extra-z.ts']);
-  });
-
-  it('warns when a done task observed only orchestrator bookkeeping stamps', () => {
-    const task = makeTask({
-      id: 'T001',
-      file: 'src/a.ts',
-      status: 'done',
-      evidence: ['hello returns greeting'],
-    });
-    let ledger = createEvidenceLedger({ sessionId: 's1', feature: 'f', tasks: [task] });
-    // Stamps 'task reached done' and 'diff written for src/a.ts' — the
-    // orchestrator's own bookkeeping, not evidence the implementer produced.
-    ledger = recordRetryOrEscalationEvidence({
-      ledger,
-      task,
-      status: 'done',
-      escalated: false,
-    });
-    const report = analyzeBriefDrift({
-      tasks: [task],
-      changedFiles: ['src/a.ts'],
-      diff: '',
-      ledger,
-      preRunChangedFiles: [],
-    });
-    const f = report.findings.find((x) => x.code === 'missing_evidence');
-    expect(f?.severity).toBe('warning');
-    expect(f?.taskId).toBe('T001');
-  });
-
-  it('does not warn when a validation outcome was observed', () => {
-    const task = makeTask({
-      id: 'T001',
-      file: 'src/a.ts',
-      status: 'done',
-      evidence: ['hello returns greeting'],
-    });
-    let ledger = createEvidenceLedger({ sessionId: 's1', feature: 'f', tasks: [task] });
-    ledger = recordRetryOrEscalationEvidence({
-      ledger,
-      task,
-      status: 'done',
-      escalated: false,
-      validation: [{ stage: 'test', passed: true }],
-    });
-    const report = analyzeBriefDrift({
-      tasks: [task],
-      changedFiles: ['src/a.ts'],
-      diff: '',
-      ledger,
-      preRunChangedFiles: [],
-    });
-    expect(report.findings.find((x) => x.code === 'missing_evidence')).toBeUndefined();
-  });
-
-  it('skipped test is missing_evidence', () => {
-    const task = makeTask({
-      id: 'T001',
-      file: 'src/a.ts',
-      status: 'done',
-      evidence: ['hello returns greeting'],
-    });
-    const ledger = withUpdatedTask(
-      createEvidenceLedger({ sessionId: 's1', feature: 'f', tasks: [task] }),
-      'T001',
-      (t) => ({
-        ...t,
-        status: 'done',
-        observedEvidence: ['lint passed'],
-        validation: [
-          { stage: 'lint', passed: true },
-          { stage: 'test', passed: true, skipped: true, skippedReason: 'no affected test file' },
-        ],
-      }),
-    );
-    const report = analyzeBriefDrift({
-      tasks: [task],
-      changedFiles: ['src/a.ts'],
-      diff: '',
-      ledger,
-      preRunChangedFiles: [],
-    });
-    const finding = report.findings.find((x) => x.code === 'missing_evidence');
-    expect(finding?.severity).toBe('warning');
-    expect(finding?.taskId).toBe('T001');
   });
 
   it('treats a ledger-unattributed file absent from the run-start baseline as run-produced', () => {

@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { CREW_SEAT_LABELS } from '../../../../core/crew/identity.js';
-import { formatModelName } from '../../../../core/model-display.js';
 import { taskId } from '../../../../core/schemas/task.js';
 import type { EngineEvent, EngineEventOf } from '../../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../../stores/workflow/streaming-output.js';
@@ -15,6 +14,7 @@ import {
 import { ACTIVITY_LABEL_PAD, displayActivityLabel } from '../../display/activity-label-display.js';
 import { eventRowBlock } from './dispatch.js';
 import { rowText } from '../row-format/rows.js';
+import { rowLeadingCells } from '../row-markers.js';
 import type { ConversationRow } from '../types.js';
 
 const streaming: StreamingOutputState = { taskId: null, lines: [], active: false };
@@ -709,9 +709,10 @@ describe('event row dispatch', () => {
         phase: 'implementing',
         taskId: taskId('T001'),
         model: 'qwen2.5-coder:7b',
+        error: 'Tool implementer (opencode) exited without changing any files',
       },
-      stateWord: 'failed',
-      body: formatModelName('qwen2.5-coder:7b'),
+      stateWord: `${CREW_SEAT_LABELS.build} failed`,
+      body: 'Tool implementer (opencode) exited without changing any files',
     },
   ] satisfies {
     name: string;
@@ -737,23 +738,85 @@ describe('event row dispatch', () => {
     },
   );
 
-  it('renders an implementer failure without inventing an absent model', () => {
-    const segments = eventRows({
+  it('renders an implementer failure without inventing an absent cause', () => {
+    const rows = eventRows({
       event: {
         type: 'implementer_generate_failed',
         ts: 0,
         phase: 'implementing',
         taskId: taskId('T001'),
+        model: 'qwen2.5-coder:7b',
       },
       globalIndex: 0,
       expanded: false,
       ctx: { width: 80, viewportRows: 20, streaming },
-    }).flatMap((rowValue) => rowValue.segments);
+    });
 
-    expect(segments.some((segment) => segment.tone === 'error' && segment.text === 'failed')).toBe(
-      true,
+    expect(rows.map(rowText)).toEqual([`${CREW_SEAT_LABELS.build} failed`]);
+    expect(rows.flatMap((rowValue) => rowValue.segments).some((s) => s.tone === 'textDim')).toBe(
+      false,
     );
-    expect(segments.some((segment) => segment.tone === 'textDim')).toBe(false);
+  });
+
+  function implementerFailedRows(error: string, width: number): ConversationRow[] {
+    return eventRows({
+      event: {
+        type: 'implementer_generate_failed',
+        ts: 0,
+        phase: 'implementing',
+        taskId: taskId('T010'),
+        model: 'opencode-go/deepseek-v4.1-flash',
+        error,
+      },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width, viewportRows: 20, streaming },
+    });
+  }
+
+  function renderedCells(rowValue: ConversationRow): number {
+    return (
+      rowLeadingCells(rowValue.kind) +
+      getTerminalCellWidth(rowValue.segments.map((segment) => segment.text).join(''))
+    );
+  }
+
+  it.each([60, 80, 120])(
+    'names the cause of an implementer failure on one row at width %i',
+    (width) => {
+      const cause =
+        'Tool implementer (opencode) exited without changing any files after a completed call that reported done for every file in its brief';
+      const rows = implementerFailedRows(
+        `${cause}\nHint: check the tool's own log for the edits it reported`,
+        width,
+      );
+
+      expect(rows).toHaveLength(1);
+      const text = rowText(rows[0] as ConversationRow);
+      expect(text.startsWith(`${CREW_SEAT_LABELS.build} failed  Tool implementer`)).toBe(true);
+      expect(text.endsWith('…')).toBe(true);
+      expect(text).not.toContain('Hint');
+      expect(renderedCells(rows[0] as ConversationRow)).toBeLessThanOrEqual(width);
+    },
+  );
+
+  it.each([60, 80, 120])(
+    'keeps a wide, control-laden implementer cause on one row at width %i',
+    (width) => {
+      const rows = implementerFailedRows(`\u001b[31m${'界'.repeat(width)}\u001b[0m`, width);
+
+      expect(rows).toHaveLength(1);
+      expect(renderedCells(rows[0] as ConversationRow)).toBeLessThanOrEqual(width);
+      expect(rowText(rows[0] as ConversationRow)).not.toContain('\u001b');
+    },
+  );
+
+  it('names the first non-blank line of an implementer cause', () => {
+    for (const error of ['\nEdit bundle did not apply', '   \nEdit bundle did not apply']) {
+      expect(implementerFailedRows(error, 80).map(rowText)).toEqual([
+        `${CREW_SEAT_LABELS.build} failed  Edit bundle did not apply`,
+      ]);
+    }
   });
 
   it('renders the user prompt with a prompt marker row and message continuations', () => {

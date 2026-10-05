@@ -161,9 +161,6 @@ describe('partial evidence and resume', () => {
     expect(entry?.changedFiles).toEqual([]);
     expect(entry?.promotedFiles ?? []).toEqual([]);
     expect(entry?.status).toBe('failed');
-    expect(entry?.observedEvidence).toContain(
-      `worker workspace: bundle stopped at ${SECOND} after applying 1 of 2 file(s) (io-failure)`,
-    );
 
     const parked = await handleFailedImplementation({
       wctx,
@@ -364,9 +361,6 @@ describe('partial evidence and resume', () => {
       candidatePaths: [ANCHOR],
     });
     expect(entry?.changedFiles).toEqual([]);
-    expect(entry?.observedEvidence).toContain(
-      'worker workspace: bundle refused before any write (implausible-rewrite)',
-    );
 
     const second: ImplementerOptions[] = [];
     const resumed = makeWorkflowContext({

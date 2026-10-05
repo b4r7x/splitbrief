@@ -31,7 +31,7 @@ const RULES = `- Research the repository read-only. Do not edit, create or delet
 - Do not invoke a native user-question tool (AskUserQuestion or the like). SPLITBRIEF asks the user.
 - Ask questions only when a decision that only the user can make blocks the plan: at most 3 questions per round, at most ${MAX_QUESTION_ROUNDS} rounds. Give every question a non-empty \`default\`, the answer the plan uses when the user just presses Enter. Give \`choices\` when the answer is one of a fixed set, else null; the \`default\` of a question with \`choices\` is one of them.
 - Criteria are the contract. Give each one an id (\`C1\`, \`C2\`, …) and the \`checkIds\` that verify it. Every check id must exist in the run checks or in a task's checks, and every check id is unique.
-- A check is \`test\` (a test file or pattern), \`cmd\` (a command) or \`render\` (a gallery scenario id).
+- A check is \`test\` (a test file or pattern), \`cmd\` (a command) or \`render\` (a gallery scenario id). A \`cmd\` check runs \`npm run <script>\` only under an approved plan and only for a script \`package.json\` defines; \`npx\` runs only as \`npx --no-install <stack tool>\`.
 - Task ids are \`T001\`, \`T002\`, … in order. Every task serves at least one criterion, every criterion is served by at least one task, and every task has at least one check.
 - Each task completes one verifiable behaviour, including its tests and the caller changes it needs. Its \`intent\` names the behaviour and its expected result, never only files. Never separate implement, test and caller tasks for one behaviour.
 - Split a behaviour only when its task would not fit the implementer's context, and split it into behaviours that each verify on their own.
@@ -42,7 +42,7 @@ const RULES = `- Research the repository read-only. Do not edit, create or delet
 - \`exclusions\`: explicit "do not" notes. The reviewer checks them.
 - \`steps\`: only where the approach is not obvious, else null.
 - \`dependsOn\`: ids of earlier tasks in the same or an earlier batch. No cycles.
-- \`batch\`: 1, 2, …. The full test suite runs at the end of each batch. SPLITBRIEF builds the tasks in the order you list them, so list them in batch order and list each task after the tasks it depends on.
+- \`batch\`: 1, 2, …. SPLITBRIEF runs the full suite at the end of each batch, and the full suite plus every required check before every review. SPLITBRIEF builds the tasks in the order you list them, so list them in batch order and list each task after the tasks it depends on.
 - A write to a protected path (${PROTECTED_PATHS_TEXT}) waits for the user to confirm it. List every such write the task needs in \`protectedOperations\` as \`{ "path": …, "operation": "write" }\`; the plan approval lists them. Use null when there is none.
 - \`validation\`: the language and the typecheck, lint and test commands and test file pattern you found in the repository. Use null for what you did not find.
 - ${GATES_ARE_SPLITBRIEFS}`;

@@ -531,23 +531,57 @@ describe('OpenCode JSON envelope adapter', () => {
     });
   });
 
-  it('preserves bounded parser warnings and typed error terminals', () => {
+  it('preserves bounded parser warnings and reads an error line as a warning with its own words', () => {
     expect(opencodeProtocolEvents('{not-json')).toEqual([
       expect.objectContaining({ type: 'warning', code: 'malformed_opencode' }),
     ]);
     expect(
       opencodeProtocolEvents(JSON.stringify({ type: 'error', sessionID: 'ses-open' })),
     ).toEqual([
-      {
-        type: 'result',
-        status: 'failed',
-        text: '',
-        usage: null,
-        nativeSessionId: 'ses-open',
-        error: { code: 'opencode-error', message: 'OpenCode reported an error' },
-        partial: true,
-      },
+      { type: 'session', nativeSessionId: 'ses-open' },
+      { type: 'warning', code: 'opencode-error', message: 'OpenCode reported an error' },
     ]);
+  });
+
+  it('ends on an error line only when the stream ends after it', () => {
+    const errorLine = JSON.stringify({
+      type: 'error',
+      sessionID: 'ses-open',
+      error: { name: 'APIError', data: { message: 'Upstream stream ended', isRetryable: true } },
+    });
+    const finalText = JSON.stringify({
+      type: 'text',
+      sessionID: 'ses-open',
+      part: { type: 'text', text: 'handed back' },
+    });
+    const usage = JSON.stringify({
+      type: 'step_finish',
+      sessionID: 'ses-open',
+      part: { type: 'step-finish', reason: 'tool-calls', tokens: { input: 7, output: 2 } },
+    });
+    const terminalOf = (lines: readonly string[]) =>
+      opencodeImplementerAdapter.terminal({
+        outputContract: opencodeImplementerAdapter.outputContract,
+        events: lines.flatMap((line) => [...opencodeProtocolEvents(line)]),
+        stderr: '',
+        exitCode: 0,
+        signal: null,
+      });
+
+    expect(terminalOf([usage, errorLine])).toEqual({
+      type: 'result',
+      status: 'failed',
+      text: '',
+      usage: { inputTokens: 7, outputTokens: 2 },
+      nativeSessionId: 'ses-open',
+      error: { code: 'opencode-error', message: 'APIError: Upstream stream ended' },
+      partial: true,
+    });
+    expect(terminalOf([usage, errorLine, finalText])).toMatchObject({
+      status: 'completed',
+      text: 'handed back',
+      error: null,
+    });
   });
 
   it('returns the exact final group after the last tool call with accumulated usage and session', () => {

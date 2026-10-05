@@ -7,13 +7,6 @@ import type {
 } from '../schemas/evidence.js';
 import { nowIso } from '../../utils/format-time.js';
 
-function buildExpectedEvidence(task: Task): string[] {
-  const out: string[] = [];
-  for (const e of task.evidence ?? []) out.push(e);
-  for (const t of task.tests ?? []) out.push(t);
-  return out;
-}
-
 export function emptyEvidenceTask(task: Task): EvidenceTask {
   return {
     id: task.id,
@@ -23,8 +16,7 @@ export function emptyEvidenceTask(task: Task): EvidenceTask {
     retries: 0,
     changedFiles: [],
     validation: [],
-    expectedEvidence: buildExpectedEvidence(task),
-    observedEvidence: [],
+    checks: [],
     escalated: false,
     briefHash: null,
   };
@@ -98,11 +90,11 @@ export function findOrSeed(
         ...v,
         ...(v.changedFiles ? { changedFiles: [...v.changedFiles] } : {}),
       })),
-      expectedEvidence:
-        existing.expectedEvidence.length > 0
-          ? [...existing.expectedEvidence]
-          : buildExpectedEvidence(task),
-      observedEvidence: [...existing.observedEvidence],
+      checks: (existing.checks ?? []).map((entry) =>
+        entry.artifacts
+          ? { ...entry, artifacts: entry.artifacts.map((artifact) => ({ ...artifact })) }
+          : { ...entry },
+      ),
       briefHash: resolvedHash,
     };
   }

@@ -2,7 +2,6 @@ import type { Summary } from '../../../core/schemas/summary.js';
 import type { EvidenceLedger, EvidenceFinalReviewStatus } from '../../../core/schemas/evidence.js';
 import { EVIDENCE_FILE, REVIEW_FILE } from '../../../core/paths.js';
 import { nowIso } from '../../../utils/format-time.js';
-import { uniquePush } from '../../../utils/collections.js';
 
 export type RecordFinalReviewEvidenceInput = {
   ledger: EvidenceLedger;
@@ -11,20 +10,8 @@ export type RecordFinalReviewEvidenceInput = {
 };
 
 export function recordFinalReviewEvidence(input: RecordFinalReviewEvidenceInput): EvidenceLedger {
-  let tasks = input.ledger.tasks;
-  if (input.status === 'written') {
-    tasks = tasks.map((t) => {
-      if (t.status === 'done' || t.status === 'escalated') {
-        const observedEvidence = [...t.observedEvidence];
-        uniquePush(observedEvidence, 'final review written');
-        return { ...t, observedEvidence };
-      }
-      return t;
-    });
-  }
   return {
     ...input.ledger,
-    tasks,
     finalReview: { path: input.path ?? REVIEW_FILE, status: input.status },
     generatedAt: nowIso(),
   };

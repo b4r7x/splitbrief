@@ -6,7 +6,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { evidenceLedgerPath, readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import { evidenceLedgerPath } from '../../../core/evidence/ledger-storage.js';
 import { SESSION_LOG_FILE, sessionDir } from '../../../core/paths.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import type { Task } from '../../../core/schemas/task.js';
@@ -227,9 +227,6 @@ describe('applyRecoveryAction: persisted success effects', () => {
     expect(result.state.tasks[0]?.status).toBe('skipped');
     expect(result.state.pendingRecovery).toBeUndefined();
     expect(loadState({ projectDir, sessionId })?.pendingRecovery).toBeUndefined();
-    expect(readEvidenceLedger({ projectDir, sessionId })?.tasks[0]?.observedEvidence).toContain(
-      'skipped: recovery retry-exhausted: T034 exhausted its retries',
-    );
     expect(events.map((event) => event.type)).toEqual(
       expect.arrayContaining(['recovery_action_selected', 'task_skipped', 'recovery_resolved']),
     );

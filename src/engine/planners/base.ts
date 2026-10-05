@@ -1,7 +1,11 @@
 import type { Task } from '../../core/schemas/task.js';
 import type { InvokeResult } from '../runners/types.js';
 import type { TypedSchemaInput } from '../runners/typed-output.js';
-import type { TypedOutputCapability } from '../../core/runners/cli-tool-catalog.js';
+import {
+  CLI_TOOL_CATALOG,
+  isCliToolId,
+  type TypedOutputCapability,
+} from '../../core/runners/cli-tool-catalog.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { StructuredSummary } from '../../core/schemas/compaction.js';
@@ -108,6 +112,10 @@ export interface PlannerBaseConfig {
 }
 export function createPlannerBase(config: PlannerBaseConfig): Planner {
   const capabilities = config.capabilities;
+  const maxInputChars =
+    config.runnerName !== undefined && isCliToolId(config.runnerName)
+      ? CLI_TOOL_CATALOG[config.runnerName].maxInputChars
+      : undefined;
 
   const planner: Planner = {
     async escalateFull(opts: EscalateOptions): Promise<EscalationResult> {
@@ -137,6 +145,7 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       seat: ctx.seat,
       typedOutput: config.typedOutput ?? 'fallback',
       canResume: capabilities.supportsSessionResume,
+      ...(maxInputChars !== undefined && { maxInputChars }),
       invoke: ({ prompt, schema }) => {
         const callContext = createPlannerCallContext(
           config,
@@ -168,6 +177,7 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
           accessMode: 'read-only',
           callbacks: ctx.callbacks,
           signal: ctx.callbacks.signal,
+          ...(ctx.images !== undefined && { images: ctx.images }),
           ...(schema !== undefined && { schema }),
         });
       },

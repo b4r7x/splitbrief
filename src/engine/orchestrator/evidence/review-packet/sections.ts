@@ -20,17 +20,6 @@ function taskEvidence(task: Task, ledger: EvidenceLedger | null): EvidenceTask |
   return ledger?.tasks.find((entry) => entry.id === task.id);
 }
 
-function expectedEvidenceForTask(task: Task, evidence: EvidenceTask | undefined): string[] {
-  if (evidence) return [...evidence.expectedEvidence];
-  return [...(task.evidence ?? []), ...task.tests];
-}
-
-function missingExpectedEvidence(expectedEvidence: string[], observedEvidence: string[]): string[] {
-  return expectedEvidence.filter(
-    (expected) => !observedEvidence.some((observed) => observed.includes(expected)),
-  );
-}
-
 function groupDriftFindings(findings: DriftFinding[]): ReviewPacket['drift']['findingsBySeverity'] {
   return {
     info: findings.filter((finding) => finding.severity === 'info'),
@@ -56,7 +45,6 @@ export function buildChanges(opts: {
   );
   const taskFileRows = state.tasks.map((task) => {
     const evidence = taskEvidence(task, ledger);
-    const observedEvidence = evidence?.observedEvidence ?? [];
     const declared = taskFiles(task);
     return {
       taskId: task.id,
@@ -66,8 +54,6 @@ export function buildChanges(opts: {
       status: task.status,
       changedFiles:
         evidence?.changedFiles ?? changedFiles.filter((file) => declared.includes(file)),
-      expectedEvidence: expectedEvidenceForTask(task, evidence),
-      observedEvidence,
     };
   });
 
@@ -87,8 +73,6 @@ export function buildValidation(
 ): ReviewPacket['validation'] {
   const tasks = state.tasks.map((task) => {
     const evidence = taskEvidence(task, ledger);
-    const expectedEvidence = expectedEvidenceForTask(task, evidence);
-    const observedEvidence = evidence?.observedEvidence ?? [];
     return {
       taskId: task.id,
       title: task.title,
@@ -99,9 +83,6 @@ export function buildValidation(
         ...(entry.errorSummary !== undefined && { errorSummary: entry.errorSummary }),
         ...(entry.baselineExempt !== undefined && { baselineExempt: entry.baselineExempt }),
       })),
-      expectedEvidence,
-      observedEvidence,
-      missingExpectedEvidence: missingExpectedEvidence(expectedEvidence, observedEvidence),
     };
   });
 
@@ -115,14 +96,38 @@ export function buildValidation(
     },
     tasks,
     finalReviewEvidenceStatus: ledger?.finalReview?.status ?? null,
-    missingEvidenceWarnings: tasks.flatMap((task) =>
-      task.missingExpectedEvidence.length > 0
-        ? [
-            `${task.taskId} expected evidence SPLITBRIEF did not record (informational; SPLITBRIEF records only its own facts; not a failure on its own): ${task.missingExpectedEvidence.join(', ')}`,
-          ]
-        : [],
-    ),
   };
+}
+
+export function buildChecks(opts: {
+  ledger: EvidenceLedger | null;
+  events: PacketEvent[];
+}): ReviewPacket['checks'] {
+  const entries = (opts.ledger?.tasks ?? []).flatMap((task) =>
+    (task.checks ?? []).map((entry) => ({
+      taskId: task.id,
+      id: entry.id,
+      ...(entry.command !== undefined && { command: entry.command }),
+      ...(entry.exitCode !== undefined && { exitCode: entry.exitCode }),
+      ...(entry.output !== undefined && { output: entry.output }),
+      ...(entry.artifacts !== undefined && {
+        artifacts: entry.artifacts.map((artifact) => ({ ...artifact })),
+      }),
+      ...(entry.workspaceSnapshotId !== undefined && {
+        workspaceSnapshotId: entry.workspaceSnapshotId,
+      }),
+      ts: entry.ts,
+    })),
+  );
+  const outsideReadPaths = [
+    ...new Set(
+      opts.events
+        .filter((event) => event.type === 'warning' && event.code === 'isolation_outside_read')
+        .map((event) => event.message ?? '')
+        .filter((message) => message !== ''),
+    ),
+  ];
+  return { entries, outsideReadPaths };
 }
 
 export function buildEvidence(ledger: EvidenceLedger | null): ReviewPacket['evidence'] {
@@ -211,11 +216,6 @@ export function buildEscalations(opts: {
     ) {
       skippedReasons.set(event.taskId, event.message);
     }
-  }
-  for (const entry of ledger?.tasks ?? []) {
-    const reason = entry.observedEvidence.find((evidence) => evidence.startsWith('skipped: '));
-    if (entry.status === 'skipped' && reason)
-      skippedReasons.set(entry.id, reason.slice('skipped: '.length));
   }
 
   return {

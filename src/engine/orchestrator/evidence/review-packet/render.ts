@@ -29,6 +29,107 @@ function renderReadinessChecks(checks: ReviewPacket['readiness']['checks']): str
   return checks.map((check) => `- ${check.severity} ${check.id}: ${check.summary}`);
 }
 
+function renderChecksLog(checks: ReviewPacket['checks']): string[] {
+  const entryLines = checks.entries.flatMap((entry) => {
+    const task = entry.taskId === undefined ? '' : ` ${entry.taskId}`;
+    const exit = entry.exitCode === undefined ? '' : ` (exit ${entry.exitCode})`;
+    const command = entry.command === undefined ? '' : `: ${entry.command}`;
+    const lines = [`- ${entry.id}${task}${exit}${command}`];
+    for (const line of (entry.output ?? '').split('\n')) {
+      if (line.trim() !== '') lines.push(`  output: ${line}`);
+    }
+    for (const artifact of entry.artifacts ?? []) {
+      lines.push(`  artifact: ${artifact.path} sha256 ${artifact.sha256}`);
+    }
+    if (entry.workspaceSnapshotId !== undefined) {
+      lines.push(`  snapshot: ${entry.workspaceSnapshotId}`);
+    }
+    if (entry.ts !== undefined) lines.push(`  time: ${entry.ts}`);
+    return lines;
+  });
+  const outsideReadLines = checks.outsideReadPaths.map((path) => `- outside read: ${path}`);
+  if (entryLines.length === 0 && outsideReadLines.length === 0) return ['- No checks recorded.'];
+  return [...entryLines, ...outsideReadLines];
+}
+
+export function renderWholeChecksLog(checks: ReviewPacket['checks']): string {
+  return renderChecksLog(checks).join('\n');
+}
+
+const DETAIL_CHAR_CAP = 800;
+const SECTION_CHAR_CAP = 30_000;
+
+function capDetailTail(detail: string): string {
+  const trimmed = detail.trim();
+  if (trimmed.length <= DETAIL_CHAR_CAP) return trimmed;
+  return `…${trimmed.slice(-(DETAIL_CHAR_CAP - 1))}`;
+}
+
+export function renderChecksLogForPrompt(
+  checks: ReviewPacket['checks'],
+  paths: Readonly<{ validation: string; sessionLog: string }>,
+): string {
+  const latest = new Map<string, { index: number; ts: string | undefined }>();
+  checks.entries.forEach((entry, index) => {
+    const previous = latest.get(entry.id);
+    if (
+      previous === undefined ||
+      previous.ts === undefined ||
+      entry.ts === undefined ||
+      entry.ts >= previous.ts
+    ) {
+      latest.set(entry.id, { index, ts: entry.ts });
+    }
+  });
+  const blocks = [
+    ...checks.entries.map((entry, index) => {
+      const failed = entry.exitCode !== undefined && entry.exitCode !== 0;
+      return {
+        priority: latest.get(entry.id)?.index === index ? (failed ? 1 : 2) : failed ? 3 : 4,
+        text: renderChecksLog({
+          entries: [
+            {
+              ...entry,
+              ...(entry.output !== undefined && { output: capDetailTail(entry.output) }),
+            },
+          ],
+          outsideReadPaths: [],
+        }).join('\n'),
+      };
+    }),
+    ...checks.outsideReadPaths.map((path) => ({
+      priority: 0,
+      text: renderChecksLog({ entries: [], outsideReadPaths: [path] }).join('\n'),
+    })),
+  ];
+  if (blocks.length === 0) return renderWholeChecksLog(checks);
+  const whole = blocks.map((block) => block.text).join('\n');
+  if (whole.length <= SECTION_CHAR_CAP) return whole;
+  const omissionMarker = (omitted: number, outsideReadOmitted: boolean): string =>
+    `[… ${omitted} entries omitted for size; the whole log is in ${paths.validation}${
+      outsideReadOmitted ? `, the isolation_outside_read warnings in ${paths.sessionLog}` : ''
+    } …]`;
+  const markerChars = omissionMarker(blocks.length, checks.outsideReadPaths.length > 0).length;
+  const byPriority = blocks
+    .map((block, index) => ({ ...block, index }))
+    .sort((left, right) => left.priority - right.priority || left.index - right.index);
+  const included = new Set<number>();
+  let chars = 0;
+  for (const block of byPriority) {
+    if (chars + block.text.length + 1 + markerChars > SECTION_CHAR_CAP) continue;
+    included.add(block.index);
+    chars += block.text.length + 1;
+  }
+  const lines = blocks.filter((_, index) => included.has(index)).map((block) => block.text);
+  if (included.size < blocks.length) {
+    const outsideReadOmitted = blocks.some(
+      (block, index) => block.priority === 0 && included.has(index) === false,
+    );
+    lines.push(omissionMarker(blocks.length - included.size, outsideReadOmitted));
+  }
+  return lines.join('\n');
+}
+
 function formatStatus(status: boolean | null): string {
   if (status === true) return 'passed';
   if (status === false) return 'failed';
@@ -121,6 +222,9 @@ export function renderReviewPacketMarkdown(packet: ReviewPacket): string {
     `- Validation: ${packet.validation.summary.passed} passed, ${packet.validation.summary.failed} failed, ${packet.validation.summary.skipped} skipped, ${packet.validation.summary.escalated} escalated`,
     `- Evidence ledger: ${packet.evidence.present ? packet.evidence.path : 'missing'}`,
     ...taskValidationLines,
+    '',
+    '## Checks Log',
+    ...renderChecksLog(packet.checks),
     '',
     '## Drift And Scope',
     `- Drift: ${formatStatus(packet.drift.passed)}${packet.drift.score === null ? '' : `, score ${packet.drift.score.toFixed(2)}`}`,

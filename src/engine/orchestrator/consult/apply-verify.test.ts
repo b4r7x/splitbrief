@@ -4,6 +4,7 @@ import type { Plan } from '../../../core/schemas/plan.js';
 import type { Check, Task } from '../../../core/schemas/task.js';
 import type { PlannerConversation, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { PlannerReplyAnswer } from '../../../core/schemas/question.js';
+import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { saveState } from '../../../core/state/persistence.js';
 import { processError } from '../../../lib/process/errors.js';
@@ -71,6 +72,7 @@ function fakeValidator(opts?: { results?: ValidationResult[]; accepted?: boolean
   const accepted = opts?.accepted ?? true;
   return {
     primeBaseline: vi.fn().mockResolvedValue(undefined),
+    runFullSuite: vi.fn().mockResolvedValue({ results: [], failures: {}, newFailures: {} }),
     runValidation: vi.fn().mockResolvedValue(results),
     decideAcceptance: vi.fn().mockReturnValue({
       accepted,
@@ -293,6 +295,58 @@ describe('applyConsultAnswer verify', () => {
     ]);
     expect(events.filter((event) => event.type === 'task_completed')).toHaveLength(0);
     expect(states.at(-1)?.tasks[0]?.status).toBe('failed');
+  });
+
+  it('runs the remaining task checks once and records the consult runs with them', async () => {
+    const { projectDir, sessionId } = setupRepo();
+    const task = makeTask({
+      id: 'T003',
+      file: 'src/greet.ts',
+      criteria: ['C1'],
+      status: 'failed',
+      checks: [
+        { id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true },
+        { id: 'K2', kind: 'cmd', value: 'node --version', required: true },
+      ],
+    });
+    const plan = planWith([], ['K1']);
+    const commandRunner = makeCommandRunner({ stdout: 'clean', stderr: '', code: 0 });
+    const { ctx, states, events } = harness({
+      projectDir,
+      sessionId,
+      task,
+      plan,
+      runCommand: commandRunner,
+      changedFiles: ['src/greet.ts'],
+    });
+    const attempt = await getChangedFilesSnapshot(projectDir);
+
+    const result = await applyConsultAnswer(
+      ctx,
+      task,
+      verify(['K1'], 'Only K1 has not run'),
+      attempt,
+    );
+
+    expect(result).toMatchObject({ action: 'completed' });
+    expect(commandRunner.calls).toHaveLength(1);
+    expect(commandRunner.calls[0]?.cmd).toBe('tsc');
+    expect(events.filter((event) => event.type === 'checks_run')).toMatchObject([
+      {
+        taskId: 'T003',
+        results: [
+          { id: 'K1', passed: true },
+          { id: 'K2', passed: true },
+        ],
+      },
+    ]);
+    expect(states.at(-1)?.tasks[0]?.checkResults).toEqual([
+      { id: 'K1', passed: true },
+      { id: 'K2', passed: true },
+    ]);
+    const checks = readEvidenceLedger({ projectDir, sessionId })?.tasks[0]?.checks ?? [];
+    expect(checks.filter((entry) => entry.id === 'K1')).toHaveLength(1);
+    expect(checks.filter((entry) => entry.id === 'K2')).toHaveLength(1);
   });
 });
 

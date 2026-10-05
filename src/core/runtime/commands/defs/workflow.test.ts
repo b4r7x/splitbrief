@@ -8,6 +8,12 @@ function command(name: string, overrides: Parameters<typeof makeCtx>[0] = {}) {
   return found;
 }
 
+function argCommand(name: string, overrides: Parameters<typeof makeCtx>[0] = {}) {
+  const found = workflowCommands(makeCtx(overrides)).find((cmd) => cmd.name === name);
+  if (found?.kind !== 'arg') throw new Error(`${name} is not an argument command`);
+  return found;
+}
+
 describe('/resume', () => {
   it('is offered only while a run is live', () => {
     const resume = command('/resume');
@@ -54,6 +60,44 @@ describe('/resume', () => {
     }).handler();
 
     expect(errors).toEqual(['Nothing to resume.']);
+  });
+});
+
+describe('/steer', () => {
+  it('is offered while a run is live or at rest', () => {
+    const steer = argCommand('/steer');
+
+    expect(
+      steer.guard?.({ phase: 'implementing', plannerSupportsImages: true, openRunAtRest: false }),
+    ).toBeUndefined();
+    expect(
+      steer.guard?.({ phase: 'reviewing-plan', plannerSupportsImages: true, openRunAtRest: true }),
+    ).toBeUndefined();
+    expect(
+      steer.guard?.({ phase: 'idle', plannerSupportsImages: true, openRunAtRest: false }),
+    ).toBe('No run to steer in this phase');
+  });
+
+  it('stops now and continues with the correction through the steer port', async () => {
+    const steerRun = vi.fn(() => true);
+    const errors: string[] = [];
+
+    await argCommand('/steer', { steerRun, setFeedbackError: (m) => errors.push(m) }).handler(
+      'focus on retries',
+    );
+
+    expect(steerRun).toHaveBeenCalledWith('focus on retries');
+    expect(errors).toEqual([]);
+  });
+
+  it('asks for a correction when the text is blank', async () => {
+    const steerRun = vi.fn(() => true);
+    const errors: string[] = [];
+
+    await argCommand('/steer', { steerRun, setFeedbackError: (m) => errors.push(m) }).handler('  ');
+
+    expect(steerRun).not.toHaveBeenCalled();
+    expect(errors).toEqual(['Usage: /steer <correction>']);
   });
 });
 

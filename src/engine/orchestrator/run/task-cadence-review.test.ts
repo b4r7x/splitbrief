@@ -211,7 +211,12 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
       triage: () => ({
         fixTasks: [
           {
-            ...makeTaskSpec({ id: 'T002', suggestedFiles: ['src/shared/widget.ts'], criteria: [] }),
+            ...makeTaskSpec({
+              id: 'T002',
+              suggestedFiles: ['src/shared/widget.ts'],
+              criteria: [],
+              checks: [{ id: 'K2', kind: 'cmd', value: 'node --version', required: true }],
+            }),
             findingIds: ['F1'],
           },
         ],

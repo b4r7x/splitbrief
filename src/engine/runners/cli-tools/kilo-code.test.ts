@@ -364,22 +364,15 @@ describe('Kilo Code planner JSON adapter', () => {
     });
   });
 
-  it('keeps malformed and explicit error records typed and bounded', () => {
+  it('keeps malformed records typed and reads an error line as a warning with its own words', () => {
     expect(kiloPlannerProtocolEvents('{not-json')).toEqual([
       expect.objectContaining({ type: 'warning', code: 'malformed_opencode' }),
     ]);
     expect(
       kiloPlannerProtocolEvents(JSON.stringify({ type: 'error', sessionID: 'ses-kilo' })),
     ).toEqual([
-      {
-        type: 'result',
-        status: 'failed',
-        text: '',
-        usage: null,
-        nativeSessionId: 'ses-kilo',
-        error: { code: 'kilo-code-error', message: 'Kilo Code reported an error' },
-        partial: true,
-      },
+      { type: 'session', nativeSessionId: 'ses-kilo' },
+      { type: 'warning', code: 'kilo-code-error', message: 'Kilo Code reported an error' },
     ]);
   });
 });
@@ -477,6 +470,53 @@ describe('Kilo Code terminal outcomes', () => {
       partial: false,
     });
   });
+
+  it.each([
+    ['planner', kiloPlannerAdapter, kiloPlannerProtocolEvents, 'handed back'],
+    ['implementer', kiloImplementerAdapter, kiloImplementerProtocolEvents, ''],
+  ] as const)(
+    'ends the %s call on an error line only when the stream ends after it',
+    (_role, adapter, parse, completedText) => {
+      const errorLine = JSON.stringify({
+        type: 'error',
+        sessionID: 'ses-kilo',
+        error: { name: 'APIError', data: { message: 'Upstream stream ended', isRetryable: true } },
+      });
+      const finalText = JSON.stringify({
+        type: 'text',
+        sessionID: 'ses-kilo',
+        part: { type: 'text', text: 'handed back' },
+      });
+      const usage = JSON.stringify({
+        type: 'step_finish',
+        sessionID: 'ses-kilo',
+        part: { type: 'step-finish', reason: 'tool-calls', tokens: { input: 7, output: 2 } },
+      });
+      const terminalOf = (lines: readonly string[]) =>
+        adapter.terminal({
+          outputContract: adapter.outputContract,
+          events: lines.flatMap((line) => [...parse(line)]),
+          stderr: '',
+          exitCode: 0,
+          signal: null,
+        });
+
+      expect(terminalOf([usage, errorLine])).toEqual({
+        type: 'result',
+        status: 'failed',
+        text: '',
+        usage: { inputTokens: 7, outputTokens: 2 },
+        nativeSessionId: 'ses-kilo',
+        error: { code: 'kilo-code-error', message: 'APIError: Upstream stream ended' },
+        partial: true,
+      });
+      expect(terminalOf([usage, errorLine, finalText])).toMatchObject({
+        status: 'completed',
+        text: completedText,
+        error: null,
+      });
+    },
+  );
 
   it('preserves a typed cancellation result instead of converting it to success', () => {
     const aborted = {

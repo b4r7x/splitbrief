@@ -2,6 +2,8 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import { validateCommitAndAdvance } from '../task/commit.js';
+import { runTaskChecksAfterAcceptance } from '../task/task-checks.js';
+import { recordCheckRuns } from '../evidence/record-checks.js';
 import type { ValidationAcceptance } from '../validation/acceptance.js';
 import type { EscalationContext } from './types.js';
 
@@ -45,6 +47,14 @@ export async function validateAndCommit(opts: ValidateAndCommitOptions) {
     signal: ctx.signal,
     changedFiles: preApprovedChangedFiles,
   });
+  await recordCheckRuns({
+    projectDir: ctx.projectDir,
+    sessionId: ctx.sessionId,
+    workspaceDir: ctx.workspaceDir,
+    state,
+    task,
+    validation: validationResults,
+  });
   if (ctx.signal?.aborted) {
     return {
       state,
@@ -74,5 +84,7 @@ export async function validateAndCommit(opts: ValidateAndCommitOptions) {
     acceptance,
     taskChangedFiles: preApprovedChangedFiles,
   });
-  return { ...result, validationResults, acceptance };
+  if (!result.completed) return { ...result, validationResults, acceptance };
+  const checked = await runTaskChecksAfterAcceptance({ wctx: ctx, state: result.state, task });
+  return { ...result, state: checked.state, validationResults, acceptance };
 }

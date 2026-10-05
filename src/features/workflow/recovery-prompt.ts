@@ -496,6 +496,7 @@ function formatRecoveryHeader(issue: RecoveryIssue): string {
     issue.reason === 'apply-conflict' ||
     issue.reason === 'apply-partial' ||
     issue.reason === 'review-input-too-large' ||
+    issue.reason === 'required-checks-unrunnable' ||
     issue.reason === 'plan-questions-exhausted' ||
     issue.reason === 'plan-checks-failed'
   ) {

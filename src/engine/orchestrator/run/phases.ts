@@ -32,7 +32,7 @@ export async function runPlanningPhases(
 ): Promise<PlanningPhaseResult> {
   const { wctx, savedState, phaseTimings, startTime, setTrackedState } = opts;
   let { state } = opts;
-  const { projectDir, sessionId, config, planner } = wctx;
+  const { projectDir, workspaceDir, sessionId, config, planner } = wctx;
   const rewindPending = savedState?.rewindPending;
 
   // Re-entering the run is the resume: the parked step and a recorded failure are cleared here
@@ -96,6 +96,7 @@ export async function runPlanningPhases(
     };
     const pre = await runPreHooks(config.hooks, 'pre_planning', prePlanPayload, {
       projectDir,
+      workspaceDir,
       sessionId,
     });
     if (pre.allow) return true;

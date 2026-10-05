@@ -158,6 +158,35 @@ describe('createImplementerBase — continuation', () => {
     expect(seenPrompt).toContain('start from the top');
   });
 
+  it('tells a retry carrying a correction that its previous attempt was discarded', async () => {
+    let seenPrompt = '';
+    const invoke = vi.fn().mockImplementation(async (opts) => {
+      seenPrompt = opts.prompt;
+      return makeRunnerCallResult({ status: 'completed', text: 'done', usage: null });
+    });
+    const implementer = createImplementerBase(makeBaseConfig({ extractsCode: false, invoke }));
+
+    await implementer.retry({
+      task: makeTask({ title: 'Add the retry ladder' }),
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+      error: 'tsc: Type X is not assignable to Y',
+      attempt: 1,
+      kind: 'local',
+      continuation: { steer: 'keep the exported name' },
+    });
+
+    expect(seenPrompt).toContain(
+      '[Continuation] Your previous attempt was discarded; its error is above. The user says: keep the exported name',
+    );
+    expect(seenPrompt).not.toContain('No output from an earlier attempt');
+    expect(seenPrompt.indexOf('tsc: Type X is not assignable to Y')).toBeLessThan(
+      seenPrompt.indexOf('[Continuation]'),
+    );
+  });
+
   it("keeps a direct writer's cut output as the partial a continue reads back", async () => {
     const sessionId = 'direct-writer-cut';
     const controller = new AbortController();

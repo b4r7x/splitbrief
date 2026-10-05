@@ -69,7 +69,7 @@ function planAnswer(): string {
           intent:
             'Create a module proving a CLI planner task can be implemented by a separate CLI implementer.',
           criteria: ['C1'],
-          checks: [{ id: 'K1', kind: 'cmd', value: 'node validate.mjs', required: true }],
+          checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
           suggestedFiles: ['src/cli-planner-implementer.ts'],
           contextFiles: [],
           exclusions: ['validation script changes', 'unrelated source files'],

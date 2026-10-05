@@ -13,6 +13,8 @@ const MAX_VALIDATION_COMMAND_CHARS = 240;
 
 type TestTarget = { run: true; targets: string[] } | { run: false; skipReason: string };
 
+export type TestTargetMode = 'narrow' | 'full';
+
 /** The tests of the brief's declared files and of every file the attempt changed. */
 export function resolveTestTarget(opts: {
   resolved: ResolvedCommand;
@@ -22,8 +24,10 @@ export function resolveTestTarget(opts: {
   config: Config;
   discovered: DiscoveredValidation | undefined;
   stack: Stack | null;
+  mode?: TestTargetMode | undefined;
 }): TestTarget {
   const { resolved, task, projectDir, config, discovered, stack } = opts;
+  if (opts.mode === 'full') return { run: true, targets: [] };
   const narrows =
     resolved.source === 'default' || (resolved.source === 'manifest' && stack !== null);
   if (!narrows || stack === null) return { run: true, targets: [] };

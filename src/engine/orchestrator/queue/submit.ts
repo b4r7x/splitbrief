@@ -19,10 +19,6 @@ import {
   type QueueHandlerContext,
 } from './types.js';
 
-function canQueueInPhase(phase: Phase): boolean {
-  return isLivePhase(phase) && !isImplementerPhase(phase);
-}
-
 export function enqueueUserMessage({
   projectDir,
   sessionId,
@@ -39,8 +35,8 @@ export function enqueueUserMessage({
   const base = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state, {
     keepUnsaved: true,
   });
-  if (enforcePhasePolicy && !canQueueInPhase(phase)) {
-    const message = `Queue is only available while the planner is running; current phase is ${phase}.`;
+  if (enforcePhasePolicy && !isLivePhase(phase) && !isImplementerPhase(phase)) {
+    const message = `Queue is only available while a run is live; current phase is ${phase}.`;
     publishWarning({
       bus,
       phase,

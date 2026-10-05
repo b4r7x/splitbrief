@@ -1,5 +1,6 @@
 import { assertNever } from '../../utils/type-guards.js';
 import type { ActiveRunnerRole } from './seat-roles.js';
+import { CLI_TOOL_CATALOG, isCliToolId } from './cli-tool-catalog.js';
 import { type CliEffortChannel, runnerEffortChannel } from './effort-channel.js';
 import type { ProviderDetection } from '../discovery/detection.js';
 import type { RunnerConfig } from '../config/accessors/runner-config.js';
@@ -25,8 +26,8 @@ export function seatConfiguredEffort(
 }
 
 /**
- * Only OpenAI-compatible endpoints hold the API seat, so the models.dev
- * `modalities.input ∋ 'image'` fact detection carries is the whole answer.
+ * The seat's image fact: a CLI takes images only when its tool declares a
+ * channel for them; an API seat follows the models.dev modality detection.
  */
 export function seatSupportsImages(
   input: Readonly<{ runner: RunnerConfig; detected?: DetectedModelFact | undefined }>,
@@ -34,7 +35,7 @@ export function seatSupportsImages(
   const runner = input.runner;
   switch (runner.kind) {
     case 'cli':
-      return true;
+      return isCliToolId(runner.tool) && CLI_TOOL_CATALOG[runner.tool].imageInput !== 'none';
     case 'api':
       return input.detected?.supportsImages ?? false;
     case 'shell':

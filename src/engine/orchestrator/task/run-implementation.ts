@@ -2,6 +2,7 @@ import { isInDeclaredSet, taskDeclaredPatterns } from '../../../core/scope/decla
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
+import { briefCorrections } from '../../../core/state/machine.js';
 import type { WorkflowContext } from '../types.js';
 import type { ImplementerOptions, ImplementerResult } from '../../implementers/types.js';
 import type { AttemptWorkspace } from '../isolation/types.js';
@@ -17,9 +18,19 @@ import { inferTaskAcceptedChangedFiles } from '../changed-files-baseline.js';
 import { hashTaskBrief } from '../../brief-hash.js';
 import { isAbortError } from '../../../utils/abort.js';
 import { implementerSeatAttempt, runSeatCall } from '../escalation/seat-wait.js';
-import { addUsageAndSave } from '../state-ops.js';
+import {
+  addUsageAndSave,
+  rebaseOnPersistedWorkflowState,
+  transitionAndSave,
+} from '../state-ops.js';
 import { isResumableWorkspaceStop, retentionError } from '../isolation/retention.js';
 import { recordedApiCreatedPaths } from '../evidence/task.js';
+import {
+  commitQueueMessagesDrained,
+  readQueueForPrompt,
+  releaseQueueMessagesForPrompt,
+} from '../queue/drain.js';
+import { formatDrainedMessages } from '../queue/prompt.js';
 
 /**
  * The brief's own declared files that already moved since it started. A restarted
@@ -41,7 +52,7 @@ async function changedDeclaredFilesNote(
           );
     if (changed.length === 0) return {};
     return {
-      extra: `These declared files already differ from the commit this brief started on: ${changed.join(', ')}`,
+      extra: `These declared files changed since this brief started (an earlier attempt of this brief left them): ${changed.join(', ')}`,
     };
   } catch {
     // Best-effort context: a snapshot head the operator rewrote must not stop the restart.
@@ -83,11 +94,33 @@ export async function runImplementation(opts: {
 
   const step = { kind: 'brief' as const, taskId: task.id, attempt: state.attempt };
   const seed = wctx.continuation?.take(step, hashTaskBrief([task]));
+  // Each correction is written against the saved head, so one already on disk is never replaced.
+  const recordCorrection = (text: string | undefined): void => {
+    if (!text) return;
+    state = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state);
+    if (briefCorrections(state, task.id).includes(text)) return;
+    state = transitionAndSave({ projectDir, sessionId }, state, {
+      type: 'RECORD_CORRECTION',
+      taskId: task.id,
+      text,
+    });
+    setTrackedState(state);
+  };
+  state = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state);
+  recordCorrection(seed?.steer?.trim());
   const workspace: AttemptWorkspace = await wctx.isolation.acquire({
     role: 'implementer',
     config,
     resume: seed?.keepWorkspace === true,
   });
+  // Text queued while an earlier brief ran is delivered here, at the boundary this brief owns:
+  // it rides the implementer's steer so the brief starts already knowing the correction.
+  const queued = readQueueForPrompt({ projectDir, sessionId, state });
+  if (queued.messages.length > 0) {
+    state = queued.state;
+    setTrackedState(state);
+  }
+  const queuedSteer = formatDrainedMessages(queued.messages).trim();
   const createdByThisTask = recordedApiCreatedPaths(
     { projectDir, sessionId },
     task,
@@ -120,18 +153,22 @@ export async function runImplementation(opts: {
       body: async ({ signal, partial, steer, recordOutput }) => {
         // The brief restarts on its own prompt. What the cut attempt already
         // wrote is still on disk, so it is named rather than re-derived.
+        recordCorrection(steer?.trim());
+        const corrections = briefCorrections(state, task.id);
+        const combinedSteer =
+          [...corrections, ...(corrections.includes(queuedSteer) ? [] : [queuedSteer])]
+            .filter((part) => part !== '')
+            .join('\n\n') || undefined;
         const continuation =
-          partial === undefined && steer === undefined
+          partial === undefined && combinedSteer === undefined
             ? undefined
             : {
                 ...(partial !== undefined && { partial }),
-                ...(steer !== undefined && { steer }),
+                ...(combinedSteer !== undefined && { steer: combinedSteer }),
                 ...(await changedDeclaredFilesNote(
                   workspace.projectDir,
                   task,
-                  workspace.snapshot.baselineFileHashes === undefined
-                    ? opts.taskStartSnapshot
-                    : workspace.snapshot,
+                  opts.taskStartSnapshot,
                 )),
               };
         const call: ImplementerOptions = {
@@ -186,6 +223,18 @@ export async function runImplementation(opts: {
           },
         };
         const produce = async (attemptSignal: AbortSignal): Promise<ImplementerResult> => {
+          if (queued.messages.length > 0) {
+            const delivered = commitQueueMessagesDrained({
+              projectDir,
+              sessionId,
+              state,
+              messages: queued.messages,
+              bus: wctx.bus,
+            });
+            state = delivered.state;
+            setTrackedState(state);
+            if (delivered.count > 0) recordCorrection(queuedSteer);
+          }
           // A fix task already has its code on disk when the findings need none; its brief
           // carries the findings, and a no-change attempt completes instead of failing.
           if (task.fix !== undefined && opts.retryError === undefined) {
@@ -236,10 +285,11 @@ export async function runImplementation(opts: {
     else if (!retentionError.isFailed(err)) workspace.cleanup();
     throw err;
   } finally {
+    releaseQueueMessagesForPrompt({ projectDir, sessionId }, queued.messages);
     streamingFeed.stop();
   }
 
-  state = loop.state;
+  state = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, loop.state);
 
   // The receipt lands before the caller decides what the attempt was, so a brief
   // that stopped mid-application still names the prefix it already wrote.

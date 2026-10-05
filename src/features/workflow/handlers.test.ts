@@ -12,6 +12,7 @@ import {
   requestLeaveSession,
   setStopHandler,
   requestResume,
+  requestSteer,
   requestStopNow,
   requestClearQueue,
   resumeParkedRun,
@@ -221,6 +222,43 @@ describe('resumeParkedRun', () => {
 
   it('reports no park when the run is at rest', () => {
     expect(resumeParkedRun('')).toBe(false);
+  });
+});
+
+describe('requestSteer', () => {
+  beforeEach(() => {
+    clearAllHandlers();
+    stopStore.__testReset();
+  });
+
+  afterEach(() => {
+    clearAllHandlers();
+    stopStore.__testReset();
+  });
+
+  it('stops now and holds the text until the park lands', () => {
+    const stop = vi.fn();
+    setStopHandler(stop);
+
+    expect(requestSteer('smaller diffs')).toBe(true);
+    expect(stop).toHaveBeenCalledTimes(1);
+
+    // The text survives the stop race: the park that follows resumes with it.
+    const steer = vi.fn();
+    stopStore.park('mid-brief', 'T002', steer);
+    expect(steer).toHaveBeenCalledWith('smaller diffs');
+  });
+
+  it('continues a run already parked with the text', () => {
+    const steer = vi.fn();
+    stopStore.park('mid-brief', 'T002', steer);
+
+    expect(requestSteer('use the other adapter')).toBe(true);
+    expect(steer).toHaveBeenCalledWith('use the other adapter');
+  });
+
+  it('reports nothing to steer when no run is on screen', () => {
+    expect(requestSteer('nope')).toBe(false);
   });
 });
 

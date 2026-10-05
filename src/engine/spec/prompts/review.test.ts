@@ -122,7 +122,10 @@ describe('buildFinalReviewPrompt', () => {
     expect(bare).toContain(
       'Mark a criterion unverified when no recorded evidence proves it, and name its checkIds.',
     );
-    expect(bare).toContain('Never claim a render was verified.');
+    expect(bare).toContain(
+      'Verify a render only when its current-candidate images are attached and you critique the scenario.',
+    );
+    expect(bare).not.toContain('Never claim a render was verified.');
   });
 
   it('drops the containment sentence that made a missing render at most a Note', () => {
@@ -201,28 +204,27 @@ describe('buildFinalReviewPrompt', () => {
     expect(result).toContain(driftSection);
   });
 
-  it('includes the recorded validation output verbatim and binds validation claims to it', () => {
-    const evidence = '- test (`npm test`): passed\n\n```\nTests  4 passed (4)\n```';
+  it('includes the checks log verbatim and binds validation claims to it', () => {
+    const evidence =
+      '- test T001 (exit 0): npm test\n  output: Tests  4 passed (4)\n  snapshot: candidate-1';
     const result = buildFinalReviewPrompt({
       spec: SPEC,
       taskBriefs: TASK_BRIEFS,
       diff: DIFF,
-      validationEvidence: evidence,
+      checksLog: evidence,
     });
-    expect(result).toContain('## Recorded Validation Output');
+    expect(result).toContain('## Checks Log');
     expect(result).toContain(
       'The orchestrator ran these validation commands and recorded their output.',
     );
     expect(result).toContain('Tests  4 passed (4)');
-    expect(result).toContain(
-      'quote the relevant line verbatim from the Recorded Validation Output section',
-    );
+    expect(result).toContain('quote the relevant line verbatim from the Checks Log section');
     expect(result).toContain('never report counts or totals that do not appear there');
   });
 
   it('still instructs how to handle missing validation evidence when none is provided', () => {
     const result = buildFinalReviewPrompt({ spec: SPEC, taskBriefs: TASK_BRIEFS, diff: DIFF });
-    expect(result).not.toContain('## Recorded Validation Output');
+    expect(result).not.toContain('## Checks Log');
     expect(result).toContain(
       'state that validation output was not recorded instead of asserting results',
     );

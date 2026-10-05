@@ -17,6 +17,7 @@ import { readDriftReport } from '../../drift/io.js';
 import { readDriftChainState } from '../../drift/chain-state.js';
 import {
   buildChanges,
+  buildChecks,
   buildCost,
   buildDrift,
   buildEscalations,
@@ -36,7 +37,7 @@ export const REVIEWER_CHECKLIST = [
   "Review drift findings and the files changed outside every brief's suggested files.",
   'Confirm validation commands passed or understand failures.',
   'Check escalated, skipped, or retried tasks.',
-  'Inspect expected vs observed evidence for each completed task.',
+  'Inspect the checks log for each completed task.',
   `Run or review any project-specific tests not covered by ${SPLITBRIEF_IDENTITY.displayName}.`,
   'Review the working tree with `git diff` before accepting or rejecting the run.',
   'Use `/run accept` or `/run reject` once the checkpoint conflicts are understood.',
@@ -97,6 +98,7 @@ export async function buildReviewPacket(opts: BuildReviewPacketOptions): Promise
       missing,
     }),
     validation: buildValidation(opts.state, ledger),
+    checks: buildChecks({ ledger, events }),
     evidence: buildEvidence(ledger),
     drift: buildDrift({ chainState, drift, briefQuality }),
     escalations: buildEscalations({ state: opts.state, ledger, events }),

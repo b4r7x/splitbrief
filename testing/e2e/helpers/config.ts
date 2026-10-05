@@ -50,7 +50,9 @@ export function makeE2eScenarioConfig(overrides: E2eScenarioConfigOverrides = {}
       typecheck: false,
       lint: false,
       test: false,
-      testCommand: 'npm test',
+      // The replayed plans name `test` checks the fixture projects cannot run (prose, or no
+      // test script); a command that exits 0 lets the scenarios measure the workflow itself.
+      testCommand: 'node --version',
       ...overrides.validation,
     },
   };

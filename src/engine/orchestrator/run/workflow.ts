@@ -285,6 +285,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
             summaryBase,
             metadata,
             setTrackedState: trackState,
+            getTrackedState: () => trackedState,
             resumeHolder,
             isolation,
             savedState,

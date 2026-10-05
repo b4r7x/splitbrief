@@ -40,8 +40,27 @@ export type ValidationBaseline = {
   failures: Partial<Record<ValidationStage, ReadonlySet<string>>>;
 };
 
+export type FullSuiteFailureKeys = Partial<Record<ValidationStage, string[]>>;
+
+export type RunFullSuiteOptions = {
+  projectDir: string;
+  config: Config;
+  bus: EventBus;
+  phase: Phase;
+  discoveredValidation?: DiscoveredValidation | undefined;
+  signal?: AbortSignal | undefined;
+  baseline?: FullSuiteFailureKeys | undefined;
+};
+
+export type RunFullSuiteResult = {
+  results: ValidationResult[];
+  failures: FullSuiteFailureKeys;
+  newFailures: FullSuiteFailureKeys;
+};
+
 export interface Validator {
   primeBaseline: (opts: PrimeBaselineOptions) => Promise<PersistedValidationBaseline | undefined>;
+  runFullSuite: (opts: RunFullSuiteOptions) => Promise<RunFullSuiteResult>;
   runValidation: (opts: RunValidationOptions) => Promise<ValidationResult[]>;
   decideAcceptance: (opts: {
     results: readonly ValidationResult[];

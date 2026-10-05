@@ -12,6 +12,7 @@ import { toTokenDelta } from '../calls/projection.js';
 import { accumulateTokenUsage } from '../calls/usage.js';
 import type { RunnerCallResult } from '../calls/types.js';
 import { requireCompletedCall } from '../planners/require-completed-call.js';
+import { inputTooLargeRefusal } from './input-limit.js';
 import { isStrictJsonSchema } from './strict-json-schema.js';
 
 export type TypedSchemaInput = Readonly<{
@@ -27,6 +28,8 @@ export type TypedSeatCall = Readonly<{
   seat: ActiveRunnerRole;
   typedOutput: TypedOutputCapability;
   canResume: boolean;
+  /** Largest prompt the seat's tool accepts in characters; omitted when the tool has no cap. */
+  maxInputChars?: number | undefined;
   invoke: (input: {
     prompt: string;
     schema?: TypedSchemaInput | undefined;
@@ -321,6 +324,14 @@ export async function requestTyped<T>(
   const schemaInput: TypedSchemaInput = { json: opts.jsonSchema, name: opts.schemaName };
   const firstPrompt =
     transport === 'native' ? opts.prompt : opts.prompt + fallbackInstruction(opts.jsonSchema);
+  const maxInputChars = opts.call.maxInputChars;
+
+  // A continuation prompt the caller built, and the repair prompt below, can both
+  // grow past what the seat's tool accepts. Refuse before sending so the halt is
+  // classified from the prompt size, not from a tool that never saw the call.
+  if (maxInputChars !== undefined && firstPrompt.length > maxInputChars) {
+    throw inputTooLargeRefusal(firstPrompt.length, maxInputChars);
+  }
 
   const first = requireCompletedCall(
     await opts.call.invoke({
@@ -349,12 +360,14 @@ export async function requestTyped<T>(
   const repairPrompt = continuesThread
     ? resumeRepairPrompt(firstCheck.errors)
     : freshRepairPrompt(opts.prompt, firstCheck.answer, firstCheck.errors);
+  const repairPromptSent =
+    transport === 'fallback' ? repairPrompt + fallbackInstruction(opts.jsonSchema) : repairPrompt;
+  if (maxInputChars !== undefined && repairPromptSent.length > maxInputChars) {
+    throw inputTooLargeRefusal(repairPromptSent.length, maxInputChars);
+  }
   const repair = requireCompletedCall(
     await opts.call.invoke({
-      prompt:
-        transport === 'fallback'
-          ? repairPrompt + fallbackInstruction(opts.jsonSchema)
-          : repairPrompt,
+      prompt: repairPromptSent,
       ...(transport === 'native' && { schema: schemaInput }),
     }),
   );

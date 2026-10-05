@@ -253,6 +253,7 @@ export interface ClaudeOneShotOpts {
   configuredArgs?: readonly string[] | undefined;
   /** The run's global skills, which the call may read and never write. */
   skillRoots?: readonly string[] | undefined;
+  images?: Attachment[] | undefined;
   signal?: AbortSignal | undefined;
   callContext?: RunnerCallContext | undefined;
   env?: NodeJS.ProcessEnv | undefined;
@@ -275,7 +276,7 @@ export async function runClaudeOneShot(opts: ClaudeOneShotOpts): Promise<RunnerC
 
   const { result } = await runClaudeCall({
     args,
-    stdin: opts.prompt,
+    stdin: applyImageRefs(opts.prompt, opts.images),
     projectDir: opts.projectDir,
     spawnEnv,
     sessionId: null,

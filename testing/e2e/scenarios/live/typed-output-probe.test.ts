@@ -77,6 +77,14 @@ const TOOLS = [
     probe: ANSWER_PROBE,
   },
   {
+    label: 'codex-stale-consult',
+    tool: 'codex',
+    command: 'codex',
+    model: undefined,
+    transport: 'native',
+    probe: STALE_CONSULT_PROBE,
+  },
+  {
     label: 'antigravity',
     tool: 'antigravity',
     command: 'agy',

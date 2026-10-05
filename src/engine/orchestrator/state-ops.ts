@@ -194,6 +194,10 @@ function mergeQueues(
             deliveredViaNative: persistedMessage.deliveredViaNative || message.deliveredViaNative,
             nativeDeliveryState: mergeNativeDeliveryState(persistedMessage, message),
             drainedAt: message.drainedAt ?? persistedMessage.drainedAt,
+            deliveredTo:
+              persistedMessage.deliveredTo === undefined && message.deliveredTo === undefined
+                ? undefined
+                : { ...persistedMessage.deliveredTo, ...message.deliveredTo },
           }
         : message,
     );

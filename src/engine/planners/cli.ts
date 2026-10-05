@@ -1,6 +1,7 @@
 import { matches } from '../../utils/error.js';
 
 import type { Config } from '../../core/schemas/config.js';
+import type { Attachment } from '../../core/schemas/attachment.js';
 import type { CliExecutableIdentity } from '../../core/discovery/detection.js';
 import type { Planner, PlannerCallbacks, PlannerFactoryOptions } from './types.js';
 import { ONE_SHOT_API_CAPS } from './types.js';
@@ -103,6 +104,7 @@ export function createCliPlanner(
     mode: 'plan' | 'escalate';
     threaded: boolean;
     resumeId: string | null;
+    images?: readonly Attachment[] | undefined;
     signal?: AbortSignal | undefined;
     sandboxEnv?: NodeJS.ProcessEnv | undefined;
     schema?: CliSchemaInput | undefined;
@@ -115,6 +117,7 @@ export function createCliPlanner(
       mode,
       threaded,
       resumeId,
+      images,
       signal,
       sandboxEnv,
     } = opts;
@@ -150,6 +153,9 @@ export function createCliPlanner(
       variant,
       installedVersion: trustedCli?.installedVersion,
       schema: opts.schema,
+      ...(images !== undefined && images.length > 0
+        ? { imagePaths: images.map((image) => image.path) }
+        : {}),
     });
     const result = await invokeCliAdapter({
       adapter,
@@ -209,6 +215,7 @@ export function createCliPlanner(
     >;
     callContext: RunnerCallContext;
     accessMode: 'planning' | 'read-only' | 'write-files';
+    images?: readonly Attachment[] | undefined;
     signal?: AbortSignal | undefined;
     sandboxEnv?: NodeJS.ProcessEnv | undefined;
     schema?: TypedSchemaInput | undefined;
@@ -260,6 +267,7 @@ export function createCliPlanner(
           mode: adapterMode,
           threaded,
           resumeId,
+          ...(opts.images !== undefined && { images: opts.images }),
           signal,
           sandboxEnv: environment,
         }),
@@ -274,13 +282,14 @@ export function createCliPlanner(
   }
 
   return createPlannerBase({
-    invokePlan: ({ prompt, projectDir, callbacks, callContext, signal, schema }) =>
+    invokePlan: ({ prompt, projectDir, callbacks, callContext, images, signal, schema }) =>
       invoke({
         prompt,
         projectDir,
         callbacks,
         callContext,
         accessMode: 'planning',
+        ...(images !== undefined && { images }),
         signal,
         ...(schema !== undefined && { schema }),
       }),
@@ -290,6 +299,7 @@ export function createCliPlanner(
       callbacks,
       callContext,
       accessMode,
+      images,
       signal,
       sandboxEnv,
       schema,
@@ -300,6 +310,7 @@ export function createCliPlanner(
         callbacks,
         callContext,
         accessMode,
+        ...(images !== undefined && { images }),
         signal,
         sandboxEnv,
         ...(schema !== undefined && { schema }),

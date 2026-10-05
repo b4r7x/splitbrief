@@ -8,7 +8,7 @@ import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { requestEnqueue } from './handlers.js';
 import { openReviewEditor, reviewEditPath } from './review-editor.js';
 import { editorDisplayLabel, resolveEditorArgv } from './editor-command.js';
-import { isLivePhase, isImplementerPhase } from '../../core/phases.js';
+import { isImplementerPhase, isLivePhase } from '../../core/phases.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import {
   resumeTerminalAfterEditor,
@@ -262,17 +262,17 @@ export function createReviewInputHandler(
         return;
       }
       const phase = lifecycle.phase;
-      if (isImplementerPhase(phase)) {
-        feedbackStore.setError('Input disabled during task implementation. Press Ctrl-C to stop.');
-        return;
-      }
-      if (isLivePhase(phase)) {
+      if (isLivePhase(phase) || isImplementerPhase(phase)) {
         const trimmed = text.trim();
         if (trimmed) {
           const result = await effects.enqueue(trimmed, phase);
           if (!result) {
+            composerDraftStore.request(trimmed);
             feedbackStore.setError('Cannot queue message: no active workflow.');
           } else if (result.status === 'rejected') {
+            // The submission was refused: the draft the composer just cleared comes back, so a
+            // rejection never loses what the operator typed.
+            composerDraftStore.request(trimmed);
             feedbackStore.setError(result.message);
           } else {
             feedbackStore.setMessage('Message queued for the next planner turn.');

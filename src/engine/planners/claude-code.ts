@@ -212,6 +212,7 @@ export function createClaudeCodePlanner(opts: {
       accessMode,
       signal,
       sandboxEnv,
+      images,
       schema,
     }) {
       const effectiveSignal = composeAbortSignal(signal, timeout);
@@ -224,6 +225,7 @@ export function createClaudeCodePlanner(opts: {
         onCallEvent: callbacks.onCallEvent,
         callContext,
         ...claudeRunnerPrep({ env, signal: effectiveSignal }),
+        ...(images !== undefined && images.length > 0 ? { images } : {}),
         ...(schema !== undefined && { schema: { json: schema.json } }),
       });
     },

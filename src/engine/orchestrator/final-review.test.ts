@@ -32,6 +32,8 @@ import {
   DRIFT_REPORT_FILE,
   REVIEW_PACKET_JSON_FILE,
   REVIEW_PACKET_MARKDOWN_FILE,
+  EVIDENCE_FILE,
+  SESSION_LOG_FILE,
 } from '../../core/paths.js';
 import { hashTaskBrief } from '../brief-hash.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
@@ -550,7 +552,7 @@ describe('runFinalReviewPhase', () => {
       {
         id: 'criterion:C1',
         status: 'unverified',
-        output: expect.stringContaining('render checks are not runnable'),
+        output: expect.stringContaining('validation.render is not set'),
       },
     ]);
     expect(record.outcome).toBe('fail');
@@ -654,7 +656,10 @@ describe('runFinalReviewPhase', () => {
     expect(result.reviewStatus).toBe('failed');
   });
 
-  it('feeds the recorded validation output into the review prompt for verbatim quoting', async () => {
+  it.each([
+    { seat: 'CLI', config: () => makeNoValidationConfig() },
+    { seat: 'API', config: () => makeNoValidationConfig({ reviewer: REVIEWER_RUNNER }) },
+  ])('feeds the checks log into the $seat review before dispatch', async ({ config }) => {
     const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nAdd titleCase.\n', null);
 
@@ -665,12 +670,30 @@ describe('runFinalReviewPhase', () => {
       (entry) => ({
         ...entry,
         status: 'done',
-        validation: [
+        checks: [
           {
-            stage: 'test',
-            passed: true,
+            id: 'test',
             command: 'npm test',
+            exitCode: 0,
             output: 'Test Files  1 passed (1)\n     Tests  4 passed (4)',
+            workspaceSnapshotId: 'baseline-candidate',
+            ts: '2026-10-06T01:00:00.000Z',
+          },
+          {
+            id: 'typecheck',
+            command: 'tsc --noEmit',
+            exitCode: 1,
+            output: 'BOUNDARY_FAILURE',
+            workspaceSnapshotId: 'boundary-candidate',
+            ts: '2026-10-06T02:00:00.000Z',
+          },
+          {
+            id: 'K1',
+            command: 'npm run required',
+            exitCode: 0,
+            output: 'REQUIRED_CHECK_PASSED',
+            workspaceSnapshotId: 'review-candidate',
+            ts: '2026-10-06T03:00:00.000Z',
           },
         ],
       }),
@@ -681,11 +704,11 @@ describe('runFinalReviewPhase', () => {
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
 
-    await runFinalReviewPhase({
+    const result = await runFinalReviewPhase({
       projectDir,
       workspaceDir: projectDir,
       sessionId,
-      config: makeNoValidationConfig(),
+      config: config(),
       callbacks,
       bus,
       state: allTasksDoneState([task], runStartHead),
@@ -695,12 +718,201 @@ describe('runFinalReviewPhase', () => {
       taskBreakdowns: [],
     });
 
-    expect(prompts[0]).toContain('## Recorded Validation Output');
-    expect(prompts[0]).toContain('- test (`npm test`): passed');
+    expect(result.reviewStatus).toBe('written');
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain('## Checks Log');
+    expect(prompts[0]).not.toContain('## Recorded Validation Output');
+    expect(prompts[0]).toContain('- test T001 (exit 0): npm test');
     expect(prompts[0]).toContain('Tests  4 passed (4)');
-    expect(prompts[0]).toContain(
-      'quote the relevant line verbatim from the Recorded Validation Output section',
+    expect(prompts[0]).toContain('snapshot: baseline-candidate');
+    expect(prompts[0]).toContain('- typecheck T001 (exit 1): tsc --noEmit');
+    expect(prompts[0]).toContain('BOUNDARY_FAILURE');
+    expect(prompts[0]).toContain('snapshot: boundary-candidate');
+    expect(prompts[0]).toContain('- K1 T001 (exit 0): npm run required');
+    expect(prompts[0]).toContain('REQUIRED_CHECK_PASSED');
+    expect(prompts[0]).toContain('snapshot: review-candidate');
+    expect(prompts[0]).toContain('quote the relevant line verbatim from the Checks Log section');
+  });
+
+  it.each([
+    { seat: 'CLI', config: () => makeNoValidationConfig() },
+    { seat: 'API', config: () => makeNoValidationConfig({ reviewer: REVIEWER_RUNNER }) },
+  ])('gives the $seat reviewer every path read outside the workspace', async ({ config }) => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nAdd titleCase.\n', null);
+    const task = makeTask({ id: 'T001', status: 'done' });
+    writeEvidenceLedger(
+      { projectDir, sessionId },
+      withUpdatedTask(
+        createEvidenceLedger({ sessionId, feature: 'feat', tasks: [task] }),
+        task.id,
+        (entry) => ({
+          ...entry,
+          status: 'done',
+          checks: [
+            { id: 'test', command: 'npm test', exitCode: 0, ts: '2026-10-06T01:00:00.000Z' },
+          ],
+        }),
+      ),
     );
+    const outsideRead = 'Task T001 read /etc/hosts (outside) with view_file';
+    writeFileSync(
+      join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE),
+      `${JSON.stringify({
+        ts: '2026-10-06T00:30:00.000Z',
+        kind: 'event',
+        type: 'warning',
+        taskId: 'T001',
+        phase: 'implementing',
+        data: { message: outsideRead, category: 'implementer', code: 'isolation_outside_read' },
+      })}\n`,
+    );
+    const { reviewer, prompts } = makeReviewer();
+
+    const result = await runFinalReviewPhase({
+      projectDir,
+      workspaceDir: projectDir,
+      sessionId,
+      config: config(),
+      callbacks: makeCallbacks().callbacks,
+      bus: makeBusRecorder().bus,
+      state: allTasksDoneState([task], runStartHead),
+      reviewer,
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+    });
+
+    expect(result.reviewStatus).toBe('written');
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain(`- outside read: ${outsideRead}`);
+  });
+
+  it('refuses the API review when the outside-read events cannot be read', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nAdd titleCase.\n', null);
+    const task = makeTask({ id: 'T001', status: 'done' });
+    writeEvidenceLedger(
+      { projectDir, sessionId },
+      withUpdatedTask(
+        createEvidenceLedger({ sessionId, feature: 'feat', tasks: [task] }),
+        task.id,
+        (entry) => ({
+          ...entry,
+          status: 'done',
+          checks: [
+            { id: 'test', command: 'npm test', exitCode: 0, ts: '2026-10-06T01:00:00.000Z' },
+          ],
+        }),
+      ),
+    );
+    mkdirSync(join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE));
+    const { reviewer, prompts } = makeReviewer();
+
+    const result = await runFinalReviewPhase({
+      projectDir,
+      workspaceDir: projectDir,
+      sessionId,
+      config: makeNoValidationConfig({ reviewer: REVIEWER_RUNNER }),
+      callbacks: makeCallbacks().callbacks,
+      bus: makeBusRecorder().bus,
+      state: allTasksDoneState([task], runStartHead),
+      reviewer,
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+    });
+
+    expect(prompts).toHaveLength(0);
+    expect(result.failure?.kind).toBe('insufficient-context');
+  });
+
+  describe('a checks log above the prompt cap', () => {
+    function writeLargeLedger(projectDir: string, sessionId: string, tasks: Task[]): void {
+      const ledger = createEvidenceLedger({ sessionId, feature: 'feat', tasks });
+      writeEvidenceLedger(
+        { projectDir, sessionId },
+        tasks.reduce(
+          (current, task, index) =>
+            withUpdatedTask(current, task.id, (entry) => ({
+              ...entry,
+              status: 'done',
+              checks: ['typecheck', 'lint', 'test'].map((stage) => ({
+                id: stage,
+                command: `npm run ${stage}`,
+                exitCode: 0,
+                output: `${stage} ${task.id} `.repeat(60),
+                workspaceSnapshotId: `candidate-${task.id}`,
+                ts: new Date(Date.UTC(2026, 9, 6, 0, index)).toISOString(),
+              })),
+            })),
+          ledger,
+        ),
+      );
+    }
+
+    const tasks = Array.from({ length: 35 }, (_, index) =>
+      makeTask({ id: `T${String(index + 1).padStart(3, '0')}`, status: 'done' }),
+    );
+
+    it('keeps the current candidate checks for a CLI reviewer and names the evidence file', async () => {
+      const { projectDir, sessionId, runStartHead } = setupProject();
+      writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nAdd titleCase.\n', null);
+      writeLargeLedger(projectDir, sessionId, tasks);
+      const { reviewer, prompts } = makeReviewer();
+
+      await runFinalReviewPhase({
+        projectDir,
+        workspaceDir: projectDir,
+        sessionId,
+        config: makeNoValidationConfig(),
+        callbacks: makeCallbacks().callbacks,
+        bus: makeBusRecorder().bus,
+        state: allTasksDoneState(tasks, runStartHead),
+        reviewer,
+        metadata: TEST_METADATA,
+        summaryBase: SUMMARY_BASE,
+        taskBreakdowns: [],
+      });
+
+      expect(prompts).toHaveLength(1);
+      for (const stage of ['typecheck', 'lint', 'test']) {
+        expect(prompts[0]).toContain(`- ${stage} T035 (exit 0): npm run ${stage}`);
+      }
+      expect(prompts[0]).toMatch(/\d+ entries omitted/);
+      expect(prompts[0]).toContain(join(sessionDir(projectDir, sessionId), EVIDENCE_FILE));
+    });
+
+    it('gives an API reviewer the whole checks log, never a trimmed one', async () => {
+      const { projectDir, sessionId, runStartHead } = setupProject();
+      writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nAdd titleCase.\n', null);
+      writeLargeLedger(projectDir, sessionId, tasks);
+      const { reviewer, prompts } = makeReviewer();
+
+      await runFinalReviewPhase({
+        projectDir,
+        workspaceDir: projectDir,
+        sessionId,
+        config: makeNoValidationConfig({
+          reviewer: { ...REVIEWER_RUNNER, contextLength: 400_000 },
+        }),
+        callbacks: makeCallbacks().callbacks,
+        bus: makeBusRecorder().bus,
+        state: allTasksDoneState(tasks, runStartHead),
+        reviewer,
+        metadata: TEST_METADATA,
+        summaryBase: SUMMARY_BASE,
+        taskBreakdowns: [],
+      });
+
+      expect(prompts).toHaveLength(1);
+      expect(prompts[0]).not.toContain('entries omitted');
+      for (const task of tasks) {
+        for (const stage of ['typecheck', 'lint', 'test']) {
+          expect(prompts[0]).toContain(`- ${stage} ${task.id} (exit 0): npm run ${stage}`);
+        }
+      }
+    });
   });
 
   it('carries the plan, diff groups, touched files, check results, consult log and answers into the prompt', async () => {

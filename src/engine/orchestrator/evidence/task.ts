@@ -1,8 +1,11 @@
 import { taskFiles, type Task } from '../../../core/schemas/task.js';
 import type { TaskCompletionMethod, TaskStatus } from '../../../core/schemas/enums.js';
 import type { ValidationResult } from '../validation/result.js';
+import type { CheckRunResult } from '../validation/run-checks.js';
+import { boundedOutputTail } from '../validation/stage.js';
 import type {
   EvidenceApiApply,
+  EvidenceCheckEntry,
   EvidenceLedger,
   EvidencePromotedFile,
   EvidencePromotionAttempt,
@@ -15,27 +18,57 @@ import { uniquePush } from '../../../utils/collections.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { hashTaskBrief } from '../../brief-hash.js';
+import { nowIso } from '../../../utils/format-time.js';
 
-const VALIDATION_PASSED_LABEL: Record<EvidenceValidationEntry['stage'], string> = {
-  typecheck: 'typecheck passed',
-  lint: 'lint passed',
-  test: 'test passed',
+type CheckEntryMeta = {
+  workspaceSnapshotId?: string | undefined;
 };
 
-const VALIDATION_PRE_EXISTING_LABEL: Record<EvidenceValidationEntry['stage'], string> = {
-  typecheck: 'typecheck failed (pre-existing)',
-  lint: 'lint failed (pre-existing)',
-  test: 'test failed (pre-existing)',
-};
-
-function validationSkippedLabel(result: ValidationResult): string {
-  const reason = result.skippedReason;
-  return reason === undefined ? `${result.stage} skipped` : `${result.stage} skipped (${reason})`;
+function stageCheckEntry(
+  result: ValidationResult,
+  meta: CheckEntryMeta,
+  ts: string,
+): EvidenceCheckEntry {
+  const entry: EvidenceCheckEntry = { id: result.stage, ts };
+  if (result.command !== undefined) entry.command = result.command;
+  if (result.exitCode !== undefined) entry.exitCode = result.exitCode;
+  const diagnostics = result.passed
+    ? result.output
+    : [result.output, result.error].filter((part) => (part ?? '').trim() !== '').join('\n');
+  if (diagnostics !== undefined && diagnostics.trim() !== '') {
+    entry.output = boundedOutputTail(diagnostics);
+  }
+  if (meta.workspaceSnapshotId !== undefined) entry.workspaceSnapshotId = meta.workspaceSnapshotId;
+  return entry;
 }
 
-function diffWrittenLabel(task: Task, changedCount: number): string {
-  const target = changedCount > 1 ? `${changedCount} files` : task.file;
-  return `diff written for ${target}`;
+function runCheckEntry(run: CheckRunResult, meta: CheckEntryMeta, ts: string): EvidenceCheckEntry {
+  const entry: EvidenceCheckEntry = { id: run.checkId, ts };
+  if (run.command !== undefined) entry.command = run.command;
+  if (run.exitCode !== undefined) entry.exitCode = run.exitCode;
+  if (run.output.trim() !== '') entry.output = run.output;
+  if (run.artifacts !== undefined && run.artifacts.length > 0) {
+    entry.artifacts = run.artifacts.map((artifact) => ({
+      path: artifact.path,
+      sha256: artifact.sha256,
+    }));
+  }
+  if (meta.workspaceSnapshotId !== undefined) entry.workspaceSnapshotId = meta.workspaceSnapshotId;
+  return entry;
+}
+
+export function checkEntries(input: {
+  validation?: readonly ValidationResult[] | undefined;
+  runs?: readonly CheckRunResult[] | undefined;
+  workspaceSnapshotId?: string | undefined;
+  ts?: string | undefined;
+}): EvidenceCheckEntry[] {
+  const ts = input.ts ?? nowIso();
+  const meta: CheckEntryMeta = { workspaceSnapshotId: input.workspaceSnapshotId };
+  return [
+    ...(input.validation ?? []).map((result) => stageCheckEntry(result, meta, ts)),
+    ...(input.runs ?? []).map((run) => runCheckEntry(run, meta, ts)),
+  ];
 }
 
 /**
@@ -247,19 +280,6 @@ export function recordLocalTaskEvidence(input: RecordLocalTaskEvidenceInput): Ev
       exemptStages: input.exemptStages,
     }),
   );
-  if (input.status === 'done') uniquePush(next.observedEvidence, 'task reached done');
-  for (const r of input.validation) {
-    if (r.skipped === true) {
-      uniquePush(next.observedEvidence, validationSkippedLabel(r));
-    } else if (r.passed) {
-      uniquePush(next.observedEvidence, VALIDATION_PASSED_LABEL[r.stage]);
-    } else if (isExemptStage(r.stage, input.exemptStages)) {
-      uniquePush(next.observedEvidence, VALIDATION_PRE_EXISTING_LABEL[r.stage]);
-    }
-  }
-  if (next.changedFiles.length > 0) {
-    uniquePush(next.observedEvidence, diffWrittenLabel(input.task, next.changedFiles.length));
-  }
   return withUpdatedTask(input.ledger, next.id, () => next);
 }
 
@@ -303,26 +323,6 @@ export function recordRetryOrEscalationEvidence(
       }),
     );
   }
-  if (input.status === 'done') {
-    uniquePush(next.observedEvidence, 'task reached done');
-  }
-  if (input.escalated || input.status === 'escalated') {
-    uniquePush(next.observedEvidence, 'task reached escalated');
-  }
-  if (input.validation) {
-    for (const r of input.validation) {
-      if (r.skipped === true) {
-        uniquePush(next.observedEvidence, validationSkippedLabel(r));
-      } else if (r.passed) {
-        uniquePush(next.observedEvidence, VALIDATION_PASSED_LABEL[r.stage]);
-      } else if (isExemptStage(r.stage, input.exemptStages)) {
-        uniquePush(next.observedEvidence, VALIDATION_PRE_EXISTING_LABEL[r.stage]);
-      }
-    }
-  }
-  if (next.changedFiles.length > 0) {
-    uniquePush(next.observedEvidence, diffWrittenLabel(input.task, next.changedFiles.length));
-  }
   return withUpdatedTask(input.ledger, next.id, () => next);
 }
 
@@ -343,10 +343,6 @@ export function recordPromotionFailureEvidence(
   // The applied prefix is on the target, so it is a changed file of this task
   // whatever the promotion did with the rest.
   for (const applied of input.attempt.appliedFiles) uniquePush(next.changedFiles, applied.path);
-  uniquePush(
-    next.observedEvidence,
-    `promotion failed at ${input.attempt.failedFile} after applying ${input.attempt.appliedFiles.length} file(s)`,
-  );
   return withTargetWrites({
     ledger: withUpdatedTask(input.ledger, next.id, () => next),
     task: input.task,
@@ -377,13 +373,6 @@ export function recordPromotedFilesEvidence(
     task: input.task,
     files: input.files,
   });
-}
-
-function apiApplyLabel(result: BundleApplyResult): string {
-  const applied = `${result.applied.length} of ${result.candidatePaths.length} file(s)`;
-  if (result.status === 'applied') return `bundle applied ${applied}`;
-  if (result.status === 'rejected') return `bundle refused before any write (${result.code})`;
-  return `bundle stopped at ${result.failedPath} after applying ${applied} (${result.code})`;
 }
 
 export type RecordApiApplyEvidenceInput = {
@@ -419,10 +408,6 @@ export function recordApiApplyEvidence(input: RecordApiApplyEvidenceInput): Evid
   // recovery moves it: nothing after the failing path was attempted, and the
   // prefix is not undone.
   if (input.result.status === 'partial') next.status = 'failed';
-  uniquePush(
-    next.observedEvidence,
-    `${input.workspacePath === undefined ? '' : 'worker workspace: '}${apiApplyLabel(input.result)}`,
-  );
   const updated = withUpdatedTask(input.ledger, next.id, () => next);
   if (input.workspacePath !== undefined) return updated;
   return withTargetWrites({
@@ -452,6 +437,5 @@ export function recordSkippedTaskEvidence(input: RecordSkippedTaskEvidenceInput)
   next.briefHash = input.briefHash ?? next.briefHash ?? null;
   next.status = 'skipped';
   next.method = 'skipped';
-  uniquePush(next.observedEvidence, `skipped: ${input.reason}`);
   return withUpdatedTask(input.ledger, next.id, () => next);
 }

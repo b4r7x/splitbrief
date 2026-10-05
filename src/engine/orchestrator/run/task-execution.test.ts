@@ -36,9 +36,13 @@ import type {
   ImplementerResult,
   RetryOptions,
 } from '../../implementers/types.js';
-import type { ContinuationHolder } from '../continuation.js';
+import { createContinuationHolder, type ContinuationHolder } from '../continuation.js';
 import { deriveRunStatus } from '../../../core/sessions/run-status.js';
+import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
+import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
 import { loadState } from '../../../core/state/persistence.js';
+import { readMessages } from '../../../core/sessions/log-reader.js';
 import { listSnapshots, readManifest } from '../../snapshots/manifest.js';
 import { createStdoutTextSink } from '../../events/sinks/stdout-text.js';
 import { runTasksAndReview } from './task-execution.js';
@@ -46,6 +50,15 @@ import { applyRecoveryAction } from '../recovery/actions.js';
 import { buildReviewFailedRecoveryIssue } from '../recovery/builders/task.js';
 import { createValidator } from '../validation/run.js';
 import { formatRetryPrompt } from '../../spec/prompt-formatter.js';
+
+/** How many times the session transcript holds this user turn. */
+async function userTurns(ref: { projectDir: string; sessionId: string }, text: string) {
+  let count = 0;
+  for await (const message of readMessages(ref)) {
+    if (message.role === 'user' && message.text === text) count += 1;
+  }
+  return count;
+}
 
 /** The sink the TUI installs, with the boundary pause pending exactly once. */
 function pauseOnceSinks(): WorkflowSinks {
@@ -310,6 +323,159 @@ describe('runTasksAndReview boundary pause', { timeout: 120_000 }, () => {
     expect(result.state.interruptedStep).toBeUndefined();
   });
 
+  // Run 2026-10-05-s6-central-checks-and-renders-plus-the-carried-in--3, 19:05 and 20:36: the
+  // correction typed at "Paused after T001" reached T002's first prompt only, wrote no
+  // user_message, and T006's retry prompt went out without it.
+  it('a correction typed at the park holds for every attempt of the next brief and is recorded once', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [
+      makeTask({ id: 'T001', file: 'src/alpha.ts' }),
+      makeTask({ id: 'T002', file: 'src/beta.ts' }),
+    ];
+    const correction = 'Do not run any test, typecheck or lint command.';
+    const steers: { call: 'implement' | 'retry'; taskId: string; steer: string | undefined }[] = [];
+    const write = (call: ImplementerOptions): void => {
+      const file = call.task.file ?? 'src/alpha.ts';
+      mkdirSync(join(call.projectDir, dirname(file)), { recursive: true });
+      writeFileSync(join(call.projectDir, file), `export const value = ${Date.now()};\n`);
+    };
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async (call: ImplementerOptions) => {
+        steers.push({ call: 'implement', taskId: call.task.id, steer: call.continuation?.steer });
+        write(call);
+        return { success: true, output: 'code' };
+      }),
+      retry: vi.fn().mockImplementation(async (call: RetryOptions) => {
+        steers.push({ call: 'retry', taskId: call.task.id, steer: call.continuation?.steer });
+        write(call);
+        return { success: true, output: 'fixed' };
+      }),
+    });
+    let t002Validations = 0;
+    const { events, options } = runOptions({
+      projectDir,
+      sessionId,
+      state: reviewedState(tasks, head, 0),
+      review: (prompt) => passingReviewVerdict(prompt),
+      onComplete: vi.fn(),
+      sinks: pauseOnceSinks(),
+      onContinuationNeeded: async () => correction,
+      continuation: createContinuationHolder(),
+      implementer,
+      config: makeConfig({
+        validation: { typecheck: true, lint: false, test: false, typecheckCommand: 'noop' },
+      }),
+      validator: {
+        ...createValidator(),
+        runValidation: vi.fn().mockImplementation(async ({ task }: { task: Task }) => {
+          const onT002 = task.id === 'T002';
+          if (onT002) t002Validations += 1;
+          const failed = onT002 && t002Validations === 1;
+          return [
+            {
+              stage: 'typecheck' as const,
+              passed: !failed,
+              error: failed ? 'TS2322 in src/beta.ts' : undefined,
+              failureFiles: failed ? ['src/beta.ts'] : [],
+            },
+          ];
+        }),
+      },
+    });
+
+    const result = await runTasksAndReview(options);
+
+    expect(steers.filter((entry) => entry.taskId === 'T001')).toEqual([
+      { call: 'implement', taskId: 'T001', steer: undefined },
+    ]);
+    const onT002 = steers.filter((entry) => entry.taskId === 'T002');
+    expect(onT002.map((entry) => entry.call)).toEqual(['implement', 'retry']);
+    expect(onT002.map((entry) => entry.steer?.includes(correction) === true)).toEqual([true, true]);
+    expect(
+      events.filter((event) => event.type === 'user_message' && event.text === correction),
+    ).toHaveLength(1);
+    expect(await userTurns({ projectDir, sessionId }, correction)).toBe(1);
+    expect(result.state.lineages?.T002?.corrections).toEqual([correction]);
+    expect(loadState({ projectDir, sessionId })?.lineages?.T002?.corrections).toEqual([correction]);
+  });
+
+  it('a correction typed at a stop inside a brief holds for that brief retry too', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [makeTask({ id: 'T001', file: 'src/alpha.ts' })];
+    const correction = 'Keep the helper in src/alpha.ts.';
+    let abortCall: (() => void) | null = null;
+    const sinks: WorkflowSinks = {
+      setAbortHandler: (handler) => {
+        abortCall = handler;
+      },
+      setQueueHandler: () => {},
+    };
+    const steers: { call: 'implement' | 'retry'; steer: string | undefined }[] = [];
+    let implementCalls = 0;
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async (call: ImplementerOptions) => {
+        implementCalls += 1;
+        steers.push({ call: 'implement', steer: call.continuation?.steer });
+        if (implementCalls === 1) {
+          abortCall?.();
+          throw new DOMException('The operation was aborted', 'AbortError');
+        }
+        mkdirSync(join(call.projectDir, 'src'), { recursive: true });
+        writeFileSync(join(call.projectDir, 'src/alpha.ts'), 'export const a = 1;\n');
+        return { success: true, output: 'code' };
+      }),
+      retry: vi.fn().mockImplementation(async (call: RetryOptions) => {
+        steers.push({ call: 'retry', steer: call.continuation?.steer });
+        writeFileSync(join(call.projectDir, 'src/alpha.ts'), 'export const a = 2;\n');
+        return { success: true, output: 'fixed' };
+      }),
+    });
+    let validations = 0;
+    const { events, options } = runOptions({
+      projectDir,
+      sessionId,
+      state: reviewedState(tasks, head, 0),
+      review: (prompt) => passingReviewVerdict(prompt),
+      onComplete: vi.fn(),
+      sinks,
+      onContinuationNeeded: async () => correction,
+      continuation: createContinuationHolder(),
+      implementer,
+      config: makeConfig({
+        validation: { typecheck: true, lint: false, test: false, typecheckCommand: 'noop' },
+      }),
+      validator: {
+        ...createValidator(),
+        runValidation: vi.fn().mockImplementation(async () => {
+          validations += 1;
+          const failed = validations === 1;
+          return [
+            {
+              stage: 'typecheck' as const,
+              passed: !failed,
+              error: failed ? 'TS2322 in src/alpha.ts' : undefined,
+              failureFiles: failed ? ['src/alpha.ts'] : [],
+            },
+          ];
+        }),
+      },
+    });
+
+    const result = await runTasksAndReview(options);
+
+    expect(steers.map((entry) => entry.call)).toEqual(['implement', 'implement', 'retry']);
+    expect(steers.map((entry) => entry.steer?.includes(correction) === true)).toEqual([
+      false,
+      true,
+      true,
+    ]);
+    expect(
+      events.filter((event) => event.type === 'user_message' && event.text === correction),
+    ).toHaveLength(1);
+    expect(await userTurns({ projectDir, sessionId }, correction)).toBe(1);
+    expect(result.state.lineages?.T001?.corrections).toEqual([correction]);
+  });
+
   it('records a boundary park and stops when nothing can continue the run in place', async () => {
     const { projectDir, sessionId, head } = setupProject();
     const tasks = [
@@ -346,7 +512,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
         summary: 'Greet people by name',
         decisions: [],
         criteria: [{ id: 'C1', text: 'The greeting is returned', checkIds: ['K1'] }],
-        checks: [{ id: 'K1', kind: 'cmd', value: 'true', required: true }],
+        checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
         validation: null,
       },
     };
@@ -373,7 +539,11 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
       triage: () => ({
         fixTasks: [
           {
-            ...makeTaskSpec({ id: 'T002', suggestedFiles: ['src/shared/widget.ts'] }),
+            ...makeTaskSpec({
+              id: 'T002',
+              suggestedFiles: ['src/shared/widget.ts'],
+              checks: [{ id: 'K2', kind: 'cmd', value: 'node --version', required: true }],
+            }),
             findingIds: ['F1'],
           },
         ],
@@ -527,7 +697,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
           summary: 'Greet people by name',
           decisions: [],
           criteria: [{ id: 'C1', text: 'The rendered greeting is checked', checkIds: ['K1'] }],
-          checks: [{ id: 'K1', kind: 'render', value: 'greeting-render', required: true }],
+          checks: [{ id: 'K1', kind: 'render', value: 'greeting-render', required: false }],
           validation: null,
         },
       },
@@ -915,7 +1085,12 @@ describe('runTasksAndReview review halt', { timeout: 120_000 }, () => {
       triage: () => ({
         fixTasks: [
           {
-            ...makeTaskSpec({ id: 'T002', suggestedFiles: ['src/shared/widget.ts'], criteria: [] }),
+            ...makeTaskSpec({
+              id: 'T002',
+              suggestedFiles: ['src/shared/widget.ts'],
+              criteria: [],
+              checks: [{ id: 'K2', kind: 'cmd', value: 'node --version', required: true }],
+            }),
             findingIds: ['F1', 'U1'],
           },
         ],
@@ -1006,7 +1181,72 @@ function integrationReviewState(tasks: Task[], head: string, cycle: number): Wor
   };
 }
 
+/** A ledger whose entries carry exactly the accepted changed files given. */
+function ledgerFor(tasks: Task[], changed: Record<string, string[]>): EvidenceLedger {
+  const ledger = createEvidenceLedger({ sessionId: 'sess-ledger', feature: 'feat', tasks });
+  return {
+    ...ledger,
+    tasks: ledger.tasks.map((entry) => ({ ...entry, changedFiles: changed[entry.id] ?? [] })),
+  };
+}
+
 describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
+  it('halts every unrunnable required Apply check before triage or review, even with an optional failure', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [
+      makeTask({
+        id: 'T001',
+        file: 'src/alpha.ts',
+        status: 'done',
+        checks: [
+          { id: 'K-task-refused', kind: 'cmd', value: 'npm run deploy', required: true },
+          { id: 'K-optional-failure', kind: 'cmd', value: 'false', required: false },
+        ],
+      }),
+    ];
+    const state = {
+      ...integrationReviewState(tasks, head, 0),
+      plan: {
+        summary: 'Re-check Apply',
+        decisions: [],
+        criteria: [],
+        validation: null,
+        checks: [
+          { id: 'K-plan-refused', kind: 'cmd' as const, value: 'npx some-package', required: true },
+          { id: 'K-render', kind: 'render' as const, value: 'overlay-picker', required: true },
+        ],
+      },
+    };
+    const { options, triagePrompts, reviewPrompts, implementer, events } = runOptions({
+      projectDir,
+      sessionId,
+      state,
+      review: (prompt) => passingReviewVerdict(prompt),
+      onComplete: vi.fn(),
+    });
+    try {
+      const result = await runTasksAndReview(options);
+
+      expect(result.state.pendingRecovery?.reason).toBe('required-checks-unrunnable');
+      for (const id of ['K-task-refused', 'K-plan-refused', 'K-render']) {
+        expect(result.state.pendingRecovery?.message).toMatch(new RegExp(`${id}: \\S`));
+      }
+      expect(triagePrompts).toEqual([]);
+      expect(reviewPrompts).toEqual([]);
+      expect(implementer.implement).not.toHaveBeenCalled();
+      expect(result.state.tasks).toHaveLength(1);
+      expect(result.state.fixCycles?.used).toBe(0);
+      expect(
+        events.find(
+          (event) => event.type === 'error' && event.code === 'required_checks_unrunnable',
+        ),
+      ).toBeDefined();
+      expect(result.completed).toBe(false);
+    } finally {
+      await options.wctx.isolation.dispose();
+    }
+  });
+
   it('non-overlapping edit merges and the whole run diff is re-reviewed', async () => {
     const { projectDir, sessionId, head } = setupProject();
     const tasks = [makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' })];
@@ -1037,20 +1277,35 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
     }
   });
 
-  it('changed candidate after green checks requires fresh results', async () => {
+  it('a changed candidate sends the fresh Apply failures to triage before the reviewer', async () => {
     const { projectDir, sessionId, head } = setupProject();
+    writeFileSync(
+      join(projectDir, 'Makefile'),
+      'test:\n\t@echo "src/alpha.ts(1,1): error TS1005" >&2; exit 1\n',
+    );
     const tasks = [
       makeTask({
         id: 'T001',
         file: 'src/alpha.ts',
         status: 'done',
-        checks: [{ id: 'C1', kind: 'cmd', value: 'false', required: true }],
+        checks: [{ id: 'C1', kind: 'cmd', value: 'make test', required: false }],
         checkResults: [{ id: 'C1', passed: true }],
       }),
     ];
+    writeEvidenceLedger({ projectDir, sessionId }, ledgerFor(tasks, { T001: ['src/alpha.ts'] }));
+    const controller = new AbortController();
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async (call: ImplementerOptions) => {
+        const file = call.task.file ?? 'src/alpha.ts';
+        mkdirSync(join(call.projectDir, dirname(file)), { recursive: true });
+        writeFileSync(join(call.projectDir, file), 'export const value = 1;\n');
+        controller.abort();
+        return { success: true, output: 'code' };
+      }),
+    });
     const validator = createValidator();
     const runValidation = vi.spyOn(validator, 'runValidation');
-    const { events, reviewPrompts, options } = runOptions({
+    const { reviewPrompts, triagePrompts, options } = runOptions({
       projectDir,
       sessionId,
       state: {
@@ -1059,13 +1314,31 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
           summary: 'Re-check the merged candidate.',
           decisions: [],
           criteria: [],
-          checks: [{ id: 'P1', kind: 'cmd', value: 'false', required: true }],
+          checks: [{ id: 'P1', kind: 'cmd', value: 'false', required: false }],
           validation: null,
         },
       },
       review: (prompt) => passingReviewVerdict(prompt),
+      triage: () => ({
+        fixTasks: [
+          {
+            ...makeTaskSpec({
+              id: 'T002',
+              suggestedFiles: ['src/alpha.ts'],
+              criteria: [],
+              checks: [],
+            }),
+            findingIds: ['A1', 'A2'],
+          },
+        ],
+        rejected: [],
+        verify: [],
+        ask: null,
+      }),
       onComplete: vi.fn(),
       validator,
+      implementer,
+      signal: controller.signal,
     });
 
     try {
@@ -1079,20 +1352,15 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
           task: expect.objectContaining({ id: 'T001' }),
         }),
       );
+      // The re-check ran fresh: the recorded pass is overwritten by the merge's failure.
       expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'C1', passed: false }]);
-      expect(reviewPrompts[0]).toContain('C1');
-      expect(reviewPrompts[0]).toContain('P1');
-      expect(result.state.applyReview?.failures).toEqual([
-        expect.stringMatching(/^T001 check C1 did not pass/),
-        expect.stringMatching(/^plan check P1 did not pass/),
-      ]);
-      // The review word cannot overrule the fresh failures: the run stays failed.
-      expect(result.state.reviewStatus).toBe('failed');
-      expect(result.state.pendingRecovery?.reason).toBe('review-failed');
-      expect(events.find((e) => e.type === 'workflow_complete')).toMatchObject({
-        review: 'failed',
-        blocking: 2,
-      });
+      expect(reviewPrompts).toHaveLength(0);
+      expect(triagePrompts).toHaveLength(1);
+      expect(triagePrompts[0]).toContain('C1');
+      expect(triagePrompts[0]).toContain('src/alpha.ts');
+      expect(triagePrompts[0]).toContain('Last changed by T001.');
+      expect(triagePrompts[0]).toContain('No task changed it.');
+      expect(result.completed).toBe(false);
     } finally {
       await options.wctx.isolation.dispose();
     }

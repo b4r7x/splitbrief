@@ -9,12 +9,23 @@ import {
 import { isAuthFailureDiagnostic } from './auth-failure.js';
 import { codexImplementerAdapter } from './cli-tools/codex.js';
 import { claudeProtocolEvents } from './cli-tools/claude-code.js';
-import { opencodeProtocolEvents } from './cli-tools/opencode.js';
-import { kiloPlannerProtocolEvents } from './cli-tools/kilo-code.js';
+import { opencodeImplementerAdapter, opencodeProtocolEvents } from './cli-tools/opencode.js';
+import { kiloPlannerAdapter, kiloPlannerProtocolEvents } from './cli-tools/kilo-code.js';
 import { runnerCallOutcome } from '../implementers/pipeline/call-result.js';
 import { streamError } from '../streaming/stream-errors.js';
 import { error } from '../../utils/error.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
+
+/** An OpenCode stream that ends on its error line: the line is the call's terminal. */
+function opencodeTerminal(line: string) {
+  return opencodeImplementerAdapter.terminal({
+    outputContract: opencodeImplementerAdapter.outputContract,
+    events: opencodeProtocolEvents(line),
+    stderr: '',
+    exitCode: 1,
+    signal: null,
+  });
+}
 
 // Captured live from `codex exec --json` on 2026-08-06 against an account at
 // its usage limit; the same message arrives back-to-back as an `error` record
@@ -345,8 +356,14 @@ describe('end-to-end classification of the live codex limit records', () => {
         data: { message: 'Rate limit exceeded', statusCode: 429, isRetryable: true },
       },
     });
-    for (const parse of [opencodeProtocolEvents, kiloPlannerProtocolEvents]) {
-      const terminal = parse(line).find((event) => event.type === 'result');
+    const kiloTerminal = kiloPlannerAdapter.terminal({
+      outputContract: kiloPlannerAdapter.outputContract,
+      events: kiloPlannerProtocolEvents(line),
+      stderr: '',
+      exitCode: 1,
+      signal: null,
+    });
+    for (const terminal of [opencodeTerminal(line), kiloTerminal]) {
       expect(terminal?.type).toBe('result');
       if (terminal?.type !== 'result') continue;
       expect(terminal.error?.message).toBe('APIError: Rate limit exceeded');
@@ -360,9 +377,7 @@ describe('end-to-end classification of the live codex limit records', () => {
     // the ladder burned every retry on `opencode-error`.
     const line =
       '{"type":"error","timestamp":1790016994502,"sessionID":"ses_f3aac4834ffexQ7jY8OG1Vw3Ox","error":{"type":"provider.quota","message":"Go usage limit exceeded","status":429}}';
-    const terminal = opencodeProtocolEvents(line).find((event) => event.type === 'result');
-    expect(terminal?.type).toBe('result');
-    if (terminal?.type !== 'result') return;
+    const terminal = opencodeTerminal(line);
     expect(terminal.error?.message).toBe('provider.quota: Go usage limit exceeded');
     const outcome = runnerCallOutcome(
       makeRunnerCallResult({

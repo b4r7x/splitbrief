@@ -4,11 +4,9 @@ import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
 import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';
 import { validateCliArgs } from './validate-args.js';
-import { finalGroupTerminal } from './final-group.js';
-import { envelopeErrorDetail } from '../../streaming/error-envelope.js';
+import { errorLineProtocolEvents, errorLineTerminal } from './final-group.js';
 import { parseOpencodeLine } from '../../streaming/parse-opencode.js';
 import type { ParsedLine } from '../types.js';
-import { isRecord } from '../../../utils/type-guards.js';
 
 const OPENCODE_ID = 'opencode' as const;
 const OPENCODE_COMMAND = 'opencode' as const;
@@ -87,39 +85,23 @@ function toProtocolEvents(parsed: ParsedLine): readonly CliProtocolEvent[] {
   return events;
 }
 
-function errorEnvelope(line: string): readonly CliProtocolEvent[] | null {
-  let value: unknown;
-  try {
-    value = JSON.parse(line.trim());
-  } catch {
-    return null;
-  }
-  if (!isRecord(value) || value.type !== 'error') return null;
-  const nativeSessionId =
-    typeof value.sessionID === 'string'
-      ? value.sessionID
-      : typeof value.sessionId === 'string'
-        ? value.sessionId
-        : null;
-  return [
-    {
-      type: 'result',
-      status: 'failed',
-      text: '',
-      usage: null,
-      nativeSessionId,
-      error: {
-        code: 'opencode-error',
-        message: envelopeErrorDetail(value, 'OpenCode reported an error'),
-      },
-      partial: true,
-    },
-  ];
+export function opencodeProtocolEvents(line: string): readonly CliProtocolEvent[] {
+  const errorEvents = errorLineProtocolEvents({
+    line,
+    errorCode: 'opencode-error',
+    defaultMessage: 'OpenCode reported an error',
+  });
+  return errorEvents ?? toProtocolEvents(parseOpencodeLine(line));
 }
 
-export function opencodeProtocolEvents(line: string): readonly CliProtocolEvent[] {
-  const errorEvents = errorEnvelope(line);
-  return errorEvents ?? toProtocolEvents(parseOpencodeLine(line));
+function terminal(input: {
+  events: readonly CliProtocolEvent[];
+}): Extract<CliProtocolEvent, { type: 'result' }> {
+  return errorLineTerminal({
+    events: input.events,
+    includeFinalGroupText: true,
+    errorCode: 'opencode-error',
+  });
 }
 
 function createProbe() {
@@ -189,7 +171,7 @@ function createPlannerAdapter(): CliPlannerAdapter<'opencode'> {
     environment: {},
     outputContract: { kind: 'text-exit', successfulExitCodes: [0] },
     parse: opencodeProtocolEvents,
-    terminal: (input) => finalGroupTerminal({ events: input.events, includeFinalGroupText: true }),
+    terminal,
     probe: createProbe(),
   };
 }
@@ -205,7 +187,7 @@ function createImplementerAdapter(): CliImplementerAdapter<'opencode'> {
     environment: {},
     outputContract: { kind: 'text-exit', successfulExitCodes: [0] },
     parse: opencodeProtocolEvents,
-    terminal: (input) => finalGroupTerminal({ events: input.events, includeFinalGroupText: true }),
+    terminal,
     probe: createProbe(),
   };
 }

@@ -49,6 +49,8 @@ export type ConsultRequestInput = Readonly<{
   snapshot: ChangedFilesSnapshot;
   /** The files the attempt changed since `snapshot`. */
   changedFiles: readonly string[];
+  /** Text the operator queued during an earlier brief, delivered with this task's consult. */
+  userText?: string | undefined;
 }>;
 
 export type ConsultOutcome =
@@ -115,6 +117,7 @@ function promptInput(
     report: input.report ?? null,
     earlierConsults: lineage?.consultRecords ?? [],
     otherTasks: state.tasks.filter((task) => task.id !== input.task.id),
+    ...(input.userText !== undefined && { userText: input.userText }),
   };
 }
 
@@ -146,8 +149,8 @@ function publishAnswer(
 }
 
 /**
- * Calls the planner about one task and records its answer, spending decision-confirm allowance
- * for deviation requests, planner-call allowance for other reasons except stale, which spends neither.
+ * Calls the planner about one task and records its answer. Deviation and stale requests
+ * spend no planner-call allowance.
  */
 export async function requestConsult(
   ctx: ConsultContext,
@@ -178,10 +181,6 @@ export async function requestConsult(
     ...(ctx.signal !== undefined && { signal: ctx.signal }),
     onStateChange: apply,
   };
-
-  if (input.reason === 'deviation') {
-    apply(transitionAndSave(ref, state, { type: 'COUNT_DECISION_CONFIRM' }));
-  }
 
   // A transient seat failure retries with backoff and a near rate-limit reset
   // is waited out before the same call repeats; a thrown consult failure is

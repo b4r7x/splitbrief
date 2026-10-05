@@ -18,6 +18,7 @@ import {
 } from './events.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { parseEngineEvent } from '../events/schema.js';
 import { taskId } from '../../core/schemas/task.js';
 import { skippedStage } from './validation/stage.js';
 
@@ -140,10 +141,26 @@ describe('createImplementerPublisher', () => {
     createImplementerPublisher(bus).publishFailed({
       phase: 'implementing',
       taskId: makeTask().id,
+      error: 'Implementer call failed',
     });
 
     expect(events[0]).toMatchObject({ type: 'implementer_generate_failed' });
     expect(events[0] && 'model' in events[0]).toBe(false);
+  });
+
+  it('publishes the cause a failed attempt carries, and the event schema keeps it', () => {
+    const { bus, events } = makeBusRecorder();
+    const cause = 'Tool implementer (opencode) exited without changing any files';
+
+    createImplementerPublisher(bus).publishFailed({
+      phase: 'implementing',
+      taskId: makeTask().id,
+      model: 'opencode-go/deepseek-v4.1-flash',
+      error: cause,
+    });
+
+    expect(events[0]).toMatchObject({ type: 'implementer_generate_failed', error: cause });
+    expect(parseEngineEvent(events[0])).toMatchObject({ error: cause });
   });
 });
 
@@ -158,6 +175,7 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
         { stage: 'test', passed: true },
       ],
       startTime: Date.now() - 100,
+      acceptance: { accepted: true, exemptStages: [], blockingStages: [] },
     });
 
     expect(events[0]).toMatchObject({
@@ -179,6 +197,7 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
         { stage: 'lint', passed: false, error: 'lint error' },
       ],
       startTime: Date.now(),
+      acceptance: { accepted: false, exemptStages: [], blockingStages: ['lint'] },
     });
 
     expect(events[0]).toMatchObject({
@@ -196,6 +215,7 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
       phase: 'result',
       results: [{ stage: 'test', passed: false, error: 'test error' }],
       startTime: Date.now(),
+      acceptance: { accepted: false, exemptStages: [], blockingStages: ['test'] },
     });
 
     expect(events[0]).toMatchObject({
@@ -220,6 +240,7 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
       phase: 'result',
       results: [{ stage: 'typecheck', passed: true, command: 'npm run typecheck' }],
       startTime: Date.now(),
+      acceptance: { accepted: true, exemptStages: [], blockingStages: [] },
     });
 
     expect(events[0]).toMatchObject({
@@ -243,6 +264,7 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
       phase: 'result',
       results: [{ stage: 'typecheck', passed: true }],
       startTime,
+      acceptance: { accepted: true, exemptStages: [], blockingStages: [] },
     });
 
     expect((events[0] as Record<string, unknown>)['duration']).toBeGreaterThanOrEqual(400);
@@ -258,6 +280,7 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
         { stage: 'test', passed: true },
       ],
       startTime: Date.now(),
+      acceptance: { accepted: true, exemptStages: [], blockingStages: [] },
     });
 
     expect(events[0]).toMatchObject({
@@ -278,6 +301,7 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
         skippedStage('lint', 'no lint command for an unrecognised stack'),
       ],
       startTime: Date.now(),
+      acceptance: { accepted: true, exemptStages: [], blockingStages: [] },
     });
 
     expect(events[0]).toMatchObject({
@@ -296,6 +320,7 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
       phase: 'result',
       results: [{ stage: 'typecheck', passed: true }],
       startTime: Date.now(),
+      acceptance: { accepted: true, exemptStages: [], blockingStages: [] },
     });
 
     expect('skippedReason' in (events[0] as Record<string, unknown>)).toBe(false);
@@ -307,6 +332,7 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
       phase: 'result',
       results: [{ stage: 'typecheck', passed: true }],
       startTime: Date.now(),
+      acceptance: { accepted: true, exemptStages: [], blockingStages: [] },
     });
 
     expect('skipped' in (events[0] as Record<string, unknown>)).toBe(false);
@@ -321,11 +347,30 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
         { stage: 'test', passed: false, error: 'pre-existing suite failure' },
       ],
       startTime: Date.now(),
-      exempt: true,
+      acceptance: { accepted: true, exemptStages: ['test'], blockingStages: [] },
     });
 
     expect(events[0]).toMatchObject({ type: 'validate', passed: true, exempt: true });
     expect('error' in (events[0] as Record<string, unknown>)).toBe(false);
+  });
+
+  it('names the blocking stage’s error, not an earlier baseline-exempt one', () => {
+    const { bus, events } = makeBusRecorder();
+    publishValidation({ bus: bus, phase: 'implementing' }, TASK, {
+      phase: 'result',
+      results: [
+        { stage: 'typecheck', passed: false, error: 'handle.test.ts(468,28): error TS2769' },
+        { stage: 'test', passed: false, error: 'FAIL src/new.test.ts > breaks' },
+      ],
+      startTime: Date.now(),
+      acceptance: { accepted: false, exemptStages: ['typecheck'], blockingStages: ['test'] },
+    });
+
+    expect(events[0]).toMatchObject({
+      type: 'validate',
+      passed: false,
+      error: 'FAIL src/new.test.ts > breaks',
+    });
   });
 
   it('omits exempt when every stage passed on its own', () => {
@@ -334,7 +379,7 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
       phase: 'result',
       results: [{ stage: 'typecheck', passed: true }],
       startTime: Date.now(),
-      exempt: true,
+      acceptance: { accepted: true, exemptStages: ['typecheck'], blockingStages: [] },
     });
 
     expect('exempt' in (events[0] as Record<string, unknown>)).toBe(false);

@@ -54,8 +54,6 @@ function attributeCompletedTasks(
       retries: 0,
       changedFiles: [task.file],
       validation: [],
-      expectedEvidence: [],
-      observedEvidence: [],
       escalated: false,
     })),
     validationSummary: { passed: tasks.length, failed: 0, skipped: 0, escalated: 0 },

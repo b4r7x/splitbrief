@@ -166,6 +166,5 @@ describe('runSingleTask — baseline-exempt validation', () => {
     expect(ledger?.tasks.find((entry) => entry.id === 'T001')?.validation).toMatchObject([
       { stage: 'typecheck', passed: false, baselineExempt: true },
     ]);
-    expect(ledger?.tasks[0]?.observedEvidence).toContain('typecheck failed (pre-existing)');
   });
 });

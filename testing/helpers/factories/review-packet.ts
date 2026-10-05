@@ -78,7 +78,10 @@ export function makeReviewPacket(overrides?: Partial<ReviewPacket>): ReviewPacke
       summary: { passed: 0, failed: 0, skipped: 0, escalated: 0 },
       tasks: [],
       finalReviewEvidenceStatus: null,
-      missingEvidenceWarnings: [],
+    },
+    checks: {
+      entries: [],
+      outsideReadPaths: [],
     },
     evidence: {
       path: null,

@@ -159,10 +159,17 @@ export async function spawnAndCollect(
     const redactedCredentials = redactSecrets(explicitRedactor(value));
     return opts.redact?.(redactedCredentials) ?? redactedCredentials;
   };
-  const cancellation = createInvocationCancellation(opts.signal, opts.timeoutMs);
+  const limitController = new AbortController();
+  const cancellation = createInvocationCancellation(
+    opts.signal === undefined
+      ? limitController.signal
+      : AbortSignal.any([opts.signal, limitController.signal]),
+    opts.timeoutMs,
+  );
   const recorder = createRunnerCallRecorder({
     context,
     credentialValues,
+    onLimit: () => limitController.abort(),
     onEvent: (event) => opts.onCallEvent?.(event),
   });
   const protectedValues = [...credentialValues, ...customRunnerRedactionValuesFor(opts.redact)];
@@ -295,6 +302,11 @@ export async function spawnAndCollect(
       },
     });
   } catch (err) {
+    if (limitController.signal.aborted) {
+      flushStdout();
+      flushStderr();
+      return { ...recorder.finalResult(), sessionId: parsedRecorder.sessionId };
+    }
     if (toolInputCapacityExceeded) {
       flushStderr();
       const stateLimitError = customRunnerToolInputStateLimitError();

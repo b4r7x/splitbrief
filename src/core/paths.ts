@@ -52,6 +52,11 @@ export function sessionDir(projectDir: string, sessionId: string): string {
   return join(projectDir, SPLITBRIEF_DIR, SESSIONS_DIR, sessionId);
 }
 
+export const RENDERS_DIR = 'renders';
+
+export const rendersDir = (ref: SessionRef, checkId: string): string =>
+  join(sessionDir(ref.projectDir, ref.sessionId), RENDERS_DIR, checkId);
+
 export const reviewPacketJsonPath = (ref: SessionRef): string =>
   join(sessionDir(ref.projectDir, ref.sessionId), REVIEW_PACKET_JSON_FILE);
 

@@ -33,6 +33,8 @@ import { appendMessage } from '../../../core/sessions/log-writer.js';
 import { parsePlanJson, writePlanJson } from '../../../core/sessions/plan-file.js';
 import { resumeStep } from '../../../core/sessions/run-status.js';
 import { DEFAULT_UNKNOWN_CONTEXT_LENGTH } from '../../../core/tokens/context-length.js';
+import { readManifestCommands } from '../../../core/validation/manifest-commands.js';
+import { detectStack } from '../../../core/validation/stacks/registry.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { countNoun } from '../../../utils/pluralize.js';
 import { buildRepoMap } from '../../codebase/repomap.js';
@@ -543,7 +545,7 @@ function compilePlan(
   state: WorkflowState,
   plan: PlanProposal,
 ): { state: WorkflowState; tasks: WorkflowState['tasks'] } {
-  const { projectDir, sessionId, bus } = wctx;
+  const { projectDir, sessionId, bus, config } = wctx;
   const ref = { projectDir, sessionId };
   const tasks = plan.tasks.map((spec) => taskFromSpec(spec, projectDir));
   writePlanJson(ref, plan);
@@ -558,10 +560,13 @@ function compilePlan(
       { kind: 'task-briefs', text: formatTasks(tasks) },
     ],
   });
-  const discovered = sanitizeDiscoveredValidation(discoveredValidation(plan), {
-    bus,
-    phase: state.phase,
-  });
+  const manifest = readManifestCommands(projectDir);
+  const stack = detectStack(projectDir, config.validation.stack);
+  const discovered = sanitizeDiscoveredValidation(
+    discoveredValidation(plan),
+    { bus, phase: state.phase },
+    { projectDir, config, manifest, stack },
+  );
   let next = discovered === undefined ? state : { ...state, discoveredValidation: discovered };
   if (next.pendingPlannerConversation !== undefined) {
     next = transitionAndSave(ref, next, { type: 'CLEAR_PLANNER_CONVERSATION' });
@@ -659,7 +664,7 @@ export async function runPlanApproval(
 
     if (correction === '') {
       try {
-        const confirmations = planConfirmations(current.tasks, projectDir);
+        const confirmations = planConfirmations(current.tasks, projectDir, current.plan);
         const result = await wctx.callbacks.onApprovalNeeded(
           'plan',
           cardPath,

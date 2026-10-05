@@ -84,8 +84,6 @@ const ReviewPacketTaskFileSchema = z.object({
   files: z.array(z.string()).optional(),
   status: TaskStatusSchema,
   changedFiles: z.array(z.string()),
-  expectedEvidence: z.array(z.string()),
-  observedEvidence: z.array(z.string()),
 });
 
 const ReviewPacketChangesSchema = z.object({
@@ -154,9 +152,22 @@ const ReviewPacketValidationTaskSchema = z.object({
       baselineExempt: z.boolean().optional(),
     }),
   ),
-  expectedEvidence: z.array(z.string()),
-  observedEvidence: z.array(z.string()),
-  missingExpectedEvidence: z.array(z.string()),
+});
+
+const ReviewPacketCheckEntrySchema = z.object({
+  taskId: TaskIdSchema.optional(),
+  id: z.string(),
+  command: z.string().optional(),
+  exitCode: z.number().int().optional(),
+  output: z.string().optional(),
+  artifacts: z.array(z.object({ path: z.string(), sha256: z.string() })).optional(),
+  workspaceSnapshotId: z.string().optional(),
+  ts: z.string().optional(),
+});
+
+const ReviewPacketChecksSchema = z.object({
+  entries: z.array(ReviewPacketCheckEntrySchema).default([]),
+  outsideReadPaths: z.array(z.string()).default([]),
 });
 
 const ReviewPacketValidationSchema = z.object({
@@ -168,7 +179,6 @@ const ReviewPacketValidationSchema = z.object({
   }),
   tasks: z.array(ReviewPacketValidationTaskSchema),
   finalReviewEvidenceStatus: EvidenceFinalReviewStatusSchema.nullable(),
-  missingEvidenceWarnings: z.array(z.string()),
 });
 
 const ReviewPacketApprovalEntrySchema = z.object({
@@ -249,6 +259,8 @@ const ReviewPacketEventSchema = z.object({
   taskId: TaskIdSchema.optional(),
   issueId: z.string().optional(),
   reason: RecoveryReasonSchema.optional(),
+  category: z.string().optional(),
+  code: z.string().optional(),
   files: z.array(z.string()).optional(),
   affectedTaskIds: z.array(TaskIdSchema).optional(),
   availableActions: z.array(RecoveryActionSchema).optional(),
@@ -380,6 +392,7 @@ export const ReviewPacketSchema = z.object({
   checkpoints: ReviewPacketCheckpointsSchema,
   recoveryDecisions: ReviewPacketRecoverySchema,
   validation: ReviewPacketValidationSchema,
+  checks: ReviewPacketChecksSchema.default({ entries: [], outsideReadPaths: [] }),
   evidence: ReviewPacketEvidenceSchema,
   drift: ReviewPacketDriftSchema,
   escalations: ReviewPacketEscalationsSchema,

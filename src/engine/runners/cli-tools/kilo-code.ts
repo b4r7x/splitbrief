@@ -1,12 +1,10 @@
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import type { ParsedLine } from '../types.js';
-import { envelopeErrorDetail } from '../../streaming/error-envelope.js';
 import { parseOpencodeLine } from '../../streaming/parse-opencode.js';
-import { isRecord } from '../../../utils/type-guards.js';
 import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
 import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';
-import { finalGroupTerminal } from './final-group.js';
+import { errorLineProtocolEvents, errorLineTerminal } from './final-group.js';
 import { validateCliArgs } from './validate-args.js';
 
 const KILO_ID = 'kilo-code' as const;
@@ -87,42 +85,17 @@ function structuredEvents(parsed: ParsedLine): readonly CliProtocolEvent[] {
   return events;
 }
 
-function structuredErrorEnvelope(line: string): readonly CliProtocolEvent[] | null {
-  let value: unknown;
-  try {
-    value = JSON.parse(line.trim());
-  } catch {
-    return null;
-  }
-  if (!isRecord(value) || value.type !== 'error') return null;
-  const nativeSessionId =
-    typeof value.sessionID === 'string'
-      ? value.sessionID
-      : typeof value.sessionId === 'string'
-        ? value.sessionId
-        : null;
-  return [
-    {
-      type: 'result',
-      status: 'failed',
-      text: '',
-      usage: null,
-      nativeSessionId,
-      error: {
-        code: 'kilo-code-error',
-        message: envelopeErrorDetail(value, 'Kilo Code reported an error'),
-      },
-      partial: true,
-    },
-  ];
-}
-
 export function kiloPlannerProtocolEvents(line: string): readonly CliProtocolEvent[] {
-  return structuredErrorEnvelope(line) ?? structuredEvents(parseOpencodeLine(line));
+  const errorEvents = errorLineProtocolEvents({
+    line,
+    errorCode: 'kilo-code-error',
+    defaultMessage: 'Kilo Code reported an error',
+  });
+  return errorEvents ?? structuredEvents(parseOpencodeLine(line));
 }
 
 export function kiloImplementerProtocolEvents(line: string): readonly CliProtocolEvent[] {
-  return structuredErrorEnvelope(line) ?? structuredEvents(parseOpencodeLine(line));
+  return kiloPlannerProtocolEvents(line);
 }
 
 function plannerBaseArgs(input: KiloPlannerBuildInput): string[] {
@@ -181,7 +154,12 @@ function createPlannerAdapter(): CliPlannerAdapter<'kilo-code'> {
     environment: {},
     outputContract: { kind: 'text-exit', successfulExitCodes: [0] },
     parse: kiloPlannerProtocolEvents,
-    terminal: (input) => finalGroupTerminal({ events: input.events, includeFinalGroupText: true }),
+    terminal: (input) =>
+      errorLineTerminal({
+        events: input.events,
+        includeFinalGroupText: true,
+        errorCode: 'kilo-code-error',
+      }),
     probe: createProbe(),
   };
 }
@@ -197,7 +175,12 @@ function createImplementerAdapter(): CliImplementerAdapter<'kilo-code'> {
     environment: {},
     outputContract: { kind: 'text-exit', successfulExitCodes: [0] },
     parse: kiloImplementerProtocolEvents,
-    terminal: (input) => finalGroupTerminal({ events: input.events, includeFinalGroupText: false }),
+    terminal: (input) =>
+      errorLineTerminal({
+        events: input.events,
+        includeFinalGroupText: false,
+        errorCode: 'kilo-code-error',
+      }),
     probe: createProbe(),
   };
 }

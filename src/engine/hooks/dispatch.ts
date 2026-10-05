@@ -40,7 +40,10 @@ export async function runHook(
 ): Promise<HookOutcome> {
   const args = guardInterpolatedArgs(entry.args, event);
   const stdin = JSON.stringify(
-    boundConsumerPayload({ context: 'hooks', payload: { event, context: ctx } }).payload,
+    boundConsumerPayload({
+      context: 'hooks',
+      payload: { event, workspaceDir: ctx.workspaceDir, context: ctx },
+    }).payload,
   );
 
   try {

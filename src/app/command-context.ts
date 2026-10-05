@@ -6,6 +6,7 @@ import {
   requestEndRun,
   requestQuit,
   requestResume,
+  requestSteer,
 } from '../features/workflow/handlers.js';
 import { findLatestExpandableActivityBatchKey } from '../features/workflow/conversation-rows/activity-batch-key.js';
 import { findLatestRenderableDiffKey } from '../core/sections/event-sections.js';
@@ -372,6 +373,7 @@ export function buildCommandContext({
     refreshSkills,
     getCurrentPhase: () => lifecycleStore.get().phase,
     resumeRun: () => requestResume(''),
+    steerRun: requestSteer,
     endRun: requestEndRun,
     getQueueDepth: () => lifecycleStore.get().queueDepth,
     clearQueue: workflow.requestClearQueue,

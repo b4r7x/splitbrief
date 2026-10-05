@@ -1,6 +1,8 @@
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import { accumulateTokenUsage } from '../../calls/usage.js';
 import { appendMessage } from '../../streaming/final-text.js';
+import { envelopeErrorDetail } from '../../streaming/error-envelope.js';
+import { isRecord } from '../../../utils/type-guards.js';
 import type { CliProtocolEvent } from './contract.js';
 
 type FinalGroupResult = Extract<CliProtocolEvent, { type: 'result' }>;
@@ -55,5 +57,57 @@ export function finalGroupTerminal(input: {
     nativeSessionId,
     error: null,
     partial: false,
+  };
+}
+
+export function errorLineProtocolEvents(input: {
+  line: string;
+  errorCode: string;
+  defaultMessage: string;
+}): readonly CliProtocolEvent[] | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(input.line.trim());
+  } catch {
+    return null;
+  }
+  if (!isRecord(value) || value.type !== 'error') return null;
+  const nativeSessionId =
+    typeof value.sessionID === 'string'
+      ? value.sessionID
+      : typeof value.sessionId === 'string'
+        ? value.sessionId
+        : null;
+  const events: CliProtocolEvent[] = [];
+  if (nativeSessionId !== null) events.push({ type: 'session', nativeSessionId });
+  events.push({
+    type: 'warning',
+    code: input.errorCode,
+    message: envelopeErrorDetail(value, input.defaultMessage),
+  });
+  return events;
+}
+
+export function errorLineTerminal(input: {
+  events: readonly CliProtocolEvent[];
+  includeFinalGroupText: boolean;
+  errorCode: string;
+}): FinalGroupResult {
+  const group = finalGroupTerminal(input);
+  const last = input.events.findLast(
+    (event) =>
+      event.type === 'text' ||
+      event.type === 'tool-use' ||
+      (event.type === 'warning' && event.code === input.errorCode),
+  );
+  if (last?.type !== 'warning') return group;
+  return {
+    type: 'result',
+    status: 'failed',
+    text: '',
+    usage: group.usage,
+    nativeSessionId: group.nativeSessionId,
+    error: { code: input.errorCode, message: last.message },
+    partial: true,
   };
 }

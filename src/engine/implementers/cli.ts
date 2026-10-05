@@ -178,7 +178,10 @@ export function createCliImplementer(
       const env =
         opts.sandboxEnv ?? (await createRunnerSandboxEnv(projectDir, config, 'implementer'));
       const adapter = resolveImplementerAdapter(toolName, config.outputFormat);
-      const effectBaseline = await captureChangeDetectorBaseline(projectDir);
+      const effectBaseline = await captureChangeDetectorBaseline(projectDir, {
+        kind: opts.changeDetection,
+        ignoreProjectDir: opts.checkoutDir,
+      });
       const declaredPaths = [...taskFiles(opts.task)];
       const declaredHashes = await hashFiles(projectDir, declaredPaths);
       const boundary =

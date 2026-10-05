@@ -12,6 +12,7 @@ import {
   EVIDENCE_FILE,
   REVIEW_FILE,
   REVIEW_JSON_FILE,
+  SESSION_LOG_FILE,
   SPEC_FILE,
   TASKS_FILE,
   sessionDir,
@@ -32,7 +33,9 @@ import { isAbortError } from '../../utils/abort.js';
 import type { ReviewPlanData, ReviewTouchedNotSuggested } from '../spec/prompts/review.js';
 import { workspaceReadInstructions } from '../spec/prompts/builder.js';
 import { recordFinalReviewEvidence } from './evidence/reporting.js';
-import { formatValidationEvidenceForPrompt } from './evidence/format-validation.js';
+import { readPacketEvents } from './evidence/review-packet/artifacts.js';
+import { renderChecksLogForPrompt, renderWholeChecksLog } from './evidence/review-packet/render.js';
+import { buildChecks } from './evidence/review-packet/sections.js';
 import { readEvidenceLedger, writeEvidenceLedger } from '../../core/evidence/ledger-storage.js';
 import type { EvidenceLedger } from '../../core/schemas/evidence.js';
 import { analyzeBriefDrift } from './drift/analyze.js';
@@ -54,7 +57,7 @@ import { taskFiles } from '../../core/schemas/task.js';
 import { hashTaskBrief } from '../brief-hash.js';
 import { writeReviewPacket } from './evidence/review-packet/write.js';
 import { formatTasks } from '../spec/formatter.js';
-import { drainQueue } from './queue/drain.js';
+import { drainQueueForReview } from './queue/drain.js';
 import { formatDrainedMessages } from './queue/prompt.js';
 import { withContinuationLoop } from './continuation.js';
 import { composeContinuation } from '../spec/prompts/continuation.js';
@@ -88,9 +91,19 @@ import {
   type ReviewOutcome,
 } from '../../core/review/verdict.js';
 import { renderReviewMarkdown } from '../../core/review/render.js';
-import { runChecks, type CheckRunResult } from './validation/run-checks.js';
+import {
+  planApprovesNpmScripts,
+  runChecks,
+  checkRegistry,
+  type CheckRunResult,
+} from './validation/run-checks.js';
+import { seatSupportsImages } from '../../core/runners/capabilities.js';
+import { forceUnverifiedRenderCriteria, reviewRenders } from './review-renders.js';
+import { currentCandidateId, recordCheckRuns } from './evidence/record-checks.js';
+import { deserializeChangedFilesBaseline } from './changed-files-baseline.js';
 import type { RequestTypedResult, SeatProtocolError } from '../runners/typed-output.js';
 import { fixCyclesOf } from '../../core/schemas/workflow.js';
+import type { PreReviewResult } from './run/pre-review-checks.js';
 
 /** The code a failed review carries when the failure names none of its own. */
 export const REVIEW_UNAVAILABLE = 'review-unavailable';
@@ -136,6 +149,12 @@ export type FinalReviewResult = {
    * caller that does not read it sees the status it always saw.
    */
   failure?: FinalReviewFailure;
+  /**
+   * The pre-review's verdict, when one ran: `fix-queued` appended work so the
+   * caller runs the task loop; `stopped` raised a halt. Absent when the review
+   * was reached.
+   */
+  preReview?: 'fix-queued' | 'stopped' | undefined;
 };
 
 export const finalReviewError = {
@@ -246,7 +265,9 @@ type ReviewVerification = {
 async function verifyReviewClaims(args: {
   verdict: ReviewVerdict;
   state: WorkflowState;
+  projectDir: string;
   workspaceDir: string;
+  sessionId: string;
   config: Config;
   bus: EventBus;
   signal?: AbortSignal | undefined;
@@ -265,14 +286,23 @@ async function verifyReviewClaims(args: {
       plan: args.state.plan,
       tasks: args.state.tasks,
       projectDir: args.workspaceDir,
+      sessionId: args.sessionId,
+      checkoutDir: args.projectDir,
       config: args.config,
       bus: args.bus,
       phase: args.state.phase,
-      planApproved: true,
+      npmScriptsApproved: planApprovesNpmScripts({ config: args.config, state: args.state }),
       ...(args.state.discoveredValidation !== undefined && {
         discoveredValidation: args.state.discoveredValidation,
       }),
       ...(args.signal !== undefined && { signal: args.signal }),
+    });
+    await recordCheckRuns({
+      projectDir: args.projectDir,
+      sessionId: args.sessionId,
+      workspaceDir: args.workspaceDir,
+      state: args.state,
+      runs,
     });
     const status = checkVerificationStatus(runs);
     const key = verificationKey(kind, id);
@@ -317,6 +347,12 @@ export async function runFinalReviewPhase(opts: {
   integration?: string | undefined;
   /** The cadence this review serves: 'task' is the scheduled mid-run review, 'final' the run's last. */
   scope?: 'final' | 'task' | undefined;
+  /**
+   * The full suite and required checks run on the candidate before the review
+   * call. The caller supplies it because the triage it may start needs the
+   * planner, which this phase does not hold.
+   */
+  preReview?: ((state: WorkflowState) => Promise<PreReviewResult>) | undefined;
 }): Promise<FinalReviewResult> {
   let { state } = opts;
   const {
@@ -341,6 +377,24 @@ export async function runFinalReviewPhase(opts: {
     // The call publisher stamps runner events with the tracked phase; the
     // reviewer's own call must read as final-review, not the last brief's.
     opts.setTrackedState?.(state);
+  }
+
+  // The pre-review owns the candidate: a required check that cannot run halts
+  // before the review, and a failing check enters triage instead of it.
+  if (opts.preReview !== undefined) {
+    const pre = await opts.preReview(state);
+    state = pre.state;
+    opts.setTrackedState?.(state);
+    if (pre.kind !== 'review') {
+      return {
+        state,
+        summaryBase,
+        verdict: null,
+        reviewText: '',
+        reviewStatus: 'failed',
+        preReview: pre.kind,
+      };
+    }
   }
 
   // The status names the seat that runs the review, which is the planner's only when no reviewer
@@ -389,6 +443,9 @@ export async function runFinalReviewPhase(opts: {
       tasks: state.tasks,
       workspaceFiles: universe.changedFiles,
       workspaceDiff: universe.fullDiff,
+      ...(state.applyReview !== undefined && {
+        mergedPaths: state.applyReview.merged.map((entry) => entry.path),
+      }),
     });
     // A run planned on one session agreed on its plan; only an older run wrote a spec.
     const spec = readSpecFileOrEmpty(
@@ -399,13 +456,25 @@ export async function runFinalReviewPhase(opts: {
       readSpecFileOrEmpty({ projectDir, sessionId }, TASKS_FILE) || formatTasks(state.tasks);
 
     let driftPromptSection: string | undefined;
-    let validationPromptSection: string | undefined;
+    let checksLog: string | undefined;
+    let wholeChecksLog: string | undefined;
     let ledger: EvidenceLedger | null = null;
+    const evidencePaths = {
+      validation: join(sessionDir(projectDir, sessionId), EVIDENCE_FILE),
+      sessionLog: join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE),
+      drift: join(sessionDir(projectDir, sessionId), DRIFT_REPORT_FILE),
+    };
     try {
       ledger = readEvidenceLedger({ projectDir, sessionId });
-      // The review's validation claims must quote this recorded output; a
-      // review left to re-derive test results invents counts.
-      validationPromptSection = formatValidationEvidenceForPrompt(ledger);
+      const events = await readPacketEvents(projectDir, sessionId, []);
+      if (ledger !== null) {
+        const checks = buildChecks({ ledger, events });
+        if (reviewRunner.kind === 'api') {
+          wholeChecksLog = renderWholeChecksLog(checks);
+        } else {
+          checksLog = renderChecksLogForPrompt(checks, evidencePaths);
+        }
+      }
     } catch (err) {
       warnError('Failed to read validation evidence', err);
     }
@@ -426,7 +495,7 @@ export async function runFinalReviewPhase(opts: {
       warnError('Failed to compute drift report', err);
     }
 
-    const drain = drainQueue({ projectDir, sessionId, state, bus });
+    const drain = drainQueueForReview({ projectDir, sessionId, state });
     state = drain.state;
     const queueText = drain.messages.length > 0 ? formatDrainedMessages(drain.messages) : '';
     const promptPrefix = [
@@ -445,6 +514,28 @@ export async function runFinalReviewPhase(opts: {
     });
 
     const plan = reviewPlanData(state);
+    // The reviewer judges only the current candidate: an artifact from an earlier
+    // candidate can never stand in for a render this run did not produce.
+    let reviewCandidateId: string | undefined;
+    try {
+      reviewCandidateId = await currentCandidateId(
+        workspaceDir,
+        deserializeChangedFilesBaseline(baseline),
+      );
+    } catch (err) {
+      warnError('failed to compute the review candidate id', err);
+    }
+    // The renders the checks log recorded: the seat takes images when its tool
+    // declares a channel, else it gets a manifest and the no-vision statement.
+    const renders = reviewRenders({
+      ledger,
+      registry: checkRegistry({ plan: state.plan, tasks: state.tasks }),
+      projectDir,
+      seatSupportsImages: seatSupportsImages({ runner: reviewRunner }),
+      currentCandidateId: reviewCandidateId,
+    });
+    const criterionCheckIds = (criterionId: string): readonly string[] =>
+      state.plan?.criteria.find((criterion) => criterion.id === criterionId)?.checkIds ?? [];
     const ledgerChangedFiles = new Map(
       (ledger?.tasks ?? []).map((entry) => [entry.id, entry.changedFiles]),
     );
@@ -474,7 +565,7 @@ export async function runFinalReviewPhase(opts: {
         changedFiles: universe.changedFiles,
         baseline: { head: baseline.head, runStartChangedFiles: baseline.runStartChangedFiles },
         driftSection: driftPromptSection,
-        validation: { recorded: ledger !== null, evidence: validationPromptSection },
+        validation: { recorded: wholeChecksLog !== undefined, evidence: wholeChecksLog },
         reviewScope,
         queueText: promptPrefix,
         taskIds: scope.taskIds,
@@ -485,6 +576,7 @@ export async function runFinalReviewPhase(opts: {
         consultLog,
         triageLog,
         planningAnswers,
+        ...(renders.section !== undefined && { renders: renders.section }),
         ...(opts.skillsContext !== undefined && { skillsContext: opts.skillsContext }),
         ...(reviewRunner.contextLength !== undefined && {
           contextLength: reviewRunner.contextLength,
@@ -522,15 +614,13 @@ export async function runFinalReviewPhase(opts: {
           criterionIds: scope.criterionIds,
           changeCoverage: reviewScope.description,
           driftReport: driftPromptSection,
-          validationEvidence: validationPromptSection,
+          checksLog,
+          renders: renders.section,
           skillsContext: opts.skillsContext,
         },
         maxChars: maxInputChars,
         declared: (path) => isInDeclaredSet(path, state.tasks.flatMap(taskDeclaredPatterns)),
-        evidencePaths: {
-          validation: join(sessionDir(projectDir, sessionId), EVIDENCE_FILE),
-          drift: join(sessionDir(projectDir, sessionId), DRIFT_REPORT_FILE),
-        },
+        evidencePaths,
       });
       if (maxInputChars !== undefined) {
         reviewInput = {
@@ -574,6 +664,7 @@ export async function runFinalReviewPhase(opts: {
           sessionId,
           bus,
           state,
+          ...(renders.images.length > 0 && { images: renders.images }),
           signal: opts.signal,
         });
         state = call.state;
@@ -612,6 +703,7 @@ export async function runFinalReviewPhase(opts: {
             sessionId,
             bus,
             state,
+            ...(renders.images.length > 0 && { images: renders.images }),
             signal: callSignal,
           });
           state = call.state;
@@ -626,15 +718,36 @@ export async function runFinalReviewPhase(opts: {
       failure = { kind: 'seat-protocol-error', error: typed.error };
       throw typed.error;
     }
-    const reviewerVerdict = typed.value;
+    let reviewerVerdict = typed.value;
     const verification = await verifyReviewClaims({
       verdict: reviewerVerdict,
       state,
+      projectDir,
       workspaceDir,
+      sessionId,
       config,
       bus,
       ...(opts.signal !== undefined && { signal: opts.signal }),
     });
+    // A render check whose images were not attached can only stay unverified:
+    // the reviewer saw no render, so nothing it says may turn one into a pass.
+    if (renders.missingCheckIds.length > 0) {
+      const forced = forceUnverifiedRenderCriteria({
+        verdict: reviewerVerdict,
+        renderCheckIds: renders.missingCheckIds,
+        criterionCheckIds,
+        verification: verification.map,
+      });
+      reviewerVerdict = forced.verdict;
+      if (forced.forcedCriterionIds.length > 0) {
+        const forcedKeys = new Set(
+          forced.forcedCriterionIds.map((id) => verificationKey('criterion', id)),
+        );
+        verification.entries = verification.entries.map((entry) =>
+          forcedKeys.has(entry.id) ? { ...entry, status: 'unverified' as const } : entry,
+        );
+      }
+    }
     const outcome = deriveReviewOutcome(reviewerVerdict, scope, verification.map);
     const record: ReviewRecord = {
       scope: opts.scope ?? 'final',

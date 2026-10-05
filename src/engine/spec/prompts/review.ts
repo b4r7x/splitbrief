@@ -8,7 +8,7 @@ import {
 
 const REVIEW_INSTRUCTIONS = `Review the implementation diff against every acceptance criterion and requirement in the spec and task briefs. Be thorough but fair -- minor style differences are acceptable; missing functionality or incorrect behavior is not.
 
-Validation claims are evidence-bound. Any statement about test, typecheck, or lint results must quote the relevant line verbatim from the Recorded Validation Output section (for example the test runner's own summary line); never report counts or totals that do not appear there. If you run additional checks yourself, present them separately as reviewer observations -- they do not replace the recorded results. If no Recorded Validation Output section is present, state that validation output was not recorded instead of asserting results.`;
+Validation claims are evidence-bound. Any statement about test, typecheck, or lint results must quote the relevant line verbatim from the Checks Log section (for example the test runner's own summary line); never report counts or totals that do not appear there. If you run additional checks yourself, present them separately as reviewer observations -- they do not replace the recorded results. If the Checks Log section is absent or contains no relevant execution, state that validation output was not recorded instead of asserting results.`;
 
 const PROVENANCE_INSTRUCTIONS = `Use the Changed Files provenance to distinguish recorded run effects from workspace context. Do not attribute the whole workspace diff to the implementer. Independent operator or tool-fix hunks are context, including when they share a declared file with run changes; unrelated defects in those hunks alone do not fail this run. Evaluate the requested behavior in the integrated current workspace, including cross-file dependencies. A regression caused by a run effect, a broken interaction with existing code, or an unmet acceptance criterion still fails review. Keep unknown and overlapping edits explicit; if missing provenance or context prevents a required judgment, report that limit and fail that criterion rather than assuming it passed.`;
 
@@ -19,7 +19,7 @@ const REVIEW_CHECKLIST = `1. **Acceptance Criteria**: Check each criterion from 
 5. **Type Safety**: Are types correct and complete?
 6. **Code Quality**: Are there obvious bugs, security issues, or performance problems?`;
 
-const REQUIRED_RESULTS = `Answer with one result per listed id, in the schema you were given. Every task not met and every failed criterion needs a blocking finding naming it. Mark a criterion unverified when no recorded evidence proves it, and name its checkIds. Never claim a render was verified. Finding kinds are defect, plan-gap, unverified and question; minor findings are notes.`;
+const REQUIRED_RESULTS = `Answer with one result per listed id, in the schema you were given. Every task not met and every failed criterion needs a blocking finding naming it. Mark a criterion unverified when no recorded evidence proves it, and name its checkIds. Verify a render only when its current-candidate images are attached and you critique the scenario. A manifest alone leaves the render unverified. Finding kinds are defect, plan-gap, unverified and question; minor findings are notes.`;
 
 const VALIDATION_EVIDENCE_PREAMBLE = `The orchestrator ran these validation commands and recorded their output. This section is the authoritative record of validation results for this run.`;
 
@@ -137,7 +137,9 @@ export type FinalReviewPromptInput = {
   taskIds?: readonly string[] | undefined;
   criterionIds?: readonly string[] | undefined;
   driftReport?: string | undefined;
-  validationEvidence?: string | undefined;
+  checksLog?: string | undefined;
+  /** The render scenarios the checks log recorded, attached or as a manifest. */
+  renders?: string | undefined;
   /**
    * What the run changed and what the diff below covers. A seat that reads no
    * files of its own is told the scope it is judging instead of inferring it.
@@ -198,11 +200,14 @@ export function buildFinalReviewPrompt(opts: FinalReviewPromptInput): string {
   if (opts.driftReport) {
     sections.push({ heading: 'Deterministic Drift Report', body: opts.driftReport });
   }
-  if (opts.validationEvidence) {
+  if (opts.checksLog) {
     sections.push({
-      heading: 'Recorded Validation Output',
-      body: `${VALIDATION_EVIDENCE_PREAMBLE}\n\n${opts.validationEvidence}`,
+      heading: 'Checks Log',
+      body: `${VALIDATION_EVIDENCE_PREAMBLE}\n\n${opts.checksLog}`,
     });
+  }
+  if (opts.renders) {
+    sections.push({ heading: 'Renders', body: opts.renders });
   }
   sections.push(
     instructionsSection(

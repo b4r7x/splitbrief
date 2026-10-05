@@ -148,15 +148,18 @@ A single JSON object is written to the child's stdin, then stdin is closed:
     "index": 4,
     "total": 12
   },
+  "workspaceDir": "/Users/you/project/.splitbrief/worktrees/s_01H...",
   "context": {
     "projectDir": "/Users/you/project",
+    "workspaceDir": "/Users/you/project/.splitbrief/worktrees/s_01H...",
     "sessionId": "s_01H..."
   }
 }
 ```
 
 - `event` is the in-flight `EngineEvent` — the same payload rendered in the TUI. Fields present depend on event type (see [per-event availability](#per-event-availability)). The stdin payload is bounded and secret-redacted before it is written to the child process.
-- `context` is static for the run: `projectDir` (absolute) and `sessionId` (per-invocation).
+- `workspaceDir` is the run's workspace, the checkout the build actually writes to. On a worktree run it is the worktree path, which a hook that runs with the checkout as its cwd needs in order to reach the files the run changed. It is also on `context`, so a hook can read it from either level.
+- `context` is static for the run: `projectDir` (absolute, the checkout), `workspaceDir` (absolute, the run workspace) and `sessionId` (per-invocation).
 
 ### stdout — optional response
 

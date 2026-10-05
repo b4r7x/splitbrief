@@ -46,6 +46,17 @@ const EvidenceValidationEntrySchema = z.object({
 });
 export type EvidenceValidationEntry = z.infer<typeof EvidenceValidationEntrySchema>;
 
+const EvidenceCheckEntrySchema = z.object({
+  id: z.string(),
+  command: z.string().optional(),
+  exitCode: z.number().int().optional(),
+  output: z.string().optional(),
+  artifacts: z.array(z.object({ path: z.string(), sha256: z.string() })).optional(),
+  workspaceSnapshotId: z.string().optional(),
+  ts: z.string(),
+});
+export type EvidenceCheckEntry = z.infer<typeof EvidenceCheckEntrySchema>;
+
 const EvidencePromotedFileSchema = z.object({
   path: z.string(),
   /** Digest supplied by the writer; null only for a recorded deletion. */
@@ -106,8 +117,9 @@ const EvidenceTaskSchema = z.object({
   durationMs: z.number().nonnegative().optional(),
   changedFiles: z.array(z.string()),
   validation: z.array(EvidenceValidationEntrySchema),
-  expectedEvidence: z.array(z.string()),
-  observedEvidence: z.array(z.string()),
+  checks: z.array(EvidenceCheckEntrySchema).optional(),
+  expectedEvidence: z.array(z.string()).optional(),
+  observedEvidence: z.array(z.string()).optional(),
   escalated: z.boolean(),
   briefHash: z.string().nullable().optional(),
   promotionAttempts: z.array(EvidencePromotionAttemptSchema).optional(),

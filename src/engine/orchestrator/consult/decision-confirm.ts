@@ -1,16 +1,14 @@
 import type { ImplementerReport } from '../../../core/schemas/consult.js';
 import type { Task } from '../../../core/schemas/task.js';
-import {
-  decisionConfirmsOf,
-  type ChangedFilesSnapshot,
-  type WorkflowState,
-} from '../../../core/schemas/workflow.js';
+import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import { decisionLedgerText } from '../../../core/state/machine.js';
 import { consultAttemptError, guidanceInstructions } from '../escalation/consult-guidance.js';
 import { publishWarning } from '../events.js';
 import type { WorkflowContext } from '../types.js';
 import { applyConsultAnswer } from './apply.js';
 import { requestConsult } from './request.js';
+import { commitQueueMessagesConsulted, readQueueForConsult } from '../queue/drain.js';
+import { formatMessage } from '../queue/prompt.js';
 
 type DecisionConfirmOutcome =
   | { kind: 'validate'; state: WorkflowState }
@@ -43,15 +41,17 @@ export async function confirmAttemptDecisions(opts: {
       phase: state.phase,
       message: `${task.id}'s reported decisions were not confirmed or added to the ledger: ${reason}`,
     });
-  const counter = decisionConfirmsOf(state);
-  if (counter.used >= counter.allowance) {
-    warn("the run's decision-confirm allowance is spent");
-    return { kind: 'validate', state };
-  }
   const onStateChange = (next: WorkflowState): void => {
     state = next;
     opts.onStateChange?.(next);
   };
+  const queued = readQueueForConsult({
+    projectDir: wctx.projectDir,
+    sessionId: wctx.sessionId,
+    state,
+  });
+  const userText =
+    queued.messages.length === 0 ? undefined : queued.messages.map(formatMessage).join('\n\n');
   const outcome = await requestConsult(
     { ...wctx, state, onStateChange },
     {
@@ -61,11 +61,22 @@ export async function confirmAttemptDecisions(opts: {
       report: { ...report, decisions },
       snapshot: opts.snapshot,
       changedFiles: opts.changedFiles,
+      ...(userText !== undefined && { userText }),
     },
   );
   if ('error' in outcome) {
     warn(outcome.error.message);
     return { kind: 'validate', state };
+  }
+  if (queued.messages.length > 0) {
+    onStateChange(
+      commitQueueMessagesConsulted({
+        projectDir: wctx.projectDir,
+        sessionId: wctx.sessionId,
+        state,
+        ids: queued.messages.map((message) => message.id),
+      }).state,
+    );
   }
   const applied = await applyConsultAnswer(
     { ...wctx, state, changedFiles: opts.changedFiles, onStateChange },

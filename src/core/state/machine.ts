@@ -5,7 +5,6 @@ import {
   WORKFLOW_STATE_VERSION,
   fixCyclesOf,
   plannerCallsOf,
-  decisionConfirmsOf,
   type ConsultRecord,
   type LineageRecord,
   type WorkflowState,
@@ -20,7 +19,7 @@ import { assertNever } from '../../utils/type-guards.js';
 import { includes } from '../../utils/type-guards.js';
 import { DEFAULT_LOCAL_RETRIES } from '../pipeline-spec/retries.js';
 import { BOUNDS } from '../pipeline-spec/bounds.js';
-import { lineageIdOf } from './task-insert.js';
+import { insertTasksAfter, lineageIdOf } from './task-insert.js';
 import { transitionError } from './errors.js';
 
 /** The text a confirmed implementer decision contributes to the plan ledger. */
@@ -53,15 +52,19 @@ const anytimeActions = [
   'INSERT_TASKS',
   'RECORD_CONSULT',
   'CONFIRM_DECISIONS',
+  'RECORD_CORRECTION',
   'COUNT_ATTEMPT',
   'COUNT_PLANNER_CALL',
-  'COUNT_DECISION_CONFIRM',
   'CLEAR_CARRIED_FAILURE',
   'GRANT_ALLOWANCE',
   'SET_TASK_INPUT_HASHES',
   'RECORD_CHECK_RESULTS',
   'SET_SEAT_WAIT',
   'CLEAR_SEAT_WAIT',
+  'START_SCHEDULED_REVIEW',
+  'CLEAR_SCHEDULED_REVIEW',
+  'SET_PENDING_BOUNDARY',
+  'CLEAR_PENDING_BOUNDARY',
 ] as const satisfies readonly MachineAction['type'][];
 
 const VALIDATION_OR_ESCALATION_SHARED_ACTIONS = [
@@ -114,6 +117,7 @@ const phaseActions = {
     'START_FIX_CYCLE',
     'REVIEW_CORRECTION',
     'QUEUE_TRIAGE',
+    'ACCEPT_AS_IS',
   ],
   'validating-task': [...VALIDATION_OR_ESCALATION_SHARED_ACTIONS, 'VALIDATION_FAIL', 'ESCALATE'],
   escalating: [...VALIDATION_OR_ESCALATION_SHARED_ACTIONS, 'UPDATE_TASK_CODE'],
@@ -180,6 +184,10 @@ const EMPTY_LINEAGE: LineageRecord = {
 function lineageKeyFor(state: WorkflowState, taskId: TaskId): TaskId {
   const task = state.tasks.find((t) => t.id === taskId);
   return task === undefined ? taskId : lineageIdOf(task);
+}
+
+export function briefCorrections(state: WorkflowState, taskId: TaskId): readonly string[] {
+  return state.lineages?.[lineageKeyFor(state, taskId)]?.corrections ?? [];
 }
 
 function withLineage(
@@ -405,8 +413,16 @@ export function transition(
         ...(action.reviewStatus === 'passed' && { applyReview: undefined }),
       };
 
-    case 'RECORD_REVIEW':
-      return { ...state, review: action.review };
+    case 'RECORD_REVIEW': {
+      const record = action.review;
+      return {
+        ...state,
+        review:
+          record.scope === 'task' && state.pendingScheduledReview !== undefined
+            ? { ...record, afterTaskId: state.pendingScheduledReview.afterTaskId }
+            : record,
+      };
+    }
 
     case 'RECORD_TRIAGE':
       return { ...state, triage: [...(state.triage ?? []), action.record] };
@@ -424,6 +440,7 @@ export function transition(
         reviewStatus: undefined,
         completedAt: undefined,
         pendingTriage: undefined,
+        pendingScheduledReview: undefined,
       };
     }
 
@@ -455,6 +472,9 @@ export function transition(
           ...(state.pendingTriage?.question !== undefined && {
             question: state.pendingTriage.question,
           }),
+          ...(state.pendingTriage?.reviewAfterTaskId !== undefined && {
+            reviewAfterTaskId: state.pendingTriage.reviewAfterTaskId,
+          }),
         },
         ...(fixCycles.used >= fixCycles.allowance && {
           fixCycles: {
@@ -466,12 +486,17 @@ export function transition(
       };
     }
 
-    case 'QUEUE_TRIAGE':
+    case 'QUEUE_TRIAGE': {
+      const reviewAfterTaskId =
+        action.reviewAfterTaskId ??
+        state.pendingTriage?.reviewAfterTaskId ??
+        state.pendingScheduledReview?.afterTaskId;
       return {
         ...state,
         pendingTriage: {
           inputs: action.inputs,
           ...(action.question !== undefined && { question: action.question }),
+          ...(reviewAfterTaskId !== undefined && { reviewAfterTaskId }),
         },
         userAnswers: [
           ...(state.userAnswers ?? []),
@@ -487,6 +512,7 @@ export function transition(
             })),
         ],
       };
+    }
 
     case 'RECORD_WORKSPACE':
       return { ...state, workspace: action.workspace };
@@ -496,6 +522,7 @@ export function transition(
         ...state,
         acceptedAsIs: { at: now.toISOString(), findings: action.findings },
         applyReview: undefined,
+        pendingTriage: undefined,
       };
 
     case 'APPLY_REVIEW_START': {
@@ -682,7 +709,16 @@ export function transition(
 
     case 'INSERT_TASKS': {
       if (action.parentId === null) {
-        return { ...state, tasks: [...state.tasks, ...action.tasks] };
+        if (action.afterTaskId === undefined) {
+          return { ...state, tasks: [...state.tasks, ...action.tasks] };
+        }
+        const anchorIndex = state.tasks.findIndex((task) => task.id === action.afterTaskId);
+        const insertAt = anchorIndex < 0 ? state.tasks.length : anchorIndex + 1;
+        return {
+          ...state,
+          tasks: insertTasksAfter(state.tasks, action.tasks, action.afterTaskId),
+          currentTaskIndex: Math.min(state.currentTaskIndex, insertAt),
+        };
       }
       const parentIndex = state.tasks.findIndex((t) => t.id === action.parentId);
       const parent = parentIndex < 0 ? undefined : state.tasks[parentIndex];
@@ -764,6 +800,12 @@ export function transition(
       };
     }
 
+    case 'RECORD_CORRECTION':
+      return withLineage(state, lineageKeyFor(state, action.taskId), (lineage) => ({
+        ...lineage,
+        corrections: [...(lineage.corrections ?? []), action.text],
+      }));
+
     case 'COUNT_ATTEMPT':
       return withLineage(state, lineageKeyFor(state, action.taskId), (lineage) => ({
         ...lineage,
@@ -773,14 +815,6 @@ export function transition(
     case 'COUNT_PLANNER_CALL': {
       const plannerCalls = plannerCallsOf(state);
       return { ...state, plannerCalls: { ...plannerCalls, used: plannerCalls.used + 1 } };
-    }
-
-    case 'COUNT_DECISION_CONFIRM': {
-      const decisionConfirms = decisionConfirmsOf(state);
-      return {
-        ...state,
-        decisionConfirms: { ...decisionConfirms, used: decisionConfirms.used + 1 },
-      };
     }
 
     case 'CLEAR_CARRIED_FAILURE':
@@ -812,6 +846,21 @@ export function transition(
         },
       };
     }
+
+    case 'START_SCHEDULED_REVIEW':
+      return { ...state, pendingScheduledReview: { afterTaskId: action.afterTaskId } };
+
+    case 'CLEAR_SCHEDULED_REVIEW':
+      return { ...state, pendingScheduledReview: undefined, pendingTriage: undefined };
+
+    case 'SET_PENDING_BOUNDARY':
+      return {
+        ...state,
+        pendingBoundary: { batch: action.batch, afterTaskId: action.afterTaskId },
+      };
+
+    case 'CLEAR_PENDING_BOUNDARY':
+      return { ...state, pendingBoundary: undefined };
 
     case 'SET_TASK_INPUT_HASHES':
       return {
@@ -873,13 +922,22 @@ export function transition(
     case 'DRAIN_QUEUE': {
       const ts = now.toISOString();
       const ids = action.ids === undefined ? undefined : new Set(action.ids);
+      const destination = action.destination ?? 'implementer';
       return {
         ...state,
-        messageQueue: state.messageQueue.map((m) =>
-          isQueuedMessagePendingDelivery(m) && (ids === undefined || ids.has(m.id))
-            ? { ...m, drainedAt: ts }
-            : m,
-        ),
+        messageQueue: state.messageQueue.map((m) => {
+          if (ids !== undefined && !ids.has(m.id)) return m;
+          if (destination === 'consult') {
+            if (m.deliveredTo?.consult !== undefined) return m;
+            return { ...m, deliveredTo: { ...m.deliveredTo, consult: ts } };
+          }
+          if (destination === 'reviewer') {
+            if (m.deliveredTo?.reviewer !== undefined) return m;
+            return { ...m, deliveredTo: { ...m.deliveredTo, reviewer: ts } };
+          }
+          if (!isQueuedMessagePendingDelivery(m)) return m;
+          return { ...m, drainedAt: ts, deliveredTo: { ...m.deliveredTo, implementer: ts } };
+        }),
       };
     }
 
