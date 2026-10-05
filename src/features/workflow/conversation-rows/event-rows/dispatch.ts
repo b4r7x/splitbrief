@@ -432,6 +432,14 @@ function queuedMessageHeader(origin: EngineEventOf<'message_queued'>['origin']):
 }
 
 function consultAnsweredText(event: EngineEventOf<'consult_answered'>): string {
+  if (event.reason === 'deviation') {
+    if (event.action === 'confirm') {
+      return `${CREW_SEAT_LABELS.plan} confirmed ${countNoun(event.decisionCount ?? 0, 'decision')} for ${event.taskId}`;
+    }
+    if (event.action === 'ask-user') {
+      return `${CREW_SEAT_LABELS.plan} asks you about the decisions ${event.taskId} reported`;
+    }
+  }
   return `${CREW_SEAT_LABELS.plan}${arrowSep()}${event.taskId}: ${consultAnsweredAction(event)}`;
 }
 

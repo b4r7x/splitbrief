@@ -376,6 +376,7 @@ export function publishConsultAnswered(
     newTaskIds: readonly TaskId[] | null;
     revision?: number | undefined;
     checkIds?: readonly string[] | undefined;
+    decisionCount?: number | undefined;
   },
 ): void {
   ctx.bus.publish({
@@ -389,6 +390,7 @@ export function publishConsultAnswered(
     newTaskIds: opts.newTaskIds === null ? null : [...opts.newTaskIds],
     ...(opts.revision !== undefined && { revision: opts.revision }),
     ...(opts.checkIds !== undefined && { checkIds: [...opts.checkIds] }),
+    ...(opts.decisionCount !== undefined && { decisionCount: opts.decisionCount }),
   });
 }
 

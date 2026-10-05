@@ -105,11 +105,14 @@ export type StateAction =
   | { type: 'CONFIRM_DECISIONS'; taskId: TaskId; decisions: { what: string; why: string }[] }
   | { type: 'COUNT_ATTEMPT'; taskId: TaskId }
   | { type: 'COUNT_PLANNER_CALL' }
+  | { type: 'COUNT_DECISION_CONFIRM' }
+  | { type: 'CLEAR_CARRIED_FAILURE'; taskId: TaskId }
   | {
       type: 'GRANT_ALLOWANCE';
       target: 'lineage' | 'planner';
       taskId: TaskId | null;
       note: string;
+      failingOutput?: string;
     }
   | { type: 'SET_TASK_INPUT_HASHES'; taskId: TaskId; inputHashes: Record<string, string> }
   | { type: 'RECORD_CHECK_RESULTS'; taskId: TaskId; results: CheckResult[] }

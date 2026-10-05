@@ -22,7 +22,7 @@ import { captureTaskReviewChanges } from '../evidence/review-capture.js';
 import { denialMessage } from './attempt-gate.js';
 import { buildApprovalDeniedRecoveryIssue } from '../recovery/builders/task.js';
 import { nowIso } from '../../../utils/format-time.js';
-import { retryAndRecord, consultHandedBackToLoop } from './retry.js';
+import { retryAndRecord, consultHandedBackToLoop, handleTaskPlannerCallFailure } from './retry.js';
 import { runPreTaskHooksAndPublish } from './pre-task.js';
 import { isResumableWorkspaceStop, retentionError } from '../isolation/retention.js';
 import { runImplementation } from './run-implementation.js';
@@ -36,8 +36,9 @@ import { inputHashesNow, inputsMoved, taskInputFiles } from './stale-inputs.js';
 import { lineageIdOf } from '../../../core/state/task-insert.js';
 import { requestConsult } from '../consult/request.js';
 import { applyConsultAnswer } from '../consult/apply.js';
-import { guidanceInstructions } from '../escalation/consult-guidance.js';
+import { consultAttemptError, guidanceInstructions } from '../escalation/consult-guidance.js';
 import { hashTaskBrief } from '../../brief-hash.js';
+import { confirmAttemptDecisions } from '../consult/decision-confirm.js';
 
 function recordApprovalDenial(opts: {
   wctx: WorkflowContext;
@@ -254,7 +255,16 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   }
   task = staleRefresh.task;
   state = staleRefresh.state;
-  const staleGuidance = staleRefresh.guidance;
+  const guidance = staleRefresh.guidance;
+  const carriedFailure = state.lineages?.[lineageIdOf(task)]?.carriedFailure;
+  const retryError =
+    guidance === undefined
+      ? carriedFailure
+      : consultAttemptError(
+          carriedFailure ??
+            `The task's inputs changed since the brief was compiled: ${taskInputFiles(task).join(', ')}`,
+          guidance,
+        );
 
   setCurrentTask(task);
   const taskStartTime = Date.now();
@@ -288,11 +298,15 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       recordApprovalDenial: (decision, message) =>
         recordApprovalDenial({ wctx, state, task, denials: decision.denials, message }),
       streamingSink: wctx.streamingSink,
-      ...(staleGuidance !== undefined && { staleGuidance }),
+      ...(retryError !== undefined && { retryError }),
     });
   } catch (err) {
     if (retentionError.isFailed(err) || retentionError.isUnavailable(err)) throw err;
     if (isAbortError(err) || wctx.signal?.aborted) return state;
+    if (carriedFailure !== undefined) {
+      state = transitionAndSave(wctx, state, { type: 'CLEAR_CARRIED_FAILURE', taskId: task.id });
+      setTrackedState(state);
+    }
     publishError({
       bus: wctx.bus,
       phase: state.phase,
@@ -324,6 +338,14 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
 
   state = addUsageAndSave(wctx, implState.state, 'implementer', implState.implResult.usage);
   setTrackedState(state);
+  if (
+    carriedFailure !== undefined &&
+    !wctx.signal?.aborted &&
+    implState.implResult.outcome !== 'user-abort'
+  ) {
+    state = transitionAndSave(wctx, state, { type: 'CLEAR_CARRIED_FAILURE', taskId: task.id });
+    setTrackedState(state);
+  }
 
   // A stop keeps the attempt's output whole; a bundle left half-applied goes to its recovery.
   const applyStatus = implState.implResult.applyResult?.status;
@@ -402,15 +424,45 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   const taskChangedFiles = gate.approvedFiles;
 
   const report = implState.implResult.report;
-  if (report !== undefined && report.status === 'done' && report.decisions.length > 0) {
+  let confirmed: Awaited<ReturnType<typeof confirmAttemptDecisions>>;
+  try {
+    confirmed = await confirmAttemptDecisions({
+      wctx,
+      task,
+      state,
+      report: report?.status === 'done' ? report : undefined,
+      snapshot: implState.workspace.snapshot,
+      changedFiles: taskChangedFiles,
+      onStateChange: (next) => {
+        state = next;
+        setTrackedState(next);
+      },
+    });
+  } catch (err) {
+    if (!isAbortError(err) && !wctx.signal?.aborted) {
+      state = transitionAndSave(wctx, state, { type: 'COUNT_ATTEMPT', taskId: task.id });
+      setTrackedState(state);
+    }
+    return handleTaskPlannerCallFailure({
+      wctx,
+      task,
+      state,
+      taskStartTime,
+      initialChangedFiles: taskChangedFiles,
+      setTrackedState,
+      err,
+      label: `Planner consult for ${task.id} failed`,
+    });
+  }
+  state = confirmed.state;
+  if (confirmed.kind === 'retry') {
     const consulted = await retryAndRecord({
       wctx,
       task,
       state,
       taskStartTime,
       taskStartSnapshot,
-      initialError: 'The implementer reported a deviation',
-      initialDeviation: report,
+      initialError: confirmed.error,
       initialChangedFiles: taskChangedFiles,
       tokensBefore,
       taskBreakdowns,

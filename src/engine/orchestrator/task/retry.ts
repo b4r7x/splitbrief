@@ -14,7 +14,7 @@ import { isAbortError } from '../../../utils/abort.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { publishError } from '../events.js';
 import { handleRetryAndEscalation } from '../escalation/handle.js';
-import type { BlockedReport, DeviationReport } from '../escalation/step.js';
+import type { BlockedReport } from '../escalation/step.js';
 import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { recordTaskUsage } from '../tokens.js';
@@ -49,7 +49,6 @@ export type RetryAndRecordOptions = {
   initialFailure?: RetryAttemptFailure | undefined;
   /** The first attempt's blocked report, when it stopped asking for a decision. */
   initialBlocked?: BlockedReport | undefined;
-  initialDeviation?: DeviationReport | undefined;
   tokensBefore: TokenUsage;
   taskBreakdowns: TaskTokenUsage[];
   setTrackedState: (s: WorkflowState) => void;
@@ -75,28 +74,101 @@ export function consultHandedBackToLoop(state: WorkflowState, task: Task): boole
   return current.parentId !== undefined && current.parentId === lineageIdOf(task);
 }
 
+type TaskFailureContext = Pick<
+  RetryAndRecordOptions,
+  | 'wctx'
+  | 'task'
+  | 'taskStartTime'
+  | 'initialValidation'
+  | 'initialChangedFiles'
+  | 'initialExemptStages'
+>;
+
+function recordFailedTask(opts: TaskFailureContext, state: WorkflowState, attempts: number): void {
+  persistTaskEvidence({
+    wctx: opts.wctx,
+    state,
+    task: opts.task,
+    recordKind: 'retry',
+    details: {
+      status: 'failed',
+      method: 'failed',
+      retries: attempts,
+      durationMs: Date.now() - opts.taskStartTime,
+      initialValidation: opts.initialValidation,
+      initialChangedFiles: opts.initialChangedFiles,
+      initialExemptStages: opts.initialExemptStages,
+    },
+  });
+}
+
+/** Recovers a failed planner call during a task from its latest saved state, preserving aborts. */
+export async function handleTaskPlannerCallFailure(
+  opts: TaskFailureContext &
+    Pick<RetryAndRecordOptions, 'state' | 'setTrackedState'> & {
+      err: unknown;
+      label: string;
+    },
+): Promise<WorkflowState> {
+  const { wctx, task, err, setTrackedState } = opts;
+  if (retentionError.isFailed(err) || retentionError.isUnavailable(err)) throw err;
+  if (isAbortError(err) || wctx.signal?.aborted) {
+    const stoppedState = loadState(wctx) ?? opts.state;
+    setTrackedState(stoppedState);
+    return stoppedState;
+  }
+  const diagnosis = diagnosePlannerCallFailure({
+    err,
+    label: opts.label,
+    runner: wctx.config.planner,
+    seat: 'plan',
+  });
+  publishError({
+    bus: wctx.bus,
+    phase: opts.state.phase,
+    message: diagnosis.message,
+    resetAt: diagnosis.resetsAt?.toISOString(),
+  });
+  const recoveryBaseState = loadState(wctx) ?? opts.state;
+  if (recoveryBaseState.pendingRecovery) {
+    setTrackedState(recoveryBaseState);
+    return recoveryBaseState;
+  }
+  // A planner out of quota or signed out on the consult halts on the plan seat, not
+  // as a brief that exhausted its retries. The halt names the brief, so retrying
+  // it or moving the plan seat replays that brief from its start.
+  const issue =
+    diagnosis.failure === 'call-failed'
+      ? buildRetryExhaustedRecoveryIssue({
+          task,
+          phase: recoveryBaseState.phase,
+          validationResults: opts.initialValidation,
+          validationSummary: diagnosis.message,
+          attempts: recoveryBaseState.attempt,
+          maxAttempts: DEFAULT_LOCAL_RETRIES,
+          allowRetryOverride: true,
+          selectedImplementerProfile: wctx.implementerProfile,
+          routeBiggerProfile: routeBiggerProfileFromDecision(wctx.routingDecision),
+          createdAt: nowIso(),
+        })
+      : await plannerCallHaltIssue({
+          projectDir: wctx.projectDir,
+          diagnosis,
+          task,
+          phase: recoveryBaseState.phase,
+          swap: { seat: 'plan', runner: wctx.config.planner },
+          details: consultHaltDetails(task.id),
+        });
+  const nextState = raisePendingRecovery(wctx, recoveryBaseState, issue, setTrackedState);
+  recordFailedTask(opts, nextState, recoveryBaseState.attempt);
+  return nextState;
+}
+
 export async function retryAndRecord(
   opts: RetryAndRecordOptions,
 ): Promise<{ state: WorkflowState; completed: boolean }> {
   const { wctx, task, initialError, taskStartTime, tokensBefore, taskBreakdowns, setTrackedState } =
     opts;
-  const recordFailedTask = (failedState: WorkflowState, attempts: number): void => {
-    persistTaskEvidence({
-      wctx,
-      state: failedState,
-      task,
-      recordKind: 'retry',
-      details: {
-        status: 'failed',
-        method: 'failed',
-        retries: attempts,
-        durationMs: Date.now() - taskStartTime,
-        initialValidation: opts.initialValidation,
-        initialChangedFiles: opts.initialChangedFiles,
-        initialExemptStages: opts.initialExemptStages,
-      },
-    });
-  };
   let taskStartSnapshot = opts.taskStartSnapshot;
   // The attempt that reached the ladder counts on the lineage before the retry it
   // earned: one implementer call, one attempt, whether it failed on validation or
@@ -132,62 +204,14 @@ export async function retryAndRecord(
       ...(retryProfileOverride !== undefined && { profileOverrideTaskId: task.id }),
       ...(opts.initialFailure !== undefined && { initialFailure: opts.initialFailure }),
       ...(opts.initialBlocked !== undefined && { initialBlocked: opts.initialBlocked }),
-      ...(opts.initialDeviation !== undefined && { initialDeviation: opts.initialDeviation }),
     }));
   } catch (err) {
-    if (retentionError.isFailed(err) || retentionError.isUnavailable(err)) throw err;
-    if (isAbortError(err) || wctx.signal?.aborted) {
-      const stoppedState = loadState(wctx) ?? state;
-      setTrackedState(stoppedState);
-      return { state: stoppedState, completed: false };
-    }
-    // Only the planner's consult call throws a runner's own words out of the ladder:
-    // the implementer pipeline turns every limit and sign-out into an outcome
-    // the ladder halts on itself.
-    const diagnosis = diagnosePlannerCallFailure({
+    const nextState = await handleTaskPlannerCallFailure({
+      ...opts,
+      state,
       err,
       label: retryFailureLabel(err, task.id),
-      runner: wctx.config.planner,
-      seat: 'plan',
     });
-    publishError({
-      bus: wctx.bus,
-      phase: opts.state.phase,
-      message: diagnosis.message,
-      resetAt: diagnosis.resetsAt?.toISOString(),
-    });
-    const recoveryBaseState = loadState(wctx) ?? state;
-    if (recoveryBaseState.pendingRecovery) {
-      setTrackedState(recoveryBaseState);
-      return { state: recoveryBaseState, completed: false };
-    }
-    // A planner out of quota or signed out on the consult halts on the plan seat, not
-    // as a brief that exhausted its retries. The halt names the brief, so retrying
-    // it or moving the plan seat replays that brief from its start.
-    const issue =
-      diagnosis.failure === 'call-failed'
-        ? buildRetryExhaustedRecoveryIssue({
-            task,
-            phase: recoveryBaseState.phase,
-            validationResults: opts.initialValidation,
-            validationSummary: diagnosis.message,
-            attempts: recoveryBaseState.attempt,
-            maxAttempts: DEFAULT_LOCAL_RETRIES,
-            allowRetryOverride: true,
-            selectedImplementerProfile: wctx.implementerProfile,
-            routeBiggerProfile: routeBiggerProfileFromDecision(wctx.routingDecision),
-            createdAt: nowIso(),
-          })
-        : await plannerCallHaltIssue({
-            projectDir: wctx.projectDir,
-            diagnosis,
-            task,
-            phase: recoveryBaseState.phase,
-            swap: { seat: 'plan', runner: wctx.config.planner },
-            details: consultHaltDetails(task.id),
-          });
-    const nextState = raisePendingRecovery(wctx, recoveryBaseState, issue, setTrackedState);
-    recordFailedTask(nextState, recoveryBaseState.attempt);
     return { state: nextState, completed: false };
   }
   let nextState = state;
@@ -236,7 +260,7 @@ export async function retryAndRecord(
       });
       nextState = raisePendingRecovery(wctx, nextState, issue, setTrackedState);
     }
-    recordFailedTask(nextState, result.attempts);
+    recordFailedTask(opts, nextState, result.attempts);
     return { state: nextState, completed: false };
   }
   const model = result.model ?? nextState.implementerModel ?? wctx.config.implementer.model;

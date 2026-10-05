@@ -81,7 +81,7 @@ it('applies real API bundles to one workspace on the first attempt, retry and co
   const second = await runImplementation({
     ...options,
     state: { ...first.state, attempt: 1 },
-    staleGuidance: 'retry this brief',
+    retryError: 'retry this brief',
   });
   expect(second.implResult.applyResult).toMatchObject({
     status: 'applied',

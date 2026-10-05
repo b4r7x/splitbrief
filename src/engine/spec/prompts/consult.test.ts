@@ -140,7 +140,7 @@ describe('buildConsultPrompt', () => {
   });
 
   it.each([false, true])(
-    'shows the ledger and the confirm action for a reported deviation, resumed=%s',
+    'shows only the decision-confirm contract and attempt evidence, resumed=%s',
     (resumed) => {
       const prompt = buildConsultPrompt(
         consultInput({
@@ -160,11 +160,23 @@ describe('buildConsultPrompt', () => {
         }),
       );
 
-      expect(prompt).toContain('deviation — The implementer finished but reported a deviation');
-      expect(prompt).toContain(resumed ? '## Confirmed Decisions' : '### Decisions');
+      expect(prompt).toContain('deviation — The implementer reported new decisions');
+      expect(prompt).toContain('### Decisions');
       expect(prompt).toContain('- Use node:crypto (T003)');
       expect(prompt).toContain('`confirm`');
       expect(prompt).toContain('A change of what is built is `ask-user`');
+      expect(prompt).toContain('## Plan');
+      expect(prompt).toContain('**C1**: A greeting is returned');
+      expect(prompt).toContain('## Task T003');
+      expect(prompt).toContain('## Attempt Diff');
+      expect(prompt).toContain('## Implementer Report');
+      expect(prompt).toContain('Validation runs after a `confirm` answer');
+      for (const action of ['guidance', 'rewrite-task', 'split-task', 'verify']) {
+        expect(prompt).not.toContain(`\`${action}\``);
+      }
+      for (const section of ['Failing Output', 'Earlier Consults', 'Other Tasks']) {
+        expect(prompt).not.toContain(`## ${section}`);
+      }
     },
   );
 

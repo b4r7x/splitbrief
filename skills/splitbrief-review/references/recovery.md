@@ -46,14 +46,17 @@ Attempt → 1 local retry with the exact errors → a planner consult.
 | `split-task` | Replace with 2–4 subtasks. Keep all criteria. Re-point pending dependents to all children. |
 | `verify` | Run the named registered checks and validation. Make no implementer call. |
 | `ask-user` | Ask only when the user alone can answer. Record why, choices and a default. |
-| `confirm` | Accept the reported deviation, record its decisions, and validate the same attempt. |
+| `confirm` | Decision-confirm only: record the accepted decisions, then validate the attempt. |
 
 Keep lineage counters across splits and resume: 2 consults and 8 attempts.
 Keep the run counter: 10 planner decisions after planning, including consults and triage.
 Before dispatch, changed inputs get one stale consult per revision: guidance or rewrite-task.
 A stale consult spends no run planner decision. A blocked report consults at once.
+A hand-back with new decisions gets one decision-confirm before validation: confirm (how) or ask-user (what).
+It is no consult: it spends the run's 20 decision-confirms, never a consult or a planner decision.
+With those spent, warn, leave the decisions out of the ledger and validate; it never pauses.
 When a bound is spent, pause and keep the work. Ask: continue with a note / skip / end.
-Continuing grants 1 more consult and 4 more attempts, or 5 more planner decisions.
+Continuing grants 1 more consult and 4 more attempts, or 5 more planner decisions, and replays the brief as a retry with the last failing output.
 <!-- /generated -->
 
 The consult input includes the plan, task revisions, attempt diff, exact errors, report, earlier consults and other task statuses.

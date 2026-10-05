@@ -140,14 +140,14 @@ function publishAnswer(
         revision: (input.task.revision ?? 1) + 1,
       }),
       ...(answer.answer.action === 'verify' && { checkIds: answer.answer.checkIds }),
+      ...(answer.answer.action === 'confirm' && { decisionCount: answer.answer.decisions.length }),
     },
   );
 }
 
 /**
- * The run's consult with its planner about one task: the typed call on the planner's session,
- * the answer recorded on the task's lineage, and the planner-call count it spends. The answer
- * is not applied here; the caller moves the task on it.
+ * Calls the planner about one task and records its answer, spending decision-confirm allowance
+ * for deviation requests, planner-call allowance for other reasons except stale, which spends neither.
  */
 export async function requestConsult(
   ctx: ConsultContext,
@@ -178,6 +178,10 @@ export async function requestConsult(
     ...(ctx.signal !== undefined && { signal: ctx.signal }),
     onStateChange: apply,
   };
+
+  if (input.reason === 'deviation') {
+    apply(transitionAndSave(ref, state, { type: 'COUNT_DECISION_CONFIRM' }));
+  }
 
   // A transient seat failure retries with backoff and a near rate-limit reset
   // is waited out before the same call repeats; a thrown consult failure is
@@ -251,7 +255,7 @@ export async function requestConsult(
       answer: consulted,
     }),
   );
-  if (input.reason !== 'stale') {
+  if (input.reason !== 'deviation' && input.reason !== 'stale') {
     apply(transitionAndSave(ref, state, { type: 'COUNT_PLANNER_CALL' }));
   }
   publishAnswer(ctx, state, input, consulted);

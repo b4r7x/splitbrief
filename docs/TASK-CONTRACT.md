@@ -43,7 +43,7 @@ The planning session's answer is typed. Its schemas live in `src/core/schemas/pl
 
 `state.plan` (`PlanSchema`) keeps the plan without its tasks; the tasks live in `state.tasks`.
 
-**The decisions ledger.** An entry is `{ text, taskId }`. A plan's own decision carries `taskId: null`. When the implementer proposes a deviation in its report (`ImplementerReport.decisions`, `{ what, why }`), the planner confirms it with the `confirm` consult answer and `CONFIRM_DECISIONS` appends `{ text: '<what> — <why>', taskId }`, naming the task that reported it. The ledger reaches every later brief's read-only Plan context, every consult and the review; the planner confirms a change of how only when the accepted criteria stay intact, and the user decides any change to what is built.
+**The decisions ledger.** An entry is `{ text, taskId }`. A plan's own decision carries `taskId: null`. When the implementer proposes a deviation in its report (`ImplementerReport.decisions`, `{ what, why }`), the planner confirms it with a decision-confirm before the attempt is validated (a cheap call with its own run counter, not a consult; see [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md)), and its `confirm` answer makes `CONFIRM_DECISIONS` append `{ text: '<what> — <why>', taskId }`, naming the task that reported it. The ledger reaches every later brief's read-only Plan context, every consult and the review; the planner confirms a change of how only when the accepted criteria stay intact, and the user decides any change to what is built.
 
 **`TaskSpec`.**
 

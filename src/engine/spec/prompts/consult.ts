@@ -42,7 +42,7 @@ const REASON_TEXT: Record<ConsultReason, string> = {
   stale:
     'The task went stale: files it captured moved under it since the brief was compiled. Only guidance or a rewritten task can answer this reason.',
   deviation:
-    'The implementer finished but reported a deviation from the brief. Confirm the deviation, or correct it before the attempt is validated.',
+    "The implementer reported new decisions. Confirm changes of how that keep every criterion, or ask the user about a change of what. Validation follows confirm; ask-user carries the user's answer into a retry.",
 };
 
 const CONSULT_CONTRACT = `You are the run's planner. SPLITBRIEF asks you, not the user, for the decision that unblocks this task. This call is read-only: do not write, edit or delete any file, and do not run commands that change the project.
@@ -58,7 +58,13 @@ The criteria rule: a rewrite or a split never drops a criterion id; a split neve
 
 const RESUME_CONTRACT = `Answer again with exactly one JSON object in the consult shape: \`answer.diagnosis\` and exactly one action. The call stays read-only. The criteria rule still holds: a rewrite or a split never drops a criterion id, and a split never splits a subtask. The checks rule still holds too: a defective check command may be repaired under the same check id, but removing a check id a served criterion names needs \`ask-user\`.`;
 
-const DEVIATION_CONTRACT = `This consult carries a reported deviation. The report's \`decisions\` list is what the implementer did differently from the brief and why. \`confirm\` — with the exact \`decisions\` list you accept — records them in the plan ledger and keeps the implementation; use it only for a change of how that keeps every accepted criterion intact. A change of what is built is \`ask-user\`.`;
+const DECISION_CONFIRM_CONTRACT = `You are the run's planner. This call confirms the new decisions in the implementer's report before validation. This call is read-only: do not write, edit or delete any file, and do not run commands that change the project.
+
+Answer with exactly one JSON object \`{ "answer": { "diagnosis": …, "action": … } }\`. \`answer.diagnosis\` states your assessment in one or two sentences. Answer with exactly one of these actions:
+- \`confirm\` with the exact \`decisions\` list you accept. Accept only changes of how that keep every criterion. The accepted entries extend the plan's confirmed decisions ledger. An empty list is valid.
+- \`ask-user\` with \`question\`, \`whyOnlyUserCanAnswer\`, \`choices\` (or null) and \`default\` (or null). A change of what is built is \`ask-user\`. The user's answer goes into the next retry.
+
+Validation runs after a \`confirm\` answer. It has not run for this attempt yet. An \`ask-user\` answer sends this attempt to a retry without validation.`;
 
 function checkLine(check: Check): string {
   return `\`${check.id}\` (${check.kind} \`${check.value}\`${check.required ? '' : ', optional'})`;
@@ -192,8 +198,12 @@ function attemptLines(input: ConsultPromptInput): string[] {
     input.diff.trim() === ''
       ? 'No diff was recorded for this attempt.'
       : fenced(input.diff, 'diff'),
-    '## Failing Output',
-    fenced(truncateByChars(input.failingOutput, BOUNDS.consultFailingOutputChars)),
+    ...(input.reason === 'deviation'
+      ? []
+      : [
+          '## Failing Output',
+          fenced(truncateByChars(input.failingOutput, BOUNDS.consultFailingOutputChars)),
+        ]),
     ...reportLines(input.report),
   ];
 }
@@ -209,12 +219,24 @@ function reasonSection(input: ConsultPromptInput): PromptPart {
  * reason and the new attempt's evidence.
  */
 export function buildConsultPrompt(input: ConsultPromptInput): string {
-  const contract =
-    input.reason === 'deviation'
-      ? `${CONSULT_CONTRACT}\n\n${DEVIATION_CONTRACT}`
-      : CONSULT_CONTRACT;
-  const resumeContract =
-    input.reason === 'deviation' ? `${RESUME_CONTRACT}\n\n${DEVIATION_CONTRACT}` : RESUME_CONTRACT;
+  if (input.reason === 'deviation') {
+    return buildPrompt({
+      title: 'Confirm reported decisions',
+      intro: `Assess the new decisions ${input.task.id} reported against the plan and task below.`,
+      sections: [
+        ...(input.plan === undefined ? [] : [planSection(input.plan)]),
+        {
+          heading: `Task ${input.task.id} (revision ${input.task.revision ?? 1})`,
+          body: taskBody(input.task),
+        },
+        reasonSection(input),
+        ...attemptLines(input),
+        instructionsSection(
+          `${DECISION_CONFIRM_CONTRACT}\n\n${workspaceReadInstructions(input.workspaceDir)}`,
+        ),
+      ],
+    });
+  }
   if (input.resumed === true) {
     return buildPrompt({
       title: 'Consult continued',
@@ -230,7 +252,7 @@ export function buildConsultPrompt(input: ConsultPromptInput): string {
         reasonSection(input),
         ...attemptLines(input),
         instructionsSection(
-          `${resumeContract}\n\n${workspaceReadInstructions(input.workspaceDir)}`,
+          `${RESUME_CONTRACT}\n\n${workspaceReadInstructions(input.workspaceDir)}`,
         ),
       ],
     });
@@ -255,7 +277,7 @@ export function buildConsultPrompt(input: ConsultPromptInput): string {
     sections.push({ heading: 'Other Tasks', body: otherTaskLines(input.otherTasks).join('\n') });
   }
   sections.push(
-    instructionsSection(`${contract}\n\n${workspaceReadInstructions(input.workspaceDir)}`),
+    instructionsSection(`${CONSULT_CONTRACT}\n\n${workspaceReadInstructions(input.workspaceDir)}`),
   );
 
   return buildPrompt({

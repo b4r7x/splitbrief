@@ -144,6 +144,13 @@ describe('skill-blocks', () => {
     expect(contract).toContain('5 more planner decisions');
   });
 
+  it('keeps reported decisions out of the consult bounds and replays a continued brief with its errors', () => {
+    const contract = renderBlock('consult-table') ?? '';
+    expect(contract).toContain('decision-confirm before validation');
+    expect(contract).toContain('20 decision-confirms');
+    expect(contract).toContain('replays the brief as a retry with the last failing output');
+  });
+
   it('every recipe writes its exit code and none invokes coreutils timeout', () => {
     const recipes = GENERATED_BLOCK_IDS.filter((id) => id.startsWith('recipe:'));
     expect(recipes.length).toBeGreaterThan(0);

@@ -130,6 +130,7 @@ export const LineageRecordSchema = z.object({
   consultRecords: z.array(ConsultRecordSchema).default([]),
   replacedParents: z.array(TaskSchema).default([]),
   notes: z.array(z.string()).default([]),
+  carriedFailure: z.string().optional(),
 });
 export type LineageRecord = z.infer<typeof LineageRecordSchema>;
 
@@ -141,6 +142,11 @@ export type PlannerCalls = z.infer<typeof PlannerCallsSchema>;
 
 export function plannerCallsOf(state: Pick<WorkflowState, 'plannerCalls'>): PlannerCalls {
   return state.plannerCalls ?? { used: 0, allowance: BOUNDS.plannerCallsPerRun };
+}
+
+/** The run's decision-confirm counter, with the initial allowance for a run without one. */
+export function decisionConfirmsOf(state: Pick<WorkflowState, 'decisionConfirms'>): PlannerCalls {
+  return state.decisionConfirms ?? { used: 0, allowance: BOUNDS.decisionConfirmsPerRun };
 }
 
 export const FixCyclesSchema = z.object({
@@ -227,6 +233,7 @@ const WorkflowStateFields = {
   messageQueue: z.array(QueuedMessageSchema).default([]),
   lineages: z.record(z.string(), LineageRecordSchema).optional(),
   plannerCalls: PlannerCallsSchema.optional(),
+  decisionConfirms: PlannerCallsSchema.optional(),
   userAnswers: PlannerConversationSchema.shape.answers.optional(),
   seatWait: SeatWaitSchema.optional(),
   rewindPending: z

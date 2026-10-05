@@ -334,7 +334,7 @@ function consultTable(): string {
     'split-task': 'Keep all criteria. Re-point pending dependents to all children.',
     verify: 'Run the named registered checks and validation. Make no implementer call.',
     'ask-user': 'Ask only when the user alone can answer. Record why, choices and a default.',
-    confirm: 'Accept the reported deviation, record its decisions, and validate the same attempt.',
+    confirm: 'Decision-confirm only: record the accepted decisions, then validate the attempt.',
   };
   return [
     `Attempt → ${DEFAULT_LOCAL_RETRIES} local retry with the exact errors → a planner consult.`,
@@ -358,8 +358,11 @@ function consultTable(): string {
     `Keep the run counter: ${BOUNDS.plannerCallsPerRun} planner decisions after planning, including consults and triage.`,
     'Before dispatch, changed inputs get one stale consult per revision: guidance or rewrite-task.',
     'A stale consult spends no run planner decision. A blocked report consults at once.',
+    'A hand-back with new decisions gets one decision-confirm before validation: confirm (how) or ask-user (what).',
+    `It is no consult: it spends the run's ${BOUNDS.decisionConfirmsPerRun} decision-confirms, never a consult or a planner decision.`,
+    'With those spent, warn, leave the decisions out of the ledger and validate; it never pauses.',
     'When a bound is spent, pause and keep the work. Ask: continue with a note / skip / end.',
-    `Continuing grants ${BOUNDS.extraConsultsPerLineage} more consult and ${BOUNDS.extraAttemptsPerLineage} more attempts, or ${BOUNDS.extraPlannerCallsPerRun} more planner decisions.`,
+    `Continuing grants ${BOUNDS.extraConsultsPerLineage} more consult and ${BOUNDS.extraAttemptsPerLineage} more attempts, or ${BOUNDS.extraPlannerCallsPerRun} more planner decisions, and replays the brief as a retry with the last failing output.`,
   ].join('\n');
 }
 

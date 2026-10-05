@@ -2,6 +2,7 @@ export const BOUNDS = {
   consultsPerLineage: 2,
   attemptsPerLineage: 8,
   plannerCallsPerRun: 10,
+  decisionConfirmsPerRun: 20,
   extraConsultsPerLineage: 1,
   extraAttemptsPerLineage: 4,
   extraPlannerCallsPerRun: 5,

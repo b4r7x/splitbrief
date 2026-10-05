@@ -72,7 +72,7 @@ function raiseConsultBound(
   ctx: EscalationContext,
   state: WorkflowState,
   task: Task,
-  lastDiagnosis: string,
+  lastError: string,
   attempts: number,
   spent: ConsultBoundSpent,
 ): RetryStepResult {
@@ -80,7 +80,8 @@ function raiseConsultBound(
     reason: spent.reason,
     phase: state.phase,
     task,
-    lastDiagnosis,
+    lastDiagnosis: lastError,
+    failingOutput: lastError,
     consults: spent.consults,
     consultAllowance: spent.consultAllowance,
     attempts: spent.attempts,
@@ -102,7 +103,7 @@ function raiseConsultBound(
   return {
     state: raisePendingRecovery(ctx, state, issue),
     task,
-    lastError: lastDiagnosis,
+    lastError,
     attempts,
     result: failedRetry(attempts),
   };
@@ -216,7 +217,7 @@ export async function runLocalRetries(
     }
     // An implementer that stopped to ask for a decision is answered by the
     // planner, not by another attempt with the same brief.
-    if (outcome.blocked !== undefined || outcome.deviation !== undefined) {
+    if (outcome.blocked !== undefined) {
       return {
         ...outcome,
         state,

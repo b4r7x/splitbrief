@@ -289,6 +289,9 @@ function applyConsultGrantRecoveryAction(
       target: issue.reason === 'planner-calls-spent' ? 'planner' : 'lineage',
       taskId,
       note: opts.comment?.trim() || 'continued',
+      ...(typeof issue.facts?.failingOutput === 'string' && {
+        failingOutput: issue.facts.failingOutput,
+      }),
     },
     { expectedRevision: state.stateRevision ?? 0 },
   );

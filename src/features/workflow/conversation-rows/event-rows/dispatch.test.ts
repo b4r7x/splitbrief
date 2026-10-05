@@ -1452,6 +1452,38 @@ describe('consult answer rows', () => {
     expect(rows.map(rowText)).toEqual([`PLAN ${arrow} T003: asks you`]);
   });
 
+  it('renders a decision-confirm as one row counting the confirmed decisions', () => {
+    const rows = rowsFor({
+      type: 'consult_answered',
+      ts: 0,
+      phase: 'implementing',
+      taskId: taskId('T004'),
+      reason: 'deviation',
+      action: 'confirm',
+      diagnosis: 'Both are changes of how.',
+      newTaskIds: null,
+      decisionCount: 2,
+    });
+
+    expect(rows.map(rowText)).toEqual(['PLAN confirmed 2 decisions for T004']);
+    expect(rows.some((rowValue) => rowValue.kind === 'card-top')).toBe(false);
+  });
+
+  it('renders a decision-confirm that asks the user as one row', () => {
+    const rows = rowsFor({
+      type: 'consult_answered',
+      ts: 0,
+      phase: 'implementing',
+      taskId: taskId('T004'),
+      reason: 'deviation',
+      action: 'ask-user',
+      diagnosis: 'Dropping the flag changes what is built.',
+      newTaskIds: null,
+    });
+
+    expect(rows.map(rowText)).toEqual(['PLAN asks you about the decisions T004 reported']);
+  });
+
   it('keeps the consult consequence events out of the transcript', () => {
     const events: EngineEvent[] = [
       {

@@ -56,14 +56,11 @@ export function consultBoundSpent(state: WorkflowState, task: Task): ConsultBoun
   return undefined;
 }
 
-/** The bound an attempt would exceed: the lineage's attempts, else the run's planner calls. */
+/** The bound an attempt would exceed: the lineage's attempts. */
 export function attemptBoundSpent(state: WorkflowState, task: Task): ConsultBoundSpent | undefined {
   const budget = consultBudget(state, task);
   if (budget.attempts >= budget.attemptAllowance) {
     return { reason: 'consult-bound-spent', ...budget };
-  }
-  if (plannerCallsSpent(state)) {
-    return { reason: 'planner-calls-spent', ...budget };
   }
   return undefined;
 }
@@ -74,6 +71,7 @@ export interface ConsultBoundRecoveryOptions extends RecoveryBuilderBase {
   task?: Task | undefined;
   /** The last planner diagnosis, or the error that stopped the last attempt. */
   lastDiagnosis: string;
+  failingOutput?: string | undefined;
   consults?: number | undefined;
   consultAllowance?: number | undefined;
   attempts?: number | undefined;
@@ -121,6 +119,7 @@ export function buildConsultBoundRecoveryIssue(opts: ConsultBoundRecoveryOptions
     details: [`Last diagnosis: ${opts.lastDiagnosis}`, remedyLine(opts.reason), countersLine(opts)],
     facts: compactFacts({
       lastDiagnosis: opts.lastDiagnosis,
+      failingOutput: opts.failingOutput,
       consults: opts.consults,
       consultAllowance: opts.consultAllowance,
       attempts: opts.attempts,

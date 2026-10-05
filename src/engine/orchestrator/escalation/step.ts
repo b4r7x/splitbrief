@@ -19,17 +19,17 @@ import { isResumableWorkspaceStop } from '../isolation/retention.js';
 import type { AttemptWorkspace } from '../isolation/types.js';
 import { commitWorkflowState } from '../state-ops.js';
 import { error } from '../../../utils/error.js';
+import { confirmAttemptDecisions } from '../consult/decision-confirm.js';
 
 /** The direct writer's blocked report: the attempt stopped asking for a decision. */
 export type BlockedReport = Extract<ImplementerReport, { status: 'blocked' }>;
 
 /** The direct writer's reported deviation: a done report proposing ledger decisions. */
-export type DeviationReport = Extract<ImplementerReport, { status: 'done' }>;
+type DeviationReport = Extract<ImplementerReport, { status: 'done' }>;
 
 /** A retry outcome, with the blocked report an attempt handed back when it stopped to ask. */
 export type RetryStepResult = RetryStepOutcome & {
   blocked?: BlockedReport | undefined;
-  deviation?: DeviationReport | undefined;
 };
 
 /**
@@ -258,8 +258,16 @@ async function runRetryStepAttempt(
     });
   }
   const actualChangedFiles = gate.approvedFiles;
-  const deviation = deviationReportOf(retryResult);
-  if (deviation !== undefined) return { state, task, lastError, attempts, deviation };
+  const confirmed = await confirmAttemptDecisions({
+    wctx: retryCtx,
+    task,
+    state,
+    report: deviationReportOf(retryResult),
+    snapshot: workspace.snapshot,
+    changedFiles: actualChangedFiles,
+  });
+  state = confirmed.state;
+  if (confirmed.kind === 'retry') return { state, task, lastError: confirmed.error, attempts };
   const commitResult = await validateAndCommit({
     ctx: retryCtx,
     task,

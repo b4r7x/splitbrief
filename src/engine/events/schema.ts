@@ -565,6 +565,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     newTaskIds: taskIdArray.nullable(),
     revision: z.number().int().optional(),
     checkIds: z.array(z.string()).optional(),
+    decisionCount: z.number().int().nonnegative().optional(),
   }),
   phaseEvent('task_replaced').extend({
     taskId: TaskIdSchema,

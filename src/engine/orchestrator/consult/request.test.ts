@@ -415,7 +415,7 @@ describe('requestConsult', () => {
     expect(planner.prompts[0]).toContain('+export const greet = "new";');
   });
 
-  it.each(['failed', 'stale', 'deviation'] as const)(
+  it.each(['failed', 'stale'] as const)(
     'repairs a rewritten task id change once for %s and takes the fixed answer',
     async (reason) => {
       const { projectDir, sessionId } = setupProject(dirs);
@@ -456,7 +456,7 @@ describe('requestConsult', () => {
     },
   );
 
-  it.each(['failed', 'stale', 'deviation'] as const)(
+  it.each(['failed', 'stale'] as const)(
     'fails the seat protocol when the rewritten task changes its id again for %s',
     async (reason) => {
       const { projectDir, sessionId } = setupProject(dirs);

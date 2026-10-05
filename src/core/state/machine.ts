@@ -5,6 +5,7 @@ import {
   WORKFLOW_STATE_VERSION,
   fixCyclesOf,
   plannerCallsOf,
+  decisionConfirmsOf,
   type ConsultRecord,
   type LineageRecord,
   type WorkflowState,
@@ -21,6 +22,11 @@ import { DEFAULT_LOCAL_RETRIES } from '../pipeline-spec/retries.js';
 import { BOUNDS } from '../pipeline-spec/bounds.js';
 import { lineageIdOf } from './task-insert.js';
 import { transitionError } from './errors.js';
+
+/** The text a confirmed implementer decision contributes to the plan ledger. */
+export function decisionLedgerText(decision: { what: string; why: string }): string {
+  return `${decision.what} — ${decision.why}`;
+}
 
 const anytimeActions = [
   'CLOSE_RUN',
@@ -49,6 +55,8 @@ const anytimeActions = [
   'CONFIRM_DECISIONS',
   'COUNT_ATTEMPT',
   'COUNT_PLANNER_CALL',
+  'COUNT_DECISION_CONFIRM',
+  'CLEAR_CARRIED_FAILURE',
   'GRANT_ALLOWANCE',
   'SET_TASK_INPUT_HASHES',
   'RECORD_CHECK_RESULTS',
@@ -728,7 +736,7 @@ export function transition(
       };
       return withLineage(state, lineageKeyFor(state, action.taskId), (lineage) => ({
         ...lineage,
-        consults: lineage.consults + 1,
+        consults: lineage.consults + (action.reason === 'deviation' ? 0 : 1),
         consultRecords: [...lineage.consultRecords, record],
         ...(action.reason === 'stale' && {
           staleConsultedRevision: {
@@ -748,7 +756,7 @@ export function transition(
           decisions: [
             ...state.plan.decisions,
             ...action.decisions.map((decision) => ({
-              text: `${decision.what} — ${decision.why}`,
+              text: decisionLedgerText(decision),
               taskId: action.taskId,
             })),
           ],
@@ -767,6 +775,20 @@ export function transition(
       return { ...state, plannerCalls: { ...plannerCalls, used: plannerCalls.used + 1 } };
     }
 
+    case 'COUNT_DECISION_CONFIRM': {
+      const decisionConfirms = decisionConfirmsOf(state);
+      return {
+        ...state,
+        decisionConfirms: { ...decisionConfirms, used: decisionConfirms.used + 1 },
+      };
+    }
+
+    case 'CLEAR_CARRIED_FAILURE':
+      return withLineage(state, lineageKeyFor(state, action.taskId), (lineage) => {
+        const { carriedFailure: _carriedFailure, ...cleared } = lineage;
+        return cleared;
+      });
+
     case 'GRANT_ALLOWANCE': {
       const granted =
         action.taskId === null
@@ -778,6 +800,7 @@ export function transition(
                 attemptAllowance: lineage.attemptAllowance + BOUNDS.extraAttemptsPerLineage,
               }),
               notes: [...lineage.notes, action.note],
+              ...(action.failingOutput !== undefined && { carriedFailure: action.failingOutput }),
             }));
       if (action.target !== 'planner') return granted;
       const plannerCalls = plannerCallsOf(granted);

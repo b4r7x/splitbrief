@@ -6,7 +6,7 @@ import type { EngineEvent } from '../../events/types.js';
 import type { SeatProtocolError } from '../../runners/typed-output.js';
 import type { ValidationAcceptance } from '../validation/acceptance.js';
 import { recordNoProgressCut, runLocalRetries } from './local-retries.js';
-import { runRetryStep, type BlockedReport, type DeviationReport } from './step.js';
+import { runRetryStep, type BlockedReport } from './step.js';
 import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import { DEFAULT_LOCAL_RETRIES } from '../../../core/pipeline-spec/retries.js';
@@ -49,9 +49,6 @@ import type {
   RetryResult,
   RetryStepOutcome,
 } from './types.js';
-import { validateAndCommit } from './validate-and-commit.js';
-import { captureTaskReviewChanges } from '../evidence/review-capture.js';
-import { formatValidationError } from '../validation/format-error.js';
 import { failedRetry } from './types.js';
 
 type HandleRetryOptions = {
@@ -68,7 +65,6 @@ type HandleRetryOptions = {
   initialFailure?: RetryAttemptFailure | undefined;
   /** The first attempt's blocked report, when it stopped asking for a decision. */
   initialBlocked?: BlockedReport | undefined;
-  initialDeviation?: DeviationReport | undefined;
 };
 
 /** A consult-run verify already committed the task; the run records a plain accepted completion. */
@@ -255,6 +251,7 @@ function consultBoundHalt(
   task: Task,
   state: WorkflowState,
   lastDiagnosis: string,
+  lastError: string,
   attempts: number,
   handBack: string | undefined,
   spent: ConsultBoundSpent,
@@ -264,6 +261,7 @@ function consultBoundHalt(
     phase: state.phase,
     task,
     lastDiagnosis,
+    failingOutput: lastError,
     consults: spent.consults,
     consultAllowance: spent.consultAllowance,
     attempts: spent.attempts,
@@ -285,7 +283,7 @@ function consultBoundHalt(
   return {
     state: raisePendingRecovery(ctx, state, issue),
     result: failedRetry(attempts, {
-      lastError: lastDiagnosis,
+      lastError,
       ...(handBack !== undefined && { handBack }),
     }),
   };
@@ -333,7 +331,6 @@ export async function handleRetryAndEscalation(
   let attempts = 0;
   let handBack: string | undefined;
   let blocked: BlockedReport | undefined = opts.initialBlocked;
-  let deviation: DeviationReport | undefined = opts.initialDeviation;
   let attemptSnapshot: ChangedFilesSnapshot = taskStartSnapshot;
   let lastDiagnosis = initialError;
 
@@ -341,7 +338,7 @@ export async function handleRetryAndEscalation(
 
   // An implementation that stopped to ask for a decision is not retried with
   // the same brief: the planner answers the question.
-  if (blocked === undefined && deviation === undefined) {
+  if (blocked === undefined) {
     const retries = await runLocalRetries({
       ctx,
       task,
@@ -356,7 +353,6 @@ export async function handleRetryAndEscalation(
     handBack = handBackOf(retries) ?? handBack;
     attemptSnapshot = retries.attemptSnapshot ?? attemptSnapshot;
     blocked = retries.blocked;
-    deviation = retries.deviation;
     if (retries.result) return { state, result: retries.result };
     if (ctx.signal?.aborted) return { state, result: failedRetry(attempts) };
     const retriesHalt = await runnerHalt(ctx, retries.task, retries);
@@ -413,13 +409,21 @@ export async function handleRetryAndEscalation(
 
     const spent = consultBoundSpent(state, task);
     if (spent !== undefined) {
-      return consultBoundHalt(ctx, task, state, lastDiagnosis, attempts, handBack, spent);
+      return consultBoundHalt(
+        ctx,
+        task,
+        state,
+        lastDiagnosis,
+        lastError,
+        attempts,
+        handBack,
+        spent,
+      );
     }
 
     const snapshot = attemptSnapshot ?? taskStartSnapshot;
     const changedFiles = await attemptChangedFiles(ctx.workspaceDir, snapshot);
-    const reason: ConsultReason =
-      deviation !== undefined ? 'deviation' : blocked !== undefined ? 'blocked' : 'failed';
+    const reason: ConsultReason = blocked !== undefined ? 'blocked' : 'failed';
     const consult = await requestConsult(
       {
         projectDir: ctx.projectDir,
@@ -437,7 +441,7 @@ export async function handleRetryAndEscalation(
         task,
         reason,
         failingOutput: lastError,
-        report: deviation ?? blocked ?? null,
+        report: blocked ?? null,
         snapshot,
         changedFiles,
       },
@@ -511,49 +515,9 @@ export async function handleRetryAndEscalation(
         },
       };
     }
-    if (applied.action === 'confirm' && deviation !== undefined) {
-      if (state.phase === 'implementing')
-        state = transitionAndSave(ctx, state, { type: 'TASK_SENT' });
-      const confirmed = await validateAndCommit({
-        ctx,
-        task,
-        state,
-        method: 'consulted',
-        transitionType: 'VALIDATION_PASS',
-        retryCount: attempts,
-        preApprovedChangedFiles: changedFiles,
-      });
-      state = confirmed.state;
-      deviation = undefined;
-      if (confirmed.completed) {
-        await captureTaskReviewChanges({
-          ref: ctx,
-          workspaceDir: ctx.workspaceDir,
-          task,
-          taskStartSnapshot: ctx.taskStartSnapshot,
-        });
-        return {
-          state,
-          result: {
-            completed: true,
-            method: 'consulted',
-            attempts,
-            acceptance: confirmed.acceptance,
-            validationResults: confirmed.validationResults,
-            changedFiles,
-          },
-        };
-      }
-      if ('blockedReason' in confirmed)
-        return { state, result: failedRetry(attempts, { lastError: confirmed.blockedReason }) };
-      lastError = formatValidationError(confirmed.validationResults, confirmed.acceptance);
-      lastDiagnosis = lastError;
-      continue;
-    }
     if (applied.action === 'failed') {
       lastError = applied.reason;
       blocked = undefined;
-      deviation = undefined;
       lastDiagnosis = applied.reason;
       continue;
     }
@@ -574,6 +538,7 @@ export async function handleRetryAndEscalation(
         task,
         state,
         lastDiagnosis,
+        lastError,
         attempts,
         handBack,
         spentBeforeAttempt,
@@ -615,7 +580,6 @@ export async function handleRetryAndEscalation(
     handBack = handBackOf(outcome) ?? handBack;
     attemptSnapshot = outcome.attemptSnapshot ?? attemptSnapshot;
     blocked = outcome.blocked;
-    deviation = outcome.deviation;
     state = transitionAndSave(ctx, state, { type: 'COUNT_ATTEMPT', taskId: task.id });
     recordNoProgressCut(ctx, task, state, outcome.lastFailure);
     if (outcome.result) return { state, result: outcome.result };

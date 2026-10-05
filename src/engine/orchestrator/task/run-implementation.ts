@@ -12,12 +12,10 @@ import { withContinuationLoop } from '../continuation.js';
 import { gateChangedFiles, type GateChangedFilesDenial } from '../approval/gate-files.js';
 import { persistApiApplyEvidence, persistApprovalEvidence } from '../evidence/persistence.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
-import { taskInputFiles } from './stale-inputs.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import { inferTaskAcceptedChangedFiles } from '../changed-files-baseline.js';
 import { hashTaskBrief } from '../../brief-hash.js';
 import { isAbortError } from '../../../utils/abort.js';
-import { consultAttemptError } from '../escalation/consult-guidance.js';
 import { implementerSeatAttempt, runSeatCall } from '../escalation/seat-wait.js';
 import { addUsageAndSave } from '../state-ops.js';
 import { isResumableWorkspaceStop, retentionError } from '../isolation/retention.js';
@@ -67,8 +65,8 @@ export async function runImplementation(opts: {
   setTrackedState: (s: WorkflowState) => void;
   recordApprovalDenial: (decision: GateChangedFilesDenial, message: string) => void;
   streamingSink?: StreamingSink | undefined;
-  /** The stale refresh's instructions: the first attempt is framed as a retry carrying them. */
-  staleGuidance?: string | undefined;
+  /** The error text the first attempt carries when it starts as a retry. */
+  retryError?: string | undefined;
 }): Promise<RunImplementationResult> {
   const { wctx, task, setTrackedState } = opts;
   const { projectDir, sessionId, config, callbacks, context } = wctx;
@@ -190,22 +188,19 @@ export async function runImplementation(opts: {
         const produce = async (attemptSignal: AbortSignal): Promise<ImplementerResult> => {
           // A fix task already has its code on disk when the findings need none; its brief
           // carries the findings, and a no-change attempt completes instead of failing.
-          if (task.fix !== undefined) {
+          if (task.fix !== undefined && opts.retryError === undefined) {
             return wctx.implementer.implement({
               ...call,
               signal: attemptSignal,
               allowNoChange: true,
             });
           }
-          return opts.staleGuidance === undefined
+          return opts.retryError === undefined
             ? wctx.implementer.implement({ ...call, signal: attemptSignal })
             : wctx.implementer.retry({
                 ...call,
                 signal: attemptSignal,
-                error: consultAttemptError(
-                  `The task's inputs changed since the brief was compiled: ${taskInputFiles(task).join(', ')}`,
-                  opts.staleGuidance,
-                ),
+                error: opts.retryError,
                 attempt: 1,
                 kind: 'local',
               });

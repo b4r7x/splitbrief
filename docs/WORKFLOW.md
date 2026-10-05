@@ -148,13 +148,15 @@ These fire from any phase. They modify sub-state without changing `phase`.
 | `REWIND_TO_PLAN` | No producer; a dead reducer case that waits for deletion. Sets `phase: 'planning'`, clears `tasks`, resets `currentTaskIndex` and `attempt` to 0, clears `awaitingContinue`, sets `rewindPending: { target: 'plan', comment? }`. |
 | `REPLACE_TASK` | A consult's `rewrite-task` answer: replaces a task in place at the same id, keeps its criteria and `parentId`, sets `status: 'pending'`, raises `revision` by one and resets `attempt` to 0 |
 | `INSERT_TASKS` | A consult's `split-task` answer (with `parentId`): removes the parent from `state.tasks`, appends it to its lineage's `replacedParents`, inserts the subtasks at the parent's position with `parentId` set to the lineage root, re-points every pending `dependsOn` that named the parent to all subtasks and adjusts `currentTaskIndex`. With `parentId: null` the review triage's fix tasks are appended at the end, with no lineage change |
-| `RECORD_CONSULT` | Appends the answer to the task's lineage with its reason, action and diagnosis, raises the lineage's consult count, and remembers the revision a stale consult saw |
+| `RECORD_CONSULT` | Appends the answer to the task's lineage with its reason, action and diagnosis, raises the lineage's consult count (a decision-confirm, reason `deviation`, does not raise it), and remembers the revision a stale consult saw |
 | `RECORD_REVIEW` | Stores the typed review as `state.review`: its verdict, its derived outcome and the check runs behind its unverified claims |
 | `RECORD_TRIAGE` | Appends one triage record (`cycle`, inputs, result, and the verify checks run) to `state.triage` |
 | `QUEUE_TRIAGE` | Saves the user or Apply inputs as `state.pendingTriage`, which the review loop triages without running the review again |
 | `COUNT_ATTEMPT` | Raises the lineage's attempt count. Never reset by a split or a resume |
-| `COUNT_PLANNER_CALL` | Raises the run's planner-call count after planning; a stale consult does not spend one |
-| `GRANT_ALLOWANCE` | `continue` on a spent consult bound: +1 consult and +4 attempts for the lineage, or +5 planner calls for the run, with the operator's note recorded on the lineage |
+| `COUNT_PLANNER_CALL` | Raises the run's planner-call count after planning; a stale consult and a decision-confirm do not spend one |
+| `COUNT_DECISION_CONFIRM` | Raises the run's decision-confirm count (`state.decisionConfirms`, bounded at 20) |
+| `GRANT_ALLOWANCE` | `continue` on a spent consult bound: +1 consult and +4 attempts for the lineage, or +5 planner calls for the run, with the operator's note recorded on the lineage and the halt's last failing output recorded as the lineage's `carriedFailure` |
+| `CLEAR_CARRIED_FAILURE` | Drops the lineage's `carriedFailure` once the replayed attempt that carried it has returned |
 | `SET_TASK_INPUT_HASHES` | Records the current content hashes of a revision's suggested and context files, which the stale refresh compares before dispatch |
 | `RECORD_CHECK_RESULTS` | Merges a `verify` answer's check results into the task |
 | `SET_SEAT_WAIT` / `CLEAR_SEAT_WAIT` | Persists and releases the rate-limit reset deadline a seat is waiting for |
@@ -421,7 +423,9 @@ An operator park keeps partial workspace edits at the same attempt. A crash with
 
 When a task fails validation after its attempt and its one retry (`DEFAULT_LOCAL_RETRIES`), or its implementer reports `blocked`, or its recorded inputs moved since it was compiled, SPLITBRIEF consults the planner: one read-only typed call on the planner's own session (`requestConsult`, `src/engine/orchestrator/consult/request.ts`). The planner answers a `ConsultAnswer` (`src/core/schemas/consult.ts`) with exactly one action — `guidance`, `rewrite-task`, `split-task`, `verify` or `ask-user` — and the run acts on it: one more implementer attempt carrying the guidance in its error block, a replacement at the same id with `revision` raised by one, a split whose subtasks take the next free ids and share the lineage, a validation-and-checks run that can complete the task as `consulted`, or the one question the ladder asks the user. An answer that would drop a criterion becomes that question. The planner never writes the implementation, and a `blocked` report is answered by the planner, not by you. Each answer is one transcript row, `PLAN → T003: split into T011, T012 · <diagnosis>`. Planner questions about requirements still come to you.
 
-A lineage is bounded at 2 consults and 8 attempts, and the run at 10 planner calls after planning (`src/core/pipeline-spec/bounds.ts`). A spent bound halts with `consult-bound-spent` or `planner-calls-spent`, carrying the planner's last diagnosis; continuing it grants one more consult and four more attempts, or five more planner calls. A stale consult spends no planner call and runs once per revision.
+A hand-back that reports `decisions` is not a consult. Before its attempt is validated, the planner confirms the decisions the ledger does not hold yet for that task, in one cheap call (the *decision-confirm*): `confirm` adds the changes of how to the plan's decisions ledger, and `ask-user` puts a change of what to you, after which the next attempt carries your answer. A retry that reports the same decisions again is not asked about twice. After the confirm, validation runs, and a red result takes the normal ladder: one retry with the exact errors, then a consult. A decision-confirm spends its own run counter (20), not a lineage consult and not a planner call. Its transcript row reads `PLAN confirmed 2 decisions for T004`.
+
+A lineage is bounded at 2 consults and 8 attempts, and the run at 10 planner calls after planning (`src/core/pipeline-spec/bounds.ts`). A spent bound halts with `consult-bound-spent` or `planner-calls-spent`, carrying the planner's last diagnosis; continuing it grants one more consult and four more attempts, or five more planner calls, and replays the brief as a retry that carries the halt's last failing output. A stale consult spends no planner call and runs once per revision.
 
 Seat trouble is bounded before a halt: a transient failure on a seat call retries up to 3 times with backoff, and a reported rate-limit reset no more than 10 minutes away is waited for, its deadline persisted as `state.seatWait` (`src/engine/orchestrator/escalation/seat-wait.ts`). A longer or unreported reset halts as `runner-usage-limit` with the seat picker; there is no automatic seat switch. The idle watchdog cuts a call that emitted nothing for 20 minutes and has no running child process; the cut counts as one attempt and the ladder continues.
 
@@ -501,10 +505,15 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
       The recorded input hashes are compared with the workspace; a task whose
       inputs moved is consulted once for this revision (reason stale) first.
       implementer.implement(taskPrompt) → code written to disk
+      (a brief replayed by continue starts as implementer.retry carrying the
+      last failing output)
       Every writer uses the run workspace selected by `workflow.isolation`.
       The protected gate checks changed files there before validation.
       (worktree by default; see CONFIGURATION.md §5)
       A write to a protected path asks, unless the approved plan listed it.
+      A hand-back that reports new decisions gets one decision-confirm first:
+        confirm → the decisions join the ledger → validation
+        ask-user → one question; the next attempt carries the answer
       implementing → TASK_SENT → validating-task
       typecheck → lint → tests (stops at the first failure attributable to the task)
         pass → VALIDATION_PASS → implementing (next task)

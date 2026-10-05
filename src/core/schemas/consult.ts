@@ -89,12 +89,7 @@ export const StaleConsultAnswerSchema = z.object({
 });
 
 export const DeviationConsultAnswerSchema = z.object({
-  answer: z.discriminatedUnion('action', [
-    GuidanceActionSchema,
-    RewriteTaskActionSchema,
-    AskUserActionSchema,
-    ConfirmActionSchema,
-  ]),
+  answer: z.discriminatedUnion('action', [ConfirmActionSchema, AskUserActionSchema]),
 });
 
 export const ImplementerReportSchema = z.discriminatedUnion('status', [

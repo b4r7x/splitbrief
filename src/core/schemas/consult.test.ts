@@ -100,12 +100,12 @@ describe('DeviationConsultAnswerSchema', () => {
     decisions: [{ what: 'Used node:crypto', why: 'The dependency is standard' }],
   });
 
-  it('takes confirm, guidance, rewrite-task and ask-user but not split-task or verify', () => {
+  it('takes only confirm and ask-user', () => {
     expect(takes(confirm)).toBe(true);
     expect(takes(answer({ action: 'guidance', instructions: 'Narrow it', context: null }))).toBe(
-      true,
+      false,
     );
-    expect(takes(answer({ action: 'rewrite-task', task: makeTaskSpec() }))).toBe(true);
+    expect(takes(answer({ action: 'rewrite-task', task: makeTaskSpec() }))).toBe(false);
     expect(
       takes(
         answer({
