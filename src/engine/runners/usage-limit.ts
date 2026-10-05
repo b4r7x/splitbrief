@@ -7,7 +7,9 @@ import type { RunnerCallWarning } from '../calls/types.js';
  * Diagnostics a runner emits when its account ran out of usage — plan quota,
  * rate limit, or credit balance. Matched only against failure diagnostics
  * (`RunnerCallResult.error.message` and typed provider error data), never
- * against task output. Logging out and back in does not fix any of these, so
+ * against task output. "Insufficient balance", "payment required", "http 402",
+ * "status 402", and '"status":402' are diagnostic-only because the stdout tail
+ * carries test logs. Logging out and back in does not fix any of these, so
  * they must never be classified as auth failures.
  *
  * Codex phrases were captured live from `codex exec --json` (2026-08-06):
@@ -32,6 +34,8 @@ import type { RunnerCallWarning } from '../calls/types.js';
  * subscription to increase your limits. Resets in 2h6m30s." (captured live
  * 2026-09-21) — once beside exit 0 with "(response may be truncated)" appended,
  * then beside exit 3; the Gemini API body behind it says `RESOURCE_EXHAUSTED`.
+ * DeepSeek through opencode reports `provider.quota: Insufficient Balance`
+ * (captured live 2026-10-05).
  */
 const USAGE_LIMIT_STRONG_PATTERNS: readonly RegExp[] = [
   /you'?ve (?:hit|reached) your[^.!\n]{0,40}\blimit\b/,
@@ -39,6 +43,13 @@ const USAGE_LIMIT_STRONG_PATTERNS: readonly RegExp[] = [
   /rate_limit_error/,
   /api\s+error.*\b429\b/,
   /request rejected.*\(?\s*429\s*\)?/,
+  /insufficient balance/,
+  /payment required/,
+  /(?:http |status |"status":)402\b/,
+  /billing[_ ]hard[_ ]limit/,
+  /billing[_ ]not[_ ]active/,
+  /requires more credits/,
+  /out of credits/,
 ];
 
 const USAGE_LIMIT_WEAK_429 = /\b429\b/;
@@ -320,7 +331,7 @@ export function parseUsageLimitReset(
  * error instead of a failed call result — the API-runner path. Prefers the
  * nested runner-call error, then the raw HTTP detail (`stream-http-status`
  * keeps it under `data.detail` while its top-level message is a rewritten
- * hint), then the error message. A bare 429 status counts as a limit even
+ * hint), then the error message. A bare 402 or 429 status counts as a limit even
  * when the body text matches no known phrase.
  */
 export function usageLimitDetailFromError(err: unknown): string | null {
@@ -334,7 +345,7 @@ export function usageLimitDetailFromError(err: unknown): string | null {
   if (matched !== undefined) return matched;
   const status = data?.status ?? data?.statusCode;
   const message = typeof err.message === 'string' ? err.message : undefined;
-  if (status === 429) return raw[0] ?? message ?? 'HTTP 429';
+  if (status === 402 || status === 429) return raw[0] ?? message ?? `HTTP ${status}`;
   if (message !== undefined && isUsageLimitDiagnostic(message)) return raw[0] ?? message;
   return null;
 }

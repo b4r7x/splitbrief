@@ -71,6 +71,11 @@ export async function handleFailedImplementation(opts: {
   // with the login command instead.
   if (implState.implResult.outcome === 'unauthenticated') {
     const toolMessage = implState.implResult.error ?? 'The runner rejected its stored credentials';
+    const seatSwap = await loadSeatSwapContext({
+      projectDir: wctx.projectDir,
+      seat: 'build',
+      runner: wctx.config.implementer,
+    });
     const issue = buildRunnerUnauthenticatedRecoveryIssue({
       task,
       phase: state.phase,
@@ -81,6 +86,7 @@ export async function handleFailedImplementation(opts: {
       ...(wctx.implementerProfile !== undefined && {
         selectedImplementerProfile: wctx.implementerProfile,
       }),
+      ...(seatSwap !== undefined && { seatSwap }),
       createdAt: nowIso(),
     });
     publishError({

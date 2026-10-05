@@ -30,6 +30,8 @@ import type { HooksConfig } from '../../../core/schemas/hooks.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
 import { formatRecoveryHeadline } from '../../../core/recovery/headline.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
+import { runnerCallOutcome } from '../../implementers/pipeline/call-result.js';
+import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 
 // The consult attempts acquire from the run isolation handle; on the copying
 // strategy under parallel full-suite load that staged-copy IO can push these
@@ -457,6 +459,105 @@ describe('handleRetryAndEscalation', () => {
     expect(busEvents.find((e) => e.type === 'recovery_prompted')).toMatchObject({
       reason: 'implementer-recipe-invalid',
     });
+  });
+
+  it('a retry refused for a spent provider balance halts on the seat without a consult', async () => {
+    // Recorded on 2026-10-05: opencode with `deepseek/deepseek-flash` on a spent DeepSeek account.
+    const balance =
+      'provider.quota: Insufficient Balance (request_id: 021cfcdf-894e-4f9c-8e1b-85ac99f6a0fe)';
+    const outcome = runnerCallOutcome(
+      makeRunnerCallResult({
+        status: 'failed',
+        text: '',
+        error: { code: 'opencode-error', message: balance },
+        backendKind: 'cli',
+      }),
+    );
+    const { projectDir, sessionId } = setupProject();
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+    const { planner, prompts } = consultPlanner([]);
+    const implementer = makeImplementer({
+      retry: vi.fn().mockResolvedValue({
+        success: false,
+        output: '',
+        error: balance,
+        ...(outcome.state !== 'success' && { outcome: outcome.state }),
+      }),
+    });
+
+    const { result, state } = await handleRetryAndEscalation({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig(),
+        planner,
+        callbacks,
+        implementer,
+        bus,
+      }),
+      task: makeTask(),
+      initialError: 'type error',
+      currentState: makeValidatingState(),
+    });
+
+    expect(result.completed).toBe(false);
+    expect(implementer.retry).toHaveBeenCalledTimes(1);
+    expect(prompts).toEqual([]);
+    expect(events.filter((e) => e.type === 'task_escalating')).toEqual([]);
+    expect(events.filter((e) => e.type === 'consult_answered')).toEqual([]);
+    expect(state.pendingRecovery).toMatchObject({ reason: 'runner-usage-limit', taskId: 'T001' });
+    expect(state.pendingRecovery?.details.join('\n')).toContain(balance);
+  });
+
+  it('a retry refused as signed out halts with the seat switch beside the login, without a consult', async () => {
+    const { projectDir, sessionId } = setupProject();
+    await rememberDetectedTools(projectDir, cliDetectionsFor('ready', ['opencode', 'claude-code']));
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+    const { planner, prompts } = consultPlanner([]);
+    const implementer = makeImplementer({
+      retry: vi.fn().mockResolvedValue({
+        success: false,
+        output: '',
+        error: 'HTTP 403 Forbidden',
+        outcome: 'unauthenticated',
+      }),
+    });
+
+    const { result, state } = await handleRetryAndEscalation({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({
+          implementer: { kind: 'cli', tool: 'opencode', model: 'deepseek/deepseek-flash' },
+        }),
+        planner,
+        callbacks,
+        implementer,
+        bus,
+      }),
+      task: makeTask(),
+      initialError: 'type error',
+      currentState: makeValidatingState(),
+    });
+
+    expect(result.completed).toBe(false);
+    expect(implementer.retry).toHaveBeenCalledTimes(1);
+    expect(prompts).toEqual([]);
+    expect(events.filter((e) => e.type === 'consult_answered')).toEqual([]);
+    expect(state.pendingRecovery).toMatchObject({
+      reason: 'runner-unauthenticated',
+      recommendedAction: 'retry-same-worker',
+      switchSeat: { seat: 'build', candidates: [{ tool: 'claude-code' }] },
+    });
+    expect(state.pendingRecovery?.availableActions).toEqual([
+      'retry-same-worker',
+      'switch-seat',
+      'skip-current-task',
+      'pause-run',
+      'end-run',
+    ]);
   });
 
   it('pre_escalation deny stops before the consult, attributing retry-exhausted to the hook', async () => {

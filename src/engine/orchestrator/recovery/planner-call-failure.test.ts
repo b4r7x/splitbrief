@@ -121,4 +121,19 @@ describe('diagnosePlannerCallFailure on an API seat', () => {
       expect(diagnosis.message).not.toContain('switch the seat');
     },
   );
+
+  it.each([
+    [402, '{"error":{"message":"Account on hold"}}', 'usage-limit'],
+    [403, 'Access denied', 'unauthenticated'],
+  ] as const)('halts a thrown %i on the seat with the provider words', (status, body, failure) => {
+    const diagnosis = diagnosePlannerCallFailure({
+      err: streamError.httpStatus('deepseek', status, body),
+      label: 'Planning failed',
+      runner: apiSeat,
+      seat: 'plan',
+    });
+
+    expect(diagnosis.failure).toBe(failure);
+    expect(diagnosis.message).toContain(body);
+  });
 });

@@ -344,4 +344,28 @@ describe('runnerCallOutcome — usage-limit classification', () => {
       );
     }
   });
+
+  it('classifies a thrown provider 403 as unauthenticated and keeps the raw detail', async () => {
+    const { streamError } = await import('../../streaming/stream-errors.js');
+    const invoke = vi
+      .fn()
+      .mockRejectedValue(streamError.httpStatus('deepseek', 403, 'Access denied'));
+    const implementer = createImplementerBase(
+      makeBaseConfig({ extractsCode: false, backendKind: 'api', invoke }),
+    );
+
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.outcome).toBe('unauthenticated');
+      expect(result.error).toBe('Access denied');
+    }
+  });
 });

@@ -83,14 +83,19 @@ function handBackOf(outcome: RetryStepOutcome): string | undefined {
  * call on a brief no retry can land until the login is fixed. Raise the login
  * recovery and stop.
  */
-function unauthenticatedHalt(
+async function unauthenticatedHalt(
   ctx: EscalationContext,
   task: Task,
   stepOutcome: RetryStepOutcome,
-): { state: WorkflowState; result: RetryResult } | null {
+): Promise<{ state: WorkflowState; result: RetryResult } | null> {
   const failure = stepOutcome.lastFailure;
   if (failure?.outcome !== 'unauthenticated') return null;
   const failingProfile = ctx.retryProfileOverride ?? ctx.implementerProfile;
+  const seatSwap = await loadSeatSwapContext({
+    projectDir: ctx.projectDir,
+    seat: 'build',
+    runner: failure.runner,
+  });
   const issue = buildRunnerUnauthenticatedRecoveryIssue({
     task,
     phase: stepOutcome.state.phase,
@@ -99,6 +104,7 @@ function unauthenticatedHalt(
     attempts: stepOutcome.attempts,
     maxAttempts: DEFAULT_LOCAL_RETRIES,
     ...(failingProfile !== undefined && { selectedImplementerProfile: failingProfile }),
+    ...(seatSwap !== undefined && { seatSwap }),
     createdAt: nowIso(),
   });
   publishError({
@@ -197,7 +203,7 @@ async function runnerHalt(
   task: Task,
   stepOutcome: RetryStepOutcome,
 ): Promise<{ state: WorkflowState; result: RetryResult } | null> {
-  const unauthenticated = unauthenticatedHalt(ctx, task, stepOutcome);
+  const unauthenticated = await unauthenticatedHalt(ctx, task, stepOutcome);
   if (unauthenticated) return unauthenticated;
   const defect = await runnerDefectHalt(ctx, task, stepOutcome);
   if (defect) return defect;

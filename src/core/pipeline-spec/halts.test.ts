@@ -10,6 +10,18 @@ describe('classifyHaltSignature', () => {
     expect(classifyHaltSignature(['{"type":"progress","code":401,"tokens":429}'])).toBeNull();
   });
 
+  // A failed run's stdout tail carries the gate output the implementer read; a test log that
+  // names a billing or a forbidden status is no halt.
+  it.each([
+    'FAIL src/payments.test.ts > rejects an order with insufficient balance',
+    'FAIL src/billing.test.ts > answers 402 Payment Required',
+    'AssertionError: expected status 402 to be 200',
+    'FAIL src/access.test.ts > HTTP 403 for a guest',
+    'AssertionError: expected status 403 to be 200',
+  ])('a test log line %j in the tail is not a halt', (line) => {
+    expect(classifyHaltSignature(['running tests…', line])).toBeNull();
+  });
+
   it('classifies usage, missing-model and spawn phrases', () => {
     expect(classifyHaltSignature(['Error: quota exceeded'])).toBe('usage');
     // Captured live from `agy -p` (antigravity 1.2.7) on 2026-09-21.

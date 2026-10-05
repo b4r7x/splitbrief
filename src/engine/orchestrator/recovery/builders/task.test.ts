@@ -15,6 +15,7 @@ import {
   buildRepeatedTimeoutRecoveryIssue,
   buildRetryExhaustedRecoveryIssue,
   buildReviewFailedRecoveryIssue,
+  buildRunnerUnauthenticatedRecoveryIssue,
   buildRunnerUsageLimitRecoveryIssue,
   buildSnapshotFailedRecoveryIssue,
   recoveryBuilderForRunnerOutcome,
@@ -311,6 +312,92 @@ describe('buildRunnerUsageLimitRecoveryIssue', () => {
     expect(issue.switchSeat).toBeUndefined();
     expect(issue.availableActions).not.toContain('switch-seat');
     expectValidRecoveryIssue(issue);
+  });
+});
+
+describe('a seat whose account the provider refuses', () => {
+  // Recorded on 2026-10-05: opencode on a spent DeepSeek account.
+  const balance =
+    'provider.quota: Insufficient Balance (request_id: 021cfcdf-894e-4f9c-8e1b-85ac99f6a0fe)';
+  const runner = makeConfig({
+    implementer: { kind: 'cli', tool: 'opencode', model: 'deepseek/deepseek-flash' },
+  }).implementer;
+  const seatSwap = {
+    seat: 'build' as const,
+    currentTool: 'opencode',
+    detectedTools: [
+      { tool: 'opencode', ready: true },
+      { tool: 'claude-code', model: 'sonnet', ready: true },
+    ],
+  };
+
+  it('halts on the spent balance with the seat switch recommended and the provider words kept', () => {
+    const issue = buildRunnerUsageLimitRecoveryIssue({
+      task: makeTask({ id: 'T001' }),
+      runner,
+      toolMessage: balance,
+      attempts: 1,
+      maxAttempts: 1,
+      seatSwap,
+      createdAt,
+    });
+
+    expect(issue.reason).toBe('runner-usage-limit');
+    expect(issue.resetAt).toBeUndefined();
+    expect(issue.recommendedAction).toBe('switch-seat');
+    expect(issue.availableActions).toEqual([
+      'retry-same-worker',
+      'switch-seat',
+      'skip-current-task',
+      'pause-run',
+      'end-run',
+    ]);
+    expect(issue.switchSeat).toEqual({
+      seat: 'build',
+      candidates: [{ tool: 'claude-code', model: 'sonnet' }],
+    });
+    expect(issue.details).toContain(`OpenCode CLI reported: ${balance}`);
+    expectValidRecoveryIssue(issue);
+  });
+
+  it('offers the seat switch beside the login when the account is signed out', () => {
+    const issue = buildRunnerUnauthenticatedRecoveryIssue({
+      task: makeTask({ id: 'T001' }),
+      runner,
+      toolMessage: 'HTTP 403 Forbidden',
+      attempts: 1,
+      maxAttempts: 1,
+      seatSwap,
+      createdAt,
+    });
+
+    expect(issue.reason).toBe('runner-unauthenticated');
+    expect(issue.availableActions).toEqual([
+      'retry-same-worker',
+      'switch-seat',
+      'skip-current-task',
+      'pause-run',
+      'end-run',
+    ]);
+    expect(issue.switchSeat).toEqual({
+      seat: 'build',
+      candidates: [{ tool: 'claude-code', model: 'sonnet' }],
+    });
+    expect(issue.details).toContain('OpenCode CLI reported: HTTP 403 Forbidden');
+    expectValidRecoveryIssue(issue);
+  });
+
+  it('offers no bigger worker to a signed-out seat: a login is the fix, not a bigger profile', () => {
+    const issue = buildRunnerUnauthenticatedRecoveryIssue({
+      task: makeTask({ id: 'T001' }),
+      runner,
+      toolMessage: 'HTTP 403 Forbidden',
+      routeBiggerProfile: 'cloud-big',
+      createdAt,
+    });
+
+    expect(issue.availableActions).not.toContain('route-bigger-worker');
+    expect(issue.recommendedAction).toBe('retry-same-worker');
   });
 });
 

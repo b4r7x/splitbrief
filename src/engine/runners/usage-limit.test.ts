@@ -414,3 +414,46 @@ describe("every tool's captured limit line classifies usage-limit", () => {
     expect(isAuthFailureDiagnostic(line)).toBe(false);
   });
 });
+
+// Recorded on 2026-10-05 (run 2026-10-05-s6-central-checks-and-renders-plus-the-carried-in--2,
+// `runner_call_error` of implementer-1): opencode with `deepseek/deepseek-flash` on a spent
+// DeepSeek account. The run retried it once and consulted the planner on it.
+const OPENCODE_DEEPSEEK_BALANCE =
+  'provider.quota: Insufficient Balance (request_id: 021cfcdf-894e-4f9c-8e1b-85ac99f6a0fe)';
+
+describe('an account the provider will not bill is a seat-down limit', () => {
+  it('classifies the recorded opencode balance refusal as usage-limit with no reset to wait for', () => {
+    expect(isUsageLimitDiagnostic(OPENCODE_DEEPSEEK_BALANCE)).toBe(true);
+    expect(isAuthFailureDiagnostic(OPENCODE_DEEPSEEK_BALANCE)).toBe(false);
+    expect(parseUsageLimitReset(OPENCODE_DEEPSEEK_BALANCE)).toBeNull();
+    const outcome = runnerCallOutcome(
+      makeRunnerCallResult({
+        status: 'failed',
+        text: '',
+        error: { code: 'opencode-error', message: OPENCODE_DEEPSEEK_BALANCE },
+        backendKind: 'cli',
+      }),
+    );
+    expect(outcome.state).toBe('usage-limit');
+  });
+
+  it.each([
+    'Insufficient Balance',
+    '402 Payment Required',
+    'HTTP 402: account suspended',
+    'unexpected status 402',
+    '{"error":{"message":"account suspended"},"status":402}',
+    'Error code: 429 - insufficient_quota',
+    'billing_hard_limit_reached: You have reached your billing hard limit.',
+    'billing_not_active: Your account is not active, please check your billing details.',
+    'This request requires more credits, or fewer max_tokens.',
+  ])('classifies %j as usage-limit, not auth', (message) => {
+    expect(isUsageLimitDiagnostic(message)).toBe(true);
+    expect(isAuthFailureDiagnostic(message)).toBe(false);
+  });
+
+  it('reads a thrown provider 402 as a limit even when its body names no known phrase', () => {
+    const err = streamError.httpStatus('deepseek', 402, '{"error":{"message":"Account on hold"}}');
+    expect(usageLimitDetailFromError(err)).toBe('{"error":{"message":"Account on hold"}}');
+  });
+});

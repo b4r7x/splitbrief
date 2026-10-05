@@ -247,12 +247,11 @@ export function buildRunnerUnauthenticatedRecoveryIssue(
   const phase = opts.phase ?? 'implementing';
   const displayName = runnerAuthDisplayName(opts.runner);
   const instruction = runnerLoginInstruction(opts.runner);
-  const actions = orderedActions([
-    'retry-same-worker',
-    'skip-current-task',
-    'pause-run',
-    'end-run',
-  ]);
+  const seatSwap = switchSeatOffer(opts.seatSwap);
+  const actions = availableActionsForReason('runner-unauthenticated', {
+    switchSeat: seatSwap !== undefined,
+    routeBigger: false,
+  });
 
   return createRecoveryIssue({
     id: opts.id,
@@ -272,6 +271,7 @@ export function buildRunnerUnauthenticatedRecoveryIssue(
     ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
     ...(opts.maxAttempts !== undefined ? { maxAttempts: opts.maxAttempts } : {}),
     selectedImplementerProfile: opts.selectedImplementerProfile,
+    ...(seatSwap !== undefined && { switchSeat: seatSwap }),
     facts: compactFacts({
       tool: displayName,
       loginInstruction: instruction,

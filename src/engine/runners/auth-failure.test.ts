@@ -118,3 +118,15 @@ describe('runnerAuthDisplayName', () => {
     );
   });
 });
+
+describe('isAuthFailureDiagnostic — an account the provider refuses', () => {
+  it.each([
+    'HTTP 403 Forbidden',
+    'unexpected status 403: access denied',
+    '{"error":{"message":"denied"},"status":403}',
+    'Error: unauthenticated',
+    'Please sign in to continue.',
+  ])('classifies %j as an auth failure', (message) => {
+    expect(isAuthFailureDiagnostic(message)).toBe(true);
+  });
+});

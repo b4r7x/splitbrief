@@ -52,10 +52,13 @@ import {
 } from './call-result.js';
 import { processImplementerOutput, readTaskFileContent } from './extracted-code.js';
 import { usageLimitDetailFromError } from '../../runners/usage-limit.js';
-import { isAuthFailureDiagnostic, runnerAuthDisplayName } from '../../runners/auth-failure.js';
+import {
+  isAuthFailureDiagnostic,
+  isAuthFailureError,
+  runnerAuthDisplayName,
+} from '../../runners/auth-failure.js';
 import { extractLastJsonObject } from '../../runners/typed-output.js';
 import { ImplementerReportSchema, type ImplementerReport } from '../../../core/schemas/consult.js';
-import { isRecord } from '../../../utils/type-guards.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import {
   checkoutChanges,
@@ -551,8 +554,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         return { success: false, output, error: limitDetail, outcome: 'usage-limit' };
       }
       const classification = typedRunnerCallErrorMessage(err) ?? toErrorMessage(err);
-      const status = isRecord(err) && isRecord(err.data) ? err.data.status : undefined;
-      if (status === 401 || isAuthFailureDiagnostic(classification)) {
+      if (isAuthFailureError(err) || isAuthFailureDiagnostic(classification)) {
         return {
           success: false,
           output,

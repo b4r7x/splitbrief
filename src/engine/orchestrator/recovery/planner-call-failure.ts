@@ -6,6 +6,7 @@ import {
 } from '../../implementers/pipeline/call-result.js';
 import {
   isAuthFailureDiagnostic,
+  isAuthFailureError,
   runnerAuthDisplayName,
   runnerLoginInstruction,
 } from '../../runners/auth-failure.js';
@@ -91,7 +92,7 @@ export function diagnosePlannerCallFailure(
       resetsAt,
     };
   }
-  if (isAuthFailureDiagnostic(typed ?? message)) {
+  if (isAuthFailureError(err) || isAuthFailureDiagnostic(typed ?? message)) {
     return {
       failure: 'unauthenticated',
       message: `${endSentence(advised)} ${runnerLoginInstruction(runner)}`,
