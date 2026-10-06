@@ -64,6 +64,8 @@ type HandleRetryOptions = {
   initialFailure?: RetryAttemptFailure | undefined;
   /** The first attempt's blocked report, when it stopped asking for a decision. */
   initialBlocked?: BlockedReport | undefined;
+  /** The user's answer to a change of what the first attempt reported. */
+  initialAnswer?: string | undefined;
 };
 
 /** A consult-run verify already committed the task; the run records a plain accepted completion. */
@@ -297,9 +299,12 @@ function consultBoundHalt(
  * The ladder: one local rung with the exact errors, then the consult loop. A
  * guidance, ask-user or confirm answer spends one more implementer attempt with
  * the planner's instructions in its error block; a rewrite or a split replaces
- * the brief and hands back to the task loop; verify completes in place. Every
- * consult and attempt is counted against the lineage and the run's planner
- * calls, and a spent bound halts for the operator's grant.
+ * the brief and hands back to the task loop; verify completes in place. The
+ * user's answer to a change of what an attempt reported is delivered by the
+ * next attempt, with no retry rung and no consult. Every consult and attempt
+ * is counted against the lineage and the run's planner calls, and a spent
+ * bound halts for the operator's grant quoting the diagnosis of the failure
+ * that raised it.
  */
 export async function handleRetryAndEscalation(
   opts: HandleRetryOptions,
@@ -337,6 +342,7 @@ export async function handleRetryAndEscalation(
   let blocked: BlockedReport | undefined = opts.initialBlocked;
   let attemptSnapshot: ChangedFilesSnapshot = taskStartSnapshot;
   let lastDiagnosis = initialError;
+  let answer: string | undefined;
 
   if (ctx.signal?.aborted) return { state, result: failedRetry(attempts) };
 
@@ -349,10 +355,12 @@ export async function handleRetryAndEscalation(
       state,
       lastError,
       ...(opts.initialFailure !== undefined && { initialFailure: opts.initialFailure }),
+      ...(opts.initialAnswer !== undefined && { answer: opts.initialAnswer }),
     });
     state = retries.state;
     task = retries.task;
     lastError = retries.lastError;
+    lastDiagnosis = lastError;
     attempts = retries.attempts;
     handBack = handBackOf(retries) ?? handBack;
     attemptSnapshot = retries.attemptSnapshot ?? attemptSnapshot;
@@ -409,8 +417,77 @@ export async function handleRetryAndEscalation(
     taskId: task.id,
   });
 
+  const attempt = async (
+    attemptError: string,
+  ): Promise<{ state: WorkflowState; result: RetryResult } | null> => {
+    if (ctx.signal?.aborted) return { state, result: failedRetry(attempts) };
+    const spentBeforeAttempt = attemptBoundSpent(state, task);
+    if (spentBeforeAttempt !== undefined) {
+      return consultBoundHalt(
+        ctx,
+        task,
+        state,
+        lastDiagnosis,
+        lastError,
+        attempts,
+        handBack,
+        spentBeforeAttempt,
+      );
+    }
+
+    const nextAttempts = attempts + 1;
+    const outcome = await runRetryStep({
+      ctx,
+      task,
+      state,
+      lastError: attemptError,
+      attempts: nextAttempts,
+      method: 'consulted',
+      transitionType: 'VALIDATION_PASS',
+      commitSuffix: 'after consult',
+      usageCategory: 'implementer',
+      retryFailureFallback: 'Consult-guided retry failed to produce valid code',
+      profileOverride: ctx.retryProfileOverride,
+      invokeRetry: makeImplementerRetryInvoker({
+        context: ctx.context,
+        kind: 'consult',
+        sessionId: ctx.sessionId,
+        languageContext: buildProjectLanguageContext(
+          ctx.projectDir,
+          state.discoveredValidation?.language,
+        ),
+        phase: state.phase,
+        onOutput: createBusTextHandler(
+          { bus: ctx.bus, phase: state.phase },
+          { role: 'implementer' },
+        ),
+      }),
+    });
+    state = outcome.state;
+    task = outcome.task;
+    lastError = outcome.lastError;
+    attempts = outcome.attempts;
+    handBack = handBackOf(outcome) ?? handBack;
+    attemptSnapshot = outcome.attemptSnapshot ?? attemptSnapshot;
+    blocked = outcome.blocked;
+    answer = outcome.answer;
+    lastDiagnosis = lastError;
+    state = transitionAndSave(ctx, state, { type: 'COUNT_ATTEMPT', taskId: task.id });
+    recordNoProgressCut(ctx, task, state, outcome.lastFailure);
+    if (outcome.result) return { state, result: outcome.result };
+    if (ctx.signal?.aborted) return { state, result: failedRetry(attempts) };
+    return runnerHalt(ctx, outcome.task, outcome);
+  };
+
   for (;;) {
     if (ctx.signal?.aborted) return { state, result: failedRetry(attempts) };
+
+    // The user's answer is not a consult: the next attempt delivers it.
+    if (answer !== undefined) {
+      const halted = await attempt(answer);
+      if (halted) return halted;
+      continue;
+    }
 
     const spent = consultBoundSpent(state, task);
     if (spent !== undefined) {
@@ -551,61 +628,7 @@ export async function handleRetryAndEscalation(
           : `The planner confirmed the reported decisions:\n${applied.decisions
               .map((decision) => `- ${decision.what} — ${decision.why}`)
               .join('\n')}`;
-    if (ctx.signal?.aborted) return { state, result: failedRetry(attempts) };
-    const spentBeforeAttempt = attemptBoundSpent(state, task);
-    if (spentBeforeAttempt !== undefined) {
-      return consultBoundHalt(
-        ctx,
-        task,
-        state,
-        lastDiagnosis,
-        lastError,
-        attempts,
-        handBack,
-        spentBeforeAttempt,
-      );
-    }
-
-    const nextAttempts = attempts + 1;
-    const outcome = await runRetryStep({
-      ctx,
-      task,
-      state,
-      lastError: consultAttemptError(lastError, instructions),
-      attempts: nextAttempts,
-      method: 'consulted',
-      transitionType: 'VALIDATION_PASS',
-      commitSuffix: 'after consult',
-      usageCategory: 'implementer',
-      retryFailureFallback: 'Consult-guided retry failed to produce valid code',
-      profileOverride: ctx.retryProfileOverride,
-      invokeRetry: makeImplementerRetryInvoker({
-        context: ctx.context,
-        kind: 'consult',
-        sessionId: ctx.sessionId,
-        languageContext: buildProjectLanguageContext(
-          ctx.projectDir,
-          state.discoveredValidation?.language,
-        ),
-        phase: state.phase,
-        onOutput: createBusTextHandler(
-          { bus: ctx.bus, phase: state.phase },
-          { role: 'implementer' },
-        ),
-      }),
-    });
-    state = outcome.state;
-    task = outcome.task;
-    lastError = outcome.lastError;
-    attempts = outcome.attempts;
-    handBack = handBackOf(outcome) ?? handBack;
-    attemptSnapshot = outcome.attemptSnapshot ?? attemptSnapshot;
-    blocked = outcome.blocked;
-    state = transitionAndSave(ctx, state, { type: 'COUNT_ATTEMPT', taskId: task.id });
-    recordNoProgressCut(ctx, task, state, outcome.lastFailure);
-    if (outcome.result) return { state, result: outcome.result };
-    if (ctx.signal?.aborted) return { state, result: failedRetry(attempts) };
-    const attemptHalt = await runnerHalt(ctx, outcome.task, outcome);
-    if (attemptHalt) return attemptHalt;
+    const halted = await attempt(consultAttemptError(lastError, instructions));
+    if (halted) return halted;
   }
 }

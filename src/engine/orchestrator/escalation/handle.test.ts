@@ -191,7 +191,10 @@ describe('handleRetryAndEscalation', () => {
       taskId: 'T001',
       availableActions: ['continue', 'skip-current-task', 'end-run'],
     });
-    expect(state.pendingRecovery?.facts?.lastDiagnosis).toBe('Second diagnosis');
+    // The halt was raised by the attempt after the second consult; no consult diagnosed that
+    // failure, so the panel quotes its own error, not the second consult's diagnosis.
+    expect(state.pendingRecovery?.facts?.lastDiagnosis).toBe('still broken');
+    expect(state.pendingRecovery?.details?.[0]).toBe('Last diagnosis: still broken');
     expect(formatRecoveryHeadline(state.pendingRecovery!)).toBe('T001 used its consult allowance');
   });
 

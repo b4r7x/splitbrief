@@ -27,9 +27,13 @@ export type BlockedReport = Extract<ImplementerReport, { status: 'blocked' }>;
 /** The direct writer's reported deviation: a done report proposing ledger decisions. */
 type DeviationReport = Extract<ImplementerReport, { status: 'done' }>;
 
-/** A retry outcome, with the blocked report an attempt handed back when it stopped to ask. */
+/**
+ * A retry outcome, with the blocked report an attempt handed back when it
+ * stopped to ask, or the user's answer to a change of what it reported.
+ */
 export type RetryStepResult = RetryStepOutcome & {
   blocked?: BlockedReport | undefined;
+  answer?: string | undefined;
 };
 
 /**
@@ -263,6 +267,9 @@ async function runRetryStepAttempt(
     changedFiles: actualChangedFiles,
   });
   state = confirmed.state;
+  if (confirmed.kind === 'answer') {
+    return { state, task, lastError: confirmed.answer, attempts, answer: confirmed.answer };
+  }
   if (confirmed.kind === 'retry') return { state, task, lastError: confirmed.error, attempts };
   const commitResult = await validateAndCommit({
     ctx: retryCtx,

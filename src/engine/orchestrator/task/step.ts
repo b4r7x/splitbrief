@@ -492,14 +492,15 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     });
   }
   state = confirmed.state;
-  if (confirmed.kind === 'retry') {
+  if (confirmed.kind !== 'validate') {
     const consulted = await retryAndRecord({
       wctx,
       task,
       state,
       taskStartTime,
       taskStartSnapshot,
-      initialError: confirmed.error,
+      initialError: confirmed.kind === 'answer' ? confirmed.answer : confirmed.error,
+      ...(confirmed.kind === 'answer' && { initialAnswer: confirmed.answer }),
       initialChangedFiles: taskChangedFiles,
       tokensBefore,
       taskBreakdowns,

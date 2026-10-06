@@ -12,9 +12,14 @@ import { formatMessage } from '../queue/prompt.js';
 
 type DecisionConfirmOutcome =
   | { kind: 'validate'; state: WorkflowState }
-  | { kind: 'retry'; state: WorkflowState; error: string };
+  | { kind: 'retry'; state: WorkflowState; error: string }
+  | { kind: 'answer'; state: WorkflowState; answer: string };
 
-/** Confirms an attempt's new decisions before validation, or carries the user's answer into a retry. */
+/**
+ * Confirms an attempt's new decisions before validation. A change of what the
+ * user answered returns the answer for the next attempt to deliver; a question
+ * left unanswered returns a failure to retry.
+ */
 export async function confirmAttemptDecisions(opts: {
   wctx: WorkflowContext;
   task: Task;
@@ -86,9 +91,9 @@ export async function confirmAttemptDecisions(opts: {
   );
   if (applied.action === 'guidance') {
     return {
-      kind: 'retry',
+      kind: 'answer',
       state,
-      error: consultAttemptError(
+      answer: consultAttemptError(
         'The planner asked the user about the decisions this attempt reported.',
         guidanceInstructions(applied.instructions, applied.context),
       ),

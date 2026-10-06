@@ -46,6 +46,8 @@ export type RetryAndRecordOptions = {
   initialFailure?: RetryAttemptFailure | undefined;
   /** The first attempt's blocked report, when it stopped asking for a decision. */
   initialBlocked?: BlockedReport | undefined;
+  /** The user's answer to a change of what the first attempt reported. */
+  initialAnswer?: string | undefined;
   tokensBefore: TokenUsage;
   taskBreakdowns: TaskTokenUsage[];
   setTrackedState: (s: WorkflowState) => void;
@@ -204,6 +206,7 @@ export async function retryAndRecord(
       ...(retryProfileOverride !== undefined && { profileOverrideTaskId: task.id }),
       ...(opts.initialFailure !== undefined && { initialFailure: opts.initialFailure }),
       ...(opts.initialBlocked !== undefined && { initialBlocked: opts.initialBlocked }),
+      ...(opts.initialAnswer !== undefined && { initialAnswer: opts.initialAnswer }),
     }));
   } catch (err) {
     const nextState = await handleTaskPlannerCallFailure({

@@ -121,6 +121,7 @@ export async function runLocalRetries(
     state: WorkflowState;
     lastError: string;
     initialFailure?: RetryAttemptFailure | undefined;
+    answer?: string | undefined;
   }>,
 ): Promise<RetryStepResult> {
   const { ctx } = opts;
@@ -131,6 +132,8 @@ export async function runLocalRetries(
   let consecutiveTimeouts = opts.initialFailure?.outcome === 'timeout' ? 1 : 0;
   let lastFailure: RetryAttemptFailure | undefined;
   let attemptSnapshot: ChangedFilesSnapshot | undefined;
+  let answer = opts.answer;
+  let rung = 0;
   const maxRetries = DEFAULT_LOCAL_RETRIES;
 
   const persistTransition = (
@@ -161,30 +164,36 @@ export async function runLocalRetries(
   // retry it earns.
   recordNoProgressCut(ctx, task, state, opts.initialFailure);
 
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+  // The user's answer is delivered by one attempt that is not a retry: it
+  // spends no rung and writes no retry row, so a red result after it still
+  // earns the retry with the exact errors.
+  while (answer !== undefined || rung < maxRetries) {
     if (ctx.signal?.aborted) break;
     const spent = attemptBoundSpent(state, task);
     if (spent !== undefined) {
       return raiseConsultBound(ctx, state, task, lastError, attempts, spent);
     }
-    if (state.phase === 'implementing') {
-      state = persistTransition(state, { type: 'TASK_SENT' });
+    if (answer === undefined) {
+      rung += 1;
+      if (state.phase === 'implementing') {
+        state = persistTransition(state, { type: 'TASK_SENT' });
+      }
+      state = persistTransition(state, { type: 'VALIDATION_FAIL' });
+      attempts = state.attempt;
+      const lineage = lineageAttemptsOf(state, task);
+      const retryRow = {
+        bus: ctx.bus,
+        phase: state.phase,
+        taskId: task.id,
+        attempt: state.attempt,
+        maxRetries,
+        lineageAttempt: lineage.used + 1,
+        attemptAllowance: lineage.allowance,
+        error: lastError,
+      };
+      publishRetry(retryRow);
+      if (state.phase === 'escalating') break;
     }
-    state = persistTransition(state, { type: 'VALIDATION_FAIL' });
-    attempts = state.attempt;
-    const lineage = lineageAttemptsOf(state, task);
-    const retryRow = {
-      bus: ctx.bus,
-      phase: state.phase,
-      taskId: task.id,
-      attempt: state.attempt,
-      maxRetries,
-      lineageAttempt: lineage.used + 1,
-      attemptAllowance: lineage.allowance,
-      error: lastError,
-    };
-    publishRetry(retryRow);
-    if (state.phase === 'escalating') break;
 
     const outcome: RetryStepResult = await runRetryStep({
       ctx,
@@ -217,6 +226,7 @@ export async function runLocalRetries(
     task = outcome.task;
     lastError = outcome.lastError;
     lastFailure = outcome.lastFailure;
+    answer = outcome.answer;
     attemptSnapshot = outcome.attemptSnapshot ?? attemptSnapshot;
     state = persistTransition(state, { type: 'COUNT_ATTEMPT', taskId: task.id });
     recordNoProgressCut(ctx, task, state, lastFailure);
