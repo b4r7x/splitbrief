@@ -8,7 +8,9 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import type { StepRef } from '../../../core/schemas/run-step.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { routerStore } from '../../../stores/navigation/router.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
+import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { useStopByline } from './use-stop-byline.js';
 
 function Lead() {
@@ -65,6 +67,24 @@ describe('useStopByline', () => {
     const ui = renderFeature(<Lead />);
 
     expect(ui.lastFrame().trim()).toBe('Cancelled by you at the plan');
+    ui.unmount();
+  });
+
+  it('names the brief the pause outlived once the running brief has finished', () => {
+    lifecycleStore.__testReset({ phase: 'implementing' });
+    tasksStore.__testReset({
+      tasks: [
+        { id: 'T001', title: 'first', status: 'done' },
+        { id: 'T002', title: 'second', status: 'done' },
+        { id: 'T003', title: 'third', status: 'done' },
+      ],
+      currentTask: 3,
+      totalTasks: 3,
+    });
+    stopStore.request('pause-after-brief');
+    const ui = renderFeature(<Lead />);
+
+    expect(ui.lastFrame().trim()).toBe('Finishing T003');
     ui.unmount();
   });
 });

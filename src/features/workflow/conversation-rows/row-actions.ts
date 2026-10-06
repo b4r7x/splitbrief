@@ -2,7 +2,7 @@ import { diffEventKey } from '../../../core/sections/event-sections.js';
 import type { ConversationRowInputs, RowBuildContext } from './types.js';
 import { activityBatchKey } from './activity-batch-key.js';
 import { buildActivityBatchViewModel } from './activity-batch-model.js';
-import { eventRowBlock } from './event-rows/dispatch.js';
+import { implementerFailureCard, eventRowBlock } from './event-rows/dispatch.js';
 import { runnerActivityBatchRowBlock } from './activity-rows.js';
 import { walkTranscript, type RunnerActivityBatch } from './transcript-walk.js';
 
@@ -13,9 +13,10 @@ export type ConversationRowAction =
   | { type: 'toggle-activity-batch'; key: string };
 
 // Maps each actionable transcript row key to its expand/collapse action so a click on the row can
-// trigger the same toggle as the keyboard. Only the activity disclosure (`+N more` / `collapse`) and
-// diff rows are actionable; every other row key is absent and a click on it is inert. Shares
-// walkTranscript with the projection so its batch grouping matches the rendered rows exactly.
+// trigger the same toggle as the keyboard. Only the activity disclosure (`+N more` / `collapse`),
+// diff rows and a failure card whose cause was cut are actionable; every other row key is absent
+// and a click on it is inert. Shares walkTranscript with the projection so its batch grouping
+// matches the rendered rows exactly.
 export function buildConversationRowActions(
   inputs: ConversationRowInputs,
 ): Map<string, ConversationRowAction> {
@@ -50,7 +51,11 @@ export function buildConversationRowActions(
     }
     if (step.kind === 'recovery') continue;
     const { event, globalIndex } = step;
-    if (event.type === 'implementer_generate_done' && event.diff) {
+    const expandable =
+      (event.type === 'implementer_generate_done' && (event.diff ?? '') !== '') ||
+      (event.type === 'implementer_generate_failed' &&
+        implementerFailureCard(event, ctx.width, false).expandable);
+    if (expandable) {
       const key = diffEventKey(event, globalIndex);
       const block = eventRowBlock({
         event,

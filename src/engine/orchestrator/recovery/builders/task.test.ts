@@ -3,6 +3,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { RecoveryIssueSchema } from '../../../../core/schemas/recovery/schemas.js';
 import { formatRecoveryHeadline } from '../../../../core/recovery/headline.js';
+import { haltOf } from '../../../../core/recovery/halt.js';
 import type { RoutingDecision } from '../../context-routing/types.js';
 import {
   buildApprovalDeniedRecoveryIssue,
@@ -234,6 +235,46 @@ describe('buildRunnerUsageLimitRecoveryIssue', () => {
     expect(issue.availableActions).toEqual(['retry-same-worker', 'skip-current-task', 'end-run']);
     expect(issue.recommendedAction).toBe('retry-same-worker');
     expectValidRecoveryIssue(issue);
+  });
+
+  it("files a seat down halt's actions, dropping only the switch with no offer", () => {
+    const base = {
+      task: makeTask({ id: 'T003' }),
+      runner: makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }).implementer,
+      toolMessage: codexLimit,
+      createdAt,
+    };
+    const withOffer = buildRunnerUsageLimitRecoveryIssue({
+      ...base,
+      seatSwap: {
+        seat: 'build',
+        currentTool: 'codex',
+        detectedTools: [
+          { tool: 'codex', ready: true },
+          { tool: 'claude-code', ready: true },
+        ],
+      },
+    });
+    const withoutOffer = buildRunnerUsageLimitRecoveryIssue(base);
+
+    expect(haltOf(withOffer.reason)).toBe('seat-down');
+    expect(haltOf(withoutOffer.reason)).toBe('seat-down');
+    expect(withOffer.availableActions).toEqual([
+      'retry-same-worker',
+      'switch-seat',
+      'skip-current-task',
+      'end-run',
+    ]);
+    expect(withoutOffer.availableActions).toEqual([
+      'retry-same-worker',
+      'skip-current-task',
+      'end-run',
+    ]);
+    expect(withoutOffer.availableActions).toEqual(
+      withOffer.availableActions.filter((action) => action !== 'switch-seat'),
+    );
+    expectValidRecoveryIssue(withOffer);
+    expectValidRecoveryIssue(withoutOffer);
   });
 
   it('offers the other detected ready tools as seats to switch to', () => {

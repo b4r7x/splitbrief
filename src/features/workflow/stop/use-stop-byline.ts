@@ -20,6 +20,13 @@ export function useStopByline(): StopByline | null {
   const view = selectTaskListView(tasks);
   const phase = lifecycleStore.use((s) => s.phase);
   const brief = selectRunningBrief(tasks, phase);
+  // A pause armed on a brief outlives it: once the brief finishes, the run's own position still
+  // names it until the boundary suite hands it on, so a finished slot is what it is finishing.
+  const focused = tasks.tasks[tasks.currentTask - 1];
+  const finishedTaskId =
+    focused !== undefined && (focused.status === 'done' || focused.status === 'escalated')
+      ? focused.id
+      : null;
   const questionPending = controlsStore.use((s) => s.inputMode === 'question');
   // A stop that ended the run loop settles it at rest, and the record it re-read says where it
   // stopped and what it kept.
@@ -37,6 +44,7 @@ export function useStopByline(): StopByline | null {
     parked: stop.parked,
     currentTaskId: brief.current?.id ?? null,
     nextTaskId: next?.id ?? null,
+    finishedTaskId,
     passed: view.passed,
     total: view.total,
     elapsedMs: stop.requestedAt === null ? 0 : Date.now() - stop.requestedAt,

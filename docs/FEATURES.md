@@ -140,7 +140,7 @@ Outcome events include `task_retry`, `task_escalating`, `consult_answered`, `tas
 
 ### Final review by the review seat
 
-**What it does.** After all tasks reach a terminal state, the review seat — the `reviewer` runner when one is configured, the planner when none is — reviews the entire diff against the Task Brief and any supporting spec. The deterministic drift report (see below) is rendered into the prompt under `## Deterministic Drift Report` so the reviewer sees both signals at once.
+**What it does.** After all tasks reach a terminal state, the review seat — the `reviewer` runner when one is configured, the planner when none is — reviews the entire diff against the Task Brief and any supporting spec. The deterministic drift report (see below) is rendered into the prompt under `## Deterministic Drift Report` so the reviewer sees both signals at once. When the seat accepts images, the review gets at most 4 PNGs of each render check, every `frame.png` first and then the other PNGs in path order; the prompt names the PNGs it does not attach. A render criterion stays unverified only when no image of its check reached the reviewer.
 
 **How to use.** Always runs at end cadence; with `workflow.review: task`, one scoped review also runs after every brief that passed its validation. The seat answers one typed `ReviewVerdict` (`src/core/schemas/review.ts`), SPLITBRIEF derives `pass`, `pass-with-notes` or `fail` and writes the record to `.splitbrief/sessions/<id>/review.json` (rendered as `review.md`). A failed review goes to one planner triage call whose fix tasks are appended with fresh ids; at most 2 fix cycles run (at most 3 reviews), and after the cap the run halts on `review-failed` with **fix again with a note**, **accept as is** at final review for every run, or end. Fires `workflow_complete` and writes `summary.json`.
 
@@ -323,7 +323,7 @@ Older files can name retired actions; `RETIRED_RECOVERY_ACTIONS` reads `revise-s
 
 **What it does.** Per-task validation, retry, consult, batch, pre-review and final-review log. Each task entry carries a `checks` array, one entry per check run: the stage runs and the registered `test`, `cmd` and `render` checks, each with its id, command, exit code, a bounded output tail, its artifact paths and their sha256, the workspace snapshot it ran against, and its time. The log replaces the prose evidence matching — an older `evidence.json` still loads, with its retired `expectedEvidence`/`observedEvidence` fields optional and ignored. Every entry carries `briefHash` so post-hoc audits can detect brief mutations. The review packet prints a `## Checks Log` section with each entry and each path the run read outside the workspace (`isolation_outside_read`), or `No checks recorded.`
 
-**How to use.** Always runs. Persisted at `.splitbrief/sessions/<id>/evidence.json` (mode 0o600). A closed run reads it twice over: it seeds the `Briefs` section with every planned brief, and its validated count closes the Run block's `Review` row (`3/3 briefs validated`).
+**How to use.** Always runs. Persisted at `.splitbrief/sessions/<id>/evidence.json` (mode 0o600). A closed run reads it twice over: it seeds the `Briefs` section with every planned brief, and its validated count closes the Run block's `Review` row (`3/3 briefs validated`). A fix task appended after the ledger existed is added to it, so the count includes it.
 
 ---
 

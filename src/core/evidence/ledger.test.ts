@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createEvidenceLedger } from './ledger-state.js';
+import { createEvidenceLedger, emptyEvidenceTask, upsertEvidenceTask } from './ledger-state.js';
 import { mutateEvidenceLedger, writeEvidenceLedger, readEvidenceLedger } from './ledger-storage.js';
 import { evidenceError } from './errors.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -16,6 +16,29 @@ describe('createEvidenceLedger', () => {
     expect(ledger.feature).toBe('feat');
     expect(ledger.tasks).toHaveLength(1);
     expect(ledger.validationSummary).toEqual({ passed: 0, failed: 0, skipped: 0, escalated: 0 });
+  });
+});
+
+describe('upsertEvidenceTask', () => {
+  it('replaces a known task and appends an unknown one, recomputing the summary', () => {
+    const t1 = makeTask({ id: 'T001' });
+    const t2 = makeTask({ id: 'T002' });
+    const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [t1, t2] });
+
+    const updated = upsertEvidenceTask(ledger, {
+      ...emptyEvidenceTask(t1),
+      checks: [{ id: 'typecheck', ts: '2026-01-01T00:00:00.000Z' }],
+    });
+    expect(updated.tasks).toHaveLength(2);
+    expect(updated.tasks[0]?.checks).toEqual([{ id: 'typecheck', ts: '2026-01-01T00:00:00.000Z' }]);
+    expect(updated.validationSummary).toEqual({ passed: 0, failed: 0, skipped: 0, escalated: 0 });
+
+    const appended = upsertEvidenceTask(updated, {
+      ...emptyEvidenceTask(makeTask({ id: 'T003' })),
+      status: 'done',
+    });
+    expect(appended.tasks.map((entry) => entry.id)).toEqual(['T001', 'T002', 'T003']);
+    expect(appended.validationSummary).toEqual({ passed: 1, failed: 0, skipped: 0, escalated: 0 });
   });
 });
 

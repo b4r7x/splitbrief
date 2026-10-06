@@ -43,11 +43,14 @@ export type ValidationBaseline = {
 
 export type FullSuiteFailureKeys = Partial<Record<ValidationStage, string[]>>;
 
+export type FullSuiteMoment = 'baseline' | 'boundary' | 'pre-review';
+
 export type RunFullSuiteOptions = {
   projectDir: string;
   config: Config;
   bus: EventBus;
   phase: Phase;
+  moment: FullSuiteMoment;
   discoveredValidation?: DiscoveredValidation | undefined;
   signal?: AbortSignal | undefined;
   baseline?: FullSuiteFailureKeys | undefined;

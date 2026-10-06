@@ -91,6 +91,30 @@ describe('stopByline', () => {
     ).toEqual({ lead: 'Answer needed to finish T002', hint: 'Pause requested' });
   });
 
+  it('names the brief the pause outlived, which the run has just finished', () => {
+    const paused = input({
+      intent: 'pause-after-brief',
+      phase: 'requested',
+      currentTaskId: null,
+      finishedTaskId: 'T003',
+    });
+
+    expect(stopByline(paused)).toEqual({
+      lead: 'Finishing T003',
+      hint: 'Pause requested; no next brief will start',
+    });
+  });
+
+  it('names the run when a pause is armed before any brief has finished', () => {
+    const paused = input({
+      intent: 'pause-after-brief',
+      phase: 'requested',
+      currentTaskId: null,
+    });
+
+    expect(stopByline(paused)?.lead).toBe('Finishing the run');
+  });
+
   it('parks mid-brief with the keys that resume it', () => {
     expect(
       stopByline(

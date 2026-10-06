@@ -8,6 +8,7 @@ import { preformattedOutputBlock } from '../row-format/preformatted-block.js';
 import { segmentedRow } from '../row-format/rows.js';
 import {
   baselineValidationRow,
+  fullSuiteRow,
   validationStageNotes,
   validationSummarySegments,
 } from '../event-format.js';
@@ -178,6 +179,19 @@ export function baselineValidationRowBlock(
         })
       : null,
   ]);
+}
+
+export function fullSuiteRowBlock(
+  keyPrefix: string,
+  event: Extract<EngineEvent, { type: 'full_suite' }>,
+  width: number,
+): ConversationRowBlock | null {
+  return wrappedTextBlock({
+    keyPrefix,
+    text: fullSuiteRow(event),
+    width,
+    tone: 'textDim',
+  });
 }
 
 export function escalateRowBlock(

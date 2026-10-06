@@ -318,6 +318,9 @@ describe('runTasksAndReview boundary pause', { timeout: 120_000 }, () => {
       at: 'boundary',
       step: { kind: 'brief', taskId: 'T002', attempt: 0 },
     });
+    expect(events.filter((e) => e.type === 'workflow_resumed')).toEqual([
+      expect.objectContaining({ phase: 'implementing' }),
+    ]);
     // Both briefs ran: the park held the run between them rather than ending it.
     expect(implementer.implement).toHaveBeenCalledTimes(2);
     expect(result.completed).toBe(true);

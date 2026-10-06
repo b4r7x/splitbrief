@@ -59,6 +59,23 @@ export function withUpdatedTask(
   };
 }
 
+/**
+ * Writes one task into the ledger by id: a task the ledger already knows is replaced, and a task
+ * appended after the ledger was created — a fix brief — is added rather than dropped.
+ */
+export function upsertEvidenceTask(ledger: EvidenceLedger, task: EvidenceTask): EvidenceLedger {
+  const known = ledger.tasks.some((t) => t.id === task.id);
+  const tasks = known
+    ? ledger.tasks.map((t) => (t.id === task.id ? task : t))
+    : [...ledger.tasks, task];
+  return {
+    ...ledger,
+    tasks,
+    validationSummary: recomputeValidationSummary(tasks),
+    generatedAt: nowIso(),
+  };
+}
+
 export function withAppendedApproval(
   ledger: EvidenceLedger,
   entry: EvidenceApproval,

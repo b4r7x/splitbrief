@@ -1,3 +1,4 @@
+import { basename } from 'node:path';
 import { resolveAttachment } from '../../core/attachments/resolve.js';
 import { verificationKey } from '../../core/review/verdict.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
@@ -5,8 +6,8 @@ import type { EvidenceCheckEntry, EvidenceLedger } from '../../core/schemas/evid
 import type { ReviewVerdict } from '../../core/schemas/review.js';
 import type { Check } from '../../core/schemas/task.js';
 
-/** One more image than this and the reviewer is handed a manifest instead. */
-export const MAX_REVIEW_RENDER_IMAGES = 12;
+/** The most images one render check sends the reviewer; the prompt names the rest. */
+export const MAX_RENDER_IMAGES_PER_CHECK = 4;
 
 export const NO_VISION_REVIEW =
   'No vision review happened: the reviewer could not receive these images.';
@@ -28,9 +29,9 @@ type MissingRender = Readonly<{
 
 type ReviewRenders = Readonly<{
   artifacts: readonly RenderArtifact[];
-  /** The attachments to send, only for the checks that resolved every image. */
+  /** The attachments to send, at most `MAX_RENDER_IMAGES_PER_CHECK` per check. */
   images: readonly Attachment[];
-  /** The render checks whose images all resolved and are being sent. */
+  /** The render checks with at least one image being sent. */
   attachedCheckIds: readonly string[];
   /** The render checks the reviewer received no image for. */
   missingCheckIds: readonly string[];
@@ -87,15 +88,39 @@ function missingLines(missing: readonly MissingRender[]): string {
   return lines.join('\n');
 }
 
+/**
+ * The order a check's PNGs are attached in, whatever order the checks log lists
+ * them: every `frame.png` first, then the other PNGs, each group by path.
+ */
+function selectionOrder(artifacts: readonly RenderArtifact[]): RenderArtifact[] {
+  const byPath = [...artifacts].sort((left, right) =>
+    left.path < right.path ? -1 : left.path > right.path ? 1 : 0,
+  );
+  return [
+    ...byPath.filter((artifact) => basename(artifact.path) === 'frame.png'),
+    ...byPath.filter((artifact) => basename(artifact.path) !== 'frame.png'),
+  ];
+}
+
 function renderSection(input: {
   attached: readonly RenderArtifact[];
+  notAttached: readonly RenderArtifact[];
   missing: readonly MissingRender[];
 }): string {
   const lines: string[] = [];
   if (input.attached.length > 0) {
     lines.push('The rendered scenarios are attached as images.', '', renderLines(input.attached));
   }
+  if (input.notAttached.length > 0) {
+    lines.push(
+      '',
+      `Rendered but not attached (over the cap of ${MAX_RENDER_IMAGES_PER_CHECK} per check, or unreadable):`,
+      '',
+      renderLines(input.notAttached),
+    );
+  }
   if (input.missing.length > 0) {
+    if (lines.length > 0) lines.push('');
     lines.push('Rendered scenarios (not attached):', '', missingLines(input.missing));
   }
   if (input.attached.length > 0) lines.push('', RENDER_CRITIQUE_INSTRUCTION);
@@ -105,11 +130,11 @@ function renderSection(input: {
 
 /**
  * The renders the review input carries. Each render check is judged on its own
- * latest execution on the current candidate: its images are attached only when
- * the seat can take them, the count is within the cap, and every one of its
- * images resolves; otherwise the reviewer gets the scenario in a manifest beside
- * the plain no-vision statement. An artifact from an earlier candidate is never
- * delivered.
+ * latest execution on the current candidate: when the seat can take images, up
+ * to `MAX_RENDER_IMAGES_PER_CHECK` of its PNGs that resolve are attached in
+ * `selectionOrder`, and the prompt names the PNGs left out. A check with no
+ * attached image goes in a manifest beside the plain no-vision statement. An
+ * artifact from an earlier candidate is never delivered.
  */
 export function reviewRenders(input: {
   ledger: EvidenceLedger | null;
@@ -139,50 +164,50 @@ export function reviewRenders(input: {
     if (list === undefined) artifactsByCheck.set(artifact.checkId, [artifact]);
     else list.push(artifact);
   }
-  // A seat without images, or one over the cap, receives no image for any check.
-  const canAttach = input.seatSupportsImages && artifacts.length <= MAX_REVIEW_RENDER_IMAGES;
   const images: Attachment[] = [];
   const attachedCheckIds: string[] = [];
+  const attached: RenderArtifact[] = [];
+  const notAttached: RenderArtifact[] = [];
   const missing: MissingRender[] = [];
   for (const check of renderChecks) {
     const checkArtifacts = artifactsByCheck.get(check.id) ?? [];
-    if (canAttach && checkArtifacts.length > 0) {
-      const resolved = checkArtifacts.map((artifact) =>
-        resolveAttachment({ input: artifact.path, projectDir: input.projectDir }),
-      );
-      // A check is attached only when every one of its images resolved.
-      if (resolved.every((entry) => entry.ok)) {
-        for (const entry of resolved) {
-          if (entry.ok) images.push(entry.attachment);
-        }
-        attachedCheckIds.push(check.id);
-        continue;
+    const ordered = selectionOrder(checkArtifacts);
+    const checkAttached = new Set<RenderArtifact>();
+    if (input.seatSupportsImages) {
+      for (const artifact of ordered) {
+        if (checkAttached.size === MAX_RENDER_IMAGES_PER_CHECK) break;
+        const resolved = resolveAttachment({ input: artifact.path, projectDir: input.projectDir });
+        if (!resolved.ok) continue;
+        images.push(resolved.attachment);
+        checkAttached.add(artifact);
       }
     }
-    missing.push({
-      checkId: check.id,
-      scenario: check.value,
-      paths: checkArtifacts.map((artifact) => artifact.path),
-    });
+    if (checkAttached.size === 0) {
+      missing.push({
+        checkId: check.id,
+        scenario: check.value,
+        paths: checkArtifacts.map((artifact) => artifact.path),
+      });
+      continue;
+    }
+    attachedCheckIds.push(check.id);
+    attached.push(...checkAttached);
+    notAttached.push(...ordered.filter((artifact) => !checkAttached.has(artifact)));
   }
-  const attachedKeys = new Set(attachedCheckIds);
   return {
     artifacts,
     images,
     attachedCheckIds,
     missingCheckIds: missing.map((entry) => entry.checkId),
-    section: renderSection({
-      attached: artifacts.filter((artifact) => attachedKeys.has(artifact.checkId)),
-      missing,
-    }),
+    section: renderSection({ attached, notAttached, missing }),
   };
 }
 
 /**
  * Forces every criterion whose checks include a render check to `unverified`, so
- * a review that received no images can never pass on a render claim. The
- * verification map records the forced status so the verdict's own derivation
- * cannot lift it back to a pass.
+ * a criterion whose render check sent the reviewer no image can never pass on
+ * that claim. The verification map records the forced status so the verdict's
+ * own derivation cannot lift it back to a pass.
  */
 export function forceUnverifiedRenderCriteria(input: {
   verdict: ReviewVerdict;

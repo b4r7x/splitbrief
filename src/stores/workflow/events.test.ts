@@ -136,6 +136,21 @@ function makeValidationBaseline(
   };
 }
 
+function makeFullSuite(
+  overrides?: Partial<EngineEventOf<'full_suite'>>,
+): EngineEventOf<'full_suite'> {
+  return {
+    type: 'full_suite',
+    ts: Date.now(),
+    phase: 'implementing',
+    status: 'running',
+    stage: 'test',
+    command: 'npm test',
+    moment: 'boundary',
+    ...overrides,
+  };
+}
+
 describe('eventsStore — append via addEvent', () => {
   beforeEach(() => resetWorkflow());
 
@@ -540,6 +555,38 @@ describe('eventsStore — append via addEvent', () => {
       const events = eventsStore.get().events;
       expect(events).toHaveLength(1);
       expect(events[0]).toMatchObject({ status: 'done', duration: 18_500 });
+    });
+  });
+
+  describe('full_suite coalescing', () => {
+    it('replaces a running stage entry with its settled verdict', () => {
+      addEvent(makeFullSuite({ status: 'running' }));
+      addEvent(makeFullSuite({ status: 'done', passed: true, duration: 12_000 }));
+
+      const events = eventsStore.get().events;
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({ type: 'full_suite', status: 'done', passed: true });
+    });
+
+    it('keeps one row per stage run', () => {
+      addEvent(makeFullSuite({ stage: 'typecheck', command: 'tsc --noEmit' }));
+      addEvent(
+        makeFullSuite({
+          stage: 'typecheck',
+          command: 'tsc --noEmit',
+          status: 'done',
+          passed: true,
+        }),
+      );
+      addEvent(makeFullSuite({ stage: 'test', command: 'npm test' }));
+      addEvent(makeFullSuite({ stage: 'test', command: 'npm test', status: 'done', passed: true }));
+
+      const events = eventsStore.get().events;
+      expect(events).toHaveLength(2);
+      expect(events.map((event) => (event as { stage: string }).stage)).toEqual([
+        'typecheck',
+        'test',
+      ]);
     });
   });
 

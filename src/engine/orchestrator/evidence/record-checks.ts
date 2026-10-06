@@ -3,7 +3,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import {
   createEvidenceLedger,
   findOrSeed,
-  withUpdatedTask,
+  upsertEvidenceTask,
 } from '../../../core/evidence/ledger-state.js';
 import { mutateEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { sha256Hex } from '../../../utils/sha256.js';
@@ -76,16 +76,14 @@ export async function recordCheckRuns(input: RecordCheckRunsInput): Promise<void
             tasks: input.state.tasks,
             briefHash,
           });
-        const seeded = ledger.tasks.some((entry) => entry.id === task.id)
-          ? ledger
-          : { ...ledger, tasks: [...ledger.tasks, findOrSeed(ledger, task, briefHash)] };
-        return withUpdatedTask(seeded, task.id, (entry) => ({
-          ...entry,
+        const seeded = findOrSeed(ledger, task);
+        return upsertEvidenceTask(ledger, {
+          ...seeded,
           checks: [
-            ...(entry.checks ?? []),
+            ...(seeded.checks ?? []),
             ...checkEntries({ validation, runs, workspaceSnapshotId, ts }),
           ],
-        }));
+        });
       },
     );
   } catch (err) {

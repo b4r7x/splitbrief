@@ -1,4 +1,4 @@
-import type { Phase } from '../../../core/schemas/enums.js';
+import type { Phase, ValidationStage } from '../../../core/schemas/enums.js';
 import type { PlannerCall } from '../../../core/schemas/run-step.js';
 import { assertNever } from '../../../utils/type-guards.js';
 
@@ -53,4 +53,17 @@ export function activeVerb(
 /** The same verb inside a sentence: no capital, no ellipsis, no reviewer name. */
 export function inlineActiveVerb(phase: Phase): string {
   return activeVerb(phase, null, null).replace('…', '').toLowerCase();
+}
+
+export function suiteStageVerb(stage: ValidationStage): string {
+  switch (stage) {
+    case 'typecheck':
+      return 'Running the typecheck';
+    case 'lint':
+      return 'Running the lint';
+    case 'test':
+      return 'Running the test suite';
+    default:
+      return assertNever(stage);
+  }
 }

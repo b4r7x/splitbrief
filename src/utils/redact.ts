@@ -1,5 +1,7 @@
 export const DEFAULT_REDACTION_MARKER = '***REDACTED***';
 
+const ELLIPSIS = '\u2026';
+
 type RedactionReplacement = string | ((substring: string, ...args: string[]) => string);
 
 interface RedactionRule {
@@ -102,9 +104,18 @@ function replaceAssignedSecret(
     const quote = value.at(0);
     const hasMatchingQuotes = (quote === '"' || quote === "'") && value.at(-1) === quote;
     const unquotedValue = hasMatchingQuotes ? value.slice(1, -1) : value;
+    const cutMarkerPrefix = unquotedValue.endsWith(ELLIPSIS)
+      ? unquotedValue.slice(0, -ELLIPSIS.length)
+      : null;
+    const isCutRedaction =
+      unquotedValue === ELLIPSIS ||
+      (cutMarkerPrefix !== null &&
+        cutMarkerPrefix.length > 0 &&
+        marker.startsWith(cutMarkerPrefix));
     if (
       unquotedValue === marker ||
       unquotedValue.endsWith(` ${marker}`) ||
+      isCutRedaction ||
       previouslyRedactedValues.has(unquotedValue)
     ) {
       return match;

@@ -117,6 +117,16 @@ export function baselineValidationRow(
   return `Baseline ${stageText}${dur}`;
 }
 
+export function fullSuiteRow(event: Extract<EngineEvent, { type: 'full_suite' }>): string {
+  const command =
+    event.command.length > 0 ? ` (${truncateTerminalDisplayText(event.command, 48)})` : '';
+  const label = `Suite ${event.stage}${command}`;
+  if (event.status === 'running') return `${label} running`;
+  const verdict = event.passed === true ? 'passed' : 'failed';
+  const dur = event.duration === undefined ? '' : ` ${formatDuration(event.duration)}`;
+  return `${label} ${verdict}${dur}`;
+}
+
 function formatEventContextFit(
   contextFit: TaskContextFit,
   estimatedTokens: number | undefined,

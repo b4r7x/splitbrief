@@ -477,6 +477,55 @@ describe('parseEngineEvent', () => {
     );
   });
 
+  it('accepts a full_suite running event with its stage, command and moment', () => {
+    expect(
+      parseEngineEvent({
+        type: 'full_suite',
+        ts: 1,
+        phase: 'implementing',
+        status: 'running',
+        stage: 'test',
+        command: 'npm test',
+        moment: 'boundary',
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        type: 'full_suite',
+        status: 'running',
+        stage: 'test',
+        command: 'npm test',
+        moment: 'boundary',
+      }),
+    );
+  });
+
+  it('accepts a full_suite done event and rejects an unknown moment', () => {
+    expect(
+      parseEngineEvent({
+        type: 'full_suite',
+        ts: 1,
+        phase: 'implementing',
+        status: 'done',
+        stage: 'lint',
+        command: 'npm run lint',
+        moment: 'pre-review',
+        passed: false,
+        duration: 1_200,
+      }),
+    ).toEqual(expect.objectContaining({ type: 'full_suite', passed: false, duration: 1_200 }));
+    expect(
+      parseEngineEvent({
+        type: 'full_suite',
+        ts: 1,
+        phase: 'implementing',
+        status: 'done',
+        stage: 'lint',
+        command: 'npm run lint',
+        moment: 'whenever',
+      }),
+    ).toBeNull();
+  });
+
   it('accepts queued message events with preview text', () => {
     expect(
       parseEngineEvent({

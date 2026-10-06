@@ -6,6 +6,7 @@ import type {
   CurrentCodeContextMode,
   TaskContextFit,
   Phase,
+  ValidationStage,
 } from '../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
 import type { ConsultReason } from '../../core/schemas/consult.js';
@@ -23,6 +24,7 @@ import type {
 } from '../events/types.js';
 import type { ValidationResult } from './validation/result.js';
 import type { ValidationAcceptance } from './validation/acceptance.js';
+import type { FullSuiteMoment } from './validation/types.js';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { ImplementerPublisher } from '../implementers/types.js';
 import { formatRecoveryHeadline } from '../../core/recovery/headline.js';
@@ -330,6 +332,30 @@ export function publishValidationBaseline(ctx: BusContext, opts: ValidationBasel
     ...(hasValidationCommands(commands) && { commands }),
     ...(hasFailing && { failing }),
     duration: Date.now() - opts.startTime,
+  });
+}
+
+export function publishFullSuite(
+  ctx: BusContext,
+  opts: {
+    status: 'running' | 'done';
+    stage: ValidationStage;
+    command: string;
+    moment: FullSuiteMoment;
+    passed?: boolean | undefined;
+    duration?: number | undefined;
+  },
+): void {
+  ctx.bus.publish({
+    type: 'full_suite',
+    ts: Date.now(),
+    phase: ctx.phase,
+    status: opts.status,
+    stage: opts.stage,
+    command: opts.command,
+    moment: opts.moment,
+    ...(opts.passed !== undefined && { passed: opts.passed }),
+    ...(opts.duration !== undefined && { duration: opts.duration }),
   });
 }
 

@@ -14,6 +14,7 @@ import {
 } from '../../../core/schemas/workflow.js';
 import { processError } from '../../../lib/process/errors.js';
 import { makeConfig, makeCommandRunner } from '#testing/helpers/validation-fixtures.js';
+import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 
 function mkTask(file: string): Task {
   return makeTask({ suggestedFiles: [file], action: 'modify' });
@@ -1446,7 +1447,13 @@ describe('runFullSuite', () => {
           processError.exitCode({ command: 'check', code: 7, stderr: ' \n', output: '' }),
         ),
       });
-      const opts = { projectDir: tempDir, config, bus: fakeBus, phase: 'implementing' as const };
+      const opts = {
+        projectDir: tempDir,
+        config,
+        bus: fakeBus,
+        phase: 'implementing' as const,
+        moment: 'baseline' as const,
+      };
       const baseline = await validator.runFullSuite(opts);
       const result = await validator.runFullSuite({ ...opts, baseline: baseline.failures });
 
@@ -1470,6 +1477,7 @@ describe('runFullSuite', () => {
       config: testOnly,
       bus: fakeBus,
       phase: 'implementing' as const,
+      moment: 'baseline' as const,
     };
     const baseline = await validator.runFullSuite(opts);
     const same = await validator.runFullSuite({ ...opts, baseline: baseline.failures });
@@ -1496,7 +1504,13 @@ describe('runFullSuite', () => {
         processError.exitCode({ command: 'tsc', code: 2, stderr: '', output: '' }),
       ),
     });
-    const opts = { projectDir: tempDir, config, bus: fakeBus, phase: 'implementing' as const };
+    const opts = {
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing' as const,
+      moment: 'baseline' as const,
+    };
     const baseline = await validator.primeBaseline({ ...opts, task: mkTask('src/app.ts') });
     const suite = await validator.runFullSuite({ ...opts, baseline: baseline?.failures });
 
@@ -1558,6 +1572,7 @@ describe('runFullSuite', () => {
       config,
       bus: fakeBus,
       phase: 'implementing' as const,
+      moment: 'baseline' as const,
       task: mkTask('src/app.ts'),
     };
     await validator.primeBaseline(opts);
@@ -1585,6 +1600,7 @@ describe('runFullSuite', () => {
       config: testOnly,
       bus: fakeBus,
       phase: 'implementing' as const,
+      moment: 'baseline' as const,
     };
 
     const baseline = await validator.runFullSuite(opts);
@@ -1621,6 +1637,7 @@ describe('runFullSuite', () => {
       config: testOnly,
       bus: fakeBus,
       phase: 'implementing' as const,
+      moment: 'baseline' as const,
     };
 
     const baseline = await validator.runFullSuite(opts);
@@ -1644,6 +1661,7 @@ describe('runFullSuite', () => {
       config: testOnly,
       bus: fakeBus,
       phase: 'implementing' as const,
+      moment: 'baseline' as const,
     };
 
     await validator.runFullSuite({
@@ -1680,6 +1698,7 @@ describe('runFullSuite', () => {
       config: testOnly,
       bus: fakeBus,
       phase: 'implementing',
+      moment: 'baseline' as const,
     });
 
     expect(runner.calls[0]?.cmd).toBe('npm');
@@ -1708,12 +1727,14 @@ describe('runFullSuite', () => {
       config: testOnly,
       bus: fakeBus,
       phase: 'implementing',
+      moment: 'baseline' as const,
     });
     const boundary = await validator.runFullSuite({
       projectDir: tempDir,
       config: testOnly,
       bus: fakeBus,
       phase: 'implementing',
+      moment: 'baseline' as const,
       baseline: baseline.failures,
     });
 
@@ -1740,10 +1761,44 @@ describe('runFullSuite', () => {
       config,
       bus: fakeBus,
       phase: 'implementing',
+      moment: 'baseline' as const,
     });
 
     expect(result.results.map((r) => r.stage)).toEqual(['typecheck', 'test']);
     expect(result.failures.typecheck).toEqual(['src/legacy.ts(1,1)']);
     expect(result.failures.test).toEqual(['src/legacy.test.ts:5']);
+  });
+
+  it('publishes a running and a done full_suite event for every stage it runs', async () => {
+    writeTsProject(tempDir);
+    const { bus, events } = makeBusRecorder();
+    const validator = createValidator({
+      runCommand: makeCommandRunner(
+        { stdout: 'ok', stderr: '', code: 0 },
+        { stdout: 'ok', stderr: '', code: 0 },
+      ),
+    });
+    const config = makeConfig({ typecheck: true, lint: false, test: true });
+
+    await validator.runFullSuite({
+      projectDir: tempDir,
+      config,
+      bus,
+      phase: 'implementing',
+      moment: 'pre-review',
+    });
+
+    const suite = events.filter(
+      (event): event is EngineEventOf<'full_suite'> => event.type === 'full_suite',
+    );
+    expect(suite.map((event) => [event.stage, event.status, event.moment])).toEqual([
+      ['typecheck', 'running', 'pre-review'],
+      ['typecheck', 'done', 'pre-review'],
+      ['test', 'running', 'pre-review'],
+      ['test', 'done', 'pre-review'],
+    ]);
+    const done = suite.find((event) => event.stage === 'test' && event.status === 'done');
+    expect(done).toMatchObject({ passed: true, command: expect.stringContaining('test') });
+    expect(done?.duration).toBeGreaterThanOrEqual(0);
   });
 });

@@ -13,7 +13,11 @@ import type {
   EvidenceValidationEntry,
 } from '../../../core/schemas/evidence.js';
 import type { BundleApplyResult } from '../../implementers/file-bundle.js';
-import { findOrSeed, withUpdatedTask } from '../../../core/evidence/ledger-state.js';
+import {
+  findOrSeed,
+  upsertEvidenceTask,
+  withUpdatedTask,
+} from '../../../core/evidence/ledger-state.js';
 import { uniquePush } from '../../../utils/collections.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
@@ -300,7 +304,7 @@ export function recordLocalTaskEvidence(input: RecordLocalTaskEvidenceInput): Ev
       exemptStages: input.exemptStages,
     }),
   );
-  return withUpdatedTask(input.ledger, next.id, () => next);
+  return upsertEvidenceTask(input.ledger, next);
 }
 
 export type RecordRetryOrEscalationEvidenceInput = {
@@ -343,7 +347,7 @@ export function recordRetryOrEscalationEvidence(
       }),
     );
   }
-  return withUpdatedTask(input.ledger, next.id, () => next);
+  return upsertEvidenceTask(input.ledger, next);
 }
 
 export type RecordPromotionFailureEvidenceInput = {
@@ -364,7 +368,7 @@ export function recordPromotionFailureEvidence(
   // whatever the promotion did with the rest.
   for (const applied of input.attempt.appliedFiles) uniquePush(next.changedFiles, applied.path);
   return withTargetWrites({
-    ledger: withUpdatedTask(input.ledger, next.id, () => next),
+    ledger: upsertEvidenceTask(input.ledger, next),
     task: input.task,
     files: input.attempt.appliedFiles,
     unknownPaths: [input.attempt.failedFile],
@@ -389,7 +393,7 @@ export function recordPromotedFilesEvidence(
   const next = findOrSeed(input.ledger, input.task, input.briefHash);
   next.briefHash = input.briefHash ?? next.briefHash ?? null;
   return withTargetWrites({
-    ledger: withUpdatedTask(input.ledger, next.id, () => next),
+    ledger: upsertEvidenceTask(input.ledger, next),
     task: input.task,
     files: input.files,
   });
@@ -428,7 +432,7 @@ export function recordApiApplyEvidence(input: RecordApiApplyEvidenceInput): Evid
   // recovery moves it: nothing after the failing path was attempted, and the
   // prefix remains in the receipt even when checkout recovery puts it back.
   if (input.result.status === 'partial') next.status = 'failed';
-  const updated = withUpdatedTask(input.ledger, next.id, () => next);
+  const updated = upsertEvidenceTask(input.ledger, next);
   if (input.workspacePath !== undefined) return updated;
   return withTargetWrites({
     ledger: updated,
@@ -457,5 +461,5 @@ export function recordSkippedTaskEvidence(input: RecordSkippedTaskEvidenceInput)
   next.briefHash = input.briefHash ?? next.briefHash ?? null;
   next.status = 'skipped';
   next.method = 'skipped';
-  return withUpdatedTask(input.ledger, next.id, () => next);
+  return upsertEvidenceTask(input.ledger, next);
 }

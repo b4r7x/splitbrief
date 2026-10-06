@@ -93,6 +93,8 @@ BUILD repair cycles after final review use the selected implementer. These bound
 
 Exactly one: the final review of the run diff, dispatched from `runFinalReviewPhase()` (`src/engine/orchestrator/final-review.ts`) through `runReviewerCall()` (`src/engine/orchestrator/review-call.ts`). Every other strong-side call stays on the planner — the planning session, the consult, `summarize` / `summarizeStructured`, and `injectUserTurn`.
 
+When the plan has render checks and the review seat accepts images, the review call attaches at most 4 PNGs of each render check: every `frame.png` first, then the other PNGs, each group in path order (`reviewRenders`, `src/engine/orchestrator/review-renders.ts`). The cap applies to each check, so a scenario that writes many PNGs does not stop the images of the other checks. The prompt names each PNG it does not attach. A render criterion stays unverified only when no image of its check reached the reviewer.
+
 A reviewer that fails mid-call is reported, not replaced: `reviewStatus: 'failed'`, the reviewer's display name in the error, final-review evidence recorded, summary still produced. There is deliberately no automatic fallback to the planner.
 
 ---

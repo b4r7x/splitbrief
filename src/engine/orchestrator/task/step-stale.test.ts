@@ -65,9 +65,9 @@ function staleRewriteAnswer(criteria: string[] = ['C1']): ConsultAnswer {
   };
 }
 
-function staleTask(projectDir: string): Task {
+function staleTask(projectDir: string, id = 'T002'): Task {
   const task = makeTask({
-    id: 'T002',
+    id,
     action: 'create',
     suggestedFiles: ['src/b.ts'],
     contextFiles: ['src/shared.ts'],
@@ -149,9 +149,12 @@ function redispatchState(state: WorkflowState, taskId: string): WorkflowState {
   };
 }
 
-function staleConsultsOf(state: WorkflowState): { revision: number; action: string }[] {
+function staleConsultsOf(
+  state: WorkflowState,
+  taskId = 'T002',
+): { revision: number; action: string }[] {
   return (
-    state.lineages?.T002?.consultRecords
+    state.lineages?.[taskId]?.consultRecords
       ?.filter((record) => record.reason === 'stale')
       .map((record) => ({ revision: record.revision, action: record.action })) ?? []
   );
@@ -211,6 +214,70 @@ describe('runSingleTask — stale refresh', () => {
     const after = await runForTask({ projectDir, sessionId, task, state, planner });
 
     expect(staleConsultsOf(after)).toEqual([]);
+    expect(typed).not.toHaveBeenCalled();
+  });
+
+  it('consults once for each dependent task whose input moved, not once for the run', async () => {
+    const { projectDir, sessionId } = setupProject({ 'src/shared.ts': SHARED });
+    const second = staleTask(projectDir);
+    const third = staleTask(projectDir, 'T003');
+    const producer = makeTask({
+      id: 'T001',
+      action: 'modify',
+      suggestedFiles: ['src/elsewhere.ts'],
+      criteria: ['C1'],
+      status: 'done',
+    });
+    const state = { ...implementingState([producer, second, third]), currentTaskIndex: 1 };
+    const typed = consultCallAnswering(() => guidanceAnswer('Read the new shared file first.'));
+    const planner = makePlanner({ typedCall: typed });
+
+    writeFileSync(join(projectDir, 'src/shared.ts'), EDITED_SHARED);
+
+    const afterSecond = await runForTask({ projectDir, sessionId, task: second, state, planner });
+    expect(staleConsultsOf(afterSecond, 'T002')).toHaveLength(1);
+    expect(staleConsultsOf(afterSecond, 'T003')).toHaveLength(0);
+
+    const afterThird = await runForTask({
+      projectDir,
+      sessionId,
+      task: taskIn(afterSecond, 'T003'),
+      state: redispatchState(afterSecond, 'T003'),
+      planner,
+    });
+    expect(staleConsultsOf(afterThird, 'T002')).toHaveLength(1);
+    expect(staleConsultsOf(afterThird, 'T003')).toHaveLength(1);
+  });
+
+  it('asks no stale consult of a dependent task when an earlier task was to write the moved input', async () => {
+    const { projectDir, sessionId } = setupProject({ 'src/shared.ts': SHARED });
+    const second = staleTask(projectDir);
+    const third = staleTask(projectDir, 'T003');
+    const producer = makeTask({
+      id: 'T001',
+      action: 'modify',
+      suggestedFiles: ['src/shared.ts'],
+      criteria: ['C1'],
+      status: 'done',
+    });
+    const state = { ...implementingState([producer, second, third]), currentTaskIndex: 1 };
+    const typed = consultCallAnswering(() => guidanceAnswer('unused'));
+    const planner = makePlanner({ typedCall: typed });
+
+    writeFileSync(join(projectDir, 'src/shared.ts'), EDITED_SHARED);
+
+    const afterSecond = await runForTask({ projectDir, sessionId, task: second, state, planner });
+    expect(staleConsultsOf(afterSecond, 'T002')).toEqual([]);
+
+    const afterThird = await runForTask({
+      projectDir,
+      sessionId,
+      task: taskIn(afterSecond, 'T003'),
+      state: redispatchState(afterSecond, 'T003'),
+      planner,
+    });
+    expect(staleConsultsOf(afterThird, 'T002')).toEqual([]);
+    expect(staleConsultsOf(afterThird, 'T003')).toEqual([]);
     expect(typed).not.toHaveBeenCalled();
   });
 

@@ -611,6 +611,14 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     failing: validationStageSkipsSchema.optional(),
     duration: z.number().optional(),
   }),
+  phaseEvent('full_suite').extend({
+    status: z.enum(['running', 'done']),
+    stage: z.enum(['typecheck', 'lint', 'test']),
+    command: z.string(),
+    moment: z.enum(['baseline', 'boundary', 'pre-review']),
+    passed: z.boolean().optional(),
+    duration: z.number().optional(),
+  }),
   phaseEvent('escalate').extend({
     taskId: TaskIdSchema,
     tier: z.union([z.literal(0), z.literal(1), z.literal(2)]),

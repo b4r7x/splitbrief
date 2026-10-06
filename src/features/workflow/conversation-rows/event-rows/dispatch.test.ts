@@ -714,6 +714,57 @@ describe('event row dispatch', () => {
     },
   );
 
+  it.each([60, 80, 120])('keeps a cut, redacted assignment on one row at width %i', (width) => {
+    const rows = implementerFailedRows(`${'x'.repeat(width - 28)} password=x`, width);
+
+    expect(rows).toHaveLength(1);
+    expect(renderedCells(rows[0] as ConversationRow)).toBeLessThanOrEqual(width);
+    expect(rowText(rows[0] as ConversationRow)).not.toContain('***REDACTED***');
+  });
+
+  it('expands a cut implementer failure to the whole cause, wrapped', () => {
+    const cause =
+      'Tool implementer (opencode) exited without changing any files after a completed call that reported done for every file in its brief';
+    const rows = eventRows({
+      event: {
+        type: 'implementer_generate_failed',
+        ts: 0,
+        phase: 'implementing',
+        taskId: taskId('T010'),
+        model: 'opencode-go/deepseek-v4.1-flash',
+        error: cause,
+      },
+      globalIndex: 0,
+      expanded: true,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+
+    expect(rows.length).toBeGreaterThan(1);
+    expect(rows.map(rowText).join('\n').replace(/\s+/g, ' ')).toContain(cause);
+    expect(rows.every((row) => renderedCells(row) <= 80)).toBe(true);
+    expect(rows.map(rowText).join('\n')).not.toContain('…');
+  });
+
+  it('keeps a fitting implementer cause on one row even when expanded', () => {
+    const rows = eventRows({
+      event: {
+        type: 'implementer_generate_failed',
+        ts: 0,
+        phase: 'implementing',
+        taskId: taskId('T010'),
+        model: 'opencode-go/deepseek-v4.1-flash',
+        error: 'Edit bundle did not apply',
+      },
+      globalIndex: 0,
+      expanded: true,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+
+    expect(rows.map(rowText)).toEqual([
+      `${CREW_SEAT_LABELS.build} failed  Edit bundle did not apply`,
+    ]);
+  });
+
   it('names the first non-blank line of an implementer cause', () => {
     for (const error of ['\nEdit bundle did not apply', '   \nEdit bundle did not apply']) {
       expect(implementerFailedRows(error, 80).map(rowText)).toEqual([

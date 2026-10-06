@@ -1,10 +1,18 @@
 import type { InputMode } from '../../core/navigation/types.js';
-import { getActiveRailStage, railStageRole } from '../../core/rail-stages.js';
+import { getActiveRailStage, railStageRole, type RailRole } from '../../core/rail-stages.js';
 import type { Phase } from '../../core/schemas/enums.js';
 
 export interface InputHintInput {
   inputHint: string;
   inputMode: InputMode;
+}
+
+// The seat a queued message reaches: the planner while it shapes the run, the reviewer during the
+// final review, where the queue drains to the reviewer. The placeholder and the confirmation both
+// read this one decision so they cannot name different seats.
+export function queueSeatRole(phase: Phase): RailRole | undefined {
+  const stage = getActiveRailStage(phase);
+  return stage === null ? undefined : railStageRole(stage.stage);
 }
 
 // A message queued during planning leads the planner's next call, and one queued during the final
@@ -18,9 +26,7 @@ export function queuePlaceholder(input: {
   stopping: boolean;
 }): string | undefined {
   if (input.inputMode !== 'normal' || !input.running || input.stopping) return undefined;
-  const stage = getActiveRailStage(input.phase);
-  if (stage === null) return undefined;
-  const role = railStageRole(stage.stage);
+  const role = queueSeatRole(input.phase);
   if (role === 'planner') return 'Queue a message for the planner…';
   if (role === 'validator') return 'Queue a message for the reviewer…';
   return undefined;

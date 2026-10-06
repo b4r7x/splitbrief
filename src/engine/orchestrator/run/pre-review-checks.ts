@@ -150,6 +150,7 @@ export async function runPreReviewChecks(
           config: opts.config,
           bus: opts.bus,
           phase: opts.phase,
+          moment: 'pre-review',
           discoveredValidation: opts.state.discoveredValidation,
           signal: opts.signal,
           baseline: opts.state.fullSuiteBaseline,

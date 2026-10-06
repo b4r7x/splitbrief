@@ -138,6 +138,22 @@ describe('recovery prompt', () => {
     expect(parseRecoveryActionAnswer('w2', issue)).toBeNull();
   });
 
+  it('reads a usage-limit halt as seat down with its rows and no pause', async () => {
+    const issue: RecoveryIssue = {
+      ...usageLimitIssue([{ tool: 'opencode' }]),
+      facts: { tool: 'Ollama' },
+    };
+
+    const visible = await renderPromptBody(formatRecoveryPrompt(issue));
+
+    expect(visible).toContain('Seat down · Usage limit on Ollama');
+    expect(visible).toContain('r   retry same worker');
+    expect(visible).toContain('w   switch BUILD to OpenCode CLI');
+    expect(visible).toContain('s   skip task');
+    expect(visible).toContain('a   end run · closes this run, changes kept');
+    expect(visible).not.toContain('pause');
+  });
+
   it('counts the ready tools that did not fit the offer', async () => {
     const issue = usageLimitIssue([
       { tool: 'claude-code', model: 'sonnet' },

@@ -364,6 +364,19 @@ describe('review input effects', () => {
     });
   });
 
+  it('confirms a message queued during the final review is for the reviewer', async () => {
+    lifecycleStore.__testReset({ phase: 'final-review' });
+    const effects = makeEffects(async () => ({ status: 'accepted' as const, messageId: 'm-1' }));
+
+    await createReviewInputHandler(makeInputMode('normal'), effects).handleInput('check the icons');
+
+    expect(effects.enqueue).toHaveBeenCalledWith('check the icons', 'final-review');
+    expect(feedbackStore.get()).toEqual({
+      message: 'Message queued for the reviewer.',
+      isError: false,
+    });
+  });
+
   it('restores the draft when the queue refuses a correction typed during a brief', async () => {
     lifecycleStore.__testReset({ phase: 'implementing' });
     const effects = makeEffects(async () => ({

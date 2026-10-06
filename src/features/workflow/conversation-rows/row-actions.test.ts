@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Section } from '../../../core/sections/event-sections.js';
+import { taskId } from '../../../core/schemas/task.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
 import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';
@@ -89,6 +90,76 @@ describe('buildConversationRowActions', () => {
         key: 'implementer_generate_done:0',
       });
     }
+  });
+
+  it('maps the cut implementer-failure rows to a toggle-diff action', () => {
+    const sections: Section<EngineEvent>[] = [
+      {
+        type: 'events',
+        startIndex: 0,
+        items: [
+          {
+            type: 'implementer_generate_failed',
+            ts: 0,
+            phase: 'implementing',
+            taskId: taskId('T010'),
+            model: 'opencode-go/deepseek-v4.1-flash',
+            error:
+              'Tool implementer (opencode) exited without changing any files after a completed call that reported done for every file in its brief',
+          },
+        ],
+      },
+    ];
+    const inputs = {
+      sections,
+      expandedDiffs: new Set<string>(),
+      expandedActivityBatches: new Set<string>(),
+      cols: 88,
+      viewportHeight: 20,
+      streaming,
+    };
+
+    const { rows } = buildConversationRows(inputs);
+    const actions = buildConversationRowActions(inputs);
+    const actionableRows = rows.filter((row) => actions.has(row.key));
+
+    expect(actionableRows.length).toBeGreaterThan(0);
+    for (const row of actionableRows) {
+      expect(actions.get(row.key)).toEqual({
+        type: 'toggle-diff',
+        key: 'implementer_generate_failed:0',
+      });
+    }
+  });
+
+  it('leaves an implementer failure whose cause fits without an action', () => {
+    const sections: Section<EngineEvent>[] = [
+      {
+        type: 'events',
+        startIndex: 0,
+        items: [
+          {
+            type: 'implementer_generate_failed',
+            ts: 0,
+            phase: 'implementing',
+            taskId: taskId('T010'),
+            model: 'opencode-go/deepseek-v4.1-flash',
+            error: 'Edit bundle did not apply',
+          },
+        ],
+      },
+    ];
+
+    const actions = buildConversationRowActions({
+      sections,
+      expandedDiffs: new Set<string>(),
+      expandedActivityBatches: new Set<string>(),
+      cols: 88,
+      viewportHeight: 20,
+      streaming,
+    });
+
+    expect(actions.size).toBe(0);
   });
 
   it('does not map a non-expandable activity batch', () => {

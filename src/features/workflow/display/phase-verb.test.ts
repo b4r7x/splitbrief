@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PHASES } from '../../../core/schemas/enums.js';
-import { activeVerb, inlineActiveVerb } from './phase-verb.js';
+import { activeVerb, inlineActiveVerb, suiteStageVerb } from './phase-verb.js';
 
 describe('activeVerb', () => {
   it('says one verb for the planning session and names an old chain briefs call', () => {
@@ -48,5 +48,13 @@ describe('inlineActiveVerb', () => {
     expect(inlineActiveVerb('implementing')).toBe('implementing');
     expect(inlineActiveVerb('planning')).toBe('planning');
     expect(inlineActiveVerb('final-review')).toBe('review');
+  });
+});
+
+describe('suiteStageVerb', () => {
+  it('names the full-suite stage instead of the seat verb', () => {
+    expect(suiteStageVerb('typecheck')).toBe('Running the typecheck');
+    expect(suiteStageVerb('lint')).toBe('Running the lint');
+    expect(suiteStageVerb('test')).toBe('Running the test suite');
   });
 });

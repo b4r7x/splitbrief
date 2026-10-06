@@ -203,6 +203,18 @@ describe('validateConfig', () => {
     expect(retiredValueNotices(config)).toEqual([notice]);
   });
 
+  it('loads a retired approval.enabled: true with exactly one notice', () => {
+    const config = { ...makeConfig(), approval: { enabled: true } };
+
+    const { errors } = validateConfig(config);
+    const warnings = retiredValueNotices(config);
+
+    expect(errors).toEqual([]);
+    expect(warnings.filter((w) => w.includes('approval.enabled'))).toEqual([
+      'approval.enabled was retired and is ignored: a write to a protected path always asks, and no other write does. Delete approval.enabled.',
+    ]);
+  });
+
   it.each(['all', 'spec', 'default'])(
     'loads the retired approve level %s as plan with one notice',
     (approve) => {

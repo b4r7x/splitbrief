@@ -27,7 +27,12 @@ import { routeTestScript } from '../../../core/validation/test-script-route.js';
 import { runCommand } from '../../../lib/process/spawn/run-command.js';
 import { labelError } from '../../../utils/format-errors.js';
 import { parseShellCommand } from '../../../utils/parse-shell-command.js';
-import { publishValidation, publishValidationBaseline, publishWarning } from '../events.js';
+import {
+  publishFullSuite,
+  publishValidation,
+  publishValidationBaseline,
+  publishWarning,
+} from '../events.js';
 import { decideValidationAcceptance, type ValidationAcceptance } from './acceptance.js';
 import { stageFailureKeys } from './extract-failure-keys.js';
 import { sanitizeDiscoveredValidation } from '../planning/sanitize-discovered-validation.js';
@@ -255,6 +260,7 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
       config,
       bus,
       phase,
+      moment,
       discoveredValidation,
       signal,
       baseline,
@@ -293,6 +299,7 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
           ? Math.max(configuredTimeout, 3 * baselineStage.durationMs)
           : configuredTimeout;
       const startedAt = Date.now();
+      publishFullSuite({ bus, phase }, { status: 'running', stage, command: plan.command, moment });
       const result = await runValidationStep({
         stage,
         cmd: plan.resolved.cmd,
@@ -306,6 +313,17 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
         signal,
       });
       const durationMs = Date.now() - startedAt;
+      publishFullSuite(
+        { bus, phase },
+        {
+          status: 'done',
+          stage,
+          command: plan.command,
+          moment,
+          passed: result.passed,
+          duration: durationMs,
+        },
+      );
       results.push(result);
       if (result.skipped !== true) {
         stages[stage] =

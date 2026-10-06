@@ -13,6 +13,8 @@ export interface StopBylineInput {
   readonly parked: { readonly kind: StopParkKind; readonly taskId: string | null } | null;
   readonly currentTaskId: string | null;
   readonly nextTaskId: string | null;
+  /** The brief the run last finished, named when a pause outlives the brief it was armed on. */
+  readonly finishedTaskId?: string | null;
   readonly passed: number;
   readonly total: number;
   /** Since the stop was asked for, so the wait is reported rather than guessed at. */
@@ -30,7 +32,7 @@ export interface StopByline {
 
 /** The run names its own brief where it has one, and says "the run" rather than nothing. */
 function subject(input: StopBylineInput): string {
-  return input.parked?.taskId ?? input.currentTaskId ?? 'the run';
+  return input.parked?.taskId ?? input.currentTaskId ?? input.finishedTaskId ?? 'the run';
 }
 
 /**

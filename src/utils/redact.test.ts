@@ -198,6 +198,12 @@ describe('redactSecrets', () => {
     expect(redactSecretsWithMetadata(redacted)).toEqual({ text: redacted, redacted: false });
   });
 
+  it('leaves a cut redaction marker redacted', () => {
+    expect(redactSecrets('password=***RED…')).toBe('password=***RED…');
+    expect(redactSecrets('password=…')).toBe('password=…');
+    expect(redactSecrets('password=hunter2')).toBe('password=***REDACTED***');
+  });
+
   it('redacts quoted credential fields and password punctuation', () => {
     const result = redactSecrets(
       `{"api_key":"ordinary/@value!#[]{}","password":"p@$$w0rd!,;}]","clientSecret":'slash/+equals=question?'}`,

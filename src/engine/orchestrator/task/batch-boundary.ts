@@ -81,6 +81,7 @@ export async function runBatchBoundary(args: {
     config: wctx.config,
     bus: wctx.bus,
     phase: state.phase,
+    moment: 'boundary',
     discoveredValidation: state.discoveredValidation,
     signal: wctx.signal,
     baseline: state.fullSuiteBaseline,

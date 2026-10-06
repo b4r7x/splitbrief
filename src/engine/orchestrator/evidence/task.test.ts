@@ -139,6 +139,18 @@ describe('recordLocalTaskEvidence', () => {
     ]);
   });
 
+  it('appends a fix task the ledger does not yet know instead of dropping it', () => {
+    const t1 = makeTask({ id: 'T001', status: 'done' });
+    const t2 = makeTask({ id: 'T002', status: 'done' });
+    const fix = makeTask({ id: 'T003', status: 'pending' });
+    const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [t1, t2] });
+
+    const updated = recordLocalTaskEvidence({ ledger, task: fix, status: 'done', validation: [] });
+
+    expect(updated.tasks.map((entry) => entry.id)).toEqual(['T001', 'T002', 'T003']);
+    expect(updated.validationSummary).toEqual({ passed: 3, failed: 0, skipped: 0, escalated: 0 });
+  });
+
   it('records the changed files without a prose diff label', () => {
     const task = makeTask({ suggestedFiles: ['src/a.ts', 'src/a.test.ts'] });
     const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });

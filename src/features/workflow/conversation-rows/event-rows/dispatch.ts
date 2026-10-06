@@ -28,6 +28,7 @@ import { isRunnerCallTranscriptRowSuppressed } from '../runner-call-classificati
 import {
   baselineValidationRowBlock,
   escalateRowBlock,
+  fullSuiteRowBlock,
   implementerDoneRowBlock,
   runningImplementerRowBlock,
   validateRowBlock,
@@ -181,18 +182,11 @@ export function eventRowBlock(options: {
       return implementerDoneRowBlock(keyPrefix, event, ctx, expanded);
     case 'implementer_generate_failed': {
       const label = `${CREW_SEAT_LABELS.build} failed`;
-      const cause = event.error
-        ?.split('\n')
-        .map((line) => line.trim())
-        .find((line) => line.length > 0);
-      const valueWidth = wrapWidthFor('card', ctx.width) - getTerminalCellWidth(`${label}  `);
+      const { value } = implementerFailureCard(event, ctx.width, expanded);
       return cardRowsBlock({
         keyPrefix,
         label,
-        value:
-          cause && valueWidth > 0
-            ? truncateTerminalDisplayText(sanitizeRowDisplayText(cause), valueWidth)
-            : undefined,
+        value,
         width: ctx.width,
         labelTone: 'error',
         valueTone: 'textDim',
@@ -202,6 +196,8 @@ export function eventRowBlock(options: {
       return validateRowBlock(keyPrefix, event, ctx.width);
     case 'validation_baseline':
       return baselineValidationRowBlock(keyPrefix, event, ctx.width);
+    case 'full_suite':
+      return fullSuiteRowBlock(keyPrefix, event, ctx.width);
     case 'escalate':
       return escalateRowBlock(keyPrefix, event, ctx.width);
     case 'artifact_written':
@@ -342,6 +338,32 @@ export function eventRowBlock(options: {
     default:
       return assertNever(event);
   }
+}
+
+function implementerFailureCause(
+  event: Extract<EngineEvent, { type: 'implementer_generate_failed' }>,
+): string | undefined {
+  const cause = event.error
+    ?.split('\n')
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+  return cause === undefined ? undefined : sanitizeRowDisplayText(cause);
+}
+
+export function implementerFailureCard(
+  event: Extract<EngineEvent, { type: 'implementer_generate_failed' }>,
+  width: number,
+  expanded: boolean,
+): { value: string | undefined; expandable: boolean } {
+  const cause = implementerFailureCause(event);
+  const valueWidth =
+    wrapWidthFor('card', width) - getTerminalCellWidth(`${CREW_SEAT_LABELS.build} failed  `);
+  if (cause === undefined || valueWidth <= 0) return { value: undefined, expandable: false };
+  const cut = getTerminalCellWidth(cause) > valueWidth;
+  return {
+    value: cut && expanded ? cause : truncateTerminalDisplayText(cause, valueWidth),
+    expandable: cut,
+  };
 }
 
 function queueMessageValue(base: string, preview: string | undefined): string {

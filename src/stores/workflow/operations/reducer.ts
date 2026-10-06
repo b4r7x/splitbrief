@@ -11,6 +11,7 @@ import type { OpenTool, OperationsState, RunningValidationStage } from './state.
 import { appendWarning, showsWarningOnPrimarySurface } from './warnings.js';
 
 type ValidationEvent = Extract<EngineEvent, { type: 'validate' | 'validation_baseline' }>;
+type SuiteEvent = Extract<EngineEvent, { type: 'full_suite' }>;
 
 function runningValidationStage(event: ValidationEvent): RunningValidationStage | null {
   if (event.status !== 'running' || event.activeStage === undefined) return null;
@@ -30,6 +31,19 @@ function applyValidationStage(state: OperationsState, event: ValidationEvent): O
   if (next !== null && current?.stage === next.stage) return state;
   if (next === null && current === null) return state;
   return { ...state, validationStage: next };
+}
+
+function runningSuiteStage(event: SuiteEvent): RunningValidationStage | null {
+  if (event.status !== 'running') return null;
+  return { stage: event.stage, command: event.command, stageStartedTs: event.ts };
+}
+
+function applySuiteStage(state: OperationsState, event: SuiteEvent): OperationsState {
+  const next = runningSuiteStage(event);
+  const current = state.suiteStage ?? null;
+  if (next !== null && current?.stage === next.stage) return state;
+  if (next === null && current === null) return state;
+  return { ...state, suiteStage: next };
 }
 
 // Activity that is not a tool the seat runs: it never opens, so it never holds a silence open.
@@ -67,6 +81,8 @@ export function updateOperations(state: OperationsState, event: EngineEvent): Op
     case 'validate':
     case 'validation_baseline':
       return applyValidationStage(state, event);
+    case 'full_suite':
+      return applySuiteStage(state, event);
     case 'runner_call_started':
       return startRunnerOperation(closePlannerStatusFallbacks(state, event.ts), event);
     case 'runner_call_runtime_status':

@@ -457,6 +457,23 @@ describe('a run with a workspace', () => {
     ).toMatchObject({ kind: 'open', stop: { kind: 'waiting-for-you', on: { kind: 'halt' } } });
   });
 
+  it('a checkout-mode run accepted as is closes unless its halt waits', () => {
+    const issue = makeRecoveryIssue({ reason: 'review-failed' });
+    const acceptedAsIs = { at: AT, findings: ['F1'] };
+
+    expect(statusOf({ phase: 'complete', reviewStatus: 'failed', acceptedAsIs })).toEqual({
+      kind: 'closed',
+      as: 'complete',
+    });
+    expect(
+      statusOf({ phase: 'complete', reviewStatus: 'failed', acceptedAsIs, pendingRecovery: issue }),
+    ).toEqual({
+      kind: 'open',
+      stop: { kind: 'waiting-for-you', on: { kind: 'halt', issue } },
+      resumeAt: { kind: 'review', cycle: 0 },
+    });
+  });
+
   it('ready outranks liveness', () => {
     expect(statusOf(passed(), 'alive')).toEqual({ kind: 'ready-to-apply', override: false });
   });

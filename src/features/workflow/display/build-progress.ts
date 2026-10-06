@@ -12,7 +12,7 @@ import type {
   OperationsState,
 } from '../../../stores/workflow/operations/state.js';
 import { selectTaskListView, type TasksState } from '../../../stores/workflow/tasks.js';
-import { inlineActiveVerb } from './phase-verb.js';
+import { inlineActiveVerb, suiteStageVerb } from './phase-verb.js';
 import { stallRunnerHint } from './live-activity.js';
 import { runnerActivityLedgerItem } from './runner-activity-display.js';
 
@@ -75,6 +75,11 @@ function runnerLabel(
 // What the run is doing, not what it has spent: usage is reported where a reader asks for it,
 // through `/usage`, and never as a rounded count that reads `0k` until the first report lands.
 function activityLine(input: DeriveBuildProgressInput): string {
+  const suite = input.operations.suiteStage ?? null;
+  if (suite !== null) {
+    const command = suite.command ?? suite.stage;
+    return [suiteStageVerb(suite.stage), command].filter((part) => part !== '').join(SOFT_SEP);
+  }
   const stage = input.operations.validationStage ?? null;
   if (stage !== null) {
     // How long the command has run is its proof of life. When the run last heard from a seat is

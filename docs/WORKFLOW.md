@@ -262,6 +262,8 @@ Briefs made from a plan skip any brief-quality pass: `checkPlan` is the only adm
 
 The planner's questions, the plan and its repair stay on one native planner session where the tool supports it (`SET_PLANNER_SESSION_ID`). A planner without a session gets the full prompt plus the conversation so far on every turn (`planFullTurn`, `src/engine/spec/prompts/plan-session.ts`). An expired native session is reissued once with the rebuilt transcript (`withExpiredSessionReissue`).
 
+The session streams no narration of its own: its answer is typed JSON, so the planner's live output is not echoed. The byline and the planner heartbeat stay its signs of life, and its question rounds and warnings show as plain rows.
+
 A halt keeps the conversation; only a plan that passed its checks clears it. A `SeatProtocolError` raises a `seat-protocol-error` recovery that offers the seat swap.
 
 ### Approval: the plan card

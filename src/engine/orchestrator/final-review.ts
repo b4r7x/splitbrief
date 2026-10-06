@@ -523,8 +523,9 @@ export async function runFinalReviewPhase(opts: {
     } catch (err) {
       warnError('failed to compute the review candidate id', err);
     }
-    // The renders the checks log recorded: the seat takes images when its tool
-    // declares a channel, else it gets a manifest and the no-vision statement.
+    // The renders the checks log recorded: the seat takes up to four images per
+    // check when its tool declares a channel, else it gets a manifest and the
+    // no-vision statement.
     const renders = reviewRenders({
       ledger,
       registry: checkRegistry({ plan: state.plan, tasks: state.tasks }),
@@ -727,8 +728,8 @@ export async function runFinalReviewPhase(opts: {
       bus,
       ...(opts.signal !== undefined && { signal: opts.signal }),
     });
-    // A render check whose images were not attached can only stay unverified:
-    // the reviewer saw no render, so nothing it says may turn one into a pass.
+    // A render check with no attached image can only stay unverified: the
+    // reviewer saw no render of it, so nothing it says may turn one into a pass.
     if (renders.missingCheckIds.length > 0) {
       const forced = forceUnverifiedRenderCriteria({
         verdict: reviewerVerdict,

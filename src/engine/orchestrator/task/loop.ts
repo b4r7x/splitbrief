@@ -148,6 +148,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
         phase: state.phase,
         projectDir: wctx.workspaceDir,
         config,
+        moment: 'baseline',
         discoveredValidation: state.discoveredValidation,
         signal: wctx.signal,
       });

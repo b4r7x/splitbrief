@@ -6,6 +6,12 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import {
+  isTuiShotsFrame,
+  S9_RENDER_CHECKS,
+  TUI_SHOTS_PNG,
+  writeTuiShotsRender,
+} from '#testing/helpers/tui-shots-renders.js';
 import { prependPath, trustedShimGate } from '#testing/helpers/command-shim.js';
 import {
   makeBusRecorder,
@@ -19,7 +25,7 @@ import {
 } from '#testing/helpers/typed-planner.js';
 import { createEvidenceLedger, withUpdatedTask } from '../../core/evidence/ledger-state.js';
 import { writeEvidenceLedger } from '../../core/evidence/ledger-storage.js';
-import { PLAN_FILE, sessionDir } from '../../core/paths.js';
+import { PLAN_FILE, rendersDir, sessionDir } from '../../core/paths.js';
 import { writeSpecFile } from '../../core/paths-io.js';
 import { sha256Hex } from '../../utils/sha256.js';
 import type { TypedCallContext } from '../planners/types.js';
@@ -253,6 +259,102 @@ describe('final review render delivery', () => {
       expect(argv[argv.indexOf('--image') + 1]).toBe(realpathSync(png));
     } finally {
       restorePath();
+    }
+  });
+  it('passes every render criterion of six tui-shots checks that recorded 80 PNGs', async () => {
+    const { projectDir, sessionId } = setupGitSessionProject({
+      prefix: 'final-review-renders-s9',
+      sessionId: 'sess-renders-s9',
+    });
+    dirs.push(projectDir);
+    const ref = { projectDir, sessionId };
+    writeSpecFile(ref, PLAN_FILE, 'Render the run screen.', null);
+    const written = S9_RENDER_CHECKS.map((render) => ({
+      render,
+      paths: writeTuiShotsRender(rendersDir(ref, render.checkId), render),
+    }));
+    const task = makeTask({ id: 'T001', status: 'done' });
+    const baseline = await captureChangedFilesBaseline(projectDir);
+    const candidateId = await currentCandidateId(projectDir, baseline);
+    const state = makeImplState([task], {
+      changedFilesBaseline: serializeChangedFilesBaseline(baseline),
+      plan: {
+        summary: 'Render the run screen.',
+        decisions: [],
+        criteria: S9_RENDER_CHECKS.map((render, index) => ({
+          id: `C${index + 1}`,
+          text: `${render.scenario} reads as designed`,
+          checkIds: [render.checkId],
+        })),
+        checks: S9_RENDER_CHECKS.map((render) => ({
+          id: render.checkId,
+          kind: 'render' as const,
+          value: render.scenario,
+          required: true,
+        })),
+        validation: null,
+      },
+    });
+    writeEvidenceLedger(
+      ref,
+      withUpdatedTask(
+        createEvidenceLedger({ sessionId, feature: state.feature, tasks: [task] }),
+        task.id,
+        (entry) => ({
+          ...entry,
+          checks: written.map(({ render, paths }) => ({
+            id: render.checkId,
+            command: `npm run tui-shots -- --scenario ${render.scenario}`,
+            exitCode: 0,
+            artifacts: paths.map((path) => ({ path, sha256: sha256Hex(TUI_SHOTS_PNG) })),
+            workspaceSnapshotId: candidateId,
+            ts: '2026-10-06T23:07:27.690Z',
+          })),
+        }),
+      ),
+    );
+    const contexts: TypedCallContext[] = [];
+    const prompts: string[] = [];
+    const call = typedCallPlanAndReview(
+      () => planFromTasks([]),
+      (prompt) => {
+        prompts.push(prompt);
+        const verdict = passingReviewVerdict(prompt);
+        return {
+          ...verdict,
+          criteria: verdict.criteria.map((criterion) => ({
+            ...criterion,
+            evidence: 'frame at every size: rows align and nothing is cut.',
+          })),
+        };
+      },
+    );
+    const reviewer = makePlanner({
+      typedCall: (ctx) => {
+        contexts.push(ctx);
+        return call(ctx);
+      },
+    });
+
+    const result = await runFinalReviewPhase({
+      ...ref,
+      workspaceDir: projectDir,
+      state,
+      config: makeNoValidationConfig({ reviewer: { kind: 'cli', tool: 'claude-code' } }),
+      reviewer,
+      callbacks: makeCallbacks().callbacks,
+      bus: makeBusRecorder().bus,
+    });
+
+    expect(result.reviewStatus).toBe('written');
+    expect(prompts[0]).not.toContain(NO_VISION_REVIEW);
+    expect(result.verdict?.outcome.unverifiedCriteria).toEqual([]);
+    expect(result.verdict?.outcome.kind).toBe('pass');
+    const images = (contexts[0]?.images ?? []).map((image) => image.path);
+    for (const { paths } of written) {
+      for (const frame of paths.filter(isTuiShotsFrame)) {
+        expect(images).toContain(realpathSync(frame));
+      }
     }
   });
 });

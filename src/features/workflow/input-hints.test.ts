@@ -1,5 +1,31 @@
 import { describe, expect, it } from 'vitest';
-import { hintStateSeverity, queuePlaceholder, resolveInputHint } from './input-hints.js';
+import {
+  hintStateSeverity,
+  queuePlaceholder,
+  queueSeatRole,
+  resolveInputHint,
+} from './input-hints.js';
+
+describe('queueSeatRole', () => {
+  it.each(['researching', 'specifying', 'planning', 'analyzing'] as const)(
+    'names the planner while %s',
+    (phase) => {
+      expect(queueSeatRole(phase)).toBe('planner');
+    },
+  );
+
+  it('names the validator during the final review', () => {
+    expect(queueSeatRole('final-review')).toBe('validator');
+  });
+
+  it('names the implementer while a brief runs', () => {
+    expect(queueSeatRole('implementing')).toBe('implementer');
+  });
+
+  it.each(['idle', 'complete'] as const)('names no seat while %s', (phase) => {
+    expect(queueSeatRole(phase)).toBeUndefined();
+  });
+});
 
 describe('queuePlaceholder', () => {
   const working = { inputMode: 'normal' as const, running: true, stopping: false };

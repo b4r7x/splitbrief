@@ -84,6 +84,7 @@ export interface OperationsState {
   byCallId: Map<string, ActiveOperation>;
   /** Optional so the retention helpers can keep their narrow shape; the reducer always sets it. */
   validationStage?: RunningValidationStage | null;
+  suiteStage?: RunningValidationStage | null;
 }
 
 const initial = (): OperationsState => ({
@@ -91,6 +92,7 @@ const initial = (): OperationsState => ({
   last: null,
   byCallId: new Map(),
   validationStage: null,
+  suiteStage: null,
 });
 
 const store = createStore<OperationsState>(initial);

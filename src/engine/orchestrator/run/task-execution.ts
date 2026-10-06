@@ -96,6 +96,7 @@ async function parkAtBoundary(args: {
   state = transitionAndSave(ref, state, { type: 'RESUME_STEP' });
   setTrackedState(state);
   recordSteer({ ...ref, bus: wctx.bus }, state.phase, steer);
+  wctx.bus.publish({ type: 'workflow_resumed', ts: Date.now(), phase: state.phase });
   wctx.continuation?.hold(step, steer.trim() === '' ? undefined : steer);
   return { state, continued: true };
 }

@@ -105,6 +105,14 @@ function mergeIntoTail(last: EngineEvent | undefined, event: EngineEvent): TailM
   ) {
     return { kind: 'replace', event };
   }
+  if (
+    event.type === 'full_suite' &&
+    last?.type === 'full_suite' &&
+    last.status === 'running' &&
+    last.stage === event.stage
+  ) {
+    return { kind: 'replace', event };
+  }
   return APPEND_TAIL_MERGE;
 }
 

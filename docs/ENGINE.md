@@ -354,6 +354,13 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 // The run-start probe. stages[s] === true means probed and green; failing[s] === true
 // means probed and red; a stage in neither was not probed.
 
+{ type: 'full_suite'; status: 'running' | 'done';
+  stage: 'typecheck' | 'lint' | 'test'; command: string;
+  moment: 'baseline' | 'boundary' | 'pre-review';
+  passed?: boolean; duration?: number }
+// One running and one done event per full-suite stage the run runs. `passed` and
+// `duration` are set on the done event, and `moment` names where the suite runs.
+
 // Recovery
 { type: 'recovery_prompted'; issueId: string; reason: RecoveryReason;
   taskId?: TaskId; files: string[]; affectedTaskIds: TaskId[];

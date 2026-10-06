@@ -611,4 +611,34 @@ describe('operationsStore', () => {
     addEvent(makeValidate({ ts: 12_000, status: 'done' }));
     expect(operationsStore.get().validationStage).toBeNull();
   });
+
+  it('stamps an open full-suite stage and clears it when the stage settles', () => {
+    addEvent({
+      type: 'full_suite',
+      ts: 5_000,
+      phase: 'implementing',
+      status: 'running',
+      stage: 'test',
+      command: 'npm test',
+      moment: 'boundary',
+    });
+    expect(operationsStore.get().suiteStage).toEqual({
+      stage: 'test',
+      command: 'npm test',
+      stageStartedTs: 5_000,
+    });
+
+    addEvent({
+      type: 'full_suite',
+      ts: 12_000,
+      phase: 'implementing',
+      status: 'done',
+      stage: 'test',
+      command: 'npm test',
+      moment: 'boundary',
+      passed: true,
+      duration: 7_000,
+    });
+    expect(operationsStore.get().suiteStage).toBeNull();
+  });
 });
