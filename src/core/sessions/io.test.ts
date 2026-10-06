@@ -286,7 +286,7 @@ describe('rows derived from state.json', () => {
       id: sessionId,
       feature: 'crashed-feature',
       status: 'open',
-      stop: 'interrupted',
+      stop: 'stopped',
       phase: 'implementing',
     });
     expect(sessions[0]).not.toHaveProperty('mode');
@@ -330,7 +330,7 @@ describe('rows derived from state.json', () => {
     expect(listSessions(tmp)[0]).toMatchObject({ status, apply: as });
   });
 
-  it('names the stop reason a halted run left on its state', () => {
+  it('names a halted run as waiting for you', () => {
     tmp = createTempDir('sessions-io-test');
     const sessionId = '2024-01-01-halted';
     saveState(
@@ -341,7 +341,7 @@ describe('rows derived from state.json', () => {
       }),
     );
 
-    expect(listSessions(tmp)[0]).toMatchObject({ status: 'open', stop: 'halted' });
+    expect(listSessions(tmp)[0]).toMatchObject({ status: 'open', stop: 'waiting-for-you' });
   });
 
   it('derives the status from the state even when a summary.json is present', () => {

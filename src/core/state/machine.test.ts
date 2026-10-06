@@ -224,6 +224,51 @@ describe('transition', () => {
     expect(transition(closed, { type: 'CLOSE_RUN' }).closed?.as).toBe('ended');
   });
 
+  it('CLOSE_RUN records the run.patch the close saved the changes in', () => {
+    const next = transition(
+      createInitialState('feat'),
+      { type: 'CLOSE_RUN', as: 'discarded', patch: '.splitbrief/sessions/s1/run.patch' },
+      { now: new Date('2026-05-01T10:00:00Z') },
+    );
+    expect(next.closed).toEqual({
+      at: '2026-05-01T10:00:00.000Z',
+      as: 'discarded',
+      patch: '.splitbrief/sessions/s1/run.patch',
+    });
+  });
+
+  it('APPLY_UNDONE records the undo on an applied run once and keeps it closed', () => {
+    const applied: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'complete',
+      applied: { at: '2026-05-01T10:00:00.000Z', backupId: 'b1', files: ['src/a.ts'] },
+      closed: { at: '2026-05-01T10:00:00.000Z', as: 'applied' },
+    };
+
+    const undone = transition(
+      applied,
+      { type: 'APPLY_UNDONE', conflicts: ['src/b.ts'] },
+      { now: new Date('2026-05-02T10:00:00Z') },
+    );
+
+    expect(undone.applied?.undone).toEqual({
+      at: '2026-05-02T10:00:00.000Z',
+      conflicts: ['src/b.ts'],
+    });
+    expect(undone.closed).toEqual(applied.closed);
+    expect(() => transition(undone, { type: 'APPLY_UNDONE', conflicts: [] })).toThrow(
+      'Cannot apply APPLY_UNDONE',
+    );
+    const ended: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'complete',
+      closed: { at: '2026-05-01T10:00:00.000Z', as: 'ended' },
+    };
+    expect(() => transition(ended, { type: 'APPLY_UNDONE', conflicts: [] })).toThrow(
+      'Cannot apply APPLY_UNDONE',
+    );
+  });
+
   it.each([
     [0, 'implementing', 1],
     [1, 'escalating', 1],
@@ -465,18 +510,6 @@ describe('transition', () => {
     s = transition(s, { type: 'START' });
     expect(s.phase).toBe('planning');
 
-    s = transition(s, { type: 'RESEARCH_DONE' });
-    expect(s.phase).toBe('specifying');
-
-    s = transition(s, { type: 'SPEC_DONE' });
-    expect(s.phase).toBe('reviewing-spec');
-
-    s = transition(s, { type: 'APPROVE_SPEC' });
-    expect(s.phase).toBe('planning');
-
-    s = transition(s, { type: 'BRIEF_ADMISSION_OPENED' });
-    expect(s.phase).toBe('reviewing-briefs');
-
     s = { ...s, tasks };
     s = transition(s, { type: 'BEGIN_IMPLEMENTATION' });
     expect(s.phase).toBe('implementing');
@@ -508,31 +541,6 @@ describe('transition', () => {
     expect(getEscalatedTaskIds(s)).toEqual([]);
     expect(getSkippedTaskIds(s)).toEqual([]);
     expect(s.currentTaskIndex).toBe(2);
-  });
-
-  it.each([
-    ['REWIND_TO_SPEC', 'specifying'],
-    ['REWIND_TO_PLAN', 'planning'],
-  ] as const)('%s -> %s with tasks cleared and counters reset', (type, phase) => {
-    const tasks = [makeTask({ id: 'T001', status: 'done' }), makeTask({ id: 'T002' })];
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'implementing',
-      tasks,
-      currentTaskIndex: 1,
-      attempt: 2,
-      awaitingContinue: true,
-      plannerSessionId: 'old-session',
-      discoveredValidation: { testCommand: 'npm test' },
-    };
-    const next = transition(state, { type });
-    expect(next.phase).toBe(phase);
-    expect(next.tasks).toEqual([]);
-    expect(next.currentTaskIndex).toBe(0);
-    expect(next.attempt).toBe(0);
-    expect(next.awaitingContinue).toBe(false);
-    expect(next.plannerSessionId).toBeUndefined();
-    expect(next.discoveredValidation).toBeUndefined();
   });
 
   it('RESET_TASK -> implementing with task set to pending and index rewound', () => {
@@ -568,29 +576,11 @@ describe('transition', () => {
     expect(next).toBe(state);
   });
 
-  it.each([
-    ['REWIND_TO_SPEC', 'specifying', 'spec', 'use refresh tokens'],
-    ['REWIND_TO_PLAN', 'planning', 'plan', 'add caching layer'],
-  ] as const)('%s with comment sets rewindPending', (type, phase, target, comment) => {
-    const state: WorkflowState = { ...createInitialState('feat'), phase: 'implementing' };
-    const next = transition(state, { type, comment });
-    expect(next.phase).toBe(phase);
-    expect(next.rewindPending).toEqual({ target, comment });
-  });
-
-  it('REWIND_TO_SPEC without comment sets rewindPending with no comment field', () => {
-    const state: WorkflowState = { ...createInitialState('feat'), phase: 'implementing' };
-    const next = transition(state, { type: 'REWIND_TO_SPEC' });
-    expect(next.phase).toBe('specifying');
-    expect(next.rewindPending).toEqual({ target: 'spec' });
-    expect(next.rewindPending?.comment).toBeUndefined();
-  });
-
   it('no longer accepts WIDEN_TASK_SCOPE from any phase', () => {
     const state: WorkflowState = {
       ...createInitialState('feat'),
       phase: 'escalating',
-      tasks: [makeTask({ id: 'T001', file: 'src/a.ts' })],
+      tasks: [makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] })],
     };
 
     expect(() =>
@@ -601,6 +591,23 @@ describe('transition', () => {
         reason: 'consumer of the export',
       } as never),
     ).toThrow('Cannot apply WIDEN_TASK_SCOPE');
+  });
+
+  it.each([
+    'RESEARCH_DONE',
+    'SPEC_DONE',
+    'APPROVE_SPEC',
+    'SPEC_CLARIFY_START',
+    'SPEC_CLARIFY_DONE',
+    'CONSTITUTION_CHECK_PASS',
+    'BRIEFS_COMPILED',
+    'BRIEF_ADMISSION_OPENED',
+    'ANALYZE_START',
+    'REWIND_TO_SPEC',
+    'REWIND_TO_PLAN',
+  ])('refuses the retired chain action %s', (type) => {
+    const state: WorkflowState = { ...createInitialState('feat'), phase: 'planning' };
+    expect(() => transition(state, { type } as never)).toThrow(`Cannot apply ${type}`);
   });
 
   it('RESET_TASK does NOT set rewindPending', () => {
@@ -629,12 +636,6 @@ describe('transition', () => {
     expect(compiled.rewindPending).toBeUndefined();
   });
 
-  it('SPEC_CLARIFY_START -> clarifying', () => {
-    const state: WorkflowState = { ...createInitialState('feat'), phase: 'reviewing-spec' };
-    const next = transition(state, { type: 'SPEC_CLARIFY_START' });
-    expect(next.phase).toBe('clarifying');
-  });
-
   it.each(['idle', 'researching', 'specifying'] as const)(
     'BEGIN_PLANNING enters planning from %s',
     (phase) => {
@@ -650,45 +651,12 @@ describe('transition', () => {
     expect(transition(state, { type: 'BEGIN_PLANNING' }).phase).toBe('planning');
   });
 
-  it('SPEC_CLARIFY_START enters clarifying from specifying', () => {
-    const state: WorkflowState = { ...createInitialState('feat'), phase: 'specifying' };
-    expect(transition(state, { type: 'SPEC_CLARIFY_START' }).phase).toBe('clarifying');
-  });
-
-  it('SPEC_DONE opens the spec gate from constitution-check', () => {
-    const state: WorkflowState = { ...createInitialState('feat'), phase: 'constitution-check' };
-    expect(transition(state, { type: 'SPEC_DONE' }).phase).toBe('reviewing-spec');
-  });
-
-  it('ANALYZE_START enters analyzing from planning', () => {
-    const state: WorkflowState = { ...createInitialState('feat'), phase: 'planning' };
-    expect(transition(state, { type: 'ANALYZE_START' }).phase).toBe('analyzing');
-  });
-
   it('PLAN_DONE settles an approved spec gate whose plan is unchanged', () => {
     const tasks = [makeTask({ id: 'T001' })];
     const state: WorkflowState = { ...createInitialState('feat'), phase: 'reviewing-spec' };
     const next = transition(state, { type: 'PLAN_DONE', tasks });
     expect(next.phase).toBe('reviewing-plan');
     expect(next.tasks).toEqual(tasks);
-  });
-
-  it('SPEC_CLARIFY_DONE -> constitution-check', () => {
-    const state: WorkflowState = { ...createInitialState('feat'), phase: 'clarifying' };
-    const next = transition(state, { type: 'SPEC_CLARIFY_DONE' });
-    expect(next.phase).toBe('constitution-check');
-  });
-
-  it('CONSTITUTION_CHECK_PASS -> planning', () => {
-    const state: WorkflowState = { ...createInitialState('feat'), phase: 'constitution-check' };
-    const next = transition(state, { type: 'CONSTITUTION_CHECK_PASS' });
-    expect(next.phase).toBe('planning');
-  });
-
-  it('ANALYZE_START -> analyzing', () => {
-    const state: WorkflowState = { ...createInitialState('feat'), phase: 'implementing' };
-    const next = transition(state, { type: 'ANALYZE_START' });
-    expect(next.phase).toBe('analyzing');
   });
 
   it('does not leave analyzing through a legacy implementation transition', () => {
@@ -714,12 +682,6 @@ describe('transition', () => {
     expect(next.tasks).toEqual(tasks);
   });
 
-  it('RESEARCH_DONE from specifying stays in specifying', () => {
-    const state: WorkflowState = { ...createInitialState('feat'), phase: 'specifying' };
-    const next = transition(state, { type: 'RESEARCH_DONE' });
-    expect(next.phase).toBe('specifying');
-  });
-
   it('PLAN_DONE from specifying enters reviewing-plan', () => {
     const tasks = [makeTask({ id: 'T001' })];
     const state: WorkflowState = { ...createInitialState('feat'), phase: 'specifying' };
@@ -727,18 +689,6 @@ describe('transition', () => {
     expect(next.phase).toBe('reviewing-plan');
     expect(next.tasks).toEqual(tasks);
   });
-
-  it.each(['planning', 'reviewing-plan', 'analyzing'] as const)(
-    'BRIEFS_COMPILED from %s keeps the briefs in planning, for a run with no plan gate',
-    (phase) => {
-      const tasks = [makeTask({ id: 'T001' })];
-      const state: WorkflowState = { ...createInitialState('feat'), phase };
-      const next = transition(state, { type: 'BRIEFS_COMPILED', tasks });
-      expect(next.phase).toBe('planning');
-      expect(next.tasks).toEqual(tasks);
-      expect(transition(next, { type: 'BRIEF_ADMISSION_OPENED' }).phase).toBe('reviewing-briefs');
-    },
-  );
 
   it.each(['planning', 'reviewing-plan', 'reviewing-briefs'] as const)(
     'BEGIN_IMPLEMENTATION enters implementing from %s',
@@ -769,19 +719,6 @@ describe('transition', () => {
     expect(next.pendingRecovery).toEqual(issue);
   });
 
-  it('PAUSE_PENDING_RECOVERY marks pending recovery as paused', () => {
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'validating-task',
-      pendingRecovery: makeRecoveryIssue(),
-    };
-
-    const next = transition(state, { type: 'PAUSE_PENDING_RECOVERY' });
-
-    expect(next.phase).toBe('validating-task');
-    expect(next.pendingRecovery?.status).toBe('paused');
-  });
-
   it('MARK_RECOVERY_APPLYING records selected action while keeping recovery pending', () => {
     const state: WorkflowState = {
       ...createInitialState('feat'),
@@ -791,31 +728,12 @@ describe('transition', () => {
 
     const next = transition(state, {
       type: 'MARK_RECOVERY_APPLYING',
-      action: 'route-bigger-worker',
+      action: 'skip-current-task',
     });
 
     expect(next.phase).toBe('validating-task');
     expect(next.pendingRecovery?.status).toBe('applying');
-    expect(next.pendingRecovery?.selectedAction).toBe('route-bigger-worker');
-  });
-
-  it('MARK_RECOVERY_APPLYING replaces a stale paused action for replay', () => {
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'validating-task',
-      pendingRecovery: makeRecoveryIssue({
-        status: 'paused',
-        selectedAction: 'pause-run',
-      }),
-    };
-
-    const next = transition(state, {
-      type: 'MARK_RECOVERY_APPLYING',
-      action: 'retry-same-worker',
-    });
-
-    expect(next.pendingRecovery?.status).toBe('applying');
-    expect(next.pendingRecovery?.selectedAction).toBe('retry-same-worker');
+    expect(next.pendingRecovery?.selectedAction).toBe('skip-current-task');
   });
 
   it('RESOLVE_PENDING_RECOVERY clears pending recovery after a selected action succeeds', () => {
@@ -938,7 +856,7 @@ describe('transition', () => {
       phase: 'implementing',
       tasks: [
         ...['T001', 'T002', 'T003'].map((id) => makeTask({ id, status: 'done' })),
-        makeTask({ id: 'T004', file: 'src/fix.ts' }),
+        makeTask({ id: 'T004', suggestedFiles: ['src/fix.ts'] }),
       ],
       currentTaskIndex: 3,
     };
@@ -985,7 +903,7 @@ describe('consult and split state operations', () => {
       id: 'T099',
       title: 'Rewritten brief',
       criteria: ['C9'],
-      files: ['src/rewritten.ts'],
+      suggestedFiles: ['src/rewritten.ts'],
       inputHashes: { 'src/rewritten.ts': 'hash' },
     });
 
@@ -1017,8 +935,8 @@ describe('consult and split state operations', () => {
     ];
     const state = implementationState(tasks, { currentTaskIndex: 1 });
     const children = [
-      makeTask({ id: 'T011', file: 'src/split-a.ts' }),
-      makeTask({ id: 'T012', file: 'src/split-b.ts', dependsOn: ['T011'] }),
+      makeTask({ id: 'T011', suggestedFiles: ['src/split-a.ts'] }),
+      makeTask({ id: 'T012', suggestedFiles: ['src/split-b.ts'], dependsOn: ['T011'] }),
     ];
 
     const next = transition(state, {
@@ -1246,7 +1164,7 @@ describe('fix cycles, review and triage records', () => {
       tasks,
       currentTaskIndex: 2,
     };
-    const fix = makeTask({ id: 'T003', file: 'src/fix.ts' });
+    const fix = makeTask({ id: 'T003', suggestedFiles: ['src/fix.ts'] });
 
     const next = transition(state, { type: 'INSERT_TASKS', parentId: null, tasks: [fix] });
 

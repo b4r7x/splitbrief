@@ -47,7 +47,7 @@ import type {
 
 const DEFAULT_VALIDATION_TIMEOUT_MS = STAGE_TIMEOUT_MS;
 
-const FULL_SUITE_TASK: Pick<Task, 'file' | 'files'> = { file: '', files: [] };
+const FULL_SUITE_TASK: Pick<Task, 'suggestedFiles'> = { suggestedFiles: [''] };
 
 function resolveValidationTimeout(config: Config): number {
   return config.validation.timeoutMs ?? DEFAULT_VALIDATION_TIMEOUT_MS;
@@ -164,7 +164,7 @@ async function formatChangedFiles(opts: {
 
 export function planStage(
   stage: ValidationStage,
-  task: Pick<Task, 'file' | 'files'>,
+  task: Pick<Task, 'suggestedFiles'>,
   ctx: StageContext,
   changedFiles: readonly string[],
   mode: TestTargetMode = 'narrow',

@@ -4,10 +4,8 @@ import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { configStore } from '../../../stores/project/config.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { focusStore } from '../../../stores/ui/focus.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { preparationStore } from '../../../stores/navigation/preparation.js';
-import { focusHasResolvableCopy } from '../copy/resolve.js';
 import { getActiveRailStage } from '../../../core/rail-stages.js';
 import {
   deriveLiveStatus,
@@ -16,7 +14,7 @@ import {
   PAUSED_LIVE_STATUS_VERB,
 } from '../display/live-activity.js';
 import { colorForTone } from '../display/tone-color.js';
-import { deriveBuildProgress, etaText, runnerSilenceMs } from '../display/build-progress.js';
+import { runnerSilenceMs } from '../display/build-progress.js';
 import { formatTime } from '../../../utils/format-time.js';
 import {
   selectRunningBrief,
@@ -83,10 +81,6 @@ export function InputFooter({
   const activeStage = getActiveRailStage(lifecycle.phase);
   const stageText = activeStage ? formatStageLabel(activeStage.stage) : '';
   const fractionText = stageFractionText(taskListView);
-  // Only advertise `y copy` when the focused region actually resolves a value, so the affordance
-  // never promises a yank that would toast "Nothing to copy".
-  const focus = focusStore.use((f) => f);
-  const copyResolvable = focusHasResolvableCopy(focus);
 
   // Re-entering a run at rest checks its tools first. That wait belongs on this row — the run
   // itself stays on screen, the composer beside it stays live, and the word is the request's own.
@@ -156,7 +150,9 @@ export function InputFooter({
   const stoppedWord = userCancelled ? 'Stopped by you' : 'Build failed';
   const stoppedLead = joinBylineParts([`${stoppedGlyph} ${stoppedWord}`, stageCore]);
   const recoveryStoppedLead = `${glyph('statusFailed')} Run stopped`;
-  const stall = lifecycle.status === 'running' ? lifecycle.stall : null;
+  // A tool the stream opened and has not closed is work, not silence: the build block names it.
+  const toolOpen = (operations.active?.openTools?.length ?? 0) > 0;
+  const stall = lifecycle.status === 'running' && !toolOpen ? lifecycle.stall : null;
   // The silence span comes from the same derivation the block's freshness line reads, so the two
   // surfaces state one number; the block prints it while it is on screen, this lead otherwise.
   const stalledFor = stall === null ? '' : formatTime(runnerSilenceMs(lifecycle, Date.now()) ?? 0);
@@ -202,7 +198,7 @@ export function InputFooter({
   // it: "queued for after T003" says where the text lands, where a bare count would not. Outside a
   // brief — planning, final review, a run at rest — the queue is the planner's or reviewer's and
   // the count is the whole truth.
-  const runningBriefId = selectRunningBrief(tasks).current?.id ?? null;
+  const runningBriefId = selectRunningBrief(tasks, lifecycle.phase).current?.id ?? null;
   const queuedText =
     lifecycle.queueDepth > 0
       ? runningBriefId !== null
@@ -210,27 +206,12 @@ export function InputFooter({
         : `${lifecycle.queueDepth} queued`
       : null;
 
-  // The build block states this estimate above the composer; the byline quotes that derivation
-  // rather than running a second one, and says nothing while there is none — naming the reason
-  // is the block's job, and this row drops its tail before it drops the lead.
-  const buildEta = deriveBuildProgress({
-    tasks,
-    lifecycle,
-    operations,
-    now: Date.now(),
-  }).eta;
-  const etaLabel = buildEta?.kind === 'estimate' ? etaText(buildEta) : null;
-
   const byline = buildInputFooterByline({
     // Raw width in; the builder owns the framed text measure.
     cols: Math.max(1, width ?? cols),
     lead,
     hintText,
     queuedText,
-    // A run that is stopping or parked is not on its way to finishing: an estimate beside that
-    // byline would be a prediction about work nobody is doing.
-    etaText: stopped === null ? etaLabel : null,
-    copyHint: copyResolvable ? 'y copy' : null,
     worktreeLabel: worktreeName ? sanitizeTerminalDisplayText(worktreeName) : null,
   });
 

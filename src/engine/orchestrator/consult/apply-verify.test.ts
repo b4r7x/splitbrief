@@ -141,7 +141,7 @@ describe('applyConsultAnswer verify', () => {
     const { projectDir, sessionId } = setupRepo();
     const task = makeTask({
       id: 'T003',
-      file: 'src/greet.ts',
+      suggestedFiles: ['src/greet.ts'],
       criteria: ['C1'],
       status: 'failed',
     });
@@ -184,7 +184,7 @@ describe('applyConsultAnswer verify', () => {
 
   it('fails the consult on an empty selection without running anything', async () => {
     const { projectDir, sessionId } = setupRepo();
-    const task = makeTask({ id: 'T003', file: 'src/greet.ts', criteria: ['C1'] });
+    const task = makeTask({ id: 'T003', suggestedFiles: ['src/greet.ts'], criteria: ['C1'] });
     const plan = planWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }]);
     const { ctx, states, events, validator } = harness({ projectDir, sessionId, task, plan });
     const attempt = await getChangedFilesSnapshot(projectDir);
@@ -199,7 +199,7 @@ describe('applyConsultAnswer verify', () => {
 
   it('fails the consult on a selection naming an unknown check', async () => {
     const { projectDir, sessionId } = setupRepo();
-    const task = makeTask({ id: 'T003', file: 'src/greet.ts', criteria: ['C1'] });
+    const task = makeTask({ id: 'T003', suggestedFiles: ['src/greet.ts'], criteria: ['C1'] });
     const plan = planWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }]);
     const { ctx, events, validator } = harness({ projectDir, sessionId, task, plan });
     const attempt = await getChangedFilesSnapshot(projectDir);
@@ -213,7 +213,7 @@ describe('applyConsultAnswer verify', () => {
 
   it("fails the consult when the selection misses a criterion's check", async () => {
     const { projectDir, sessionId } = setupRepo();
-    const task = makeTask({ id: 'T003', file: 'src/greet.ts', criteria: ['C1'] });
+    const task = makeTask({ id: 'T003', suggestedFiles: ['src/greet.ts'], criteria: ['C1'] });
     const plan = planWith(
       [
         { id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true },
@@ -235,7 +235,7 @@ describe('applyConsultAnswer verify', () => {
     const { projectDir, sessionId } = setupRepo();
     const task = makeTask({
       id: 'T003',
-      file: 'src/greet.ts',
+      suggestedFiles: ['src/greet.ts'],
       criteria: ['C1'],
       status: 'failed',
     });
@@ -269,7 +269,7 @@ describe('applyConsultAnswer verify', () => {
     const { projectDir, sessionId } = setupRepo();
     const task = makeTask({
       id: 'T003',
-      file: 'src/greet.ts',
+      suggestedFiles: ['src/greet.ts'],
       criteria: ['C1'],
       status: 'failed',
     });
@@ -303,7 +303,7 @@ describe('applyConsultAnswer verify', () => {
     const { projectDir, sessionId } = setupRepo();
     const task = makeTask({
       id: 'T003',
-      file: 'src/greet.ts',
+      suggestedFiles: ['src/greet.ts'],
       criteria: ['C1'],
       status: 'failed',
       checks: [
@@ -355,7 +355,7 @@ describe('applyConsultAnswer verify', () => {
 describe('applyConsultAnswer ask-user', () => {
   it('puts the one question to the operator and hands the answer back as guidance', async () => {
     const { projectDir, sessionId } = setupRepo();
-    const task = makeTask({ id: 'T003', file: 'src/greet.ts', criteria: ['C1'] });
+    const task = makeTask({ id: 'T003', suggestedFiles: ['src/greet.ts'], criteria: ['C1'] });
     const plan = planWith([]);
     const replies: PlannerConversation[] = [];
     const { ctx, states } = harness({
@@ -389,7 +389,7 @@ describe('applyConsultAnswer ask-user', () => {
 
   it('takes the default when the operator answers with a bare Enter', async () => {
     const { projectDir, sessionId } = setupRepo();
-    const task = makeTask({ id: 'T003', file: 'src/greet.ts', criteria: ['C1'] });
+    const task = makeTask({ id: 'T003', suggestedFiles: ['src/greet.ts'], criteria: ['C1'] });
     const plan = planWith([]);
     const { ctx } = harness({
       projectDir,
@@ -407,7 +407,7 @@ describe('applyConsultAnswer ask-user', () => {
 
   it('takes the default when the run is headless', async () => {
     const { projectDir, sessionId } = setupRepo();
-    const task = makeTask({ id: 'T003', file: 'src/greet.ts', criteria: ['C1'] });
+    const task = makeTask({ id: 'T003', suggestedFiles: ['src/greet.ts'], criteria: ['C1'] });
     const plan = planWith([]);
     const { ctx, states } = harness({ projectDir, sessionId, task, plan });
     const attempt = await getChangedFilesSnapshot(projectDir);

@@ -12,8 +12,13 @@ import type { Summary } from '../../../core/schemas/summary.js';
 import { deriveSummaryView } from './view-model.js';
 import { outcomeLine } from './outcome.js';
 
-const oldTask = makeTask({ id: 'T001', title: 'Old task', file: 'old.ts', status: 'done' });
-const newTask = makeTask({ id: 'T001', title: 'New task', file: 'new.ts' });
+const oldTask = makeTask({
+  id: 'T001',
+  title: 'Old task',
+  suggestedFiles: ['old.ts'],
+  status: 'done',
+});
+const newTask = makeTask({ id: 'T001', title: 'New task', suggestedFiles: ['new.ts'] });
 const oldLedger = createEvidenceLedger({
   sessionId: 'proof',
   feature: 'proof',
@@ -172,7 +177,12 @@ describe('independent closed attribution proof', () => {
   });
 
   it('folds repeated executions of a current brief into its one current row', () => {
-    const done = makeTask({ id: 'T009', title: 'Twice', file: 'twice.ts', status: 'done' });
+    const done = makeTask({
+      id: 'T009',
+      title: 'Twice',
+      suggestedFiles: ['twice.ts'],
+      status: 'done',
+    });
     const result = view(
       [done],
       {

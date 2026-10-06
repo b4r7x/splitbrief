@@ -13,7 +13,6 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { BOUNDS } from '../src/core/pipeline-spec/bounds.js';
 import { GATE_ORDER } from '../src/core/pipeline-spec/gates.js';
-import { parseTasksStrict } from '../src/engine/spec/tasks/parse.js';
 import { GENERATED_BLOCK_IDS, renderBlock } from './skill-blocks.js';
 import { runSyncCli } from './sync-skills.js';
 
@@ -70,6 +69,12 @@ describe('skill-blocks', () => {
       '`contextFiles` → one `### Read-only context (do not modify) — <path>` section per file',
     );
     expect(template).not.toContain('under `### Current Code`');
+  });
+
+  it('carries the plan context in the brief template', () => {
+    const template = renderBlock('brief-template') ?? '';
+    expect(template).toContain('Plan context (read-only)');
+    expect(template).toContain('"decisions":[]');
   });
 
   it('uses workspace rules and gives validation to the session', () => {
@@ -259,23 +264,6 @@ describe('skill-blocks', () => {
     expect(fixes).not.toMatch(/reopen|last brief|path substring/iu);
     expect(fixes).toContain('references/gates.md');
     expect(fixes).not.toContain('Re-run the full suite');
-  });
-
-  it('keeps the Markdown brief readable by the strict parser', () => {
-    const template = (renderBlock('brief-template') ?? '').replace(/^ {4}/gm, '');
-    const brief = template.slice(template.indexOf('---\nid: T001'));
-    const warnings: string[] = [];
-    const [task] = parseTasksStrict(brief, (warning) => warnings.push(warning));
-    expect(task?.id).toBe('T001');
-    expect(task?.description).toContain('What to implement and why');
-    expect(task?.description).toContain('Plan context (read-only)');
-    expect(task?.tests).toEqual(['Test case with concrete inputs/outputs']);
-    expect(task?.constraints).toContain('Follow existing codebase patterns');
-    expect(brief).toContain('Plan context (read-only)');
-    expect(brief).toContain('"decisions":[]');
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain('Read-only context (do not modify)');
-    expect(warnings[0]).not.toMatch(/Plan context|Implementer report/u);
   });
 
   it('syncs the recovery block without rewriting an unchanged babysit script mirror', () => {

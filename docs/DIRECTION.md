@@ -14,7 +14,7 @@ SPLITBRIEF is a CLI tool. CLI tools are loved when they respect the developer's 
 
 ### 2. Heartbeat over silence
 
-Any wait > 5 seconds must show proof of life: token count incrementing, current phase name, or truncated excerpt. The 60-second spinner is where trust dies. Users alt-tab, forget, and the session completes without them. The run-start validation probe is covered too: before the first task it publishes `validation_baseline` running rows naming the stage being probed, so a slow or red validation stage cannot sit silent behind `Implementing…`. The 60 seconds this principle names are now a threshold in the code: the Build progress block prints `last event 8s ago`, counting every second, and flips to `No update for 5m 12s` in the warning colour once the idle watchdog has warned that a seat on a call has sent nothing; the watchdog's warn is `RUNNER_IDLE_WARN_MS` (five minutes by default, tunable per runner as `idleWarnMs`), and the block never paints the warning below the 60-second floor `UI_IDLE_WARN_MS` (`src/features/workflow/display/build-progress.ts`).
+Any wait > 5 seconds must show proof of life: token count incrementing, current phase name, or truncated excerpt. The 60-second spinner is where trust dies. Users alt-tab, forget, and the session completes without them. The run-start validation probe is covered too: before the first task it publishes `validation_baseline` running rows naming the stage being probed, so a slow or red validation stage cannot sit silent behind `Implementing…`. The 60 seconds this principle names are now a threshold in the code: the Build progress block prints `last event 8s ago`, counting every second. Once the idle watchdog has warned that a seat on a call has sent nothing, the line names what the seat is doing: `running <command> · 5m 12s` for a tool still open, `a tool is running · 5m 12s` for a runner that reports tools only when they end, otherwise `No update for 5m 12s` in the warning colour; the watchdog's warn is `RUNNER_IDLE_WARN_MS` (five minutes by default, tunable per runner as `idleWarnMs`), and the block never paints the warning below the 60-second floor `UI_IDLE_WARN_MS` (`src/features/workflow/display/build-progress.ts`).
 
 ### 3. One command for session continuity
 
@@ -88,7 +88,7 @@ Design goals:
 
 Any function exceeding ~300 lines with 5+ responsibilities must be decomposed. Extract named helpers at the responsibility boundary. The orchestrator is the most-changed code; readability > compactness.
 
-Canonical example: `src/engine/orchestrator/task/step.ts` was decomposed into focused modules: `pre-task.ts` (pre-hook dispatch, task-start event, snapshot), `run-implementation.ts` (continuation loop, streaming, staging), `attempt-gate.ts` (the protected-write gate over an attempt's changes in the run workspace), `analyze-drift.ts` (per-task drift chain updates), `rollback.ts` (snapshot restore after hook denial or retry exhaustion), and `resolve-deps.ts` (dependency resolution). Colocated tests split across `step.test.ts` (completion/abort/evidence), `step-approval.test.ts`, `step-user-edit.test.ts`, and `step-recovery.test.ts`.
+Canonical example: `src/engine/orchestrator/task/step.ts` was decomposed into focused modules: `pre-task.ts` (pre-hook dispatch, task-start event, snapshot), `run-implementation.ts` (continuation loop, streaming, staging), `attempt-gate.ts` (the protected-write gate over an attempt's changes in the run workspace), `rollback.ts` (snapshot restore in the run workspace after hook denial, retry exhaustion or an interrupted attempt), and `resolve-deps.ts` (dependency resolution). Colocated tests split across `step.test.ts` (completion/abort/evidence), `step-approval.test.ts`, `step-user-edit.test.ts`, and `step-recovery.test.ts`.
 
 ### AD-3: Selector narrowness is performance
 
@@ -210,7 +210,7 @@ These were specced in DIRECTION but not yet built as of the audit. Each is a sta
 | Contextual footer keybindings | Footer changes based on cursor position | ✅ |
 | Recovery consequence text | "retry-task: re-runs prompt, costs ~$0.02" | — |
 | Auto-expand active diffs | Diffs expanded for running task, collapsed for completed | — |
-| Unify approval flags | `--auto` and `--approve` removed; `workflow.approve: none` (the plan card) and `--yolo` remain distinct concepts | ✅ |
+| Unify approval flags | `--auto` and `--approve` removed; `workflow.approve: none` skips the plan card; `--yolo` is removed | ✅ |
 | Session numeric aliases | `splitbrief continue 1` instead of the full `20250412-143022-abc` id | ✅ (on `continue`; the `attach` command was retired) |
 | HTML/Markdown session export | Export workflow results as shareable artifact | — |
 | External `$EDITOR` integration | Open editor for long feature descriptions | — |

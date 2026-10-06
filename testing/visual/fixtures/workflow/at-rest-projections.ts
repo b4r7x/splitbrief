@@ -564,7 +564,7 @@ function savedState(
         id: brief.id,
         status: brief.status,
         title: briefTitle(brief.id),
-        ...(known !== undefined && { file: known.file }),
+        ...(known !== undefined && { suggestedFiles: [known.file] }),
       });
     }),
     plannerSessionId: null,
@@ -608,7 +608,30 @@ const AT_REST_PAUSED = record({
   sessionId: 'visual-at-rest-paused',
   status: {
     kind: 'open',
-    stop: { kind: 'paused', at: 'mid-step' },
+    stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } },
+    resumeAt: { kind: 'brief', taskId: BRIEFS.routeTests.id, attempt: 0 },
+  },
+  state: savedState({
+    phase: 'implementing',
+    currentTaskIndex: 2,
+    briefs: [
+      { id: BRIEFS.validator.id, status: 'done' },
+      { id: BRIEFS.wire.id, status: 'done' },
+      { id: BRIEFS.routeTests.id, status: 'in_progress' },
+      { id: BRIEFS.blur.id, status: 'pending' },
+      { id: BRIEFS.docs.id, status: 'pending' },
+    ],
+  }),
+});
+
+/** Ten minutes of build, a stop, a night at rest, five minutes more: fifteen minutes of run time. */
+export const LONG_PARK_LOG = 'testing/fixtures/session-log/long-park.jsonl';
+
+const AT_REST_LONG_PARK = record({
+  sessionId: 'visual-at-rest-long-park',
+  status: {
+    kind: 'open',
+    stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } },
     resumeAt: { kind: 'brief', taskId: BRIEFS.routeTests.id, attempt: 0 },
   },
   state: savedState({
@@ -629,26 +652,29 @@ const AT_REST_HALTED = record({
   status: {
     kind: 'open',
     stop: {
-      kind: 'halted',
-      issue: {
-        id: 'visual-halt',
-        reason: 'runner-usage-limit',
-        phase: 'implementing',
-        status: 'awaiting-user',
-        seat: 'build',
-        taskId: BRIEFS.wire.id,
-        files: [],
-        affectedTaskIds: [BRIEFS.wire.id],
-        // The halt `buildRunnerUsageLimitRecoveryIssue` writes: the tool by its display name.
-        message: usageLimitAdvice({ tool: 'Ollama', seat: 'build' }),
-        details: [
-          'Ollama reported: usage limit reached',
-          'The run stopped instead of escalating this task to the planner.',
-        ],
-        facts: { tool: 'Ollama', limitMessage: 'usage limit reached' },
-        availableActions: ['switch-seat', 'pause-run', 'end-run'],
-        recommendedAction: 'switch-seat',
-        createdAt: STARTED_AT_ISO,
+      kind: 'waiting-for-you',
+      on: {
+        kind: 'halt',
+        issue: {
+          id: 'visual-halt',
+          reason: 'runner-usage-limit',
+          phase: 'implementing',
+          status: 'awaiting-user',
+          seat: 'build',
+          taskId: BRIEFS.wire.id,
+          files: [],
+          affectedTaskIds: [BRIEFS.wire.id],
+          // The halt `buildRunnerUsageLimitRecoveryIssue` writes: the tool by its display name.
+          message: usageLimitAdvice({ tool: 'Ollama', seat: 'build' }),
+          details: [
+            'Ollama reported: usage limit reached',
+            'The run stopped instead of escalating this task to the planner.',
+          ],
+          facts: { tool: 'Ollama', limitMessage: 'usage limit reached' },
+          availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
+          recommendedAction: 'retry-same-worker',
+          createdAt: STARTED_AT_ISO,
+        },
       },
     },
     resumeAt: { kind: 'brief', taskId: BRIEFS.wire.id, attempt: 2 },
@@ -672,31 +698,28 @@ const AT_REST_LEFT_ISOLATION = record({
   status: {
     kind: 'open',
     stop: {
-      kind: 'halted',
-      issue: {
-        id: 'visual-left-isolation',
-        reason: 'implementer-left-isolation',
-        phase: 'implementing',
-        status: 'awaiting-user',
-        seat: 'build',
-        taskId: BRIEFS.wire.id,
-        files: [BRIEFS.wire.file],
-        affectedTaskIds: [BRIEFS.wire.id],
-        message: `${BRIEFS.wire.id} left the isolation directory — Google Antigravity CLI searched ~ with run_command: find ~ -name "form.ts" 2>/dev/null`,
-        details: [
-          'Google Antigravity CLI searched ~ with run_command: find ~ -name "form.ts" 2>/dev/null',
-          'Nothing from this attempt was promoted.',
-        ],
-        facts: { tool: 'Google Antigravity CLI' },
-        availableActions: [
-          'retry-same-worker',
-          'switch-seat',
-          'skip-current-task',
-          'pause-run',
-          'end-run',
-        ],
-        recommendedAction: 'retry-same-worker',
-        createdAt: STARTED_AT_ISO,
+      kind: 'waiting-for-you',
+      on: {
+        kind: 'halt',
+        issue: {
+          id: 'visual-left-isolation',
+          reason: 'implementer-left-isolation',
+          phase: 'implementing',
+          status: 'awaiting-user',
+          seat: 'build',
+          taskId: BRIEFS.wire.id,
+          files: [BRIEFS.wire.file],
+          affectedTaskIds: [BRIEFS.wire.id],
+          message: `${BRIEFS.wire.id} left the isolation directory — Google Antigravity CLI searched ~ with run_command: find ~ -name "form.ts" 2>/dev/null`,
+          details: [
+            'Google Antigravity CLI searched ~ with run_command: find ~ -name "form.ts" 2>/dev/null',
+            "Your checkout gets the run's changes only through Apply.",
+          ],
+          facts: { tool: 'Google Antigravity CLI' },
+          availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
+          recommendedAction: 'retry-same-worker',
+          createdAt: STARTED_AT_ISO,
+        },
       },
     },
     resumeAt: { kind: 'brief', taskId: BRIEFS.wire.id, attempt: 0 },
@@ -716,7 +739,7 @@ const AT_REST_WAITING_GATE = record({
   sessionId: 'visual-at-rest-waiting-gate',
   status: {
     kind: 'open',
-    stop: { kind: 'waiting', gate: 'spec', reopens: false },
+    stop: { kind: 'waiting-for-you', on: { kind: 'gate', gate: 'spec', reopens: false } },
     resumeAt: { kind: 'gate', gate: 'spec' },
   },
   state: savedState({ phase: 'reviewing-spec', briefs: [] }),
@@ -730,7 +753,7 @@ const AT_REST_QUICK = record({
   sessionId: 'visual-at-rest-quick',
   status: {
     kind: 'open',
-    stop: { kind: 'paused', at: 'mid-step' },
+    stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } },
     resumeAt: { kind: 'planner', call: 'plan' },
   },
   state: savedState({ phase: 'researching', briefs: [] }),
@@ -828,6 +851,30 @@ const CLOSED_APPLIED = record({
   ledger: READY_LEDGER,
 });
 
+function undoneApplyRecord(conflicts: string[]): RunRecord {
+  const sessionId =
+    conflicts.length === 0 ? 'visual-closed-undone' : 'visual-closed-undo-conflicts';
+  return record({
+    sessionId,
+    status: { kind: 'closed', as: 'applied' },
+    state: savedState({
+      phase: 'complete',
+      briefs: WORKSPACE_BRIEFS,
+      reviewStatus: 'passed',
+      workspace: RUN_WORKSPACE,
+      applied: {
+        at: GENERATED_AT,
+        backupId: 'visual-backup',
+        files: [FILES.formTest, FILES.form],
+        undone: { at: GENERATED_AT, conflicts },
+      },
+      closed: { at: GENERATED_AT, as: 'applied' },
+    }),
+    summary: workspaceSummary(sessionId),
+    ledger: READY_LEDGER,
+  });
+}
+
 const CLOSED_DISCARDED = record({
   sessionId: 'visual-closed-discarded',
   status: { kind: 'closed', as: 'discarded' },
@@ -836,7 +883,11 @@ const CLOSED_DISCARDED = record({
     briefs: WORKSPACE_BRIEFS,
     reviewStatus: 'passed',
     workspace: RUN_WORKSPACE,
-    closed: { at: GENERATED_AT, as: 'discarded' },
+    closed: {
+      at: GENERATED_AT,
+      as: 'discarded',
+      patch: '.splitbrief/sessions/visual-closed-discarded/run.patch',
+    },
   }),
   summary: workspaceSummary('visual-closed-discarded'),
   ledger: READY_LEDGER,
@@ -1000,7 +1051,7 @@ const REPLAYED_HISTORY = record({
   sessionId: 'visual-replayed-history',
   status: {
     kind: 'open',
-    stop: { kind: 'interrupted' },
+    stop: { kind: 'stopped', on: { kind: 'interrupted' } },
     resumeAt: { kind: 'brief', taskId: BRIEFS.wire.id, attempt: 0 },
   },
   state: savedState({
@@ -1027,7 +1078,7 @@ const GATES_APPROVED = record({
   sessionId: 'visual-gates-approved',
   status: {
     kind: 'open',
-    stop: { kind: 'paused', at: 'mid-step' },
+    stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } },
     resumeAt: { kind: 'brief', taskId: BRIEFS.wire.id, attempt: 0 },
   },
   state: savedState({
@@ -1047,7 +1098,7 @@ const GATE_STOPPED = record({
   sessionId: 'visual-gate-stopped',
   status: {
     kind: 'open',
-    stop: { kind: 'paused', at: 'boundary' },
+    stop: { kind: 'stopped', on: { kind: 'paused', at: 'boundary' } },
     resumeAt: { kind: 'gate', gate: 'plan' },
   },
   state: savedState({
@@ -1075,18 +1126,12 @@ function atRestProjection(input: {
 
 export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   atRestProjection({ id: 'workflow-at-rest-paused', route: { record: AT_REST_PAUSED } }),
+  atRestProjection({
+    id: 'workflow-at-rest-long-park',
+    route: { record: AT_REST_LONG_PARK, log: LONG_PARK_LOG },
+  }),
   atRestProjection({ id: 'workflow-at-rest-quick', route: { record: AT_REST_QUICK } }),
   atRestProjection({ id: 'workflow-at-rest-halted', route: { record: AT_REST_HALTED } }),
-  atRestProjection({
-    id: 'workflow-recovery-paused',
-    route: {
-      record: {
-        ...AT_REST_LEFT_ISOLATION,
-        ref: { ...AT_REST_LEFT_ISOLATION.ref, sessionId: 'visual-recovery-paused' },
-      },
-      log: LEFT_ISOLATION_LOG,
-    },
-  }),
   atRestProjection({
     id: 'workflow-at-rest-left-isolation',
     route: { record: AT_REST_LEFT_ISOLATION, log: LEFT_ISOLATION_LOG },
@@ -1099,6 +1144,11 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   atRestProjection({ id: 'workflow-ready-to-apply', route: { record: READY_TO_APPLY } }),
   atRestProjection({ id: 'workflow-ready-override', route: { record: READY_OVERRIDE } }),
   atRestProjection({ id: 'workflow-closed-applied', route: { record: CLOSED_APPLIED } }),
+  atRestProjection({ id: 'workflow-closed-undone', route: { record: undoneApplyRecord([]) } }),
+  atRestProjection({
+    id: 'workflow-closed-undo-conflicts',
+    route: { record: undoneApplyRecord([FILES.form]) },
+  }),
   atRestProjection({ id: 'workflow-closed-discarded', route: { record: CLOSED_DISCARDED } }),
   atRestProjection({
     id: 'workflow-closed-complete-needs-attention',

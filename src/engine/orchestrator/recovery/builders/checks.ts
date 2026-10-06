@@ -1,6 +1,6 @@
 import type { Phase } from '../../../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../../../core/schemas/recovery/schemas.js';
-import { availableActionsForReason } from './actions.js';
+import { haltActions } from './actions.js';
 import { compactFacts, createRecoveryIssue, type RecoveryBuilderBase } from './issue.js';
 
 export type UnrunnableCheck = { checkId: string; output: string };
@@ -9,7 +9,7 @@ export type UnrunnableCheck = { checkId: string; output: string };
  * A required check whose status is refused, not-runnable or unknown is a policy
  * problem, not a finding: the run cannot judge the candidate, and no fix task can
  * answer it. The halt names every check id and why it cannot run, and offers the
- * reviewer seat the same re-issue, pause and end the other no-verdict review halts do.
+ * reviewer seat the same re-issue and end the other no-verdict review halts do.
  */
 export function buildRequiredChecksUnrunnableRecoveryIssue(
   opts: RecoveryBuilderBase & {
@@ -19,10 +19,7 @@ export function buildRequiredChecksUnrunnableRecoveryIssue(
 ): RecoveryIssue {
   const checkIds = opts.checks.map((check) => check.checkId);
   const entries = opts.checks.map((check) => `${check.checkId}: ${check.output.trim()}`);
-  const actions = availableActionsForReason('required-checks-unrunnable', {
-    switchSeat: false,
-    routeBigger: false,
-  });
+  const actions = haltActions('required-checks-unrunnable', ['retry-same-worker', 'end-run']);
   return createRecoveryIssue({
     id: opts.id,
     reason: 'required-checks-unrunnable',

@@ -92,7 +92,7 @@ describe('runHeadless — recovery stops', () => {
       }),
     ).rejects.toMatchObject({
       exitCode: 1,
-      message: expect.stringContaining('Recovery required'),
+      message: expect.stringContaining('Needs you ('),
     });
 
     const jsonLines = stdoutChunks
@@ -113,8 +113,9 @@ describe('runHeadless — recovery stops', () => {
       expect.objectContaining({
         type: 'recovery_required',
         sessionId,
+        halt: 'needs-you',
         reason: 'retry-exhausted',
-        availableActions: ['skip-current-task', 'pause-run', 'end-run'],
+        availableActions: ['skip-current-task', 'end-run'],
       }),
     );
   });
@@ -161,7 +162,7 @@ describe('runHeadless — recovery stops', () => {
       }),
     ).rejects.toMatchObject({
       exitCode: 1,
-      message: expect.stringContaining('Recovery required (review-failed):'),
+      message: expect.stringContaining('Needs you (review-failed):'),
     });
 
     const jsonLines = stdoutChunks
@@ -220,7 +221,7 @@ describe('runHeadless — a halted session exits non-zero', () => {
       }),
     ).rejects.toMatchObject({
       exitCode: 1,
-      message: expect.stringContaining('Recovery required (planner-call-failed)'),
+      message: expect.stringContaining('Seat down (planner-call-failed)'),
     });
 
     const jsonLines = stdoutChunks
@@ -271,7 +272,7 @@ describe('runHeadless — a tiered approval refusal stops the run', () => {
 
     // A manifest write classifies as package_change. Headless has no one to
     // confirm it, so the write gate denies it and the run stops for recovery.
-    const task = makeTask({ id: 'T001', action: 'modify', file: 'package.json' });
+    const task = makeTask({ id: 'T001', action: 'modify', suggestedFiles: ['package.json'] });
     const state = {
       ...createInitialState('bump the dependency'),
       phase: 'implementing' as const,
@@ -299,7 +300,7 @@ describe('runHeadless — a tiered approval refusal stops the run', () => {
       }),
     ).rejects.toMatchObject({
       exitCode: 1,
-      message: expect.stringContaining('Recovery required (approval-denied):'),
+      message: expect.stringContaining('Needs you (approval-denied):'),
     });
 
     const jsonLines = stdoutChunks

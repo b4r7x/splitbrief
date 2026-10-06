@@ -6,6 +6,8 @@ import {
   type TasksState,
 } from '../../../stores/workflow/tasks.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import type { Phase } from '../../../core/schemas/enums.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { wrappedProseTexts } from '../conversation-rows/row-format/text.js';
@@ -155,7 +157,7 @@ export function readStopMenuRows(): StopRow[] {
               {
                 id: 'end-run' as const,
                 label: 'End run',
-                consequence: briefsHaveRun(tasksStore.get())
+                consequence: briefsHaveRun(tasksStore.get(), lifecycleStore.get().phase)
                   ? 'close this run; keep changes'
                   : 'close this run',
               },
@@ -177,19 +179,19 @@ export function readStopMenuRows(): StopRow[] {
       },
     ];
   const tasks = tasksStore.get();
-  const brief = selectRunningBrief(tasks);
+  const brief = selectRunningBrief(tasks, lifecycleStore.get().phase);
   return stopSheetRows({
     currentTaskId: brief.current?.id ?? null,
     nextTaskId: brief.next?.id ?? null,
-    hasChanges: briefsHaveRun(tasks),
+    hasChanges: briefsHaveRun(tasks, lifecycleStore.get().phase),
     boundaryPauseRequested: stopStore.get().intent === 'pause-after-brief',
   });
 }
 
 /** A brief that ran left changes behind; until the first one starts, the run has none to keep. */
-function briefsHaveRun(tasks: TasksState): boolean {
+function briefsHaveRun(tasks: TasksState, phase: Phase): boolean {
   const view = selectTaskListView(tasks);
-  return selectRunningBrief(tasks).current !== null || view.finished + view.failed > 0;
+  return selectRunningBrief(tasks, phase).current !== null || view.finished + view.failed > 0;
 }
 
 /** What every row keeps: the draft always, the run's changes once a brief has made some. */
@@ -198,5 +200,7 @@ export function stopSheetFooter(input: { hasChanges: boolean }): string {
 }
 
 export function readStopSheetFooter(): string {
-  return stopSheetFooter({ hasChanges: briefsHaveRun(tasksStore.get()) });
+  return stopSheetFooter({
+    hasChanges: briefsHaveRun(tasksStore.get(), lifecycleStore.get().phase),
+  });
 }

@@ -84,7 +84,7 @@ const WHOLE: ApiReviewContextInput = {
   fullDiff: diffFor('src/login.ts'),
   changedFiles: ['src/login.ts'],
   baseline: { head: 'abc1234', runStartChangedFiles: [] },
-  driftSection: 'passed: true\nscore: 1.00\nfindings: none',
+  driftSection: 'passed: true\nfindings: none',
   validation: { recorded: true, evidence: '- test (`npm test`): passed' },
   contextLength: 64_000,
 };

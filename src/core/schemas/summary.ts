@@ -9,14 +9,6 @@ import { UsageBoundarySchema } from './usage-evidence.js';
 import { InvocationIdentitySchema } from './invocation-identity.js';
 import { uniqueInOrder } from '../../utils/collections.js';
 
-export const ChainDriftSummarySchema = z.object({
-  score: z.number().min(0).max(1),
-  chainLength: z.number().int().nonnegative(),
-  uniqueOutOfBoundsFiles: z.array(z.string()),
-  representativePath: z.string(),
-  emittedChainCount: z.number().int().nonnegative(),
-});
-
 export const BriefQualitySummarySchema = z.object({
   score: z.number().min(0).max(1),
   passed: z.boolean(),
@@ -26,7 +18,6 @@ export const BriefQualitySummarySchema = z.object({
 
 export const DriftSummarySchema = z.object({
   passed: z.boolean(),
-  score: z.number().min(0).max(1),
   errorCount: z.number().nonnegative(),
   warningCount: z.number().nonnegative(),
 });
@@ -266,7 +257,6 @@ export const SummarySchema = z.object({
     .optional(),
   briefQuality: BriefQualitySummarySchema.optional(),
   driftSummary: DriftSummarySchema.optional(),
-  chainDriftSummary: ChainDriftSummarySchema.optional(),
   checkpointSummary: CheckpointSummaryRollupSchema.optional(),
   reviewPacket: ReviewPacketSummarySchema.optional(),
   review: z

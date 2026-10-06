@@ -101,7 +101,7 @@ describe('assertNotMistypedCommand rejects a retired command', () => {
     { label: 'a boolean flag ahead of the retired name', argv: ['--json', 'attach', 'x'] },
     { label: 'a value flag ahead of the retired name', argv: ['--project', 'foo', 'attach', 'x'] },
     { label: 'a value flag spelled with =', argv: ['--project=foo', 'attach', 'x'] },
-    { label: 'a boolean flag between operands', argv: ['--yolo', 'ps'] },
+    { label: 'a boolean flag between operands', argv: ['--plain', 'ps'] },
   ])('sees through $label', ({ argv }) => {
     const captured = captureThrown(argv);
 
@@ -134,6 +134,10 @@ describe('assertNotMistypedCommand rejects a removed flag', () => {
     {
       argv: ['spec', '--approve=all', 'add caching'],
       message: '--approve was removed: set workflow.approve (plan or none) in the config',
+    },
+    {
+      argv: ['add caching', '--yolo'],
+      message: '--yolo was removed: only a write to a protected path asks',
     },
   ])('names where $argv.1 went', ({ argv, message }) => {
     const captured = captureThrown(argv);

@@ -1,12 +1,7 @@
 import { isAbsolute, relative } from 'node:path';
 import { configStore } from '../../../stores/project/config.js';
-import {
-  getVisibleBriefWindow,
-  isBriefIndexVisible,
-  reviewStore,
-} from '../../../stores/workflow/review.js';
+import { getVisibleBriefWindow, reviewStore } from '../../../stores/workflow/review.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
-import { focusStore, type Focus } from '../../../stores/ui/focus.js';
 import { getRunnerCommand } from '../../../core/config/accessors/runner-config.js';
 import type { CopyTarget } from '../../../core/runtime/commands/types.js';
 import { assertNever } from '../../../utils/type-guards.js';
@@ -21,19 +16,10 @@ function lastAssistantMessage(): string | null {
   return null;
 }
 
-// The brief row a copy command targets. Requires a non-empty visible window and an index inside
-// [start, start + count). A click or arrow-key selection sets brief focus; without one (e.g. a bare
-// `/copy brief`) fall back to the top of the visible window — the row the user is reading. An
-// explicit focus index is honored only when it is visible; stale out-of-window focus copies nothing
-// rather than silently yanking the wrong brief.
-function focusedBriefIndex(focus = focusStore.get()): number | null {
-  const state = reviewStore.get();
-  const { start, count } = getVisibleBriefWindow(state);
-  if (count <= 0) return null;
-  if (focus !== null && focus.region === 'brief') {
-    return isBriefIndexVisible(focus.index, state) ? focus.index : null;
-  }
-  return start;
+// The brief row a copy command targets: the top of the visible window, the row the user is reading.
+function visibleBriefIndex(): number | null {
+  const { start, count } = getVisibleBriefWindow();
+  return count > 0 ? start : null;
 }
 
 // Resolves the canonical source value for a copy target — the raw, un-sanitized, un-truncated value
@@ -42,11 +28,11 @@ function focusedBriefIndex(focus = focusStore.get()): number | null {
 export function resolveCopyValue(target: CopyTarget): string | null {
   switch (target) {
     case 'path': {
-      // The focused brief row's own file, not the review document path — the row the user is
-      // pointing at is the one they mean to copy a path for. Aligned to `briefSources` by index.
+      // The visible brief row's own file, not the review document path. Aligned to `briefSources`
+      // by index.
       const { briefPaths } = reviewStore.get();
       if (briefPaths.length === 0) return null;
-      const index = focusedBriefIndex();
+      const index = visibleBriefIndex();
       if (index === null) return null;
       const file = briefPaths[index];
       if (file === undefined || file.length === 0) return null;
@@ -59,7 +45,7 @@ export function resolveCopyValue(target: CopyTarget): string | null {
     case 'brief': {
       const { briefSources } = reviewStore.get();
       if (briefSources.length === 0) return null;
-      const index = focusedBriefIndex();
+      const index = visibleBriefIndex();
       if (index === null) return null;
       const source = briefSources[index];
       return source && source.length > 0 ? source : null;
@@ -71,14 +57,4 @@ export function resolveCopyValue(target: CopyTarget): string | null {
     default:
       return assertNever(target);
   }
-}
-
-export function focusHasResolvableCopy(focus: Focus | null): boolean {
-  if (focus === null) return false;
-  if (focus.region !== 'brief') return false;
-  const state = reviewStore.get();
-  if (state.briefSources.length === 0) return false;
-  if (!isBriefIndexVisible(focus.index, state)) return false;
-  const value = state.briefSources[focus.index];
-  return value !== undefined && value !== null && value.length > 0;
 }

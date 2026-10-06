@@ -5,11 +5,7 @@ import { createInitialState, transition } from '../../../src/core/state/machine.
 export function makeImplState(tasks: Task[], overrides?: Partial<WorkflowState>): WorkflowState {
   let state = createInitialState('feat');
   state = transition(state, { type: 'START' });
-  state = transition(state, { type: 'RESEARCH_DONE' });
-  state = transition(state, { type: 'SPEC_DONE' });
-  state = transition(state, { type: 'APPROVE_SPEC' });
   state = { ...state, tasks };
-  state = transition(state, { type: 'BRIEF_ADMISSION_OPENED' });
   state = transition(state, { type: 'BEGIN_IMPLEMENTATION' });
   return { ...state, ...overrides };
 }

@@ -213,10 +213,8 @@ describe('createCliPlanner', () => {
     }
   });
 
-  it('forwards split known-CLI question markers once while preserving output', async () => {
-    const marker = '<!-- Q:{"id":"scope","type":"input","text":"Which scope?"} -->';
-    const splitAt = marker.indexOf('scope');
-    const chunks = [marker.slice(0, splitAt), marker.slice(splitAt), marker];
+  it('streams every known-CLI text event as output', async () => {
+    const chunks = ['Which ', 'scope?', ' Which scope?'];
     installShim(
       'opencode',
       chunks.map((text) =>
@@ -229,66 +227,10 @@ describe('createCliPlanner', () => {
     );
     const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }));
     const onOutput = vi.fn();
-    const onQuestion = vi.fn();
 
-    await callPlanner(planner, {
-      prompt: 'prompt',
-      projectDir,
-      callbacks: { onOutput, onQuestion },
-    });
+    await callPlanner(planner, { prompt: 'prompt', projectDir, callbacks: { onOutput } });
 
     expect(onOutput.mock.calls.flat()).toEqual(chunks);
-    expect(onQuestion).toHaveBeenCalledTimes(1);
-    expect(onQuestion).toHaveBeenCalledWith([{ id: 'scope', type: 'input', text: 'Which scope?' }]);
-  });
-
-  it('deduplicates repeated known-CLI question markers in one text event', async () => {
-    const marker = '<!-- Q:{"id":"scope","type":"input","text":"Which scope?"} -->';
-    const combined = `${marker}${marker}`;
-    installShim('opencode', [
-      JSON.stringify({
-        type: 'text',
-        sessionID: 'ses-open',
-        part: { type: 'text', text: combined },
-      }),
-    ]);
-    const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }));
-    const onOutput = vi.fn();
-    const onQuestion = vi.fn();
-
-    await callPlanner(planner, {
-      prompt: 'prompt',
-      projectDir,
-      callbacks: { onOutput, onQuestion },
-    });
-
-    expect(onOutput).toHaveBeenCalledTimes(1);
-    expect(onOutput).toHaveBeenCalledWith(combined);
-    expect(onQuestion).toHaveBeenCalledTimes(1);
-    expect(onQuestion).toHaveBeenCalledWith([{ id: 'scope', type: 'input', text: 'Which scope?' }]);
-  });
-
-  it('does not infer questions from plain known-CLI prose', async () => {
-    const prose = 'Which scope should tasks.md cover?';
-    installShim('opencode', [
-      JSON.stringify({
-        type: 'text',
-        sessionID: 'ses-open',
-        part: { type: 'text', text: prose },
-      }),
-    ]);
-    const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }));
-    const onOutput = vi.fn();
-    const onQuestion = vi.fn();
-
-    await callPlanner(planner, {
-      prompt: 'prompt',
-      projectDir,
-      callbacks: { onOutput, onQuestion },
-    });
-
-    expect(onOutput).toHaveBeenCalledWith(prose);
-    expect(onQuestion).not.toHaveBeenCalled();
   });
 
   it('capabilities: supportsSessionResume mirrors the tool config (codex yes, opencode no)', () => {

@@ -1,8 +1,7 @@
 import { flushSessionDrafts } from '../../stores/ui/session-drafts.js';
-import { readActiveRecord } from '../../core/sessions/active-pointer.js';
 import { readRunRecord } from '../../core/sessions/run-record-io.js';
 import { closeRunIfOpen } from '../../engine/orchestrator/run/close.js';
-import { finalizeEndedRun } from '../../engine/orchestrator/session-lifecycle/finalize.js';
+import { finalizeRunAtRest } from '../../engine/orchestrator/session-lifecycle/finalize.js';
 import { createRecoveryBus } from '../../engine/orchestrator/recovery/bus.js';
 import { WORKFLOW_CANCEL_REASON_USER } from '../../engine/events/workflow-cancel.js';
 import { addTuiEvent } from './tui-sink.js';
@@ -17,7 +16,6 @@ import type { Phase } from '../../core/schemas/enums.js';
 import { markCancellationRequested } from '../../stores/workflow/actions/interrupt.js';
 import { markWorkflowResumed } from '../../stores/workflow/actions/resume.js';
 import { stopStore } from '../../stores/workflow/stop.js';
-import type { TaskRedoRequest } from '../../core/state/build-rewind-action.js';
 import type { QueueClearResult, QueueSubmissionResult } from '../../engine/orchestrator/types.js';
 
 type AbortHandler = () => void;
@@ -26,7 +24,6 @@ interface Handlers {
   stop: () => void;
   cancel: () => void;
   resume: (text: string) => void;
-  rewind: (request: TaskRedoRequest) => void;
   queue: (text: string, phase: Phase) => QueueSubmissionResult | Promise<QueueSubmissionResult>;
   clearQueue: () => QueueClearResult | Promise<QueueClearResult>;
 }
@@ -80,7 +77,6 @@ export function createAbortHandlerScope(): (h: AbortHandler | null) => void {
 export const setStopHandler = (h: Handlers['stop'] | null) => setHandler('stop', h);
 export const setCancelHandler = (h: Handlers['cancel'] | null) => setHandler('cancel', h);
 export const setResumeHandler = (h: Handlers['resume'] | null) => setHandler('resume', h);
-export const setRewindHandler = (h: Handlers['rewind'] | null) => setHandler('rewind', h);
 export const setQueueHandler = (h: Handlers['queue'] | null) => setHandler('queue', h);
 export const setClearQueueHandler = (h: Handlers['clearQueue'] | null) =>
   setHandler('clearQueue', h);
@@ -233,11 +229,6 @@ export function requestEndRun(): boolean {
       if (record.status.kind === 'running') return false;
       const hydrated = hydrateResume(record.ref);
       if (hydrated.kind !== 'loaded') return false;
-      const active = readActiveRecord(record.ref.projectDir);
-      const receipt =
-        active?.kind === 'v1' && active.receipt.sessionId === record.ref.sessionId
-          ? active.receipt
-          : undefined;
       stopStore.request('end-run');
       const finish = async (): Promise<void> => {
         const bus = createRecoveryBus({ ...record.ref, sink: addTuiEvent });
@@ -250,7 +241,7 @@ export function requestEndRun(): boolean {
             reason: WORKFLOW_CANCEL_REASON_USER,
           });
         }
-        finalizeEndedRun({ ref: record.ref, active: receipt, config, state: closure.state });
+        finalizeRunAtRest({ ref: record.ref, config, state: closure.state });
         routerStore.updateRun({ run: readRunRecord(record.ref), execution: { kind: 'at-rest' } });
         stopStore.end();
         sessionsStore.refresh();
@@ -329,12 +320,6 @@ export function requestLeaveSession(): void {
 
 export function requestQuit(exit: () => void): void {
   requestDeparture('quit', exit);
-}
-
-export function requestRewind(request: TaskRedoRequest): boolean {
-  if (!handlers.rewind) return false;
-  handlers.rewind(request);
-  return true;
 }
 
 export async function requestEnqueue(

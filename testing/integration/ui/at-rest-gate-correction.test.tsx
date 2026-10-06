@@ -128,7 +128,7 @@ describe('a correction typed at a parked approval gate', () => {
         rows: 40,
       });
       await vi.waitFor(() => {
-        expect(stripAnsiStyles(ui?.lastFrame() ?? '')).toContain('Paused at the plan');
+        expect(stripAnsiStyles(ui?.lastFrame() ?? '')).toContain('Stopped at the plan');
       });
       expect(
         eventsStore.get().events.filter((event) => event.type === 'user_message'),

@@ -10,6 +10,7 @@ import type { RecoveryAction } from '../../core/schemas/enums.js';
 import type { RecoveryIssue, SeatSwapCandidate } from '../../core/schemas/recovery/schemas.js';
 import type { TaskId } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
+import { deriveRunStatus } from '../../core/sessions/run-status.js';
 import type { EventSink } from '../../engine/events/types.js';
 import { createRecoveryBus } from '../../engine/orchestrator/recovery/bus.js';
 import { publishRecoveryPrompted } from '../../engine/orchestrator/events.js';
@@ -21,9 +22,10 @@ import {
   type PreparedExecution,
 } from '../../engine/runners/prepared-execution.js';
 import { configStore } from '../../stores/project/config.js';
+import { composerDraftStore } from '../../stores/ui/composer-draft.js';
+import { composerLiveStore } from '../../stores/ui/composer-live.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
-import { markWorkflowPaused } from '../../stores/workflow/actions/pause.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';
 import { runResumePolicy } from './resume-policy.js';
@@ -33,9 +35,6 @@ import {
   parseRecoveryActionAnswer,
   switchSeatCandidateForAnswer,
 } from './recovery-prompt.js';
-
-/** What a paused recovery says; the halted run's byline under it names the key that decides it. */
-export const RECOVERY_PAUSED_MESSAGE = 'Recovery paused.';
 
 const NO_CORRECTION_MESSAGE = 'This halt takes no typed correction. Choose one of its actions.';
 
@@ -179,7 +178,7 @@ export function createRecoveryDriver(
       if (action === 'accept-as-is' && issue.reason === 'review-input-too-large') {
         return inputMode.setQuestionMode('Why skip the review? (enter records none)');
       }
-      if (action !== 'revise' && action !== 'revise-spec') return '';
+      if (action !== 'revise') return '';
       return inputMode.setQuestionMode(
         issue.reason === 'review-failed'
           ? "What should the fix change? (enter sends the review's findings alone)"
@@ -239,19 +238,15 @@ export function createRecoveryDriver(
 
       feedbackStore.reset();
 
-      if (result.status === 'paused') {
-        recoveryNoticeStore.clear();
-        markWorkflowPaused();
-        feedbackStore.setMessage(RECOVERY_PAUSED_MESSAGE);
-        return { shouldRun: false, state: result.state };
-      }
-
-      if (result.status === 'closed') {
+      const status = deriveRunStatus({ state: result.state, liveness: 'not-alive' });
+      if (status.kind === 'closed') {
         recoveryNoticeStore.clear();
         // The close is on the state; the run loop finalizes the session from it —
         // one summary, one receipt release, through the same path every other
         // ending takes.
-        feedbackStore.setMessage(`Run ended.${filesStillOnDiskSuffix(result.state.workspace)}`);
+        feedbackStore.setMessage(
+          `Run ${status.as === 'complete' ? 'closed' : 'ended'}.${filesStillOnDiskSuffix(result.state.workspace)}`,
+        );
         return { shouldRun: false, state: result.state };
       }
 
@@ -292,7 +287,7 @@ export function createRecoveryDriver(
     // retry halt keeps them as the steer of whichever retry the operator picks on the panel.
     const correctionAction = correctionActionFor(issue);
     if (reentryCorrection.trim() !== '') {
-      if (correctionAction === 'revise' || correctionAction === 'revise-spec') {
+      if (correctionAction === 'revise') {
         const applied = await applyAction(correctionAction, '', reentryCorrection);
         if (applied?.shouldRun === true) return { ...applied, correctionTaken: true };
         if (applied !== null) return applied;
@@ -323,6 +318,12 @@ export function createRecoveryDriver(
       if (action === null) {
         feedbackStore.setError('Unknown recovery action.');
         continue;
+      }
+      // Words typed beside the panel are the note of the action that takes one.
+      const draft = composerLiveStore.get().text.trim();
+      if (correction === '' && action === correctionAction && draft !== '') {
+        correction = draft;
+        composerDraftStore.request('');
       }
       const comment = correction === '' ? await promptRecoveryComment(action) : correction;
       if (controller.signal.aborted || abortedRef.current) {

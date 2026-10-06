@@ -162,7 +162,14 @@ export async function runApply(input: {
     ) {
       return halt(
         buildApplyConflictRecoveryIssue({
-          conflicts: [{ path: cause.data.path, kind: 'changed' }],
+          conflicts: [
+            {
+              path: cause.data.path,
+              kind: matches('apply-workspace-changed')(cause)
+                ? 'workspace-changed'
+                : 'checkout-changed',
+            },
+          ],
           workspacePath: workspace.path,
           createdAt: new Date().toISOString(),
         }),
@@ -298,7 +305,7 @@ export async function runApply(input: {
     case 'changed':
       return halt(
         buildApplyConflictRecoveryIssue({
-          conflicts: result.files.map((path) => ({ path, kind: 'changed' })),
+          conflicts: result.files.map((path) => ({ path, kind: 'checkout-changed' })),
           workspacePath: workspace.path,
           createdAt: new Date().toISOString(),
         }),

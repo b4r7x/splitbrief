@@ -13,6 +13,7 @@ import type { Plan } from '../../../core/schemas/plan.js';
 import { protectedWriteClass } from './action-classifier.js';
 import { parseShellCommand } from '../../../utils/parse-shell-command.js';
 import { checkRegistry } from '../validation/run-checks.js';
+import { WORKFLOW_CANCEL_REASON_USER } from '../../events/workflow-cancel.js';
 
 /** A confirmation the run already granted holds for the same path and operation. */
 function confirmedEarlierInRun(input: GateActionInput, actionClass: ActionClass): boolean {
@@ -140,6 +141,9 @@ export async function gateConfirmTier(args: ConfirmTierInput): Promise<GateDecis
     };
   }
 
+  if (response.reason === WORKFLOW_CANCEL_REASON_USER) {
+    return { allow: false, cancelled: true, reason: response.reason, actionClass };
+  }
   publishApprovalRejected({ bus, phase, tier, actionClass, taskId, reason: response.reason });
   return { allow: false, reason: response.reason, tier, actionClass, actionDescription };
 }

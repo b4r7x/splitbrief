@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { findKnownModel } from '../../../core/providers/known-models.js';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
@@ -826,7 +827,7 @@ describe('runner-owned catalog resolution', () => {
     });
   });
 
-  it('leaves a configured full model id nameless and windowless beside the alias rows', () => {
+  it('leaves a configured full model id nameless, with the window of the known model it pins', () => {
     const cache = makeModelCacheAccessor({
       catalog: {
         anthropic: {
@@ -851,7 +852,10 @@ describe('runner-owned catalog resolution', () => {
       selectionId: 'claude-haiku-4-5',
       membership: 'custom',
     });
-    expect(recovered?.contextLength).toBeUndefined();
+    expect(recovered?.contextLength).toBe(
+      findKnownModel('claude-code', 'claude-haiku-4-5')?.contextLength,
+    );
+    expect(recovered?.contextLength).toBeGreaterThan(0);
     expect(recovered?.displayName).toBeUndefined();
     expect(formatModelName(recovered?.id ?? '', 'claude-code')).toBe('Haiku 4.5');
   });

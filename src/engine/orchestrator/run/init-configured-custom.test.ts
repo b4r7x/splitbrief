@@ -215,7 +215,7 @@ describe('configured custom workflow runtime', () => {
               implementer: { kind: 'cli', tool: 'codex', authChannel: 'session' },
               validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
               workflow: {},
-              approval: { enabled: false, feedRejectionsToPlanner: true },
+              approval: { feedRejectionsToPlanner: true },
               codebase: { enabled: false, tokenBudget: 4000 },
             }),
           );
@@ -285,7 +285,7 @@ describe('configured custom workflow runtime', () => {
             slot: { role: 'implementer', profile: 'configured-output' },
           });
           const result = await dynamicImplementer.implement({
-            task: makeTask({ file: 'src/dynamic-stage.ts' }),
+            task: makeTask({ suggestedFiles: ['src/dynamic-stage.ts'] }),
             projectDir,
             config,
             context: { name: 'r2-stage-project', dir: projectDir },
@@ -339,7 +339,7 @@ describe('configured custom workflow runtime', () => {
           implementer: { kind: 'agent', command: 'cat', outputFormat: 'text', model: 'legacy' },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
           workflow: {},
-          approval: { enabled: false, feedRejectionsToPlanner: true },
+          approval: { feedRejectionsToPlanner: true },
         }),
         planner: runner(plannerCommand, 'configured planner'),
         implementerProfiles: {

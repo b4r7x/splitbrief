@@ -21,15 +21,13 @@ export function anchorAction(file: string, projectDir: string): Task['action'] {
 
 /** A plan task in the legacy brief shape every engine path reads, with the plan fields kept. */
 export function taskFromSpec(spec: TaskSpec, projectDir: string): Task {
-  const [file] = spec.suggestedFiles;
+  const [file, ...rest] = spec.suggestedFiles;
   if (file === undefined) throw planTaskError.noSuggestedFile(spec.id);
   return {
     id: spec.id,
     title: spec.title,
     status: 'pending',
     action: anchorAction(file, projectDir),
-    file,
-    files: spec.suggestedFiles,
     dependsOn: spec.dependsOn,
     description: spec.intent,
     tests: spec.checks.filter((check) => check.kind === 'test').map((check) => check.value),
@@ -40,7 +38,7 @@ export function taskFromSpec(spec: TaskSpec, projectDir: string): Task {
     evidence: spec.checks.map(formatCheck),
     criteria: spec.criteria,
     checks: spec.checks,
-    suggestedFiles: spec.suggestedFiles,
+    suggestedFiles: [file, ...rest],
     contextFiles: spec.contextFiles,
     exclusions: spec.exclusions,
     inputHashes: inputHashesNow(projectDir, specInputFiles(spec)),

@@ -31,7 +31,7 @@ describe('runSingleTask — approval gates', () => {
     const task = makeTask({
       id: 'T001',
       action: 'create',
-      file: 'src/hello.ts',
+      suggestedFiles: ['src/hello.ts'],
       scope: { inBounds: ['src/hello.ts'] },
     });
     const state = implementingState([task]);
@@ -56,7 +56,7 @@ describe('runSingleTask — approval gates', () => {
         implementer,
         bus,
         config: makeConfig({
-          approval: { enabled: true, feedRejectionsToPlanner: true },
+          approval: { feedRejectionsToPlanner: true },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         }),
         validator: { ...createValidator(), runValidation },
@@ -91,9 +91,9 @@ describe('runSingleTask — approval gates', () => {
     );
   });
 
-  it('asks once for a protected write with approval off; a denial discards only that file', async () => {
+  it('asks once for a protected write; a denial discards only that file', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', action: 'create', file: 'src/hello.ts' });
+    const task = makeTask({ id: 'T001', action: 'create', suggestedFiles: ['src/hello.ts'] });
     const state = implementingState([task]);
 
     const implementer = makeImplementer({
@@ -116,7 +116,7 @@ describe('runSingleTask — approval gates', () => {
         implementer,
         bus,
         config: makeConfig({
-          approval: { enabled: false, feedRejectionsToPlanner: true },
+          approval: { feedRejectionsToPlanner: true },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         }),
       }),
@@ -149,13 +149,66 @@ describe('runSingleTask — approval gates', () => {
     expect(error?.message).not.toMatch(/revert/i);
   });
 
+  it('parks the brief resumably when the protected-write confirmation is cancelled', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001', action: 'create', suggestedFiles: ['src/hello.ts'] });
+    const state = implementingState([task]);
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async ({ projectDir }: ImplementerOptions) => {
+        mkdirSync(join(projectDir, 'src'), { recursive: true });
+        writeFileSync(join(projectDir, 'src/hello.ts'), 'export const hello = 1;\n');
+        writeFileSync(join(projectDir, '.env.local'), 'TOKEN=1\n');
+        writeFileSync(join(projectDir, 'package.json'), '{"name":"changed"}\n');
+        return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
+      }),
+    });
+    const onTieredApproval = vi
+      .fn()
+      .mockResolvedValue({ decision: 'deny', reason: 'user_cancelled' });
+    const { callbacks } = makeCallbacks({ onTieredApproval });
+    const { bus, events } = makeBusRecorder();
+    const wctx = await openRunWorkspace(
+      makeWorkflowContext({
+        projectDir,
+        sessionId,
+        callbacks,
+        implementer,
+        bus,
+        config: makeConfig({
+          validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        }),
+      }),
+    );
+
+    const result = await runSingleTask({
+      wctx,
+      task,
+      index: 0,
+      totalTasks: 1,
+      state,
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(onTieredApproval).toHaveBeenCalledTimes(1);
+    expect(result.pendingRecovery).toBeUndefined();
+    expect(result.currentTaskIndex).toBe(0);
+    expect(result.interruptedStep).toMatchObject({
+      cut: 'mid-step',
+      step: { kind: 'brief', taskId: 'T001' },
+    });
+    expect(events.some((e) => e.type === 'approval_rejected')).toBe(false);
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+    expect(readEvidenceLedger({ projectDir, sessionId })?.rejections ?? []).toEqual([]);
+  });
+
   it('asks once for a protected file the brief declares, at the write', async () => {
     const { projectDir, sessionId } = setupProject({ 'package.json': '{}\n' });
     const task = makeTask({
       id: 'T001',
       action: 'modify',
-      file: 'src/a.ts',
-      files: ['src/a.ts', 'package.json'],
+      suggestedFiles: ['src/a.ts', 'package.json'],
     });
     const state = implementingState([task]);
 
@@ -179,7 +232,7 @@ describe('runSingleTask — approval gates', () => {
         callbacks,
         implementer,
         config: makeConfig({
-          approval: { enabled: true, feedRejectionsToPlanner: true },
+          approval: { feedRejectionsToPlanner: true },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         }),
       }),
@@ -201,7 +254,7 @@ describe('runSingleTask — approval gates', () => {
 
   it('discards the workspace protected write and preserves the checkout edit made during the prompt', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', action: 'create', file: 'src/hello.ts' });
+    const task = makeTask({ id: 'T001', action: 'create', suggestedFiles: ['src/hello.ts'] });
     const state = implementingState([task]);
 
     const implementer = makeImplementer({
@@ -227,7 +280,7 @@ describe('runSingleTask — approval gates', () => {
         implementer,
         bus,
         config: makeConfig({
-          approval: { enabled: true, feedRejectionsToPlanner: true },
+          approval: { feedRejectionsToPlanner: true },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         }),
       }),
@@ -256,7 +309,7 @@ describe('runSingleTask — approval gates', () => {
     const task = makeTask({
       id: 'T001',
       action: 'create',
-      file: 'src/hello.ts',
+      suggestedFiles: ['src/hello.ts'],
       scope: { inBounds: ['src/hello.ts'] },
     });
     const state = implementingState([task]);
@@ -279,7 +332,7 @@ describe('runSingleTask — approval gates', () => {
         implementer,
         bus,
         config: makeConfig({
-          approval: { enabled: true, feedRejectionsToPlanner: true },
+          approval: { feedRejectionsToPlanner: true },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         }),
       }),
@@ -318,7 +371,7 @@ describe('runSingleTask — approval gates', () => {
     const task = makeTask({
       id: 'T001',
       action: 'modify',
-      file: 'src/main.ts',
+      suggestedFiles: ['src/main.ts'],
       scope: { inBounds: ['src/main.ts'] },
     });
     const state = implementingState([task]);
@@ -339,7 +392,7 @@ describe('runSingleTask — approval gates', () => {
       implementer,
       bus,
       config: makeConfig({
-        approval: { enabled: true, feedRejectionsToPlanner: false },
+        approval: { feedRejectionsToPlanner: false },
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       }),
       ...(opts.runValidation === undefined

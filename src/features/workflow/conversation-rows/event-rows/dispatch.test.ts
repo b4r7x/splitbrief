@@ -142,7 +142,25 @@ describe('event row dispatch', () => {
     expect(rows[0]?.segments.every((segment) => segment.tone === 'textDim')).toBe(true);
   });
 
-  it('says only a protected write asks when an old session logged --yolo', () => {
+  it('states the drift findings without a score, even for an old event that carried one', () => {
+    const text = (event: EngineEvent): string =>
+      eventRows({
+        event,
+        globalIndex: 0,
+        expanded: false,
+        ctx: { width: 80, viewportRows: 20, streaming },
+      })
+        .map(rowText)
+        .join('\n');
+    const base = { type: 'drift_report', ts: 0, phase: 'final-review', passed: true } as const;
+
+    expect(text({ ...base, errorCount: 0, warningCount: 0 })).toContain('clean');
+    const old = text({ ...base, score: 0.6, errorCount: 1, warningCount: 1 } as EngineEvent);
+    expect(old).toContain('1 error · 1 warning');
+    expect(old).not.toContain('score');
+  });
+
+  it('reads a retired approval toggle without a transcript row', () => {
     const rows = eventRows({
       event: { type: 'approval_mode_changed', ts: 0, mode: 'yolo' },
       globalIndex: 0,
@@ -150,7 +168,27 @@ describe('event row dispatch', () => {
       ctx: { width: 80, viewportRows: 20, streaming },
     });
 
-    expect(rows.map(rowText).join('\n')).toContain('only a write to a protected path asks');
+    expect(rows).toEqual([]);
+  });
+
+  it('states the lineage attempt and allowance on a retry after a grant', () => {
+    const rows = eventRows({
+      event: {
+        type: 'task_retry',
+        ts: 0,
+        phase: 'implementing',
+        taskId: taskId('T001'),
+        attempt: 1,
+        maxRetries: 3,
+        error: 'failed',
+        lineageAttempt: 7,
+        attemptAllowance: 12,
+      },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+    expect(rows.map(rowText).join('\n')).toContain('attempt 7 of 12');
   });
 
   it('strips OSC-52/CSI control bytes from a user prompt row now that it owns the title', () => {
@@ -218,113 +256,34 @@ describe('event row dispatch', () => {
       ctx: { width: 80, viewportRows: 20, streaming },
     });
 
-    expect(rows.map(rowText)).toEqual(['task failed  T001']);
+    expect(rows.map(rowText)).toEqual(['Task failed  T001']);
     expect(rows[0]?.kind).toBe('summary');
-    expect(rows[0]?.segments).toContainEqual({ text: 'task failed  ', tone: 'error' });
+    expect(rows[0]?.segments).toContainEqual({ text: 'Task failed  ', tone: 'error' });
     expect(rows[0]?.segments).toContainEqual({ text: 'T001', tone: 'textDim' });
   });
 
-  it.each([
-    ['continued', 'Continued', 'success'],
-    ['retry-current-task', 'Tried again', 'success'],
-    ['skipped-current-task', 'Skipped current task', 'textDim'],
-    ['aborted', 'Ended run', 'error'],
-  ] as const)('tones recovery_resolved outcome %s as %s', (outcome, outcomeLabel, tone) => {
-    const event: EngineEventOf<'recovery_resolved'> = {
-      type: 'recovery_resolved',
-      ts: 0,
-      phase: 'implementing',
-      issueId: 'issue-1',
-      reason: 'validation-failed',
-      action: 'retry-same-worker',
-      outcome,
-    };
-
-    const rows = eventRows({
-      event,
-      globalIndex: 0,
-      expanded: false,
-      ctx: { width: 80, viewportRows: 20, streaming },
-    });
-
-    const topRow = rows.find((rowValue) => rowValue.kind === 'card-top');
-    expect(topRow).toBeDefined();
-    expect(topRow?.segments[0]?.tone).toBe(tone);
-    if (topRow !== undefined) {
-      expect(rowText(topRow)).not.toContain('┌');
-    }
-    expect(rows.map(rowText).join('\n')).toContain(`${outcomeLabel} via Try again`);
-  });
-
-  it('does not call a brief the planner stopped early one that exhausted its retries', () => {
+  it('renders a planner command the stage did not take as one dim validation row', () => {
     const rows = eventRows({
       event: {
-        type: 'recovery_action_selected',
+        type: 'warning',
         ts: 0,
-        phase: 'escalating',
-        issueId: 'issue-1',
-        reason: 'retry-exhausted',
-        action: 'retry-same-worker',
-        seat: 'build',
+        phase: 'planning',
+        message: 'The lint stage does not take npm run lint from the planner.',
+        category: 'validation',
+        code: 'discovered_validation_refused',
       },
       globalIndex: 0,
       expanded: false,
-      ctx: { width: 80, viewportRows: 20, streaming },
-    });
-    const text = rows.map(rowText).join('\n');
-
-    expect(text).toContain('Selected Try again for Stopped brief');
-    expect(text).not.toMatch(/exhausted/i);
-  });
-
-  describe('a seat swap names the seat the halt stopped', () => {
-    function swapRowsText(seat: 'plan' | 'build' | 'review' | undefined): string {
-      const base = {
-        ts: 0,
-        phase: 'planning',
-        issueId: 'issue-1',
-        reason: 'runner-usage-limit',
-        action: 'switch-seat',
-        ...(seat !== undefined && { seat }),
-      } as const;
-      const events: EngineEvent[] = [
-        { type: 'recovery_action_selected', ...base },
-        { type: 'recovery_action_failed', ...base, message: 'codex is not ready' },
-        { type: 'recovery_resolved', ...base, outcome: 'continued' },
-      ];
-      return events
-        .flatMap((event, globalIndex) =>
-          eventRows({
-            event,
-            globalIndex,
-            expanded: false,
-            ctx: { width: 80, viewportRows: 20, streaming },
-          }),
-        )
-        .map(rowText)
-        .join('\n');
-    }
-
-    it.each([
-      ['plan', 'Change PLAN tool'],
-      ['build', 'Change BUILD tool'],
-      ['review', 'Change REVIEW tool'],
-    ] as const)('on the %s seat', (seat, label) => {
-      const text = swapRowsText(seat);
-
-      expect(text).toContain(`Selected ${label} for Runner usage limit`);
-      expect(text).toContain(`${label} blocked: codex is not ready`);
-      expect(text).toContain(`Continued via ${label}`);
+      ctx: { width: 120, viewportRows: 20, streaming },
     });
 
-    it('names no seat on an event recorded before the seat was', () => {
-      const text = swapRowsText(undefined);
-
-      expect(text).toContain('Selected Change tool for Runner usage limit');
-      expect(text).toContain('Change tool blocked: codex is not ready');
-      expect(text).toContain('Continued via Change tool');
-      expect(text).not.toMatch(/Change (PLAN|BUILD|REVIEW) tool/);
-    });
+    expect(rows.map(rowText)).toEqual([
+      'Validation  The lint stage does not take npm run lint from the planner.',
+    ]);
+    expect(rows.flatMap((row) => row.segments).every((segment) => segment.tone !== 'warning')).toBe(
+      true,
+    );
+    expect(rows[0]?.markerTone).toBeUndefined();
   });
 
   it('redacts secrets in planner, warning, and user display rows', () => {
@@ -608,49 +567,6 @@ describe('event row dispatch', () => {
     expect(normalized).not.toContain('3,911');
   });
 
-  it('draws the user-edits card as its verdict over its files', () => {
-    const files = ['CHANGELOG.md', 'docs/CLI-REFERENCE.md', 'docs/ENGINE.md', 'src/app/keys.ts'];
-    const event: EngineEventOf<'paused_external_changes'> = {
-      type: 'paused_external_changes',
-      ts: 0,
-      phase: 'implementing',
-      conflict: {
-        kind: 'unrelated',
-        files,
-        affectedTaskIds: [],
-        currentTaskId: taskId('T001'),
-        fileConflicts: files.map((file) => ({ file, kind: 'unrelated', affectedTaskIds: [] })),
-        safeToContinue: true,
-        availableActions: ['continue-unrelated', 'pause', 'abort-workflow'],
-      },
-      selectedAction: 'continue-unrelated',
-    };
-
-    for (const width of [119, 79, 59]) {
-      const lines = eventRows({
-        event,
-        globalIndex: 0,
-        expanded: false,
-        ctx: { width, viewportRows: 20, streaming },
-      }).map((row) => rowText(row).trim());
-
-      expect(lines[0]).toBe('user edits');
-      expect(lines[1]).toBe('outside the remaining briefs · run continued');
-      const fileRows = lines.slice(2);
-      expect(fileRows.join(' ')).toBe(
-        width === 59
-          ? 'CHANGELOG.md · docs/CLI-REFERENCE.md · docs/ENGINE.md +1 more'
-          : 'CHANGELOG.md · docs/CLI-REFERENCE.md · docs/ENGINE.md · +1 more',
-      );
-      if (width === 59) {
-        expect(fileRows).toEqual([
-          'CHANGELOG.md · docs/CLI-REFERENCE.md · docs/ENGINE.md',
-          '+1 more',
-        ]);
-      }
-    }
-  });
-
   it.each([
     {
       name: 'error',
@@ -660,7 +576,7 @@ describe('event row dispatch', () => {
         phase: 'implementing',
         message: 'disk write boundary exceeded',
       },
-      stateWord: 'error',
+      stateWord: 'Error',
       body: 'disk write boundary exceeded',
     },
     {
@@ -678,19 +594,6 @@ describe('event row dispatch', () => {
       body: 'worker unavailable',
     },
     {
-      name: 'brief_quality_failed',
-      event: {
-        type: 'brief_quality_failed',
-        ts: 0,
-        phase: 'planning',
-        score: 0.5,
-        errorCount: 2,
-        warningCount: 1,
-      },
-      stateWord: 'brief quality',
-      body: 'failed',
-    },
-    {
       name: 'task_full_fail',
       event: {
         type: 'task_full_fail',
@@ -698,7 +601,7 @@ describe('event row dispatch', () => {
         phase: 'implementing',
         taskId: taskId('T001'),
       },
-      stateWord: 'task failed',
+      stateWord: 'Task failed',
       body: 'T001',
     },
     {
@@ -1039,9 +942,7 @@ describe('event row dispatch', () => {
       ctx: { width: 80, viewportRows: 20, streaming },
     });
 
-    expect(rows.map(rowText).join('\n')).toContain(
-      'Turn stopped — type instructions to steer, or press Enter to retry.',
-    );
+    expect(rows.map(rowText).join('\n')).toContain('mid-turn');
     expect(rows.length).toBeGreaterThan(0);
     expect(rows.every((rowValue) => rowValue.markerTone === 'warning')).toBe(true);
   });
@@ -1065,7 +966,7 @@ describe('event row dispatch', () => {
       .map(rowText)
       .join('\n');
 
-    expect(text).toContain('Paused at the plan.');
+    expect(text).toContain('at the plan');
     expect(text).not.toContain('reopen');
     expect(text).not.toContain('Turn stopped');
     expect(text).not.toContain('retry');
@@ -1090,13 +991,13 @@ describe('event row dispatch', () => {
       .map(rowText)
       .join('\n');
 
-    expect(text).toContain('Paused before T002.');
+    expect(text).toContain('before T002');
     expect(text).not.toContain('Turn stopped');
     expect(text).not.toContain('retry');
     expect(text).not.toContain('after T002');
   });
 
-  it('turn_interrupted mid-brief keeps the retry copy', () => {
+  it('turn_interrupted mid-brief names the brief and leaves the keys to the byline', () => {
     const event: EngineEventOf<'turn_interrupted'> = {
       type: 'turn_interrupted',
       ts: 0,
@@ -1115,7 +1016,7 @@ describe('event row dispatch', () => {
       .map(rowText)
       .join('\n');
 
-    expect(text).toContain('Turn stopped — type instructions to steer, or press Enter to retry.');
+    expect(text).toContain('at T002');
   });
 
   it('task_retry counts attempts the way the build block does', () => {
@@ -1183,56 +1084,13 @@ describe('event row dispatch', () => {
     });
 
     const joined = rows.map(rowText).join('\n');
-    expect(joined).toContain('answered  recorded — applied at the next planner call');
+    expect(joined).toContain('Answered  recorded — applied at the next planner call');
     expect(joined).not.toMatch(/queued/i);
     expect(rows[0]?.markerTone).toBe('success');
     expect(rows[0]?.segments[0]?.tone).toBe('success');
     expect(rows[0]?.segments[1]?.tone).toBe('textDim');
     expect(rows[1] && rowText(rows[1])).toBe('clarification: Use JWT? -> Yes, use JWT');
     expect(rows[1]?.segments[0]?.tone).toBe('text');
-  });
-
-  it('renders a visible blocked row when the readiness gate blocks', () => {
-    const event: EngineEventOf<'brief_readiness_blocked'> = {
-      type: 'brief_readiness_blocked',
-      ts: 0,
-      phase: 'planning',
-      taskCount: 20,
-      blockedCount: 3,
-      blockedTaskIds: ['T001', 'T002', 'T003'],
-      kinds: ['missing-worker'],
-    };
-
-    const rows = eventRows({
-      event,
-      globalIndex: 0,
-      expanded: false,
-      ctx: { width: 80, viewportRows: 20, streaming },
-    });
-
-    expect(rows.length).toBeGreaterThan(0);
-    expect(rows.map(rowText).join('\n')).toContain('brief readiness');
-    expect(rows.map(rowText).join('\n')).toContain('blocked · 3 tasks of 20');
-    expect(rows.map(rowText).join('\n')).not.toContain('passed');
-  });
-
-  it('renders a passed row when the readiness gate clears', () => {
-    const event: EngineEventOf<'brief_readiness_passed'> = {
-      type: 'brief_readiness_passed',
-      ts: 0,
-      phase: 'planning',
-      taskCount: 5,
-    };
-
-    const rows = eventRows({
-      event,
-      globalIndex: 0,
-      expanded: false,
-      ctx: { width: 80, viewportRows: 20, streaming },
-    });
-
-    expect(rows.length).toBeGreaterThan(0);
-    expect(rows.map(rowText).join('\n')).toContain('passed · 5 tasks');
   });
 
   it('renders the pre-existing-failure line when the baseline done event carries failing stages', () => {
@@ -1254,7 +1112,7 @@ describe('event row dispatch', () => {
     });
 
     const text = rows.map(rowText).join('\n').replace(/\s+/g, ' ');
-    expect(text).toContain('baseline');
+    expect(text).toContain('Baseline');
     expect(text).toContain('typecheck (npx tsc --noEmit) failed');
     expect(text).toContain('already failing before any task ran: typecheck');
     expect(text).toContain('pre-existing failures will not fail this run');
@@ -1322,7 +1180,7 @@ describe('validate failure output', () => {
     });
 
     const header = requireRow(rows, (rowValue) => rowValue.kind === 'callout-top');
-    expect(rowText(header)).toBe('error  lint');
+    expect(rowText(header)).toBe('Error  lint');
     expect(header.segments[0]?.tone).toBe('error');
     // The rail is structure: severity lives on the label and the signed rows, never on a
     // full-height column that reads as one field once sixteen colours flatten it.
@@ -1386,7 +1244,7 @@ describe('validate failure output', () => {
     });
     const texts = rows.map(rowText);
 
-    expect(texts[0]).toContain('validate');
+    expect(texts[0]).toContain('Validate');
     expect(texts[0]).not.toContain('skipped');
     expect(texts.slice(1)).toContain(
       'lint pre-existing failure, test skipped (no affected test file found)',

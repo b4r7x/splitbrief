@@ -162,7 +162,7 @@ describe('SessionsPicker', () => {
     await tick(1);
     await flushEffects();
 
-    instance.stdin.write('interrupted');
+    instance.stdin.write('stopped');
     await vi.waitFor(() => {
       const current = instance.lastFrame() ?? '';
       expect(current).toContain('alpha feature');

@@ -1,5 +1,5 @@
 import { isApiProviderId } from '../../core/providers/api-provider-catalog.js';
-import { taskFiles, type Task } from '../../core/schemas/task.js';
+import type { Task } from '../../core/schemas/task.js';
 import { estimateTokens } from '../../core/tokens/estimate.js';
 import type { EffortLevel } from '../../core/schemas/enums.js';
 import { error } from '../../utils/error.js';
@@ -234,8 +234,9 @@ export const apiBudgetError = {
  * no captured baseline counts as a `create`.
  */
 export function apiBuildTargets(task: Task): readonly ApiBudgetBuildTarget[] {
-  return taskFiles(task).map((path) => {
-    const baseline = path === task.file ? task.currentCode : task.currentCodeByFile?.[path];
+  return task.suggestedFiles.map((path) => {
+    const baseline =
+      path === task.suggestedFiles[0] ? task.currentCode : task.currentCodeByFile?.[path];
     return baseline !== undefined
       ? { path, action: 'modify' as const, content: baseline }
       : { path, action: 'create' as const };

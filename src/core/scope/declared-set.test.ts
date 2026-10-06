@@ -17,7 +17,7 @@ function task(overrides: Partial<Task> = {}): Task {
     id: taskId('T001'),
     title: 'anchor',
     action: 'modify',
-    file: 'src/a.ts',
+    suggestedFiles: ['src/a.ts'],
     dependsOn: [],
     description: '',
     tests: [],
@@ -87,7 +87,7 @@ describe('taskDeclaredPatterns', () => {
   it('collects files, in bounds and approved out of bounds', () => {
     const patterns = taskDeclaredPatterns(
       task({
-        files: ['src/a.ts', 'src/a.test.ts'],
+        suggestedFiles: ['src/a.ts', 'src/a.test.ts'],
         scope: { inBounds: ['src/api/**'], approvedOutOfBounds: ['tsconfig.json'] },
       }),
     );
@@ -102,7 +102,7 @@ describe('taskDeclaredPatterns', () => {
 describe('undeclaredFiles', () => {
   it('returns only the changed files no declared pattern licenses', () => {
     const subject = task({
-      files: ['src/a.ts', 'src/a.test.ts'],
+      suggestedFiles: ['src/a.ts', 'src/a.test.ts'],
       scope: { inBounds: ['docs/**'] },
     });
     expect(undeclaredFiles(['src/a.ts', 'docs/x.md', './src/b.ts'], subject)).toEqual([

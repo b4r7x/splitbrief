@@ -54,7 +54,7 @@ The planning session's answer is typed. Its schemas live in `src/core/schemas/pl
 | `intent` | string | `description` |
 | `criteria` | string[] (criterion ids) | `criteria` |
 | `checks` | `Check[]` | `checks`; `tests` = the values of the `test` checks; `evidence` = one line per check (`<id> <kind>[ (optional)]: <value>`) |
-| `suggestedFiles` | string[], at least one | `suggestedFiles`; `files` = all of them; `file` = the first |
+| `suggestedFiles` | string[], at least one | `suggestedFiles` (the first is the anchor) |
 | `contextFiles` | string[] | `contextFiles` (read-only: never in `scope`, never a write target) |
 | `exclusions` | string[] | `exclusions`; `scope.outOfBounds` |
 | `protectedOperations` | `{ path, operation: 'write' }[]` or null | `protectedOperations` (absent when null) |
@@ -79,6 +79,8 @@ The planning session's answer is typed. Its schemas live in `src/core/schemas/pl
 | `uncovered-criterion` | Every criterion is served by at least one task |
 | `unknown-criterion` | A task names only criteria the plan defines |
 | `task-without-check` | Every task carries at least one check |
+| `task-without-criterion` | Every task serves at least one criterion |
+| `task-without-intent` | Every task has a non-blank intent |
 | `path-outside-project` | No suggested or context file resolves outside the project; these paths come from the model |
 | `path-not-file` | A suggested or context file that exists is a regular file, not a directory or a symlink (`lstat`); `estimatePlanContextFits` skips the same tasks (`pathsNotFiles`) |
 | `missing-context-file` | A context file exists, or this task or an earlier listed task names it as a suggested file; a suggested file may not exist yet |
@@ -106,9 +108,9 @@ Every Task Brief v1 covers nine semantic sections, even when a section is brief.
 
 | # | Brief section | Schema fields | Notes |
 |---|---|---|---|
-| 1 | **Identity** | `id`, `title`, `file`, `files`, `action` | Stable identity for the task. `files` is the slice the brief writes; `file` is its anchor and must be a member of `files`. When `files` is absent it resolves to `[file]`. |
+| 1 | **Identity** | `id`, `title`, `suggestedFiles`, `action` | Stable identity for the task. `suggestedFiles` is the slice the brief writes; its first path is the anchor. A brief saved before `suggestedFiles` named them in `file` and `files`; the schema reads those as `suggestedFiles`. |
 | 2 | **Intent** | `description` | What change is needed and why it matters. |
-| 3 | **Scope** | `description`, `constraints`, optional `scope.inBounds` / `scope.outOfBounds` | Guidance: `files` are the suggested files, **In bounds** is context, and **Out of bounds** lists the explicit exclusions the reviewer checks. |
+| 3 | **Scope** | `description`, `constraints`, optional `scope.inBounds` / `scope.outOfBounds` | Guidance: `suggestedFiles` are suggestions, **In bounds** is context, and **Out of bounds** lists the explicit exclusions the reviewer checks. |
 | 4 | **Code Context** | `signature`, `currentCode`, `typeDefs`, `pattern` | Existing code, signatures, types, or patterns the implementer needs. |
 | 5 | **Implementation Plan** | `implementationSteps` | Ordered steps for the change. |
 | 6 | **Validation** | `tests` | Concrete checks, tests, or assertions that define success. |
@@ -116,9 +118,9 @@ Every Task Brief v1 covers nine semantic sections, even when a section is brief.
 | 8 | **Escalation** | optional `escalation` | When the implementer must stop and ask instead of guessing. |
 | 9 | **Evidence** | optional `evidence` | Final reviewable proof preserved after the task completes. |
 
-`tasks.md` is the markdown transport: one task block per brief, frontmatter for identity and dependencies, `### …` headings for each semantic section. The parser also reads the planner spellings it meets: a `##` or `####` heading that names a section (numbered or bold), `**Label**:` scope labels, `*` or indented bullets (a nested bullet stays with its item), `1)` steps, or bulleted steps. The frontmatter reads `action` in any case, pads `T1` to `T001` in `id` and `depends_on`, and splits a `depends_on: T001, T002` string. Any other id is still rejected. The implementer prompt may reformat a brief but must not change its meaning. `state.json` is the stable external JSON; consume that for machine-readable read-only workflows.
+`tasks.md` is a projection for people, rendered from the compiled tasks (`formatTasks`, `src/engine/spec/formatter.ts`): one task block per brief, frontmatter for identity and dependencies, `### …` headings for each semantic section. Nothing parses it back. The implementer prompt may reformat a brief but must not change its meaning. `state.json` is the stable external JSON; consume that for machine-readable read-only workflows.
 
-**How the Scope section is interpreted.** Scope is guidance, not a fence. The brief's `files` are the suggested files, **In bounds** is context, and **Out of bounds** lists the explicit exclusions the reviewer checks. An implementer may edit another ordinary project file when the change needs it; SPLITBRIEF records it as touched, not suggested, runs its tests, and shows it to the reviewer. Only a protected path (dependency manifests and lockfiles, CI configuration, env and key files, `.git`, `.splitbrief`) asks the user (see [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md)). A placeholder bullet — `None`, `None.`, `n/a` or `-` — is no entry at all: the parser drops it and `scopeEntryPatterns` licenses nothing for it (`isScopePlaceholder`). Scope bullets are prose, not a file list. A brief's **declared set** is `files` plus every `scope.inBounds` and `scope.approvedOutOfBounds` bullet, and one module resolves it for every consumer — `taskDeclaredPatterns` / `isInDeclaredSet` in `src/core/scope/declared-set.ts`. When deciding whether a brief widens the write scope beyond its `files`, SPLITBRIEF extracts path tokens from each `scope.inBounds` / `scope.approvedOutOfBounds` bullet (`scopePathPatterns` in `src/utils/path-patterns.ts`): backtick-quoted tokens first, then — when the bullet has no backticks — the whole bullet if it contains no whitespace, otherwise concrete path patterns matched out of the prose. A token only counts as a path when it carries a directory separator or a glob; a bare filename with no directory cannot denote a file other than one of the task's own `files` in any recorded plan, so it never widens the write scope. A bullet that names a file the brief already declares does not widen it either.
+**How the Scope section is interpreted.** Scope is guidance, not a fence. The brief's `suggestedFiles` are suggestions, **In bounds** is context, and **Out of bounds** lists the explicit exclusions the reviewer checks. An implementer may edit another ordinary project file when the change needs it; SPLITBRIEF records it as touched, not suggested, runs its tests, and shows it to the reviewer. Only a protected path (dependency manifests and lockfiles, CI configuration, env and key files, `.git`, `.splitbrief`) asks the user (see [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md)). A placeholder bullet — `None`, `None.`, `n/a` or `-` — is no entry at all: `scopeEntryPatterns` licenses nothing for it (`isScopePlaceholder`). Scope bullets are prose, not a file list. A brief's **declared set** is `suggestedFiles` plus every `scope.inBounds` and `scope.approvedOutOfBounds` bullet, and one module resolves it for every consumer — `taskDeclaredPatterns` / `isInDeclaredSet` in `src/core/scope/declared-set.ts`. When deciding whether a brief widens the write scope beyond its `suggestedFiles`, SPLITBRIEF extracts path tokens from each `scope.inBounds` / `scope.approvedOutOfBounds` bullet (`scopePathPatterns` in `src/utils/path-patterns.ts`): backtick-quoted tokens first, then — when the bullet has no backticks — the whole bullet if it contains no whitespace, otherwise concrete path patterns matched out of the prose. A token only counts as a path when it carries a directory separator or a glob; a bare filename with no directory cannot denote a file other than one of the task's own `suggestedFiles` in any recorded plan, so it never widens the write scope. A bullet that names a file the brief already declares does not widen it either.
 
 **Approved out of bounds is planner-authored.** The run no longer appends to it: the hint rung's `widen` verdict and `WIDEN_TASK_SCOPE` are gone. When the consult decides a brief's scope was wrong, it answers `rewrite-task` or `split-task` and the replacement carries the scope the planner wrote; the entry is then an ordinary Scope bullet, read by `scopePathPatterns` exactly as any other, so the declared set, the write gate, the classifier, the preamble and drift widen together. `scope.approvedOutOfBounds` is visible in `state.json` and in the brief as rendered; old `task_scope_widened` events stay replayable.
 
@@ -137,8 +139,7 @@ type Task = {
   id: TaskId;                        // branded string, e.g. "T001"
   parentId?: TaskId;                 // set on a split's subtask: the lineage's root task id
   title: string;                     // short human label
-  file: string;                      // project-relative anchor path (e.g. "src/foo.ts")
-  files?: string[];                  // optional: the whole slice; defaults to [file], and file is a member
+  suggestedFiles: [string, ...string[]];  // every path the brief may write, first the anchor (e.g. "src/foo.ts")
   action: 'create' | 'modify';
   description: string;               // full task description
   dependsOn: TaskId[];               // IDs of tasks that must complete first
@@ -161,7 +162,6 @@ type Task = {
   // Plan fields: set by taskFromSpec on a task compiled from plan.json; absent on older briefs
   criteria?: string[];               // criterion ids the task serves
   checks?: Check[];                  // { id, kind: 'test' | 'cmd' | 'render', value, required }
-  suggestedFiles?: string[];         // guidance; mapped onto files
   contextFiles?: string[];           // read-only context; never a write target
   contextCodeByFile?: Record<string, string>;  // captured current code of contextFiles, keyed by path
   exclusions?: string[];             // explicit "do not" notes
@@ -285,7 +285,7 @@ Recommended mapping:
 | `tests` | Acceptance criteria bullets |
 | `constraints` | Additional requirements bullets |
 | `status` | Workflow state (mapped per project) |
-| `file` | Custom field "Affected file" |
+| `suggestedFiles` | Custom field "Affected files" |
 | `action` | Custom field "Change type" |
 | `dependsOn` | Issue links (blocked-by) |
 
@@ -324,7 +324,7 @@ If two tools need to coordinate, they agree on a key (e.g., `external.vcs-sync`)
 
 | Field | Meaning when absent |
 |---|---|
-| `Task.files` | the slice is `[task.file]` |
+| `Task.files` | parse-only now: a saved `files`, else `[file]`, reads as `suggestedFiles` |
 | `Task.currentCodeByFile` | only the anchor's `currentCode` was captured |
 | `Task.fix` | the task is a plan task, not a fix task the review triage appended |
 | `WorkflowState.reviewFixes` | no review fix cycle has run. Parse-only now: `fixCycles` is the live home, and `reviewFixes.cycle` is read only when `fixCycles` is absent |
@@ -339,7 +339,7 @@ If two tools need to coordinate, they agree on a key (e.g., `external.vcs-sync`)
 | `WorkflowState.lastFailure` | the run recorded no failure; it stopped for some other reason |
 | evidence `skipped` / `skippedReason` | the stage ran (a skipped stage was previously indistinguishable from a pass) |
 
-**`Session.status` (2026-09-15).** The session record's status is now `open` \| `complete` \| `ended`, derived from the state by `deriveRunStatus` rather than from the exit path the run happened to take. The legacy literals `interrupted`, `failed` and `cancelled` still parse: they map to `open`, and `failed` additionally sets `stop: 'failed'`. The row also carries optional `phase`, `mode` and `stop` (`paused` \| `waiting` \| `halted` \| `failed` \| `interrupted`); an absent `stop` on an open row means the run is still going.
+**`Session.status` (2026-09-15).** The session record's status is now `open` \| `complete` \| `ended`, derived from the state by `deriveRunStatus` rather than from the exit path the run happened to take. The legacy literals `interrupted`, `failed` and `cancelled` still parse: they map to `open`, and `failed` additionally sets `stop: 'stopped'`. The row also carries optional `phase`, `mode` and `stop` (`waiting-for-you` \| `stopped`); an absent `stop` on an open row means the run is still going. An older row's `stop` of `input-required`, `waiting` or `halted` reads as `waiting-for-you`, and `paused`, `failed` or `interrupted` reads as `stopped` (`StopKindSchema`, `src/core/schemas/run-step.ts`).
 
 ## What is NOT stable
 
@@ -355,7 +355,7 @@ If two tools need to coordinate, they agree on a key (e.g., `external.vcs-sync`)
 {
   "id": "T003",
   "title": "Add email validation to SignupForm",
-  "file": "src/features/auth/SignupForm.tsx",
+  "suggestedFiles": ["src/features/auth/SignupForm.tsx"],
   "action": "modify",
   "description": "Validate the email field in the signup form before submission.",
   "dependsOn": [],
@@ -397,7 +397,7 @@ The output must match the shape above.
 
 ## Older runs: `brief-quality.json`
 
-A run planned before the typed plan session ran a brief-quality pass over `tasks.md` and wrote `brief-quality.json`. A new run writes no such file: its briefs are compiled from a plan that passed `checkPlan`. `BriefQualityReport` and `isBriefQualityReport` (`src/engine/spec/brief-quality.ts`) stay so that an older session folder still reads, and the `brief_quality_*` and `brief_readiness_*` events stay in the event schema for replay. The scorer itself is deleted.
+A run planned before the typed plan session ran a brief-quality pass over `tasks.md` and wrote `brief-quality.json`. A new run writes no such file: its briefs are compiled from a plan that passed `checkPlan`. `BriefQualityReport` and `isBriefQualityReport` (`src/engine/spec/brief-quality.ts`) stay so that an older session folder still reads, but the `brief_quality_*` and `brief_readiness_*` events no longer replay. The owner accepted this detail loss for sessions older than S7. The scorer itself is deleted.
 
 ## API BUILD file bundles
 
@@ -536,7 +536,6 @@ Final-review attribution comes from `review-changes.json`, which records the bef
 type DriftReport = {
   version: 1;
   passed: boolean;       // true when no error-severity findings
-  score: number;         // 1 - 0.25*errors - 0.08*warnings, clamped to [0,1]
   changedFiles: string[];
   expectedFiles: string[];
   findings: Array<{
@@ -545,7 +544,6 @@ type DriftReport = {
       | 'out_of_scope_file'
       | 'missing_expected_file'
       | 'orphan_diff'
-      | 'out_of_bounds_text_match'
       | 'missing_evidence'
       | 'failed_task_with_diff';
     taskId?: string;
@@ -556,15 +554,16 @@ type DriftReport = {
 };
 ```
 
+An older report may carry a `score` and `out_of_bounds_text_match` findings. The reader drops those findings (`DriftFindingsSchema`, `src/core/schemas/drift.ts`); nothing reads the score.
+
 ### Detection rules
 
 | Code | Severity | Trigger |
 |---|---|---|
 | `out_of_scope_file` | info | Changed file is outside every brief's declared set: `<file> touched, not suggested by any task.`, or a pre-existing note when the file was already changed before the run started. It never fails drift. |
-| `missing_expected_file` | warning | Task is `done` / `escalated` but its target file is not in the diff. |
-| `failed_task_with_diff` | error | Task is `failed` but its target file appears in the diff. |
+| `missing_expected_file` | warning | Task is `done` / `escalated` but none of its suggested files is in the diff. |
+| `failed_task_with_diff` | error | Task is `failed` but one of its suggested files appears in the diff. |
 | `orphan_diff` | error | Diff contains files but every task is `failed` or `skipped`. |
-| `out_of_bounds_text_match` | error | A `task.scope.outOfBounds` pattern matches a changed-file path or appears in the raw diff text. Match literally as a substring; do not use regex or semantic matching. |
 | `missing_evidence` | warning | Task `done`/`escalated` declared expected evidence but the ledger observed none — or observed the test stage as `skipped`, which is absence of proof, not proof. |
 
 ### Event
@@ -573,5 +572,5 @@ The orchestrator publishes a `drift_report` event:
 
 ```ts
 { type: 'drift_report'; ts: number; phase: Phase; passed: boolean;
-  score: number; errorCount: number; warningCount: number }
+  errorCount: number; warningCount: number }
 ```

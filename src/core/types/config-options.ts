@@ -38,6 +38,5 @@ export interface WorkflowOpts {
   allowUnverifiedAuth?: boolean;
   json?: boolean;
   plain?: boolean;
-  yolo?: boolean;
   skills?: string[];
 }

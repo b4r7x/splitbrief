@@ -57,6 +57,40 @@ describe('runPreTaskHooksAndPublish', () => {
     ).toBe(true);
   });
 
+  it("announces the brief with its lineage's attempt number and allowance", async () => {
+    const task = makeTask({ id: 'T001' });
+    const state = {
+      ...implementingState([task]),
+      lineages: {
+        T001: {
+          consults: 0,
+          consultAllowance: 2,
+          attempts: 3,
+          attemptAllowance: 12,
+          staleConsultedRevision: {},
+          consultRecords: [],
+          replacedParents: [],
+          notes: [],
+        },
+      },
+    };
+    const { bus, events } = makeBusRecorder();
+
+    await runPreTaskHooksAndPublish({
+      wctx: makeWorkflowContext({ bus }),
+      task,
+      state,
+      index: 0,
+      totalTasks: 1,
+      setTrackedState: vi.fn(),
+    });
+
+    expect(events.find((e) => e.type === 'task_started')).toMatchObject({
+      lineageAttempt: 4,
+      attemptAllowance: 12,
+    });
+  });
+
   it('a resumed cut attempt keeps the task-start snapshot its brief began from', async () => {
     const task = makeTask({ id: 'T001' });
     const started = { head: 'abc123', files: ['src/before.ts'], dirtyFileContents: {} };

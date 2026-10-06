@@ -1,3 +1,5 @@
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { SessionRef } from '../../../core/types/session-ref.js';
 import { error } from '../../../utils/error.js';
 import { type FileSnapshotEntry, writeConfinedEntry } from '../approval/file-snapshots/entry.js';
 import {
@@ -7,6 +9,7 @@ import {
   readBackupBlob,
 } from './backup.js';
 import { readApplyEntry, sameSideEntry, unsafeEntryError } from './states.js';
+import { transitionAndSave } from '../state-ops.js';
 
 type ApplyBackupInput = { projectDir: string; sessionId: string; backupId: string };
 
@@ -103,4 +106,17 @@ export async function restoreApplyBackup(input: ApplyBackupInput): Promise<{
     }
   }
   return { restored: restored.sort(), unchanged: unchanged.sort(), conflicts: conflicts.sort() };
+}
+
+/** Undo after Apply: the checkout goes back to its pre-Apply bytes and the run records the undo. */
+export async function undoApply(
+  ref: SessionRef,
+  state: WorkflowState,
+): Promise<Awaited<ReturnType<typeof restoreApplyBackup>>> {
+  const { applied } = state;
+  if (applied === undefined) throw error('apply-not-undoable', 'Run was not applied.');
+  if (applied.undone !== undefined) throw error('apply-not-undoable', 'Apply already undone.');
+  const result = await restoreApplyBackup({ ...ref, backupId: applied.backupId });
+  transitionAndSave(ref, state, { type: 'APPLY_UNDONE', conflicts: result.conflicts });
+  return result;
 }

@@ -352,7 +352,7 @@ describe('handleFailedImplementation — a stop with a hand-back is consulted', 
 describe('handleFailedImplementation — an effect failure is no scope fence', () => {
   it('retries on the runner error and never sends a revert instruction', async () => {
     const { projectDir, sessionId } = setupProject({ 'src/other.ts': 'committed other\n' });
-    const task = makeTask({ id: 'T001', action: 'create', file: 'src/hello.ts' });
+    const task = makeTask({ id: 'T001', action: 'create', suggestedFiles: ['src/hello.ts'] });
     const state = implementingState([task]);
     const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
     writeFileSync(join(projectDir, 'src/other.ts'), 'agent rewrote this\n');
@@ -393,20 +393,20 @@ describe('handleFailedImplementation — an effect failure is no scope fence', (
   });
 
   it('an extracted-code write blocked by a change during approval is an ordinary failed attempt', async () => {
-    const task = makeTask({ id: 'T001', file: 'src/app.ts' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/app.ts'] });
     const state = implementingState([task]);
     const retry = vi.fn().mockResolvedValue({
       success: false,
       error: 'still blocked',
       usage: { inputTokens: 1, outputTokens: 1 },
     });
-    const { bus, events } = makeBusRecorder();
+    const { bus } = makeBusRecorder();
     const wctx = makeWorkflowContext({
       implementer: makeImplementer({ retry }),
       bus,
       planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
     });
-    const error = extractedCodeApprovalRaceError(task.file);
+    const error = extractedCodeApprovalRaceError(task.suggestedFiles[0]);
 
     const next = await handleFailedImplementation({
       wctx,
@@ -422,6 +422,5 @@ describe('handleFailedImplementation — an effect failure is no scope fence', (
 
     expect(retry.mock.calls[0]?.[0]?.error).toBe(error);
     expect(next.pendingRecovery?.reason).not.toBe('approval-promotion-conflict');
-    expect(events.find((e) => e.type === 'paused_external_changes')).toBeUndefined();
   });
 });

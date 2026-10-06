@@ -77,22 +77,24 @@ afterEach(() => {
 });
 
 describe('BuildProgressBlock', () => {
-  it('states the counts, the attempt and why there is no ETA', () => {
-    const ui = renderFeature(<BuildProgressBlock cols={120} />);
-    const frame = ui.lastFrame() ?? '';
+  it('states the counts, and the attempt only once a retry has spent one', () => {
+    const first = renderFeature(<BuildProgressBlock cols={120} />);
+    expect(first.lastFrame() ?? '').toContain('1/3 briefs passed');
+    expect(first.lastFrame() ?? '').not.toContain('attempt');
+    expect(first.lastFrame() ?? '').not.toContain('ETA');
+    first.unmount();
 
-    expect(frame).toContain('1/3 briefs passed');
-    expect(frame).toContain('attempt 1 of');
-    expect(frame).toContain('ETA unavailable: no brief finished yet');
-
-    ui.unmount();
+    tasksStore.__testReset({ ...tasksStore.get(), currentAttempt: 2 });
+    const retry = renderFeature(<BuildProgressBlock cols={120} />);
+    expect(stripAnsiStyles(retry.lastFrame() ?? '')).toContain('1/3 briefs passed · attempt 2 of');
+    retry.unmount();
   });
 
   it('spreads the same facts over more rows when the terminal is narrow', () => {
     const ui = renderFeature(<BuildProgressBlock cols={60} />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame.split('\n').filter((line) => line.trim().length > 0)).toHaveLength(5);
+    expect(frame.split('\n').filter((line) => line.trim().length > 0)).toHaveLength(3);
 
     ui.unmount();
   });
@@ -145,8 +147,10 @@ describe('BuildProgressBlock', () => {
     const ui = renderFeature(<BuildProgressBlock cols={160} />, { cols: 160, rows: 24 });
     const frame = ui.lastFrame();
 
-    expect(stripAnsiStyles(frame)).toContain('OpenCode CLI · implementing · No update for 5m 12s');
-    expect(frame).toContain(`${warning}No update for 5m 12s`);
+    expect(stripAnsiStyles(frame)).toContain(
+      'OpenCode CLI · implementing · a tool is running · 5m 12s',
+    );
+    expect(frame).toContain(`${warning}a tool is running · 5m 12s`);
     expect(frame).not.toContain(`${warning}OpenCode CLI · implementing`);
 
     ui.unmount();

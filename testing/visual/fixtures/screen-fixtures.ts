@@ -624,7 +624,7 @@ function createWorkflowContinuingFixture(): FixtureLifecycle {
       hydration: { kind: 'loaded', state },
       status: {
         kind: 'open',
-        stop: { kind: 'interrupted' },
+        stop: { kind: 'stopped', on: { kind: 'interrupted' } },
         resumeAt: { kind: 'planner', call: 'tasks' },
       },
     }),

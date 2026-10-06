@@ -10,10 +10,9 @@ import type {
 import { resolveModelDisplayName } from '../../../engine/providers/model/display-names.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { formatDuration } from '../../../utils/format-time.js';
-import { formatContextLength, formatTruncatedList } from '../../../core/formatting.js';
+import { formatContextLength } from '../../../core/formatting.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { truncateTerminalDisplayText } from '../../../utils/display-text.js';
-import { userEditConflictRelation } from '../../../core/recovery/user-edit-conflict-words.js';
 import { formatUsageTokens } from '../usage-details-model.js';
 import type { ConversationRowSegment, ConversationRowTone } from './types.js';
 
@@ -57,40 +56,13 @@ export function formatTaskStartedParts(
   return parts;
 }
 
-// The verdict and the file list are two lines, the way the recovery panel puts its files under its
-// headline: in one line the list wrapped into the verdict and split it.
-export function formatExternalChangesValue(
-  event: Extract<EngineEvent, { type: 'paused_external_changes' }>,
-): string {
-  // Only `continue-unrelated` lets the brief start. Every other answer raises a recovery issue,
-  // so the card must not name an action that the recovery panel offers next.
-  const outcome =
-    event.selectedAction === undefined
-      ? undefined
-      : event.selectedAction === 'continue-unrelated'
-        ? 'run continued'
-        : 'recovery needed';
-  const verdict = [
-    event.conflict
-      ? userEditConflictRelation({
-          kind: event.conflict.kind,
-          affectedTaskIds: event.conflict.affectedTaskIds,
-          currentTaskId: event.conflict.currentTaskId,
-        })
-      : 'External changes detected',
-    ...(outcome === undefined ? [] : [outcome]),
-  ].join(' · ');
-  const files = event.conflict ? formatTruncatedList(event.conflict.files, 3) : '';
-  return files === '' ? verdict : `${verdict}\n${files}`;
-}
-
 // One flat string could not show which stage failed without being read word by word, and it wrapped
 // mid-stage. Each stage is its own toned segment now, and dropping the command keeps the row on one
 // line at every width — the failing stage's command moves to the error block below it.
 export function validationSummarySegments(
   event: Extract<EngineEvent, { type: 'validate' }>,
 ): ConversationRowSegment[] {
-  const segments: ConversationRowSegment[] = [{ text: 'validate', tone: 'textDim' }];
+  const segments: ConversationRowSegment[] = [{ text: 'Validate', tone: 'textDim' }];
   for (const stage of ValidationStageSchema.options) {
     const state = validationStageSymbol(event, event.stages, stage, event.skipped);
     segments.push(
@@ -142,7 +114,7 @@ export function baselineValidationRow(
     .map((stage) => baselineValidationStageText(event, stage))
     .join(' ');
   const dur = event.duration ? ` ${formatDuration(event.duration)}` : '';
-  return `baseline ${stageText}${dur}`;
+  return `Baseline ${stageText}${dur}`;
 }
 
 function formatEventContextFit(

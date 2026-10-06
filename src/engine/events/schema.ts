@@ -10,15 +10,16 @@ import {
   TaskCompletionMethodSchema,
   TaskContextFitSchema,
   TaskStatusSchema,
-  UserEditConflictActionSchema,
-  UserEditConflictKindSchema,
   WorkflowModeSchema,
 } from '../../core/schemas/enums.js';
 import { CheckResultSchema, TaskIdSchema } from '../../core/schemas/task.js';
 import { AnsweredQuestionSchema } from '../../core/schemas/question.js';
 import { PlannerCallSchema, StepCutSchema, StepRefSchema } from '../../core/schemas/run-step.js';
 import { ConsultRecordSchema } from '../../core/schemas/workflow.js';
-import { TaskReviewRecoverySchema } from '../../core/schemas/recovery/schemas.js';
+import {
+  readSavedRecoveryActions,
+  TaskReviewRecoverySchema,
+} from '../../core/schemas/recovery/schemas.js';
 import { CREW_SEAT_IDS } from '../../core/crew/identity.js';
 import { TaskTokenUsageSchema, TokenUsageSchema } from '../../core/schemas/tokens.js';
 import { RewindEventVariantSchemas } from '../../core/state/rewind-event.js';
@@ -112,7 +113,15 @@ function parseEngineEventPayload(value: unknown): EngineEventFromPayloadSchemas 
   const operationalMessage = parseOperationalMessageEvent(value);
   if (operationalMessage !== null) return operationalMessage;
 
-  return parseWithSchema(EngineEventPayloadSchema, value);
+  return parseWithSchema(EngineEventPayloadSchema, readSavedRecoveryEvent(value));
+}
+
+/** A logged recovery event names its actions in today's vocabulary; see `readSavedRecoveryActions`. */
+function readSavedRecoveryEvent(value: unknown): unknown {
+  if (!isRecord(value) || typeof value.type !== 'string' || !value.type.startsWith('recovery_')) {
+    return value;
+  }
+  return readSavedRecoveryActions(value);
 }
 
 function invalidEngineEventMessage(value: unknown): string {
@@ -180,22 +189,6 @@ const runnerCallToolUseEventSchema = z.discriminatedUnion('stage', [
 ]);
 
 export const WorkflowCancelReasonSchema = z.enum(WORKFLOW_CANCEL_REASONS);
-
-export const userEditConflictSchema = z.looseObject({
-  kind: UserEditConflictKindSchema,
-  files: stringArray,
-  affectedTaskIds: taskIdArray,
-  currentTaskId: TaskIdSchema.optional(),
-  fileConflicts: z.array(
-    z.looseObject({
-      file: z.string(),
-      kind: UserEditConflictKindSchema,
-      affectedTaskIds: taskIdArray,
-    }),
-  ),
-  safeToContinue: z.boolean(),
-  availableActions: z.array(UserEditConflictActionSchema),
-});
 
 export const taskReviewRequestFields = {
   taskId: TaskIdSchema,
@@ -273,10 +266,6 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     /** The ids of the skills every seat call of this run carries. */
     skills: z.array(z.string()).optional(),
   }),
-  phaseEvent('paused_external_changes').extend({
-    conflict: userEditConflictSchema.optional(),
-    selectedAction: UserEditConflictActionSchema.optional(),
-  }),
   phaseEvent('recovery_prompted').extend({
     issueId: z.string(),
     reason: RecoveryReasonSchema,
@@ -326,7 +315,6 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   }),
   phaseEvent('planner_heartbeat').extend({
     elapsedMs: z.number(),
-    accumulatedTokens: z.number(),
     callId: CallIdSchema.optional(),
   }),
   strictCallPhaseEvent('runner_call_started'),
@@ -402,27 +390,8 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   phaseEvent('briefs_rejected'),
   ...RewindEventVariantSchemas,
   phaseEvent('all_tasks_done'),
-  phaseEvent('brief_quality_passed').extend({
-    score: z.number(),
-    warningCount: z.number(),
-  }),
-  phaseEvent('brief_quality_failed').extend({
-    score: z.number(),
-    errorCount: z.number(),
-    warningCount: z.number(),
-  }),
-  phaseEvent('brief_readiness_passed').extend({
-    taskCount: z.number(),
-  }),
-  phaseEvent('brief_readiness_blocked').extend({
-    taskCount: z.number(),
-    blockedCount: z.number(),
-    blockedTaskIds: stringArray,
-    kinds: stringArray,
-  }),
   phaseEvent('drift_report').extend({
     passed: z.boolean(),
-    score: z.number(),
     errorCount: z.number(),
     warningCount: z.number(),
   }),
@@ -481,6 +450,9 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     title: z.string(),
     index: z.number().int().nonnegative(),
     total: z.number().int().nonnegative(),
+    /** The attempt this brief's lineage is on, and its allowance; absent on older logs. */
+    lineageAttempt: z.number().int().positive().optional(),
+    attemptAllowance: z.number().int().nonnegative().optional(),
     file: z.string(),
     files: stringArray.optional(),
     action: FileActionSchema,
@@ -514,6 +486,9 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     taskId: TaskIdSchema,
     attempt: z.number().int().nonnegative(),
     maxRetries: z.number().int().nonnegative(),
+    /** The attempt this retry is on its lineage, and the lineage's allowance; absent on older logs. */
+    lineageAttempt: z.number().int().positive().optional(),
+    attemptAllowance: z.number().int().nonnegative().optional(),
     error: z.string(),
   }),
   phaseEvent('task_escalating').extend({ taskId: TaskIdSchema }),
@@ -602,8 +577,9 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     taskId: TaskIdSchema,
     file: z.string(),
     diff: z.string().optional(),
-    linesAdded: z.number(),
-    linesRemoved: z.number(),
+    /** Absent when the call's baseline kept no content to count against. */
+    linesAdded: z.number().optional(),
+    linesRemoved: z.number().optional(),
     duration: z.number(),
     /** An allowed no-change attempt that verified its brief and changed nothing. */
     noChange: z.literal(true).optional(),

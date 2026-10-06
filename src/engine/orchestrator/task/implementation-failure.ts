@@ -12,12 +12,10 @@ import {
   buildRunnerUnauthenticatedRecoveryIssue,
   buildRunnerUsageLimitRecoveryIssue,
   recoveryBuilderForRunnerOutcome,
-  routeBiggerProfileFromDecision,
   runnerHaltRow,
 } from '../recovery/builders/task.js';
 import { boundedHandBack } from '../escalation/types.js';
 import { retryAndRecord } from './retry.js';
-import { runChainAnalysisSafe } from './analyze-drift.js';
 import { loadSeatSwapContext } from '../recovery/seat-swap-context.js';
 import { raiseApiApplyRecovery } from '../evidence/persistence.js';
 
@@ -99,7 +97,6 @@ export async function handleFailedImplementation(opts: {
   // every task onto the planner.
   if (implState.implResult.outcome === 'usage-limit') {
     const toolMessage = implState.implResult.error ?? 'The runner reported a usage limit';
-    const routeBiggerProfile = routeBiggerProfileFromDecision(wctx.routingDecision);
     const seatSwap = await loadSeatSwapContext({
       projectDir: wctx.projectDir,
       seat: 'build',
@@ -115,7 +112,6 @@ export async function handleFailedImplementation(opts: {
       ...(wctx.implementerProfile !== undefined && {
         selectedImplementerProfile: wctx.implementerProfile,
       }),
-      ...(routeBiggerProfile !== undefined && { routeBiggerProfile }),
       ...(seatSwap !== undefined && { seatSwap }),
       createdAt: nowIso(),
     });
@@ -183,12 +179,6 @@ export async function handleFailedImplementation(opts: {
     tokensBefore,
     taskBreakdowns,
     setTrackedState,
-  });
-  await runChainAnalysisSafe({
-    wctx,
-    task,
-    state: retry.state,
-    taskStartSnapshot,
   });
   return retry.state;
 }

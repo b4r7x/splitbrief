@@ -105,11 +105,7 @@ async function runTestCheck(
   run: ValidationCommandRunner,
   stageContext: ReturnType<typeof buildStageContext>,
 ): Promise<CheckRunResult> {
-  const checkTask: Pick<Task, 'file' | 'files'> = {
-    ...opts.task,
-    file: check.value,
-    files: [check.value],
-  };
+  const checkTask: Pick<Task, 'suggestedFiles'> = { suggestedFiles: [check.value] };
   const planned = planStage('test', checkTask, stageContext, [check.value]);
   if (planned.kind === 'skip') {
     return { checkId: check.id, status: 'not-runnable', output: planned.reason };

@@ -15,13 +15,13 @@ describe('live release matrix', () => {
 
   for (const row of RELEASE_MATRIX) {
     itRelease(
-      `release row ${row.id}: ${row.mode}, plan ${row.plan}, build ${row.build}` +
+      `release row ${row.id}: ${row.tier}, plan ${row.plan}, build ${row.build}` +
         (row.review === undefined ? '' : `, review ${row.review}`),
       async (ctx) => {
         const result = await runReleaseMatrixRow(resolveReleaseMatrixRun(row));
         if (result.outcome === 'skip') return ctx.skip(result.reason ?? 'row skipped');
       },
-      row.mode === 'quick' ? 300_000 : 900_000,
+      row.tier === 'one-file' ? 300_000 : 900_000,
     );
   }
 });

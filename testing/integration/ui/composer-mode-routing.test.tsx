@@ -129,14 +129,14 @@ describe('composer mode routing', () => {
     ui.unmount();
   });
 
-  it('routes whitespace-only question answers so recovery prompts can pause', async () => {
+  it('routes whitespace-only question answers so a recovery prompt takes its recommendation', async () => {
     const submits: string[] = [];
     const emptySubmits: string[] = [];
     const ui = renderDockedComposer({
       commands: COMMANDS,
       currentScreen: 'workflow',
       mode: 'question',
-      hint: 'Recovery needed',
+      hint: 'Needs you',
       onSubmit: (text) => submits.push(text),
       onRuntimeCommand: () => {},
       onEmptySubmit: () => emptySubmits.push('empty'),

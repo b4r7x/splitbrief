@@ -30,7 +30,7 @@ import {
 import { collectTrackedFiles } from '../snapshots/files.js';
 import { getCurrentChangedFiles } from '../../lib/git/files.js';
 import { isInternalGitStatusPath } from '../../core/paths.js';
-import { taskFiles, type Task } from '../../core/schemas/task.js';
+import type { Task } from '../../core/schemas/task.js';
 import { undeclaredFiles } from '../../core/scope/declared-set.js';
 import { stderrUsageLimit } from '../runners/usage-limit.js';
 import {
@@ -182,7 +182,7 @@ export function createCliImplementer(
         kind: opts.changeDetection,
         ignoreProjectDir: opts.checkoutDir,
       });
-      const declaredPaths = [...taskFiles(opts.task)];
+      const declaredPaths = [...opts.task.suggestedFiles];
       const declaredHashes = await hashFiles(projectDir, declaredPaths);
       const boundary =
         opts.checkoutDir === undefined

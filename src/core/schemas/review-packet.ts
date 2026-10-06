@@ -9,7 +9,12 @@ import {
   TaskStatusSchema,
   WorkflowModeSchema,
 } from './enums.js';
-import { DriftSeveritySchema, DriftCodeSchema } from './drift.js';
+import { DriftFindingsSchema } from './drift.js';
+import {
+  readSavedRecoveryAction,
+  readSavedRecoveryActions,
+  readSavedRecoverySelections,
+} from './recovery/schemas.js';
 import { EvidenceValidationStageSchema, EvidenceFinalReviewStatusSchema } from './evidence.js';
 import {
   CostAmountBasisSchema,
@@ -204,44 +209,21 @@ const ReviewPacketEvidenceSchema = z.object({
   rejections: z.array(ReviewPacketApprovalEntrySchema),
 });
 
-const ReviewPacketDriftFindingSchema = z.object({
-  severity: DriftSeveritySchema,
-  code: DriftCodeSchema,
-  taskId: TaskIdSchema.optional(),
-  file: z.string().optional(),
-  message: z.string(),
-});
-
 const ReviewPacketDriftSchema = z.object({
   path: z.string().nullable(),
   present: z.boolean(),
   passed: z.boolean().nullable(),
-  score: z.number().min(0).max(1).nullable(),
   errorCount: z.number().int().nonnegative(),
   warningCount: z.number().int().nonnegative(),
   changedFiles: z.array(z.string()),
   expectedFiles: z.array(z.string()),
-  findings: z.array(ReviewPacketDriftFindingSchema),
+  findings: DriftFindingsSchema,
   findingsBySeverity: z.object({
-    info: z.array(ReviewPacketDriftFindingSchema),
-    warning: z.array(ReviewPacketDriftFindingSchema),
-    error: z.array(ReviewPacketDriftFindingSchema),
+    info: DriftFindingsSchema,
+    warning: DriftFindingsSchema,
+    error: DriftFindingsSchema,
   }),
   briefHash: z.string().nullable(),
-  chainSummary: z.object({
-    path: z.string(),
-    present: z.boolean(),
-    emittedChainCount: z.number().int().nonnegative(),
-    topChain: z
-      .object({
-        chainLength: z.number().int().positive(),
-        score: z.number().min(0).max(1),
-        uniqueOutOfBoundsFiles: z.array(z.string()),
-        representativePath: z.string(),
-        detectedAtTaskId: TaskIdSchema,
-      })
-      .nullable(),
-  }),
   briefQuality: z.object({
     path: z.string(),
     present: z.boolean(),
@@ -252,44 +234,51 @@ const ReviewPacketDriftSchema = z.object({
   }),
 });
 
-const ReviewPacketEventSchema = z.object({
-  ts: z.string(),
-  type: z.string(),
-  phase: PhaseSchema.optional(),
-  taskId: TaskIdSchema.optional(),
-  issueId: z.string().optional(),
-  reason: RecoveryReasonSchema.optional(),
-  category: z.string().optional(),
-  code: z.string().optional(),
-  files: z.array(z.string()).optional(),
-  affectedTaskIds: z.array(TaskIdSchema).optional(),
-  availableActions: z.array(RecoveryActionSchema).optional(),
-  recommendedAction: RecoveryActionSchema.optional(),
-  action: RecoveryActionSchema.optional(),
-  outcome: z.string().optional(),
-  message: z.string().optional(),
-});
+const ReviewPacketEventSchema = z.preprocess(
+  readSavedRecoveryActions,
+  z.object({
+    ts: z.string(),
+    type: z.string(),
+    phase: PhaseSchema.optional(),
+    taskId: TaskIdSchema.optional(),
+    issueId: z.string().optional(),
+    reason: RecoveryReasonSchema.optional(),
+    category: z.string().optional(),
+    code: z.string().optional(),
+    files: z.array(z.string()).optional(),
+    affectedTaskIds: z.array(TaskIdSchema).optional(),
+    availableActions: z.array(RecoveryActionSchema).optional(),
+    recommendedAction: RecoveryActionSchema.optional(),
+    action: RecoveryActionSchema.optional(),
+    outcome: z.string().optional(),
+    message: z.string().optional(),
+  }),
+);
 
-const ReviewPacketRecoveryIssueSchema = z.object({
-  issueId: z.string(),
-  reason: RecoveryReasonSchema,
-  status: RecoveryStatusSchema,
-  phase: PhaseSchema,
-  taskId: TaskIdSchema.optional(),
-  selectedAction: RecoveryActionSchema.optional(),
-  recommendedAction: RecoveryActionSchema,
-  availableActions: z.array(RecoveryActionSchema),
-  files: z.array(z.string()),
-  affectedTaskIds: z.array(TaskIdSchema),
-});
+const ReviewPacketRecoveryIssueSchema = z.preprocess(
+  readSavedRecoveryActions,
+  z.object({
+    issueId: z.string(),
+    reason: RecoveryReasonSchema,
+    status: RecoveryStatusSchema,
+    phase: PhaseSchema,
+    taskId: TaskIdSchema.optional(),
+    selectedAction: RecoveryActionSchema.optional(),
+    recommendedAction: RecoveryActionSchema,
+    availableActions: z.array(RecoveryActionSchema),
+    files: z.array(z.string()),
+    affectedTaskIds: z.array(TaskIdSchema),
+  }),
+);
 
 const ReviewPacketRecoveryOutcomeSchema = z.object({
   issueId: z.string().nullable(),
-  action: RecoveryActionSchema.optional(),
+  action: z.preprocess(readSavedRecoveryAction, RecoveryActionSchema.optional()),
   status: z.enum([
     'continued',
     'retry-current-task',
     'skipped',
+    // Written by runs whose halts offered a pause; read only.
     'paused',
     'resumed',
     'aborted',
@@ -303,13 +292,19 @@ const ReviewPacketRecoverySchema = z.object({
   sourceArtifacts: z.array(ReviewPacketArtifactSourceSchema),
   events: z.array(ReviewPacketEventSchema),
   currentIssue: ReviewPacketRecoveryIssueSchema.nullable(),
-  selectedActions: z.array(
-    z.object({
-      issueId: z.string(),
-      reason: RecoveryReasonSchema,
-      action: RecoveryActionSchema,
-      selectedAt: z.string(),
-    }),
+  selectedActions: z.preprocess(
+    readSavedRecoverySelections,
+    z.array(
+      z.preprocess(
+        readSavedRecoveryActions,
+        z.object({
+          issueId: z.string(),
+          reason: RecoveryReasonSchema,
+          action: RecoveryActionSchema,
+          selectedAt: z.string(),
+        }),
+      ),
+    ),
   ),
   outcomes: z.array(ReviewPacketRecoveryOutcomeSchema),
   unresolvedRisks: z.array(z.string()),

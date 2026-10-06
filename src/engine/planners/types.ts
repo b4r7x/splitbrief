@@ -1,6 +1,5 @@
 import type { Task } from '../../core/schemas/task.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
-import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { StructuredSummary } from '../../core/schemas/compaction.js';
 import type { ChangeDetectionKind } from '../change-detection.js';
@@ -91,7 +90,6 @@ export type PlannerUserTurnResult =
 
 export interface PlannerCallbacks {
   onOutput: (text: string) => void;
-  onQuestion?: ((questions: ClarificationQuestion[]) => void) | undefined;
   /** Emitted when the backend reports its native session handle (e.g. Claude Code stream-json session_id). */
   onSessionId?: ((sessionId: string) => void) | undefined;
   /** Emitted when a previously-valid session handle is rejected by the backend. */

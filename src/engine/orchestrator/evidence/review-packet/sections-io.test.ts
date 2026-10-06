@@ -36,7 +36,6 @@ function driftWith(changedFiles: string[]): DriftReport {
   return {
     version: 1,
     passed: true,
-    score: 1,
     changedFiles,
     expectedFiles: [],
     findings: [],
@@ -261,9 +260,9 @@ describe('buildFinalReview', () => {
     ).rejects.toThrow('Invalid typed review');
   });
 
-  it('lands a fail verdict with one critical finding in the packet', async () => {
+  it('reads no verdict from a run that saved only review.md, but keeps its excerpt', async () => {
     const { projectDir } = makeProject();
-    const sessionId = 'review-fail-session';
+    const sessionId = 'review-markdown-only-session';
     writeReview(
       projectDir,
       sessionId,
@@ -284,38 +283,10 @@ fail
       missing,
     });
 
-    expect(section.verdict).toBe('fail');
-    expect(section.findingCounts).toEqual({ critical: 1, warning: 0, note: 0 });
-    expect(section.criteriaPassed).toBe(0);
-    expect(section.criteriaFailed).toBe(0);
+    expect(section.verdict).toBeNull();
+    expect(section.findingCounts).toEqual({ critical: 0, warning: 0, note: 0 });
+    expect(section.excerpt).toContain('Unauthenticated requests return 500');
     expect(missing).not.toContain(REVIEW_FILE);
-  });
-
-  it('counts no critical finding for a Critical label the reviewer filled with None.', async () => {
-    const { projectDir } = makeProject();
-    const sessionId = 'review-none-session';
-    writeReview(
-      projectDir,
-      sessionId,
-      `### Verdict
-\`pass_with_notes\`
-
-### Findings
-- **Critical**: None.
-- **Warning**: There is no recorded evidence for T001.
-`,
-    );
-
-    const section = await buildFinalReview({
-      projectDir,
-      sessionId,
-      requestedStatus: 'written',
-      ledger: null,
-      missing: [],
-    });
-
-    expect(section.verdict).toBe('pass_with_notes');
-    expect(section.findingCounts).toEqual({ critical: 0, warning: 1, note: 0 });
   });
 
   it('reads the typed review record when review.json exists, never the markdown beside it', async () => {

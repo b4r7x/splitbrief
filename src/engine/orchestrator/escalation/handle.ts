@@ -36,7 +36,6 @@ import {
   buildRunnerUnauthenticatedRecoveryIssue,
   buildRunnerUsageLimitRecoveryIssue,
   recoveryBuilderForRunnerOutcome,
-  routeBiggerProfileFromDecision,
   runnerHaltRow,
 } from '../recovery/builders/task.js';
 import { loadSeatSwapContext } from '../recovery/seat-swap-context.js';
@@ -130,7 +129,6 @@ async function usageLimitHalt(
   const failure = stepOutcome.lastFailure;
   if (failure?.outcome !== 'usage-limit') return null;
   const failingProfile = ctx.retryProfileOverride ?? ctx.implementerProfile;
-  const routeBiggerProfile = routeBiggerProfileFromDecision(ctx.routingDecision);
   const seatSwap = await loadSeatSwapContext({
     projectDir: ctx.projectDir,
     seat: 'build',
@@ -144,7 +142,6 @@ async function usageLimitHalt(
     attempts: stepOutcome.attempts,
     maxAttempts: DEFAULT_LOCAL_RETRIES,
     ...(failingProfile !== undefined && { selectedImplementerProfile: failingProfile }),
-    ...(routeBiggerProfile !== undefined && { routeBiggerProfile }),
     ...(seatSwap !== undefined && { seatSwap }),
     createdAt: nowIso(),
   });
@@ -173,7 +170,6 @@ async function runnerDefectHalt(
   const build = recoveryBuilderForRunnerOutcome(failure.outcome);
   if (build === undefined) return null;
   const failingProfile = ctx.retryProfileOverride ?? ctx.implementerProfile;
-  const routeBiggerProfile = routeBiggerProfileFromDecision(ctx.routingDecision);
   const seatSwap = await loadSeatSwapContext({
     projectDir: ctx.projectDir,
     seat: 'build',
@@ -187,7 +183,6 @@ async function runnerDefectHalt(
     attempts: stepOutcome.attempts,
     maxAttempts: DEFAULT_LOCAL_RETRIES,
     ...(failingProfile !== undefined && { selectedImplementerProfile: failingProfile }),
-    ...(routeBiggerProfile !== undefined && { routeBiggerProfile }),
     ...(seatSwap !== undefined && { seatSwap }),
     ...(stepOutcome.state.workspace?.kind === 'checkout' && {
       inPlace: { revertedDir: revertedDir(ctx) },

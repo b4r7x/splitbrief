@@ -30,6 +30,7 @@ export const HeadlessJsonRecordSchema = z.discriminatedUnion('type', [
   z.strictObject({
     type: z.literal('recovery_required'),
     sessionId: z.string(),
+    halt: z.enum(['needs-you', 'seat-down']),
     reason: RecoveryReasonSchema,
     status: RecoveryStatusSchema.optional(),
     message: z.string(),
@@ -39,6 +40,14 @@ export const HeadlessJsonRecordSchema = z.discriminatedUnion('type', [
     availableActions: z.array(RecoveryActionSchema),
     recommendedAction: RecoveryActionSchema,
     resumeCommand: z.string(),
+  }),
+  z.strictObject({
+    type: z.literal('ready_to_apply'),
+    sessionId: z.string(),
+    /** The run was accepted as is after the review cap; Apply confirms its open findings. */
+    override: z.boolean(),
+    applyCommand: z.string(),
+    discardCommand: z.string(),
   }),
   z.strictObject({
     type: z.literal('final_review_failed'),

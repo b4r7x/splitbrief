@@ -136,7 +136,10 @@ describe('closeRunIfOpen on a workspace run before Apply', () => {
 
       const patchPath = join(sessionDir(ref.projectDir, ref.sessionId), 'run.patch');
       expect(closure.closedNow).toBe(true);
-      expect(loadState(ref)?.closed?.as).toBe(closedAs);
+      expect(loadState(ref)?.closed).toMatchObject({
+        as: closedAs,
+        patch: join(SPLITBRIEF_DIR, 'sessions', SESSION_ID, 'run.patch'),
+      });
       expect(existsSync(patchPath)).toBe(true);
       expect(checkoutFiles(ref.projectDir)).toEqual(before);
       expect(existsSync(workspaceDir)).toBe(false);

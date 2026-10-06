@@ -119,12 +119,10 @@ describe('groupEventsIntoSections', () => {
 
     const sections = groupEventsIntoSections(events);
 
-    expect(sections).toHaveLength(2);
-    expect(requireSection(sections, 0, 'events').items).toEqual(events.slice(0, 3));
-    expect(requireSection(sections, 1, 'completed-task').items).toEqual([
-      retryStart,
-      retryComplete,
-    ]);
+    expect(sections).toHaveLength(1);
+    const completed = requireSection(sections, 0, 'completed-task');
+    expect(completed.items).toEqual(events);
+    expect(completed.startIndex).toBe(0);
   });
 
   it('abandons a previous open attempt when the same task starts again', () => {
@@ -139,9 +137,103 @@ describe('groupEventsIntoSections', () => {
 
     const sections = groupEventsIntoSections(events);
 
-    expect(sections).toHaveLength(2);
-    expect(requireSection(sections, 0, 'events').items).toEqual(events.slice(0, 2));
-    expect(requireSection(sections, 1, 'completed-task').summary.title).toBe('Retry auth');
+    expect(sections).toHaveLength(1);
+    const completed = requireSection(sections, 0, 'completed-task');
+    expect(completed.items).toEqual(events);
+    expect(completed.summary.title).toBe('Retry auth');
+  });
+
+  describe('an abandoned attempt joins its task', () => {
+    const at = (type: string, fields: Record<string, unknown> = {}) => ({
+      type,
+      ts: 1,
+      phase: 'implementing',
+      ...fields,
+    });
+    const start = (id: string, index: number) =>
+      makeTaskStart({ taskId: taskId(id), title: id, index });
+    const complete = (id: string) => makeTaskComplete({ taskId: taskId(id), retries: 1 });
+    const retriedRun = () => [
+      start('T002', 1),
+      at('error', { message: 'Your checkout changed under T002' }),
+      at('recovery_prompted', { issueId: 'i1', taskId: 'T002' }),
+      at('recovery_action_selected', { issueId: 'i1', action: 'retry' }),
+      at('task_reset', { taskId: 'T002' }),
+      at('recovery_resolved', { issueId: 'i1', outcome: 'retry-current-task' }),
+      start('T002', 1),
+      complete('T002'),
+      start('T003', 2),
+      complete('T003'),
+      start('T004', 3),
+    ];
+
+    it('folds the halt, the recovery and the retry into the completed task', () => {
+      const events = retriedRun();
+      const sections = groupEventsIntoSections(events);
+
+      expect(sections.map((section) => section.type)).toEqual([
+        'completed-task',
+        'completed-task',
+        'active-task',
+      ]);
+      const t002 = requireSection(sections, 0, 'completed-task');
+      expect(t002.summary.id).toBe('T002');
+      expect(t002.summary.retries).toBe(1);
+      expect(t002.startIndex).toBe(0);
+      expect(t002.items).toEqual(events.slice(0, 8));
+      expect(requireSection(sections, 1, 'completed-task').summary.id).toBe('T003');
+      expect(requireSection(sections, 2, 'active-task').startIndex).toBe(10);
+    });
+
+    it('starts the running retry at its first attempt', () => {
+      const events = retriedRun().slice(0, 7);
+      const sections = groupEventsIntoSections(events);
+
+      expect(sections).toHaveLength(1);
+      const active = requireSection(sections, 0, 'active-task');
+      expect(active.startIndex).toBe(0);
+      expect(active.items).toEqual(events);
+    });
+
+    it('keeps a reset with no restart as a loose section', () => {
+      const events = [start('T002', 1), at('task_reset', { taskId: 'T002' })];
+      const sections = groupEventsIntoSections(events);
+
+      expect(sections).toHaveLength(1);
+      expect(requireSection(sections, 0, 'events').items).toEqual(events);
+    });
+
+    it('keeps a run-level error between two tasks loose', () => {
+      const runError = at('error', { message: 'run-level' });
+      const events = [start('T001', 0), complete('T001'), runError, start('T002', 1)];
+      const sections = groupEventsIntoSections(events);
+
+      expect(sections.map((section) => section.type)).toEqual([
+        'completed-task',
+        'events',
+        'active-task',
+      ]);
+      expect(requireSection(sections, 1, 'events').items).toEqual([runError]);
+    });
+
+    it('keeps attempts apart when another task ran between them', () => {
+      const events = [
+        start('T002', 1),
+        at('task_reset', { taskId: 'T002' }),
+        start('T003', 2),
+        complete('T003'),
+        start('T002', 1),
+        complete('T002'),
+      ];
+      const sections = groupEventsIntoSections(events);
+
+      expect(sections.map((section) => section.type)).toEqual([
+        'events',
+        'completed-task',
+        'completed-task',
+      ]);
+      expect(requireSection(sections, 2, 'completed-task').startIndex).toBe(4);
+    });
   });
 
   it('handles multiple completed tasks in sequence', () => {

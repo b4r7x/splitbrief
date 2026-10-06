@@ -6,21 +6,14 @@ describe('hoverStore', () => {
     hoverStore.reset();
   });
 
-  it('sets a surface and index', () => {
-    hoverStore.set('brief', 2);
-    expect(hoverStore.get()).toEqual({ surface: 'brief', index: 2 });
-  });
-
-  it('keeps the same snapshot when set to the same value', () => {
-    hoverStore.set('conversation', 1);
-    const first = hoverStore.get();
-    hoverStore.set('conversation', 1);
-    expect(hoverStore.get()).toBe(first);
+  it('sets the hovered conversation row index', () => {
+    hoverStore.set(2);
+    expect(hoverStore.get()).toBe(2);
   });
 
   it('clears to null', () => {
     expect(hoverStore.get()).toBeNull();
-    hoverStore.set('brief', 0);
+    hoverStore.set(0);
     hoverStore.clear();
     expect(hoverStore.get()).toBeNull();
   });

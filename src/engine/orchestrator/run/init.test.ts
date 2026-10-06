@@ -167,7 +167,7 @@ async function initializeTestWorkflow(
       testCommand: 'noop',
     },
     workflow: {},
-    approval: { enabled: false, feedRejectionsToPlanner: true },
+    approval: { feedRejectionsToPlanner: true },
     codebase: { enabled: false, tokenBudget: 4000 },
     ...(input.reviewer === undefined ? {} : { reviewer: input.reviewer }),
     ...input.configOverrides,
@@ -669,12 +669,12 @@ describe('initializeWorkflow', () => {
       await init.wctx.validator.primeBaseline({
         bus: init.wctx.bus,
         phase: 'implementing',
-        task: makeTask({ file: 'src/app.ts', action: 'modify' }),
+        task: makeTask({ suggestedFiles: ['src/app.ts'], action: 'modify' }),
         projectDir,
         config,
       });
       const results = await init.wctx.validator.runValidation({
-        task: makeTask({ file: 'src/app.ts', action: 'modify' }),
+        task: makeTask({ suggestedFiles: ['src/app.ts'], action: 'modify' }),
         projectDir,
         config,
         bus: init.wctx.bus,
@@ -727,7 +727,7 @@ describe('initializeWorkflow', () => {
         savedState: {
           ...createInitialState(feature),
           phase: 'implementing',
-          tasks: [makeTask({ id: 'T001', status: 'pending', file: 'src/banner.ts' })],
+          tasks: [makeTask({ id: 'T001', status: 'pending', suggestedFiles: ['src/banner.ts'] })],
           currentTaskIndex: 0,
           attempt: 0,
         },
@@ -764,7 +764,7 @@ describe('initializeWorkflow', () => {
         savedState: {
           ...createInitialState(feature),
           phase: 'implementing',
-          tasks: [makeTask({ id: 'T001', status: 'pending', file: 'src/banner.ts' })],
+          tasks: [makeTask({ id: 'T001', status: 'pending', suggestedFiles: ['src/banner.ts'] })],
           currentTaskIndex: 0,
           seatWait: { seat: 'build', resetAt: '2026-01-01T00:02:00.000Z' },
         },
@@ -818,7 +818,11 @@ describe('initializeWorkflow — a task interrupted mid-gate', () => {
           const snapshot = (await isolation.acquire({ role: 'implementer', config })).snapshot;
           writeFileSync(join(workspace.projectDir, 'src/two.ts'), 'half written by the killed run');
           writeFileSync(join(projectDir, 'src/two.ts'), 'operator edit');
-          const task = makeTask({ id: 'T001', status: 'in_progress', file: 'src/two.ts' });
+          const task = makeTask({
+            id: 'T001',
+            status: 'in_progress',
+            suggestedFiles: ['src/two.ts'],
+          });
           const { init, tracked } = await initializeTestWorkflow({
             projectDir,
             sessionId,
@@ -862,7 +866,7 @@ describe('initializeWorkflow — a task interrupted mid-gate', () => {
       writeFileSync(join(projectDir, 'src/two.ts'), 'half written by the killed run');
       const feature = 'resume the interrupted brief';
       const sessionId = 'session-init-interrupted-task';
-      const task = makeTask({ id: 'T001', status: 'in_progress', file: 'src/two.ts' });
+      const task = makeTask({ id: 'T001', status: 'in_progress', suggestedFiles: ['src/two.ts'] });
 
       const { init, tracked } = await initializeTestWorkflow({
         projectDir,
@@ -905,7 +909,7 @@ describe('initializeWorkflow — a task interrupted mid-gate', () => {
       writeFileSync(join(projectDir, 'src/operator.ts'), 'edited by the operator after the kill');
       const feature = 'resume without clobbering the operator';
       const sessionId = 'session-init-operator-edit';
-      const task = makeTask({ id: 'T001', status: 'in_progress', file: 'src/two.ts' });
+      const task = makeTask({ id: 'T001', status: 'in_progress', suggestedFiles: ['src/two.ts'] });
       const events: EngineEvent[] = [];
 
       const { init } = await initializeTestWorkflow({
@@ -954,7 +958,7 @@ describe('initializeWorkflow — a task interrupted mid-gate', () => {
       writeFileSync(join(projectDir, 'src/shared.ts'), 'promoted by the killed run');
       const feature = 'resume a brief that touched an unplanned file';
       const sessionId = 'session-init-unplanned-promotion';
-      const task = makeTask({ id: 'T001', status: 'in_progress', file: 'src/two.ts' });
+      const task = makeTask({ id: 'T001', status: 'in_progress', suggestedFiles: ['src/two.ts'] });
       ensureSessionDir(projectDir, sessionId);
       const ledger = createEvidenceLedger({ sessionId, feature, tasks: [task] });
       writeEvidenceLedger(
@@ -1018,7 +1022,7 @@ describe('initializeWorkflow — a brief killed while its runner was building', 
         savedState: {
           ...createInitialState(feature),
           phase: 'implementing',
-          tasks: [makeTask({ id: 'T001', status: 'in_progress', file: 'src/two.ts' })],
+          tasks: [makeTask({ id: 'T001', status: 'in_progress', suggestedFiles: ['src/two.ts'] })],
           currentTaskIndex: 0,
           attempt: 1,
           changedFilesBaseline: {
@@ -1057,7 +1061,7 @@ describe('initializeWorkflow — a brief killed while its runner was building', 
         savedState: {
           ...createInitialState(feature),
           phase: 'implementing',
-          tasks: [makeTask({ id: 'T001', status: 'in_progress', file: 'src/two.ts' })],
+          tasks: [makeTask({ id: 'T001', status: 'in_progress', suggestedFiles: ['src/two.ts'] })],
           currentTaskIndex: 0,
           attempt: 1,
           interruptedStep: {
@@ -1105,9 +1109,9 @@ describe('initializeWorkflow — a cut step that names a passed brief', () => {
           ...createInitialState(feature),
           phase: 'escalating',
           tasks: [
-            makeTask({ id: 'T001', status: 'done', file: 'src/reopened.ts' }),
-            makeTask({ id: 'T002', status: 'done', file: 'src/passed.ts' }),
-            makeTask({ id: 'T003', status: 'in_progress', file: 'src/running.ts' }),
+            makeTask({ id: 'T001', status: 'done', suggestedFiles: ['src/reopened.ts'] }),
+            makeTask({ id: 'T002', status: 'done', suggestedFiles: ['src/passed.ts'] }),
+            makeTask({ id: 'T003', status: 'in_progress', suggestedFiles: ['src/running.ts'] }),
           ],
           currentTaskIndex: 1,
           attempt: 1,
@@ -1389,7 +1393,7 @@ describe('initializeWorkflow — a file halt saved before the run workspace', ()
     run: Partial<WorkflowState> = {},
   ) {
     const baseline = serializeChangedFilesBaseline(await captureChangedFilesBaseline(projectDir));
-    const task = makeTask({ id: 'T001', status: 'in_progress', file: 'src/edited.ts' });
+    const task = makeTask({ id: 'T001', status: 'in_progress', suggestedFiles: ['src/edited.ts'] });
     recordBriefOutput(projectDir, sessionId, task);
     writeFileSync(join(projectDir, 'src/edited.ts'), 'still edited');
     const events: EngineEvent[] = [];
@@ -1409,8 +1413,8 @@ describe('initializeWorkflow — a file halt saved before the run workspace', ()
           phase: 'implementing',
           taskId: taskId('T001'),
           files: ['src/edited.ts'],
-          availableActions: ['pause-run', 'end-run'],
-          recommendedAction: 'pause-run',
+          availableActions: ['retry-same-worker', 'end-run'],
+          recommendedAction: 'retry-same-worker',
           ...halt,
         }),
       },
@@ -1420,6 +1424,8 @@ describe('initializeWorkflow — a file halt saved before the run workspace', ()
 
   it.each([
     { name: 'user-edit conflict', halt: { reason: 'user-edit-conflict' } },
+    { name: 'constitution check', halt: { reason: 'constitution-check-failed' } },
+    { name: 'scope violation', halt: { reason: 'scope-violation' } },
     {
       name: 'partial approval promotion conflict',
       halt: { reason: 'approval-promotion-conflict', facts: { partialPromotion: true } },
@@ -1459,7 +1465,7 @@ describe('initializeWorkflow — a file halt saved before the run workspace', ()
               return event.type === 'warning';
             })
             .map((event) => event.message),
-        ).toContain('The files the halt named no longer block this brief; continuing.');
+        ).toContain('The halt this run saved no longer applies; continuing.');
       });
     },
   );

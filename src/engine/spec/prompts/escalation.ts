@@ -11,7 +11,7 @@ function taskMetaSection(task: Task, ctx: LanguageContext): PromptSection {
     body: `**ID**: ${task.id}
 **Title**: ${task.title}
 **Action**: ${task.action}
-**File**: ${task.file}
+**File**: ${task.suggestedFiles[0]}
 
 ### Description
 ${task.description}${
@@ -39,18 +39,18 @@ function escalationInstructions(
 ): string {
   if (outputMode === 'files') {
     return `1. Analyze the failed attempt and the error to understand what went wrong.
-2. Edit \`${task.file}\` directly in the current working directory with the correct, complete implementation.
+2. Edit \`${task.suggestedFiles[0]}\` directly in the current working directory with the correct, complete implementation.
 3. Ensure all tests and constraints are satisfied.
 4. Follow existing project conventions (${conventionsText(ctx)}).
 
 Make the changes on disk. Do not return file contents as a substitute for editing the files. When finished, briefly report the files changed and validation performed.`;
   }
   return `1. Analyze the failed attempt and the error to understand what went wrong.
-2. Write the correct, complete implementation for \`${task.file}\`.
+2. Write the correct, complete implementation for \`${task.suggestedFiles[0]}\`.
 3. Ensure all tests and constraints are satisfied.
 4. Follow existing project conventions (${conventionsText(ctx)}).
 
-Respond with the complete file content for \`${task.file}\`. Do not include explanations outside the code.`;
+Respond with the complete file content for \`${task.suggestedFiles[0]}\`. Do not include explanations outside the code.`;
 }
 
 export function buildEscalationPrompt(opts: {

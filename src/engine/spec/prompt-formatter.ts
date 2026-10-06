@@ -1,5 +1,5 @@
 import type { ProjectContext, CodeContext } from '../../core/state/types.js';
-import { taskFiles, type Task } from '../../core/schemas/task.js';
+import type { Task } from '../../core/schemas/task.js';
 import type { Plan } from '../../core/schemas/plan.js';
 import type { ImplementerWriteMode } from '../../core/schemas/implementer-config.js';
 import type { BuildOutputContract } from '../implementers/file-bundle.js';
@@ -66,17 +66,17 @@ function buildTaskSections(
     if (context.skillsContext) sections.push(context.skillsContext, '');
   }
 
-  const files = taskFiles(task);
+  const files = task.suggestedFiles;
   sections.push(
     `## Task: ${task.title}`,
     `### Action: ${task.action}`,
     ...(files.length > 1
       ? [
           '### Files:',
-          `- ${task.file} (anchor)`,
-          ...files.filter((p) => p !== task.file).map((p) => `- ${p}`),
+          `- ${task.suggestedFiles[0]} (anchor)`,
+          ...files.filter((p) => p !== task.suggestedFiles[0]).map((p) => `- ${p}`),
         ]
-      : [`### File: ${task.file}`]),
+      : [`### File: ${task.suggestedFiles[0]}`]),
     '',
     TASK_BRIEF_HEADINGS.description.heading,
     task.description,
@@ -147,7 +147,7 @@ function buildTaskSections(
       ? `Answer with one JSON object: {"version":1,"files":[{"path":"...","action":"create"|"modify","content":"..."}]}. Carry the complete new contents of every file listed above that you change, and leave the rest out. No markdown fences. No explanations.`
       : writesFiles === 'direct'
         ? `Edit ${files.join(', ')} directly in ${inPlace ? "the user's checkout" : 'the isolation directory'}. SPLITBRIEF runs the typecheck, lint and test gates after you hand back, so run at most the focused test files the brief lists, once. End your reply with the one JSON report object the rules describe: status done with the files you changed, or status blocked with your question and the files you need.`
-        : `Output the complete file contents for ${task.file}. No markdown fences. No explanations.`;
+        : `Output the complete file contents for ${task.suggestedFiles[0]}. No markdown fences. No explanations.`;
   sections.push('', completionInstruction);
 
   return sections;
@@ -225,7 +225,7 @@ function insertCodeContext(sections: string[], task: Task, budget?: { remaining:
   const byFile = task.currentCodeByFile;
   const extras: [string, string][] = [];
   if (byFile) {
-    for (const path of taskFiles(task)) {
+    for (const path of task.suggestedFiles) {
       const content = byFile[path];
       if (content !== undefined) extras.push([path, content]);
     }

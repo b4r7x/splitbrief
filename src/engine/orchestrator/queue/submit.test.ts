@@ -360,9 +360,12 @@ describe('enqueue', () => {
       status: 'accepted',
     });
 
-    state = transitionAndSave({ projectDir, sessionId }, staleState, { type: 'RESEARCH_DONE' });
+    state = transitionAndSave({ projectDir, sessionId }, staleState, {
+      type: 'PLAN_DONE',
+      tasks: [],
+    });
 
     expect(state.messageQueue.map((m) => m.text)).toEqual(['do not drop me']);
-    expect(state.phase).toBe('specifying');
+    expect(state.phase).toBe('reviewing-plan');
   });
 });

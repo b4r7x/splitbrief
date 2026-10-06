@@ -28,7 +28,7 @@ Primary state is the `phase` field — one of 15 values from the `Phase` enum. `
 
 These overlays sit on top of any phase. They do not change `phase`:
 
-- **`closed`** records `{ at, as }`. `as` is `applied`, `discarded` or `ended`. Apply, Discard and `CLOSE_RUN` close workspace runs. A passing review makes them ready to apply. Older runs without a recorded workspace close as `complete` on a passing review.
+- **`closed`** records `{ at, as }`. `as` is `applied`, `discarded` or `ended`. Apply, Discard and `CLOSE_RUN` close worktree and staged-copy runs. A passing review or Accept as is override makes them ready to apply. Checkout runs and older runs without a recorded workspace close as `complete` on either result. An override preserves the failed verdict.
 - **`workspace`** records the run's directory, kind and base snapshot. **`applying`** records an Apply in progress and its backup. **`applied`** records the completed write. **`acceptedAsIs`** records an owner override and its open findings.
 - **`interruptedStep`** — the step a stop cut: `{ step, source, cut, partialRef?, at }`. `cut` says whether the stop landed `mid-step` inside a call or on a `boundary` where it cut nothing: between two briefs, or at a gate. The run stays open and picks that step up again.
 - **`awaitingContinue`** — the boolean beside it, set by the same action and cleared by `RESUME_STEP`. It predates `interruptedStep`; a state written before that field existed still reads as parked.
@@ -116,11 +116,11 @@ On a `fail`, one planner triage call answers with a typed `TriageResult` (`src/e
 
 A fix attempt may verify the existing code without changing it: `task.fix` permits that attempt, and normal validation decides whether it completes. `implementer_generate_done` records `noChange: true`; its done row reads `verified · no change needed`. Other attempts still fail `no-staged-change` when they change nothing.
 
-`REVIEW_CYCLE_CAP` is 2 fix cycles (`src/core/pipeline-spec/review.ts`), so a run reaches at most 3 reviews; every triage that leads to a re-review counts one cycle, and the Apply integration re-review counts one too. A scheduled review under `workflow.review: task` does not spend one when it passes. That key selects the cadence (`end` is the default): `end` reviews once after the final brief; `task` also reviews after every brief that passed its validation, scoped to the completed tasks and the criteria whose serving tasks are all done, while the final review still covers everything. A spent cap records a failed review and raises `review-failed`. The run stays open with three actions: fix again with a note, which records the operator's correction as a triage input and grants one more cycle (`BOUNDS.extraFixCyclesPerRun`); [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is), on a worktree or staged-copy run; and end the run. A `complete`/failed state takes that correction through `REVIEW_CORRECTION`, which moves it back to `final-review` with the input queued, so the loop triages the saved review and makes no new review call.
+`REVIEW_CYCLE_CAP` is 2 fix cycles (`src/core/pipeline-spec/review.ts`), so a run reaches at most 3 reviews; every triage that leads to a re-review counts one cycle, and the Apply integration re-review counts one too. A scheduled review under `workflow.review: task` does not spend one when it passes. That key selects the cadence (`end` is the default): `end` reviews once after the final brief; `task` also reviews after every brief that passed its validation, scoped to the completed tasks and the criteria whose serving tasks are all done, while the final review still covers everything. A spent cap records a failed review and raises `review-failed`. The run stays open with three actions: fix again with a note, which records the operator's correction as a triage input and grants one more cycle (`BOUNDS.extraFixCyclesPerRun`); [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is), at final review for every run; and end the run. A `complete`/failed state takes that correction through `REVIEW_CORRECTION`, which moves it back to `final-review` with the input queued, so the loop triages the saved review and makes no new review call.
 
 An Apply whose merge writes text conflict markers for a file both sides changed does not halt: it queues one triage input per conflicted file (`source: 'apply'`), re-enters `final-review` through `APPLY_REVIEW_START`, and the triage turns them into fix tasks before Apply runs again. Any other conflict still raises the [`apply-conflict` halt](./APPROVAL-AND-RECOVERY.md#apply-conflicts).
 
-**Retired chain actions.** `phaseActions` still lists the actions of the retired planning chain — `RESEARCH_DONE`, `SPEC_DONE`, `APPROVE_SPEC`, `SPEC_CLARIFY_START`, `SPEC_CLARIFY_DONE`, `CONSTITUTION_CHECK_PASS`, `BRIEFS_COMPILED`, `BRIEF_ADMISSION_OPENED` and `ANALYZE_START`. No code dispatches them, so they are dead reducer cases that wait for deletion, not compatibility code: `state.json` loads through its schema and `session.jsonl` replays into the stores, and neither path calls `transition`. What an older state needs is its saved phase and `rewindPending`.
+**Retired chain actions.** `phaseActions` no longer lists the actions of the retired planning chain — `RESEARCH_DONE`, `SPEC_DONE`, `APPROVE_SPEC`, `SPEC_CLARIFY_START`, `SPEC_CLARIFY_DONE`, `CONSTITUTION_CHECK_PASS`, `BRIEFS_COMPILED`, `BRIEF_ADMISSION_OPENED` and `ANALYZE_START`. Their reducer cases are deleted: `state.json` loads through its schema and `session.jsonl` replays into the stores, and neither path calls `transition`. What an older state needs is its saved phase and `rewindPending`.
 
 ### 1.3 Anytime actions
 
@@ -142,10 +142,7 @@ These fire from any phase. They modify sub-state without changing `phase`.
 | `CLEAR_QUEUE` | Removes pending or injecting undelivered messages from the queue. Delivered and already-drained messages remain as history. |
 | `SET_PENDING_RECOVERY` | Sets `pendingRecovery` to the provided `RecoveryIssue`. |
 | `MARK_RECOVERY_APPLYING` | Records selected recovery action and timestamp on `pendingRecovery`. |
-| `PAUSE_PENDING_RECOVERY` | Sets `pendingRecovery.status` to `'paused'`. |
 | `RESOLVE_PENDING_RECOVERY` | Removes `pendingRecovery` after the selected recovery path is handled. |
-| `REWIND_TO_SPEC` | No producer; a dead reducer case that waits for deletion. Sets `phase: 'specifying'`, clears `tasks`, resets `currentTaskIndex` and `attempt` to 0, clears `awaitingContinue`, sets `rewindPending: { target: 'spec', comment? }`. |
-| `REWIND_TO_PLAN` | No producer; a dead reducer case that waits for deletion. Sets `phase: 'planning'`, clears `tasks`, resets `currentTaskIndex` and `attempt` to 0, clears `awaitingContinue`, sets `rewindPending: { target: 'plan', comment? }`. |
 | `REPLACE_TASK` | A consult's `rewrite-task` answer: replaces a task in place at the same id, keeps its criteria and `parentId`, sets `status: 'pending'`, raises `revision` by one and resets `attempt` to 0 |
 | `INSERT_TASKS` | A consult's `split-task` answer (with `parentId`): removes the parent from `state.tasks`, appends it to its lineage's `replacedParents`, inserts the subtasks at the parent's position with `parentId` set to the lineage root, re-points every pending `dependsOn` that named the parent to all subtasks and adjusts `currentTaskIndex`. With `parentId: null` the review triage's fix tasks are appended at the end, with no lineage change |
 | `RECORD_CONSULT` | Appends the answer to the task's lineage with its reason, action and diagnosis, raises the lineage's consult count (a decision-confirm, reason `deviation`, does not raise it), and remembers the revision a stale consult saw |
@@ -203,13 +200,13 @@ How a run stands is not a phase. It is derived once, by `deriveRunStatus` (`src/
 | `ready-to-apply` | A worktree or staged-copy result has a passing review or an owner override. It awaits Apply or Discard. `override` names the override. |
 | `closed` | The run is over. Workspace outcomes are `applied`, `discarded` and `ended`. A passed checkout-mode run and an older passed run close as `complete`. |
 
-Continuation takes an open run. A ready run takes Apply or Discard, and a closed run takes nothing. A ready run has no pending recovery, interrupted step or Apply in progress. An `apply-conflict` or `apply-partial` halt is `open halted`. An unfinished Apply resumes at its Apply step.
+Continuation takes an open run. A ready run takes Apply or Discard, and a closed run takes nothing. A ready run has no pending recovery, interrupted step or Apply in progress. An `apply-conflict` or `apply-partial` halt leaves the run `open` and waiting for you on that halt. An unfinished Apply resumes at its Apply step.
 
-Older runs without `state.workspace` keep their status rules. A passed run stays closed; an interrupted or halted run stays open. Continuing an old open run creates its workspace at first acquisition. Its base captures the checkout then, including tasks already written there. A retained task workspace keeps its partial files.
+Older runs without `state.workspace` keep their status rules. A passed run stays closed; a stopped run, or a run that waits for you at a halt, stays open. Continuing an old open run creates its workspace at first acquisition. Its base captures the checkout then, including tasks already written there. A retained task workspace keeps its partial files.
 
-**Closing a checkout run.** With `workflow.isolation: none` the implementer edits your checkout itself. The run records `workspace.kind: 'checkout'` once, so a later config change does not move it. There is no Apply step: a passing review closes the run as `closed complete`. End run, Discard and `CLOSE_RUN` write no `run.patch`, because nothing is unapplied. The close notice reads: "This run edited your checkout directly: its changes are already there, so nothing is unapplied and no run patch was written." On a checkout run, `/run accept` closes an open run as it is, and `/run reject confirm` restores the session baseline and closes it as discarded; see [`/run`](./SLASH-COMMANDS-REFERENCE.md#run-acceptreject).
+**Closing a checkout run.** With `workflow.isolation: none` the implementer edits your checkout itself. The run records `workspace.kind: 'checkout'` once, so a later config change does not move it. There is no Apply step: a passing review or an Accept as is override closes the run as `closed complete`. An override preserves the failed or unverified verdict; the closed block shows needs attention. End run, Discard and `CLOSE_RUN` write no `run.patch`, because nothing is unapplied. The close notice reads: "This run edited your checkout directly: its changes are already there, so nothing is unapplied and no run patch was written." On a checkout run, `/run accept` closes an open run as it is, and `/run reject confirm` restores the session baseline and closes it as discarded; see [`/run`](./SLASH-COMMANDS-REFERENCE.md#run-acceptreject).
 
-**`stop`** — why it is not running, in first-match order: `halted` (a `pendingRecovery` is waiting on an answer) · `input-required` (the planner is waiting for a reply) · `paused` (a park, `at: 'mid-step'` or `'boundary'`) · `waiting` (parked at the plan card, or at an older run's spec or briefs gate) · `failed` (`lastFailure` names the error a turn died on) · `interrupted` (the process went away without recording anything).
+**`stop`** — why it is not running. It has two kinds. `waiting-for-you` means that the run cannot go on without you, `on`: `halt` (a `pendingRecovery` waits on an answer), `question` (the planner waits for a reply) or `gate` (parked at the plan card, or at an older run's spec or briefs gate). `stopped` means that the run can go on as it stands, `on`: `paused` (a park, `at: 'mid-step'` or `'boundary'`), `failed` (`lastFailure` names the error a turn died on) or `interrupted` (the process went away without recording anything). The first match wins, in this order: `halt`, `question`, `paused`, `gate`, `failed`, `interrupted`. Together with `running`, `ready-to-apply` and `closed`, a user sees five states: running, waiting for you, stopped, ready to apply and closed.
 
 **`resumeAt`** — the step it picks up at, from `resumeStep(state)`: the gate it is parked at, the brief it was building, the review it reached, or the planner call its saved phase names (`plan` for a run in `planning`). The engine reads it to decide what runs, not how: every planner call continues as the one planning session. `resumeStep` reads the saved state only; first match wins: an open planner conversation, a ready Apply, a parked gate, the brief, the review, else the planning session.
 
@@ -357,9 +354,9 @@ Stop status follows real work: `Waiting for processes to exit` only while owned 
 
 ### A saved rewind
 
-`/revise-spec` and `/revise-plan` are removed commands; request changes on the plan card instead. A correction at the card publishes `plan_regenerated`, dispatches `CORRECT_PLAN` and runs the planning session with the correction (`src/engine/orchestrator/planning/session.ts`). `CORRECT_PLAN` saves the correction as `rewindPending: { target: 'plan', comment }`, and `PLAN_COMPILED` clears it. A run that stops before a plan compiles still carries it, and so can an older `state.json`. On the next planning entry `rewindLead` (`src/engine/orchestrator/planning/run.ts`) resets the drift chain and runs the one planning session with the comment as its correction (`planRevisedTurn`) against the saved `plan.json`, then opens the plan card. `target` is not read: a spec rewind and a plan rewind run the same session.
+`/revise-spec` and `/revise-plan` are removed commands; request changes on the plan card instead. A correction at the card publishes `plan_regenerated`, dispatches `CORRECT_PLAN` and runs the planning session with the correction (`src/engine/orchestrator/planning/session.ts`). `CORRECT_PLAN` saves the correction as `rewindPending: { target: 'plan', comment }`, and `PLAN_COMPILED` clears it. A run that stops before a plan compiles still carries it, and so can an older `state.json`. On the next planning entry `rewindLead` (`src/engine/orchestrator/planning/run.ts`) runs the one planning session with the comment as its correction (`planRevisedTurn`) against the saved `plan.json`, then opens the plan card. `target` is not read: a spec rewind and a plan rewind run the same session.
 
-`REWIND_TO_SPEC` and `REWIND_TO_PLAN` have no producer, so they are dead reducer cases that wait for deletion. A saved state needs only its `rewindPending`, which `rewindLead` reads.
+`REWIND_TO_SPEC` and `REWIND_TO_PLAN` reducer cases are deleted. A saved state needs only its `rewindPending`, which `rewindLead` reads.
 
 ---
 
@@ -401,20 +398,20 @@ Pending queue entries remain in `state.json`. A continuation excludes still-pend
 
 | Stop reason | What it was | Continuing it |
 |---|---|---|
-| `paused · mid-step` | Stop now, inside a call | Re-issues that step with the partial it left behind and the operator's steer |
-| `paused · boundary` | Pause after this brief, or Stop now at a gate | Starts the brief it stopped before; a typed steer is held for that brief. A stop at the plan card re-opens the card |
-| `waiting` | Parked at the plan card, or at an older run's spec or briefs gate | Re-opens the plan card without re-spending the call behind it; an older gate continues as the planning session. At rest the byline reads `⏎ to reopen it` at the plan card and `⏎ to continue` at an older spec or briefs gate |
-| `halted` | A `pendingRecovery` nobody answered | Shows the recovery panel before any work |
-| `failed` | `lastFailure` — a turn died on an error | Retries the step it died on |
-| `interrupted` | The process went away recording nothing | Restarts at `resumeStep`; an `in_progress` brief with no `interruptedStep` is a crash, so its own writes — declared or attributed in the workspace — are restored from `activeTaskSnapshot` and it restarts clean |
+| `stopped` · `paused` · `mid-step` | Stop now, inside a call | Re-issues that step with the partial it left behind and the operator's steer |
+| `stopped` · `paused` · `boundary` | Pause after this brief, or Stop now at a gate | Starts the brief it stopped before; a typed steer is held for that brief. A stop at the plan card re-opens the card |
+| `waiting-for-you` · `gate` | Parked at the plan card, or at an older run's spec or briefs gate | Re-opens the plan card without re-spending the call behind it; an older gate continues as the planning session. At rest the byline reads `⏎ to reopen it` at the plan card and `⏎ to continue` at an older spec or briefs gate |
+| `waiting-for-you` · `halt` | A `pendingRecovery` nobody answered | Shows the recovery panel before any work |
+| `stopped` · `failed` | `lastFailure` — a turn died on an error | Retries the step it died on |
+| `stopped` · `interrupted` | The process went away recording nothing | Restarts at `resumeStep`; an `in_progress` brief with no `interruptedStep` is a crash, so its own writes — declared or attributed in the workspace — are restored from `activeTaskSnapshot` and it restarts clean |
 
 A park keeps the worktree's partial edits and continues with that context; a crash does not, because nobody chose to keep them.
 
 ### Recovery on continuing
 
-If state has `pendingRecovery`, resume shows that issue before dispatching work. [Retired file halts](./APPROVAL-AND-RECOVERY.md#retired-file-halts) resolve on continue with a notice. Selecting `pause-run` keeps `.splitbrief/active` intact so the same decision appears on next resume.
+If state has `pendingRecovery`, resume shows that issue before dispatching work. [Retired file halts](./APPROVAL-AND-RECOVERY.md#retired-file-halts) resolve on continue with a notice. A halt stays pending until you choose one of its actions, so a run you leave shows the same decision when you continue it.
 
-An unresolved recovery also makes the stop audible: when the task loop re-enters a state that still carries `pendingRecovery`, it publishes a transcript-safe `warning` with `code: 'recovery_pending_unresolved'` naming the reason, the recovery status (`awaiting-user`, `paused`, or `applying`) and the available actions, then stops without running any task. The issue is neither cleared nor re-entered. In headless `--json` mode the same state fails the command with exit code 1 for **every** status — a paused or applying recovery no longer exits 0 having done nothing.
+An unresolved recovery also makes the stop audible: when the task loop re-enters a state that still carries `pendingRecovery`, it publishes a transcript-safe `warning` with `code: 'recovery_pending_unresolved'` naming the reason, the recovery status (`awaiting-user` or `applying`) and the available actions, then stops without running any task. The issue is neither cleared nor re-entered. In headless `--json` mode the same state fails the command with exit code 1 for **every** status — an applying recovery does not exit 0 having done nothing.
 
 An operator park keeps partial workspace edits at the same attempt. A crash without `interruptedStep` restores the brief's attributed workspace changes and restarts at attempt 0. Re-entry clears the park before the brief runs. A halt followed by Stop in that gap can therefore leave an `in_progress` brief without `interruptedStep`. If the session log proves that brief never ran again, `RESTORE_BRIEF_PARK` restores its park instead of restarting it.
 
@@ -432,28 +429,26 @@ Seat trouble is bounded before a halt: a transient failure on a seat call retrie
 
 Recovery follows a spent bound, a ladder that cannot continue — a consult call that failed, a `pre_escalation` hook that denied it — or a run-level failure: `pendingRecovery` is set and the phase stays where the stop occurred. Historical full-tier outcomes remain readable.
 
-Recovery is not only the task loop's. A planner-seat turn that cannot decide alone raises one too, and the issue carries a `seat` (`plan` | `build` | `review`) so the panel and the swap offer name the seat that is actually stuck: `planner-call-failed` (the call died and the diagnosis is already on the bus), `plan-questions-exhausted` (the planner asked a third round of questions), `plan-checks-failed` (the plan failed its checks again after one repair) and `seat-protocol-error` (the seat's typed answer did not parse after its repair). `planner-returned-no-briefs`, `constitution-check-failed`, `brief-review-no-progress` and `brief-quality-unrepaired` have no producer now; they stay so that an older `state.json` still loads, and their halts still offer their actions. `runner-unauthenticated` and `runner-usage-limit` are seat-blocked halts and can fire on the plan seat as readily as the build seat.
+Recovery is not only the task loop's. A planner-seat turn that cannot decide alone raises one too, and the issue carries a `seat` (`plan` | `build` | `review`) so the panel and the swap offer name the seat that is actually stuck: `planner-call-failed` (the call died and the diagnosis is already on the bus), `plan-questions-exhausted` (the planner asked a third round of questions), `plan-checks-failed` (the plan failed its checks again after one repair) and `seat-protocol-error` (the seat's typed answer did not parse after its repair). The reasons in `RETIRED_RECOVERY_REASONS` (`validation-failed`, `user-edit-conflict`, `approval-promotion-conflict`, `scope-violation`, `planner-returned-no-briefs`, `constitution-check-failed`, `brief-review-no-progress` and `brief-quality-unrepaired`) have no producer now. They still parse so that an older `state.json` still loads, and a saved halt on one of them resolves on continue with a notice. `runner-unauthenticated` and `runner-usage-limit` are *Seat down* halts and can fire on the plan seat as readily as the build seat.
 
-`RECOVERY_REASONS` (`src/core/schemas/enums.ts`) defines the persisted reason names. [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#recovery) lists their producers, actions and compatibility rules.
+`RECOVERY_REASONS` (`src/core/schemas/enums.ts`) defines the persisted reason names. A person sees one of two halts, and each reason maps onto one of them (`haltOf`, `src/core/recovery/halt.ts`): *Needs you* (a decision only the operator can make) or *Seat down* (the seat cannot run). The panel title and the at-rest byline read `Needs you · <cause>` or `Seat down · <cause>`; the reason code stays in the issue, the events and the log. [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#recovery) lists their producers, actions and compatibility rules.
 
 Recovery actions:
 
 | Action | Effect |
 |--------|--------|
 | `retry-same-worker` | Retries the recorded PLAN/REVIEW step, or resets and reruns the matching BUILD task |
-| `route-bigger-worker` | Clears recovery, reruns task with named larger profile |
 | `switch-seat` | A seat that cannot run at all: moves it to another ready detected tool and re-prepares the session on it |
 | `revise` | Clears recovery and queues the operator's correction for the next planner turn; on `review-failed`, records the correction and opens one more review fix cycle |
-| `revise-spec` | Kept for an older `constitution-check-failed` halt: it acts as `revise` and queues the note as a correction for the planning session |
 | `continue` | Grants extra allowance on `consult-bound-spent` or `planner-calls-spent` |
-| `accept-as-is` | Records an owner override on a workspace run's `review-failed` halt. See [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is). |
+| `accept-as-is` | Records an owner override at final review. Workspace runs become ready to apply; checkout runs and older runs without a workspace close. See [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is). |
 | `restore-backup` | Restores a partial Apply through its backup. See [Partial Apply recovery](./APPROVAL-AND-RECOVERY.md#partial-apply-recovery). |
 | `skip-current-task` | Records evidence, marks task `skipped`, advances index |
-| `pause-run` | Keeps issue pending and session resumable |
 | `end-run` | Uses the shared close path. Unapplied workspace work stays in `run.patch`; a checkout-mode run writes no patch. The run closes as `ended` or `discarded`. See [Apply](#apply). |
-| `planner-split-rebase` | Legacy/manual only; new prompts do not offer it, and old states block with `planner-proposal-required` |
 
-Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`) → cleared (via `RESOLVE_PENDING_RECOVERY`). Or `awaiting-user` → `paused` (via `PAUSE_PENDING_RECOVERY`) → resumable on next `splitbrief resume`.
+A *Needs you* halt allows `continue`, `retry-same-worker`, `revise`, `accept-as-is`, `restore-backup`, `skip-current-task` and `end-run`; a *Seat down* halt allows `retry-same-worker`, `switch-seat`, `skip-current-task` and `end-run`. The retired actions of older files read through `RETIRED_RECOVERY_ACTIONS`: `revise-spec` as `revise`, `route-bigger-worker` as `retry-same-worker`, and `pause-run` and `planner-split-rebase` are dropped.
+
+Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`) → cleared (via `RESOLVE_PENDING_RECOVERY`). A status `paused` saved by an older run reads as `awaiting-user`.
 
 ---
 
@@ -541,7 +536,7 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
     with new ids and batch = highest plan batch + cycle, one fix cycle is spent,
     and implementing re-runs them (START_FIX_CYCLE) up to the review cycle cap
     of 2. After the cap the run halts on review-failed: fix again with a note
-    (+1 cycle), Accept as is on a workspace run, or end.
+    (+1 cycle), Accept as is at final review for every run, or end.
 ```
 
 During live model-call phases, `ctrl+c` is Stop now and parks the run; `esc` opens the stop menu. Messages typed during live planner phases queue; only still-pending delivery entries drain at the next safe-point. Request changes on the plan card to revise the plan.

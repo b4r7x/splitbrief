@@ -17,12 +17,12 @@ import { attachmentsStore } from '../stores/workflow/attachments.js';
 import { deriveRunStatus, isAnsweredApplyRecovery } from '../core/sessions/run-status.js';
 import { continuesHeadless, formatResumeCommand } from '../core/recovery/resume-command.js';
 import { finalReviewFailedCause } from '../core/recovery/headline.js';
+import { haltOf, recoveryHaltLabel } from '../core/recovery/halt.js';
 import { formatResetAt } from '../core/recovery/reset-clock.js';
 import { cliError } from './errors.js';
-import { readyToApplyMessage } from './sessions/resolve.js';
+import { applyCommand, discardCommand, readyToApplyMessage } from './sessions/resolve.js';
 import { installTerminalOutputErrorGuard } from '../lib/terminal/control.js';
 import { writeHeadlessJsonRecord } from '../engine/events/public-json.js';
-import { createQuestionMarkerStripper } from '../engine/parsers/question.js';
 
 function buildNoopSinks() {
   return {
@@ -66,10 +66,8 @@ export function emitRecoveryAndFailIfPending({
     state?.pendingRecovery === undefined
   ) {
     const resumeCommand = `splitbrief continue ${sessionId}`;
-    const stripper = createQuestionMarkerStripper();
-    const visibleText = (stripper.push(conversation.text) + stripper.flush()).trim();
     const message =
-      visibleText ||
+      conversation.text.trim() ||
       conversation.questions
         .map((question) =>
           question.type === 'choice'
@@ -99,6 +97,7 @@ export function emitRecoveryAndFailIfPending({
     {
       type: 'recovery_required',
       sessionId,
+      halt: haltOf(issue.reason),
       reason: issue.reason,
       status: issue.status,
       message: issue.message,
@@ -114,9 +113,34 @@ export function emitRecoveryAndFailIfPending({
   // The stored message names no clock; a quota halt's reset is spelled when the line is printed.
   const reset = formatResetAt(issue.resetAt);
   throw cliError(
-    `Recovery required (${issue.reason}): ${issue.message}${reset === undefined ? '' : ` (${reset})`}\nRecommended: ${issue.recommendedAction}\nContinue with: ${resumeCommand}${continuesHeadless(issue) ? ' [--plain|--json]' : ''}`,
+    `${recoveryHaltLabel(haltOf(issue.reason))} (${issue.reason}): ${issue.message}${reset === undefined ? '' : ` (${reset})`}\nRecommended: ${issue.recommendedAction}\nContinue with: ${resumeCommand}${continuesHeadless(issue) ? ' [--plain|--json]' : ''}`,
     1,
   );
+}
+
+/**
+ * A run with a reviewed result in its workspace is ready to apply, whether the review passed or the
+ * operator accepted it as is: that is a finished headless run, not a failed review.
+ */
+function emitReadyToApply(
+  state: WorkflowState | null,
+  sessionId: string,
+  writeRecord: RecordWriter,
+): boolean {
+  const status = state === null ? null : deriveRunStatus({ state, liveness: 'not-alive' });
+  if (status?.kind !== 'ready-to-apply') return false;
+  writeRecord(
+    {
+      type: 'ready_to_apply',
+      sessionId,
+      override: status.override,
+      applyCommand: applyCommand(sessionId),
+      discardCommand: discardCommand(sessionId),
+    },
+    process.stdout,
+  );
+  process.stderr.write(`${readyToApplyMessage(sessionId)}\n`);
+  return true;
 }
 
 function failIfFinalReviewFailed(
@@ -142,12 +166,13 @@ function failIfFinalReviewIncomplete(
 }
 
 function failIfSessionFailed(
-  projectDir: string,
+  state: WorkflowState | null,
   sessionId: string,
   writeRecord: RecordWriter,
 ): void {
-  const session = readSession({ projectDir, sessionId });
-  if (session?.stop !== 'failed') return;
+  if (state === null) return;
+  const status = deriveRunStatus({ state, liveness: 'not-alive' });
+  if (status.kind !== 'open' || status.stop.on.kind !== 'failed') return;
   writeRecord({
     type: 'error',
     message: `Session ${sessionId} ended with status failed.`,
@@ -161,18 +186,10 @@ function failIfSessionFailed(
 // above miss it. A user-requested abort never reaches here: the signal check in
 // runHeadless returns first, keeping SIGINT/SIGTERM at exit 0.
 function failIfSessionInterrupted(
-  state: WorkflowState | null,
   projectDir: string,
   sessionId: string,
   writeRecord: RecordWriter,
 ): void {
-  if (
-    state !== null &&
-    deriveRunStatus({ state, liveness: 'not-alive' }).kind === 'ready-to-apply'
-  ) {
-    process.stderr.write(`${readyToApplyMessage(sessionId)}\n`);
-    return;
-  }
   const session = readSession({ projectDir, sessionId });
   if (session === null || session.status === 'complete') return;
   writeRecord({
@@ -268,8 +285,12 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
 
   const finalState = loadOwnedState({ projectDir, sessionId });
   emitRecoveryAndFailIfPending({ state: finalState, sessionId, writeRecord });
+  if (emitReadyToApply(finalState, sessionId, writeRecord)) return;
+  const status =
+    finalState === null ? null : deriveRunStatus({ state: finalState, liveness: 'not-alive' });
+  if (status?.kind === 'closed' && status.as === 'complete') return;
   failIfFinalReviewFailed(finalState, projectDir, sessionId, writeRecord);
   failIfFinalReviewIncomplete(finalState, sessionId, writeRecord);
-  failIfSessionFailed(projectDir, sessionId, writeRecord);
-  failIfSessionInterrupted(finalState, projectDir, sessionId, writeRecord);
+  failIfSessionFailed(finalState, sessionId, writeRecord);
+  failIfSessionInterrupted(projectDir, sessionId, writeRecord);
 }

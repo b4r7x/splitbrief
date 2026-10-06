@@ -35,7 +35,7 @@ export type WithShutdownHandlersOpts = {
   projectDir: string;
   sessionId: string;
   getTrackedState: () => WorkflowState | undefined;
-  getCurrentTask: () => Pick<Task, 'file' | 'files' | 'action'> | undefined;
+  getCurrentTask: () => Pick<Task, 'suggestedFiles' | 'action'> | undefined;
 };
 
 export async function shutdownWorkflow(opts: WithShutdownHandlersOpts): Promise<void> {

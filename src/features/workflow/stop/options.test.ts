@@ -2,6 +2,8 @@ import { afterEach, describe, it, expect } from 'vitest';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { routerStore } from '../../../stores/navigation/router.js';
+import { addEvent } from '../../../stores/workflow/actions/event.js';
+import { taskId } from '../../../core/schemas/task.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import {
   STOP_SHEET_FOOTER,
@@ -156,5 +158,64 @@ describe('readStopMenuRows on a run ready to apply', () => {
     const rows = readStopMenuRows();
     expect(rows.map((row) => row.id)).toEqual(['end-run', 'leave']);
     expect(rows[0]?.consequence).toBe('discard the result; save its changes in run.patch');
+  });
+});
+
+describe('readStopMenuRows right after a continue', () => {
+  afterEach(() => {
+    resetAllStores();
+  });
+
+  // Continuing a halt resets its brief before the task loop starts it again, so for that moment no
+  // brief reads in progress. The run is still on that brief, and a pause after it is still a choice.
+  it('offers a pause after the brief the run is on, before the brief starts again', () => {
+    const phase = 'implementing' as const;
+    addEvent({
+      type: 'tasks_planned',
+      ts: 1,
+      phase,
+      tasks: [
+        { id: taskId('T001'), title: 'One', index: 0, file: 'a.ts', action: 'create' },
+        { id: taskId('T002'), title: 'Two', index: 1, file: 'b.ts', action: 'create' },
+        { id: taskId('T003'), title: 'Three', index: 2, file: 'c.ts', action: 'create' },
+      ],
+      total: 3,
+    });
+    addEvent({
+      type: 'task_started',
+      ts: 2,
+      phase,
+      taskId: taskId('T001'),
+      title: 'One',
+      index: 0,
+      total: 3,
+      file: 'a.ts',
+      action: 'create',
+    });
+    addEvent({
+      type: 'task_completed',
+      ts: 3,
+      phase,
+      taskId: taskId('T001'),
+      title: 'One',
+      method: 'local',
+      retries: 0,
+      duration: 1,
+    });
+    addEvent({
+      type: 'task_started',
+      ts: 4,
+      phase,
+      taskId: taskId('T002'),
+      title: 'Two',
+      index: 1,
+      total: 3,
+      file: 'b.ts',
+      action: 'create',
+    });
+    addEvent({ type: 'task_reset', ts: 5, phase, taskId: taskId('T002') });
+
+    const pause = readStopMenuRows().find((row) => row.id === 'pause-after-brief');
+    expect(pause?.consequence).toBe('finish T002 including checks and review; do not start T003');
   });
 });

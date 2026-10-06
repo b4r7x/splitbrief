@@ -1,18 +1,15 @@
 import type { MouseEvent } from '../../../lib/terminal/filtered-stdin/types.js';
 import { hitTopmostZone } from '../../../lib/terminal/mouse-zones.js';
-import { focusStore } from '../../../stores/ui/focus.js';
 import { hoverStore } from '../../../stores/ui/hover.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { completionStore } from '../../../stores/ui/completion.js';
-import { reviewStore } from '../../../stores/workflow/review.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
 import { streamingOutputStore } from '../../../stores/workflow/streaming-output.js';
 import { getSections } from '../../../stores/workflow/actions/sections.js';
 import { PROMPT_ZONE_Z } from '../components/approval-prompt.js';
 import { RAIL_STAGES } from '../../../core/rail-stages.js';
-import { hitBriefTaskRow, hitRailStage, hitTranscriptRow } from '../layout/hit-test.js';
+import { hitRailStage, hitTranscriptRow } from '../layout/hit-test.js';
 import {
-  readBriefListSnapshot,
   readConversationHoverSnapshot,
   readConversationScrollSnapshot,
   readRailSnapshot,
@@ -28,10 +25,7 @@ export function _resetHoverThrottle(): void {
   lastHoverAt = 0;
 }
 
-type WorkflowHit =
-  | { surface: 'rail'; index: number }
-  | { surface: 'brief'; index: number }
-  | { surface: 'conversation'; index: number };
+type WorkflowHit = { surface: 'rail'; index: number } | { surface: 'conversation'; index: number };
 
 function resolveWorkflowHit(
   sgrX: number,
@@ -40,20 +34,8 @@ function resolveWorkflowHit(
 ): WorkflowHit | null {
   const railIndex = hitRailStage(readRailSnapshot().zones, sgrX, sgrY);
   if (railIndex !== null) return { surface: 'rail', index: railIndex };
-  if (controlsStore.get().inputMode === 'review') {
-    if (reviewStore.get().filePath === null) return null;
-    const brief = readBriefListSnapshot();
-    if (brief === null) return null;
-    const index = hitBriefTaskRow({
-      rect: brief.rect,
-      sgrX,
-      sgrY,
-      taskTopOffset: brief.taskTopOffset,
-      visibleCount: brief.visibleCount,
-      previousCount: brief.previousCount,
-    });
-    return index === null ? null : { surface: 'brief', index };
-  }
+  // The review owns the body; nothing under it is a transcript row.
+  if (controlsStore.get().inputMode === 'review') return null;
   const visibleCount = hoverSnapshot.stickyLeadingRows + hoverSnapshot.viewportHeight;
   const index = hitTranscriptRow({
     rect: hoverSnapshot.contentRect,
@@ -95,7 +77,7 @@ function handleHover(sgrX: number, sgrY: number): void {
   if (now - lastHoverAt < HOVER_THROTTLE_MS) return;
   lastHoverAt = now;
 
-  hoverStore.set(hit.surface, hit.index);
+  hoverStore.set(hit.index);
 }
 
 function activateConversationRow(windowIndex: number): void {
@@ -157,10 +139,6 @@ export function handleWorkflowMousePress(event: MouseEvent): void {
   if (!hit) return;
   if (hit.surface === 'rail') {
     scrollToRailStage(hit.index);
-    return;
-  }
-  if (hit.surface === 'brief') {
-    focusStore.set('brief', hit.index);
     return;
   }
   activateConversationRow(hit.index);

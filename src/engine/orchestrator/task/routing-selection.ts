@@ -50,7 +50,6 @@ export async function selectRoutingProfile(opts: {
       task,
       phase: state.phase,
       selectedImplementerProfile: retryProfileOverride,
-      canRouteBigger: false,
       routingReason: message,
       createdAt: nowIso(),
     });

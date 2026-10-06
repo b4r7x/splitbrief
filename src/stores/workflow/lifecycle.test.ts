@@ -6,10 +6,12 @@ import {
   markLifecyclePaused,
   markLifecycleWaitEnded,
   markLifecycleWaitStarted,
+  runElapsedMs,
   updateStall,
 } from './lifecycle.js';
 import { addEvent } from './actions/event.js';
 import { markWorkflowPaused } from './actions/pause.js';
+import { markWorkflowResumed } from './actions/resume.js';
 import { markWaitEnded, markWaitStarted } from './actions/wait.js';
 import { resetWorkflow } from './actions/reset.js';
 import { hydrateFromState } from './actions/hydrate.js';
@@ -294,7 +296,7 @@ describe('waiting on the user', () => {
     expect(markLifecycleWaitStarted(idle, 2_000)).toBe(idle);
 
     addEvent({ type: 'workflow_started', ts: 1_000, phase: 'researching', feature: 'test' });
-    const paused = markLifecyclePaused(lifecycleStore.get());
+    const paused = markLifecyclePaused(lifecycleStore.get(), 1_500);
     expect(markLifecycleWaitStarted(paused, 2_000)).toBe(paused);
 
     markWaitStarted(2_000);
@@ -503,5 +505,71 @@ describe('runner call stall', () => {
     addEvent(makeRetry({ taskId: taskId('T001'), attempt: 1, ts: 4_000 }));
     expect(lifecycleStore.get().attemptStartedTs).toBe(4_000);
     expect(lifecycleStore.get().lastRunnerEventTs).toBe(3_000);
+  });
+});
+
+describe('the run clock', () => {
+  beforeEach(() => resetWorkflow());
+
+  const MIN = 60_000;
+  const HOUR = 60 * MIN;
+
+  function atRestState(): Parameters<typeof hydrateFromState>[0] {
+    return {
+      stateVersion: 1,
+      phase: 'implementing',
+      feature: 'f',
+      currentTaskIndex: 0,
+      attempt: 0,
+      tasks: [],
+      startedAt: new Date(0).toISOString(),
+      tokenUsage: makeUsage(),
+      awaitingContinue: false,
+      messageQueue: [],
+    };
+  }
+
+  // Ten minutes of work, a stop, a night at rest, five minutes more: the run ran fifteen minutes.
+  it('leaves a night the run sat stopped out of its run time', () => {
+    addEvent({ type: 'workflow_started', ts: 0, phase: 'implementing', feature: 'f' });
+    addEvent({ type: 'workflow_cancelled', ts: 10 * MIN, phase: 'implementing' });
+    hydrateFromState(atRestState(), { endedAt: 10 * MIN });
+    expect(runElapsedMs(lifecycleStore.get(), 10 * HOUR)).toBe(10 * MIN);
+
+    addEvent({ type: 'workflow_resumed', ts: 10 * HOUR, phase: 'implementing' });
+    expect(runElapsedMs(lifecycleStore.get(), 10 * HOUR + 5 * MIN)).toBe(15 * MIN);
+
+    addEvent({ type: 'workflow_complete', ts: 10 * HOUR + 5 * MIN, phase: 'complete' });
+    expect(lifecycleStore.get().durationMs).toBe(15 * MIN);
+  });
+
+  it('keeps a paused fixture at the run time it names, whatever the clock reads', () => {
+    lifecycleStore.__testReset({
+      status: 'paused',
+      phase: 'implementing',
+      startedAt: 0,
+      durationMs: 10 * MIN,
+    });
+
+    expect(lifecycleStore.get()).toMatchObject({ status: 'paused', durationMs: 10 * MIN });
+  });
+
+  it('leaves a live park out of the run time', () => {
+    addEvent({ type: 'workflow_started', ts: 0, phase: 'implementing', feature: 'f' });
+    markWorkflowPaused(10 * MIN);
+    expect(runElapsedMs(lifecycleStore.get(), 10 * HOUR)).toBe(10 * MIN);
+
+    markWorkflowResumed(10 * HOUR);
+    expect(runElapsedMs(lifecycleStore.get(), 10 * HOUR + 5 * MIN)).toBe(15 * MIN);
+  });
+
+  it('reads a log that ended mid-run back at the run time it had reached', () => {
+    addEvent({ type: 'workflow_started', ts: 0, phase: 'implementing', feature: 'f' });
+    addEvent({ type: 'workflow_cancelled', ts: 10 * MIN, phase: 'implementing' });
+    hydrateFromState(atRestState(), { endedAt: 10 * MIN });
+    addEvent({ type: 'workflow_resumed', ts: 10 * HOUR, phase: 'implementing' });
+    hydrateFromState(atRestState(), { endedAt: 10 * HOUR + 5 * MIN });
+
+    expect(lifecycleStore.get().durationMs).toBe(15 * MIN);
   });
 });

@@ -112,7 +112,7 @@ function runOptions(opts: {
   });
   const implementer = makeImplementer({
     implement: vi.fn().mockImplementation(async (call: ImplementerOptions) => {
-      const file = call.task.file ?? 'src/alpha.ts';
+      const file = call.task.suggestedFiles[0];
       mkdirSync(join(call.projectDir, dirname(file)), { recursive: true });
       writeFileSync(join(call.projectDir, file), `export const value = ${Date.now()};\n`);
       return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
@@ -158,8 +158,8 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
   it('scopes each scheduled review to the completed briefs and due criteria', async () => {
     const { projectDir, sessionId, head } = setupProject();
     const tasks = [
-      makeTask({ id: 'T001', file: 'src/alpha.ts', criteria: ['C1'] }),
-      makeTask({ id: 'T002', file: 'src/beta.ts', criteria: ['C2'] }),
+      makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], criteria: ['C1'] }),
+      makeTask({ id: 'T002', suggestedFiles: ['src/beta.ts'], criteria: ['C2'] }),
     ];
     const onComplete = vi.fn();
     const phases: string[] = [];
@@ -197,7 +197,7 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
 
   it('triages a scheduled failure into an appended fix task and stays implementing', async () => {
     const { projectDir, sessionId, head } = setupProject();
-    const tasks = [makeTask({ id: 'T001', file: 'src/alpha.ts', criteria: ['C1'] })];
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], criteria: ['C1'] })];
     const onComplete = vi.fn();
     const phases: string[] = [];
     const { events, reviewPrompts, triagePrompts, options } = runOptions({
@@ -252,8 +252,8 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
   it("keeps the unchanged 'end' cadence to one final review", async () => {
     const { projectDir, sessionId, head } = setupProject();
     const tasks = [
-      makeTask({ id: 'T001', file: 'src/alpha.ts', criteria: ['C1'] }),
-      makeTask({ id: 'T002', file: 'src/beta.ts', criteria: ['C2'] }),
+      makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], criteria: ['C1'] }),
+      makeTask({ id: 'T002', suggestedFiles: ['src/beta.ts'], criteria: ['C2'] }),
     ];
     const phases: string[] = [];
     const { events, reviewPrompts, triagePrompts, options } = runOptions({
@@ -279,8 +279,8 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
   it('halts on the cap when a scheduled failure has no fix cycle left', async () => {
     const { projectDir, sessionId, head } = setupProject();
     const tasks = [
-      makeTask({ id: 'T001', file: 'src/alpha.ts', criteria: ['C1'] }),
-      makeTask({ id: 'T002', file: 'src/beta.ts', criteria: ['C2'] }),
+      makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], criteria: ['C1'] }),
+      makeTask({ id: 'T002', suggestedFiles: ['src/beta.ts'], criteria: ['C2'] }),
     ];
     const onComplete = vi.fn();
     const { events, triagePrompts, options } = runOptions({
@@ -353,7 +353,7 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
 
   it('halts on the planner-call bound when a scheduled failure would triage', async () => {
     const { projectDir, sessionId, head } = setupProject();
-    const tasks = [makeTask({ id: 'T001', file: 'src/alpha.ts', criteria: ['C1'] })];
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], criteria: ['C1'] })];
     const { triagePrompts, options } = runOptions({
       projectDir,
       sessionId,

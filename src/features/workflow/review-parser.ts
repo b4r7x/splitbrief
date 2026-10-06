@@ -133,9 +133,8 @@ export async function openReviewFileExternally(
     const before = baseline ?? (await readReviewSnapshot(filePath));
     await new Promise((resolve) => setTimeout(resolve, OPENING_SIGNAL_PAINT_MS));
     // Last check before the handover, so nothing may await after it: the paint window stays
-    // interactive, and another armed review key ('y'/'q') can settle the gate — clearing the
-    // review owner. Opening the editor then would freeze a live workflow and later resolve
-    // the wrong gate.
+    // interactive, and a typed review command can settle the gate — clearing the review owner.
+    // Opening the editor then would freeze a live workflow and later resolve the wrong gate.
     if (reviewStore.get().ownerToken !== reviewOwner) {
       if (feedbackStore.get().message === openingMessage) feedbackStore.setMessage(null);
       return;

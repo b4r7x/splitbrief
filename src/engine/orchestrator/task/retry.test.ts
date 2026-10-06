@@ -96,7 +96,7 @@ describe('retryAndRecord — retry budget', () => {
 
   it('keeps initial failure evidence distinct from successful retry validation', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', file: 'src/task.ts' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/task.ts'] });
     let state = implementingState([task]);
     state = transition(state, { type: 'START_TASK', taskId: task.id });
     state = transition(state, { type: 'TASK_SENT' });
@@ -106,7 +106,7 @@ describe('retryAndRecord — retry budget', () => {
         .fn()
         .mockImplementation(async ({ projectDir: retryDir }: { projectDir: string }) => {
           mkdirSync(join(retryDir, 'src'), { recursive: true });
-          writeFileSync(join(retryDir, task.file), 'recovered implementation');
+          writeFileSync(join(retryDir, task.suggestedFiles[0]), 'recovered implementation');
           return {
             success: true,
             output: 'fixed',
@@ -165,7 +165,7 @@ describe('retryAndRecord — retry budget', () => {
 
   it('stamps the initial-failure entry with the initial acceptance, not the retry acceptance', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', file: 'src/task.ts' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/task.ts'] });
     let state = implementingState([task]);
     state = transition(state, { type: 'START_TASK', taskId: task.id });
     state = transition(state, { type: 'TASK_SENT' });
@@ -175,7 +175,7 @@ describe('retryAndRecord — retry budget', () => {
         .fn()
         .mockImplementation(async ({ projectDir: retryDir }: { projectDir: string }) => {
           mkdirSync(join(retryDir, 'src'), { recursive: true });
-          writeFileSync(join(retryDir, task.file), 'recovered implementation');
+          writeFileSync(join(retryDir, task.suggestedFiles[0]), 'recovered implementation');
           return {
             success: true,
             output: 'fixed',
@@ -462,7 +462,7 @@ describe('retryAndRecord — recovery stop points', () => {
     expect(result.state.pendingRecovery).toMatchObject({
       reason: 'retry-exhausted',
       taskId: 'T001',
-      availableActions: ['retry-same-worker', 'skip-current-task', 'pause-run', 'end-run'],
+      availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
     });
     expect(loadState({ projectDir, sessionId })?.pendingRecovery).toMatchObject({
       reason: 'retry-exhausted',
@@ -473,7 +473,7 @@ describe('retryAndRecord — recovery stop points', () => {
         type: 'recovery_prompted',
         reason: 'retry-exhausted',
         taskId: 'T001',
-        availableActions: ['retry-same-worker', 'skip-current-task', 'pause-run', 'end-run'],
+        availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
       }),
     );
   });
@@ -654,7 +654,7 @@ describe('retryAndRecord — a planner out of quota on the consult', () => {
   async function consultHalted(words = CODEX_LIMIT) {
     const { projectDir, sessionId } = setupProject();
     await rememberDetectedTools(projectDir, cliDetectionsFor('ready', ['codex', 'claude-code']));
-    const task = makeTask({ id: 'T001', file: 'src/alpha.ts' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'] });
     let state = implementingState([task]);
     state = transition(state, { type: 'START_TASK', taskId: task.id });
     state = transition(state, { type: 'TASK_SENT' });
@@ -703,13 +703,7 @@ describe('retryAndRecord — a planner out of quota on the consult', () => {
       files: ['src/alpha.ts'],
       affectedTaskIds: ['T001'],
       switchSeat: { seat: 'plan', candidates: [{ tool: 'claude-code' }] },
-      availableActions: [
-        'retry-same-worker',
-        'switch-seat',
-        'skip-current-task',
-        'pause-run',
-        'end-run',
-      ],
+      availableActions: ['retry-same-worker', 'switch-seat', 'skip-current-task', 'end-run'],
       recommendedAction: 'switch-seat',
       facts: { tool: 'OpenAI Codex CLI' },
     });

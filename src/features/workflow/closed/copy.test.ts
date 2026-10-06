@@ -23,7 +23,25 @@ describe('runRows', () => {
     expect(valueFor(view, 'Packet')).toBe(
       '.splitbrief/sessions/2026-09-14-add-email-validation-with-tests/review-packet.md',
     );
-    expect(valueFor(view, 'Scope')).toBe('score 1.00');
+    expect(valueFor(view, 'Scope')).toBe('clean');
+  });
+
+  it('names the run.patch a run left its changes in, after the packet', () => {
+    const view = makeView({
+      files: {
+        ...makeView().files,
+        patch: '.splitbrief/sessions/2026-09-14-add-email-validation-with-tests/run.patch',
+      },
+    });
+    expect(valueFor(view, 'Patch')).toBe(
+      '.splitbrief/sessions/2026-09-14-add-email-validation-with-tests/run.patch',
+    );
+    expect(
+      runRows(view)
+        .map((row) => row.label)
+        .slice(0, 3),
+    ).toEqual(['Review', 'Packet', 'Patch']);
+    expect(valueFor(makeView(), 'Patch')).toBeUndefined();
   });
 
   it('tones the failing verdict and leaves the counts alone', () => {
@@ -57,10 +75,13 @@ describe('runRows', () => {
 
   it('warns on a scope check that did not pass', () => {
     const view = makeView({
-      scope: { kind: 'checked', passed: false, score: 0.6, errors: 1, warnings: 1 },
+      scope: { kind: 'checked', passed: false, errors: 1, warnings: 1 },
     });
     const row = runRows(view).find((candidate) => candidate.label === 'Scope');
-    expect(row?.segments[0]).toEqual({ text: 'score 0.60 · 1 error · 1 warning', tone: 'warning' });
+    expect(row?.segments).toEqual([
+      { text: '1 error', tone: 'warning' },
+      { text: '1 warning', tone: 'warning' },
+    ]);
   });
 
   it('shows brief quality only when the run measured it', () => {

@@ -24,7 +24,6 @@ import { userVisibleChangedFiles } from '../../changed-files-baseline.js';
 import { uniqueSorted } from '../../../../utils/collections.js';
 import { extractFrontmatter } from '../../../../utils/frontmatter.js';
 import type { DriftReport } from '../../../../core/schemas/drift.js';
-import { parseFinalReview, type ParsedFinalReview } from '../../../parsers/final-review.js';
 import { readFinalReviewRecord } from '../../../../core/review/store.js';
 import { addMissing } from './missing-artifacts.js';
 
@@ -93,20 +92,6 @@ function reviewExcerpt(body: string): string | null {
   return `${normalized.slice(0, REVIEW_EXCERPT_MAX - 3)}...`;
 }
 
-function countFindings(
-  findings: ParsedFinalReview['findings'],
-): ReviewPacket['finalReview']['findingCounts'] {
-  const counts: ReviewPacket['finalReview']['findingCounts'] = {
-    critical: 0,
-    warning: 0,
-    note: 0,
-  };
-  for (const finding of findings) {
-    counts[finding.severity] += 1;
-  }
-  return counts;
-}
-
 export async function buildFinalReview(opts: {
   projectDir: string;
   sessionId: string;
@@ -128,7 +113,6 @@ export async function buildFinalReview(opts: {
         : `${REVIEW_FILE} was not available.`;
   const review = readFinalReviewRecord({ projectDir, sessionId });
   const body = review.kind === 'task-only' ? null : await readReviewBody(projectDir, sessionId);
-  const parsed = review.kind === 'none' && body !== null ? parseFinalReview(body) : null;
   const outcome = review.kind === 'final' ? reviewOutcomeOf(review.record) : null;
   return {
     path: REVIEW_FILE,
@@ -136,21 +120,13 @@ export async function buildFinalReview(opts: {
     evidenceStatus: ledger?.finalReview?.status ?? null,
     statusText,
     excerpt: body === null ? null : reviewExcerpt(body),
-    verdict: outcome === null ? (parsed?.verdict ?? null) : reviewOutcomeWord(outcome),
+    verdict: outcome === null ? null : reviewOutcomeWord(outcome),
     criteriaPassed:
-      outcome === null
-        ? (parsed?.criteria.filter((criterion) => criterion.passed).length ?? 0)
-        : outcome.criteria.filter((criterion) => criterion.status === 'pass').length,
+      outcome?.criteria.filter((criterion) => criterion.status === 'pass').length ?? 0,
     criteriaFailed:
-      outcome === null
-        ? (parsed?.criteria.filter((criterion) => !criterion.passed).length ?? 0)
-        : outcome.criteria.filter((criterion) => criterion.status !== 'pass').length,
+      outcome?.criteria.filter((criterion) => criterion.status !== 'pass').length ?? 0,
     findingCounts:
-      outcome === null
-        ? parsed === null
-          ? { critical: 0, warning: 0, note: 0 }
-          : countFindings(parsed.findings)
-        : reviewFindingCounts(outcome),
+      outcome === null ? { critical: 0, warning: 0, note: 0 } : reviewFindingCounts(outcome),
   };
 }
 

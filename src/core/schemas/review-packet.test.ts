@@ -237,3 +237,88 @@ describe('review packet seat identity kinds', () => {
     ).toThrow();
   });
 });
+
+describe('review packet recovery selections saved by older runs', () => {
+  it.each(['pause-run', 'planner-split-rebase', 'route-bigger-worker', 'revise-spec'])(
+    'reads %s in events, outcomes and the current issue',
+    (action) => {
+      const base = ReviewPacketSchema.parse(packetBeforeVerdictFields());
+      const currentIssue = {
+        issueId: 'old-halt',
+        reason: 'retry-exhausted',
+        status: 'awaiting-user',
+        phase: 'implementing',
+        availableActions: [action, 'end-run'],
+        recommendedAction: action,
+        selectedAction: action,
+        files: [],
+        affectedTaskIds: [],
+      };
+      const packet = ReviewPacketSchema.parse({
+        ...base,
+        recoveryDecisions: {
+          ...base.recoveryDecisions,
+          currentIssue,
+          events: [{ ts: '2026-10-01T00:00:00.000Z', type: 'recovery_action_selected', action }],
+          outcomes: [{ issueId: 'old-halt', action, status: 'continued' }],
+        },
+      });
+      const successor =
+        action === 'route-bigger-worker'
+          ? 'retry-same-worker'
+          : action === 'revise-spec'
+            ? 'revise'
+            : undefined;
+      expect(packet.recoveryDecisions.events[0]?.action).toBe(successor);
+      expect(packet.recoveryDecisions.outcomes[0]?.action).toBe(successor);
+      expect(packet.recoveryDecisions.currentIssue?.selectedAction).toBe(successor);
+    },
+  );
+
+  it('rejects selections with missing or unknown actions', () => {
+    const base = ReviewPacketSchema.parse(packetBeforeVerdictFields());
+    for (const action of [undefined, 'unknown-action']) {
+      expect(
+        ReviewPacketSchema.safeParse({
+          ...base,
+          recoveryDecisions: {
+            ...base.recoveryDecisions,
+            selectedActions: [
+              { issueId: 'bad', reason: 'retry-exhausted', action, selectedAt: 'today' },
+            ],
+          },
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  it('reads a packet whose selections name retired actions, keeping only those with a successor', () => {
+    const base = packetBeforeVerdictFields() as { recoveryDecisions: Record<string, unknown> };
+    const selection = (issueId: string, action: string) => ({
+      issueId,
+      reason: 'retry-exhausted',
+      action,
+      selectedAt: '2026-10-01T00:00:00.000Z',
+    });
+
+    const packet = ReviewPacketSchema.parse({
+      ...base,
+      recoveryDecisions: {
+        ...base.recoveryDecisions,
+        selectedActions: [
+          selection('paused-halt', 'pause-run'),
+          selection('split-halt', 'planner-split-rebase'),
+          selection('bigger-halt', 'route-bigger-worker'),
+          selection('revised-halt', 'revise-spec'),
+          selection('skipped-halt', 'skip-current-task'),
+        ],
+      },
+    });
+
+    expect(packet.recoveryDecisions.selectedActions).toEqual([
+      expect.objectContaining({ issueId: 'bigger-halt', action: 'retry-same-worker' }),
+      expect.objectContaining({ issueId: 'revised-halt', action: 'revise' }),
+      expect.objectContaining({ issueId: 'skipped-halt', action: 'skip-current-task' }),
+    ]);
+  });
+});

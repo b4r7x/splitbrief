@@ -48,9 +48,6 @@ function setupProject(): string {
 function savedStateWithPendingQuestion(feature: string): WorkflowState {
   let state = createInitialState(feature);
   state = transition(state, { type: 'START' });
-  state = transition(state, { type: 'RESEARCH_DONE' });
-  state = transition(state, { type: 'SPEC_DONE' });
-  state = transition(state, { type: 'APPROVE_SPEC' });
   return {
     ...state,
     pendingPlannerConversation: {
@@ -75,7 +72,7 @@ describe('a steer that resumes a run is recorded exactly once', { timeout: 90_00
     const task = makeTask({
       id: 'T001',
       action: 'create',
-      file: targetFile,
+      suggestedFiles: [targetFile],
       title: 'Create steered module',
       description: 'Create the steered module after the run resumes.',
       implementationSteps: ['Create src/steered.ts.'],

@@ -30,14 +30,14 @@ const TASKS = [
   makeTask({
     id: 'T001',
     action: 'modify',
-    file: 'src/first.ts',
+    suggestedFiles: ['src/first.ts'],
     scope: { inBounds: ['src/first.ts'], outOfBounds: ['every other file'] },
     evidence: ['src/first.ts exports first'],
   }),
   makeTask({
     id: 'T002',
     action: 'modify',
-    file: 'src/second.ts',
+    suggestedFiles: ['src/second.ts'],
     dependsOn: ['T001'],
     scope: { inBounds: ['src/second.ts'], outOfBounds: ['every other file'] },
     evidence: ['src/second.ts exports second'],
@@ -70,7 +70,7 @@ describe('user commits during a run', { timeout: 120_000 }, () => {
     const feature = 'two briefs while the owner commits';
     const config = makeNoValidationConfig({
       workflow: { approve: 'none', maxRetries: 1, isolation: 'worktree' },
-      approval: { enabled: false, feedRejectionsToPlanner: false },
+      approval: { feedRejectionsToPlanner: false },
     });
 
     const userCommit = (file: string, content: string) => {
@@ -83,7 +83,7 @@ describe('user commits during a run', { timeout: 120_000 }, () => {
       capabilities: { writesFiles: 'direct' },
       implement: vi.fn(async (opts: ImplementerOptions) => {
         callDirs.push(opts.projectDir);
-        const path = join(opts.projectDir, opts.task.file);
+        const path = join(opts.projectDir, opts.task.suggestedFiles[0]);
         mkdirSync(dirname(path), { recursive: true });
         writeFileSync(path, `export const ${opts.task.id.toLowerCase()} = true;\n`);
         if (opts.task.id === 'T001') {
@@ -125,7 +125,6 @@ describe('user commits during a run', { timeout: 120_000 }, () => {
     if (workspace === undefined) throw new Error('the run recorded no workspace');
     expect(workspace.kind).toBe('worktree');
     expect(events.filter((event) => event.type === 'recovery_prompted')).toEqual([]);
-    expect(events.filter((event) => event.type === 'paused_external_changes')).toEqual([]);
     expect(final.pendingRecovery).toBeUndefined();
     expect(final.tasks.map((task) => [task.id, task.status])).toEqual([
       ['T001', 'done'],

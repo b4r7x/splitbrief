@@ -1,16 +1,9 @@
 import { getRailActiveIndex } from '../../../core/rail-stages.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { readStopMenuRows, stopMenuLayout } from '../stop/options.js';
-import { getProgressRows, selectRailForm, WORKFLOW_GUTTER_X } from './chrome-rows.js';
+import { getProgressRows, selectRailForm } from './chrome-rows.js';
+import { getRailStageZones, resolveRailFraction, type RailStageZone } from './hit-test.js';
 import {
-  briefListTopOffset,
-  getRailStageZones,
-  resolveRailFraction,
-  type RailStageZone,
-} from './hit-test.js';
-import { clamp } from '../../../utils/math.js';
-import {
-  getReviewColumnWidth,
   getReviewContentLayout,
   getReviewPanelBudget,
   getWorkflowContentRect,
@@ -18,11 +11,7 @@ import {
   getWorkflowViewportHeight,
   REVIEW_FRAME_ROWS,
 } from './rect.js';
-import {
-  getSimpleBriefMaxTaskOffset,
-  getSimpleBriefTaskRowBudget,
-  getSimpleBriefVisibleTaskCount,
-} from './brief-review.js';
+import { getSimpleBriefTaskRowBudget, getSimpleBriefVisibleTaskCount } from './brief-review.js';
 import { inputHeightStore } from '../../../stores/ui/input-height.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { routerStore } from '../../../stores/navigation/router.js';
@@ -173,61 +162,6 @@ export function readReviewContentHeight(): number {
     Math.max(0, viewportHeight - REVIEW_FRAME_ROWS),
     reviewStore.get().renderedLineCount,
   ).contentHeight;
-}
-
-export interface BriefListSnapshot {
-  rect: ReturnType<typeof getWorkflowContentRect>;
-  previousCount: number;
-  visibleCount: number;
-  hasLoadError: boolean;
-  taskTopOffset: number;
-}
-
-export function readBriefListSnapshot(): BriefListSnapshot | null {
-  if (lifecycleStore.get().phase !== 'reviewing-briefs') return null;
-  const { rows, cols } = terminalSizeStore.get();
-  const promptRows = readWorkflowPromptRows();
-  const contentRect = getWorkflowContentRect({
-    cols,
-    rows,
-    inputRows: inputHeightStore.get().rows,
-    sidebarVisible: controlsStore.get().sidebarVisible,
-    promptRows,
-    progressRows: readProgressRows(promptRows),
-  });
-  // The brief column is the review frame: one gutter in from the pane, as wide as
-  // getReviewColumnWidth says. Routing both through the renderer's own measures keeps a single
-  // source of truth for the rendered column geometry, so the hit-test rect can never drift from
-  // what the renderer paints.
-  const reviewWidth = getReviewColumnWidth(contentRect.width);
-  const left = contentRect.left + WORKFLOW_GUTTER_X;
-  const rect = {
-    ...contentRect,
-    left,
-    width: reviewWidth,
-    right: reviewWidth > 0 ? left + reviewWidth - 1 : left,
-  };
-  const hasLoadError = hasReviewLoadError();
-  const rowBudget = getSimpleBriefTaskRowBudget({
-    containerHeight: contentRect.height,
-    hasLoadError,
-  });
-  const taskCount = reviewStore.get().renderedLineCount;
-  const maxStart = getSimpleBriefMaxTaskOffset({ rowBudget, taskCount });
-  const previousCount = clamp(Math.floor(reviewStore.get().scrollOffset), 0, maxStart);
-  // Clamp to the tasks actually rendered in the window so a tall terminal with few briefs never
-  // leaves a phantom hotspot below the last row that maps to an out-of-bounds task index.
-  const visibleCount = Math.min(
-    getSimpleBriefVisibleTaskCount({ rowBudget, taskCount }),
-    taskCount - previousCount,
-  );
-  return {
-    rect,
-    previousCount,
-    visibleCount,
-    hasLoadError,
-    taskTopOffset: briefListTopOffset({ hasLoadError }),
-  };
 }
 
 function readConversationLayoutSnapshot(): ConversationLayoutSnapshot {

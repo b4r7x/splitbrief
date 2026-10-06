@@ -39,7 +39,7 @@ const EARLIER = 'src/earlier.ts';
 const EARLIER_TEXT = 'export const earlier = true;\n';
 
 const BASE_CONFIG = {
-  approval: { enabled: false, feedRejectionsToPlanner: true },
+  approval: { feedRejectionsToPlanner: true },
   validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
   workflow: { maxRetries: 2 },
 } as const;
@@ -84,8 +84,7 @@ type Transport = {
 const helloTask = makeTask({
   id: 'T001',
   action: 'create',
-  file: HELLO,
-  files: [HELLO, SECRET],
+  suggestedFiles: [HELLO, SECRET],
   scope: { inBounds: [HELLO, SECRET] },
 });
 
@@ -141,7 +140,12 @@ const TRANSPORTS: Transport[] = [
   {
     name: 'shell',
     confirmsBeforeWrite: true,
-    task: makeTask({ id: 'T001', action: 'modify', file: SECRET, scope: { inBounds: [SECRET] } }),
+    task: makeTask({
+      id: 'T001',
+      action: 'modify',
+      suggestedFiles: [SECRET],
+      scope: { inBounds: [SECRET] },
+    }),
     build: () => {
       const config = makeConfig({
         ...BASE_CONFIG,
@@ -331,8 +335,7 @@ describe('gateAttemptChanges', () => {
     const task = makeTask({
       id: 'T001',
       action: 'modify',
-      file: SECRET,
-      files: [SECRET, SECOND],
+      suggestedFiles: [SECRET, SECOND],
       scope: { inBounds: [SECRET, SECOND] },
     });
 
@@ -363,7 +366,7 @@ describe('gateAttemptChanges', () => {
     const workspace = await isolation.acquire({ role: 'implementer', config });
     chmodSync(join(workspace.projectDir, CI_FILE), 0o755);
     const onTieredApproval = vi.fn().mockResolvedValue({ decision: 'deny', reason: 'no' });
-    const task = makeTask({ id: 'T001', action: 'modify', file: CI_FILE });
+    const task = makeTask({ id: 'T001', action: 'modify', suggestedFiles: [CI_FILE] });
 
     const gate = await gateAttemptChanges({
       wctx: makeTaskWorkflowContext({
@@ -426,7 +429,7 @@ describe('gateAttemptChanges', () => {
           callbacks: makeCallbacks({ onTieredApproval }).callbacks,
           config: makeConfig(BASE_CONFIG),
         }),
-        task: makeTask({ id: 'T001', action: 'modify', file: SECRET }),
+        task: makeTask({ id: 'T001', action: 'modify', suggestedFiles: [SECRET] }),
         phase: 'implementing',
         workspace: {
           projectDir,

@@ -189,7 +189,7 @@ describe('readiness checks', () => {
     );
     const checks = report.sections.flatMap((section) => section.checks);
 
-    expect(checks.find((check) => check.id === 'approval.resolved')?.summary).toBe(
+    expect(checks.find((check) => check.id === 'workflow.plan-approval')?.summary).toBe(
       'Plan approval: plan; a headless run approves the plan card unattended.',
     );
     expect(

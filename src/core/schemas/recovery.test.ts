@@ -1,56 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import { allowedActionsForReason } from './recovery/policy.js';
 import { RecoveryIssueSchema } from './recovery/schemas.js';
+
+const saved = {
+  id: 'rec_2026_04_28_002',
+  phase: 'implementing',
+  status: 'awaiting-user',
+  files: [],
+  affectedTaskIds: [],
+  message: 'Halted',
+  details: [],
+  createdAt: '2026-04-28T12:00:00.000Z',
+} as const;
+
 describe('RecoveryIssueSchema', () => {
   it('rejects a recommended action that is not available', () => {
     const result = RecoveryIssueSchema.safeParse({
-      id: 'rec_2026_04_28_002',
+      ...saved,
       reason: 'review-failed',
-      phase: 'implementing',
-      status: 'awaiting-user',
-      files: [],
-      affectedTaskIds: [],
-      message: 'Review failed',
-      details: ['The planner rejected the final review'],
-      availableActions: ['pause-run', 'end-run'],
+      availableActions: ['revise', 'end-run'],
       recommendedAction: 'continue',
-      createdAt: '2026-04-28T12:00:00.000Z',
-    });
-
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects available actions that violate the reason policy', () => {
-    const result = RecoveryIssueSchema.safeParse({
-      id: 'rec_2026_04_28_006',
-      reason: 'review-failed',
-      phase: 'implementing',
-      status: 'awaiting-user',
-      files: [],
-      affectedTaskIds: [],
-      message: 'Review failed',
-      details: ['The planner rejected the final review'],
-      availableActions: ['pause-run', 'end-run', 'skip-current-task'],
-      recommendedAction: 'pause-run',
-      createdAt: '2026-04-28T12:00:00.000Z',
-    });
-
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects skip-current-task for context overflow', () => {
-    const result = RecoveryIssueSchema.safeParse({
-      id: 'rec_2026_04_28_007',
-      reason: 'context-overflow',
-      phase: 'implementing',
-      status: 'awaiting-user',
-      files: [],
-      affectedTaskIds: ['T001'],
-      message: 'Context overflow',
-      details: ['Worker hit the context limit'],
-      availableActions: ['retry-same-worker', 'skip-current-task'],
-      recommendedAction: 'retry-same-worker',
-      createdAt: '2026-04-28T12:00:00.000Z',
     });
 
     expect(result.success).toBe(false);
@@ -58,27 +26,92 @@ describe('RecoveryIssueSchema', () => {
 
   it('rejects a selected action that is not available', () => {
     const result = RecoveryIssueSchema.safeParse({
-      id: 'rec_2026_04_28_005',
+      ...saved,
       reason: 'review-failed',
-      phase: 'implementing',
       status: 'applying',
-      files: [],
-      affectedTaskIds: [],
-      message: 'Review failed',
-      details: ['The planner rejected the final review'],
-      availableActions: ['pause-run', 'end-run'],
-      recommendedAction: 'pause-run',
+      availableActions: ['revise', 'end-run'],
+      recommendedAction: 'revise',
       selectedAction: 'continue',
-      createdAt: '2026-04-28T12:00:00.000Z',
     });
 
     expect(result.success).toBe(false);
   });
 
-  it('returns fresh allowed-action arrays for callers', () => {
-    const first = allowedActionsForReason('context-overflow');
-    first.push('skip-current-task');
+  it('reads a halt an older run saved with a pause into the actions its halt still offers', () => {
+    const issue = RecoveryIssueSchema.parse({
+      ...saved,
+      reason: 'runner-usage-limit',
+      status: 'paused',
+      availableActions: [
+        'retry-same-worker',
+        'route-bigger-worker',
+        'switch-seat',
+        'skip-current-task',
+        'pause-run',
+        'end-run',
+      ],
+      recommendedAction: 'pause-run',
+      selectedAction: 'pause-run',
+    });
 
-    expect(allowedActionsForReason('context-overflow')).not.toContain('skip-current-task');
+    expect(issue.status).toBe('awaiting-user');
+    expect(issue.availableActions).toEqual([
+      'retry-same-worker',
+      'switch-seat',
+      'skip-current-task',
+      'end-run',
+    ]);
+    expect(issue.recommendedAction).toBe('retry-same-worker');
+    expect(issue.selectedAction).toBeUndefined();
+  });
+
+  it("maps an old run's revise-spec onto revise and keeps a retired cause readable", () => {
+    const issue = RecoveryIssueSchema.parse({
+      ...saved,
+      reason: 'constitution-check-failed',
+      availableActions: ['revise-spec', 'end-run'],
+      recommendedAction: 'revise-spec',
+    });
+
+    expect(issue.reason).toBe('constitution-check-failed');
+    expect(issue.availableActions).toEqual(['revise', 'end-run']);
+    expect(issue.recommendedAction).toBe('revise');
+  });
+
+  it('drops an action the cause no longer offers on its halt', () => {
+    const issue = RecoveryIssueSchema.parse({
+      ...saved,
+      reason: 'checkout-changed',
+      availableActions: ['retry-same-worker', 'switch-seat', 'skip-current-task', 'end-run'],
+      recommendedAction: 'switch-seat',
+    });
+
+    expect(issue.availableActions).toEqual(['retry-same-worker', 'skip-current-task', 'end-run']);
+    expect(issue.recommendedAction).toBe('retry-same-worker');
+  });
+
+  it('keeps End run when nothing an old halt offered is left', () => {
+    const issue = RecoveryIssueSchema.parse({
+      ...saved,
+      reason: 'scope-violation',
+      availableActions: ['pause-run', 'planner-split-rebase'],
+      recommendedAction: 'pause-run',
+    });
+
+    expect(issue.availableActions).toEqual(['end-run']);
+    expect(issue.recommendedAction).toBe('end-run');
+  });
+});
+
+describe('RecoveryIssueSchema, unknown saved actions', () => {
+  it('still refuses an action name no release ever offered', () => {
+    const result = RecoveryIssueSchema.safeParse({
+      ...saved,
+      reason: 'retry-exhausted',
+      availableActions: ['retry-same-worker', 'teleport'],
+      recommendedAction: 'retry-same-worker',
+    });
+
+    expect(result.success).toBe(false);
   });
 });

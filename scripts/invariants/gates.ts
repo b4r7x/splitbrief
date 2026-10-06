@@ -318,6 +318,21 @@ export const gates: readonly Gate[] = [
       "{ rg -n \"createEventBus|new EventBus\" src/features --glob '!**/*.test.ts' --glob '!**/*.test.tsx' || true; } | wc -l",
     expected: 0,
   },
+  {
+    id: '53',
+    description:
+      'Every live recovery cause has a producer under src/engine and no retired cause does (retired causes are parse-only readers for old runs)',
+    command: 'tsx scripts/recovery-producers.ts | wc -l',
+    expected: 0,
+  },
+  {
+    id: '54',
+    description:
+      'Retired recovery actions appear only in their old-file reader (src/core/schemas/enums.ts)',
+    command:
+      "{ rg -n \"'(pause-run|route-bigger-worker|planner-split-rebase|revise-spec)'|PAUSE_PENDING_RECOVERY\" src --glob '!**/*.test.ts' --glob '!**/*.test.tsx' | rg -v '^src/core/schemas/enums\\.ts:' || true; } | wc -l",
+    expected: 0,
+  },
 ];
 
 export function getInvariantGates(id: string): readonly Gate[] {

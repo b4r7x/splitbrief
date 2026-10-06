@@ -15,6 +15,9 @@ import { materializeConversationRowsWindow } from './materialize-window.js';
 import { wrappedTextBlock } from './row-block-compose.js';
 import { rowText } from './row-format/rows.js';
 import { wrapWidthFor } from './row-markers.js';
+import type { ConversationRow } from './types.js';
+import { taskId } from '../../../core/schemas/task.js';
+import { arrowSep, SOFT_SEP } from '../../../core/separators.js';
 
 const streaming: StreamingOutputState = { taskId: null, lines: [], active: false };
 const CODEX_LABEL = 'OpenAI Codex CLI';
@@ -235,7 +238,7 @@ describe('buildConversationRows', () => {
     expect(expandedText).toContain('a.ts');
   });
 
-  it('pins the highest-severity warning or error in collapsed activity blocks', () => {
+  it('keeps a collapsed activity block in event order, the warning counted in its header', () => {
     const sections: Section<EngineEvent>[] = [
       {
         type: 'events',
@@ -268,14 +271,13 @@ describe('buildConversationRows', () => {
     expect(text).toContain(
       `${CREW_SEAT_LABELS.plan} activity  5 updates  1 warn  [${CODEX_LABEL}]`,
     );
-    expect(text).toContain(activityLine('WARN', 'stderr'));
-    expect(text).toContain(activityLine('READ', 'c.ts'));
-    expect(text).toContain(activityLine('READ', 'd.ts'));
-    expect(text).not.toContain(activityLine('READ', 'a.ts'));
-    expect(text).not.toContain(activityLine('READ', 'b.ts'));
-
     const warnLine = activityLine('WARN', 'stderr');
-    expect(text.indexOf(warnLine)).toBeLessThan(text.indexOf(activityLine('READ', 'c.ts')));
+    expect(text).not.toContain(warnLine);
+    expect(text).not.toContain(activityLine('READ', 'a.ts'));
+    expect(text).toContain(activityLine('READ', 'b.ts'));
+    expect(text.indexOf(activityLine('READ', 'b.ts'))).toBeLessThan(
+      text.indexOf(activityLine('READ', 'c.ts')),
+    );
     expect(text.indexOf(activityLine('READ', 'c.ts'))).toBeLessThan(
       text.indexOf(activityLine('READ', 'd.ts')),
     );
@@ -911,5 +913,213 @@ describe('buildConversationRowsProjection event block cache', () => {
       .join('\n');
 
     expect(incrementalText).toBe(freshText);
+  });
+});
+
+describe('one recovery reads as one block', () => {
+  const at = { ts: 0, phase: 'implementing' } as const;
+  const recovery = { ...at, issueId: 'issue-1', reason: 'checkout-changed' } as const;
+  const halt: EngineEvent = {
+    ...at,
+    type: 'error',
+    message: 'Your checkout changed under T002 — branch cli-budget-behaviour-fixes',
+  };
+  const prompted: EngineEvent = {
+    ...recovery,
+    type: 'recovery_prompted',
+    taskId: taskId('T002'),
+    files: [],
+    affectedTaskIds: [],
+    availableActions: ['retry-same-worker'],
+    recommendedAction: 'retry-same-worker',
+    headline: 'Your checkout changed under T002',
+    resumeCommand: 'splitbrief continue',
+  };
+  const selected: EngineEvent = {
+    ...recovery,
+    type: 'recovery_action_selected',
+    action: 'retry-same-worker',
+    seat: 'build',
+  };
+  const reset: EngineEvent = { ...at, type: 'task_reset', taskId: taskId('T002') };
+  const resolved: EngineEvent = {
+    ...recovery,
+    type: 'recovery_resolved',
+    action: 'retry-same-worker',
+    seat: 'build',
+    outcome: 'retry-current-task',
+    implementerProfile: 'default',
+  };
+
+  function transcript(items: EngineEvent[]): { lines: string[]; rows: ConversationRow[] } {
+    const { rows } = buildConversationRows({
+      sections: [{ type: 'events', startIndex: 0, items }],
+      expandedDiffs: new Set(),
+      expandedActivityBatches: new Set(),
+      cols: 100,
+      viewportHeight: 30,
+      streaming,
+    });
+    return { lines: rows.map((row) => rowText(row).trim()).filter((line) => line !== ''), rows };
+  }
+
+  it('gives the halt its error and folds selection, reset and outcome into one Recovery row', () => {
+    const { lines } = transcript([halt, prompted, selected, reset, resolved]);
+
+    expect(lines).toEqual([
+      'Error',
+      'Your checkout changed under T002 — branch cli-budget-behaviour-fixes',
+      `Recovery  Try again${arrowSep()}T002 back to pending, retried`,
+    ]);
+  });
+
+  it('shows a recovery still being applied as its action alone', () => {
+    const { lines } = transcript([halt, prompted, selected]);
+
+    expect(lines.at(-1)).toBe('Recovery  Try again');
+  });
+
+  it('keeps the prompted card as one quiet row when no error before it names the halt', () => {
+    const { lines, rows } = transcript([prompted]);
+
+    expect(lines).toEqual(['Recovery  Your checkout changed under T002']);
+    const [row] = rows.filter((candidate) => rowText(candidate).trim() !== '');
+    expect(row?.kind).toBe('card');
+    expect(row?.segments[0]?.tone).toBe('textDim');
+  });
+
+  it('folds a halt no error row names, and what was done about it, into one row', () => {
+    const { lines } = transcript([prompted, prompted, selected, reset, resolved]);
+
+    expect(lines).toEqual([
+      `Recovery  Your checkout changed under T002${SOFT_SEP}Try again${arrowSep()}T002 back to pending, retried`,
+    ]);
+  });
+
+  it('keeps a blocked action as its own error row', () => {
+    const failed: EngineEvent = {
+      ...recovery,
+      type: 'recovery_action_failed',
+      action: 'retry-same-worker',
+      seat: 'build',
+      message: 'worker unavailable',
+    };
+    const { lines, rows } = transcript([selected, failed]);
+
+    expect(lines).toEqual([
+      'Recovery  Try again',
+      'Recovery  Try again blocked: worker unavailable',
+    ]);
+    const blocked = rows.find((row) => rowText(row).includes('blocked'));
+    expect(blocked?.segments[0]?.tone).toBe('error');
+  });
+
+  it('heads a brief restarted by its recovery once', () => {
+    const start: EngineEvent = {
+      ...at,
+      type: 'task_started',
+      taskId: taskId('T002'),
+      title: 'Wire the login route',
+      index: 1,
+      total: 3,
+      file: 'src/login.ts',
+      action: 'modify',
+    };
+    const { lines } = transcript([start, halt, prompted, selected, reset, resolved, start]);
+
+    expect(lines.filter((line) => line.includes('Wire the login route'))).toHaveLength(1);
+    expect(lines.at(-1)).toBe(`Recovery  Try again${arrowSep()}T002 back to pending, retried`);
+  });
+
+  it('heads a brief again when its recovery restarted it on another tool', () => {
+    const start: EngineEvent = {
+      ...at,
+      type: 'task_started',
+      taskId: taskId('T002'),
+      title: 'Wire the login route',
+      index: 1,
+      total: 3,
+      file: 'src/login.ts',
+      action: 'modify',
+      tool: 'opencode',
+    };
+    const { lines } = transcript([
+      start,
+      halt,
+      prompted,
+      selected,
+      reset,
+      resolved,
+      { ...start, tool: 'codex' },
+    ]);
+
+    expect(lines.filter((line) => line.includes('Wire the login route'))).toHaveLength(2);
+  });
+
+  it.each([
+    ['continued', 'continued', 'success'],
+    ['retry-current-task', 'retried', 'success'],
+    ['skipped-current-task', 'skipped', 'textDim'],
+    ['aborted', 'run ended', 'error'],
+  ] as const)('tones an outcome %s as %s', (outcome, outcomeWords, tone) => {
+    const { lines, rows } = transcript([
+      { ...recovery, type: 'recovery_resolved', action: 'retry-same-worker', outcome },
+    ]);
+
+    expect(lines).toEqual([`Recovery  Try again${arrowSep()}${outcomeWords}`]);
+    expect(rows[0]?.segments[0]?.tone).toBe(tone);
+  });
+
+  it('does not call a brief the planner stopped early one that failed', () => {
+    const { lines } = transcript([
+      { ...selected, reason: 'retry-exhausted', phase: 'escalating' } as EngineEvent,
+    ]);
+
+    expect(lines).toEqual(['Recovery  Try again']);
+    expect(lines.join('\n')).not.toMatch(/exhausted/i);
+  });
+
+  describe('a seat swap names the seat the halt stopped', () => {
+    function swapLines(seat: 'plan' | 'build' | 'review' | undefined): string[] {
+      const base = {
+        ...at,
+        phase: 'planning',
+        issueId: 'issue-1',
+        reason: 'runner-usage-limit',
+        action: 'switch-seat',
+        ...(seat !== undefined && { seat }),
+      } as const;
+      return transcript([
+        { type: 'recovery_action_selected', ...base },
+        { type: 'recovery_action_failed', ...base, message: 'codex is not ready' },
+        { type: 'recovery_resolved', ...base, outcome: 'continued' },
+      ]).lines;
+    }
+
+    it.each([
+      ['plan', 'Change PLAN tool'],
+      ['build', 'Change BUILD tool'],
+      ['review', 'Change REVIEW tool'],
+    ] as const)('on the %s seat', (seat, label) => {
+      expect(swapLines(seat)).toEqual([
+        `Recovery  ${label}`,
+        `Recovery  ${label} blocked: codex is not ready`,
+        `Recovery  ${label}${arrowSep()}continued`,
+      ]);
+    });
+
+    it('names no seat on an event recorded before the seat was', () => {
+      expect(swapLines(undefined)).toEqual([
+        'Recovery  Change tool',
+        'Recovery  Change tool blocked: codex is not ready',
+        `Recovery  Change tool${arrowSep()}continued`,
+      ]);
+    });
+  });
+
+  it('names a reset outside a recovery in one row', () => {
+    const { lines } = transcript([reset]);
+
+    expect(lines).toEqual(['Task reset  T002 back to pending']);
   });
 });

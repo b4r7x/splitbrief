@@ -34,8 +34,8 @@ describe('runTaskLoop', { timeout: 120_000 }, () => {
     dirs.push(projectDir);
 
     const tasks = [
-      makeTask({ id: 'T001', file: 'src/alpha.ts' }),
-      makeTask({ id: 'T002', file: 'src/beta.ts' }),
+      makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'] }),
+      makeTask({ id: 'T002', suggestedFiles: ['src/beta.ts'] }),
     ];
     const implemented: string[] = [];
     const implementer = makeImplementer({
@@ -77,8 +77,8 @@ describe('runTaskLoop', { timeout: 120_000 }, () => {
     dirs.push(projectDir);
 
     const tasks = [
-      makeTask({ id: 'T001', file: 'src/alpha.ts' }),
-      makeTask({ id: 'T002', file: 'src/beta.ts', status: 'done' }),
+      makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'] }),
+      makeTask({ id: 'T002', suggestedFiles: ['src/beta.ts'], status: 'done' }),
     ];
     const implemented: string[] = [];
     const implementer = makeImplementer({
@@ -121,7 +121,7 @@ describe('runTaskLoop', { timeout: 120_000 }, () => {
       commands: { typecheck: 'npm run typecheck' },
       failures: { typecheck: ['src/alpha.ts(12,5)'] },
     };
-    const tasks = [makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' })];
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
     const primeBaseline = vi.fn().mockResolvedValue(probed);
     const setTrackedState = vi.fn();
 
@@ -189,7 +189,7 @@ describe('runTaskLoop', { timeout: 120_000 }, () => {
         implementer,
         bus: makeBusRecorder().bus,
       }),
-      initialState: makeImplState([makeTask({ id: 'T001', file: 'src/alpha.ts' })]),
+      initialState: makeImplState([makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'] })]),
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
     });

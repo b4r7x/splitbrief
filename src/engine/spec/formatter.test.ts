@@ -1,6 +1,6 @@
+import YAML from 'yaml';
 import { describe, it, expect } from 'vitest';
 import { formatTasks } from './formatter.js';
-import { parseTasks, parseTasksStrict } from './tasks/parse.js';
 import { makeTask as makeBaseTask } from '#testing/helpers/factories/task.js';
 
 type TaskOverrides = Parameters<typeof makeBaseTask>[0];
@@ -8,24 +8,30 @@ type TaskOverrides = Parameters<typeof makeBaseTask>[0];
 function makeTask(overrides: TaskOverrides = {}): ReturnType<typeof makeBaseTask> {
   return makeBaseTask({
     title: 'Create utility module',
-    file: 'src/utils/helpers.ts',
+    suggestedFiles: ['src/utils/helpers.ts'],
     description: 'Implement helper functions for string manipulation.',
     ...overrides,
   });
 }
 
+/** The YAML header of every brief in a `tasks.md`, read as YAML. */
+function headers(markdown: string): unknown[] {
+  return [...markdown.matchAll(/^---\n([\s\S]*?)\n---$/gm)].map((match) =>
+    YAML.parse(match[1] ?? ''),
+  );
+}
+
 describe('formatTasks', () => {
   it('handles the empty boundary', () => {
     expect(formatTasks([])).toBe('');
-    expect(parseTasks('')).toEqual([]);
   });
 
-  it('round-trips ordered tasks with metadata and optional brief fields', () => {
+  it('writes ordered briefs with their metadata and optional brief fields', () => {
     const first = makeTask({
       id: 'T001',
       title: 'My Task',
       action: 'modify',
-      file: 'src/foo.ts',
+      suggestedFiles: ['src/foo.ts'],
       description: 'Implement the helper function for string trimming.',
       implementationSteps: ['first step', 'second step'],
       tests: ['assertion one', 'assertion two'],
@@ -37,51 +43,50 @@ describe('formatTasks', () => {
         outOfBounds: ['do not touch bar.ts'],
         approvedOutOfBounds: ['src/shared.ts'],
       },
-      typeDefs: 'export type Foo = { bar: string };',
-      signature: 'export function greet(name: string): string',
-      currentCode: 'export function old(): void {}',
       pattern: 'Follow the existing parseConfig(raw) guard shape.',
     });
     const second = makeBaseTask({
       id: 'T002',
       title: 'Second',
-      file: 'src/bar.ts',
+      suggestedFiles: ['src/bar.ts'],
       description: 'Do bar',
       dependsOn: [first.id],
-      implementationSteps: ['step 2'],
-      tests: ['test B'],
     });
 
-    const parsed = parseTasks(formatTasks([first, second]));
+    const markdown = formatTasks([first, second]);
 
-    expect(parsed).toHaveLength(2);
-    expect(parsed[0]).toMatchObject({
-      id: first.id,
-      title: 'My Task',
-      action: 'modify',
-      file: 'src/foo.ts',
-      description: 'Implement the helper function for string trimming.',
-      implementationSteps: ['first step', 'second step'],
-      tests: ['assertion one', 'assertion two'],
-      constraints: ['no side effects', 'pure function'],
-      escalation: ['stop on ambiguity'],
-      evidence: ['npm test passes'],
-      scope: {
-        inBounds: ['only foo.ts'],
-        outOfBounds: ['do not touch bar.ts'],
-        approvedOutOfBounds: ['src/shared.ts'],
+    expect(headers(markdown)).toEqual([
+      {
+        id: 'T001',
+        title: 'My Task',
+        action: 'modify',
+        file: 'src/foo.ts',
+        files: ['src/foo.ts'],
+        depends_on: [],
       },
-      typeDefs: 'export type Foo = { bar: string };',
-      signature: 'export function greet(name: string): string',
-      currentCode: 'export function old(): void {}',
-      pattern: 'Follow the existing parseConfig(raw) guard shape.',
-    });
-    expect(parsed[1]).toMatchObject({
-      id: second.id,
-      title: 'Second',
-      file: 'src/bar.ts',
-      dependsOn: [first.id],
-    });
+      {
+        id: 'T002',
+        title: 'Second',
+        action: 'create',
+        file: 'src/bar.ts',
+        files: ['src/bar.ts'],
+        depends_on: ['T001'],
+      },
+    ]);
+    for (const text of [
+      '### Description\nImplement the helper function for string trimming.',
+      '### Implementation Steps\n1. first step\n2. second step',
+      '- assertion one\n- assertion two',
+      '- no side effects\n- pure function',
+      '**In bounds:**\n- only foo.ts',
+      '**Out of bounds:**\n- do not touch bar.ts',
+      '**Approved out of bounds:**\n- src/shared.ts',
+      '- stop on ambiguity',
+      '- npm test passes',
+      'Follow the existing parseConfig(raw) guard shape.',
+    ]) {
+      expect(markdown).toContain(text);
+    }
   });
 
   it('wraps signature, currentCode, and typeDefs in code fences', () => {
@@ -103,37 +108,11 @@ describe('formatTasks', () => {
     expect(markdown).toContain('```\nexport type Foo = { bar: string };\n```');
   });
 
-  it('round-trips currentCode that contains heading and separator lines', () => {
-    const currentCode =
-      'export function old() {\n  return `---`;\n}\n### not a real heading\n--- not a separator';
-    const task = makeTask({
-      action: 'modify',
-      currentCode,
-      typeDefs: 'export type Foo = {\n  bar: string;\n};',
-      signature: 'export function old(): void',
-    });
-
-    const parsed = parseTasks(formatTasks([task]));
-
-    expect(parsed).toHaveLength(1);
-    expect(parsed[0]?.currentCode).toBe(currentCode);
-    expect(parsed[0]?.typeDefs).toBe('export type Foo = {\n  bar: string;\n};');
-    expect(parsed[0]?.signature).toBe('export function old(): void');
-  });
-
-  it('round-trips code that itself contains a triple-backtick fenced block', () => {
+  it('fences code that itself contains a triple-backtick block with a longer fence', () => {
     const currentCode = 'const md = `\n```js\nfoo()\n```\n`;';
-    const task = makeTask({
-      action: 'modify',
-      currentCode,
-      typeDefs: 'export type Bar = string;',
-    });
+    const task = makeTask({ action: 'modify', currentCode });
 
-    const parsed = parseTasks(formatTasks([task]));
-
-    expect(parsed).toHaveLength(1);
-    expect(parsed[0]?.currentCode).toBe(currentCode);
-    expect(parsed[0]?.typeDefs).toBe('export type Bar = string;');
+    expect(formatTasks([task])).toContain(`\`\`\`\`\n${currentCode}\n\`\`\`\``);
   });
 
   it.each([
@@ -143,83 +122,20 @@ describe('formatTasks', () => {
     ['single quote', "Don't break the parser"],
     ['leading dash', '- not a list item'],
     ['trailing space', 'title with trailing space '],
-  ] as const)('strict round-trips a title needing YAML quoting (%s)', (_name, title) => {
-    const task = makeTask({ id: 'T001', title });
-
-    const parsed = parseTasksStrict(formatTasks([task]));
-
-    expect(parsed).toHaveLength(1);
-    expect(parsed[0]?.title).toBe(title);
-  });
-
-  it('strict round-trips a file path that needs YAML quoting', () => {
-    const task = makeTask({ id: 'T001', file: 'src/weird: name.ts' });
-
-    const parsed = parseTasksStrict(formatTasks([task]));
-
-    expect(parsed).toHaveLength(1);
-    expect(parsed[0]?.file).toBe('src/weird: name.ts');
-  });
-
-  it('strict round-trips a multi-line title without producing a block scalar inline', () => {
-    const title = 'first line\nsecond line: with colon and "quotes"';
-    const task = makeTask({ id: 'T001', title });
-
-    const parsed = parseTasksStrict(formatTasks([task]));
-
-    expect(parsed).toHaveLength(1);
-    expect(parsed[0]?.title).toBe(title);
-  });
-
-  it('strict-parse round-trips signature/currentCode/typeDefs whose fenced bodies contain --- documents', () => {
-    const signature = 'export function loadFrontmatter(raw: string): Frontmatter';
-    const currentCode = ['---', 'id: T999', 'title: looks like a task', '---', 'body line'].join(
-      '\n',
-    );
-    const typeDefs = ['export type Frontmatter = {', '  ---: never;', '};'].join('\n');
-    const first = makeTask({
-      id: 'T001',
-      action: 'modify',
-      signature,
-      currentCode,
-      typeDefs,
-    });
-    const second = makeTask({
-      id: 'T002',
-      title: 'Second task',
-      file: 'src/second.ts',
-      dependsOn: [first.id],
-    });
-
-    const parsed = parseTasksStrict(formatTasks([first, second]));
-
-    expect(parsed.map((t) => t.id)).toEqual(['T001', 'T002']);
-    expect(parsed[0]?.signature).toBe(signature);
-    expect(parsed[0]?.currentCode).toBe(currentCode);
-    expect(parsed[0]?.typeDefs).toBe(typeDefs);
-  });
-  it('round-trips files through tasks.md', () => {
-    const task = makeTask({
-      id: 'T001',
-      file: 'src/slice.ts',
-      files: ['src/slice.ts', 'src/slice.test.ts'],
-    });
-
-    const markdown = formatTasks([task]);
-    expect(markdown).toContain('files:\n  - src/slice.ts\n  - src/slice.test.ts');
-    expect(parseTasksStrict(markdown)[0]?.files).toEqual(['src/slice.ts', 'src/slice.test.ts']);
+    ['line break', 'first line\nsecond line: with colon and "quotes"'],
+  ] as const)('quotes a title YAML would misread (%s)', (_name, title) => {
+    expect(headers(formatTasks([makeTask({ id: 'T001', title })]))).toMatchObject([{ title }]);
   });
 
   it.each([
+    ['colon', 'src/weird: name.ts'],
     ['comma', 'data/a,b.csv'],
     ['bracket', 'app/[slug]/page.tsx'],
-  ] as const)('strict round-trips a files entry carrying a flow indicator (%s)', (_name, path) => {
-    const files = [path, 'src/c.ts'];
-    const task = makeTask({ id: 'T001', file: path, files });
+  ] as const)('quotes a file path YAML would misread (%s)', (_name, path) => {
+    const files: [string, ...string[]] = [path, 'src/c.ts'];
 
-    const parsed = parseTasksStrict(formatTasks([task]));
-
-    expect(parsed[0]?.files).toEqual(files);
-    expect(parsed[0]?.file).toBe(path);
+    expect(headers(formatTasks([makeTask({ id: 'T001', suggestedFiles: files })]))).toMatchObject([
+      { file: path, files },
+    ]);
   });
 });

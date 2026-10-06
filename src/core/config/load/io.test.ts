@@ -101,10 +101,7 @@ describe('config loading', () => {
         label: 'Refresh docs',
         command: '/refresh',
       });
-      expect(config.approval).toEqual({
-        enabled: true,
-        feedRejectionsToPlanner: false,
-      });
+      expect(config.approval).toEqual({ feedRejectionsToPlanner: false });
     });
 
     it('preserves hook event and option keys from YAML', () => {
@@ -200,7 +197,7 @@ describe('config loading', () => {
 
     it('rejects the removed approval.headless field', () => {
       const dir = join(TMP, 'removed-approval-headless');
-      writeConfigYaml(dir, { approval: { enabled: true, headless: true } });
+      writeConfigYaml(dir, { approval: { headless: true } });
 
       expect(() => loadConfig(dir)).toThrow('approval.headless: Unknown config key');
     });
@@ -284,7 +281,6 @@ describe('config loading', () => {
         workflow: {
           approve: 'plan',
           git: { create_branch: true },
-          drift_chain_threshold: 0.4,
           compaction_threshold: 50,
           compaction_format: 'structured',
         },
@@ -294,7 +290,6 @@ describe('config loading', () => {
         approve: 'plan',
         review: 'end',
         git: { createBranch: true },
-        driftChainThreshold: 0.4,
         compactionThreshold: 50,
         compactionFormat: 'structured',
       });

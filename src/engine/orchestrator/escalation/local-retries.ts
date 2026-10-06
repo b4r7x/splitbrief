@@ -1,5 +1,9 @@
 import type { Task } from '../../../core/schemas/task.js';
-import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
+import {
+  lineageAttemptsOf,
+  type ChangedFilesSnapshot,
+  type WorkflowState,
+} from '../../../core/schemas/workflow.js';
 import { ABORTED_OUTCOME_TEXT } from '../../implementers/pipeline/call-result.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import {
@@ -168,12 +172,15 @@ export async function runLocalRetries(
     }
     state = persistTransition(state, { type: 'VALIDATION_FAIL' });
     attempts = state.attempt;
+    const lineage = lineageAttemptsOf(state, task);
     const retryRow = {
       bus: ctx.bus,
       phase: state.phase,
       taskId: task.id,
       attempt: state.attempt,
       maxRetries,
+      lineageAttempt: lineage.used + 1,
+      attemptAllowance: lineage.allowance,
       error: lastError,
     };
     publishRetry(retryRow);

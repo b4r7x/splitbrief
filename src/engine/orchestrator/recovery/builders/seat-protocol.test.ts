@@ -62,7 +62,7 @@ describe('buildSeatProtocolErrorRecoveryIssue', () => {
   it('offers no seat swap without a detected alternative and recommends the retry', () => {
     const issue = buildSeatProtocolErrorRecoveryIssue(input);
 
-    expect(issue.availableActions).not.toContain('switch-seat');
+    expect(issue.availableActions).toEqual(['retry-same-worker', 'end-run']);
     expect(issue.recommendedAction).toBe('retry-same-worker');
   });
 
@@ -74,6 +74,7 @@ describe('buildSeatProtocolErrorRecoveryIssue', () => {
     });
 
     expect(issue.seat).toBe('plan');
-    expect(issue.availableActions).toContain('switch-seat');
+    expect(issue.availableActions).toEqual(['retry-same-worker', 'switch-seat', 'end-run']);
+    expect(issue.recommendedAction).toBe('retry-same-worker');
   });
 });

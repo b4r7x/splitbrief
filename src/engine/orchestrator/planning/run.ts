@@ -2,7 +2,6 @@ import { resolveApproveLevel } from '../../../core/config/runtime/resolve.js';
 import { PLAN_JSON_FILE } from '../../../core/paths.js';
 import { readSpecFileOrEmpty } from '../../../core/paths-io.js';
 import { planRevisedTurn } from '../../spec/prompts/plan-session.js';
-import { resetDriftChainState } from '../drift/chain-state.js';
 import { runPlanApproval, runPlanningSession } from './session.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
 
@@ -47,12 +46,10 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<Plan
 /**
  * A correction at the plan card stands on the run as its rewind until a plan compiles, and so does
  * the rewind a state saved by an older version carries. A run that continues before then opens
- * its planning session with that correction and the plan it corrects; the briefs an older rewind
- * reset take their drift chain with them.
+ * its planning session with that correction and the plan it corrects.
  */
 function rewindLead(opts: PlanningPhaseOptions, comment: string | undefined): string | undefined {
   const ref = { projectDir: opts.wctx.projectDir, sessionId: opts.wctx.sessionId };
-  resetDriftChainState(ref);
   const correction = comment?.trim();
   if (correction === undefined || correction === '') return undefined;
   return planRevisedTurn(readSpecFileOrEmpty(ref, PLAN_JSON_FILE), correction);

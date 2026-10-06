@@ -91,20 +91,37 @@ describe('PlanSchema', () => {
 });
 
 describe('TaskSchema', () => {
-  it('still parses a task with only the old fields', () => {
-    const legacy = {
-      id: 'T001',
-      title: 'Create hello module',
-      action: 'create',
+  const legacy = {
+    id: 'T001',
+    title: 'Create hello module',
+    action: 'create',
+    dependsOn: [],
+    description: 'Create a hello world module',
+    tests: [],
+    constraints: [],
+    typeDefs: '',
+    implementationSteps: [],
+    status: 'pending',
+  };
+
+  it('folds the saved single `file` into suggestedFiles', () => {
+    const task = TaskSchema.parse({ ...legacy, file: 'src/hello.ts' });
+    expect(task.suggestedFiles).toEqual(['src/hello.ts']);
+    expect(task).not.toHaveProperty('file');
+  });
+
+  it('folds the saved `files` list into suggestedFiles', () => {
+    const task = TaskSchema.parse({
+      ...legacy,
       file: 'src/hello.ts',
-      dependsOn: [],
-      description: 'Create a hello world module',
-      tests: [],
-      constraints: [],
-      typeDefs: '',
-      implementationSteps: [],
-      status: 'pending',
-    };
-    expect(TaskSchema.parse(legacy)).toEqual(legacy);
+      files: ['src/hello.ts', 'src/hello.test.ts'],
+    });
+    expect(task.suggestedFiles).toEqual(['src/hello.ts', 'src/hello.test.ts']);
+    expect(task).not.toHaveProperty('files');
+  });
+
+  it('rejects a task that names no file', () => {
+    expect(TaskSchema.safeParse({ ...legacy, suggestedFiles: [] }).success).toBe(false);
+    expect(TaskSchema.safeParse(legacy).success).toBe(false);
   });
 });

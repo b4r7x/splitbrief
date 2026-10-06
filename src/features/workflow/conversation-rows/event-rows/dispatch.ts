@@ -1,4 +1,3 @@
-import { formatScoreSummary } from '../../../../core/formatting.js';
 import { CREW_SEAT_LABELS } from '../../../../core/crew/identity.js';
 import { arrowSep, SOFT_SEP } from '../../../../core/separators.js';
 import type { EngineEvent, EngineEventOf } from '../../../../engine/events/types.js';
@@ -12,7 +11,6 @@ import { pluralize, countNoun } from '../../../../utils/pluralize.js';
 import { runnerActivityBatchRowBlock } from '../activity-rows.js';
 import { borderedCardRowsBlock } from '../bordered-card-block.js';
 import { calloutRowsBlock } from '../callout-block.js';
-import { formatExternalChangesValue } from '../event-format.js';
 import { wrapWidthFor } from '../row-markers.js';
 import { sanitizeRowDisplayText } from '../row-format/text.js';
 import type { ConversationRowBlock, ConversationRowTone, RowBuildContext } from '../types.js';
@@ -40,32 +38,9 @@ import { WORKFLOW_CANCEL_REASON_USER } from '../../../../engine/events/workflow-
 import { formatResetAt, stripRecoveryResetClause } from '../../../../core/recovery/reset-clock.js';
 import { stepWord } from '../../closed/byline.js';
 import { recoveryActionLabel } from '../../../../core/recovery/action-label.js';
+import type { RecoveryFold } from '../transcript-walk.js';
 
-function sentenceCaseIdentifier(value: string): string {
-  const words = value.replace(/[-_]+/gu, ' ').trim();
-  return words.length === 0 ? words : `${words[0]?.toUpperCase() ?? ''}${words.slice(1)}`;
-}
-
-// The event records the halt's reason and not the escalation verdict, and a planner verdict can
-// stop a brief after one attempt: "retry exhausted" would then claim retries that never ran.
-function recoveryReasonLabel(reason: string): string {
-  return reason === 'retry-exhausted' ? 'Stopped brief' : sentenceCaseIdentifier(reason);
-}
-
-function recoveryOutcomeLabel(value: string): string {
-  switch (value) {
-    case 'continued':
-      return 'Continued';
-    case 'retry-current-task':
-      return 'Tried again';
-    case 'skipped-current-task':
-      return 'Skipped current task';
-    case 'aborted':
-      return 'Ended run';
-    default:
-      return sentenceCaseIdentifier(value);
-  }
-}
+const DISCOVERED_VALIDATION_REFUSED = 'discovered_validation_refused';
 
 export function eventRowBlock(options: {
   event: EngineEvent;
@@ -92,34 +67,8 @@ export function eventRowBlock(options: {
           bold: true,
         },
       ]);
-    case 'paused_external_changes':
-      return borderedCardRowsBlock({
-        keyPrefix,
-        label: 'user edits',
-        value: formatExternalChangesValue(event),
-        width: ctx.width,
-        labelTone: event.conflict?.safeToContinue ? 'textDim' : 'error',
-      });
-    case 'recovery_prompted':
-      return borderedCardRowsBlock({
-        keyPrefix,
-        label: 'Recovery',
-        // The prompt panel below carries the clock; the card names what happened, once.
-        value: stripRecoveryResetClause(event.headline),
-        width: ctx.width,
-        labelTone: 'textDim',
-        valueTone: 'textDim',
-      });
-    case 'recovery_action_selected':
-      return borderedCardRowsBlock({
-        keyPrefix,
-        label: 'Recovery',
-        value: `Selected ${recoveryActionLabel(event.action, { seat: event.seat })} for ${recoveryReasonLabel(event.reason)}`,
-        width: ctx.width,
-        labelTone: 'textDim',
-      });
     case 'recovery_action_failed':
-      return borderedCardRowsBlock({
+      return cardRowsBlock({
         keyPrefix,
         label: 'Recovery',
         value: `${recoveryActionLabel(event.action, { seat: event.seat })} blocked: ${event.message}`,
@@ -127,15 +76,11 @@ export function eventRowBlock(options: {
         labelTone: 'error',
         valueTone: 'textDim',
       });
+    // `walkTranscript` folds these into one Recovery row, painted by `recoveryRowBlock`.
+    case 'recovery_prompted':
+    case 'recovery_action_selected':
     case 'recovery_resolved':
-      return borderedCardRowsBlock({
-        keyPrefix,
-        label: 'Recovery',
-        value: `${recoveryOutcomeLabel(event.outcome)} via ${recoveryActionLabel(event.action, { seat: event.seat })}${event.implementerProfile ? ` · ${event.implementerProfile}` : ''}`,
-        width: ctx.width,
-        labelTone: recoveryResolvedTone(event.outcome),
-        valueTone: recoveryResolvedTone(event.outcome),
-      });
+      return null;
     case 'planner_text':
       return plannerTextRowBlock({
         event,
@@ -146,7 +91,7 @@ export function eventRowBlock(options: {
     case 'rewind_to_spec':
       return cardRowsBlock({
         keyPrefix,
-        label: `rewind ${glyph('connectorHandoff')} spec`,
+        label: `Rewind ${glyph('connectorHandoff')} spec`,
         value: event.comment || undefined,
         width: ctx.width,
         labelTone: 'textDim',
@@ -154,56 +99,20 @@ export function eventRowBlock(options: {
     case 'rewind_to_plan':
       return cardRowsBlock({
         keyPrefix,
-        label: `rewind ${glyph('connectorHandoff')} plan`,
+        label: `Rewind ${glyph('connectorHandoff')} plan`,
         value: event.comment || undefined,
         width: ctx.width,
         labelTone: 'textDim',
       });
-    case 'brief_quality_passed':
-      return borderedCardRowsBlock({
-        keyPrefix,
-        label: 'brief quality',
-        value: `passed · ${formatScoreSummary(event.score, { errorCount: 0, warningCount: event.warningCount })}`,
-        width: ctx.width,
-        labelTone: 'success',
-      });
-    case 'brief_quality_failed':
-      return borderedCardRowsBlock({
-        keyPrefix,
-        label: 'brief quality',
-        value: `failed · ${formatScoreSummary(event.score, {
-          errorCount: event.errorCount,
-          warningCount: event.warningCount,
-        })}`,
-        width: ctx.width,
-        labelTone: 'error',
-        valueTone: 'textDim',
-      });
-    case 'brief_readiness_passed':
-      return borderedCardRowsBlock({
-        keyPrefix,
-        label: 'brief readiness',
-        value: `passed · ${countNoun(event.taskCount, 'task')}`,
-        width: ctx.width,
-        labelTone: 'success',
-      });
-    case 'brief_readiness_blocked':
-      return borderedCardRowsBlock({
-        keyPrefix,
-        label: 'brief readiness',
-        value: `blocked · ${countNoun(event.blockedCount, 'task')} of ${event.taskCount}`,
-        width: ctx.width,
-        labelTone: 'error',
-        valueTone: 'textDim',
-      });
     case 'drift_report':
       return borderedCardRowsBlock({
         keyPrefix,
-        label: 'drift',
-        value: formatScoreSummary(event.score, {
-          errorCount: event.errorCount,
-          warningCount: event.warningCount,
-        }),
+        label: 'Drift',
+        value:
+          [
+            ...(event.errorCount > 0 ? [countNoun(event.errorCount, 'error')] : []),
+            ...(event.warningCount > 0 ? [countNoun(event.warningCount, 'warning')] : []),
+          ].join(SOFT_SEP) || 'clean',
         width: ctx.width,
         labelTone: event.passed ? 'success' : 'textDim',
         valueTone: 'textDim',
@@ -219,7 +128,7 @@ export function eventRowBlock(options: {
     case 'task_skipped':
       return cardRowsBlock({
         keyPrefix,
-        label: 'skipped',
+        label: 'Skipped',
         value: `${event.taskId} ${event.title}: ${event.reason}`,
         width: ctx.width,
         labelTone: 'textDim',
@@ -234,7 +143,7 @@ export function eventRowBlock(options: {
     case 'task_full_fail':
       return cardRowsBlock({
         keyPrefix,
-        label: 'task failed',
+        label: 'Task failed',
         value: event.taskId,
         width: ctx.width,
         labelTone: 'error',
@@ -246,17 +155,18 @@ export function eventRowBlock(options: {
         keyPrefix,
         // The build block counts attempts, first try included. A retry index over a retry budget
         // beside it would put two numbers on one screen for one fact.
-        text: `retry  attempt ${event.attempt + 1} of ${event.maxRetries + 1}`,
+        text: `Retry  attempt ${event.lineageAttempt ?? event.attempt + 1} of ${event.attemptAllowance ?? event.maxRetries + 1}`,
         width: ctx.width,
         tone: 'textDim',
       });
     case 'task_reset':
       return cardRowsBlock({
         keyPrefix,
-        label: 'task reset',
-        value: `Task ${event.taskId} set to pending`,
+        label: 'Task reset',
+        value: `${event.taskId} back to pending`,
         width: ctx.width,
         labelTone: 'textDim',
+        valueTone: 'textDim',
       });
     case 'consult_answered':
       return wrappedTextBlock({
@@ -299,7 +209,7 @@ export function eventRowBlock(options: {
     case 'git_commit':
       return borderedCardRowsBlock({
         keyPrefix,
-        label: 'committed',
+        label: 'Committed',
         value: event.message,
         width: ctx.width,
         labelTone: 'success',
@@ -307,7 +217,7 @@ export function eventRowBlock(options: {
     case 'git_checkpoint':
       return borderedCardRowsBlock({
         keyPrefix,
-        label: 'checkpoint',
+        label: 'Checkpoint',
         value: event.tag,
         width: ctx.width,
         labelTone: 'success',
@@ -315,7 +225,7 @@ export function eventRowBlock(options: {
     case 'git_branch_created':
       return cardRowsBlock({
         keyPrefix,
-        label: 'branch',
+        label: 'Branch',
         value: event.name,
         width: ctx.width,
         labelTone: 'success',
@@ -345,7 +255,7 @@ export function eventRowBlock(options: {
     case 'message_injected_native':
       return cardRowsBlock({
         keyPrefix,
-        label: 'injected',
+        label: 'Injected',
         value: queueMessageValue('Message delivered to live session', event.preview),
         width: ctx.width,
         labelTone: 'success',
@@ -353,7 +263,7 @@ export function eventRowBlock(options: {
     case 'queue_drained':
       return cardRowsBlock({
         keyPrefix,
-        label: 'drained',
+        label: 'Drained',
         value: `${event.count} queued ${pluralize(event.count, 'message')} folded into next prompt`,
         width: ctx.width,
         labelTone: 'textDim',
@@ -361,7 +271,7 @@ export function eventRowBlock(options: {
     case 'queue_cleared':
       return cardRowsBlock({
         keyPrefix,
-        label: 'queue cleared',
+        label: 'Queue cleared',
         value: `${event.count} pending ${pluralize(event.count, 'message')} removed`,
         width: ctx.width,
         labelTone: 'textDim',
@@ -373,47 +283,40 @@ export function eventRowBlock(options: {
     case 'planner_attachments_dropped':
       return cardRowsBlock({
         keyPrefix,
-        label: 'attachments dropped',
+        label: 'Attachments dropped',
         value: `${countNoun(event.count, 'image')} dropped (${event.reason})`,
         width: ctx.width,
         labelTone: 'textDim',
         valueTone: 'textDim',
       });
     case 'warning':
-      return event.code === 'discovered_validation_refused'
-        ? cardRowsBlock({
-            keyPrefix,
-            label: 'warning',
-            value: event.message,
-            width: ctx.width,
-            labelTone: 'textDim',
-            valueTone: 'textDim',
-          })
-        : calloutRowsBlock({
-            keyPrefix,
-            label: 'warning',
-            value: event.message,
-            width: ctx.width,
-            severity: 'warning',
-          });
+      // A planner command the stage did not take is a note on the plan, not a fault to act on.
+      if (event.code === DISCOVERED_VALIDATION_REFUSED) {
+        return cardRowsBlock({
+          keyPrefix,
+          label: 'Validation',
+          value: event.message,
+          width: ctx.width,
+          labelTone: 'textDim',
+          valueTone: 'textDim',
+        });
+      }
+      return calloutRowsBlock({
+        keyPrefix,
+        label: 'Warning',
+        value: event.message,
+        width: ctx.width,
+        severity: 'warning',
+      });
     case 'error':
       return calloutRowsBlock({
         keyPrefix,
-        label: 'error',
+        label: 'Error',
         // The words are stored and name no clock; the reset is spelled now, as the header spells it.
         meta: formatResetAt(event.resetAt),
         value: event.message,
         width: ctx.width,
         severity: 'error',
-      });
-    case 'approval_mode_changed':
-      return cardRowsBlock({
-        keyPrefix,
-        label: 'approval',
-        value: 'only a write to a protected path asks',
-        width: ctx.width,
-        labelTone: 'textDim',
-        valueTone: 'textDim',
       });
     case 'runner_call_activity':
       return runnerActivityBatchRowBlock({
@@ -424,15 +327,15 @@ export function eventRowBlock(options: {
     case 'turn_interrupted':
       return calloutRowsBlock({
         keyPrefix,
-        label: 'interrupted',
-        // A gate runs no turn, so there is nothing to retry; the byline says what ⏎ does there.
+        label: 'Stopped',
+        // The row states where the run stopped; the byline under the composer says what continues it.
         // A boundary brief event names the brief to resume, not the one just completed.
         value:
-          event.step?.kind === 'gate'
-            ? `Paused at ${stepWord(event.step)}.`
-            : event.at === 'boundary' && event.step?.kind === 'brief'
-              ? `Paused before ${event.step.taskId}.`
-              : 'Turn stopped — type instructions to steer, or press Enter to retry.',
+          event.step === undefined
+            ? 'mid-turn'
+            : event.at === 'boundary' && event.step.kind === 'brief'
+              ? `before ${event.step.taskId}`
+              : `at ${stepWord(event.step)}`,
         width: ctx.width,
         severity: 'warning',
       });
@@ -451,7 +354,7 @@ function queuedMessageHeader(origin: EngineEventOf<'message_queued'>['origin']):
   tone: ConversationRowTone;
 } {
   return origin === 'clarification'
-    ? { label: 'answered', value: 'recorded — applied at the next planner call', tone: 'success' }
+    ? { label: 'Answered', value: 'recorded — applied at the next planner call', tone: 'success' }
     : { label: 'Queued', value: 'applies at the next planner prompt', tone: 'info' };
 }
 
@@ -490,6 +393,50 @@ function consultAnsweredAction(event: EngineEventOf<'consult_answered'>): string
       return `confirmed the deviation${SOFT_SEP}${event.diagnosis}`;
     default:
       return assertNever(event.action);
+  }
+}
+
+export function recoveryRowBlock(
+  keyPrefix: string,
+  recovery: RecoveryFold,
+  width: number,
+): ConversationRowBlock | null {
+  const { prompted, reset, resolved } = recovery;
+  const chosen = recovery.selected ?? resolved;
+  const outcome = [
+    reset === undefined ? null : `${reset.taskId} back to pending`,
+    resolved === undefined ? null : recoveryOutcomeWords(resolved.outcome),
+  ].filter((part): part is string => part !== null);
+  const action =
+    chosen === undefined ? null : recoveryActionLabel(chosen.action, { seat: chosen.seat });
+  const done =
+    action === null || outcome.length === 0
+      ? action
+      : `${action}${arrowSep()}${outcome.join(', ')}`;
+  // The prompt panel carries the clock; the row names what happened, once.
+  const halt = prompted === undefined ? null : stripRecoveryResetClause(prompted.headline);
+  return cardRowsBlock({
+    keyPrefix,
+    label: 'Recovery',
+    value: [halt, done].filter((part): part is string => part !== null).join(SOFT_SEP),
+    width,
+    labelTone: resolved === undefined ? 'textDim' : recoveryResolvedTone(resolved.outcome),
+    valueTone: 'textDim',
+  });
+}
+
+function recoveryOutcomeWords(outcome: EngineEventOf<'recovery_resolved'>['outcome']): string {
+  switch (outcome) {
+    case 'continued':
+      return 'continued';
+    case 'retry-current-task':
+      return 'retried';
+    case 'skipped-current-task':
+      return 'skipped';
+    case 'aborted':
+      return 'run ended';
+    default:
+      return assertNever(outcome);
   }
 }
 

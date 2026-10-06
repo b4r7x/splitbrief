@@ -11,7 +11,6 @@ import { addEvent } from './actions/event.js';
 import { resetWorkflow } from './actions/reset.js';
 import { taskId } from '../../core/schemas/task.js';
 import type { EngineEventOf } from '../../engine/events/types.js';
-import { boundEngineEventForConsumer } from '../../engine/events/bound.js';
 import { parseEngineEvent } from '../../engine/events/schema.js';
 import type { RunnerCallWarningInput } from '../../engine/calls/types.js';
 import { normalizeRunnerCallWarning } from '../../engine/calls/warnings.js';
@@ -434,40 +433,6 @@ describe('eventsStore — append via addEvent', () => {
     expect(JSON.stringify(events)).not.toContain('\u001b');
   });
 
-  it('retains an already-bounded external-change event without re-processing', () => {
-    const boundedEvent = boundEngineEventForConsumer(
-      {
-        type: 'paused_external_changes',
-        ts: 1_002,
-        phase: 'implementing',
-        selectedAction: 'pause',
-        conflict: {
-          kind: 'current-task-conflict',
-          files: ['src/a.ts'],
-          affectedTaskIds: [taskId('T001')],
-          currentTaskId: taskId('T001'),
-          fileConflicts: [
-            {
-              file: 'src/a.ts',
-              kind: 'current-task-conflict',
-              affectedTaskIds: [taskId('T001')],
-            },
-          ],
-          safeToContinue: false,
-          availableActions: ['pause', 'skip-current-task', 'abort-workflow'],
-        },
-      },
-      'tui',
-    );
-    if (boundedEvent.type !== 'paused_external_changes') {
-      throw new Error('Expected bounded paused_external_changes event');
-    }
-
-    addEvent(boundedEvent);
-
-    expect(eventsStore.get().events).toEqual([boundedEvent]);
-  });
-
   it('stops coalescing when a different event type arrives', () => {
     addEvent(makePlannerText({ text: 'a' }));
     addEvent(makePlannerStatus({ phase: 'specifying' }));
@@ -502,6 +467,20 @@ describe('eventsStore — append via addEvent', () => {
       const events = eventsStore.get().events;
       expect(events).toHaveLength(1);
       expect((events[0] as { stages: { typecheck: boolean } }).stages.typecheck).toBe(true);
+    });
+
+    it('replaces the running validate of a brief with its settled verdict', () => {
+      addEvent(makeValidate({ taskId: taskId('T001'), status: 'running', passed: false }));
+      addEvent(makeValidate({ taskId: taskId('T001'), status: 'done', passed: true }));
+      const events = eventsStore.get().events;
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({ status: 'done', passed: true });
+    });
+
+    it('keeps the running validate of another brief', () => {
+      addEvent(makeValidate({ taskId: taskId('T001'), status: 'running', passed: false }));
+      addEvent(makeValidate({ taskId: taskId('T002'), status: 'done', passed: true }));
+      expect(eventsStore.get().events).toHaveLength(2);
     });
 
     it('does not replace done validate with running', () => {
@@ -544,20 +523,23 @@ describe('eventsStore — append via addEvent', () => {
       expect((events[0] as { activeStage: string }).activeStage).toBe('lint');
     });
 
-    it('does not collapse a running event followed by a done event', () => {
+    it('replaces the running event with the settled one', () => {
       addEvent(
         makeValidationBaseline({
           status: 'running',
-          stages: { typecheck: false, lint: false, test: false },
+          stages: { typecheck: true, lint: true, test: false },
         }),
       );
       addEvent(
         makeValidationBaseline({
           status: 'done',
-          stages: { typecheck: true, lint: true, test: true },
+          stages: { typecheck: true, lint: true, test: false },
+          duration: 18_500,
         }),
       );
-      expect(eventsStore.get().events).toHaveLength(2);
+      const events = eventsStore.get().events;
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({ status: 'done', duration: 18_500 });
     });
   });
 
@@ -596,14 +578,12 @@ describe('eventsStore — append via addEvent', () => {
         ts: 1000,
         phase: 'planning',
         elapsedMs: 5000,
-        accumulatedTokens: 100,
       });
       addEvent({
         type: 'planner_heartbeat',
         ts: 3000,
         phase: 'planning',
         elapsedMs: 7000,
-        accumulatedTokens: 200,
       });
       expect(eventsStore.get().events).toHaveLength(0);
     });
@@ -615,7 +595,6 @@ describe('eventsStore — append via addEvent', () => {
         ts: 1000,
         phase: 'planning',
         elapsedMs: 5000,
-        accumulatedTokens: 100,
       });
       addEvent(makePlannerText({ text: 'b' }));
       const events = eventsStore.get().events;

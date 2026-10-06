@@ -328,7 +328,7 @@ Lower-confidence cleanup that should not happen blindly:
 
 - Do not delete snapshots before deciding how checkpoint UX should work.
 - Do not delete worktree support: it is the default isolation path, not a hypothetical future need.
-- Do not reintroduce inline Task Brief editing just because an external editor round-trip feels less integrated; preserve the simple review plus persisted `tasks.md` editor contract unless product direction changes.
+- Do not reintroduce inline Task Brief editing just because an external editor round-trip feels less integrated; preserve the simple plan card plus the persisted `plan.json` editor contract unless product direction changes.
 
 ## Implemented build order
 

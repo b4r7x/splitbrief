@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { PLAN_FILE, SPEC_FILE, TASKS_FILE, sessionDir } from '../../core/paths.js';
 import { buildSpecFrontmatter } from '../../core/paths-io.js';
+import { taskId } from '../../core/schemas/task.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { buildArtifactExcerpt, publishArtifactWritten } from './artifact-card.js';
 
@@ -255,13 +256,10 @@ describe('buildArtifactExcerpt — section outline', () => {
 });
 
 describe('buildArtifactExcerpt — Task Brief outline', () => {
-  const brief = (id: string, title: string, file: string): string[] => [
+  const brief = (id: string, title: string): string[] => [
     '---',
     `id: ${id}`,
     `title: ${title}`,
-    'action: create',
-    `file: ${file}`,
-    'depends_on: []',
     '---',
     '',
     '### Description',
@@ -270,16 +268,13 @@ describe('buildArtifactExcerpt — Task Brief outline', () => {
   ];
 
   it('lists brief ids and titles rather than the brief template headings', () => {
-    const lines = [
-      'I’m inspecting the repository conventions before writing the briefs.',
-      '',
-      'Phase 1 establishes the shared tool contract.',
-      '',
-      ...brief('T001', 'Add API tool contract', 'src/engine/tools/types.ts'),
-      ...brief('T002', '"Validate API tools and inputs"', 'src/engine/tools/validation.ts'),
+    const briefs = [
+      { id: taskId('T001'), title: 'Add API tool contract' },
+      { id: taskId('T002'), title: 'Validate **API** tools\nand inputs' },
     ];
+    const lines = briefs.flatMap((entry) => brief(entry.id, entry.title));
 
-    const result = buildArtifactExcerpt(lines.join('\n'), TASKS_FILE);
+    const result = buildArtifactExcerpt(lines.join('\n'), TASKS_FILE, briefs);
 
     expect(result.excerpt).toEqual([
       'T001  Add API tool contract',
@@ -290,11 +285,13 @@ describe('buildArtifactExcerpt — Task Brief outline', () => {
   });
 
   it('counts the briefs it could not show, not the lines', () => {
-    const lines = Array.from({ length: 13 }, (_, index) =>
-      brief(`T${String(index + 1).padStart(3, '0')}`, `Task ${index + 1}`, `src/${index}.ts`),
-    ).flat();
+    const briefs = Array.from({ length: 13 }, (_, index) => ({
+      id: taskId(`T${String(index + 1).padStart(3, '0')}`),
+      title: `Task ${index + 1}`,
+    }));
+    const lines = briefs.flatMap((entry) => brief(entry.id, entry.title));
 
-    const result = buildArtifactExcerpt(lines.join('\n'), TASKS_FILE);
+    const result = buildArtifactExcerpt(lines.join('\n'), TASKS_FILE, briefs);
 
     expect(result.excerpt).toHaveLength(10);
     expect(result.omittedUnit).toBe('task');
@@ -302,32 +299,12 @@ describe('buildArtifactExcerpt — Task Brief outline', () => {
   });
 
   it('lists a lone brief rather than the headings every brief repeats', () => {
-    const lines = [
-      ...brief('T001', 'Fix the startup router', 'src/cli/commands/start/register.ts'),
-      '### Tests',
-      ...filler('tests', 6),
-    ];
+    const briefs = [{ id: taskId('T001'), title: 'Fix the startup router' }];
+    const lines = [...brief('T001', 'Fix the startup router'), '### Tests', ...filler('tests', 6)];
 
-    const result = buildArtifactExcerpt(lines.join('\n'), TASKS_FILE);
+    const result = buildArtifactExcerpt(lines.join('\n'), TASKS_FILE, briefs);
 
     expect(result.excerpt).toEqual(['T001  Fix the startup router']);
-  });
-
-  // Only `tasks.md` is the list a run executes. The parser reads a fenced brief when nothing
-  // outside a fence parses, so a plan that quotes the format would preview the quote.
-  it('reads a brief a plan quotes as part of the plan, not as its outline', () => {
-    const lines = [
-      ...section('## Approach', 6),
-      '```markdown',
-      ...brief('T001', 'Quote the brief format', 'src/quoted.ts'),
-      '```',
-      ...section('## Risks', 6),
-    ];
-
-    const result = buildArtifactExcerpt(lines.join('\n'), PLAN_FILE);
-
-    expect(result.excerpt.map((row) => row.split('  ')[0])).toEqual(['Approach', 'Risks']);
-    expect(result.omittedUnit).toBe('section');
   });
 });
 

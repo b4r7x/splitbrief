@@ -1,6 +1,7 @@
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
 import { recoveryFactNumber, recoveryFactString } from '../schemas/recovery/facts.js';
 import { formatResetAt } from './reset-clock.js';
+import { haltOf, recoveryHaltLabel } from './halt.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { countNoun } from '../../utils/pluralize.js';
 
@@ -44,7 +45,7 @@ export function retryExhaustedCause(
   if (cause.hookReason !== undefined) {
     return `${cause.task} escalation blocked by pre_escalation hook: ${cause.hookReason}`;
   }
-  return `${cause.task} exhausted its retries`;
+  return `${cause.task} failed`;
 }
 
 /**
@@ -131,4 +132,9 @@ export function formatRecoveryHeadline(issue: RecoveryIssue, now: number = Date.
     default:
       return assertNever(issue.reason);
   }
+}
+
+/** The halt and its cause on one line: "Needs you · …" or "Seat down · …". */
+export function formatRecoveryTitle(cause: string, issue: Pick<RecoveryIssue, 'reason'>): string {
+  return `${recoveryHaltLabel(haltOf(issue.reason))} · ${cause}`;
 }

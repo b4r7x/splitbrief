@@ -79,7 +79,8 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       reason: 'dependency-blocked',
       taskId: 'T002',
       affectedTaskIds: ['T001', 'T002'],
-      availableActions: ['skip-current-task', 'pause-run', 'end-run'],
+      availableActions: ['skip-current-task', 'end-run'],
+      recommendedAction: 'skip-current-task',
     });
     expect(loadState({ projectDir, sessionId })?.pendingRecovery).toMatchObject({
       reason: 'dependency-blocked',
@@ -90,8 +91,8 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
         type: 'recovery_prompted',
         reason: 'dependency-blocked',
         taskId: 'T002',
-        availableActions: ['skip-current-task', 'pause-run', 'end-run'],
-        recommendedAction: 'pause-run',
+        availableActions: ['skip-current-task', 'end-run'],
+        recommendedAction: 'skip-current-task',
       }),
     );
   });
@@ -199,8 +200,8 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     expect(result.state.pendingRecovery).toMatchObject({
       reason: 'context-overflow',
       taskId: 'T001',
-      availableActions: ['pause-run', 'end-run'],
-      recommendedAction: 'pause-run',
+      availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
+      recommendedAction: 'retry-same-worker',
     });
     expect(loadState({ projectDir, sessionId })?.pendingRecovery).toMatchObject({
       reason: 'context-overflow',
@@ -215,8 +216,8 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
         type: 'recovery_prompted',
         reason: 'context-overflow',
         taskId: 'T001',
-        availableActions: ['pause-run', 'end-run'],
-        recommendedAction: 'pause-run',
+        availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
+        recommendedAction: 'retry-same-worker',
       }),
     );
   });
@@ -289,7 +290,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     });
   });
 
-  it.each([{ status: 'awaiting-user' }, { status: 'paused' }] as const)(
+  it.each([{ status: 'awaiting-user' }, { status: 'applying' }] as const)(
     'stops on resume of a $status recovery, warning about it and leaving the issue unchanged',
     async ({ status }) => {
       const { projectDir, sessionId } = setupSessionOnly();
@@ -334,7 +335,9 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
         message: expect.stringContaining(`status: ${status}`),
       });
       expect(warning).toMatchObject({
-        message: expect.stringContaining('pause-run'),
+        message: expect.stringContaining(
+          'Available actions: retry-same-worker, skip-current-task, end-run.',
+        ),
       });
       expect(result.state.pendingRecovery).toEqual(issue);
       expect(result.state.pendingRecovery?.status).toBe(status);

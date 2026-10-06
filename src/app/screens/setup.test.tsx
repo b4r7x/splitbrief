@@ -697,11 +697,13 @@ describe('SetupScreen', () => {
 
       await focusRow(ui, UP, 'Claude crew, Codex review');
       ui.stdin.write(ENTER);
+      // The store takes the saved revision after the write lands; Continue saves against it.
       await vi.waitFor(() => {
         expect(loadConfig(projectDir).config.reviewer).toMatchObject({
           kind: 'cli',
           tool: 'codex',
         });
+        expect(configStore.get().revision).toEqual(loadConfig(projectDir).revision);
       });
       await continueSetup(ui);
 

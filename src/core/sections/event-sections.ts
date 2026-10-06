@@ -116,6 +116,14 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
     if (ev === undefined) continue;
     if (isTaskStartedEvent(ev)) {
       abandonOpenTask(taskRanges, openTasks, ev.taskId, i - 1);
+      const latest = taskRanges.at(-1);
+      if (latest?.abandoned && latest.taskId === ev.taskId) {
+        latest.abandoned = false;
+        latest.endIdx = -1;
+        latest.startEvent = ev;
+        openTasks.set(ev.taskId, taskRanges.length - 1);
+        continue;
+      }
       const idx = taskRanges.length;
       taskRanges.push({
         taskId: ev.taskId,

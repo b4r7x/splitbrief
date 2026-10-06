@@ -28,10 +28,28 @@ describe('SessionSchema', () => {
     expect(result.success && result.data.stop).toBeUndefined();
   });
 
-  it('maps the legacy failed status to open with a failed stop reason', () => {
+  it('maps the legacy failed status to an open run that stopped', () => {
     const result = SessionSchema.safeParse({ ...base, status: 'failed', summary: null });
     expect(result.success && result.data.status).toBe('open');
-    expect(result.success && result.data.stop).toBe('failed');
+    expect(result.success && result.data.stop).toBe('stopped');
+  });
+
+  it.each([
+    ['input-required', 'waiting-for-you'],
+    ['waiting', 'waiting-for-you'],
+    ['halted', 'waiting-for-you'],
+    ['paused', 'stopped'],
+    ['failed', 'stopped'],
+    ['interrupted', 'stopped'],
+  ] as const)('reads the saved stop %s as %s', (saved, stop) => {
+    const result = SessionSchema.safeParse({ ...base, status: 'open', summary: null, stop: saved });
+    expect(result.success && result.data.stop).toBe(stop);
+  });
+
+  it('rejects a stop outside the two states', () => {
+    expect(
+      SessionSchema.safeParse({ ...base, status: 'open', summary: null, stop: 'parked' }).success,
+    ).toBe(false);
   });
 
   it('carries the phase, mode and stop reason of an open run', () => {
@@ -41,12 +59,12 @@ describe('SessionSchema', () => {
       summary: null,
       phase: 'implementing',
       mode: 'standard',
-      stop: 'halted',
+      stop: 'waiting-for-you',
     });
     expect(result.success && result.data).toMatchObject({
       phase: 'implementing',
       mode: 'standard',
-      stop: 'halted',
+      stop: 'waiting-for-you',
     });
   });
 

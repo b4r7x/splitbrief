@@ -431,7 +431,7 @@ The repository layers many supporting subsystems on top of that core loop:
 
 - **One planning session** — every run plans in one typed session (`src/engine/orchestrator/planning/session.ts`) that answers a plan `checkPlan` validates, and goes through a shared `runWorkflow` orchestrator (`src/engine/orchestrator/run/workflow.ts`). There are no workflow modes.
 - **EventBus** (`src/engine/events/bus.ts`) — single pub/sub port; sinks include the TUI store, an append-only JSONL log, an opt-in NDJSON-on-stdout sink for `--json` headless runs, and a workflow-hook dispatcher.
-- **Plan checks** — `checkPlan` (`src/engine/spec/plan-checks.ts`) plus the context fit admit a plan; a failing plan goes back to the planner once, and one plan card (`reviewing-plan`) asks for human approval unless `workflow.approve: none`. The final deterministic `drift-report.json` / `drift_report` event is produced during final review; per-task cross-scope accumulation is `drift-chains.json` / `drift_chain_detected`.
+- **Plan checks** — `checkPlan` (`src/engine/spec/plan-checks.ts`) plus the context fit admit a plan; a failing plan goes back to the planner once, and one plan card (`reviewing-plan`) asks for human approval unless `workflow.approve: none`. The final deterministic `drift-report.json` / `drift_report` event is produced during final review; there is no per-task drift-chain accumulation.
 - **Snapshots** (`src/engine/snapshots/`) — content-addressed working-tree snapshots stored under `.splitbrief/sessions/<id>/snapshots/` with a baseline + delta layout. The run ledger under `src/engine/snapshots/run/` is what `/run accept` and `/run reject confirm` operate on for a run without a workspace; a workspace run uses Apply and its backup instead ([SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md#run-acceptreject)).
 - **Run workspace and Apply** (`src/engine/orchestrator/isolation/`, `src/engine/orchestrator/apply/`) create and retain one run directory. `apply/` contains `states.ts`, `merge.ts`, `backup.ts`, `write.ts`, `restore.ts`, `patch.ts` and the `run.ts` driver. [HOW-IT-WORKS.md](./HOW-IT-WORKS.md#run-workspace-and-apply) owns the data flow; [WORKFLOW.md](./WORKFLOW.md#apply) owns the Apply sequence. The implementer boundary and audit remain under `src/engine/implementers/isolation/`.
 - **Protected-path confirmation** (`src/engine/orchestrator/task/attempt-gate.ts`, `src/engine/orchestrator/approval/`) checks attempt changes inside the workspace. `tiered-approval.ts`, `types.ts`, `confirm.ts` and `events.ts` own confirmation. See [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#protected-path-confirmation).
@@ -511,7 +511,7 @@ src/
 │   │                              to run), cli-tool-catalog, runner-billing
 │   ├── schemas/                   All Zod schemas (see §6 storage)
 │   │                              attachment, codebase, config,
-│   │                              drift-chain, enums, evidence, hooks,
+│   │                              enums, evidence, hooks,
 │   │                              implementer-config, models-dev,
 │   │                              plan, planner-config, question, runner-fields,
 │   │                              session, session-log, snapshot, summary,
@@ -586,7 +586,7 @@ src/
 │   │   ├── consult/               request (typed consult on the planner
 │   │   │                          session) + apply (the five answers)
 │   │   ├── continuation.ts        withContinuationLoop (pause/resume gate)
-│   │   ├── drift/                 per-task drift and chained drift state
+│   │   ├── drift/                 the run's drift report (analyze, format, io)
 │   │   ├── escalation/            local retries, retry step, seat wait,
 │   │   │                          evidence, retry validation
 │   │   ├── events.ts              publish* helpers for typed events
@@ -861,9 +861,9 @@ Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orch
 `src/engine/events/schema.ts` defines the type-dispatched event contract as `EngineEventSchema` (the `EngineEvent` alias is `z.infer`d in `src/engine/events/types.ts`). Every `EngineEvent` carries `ts: number`; most carry `phase: Phase`. The phase-less variants are `snapshot_restored`, `snapshot_restore_conflict`, and `approval_mode_changed`. The grouped summary below is a navigation aid; use the source contract for the exact, exhaustive event list and field shapes. For key event shapes with full field definitions, see [ENGINE.md](./ENGINE.md).
 
 **Workflow lifecycle (7):**
-`workflow_started`, `workflow_resumed`, `workflow_complete`, `workflow_cancelled`, `workflow_config`, `turn_interrupted` — the pause event. It carries `source` (`user` | `watchdog`), `at`, where the stop landed — `mid-step` inside a call, `boundary` where it cut nothing: between two briefs, or at a gate — and `step`, the step the stop parked, as `interruptedStep.step` records it. Every park publishes it: a stop from the stop sheet (`parkStoppedRun`, `src/engine/orchestrator/state-ops.ts`), a stop inside a planner call, a park in place and a pause between briefs. The transcript row names a gate stop by its gate (`Paused at the plan gate`), because a gate runs no turn to retry.
+`workflow_started`, `workflow_resumed`, `workflow_complete`, `workflow_cancelled`, `workflow_config`, `turn_interrupted` — the pause event. It carries `source` (`user` | `watchdog`), `at`, where the stop landed — `mid-step` inside a call, `boundary` where it cut nothing: between two briefs, or at a gate — and `step`, the step the stop parked, as `interruptedStep.step` records it. Every park publishes it: a stop from the stop sheet (`parkStoppedRun`, `src/engine/orchestrator/state-ops.ts`), a stop inside a planner call, a park in place and a pause between briefs. The transcript row is labelled `Stopped` and states only where the run stopped: `at T003`, `at the plan`, or `before T004` for a boundary stop. The byline under the composer says what continues it.
 
-`paused_external_changes` is replay-only. Older logs still load it; new runs produce no user-edit pause event.
+`paused_external_changes` no longer replays. The owner accepted detail loss for sessions older than S7; their state and evidence still open at rest.
 
 **Recovery:**
 
@@ -877,8 +877,8 @@ S7 deletes `orchestrator/user-edit/`, `approval/gate-and-promote.ts`, `task/appl
 **Planner stream:**
 `planner_status`, `planner_text`, `planner_heartbeat`
 
-**Planning milestones (23):**
-`spec_approved`, `spec_rejected`, `spec_regenerated`, `plan_approved`, `plan_rejected`, `plan_regenerated`, `briefs_approved`, `briefs_rejected`, `rewind_to_spec`, `rewind_to_plan`, `all_tasks_done`, `brief_quality_passed`, `brief_quality_failed`, `brief_readiness_passed`, `brief_readiness_blocked`, `drift_report`, `drift_chain_detected`, `snapshot_created`, `snapshot_restored`, `snapshot_restore_conflict`, `mode_resolved`, `mode_advice`, `instant_plan_received`. The plan card publishes `plan_approved` when it is approved, `plan_regenerated` when it sends a correction back to the planner, and `plan_rejected` when End run closes the run there (`runPlanApproval`, `planning/session.ts`). Replay only: `spec_*`, `briefs_*`, `rewind_to_*`, `brief_quality_*`, `brief_readiness_*`, `mode_resolved`, `mode_advice` and `instant_plan_received` have no producer now and stay so older logs replay.
+**Planning milestones (19):**
+`spec_approved`, `spec_rejected`, `spec_regenerated`, `plan_approved`, `plan_rejected`, `plan_regenerated`, `briefs_approved`, `briefs_rejected`, `rewind_to_spec`, `rewind_to_plan`, `all_tasks_done`, `drift_report`, `drift_chain_detected`, `snapshot_created`, `snapshot_restored`, `snapshot_restore_conflict`, `mode_resolved`, `mode_advice`, `instant_plan_received`. The plan card publishes `plan_approved` when it is approved, `plan_regenerated` when it sends a correction back to the planner, and `plan_rejected` when End run closes the run there (`runPlanApproval`, `planning/session.ts`). Replay only: `spec_*`, `briefs_*`, `rewind_to_*`, `mode_resolved`, `mode_advice`, `instant_plan_received` and `drift_chain_detected` have no producer now and stay so older logs replay. The `brief_quality_*` and `brief_readiness_*` events no longer replay under the recorded detail-loss decision for sessions older than S7.
 
 **Task lifecycle:**
 `task_started`, `task_completed`, `task_skipped`, `task_retry`, `task_escalating`, `task_replaced`, `tasks_inserted`, `task_touched_not_suggested` (the files a completed brief changed that no brief suggested), `task_reset`, `task_tokens`, `task_review_needed` (replay only: the per-task review gate is deleted), `review_fix_started`. Replay only: `task_scope_widened`, `hint_failed`, `task_full_fail`
@@ -948,7 +948,7 @@ All per-session state lives under `.splitbrief/sessions/<session-id>/`. Path con
         ├── analyze.json            Older runs only
         ├── evidence.json           Evidence ledger (briefHash-tagged)
         ├── drift-report.json       Final deterministic drift report for the whole run/diff
-        ├── drift-chains.json       Chained-drift detector state
+        ├── drift-chains.json       Older runs only (no drift chains are scored now)
         ├── brief-quality.json      Older runs only (a new run writes none)
         ├── summary.json            Final aggregates (written at the end of each pass, carrying the
         │                            derived run status and phase; a resume drops the old stop)
@@ -1064,31 +1064,6 @@ export async function restoreSnapshot(opts: RestoreOptions): Promise<RestoreResu
 export async function computeSnapshotDiff(opts: DiffOptions): Promise<SnapshotDiffResult>
 export function formatSnapshotDiff(result, opts?: { color?: boolean }): string
 //  FileDiff.status: 'unchanged' | 'modified' | 'added' | 'removed'
-```
-
-### `engine/orchestrator/drift/chain.ts`
-
-```ts
-export function computePerTaskOutOfBounds(task: Task, taskChangedFiles: string[]): Set<string>
-export function analyzeDriftChain(
-  state: DriftChainState,
-  taskId: string,
-  outOfBoundsFiles: Set<string>,
-  threshold: number,
-): { state: DriftChainState; emitted: EmittedChain | undefined }
-```
-
-`computeScore` weights = `length(0.3) + overlap(0.5) + newFiles(0.2)`, capped to `[0,1]`. `representativePath` picks the most-recurring out-of-bounds file (lex tiebreak).
-
-### `engine/orchestrator/drift/chain-state.ts`
-
-```ts
-export function initialDriftChainState(sessionId: string): DriftChainState
-export function driftChainsPath(projectDir, sessionId): string
-export function readDriftChainState(projectDir, sessionId): DriftChainState | null
-export function writeDriftChainState(projectDir, sessionId, state): void
-export function emptyActiveChain(): ActiveDriftChain
-export function resetDriftChainState(projectDir, sessionId): void
 ```
 
 ### `core/evidence/ledger-state.ts`
@@ -1216,9 +1191,6 @@ The registry holds 22 commands in five categories. `/mode`, `/revise-spec`, `/re
 `.splitbrief/config.yaml` is written as `version: 3`, and no other version loads. The full schema lives in `src/core/schemas/config.ts`. The optional sections below are recognized:
 
 ```yaml
-workflow:
-  driftChainThreshold: 0.6     # 0.0–1.0; default 0.6; emit drift_chain_detected at/above this score
-
 palette:
   customActions:               # command-palette spec: add project-specific palette entries
     - id: my-action            # unique id (string, min 1 char)
@@ -1247,7 +1219,7 @@ Enforced by hooks, type system, exhaustive switches, or pre-merge greps. Breakin
 2. **`.git/`, `.splitbrief/`, `node_modules/`, `.trees/` MUST be excluded from snapshots / drift / file collection, at any depth, and a directory the project ignores is never entered.** `INTERNAL_SKIP_DIRS` (`core/paths.ts`), re-exported as `ALWAYS_EXCLUDED` from `engine/snapshots/files.ts` and honoured by `collectTrackedFiles`. Including `.splitbrief/` causes exponential snapshot growth (snapshots-of-snapshots); including `.trees/` pulls any user-created worktree checkout into the project's snapshots and diffs. The run's own isolation worktree needs no exclusion entry at all: it lives outside the project root entirely, under `$XDG_STATE_HOME/splitbrief/trees/<hash>/<slug>/` (default `~/.local/state/splitbrief/trees/...`), where a project-rooted walker never reaches it.
 3. **`briefHash` must propagate** from `createEvidenceLedger` (or the existing-ledger fallback) to every `record*` call in the per-task path. Lost propagation produces `briefHash: null` entries that break post-hoc evidence audits.
 4. **`TaskStatus` value is `'done'` NOT `'completed'`.** The enum is `['pending', 'in_progress', 'done', 'failed', 'escalated', 'skipped']` (`core/schemas/enums.ts`). `task_completed` is the *event* name; the *status* string is `'done'`.
-5. **Every terminal point in `runSingleTask` must call `runChainAnalysisSafe`** (drift chain analysis) — otherwise chain state desyncs from per-task drift. There are such points on every exit (success, fail, a consult rewrite or split, a verify completion, skip).
+5. **Drift runs once per run, not per task.** `analyzeBriefDrift` (`engine/orchestrator/drift/analyze.ts`) runs before the final review from `final-review.ts`; no exit of `runSingleTask` carries drift state, and there is no drift-chain analysis.
 6. **Engine MUST NOT import React, Ink, or anything from `src/features/`, `src/components/`, `src/hooks/`.** This is what makes the workflow runnable headlessly under Vitest.
 7. **Zero runtime classes.** Production source uses functions and module-scoped state; test fixtures may contain class syntax when that is the behavior under test.
 8. **Zero barrels.** No re-export-only `index.ts` anywhere in `src/`; currently there are no `index.ts` or `index.tsx` files in `src/`.
@@ -1269,7 +1241,7 @@ Quickest path for a fresh agent:
 2. `src/cli/commands/start/register.ts` — see the bootstrap flow.
 3. `src/engine/orchestrator/run/workflow.ts` → `run/init.ts` → `run/phases.ts` — see the top-level loop.
 4. `src/engine/orchestrator/planning/session.ts` — see the planning session and the plan card.
-5. `src/engine/orchestrator/task/loop.ts` and `src/engine/orchestrator/task/step.ts` (entry) with internal helpers such as `analyze-drift.ts` and `rollback.ts` — see the per-task loop with auto-snapshot, drift chain, and evidence integration.
+5. `src/engine/orchestrator/task/loop.ts` and `src/engine/orchestrator/task/step.ts` (entry) with internal helpers such as `attempt-gate.ts` and `rollback.ts` — see the per-task loop with auto-snapshot and evidence integration.
 6. `src/engine/events/schema.ts` — see the full event vocabulary (`EngineEventSchema`).
 7. `src/core/paths.ts` — see every path the system writes.
 

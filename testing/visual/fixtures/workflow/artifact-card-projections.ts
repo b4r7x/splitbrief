@@ -10,7 +10,7 @@ const CARD_FEATURE = 'Visual fixture workflow';
 
 // A 2026-09-25 run's briefs with the number of files each declared. `formatTasks` writes one
 // header line per file and dependency, so T004 and T006 run to 13 and 14 lines; the card is built
-// from that document by the production excerpt, not typed in here.
+// from those briefs by the production excerpt, not typed in here.
 const TASKS_CARD_BRIEFS = [
   ['T001', 'Give the reviewer every recorded validation entry', 4],
   ['T002', "Name scripts/ and evals/ in the brief contract's consumer rule", 4],
@@ -21,16 +21,19 @@ const TASKS_CARD_BRIEFS = [
   ['T007', 'Stop naming promoted files as unpromoted leftovers at a fresh reseed', 2],
 ] as const;
 
-const tasksCardDocument = formatTasks(
-  TASKS_CARD_BRIEFS.map(([id, title, fileCount], index) =>
-    makeTask({
-      id,
-      title,
-      file: `src/brief-${index + 1}/0.ts`,
-      files: Array.from({ length: fileCount }, (_, file) => `src/brief-${index + 1}/${file}.ts`),
-      dependsOn: id === 'T004' ? ['T003'] : id === 'T006' ? ['T005'] : [],
-    }),
-  ),
+const tasksCardBriefs = TASKS_CARD_BRIEFS.map(([id, title, fileCount], index) =>
+  makeTask({
+    id,
+    title,
+    suggestedFiles: [
+      `src/brief-${index + 1}/0.ts`,
+      ...Array.from(
+        { length: fileCount - 1 },
+        (_, file) => `src/brief-${index + 1}/${file + 1}.ts`,
+      ),
+    ],
+    dependsOn: id === 'T004' ? ['T003'] : id === 'T006' ? ['T005'] : [],
+  }),
 );
 
 export const tasksCardProjection: WorkflowFixtureProjection = {
@@ -60,7 +63,7 @@ export const tasksCardProjection: WorkflowFixtureProjection = {
       phase: 'planning',
       filename: TASKS_FILE,
       path: `.splitbrief/sessions/2026-09-25-fix-the-four-part-b-defects/${TASKS_FILE}`,
-      ...buildArtifactExcerpt(tasksCardDocument, TASKS_FILE),
+      ...buildArtifactExcerpt(formatTasks(tasksCardBriefs), TASKS_FILE, tasksCardBriefs),
     },
   ],
 };

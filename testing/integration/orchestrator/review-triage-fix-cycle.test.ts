@@ -80,7 +80,7 @@ describe('review triage fix cycle', { timeout: 90_000 }, () => {
     const task = makeTask({
       id: 'T001',
       action: 'create',
-      file: 'src/alpha.ts',
+      suggestedFiles: ['src/alpha.ts'],
       title: 'Create the greeting module',
       description: 'Create the greeting module the plan asks for.',
       implementationSteps: ['Create src/alpha.ts with the greeting export.'],
@@ -129,7 +129,7 @@ describe('review triage fix cycle', { timeout: 90_000 }, () => {
       capabilities: { writesFiles: 'direct' },
       implement: vi.fn().mockImplementation(async (opts: ImplementerOptions) => {
         expect(opts.projectDir).not.toBe(projectDir);
-        const file = opts.task.file;
+        const file = opts.task.suggestedFiles[0];
         mkdirSync(join(opts.projectDir, dirname(file)), { recursive: true });
         writeFileSync(
           join(opts.projectDir, file),

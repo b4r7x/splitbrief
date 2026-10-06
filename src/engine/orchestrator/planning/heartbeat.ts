@@ -31,8 +31,6 @@ export function startPlannerHeartbeat(
       ts: now,
       phase,
       elapsedMs: now - windowStart,
-      // Nothing reports the call's tokens while it runs.
-      accumulatedTokens: 0,
       ...(state.callId !== undefined ? { callId: state.callId } : {}),
     });
   };

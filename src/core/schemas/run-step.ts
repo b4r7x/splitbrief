@@ -17,15 +17,21 @@ export const GATE_NAMES = ['spec', 'plan', 'briefs'] as const;
 export const GateNameSchema = z.enum(GATE_NAMES);
 export type GateName = z.infer<typeof GateNameSchema>;
 
-export const STOP_KINDS = [
-  'paused',
-  'waiting',
-  'halted',
-  'failed',
-  'interrupted',
-  'input-required',
-] as const;
-export const StopKindSchema = z.enum(STOP_KINDS);
+/** The two states an open run rests in; see `StopReason`. */
+export const STOP_KINDS = ['waiting-for-you', 'stopped'] as const;
+/** Older rows named the stop itself; each reads as the state it put the run in. */
+const SAVED_STOP_KINDS: Readonly<Record<string, (typeof STOP_KINDS)[number]>> = {
+  'input-required': 'waiting-for-you',
+  waiting: 'waiting-for-you',
+  halted: 'waiting-for-you',
+  paused: 'stopped',
+  failed: 'stopped',
+  interrupted: 'stopped',
+};
+export const StopKindSchema = z.preprocess(
+  (value) => (typeof value === 'string' ? (SAVED_STOP_KINDS[value] ?? value) : value),
+  z.enum(STOP_KINDS),
+);
 export type StopKind = z.infer<typeof StopKindSchema>;
 
 /**

@@ -88,7 +88,7 @@ const AT_REST_RUN = makeRunRecord({
   hydration: { kind: 'loaded', state: RESUME_STATE },
   status: {
     kind: 'open',
-    stop: { kind: 'interrupted' },
+    stop: { kind: 'stopped', on: { kind: 'interrupted' } },
     resumeAt: { kind: 'planner', call: 'tasks' },
   },
 });

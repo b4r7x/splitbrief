@@ -120,8 +120,8 @@ describe('saveState / loadState roundtrip', () => {
         estimatedTokens: 42_000,
         contextLimit: 32_768,
       },
-      availableActions: ['route-bigger-worker', 'retry-same-worker', 'pause-run', 'end-run'],
-      recommendedAction: 'route-bigger-worker',
+      availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
+      recommendedAction: 'retry-same-worker',
     });
     const state = {
       ...createInitialState('recoverable-feature'),

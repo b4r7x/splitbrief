@@ -148,9 +148,6 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
                 );
                 break;
               case 'confirm-override':
-                ctx.setFeedbackError(
-                  `Accepted as is with ${countNoun(result.findings.length, 'open finding')}: ${result.findings.join('; ')}. Nothing verified them. /run accept confirm applies the run.`,
-                );
                 break;
               case 'halted':
                 ctx.refreshRun();

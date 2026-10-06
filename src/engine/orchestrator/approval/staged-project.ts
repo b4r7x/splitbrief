@@ -46,7 +46,7 @@ export type PromoteStagedChangesResult = {
 
 export const stagedProjectError = {
   conflict: (file: string) =>
-    error('approval-promotion-conflict', `Target changed before promotion: ${file}`, { file }),
+    error('staged-promotion-conflict', `Target changed before promotion: ${file}`, { file }),
 } as const;
 
 const GITIGNORE_FILE = '.gitignore';

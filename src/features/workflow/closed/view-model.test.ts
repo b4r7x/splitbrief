@@ -5,13 +5,15 @@ import type { EvidenceLedger, EvidenceTask } from '../../../core/schemas/evidenc
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { RequestEstimate, Summary } from '../../../core/schemas/summary.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import type { RunRecord } from '../../../core/sessions/run-record.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { arrowSep } from '../../../core/separators.js';
-import { crewLine } from './copy.js';
+import { crewLine, runRows, runRowValue } from './copy.js';
+import { bylineText } from './byline.js';
 import { deriveSummaryView, type SummaryView } from './view-model.js';
 
 function ledgerTask(overrides: Partial<EvidenceTask> & Pick<EvidenceTask, 'id'>): EvidenceTask {
@@ -109,7 +111,7 @@ function readySummary(overrides: Partial<Summary> = {}): Summary {
 
 describe('outcome kind', () => {
   it('is ready only when the packet, the verdict, the scope check and the briefs all agree', () => {
-    expect(derive(readySummary()).outcome.kind).toBe('ready');
+    expect(derive(readySummary()).outcome.kind).toBe('complete');
   });
 
   it.each([
@@ -141,7 +143,7 @@ describe('outcome kind', () => {
           summary: readySummary(),
           status: {
             kind: 'open',
-            stop: { kind: 'interrupted' },
+            stop: { kind: 'stopped', on: { kind: 'interrupted' } },
             resumeAt: { kind: 'review', cycle: 0 },
           },
         }),
@@ -160,38 +162,106 @@ const WORKSPACE = {
   base: { snapshotId: 'workspace-base', head: null },
 };
 
-function workspaceHydration(phase: Phase): RunRecord['hydration'] {
-  return { kind: 'loaded', state: makeWorkflowState({ phase, workspace: WORKSPACE }) };
+const CHANGED = ['src/validate.ts'];
+const PATCH_PATH = '.splitbrief/sessions/2026-09-14-feature/run.patch';
+
+function workspaceHydration(
+  phase: Phase,
+  closed?: WorkflowState['closed'],
+): RunRecord['hydration'] {
+  return {
+    kind: 'loaded',
+    state: makeWorkflowState({ phase, workspace: WORKSPACE, ...(closed && { closed }) }),
+  };
 }
+
+const CLOSED_AT = '2026-09-14T10:00:00.000Z';
 
 describe('a run with a workspace', () => {
   it('reads an applied run as applied, with every stage and Apply done', () => {
-    const view = derive(readySummary(), {
+    const view = derive(readySummary({ changedFiles: CHANGED }), {
       status: { kind: 'closed', as: 'applied' },
       hydration: workspaceHydration('complete'),
     });
     expect(view.outcome.kind).toBe('applied');
     expect(view.rail.map((state) => state.status)).toEqual(['done', 'done', 'done', 'done']);
-    expect(view.files.patch).toBe(false);
+    expect(view.files.patch).toBeNull();
+  });
+
+  // `/run reject confirm` on a run whose Apply was already undone refuses ("Apply already undone"):
+  // the closed block of that run says the undo happened and offers it no second time.
+  it('reads an applied run whose Apply was undone as undone, offering no second undo', () => {
+    const view = derive(readySummary({ changedFiles: CHANGED }), {
+      status: { kind: 'closed', as: 'applied' },
+      hydration: {
+        kind: 'loaded',
+        state: makeWorkflowState({
+          phase: 'complete',
+          workspace: WORKSPACE,
+          applied: {
+            at: CLOSED_AT,
+            backupId: 'apply-1',
+            files: CHANGED,
+            undone: { at: CLOSED_AT, conflicts: [] },
+          },
+        }),
+      },
+    });
+    const byline = bylineText(view, 120);
+    expect(byline).not.toContain('/run reject');
+    expect(byline.toLowerCase()).toContain('undone');
+  });
+
+  it('names undo conflicts on the Apply row and marks the reverted Apply on the rail', () => {
+    const view = derive(readySummary({ changedFiles: CHANGED }), {
+      status: { kind: 'closed', as: 'applied' },
+      hydration: {
+        kind: 'loaded',
+        state: makeWorkflowState({
+          phase: 'complete',
+          workspace: WORKSPACE,
+          applied: {
+            at: CLOSED_AT,
+            backupId: 'apply-1',
+            files: CHANGED,
+            undone: { at: CLOSED_AT, conflicts: ['src/later-edit.ts'] },
+          },
+        }),
+      },
+    });
+    const row = runRows(view).find((row) => row.label === 'Apply');
+    expect(row).toBeDefined();
+    if (row === undefined) throw new Error('Missing Apply row');
+    expect(runRowValue(row)).toBe('undone, 1 conflict kept');
+    expect(view.rail.find((stage) => stage.stage === 'apply')?.status).toBe('cancelled');
+    expect(bylineText(view, 120)).not.toContain('/run reject');
   });
 
   it('reads a discarded run as discarded, its changes saved in run.patch', () => {
-    const view = derive(readySummary(), {
+    const view = derive(readySummary({ changedFiles: CHANGED }), {
       status: { kind: 'closed', as: 'discarded' },
-      hydration: workspaceHydration('complete'),
+      hydration: workspaceHydration('complete', {
+        at: CLOSED_AT,
+        as: 'discarded',
+        patch: PATCH_PATH,
+      }),
     });
     expect(view.outcome.kind).toBe('discarded');
     expect(view.rail.map((state) => state.status)).toEqual(['done', 'done', 'done', 'cancelled']);
-    expect(view.files.patch).toBe(true);
+    expect(view.files.patch).toBe(PATCH_PATH);
   });
 
   it('says an ended run left its changes in run.patch', () => {
-    const view = derive(makeSummary({ phase: 'implementing' }), {
+    const view = derive(makeSummary({ phase: 'implementing', changedFiles: CHANGED }), {
       status: ENDED,
-      hydration: workspaceHydration('implementing'),
+      hydration: workspaceHydration('implementing', {
+        at: CLOSED_AT,
+        as: 'ended',
+        patch: PATCH_PATH,
+      }),
     });
     expect(view.outcome.kind).toBe('ended');
-    expect(view.files.patch).toBe(true);
+    expect(view.files.patch).toBe(PATCH_PATH);
     expect(view.rail.map((state) => state.status)).toEqual([
       'done',
       'cancelled',
@@ -200,10 +270,31 @@ describe('a run with a workspace', () => {
     ]);
   });
 
+  it('names no patch the close did not record', () => {
+    const view = derive(makeSummary({ phase: 'implementing', changedFiles: CHANGED }), {
+      status: ENDED,
+      hydration: workspaceHydration('implementing', { at: CLOSED_AT, as: 'ended' }),
+    });
+    expect(view.files.patch).toBeNull();
+  });
+
   it('writes no patch for a run without a workspace', () => {
-    expect(derive(makeSummary({ phase: 'implementing' }), { status: ENDED }).files.patch).toBe(
-      false,
-    );
+    expect(
+      derive(makeSummary({ phase: 'implementing', changedFiles: CHANGED }), { status: ENDED }).files
+        .patch,
+    ).toBeNull();
+  });
+
+  it('names no patch for a discarded run that changed no file', () => {
+    const view = derive(readySummary({ changedFiles: [] }), {
+      status: { kind: 'closed', as: 'discarded' },
+      hydration: workspaceHydration('complete', {
+        at: CLOSED_AT,
+        as: 'discarded',
+        patch: PATCH_PATH,
+      }),
+    });
+    expect(view.files.patch).toBeNull();
   });
 });
 
@@ -599,7 +690,7 @@ describe('brief rows', () => {
     });
     const state = makeWorkflowState({
       phase: 'reviewing-plan',
-      tasks: [makeTask({ id: 'T001', title: 'New brief', file: 'src/new.ts' })],
+      tasks: [makeTask({ id: 'T001', title: 'New brief', suggestedFiles: ['src/new.ts'] })],
     });
     const view = derive(
       makeSummary({
@@ -705,7 +796,7 @@ describe('review', () => {
       makeSummary({
         totalTasks: 3,
         review: { verdict: 'pass', critical: 0, warnings: 2, notes: 1 },
-        driftSummary: { passed: true, score: 1, errorCount: 0, warningCount: 0 },
+        driftSummary: { passed: true, errorCount: 0, warningCount: 0 },
       }),
     );
     expect(view.review).toMatchObject({
@@ -740,14 +831,13 @@ describe('scope', () => {
     expect(derive(makeSummary()).scope).toEqual({ kind: 'not-run' });
   });
 
-  it('carries the score and the deviation counts', () => {
+  it('carries the deviation counts', () => {
     const view = derive(
-      makeSummary({ driftSummary: { passed: false, score: 0.6, errorCount: 1, warningCount: 1 } }),
+      makeSummary({ driftSummary: { passed: false, errorCount: 1, warningCount: 1 } }),
     );
     expect(view.scope).toEqual({
       kind: 'checked',
       passed: false,
-      score: 0.6,
       errors: 1,
       warnings: 1,
     });

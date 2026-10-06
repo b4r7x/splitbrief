@@ -2,7 +2,6 @@ import type { z } from 'zod';
 import { EFFORT_LEVELS, EffortLevelSchema } from '../../../schemas/enums.js';
 import { configError } from '../../errors.js';
 import type { Config } from '../../../schemas/config.js';
-import { defaultApprovalConfig } from '../../../schemas/config.js';
 import {
   applyImplementerOverrides,
   applyPlannerEffort,
@@ -61,13 +60,6 @@ export function applyCLIOverrides(config: Config, overrides: CLIOverrides): Conf
       EFFORT_LEVELS,
     );
     next = applyReviewerEffort(next, effort);
-  }
-  if (overrides.yolo) {
-    const approval = next.approval ?? defaultApprovalConfig();
-    next = {
-      ...next,
-      approval: { ...approval, enabled: false },
-    };
   }
   return next;
 }

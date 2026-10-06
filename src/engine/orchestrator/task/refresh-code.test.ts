@@ -28,7 +28,7 @@ describe('refreshAndPersistCode', () => {
       writeFileSync(join(outside, 'secret.ts'), 'outside');
       symlinkSync(join(outside, 'secret.ts'), join(projectDir, 'src', 'leak.ts'));
 
-      const task = makeTask({ file: 'src/leak.ts' });
+      const task = makeTask({ suggestedFiles: ['src/leak.ts'] });
       const state = { ...createInitialState('feature'), phase: 'implementing' as const };
 
       const result = await refreshAndPersistCode(
@@ -53,7 +53,7 @@ describe('refreshAndPersistCode', () => {
     try {
       mkdirSync(join(projectDir, 'src'), { recursive: true });
       writeFileSync(join(projectDir, 'src', 'b.ts'), 'export const partial = true;\n');
-      const task = makeTask({ id: 'T002', action: 'create', file: 'src/b.ts' });
+      const task = makeTask({ id: 'T002', action: 'create', suggestedFiles: ['src/b.ts'] });
       const state = { ...createInitialState('feature'), phase: 'implementing' as const };
       const step = { kind: 'brief' as const, taskId: task.id, attempt: state.attempt };
       const continuation = createContinuationHolder({
@@ -95,8 +95,7 @@ describe('refreshAndPersistCode', () => {
         writeFileSync(join(dir, 'src', 'ctx.ts'), `${label} context`);
       }
       const task = makeTask({
-        file: 'src/x.ts',
-        files: ['src/x.ts', 'src/x.test.ts'],
+        suggestedFiles: ['src/x.ts', 'src/x.test.ts'],
         contextFiles: ['src/ctx.ts'],
       });
       const state = {
@@ -132,8 +131,7 @@ describe('refreshAndPersistCode', () => {
       writeFileSync(join(projectDir, 'src', 'x.test.ts'), 'sibling code');
 
       const task = makeTask({
-        file: 'src/x.ts',
-        files: ['src/x.ts', 'src/x.test.ts', 'src/missing.ts'],
+        suggestedFiles: ['src/x.ts', 'src/x.test.ts', 'src/missing.ts'],
       });
       const state = {
         ...createInitialState('feature'),
@@ -169,7 +167,7 @@ describe('refreshAndPersistCode', () => {
 
       const task = makeTask({
         action: 'modify',
-        file: 'src/x.ts',
+        suggestedFiles: ['src/x.ts'],
         contextFiles: ['src/types.ts', 'src/big.ts', 'src/gone.ts', 'src/late.ts'],
       });
       const state = {
@@ -206,8 +204,7 @@ describe('refreshAndPersistCode', () => {
       writeFileSync(join(projectDir, 'src', 'types.ts'), 'context code');
 
       const task = makeTask({
-        file: 'src/x.ts',
-        files: ['src/x.ts', 'src/x.test.ts'],
+        suggestedFiles: ['src/x.ts', 'src/x.test.ts'],
         contextFiles: ['src/types.ts'],
         currentCode: 'stale planner copy',
       });
@@ -275,7 +272,11 @@ describe('refreshAndPersistCode', () => {
     const sessionId = 'sess-refresh-gone-anchor';
     ensureSessionDir(projectDir, sessionId);
     try {
-      const task = makeTask({ action: 'modify', file: 'src/x.ts', currentCode: 'stale' });
+      const task = makeTask({
+        action: 'modify',
+        suggestedFiles: ['src/x.ts'],
+        currentCode: 'stale',
+      });
       const state = {
         ...createInitialState('feature'),
         phase: 'implementing' as const,
@@ -307,8 +308,7 @@ describe('refreshAndPersistCode', () => {
       writeFileSync(join(projectDir, 'src', 'types.ts'), 'context code');
 
       const task = makeTask({
-        file: 'src/x.ts',
-        files: ['src/x.ts', 'src/y.ts'],
+        suggestedFiles: ['src/x.ts', 'src/y.ts'],
         contextFiles: ['src/x.ts', 'src/y.ts', 'src/types.ts'],
       });
       const state = {

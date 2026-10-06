@@ -5,12 +5,7 @@ import {
   createEditorState,
   followCaretScroll,
 } from '../../core/editor/editor-state.js';
-import type {
-  EditorEvent,
-  EditorLayout,
-  EditorState,
-  EditorSurface,
-} from '../../core/editor/editor-state.js';
+import type { EditorEvent, EditorLayout, EditorState } from '../../core/editor/editor-state.js';
 import { wrapVisualLines } from '../../core/editor/grapheme-motions.js';
 
 interface OpenParams {
@@ -36,7 +31,7 @@ const initial: EditorSessionState = { status: 'closed' };
 
 const store = createStore<EditorSessionState>(initial);
 
-function openSession(surface: EditorSurface, params: OpenParams): EditorSessionState {
+function openSession(params: OpenParams): EditorSessionState {
   return {
     status: 'open',
     filePath: params.filePath,
@@ -44,13 +39,13 @@ function openSession(surface: EditorSurface, params: OpenParams): EditorSessionS
     ownerToken: params.ownerToken,
     submitting: false,
     layout: params.layout,
-    ...createEditorState(surface, params.value),
+    ...createEditorState(params.value),
   };
 }
 
 export const editorStore = {
   ...storeBase(store),
-  openRaw: (params: OpenParams) => store.set(openSession('raw', params)),
+  openRaw: (params: OpenParams) => store.set(openSession(params)),
   dispatch: (event: EditorEvent) =>
     store.set((s) => {
       if (s.status !== 'open') return s;
@@ -62,7 +57,7 @@ export const editorStore = {
     store.set((s) => {
       if (s.status !== 'open') return s;
       // Idempotent by value: an unchanged layout returns the SAME state so create-store bails on
-      // Object.is and never notifies. This lets the field surface re-measure its render box in a
+      // Object.is and never notifies. This lets the editor re-measure its render box in a
       // layout effect every render without a set → re-render → re-measure loop.
       if (s.layout.columns === layout.columns && s.layout.rows === layout.rows) return s;
       // A resize/reflow re-wraps the document at the new width, which can push the caret's visual

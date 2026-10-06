@@ -148,12 +148,12 @@ node "$SKILL_DIR/scripts/watch-run.mjs" "$SESSION_DIR" "$WATCH_CURSOR" 30
 Read its event and state summary, then inspect the terminal and stderr. A watcher failure is a supervision blocker: park, then supervise from a copy of the watcher outside the checkout, then resume. The watcher fix in the checkout waits until the run ends.
 Never discard the cursor to suppress a finding. Record each event's disposition. Do not read the entire log into agent context.
 
-Events worth acting on: `artifact_written`, `recovery_prompted{reason}`, `task_retry{attempt}`, `task_escalating`, `validate{status:"done",passed}`, `paused_external_changes`, `runner_call_stalled`, `workflow_complete{review}`.
+Events worth acting on: `artifact_written`, `recovery_prompted{reason}`, `task_retry{attempt}`, `task_escalating`, `validate{status:"done",passed}`, `runner_call_stalled`, `workflow_complete{review}`.
 
 A stalled-call event requires inspection of the terminal and the child's activity. Silence alone does not prove a tool defect.
 Do not wait through repeated identical failures without classification. If the cause is uncertain, park and diagnose it.
 
-**Live progress is in the run workspace.** The worktree lives at `~/.local/state/splitbrief/trees/<repo-key>/<session>` by default. Tasks and validation use that workspace or the run's staged copy. The project checkout receives the assessed result once, at Apply. Before Apply, `git status` in the checkout does not show the run's implementation changes. With `workflow.isolation: none` (shown as "your checkout") the implementer edits the checkout itself: live progress is in the checkout, `git status` shows it as it happens, there is no result menu and no Apply, and a passing review closes the run. Do not edit the checkout while a brief runs; an edit between calls is a warning, and a git write during a call halts `checkout-changed`.
+**Live progress is in the run workspace.** The worktree lives at `~/.local/state/splitbrief/trees/<repo-key>/<session>` by default. Tasks and validation use that workspace or the run's staged copy. The project checkout receives the assessed result once, at Apply. Before Apply, `git status` in the checkout does not show the run's implementation changes. With `workflow.isolation: none` (shown as "your checkout") the implementer edits the checkout itself: live progress is in the checkout, `git status` shows it as it happens, there is no result menu and no Apply, and a passing review or Accept as is override closes the run. An override preserves the failed verdict. Do not edit the checkout while a brief runs; an edit between calls is a warning, and a git write during a call halts `checkout-changed`.
 
 ## Answering prompts
 

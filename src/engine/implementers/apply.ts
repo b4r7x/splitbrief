@@ -17,13 +17,13 @@ export async function applyCode(
 ): Promise<{ success: boolean; error?: string }> {
   let filePath: string;
   try {
-    filePath = validateTaskPath(projectDir, task.file);
+    filePath = validateTaskPath(projectDir, task.suggestedFiles[0]);
   } catch (err) {
     return { success: false, error: toErrorMessage(err) };
   }
 
   if (task.action === 'create') {
-    await writeConfinedSecureFileAsync(projectDir, task.file, code);
+    await writeConfinedSecureFileAsync(projectDir, task.suggestedFiles[0], code);
     return { success: true };
   }
 
@@ -32,7 +32,7 @@ export async function applyCode(
     existing = await readFile(filePath, 'utf-8');
   } catch (err) {
     if (!isENOENT(err)) throw err;
-    await writeConfinedSecureFileAsync(projectDir, task.file, code);
+    await writeConfinedSecureFileAsync(projectDir, task.suggestedFiles[0], code);
     return { success: true };
   }
 
@@ -44,12 +44,12 @@ export async function applyCode(
       return {
         success: false,
         error:
-          `Malformed SEARCH/REPLACE block in ${task.file}: nothing was written because a block opens with ` +
+          `Malformed SEARCH/REPLACE block in ${task.suggestedFiles[0]}: nothing was written because a block opens with ` +
           '<<<<<<< SEARCH but never closes with ======= and >>>>>>> REPLACE:\n' +
           code.slice(markerIndex, markerIndex + 200),
       };
     }
-    await writeConfinedSecureFileAsync(projectDir, task.file, code);
+    await writeConfinedSecureFileAsync(projectDir, task.suggestedFiles[0], code);
     return { success: true };
   }
 
@@ -66,14 +66,14 @@ export async function applyCode(
       return {
         success: false,
         error:
-          `Search block not found in ${task.file} (checked both raw and line-ending-normalized content):\n` +
+          `Search block not found in ${task.suggestedFiles[0]} (checked both raw and line-ending-normalized content):\n` +
           search.slice(0, 200),
       };
     }
     if (matched.kind === 'ambiguous') {
       return {
         success: false,
-        error: `ambiguous search block (${matched.occurrences} matches) in ${task.file}:\n${search.slice(0, 200)}`,
+        error: `ambiguous search block (${matched.occurrences} matches) in ${task.suggestedFiles[0]}:\n${search.slice(0, 200)}`,
       };
     }
 
@@ -83,7 +83,11 @@ export async function applyCode(
       result.slice(matched.index + matched.length);
   }
 
-  await writeConfinedSecureFileAsync(projectDir, task.file, restoreEnding(result, fileEnding));
+  await writeConfinedSecureFileAsync(
+    projectDir,
+    task.suggestedFiles[0],
+    restoreEnding(result, fileEnding),
+  );
   return { success: true };
 }
 

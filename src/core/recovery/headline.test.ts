@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
 import { taskId } from '../schemas/task.js';
-import { formatRecoveryHeadline, retryExhaustedCause } from './headline.js';
+import { formatRecoveryHeadline, formatRecoveryTitle, retryExhaustedCause } from './headline.js';
 
 const usageLimitIssue = makeRecoveryIssue({
   reason: 'runner-usage-limit',
   resetAt: '2026-09-13T17:00:00.000Z',
   facts: { tool: 'Claude Code' },
-  availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
+  availableActions: ['retry-same-worker', 'switch-seat', 'skip-current-task', 'end-run'],
   recommendedAction: 'switch-seat',
 });
 
@@ -37,7 +37,7 @@ describe('formatRecoveryHeadline', () => {
   it('words the halts that have their own sentence', () => {
     const cases: Array<[Parameters<typeof makeRecoveryIssue>[0], string]> = [
       [{ reason: 'runner-unauthenticated', facts: { tool: 'Codex' } }, 'Signed out of Codex'],
-      [{ reason: 'retry-exhausted' }, 'T001 exhausted its retries'],
+      [{ reason: 'retry-exhausted' }, 'T001 failed'],
       [{ reason: 'scope-violation' }, 'T001 wrote outside its declared files'],
       [
         { reason: 'implementer-recipe-invalid', facts: { tool: 'Cursor' } },
@@ -92,8 +92,8 @@ describe('formatRecoveryHeadline', () => {
           taskId: undefined,
           taskTitle: undefined,
           facts,
-          availableActions: ['pause-run', 'end-run'],
-          recommendedAction: 'pause-run',
+          availableActions: ['retry-same-worker', 'end-run'],
+          recommendedAction: 'retry-same-worker',
         }),
       );
 
@@ -111,7 +111,7 @@ describe('formatRecoveryHeadline', () => {
       formatRecoveryHeadline(
         makeRecoveryIssue({ reason: 'retry-exhausted', taskId: taskId('T042') }),
       ),
-    ).toBe('T042 exhausted its retries');
+    ).toBe('T042 failed');
   });
 
   it('words a retry-exhausted halt by planner verdict or hook denial', () => {
@@ -132,12 +132,24 @@ describe('formatRecoveryHeadline', () => {
       formatRecoveryHeadline(
         makeRecoveryIssue({ reason: 'retry-exhausted', facts: { plannerVerdict: 'answer' } }),
       ),
-    ).toBe('T001 exhausted its retries');
+    ).toBe('T001 failed');
   });
 });
 
 describe('retryExhaustedCause', () => {
   it('falls back to exhausted retries when neither fact is present', () => {
-    expect(retryExhaustedCause({ task: 'T005' })).toBe('T005 exhausted its retries');
+    expect(retryExhaustedCause({ task: 'T005' })).toBe('T005 failed');
+  });
+});
+
+describe('formatRecoveryTitle', () => {
+  it.each([
+    ['retry-exhausted', 'Needs you'],
+    ['apply-conflict', 'Needs you'],
+    ['constitution-check-failed', 'Needs you'],
+    ['runner-usage-limit', 'Seat down'],
+    ['seat-protocol-error', 'Seat down'],
+  ] as const)('puts the halt a %s cause stops on before the cause', (reason, halt) => {
+    expect(formatRecoveryTitle('the cause', { reason })).toBe(`${halt} · the cause`);
   });
 });

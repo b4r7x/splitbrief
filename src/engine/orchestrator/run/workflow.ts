@@ -5,7 +5,6 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
 import type { Config } from '../../../core/schemas/config.js';
-import { WORKFLOW_REWIND_ABORT_REASON } from '../../../core/phases.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { pruneOrphanSessions } from '../../../core/sessions/orphans.js';
 import { recordRunnerPid, releaseRunnerPid } from '../../../core/sessions/runner-pids.js';
@@ -141,7 +140,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   };
 
   let trackedState: WorkflowState | undefined;
-  let currentTask: Pick<Task, 'file' | 'files' | 'action'> | undefined;
+  let currentTask: Pick<Task, 'suggestedFiles' | 'action'> | undefined;
   let result: Summary | undefined;
   let wctx: WorkflowContext | undefined;
   let workflowBus: WorkflowContext['bus'] | undefined;
@@ -167,7 +166,6 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   const parkRun = (state: WorkflowState): WorkflowState => {
     const latest = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state);
     if (
-      opts.signal?.reason === WORKFLOW_REWIND_ABORT_REASON ||
       latest.closed !== undefined ||
       latest.phase === 'complete' ||
       latest.interruptedStep !== undefined ||
@@ -327,64 +325,46 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
             ...(wctx.signal !== undefined && { signal: wctx.signal }),
           });
 
-          let stateForPlanning = init.state;
-          let savedStateForPlanning = savedState;
-          while (true) {
-            const planning = await runPlanningPhases({
-              wctx,
-              state: stateForPlanning,
-              savedState: savedStateForPlanning,
-              phaseTimings,
-              startTime,
-              setTrackedState: trackState,
-            });
-            trackState(planning.state);
+          const planning = await runPlanningPhases({
+            wctx,
+            state: init.state,
+            savedState,
+            phaseTimings,
+            startTime,
+            setTrackedState: trackState,
+          });
+          trackState(planning.state);
 
-            switch (planning.disposition) {
-              case 'terminal':
-                if (planning.outcome === 'failed') {
-                  trackState(recordFailure(planning.state, 'Planning failed.'));
-                }
-                result = buildSummary({ ...summaryBase, state: planning.state, phaseTimings });
-                return;
-              case 'ready-for-tasks':
-                break;
-              default:
-                return assertNever(planning);
-            }
-
-            if (opts.signal?.aborted) {
+          switch (planning.disposition) {
+            case 'terminal':
+              if (planning.outcome === 'failed') {
+                trackState(recordFailure(planning.state, 'Planning failed.'));
+              }
               result = buildSummary({ ...summaryBase, state: planning.state, phaseTimings });
               return;
-            }
+            case 'ready-for-tasks':
+              break;
+            default:
+              return assertNever(planning);
+          }
 
-            const taskRun = await runTasksAndReview({
-              wctx,
-              state: planning.state,
-              planning,
-              summaryBase,
-              phaseTimings,
-              setTrackedState: trackState,
-              setCurrentTask: (t) => {
-                currentTask = t;
-              },
-            });
-            result = taskRun.summary;
-            if (taskRun.cancelled) {
-              publishWorkflowCancellation(WORKFLOW_CANCEL_REASON_USER);
-              return;
-            }
-            if (
-              !taskRun.completed &&
-              taskRun.state.rewindPending !== undefined &&
-              !opts.signal?.aborted
-            ) {
-              stateForPlanning = taskRun.state;
-              savedStateForPlanning = taskRun.state;
-              continue;
-            }
+          if (opts.signal?.aborted) {
+            result = buildSummary({ ...summaryBase, state: planning.state, phaseTimings });
             return;
           }
+
+          const taskRun = await runTasksAndReview({
+            wctx,
+            state: planning.state,
+            planning,
+            summaryBase,
+            phaseTimings,
+            setTrackedState: trackState,
+            setCurrentTask: (t) => {
+              currentTask = t;
+            },
+          });
+          result = taskRun.summary;
         } catch (err) {
           await killAllProcesses();
           if (!opts.signal?.aborted || retentionError.isFailed(err)) {

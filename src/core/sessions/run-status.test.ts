@@ -51,10 +51,31 @@ describe('deriveRunStatus', () => {
     ).toEqual({ kind: 'running' });
   });
 
-  it('reports a pending recovery as halted and carries the issue', () => {
+  it('reports a pending recovery as waiting for you on the halt and carries the issue', () => {
     const issue = makeRecoveryIssue();
     const status = stopOf({ phase: 'validating-task', pendingRecovery: issue });
-    expect(status).toMatchObject({ kind: 'open', stop: { kind: 'halted', issue } });
+    expect(status).toMatchObject({
+      kind: 'open',
+      stop: { kind: 'waiting-for-you', on: { kind: 'halt', issue } },
+    });
+  });
+
+  it('reports an unanswered planner question as waiting for you on the question', () => {
+    const status = stopOf({
+      phase: 'planning',
+      pendingPlannerConversation: {
+        call: 'plan',
+        text: 'Which DB?',
+        questions: [],
+        answers: [],
+        answered: false,
+      },
+    });
+    expect(status).toEqual({
+      kind: 'open',
+      stop: { kind: 'waiting-for-you', on: { kind: 'question' } },
+      resumeAt: { kind: 'planner', call: 'plan' },
+    });
   });
 
   it('reads an interrupted step with a captured partial as paused mid-step', () => {
@@ -67,7 +88,9 @@ describe('deriveRunStatus', () => {
         at: '2026-09-01T00:00:00.000Z',
       },
     });
-    expect(status).toMatchObject({ stop: { kind: 'paused', at: 'mid-step' } });
+    expect(status).toMatchObject({
+      stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } },
+    });
   });
 
   it('reads the cut the stop recorded in preference to guessing from the partial', () => {
@@ -81,7 +104,7 @@ describe('deriveRunStatus', () => {
           at: '2026-09-01T00:00:00.000Z',
         },
       }),
-    ).toMatchObject({ stop: { kind: 'paused', at: 'boundary' } });
+    ).toMatchObject({ stop: { kind: 'stopped', on: { kind: 'paused', at: 'boundary' } } });
 
     expect(
       stopOf({
@@ -93,7 +116,7 @@ describe('deriveRunStatus', () => {
           at: '2026-09-01T00:00:00.000Z',
         },
       }),
-    ).toMatchObject({ stop: { kind: 'paused', at: 'mid-step' } });
+    ).toMatchObject({ stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } } });
   });
 
   it('reads an interrupted step with no partial as paused at a boundary', () => {
@@ -105,12 +128,14 @@ describe('deriveRunStatus', () => {
         at: '2026-09-01T00:00:00.000Z',
       },
     });
-    expect(status).toMatchObject({ stop: { kind: 'paused', at: 'boundary' } });
+    expect(status).toMatchObject({
+      stop: { kind: 'stopped', on: { kind: 'paused', at: 'boundary' } },
+    });
   });
 
   it('reads a legacy awaitingContinue with no interrupt record as paused mid-step', () => {
     expect(stopOf({ phase: 'planning', awaitingContinue: true })).toMatchObject({
-      stop: { kind: 'paused', at: 'mid-step' },
+      stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } },
     });
   });
 
@@ -119,7 +144,9 @@ describe('deriveRunStatus', () => {
     ['reviewing-plan', 'plan'],
     ['reviewing-briefs', 'briefs'],
   ] as const)('reports %s as waiting on the %s gate', (phase, gate) => {
-    expect(stopOf({ phase })).toMatchObject({ stop: { kind: 'waiting', gate, reopens: false } });
+    expect(stopOf({ phase })).toMatchObject({
+      stop: { kind: 'waiting-for-you', on: { kind: 'gate', gate, reopens: false } },
+    });
   });
 
   it('reports a recorded failure with its message', () => {
@@ -131,7 +158,9 @@ describe('deriveRunStatus', () => {
         at: '2026-09-01T00:00:00.000Z',
       },
     });
-    expect(status).toMatchObject({ stop: { kind: 'failed', message: 'Planning failed.' } });
+    expect(status).toMatchObject({
+      stop: { kind: 'stopped', on: { kind: 'failed', message: 'Planning failed.' } },
+    });
   });
 
   it('forgets a recorded failure once the run picks the step up again', () => {
@@ -146,12 +175,14 @@ describe('deriveRunStatus', () => {
     const resumed = transition(failed, { type: 'RESUME_STEP' });
 
     expect(deriveRunStatus({ state: resumed, liveness: 'not-alive' })).toMatchObject({
-      stop: { kind: 'interrupted' },
+      stop: { kind: 'stopped', on: { kind: 'interrupted' } },
     });
   });
 
   it('falls back to interrupted when nothing says why the run stopped', () => {
-    expect(stopOf({ phase: 'implementing' })).toMatchObject({ stop: { kind: 'interrupted' } });
+    expect(stopOf({ phase: 'implementing' })).toMatchObject({
+      stop: { kind: 'stopped', on: { kind: 'interrupted' } },
+    });
   });
 
   // The briefs of a run whose steps open no plan gate once waited in reviewing-plan, so a run saved
@@ -178,9 +209,12 @@ describe('deriveRunStatus', () => {
       });
       expect(status).toMatchObject(
         at === 'at the plan gate'
-          ? { stop: { kind: 'waiting', gate: 'plan' }, resumeAt: { kind: 'gate', gate: 'plan' } }
+          ? {
+              stop: { kind: 'waiting-for-you', on: { kind: 'gate', gate: 'plan' } },
+              resumeAt: { kind: 'gate', gate: 'plan' },
+            }
           : {
-              stop: { kind: 'interrupted' },
+              stop: { kind: 'stopped', on: { kind: 'interrupted' } },
               resumeAt: { kind: 'planner', call: 'plan' },
             },
       );
@@ -206,7 +240,7 @@ describe('deriveRunStatus', () => {
       liveness: 'not-alive',
     });
     expect(status).toMatchObject({
-      stop: { kind: 'waiting', gate: 'plan', reopens: true },
+      stop: { kind: 'waiting-for-you', on: { kind: 'gate', gate: 'plan', reopens: true } },
       resumeAt: { kind: 'gate', gate: 'plan' },
     });
   });
@@ -331,7 +365,7 @@ describe('a run with a workspace', () => {
     const issue = makeRecoveryIssue();
     expect(statusOf(passed({ pendingRecovery: issue }))).toEqual({
       kind: 'open',
-      stop: { kind: 'halted', issue },
+      stop: { kind: 'waiting-for-you', on: { kind: 'halt', issue } },
       resumeAt: { kind: 'apply' },
     });
   });
@@ -340,7 +374,7 @@ describe('a run with a workspace', () => {
     const applying = passed({ applying: { at: AT, backupId: 'apply-1' } });
     expect(statusOf(applying)).toEqual({
       kind: 'open',
-      stop: { kind: 'interrupted' },
+      stop: { kind: 'stopped', on: { kind: 'interrupted' } },
       resumeAt: { kind: 'apply' },
     });
     expect(resumeStep(state(applying))).toEqual({ kind: 'apply' });
@@ -384,7 +418,7 @@ describe('a run with a workspace', () => {
   it('old interrupted run stays open', () => {
     expect(statusOf({ phase: 'implementing' })).toMatchObject({
       kind: 'open',
-      stop: { kind: 'interrupted' },
+      stop: { kind: 'stopped', on: { kind: 'interrupted' } },
     });
   });
 
@@ -393,6 +427,34 @@ describe('a run with a workspace', () => {
       kind: 'closed',
       as: 'complete',
     });
+  });
+
+  it('a checkout run accepted as is after a failed review closes, its verdict still failed', () => {
+    expect(
+      statusOf(
+        passed({
+          workspace: { ...WORKTREE, kind: 'checkout' },
+          reviewStatus: 'failed',
+          acceptedAsIs: { at: AT, findings: ['F1'] },
+        }),
+      ),
+    ).toEqual({ kind: 'closed', as: 'complete' });
+  });
+
+  // A skipped task-cadence review records an override too; it must not read as accepting the final
+  // review that failed after it, while that review's halt waits for an answer.
+  it('a checkout run whose final review failed after a skipped task review waits at its halt', () => {
+    const issue = makeRecoveryIssue({ reason: 'review-failed' });
+    expect(
+      statusOf(
+        passed({
+          workspace: { ...WORKTREE, kind: 'checkout' },
+          reviewStatus: 'failed',
+          acceptedAsIs: { at: AT, findings: ['Skipped the T001 review'] },
+          pendingRecovery: issue,
+        }),
+      ),
+    ).toMatchObject({ kind: 'open', stop: { kind: 'waiting-for-you', on: { kind: 'halt' } } });
   });
 
   it('ready outranks liveness', () => {
@@ -406,6 +468,10 @@ describe('a run with a workspace', () => {
           interruptedStep: { step: { kind: 'apply' }, source: 'user', cut: 'mid-step', at: AT },
         }),
       ),
-    ).toMatchObject({ kind: 'open', stop: { kind: 'paused' }, resumeAt: { kind: 'apply' } });
+    ).toMatchObject({
+      kind: 'open',
+      stop: { kind: 'stopped', on: { kind: 'paused' } },
+      resumeAt: { kind: 'apply' },
+    });
   });
 });

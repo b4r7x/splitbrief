@@ -48,14 +48,16 @@ export function buildRoutingPreviewMetadata(
   const plannedCreateIndexes = new Map<string, number>();
   tasks.forEach((task, index) => {
     if (task.action !== 'create') return;
-    const normalized = normalizeTaskFilePath(task.file);
+    const normalized = normalizeTaskFilePath(task.suggestedFiles[0]);
     const existing = plannedCreateIndexes.get(normalized);
     if (existing === undefined || index < existing) plannedCreateIndexes.set(normalized, index);
   });
 
   return Promise.all(
     tasks.map(async (task, index) => {
-      const createdAtIndex = plannedCreateIndexes.get(normalizeTaskFilePath(task.file));
+      const createdAtIndex = plannedCreateIndexes.get(
+        normalizeTaskFilePath(task.suggestedFiles[0]),
+      );
       const plannedCreateEarlier = createdAtIndex !== undefined && createdAtIndex < index;
       const { task: routingTask, estimateStatus } = await refreshTaskForRoutingPreview(
         task,
@@ -118,8 +120,8 @@ async function refreshTaskForRoutingPreview(
   if (task.action !== 'modify') return { task };
 
   try {
-    assertWritablePathConfined(task.file, projectDir);
-    const currentCode = await readFile(join(projectDir, task.file), 'utf-8');
+    assertWritablePathConfined(task.suggestedFiles[0], projectDir);
+    const currentCode = await readFile(join(projectDir, task.suggestedFiles[0]), 'utf-8');
     return { task: { ...task, currentCode }, estimateStatus: 'refreshed-current-code' };
   } catch (err) {
     const { currentCode: _staleCurrentCode, ...taskWithoutCurrentCode } = task;

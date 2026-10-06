@@ -117,7 +117,7 @@ export function createApiImplementer(
       // against. A formatter that cut it to fit would ask for a rewrite of code
       // the model never saw, so the call refuses instead.
       if (currentCodeContextMode(opts.task, prompt) === 'truncated')
-        throw apiBudgetError.currentCodeTruncated('implementer', opts.task.file);
+        throw apiBudgetError.currentCodeTruncated('implementer', opts.task.suggestedFiles[0]);
 
       const provider = getProvider(impl.provider, {
         apiBase: impl.apiBase,

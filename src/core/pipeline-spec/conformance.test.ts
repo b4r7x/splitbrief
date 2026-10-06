@@ -23,7 +23,6 @@ import {
   MAX_TEST_TAIL_LINES,
   MAX_VALIDATION_OUTPUT_CHARS,
 } from '../../engine/orchestrator/validation/stage.js';
-import { parseFinalReview } from '../../engine/parsers/final-review.js';
 import type { Planner } from '../../engine/planners/types.js';
 import { isAuthFailureDiagnostic } from '../../engine/runners/auth-failure.js';
 import { isUsageLimitDiagnostic } from '../../engine/runners/usage-limit.js';
@@ -135,13 +134,6 @@ describe('timeouts', () => {
 describe('review verdicts', () => {
   it('the summary schema enumerates the pipeline spec verdict words', () => {
     expect([...ReviewVerdictSchema.options]).toEqual([...VERDICT_RULES.words]);
-  });
-
-  it('the final-review parser reads exactly the pipeline spec verdict words', () => {
-    for (const word of VERDICT_RULES.words) {
-      expect(parseFinalReview(`### Verdict\n\n${word}\n`).verdict).toBe(word);
-    }
-    expect(parseFinalReview('### Verdict\n\napproved\n').verdict).toBeNull();
   });
 });
 

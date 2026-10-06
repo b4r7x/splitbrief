@@ -17,8 +17,6 @@ import {
 import type { CliImplementerConfig } from '../../../src/core/schemas/implementer-config.js';
 import type { RunnerFailureOutcomeState } from '../../../src/engine/runners/errors.js';
 import { isolationWorktreePath, SANDBOX_DIR } from '../../../src/core/paths.js';
-import { parseTasksStrict } from '../../../src/engine/spec/tasks/parse.js';
-import { formatTasks } from '../../../src/engine/spec/formatter.js';
 import { createCliImplementer } from '../../../src/engine/implementers/cli.js';
 import { runImplementation } from '../../../src/engine/orchestrator/task/run-implementation.js';
 import { runSingleTask } from '../../../src/engine/orchestrator/task/step.js';
@@ -125,10 +123,10 @@ function implementerConfig(): CliImplementerConfig {
 }
 
 function proofTask() {
-  const task = makeTask({
+  return makeTask({
     id: 'T001',
     action: 'create',
-    file: TARGET_SRC,
+    suggestedFiles: [TARGET_SRC],
     title: 'Direct writer change proof module',
     description: `${PROMPT_HEAD}create the change proof module${PROMPT_TAIL}`,
     implementationSteps: [
@@ -141,9 +139,6 @@ function proofTask() {
     escalation: ['Stop if the scoped source path is not writable.'],
     typeDefs: 'export const marker: string',
   });
-  const parsed = parseTasksStrict(formatTasks([task]))[0];
-  if (parsed === undefined) throw new Error('expected the canonical proof task fixture');
-  return parsed;
 }
 
 function seedValidationProject(projectDir: string): void {
@@ -396,7 +391,7 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
             implementer: implementerConfig(),
             validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
             workflow: { maxRetries: 0 },
-            approval: { enabled: false, feedRejectionsToPlanner: false },
+            approval: { feedRejectionsToPlanner: false },
           }),
         }),
         task,
@@ -457,7 +452,7 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
             implementer: implementerConfig(),
             validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
             workflow: { maxRetries: 0 },
-            approval: { enabled: false, feedRejectionsToPlanner: false },
+            approval: { feedRejectionsToPlanner: false },
           }),
         }),
         task,
@@ -518,7 +513,7 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
       workflow: {
         maxRetries: 0,
       },
-      approval: { enabled: false, feedRejectionsToPlanner: false },
+      approval: { feedRejectionsToPlanner: false },
       escalation: { enabled: false },
     });
     const preparationId = 'direct-writer-change-proof-preparation';

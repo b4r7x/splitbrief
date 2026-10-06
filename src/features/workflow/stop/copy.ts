@@ -37,17 +37,17 @@ function subject(input: StopBylineInput): string {
  * Where a stop parked the run, in the words its record uses. Only a brief the stop cut mid-step has
  * partial work to keep: a planner step, a gate or a brief not yet started changed nothing.
  */
-function pausedLead(input: StopBylineInput): string {
+function stoppedLead(input: StopBylineInput): string {
   const status = input.record?.status;
   if (status?.kind !== 'open') {
     const brief = input.parked?.taskId ?? input.currentTaskId;
-    return brief === null ? 'Paused' : `Paused at ${brief}${SOFT_SEP}Partial changes kept`;
+    return brief === null ? 'Stopped' : `Stopped at ${brief}${SOFT_SEP}Partial changes kept`;
   }
-  const lead = `Paused at ${stepWord(status.resumeAt)}`;
+  const lead = `Stopped at ${stepWord(status.resumeAt)}`;
   const cutBrief =
     status.resumeAt.kind === 'brief' &&
-    status.stop.kind === 'paused' &&
-    status.stop.at === 'mid-step';
+    status.stop.on.kind === 'paused' &&
+    status.stop.on.at === 'mid-step';
   return cutBrief ? `${lead}${SOFT_SEP}Partial changes kept` : lead;
 }
 
@@ -119,7 +119,7 @@ export function stopByline(input: StopBylineInput): StopByline | null {
       };
     }
     return {
-      lead: pausedLead(input),
+      lead: stoppedLead(input),
       hint: `/resume${SOFT_SEP}/stop options${SOFT_SEP}esc back to sessions${SOFT_SEP}ctrl+c quit`,
     };
   }

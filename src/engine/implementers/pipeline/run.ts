@@ -10,7 +10,6 @@ import { composeContinuation } from '../../spec/prompts/continuation.js';
 import type { RunnerCallContext, RunnerCallResult, RunnerCallStatus } from '../../calls/types.js';
 import { toTokenDelta } from '../../calls/projection.js';
 import type { Task } from '../../../core/schemas/task.js';
-import { taskFiles } from '../../../core/schemas/task.js';
 import { taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import {
@@ -36,6 +35,7 @@ import { DEFAULT_AVAILABILITY } from '../../availability.js';
 import { createTranscriptBuffer } from '../../streaming/transcript-buffer.js';
 import {
   captureChangeDetectorBaseline,
+  countChangedLines,
   type ChangeDetector,
   type ChangeDetectorBaseline,
 } from '../../change-detection.js';
@@ -128,10 +128,10 @@ function retryTemperature(
  * capture reads as existing is a modify even when the brief still says create.
  */
 function refreshTaskCode(task: Task, baselines: readonly BundleBaseline[]): Task {
-  const anchor = baselines.find((baseline) => baseline.path === task.file);
+  const anchor = baselines.find((baseline) => baseline.path === task.suggestedFiles[0]);
   const byFile = Object.fromEntries(
     baselines.flatMap((baseline) =>
-      baseline.path !== task.file && baseline.kind === 'text'
+      baseline.path !== task.suggestedFiles[0] && baseline.kind === 'text'
         ? ([[baseline.path, baseline.content]] as const)
         : [],
     ),
@@ -283,7 +283,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
           // A refusal before generation has no response to tell a no-op from an
           // omission: every declared target is simply untouched.
           noops: [],
-          untouched: [...taskFiles(opts.task)].sort(),
+          untouched: [...opts.task.suggestedFiles].sort(),
         }),
       };
     }
@@ -362,7 +362,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
       baseConfig.publisher?.publishDone({
         phase: opts.phase,
         taskId: opts.task.id,
-        file: opts.task.file,
+        file: opts.task.suggestedFiles[0],
         diff: aggregate.diff,
         linesAdded: aggregate.linesAdded,
         linesRemoved: aggregate.linesRemoved,
@@ -529,11 +529,11 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
       prependSystemPreamble && systemPreamble ? systemPreamble + '\n\n' + rawPrompt : rawPrompt;
     const { task, projectDir, config, onOutput, sessionId, phase } = opts;
 
-    assertPathConfined(task.file, projectDir);
+    assertPathConfined(task.suggestedFiles[0], projectDir);
 
     let oldContent: string | null = null;
     if (outputContract === 'legacy-code-v1') {
-      oldContent = await readTaskFileContent(projectDir, task.file);
+      oldContent = await readTaskFileContent(projectDir, task.suggestedFiles[0]);
     }
 
     let changeBaseline: ChangeDetectorBaseline | undefined;
@@ -560,7 +560,12 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
 
     const checkoutDir = opts.fileIgnoreProjectDir;
 
-    if (phase) baseConfig.publisher?.publishRunning({ phase, taskId: task.id, file: task.file });
+    if (phase)
+      baseConfig.publisher?.publishRunning({
+        phase,
+        taskId: task.id,
+        file: task.suggestedFiles[0],
+      });
     const startTime = Date.now();
     const callContext = createImplementerCallContext({
       config,
@@ -735,7 +740,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
           baseConfig.publisher?.publishDone({
             phase,
             taskId: task.id,
-            file: task.file,
+            file: task.suggestedFiles[0],
             diff: result.diff,
             linesAdded: result.linesAdded,
             linesRemoved: result.linesRemoved,
@@ -782,12 +787,15 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
     }
 
     if (phase) {
+      const lines =
+        changeBaseline === undefined
+          ? undefined
+          : await countChangedLines(projectDir, changeBaseline);
       baseConfig.publisher?.publishDone({
         phase,
         taskId: task.id,
-        file: task.file,
-        linesAdded: 0,
-        linesRemoved: 0,
+        file: task.suggestedFiles[0],
+        ...lines,
         duration: Date.now() - startTime,
         ...(noChange && { noChange: true }),
       });

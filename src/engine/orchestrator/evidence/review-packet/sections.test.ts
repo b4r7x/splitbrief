@@ -121,7 +121,7 @@ describe('buildChecks', () => {
 
 describe('buildChanges declared files', () => {
   it('task row carries files', () => {
-    const task = makeTask({ id: 'T001', file: 'src/a.ts', files: ['src/a.ts', 'src/a.test.ts'] });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts', 'src/a.test.ts'] });
 
     const changes = buildChanges({
       state: stateWith(task),

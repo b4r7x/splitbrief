@@ -154,6 +154,16 @@ const RETIRED_CONFIG_VALUES: readonly {
       'approval.tiers was retired and is ignored: a write to a protected path always asks, and no other write does. Delete approval.tiers.',
   },
   {
+    path: ['approval', 'enabled'],
+    notice:
+      'approval.enabled was retired and is ignored: a write to a protected path always asks, and no other write does. Delete approval.enabled.',
+  },
+  {
+    path: ['workflow', 'driftChainThreshold'],
+    notice:
+      'workflow.drift_chain_threshold was retired and is ignored: SPLITBRIEF no longer scores drift chains; the reviewer reads the files a brief touched but did not suggest. Delete workflow.drift_chain_threshold.',
+  },
+  {
     path: ['workflow', 'maxRetries'],
     notice:
       'workflow.max_retries was retired and is ignored: the lineage attempt allowance bounds the ladder now. Delete workflow.max_retries.',

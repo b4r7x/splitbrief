@@ -191,7 +191,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     ).join('\n');
     writeFileSync(join(projectDir, 'src/target.ts'), currentCode);
 
-    const task = makeTask({ id: 'T001', action: 'modify', file: 'src/target.ts' });
+    const task = makeTask({ id: 'T001', action: 'modify', suggestedFiles: ['src/target.ts'] });
     const state = makeImplState([task]);
     const config = profilesConfig({ largeWindow: 80_000, smallWindow: 10_000 });
     const selectedImplementer = makeImplementer({
@@ -242,7 +242,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     const task = makeTask({
       id: 'T001',
       action: 'modify',
-      file: 'src/missing.ts',
+      suggestedFiles: ['src/missing.ts'],
       currentCode: 'export const stale = true;\n',
     });
     const state = makeImplState([task]);

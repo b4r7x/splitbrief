@@ -271,11 +271,6 @@ export function addWorkflowOptions(cmd: Command): Command {
       false,
     )
     .option(
-      '--yolo',
-      'Kept for compatibility: changes nothing; only a write to a protected path asks',
-      false,
-    )
-    .option(
       '--skills <ids>',
       'Attach project/global skills to every seat (comma-separated ids)',
       parseSkillIdsOption,

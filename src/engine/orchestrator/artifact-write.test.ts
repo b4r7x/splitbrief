@@ -1,16 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { readSpecFile, writeSpecFile, type SpecMetadata } from '../../core/paths-io.js';
-import { PLAN_FILE, RESEARCH_FILE, SPEC_FILE, TASKS_FILE, sessionDir } from '../../core/paths.js';
+import { readSpecFile, type SpecMetadata } from '../../core/paths-io.js';
+import { PLAN_FILE, TASKS_FILE } from '../../core/paths.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
-import { cleanupTaskProjects } from '#testing/helpers/orchestrator-task-context.js';
-import {
-  writeAndPublishArtifact,
-  writeAndPublishArtifacts,
-  type ArtifactKind,
-} from './artifact-write.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
+import { writeAndPublishPlanArtifacts } from './artifact-write.js';
 
 const SESSION_ID = 'artifact-write-test';
 const METADATA: SpecMetadata = {
@@ -25,7 +19,6 @@ let tempDir: string | undefined;
 afterEach(() => {
   if (tempDir !== undefined) cleanupTempDir(tempDir);
   tempDir = undefined;
-  cleanupTaskProjects();
 });
 
 function fixtureDir(): string {
@@ -33,198 +26,71 @@ function fixtureDir(): string {
   return tempDir;
 }
 
-function writeOptions(
-  projectDir: string,
-  kind: ArtifactKind,
-  text: string,
-  metadata: SpecMetadata | null | undefined,
-) {
-  return {
-    projectDir,
-    sessionId: SESSION_ID,
-    bus: makeBusRecorder().bus,
-    phase: kind === 'spec' ? ('specifying' as const) : ('planning' as const),
-    kind,
-    text,
-    metadata,
-  };
-}
+const TASKS = Array.from({ length: 3 }, (_, index) =>
+  makeTask({ id: `T00${index + 1}`, title: `Brief ${index + 1}` }),
+);
 
-describe('writeAndPublishArtifact', () => {
-  it.each([
-    { kind: 'spec' as const, filename: SPEC_FILE, phase: 'specifying' as const },
-    { kind: 'plan' as const, filename: PLAN_FILE, phase: 'planning' as const },
-  ])(
-    'rejects an invalid $kind replacement before changing bytes or publishing',
-    ({ kind, filename, phase }) => {
-      const projectDir = fixtureDir();
-      const previous = `${filename} approved bytes\r\n\u0000\u0001`;
-      writeSpecFile({ projectDir, sessionId: SESSION_ID }, filename, previous, null);
-      const path = join(sessionDir(projectDir, SESSION_ID), filename);
-      const before = readFileSync(path);
-      const { bus, events } = makeBusRecorder();
-
-      expect(() =>
-        writeAndPublishArtifact({
-          ...writeOptions(projectDir, kind, 'planner prose without a heading', null),
-          bus,
-          phase,
-        }),
-      ).toThrowError(
-        expect.objectContaining({
-          kind: 'planning-invalid-artifact',
-          data: { phase, filename, missingShape: 'Markdown heading' },
-        }),
-      );
-
-      expect(readFileSync(path)).toEqual(before);
-      expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(0);
-    },
-  );
-
-  it.each([
-    {
-      kind: 'spec' as const,
-      filename: SPEC_FILE,
-      phase: 'specifying' as const,
-      text: '# Spec\n\nAccepted.',
-    },
-    {
-      kind: 'plan' as const,
-      filename: PLAN_FILE,
-      phase: 'planning' as const,
-      text: '# Plan\n\nAccepted.',
-    },
-  ])('writes and publishes an admitted $kind exactly once', ({ kind, filename, phase, text }) => {
+describe('writeAndPublishPlanArtifacts', () => {
+  it('writes plan.md and tasks.md, then publishes one card for each', () => {
     const projectDir = fixtureDir();
     const { bus, events } = makeBusRecorder();
 
-    writeAndPublishArtifact({
-      ...writeOptions(projectDir, kind, text, METADATA),
-      bus,
-      phase,
-    });
-
-    const persisted = readSpecFile({ projectDir, sessionId: SESSION_ID }, filename);
-    expect(persisted).toContain('generated_by: splitbrief');
-    expect(persisted).toContain(text);
-    expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(1);
-    expect(events.find((event) => event.type === 'artifact_written')).toMatchObject({
-      filename,
-      phase,
-    });
-  });
-
-  it('writes and publishes a Task Brief projection without a generation receipt', () => {
-    const projectDir = fixtureDir();
-    const text = [
-      '---',
-      'id: T001',
-      'title: Add the persistence seam',
-      'action: create',
-      'file: src/engine/orchestrator/artifact-write.ts',
-      'depends_on: []',
-      '---',
-      '',
-      '### Description',
-      'Persist the artifact and publish one card.',
-    ].join('\n');
-    const { bus, events } = makeBusRecorder();
-
-    writeAndPublishArtifact({
-      ...writeOptions(projectDir, 'task-briefs', text, null),
-      bus,
-      phase: 'reviewing-briefs',
-    });
-
-    expect(existsSync(join(sessionDir(projectDir, SESSION_ID), TASKS_FILE))).toBe(true);
-    expect(readSpecFile({ projectDir, sessionId: SESSION_ID }, TASKS_FILE)).toBe(text);
-    expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(1);
-    expect(events.find((event) => event.type === 'artifact_written')).toMatchObject({
-      filename: TASKS_FILE,
-      phase: 'reviewing-briefs',
-    });
-  });
-
-  it('keeps a null or omitted metadata value write-only with no generated frontmatter', () => {
-    const projectDir = fixtureDir();
-    const text = '# Plan\n\nNo metadata.';
-    const { bus } = makeBusRecorder();
-
-    writeAndPublishArtifact({
-      ...writeOptions(projectDir, 'plan', text, null),
-      bus,
-    });
-    expect(readSpecFile({ projectDir, sessionId: SESSION_ID }, PLAN_FILE)).toBe(text);
-
-    writeAndPublishArtifact({
-      ...writeOptions(projectDir, 'plan', text, undefined),
-      bus,
-    });
-    expect(readSpecFile({ projectDir, sessionId: SESSION_ID }, PLAN_FILE)).toBe(text);
-  });
-});
-
-describe('writeAndPublishArtifacts — whole-array prevalidation', () => {
-  it('writes nothing and publishes nothing when a later item fails admission', () => {
-    const projectDir = fixtureDir();
-    const { bus, events } = makeBusRecorder();
-
-    expect(() =>
-      writeAndPublishArtifacts({
-        projectDir,
-        sessionId: SESSION_ID,
-        bus,
-        phase: 'planning',
-        items: [
-          { kind: 'research', text: '# Research\n\nFindings.' },
-          { kind: 'spec', text: 'planner prose without a heading' },
-        ],
-        metadata: null,
-      }),
-    ).toThrowError(
-      expect.objectContaining({
-        kind: 'planning-invalid-artifact',
-        data: expect.objectContaining({ phase: 'specifying', filename: SPEC_FILE }),
-      }),
-    );
-
-    expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(0);
-    expect(existsSync(join(sessionDir(projectDir, SESSION_ID), RESEARCH_FILE))).toBe(false);
-  });
-
-  it('writes every item after all items pass and publishes one event per item', () => {
-    const projectDir = fixtureDir();
-    const { bus, events } = makeBusRecorder();
-
-    writeAndPublishArtifacts({
+    writeAndPublishPlanArtifacts({
       projectDir,
       sessionId: SESSION_ID,
       bus,
       phase: 'planning',
-      items: [
-        { kind: 'research', text: '# Research\n\nFindings.' },
-        { kind: 'spec', text: '# Spec\n\nRequirements.', admission: 'already-admitted' },
-        { kind: 'plan', text: '# Plan\n\nSteps.', admission: 'already-admitted' },
-        {
-          kind: 'task-briefs',
-          text: '---\nid: T001\ntitle: A task\naction: create\nfile: src/a.ts\ndepends_on: []\n---\n\n### Description\nWork.',
-        },
-      ],
       metadata: METADATA,
+      planMarkdown: '# Plan\n\nSteps.',
+      tasks: TASKS,
     });
 
-    expect(readSpecFile({ projectDir, sessionId: SESSION_ID }, RESEARCH_FILE)).toContain(
-      'Findings.',
-    );
-    expect(readSpecFile({ projectDir, sessionId: SESSION_ID }, SPEC_FILE)).toContain(
-      'Requirements.',
-    );
-    expect(readSpecFile({ projectDir, sessionId: SESSION_ID }, PLAN_FILE)).toContain('Steps.');
-    expect(readSpecFile({ projectDir, sessionId: SESSION_ID }, TASKS_FILE)).toContain('id: T001');
-    expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(4);
+    const ref = { projectDir, sessionId: SESSION_ID };
+    expect(readSpecFile(ref, PLAN_FILE)).toContain('generated_by: splitbrief');
+    expect(readSpecFile(ref, PLAN_FILE)).toContain('Steps.');
+    expect(readSpecFile(ref, TASKS_FILE)).toContain('id: T001');
+    const cards = events.filter((event) => event.type === 'artifact_written');
+    expect(cards.map((event) => event.filename)).toEqual([PLAN_FILE, TASKS_FILE]);
+  });
+
+  it('outlines the tasks card by the briefs it was rendered from', () => {
+    const { bus, events } = makeBusRecorder();
+
+    writeAndPublishPlanArtifacts({
+      projectDir: fixtureDir(),
+      sessionId: SESSION_ID,
+      bus,
+      phase: 'planning',
+      metadata: null,
+      planMarkdown: '# Plan\n\nSteps.',
+      tasks: TASKS,
+    });
+
     expect(
-      events.filter((event) => event.type === 'artifact_written').map((event) => event.filename),
-    ).toEqual([RESEARCH_FILE, SPEC_FILE, PLAN_FILE, TASKS_FILE]);
+      events.find((event) => event.type === 'artifact_written' && event.filename === TASKS_FILE),
+    ).toMatchObject({
+      excerpt: ['T001  Brief 1', 'T002  Brief 2', 'T003  Brief 3'],
+      omittedCount: 0,
+      omittedUnit: 'task',
+    });
+  });
+
+  it('keeps a null metadata value write-only with no generated frontmatter', () => {
+    const projectDir = fixtureDir();
+    const { bus } = makeBusRecorder();
+
+    writeAndPublishPlanArtifacts({
+      projectDir,
+      sessionId: SESSION_ID,
+      bus,
+      phase: 'planning',
+      metadata: null,
+      planMarkdown: '# Plan\n\nNo metadata.',
+      tasks: TASKS,
+    });
+
+    expect(readSpecFile({ projectDir, sessionId: SESSION_ID }, PLAN_FILE)).toBe(
+      '# Plan\n\nNo metadata.',
+    );
   });
 });

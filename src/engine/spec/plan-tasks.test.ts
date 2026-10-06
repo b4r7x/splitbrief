@@ -36,8 +36,6 @@ describe('taskFromSpec', () => {
       id: 'T002',
       status: 'pending',
       action: 'create',
-      file: 'src/hello.ts',
-      files: ['src/hello.ts', 'src/hello.test.ts'],
       dependsOn: ['T001'],
       description: spec.intent,
       tests: ['src/hello.test.ts'],

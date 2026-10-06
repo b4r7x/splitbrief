@@ -119,7 +119,7 @@ describe('runTaskChecksAfterAcceptance', () => {
       method: 'local',
       transitionType: 'VALIDATION_PASS',
       retryCount: 1,
-      preApprovedChangedFiles: [task.file],
+      preApprovedChangedFiles: [task.suggestedFiles[0]],
     });
 
     expect(result.completed).toBe(true);

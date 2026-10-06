@@ -131,7 +131,7 @@ Commands that decide who does the work and how: the three seats and tool detecti
 
 ## Workflow
 
-Commands that act on the active run: stop, resume or end the run, manage the queue, and settle the run's written changes. `category: 'workflow'` in the registry. Most are restricted to the `workflow` screen. A change to the plan is requested on the plan card (`c` Request changes); there is no rewind command.
+Commands that act on the active run: stop, resume or end the run, manage the queue, and settle the run's written changes. `category: 'workflow'` in the registry. Most are restricted to the `workflow` screen. A change to the plan is requested on the plan card (the Request changes row); there is no rewind command.
 
 ### `/stop`
 
@@ -229,7 +229,7 @@ Commands that change what the workflow screen shows without touching the run. `c
 - **Screens**: `workflow`.
 - **Args**: none.
 - **Example**: `/tasks`
-- **Behavior**: Names a destination rather than a switch: it shows the sidebar and a second call leaves it on screen (the sidebar primitive is a toggle, so a toggle that hid it is undone), then reports `"Brief list shown"`. At or below 120 columns there is no sidebar to open, so the command answers with the list itself — `"Briefs: T001 passed, T002 running, T003 queued"`, or `"No briefs planned yet"` before the plan lands — and the transcript keeps its standing `Completed n/total` and `Queued n` blocks.
+- **Behavior**: Names a destination rather than a switch: it shows the sidebar and a second call leaves it on screen (the sidebar primitive is a toggle, so a toggle that hid it is undone), then reports `"Brief list shown"`. At or below 120 columns there is no sidebar to open, so the command answers with the list itself — `"Briefs: T001 passed, T002 running, T003 queued"`, or `"No briefs planned yet"` before the plan lands — and the transcript keeps its standing `Completed n/total` and `Pending n` blocks.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/view.ts`; toggles `controlsStore.sidebarVisible` through the command context, and reads the briefs from `tasksStore` through the context's `listBriefs` port.
 - **See also**: `/sidebar`, `/scroll`.
 
@@ -266,8 +266,8 @@ Commands that move data in or out: clipboard copies and image attachments. `cate
 - **Screens**: `workflow` only. Not available on `home` — copy targets read workflow review state.
 - **Args**: optional target. One of `message`, `brief`, `path`, `command`, `cost` (the `COPY_TARGETS` tuple in `src/core/runtime/commands/types.ts`). Defaults to `message` when omitted. Any other value prints `"Invalid copy target: <x>. Valid: message, brief, path, command, cost"`.
   - `message` — the planner's most recent assistant text.
-  - `brief` — the focused (or top-of-window) Task Brief's source text.
-  - `path` — the focused brief's file path, relative to the project directory.
+  - `brief` — the source text of the Task Brief at the top of the visible window.
+  - `path` — the file path of the brief at the top of the visible window, relative to the project directory.
   - `command` — the configured planner runner command.
   - `cost` — an explicit export of available cost details; it reads the same spend text as `/usage`, and the legacy `workflow.showSpend` key does not switch it off. There is no Settings toggle or main-screen counter.
 - **Example**: `/copy`, `/copy brief`, `/copy path`, `/copy cost`
@@ -310,10 +310,10 @@ These names no longer exist. Typing one prints `"<name> was removed: <pointer>"`
 | `/compact-transcript` | `the transcript compacts itself as the context window fills` — compaction is automatic; the format is `workflow.compactionFormat` in [`CONFIGURATION.md`](./CONFIGURATION.md). |
 | `/export` | `a run leaves its artifacts in .splitbrief/sessions/<id>/` — there is no HTML report; read the session directory. |
 | `/handoff` | `a run leaves its artifacts in .splitbrief/sessions/<id>/` — there is no handoff pack; read the session directory. |
-| `/yolo` | `only a write to a protected path asks` — neither `approval.enabled` nor `--yolo` changes that; see `approval` in [`CONFIGURATION.md`](./CONFIGURATION.md#9-approval). |
+| `/yolo` | `only a write to a protected path asks` — `approval.enabled` loads with one retirement notice and is ignored; `--yolo` is removed; see `approval` in [`CONFIGURATION.md`](./CONFIGURATION.md#9-approval). |
 | `/mode` | `every run plans in one session` — there are no workflow modes; see [WORKFLOW.md](./WORKFLOW.md#3-the-planning-session). |
-| `/revise-spec` | `request changes on the plan` — on the plan card, `c` Request changes sends the correction to the planning session. |
-| `/revise-plan` | `request changes on the plan` — on the plan card, `c` Request changes sends the correction to the planning session. |
+| `/revise-spec` | `request changes on the plan` — on the plan card, the Request changes row (or a typed `comment <text>`) sends the correction to the planning session. |
+| `/revise-plan` | `request changes on the plan` — on the plan card, the Request changes row (or a typed `comment <text>`) sends the correction to the planning session. |
 | `/approval` | `a protected write asks once per run` — there are no sticky grants to list or clear; see [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#protected-path-confirmation). |
 
 ---
@@ -333,7 +333,7 @@ Most slash commands have no dedicated keybinding — open the command palette wi
 | `Ctrl+C` | Stop now on a live workflow; from home or a run at rest, the first press arms a two-second quit confirmation and the second exits | `src/app/keys.ts` |
 | `Esc` | Open the stop menu (live workflow); a second Escape stops now; go home on a run at rest; otherwise close the topmost overlay | `src/app/keys.ts` |
 
-`Ctrl+C` is Stop now while a run can still be stopped: one press performs **Stop now** (`requestStopNow` in `src/features/workflow/handlers.ts`), aborting the in-flight call along with any retry, consult or per-task review call, scheduling no new brief, and parking the run as `Paused at T<id> · Partial changes kept`. It is also how you quit, and that press is confirmed: the first press arms a two-second `Press ctrl+c again to quit` confirmation — on a live run, the press that stops it is the one that arms it — and the next press within the window exits, while any other interaction clears the confirmation.
+`Ctrl+C` is Stop now while a run can still be stopped: one press performs **Stop now** (`requestStopNow` in `src/features/workflow/handlers.ts`), aborting the in-flight call along with any retry, consult or per-task review call, scheduling no new brief, and parking the run as `Stopped at T<id> · Partial changes kept`. It is also how you quit, and that press is confirmed: the first press arms a two-second `Press ctrl+c again to quit` confirmation — on a live run, the press that stops it is the one that arms it — and the next press within the window exits, while any other interaction clears the confirmation.
 
 `Esc` during a live workflow opens the **Stop options** menu immediately above the composer (`src/features/workflow/stop/menu.tsx`), with or without a draft. The transcript stays visible and updates. `↑↓` selects, `Enter` executes, a second `Esc` performs resumable **Stop now**, and `Tab` dismisses. **End run** stays an explicit selection. The pause row appears while a brief is running and becomes **Keep running** when a pause is pending. The title line promises `Changes and draft stay.` once a brief has run and `Draft stays.` before that; every row shows its consequence in full. `Ctrl+C` remains immediate Stop now. Completion, editor and permission dialogs retain their own Escape handling. On an inactive run, Escape goes home, draft or no draft.
 
@@ -384,7 +384,7 @@ When the review pane has a `filePath` set (the plan card's `plan.md`), these key
 
 ### The plan card
 
-While the plan card waits, `↑`/`↓` move the cursor over its rows and a bare `⏎` takes the highlighted row. No letter settles the card on its own: the row keys (`y`, `c`, `e`, `q`) are typed words, sent with `⏎`. Typed text goes through `src/features/workflow/review-commands.ts`; any text that is not one of the words below is a correction, so a sentence that opens with `q` or `y` never ends or approves the run.
+While the plan card waits, `↑`/`↓` move the cursor over its rows and a bare `⏎` takes the highlighted row. The rows carry no letter keys, because the composer holds the keyboard: a letter is text, and a word settles the card only when it is sent with `⏎`. The panel legend reads `approve · comment <text> · end-run · edit` (`REVIEW_HINT`). Typed text goes through `src/features/workflow/review-commands.ts`; any text that is not one of the words below is a correction, so a sentence that opens with `q` or `y` never ends or approves the run.
 
 | Typed | Action |
 |---|---|
@@ -490,4 +490,3 @@ Alphabetical, for fast lookup.
 - [`docs/ARCHITECTURE.md`](./ARCHITECTURE.md) — how the TUI, stores, engine, and runners are layered.
 - [`docs/STORES.md`](./STORES.md) — `configStore`, `overlayStore`, `feedbackStore`, `lifecycleStore`, `routerStore`, `attachmentsStore`.
 - [`src/core/runtime/commands/`](https://github.com/b4r7x/splitbrief/tree/main/src/core/runtime/commands) — `dispatch.test.ts`, `lookup.test.ts`, and split `registry-*.test.ts` suites (`registry-configuration.test.ts`, `registry-recovery.test.ts`, `registry-conversation.test.ts`, `registry-session.test.ts`, `registry-snapshots.test.ts`, …) cover the phase / screen / arg matrix.
-

@@ -51,8 +51,7 @@ src/stores/
 │   ├── command-palette-mru.ts # Command palette most-recently-used order
 │   ├── project-files.ts      # Project-file picker refresh invalidation tick
 │   ├── completion.ts         # Completion popup open/closed flag
-│   ├── focus.ts              # Focused region + index (e.g. brief)
-│   ├── hover.ts              # Hovered surface + index (brief / conversation)
+│   ├── hover.ts              # Hovered conversation row index
 │   └── persistence.ts        # Disk I/O for inputHistoryStore (hydrate + debounced save)
 ├── workflow/                 # State that only exists during a workflow run
 │   ├── events.ts             # Event log (mergeEvent + MAX_EVENTS)
@@ -66,7 +65,7 @@ src/stores/
 │   ├── conversation-scroll.ts # Scroll position + expanded diffs
 │   ├── streaming-output.ts   # Live streamed runner output
 │   ├── transcript-tail.ts    # What the blocks after the run's events add to the transcript
-│   ├── recovery-notice.ts    # Halted seat + its quota reset, for the header
+│   ├── recovery-notice.ts    # The seat a halt stopped + its quota reset, for the header
 │   └── review.ts             # Review file path + scroll
 ├── approval-prompt/          # Confirmation prompt (protected writes, custom-runner admission)
 │   └── prompt.ts             # approvalPromptStore (via channels/prompt)
@@ -201,9 +200,9 @@ routerStore.navigate('workflow', { feature: 'auth' });
 | `commandPaletteMruStore` | `ui/command-palette-mru.ts` | `{ ids: string[] }` | `record()` |
 | `projectFilesStore` | `ui/project-files.ts` | `{ refreshEpoch: number }` invalidation tick; the composer owns file-list reads and local list state | `requestRefresh()` |
 | `eventsStore` | `workflow/events.ts` | `{ events: EngineEvent[] }` | internal writes via `actions.addEvent` |
-| `tasksStore` | `workflow/tasks.ts` | `{ currentTask, totalTasks, taskCompletionTimes, taskMap, tasks }` | internal writes via `actions.addEvent` |
+| `tasksStore` | `workflow/tasks.ts` | `{ currentTask, currentAttempt, attemptAllowance, totalTasks, taskMap, tasks }` | internal writes via `actions.addEvent` |
 | `tokensStore` | `workflow/tokens.ts` | `{ localCount, escalatedCount, tokenUsage }` | internal writes via `actions.addEvent` |
-| `lifecycleStore` | `workflow/lifecycle.ts` | `{ phase, status, cancelled, queueDepth, startedAt, endedAt, durationMs, reason, plannerCall, plannerCallStartedTs, waitingSince, waitedMs, resumedAt }` — `plannerCall` is the call the phase is on when the engine names one, `plannerCallStartedTs` is where the byline clock of that call starts, `waitingSince` / `waitedMs` keep time spent waiting on the user out of the stage clock, `resumedAt` keeps a resumed run's park out of it | internal writes via `actions.addEvent` / local cancel intent |
+| `lifecycleStore` | `workflow/lifecycle.ts` | `{ phase, status, cancelled, queueDepth, startedAt, endedAt, durationMs, reason, plannerCall, plannerCallStartedTs, waitingSince, waitedMs, resumedAt, bankedRunMs }` — `plannerCall` is the call the phase is on when the engine names one, `plannerCallStartedTs` is where the byline clock of that call starts, `waitingSince` / `waitedMs` keep time spent waiting on the user out of the stage clock, `resumedAt` keeps a resumed run's park out of it, `bankedRunMs` is the run time of the stretches before the last resume, so the header clock (`runElapsedMs`) leaves parks out | internal writes via `actions.addEvent` / local cancel intent |
 | `operationsStore` | `workflow/operations/state.ts` | `{ active, last, byCallId }` compact runner lifecycle/status | internal writes via `actions.addEvent` / local cancel intent |
 | `stopStore` | `workflow/stop.ts` | `{ intent, phase, requestedAt, parked, error? }` — the run's stop intent and where its termination stands | `request(intent)`, phase marks (`markTerminating()`, `markSettling()`, `markForcing()`), `park()`, `resume(steer)`, `end()`, `fail()` |
 | `conversationScrollStore` | `workflow/conversation-scroll.ts` | `{ scrollOffset, expandedDiffs, ... }` | `scrollUp()`, `scrollDown()`, `scrollToBottom()`, `toggleDiff()` |
@@ -230,7 +229,7 @@ routerStore.navigate('workflow', { feature: 'auth' });
 | `markCancellationRequested(intent?)` | Local UI intent for immediate feedback. Terminalizes lifecycle and running operations with frozen duration, but does **not** append a fake event or rewrite `planner_status` to success. The canonical history event is still engine-published `workflow_cancelled`. |
 | `resetWorkflow()` | Resets the workflow sub-stores **and invalidates the memo caches** (`cachedEvents`, `cachedSections`) so subscribers observe a clean slate. It only clears: nothing is synthesized here. Cache invalidation is symmetric with sub-store reset — missing it leaks pre-reset sections into the first post-reset `useSections()` call. |
 | `loadEvents(events)` (`load.ts`) | The hydration counterpart of `addEvent`: resets first, then folds a whole replayed log through the same reducers and commits each store once. |
-| `hydrateFromState(state, { endedAt? })` (`hydrate.ts`) | Lays the saved state over whatever the replay rebuilt — the phase, the brief list, the spend and the queue depth. It never claims a run read back from disk is running: an open run hydrates as `paused`, a finished one as `complete`, and the header clock freezes at the last event the log carries. |
+| `hydrateFromState(state, { endedAt? })` (`hydrate.ts`) | Lays the saved state over whatever the replay rebuilt — the phase, the brief list, the spend and the queue depth. It never claims a run read back from disk is running: an open run hydrates as `paused`, a finished one as `complete`, and the header clock freezes at the last event the log carries, without the parks the log records. |
 | `getSections()` / `useSections()` | Memoized derivation of conversation sections from `eventsStore.events`. Cache lives file-local. |
 
 **Reducers live with their owner sub-store** — `events.ts` exports `mergeEvent` + `MAX_EVENTS`, `tasks.ts` exports `updateTaskMap` + `updateTaskCounts`, `tokens.ts` exports `updateTokens`, `lifecycle.ts` exports `updatePhase` + `updateQueueDepth`, and `operations/reducer.ts` exports `updateOperations`. They are pure functions and can be tested directly.

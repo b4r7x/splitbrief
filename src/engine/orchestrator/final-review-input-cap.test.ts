@@ -151,7 +151,7 @@ describe('final review input cap', () => {
     timeout: 60_000,
   }, async () => {
     const ref = project();
-    const task = makeTask({ id: 'T001', file: 'src/big.ts', action: 'modify' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/big.ts'], action: 'modify' });
     await completeTask(ref, task, { 'src/big.ts': lines('v', 40_000) });
     const { reviewer, prompts } = countingReviewer();
 
@@ -181,9 +181,8 @@ describe('final review input cap', () => {
     const ref = project();
     const task = makeTask({
       id: 'T001',
-      file: 'src/big.ts',
       action: 'modify',
-      files: ['src/big.ts', 'src/new-big.ts'],
+      suggestedFiles: ['src/big.ts', 'src/new-big.ts'],
     });
     await completeTask(ref, task, {
       'src/big.ts': lines('v', 15_000),
@@ -226,7 +225,7 @@ describe('final review input cap', () => {
 
   it("classifies the tool's own input_too_large refusal as review-input-too-large with its numbers", async () => {
     const ref = project();
-    const task = makeTask({ id: 'T001', file: 'src/big.ts', action: 'modify' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/big.ts'], action: 'modify' });
     await completeTask(ref, task, { 'src/big.ts': 'export const start = 1;\n' });
     const invoke = vi.fn(async () =>
       makeRunnerCallResult({
@@ -260,7 +259,7 @@ describe('final review input cap', () => {
 
   it('halts the same way when a repair answer grows the prompt over the cap', async () => {
     const ref = project();
-    const task = makeTask({ id: 'T001', file: 'src/big.ts', action: 'modify' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/big.ts'], action: 'modify' });
     await completeTask(ref, task, { 'src/big.ts': 'export const start = 1;\n' });
     const invoke = vi
       .fn()
@@ -294,9 +293,8 @@ describe('final review input cap', () => {
     const ref = project();
     const task = makeTask({
       id: 'T001',
-      file: 'src/big.ts',
       action: 'modify',
-      files: ['src/big.ts', 'src/new-big.ts'],
+      suggestedFiles: ['src/big.ts', 'src/new-big.ts'],
     });
     await completeTask(ref, task, {
       'src/big.ts': lines('v', 40_000),
@@ -336,7 +334,7 @@ describe('final review input cap', () => {
     timeout: 60_000,
   }, async () => {
     const ref = project();
-    const task = makeTask({ id: 'T001', file: 'src/big.ts', action: 'modify' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/big.ts'], action: 'modify' });
     await completeTask(ref, task, { 'src/big.ts': lines('v', 40_000) });
     const taskReview = {
       scope: 'task',
@@ -379,7 +377,7 @@ describe('final review input cap', () => {
     timeout: 60_000,
   }, async () => {
     const ref = project();
-    const task = makeTask({ id: 'T001', file: 'src/big.ts', action: 'modify' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/big.ts'], action: 'modify' });
     await completeTask(ref, task, { 'src/big.ts': lines('v', 40_000) });
     const workspace = {
       kind: 'worktree' as const,

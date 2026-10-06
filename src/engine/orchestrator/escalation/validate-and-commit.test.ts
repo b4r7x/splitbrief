@@ -33,7 +33,7 @@ function setupProject(): { projectDir: string; sessionId: string } {
 function configWithProfiles(): Config {
   return {
     ...makeNoValidationConfig({
-      approval: { enabled: false, feedRejectionsToPlanner: true },
+      approval: { feedRejectionsToPlanner: true },
       workflow: {},
     }),
     implementerProfiles: {
@@ -75,7 +75,7 @@ async function makeValidateCtx(opts: {
 describe('validateAndCommit', () => {
   it('does not commit retry results when the signal aborts during validation', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T011', file: 'src/abort.ts' });
+    const task = makeTask({ id: 'T011', suggestedFiles: ['src/abort.ts'] });
     const controller = new AbortController();
     const validator: Validator = {
       primeBaseline: vi.fn().mockResolvedValue(undefined),
@@ -106,7 +106,7 @@ describe('validateAndCommit', () => {
       method: 'local',
       transitionType: 'VALIDATION_PASS',
       retryCount: 1,
-      preApprovedChangedFiles: [task.file],
+      preApprovedChangedFiles: [task.suggestedFiles[0]],
     });
 
     expect(result).toMatchObject({
@@ -119,7 +119,7 @@ describe('validateAndCommit', () => {
 
   it('accepts a retry whose only failing stage was exempt at baseline, like the task path', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T012', file: 'src/exempt.ts' });
+    const task = makeTask({ id: 'T012', suggestedFiles: ['src/exempt.ts'] });
     const validator: Validator = {
       primeBaseline: vi.fn().mockResolvedValue(undefined),
       runFullSuite: vi
@@ -145,7 +145,7 @@ describe('validateAndCommit', () => {
       method: 'local',
       transitionType: 'VALIDATION_PASS',
       retryCount: 1,
-      preApprovedChangedFiles: [task.file],
+      preApprovedChangedFiles: [task.suggestedFiles[0]],
     });
 
     expect(result).toMatchObject({
@@ -156,7 +156,7 @@ describe('validateAndCommit', () => {
 
   it('blocks a retry whose failing stage was green at baseline', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T013', file: 'src/blocks.ts' });
+    const task = makeTask({ id: 'T013', suggestedFiles: ['src/blocks.ts'] });
     const validator: Validator = {
       primeBaseline: vi.fn().mockResolvedValue(undefined),
       runFullSuite: vi
@@ -182,7 +182,7 @@ describe('validateAndCommit', () => {
       method: 'local',
       transitionType: 'VALIDATION_PASS',
       retryCount: 1,
-      preApprovedChangedFiles: [task.file],
+      preApprovedChangedFiles: [task.suggestedFiles[0]],
     });
 
     expect(result).toMatchObject({

@@ -65,21 +65,11 @@ describe('gateAction', () => {
     else delete (process.stdout as { isTTY?: boolean }).isTTY;
   });
 
-  it('approval.enabled=false → allow immediately without events', async () => {
-    const { bus, events } = makeBusRecorder();
-    const config = makeApprovalConfig({ enabled: false });
-    const input = makeInput({ bus, config });
-    const result = await gateAction(input);
-    expect(result.allow).toBe(true);
-    expect(events).toHaveLength(0);
-  });
-
   it('an unplanned ordinary write is auto by default', async () => {
     const { bus, events } = makeBusRecorder();
     const result = await gateAction(
       makeInput({
         bus,
-        config: makeApprovalConfig({ enabled: true }),
         actionDescription: 'write src/shared/button.ts',
         targetPath: 'src/shared/button.ts',
       }),
@@ -88,40 +78,25 @@ describe('gateAction', () => {
     expect(events.filter((e) => e.type === 'approval_prompted')).toHaveLength(0);
   });
 
-  it.each([
-    {
-      name: 'approval.enabled: false',
-      config: makeApprovalConfig({ enabled: false }),
-      targetPath: '.env.local',
-    },
-    {
-      name: 'a session with approval off (--yolo)',
-      getApprovalEnabled: () => false,
-      targetPath: '.github/workflows/ci.yml',
-    },
-  ])(
-    'a protected write still asks under $name',
-    async ({ config, getApprovalEnabled, targetPath }) => {
-      const { bus, events } = makeBusRecorder();
-      let asked = 0;
-      const result = await gateAction(
-        makeInput({
-          bus,
-          ...(config !== undefined && { config }),
-          ...(getApprovalEnabled !== undefined && { getApprovalEnabled }),
-          actionDescription: `write ${targetPath}`,
-          targetPath,
-          onTieredApproval: async () => {
-            asked += 1;
-            return CONFIRMED();
-          },
-        }),
-      );
-      expect(asked).toBe(1);
-      expect(result.allow).toBe(true);
-      expect(events.find((e) => e.type === 'approval_prompted')?.tier).toBe('confirm');
-    },
-  );
+  it('a protected write asks whatever a retired approval.enabled says', async () => {
+    const { bus, events } = makeBusRecorder();
+    let asked = 0;
+    const result = await gateAction(
+      makeInput({
+        bus,
+        config: makeConfig({ approval: { enabled: false, feedRejectionsToPlanner: true } }),
+        actionDescription: 'write .env.local',
+        targetPath: '.env.local',
+        onTieredApproval: async () => {
+          asked += 1;
+          return CONFIRMED();
+        },
+      }),
+    );
+    expect(asked).toBe(1);
+    expect(result.allow).toBe(true);
+    expect(events.find((e) => e.type === 'approval_prompted')?.tier).toBe('confirm');
+  });
 
   it('a confirmation the run already granted holds for the same path and operation', async () => {
     const projectDir = trackTempDir('splitbrief-test');
@@ -181,7 +156,7 @@ describe('gateAction', () => {
 
   it('confirm tier, no callback → deny APPROVAL_REQUIRED', async () => {
     const { bus } = makeBusRecorder();
-    const config = makeApprovalConfig({ enabled: true });
+    const config = makeApprovalConfig();
     const input = makeInput({
       bus,
       config,
@@ -195,7 +170,7 @@ describe('gateAction', () => {
 
   it('confirm tier, wrong phrase → deny invalid_confirm_phrase', async () => {
     const { bus, events } = makeBusRecorder();
-    const config = makeApprovalConfig({ enabled: true });
+    const config = makeApprovalConfig();
     const input = makeInput({
       bus,
       config,
@@ -215,7 +190,7 @@ describe('gateAction', () => {
 
   it('confirm tier, callback deny → deny, approval_rejected emitted', async () => {
     const { bus, events } = makeBusRecorder();
-    const config = makeApprovalConfig({ enabled: true });
+    const config = makeApprovalConfig();
     const input = makeInput({
       bus,
       config,
@@ -231,7 +206,7 @@ describe('gateAction', () => {
 
   it('confirm tier, valid confirm → approval_granted event records confirmReason', async () => {
     const { bus, events } = makeBusRecorder();
-    const config = makeApprovalConfig({ enabled: true });
+    const config = makeApprovalConfig();
     const input = makeInput({
       bus,
       config,

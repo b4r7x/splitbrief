@@ -5,9 +5,6 @@ import { loadState } from '../../../core/state/persistence.js';
 import { isQueuedMessagePendingDelivery } from '../../../core/queue-state.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
-import { isPlannerDocument } from '../../../core/pipeline-spec/planner-documents.js';
-import { extractQuestionsFromStream } from '../../parsers/question.js';
-import { parseTaskSourceBlocks } from '../../spec/tasks/parse.js';
 
 export type ResumeMessage = { role: 'user' | 'assistant'; content: string };
 
@@ -64,63 +61,17 @@ async function readCompactedResumeEntries(ref: SessionRef): Promise<SessionLogMe
   return readCompactedMessages(sessionDir(ref.projectDir, ref.sessionId));
 }
 
-/**
- * The entries in logged order, grouped by the call that wrote them: one call's assistant text runs
- * together, and its interrupted marker, when the call was cut, closes it.
- */
-function turnsOf(messages: readonly SessionLogMessageEntry[]): SessionLogMessageEntry[][] {
-  const turns: SessionLogMessageEntry[][] = [];
-  for (const message of messages) {
-    const turn = turns.at(-1);
-    const last = turn?.at(-1);
-    if (
-      turn !== undefined &&
-      last?.role === 'assistant' &&
-      message.role === 'assistant' &&
-      last.phase === message.phase &&
-      last.interrupted !== true
-    ) {
-      turn.push(message);
-    } else {
-      turns.push([message]);
-    }
-  }
-  return turns;
-}
-
-/**
- * A completed call whose text is the document its step writes. The document is the step's artifact,
- * which the step prompts carry, and a log from before documents stopped being logged still holds it.
- */
-function isPlannerDocumentTurn(turn: readonly SessionLogMessageEntry[]): boolean {
-  const [first] = turn;
-  if (first?.role !== 'assistant' || turn.at(-1)?.interrupted === true) return false;
-  const text = turn.map((entry) => entry.text).join('');
-  if (extractQuestionsFromStream(text).length > 0) return false;
-  switch (first.phase) {
-    case 'researching':
-      return isPlannerDocument('research', text);
-    case 'specifying':
-      return isPlannerDocument('spec', text);
-    case 'planning':
-      return isPlannerDocument('plan', text) || parseTaskSourceBlocks(text).length > 0;
-    default:
-      return false;
-  }
-}
-
 function plannerConversation(
   entries: readonly SessionLogMessageEntry[],
   pendingQueue: WorkflowState['messageQueue'],
 ): ResumeMessage[] {
-  const turns = turnsOf(
-    entries.filter(
+  return entries
+    .filter(
       (message) =>
         !isImplementerOutput(message) &&
         !isStillPendingQueuedTranscriptMessage(message, pendingQueue),
-    ),
-  ).filter((turn) => !isPlannerDocumentTurn(turn));
-  return turns.flat().map(toResumeMessage);
+    )
+    .map(toResumeMessage);
 }
 
 /** The planner conversation `session.jsonl` holds, a cut call's partial included. */

@@ -99,7 +99,7 @@ async function implement(
     publisher,
   });
   return implementer.implement({
-    task: makeTask({ id: 'T001', action: 'create', file: 'src/greet.ts' }),
+    task: makeTask({ id: 'T001', action: 'create', suggestedFiles: ['src/greet.ts'] }),
     projectDir: isolationDir,
     fileIgnoreProjectDir: checkoutDir,
     config: makeConfig({ implementer: opencode }),
@@ -161,7 +161,7 @@ describe("createCliImplementer — the run's attached skills", { timeout: 30_000
     });
 
     const result = await implementer.implement({
-      task: makeTask({ id: 'T001', action: 'create', file: 'src/greet.ts' }),
+      task: makeTask({ id: 'T001', action: 'create', suggestedFiles: ['src/greet.ts'] }),
       projectDir: isolationDir,
       fileIgnoreProjectDir: checkoutDir,
       config: makeConfig({ implementer: claude }),

@@ -427,8 +427,11 @@ function configuredRecovery(
     sourceProviderId: input.runnerId,
     modelsDevEntries: input.modelsDevEntries,
   });
+  // The tool's own model table knows the window of a full id its alias pins, models.dev or not.
+  const contextLength =
+    metadata?.contextLength ?? findKnownModel(input.runnerId, input.selectionId)?.contextLength;
   return stripUnpricedFields({
-    ...(metadata?.contextLength === undefined ? {} : { contextLength: metadata.contextLength }),
+    ...(contextLength === undefined ? {} : { contextLength }),
     id: input.selectionId,
     selectionId: input.selectionId,
     runnerId: input.runnerId,

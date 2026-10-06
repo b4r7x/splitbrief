@@ -3,7 +3,6 @@ import { basename, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   MATRIX_TIERS,
-  type LiveMatrixTier,
   type LiveSeat,
   appendLiveManifestRow,
   beginLiveManifest,
@@ -226,9 +225,9 @@ describe('release matrix invariants', () => {
     }
   });
 
-  it('covers every workflow mode and rejects duplicate row ids', () => {
-    expect(new Set(RELEASE_MATRIX.map((row) => row.mode))).toEqual(
-      new Set(['quick', 'standard', 'speckit']),
+  it('covers every tier and rejects duplicate row ids', () => {
+    expect(new Set(RELEASE_MATRIX.map((row) => row.tier))).toEqual(
+      new Set(Object.keys(MATRIX_TIERS)),
     );
     expect(new Set(RELEASE_MATRIX.map((row) => row.id)).size).toBe(RELEASE_MATRIX.length);
   });
@@ -245,10 +244,14 @@ describe('release matrix invariants', () => {
     expect(canaries.map((row) => row.plan).sort()).toEqual([...CLI_TOOL_IDS].sort());
   });
 
-  it('runs every row on its mode tier task', () => {
+  it('runs every row on its tier task', () => {
     for (const row of RELEASE_MATRIX) {
-      expect(row.task, row.id).toBe(MATRIX_TIERS[row.mode].task);
+      expect(row.task, row.id).toBe(MATRIX_TIERS[row.tier].task);
     }
+  });
+
+  it('runs at least one row with a reviewer seat of its own', () => {
+    expect(RELEASE_MATRIX.some((row) => row.review !== undefined)).toBe(true);
   });
 
   it('resolves the default pin per tool through liveModelPin', () => {
@@ -358,7 +361,7 @@ describe('release matrix manifest and config', () => {
       appendLiveManifestRow(
         {
           id: 'r1',
-          mode: 'quick',
+          tier: 'one-file',
           plan: seat('codex'),
           build: seat('cursor'),
           review: null,
@@ -370,7 +373,7 @@ describe('release matrix manifest and config', () => {
       appendLiveManifestRow(
         {
           id: 'r2',
-          mode: 'standard',
+          tier: 'two-files',
           plan: seat('claude-code'),
           build: seat('kilo-code'),
           review: null,
@@ -392,7 +395,7 @@ describe('release matrix manifest and config', () => {
       appendLiveManifestRow(
         {
           id: 'only',
-          mode: 'quick',
+          tier: 'one-file',
           plan: seat('codex'),
           build: seat('codex'),
           review: null,
@@ -409,11 +412,11 @@ describe('release matrix manifest and config', () => {
     });
   });
 
-  it('assembles a quick row config with no reviewer seat', () => {
-    const row = RELEASE_MATRIX.find((r) => r.id === 'quick-canary-codex');
+  it('assembles a one-file row config with no reviewer seat', () => {
+    const row = RELEASE_MATRIX.find((r) => r.id === 'one-file-canary-codex');
     if (row === undefined) throw new Error('missing row');
 
-    const config = releaseMatrixConfig(resolveReleaseMatrixRun(row), MATRIX_TIERS.quick);
+    const config = releaseMatrixConfig(resolveReleaseMatrixRun(row), MATRIX_TIERS['one-file']);
     if (config.planner.kind !== 'cli') throw new Error('unreachable');
     if (config.implementer.kind !== 'cli') throw new Error('unreachable');
 
@@ -423,26 +426,25 @@ describe('release matrix manifest and config', () => {
     expect(config.workflow.mode).toBeUndefined();
   });
 
-  it('assembles a speckit row config with the reviewer seat', () => {
-    const row = RELEASE_MATRIX.find((r) => r.id === 'speckit-cross-opencode-command-code');
+  it('assembles a question-round row config with the reviewer seat and an answer', () => {
+    const row = RELEASE_MATRIX.find((r) => r.id === 'question-round-cross-opencode-command-code');
     if (row === undefined) throw new Error('missing row');
 
-    const config = releaseMatrixConfig(resolveReleaseMatrixRun(row), MATRIX_TIERS.speckit);
+    const config = releaseMatrixConfig(
+      resolveReleaseMatrixRun(row),
+      MATRIX_TIERS['question-round'],
+    );
     const reviewer = config.reviewer;
     if (reviewer === undefined || reviewer.kind !== 'cli') throw new Error('unreachable');
 
     expect(reviewer.tool).toBe('codex');
     expect(config.workflow.mode).toBeUndefined();
-
-    const contextMd = MATRIX_TIERS.speckit.contextMd;
-    if (contextMd === undefined) throw new Error('unreachable');
-    expect(contextMd.length).toBeGreaterThan(0);
-    expect(MATRIX_TIERS.quick.contextMd).toBeUndefined();
+    expect(MATRIX_TIERS['question-round'].plannerAnswer).toContain('src/live-question.ts');
+    expect(MATRIX_TIERS['one-file'].plannerAnswer).toBeUndefined();
   });
 
-  it('keeps tier artifacts and validate scripts defined for every mode', () => {
-    for (const mode of ['quick', 'standard', 'speckit'] as const) {
-      const tier: LiveMatrixTier = MATRIX_TIERS[mode];
+  it('keeps tier artifacts and validate scripts defined for every tier', () => {
+    for (const tier of Object.values(MATRIX_TIERS)) {
       expect(tier.task).not.toBe('');
       expect(tier.validateScript).not.toBe('');
       expect(tier.artifact.path.startsWith('src/')).toBe(true);

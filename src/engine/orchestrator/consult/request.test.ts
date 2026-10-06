@@ -207,7 +207,13 @@ describe('requestConsult', () => {
       writeFileSync(join(projectDir, file), 'export const greeting = "checkout";\n');
       writeFileSync(join(workspaceDir, file), 'export const greeting = "workspace";\n');
       const reply = 'Greet by first name only.';
-      const task = makeTask({ id: 'T003', file, status: 'failed', revision: 1, criteria: ['C1'] });
+      const task = makeTask({
+        id: 'T003',
+        suggestedFiles: [file],
+        status: 'failed',
+        revision: 1,
+        criteria: ['C1'],
+      });
       const planned = { ...consultState(), tasks: [task] };
       let stopped = transition(
         { ...planned, tokenUsage: { ...planned.tokenUsage, plannerInput: 40, plannerOutput: 12 } },

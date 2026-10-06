@@ -18,7 +18,8 @@ export type GateDenial = {
 export type GateAttemptOutcome =
   | { outcome: 'allow'; approvedFiles: string[]; denial?: GateDenial }
   | { outcome: 'denied'; denial: GateDenial }
-  | { outcome: 'aborted' };
+  | { outcome: 'aborted' }
+  | { outcome: 'cancelled' };
 
 /**
  * The row a denial shows. A blocked attempt went nowhere; otherwise only the denied files were
@@ -67,7 +68,6 @@ export async function gateAttemptChanges(opts: {
       bus: wctx.bus,
       callbacks: wctx.callbacks,
       config: wctx.config,
-      getApprovalEnabled: wctx.getApprovalEnabled,
       signal: wctx.signal,
     });
   }
@@ -75,6 +75,11 @@ export async function gateAttemptChanges(opts: {
     if (isResumableWorkspaceStop(wctx.signal)) await workspace.retain?.();
     else workspace.cleanup();
     return { outcome: 'aborted' };
+  }
+  // A cancelled confirmation is the user's stop, so the attempt's writes are kept as a stop keeps them.
+  if (decision.cancelled) {
+    await workspace.retain?.();
+    return { outcome: 'cancelled' };
   }
   let approvedFiles = changedFiles;
   let denial: GateDenial | undefined;

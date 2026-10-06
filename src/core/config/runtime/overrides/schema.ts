@@ -19,7 +19,6 @@ export const CLIOverridesSchema = z.object({
   contextLength: z.number().optional(),
   plannerEffort: z.string().optional(),
   reviewerEffort: z.string().optional(),
-  yolo: z.boolean().optional(),
 });
 
 export type CLIOverrides = z.infer<typeof CLIOverridesSchema>;

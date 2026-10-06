@@ -10,8 +10,16 @@ export function assertSessionExists(projectDir: string, sessionId: string): void
   }
 }
 
+export function applyCommand(sessionId: string): string {
+  return `splitbrief continue ${sessionId} --action apply`;
+}
+
+export function discardCommand(sessionId: string): string {
+  return `splitbrief continue ${sessionId} --action discard`;
+}
+
 export function readyToApplyMessage(sessionId: string): string {
-  return `Run ${sessionId} is ready to apply.\nApply with: splitbrief continue ${sessionId} --action apply\nDiscard with: splitbrief continue ${sessionId} --action discard`;
+  return `Run ${sessionId} is ready to apply.\nApply with: ${applyCommand(sessionId)}\nDiscard with: ${discardCommand(sessionId)}`;
 }
 
 export function assertResumableState(state: WorkflowState, sessionId: string): void {

@@ -12,7 +12,7 @@ export function makeTask(overrides?: TaskOverrides): Task {
     id: brand(id ?? 'T001'),
     title: 'Create hello module',
     action: 'create',
-    file: 'src/hello.ts',
+    suggestedFiles: ['src/hello.ts'],
     dependsOn: (dependsOn ?? []).map(brand),
     description: 'Create a hello world module',
     tests: ['returns the expected greeting'],
@@ -22,18 +22,4 @@ export function makeTask(overrides?: TaskOverrides): Task {
     status: 'pending',
     ...rest,
   };
-}
-
-export function dependencyTaskBlock(id: string): string {
-  return `---
-id: ${id}
-title: "Dependency ${id}"
-action: create
-file: src/${id.toLowerCase()}.ts
-depends_on: []
----
-
-### Description
-Dependency task.
-`;
 }

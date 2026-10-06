@@ -35,6 +35,5 @@ export function workflowOptsToCLIOverrides(opts: WorkflowOpts): CLIOverrides {
     },
     plannerEffort: opts.plannerEffort,
     reviewerEffort: opts.reviewerEffort,
-    yolo: opts.yolo,
   };
 }

@@ -99,7 +99,7 @@ describe('applyConsultAnswer', () => {
     const { projectDir, sessionId } = setupRepo(dirs);
     const task = makeTask({
       id: 'T003',
-      file: 'src/greet.ts',
+      suggestedFiles: ['src/greet.ts'],
       criteria: ['C1'],
       status: 'failed',
     });
@@ -124,7 +124,7 @@ describe('applyConsultAnswer', () => {
 
   it("hands the planner's own ask-user answer back as guidance", async () => {
     const { projectDir, sessionId } = setupRepo(dirs);
-    const task = makeTask({ id: 'T003', file: 'src/greet.ts', criteria: ['C1'] });
+    const task = makeTask({ id: 'T003', suggestedFiles: ['src/greet.ts'], criteria: ['C1'] });
     const { ctx } = contextFor(projectDir, sessionId, task);
     const attempt = await getChangedFilesSnapshot(projectDir);
 
@@ -155,7 +155,7 @@ describe('applyConsultAnswer', () => {
     const { projectDir, sessionId } = setupRepo(dirs);
     const task = makeTask({
       id: 'T003',
-      file: 'src/greet.ts',
+      suggestedFiles: ['src/greet.ts'],
       criteria: ['C1', 'C2'],
       status: 'failed',
     });
@@ -180,7 +180,7 @@ describe('applyConsultAnswer', () => {
     const { projectDir, sessionId } = setupRepo(dirs);
     const task = makeTask({
       id: 'T003',
-      file: 'src/greet.ts',
+      suggestedFiles: ['src/greet.ts'],
       criteria: ['C1', 'C2'],
       status: 'failed',
     });
@@ -205,7 +205,7 @@ describe('applyConsultAnswer', () => {
     const { projectDir, sessionId } = setupRepo(dirs);
     const task = makeTask({
       id: 'T003',
-      file: 'src/greet.ts',
+      suggestedFiles: ['src/greet.ts'],
       criteria: ['C1'],
       checks: [{ id: 'K1', kind: 'test', value: 'src/greet.test.ts', required: true }],
       status: 'failed',
@@ -245,7 +245,7 @@ describe('applyConsultAnswer', () => {
     const { projectDir, sessionId } = setupRepo(dirs);
     const task = makeTask({
       id: 'T003',
-      file: 'src/greet.ts',
+      suggestedFiles: ['src/greet.ts'],
       criteria: ['C1'],
       checks: [{ id: 'K1', kind: 'test', value: 'src/greet.test.ts', required: true }],
       status: 'failed',
@@ -285,7 +285,7 @@ describe('applyConsultAnswer', () => {
     const { projectDir, sessionId } = setupRepo(dirs);
     const task = makeTask({
       id: 'T003',
-      file: 'src/greet.ts',
+      suggestedFiles: ['src/greet.ts'],
       criteria: ['C1'],
       status: 'failed',
     });
@@ -331,7 +331,7 @@ describe('applyConsultAnswer', () => {
       'src/greet.ts': ATTEMPT_GREET,
       'src/context.ts': 'export const context = false;\n',
     });
-    const task = makeTask({ id: 'T003', file: 'src/greet.ts', criteria: ['C1'] });
+    const task = makeTask({ id: 'T003', suggestedFiles: ['src/greet.ts'], criteria: ['C1'] });
     const { ctx } = contextFor(projectDir, sessionId, task);
 
     const result = await applyConsultAnswer(
@@ -359,7 +359,7 @@ describe('applyConsultAnswer', () => {
     const { projectDir, sessionId } = setupRepo(dirs);
     const task = makeTask({
       id: 'T003',
-      file: 'src/greet.ts',
+      suggestedFiles: ['src/greet.ts'],
       criteria: ['C1', 'C2'],
       status: 'failed',
     });
@@ -398,11 +398,16 @@ describe('applyConsultAnswer', () => {
 
   it('split-task fails when the saved run has no parent to split', async () => {
     const { projectDir, sessionId } = setupRepo(dirs);
-    const task = makeTask({ id: 'T003', file: 'src/greet.ts', criteria: ['C1'], status: 'failed' });
+    const task = makeTask({
+      id: 'T003',
+      suggestedFiles: ['src/greet.ts'],
+      criteria: ['C1'],
+      status: 'failed',
+    });
     const { ctx, states, events } = contextFor(projectDir, sessionId, task);
     const missing = makeTask({
       id: 'T007',
-      file: 'src/greet.ts',
+      suggestedFiles: ['src/greet.ts'],
       criteria: ['C1'],
       status: 'failed',
     });

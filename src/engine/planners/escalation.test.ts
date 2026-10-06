@@ -45,7 +45,7 @@ describe('escalateFull with escalateFullMode: "files"', () => {
     await escalateFull(
       { invokeEscalate, escalateFullMode: 'files' },
       {
-        task: makeTask({ file: TARGET }),
+        task: makeTask({ suggestedFiles: [TARGET] }),
         error: 'validation failed',
         projectDir: worktree,
         callbacks: { onOutput: () => {} },

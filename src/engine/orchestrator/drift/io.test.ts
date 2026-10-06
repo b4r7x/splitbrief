@@ -18,7 +18,6 @@ describe('readDriftReport — backward compat', () => {
     const report = analyzeBriefDrift({
       tasks: [],
       changedFiles: [],
-      diff: '',
       preRunChangedFiles: [],
     });
     const { briefHash: _bh, ...legacy } = report;
@@ -29,6 +28,26 @@ describe('readDriftReport — backward compat', () => {
     const result = readDriftReport({ projectDir: dir, sessionId: 's1' });
     expect(result).not.toBeNull();
     expect(result?.briefHash).toBeNull();
+  });
+
+  it('reads an older report without its score or its retired out-of-bounds finding', () => {
+    mkdirSync(join(dir, '.splitbrief', 'sessions', 's1'), { recursive: true });
+    writeFileSync(
+      driftReportPath({ projectDir: dir, sessionId: 's1' }),
+      JSON.stringify({
+        version: 1,
+        passed: false,
+        score: 0.75,
+        changedFiles: [],
+        expectedFiles: [],
+        findings: [
+          { severity: 'error', code: 'out_of_bounds_text_match', message: 'SECRET in diff.' },
+        ],
+      }),
+    );
+    const result = readDriftReport({ projectDir: dir, sessionId: 's1' });
+    expect(result).not.toHaveProperty('score');
+    expect(result?.findings).toEqual([]);
   });
 });
 
@@ -45,7 +64,6 @@ describe('writeDriftReport', () => {
     const report = analyzeBriefDrift({
       tasks: [],
       changedFiles: [],
-      diff: '',
       preRunChangedFiles: [],
     });
     writeDriftReport({ projectDir: dir, sessionId: 's1' }, report);

@@ -1,57 +1,27 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { parseTasksStrict } from '../../../src/engine/spec/tasks/parse.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { assertPlainStdout, assertSessionDir, assertWorkingTree } from './run-dir-assertions.js';
 
-const TASKS_MD = `# Tasks
-
----
-id: T001
-title: Register the health route
-action: modify
-file: src/routes.ts
-files:
-  - src/routes.ts
-  - src/server.ts
-depends_on: []
----
-
-### Description
-Register a GET /api/health route.
-
-### Implementation Steps
-1. Add the route entry.
-
-### Tests
-- GET /api/health returns 200.
-
-### Constraints
-- No new dependencies.
-
----
-id: T002
-title: Cover the health route
-action: create
-file: test/server.test.mjs
-depends_on:
-  - T001
----
-
-### Description
-Add a node:test case for the route.
-
-### Implementation Steps
-1. Add the case.
-
-### Tests
-- npm test passes.
-
-### Constraints
-- Use node:test.
-`;
+const TASKS = [
+  makeTask({
+    id: 'T001',
+    title: 'Register the health route',
+    action: 'modify',
+    suggestedFiles: ['src/routes.ts', 'src/server.ts'],
+  }),
+  makeTask({
+    id: 'T002',
+    title: 'Cover the health route',
+    action: 'create',
+    suggestedFiles: ['test/server.test.mjs'],
+    dependsOn: ['T001'],
+  }),
+];
 
 function plainStdout(): string {
   return [
@@ -94,7 +64,7 @@ function sessionLog(extra: readonly string[] = []): string {
 
 function writeSessionDir(dir: string, overrides: Readonly<Record<string, string>> = {}): void {
   const files: Record<string, string> = {
-    'tasks.md': TASKS_MD,
+    'state.json': JSON.stringify(makeWorkflowState({ tasks: TASKS })),
     'spec.md': '# Spec\n\nAdd a health endpoint.\n',
     'plan.md': '# Plan\n\nOne route, one test.\n',
     'evidence.json': JSON.stringify({
@@ -121,13 +91,11 @@ function writeSessionDir(dir: string, overrides: Readonly<Record<string, string>
     'drift-report.json': JSON.stringify({
       version: 1,
       passed: true,
-      score: 1,
       changedFiles: ['src/routes.ts'],
       expectedFiles: ['src/routes.ts'],
       findings: [],
       briefHash: null,
     }),
-    'review.md': '# Final review\n\n### Verdict\n\npass\n',
     'summary.json': JSON.stringify({
       id: 'sess-1',
       feature: 'health endpoint',
@@ -154,6 +122,7 @@ function writeSessionDir(dir: string, overrides: Readonly<Record<string, string>
           reviewerOutput: 120,
         },
         escalationRate: 0,
+        review: { verdict: 'pass', critical: 0, warnings: 0, notes: 0 },
         taskBreakdown: [
           {
             taskId: 'T001',
@@ -284,7 +253,6 @@ describe('assertSessionDir', () => {
       'drift-report.json': JSON.stringify({
         version: 1,
         passed: false,
-        score: 0.5,
         changedFiles: ['src/unrelated.ts'],
         expectedFiles: ['src/routes.ts'],
         findings: [
@@ -305,8 +273,6 @@ describe('assertSessionDir', () => {
 });
 
 describe('assertWorkingTree', () => {
-  const tasks = parseTasksStrict(TASKS_MD);
-
   it('accepts changes confined to the declared set and .splitbrief/', () => {
     const dir = tempDir('run-dir-assertions-tree-ok');
     createTestGitRepo(dir, { 'src/routes.ts': 'export const routes = [];\n' });
@@ -314,9 +280,9 @@ describe('assertWorkingTree', () => {
     mkdirSync(join(dir, 'test'), { recursive: true });
     writeFileSync(join(dir, 'test/server.test.mjs'), '// test\n', 'utf-8');
     mkdirSync(join(dir, '.splitbrief/sessions/sess-1'), { recursive: true });
-    writeFileSync(join(dir, '.splitbrief/sessions/sess-1/tasks.md'), TASKS_MD, 'utf-8');
+    writeFileSync(join(dir, '.splitbrief/sessions/sess-1/tasks.md'), '# Tasks\n', 'utf-8');
 
-    expect(() => assertWorkingTree(dir, tasks)).not.toThrow();
+    expect(() => assertWorkingTree(dir, TASKS)).not.toThrow();
   });
 
   it('rejects a file no brief declared', () => {
@@ -324,6 +290,6 @@ describe('assertWorkingTree', () => {
     createTestGitRepo(dir, { 'src/routes.ts': 'export const routes = [];\n' });
     writeFileSync(join(dir, 'src/unrelated.ts'), 'export const stray = true;\n', 'utf-8');
 
-    expect(() => assertWorkingTree(dir, tasks)).toThrow();
+    expect(() => assertWorkingTree(dir, TASKS)).toThrow();
   });
 });

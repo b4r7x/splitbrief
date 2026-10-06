@@ -97,9 +97,7 @@ async function haltFailedReview(args: {
     ...(args.fixCycles !== undefined && { fixCycles: args.fixCycles }),
     ...(args.unverified !== undefined && { unverified: args.unverified }),
     ...(args.detail !== undefined && { detail: args.detail }),
-    acceptAsIs:
-      !scheduled &&
-      (state.workspace?.kind === 'worktree' || state.workspace?.kind === 'staged-copy'),
+    acceptAsIs: !scheduled,
   });
   publishError({
     bus: args.wctx.bus,
@@ -175,10 +173,7 @@ export async function haltVerdictlessReview(args: {
       phase: state.phase,
       failure,
       tool: getRunnerCatalogDisplayName(resolveReviewerRunner(wctx.config).runner),
-      acceptAsIs:
-        scheduledTaskReview(state) ||
-        (state.phase === 'final-review' &&
-          (state.workspace?.kind === 'worktree' || state.workspace?.kind === 'staged-copy')),
+      acceptAsIs: scheduledTaskReview(state) || state.phase === 'final-review',
       createdAt: nowIso(),
     });
     publishError({

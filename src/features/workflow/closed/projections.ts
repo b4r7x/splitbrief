@@ -288,7 +288,7 @@ function sameCurrentBrief(ledgerTask: EvidenceTask, task: Task, planHash: string
   if (task.status === 'pending' && ledgerTask.status !== 'pending') return false;
   if (task.status === 'in_progress' && ledgerTask.status !== 'in_progress') return false;
   if (ledgerTask.briefHash != null) return ledgerTask.briefHash === planHash;
-  return ledgerTask.title === task.title && ledgerTask.file === task.file;
+  return ledgerTask.title === task.title && ledgerTask.file === task.suggestedFiles[0];
 }
 
 /** Older summaries can name a stopped brief whose ID a later plan reused. */
@@ -413,7 +413,6 @@ export function scopeView(summary: Summary): ScopeView {
   return {
     kind: 'checked',
     passed: drift.passed,
-    score: drift.score,
     errors: drift.errorCount,
     warnings: drift.warningCount,
   };

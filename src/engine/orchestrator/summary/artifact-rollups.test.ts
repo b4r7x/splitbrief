@@ -3,7 +3,6 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildSummary } from './build.js';
-import { taskId } from '../../../core/schemas/task.js';
 import { makeReviewPacket } from '#testing/helpers/factories/review-packet.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -12,8 +11,6 @@ import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { recordLocalTaskEvidence } from '../evidence/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { transition } from '../../../core/state/machine.js';
-import { writeDriftChainState } from '../drift/chain-state.js';
-import type { DriftChainState } from '../../../core/schemas/drift-chain.js';
 import { reviewPacketJsonPath } from '../../../core/paths.js';
 import type { ReviewPacket } from '../../../core/schemas/review-packet.js';
 import { loadSessionArtifactRollups } from './artifact-rollups.js';
@@ -124,10 +121,10 @@ describe('buildSummary session artifact rollups', () => {
       const oldTask = makeTask({
         id: 'T001',
         title: 'Old brief',
-        file: 'src/old.ts',
+        suggestedFiles: ['src/old.ts'],
         status: 'done',
       });
-      const newTask = makeTask({ id: 'T001', title: 'New brief', file: 'src/new.ts' });
+      const newTask = makeTask({ id: 'T001', title: 'New brief', suggestedFiles: ['src/new.ts'] });
       const ledger = recordLocalTaskEvidence({
         ledger: createEvidenceLedger({
           sessionId,
@@ -141,7 +138,12 @@ describe('buildSummary session artifact rollups', () => {
         changedFiles: ['src/old.ts'],
       });
       writeEvidenceLedger({ projectDir, sessionId }, ledger);
-      const rewound = transition(makeImplState([oldTask]), { type: 'REWIND_TO_PLAN' });
+      const rewound = {
+        ...makeImplState([oldTask]),
+        phase: 'planning' as const,
+        tasks: [],
+        rewindPending: { target: 'plan' as const },
+      };
       const gate = transition(rewound, { type: 'PLAN_DONE', tasks: [newTask] });
       const base = {
         feature: 'rewound',
@@ -190,133 +192,6 @@ describe('buildSummary session artifact rollups', () => {
       rmSync(projectDir, { recursive: true, force: true });
     }
   });
-
-  it('chainDriftSummary is undefined when no drift-chains.json on disk', () => {
-    const projectDir = mkdtempSync(join(tmpdir(), 'summary-chain-nofile-'));
-    try {
-      const summary = buildSummary({
-        feature: 'no-chain',
-        state: makeState(),
-        startTime: Date.now(),
-        plannerTool: 'claude-code',
-        implementerTool: 'ollama',
-        projectDir,
-        sessionId: 'nonexistent-chain-session',
-      });
-      expect(summary.chainDriftSummary).toBeUndefined();
-    } finally {
-      rmSync(projectDir, { recursive: true, force: true });
-    }
-  });
-
-  it('chainDriftSummary is undefined when drift-chains.json has zero emitted chains', () => {
-    const projectDir = mkdtempSync(join(tmpdir(), 'summary-chain-empty-'));
-    try {
-      const sessionId = 'chain-empty-session';
-      const state: DriftChainState = {
-        version: 1,
-        sessionId,
-        activeChain: { entries: [], uniqueFiles: [], score: 0 },
-        emittedChains: [],
-      };
-      writeDriftChainState({ projectDir, sessionId }, state);
-      const summary = buildSummary({
-        feature: 'chain-empty',
-        state: makeState(),
-        startTime: Date.now(),
-        plannerTool: 'claude-code',
-        implementerTool: 'ollama',
-        projectDir,
-        sessionId,
-      });
-      expect(summary.chainDriftSummary).toBeUndefined();
-    } finally {
-      rmSync(projectDir, { recursive: true, force: true });
-    }
-  });
-
-  it('chainDriftSummary reflects single emitted chain', () => {
-    const projectDir = mkdtempSync(join(tmpdir(), 'summary-chain-one-'));
-    try {
-      const sessionId = 'chain-one-session';
-      const chainState: DriftChainState = {
-        version: 1,
-        sessionId,
-        activeChain: { entries: [], uniqueFiles: [], score: 0 },
-        emittedChains: [
-          {
-            chainLength: 4,
-            score: 0.8,
-            uniqueOutOfBoundsFiles: ['src/foo.ts', 'src/bar.ts'],
-            representativePath: 'src/foo.ts',
-            detectedAtTaskId: taskId('T004'),
-          },
-        ],
-      };
-      writeDriftChainState({ projectDir, sessionId }, chainState);
-      const summary = buildSummary({
-        feature: 'chain-one',
-        state: makeState(),
-        startTime: Date.now(),
-        plannerTool: 'claude-code',
-        implementerTool: 'ollama',
-        projectDir,
-        sessionId,
-      });
-      expect(summary.chainDriftSummary).toBeDefined();
-      expect(summary.chainDriftSummary?.score).toBe(0.8);
-      expect(summary.chainDriftSummary?.chainLength).toBe(4);
-      expect(summary.chainDriftSummary?.representativePath).toBe('src/foo.ts');
-      expect(summary.chainDriftSummary?.emittedChainCount).toBe(1);
-    } finally {
-      rmSync(projectDir, { recursive: true, force: true });
-    }
-  });
-
-  it('chainDriftSummary reflects highest-scoring chain when multiple emitted', () => {
-    const projectDir = mkdtempSync(join(tmpdir(), 'summary-chain-multi-'));
-    try {
-      const sessionId = 'chain-multi-session';
-      const chainState: DriftChainState = {
-        version: 1,
-        sessionId,
-        activeChain: { entries: [], uniqueFiles: [], score: 0 },
-        emittedChains: [
-          {
-            chainLength: 2,
-            score: 0.5,
-            uniqueOutOfBoundsFiles: ['src/a.ts'],
-            representativePath: 'src/a.ts',
-            detectedAtTaskId: taskId('T002'),
-          },
-          {
-            chainLength: 5,
-            score: 0.9,
-            uniqueOutOfBoundsFiles: ['src/b.ts', 'src/c.ts'],
-            representativePath: 'src/b.ts',
-            detectedAtTaskId: taskId('T007'),
-          },
-        ],
-      };
-      writeDriftChainState({ projectDir, sessionId }, chainState);
-      const summary = buildSummary({
-        feature: 'chain-multi',
-        state: makeState(),
-        startTime: Date.now(),
-        plannerTool: 'claude-code',
-        implementerTool: 'ollama',
-        projectDir,
-        sessionId,
-      });
-      expect(summary.chainDriftSummary).toBeDefined();
-      expect(summary.chainDriftSummary?.score).toBe(0.9);
-      expect(summary.chainDriftSummary?.chainLength).toBe(5);
-      expect(summary.chainDriftSummary?.representativePath).toBe('src/b.ts');
-      expect(summary.chainDriftSummary?.emittedChainCount).toBe(2);
-    } finally {
-      rmSync(projectDir, { recursive: true, force: true });
-    }
-  });
 });
 
 function makePacket(finalReview: ReviewPacket['finalReview']): ReviewPacket {
@@ -332,6 +207,39 @@ function writePacket(projectDir: string, sessionId: string, packet: ReviewPacket
 }
 
 describe('review packet rollup final-review fields', () => {
+  it('reads a packet an older run saved with a drift score, a chain summary and a retired finding', () => {
+    const projectDir = mkdtempSync(join(tmpdir(), 'summary-packet-drift-'));
+    try {
+      const sessionId = 'packet-drift-session';
+      const packet = makeReviewPacket();
+      const retired = { severity: 'error', code: 'out_of_bounds_text_match', message: 'SECRET.' };
+      const olderPacket = {
+        ...packet,
+        drift: {
+          ...packet.drift,
+          passed: false,
+          score: 0.75,
+          findings: [retired],
+          findingsBySeverity: { info: [], warning: [], error: [retired] },
+          chainSummary: {
+            path: 'drift-chains.json',
+            present: false,
+            emittedChainCount: 0,
+            topChain: null,
+          },
+        },
+      };
+      mkdirSync(join(projectDir, '.splitbrief', 'sessions', sessionId), { recursive: true });
+      writeFileSync(reviewPacketJsonPath({ projectDir, sessionId }), JSON.stringify(olderPacket));
+
+      expect(loadSessionArtifactRollups(projectDir, sessionId).reviewPacket?.driftPassed).toBe(
+        false,
+      );
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
   it('carries the verdict and finding counts from the packet into the summary rollup', () => {
     const projectDir = mkdtempSync(join(tmpdir(), 'summary-packet-verdict-'));
     try {

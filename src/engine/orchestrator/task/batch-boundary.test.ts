@@ -46,11 +46,11 @@ const TEST_PLAN: Plan = {
 };
 
 function doneTask(id: string, file: string, batch = 1) {
-  return makeTask({ id, file, status: 'done', batch });
+  return makeTask({ id, suggestedFiles: [file], status: 'done', batch });
 }
 
 function pendingTask(id: string, file: string, batch = 1) {
-  return makeTask({ id, file, batch });
+  return makeTask({ id, suggestedFiles: [file], batch });
 }
 
 /** A ledger whose entries carry exactly the accepted changed files given. */
@@ -414,7 +414,10 @@ describe('runTaskLoop batch boundaries', { timeout: 120_000 }, () => {
       implement: vi.fn(async (opts: ImplementerOptions) => {
         order.push(opts.task.id);
         mkdirSync(join(opts.projectDir, 'src'), { recursive: true });
-        writeFileSync(join(opts.projectDir, opts.task.file), `done by ${opts.task.id}\n`);
+        writeFileSync(
+          join(opts.projectDir, opts.task.suggestedFiles[0]),
+          `done by ${opts.task.id}\n`,
+        );
         if (opts.task.id === 'T002') {
           writeFileSync(join(opts.projectDir, regressionFile), 'regressed by T002\n');
         }
@@ -439,7 +442,10 @@ describe('runTaskLoop batch boundaries', { timeout: 120_000 }, () => {
         if (regressed) {
           acceptedBatch = trackedState.tasks.slice(0, 3);
           for (const task of acceptedBatch) {
-            acceptedBytes.set(task.file, readFileSync(join(opts.projectDir, task.file)));
+            acceptedBytes.set(
+              task.suggestedFiles[0],
+              readFileSync(join(opts.projectDir, task.suggestedFiles[0])),
+            );
           }
           return {
             results: [
@@ -523,9 +529,9 @@ describe('runTaskLoop batch boundaries', { timeout: 120_000 }, () => {
     expect(implementer.implement).toHaveBeenCalledTimes(5);
     expect(implementer.retry).not.toHaveBeenCalled();
     for (const task of acceptedBatch) {
-      const bytes = readFileSync(join(wctx.workspaceDir, task.file));
+      const bytes = readFileSync(join(wctx.workspaceDir, task.suggestedFiles[0]));
       expect(bytes).toEqual(Buffer.from(`done by ${task.id}\n`));
-      expect(bytes).toEqual(acceptedBytes.get(task.file));
+      expect(bytes).toEqual(acceptedBytes.get(task.suggestedFiles[0]));
     }
     expect(readFileSync(join(wctx.workspaceDir, regressionFile), 'utf-8')).toBe('done by T005\n');
   });

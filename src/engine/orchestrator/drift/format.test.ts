@@ -17,15 +17,10 @@ describe('publishDriftReport', () => {
     };
     const report = analyzeBriefDrift({
       tasks: [
-        makeTask({
-          id: 'T001',
-          file: 'src/a.ts',
-          status: 'done',
-          scope: { outOfBounds: ['src/extra.ts'] },
-        }),
+        makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'], status: 'done' }),
+        makeTask({ id: 'T002', suggestedFiles: ['src/b.ts'], status: 'failed' }),
       ],
-      changedFiles: ['src/a.ts', 'src/extra.ts'],
-      diff: '',
+      changedFiles: ['src/a.ts', 'src/b.ts'],
       preRunChangedFiles: [],
     });
 
@@ -43,27 +38,25 @@ describe('publishDriftReport', () => {
 });
 
 describe('formatDriftReportForPrompt', () => {
-  it('includes passed/score and findings list with severity prefix', () => {
-    const tasks = [makeTask({ id: 'T001', file: 'src/a.ts', status: 'done' })];
+  it('states passed and the findings with their severity, and no score', () => {
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'], status: 'done' })];
     const report = analyzeBriefDrift({
       tasks,
       changedFiles: ['src/a.ts', 'src/extra.ts'],
-      diff: '',
       preRunChangedFiles: [],
     });
     const out = formatDriftReportForPrompt(report);
     expect(out).toContain('passed: true');
-    expect(out).toContain('score: 1.00');
+    expect(out).not.toContain('score');
     expect(out).toContain('[info] out_of_scope_file');
     expect(out).toContain('src/extra.ts');
   });
 
   it('emits "findings: none" when report is clean', () => {
-    const tasks = [makeTask({ id: 'T001', file: 'src/a.ts', status: 'done' })];
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'], status: 'done' })];
     const report = analyzeBriefDrift({
       tasks,
       changedFiles: ['src/a.ts'],
-      diff: '',
       preRunChangedFiles: [],
     });
     expect(formatDriftReportForPrompt(report)).toContain('findings: none');

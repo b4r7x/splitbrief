@@ -72,9 +72,14 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
   it('repairs a twice-failing task by splitting it, with no user prompt, and keeps earlier work', async () => {
     const { projectDir, sessionId } = setupProject();
     const tasks = [
-      makeTask({ id: 'T001', file: 'src/a.ts', criteria: ['C1'] }),
-      makeTask({ id: 'T002', file: 'src/b.ts', criteria: ['C2'] }),
-      makeTask({ id: 'T003', file: 'src/final.ts', criteria: ['C3'], dependsOn: ['T002'] }),
+      makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'], criteria: ['C1'] }),
+      makeTask({ id: 'T002', suggestedFiles: ['src/b.ts'], criteria: ['C2'] }),
+      makeTask({
+        id: 'T003',
+        suggestedFiles: ['src/final.ts'],
+        criteria: ['C3'],
+        dependsOn: ['T002'],
+      }),
     ];
     const state = makeImplState(tasks);
 
@@ -83,7 +88,10 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
     const implementer = makeImplementer({
       implement: vi.fn().mockImplementation(async (opts: ImplementerOptions) => {
         mkdirSync(join(opts.projectDir, 'src'), { recursive: true });
-        writeFileSync(join(opts.projectDir, opts.task.file), `done by ${opts.task.id}\n`);
+        writeFileSync(
+          join(opts.projectDir, opts.task.suggestedFiles[0]),
+          `done by ${opts.task.id}\n`,
+        );
         return {
           success: true,
           output: 'wrote the brief file',

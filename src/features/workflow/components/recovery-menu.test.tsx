@@ -20,7 +20,8 @@ function mount(onResolve: (answer: string) => void, width = 80, issue = makeReco
 
 function seatSwapIssue() {
   return makeRecoveryIssue({
-    availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
+    reason: 'runner-usage-limit',
+    availableActions: ['retry-same-worker', 'switch-seat', 'skip-current-task', 'end-run'],
     recommendedAction: 'switch-seat',
     switchSeat: {
       seat: 'build',
@@ -89,7 +90,7 @@ it.each([
   const issue = makeRecoveryIssue({
     ...halt,
     reason: 'runner-usage-limit',
-    availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
+    availableActions: ['retry-same-worker', 'switch-seat', 'skip-current-task', 'end-run'],
     recommendedAction: 'switch-seat',
     switchSeat: { seat: 'plan', candidates: [{ tool: 'claude-code' }] },
   });
@@ -109,7 +110,7 @@ it.each([
   const issue = makeRecoveryIssue({
     ...halt,
     reason: 'runner-usage-limit',
-    availableActions: ['retry-same-worker', 'pause-run', 'end-run'],
+    availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
     recommendedAction: 'retry-same-worker',
   });
   const ui = mount(vi.fn(), 100, issue);
@@ -128,7 +129,7 @@ it('keeps every action label whole on a 56-column panel', async () => {
     seat: 'review',
     taskId: undefined,
     phase: 'final-review',
-    availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
+    availableActions: ['retry-same-worker', 'switch-seat', 'skip-current-task', 'end-run'],
     recommendedAction: 'switch-seat',
     switchSeat: { seat: 'plan', candidates: [{ tool: 'claude-code' }] },
   });
@@ -137,7 +138,7 @@ it('keeps every action label whole on a 56-column panel', async () => {
   const frame = stripAnsiStyles(ui.lastFrame());
   const rows = frame
     .split('\n')
-    .filter((line) => /Try again|Change PLAN tool|Pause run|End run/.test(line));
+    .filter((line) => /Try again|Change PLAN tool|Skip task|End run/.test(line));
   expect(rows).toHaveLength(4);
   expect(frame).toContain('Change PLAN tool · runs the review again');
   for (const row of rows) expect(row).not.toContain('…');
@@ -156,30 +157,32 @@ it('drops a legend token whole rather than cutting the last key in half', async 
   ui.unmount();
 });
 
-it('shows each row its key, padded to the widest offered key', async () => {
+it('shows each row its key beside its label', async () => {
   const issue = makeRecoveryIssue({
-    availableActions: ['skip-current-task', 'pause-run', 'end-run'],
-    recommendedAction: 'pause-run',
+    reason: 'dependency-blocked',
+    availableActions: ['skip-current-task', 'end-run'],
+    recommendedAction: 'skip-current-task',
   });
   const ui = mount(vi.fn(), 80, issue);
   await flushEffects();
   const frame = stripAnsiStyles(ui.lastFrame());
-  expect(frame).toContain('s       Skip task');
-  expect(frame).toContain('space   Pause run');
+  expect(frame).toContain('s   Skip task');
+  expect(frame).toContain('a   End run');
   ui.unmount();
 });
 
 it('stands the recommended marker one cell after the label and highlights that row', async () => {
   const issue = makeRecoveryIssue({
-    availableActions: ['skip-current-task', 'pause-run', 'end-run'],
-    recommendedAction: 'pause-run',
+    reason: 'dependency-blocked',
+    availableActions: ['skip-current-task', 'end-run'],
+    recommendedAction: 'end-run',
   });
   const ui = mount(vi.fn(), 80, issue);
   await flushEffects();
   const row = stripAnsiStyles(ui.lastFrame())
     .split('\n')
-    .find((line) => line.includes('Pause run'));
-  expect(row).toContain(`${listRowLead('active')}space   Pause run recommended`);
+    .find((line) => line.includes('End run'));
+  expect(row).toContain(`${listRowLead('active')}a   End run recommended`);
   ui.unmount();
 });
 
@@ -195,9 +198,9 @@ it('offers the correction key only on a halt that takes typed words', async () =
     vi.fn(),
     80,
     makeRecoveryIssue({
-      reason: 'user-edit-conflict',
-      availableActions: ['pause-run', 'end-run'],
-      recommendedAction: 'pause-run',
+      reason: 'dependency-blocked',
+      availableActions: ['skip-current-task', 'end-run'],
+      recommendedAction: 'skip-current-task',
     }),
   );
   await flushEffects();
@@ -205,4 +208,67 @@ it('offers the correction key only on a halt that takes typed words', async () =
   expect(frame).toContain('↑↓ select · ⏎ confirm');
   expect(frame).not.toContain('tab type a correction');
   refusing.unmount();
+});
+
+it('says what ⏎ in the composer does while it holds focus, and lists no live keys', async () => {
+  const ui = renderFeature(
+    <RecoveryMenu
+      issue={makeRecoveryIssue({
+        reason: 'consult-bound-spent',
+        availableActions: ['continue', 'skip-current-task', 'end-run'],
+        recommendedAction: 'continue',
+      })}
+      width={80}
+      clampedBoxRows={14}
+      focused={false}
+      onFocusChange={() => {}}
+      onResolve={() => {}}
+    />,
+  );
+  await flushEffects();
+  const frame = stripAnsiStyles(ui.lastFrame());
+  expect(frame).toContain('⏎ Continue with the typed correction · tab back to the actions');
+  expect(frame).not.toContain('↑↓ select');
+  expect(frame).toContain('Continue');
+  expect(frame).not.toContain('c   Continue');
+  ui.unmount();
+});
+
+it('offers a typed note on a halt whose Continue grants a spent bound', async () => {
+  const ui = mount(
+    vi.fn(),
+    80,
+    makeRecoveryIssue({
+      reason: 'consult-bound-spent',
+      availableActions: ['continue', 'skip-current-task', 'end-run'],
+      recommendedAction: 'continue',
+    }),
+  );
+  await flushEffects();
+  expect(stripAnsiStyles(ui.lastFrame())).toContain(
+    '↑↓ select · ⏎ confirm · tab type a correction',
+  );
+  ui.unmount();
+});
+
+it('says only where typing goes when the halt takes no note and the composer holds focus', async () => {
+  const ui = renderFeature(
+    <RecoveryMenu
+      issue={makeRecoveryIssue({
+        reason: 'dependency-blocked',
+        availableActions: ['skip-current-task', 'end-run'],
+        recommendedAction: 'skip-current-task',
+      })}
+      width={80}
+      clampedBoxRows={14}
+      focused={false}
+      onFocusChange={() => {}}
+      onResolve={() => {}}
+    />,
+  );
+  await flushEffects();
+  expect(stripAnsiStyles(ui.lastFrame())).toContain(
+    'typing goes to the composer · tab back to the actions',
+  );
+  ui.unmount();
 });

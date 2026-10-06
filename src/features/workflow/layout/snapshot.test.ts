@@ -1,13 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
-  readBriefListSnapshot,
   readConversationHoverSnapshot,
   readConversationScrollSnapshot,
   readRailSnapshot,
   readReviewContentHeight,
 } from './snapshot.js';
-import { briefListTopOffset, hitBriefTaskRow, hitTranscriptRow } from './hit-test.js';
-import { getContentTopRow, getProgressRows, WORKFLOW_GUTTER_X } from './chrome-rows.js';
+import { hitTranscriptRow } from './hit-test.js';
+import { getContentTopRow, getProgressRows } from './chrome-rows.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { inputHeightStore } from '../../../stores/ui/input-height.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
@@ -24,7 +23,6 @@ import { getApprovalPromptRows } from '../prompt-rows/approval.js';
 import { getQuestionPromptRows } from '../prompt-rows/question.js';
 import {
   getReviewContentLayout,
-  getWorkflowContentWidth,
   getWorkflowSidebarWidth,
   getWorkflowViewportHeight,
   REVIEW_FRAME_ROWS,
@@ -145,7 +143,7 @@ describe('readConversationScrollSnapshot', () => {
     const progressRows = getProgressRows({ phase: 'implementing', cols: 80 });
     const snap = readConversationScrollSnapshot();
 
-    expect(progressRows).toBe(5);
+    expect(progressRows).toBe(3);
     // The block rides above the transcript, so its rows leave the body and push its top row down.
     expect(snap.viewportHeight).toBe(
       getWorkflowViewportHeight({ rows: 30, inputRows: 3, progressRows }),
@@ -552,163 +550,6 @@ describe('readReviewContentHeight', () => {
     const tallContent = readReviewContentHeight();
 
     expect(tallContent).toBe(shortContent - 2);
-  });
-});
-
-describe('readBriefListSnapshot phantom-hotspot clamp', () => {
-  it('gives brief review the same body height as the conversation when the sidebar is visible', () => {
-    const rows = 30;
-    const inputRows = 3;
-    const cols = 121;
-    terminalSizeStore.__testReset({ cols, rows, isSmall: false });
-    inputHeightStore.__testReset({ rows: inputRows });
-    controlsStore.setSidebar(true);
-    lifecycleStore.__testReset({ phase: 'reviewing-briefs', status: 'running', startedAt: 0 });
-    reviewStore.setRenderedLineCount(1);
-
-    const snap = readBriefListSnapshot();
-    if (!snap) throw new Error('expected a brief list snapshot while reviewing briefs');
-
-    const fullBodyHeight = getWorkflowViewportHeight({ rows, inputRows });
-    const conversation = readConversationScrollSnapshot().contentRect;
-
-    expect(getWorkflowSidebarWidth({ cols, sidebarVisible: true })).toBeGreaterThan(0);
-    expect(snap.rect.height).toBe(fullBodyHeight);
-    expect(snap.rect.height).toBe(conversation.height);
-    expect(snap.rect.bottom).toBe(conversation.bottom);
-    expect(snap.rect.bottom).toBe(snap.rect.top + fullBodyHeight - 1);
-  });
-
-  it('clamps the visible window to the rendered briefs on a tall terminal with few tasks', () => {
-    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
-    inputHeightStore.__testReset({ rows: 3 });
-    lifecycleStore.__testReset({ phase: 'reviewing-briefs', status: 'running', startedAt: 0 });
-    reviewStore.setRenderedLineCount(3);
-    reviewStore.setScrollOffset(0);
-
-    const snap = readBriefListSnapshot();
-    if (!snap) throw new Error('expected a brief list snapshot while reviewing briefs');
-
-    // Far fewer briefs than rows of budget — the window must not advertise more rows than exist.
-    expect(snap.visibleCount).toBe(3);
-    expect(snap.previousCount).toBe(0);
-
-    const listTop = snap.rect.top + briefListTopOffset({ hasLoadError: false });
-    const lastRowY = listTop + snap.visibleCount - 1;
-    const belowLastRowY = lastRowY + 1;
-
-    // The probe row sits inside the content rect but below the last rendered brief: still inert.
-    expect(belowLastRowY).toBeLessThanOrEqual(snap.rect.bottom);
-    expect(
-      hitBriefTaskRow({
-        rect: snap.rect,
-        sgrX: snap.rect.left,
-        sgrY: belowLastRowY,
-        hasLoadError: false,
-        visibleCount: snap.visibleCount,
-        previousCount: snap.previousCount,
-      }),
-    ).toBeNull();
-    expect(
-      hitBriefTaskRow({
-        rect: snap.rect,
-        sgrX: snap.rect.left,
-        sgrY: lastRowY,
-        hasLoadError: false,
-        visibleCount: snap.visibleCount,
-        previousCount: snap.previousCount,
-      }),
-    ).toBe(2);
-  });
-
-  it('spans the full content pane on a wide terminal (no review column cap)', () => {
-    terminalSizeStore.__testReset({ cols: 300, rows: 40, isSmall: false });
-    inputHeightStore.__testReset({ rows: 3 });
-    lifecycleStore.__testReset({ phase: 'reviewing-briefs', status: 'running', startedAt: 0 });
-    reviewStore.setRenderedLineCount(5);
-    reviewStore.setScrollOffset(0);
-    controlsStore.setSidebar(false);
-
-    const snap = readBriefListSnapshot();
-    if (!snap) throw new Error('expected a brief list snapshot while reviewing briefs');
-
-    // The review column is uncapped, so the brief card fills the content pane past the gutter its
-    // frame stands in.
-    const fullContentWidth = getWorkflowContentWidth({
-      cols: 300,
-      sidebarVisible: false,
-    });
-    expect(fullContentWidth).toBeGreaterThan(120);
-    expect(snap.rect.left).toBe(WORKFLOW_GUTTER_X);
-    expect(snap.rect.width).toBe(fullContentWidth - WORKFLOW_GUTTER_X);
-    expect(snap.rect.right).toBe(snap.rect.left + snap.rect.width - 1);
-
-    const listTop = snap.rect.top + briefListTopOffset({ hasLoadError: false });
-
-    // The last painted column of the full-width card still resolves a brief row.
-    expect(
-      hitBriefTaskRow({
-        rect: snap.rect,
-        sgrX: snap.rect.right,
-        sgrY: listTop,
-        hasLoadError: false,
-        visibleCount: snap.visibleCount,
-        previousCount: snap.previousCount,
-      }),
-    ).toBe(0);
-
-    // One column past the content pane is outside the card — clicking it must not focus or copy a
-    // row.
-    expect(
-      hitBriefTaskRow({
-        rect: snap.rect,
-        sgrX: snap.rect.right + 1,
-        sgrY: listTop,
-        hasLoadError: false,
-        visibleCount: snap.visibleCount,
-        previousCount: snap.previousCount,
-      }),
-    ).toBeNull();
-  });
-
-  it('shifts the brief-list offset down by the error chrome row when a brief failed to load', () => {
-    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
-    inputHeightStore.__testReset({ rows: 3 });
-    lifecycleStore.__testReset({ phase: 'reviewing-briefs', status: 'running', startedAt: 0 });
-    reviewStore.setRenderedLineCount(3);
-    reviewStore.setScrollOffset(0);
-    reviewStore.setLoadError('Task Brief file is missing');
-
-    const snap = readBriefListSnapshot();
-    if (!snap) throw new Error('expected a brief list snapshot while reviewing briefs');
-
-    // The snapshot carries the real error flag so the hit-test offset can track the rendered chrome.
-    expect(snap.hasLoadError).toBe(true);
-
-    // With the error line rendered, the first task row sits one screen line lower; feeding the
-    // snapshot's own flag back into the hit-test maps that lower line to task 0.
-    const listTop = snap.rect.top + briefListTopOffset({ hasLoadError: true });
-    expect(
-      hitBriefTaskRow({
-        rect: snap.rect,
-        sgrX: snap.rect.left,
-        sgrY: listTop,
-        hasLoadError: snap.hasLoadError,
-        visibleCount: snap.visibleCount,
-        previousCount: snap.previousCount,
-      }),
-    ).toBe(0);
-    // The pre-error offset would land on the error line, not the first task: inert.
-    expect(
-      hitBriefTaskRow({
-        rect: snap.rect,
-        sgrX: snap.rect.left,
-        sgrY: snap.rect.top + briefListTopOffset({ hasLoadError: false }),
-        hasLoadError: snap.hasLoadError,
-        visibleCount: snap.visibleCount,
-        previousCount: snap.previousCount,
-      }),
-    ).toBeNull();
   });
 });
 

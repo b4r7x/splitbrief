@@ -1,7 +1,9 @@
 import { createStore, storeBase } from '../create-store.js';
 import type { EngineEvent, EngineEventOf } from '../../engine/events/types.js';
-import type { TaskStatus } from '../../core/schemas/enums.js';
+import type { Phase, TaskStatus } from '../../core/schemas/enums.js';
+import { isImplementerPhase } from '../../core/phases.js';
 import { taskStatusForCompletionMethod } from '../../core/task-completion.js';
+import { BOUNDS } from '../../core/pipeline-spec/bounds.js';
 
 type FileAction = EngineEventOf<'task_started'>['action'];
 
@@ -36,8 +38,8 @@ export function taskTargetLabel(task: WorkflowTask): string {
 export interface TasksState {
   currentTask: number;
   currentAttempt: number;
+  attemptAllowance: number;
   totalTasks: number;
-  taskCompletionTimes: number[];
   taskMap: Map<string, WorkflowTask>;
   tasks: WorkflowTask[];
 }
@@ -45,8 +47,8 @@ export interface TasksState {
 const initial: TasksState = {
   currentTask: 0,
   currentAttempt: 1,
+  attemptAllowance: BOUNDS.attemptsPerLineage,
   totalTasks: 0,
-  taskCompletionTimes: [],
   taskMap: new Map(),
   tasks: [],
 };
@@ -111,11 +113,18 @@ export interface RunningBrief {
 }
 
 // The brief a stop would interrupt and the one it would not start. One derivation, so the stop
-// sheet, the byline and the park can never name a different pair.
-export function selectRunningBrief(state: TasksState): RunningBrief {
-  const index = state.tasks.findIndex((task) => task.status === 'in_progress');
-  if (index === -1) return { current: null, next: null };
-  return { current: state.tasks[index] ?? null, next: state.tasks[index + 1] ?? null };
+// sheet, the byline and the park can never name a different pair. The run's own position names the
+// brief, not its status: continuing a halt resets the brief to pending before the build starts it
+// again, and the run is on it all the same. A brief that already finished is no brief a stop would
+// interrupt, and outside the build a pending brief is only one the plan lists.
+export function selectRunningBrief(state: TasksState, phase: Phase): RunningBrief {
+  const index = state.currentTask - 1;
+  const current = state.tasks[index];
+  const onIt =
+    current?.status === 'in_progress' ||
+    (current?.status === 'pending' && isImplementerPhase(phase));
+  if (current === undefined || !onIt) return { current: null, next: null };
+  return { current, next: state.tasks[index + 1] ?? null };
 }
 
 /** The brief that follows a named one, which is what a boundary pause is holding back. */
@@ -211,22 +220,21 @@ export function updateTaskMap(
 export function updateTaskCounts(
   state: TasksState,
   event: EngineEvent,
-): Pick<TasksState, 'currentTask' | 'currentAttempt' | 'totalTasks' | 'taskCompletionTimes'> {
-  let { currentTask, currentAttempt, totalTasks, taskCompletionTimes } = state;
+): Pick<TasksState, 'currentTask' | 'currentAttempt' | 'attemptAllowance' | 'totalTasks'> {
+  let { currentTask, currentAttempt, attemptAllowance, totalTasks } = state;
   if (event.type === 'tasks_planned') {
     totalTasks = event.total;
   }
   if (event.type === 'task_started') {
     currentTask = event.index + 1;
-    currentAttempt = 1;
+    currentAttempt = event.lineageAttempt ?? 1;
+    attemptAllowance = event.attemptAllowance ?? BOUNDS.attemptsPerLineage;
     totalTasks = event.total;
   }
   // `attempt` counts the retries already spent, so the attempt now running is one past it.
   if (event.type === 'task_retry') {
-    currentAttempt = event.attempt + 1;
+    currentAttempt = event.lineageAttempt ?? event.attempt + 1;
+    attemptAllowance = event.attemptAllowance ?? BOUNDS.attemptsPerLineage;
   }
-  if (event.type === 'task_completed') {
-    taskCompletionTimes = [...taskCompletionTimes, event.duration];
-  }
-  return { currentTask, currentAttempt, totalTasks, taskCompletionTimes };
+  return { currentTask, currentAttempt, attemptAllowance, totalTasks };
 }

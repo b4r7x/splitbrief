@@ -69,14 +69,16 @@ describe('requiredWriteModeForTask', () => {
     ['src/hello.ts', '../outside.ts'],
     ['src/hello.ts', 'src/hello.ts'],
     ['src/hello.ts', 'src/hello.ts/nested.ts'],
-    Array.from({ length: 33 }, (_, i) => `src/file${i}.ts`),
-  ])('requires direct writes for unsupported targets %j', (...files) => {
-    expect(requiredWriteModeForTask(makeTask({ files }))).toBe('direct');
+    ['src/file0.ts', ...Array.from({ length: 32 }, (_, i) => `src/file${i + 1}.ts`)],
+  ])('requires direct writes for unsupported targets %j', (anchor, ...rest) => {
+    expect(requiredWriteModeForTask(makeTask({ suggestedFiles: [anchor, ...rest] }))).toBe(
+      'direct',
+    );
   });
 
   it('allows explicit multi-file bundles', () => {
     expect(
-      requiredWriteModeForTask(makeTask({ files: ['src/hello.ts', 'src/hello.test.ts'] })),
+      requiredWriteModeForTask(makeTask({ suggestedFiles: ['src/hello.ts', 'src/hello.test.ts'] })),
     ).toBe('extracted-code');
     expect(requiredWriteModeForTask(makeTask())).toBe('extracted-code');
   });

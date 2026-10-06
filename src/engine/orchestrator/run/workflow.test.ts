@@ -407,7 +407,7 @@ describe('runWorkflow — smoke', () => {
 
     const { listSessions } = await import('../../../core/sessions/io.js');
     const persisted = listSessions(projectDir).find((s) => s.id === sessionId);
-    expect(persisted).toMatchObject({ status: 'open', stop: 'halted' });
+    expect(persisted).toMatchObject({ status: 'open', stop: 'waiting-for-you' });
   });
 
   it('initialization failure leaves the run open', async () => {
@@ -786,7 +786,7 @@ describe('runWorkflow — smoke', () => {
       stateVersion: resumed.stateVersion,
       status: 'open',
       summary: null,
-      stop: 'halted',
+      stop: 'waiting-for-you',
     });
     let stopWhileRunning: string | undefined = 'not read';
     const planner = makePlanner({
@@ -1028,7 +1028,7 @@ describe('runWorkflow — smoke', () => {
     const { listSessions } = await import('../../../core/sessions/io.js');
     const row = listSessions(projectDir).find((s) => s.id === sessionId);
     expect(row?.status).toBe('open');
-    expect(row?.stop).toBe('paused');
+    expect(row?.stop).toBe('stopped');
     const { loadState } = await import('../../../core/state/persistence.js');
     const saved = loadState({ projectDir, sessionId });
     expect(saved?.closed).toBeUndefined();
@@ -1379,7 +1379,7 @@ describe('runWorkflow — smoke', () => {
               makeTask({
                 id: 'T001',
                 title: 'Reviewable task',
-                file: 'src/reviewable.ts',
+                suggestedFiles: ['src/reviewable.ts'],
                 scope: { inBounds: ['src/reviewable.ts'], outOfBounds: ['other files'] },
                 evidence: ['task_completed event shows the task ran'],
                 typeDefs: 'type ReviewableTask = { file: string }',
@@ -1409,7 +1409,7 @@ describe('runWorkflow — smoke', () => {
         makeTask({
           id: 'T001',
           title: 'Reviewable task',
-          file: 'src/reviewable.ts',
+          suggestedFiles: ['src/reviewable.ts'],
           scope: { inBounds: ['src/reviewable.ts'], outOfBounds: ['other files'] },
           evidence: ['task_completed event shows the task ran'],
           typeDefs: 'type ReviewableTask = { file: string }',

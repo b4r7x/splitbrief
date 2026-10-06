@@ -49,7 +49,7 @@ describe('QuestionPrompt', () => {
           { tool: 'kilo-code' },
         ],
       },
-      availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
+      availableActions: ['retry-same-worker', 'switch-seat', 'skip-current-task', 'end-run'],
       recommendedAction: 'switch-seat',
     });
     const rows = Math.min(10, getRecoveryPromptRows(issue, 100));

@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { DRIFT_REPORT_FILE, sessionDir } from '../../../core/paths.js';
 import { readJsonSafe, writeSecureFile } from '../../../lib/fs.js';
-import { isDriftReport, type DriftReport } from '../../../core/schemas/drift.js';
+import { DriftReportSchema, type DriftReport } from '../../../core/schemas/drift.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 
 export function driftReportPath(ref: SessionRef): string {
@@ -15,6 +15,6 @@ export function writeDriftReport(ref: SessionRef, report: DriftReport): void {
 export function readDriftReport(ref: SessionRef): DriftReport | null {
   const raw = readJsonSafe(driftReportPath(ref));
   if (raw === null) return null;
-  if (!isDriftReport(raw)) return null;
-  return { ...raw, briefHash: raw.briefHash ?? null };
+  const parsed = DriftReportSchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
 }

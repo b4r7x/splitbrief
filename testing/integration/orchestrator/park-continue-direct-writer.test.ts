@@ -37,7 +37,7 @@ describe('a brief parked inside a direct writer', { timeout: 90_000 }, () => {
     const task = makeTask({
       id: 'T001',
       action: 'create',
-      file: targetFile,
+      suggestedFiles: [targetFile],
       title: 'Create parked module',
       scope: { inBounds: [targetFile], outOfBounds: ['unrelated files'] },
       evidence: ['src/parked.ts exports parked'],

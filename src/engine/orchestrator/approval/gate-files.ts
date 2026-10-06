@@ -10,8 +10,11 @@ export type GateChangedFilesInput = Omit<GateActionInput, 'actionDescription' | 
 
 export type GateChangedFilesDecision = GateDecision & { changedFiles: string[] } & (
     | { allow: true }
+    /** A cancelled confirmation stops the gate: no later file is asked about, and none is denied. */
+    | { allow: false; cancelled: true }
     | {
         allow: false;
+        cancelled?: undefined;
         /** Every path the gate denied; the first denial's details are the decision's own. */
         deniedFiles: string[];
         /** One decision per denied path, in `deniedFiles` order; each is recorded as its own rejection. */
@@ -19,7 +22,7 @@ export type GateChangedFilesDecision = GateDecision & { changedFiles: string[] }
       }
   );
 
-export type GateChangedFilesDenial = Extract<GateChangedFilesDecision, { allow: false }>;
+export type GateChangedFilesDenial = Extract<GateChangedFilesDecision, { deniedFiles: string[] }>;
 
 /** Each file is gated on its own: a denial removes that file, never the files around it. */
 export async function gateChangedFiles(
@@ -34,6 +37,7 @@ export async function gateChangedFiles(
     if (input.signal?.aborted) break;
     const actionDescription = `write ${file}`;
     const decision = await gateAction({ ...input, actionDescription, targetPath: file });
+    if (decision.cancelled) return { ...decision, allow: false, cancelled: true, changedFiles };
     if (!decision.allow) {
       deniedFiles.push(file);
       denials.push(decision);

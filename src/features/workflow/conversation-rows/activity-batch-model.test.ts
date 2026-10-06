@@ -126,14 +126,6 @@ describe('buildActivityBatchViewModel', () => {
     expect(model.headerText).not.toContain('warn');
     expect(model.visibleItems).toHaveLength(COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT);
     expect(model.visibleItems.map((item) => item.severity)).toEqual(['info', 'info', 'info']);
-    expect(model.visibleItems.map((item) => item.pinned)).toEqual([false, false, false]);
-    expect(
-      model.visibleItems.map((item) => ({
-        value: item.value,
-        severity: item.severity,
-        pinned: item.pinned,
-      })),
-    ).toContainEqual({ value: 'npm test', severity: 'info', pinned: false });
     expect(model.visibleItems.map((item) => item.value)).toEqual(['b.ts', 'c.ts', 'npm test']);
   });
 
@@ -163,7 +155,7 @@ describe('buildActivityBatchViewModel', () => {
     );
   });
 
-  it('renders a collapsed pin at its chronological slot with the newest entry last', () => {
+  it('shows the newest entries in event order and pins no earlier warning', () => {
     const oldestWarning = buildActivityBatchViewModel({
       batchKey: 'batch-1',
       events: [
@@ -175,11 +167,8 @@ describe('buildActivityBatchViewModel', () => {
       ],
     });
 
-    expect(oldestWarning.visibleItems.map((item) => item.value)).toEqual([
-      'stderr',
-      'c.ts',
-      'd.ts',
-    ]);
+    expect(oldestWarning.visibleItems.map((item) => item.value)).toEqual(['b.ts', 'c.ts', 'd.ts']);
+    expect(oldestWarning.headerText).toContain('1 warn');
 
     const newestWarningEvents = [
       activity({ sequence: 1, activityId: 'a', kind: 'read', label: 'reading a.ts' }),

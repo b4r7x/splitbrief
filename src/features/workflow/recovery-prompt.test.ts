@@ -9,7 +9,6 @@ import { PromptBody } from './components/prompt-body.js';
 import {
   formatActionRow,
   formatMiddotList,
-  formatRecoveryActionLines,
   formatRecoveryPrompt,
   getRecoveryPromptActions,
   isActionRowLine,
@@ -30,19 +29,18 @@ async function renderPromptBody(prompt: string): Promise<string> {
 
 const baseIssue: RecoveryIssue = {
   id: 'rec_test',
-  reason: 'validation-failed',
-  phase: 'validating-task',
+  reason: 'retry-exhausted',
+  phase: 'escalating',
   status: 'awaiting-user',
   taskId: taskId('T003'),
   taskTitle: 'Patch auth validation',
   files: ['src/auth/session.ts', 'src/auth/session.test.ts'],
   affectedTaskIds: [taskId('T003')],
-  message: 'T003 validation failed',
+  message: 'T003 failed',
   details: [
     'Validation test failed: npm test -- auth failed in src/auth/session.test.ts',
     'Attempts: 3/3',
     'Worker profile: local-qwen',
-    'Bigger worker available: cheap-cloud',
   ],
   attempts: 3,
   maxAttempts: 3,
@@ -50,17 +48,9 @@ const baseIssue: RecoveryIssue = {
   facts: {
     validationStage: 'test',
     validationSummary: 'npm test -- auth failed',
-    routeBiggerProfile: 'cheap-cloud',
   },
-  availableActions: [
-    'retry-same-worker',
-    'route-bigger-worker',
-    'planner-split-rebase',
-    'skip-current-task',
-    'pause-run',
-    'end-run',
-  ],
-  recommendedAction: 'route-bigger-worker',
+  availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
+  recommendedAction: 'retry-same-worker',
   createdAt: '2026-04-29T12:00:00.000Z',
 };
 
@@ -79,7 +69,7 @@ describe('recovery prompt', () => {
       details: ['Codex reported: 5-hour limit reached'],
       facts: {},
       switchSeat: { seat: 'build', candidates },
-      availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
+      availableActions: ['retry-same-worker', 'switch-seat', 'skip-current-task', 'end-run'],
       recommendedAction: 'switch-seat',
     };
   }
@@ -97,7 +87,7 @@ describe('recovery prompt', () => {
 
     const visible = await renderPromptBody(formatRecoveryPrompt(issue));
 
-    expect(visible).toContain('Usage limit on Ollama · resets 17:00');
+    expect(visible).toContain('Seat down · Usage limit on Ollama · resets 17:00');
     expect(visible).not.toContain('5:00 PM');
     expect(visible.match(/resets 17:00/g)).toHaveLength(1);
   });
@@ -131,10 +121,10 @@ describe('recovery prompt', () => {
 
     const visible = await renderPromptBody(formatRecoveryPrompt(issue));
 
-    expect(visible).toContain('w1      switch BUILD to Claude Code CLI · Sonnet 5');
-    expect(visible).toContain('w2      switch BUILD to OpenCode CLI');
-    expect(visible).toContain('r       retry same worker');
-    expect(visible).toContain('a       end run');
+    expect(visible).toContain('w1   switch BUILD to Claude Code CLI · Sonnet 5');
+    expect(visible).toContain('w2   switch BUILD to OpenCode CLI');
+    expect(visible).toContain('r    retry same worker');
+    expect(visible).toContain('a    end run');
     expect(visible).not.toContain('opencode,');
   });
 
@@ -143,7 +133,7 @@ describe('recovery prompt', () => {
 
     const visible = await renderPromptBody(formatRecoveryPrompt(issue));
 
-    expect(visible).toContain('w       switch BUILD to OpenCode CLI');
+    expect(visible).toContain('w   switch BUILD to OpenCode CLI');
     expect(visible).not.toContain('w1');
     expect(parseRecoveryActionAnswer('w2', issue)).toBeNull();
   });
@@ -159,7 +149,7 @@ describe('recovery prompt', () => {
 
     const visible = await renderPromptBody(formatRecoveryPrompt(issue));
 
-    expect(visible).toContain('w3      switch BUILD to Cursor Agent CLI');
+    expect(visible).toContain('w3   switch BUILD to Cursor Agent CLI');
     expect(visible).toContain('(2 more ready tools detected)');
     expect(visible).not.toContain('w4');
   });
@@ -179,40 +169,38 @@ describe('recovery prompt', () => {
     expect(switchSeatCandidateForAnswer('w9', issue.switchSeat)).toBeUndefined();
   });
 
-  it('builds a compact validation recovery prompt with only available actions', async () => {
+  it('builds a compact retry-exhausted recovery prompt with only available actions', async () => {
     const prompt = formatRecoveryPrompt(baseIssue);
     const visible = await renderPromptBody(prompt);
 
-    expect(visible).toContain('Recovery needed · T003 validation failed after 3 attempts');
+    expect(visible).toContain('Needs you · T003 failed after 3 attempts');
     expect(visible).toContain('Task T003 · Patch auth validation');
     expect(visible).toContain('Files src/auth/session.ts · src/auth/session.test.ts');
     expect(visible).toContain(
       'Last check test failed: npm test -- auth failed in src/auth/session.test.ts',
     );
-    expect(visible).toContain('r       retry same worker');
-    expect(visible).toContain('b       route to bigger worker · cheap-cloud recommended');
-    expect(visible).toContain('s       skip task');
-    expect(visible).toContain('space   pause · no new brief starts, changes kept');
-    expect(visible).toContain('a       end run · closes this run, changes kept');
+    expect(visible).toContain('Worker local-qwen');
+    expect(visible).toContain('r   retry same worker recommended');
+    expect(visible).toContain('s   skip task');
+    expect(visible).toContain('a   end run · closes this run, changes kept');
     expect(visible).not.toContain('continue');
-    expect(visible).not.toContain('ask planner');
   });
 
-  it('emits the rebase action with its tail on a separate continuation line', () => {
-    const lines = formatRecoveryActionLines(
-      ['planner-split-rebase', 'pause-run'],
-      { reason: 'user-edit-conflict' },
-      'planner-split-rebase',
+  it('names the worker with its context length in compact form', async () => {
+    const visible = await renderPromptBody(
+      formatRecoveryPrompt({
+        ...baseIssue,
+        selectedImplementerProfile: 'default',
+        facts: { contextLength: 32_768 },
+      }),
     );
 
-    expect(lines[0]).toBe('▌ [p]  ask planner to rebase on your edits');
-    expect(lines[1]).toBe('(approve / edit / reject the proposal)');
-    expect(lines[0]).not.toContain('(approve');
+    expect(visible).toContain('Worker default · 32K context');
   });
 
   it.each([
-    ['plan-questions-exhausted', 'Recovery needed · Planner still asks questions after 2 rounds'],
-    ['plan-checks-failed', 'Recovery needed · Plan still fails its checks after one repair'],
+    ['plan-questions-exhausted', 'Needs you · Planner still asks questions after 2 rounds'],
+    ['plan-checks-failed', 'Needs you · Plan still fails its checks after one repair'],
   ] as const)('names a %s halt by its headline, not a second wording of it', (reason, header) => {
     const prompt = formatRecoveryPrompt({
       ...baseIssue,
@@ -229,9 +217,9 @@ describe('recovery prompt', () => {
   it('serializes the rows into a flat prompt with the recommended accent marker', () => {
     const prompt = formatRecoveryPrompt(baseIssue);
 
-    expect(prompt).toContain('Recovery needed · T003 validation failed after 3 attempts');
-    expect(prompt).toContain('▌ [b]  route to bigger worker · cheap-cloud');
-    expect(prompt).toContain('[r]  retry same worker');
+    expect(prompt).toContain('Needs you · T003 failed after 3 attempts');
+    expect(prompt).toContain('▌ [r]  retry same worker');
+    expect(prompt).toContain('[s]  skip task');
     expect(prompt).not.toContain('[c]  continue');
   });
 
@@ -246,59 +234,56 @@ describe('recovery prompt', () => {
 
   it('parses answers into typed recovery actions', () => {
     expect(parseRecoveryActionAnswer('r', baseIssue)).toBe('retry-same-worker');
-    expect(parseRecoveryActionAnswer('route bigger', baseIssue)).toBe('route-bigger-worker');
     expect(parseRecoveryActionAnswer('skip', baseIssue)).toBe('skip-current-task');
-    expect(parseRecoveryActionAnswer(' ', baseIssue)).toBe('pause-run');
     expect(parseRecoveryActionAnswer('abort', baseIssue)).toBe('end-run');
   });
 
   it('marks the recommended action and applies it only for empty Enter', async () => {
-    const prompt = formatRecoveryPrompt(baseIssue);
-    const visible = await renderPromptBody(prompt);
+    const issue: RecoveryIssue = { ...baseIssue, recommendedAction: 'skip-current-task' };
+    const visible = await renderPromptBody(formatRecoveryPrompt(issue));
 
-    expect(visible).toContain('b       route to bigger worker · cheap-cloud recommended');
-    expect(parseRecoveryActionAnswer('', baseIssue)).toBe('route-bigger-worker');
+    expect(visible).toContain('s   skip task recommended');
+    expect(parseRecoveryActionAnswer('', issue)).toBe('skip-current-task');
+    expect(parseRecoveryActionAnswer('   ', issue)).toBe('skip-current-task');
   });
 
   it('returns null for unknown or unavailable non-empty input so the caller re-prompts', () => {
     expect(parseRecoveryActionAnswer('continue', baseIssue)).toBeNull();
-    expect(parseRecoveryActionAnswer('p', baseIssue)).toBeNull();
+    expect(parseRecoveryActionAnswer('w', baseIssue)).toBeNull();
     expect(parseRecoveryActionAnswer('nope', baseIssue)).toBeNull();
   });
 
-  it('marks and applies pause when the recommended action is not promptable', async () => {
+  it('recommends the first listed action when the saved recommendation is not offered', async () => {
     const issue: RecoveryIssue = {
       ...baseIssue,
-      id: 'rec_unpromptable',
-      availableActions: ['planner-split-rebase', 'pause-run', 'end-run'],
-      recommendedAction: 'planner-split-rebase',
+      id: 'rec_unoffered',
+      availableActions: ['skip-current-task', 'end-run'],
+      recommendedAction: 'retry-same-worker',
     };
 
     const visible = await renderPromptBody(formatRecoveryPrompt(issue));
 
-    expect(visible).toContain('space   pause · no new brief starts, changes kept recommended');
-    expect(parseRecoveryActionAnswer('', issue)).toBe('pause-run');
+    expect(visible).toContain('s   skip task recommended');
+    expect(parseRecoveryActionAnswer('', issue)).toBe('skip-current-task');
   });
 
   it('parses continue only when the issue allows it', () => {
     const issue: RecoveryIssue = {
-      id: 'rec_conflict',
-      reason: 'user-edit-conflict',
+      id: 'rec_bound',
+      reason: 'consult-bound-spent',
       phase: 'implementing',
       status: 'awaiting-user',
-      message: 'You edited a file this brief is changing',
-      files: ['src/validate.ts'],
+      message: 'T003 used its consult allowance',
+      files: [],
       affectedTaskIds: [],
-      details: ['Conflict kind: unrelated-file', 'Safe to continue: yes'],
-      availableActions: ['continue', 'pause-run', 'end-run'],
+      details: [],
+      availableActions: ['continue', 'skip-current-task', 'end-run'],
       recommendedAction: 'continue',
       createdAt: '2026-04-29T12:00:00.000Z',
     };
 
     expect(parseRecoveryActionAnswer('c', issue)).toBe('continue');
-    expect(
-      parseRecoveryActionAnswer('c', { ...issue, availableActions: ['pause-run'] }),
-    ).toBeNull();
+    expect(parseRecoveryActionAnswer('c', { ...issue, availableActions: ['end-run'] })).toBeNull();
   });
 
   it('offers only the actions the issue carries, with its details under the headline', async () => {
@@ -311,158 +296,39 @@ describe('recovery prompt', () => {
       files: [],
       affectedTaskIds: [],
       details: ['Blocked step: before T004'],
-      availableActions: ['pause-run', 'end-run'],
-      recommendedAction: 'pause-run',
+      availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
+      recommendedAction: 'retry-same-worker',
       createdAt: '2026-04-29T12:00:00.000Z',
     };
 
     const visible = await renderPromptBody(formatRecoveryPrompt(issue));
 
-    expect(visible).toContain('Recovery needed · Context overflowed on T004');
+    expect(visible).toContain('Seat down · Context overflowed on T004');
     expect(visible).toContain('Blocked step: before T004');
-    expect(visible).toContain('space   pause · no new brief starts, changes kept recommended');
-    expect(visible).toContain('a       end run · closes this run, changes kept');
+    expect(visible).toContain('r   retry same worker recommended');
+    expect(visible).toContain('s   skip task');
+    expect(visible).toContain('a   end run · closes this run, changes kept');
     expect(visible).not.toContain('continue');
     expect(parseRecoveryActionAnswer('c', issue)).toBeNull();
-  });
-
-  it('uses compact worker context and human conflict words without changing the evidence', async () => {
-    const details = [
-      'Conflict kind: current-task-conflict',
-      'Safe to continue: no',
-      'src/auth/session.ts: current-task-conflict affects T004',
-    ];
-    const issue: RecoveryIssue = {
-      id: 'rec_user_edit_words',
-      reason: 'user-edit-conflict',
-      phase: 'implementing',
-      status: 'awaiting-user',
-      taskId: taskId('T004'),
-      taskTitle: 'Update session store',
-      files: ['src/auth/session.ts'],
-      affectedTaskIds: [taskId('T004')],
-      message: 'User edits conflict with T004',
-      details,
-      selectedImplementerProfile: 'default',
-      facts: {
-        conflictKind: 'current-task-conflict',
-        safeToContinue: false,
-        contextLength: 32_768,
-      },
-      availableActions: ['skip-current-task', 'pause-run', 'end-run'],
-      recommendedAction: 'pause-run',
-      createdAt: '2026-04-29T12:00:00.000Z',
-    };
-
-    const visible = await renderPromptBody(formatRecoveryPrompt(issue));
-
-    expect(visible).toContain('Edit relation: conflict with T004');
-    expect(visible).toContain('Continuing is not safe');
-    expect(visible).toContain('src/auth/session.ts: conflict with T004');
-    expect(visible).toContain('Worker default · 32K context');
-    expect(visible).not.toContain('current-task-conflict');
-    expect(visible).not.toContain('Safe to continue: no');
-    expect(issue.details).toEqual(details);
-  });
-
-  it('uses the issue task when a known file conflict has no per-file task list', async () => {
-    const issue: RecoveryIssue = {
-      ...baseIssue,
-      reason: 'user-edit-conflict',
-      taskId: taskId('T003'),
-      files: ['src/a.ts'],
-      affectedTaskIds: [taskId('T003')],
-      details: ['src/a.ts: current-task-conflict'],
-      facts: { conflictKind: 'current-task-conflict' },
-      availableActions: ['pause-run', 'end-run'],
-      recommendedAction: 'pause-run',
-    };
-
-    const visible = await renderPromptBody(formatRecoveryPrompt(issue));
-
-    expect(visible).toContain('src/a.ts: conflict with T003');
-  });
-
-  it('describes a current conflict when no brief ID is available', async () => {
-    const issue: RecoveryIssue = {
-      ...baseIssue,
-      reason: 'user-edit-conflict',
-      taskId: undefined,
-      affectedTaskIds: [],
-      details: ['Conflict kind: current-task-conflict'],
-      facts: { conflictKind: 'current-task-conflict' },
-      availableActions: ['pause-run', 'end-run'],
-      recommendedAction: 'pause-run',
-    };
-
-    const visible = await renderPromptBody(formatRecoveryPrompt(issue));
-
-    expect(visible).toContain('Edit relation: conflict with the current brief');
-  });
-
-  it('keeps unknown and user-written conflict details unchanged', async () => {
-    const issue: RecoveryIssue = {
-      ...baseIssue,
-      reason: 'user-edit-conflict',
-      files: ['src/a.ts'],
-      taskId: taskId('T003'),
-      affectedTaskIds: [taskId('T003')],
-      details: [
-        'Conflict kind: legacy-conflict',
-        'Safe to continue: maybe',
-        'src/a.ts: legacy-conflict affects T003',
-        'Planner said: current-task-conflict is historical data',
-      ],
-      facts: { conflictKind: 'legacy-conflict' },
-      availableActions: ['pause-run', 'end-run'],
-      recommendedAction: 'pause-run',
-    };
-
-    const visible = await renderPromptBody(formatRecoveryPrompt(issue));
-
-    expect(visible).toContain('Conflict kind: legacy-conflict');
-    expect(visible).toContain('Safe to continue: maybe');
-    expect(visible).toContain('src/a.ts: legacy-conflict affects T003');
-    expect(visible).toContain('Planner said: current-task-conflict is historical data');
   });
 
   it('uses the shared truncated-list spelling', () => {
     expect(formatMiddotList(['a', 'b', 'c', 'd'], 3)).toBe('a · b · c · +1 more');
   });
 
-  it('hides legacy planner rebase actions and falls back to pause', async () => {
-    const issue: RecoveryIssue = {
-      id: 'rec_user_edit',
-      reason: 'user-edit-conflict',
-      phase: 'implementing',
-      status: 'awaiting-user',
-      message: 'User edits conflict with T004',
-      taskId: taskId('T004'),
-      taskTitle: 'Update session store',
-      files: ['src/auth/session.ts'],
-      affectedTaskIds: [taskId('T004'), taskId('T006')],
-      details: ['Conflict kind: current-task-conflict', 'Safe to continue: no'],
-      facts: { conflictKind: 'current-task-conflict', safeToContinue: false },
-      availableActions: ['planner-split-rebase', 'skip-current-task', 'pause-run', 'end-run'],
-      recommendedAction: 'planner-split-rebase',
-      createdAt: '2026-04-29T12:00:00.000Z',
-    };
-
-    const visible = await renderPromptBody(formatRecoveryPrompt(issue));
-
-    expect(visible).toContain('space   pause · no new brief starts, changes kept recommended');
-    expect(visible).not.toContain('ask planner');
-    expect(parseRecoveryActionAnswer('p', issue)).toBeNull();
-  });
-
   it('spells the run-level answers in the words the gate uses', () => {
-    expect(formatRecoveryActionLines(['revise', 'end-run'], {}, 'revise')).toEqual([
+    const prompt = formatRecoveryPrompt({
+      ...baseIssue,
+      reason: 'plan-checks-failed',
+      taskId: undefined,
+      availableActions: ['retry-same-worker', 'revise', 'end-run'],
+      recommendedAction: 'revise',
+    });
+
+    expect(prompt).toContain(
       `${recommendedRowPrefix()}[v]  revise · send the planner a correction`,
-      '[a]  end run · closes this run, changes kept',
-    ]);
-    expect(formatRecoveryActionLines(['revise-spec', 'end-run'], {}, 'revise-spec')[0]).toContain(
-      'revise · send the planner a correction',
     );
+    expect(prompt).toContain('[a]  end run · closes this run, changes kept');
   });
 
   it.each([
@@ -474,7 +340,7 @@ describe('recovery prompt', () => {
   ] as const)('parses %s as %s when the halt offers it', (answer, action) => {
     const issue: RecoveryIssue = {
       ...baseIssue,
-      reason: 'brief-review-no-progress',
+      reason: 'plan-checks-failed',
       availableActions: ['revise', 'end-run'],
       recommendedAction: 'revise',
     };
@@ -486,8 +352,9 @@ describe('recovery prompt', () => {
     const prev = process.env.TERM;
     process.env.TERM = 'dumb';
     try {
-      const lines = formatRecoveryActionLines(['route-bigger-worker'], {}, 'route-bigger-worker');
-      expect(lines[0]).toBe(`${glyph('liveBar', 'ascii')} [b]  route to bigger worker`);
+      expect(formatRecoveryPrompt(baseIssue)).toContain(
+        `${glyph('liveBar', 'ascii')} [r]  retry same worker`,
+      );
       expect(passHeadlinePrefix()).toBe(`${glyph('check', 'ascii')} `);
     } finally {
       process.env.TERM = prev;
@@ -532,8 +399,8 @@ describe('recovery prompt', () => {
         apiContextRequiredTokens: 156_000,
         apiContextAvailableTokens: 32_768,
       },
-      availableActions: ['retry-same-worker', 'pause-run', 'end-run'],
-      recommendedAction: 'pause-run',
+      availableActions: ['retry-same-worker', 'end-run'],
+      recommendedAction: 'retry-same-worker',
       createdAt: '2026-04-29T12:00:00.000Z',
       ...overrides,
     };
@@ -542,19 +409,19 @@ describe('recovery prompt', () => {
   it('names the plan seat that was never called, and the sections it never got', async () => {
     const visible = await renderPromptBody(formatRecoveryPrompt(apiContextIssue()));
 
-    expect(visible).toContain('Nothing was sent to PLAN · required evidence was missing');
+    expect(visible).toContain(
+      'Seat down · Nothing was sent to PLAN · required evidence was missing',
+    );
     expect(visible).toContain('Missing: evidence.json, drift-report.json');
     expect(visible).toContain(
       'Adjust the plan seat with /crew plan or Settings, then /resume and choose retry.',
     );
-    expect(visible).toContain('r       retry PLAN');
-    expect(visible).toContain('space   pause · no new brief starts, changes kept recommended');
-    expect(visible).toContain('a       end run · closes this run, changes kept');
+    expect(visible).toContain('r   retry PLAN recommended');
+    expect(visible).toContain('a   end run · closes this run, changes kept');
     // The figures are the details view's; the panel states the cause and nothing numeric.
     expect(visible).not.toMatch(/148,?000|156,?000|32,?768/);
     expect(visible).not.toMatch(/blocking|0 finding/i);
     expect(visible).not.toContain('skip task');
-    expect(visible).not.toContain('route to bigger worker');
     // The boundary's sentence repeats the list the detail row already carries.
     expect(visible.match(/evidence\.json/g)).toHaveLength(1);
   });
@@ -583,7 +450,7 @@ describe('recovery prompt', () => {
     const visible = await renderPromptBody(formatRecoveryPrompt(issue));
 
     expect(visible).toContain('Nothing was sent to REVIEW · larger than the context window');
-    expect(visible).toContain('r       retry REVIEW');
+    expect(visible).toContain('r   retry REVIEW');
     expect(visible).toContain('/crew review');
     expect(visible).not.toMatch(/blocking/i);
     expect(visible).not.toMatch(/412,?000|32,?768/);
@@ -607,8 +474,8 @@ describe('recovery prompt', () => {
     const visible = await renderPromptBody(formatRecoveryPrompt(issue));
 
     // No context diagnosis, so the halt keeps the ordinary headline — only the retry is seat-level.
-    expect(visible).toContain('Recovery needed · The review call did not land: socket hang up');
-    expect(visible).toContain('r       retry REVIEW');
+    expect(visible).toContain('Needs you · The review call did not land: socket hang up');
+    expect(visible).toContain('r   retry REVIEW');
     expect(parseRecoveryActionAnswer('r', issue)).toBe('retry-same-worker');
     expect(parseRecoveryActionAnswer('retry', issue)).toBe('retry-same-worker');
   });
@@ -622,15 +489,15 @@ describe('recovery prompt', () => {
 
     const visible = await renderPromptBody(formatRecoveryPrompt(withBrief));
 
-    expect(visible).toContain('r       retry same worker');
+    expect(visible).toContain('r   retry same worker');
     expect(visible).not.toContain('retry PLAN');
     expect(await renderPromptBody(formatRecoveryPrompt(baseIssue))).toContain(
-      'r       retry same worker',
+      'r   retry same worker',
     );
   });
 
-  // The retry-exhausted builder writes six rows at its widest, and the two voices plus the
-  // verdict are the last three. A tighter budget would drop exactly the evidence the halt is for.
+  // At its widest the retry-exhausted builder ends on the two voices and the verdict. A tighter
+  // budget would drop exactly the evidence the halt is for.
   it('keeps both voices and the verdict on the widest retry-exhausted halt', async () => {
     const issue: RecoveryIssue = {
       ...baseIssue,
@@ -641,7 +508,6 @@ describe('recovery prompt', () => {
         'Last error: test failed: npm test -- auth failed in src/auth/session.test.ts',
         'Attempts: 4 (3 local, then 1 with planner hints)',
         'Worker profile: local-qwen',
-        'Bigger worker available: cheap-cloud',
         'Implementer said: the session type has no expiry field, so I stopped.',
         'Planner said: Add expiry to the session type in its own brief first.',
         'Planner verdict: the brief itself is wrong — the brief names a field the type never had',
@@ -666,7 +532,7 @@ describe('recovery prompt', () => {
       facts: { plannerVerdict: 'brief' },
     };
     expect(formatRecoveryPrompt(verdictIssue).split('\n')[0]).toBe(
-      'Recovery needed · T003: the planner found the brief wrong',
+      'Needs you · T003: the planner found the brief wrong',
     );
 
     const retryIssue: RecoveryIssue = {
@@ -677,7 +543,7 @@ describe('recovery prompt', () => {
       facts: {},
     };
     expect(formatRecoveryPrompt(retryIssue).split('\n')[0]).toBe(
-      'Recovery needed · T005 exhausted its retries after 4 attempts',
+      'Needs you · T005 failed after 4 attempts',
     );
 
     const legacyWords = 'exhausted recovery' + ' retries';
@@ -686,7 +552,7 @@ describe('recovery prompt', () => {
       message: `T005 ${legacyWords}`,
     };
     expect(formatRecoveryPrompt(legacyIssue).split('\n')[0]).toBe(
-      'Recovery needed · T005 exhausted its retries after 4 attempts',
+      'Needs you · T005 failed after 4 attempts',
     );
     expect(formatRecoveryPrompt(legacyIssue)).not.toContain(legacyWords);
 
@@ -694,9 +560,7 @@ describe('recovery prompt', () => {
       ...baseIssue,
       attempts: 0,
     };
-    expect(formatRecoveryPrompt(zeroAttemptsIssue).split('\n')[0]).toBe(
-      'Recovery needed · T003 validation failed',
-    );
+    expect(formatRecoveryPrompt(zeroAttemptsIssue).split('\n')[0]).toBe('Needs you · T003 failed');
   });
 
   it('leaves a substantive review failure on the words it earned', async () => {
@@ -711,14 +575,14 @@ describe('recovery prompt', () => {
       message: 'Final review failed with 2 blocking findings',
       details: ['See review.md'],
       facts: { blocking: 2 },
-      availableActions: ['pause-run', 'end-run'],
-      recommendedAction: 'pause-run',
+      availableActions: ['revise', 'end-run'],
+      recommendedAction: 'revise',
       createdAt: '2026-04-29T12:00:00.000Z',
     };
 
     const visible = await renderPromptBody(formatRecoveryPrompt(issue));
 
-    expect(visible).toContain('Recovery needed · Final review failed with 2 blocking findings');
+    expect(visible).toContain('Needs you · Final review failed with 2 blocking findings');
     expect(visible).not.toContain('Nothing was sent');
     expect(visible).not.toContain('retry');
   });
@@ -736,8 +600,8 @@ describe('recovery prompt', () => {
         'a.txt · both sides changed the same lines',
         'gone.txt · deleted on one side, changed on the other',
       ],
-      availableActions: ['retry-same-worker', 'pause-run', 'end-run'],
-      recommendedAction: 'pause-run',
+      availableActions: ['retry-same-worker', 'end-run'],
+      recommendedAction: 'retry-same-worker',
       createdAt: '2026-10-04T09:00:00.000Z',
     };
     const partial: RecoveryIssue = {
@@ -756,7 +620,7 @@ describe('recovery prompt', () => {
     );
     const offered: RecoveryIssue = {
       ...partial,
-      availableActions: ['retry-same-worker', 'restore-backup', 'pause-run', 'end-run'],
+      availableActions: ['retry-same-worker', 'restore-backup', 'end-run'],
       recommendedAction: 'retry-same-worker',
     };
     expect(recoveryMenuLabel('restore-backup', offered)).toBe(
@@ -781,7 +645,7 @@ describe('recovery prompt', () => {
     expect(wide).toContain('i.txt · not written');
     expect(wide).toContain('Backup of the replaced files: /tmp/backup');
     const visible = await renderPromptBody(formatRecoveryPrompt(conflict));
-    expect(visible).toContain('Recovery needed · Apply found 2 conflicting files');
+    expect(visible).toContain('Needs you · Apply found 2 conflicting files');
     expect(visible).toContain('a.txt · both sides changed the same lines');
     expect(visible).toContain('re-run Apply');
     expect(visible).not.toContain('retry same worker');
@@ -802,8 +666,8 @@ describe('recovery prompt', () => {
         "Resolve each file in /tmp/ws: keep the run's version, copy your checkout's version over it, or edit it; then choose Re-run Apply.",
         ...files.map((file) => `${file} · both sides changed the same lines`),
       ],
-      availableActions: ['retry-same-worker', 'pause-run', 'end-run'],
-      recommendedAction: 'pause-run',
+      availableActions: ['retry-same-worker', 'end-run'],
+      recommendedAction: 'retry-same-worker',
       createdAt: '2026-10-04T09:00:00.000Z',
     };
 

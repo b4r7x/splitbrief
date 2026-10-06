@@ -47,7 +47,7 @@ describe('captureBundleBaseline', () => {
           'alias/control.txt',
           'linked.txt',
         ]) {
-          expect(await capture(dir, { file: path, action: 'modify' })).toMatchObject({
+          expect(await capture(dir, { suggestedFiles: [path], action: 'modify' })).toMatchObject({
             kind: 'rejected',
             code: 'unsafe-target',
             path,
@@ -65,7 +65,7 @@ describe('captureBundleBaseline', () => {
       write(dir, 'src/latin1.ts', Buffer.from([0x61, 0xff, 0xfe, 0x0a]));
       write(dir, 'src/blob.ts', Buffer.from([0x61, 0x00, 0x62]));
 
-      const absent = await capture(dir, { file: 'src/new.ts', action: 'create' });
+      const absent = await capture(dir, { suggestedFiles: ['src/new.ts'], action: 'create' });
       expect(absent).toEqual({
         kind: 'captured',
         baselines: [{ path: 'src/new.ts', operation: 'create', kind: 'missing' }],
@@ -77,7 +77,7 @@ describe('captureBundleBaseline', () => {
         ['src/latin1.ts', /not valid UTF-8/],
         ['src/blob.ts', /binary/],
       ] as const) {
-        const result = await capture(dir, { file: path, action: 'modify' });
+        const result = await capture(dir, { suggestedFiles: [path], action: 'modify' });
         expect(result).toMatchObject({ kind: 'rejected', code: 'unsafe-target', path });
         expect(result.kind === 'rejected' && result.error).toMatch(reason);
       }
@@ -90,8 +90,7 @@ describe('captureBundleBaseline', () => {
       chmodSync(join(dir, 'src/app.ts'), 0o755);
 
       const result = await capture(dir, {
-        file: 'src/app.ts',
-        files: ['src/app.ts', 'src/new.ts'],
+        suggestedFiles: ['src/app.ts', 'src/new.ts'],
         action: 'modify',
       });
       expect(result).toEqual({
@@ -115,24 +114,30 @@ describe('captureBundleBaseline', () => {
     await withDir('anchor', async (dir) => {
       write(dir, 'src/app.ts', 'export const a = 1;\n');
 
-      expect(await capture(dir, { file: 'src/app.ts', action: 'create' })).toMatchObject({
+      expect(
+        await capture(dir, { suggestedFiles: ['src/app.ts'], action: 'create' }),
+      ).toMatchObject({
         kind: 'rejected',
         code: 'baseline-conflict',
         path: 'src/app.ts',
         error: 'the brief says create but the anchor already exists',
       });
-      expect(await capture(dir, { file: 'src/gone.ts', action: 'modify' })).toMatchObject({
+      expect(
+        await capture(dir, { suggestedFiles: ['src/gone.ts'], action: 'modify' }),
+      ).toMatchObject({
         kind: 'rejected',
         code: 'baseline-conflict',
         error: 'the brief says modify but the anchor is missing',
       });
 
-      const retry = await capture(dir, { file: 'src/app.ts', action: 'create' }, ['src/app.ts']);
+      const retry = await capture(dir, { suggestedFiles: ['src/app.ts'], action: 'create' }, [
+        'src/app.ts',
+      ]);
       expect(retry).toMatchObject({
         kind: 'captured',
         baselines: [{ path: 'src/app.ts', operation: 'modify', content: 'export const a = 1;\n' }],
       });
-      const unrelated = await capture(dir, { file: 'src/app.ts', action: 'create' }, [
+      const unrelated = await capture(dir, { suggestedFiles: ['src/app.ts'], action: 'create' }, [
         'src/other.ts',
       ]);
       expect(unrelated).toMatchObject({ kind: 'rejected', code: 'baseline-conflict' });
@@ -145,23 +150,27 @@ describe('captureBundleBaseline', () => {
       write(dir, 'src/dup.ts', 'duplicate\n');
       linkSync(join(dir, 'src/app.ts'), join(dir, 'src/alias.ts'));
 
-      const cases: Array<[string[], RegExp]> = [
+      const cases: Array<[[string, ...string[]], RegExp]> = [
         [['src/app.ts', 'src/../src/app.ts'], /`\.` or `\.\.` segment/],
         [['src/dup.ts', 'src/dup.ts'], /duplicate declared target/],
-        [['src/tree', 'src/tree/inner.ts'], /collides with declared target/],
+        [['src/dup.ts', 'src/tree', 'src/tree/inner.ts'], /collides with declared target/],
         [['src/alias.ts', 'src/app.ts'], /hardlink/],
         [['src/app.ts', '/etc/passwd'], /absolute path/],
       ];
       for (const [files, reason] of cases) {
-        const result = await capture(dir, { file: 'src/app.ts', files, action: 'modify' });
+        const result = await capture(dir, { suggestedFiles: files, action: 'modify' });
         expect(result).toMatchObject({ kind: 'rejected', code: 'unsafe-target' });
         expect(result.kind === 'rejected' && result.error).toMatch(reason);
       }
 
-      const many = Array.from({ length: 33 }, (_, i) => `src/f${i}.ts`);
-      expect(
-        await capture(dir, { file: many[0] ?? '', files: many, action: 'create' }),
-      ).toMatchObject({ kind: 'rejected', code: 'output-limit' });
+      const many: [string, ...string[]] = [
+        'src/f0.ts',
+        ...Array.from({ length: 32 }, (_, i) => `src/f${i + 1}.ts`),
+      ];
+      expect(await capture(dir, { suggestedFiles: many, action: 'create' })).toMatchObject({
+        kind: 'rejected',
+        code: 'output-limit',
+      });
     });
   });
 });
@@ -170,7 +179,7 @@ describe('compareBundleBaseline', () => {
   itUnix('detects the same bytes under a different file mode', async () => {
     await withDir('mode', async (dir) => {
       write(dir, 'src/run.sh', 'echo hi\n');
-      const captured = await capture(dir, { file: 'src/run.sh', action: 'modify' });
+      const captured = await capture(dir, { suggestedFiles: ['src/run.sh'], action: 'modify' });
       if (captured.kind !== 'captured') throw new Error('capture failed');
       expect(await compareBundleBaseline(dir, captured.baselines)).toEqual({ kind: 'match' });
 
@@ -190,8 +199,7 @@ describe('compareBundleBaseline', () => {
         write(dir, 'src/first.ts', 'first\n');
         write(dir, 'src/second.ts', 'second\n');
         const captured = await capture(dir, {
-          file: 'src/first.ts',
-          files: ['src/first.ts', 'src/second.ts'],
+          suggestedFiles: ['src/first.ts', 'src/second.ts'],
           action: 'modify',
         });
         if (captured.kind !== 'captured') throw new Error('capture failed');
@@ -216,8 +224,7 @@ describe('compareBundleBaseline', () => {
     await withDir('presence', async (dir) => {
       write(dir, 'src/app.ts', 'a\n');
       const captured = await capture(dir, {
-        file: 'src/app.ts',
-        files: ['src/app.ts', 'src/new.ts'],
+        suggestedFiles: ['src/app.ts', 'src/new.ts'],
         action: 'modify',
       });
       if (captured.kind !== 'captured') throw new Error('capture failed');

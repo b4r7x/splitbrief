@@ -37,7 +37,7 @@ describe('validation output redaction', () => {
     bus.subscribe((e) => events.push(e));
 
     await validator.runValidation({
-      task: makeTask({ file: 'src/a.ts' }),
+      task: makeTask({ suggestedFiles: ['src/a.ts'] }),
       projectDir: tempDir,
       config,
       bus,
@@ -73,7 +73,7 @@ describe('validation output redaction', () => {
     bus.subscribe((e) => events.push(e));
 
     await validator.runValidation({
-      task: makeTask({ file: 'src/a.ts' }),
+      task: makeTask({ suggestedFiles: ['src/a.ts'] }),
       projectDir: tempDir,
       config,
       bus,
@@ -99,7 +99,7 @@ describe('validation output redaction', () => {
     const bus = { publish: () => {}, subscribe: () => () => {} };
 
     const results = await validator.runValidation({
-      task: makeTask({ file: 'src/a.ts' }),
+      task: makeTask({ suggestedFiles: ['src/a.ts'] }),
       projectDir: tempDir,
       config,
       bus: bus as never,

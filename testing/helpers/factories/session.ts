@@ -14,7 +14,7 @@ export function makeSession(overrides?: SessionOverrides): Session {
     startedAt: 1_700_000_000,
     completedAt: null,
     stateVersion: 1,
-    ...(status === 'open' && { stop: 'interrupted' as const }),
+    ...(status === 'open' && { stop: 'stopped' as const }),
     ...overrides,
   };
   if (status === 'complete') {

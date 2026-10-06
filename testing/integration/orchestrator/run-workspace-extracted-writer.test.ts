@@ -52,7 +52,7 @@ describe('an extracted-code writer in the run workspace', { timeout: 90_000 }, (
     const task = makeTask({
       id: 'T001',
       action: 'modify',
-      file: targetFile,
+      suggestedFiles: [targetFile],
       title: 'Change the value',
       scope: { inBounds: [targetFile], outOfBounds: ['unrelated files'] },
       evidence: ['src/value.ts exports value 2'],

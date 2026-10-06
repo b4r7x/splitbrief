@@ -60,7 +60,7 @@ describe.skipIf(process.env.SPLITBRIEF_PERF !== '1')('conversation flow hover pe
     const durations: number[] = [];
     for (let index = 0; index < 80; index += 1) {
       const startedAt = performance.now();
-      hoverStore.set('conversation', 2 + (index % 12));
+      hoverStore.set(2 + (index % 12));
       await tick(5);
       durations.push(performance.now() - startedAt);
     }

@@ -8,24 +8,11 @@ import { FeedbackRow } from './feedback-row.js';
 import { InputFooter } from './input-footer.js';
 import { Divider } from '../../../components/divider.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
-import { glyph } from '../../../lib/glyphs.js';
 import type { ComposerBoxHintOverride } from '../input-hints.js';
 import type { RailStageState } from '../../../core/rail-stages.js';
 import { getChromeContentWidth, WORKFLOW_GUTTER_X, type RailForm } from '../layout/chrome-rows.js';
 import type { readClipboardImage as readSystemClipboardImage } from '../../../core/attachments/clipboard-image.js';
 import type { listProjectFiles as listFiles } from '../../../lib/file-listing.js';
-
-// The in-box hint is a key cluster and a done mark: what a run spent and how many tokens it took
-// is named in /usage, not beside the caret.
-function useComposerBoxHints(override?: ComposerBoxHintOverride | undefined): ComposerBoxHints {
-  const complete = lifecycleStore.use((s) => s.phase === 'complete');
-  const baseKeys = override?.keys ?? '';
-  const keys = complete
-    ? [baseKeys, glyph('check')].filter((part) => part.length > 0).join('  ')
-    : baseKeys;
-  return { keys };
-}
 
 export function WorkflowHeader({
   startedAt,
@@ -124,7 +111,9 @@ export function WorkflowFooter({
   readClipboardImage?: typeof readSystemClipboardImage | undefined;
   listProjectFiles?: typeof listFiles | undefined;
 }) {
-  const boxHints = useComposerBoxHints(boxHintOverride);
+  // The in-box hint is a key cluster and nothing else: what a run spent is named in /usage, and how
+  // it ended in the rail and the closed block, not beside the caret.
+  const boxHints: ComposerBoxHints = { keys: boxHintOverride?.keys ?? '' };
   const composerSession = mode === 'review' ? `review:${reviewEpoch ?? 0}` : 'non-review';
   // The width the composer box actually renders at — the terminal inside the gutter — so the
   // input's own wrap math budgets the same cells the box paints.

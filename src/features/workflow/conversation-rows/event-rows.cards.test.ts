@@ -86,7 +86,7 @@ describe('eventRows colored left-rule callouts', () => {
     expect(topRow.markerTone).toBe('error');
     expect(topRow.segments[0]?.tone).toBe('error');
     expect(rowText(topRow)).not.toContain(RULE);
-    expect(rowText(topRow)).toContain('error');
+    expect(rowText(topRow)).toContain('Error');
 
     const bodyRow = requireRow(rows, (rowValue) => rowValue.kind === 'callout-body');
     expect(bodyRow.markerTone).toBe('error');
@@ -109,9 +109,9 @@ describe('eventRows colored left-rule callouts', () => {
     const header = () => rowText(requireRow(rowsFor(event), (row) => row.kind === 'callout-top'));
     vi.useFakeTimers({ toFake: ['Date'], now: new Date(2026, 6, 13, 9, 30) });
     try {
-      expect(header()).toMatch(/^error {2}resets 17:00 *$/);
+      expect(header()).toMatch(/^Error {2}resets 17:00 *$/);
       vi.setSystemTime(new Date(2026, 6, 14, 9, 30));
-      expect(header()).toMatch(/^error {2}resets Jul 13, 17:00 *$/);
+      expect(header()).toMatch(/^Error {2}resets Jul 13, 17:00 *$/);
     } finally {
       vi.useRealTimers();
     }
@@ -134,7 +134,7 @@ describe('eventRows colored left-rule callouts', () => {
     const topRow = requireRow(rows, (rowValue) => rowValue.kind === 'callout-top');
     expect(topRow.markerTone).toBe('warning');
     expect(topRow.segments[0]?.tone).toBe('warning');
-    expect(rowText(topRow)).toContain('warning');
+    expect(rowText(topRow)).toContain('Warning');
 
     const bodyRow = requireRow(rows, (rowValue) => rowValue.kind === 'callout-body');
     expect(rowText(bodyRow)).toContain('the runner reported no usage');
@@ -160,36 +160,6 @@ describe('eventRows colored left-rule callouts', () => {
     expect(text).toContain('T001 Validate no-op workflow: dependency failed');
     expect(text).not.toContain('TT001');
     expect(rows[0]?.kind).toBe('card');
-  });
-
-  it('keeps recovery_prompted as a quiet de-boxed card, no left rule', () => {
-    const event: EngineEventOf<'recovery_prompted'> = {
-      type: 'recovery_prompted',
-      ts: 0,
-      phase: 'implementing',
-      issueId: 'issue-1',
-      reason: 'validation-failed',
-      headline: 'Validation failed on T001',
-      resumeCommand: 'splitbrief continue s-1 --action retry',
-      recommendedAction: 'retry-same-worker',
-      taskId: taskId('T001'),
-      files: [],
-      affectedTaskIds: [],
-      availableActions: ['retry-same-worker'],
-    };
-
-    const rows = rowsFor(event);
-
-    expect(hasLabelRow(rows)).toBe(true);
-    expect(hasLeftRule(rows)).toBe(false);
-    const topRow = requireRow(rows, (rowValue) => rowValue.kind === 'card-top');
-    expect(rowText(topRow)).toContain('Recovery');
-    expect(topRow.segments[0]?.tone).toBe('textDim');
-
-    // The card says what happened in the words the prompt uses, not the enum names behind them.
-    const bodyRow = requireRow(rows, (rowValue) => rowValue.kind === 'card-body');
-    expect(rowText(bodyRow)).toContain('Validation failed on T001');
-    expect(rowText(bodyRow)).not.toContain('retry-same-worker');
   });
 
   it('does not append its own trailing blank row (build.ts owns inter-block spacing)', () => {
@@ -264,7 +234,7 @@ describe('eventRows colored left-rule callouts', () => {
     expect(windowRows).toHaveLength(1);
     const topRow = requireRow(windowRows, (rowValue) => rowValue.kind === 'callout-top');
     expect(topRow.markerTone).toBe('error');
-    expect(rowText(topRow)).toContain('error');
+    expect(rowText(topRow)).toContain('Error');
 
     const bodyWindowRows = block?.createRows(1, 2) ?? [];
     expect(bodyWindowRows).toHaveLength(1);

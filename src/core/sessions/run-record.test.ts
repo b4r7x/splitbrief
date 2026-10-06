@@ -48,7 +48,10 @@ describe('loadRunRecord', () => {
     expect(loaded.hydration.kind).toBe('missing');
     expect(loaded.status).toEqual({
       kind: 'open',
-      stop: { kind: 'failed', message: 'Session has no saved state to read.' },
+      stop: {
+        kind: 'stopped',
+        on: { kind: 'failed', message: 'Session has no saved state to read.' },
+      },
       resumeAt: { kind: 'planner', call: 'plan' },
     });
     expect(loaded.feature).toBe('');
@@ -62,7 +65,10 @@ describe('loadRunRecord', () => {
     const loaded = record();
 
     expect(loaded.hydration.kind).toBe('invalid');
-    expect(loaded.status).toMatchObject({ kind: 'open', stop: { kind: 'failed' } });
+    expect(loaded.status).toMatchObject({
+      kind: 'open',
+      stop: { kind: 'stopped', on: { kind: 'failed' } },
+    });
   });
 
   it('reads an open paused run with its feature and resume step', () => {
@@ -75,7 +81,7 @@ describe('loadRunRecord', () => {
     expect(loaded.startedAt).not.toBeNull();
     expect(loaded.status).toMatchObject({
       kind: 'open',
-      stop: { kind: 'paused', at: 'mid-step' },
+      stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } },
       resumeAt: { kind: 'brief', taskId: 'T001', attempt: 0 },
     });
   });

@@ -65,11 +65,11 @@ The owner watches live with `tmux attach -r -t sb`. A read-only attach never res
 | Moment | Read first | Then |
 |---|---|---|
 | Planner question | the question block in the pane | `↑↓` choose, `⏎` next, `tab` writes a free answer, the last `⏎` sends all answers |
-| Plan card (`reviewing-plan`, with `approve: plan`) | `.splitbrief/sessions/<id>/plan.md`: summary, acceptance criteria, protected writes, one task per coherent outcome, no task planning for a red gate | `y` approve, `c` request changes, `e` edit `plan.json`, `q` end the run |
-| Recovery panel | the reason line and the file list | type the action letter and `⏎`; at a task halt, typed free text retries the brief with that text as the implementer's correction; `w` (switch seat) opens the halted seat's picker on the offered tool, where tool and model are chosen |
+| Plan card (`reviewing-plan`, with `approve: plan`) | `.splitbrief/sessions/<id>/plan.md`: summary, acceptance criteria, protected writes, one task per coherent outcome, no task planning for a red gate | `↑↓` choose a row and `⏎` take it — approve, request changes, edit `plan.json`, end the run; or type `approve`, `comment <text>`, `edit` or `end-run` and `⏎` |
+| Recovery panel | the title line (`Needs you · <cause>` or `Seat down · <cause>`) and the file list | press the action's letter, or `⏎` on the highlighted row; at a task halt, typed free text retries the brief with that text as the implementer's correction; `w` (switch seat) opens the halted seat's picker on the offered tool, where tool and model are chosen |
 | Stop sheet | — | `esc` opens it, `esc` again stops resumably, `ctrl+c` twice quits after the stop settles |
 
-Headless: `$SB start --plain --yolo "<sentence>" @tasks.md`. The plan card is approved unattended (`workflow.approve: none` skips it), a planner question ends the run with `input_required`, and `kill -INT <pid>` parks the run cleanly (exit 0, status `open · paused`).
+Headless: `$SB start --plain "<sentence>" @tasks.md`. The plan card is approved unattended (`workflow.approve: none` skips it), a planner question ends the run with `input_required`, and `kill -INT <pid>` parks the run cleanly (exit 0, status `open · stopped`).
 
 ## 3. Watching a run
 
@@ -81,7 +81,7 @@ tmux capture-pane -t sb -p | sed 's/[[:space:]]*$//' | grep -v '^$' | tail -16
 ps -o rss=,etime= -p $(pgrep -f 'dist/cli.js' | head -1)
 ```
 
-Events worth acting on: `artifact_written`, `recovery_prompted{reason}`, `task_retry{attempt}`, `task_escalating`, `validate{status:"done",passed}`, `paused_external_changes`, `runner_call_stalled`, `workflow_complete{review}`.
+Events worth acting on: `artifact_written`, `recovery_prompted{reason}`, `task_retry{attempt}`, `task_escalating`, `validate{status:"done",passed}`, `runner_call_stalled`, `workflow_complete{review}`.
 
 Silence now means no frames. Every admitted tool is spawned in a streaming output mode — antigravity included, on `--output-format stream-json` — so a working child emits a frame per step and the idle watchdog measures the gap between frames, not the gap between documents. `runner_call_stalled` therefore means the tool has printed nothing for 5 minutes, which is worth looking at rather than waiting out; the watchdog still cuts only after 20 minutes with no event and no running child process. Before killing a child, look for its own activity trail: antigravity writes step records to `~/.gemini/antigravity-cli/brain/<conversation>/.system_generated/logs/chunks/transcript_full/*.jsonl` (`ls -t … | head -1`, then `tail -1`); a record younger than a minute is a working agent.
 

@@ -4,7 +4,7 @@ import type { RecoveryIssue } from '../../../../core/schemas/recovery/schemas.js
 import type { SeatProtocolError } from '../../../runners/typed-output.js';
 import type { RecoveryBuilderBase } from './issue.js';
 import { compactFacts, createRecoveryIssue } from './issue.js';
-import { availableActionsForReason, chooseRecommended } from './actions.js';
+import { chooseRecommended, haltActions } from './actions.js';
 import { switchSeatOffer, type SeatSwapContext } from './task.js';
 
 export interface SeatProtocolRecoveryOptions extends RecoveryBuilderBase {
@@ -23,10 +23,11 @@ export function buildSeatProtocolErrorRecoveryIssue(
 ): RecoveryIssue {
   const reason = 'seat-protocol-error';
   const offer = switchSeatOffer(opts.seatSwap);
-  const actions = availableActionsForReason(reason, {
-    switchSeat: offer !== undefined,
-    routeBigger: false,
-  });
+  const actions = haltActions(reason, [
+    'retry-same-worker',
+    offer === undefined ? undefined : 'switch-seat',
+    'end-run',
+  ]);
 
   return createRecoveryIssue({
     id: opts.id,
@@ -44,7 +45,7 @@ export function buildSeatProtocolErrorRecoveryIssue(
       attempts: String(opts.error.data.attempts),
     }),
     availableActions: actions,
-    recommendedAction: chooseRecommended(actions, ['retry-same-worker', 'pause-run']),
+    recommendedAction: chooseRecommended(actions),
     createdAt: opts.createdAt,
   });
 }

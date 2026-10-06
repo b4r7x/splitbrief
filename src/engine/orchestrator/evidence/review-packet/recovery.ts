@@ -92,19 +92,6 @@ function buildRecovery(
       ...(event.message !== undefined && { message: event.message }),
     }));
 
-  const resolvedIssueIds = new Set(
-    resolvedOutcomes.flatMap((outcome) => (outcome.issueId ? [outcome.issueId] : [])),
-  );
-  const pausedOutcomes: RecoveryOutcome[] = selectedActions
-    .filter(
-      (selected) => selected.action === 'pause-run' && !resolvedIssueIds.has(selected.issueId),
-    )
-    .map((selected) => ({
-      issueId: selected.issueId,
-      action: selected.action,
-      status: 'paused',
-    }));
-
   const resumedOutcomes: RecoveryOutcome[] = events
     .filter((event) => event.type === 'workflow_resumed')
     .map(() => ({
@@ -129,10 +116,6 @@ function buildRecovery(
       (outcome) =>
         `Recovery action failed${outcome.issueId ? ` for ${outcome.issueId}` : ''}${outcome.message ? `: ${outcome.message}` : ''}.`,
     ),
-    ...pausedOutcomes.map(
-      (outcome) =>
-        `Recovery issue ${outcome.issueId ?? 'unknown'} paused without a resolved event.`,
-    ),
     ...unresolvedOutcomes.map((outcome) => outcome.message ?? 'Recovery issue remains unresolved.'),
   ];
 
@@ -144,13 +127,7 @@ function buildRecovery(
     events: recoveryEvents,
     currentIssue,
     selectedActions,
-    outcomes: [
-      ...resolvedOutcomes,
-      ...failedOutcomes,
-      ...pausedOutcomes,
-      ...resumedOutcomes,
-      ...unresolvedOutcomes,
-    ],
+    outcomes: [...resolvedOutcomes, ...failedOutcomes, ...resumedOutcomes, ...unresolvedOutcomes],
     unresolvedRisks,
   };
 }

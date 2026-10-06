@@ -4,18 +4,18 @@ import type { Task } from '../../../../core/schemas/task.js';
 import type { PlannerCallDiagnosis } from '../planner-call-failure.js';
 import type { RecoveryBuilderBase } from './issue.js';
 import { compactFacts, createRecoveryIssue } from './issue.js';
-import { availableActionsForReason, chooseRecommended, orderedActions } from './actions.js';
+import { chooseRecommended, haltActions } from './actions.js';
 import { taskFiles } from './details.js';
 import { switchSeatOffer, type SeatSwapContext } from './task.js';
 
 /** Why the plan seat could not produce its artifact. */
 export type PlannerSeatFailure = 'unauthenticated' | 'usage-limit' | 'call-failed';
 
-const PLANNER_FAILURE_REASONS: Record<PlannerSeatFailure, RecoveryReason> = {
+const PLANNER_FAILURE_REASONS = {
   unauthenticated: 'runner-unauthenticated',
   'usage-limit': 'runner-usage-limit',
   'call-failed': 'planner-call-failed',
-};
+} as const satisfies Record<PlannerSeatFailure, RecoveryReason>;
 
 export interface PlannerCallFailureRecoveryOptions extends RecoveryBuilderBase {
   /**
@@ -52,10 +52,12 @@ export function buildPlannerCallFailedRecoveryIssue(
   const reason = PLANNER_FAILURE_REASONS[diagnosis.failure];
   const resetsAt = diagnosis.resetsAt ?? null;
   const offer = switchSeatOffer(opts.seatSwap);
-  const actions = availableActionsForReason(reason, {
-    switchSeat: offer !== undefined,
-    routeBigger: false,
-  }).filter((action) => action !== 'skip-current-task' || opts.task !== undefined);
+  const actions = haltActions(reason, [
+    'retry-same-worker',
+    offer === undefined ? undefined : 'switch-seat',
+    opts.task === undefined ? undefined : 'skip-current-task',
+    'end-run',
+  ]);
 
   return createRecoveryIssue({
     id: opts.id,
@@ -73,9 +75,7 @@ export function buildPlannerCallFailedRecoveryIssue(
     availableActions: actions,
     recommendedAction: chooseRecommended(
       actions,
-      diagnosis.failure === 'usage-limit'
-        ? ['switch-seat', 'pause-run']
-        : ['retry-same-worker', 'pause-run'],
+      diagnosis.failure === 'usage-limit' ? ['switch-seat'] : [],
     ),
     createdAt: opts.createdAt,
   });
@@ -97,7 +97,7 @@ export function buildPlanSessionHaltRecoveryIssue(
     reason: Extract<RecoveryReason, 'plan-questions-exhausted' | 'plan-checks-failed'>;
   },
 ): RecoveryIssue {
-  const actions = orderedActions(['retry-same-worker', 'revise', 'end-run']);
+  const actions = haltActions(opts.reason, ['retry-same-worker', 'revise', 'end-run']);
   return createRecoveryIssue({
     id: opts.id,
     seat: 'plan',

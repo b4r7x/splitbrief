@@ -85,7 +85,7 @@ describe('file-hash change detection', () => {
       expect(existsSync(join(repoDir, '.git'))).toBe(true);
 
       const inferred = await captureChangeDetectorBaseline(repoDir);
-      expect(inferred).toEqual({ kind: 'git-status', files: ['src/app.ts'] });
+      expect(inferred).toMatchObject({ kind: 'git-status', files: ['src/app.ts'] });
       const declared = await captureChangeDetectorBaseline(repoDir, { kind: 'file-hashes' });
       expect(declared.kind).toBe('file-hashes');
       const detect = createChangeDetector('Direct implementer');

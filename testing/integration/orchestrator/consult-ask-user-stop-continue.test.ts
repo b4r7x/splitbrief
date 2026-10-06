@@ -79,7 +79,7 @@ describe('a run stopped while a consult question waits', { timeout: 120_000 }, (
     const task = makeTask({
       id: 'T001',
       action: 'create',
-      file: targetFile,
+      suggestedFiles: [targetFile],
       title: 'Create the marker module',
       description: 'Create a module whose marker only the operator knows.',
       implementationSteps: ['Create src/loop.ts with the marker export.'],

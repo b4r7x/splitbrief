@@ -1,6 +1,6 @@
 import type { ConsultReason, ImplementerReport } from '../../../core/schemas/consult.js';
 import type { Plan } from '../../../core/schemas/plan.js';
-import { taskFiles, type Check, type Task } from '../../../core/schemas/task.js';
+import type { Check, Task } from '../../../core/schemas/task.js';
 import type { ConsultRecord } from '../../../core/schemas/workflow.js';
 import { BOUNDS } from '../../../core/pipeline-spec/bounds.js';
 import { assertNever } from '../../../utils/type-guards.js';
@@ -111,9 +111,7 @@ function taskBody(task: Task): string {
   return [
     `**Title**: ${task.title}`,
     `**Action**: ${task.action}`,
-    `**Files**: ${taskFiles(task)
-      .map((file) => `\`${file}\``)
-      .join(', ')}`,
+    `**Files**: ${task.suggestedFiles.map((file) => `\`${file}\``).join(', ')}`,
     `**Depends on**: ${task.dependsOn.join(', ') || 'nothing'}`,
     `**Criteria**: ${(task.criteria ?? []).join(', ') || 'none recorded'}`,
     '',
@@ -137,9 +135,7 @@ function revisionSection(revision: Task): PromptPart {
 function revisionBody(revision: Task): string {
   return [
     `**Action**: ${revision.action}`,
-    `**Files**: ${taskFiles(revision)
-      .map((file) => `\`${file}\``)
-      .join(', ')}`,
+    `**Files**: ${revision.suggestedFiles.map((file) => `\`${file}\``).join(', ')}`,
     `**Criteria**: ${(revision.criteria ?? []).join(', ') || 'none recorded'}`,
     '',
     revision.description,

@@ -17,6 +17,7 @@ import {
 import { effortTokenOfModelId, peelAxisTokensFromModelId } from '../runners/effort-channel.js';
 import { PlannerConfigSchema } from './planner-config.js';
 import {
+  ActionClassSchema,
   CliToolIdSchema,
   EFFORT_LEVELS,
   EffortLevelSchema,
@@ -265,5 +266,14 @@ describe('TaskCompletionMethodSchema', () => {
   });
   it.each(['mcp', 'done', ''])('rejects "%s"', (input) => {
     expect(TaskCompletionMethodSchema.safeParse(input).success).toBe(false);
+  });
+});
+
+describe('ActionClassSchema', () => {
+  it('accepts "validation", the class of an npm run check the approved plan confirms', () => {
+    expect(ActionClassSchema.parse('validation')).toBe('validation');
+  });
+  it('accepts "network", which a custom runner admission still asks about', () => {
+    expect(ActionClassSchema.parse('network')).toBe('network');
   });
 });

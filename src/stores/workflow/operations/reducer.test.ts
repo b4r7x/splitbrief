@@ -142,6 +142,61 @@ function runnerWarning(
   };
 }
 
+function runnerActivity(
+  overrides?: Partial<EngineEventOf<'runner_call_activity'>>,
+): EngineEventOf<'runner_call_activity'> {
+  return {
+    type: 'runner_call_activity',
+    ts: 1_100,
+    phase: 'implementing',
+    taskId: taskId('T001'),
+    callId: 'call-1',
+    role: 'implementer',
+    backendKind: 'cli',
+    sequence: 2,
+    activityId: 'call-1:tool:a',
+    stage: 'updated',
+    kind: 'command',
+    label: 'bash',
+    target: 'npx vitest run',
+    redacted: false,
+    ...overrides,
+  };
+}
+
+describe('the tools a running call has open', () => {
+  beforeEach(() => resetWorkflow());
+
+  it('keeps each tool from the activity that opens it until the activity that closes it', () => {
+    addEvent(runnerStarted());
+    addEvent(runnerActivity({ ts: 1_100 }));
+    addEvent(
+      runnerActivity({ ts: 1_200, activityId: 'call-1:tool:b', kind: 'read', target: 'a.ts' }),
+    );
+    addEvent(runnerActivity({ ts: 1_300, activityId: 'call-1:tool:b', stage: 'completed' }));
+    addEvent(runnerActivity({ ts: 1_400 }));
+
+    expect(operationsStore.get().active?.openTools).toEqual([
+      {
+        activityId: 'call-1:tool:a',
+        kind: 'command',
+        label: 'bash',
+        target: 'npx vitest run',
+        since: 1_100,
+      },
+    ]);
+  });
+
+  it('opens no tool for activity that is not one', () => {
+    addEvent(runnerStarted());
+    addEvent(
+      runnerActivity({ activityId: 'call-1:system', kind: 'text', label: 'system activity' }),
+    );
+
+    expect(operationsStore.get().active?.openTools ?? []).toEqual([]);
+  });
+});
+
 describe('operationsStore', () => {
   beforeEach(() => resetWorkflow());
 

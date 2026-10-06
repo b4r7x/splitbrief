@@ -23,7 +23,7 @@ import {
 } from './projections.js';
 
 /** How a closed run reads: every check agreed, something needs a look, or it was ended. */
-export type SummaryOutcomeKind = 'ready' | 'needs-attention' | 'ended' | 'applied' | 'discarded';
+export type SummaryOutcomeKind = 'complete' | 'needs-attention' | 'ended' | 'applied' | 'discarded';
 
 export type SeatView =
   | Readonly<{ kind: 'named'; identity: string; short: string }>
@@ -69,7 +69,6 @@ export type ScopeView =
   | Readonly<{
       kind: 'checked';
       passed: boolean;
-      score: number;
       errors: number;
       warnings: number;
     }>;
@@ -111,10 +110,11 @@ export interface SummaryView {
     changed: string[] | null;
     partial: ReadonlySet<string>;
     stoppedAt: Readonly<{ taskId: TaskId; partialFiles: string[] }> | null;
-    /** An ended or discarded workspace run saved its changes in run.patch. */
-    patch: boolean;
+    /** The run.patch an ended or discarded workspace run saved its changes in, project-relative. */
+    patch: string | null;
   }>;
   checkpoint: 'accepted' | 'rejected' | null;
+  applyUndo: Readonly<{ conflicts: readonly string[] }> | null;
   phases: PhaseTiming[];
 }
 
@@ -147,13 +147,15 @@ export function deriveSummaryView(input: DeriveSummaryViewInput): SummaryView | 
   const tasks = state?.tasks ?? null;
   const rows = briefRows({ summary, ledger, currentTasks: tasks });
   const apply = applyStage(record);
+  const files = filesView(summary);
+  const sessionId = sanitizeTerminalDisplayText(record.ref.sessionId);
   return {
     outcome: { kind: outcomeKind },
     run: {
       feature: sanitizeTerminalDisplayText(summary.feature),
       totalMs: summary.totalTime,
       phase,
-      sessionId: sanitizeTerminalDisplayText(record.ref.sessionId),
+      sessionId,
     },
     rail: railFor(phase, outcomeKind, apply),
     seats: {
@@ -176,8 +178,16 @@ export function deriveSummaryView(input: DeriveSummaryViewInput): SummaryView | 
     quality: summary.briefQuality ?? null,
     cost: input.showSpend === false ? null : costView(summary.costBreakdown),
     tokens: tokensView(summary),
-    files: { ...filesView(summary), patch: workspacePatch(record, state) },
+    files: { ...files, patch: savedPatch(state, files.changed) },
     checkpoint: record.checkpoint?.kind ?? null,
+    applyUndo:
+      state?.applied?.undone === undefined
+        ? null
+        : {
+            conflicts: state.applied.undone.conflicts.map((path) =>
+              sanitizeTerminalDisplayText(path),
+            ),
+          },
     phases: phaseTimings(summary),
   };
 }
@@ -187,7 +197,7 @@ function savedPhase(record: RunRecord): Phase | null {
 }
 
 /**
- * Ready is the whole run agreeing: it finished, the packet was written, the verdict allows it, the
+ * Complete is the whole run agreeing: it finished, the packet was written, the verdict allows it, the
  * scope check passed and no brief failed. Anything short of that on a finished run needs attention.
  */
 function outcomeKindFor(
@@ -199,20 +209,19 @@ function outcomeKindFor(
   if (closedAs === 'discarded') return 'discarded';
   const packet = summary.reviewPacket;
   const verdict = packet?.finalReviewVerdict ?? null;
-  const ready =
+  const agreed =
     packet?.finalReviewStatus === 'written' &&
     (verdict === 'pass' || verdict === 'pass_with_notes') &&
     packet.driftPassed === true &&
     summary.failed === 0;
-  return ready ? 'ready' : 'needs-attention';
+  return agreed ? 'complete' : 'needs-attention';
 }
 
-/** An ended or discarded workspace run left its changes in run.patch; nothing else is a patch. */
-function workspacePatch(record: RunRecord, state: WorkflowState | null): boolean {
-  const workspace = state?.workspace;
-  if (workspace === undefined || workspace.kind === 'checkout') return false;
-  const status = record.status;
-  return status.kind === 'closed' && (status.as === 'ended' || status.as === 'discarded');
+/** The run.patch the close recorded; a run that changed no file left nothing in it. */
+function savedPatch(state: WorkflowState | null, changed: readonly string[] | null): string | null {
+  const patch = state?.closed?.patch;
+  if (patch === undefined || changed?.length === 0) return null;
+  return sanitizeTerminalDisplayText(patch);
 }
 
 /**

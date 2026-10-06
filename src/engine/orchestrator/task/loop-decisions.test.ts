@@ -102,13 +102,13 @@ function decidingImplementer(decisionsPerCall: readonly (readonly Decision[])[])
   const script = [...decisionsPerCall];
   const write = (projectDir: string, task: Task, marker: string) => {
     mkdirSync(join(projectDir, 'src'), { recursive: true });
-    writeFileSync(join(projectDir, task.file), `${marker}\n`);
+    writeFileSync(join(projectDir, task.suggestedFiles[0]), `${marker}\n`);
   };
   const handBack = (decisions: readonly Decision[], task: Task) => ({
     success: true,
     output: 'implemented',
     usage: { inputTokens: 10, outputTokens: 5 },
-    report: doneReport(decisions, task.file),
+    report: doneReport(decisions, task.suggestedFiles[0]),
   });
   let calls = 0;
   return makeImplementer({
@@ -220,7 +220,7 @@ async function runLoop(opts: {
 describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
   it('confirms how-only decisions, then a red validation retries with the exact errors before any consult', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', file: 'src/a.ts' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
     const implementer = decidingImplementer([[HOW], [HOW], [HOW]]);
     const validator = scriptedValidator({ T001: [TS_ERROR, LINT_ERROR, null] });
     const { planner, prompts } = scriptedPlanner({
@@ -270,7 +270,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
 
   it('confirms only the decisions the ledger does not hold yet', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', file: 'src/a.ts' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
     const implementer = decidingImplementer([[HOW], [HOW, HOW_TOO]]);
     const validator = scriptedValidator({ T001: [TS_ERROR, null] });
     const confirmations = [[HOW], [HOW_TOO]];
@@ -303,7 +303,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
 
   it('confirms decisions with the consult and planner-call bounds spent, and never halts', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', file: 'src/a.ts' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
     const implementer = decidingImplementer([[HOW, HOW_TOO]]);
     const validator = scriptedValidator({});
     const { planner, prompts } = scriptedPlanner({ confirm: () => confirm([HOW, HOW_TOO]) });
@@ -342,7 +342,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
 
   it('puts a change of what to the user and retries with the answer, without a consult', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', file: 'src/a.ts' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
     const what: Decision = { what: 'Dropped the --json flag', why: 'It was hard to wire' };
     const implementer = decidingImplementer([[what], []]);
     const validator = scriptedValidator({});
@@ -385,7 +385,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
 
   it("confirms a brief's decisions however many confirms the briefs before it spent", async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', file: 'src/a.ts' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
     const implementer = decidingImplementer([[HOW]]);
     const validator = scriptedValidator({});
     const { planner, prompts } = scriptedPlanner({ confirm: () => confirm([HOW]) });
@@ -416,7 +416,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
 
   it('asks the user about a change of what a retry reported, and consults with the answer', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', file: 'src/a.ts' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
     const what: Decision = { what: 'Dropped the --json flag', why: 'It was hard to wire' };
     const implementer = decidingImplementer([[], [what], []]);
     const validator = scriptedValidator({ T001: [TS_ERROR, null] });
@@ -464,7 +464,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
 
   it('validates with a warning when the decision-confirm answer is malformed', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', file: 'src/a.ts' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
     const implementer = decidingImplementer([[HOW]]);
     const validator = scriptedValidator({});
     const planner = makePlanner({
@@ -499,7 +499,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
 
   it('halts on a recovery when the decision-confirm call itself fails', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', file: 'src/a.ts' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
     const implementer = decidingImplementer([[HOW]]);
     const validator = scriptedValidator({});
     const planner = makePlanner({
@@ -532,7 +532,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
 
   it('stops without validation or a recovery when the run is stopped during the decision-confirm', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', file: 'src/a.ts' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
     const implementer = decidingImplementer([[HOW]]);
     const validator = scriptedValidator({});
     const controller = new AbortController();
@@ -569,7 +569,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     'restarts a brief continued past %s with the last failing output',
     async (reason, bounds) => {
       const { projectDir, sessionId } = setupProject();
-      const task = makeTask({ id: 'T001', file: 'src/a.ts' });
+      const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
       const implementer = decidingImplementer([]);
       const validator = scriptedValidator({ T001: [TS_ERROR, LINT_ERROR, null] });
       const { planner } = scriptedPlanner({ confirm: () => confirm([]) });
@@ -622,7 +622,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
 
   it('keeps the carried failure across a stop, and drops it once the carrying attempt returns', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', file: 'src/a.ts' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
     const validator = scriptedValidator({ T001: [LINT_ERROR] });
     const { planner } = scriptedPlanner({ confirm: () => confirm([]), consult: guidance });
     const { bus } = makeBusRecorder();

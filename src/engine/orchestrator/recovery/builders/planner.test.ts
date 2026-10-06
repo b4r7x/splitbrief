@@ -25,7 +25,7 @@ const plannerSeatSwap: SeatSwapContext = {
 };
 
 describe('buildPlannerCallFailedRecoveryIssue', () => {
-  it('offers a re-issue, a pause and an end, and no task actions', () => {
+  it('offers a re-issue and an end, and no task actions', () => {
     const issue = buildPlannerCallFailedRecoveryIssue({
       diagnosis: { failure: 'call-failed', message: 'Planning failed.' },
       phase: 'planning',
@@ -34,7 +34,7 @@ describe('buildPlannerCallFailedRecoveryIssue', () => {
 
     expect(issue.reason).toBe('planner-call-failed');
     expect(issue.seat).toBe('plan');
-    expect(issue.availableActions).toEqual(['retry-same-worker', 'pause-run', 'end-run']);
+    expect(issue.availableActions).toEqual(['retry-same-worker', 'end-run']);
     expect(issue.recommendedAction).toBe('retry-same-worker');
     expect(issue.taskId).toBeUndefined();
     expectValidRecoveryIssue(issue);
@@ -52,7 +52,8 @@ describe('buildPlannerCallFailedRecoveryIssue', () => {
       seat: 'plan',
       candidates: [{ tool: 'claude-code' }],
     });
-    expect(issue.availableActions).toContain('switch-seat');
+    expect(issue.availableActions).toEqual(['retry-same-worker', 'switch-seat', 'end-run']);
+    expect(issue.recommendedAction).toBe('retry-same-worker');
     expectValidRecoveryIssue(issue);
   });
 
@@ -86,7 +87,7 @@ describe('buildPlannerCallFailedRecoveryIssue', () => {
   });
 
   it('names the brief a hint halted on and can skip it; a review halt names none', () => {
-    const task = makeTask({ id: 'T004', file: 'src/alpha.ts' });
+    const task = makeTask({ id: 'T004', suggestedFiles: ['src/alpha.ts'] });
     const hint = buildPlannerCallFailedRecoveryIssue({
       diagnosis: { failure: 'usage-limit', message: 'Codex hit its usage limit.' },
       task,
@@ -112,17 +113,11 @@ describe('buildPlannerCallFailedRecoveryIssue', () => {
       'retry-same-worker',
       'switch-seat',
       'skip-current-task',
-      'pause-run',
       'end-run',
     ]);
     expect(review.seat).toBe('review');
     expect(review.taskId).toBeUndefined();
-    expect(review.availableActions).toEqual([
-      'retry-same-worker',
-      'switch-seat',
-      'pause-run',
-      'end-run',
-    ]);
+    expect(review.availableActions).toEqual(['retry-same-worker', 'switch-seat', 'end-run']);
     expectValidRecoveryIssue(hint);
     expectValidRecoveryIssue(review);
   });

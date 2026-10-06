@@ -27,8 +27,6 @@ export interface UseRunContinueResult {
   inlineResume: InlineResume | undefined;
   /** Record the state this run carries without re-entering the engine. */
   setInlineResume: (next: InlineResume) => void;
-  /** Re-enter the engine on a state: a rewind and the continue path below both take it. */
-  restart: (next: InlineResume) => void;
   handleResume: (injectedText?: string) => void;
 }
 
@@ -73,5 +71,5 @@ export function useRunContinue({
     );
   };
 
-  return { runId, inlineResume, setInlineResume, restart, handleResume };
+  return { runId, inlineResume, setInlineResume, handleResume };
 }

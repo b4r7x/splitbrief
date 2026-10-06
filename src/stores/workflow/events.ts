@@ -89,17 +89,17 @@ function mergeIntoTail(last: EngineEvent | undefined, event: EngineEvent): TailM
       joined.length > MAX_MERGED_TEXT_LENGTH ? joined.slice(-MAX_MERGED_TEXT_LENGTH) : joined;
     return { kind: 'replace', event: { ...last, text } };
   }
+  // A running gate is progress on the one verdict that settles it: the verdict takes its slot.
   if (
     event.type === 'validate' &&
-    event.status === 'running' &&
     last?.type === 'validate' &&
-    last.status === 'running'
+    last.status === 'running' &&
+    last.taskId === event.taskId
   ) {
     return { kind: 'replace', event };
   }
   if (
     event.type === 'validation_baseline' &&
-    event.status === 'running' &&
     last?.type === 'validation_baseline' &&
     last.status === 'running'
   ) {

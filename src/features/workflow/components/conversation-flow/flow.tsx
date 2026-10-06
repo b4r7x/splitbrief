@@ -13,7 +13,11 @@ import { conversationScrollStore } from '../../../../stores/workflow/conversatio
 import { streamingOutputStore } from '../../../../stores/workflow/streaming-output.js';
 import { transcriptTailStore } from '../../../../stores/workflow/transcript-tail.js';
 import { lifecycleStore } from '../../../../stores/workflow/lifecycle.js';
-import { selectTaskListView, tasksStore } from '../../../../stores/workflow/tasks.js';
+import {
+  selectRunningBrief,
+  selectTaskListView,
+  tasksStore,
+} from '../../../../stores/workflow/tasks.js';
 import type { TaskListView } from '../../../../stores/workflow/tasks.js';
 import { useSections } from '../../../../stores/workflow/actions/sections.js';
 import { useStores } from '../../../../stores/use-stores.js';
@@ -118,15 +122,27 @@ export function ConversationFlow({
   // A run that has closed has nothing queued: the briefs it never reached are already listed, in
   // the block that accounts for it, as the briefs it never reached.
   const closed = tail !== undefined && tail.length > 0;
+  // The brief the run is on is the live section, not a pending one, even while a recovery has set it
+  // back to pending before its next start.
+  const runningBrief = selectRunningBrief(tasks, lifecycle.phase).current;
   const pendingTasks =
-    sidebarShowsTasks || closed ? [] : tasks.tasks.filter((task) => task.status === 'pending');
+    sidebarShowsTasks || closed
+      ? []
+      : tasks.tasks.filter((task) => task.status === 'pending' && task !== runningBrief);
   const viewportSplit = splitConversationViewport({
     viewportHeight,
     sections,
     pendingTaskCount: pendingTasks.length,
   });
+  // A block too short for every pending brief spends its last row saying how many it left out,
+  // unless that row would be its only one: the heading already carries the count.
+  const shownPending =
+    pendingTasks.length > viewportSplit.queuedRows && viewportSplit.queuedRows > 1
+      ? viewportSplit.queuedRows - 1
+      : Math.min(viewportSplit.queuedRows, pendingTasks.length);
+  const hiddenPending = viewportSplit.queuedRows > 1 ? pendingTasks.length - shownPending : 0;
   const queuedRows = pendingTasks
-    .slice(0, viewportSplit.queuedRows)
+    .slice(0, shownPending)
     .map((task) =>
       row({ key: `queued-${task.id}`, text: task.title, tone: 'textDim', kind: 'task-header' }),
     );
@@ -263,7 +279,7 @@ export function ConversationFlow({
           />
         </Box>
       </Box>
-      {queuedRows.length > 0 && (
+      {viewportSplit.queuedRows > 0 && (
         <Box flexDirection="column" width={conversationWidth} flexShrink={0} overflow="hidden">
           {/* One pad row and the heading — the two rows the viewport split charges this block as
               its chrome. A bare run of circles under a stretch of blank rows announces nothing;
@@ -276,13 +292,24 @@ export function ConversationFlow({
             flexShrink={0}
             marginLeft={rowLeadingCells('message')}
           >
-            <Text color={t.textDim}>{`Queued ${pendingTasks.length}`}</Text>
+            <Text color={t.textDim}>{`Pending ${pendingTasks.length}`}</Text>
           </Box>
           {queuedRows.map((queuedRow) => (
             <Box key={queuedRow.key} height={1} width={conversationWidth} flexShrink={0}>
               <ConversationRowView row={queuedRow} lifecycle="queued" />
             </Box>
           ))}
+          {hiddenPending > 0 && (
+            <Box
+              height={1}
+              width={conversationWidth}
+              overflow="hidden"
+              flexShrink={0}
+              marginLeft={rowLeadingCells('message')}
+            >
+              <Text color={t.textDim}>{`+${hiddenPending} more`}</Text>
+            </Box>
+          )}
         </Box>
       )}
     </Box>

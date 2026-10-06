@@ -87,7 +87,7 @@ function setupProject(): { projectDir: string; sessionId: string } {
 function configWithProfiles(): Config {
   return {
     ...makeNoValidationConfig({
-      approval: { enabled: false, feedRejectionsToPlanner: true },
+      approval: { feedRejectionsToPlanner: true },
       workflow: {},
     }),
     implementerProfiles: {
@@ -125,8 +125,7 @@ describe('runRetryStep', () => {
       const task = makeTask({
         id: 'T041',
         action: 'create',
-        file: 'created.ts',
-        files: ['created.ts', 'uncertain.ts'],
+        suggestedFiles: ['created.ts', 'uncertain.ts'],
       });
       const config = makeNoValidationConfig({ workflow: { isolation: 'none' } });
       const isolation = createRunIsolation({
@@ -163,11 +162,11 @@ describe('runRetryStep', () => {
           usageCategory: 'implementer',
           retryFailureFallback: 'retry failed',
           invokeRetry: async ({ projectDir: dir }) => {
-            writeFileSync(join(dir, task.file), bytes);
+            writeFileSync(join(dir, task.suggestedFiles[0]), bytes);
             writeFileSync(join(dir, 'uncertain.ts'), unknown);
             const common = {
               callId: 'retry-write',
-              candidatePaths: [task.file, 'uncertain.ts'],
+              candidatePaths: [task.suggestedFiles[0], 'uncertain.ts'],
               error: 'write failed',
               failedPath: 'uncertain.ts',
               noops: [],
@@ -181,7 +180,7 @@ describe('runRetryStep', () => {
                     code: 'io-failure',
                     applied: [
                       {
-                        path: task.file,
+                        path: task.suggestedFiles[0],
                         action: 'create',
                         beforeSha256: null,
                         afterSha256: sha256Hex(bytes),
@@ -195,12 +194,12 @@ describe('runRetryStep', () => {
             return { success: false, error: applyResult.error, applyResult };
           },
         });
-        expect(existsSync(join(projectDir, task.file))).toBe(false);
+        expect(existsSync(join(projectDir, task.suggestedFiles[0]))).toBe(false);
         expect(existsSync(join(projectDir, 'uncertain.ts'))).toBe(false);
         const reverted = join(sessionDir(projectDir, sessionId), 'reverted');
         const stamp = readdirSync(reverted)[0];
         if (stamp === undefined) throw new Error('missing retry backup');
-        expect(readFileSync(join(reverted, stamp, task.file), 'utf8')).toBe(bytes);
+        expect(readFileSync(join(reverted, stamp, task.suggestedFiles[0]), 'utf8')).toBe(bytes);
         expect(readFileSync(join(reverted, stamp, 'uncertain.ts'), 'utf8')).toBe(unknown);
         expect(outcome.state.pendingRecovery?.details?.join('\n')).toContain(
           '.splitbrief/sessions/sess-retry-step/reverted',
@@ -216,10 +215,10 @@ describe('runRetryStep', () => {
   );
   it('a retry of an extracted-code writer acquires the same workspace as the first attempt', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ file: 'src/value.ts', action: 'modify' });
+    const task = makeTask({ suggestedFiles: ['src/value.ts'], action: 'modify' });
     mkdirSync(join(projectDir, 'src'), { recursive: true });
     const original = 'export const value = 1;\n';
-    writeFileSync(join(projectDir, task.file), original);
+    writeFileSync(join(projectDir, task.suggestedFiles[0]), original);
     const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
     const receivedDirs: string[] = [];
     const wctx = makeWctx({
@@ -229,7 +228,7 @@ describe('runRetryStep', () => {
         capabilities: { writesFiles: 'extracted-code' },
         implement: async ({ projectDir: dir }) => {
           receivedDirs.push(dir);
-          writeFileSync(join(dir, task.file), 'export const value = "failed";\n');
+          writeFileSync(join(dir, task.suggestedFiles[0]), 'export const value = "failed";\n');
           return { success: false, output: '', error: 'failed first attempt' };
         },
       }),
@@ -257,7 +256,7 @@ describe('runRetryStep', () => {
         retryFailureFallback: 'retry failed',
         invokeRetry: async ({ projectDir: dir }) => {
           receivedDirs.push(dir);
-          writeFileSync(join(dir, task.file), 'export const value = "retry";\n');
+          writeFileSync(join(dir, task.suggestedFiles[0]), 'export const value = "retry";\n');
           return { success: false, output: '', error: 'retry failed' };
         },
       });
@@ -265,7 +264,7 @@ describe('runRetryStep', () => {
       expect(first.workspace).toBeDefined();
       expect(receivedDirs).toEqual([first.workspace?.projectDir, first.workspace?.projectDir]);
       expect(receivedDirs[0]).not.toBe(projectDir);
-      expect(readFileSync(join(projectDir, task.file), 'utf8')).toBe(original);
+      expect(readFileSync(join(projectDir, task.suggestedFiles[0]), 'utf8')).toBe(original);
     } finally {
       await wctx.isolation.dispose();
     }
@@ -273,7 +272,7 @@ describe('runRetryStep', () => {
 
   it('passes the workflow abort signal to retry invocation', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T000', file: 'src/signal.ts' });
+    const task = makeTask({ id: 'T000', suggestedFiles: ['src/signal.ts'] });
     const state = makeImplState([task]);
     const config = configWithProfiles();
     const { callbacks } = makeCallbacks();
@@ -326,7 +325,7 @@ describe('runRetryStep', () => {
   it('records the usage of a transient attempt a retry replaced', async () => {
     vi.useFakeTimers();
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T007', file: 'src/transient.ts' });
+    const task = makeTask({ id: 'T007', suggestedFiles: ['src/transient.ts'] });
     const state = makeImplState([task]);
     const config = configWithProfiles();
     const { callbacks } = makeCallbacks();
@@ -409,7 +408,7 @@ describe('runRetryStep', () => {
 
   it('intermediate-tier usage-limit failure records the intermediate runner in lastFailure.runner', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T006', file: 'src/intermediate-fail.ts' });
+    const task = makeTask({ id: 'T006', suggestedFiles: ['src/intermediate-fail.ts'] });
     const state = makeImplState([task]);
     const defaultImplementer = {
       kind: 'api' as const,
@@ -489,7 +488,7 @@ describe('runRetryStep', () => {
 
   it('uses an overridden implementer profile for retry execution and completion metadata', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', file: 'src/profile.ts' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/profile.ts'] });
     const state = makeImplState([task]);
     const config = configWithProfiles();
     const { callbacks } = makeCallbacks();
@@ -589,7 +588,7 @@ describe('runRetryStep', () => {
 
   it('propagates the profile-resolution error instead of retrying', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T002', file: 'src/missing.ts' });
+    const task = makeTask({ id: 'T002', suggestedFiles: ['src/missing.ts'] });
     const invokeRetry = vi.fn();
 
     await expect(
@@ -616,7 +615,7 @@ describe('runRetryStep', () => {
 
   it('uses the default implementer when profileOverride is undefined', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T003', file: 'src/default.ts' });
+    const task = makeTask({ id: 'T003', suggestedFiles: ['src/default.ts'] });
     const state = makeImplState([task]);
     const config = configWithProfiles();
     const { callbacks } = makeCallbacks();
@@ -694,7 +693,7 @@ describe('runRetryStep', () => {
     timeout: 60_000,
   }, async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T004', file: 'src/shared.ts' });
+    const task = makeTask({ id: 'T004', suggestedFiles: ['src/shared.ts'] });
     const state = makeImplState([task]);
     const config = configWithProfiles();
     const { callbacks } = makeCallbacks();
@@ -774,7 +773,7 @@ describe('runRetryStep', () => {
     timeout: 60_000,
   }, async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T005', file: 'src/dirty.ts' });
+    const task = makeTask({ id: 'T005', suggestedFiles: ['src/dirty.ts'] });
     const state = makeImplState([task]);
     const config = configWithProfiles();
     const { callbacks } = makeCallbacks();
@@ -862,7 +861,7 @@ describe('runRetryStep — a failed attempt keeps its story', () => {
     retryResult: Partial<RetryInvokeResult>,
   ): Promise<Awaited<ReturnType<typeof runRetryStep>>> {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T040', file: 'src/story.ts' });
+    const task = makeTask({ id: 'T040', suggestedFiles: ['src/story.ts'] });
     return runRetryStep({
       ctx: {
         ...makeWctx({ projectDir, sessionId, config: makeNoValidationConfig() }),
@@ -922,7 +921,7 @@ describe('runRetryStep — a failed attempt keeps its story', () => {
 describe('runRetryStep — gate denial', () => {
   it('attempt-denied package change is restored before returning a failed retry without recovery', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T030', file: 'src/main.ts' });
+    const task = makeTask({ id: 'T030', suggestedFiles: ['src/main.ts'] });
     const state = makeImplState([task]);
     const { callbacks } = makeCallbacks({
       onTieredApproval: vi
@@ -940,7 +939,7 @@ describe('runRetryStep — gate denial', () => {
         workspaceDir: projectDir,
         sessionId,
         config: makeNoValidationConfig({
-          approval: { enabled: true, feedRejectionsToPlanner: false },
+          approval: { feedRejectionsToPlanner: false },
           workflow: {},
         }),
         callbacks,

@@ -96,7 +96,7 @@ describe('a correction typed on a run at rest', () => {
       VIEWPORT,
     );
     await vi.waitFor(() => {
-      expect(stripAnsiStyles(ui?.lastFrame() ?? '')).toContain('Interrupted');
+      expect(stripAnsiStyles(ui?.lastFrame() ?? '')).toContain('Stopped at');
     });
     expect(eventsStore.get().events.filter((event) => event.type === 'user_message')).toHaveLength(
       0,

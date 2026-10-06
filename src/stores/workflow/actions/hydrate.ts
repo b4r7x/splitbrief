@@ -10,7 +10,7 @@ import {
   type TaskAttemptTokens,
   type TokensState,
 } from '../tokens.js';
-import { _lifecycleInternal, durationFromStart, type LifecycleState } from '../lifecycle.js';
+import { _lifecycleInternal, runMsAt, type LifecycleState } from '../lifecycle.js';
 
 export interface HydrateFromStateOptions {
   /** When the run last produced an event, so a run at rest shows a clock that stopped. */
@@ -51,6 +51,13 @@ function lifecycleFromState(
     startedAt,
     reason: null,
   } as const;
+  // The replayed log knows the stretches the run ran and the parks between them; the state knows
+  // only when it started. A log with no start of its own runs from the state's.
+  const runMsUntil = (ts: number | null): number | null => {
+    if (ts === null) return null;
+    if (current.startedAt === null) return Math.max(0, ts - (startedAt ?? ts));
+    return current.durationMs ?? runMsAt(current, ts);
+  };
   if (state.phase === 'complete') {
     const completedAt =
       state.completedAt === undefined ? lastEventTs : timestampFromIso(state.completedAt);
@@ -59,7 +66,7 @@ function lifecycleFromState(
       phase: state.phase,
       status: 'complete',
       endedAt: completedAt,
-      durationMs: completedAt === null ? null : durationFromStart(startedAt, completedAt),
+      durationMs: runMsUntil(completedAt),
     };
   }
   return {
@@ -67,7 +74,7 @@ function lifecycleFromState(
     phase: state.phase,
     status: 'paused',
     endedAt: null,
-    durationMs: lastEventTs === null ? null : durationFromStart(startedAt, lastEventTs),
+    durationMs: runMsUntil(lastEventTs),
   };
 }
 
@@ -91,7 +98,7 @@ function tasksStateFromState(
     id: task.id,
     title: task.title,
     status: task.status,
-    file: task.file,
+    file: task.suggestedFiles[0],
     action: task.action,
   }));
   const taskMap = new Map<string, WorkflowTask>();

@@ -23,7 +23,6 @@ describe('editorStore ownership capture', () => {
     expect(raw.status).toBe('open');
     if (raw.status !== 'open') throw new Error('expected open');
     expect(raw.ownerToken).toBe(7);
-    expect(raw.surface).toBe('raw');
   });
 });
 

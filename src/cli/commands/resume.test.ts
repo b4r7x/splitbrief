@@ -105,10 +105,7 @@ describe('resume command', () => {
     const sessionId = '2026-04-18-halted';
     const sessDir = makeSessionDir(tmp, sessionId);
     writeState(sessDir, 'halted feature', {
-      pendingRecovery: makeRecoveryIssue({
-        status: 'paused',
-        recommendedAction: 'skip-current-task',
-      }),
+      pendingRecovery: makeRecoveryIssue({ recommendedAction: 'skip-current-task' }),
     });
     writeActive({ projectDir: tmp, sessionId });
 

@@ -14,7 +14,6 @@ const scenario = {
   cassetteName: 'drift-out-of-scope',
   feature: 'update config parser',
   config: makeE2eScenarioConfig({
-    workflow: { driftChainThreshold: 0.01 },
     hooks: {
       pre_validation: [
         {
@@ -51,11 +50,10 @@ describe('e2e: drift out-of-scope detection', () => {
     );
   }
 
-  it('keeps the final drift report attribution-scoped and emits the out-of-scope drift chain', async () => {
+  it('keeps the final drift report attribution-scoped and keeps the out-of-scope write', async () => {
     installDriftHook();
     const summary = await runE2eWorkflow(ctx, scenario);
     const driftReport = ctx.events.find((event) => event.type === 'drift_report');
-    const driftChain = ctx.events.find((event) => event.type === 'drift_chain_detected');
     const parserPath = join(ctx.projectDir, 'src/config-parser.ts');
 
     expect(summary.totalTasks).toBeGreaterThanOrEqual(1);
@@ -67,15 +65,9 @@ describe('e2e: drift out-of-scope detection', () => {
     });
     expect(driftReport).toBeDefined();
     // The hook wrote into the run workspace while the brief ran, so its file is
-    // part of the run and the final drift report stays free of errors...
+    // part of the run and the final drift report stays free of errors.
     expect(driftReport?.passed).toBe(true);
     expect(driftReport?.errorCount).toBe(0);
-    // ...while the per-task drift chain still reports the out-of-scope write.
-    expect(driftChain).toMatchObject({
-      type: 'drift_chain_detected',
-      uniqueOutOfBoundsFiles: ['src/out-of-scope.ts'],
-      representativePath: 'src/out-of-scope.ts',
-    });
 
     // The write is not dropped: the review packet lists it among the workspace
     // files the run changed.

@@ -2,7 +2,6 @@ import { constants } from 'node:fs';
 import { lstat, open, realpath, type FileHandle } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { sessionDir } from '../../../core/paths.js';
-import { WORKFLOW_REWIND_ABORT_REASON } from '../../../core/phases.js';
 import type { Config } from '../../../core/schemas/config.js';
 import {
   RetainedWorkspaceSchema,
@@ -43,11 +42,7 @@ export const retentionError = {
 };
 
 export function isResumableWorkspaceStop(signal: AbortSignal | undefined): boolean {
-  return (
-    signal?.aborted === true &&
-    workflowCancelledReasonFromSignal(signal) === undefined &&
-    signal.reason !== WORKFLOW_REWIND_ABORT_REASON
-  );
+  return signal?.aborted === true && workflowCancelledReasonFromSignal(signal) === undefined;
 }
 
 export function workspaceOwner(input: { sessionId: string; config: Config }): WorkspaceOwner {

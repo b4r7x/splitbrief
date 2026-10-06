@@ -133,7 +133,7 @@ describe('api implementer — OpenAI-compatible path', () => {
     );
 
     const implementer = createApiImplementer(makeConfig());
-    const task = makeTask({ id: 'T001', file: 'src/hello.ts', action: 'create' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/hello.ts'], action: 'create' });
 
     const result = await implementer.implement({
       task,
@@ -183,7 +183,7 @@ describe('api implementer — OpenAI-compatible path', () => {
 
     const controller = new AbortController();
     const implementer = createApiImplementer(makeConfig());
-    const task = makeTask({ id: 'T010', file: 'src/signal.ts', action: 'create' });
+    const task = makeTask({ id: 'T010', suggestedFiles: ['src/signal.ts'], action: 'create' });
     const pending = implementer.implement({
       task,
       projectDir,
@@ -210,7 +210,7 @@ describe('api implementer — OpenAI-compatible path', () => {
     );
 
     const implementer = createApiImplementer(makeConfig());
-    const task = makeTask({ id: 'T002', file: 'src/nowrite.ts', action: 'create' });
+    const task = makeTask({ id: 'T002', suggestedFiles: ['src/nowrite.ts'], action: 'create' });
 
     const result = await implementer.implement({
       task,
@@ -229,7 +229,7 @@ describe('api implementer — OpenAI-compatible path', () => {
     fetchMock.mockRejectedValue(new Error('Connection timeout'));
 
     const implementer = createApiImplementer(makeConfig());
-    const task = makeTask({ id: 'T003', file: 'src/failed.ts', action: 'create' });
+    const task = makeTask({ id: 'T003', suggestedFiles: ['src/failed.ts'], action: 'create' });
 
     const result = await implementer.implement({
       task,
@@ -255,7 +255,7 @@ describe('api implementer — OpenAI-compatible path', () => {
       implementer: { ...remoteImplementerSeat, temperature: undefined },
     });
     const implementer = createApiImplementer(cfg);
-    const task = makeTask({ id: 'T016', file: 'src/temperature.ts', action: 'create' });
+    const task = makeTask({ id: 'T016', suggestedFiles: ['src/temperature.ts'], action: 'create' });
 
     await implementer.implement({
       task,
@@ -278,7 +278,7 @@ describe('api implementer — OpenAI-compatible path', () => {
     );
     const cfg = makeConfig({ implementer: { ...seat, effort: 'high' } });
     await createApiImplementer(cfg).implement({
-      task: makeTask({ id: 'T017', file: 'src/effort.ts', action: 'create' }),
+      task: makeTask({ id: 'T017', suggestedFiles: ['src/effort.ts'], action: 'create' }),
       projectDir,
       config: cfg,
       context: defaultContext,
@@ -307,7 +307,7 @@ describe('api implementer — OpenAI-compatible path', () => {
       implementer: { ...remoteImplementerSeat, temperature: 0.2 },
     });
     const implementer = createApiImplementer(cfg);
-    const task = makeTask({ id: 'T005', file: 'src/retry.ts', action: 'create' });
+    const task = makeTask({ id: 'T005', suggestedFiles: ['src/retry.ts'], action: 'create' });
     const baseRetry = {
       task,
       projectDir,
@@ -353,7 +353,7 @@ describe('api implementer — OpenAI-compatible path', () => {
     const cfg = makeConfig({ implementer: remoteImplementerSeat });
     const implementer = createApiImplementer(cfg);
     const call = {
-      task: makeTask({ id: 'T019', file: 'src/plan.ts', action: 'create' }),
+      task: makeTask({ id: 'T019', suggestedFiles: ['src/plan.ts'], action: 'create' }),
       projectDir,
       config: cfg,
       context: defaultContext,
@@ -394,7 +394,7 @@ describe('api implementer — OpenAI-compatible path', () => {
     });
     cfg.implementer.model = 'auto';
     const implementer = createApiImplementer(cfg);
-    const task = makeTask({ id: 'T006', file: 'src/auto.ts', action: 'create' });
+    const task = makeTask({ id: 'T006', suggestedFiles: ['src/auto.ts'], action: 'create' });
 
     const result = await implementer.implement({
       task,
@@ -414,7 +414,7 @@ describe('api implementer — OpenAI-compatible path', () => {
 
     const cfg = makeConfig({ implementer: { contextLength: 1_000_000 } });
     const implementer = createApiImplementer(cfg);
-    const task = makeTask({ id: 'T007', file: 'src/clamp.ts', action: 'create' });
+    const task = makeTask({ id: 'T007', suggestedFiles: ['src/clamp.ts'], action: 'create' });
 
     await implementer.implement({
       task,
@@ -437,7 +437,11 @@ describe('api implementer — OpenAI-compatible path', () => {
       implementer: { ...remoteImplementerSeat, contextLength: undefined },
     });
     const implementer = createApiImplementer(cfg);
-    const task = makeTask({ id: 'T018', file: 'src/shared-default.ts', action: 'create' });
+    const task = makeTask({
+      id: 'T018',
+      suggestedFiles: ['src/shared-default.ts'],
+      action: 'create',
+    });
 
     const result = await implementer.implement({
       task,
@@ -464,7 +468,7 @@ describe('api implementer — OpenAI-compatible path', () => {
       },
     });
     const implementer = createApiImplementer(cfg);
-    const task = makeTask({ id: 'T008', file: 'src/or.ts', action: 'create' });
+    const task = makeTask({ id: 'T008', suggestedFiles: ['src/or.ts'], action: 'create' });
 
     const result = await implementer.implement({
       task,

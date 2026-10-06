@@ -7,7 +7,6 @@ import { lifecycleStore } from '../../../../src/stores/workflow/lifecycle.js';
 import { feedbackStore } from '../../../../src/stores/ui/feedback.js';
 import { formatCopyResult } from '../../../../src/core/runtime/commands/types.js';
 import { stopStore } from '../../../../src/stores/workflow/stop.js';
-import { RECOVERY_PAUSED_MESSAGE } from '../../../../src/features/workflow/recovery-driver.js';
 import {
   WORKFLOW_FIXTURE_TEXT,
   workflowFixtureProjections,
@@ -29,6 +28,8 @@ function applyStop(stop: FixtureStopState): void {
 // The stop ladder lives in a store, not in the event stream, and the workflow screen resets the
 // session-scoped stores from a mount effect (`use-runner.ts`) and replays the projection after it.
 // Stamping on every run start is what survives that replay.
+const CONSULT_BOUND_NOTE = 'run the formatter first';
+
 function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureFactory {
   const base = createWorkflowFixtureFactory(projection);
   if (projection.scenarioId === 'workflow-selection-copy') {
@@ -37,10 +38,13 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
       afterMount: () => feedbackStore.setMessage(formatCopyResult('native')),
     });
   }
-  if (projection.scenarioId === 'workflow-recovery-paused') {
+  if (projection.scenarioId === 'workflow-recovery-consult-bound-note') {
     return () => ({
       ...base(),
-      afterMount: () => feedbackStore.setMessage(RECOVERY_PAUSED_MESSAGE),
+      afterMount: async (write) => {
+        await write.press('\t');
+        await write.press(CONSULT_BOUND_NOTE);
+      },
     });
   }
   const stop = projection.stop;
@@ -94,16 +98,18 @@ const checkpointPredicates = [
     includesAll(WORKFLOW_FIXTURE_TEXT.implementation, 'briefs passed'),
   ],
   // The brief's row is the transcript's tail, so its estimate is on screen at every width.
-  [checkpointId('implementation-user-edits'), includesAll('briefs passed')],
   [checkpointId('implementation-narration'), includesAll('briefs passed')],
   [checkpointId('implementation-adjacent-narration'), includesAll('briefs passed')],
   [checkpointId('implementation-retry'), includesAll('briefs passed')],
+  [checkpointId('implementation-after-retry'), includesAll()],
+  [checkpointId('recovery-resolved-retry'), includesAll()],
   [checkpointId('review-fix'), includesAll()],
+  [checkpointId('complete-after-fix-tasks'), includesAll('4/4 briefs passed')],
   [checkpointId('review-fix-no-change'), includesAll('no change needed')],
   [checkpointId('final-review'), includesAll('3/3 briefs passed')],
   [checkpointId('implementation-escalated'), includesAll('briefs passed')],
-  [checkpointId('validation'), includesAll('validate', 'test skipped')],
-  [checkpointId('planner-commands-refused'), includesAll('warning')],
+  [checkpointId('validation'), includesAll('Validate', 'test skipped')],
+  [checkpointId('planner-commands-refused'), includesAll('Validation')],
   [checkpointId('touched-not-suggested'), includesAll('also changed')],
   // The tiered gate owns this checkpoint: it takes the prompt zone from the document panel, so the
   // panel's own words are never on this frame.
@@ -124,22 +130,24 @@ const checkpointPredicates = [
   [checkpointId('planner-reply'), includesAll('Reply to the planner…', 'Waiting for your answer')],
   // The transcript pins the tail, so the block's last row is the width-stable marker.
   [checkpointId('question-answered'), includesAll('Simplify/clean up existing code')],
-  [checkpointId('paused-mid-brief'), includesAll('/resume', 'Turn stopped')],
-  [checkpointId('paused-boundary'), includesAll('briefs complete', 'Paused before T902')],
+  [checkpointId('paused-mid-brief'), includesAll('/resume', 'Stopped at T')],
+  [checkpointId('paused-boundary'), includesAll('briefs complete', 'before T902')],
   [checkpointId('stopping'), includesAll('esc back after stop')],
   [checkpointId('stopped'), includesAll('Changes kept')],
   // A run at rest carries its own name: the marker is the session the record names, which the
   // closed block states in full and the open byline carries. Nothing else is width-stable — the
   // byline sheds its reason and then its alternative as the terminal narrows.
   [checkpointId('at-rest-paused'), includesAll()],
+  [checkpointId('at-rest-long-park'), includesAll('15:00')],
   [checkpointId('at-rest-halted'), includesAll()],
-  [checkpointId('recovery-paused'), includesAll()],
   [checkpointId('retained-workspace'), includesAll('Workspace kept')],
   [checkpointId('at-rest-waiting'), includesAll()],
   [checkpointId('closed-ready'), includesAll()],
   [checkpointId('ready-to-apply'), includesAll()],
   [checkpointId('ready-override'), includesAll()],
   [checkpointId('closed-applied'), includesAll()],
+  [checkpointId('closed-undone'), includesAll('Apply undone')],
+  [checkpointId('closed-undo-conflicts'), includesAll('1 conflict kept')],
   [checkpointId('closed-discarded'), includesAll()],
   [checkpointId('closed-needs-attention'), includesAll()],
   [checkpointId('closed-ended'), includesAll()],
@@ -154,11 +162,15 @@ const checkpointPredicates = [
   [checkpointId('recovery-plan-questions'), includesAll('Which store keeps the greeting?')],
   [checkpointId('recovery-review'), includesAll(WORKFLOW_FIXTURE_TEXT.recoveryPlan)],
   [checkpointId('recovery-hint'), includesAll(WORKFLOW_FIXTURE_TEXT.recoveryPlan)],
-  [checkpointId('recovery-plan-swapped'), includesAll('Continued via Change PLAN tool')],
+  [checkpointId('recovery-plan-swapped'), includesAll()],
   [checkpointId('plan-activity'), includesAll('src/core/crew/identity.ts')],
   [checkpointId('retry-exhausted'), includesAll(WORKFLOW_FIXTURE_TEXT.retryExhausted)],
   [checkpointId('consult-bound'), includesAll(WORKFLOW_FIXTURE_TEXT.consultBound)],
-  [checkpointId('review-failed'), includesAll(WORKFLOW_FIXTURE_TEXT.reviewFailed)],
+  [
+    checkpointId('consult-bound-note'),
+    includesAll('Continue with the typed correction', CONSULT_BOUND_NOTE),
+  ],
+  [checkpointId('review-failed'), includesAll(WORKFLOW_FIXTURE_TEXT.reviewFailed, 'Accept as is')],
   [checkpointId('left-isolation'), includesAll(WORKFLOW_FIXTURE_TEXT.leftIsolation)],
   [checkpointId('checkout-changed'), includesAll(WORKFLOW_FIXTURE_TEXT.checkoutChanged)],
   [checkpointId('at-rest-left-isolation'), includesAll()],
@@ -169,7 +181,8 @@ const checkpointPredicates = [
     checkpointId('planning-claude-frames'),
     includesAll(WORKFLOW_FIXTURE_TEXT.planningReply, 'retry 2 of 10'),
   ],
-  [checkpointId('implementation-silent'), includesAll('Still working', 'No update for')],
+  [checkpointId('implementation-silent'), includesAll('Still working', 'a tool is running')],
+  [checkpointId('implementation-tool-running'), includesAll('running npx vitest run')],
   [checkpointId('planner-session-expired'), includesAll('Planner session expired')],
 ] as const satisfies readonly (readonly [CheckpointId, CheckpointPredicate])[];
 

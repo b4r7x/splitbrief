@@ -1,8 +1,4 @@
-import type {
-  CurrentCodeContextMode,
-  TaskContextFit,
-  UserEditConflictKind,
-} from '../schemas/enums.js';
+import type { CurrentCodeContextMode, TaskContextFit } from '../schemas/enums.js';
 import type { TaskId } from '../schemas/task.js';
 
 export type PlanReviewRisk = 'low' | 'medium' | 'high';
@@ -14,13 +10,6 @@ export type PlanReviewEstimateStatus =
   | 'pending-earlier-task';
 
 export type PlanReviewRoutingBlockKind = 'no-capable-worker';
-
-export interface PlanReviewConflictMetadata {
-  kind: UserEditConflictKind;
-  files: string[];
-  affectedTaskIds?: string[] | undefined;
-  note?: string | undefined;
-}
 
 export interface PlanTaskReviewMetadata {
   taskId: TaskId;
@@ -36,6 +25,5 @@ export interface PlanTaskReviewMetadata {
   validationStatus?: 'pending' | 'pass' | 'warn' | 'fail' | undefined;
   risk?: PlanReviewRisk | undefined;
   stale?: boolean | undefined;
-  conflict?: PlanReviewConflictMetadata | undefined;
   checkpoint?: string | undefined;
 }

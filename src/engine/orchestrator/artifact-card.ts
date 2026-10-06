@@ -1,13 +1,13 @@
 import { join } from 'node:path';
 import type { Phase } from '../../core/schemas/enums.js';
-import { sessionDir, TASKS_FILE } from '../../core/paths.js';
+import { sessionDir } from '../../core/paths.js';
+import type { Task } from '../../core/schemas/task.js';
 import {
   getTerminalCellWidth,
   iterateTerminalGraphemes,
   truncateTerminalDisplayText,
 } from '../../utils/display-text.js';
 import type { EventBus } from '../events/types.js';
-import { parseTaskSourceBlocks } from '../spec/tasks/parse.js';
 
 const EXCERPT_MAX_ROWS = 10;
 const EXCERPT_MAX_LINE_CELLS = 200;
@@ -22,6 +22,8 @@ const STRONG_STAR = /\*\*(?=\S)(.*?\S)\*\*/g;
 const STRONG_UNDERSCORE = /(^|[^\w])__(?=\S)(.*?\S)__(?!\w)/g;
 const EM_STAR = /\*(?=\S)([^*]*?\S)\*/g;
 const EM_UNDERSCORE = /(^|[^\w])_(?=\S)([^_]*?\S)_(?!\w)/g;
+
+type Brief = Pick<Task, 'id' | 'title'>;
 
 /** What one excerpt row stands for, and therefore what `omittedCount` counts. */
 export type ExcerptUnit = 'line' | 'section' | 'task';
@@ -55,15 +57,19 @@ interface Outline {
  *
  * 1. the document from its first real content, when the rest fits — nothing is selected, so
  *    nothing can be selected wrong;
- * 2. its outline — the Task Brief ids and titles the parser reads from a `tasks.md`, else its
- *    sections with their sizes;
+ * 2. its outline — the ids and titles of the Task Briefs a `tasks.md` was rendered from, else
+ *    its sections with their sizes;
  * 3. a slice from the same starting point, which is the fallback when neither outline exists.
  *
  * Every row is a display string, not a file byte: block heading markers and paired inline
  * emphasis are removed in all three paths so one card never carries two grammars. Nothing is
  * interpreted — no emphasis is applied, no link resolved, no code span touched.
  */
-export function buildArtifactExcerpt(text: string, filename: string): ArtifactExcerpt {
+export function buildArtifactExcerpt(
+  text: string,
+  filename: string,
+  briefs?: readonly Brief[],
+): ArtifactExcerpt {
   const lines = documentLines(text);
   const lineCount = lines.length;
   if (lineCount === 0) return { lineCount, excerpt: [], omittedCount: 0, omittedUnit: 'line' };
@@ -72,7 +78,7 @@ export function buildArtifactExcerpt(text: string, filename: string): ArtifactEx
   const start = sliceStart(structure, filename);
   if (lineCount - start <= EXCERPT_MAX_ROWS) return slice(lines, structure, start, filename);
 
-  const outline = outlineOf({ text, structure, lines, filename });
+  const outline = outlineOf({ structure, lines, filename, briefs });
   if (outline !== null) return outline;
   return slice(lines, structure, start, filename);
 }
@@ -84,10 +90,12 @@ export function publishArtifactWritten(input: {
   sessionId: string;
   filename: string;
   text: string;
+  briefs?: readonly Brief[] | undefined;
 }): void {
   const { lineCount, excerpt, omittedCount, omittedUnit } = buildArtifactExcerpt(
     input.text,
     input.filename,
+    input.briefs,
   );
   if (excerpt.length === 0) return;
   input.bus.publish({
@@ -157,15 +165,14 @@ function displayLine(line: string, fenced: boolean): string {
 }
 
 function outlineOf(input: {
-  text: string;
   structure: readonly string[];
   lines: readonly string[];
   filename: string;
+  briefs: readonly Brief[] | undefined;
 }): ArtifactExcerpt | null {
-  const { text, structure, lines, filename } = input;
-  if (filename === TASKS_FILE) {
-    const briefs = briefOutline(text);
-    if (briefs.total > 0) return outlineExcerpt(lines.length, briefs, 'task');
+  const { structure, lines, filename, briefs } = input;
+  if (briefs !== undefined && briefs.length > 0) {
+    return outlineExcerpt(lines.length, briefOutline(briefs), 'task');
   }
   const outline = outlineIn(structure, lines.length, filename);
   if (outline !== null) return outline;
@@ -193,14 +200,8 @@ function outlineExcerpt(lineCount: number, outline: Outline, unit: ExcerptUnit):
   };
 }
 
-/**
- * `id` and `title` of every Task Brief the parser reads, which is the list the run executes. The
- * card keeps no brief grammar of its own: its own reader disagreed with the parser wherever the two
- * rules differed — a code fence one brief never closed, a separator glued to the line before it,
- * CRLF line endings, a title YAML writes as a block scalar.
- */
-function briefOutline(text: string): Outline {
-  const briefs = parseTaskSourceBlocks(text);
+/** `id` and `title` of every Task Brief, which is the list the run executes. */
+function briefOutline(briefs: readonly Brief[]): Outline {
   const shown = briefs.slice(0, EXCERPT_MAX_ROWS);
   const idWidth = columnWidth(shown.map((brief) => brief.id));
   return {
@@ -211,7 +212,7 @@ function briefOutline(text: string): Outline {
   };
 }
 
-/** A block scalar keeps the title's line breaks, and a card row has none to keep. */
+/** A card row has no line breaks to keep. */
 function briefTitle(title: string): string {
   return stripEmphasis(title.replace(/\s+/g, ' ').trim());
 }

@@ -727,7 +727,7 @@ type Config = {
     maxRetries?: unknown         // retired: loads with one notice, ignored; the lineage attempt bound replaces it
     compactionThreshold?: number
     git?: { createBranch?: boolean } // retired commitStrategy input is stripped
-    // ... plus driftChainThreshold; taskReview, briefReview and speckit are retired keys (one notice each)
+    // taskReview, briefReview, speckit and driftChainThreshold are retired keys (one notice each)
   }
   escalation?: unknown           // retired: loads with one notice, ignored; the planner's consult replaces the intermediate tier
   approval?: { enabled?: boolean; tiers?: unknown /* retired: one notice, ignored */; feedRejectionsToPlanner?: boolean; ... }

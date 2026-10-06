@@ -153,8 +153,8 @@ const contextHalt: RecoveryIssue = {
     apiContextAvailableTokens: 32_768,
     apiContextOutputCap: 8_192,
   },
-  availableActions: ['retry-same-worker', 'pause-run', 'end-run'],
-  recommendedAction: 'pause-run',
+  availableActions: ['retry-same-worker', 'end-run'],
+  recommendedAction: 'retry-same-worker',
   createdAt: '2026-04-29T12:00:00.000Z',
 };
 

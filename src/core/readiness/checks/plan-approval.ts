@@ -3,7 +3,7 @@ import { DEFAULT_LOCAL_RETRIES } from '../../pipeline-spec/retries.js';
 import type { Config } from '../../schemas/config.js';
 import type { ReadinessCheck } from '../types.js';
 
-export function buildApprovalChecks(
+export function buildPlanApprovalChecks(
   config: Config,
   interaction: 'interactive' | 'headless' | undefined,
 ): ReadinessCheck[] {
@@ -11,7 +11,7 @@ export function buildApprovalChecks(
   const effort = resolveEffortLevel({ config });
   return [
     {
-      id: 'approval.resolved',
+      id: 'workflow.plan-approval',
       severity: 'info',
       summary:
         approve === 'plan' && interaction === 'headless'

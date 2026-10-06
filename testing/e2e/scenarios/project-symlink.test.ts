@@ -81,7 +81,7 @@ describe('e2e: a checkout holding an untracked symlink that stays inside the pro
     expect(run.stdout).toContain('task T001: done');
     expect(output).not.toContain('could not be read');
     expect(output).not.toContain('falling back to a staged copy');
-    expect(output).not.toContain('Recovery required');
+    expect(output).not.toMatch(/Needs you \(|Seat down \(/);
     // The implementer ran in the isolation worktree, and the link was there with it.
     const view: { cwd: string; link: string } = JSON.parse(
       readFileSync(viewPath(fixture.projectDir), 'utf-8'),

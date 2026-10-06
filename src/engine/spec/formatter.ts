@@ -48,11 +48,9 @@ function formatSingleTask(task: Task): string {
   lines.push(`id: ${yamlScalar(task.id)}`);
   lines.push(`title: ${yamlScalar(task.title)}`);
   lines.push(`action: ${yamlScalar(task.action)}`);
-  lines.push(`file: ${yamlScalar(task.file)}`);
-  if (task.files !== undefined) {
-    lines.push('files:');
-    for (const f of task.files) lines.push(`  - ${yamlScalar(f)}`);
-  }
+  lines.push(`file: ${yamlScalar(task.suggestedFiles[0])}`);
+  lines.push('files:');
+  for (const f of task.suggestedFiles) lines.push(`  - ${yamlScalar(f)}`);
   if (task.dependsOn.length > 0) {
     lines.push('depends_on:');
     lines.push(dependsOnYaml);

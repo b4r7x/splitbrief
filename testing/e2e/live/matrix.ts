@@ -1,4 +1,5 @@
 import {
+  type LiveMatrixTierId,
   type LiveSeat,
   type ReleaseMatrixRun,
   liveModelPin,
@@ -7,7 +8,7 @@ import {
 
 export type ReleaseMatrixRow = Readonly<{
   id: string;
-  mode: 'quick' | 'standard' | 'speckit';
+  tier: LiveMatrixTierId;
   plan: string;
   build: string;
   review?: string | undefined;
@@ -40,96 +41,96 @@ export function resolveReleaseMatrixSeat(tool: string): LiveSeat {
 
 export const RELEASE_MATRIX: readonly ReleaseMatrixRow[] = [
   {
-    id: 'quick-canary-claude-code',
-    mode: 'quick',
+    id: 'one-file-canary-claude-code',
+    tier: 'one-file',
     plan: 'claude-code',
     build: 'claude-code',
     task: 'Create src/live-easy.ts exporting a string constant named liveEasy with value "live-easy".',
   },
   {
-    id: 'quick-canary-codex',
-    mode: 'quick',
+    id: 'one-file-canary-codex',
+    tier: 'one-file',
     plan: 'codex',
     build: 'codex',
     task: 'Create src/live-easy.ts exporting a string constant named liveEasy with value "live-easy".',
   },
   {
-    id: 'quick-canary-opencode',
-    mode: 'quick',
+    id: 'one-file-canary-opencode',
+    tier: 'one-file',
     plan: 'opencode',
     build: 'opencode',
     task: 'Create src/live-easy.ts exporting a string constant named liveEasy with value "live-easy".',
   },
   {
-    id: 'quick-canary-command-code',
-    mode: 'quick',
+    id: 'one-file-canary-command-code',
+    tier: 'one-file',
     plan: 'command-code',
     build: 'command-code',
     task: 'Create src/live-easy.ts exporting a string constant named liveEasy with value "live-easy".',
   },
   {
-    id: 'quick-canary-kilo-code',
-    mode: 'quick',
+    id: 'one-file-canary-kilo-code',
+    tier: 'one-file',
     plan: 'kilo-code',
     build: 'kilo-code',
     task: 'Create src/live-easy.ts exporting a string constant named liveEasy with value "live-easy".',
   },
   {
-    id: 'quick-canary-cursor',
-    mode: 'quick',
+    id: 'one-file-canary-cursor',
+    tier: 'one-file',
     plan: 'cursor',
     build: 'cursor',
     task: 'Create src/live-easy.ts exporting a string constant named liveEasy with value "live-easy".',
   },
   {
-    id: 'quick-canary-copilot',
-    mode: 'quick',
+    id: 'one-file-canary-copilot',
+    tier: 'one-file',
     plan: 'copilot',
     build: 'copilot',
     task: 'Create src/live-easy.ts exporting a string constant named liveEasy with value "live-easy".',
   },
   {
-    id: 'quick-canary-antigravity',
-    mode: 'quick',
+    id: 'one-file-canary-antigravity',
+    tier: 'one-file',
     plan: 'antigravity',
     build: 'antigravity',
     task: 'Create src/live-easy.ts exporting a string constant named liveEasy with value "live-easy".',
   },
   {
-    id: 'quick-cross-codex-cursor',
-    mode: 'quick',
+    id: 'one-file-cross-codex-cursor',
+    tier: 'one-file',
     plan: 'codex',
     build: 'cursor',
     task: 'Create src/live-easy.ts exporting a string constant named liveEasy with value "live-easy".',
   },
   {
-    id: 'standard-cross-command-code-opencode',
-    mode: 'standard',
+    id: 'two-files-cross-command-code-opencode',
+    tier: 'two-files',
     plan: 'command-code',
     build: 'opencode',
     task: 'Add src/live-heavy/value.ts exporting a number constant liveHeavyValue with value 42, and src/live-heavy/double.ts exporting a function doubleLiveHeavy that returns its numeric argument times two.',
   },
   {
-    id: 'standard-cross-claude-code-kilo-code',
-    mode: 'standard',
+    id: 'two-files-cross-claude-code-kilo-code',
+    tier: 'two-files',
     plan: 'claude-code',
     build: 'kilo-code',
     task: 'Add src/live-heavy/value.ts exporting a number constant liveHeavyValue with value 42, and src/live-heavy/double.ts exporting a function doubleLiveHeavy that returns its numeric argument times two.',
   },
   {
-    id: 'speckit-cross-opencode-command-code',
-    mode: 'speckit',
+    id: 'question-round-cross-opencode-command-code',
+    tier: 'question-round',
     plan: 'opencode',
     build: 'command-code',
     review: 'codex',
-    task: 'Create src/live-speckit.ts exporting a string constant named liveSpeckit with value "live-speckit".',
+    task: 'Create src/live-question.ts exporting a string constant named liveQuestion with value "live-question".',
   },
 ];
 
 export function resolveReleaseMatrixRun(row: ReleaseMatrixRow): ReleaseMatrixRun {
   return {
     id: row.id,
-    mode: row.mode,
+    tier: row.tier,
     task: row.task,
     plan: resolveReleaseMatrixSeat(row.plan),
     build: resolveReleaseMatrixSeat(row.build),

@@ -39,38 +39,53 @@ describe('boundHeadlessJsonRecord', () => {
     });
   });
 
-  it('carries the recovery status through so a machine consumer can distinguish the three states', () => {
-    for (const status of ['awaiting-user', 'paused', 'applying'] as const) {
+  it('carries the halt and the recovery status through so a machine consumer can tell them apart', () => {
+    for (const status of ['awaiting-user', 'applying'] as const) {
       expect(
         boundHeadlessJsonRecord({
           type: 'recovery_required',
           sessionId: 'sess-1',
+          halt: 'seat-down',
           reason: 'context-overflow',
           status,
           message: 'overflow',
-          availableActions: ['pause-run', 'end-run'],
-          recommendedAction: 'pause-run',
-          resumeCommand: 'splitbrief resume',
+          availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
+          recommendedAction: 'retry-same-worker',
+          resumeCommand: 'splitbrief continue sess-1 --action retry',
         }),
-      ).toMatchObject({ type: 'recovery_required', status });
+      ).toMatchObject({ type: 'recovery_required', halt: 'seat-down', status });
     }
   });
 
-  it('still parses a pre-change recovery_required record without a status', () => {
+  it('still parses a recovery_required record without a status', () => {
     expect(
       boundHeadlessJsonRecord({
         type: 'recovery_required',
         sessionId: 'sess-1',
-        reason: 'context-overflow',
-        message: 'overflow',
-        availableActions: ['pause-run', 'end-run'],
-        recommendedAction: 'pause-run',
-        resumeCommand: 'splitbrief resume',
+        halt: 'needs-you',
+        reason: 'apply-conflict',
+        message: 'Apply found 1 conflicting file',
+        availableActions: ['retry-same-worker', 'end-run'],
+        recommendedAction: 'retry-same-worker',
+        resumeCommand: 'splitbrief continue sess-1 --action retry',
       }),
     ).toMatchObject({
       type: 'recovery_required',
       sessionId: 'sess-1',
-      reason: 'context-overflow',
+      halt: 'needs-you',
+      reason: 'apply-conflict',
     });
+  });
+
+  it.each([false, true])('writes a ready_to_apply record with override %s as given', (override) => {
+    const record = {
+      type: 'ready_to_apply' as const,
+      sessionId: 'sess-1',
+      override,
+      applyCommand: 'splitbrief continue sess-1 --action apply',
+      discardCommand: 'splitbrief continue sess-1 --action discard',
+    };
+
+    expect(boundHeadlessJsonRecord(record)).toEqual(record);
   });
 });

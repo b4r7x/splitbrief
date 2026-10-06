@@ -1,5 +1,5 @@
 import type { ConsultRecord, WorkflowState } from '../../core/schemas/workflow.js';
-import type { CheckResult, TaskId } from '../../core/schemas/task.js';
+import type { CheckResult, Task, TaskId } from '../../core/schemas/task.js';
 import type {
   RecoveryAction,
   TaskCompletionMethod,
@@ -25,7 +25,6 @@ import type { ValidationResult } from './validation/result.js';
 import type { ValidationAcceptance } from './validation/acceptance.js';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { ImplementerPublisher } from '../implementers/types.js';
-import type { EmittedChain } from '../../core/schemas/drift-chain.js';
 import { formatRecoveryHeadline } from '../../core/recovery/headline.js';
 import { formatResumeCommand } from '../../core/recovery/resume-command.js';
 import { labelError } from '../../utils/format-errors.js';
@@ -140,7 +139,7 @@ export function publishPlannerStatus(
 // about each task only when it starts. `task_started` stays the per-task lifecycle signal.
 export function publishTasksPlanned(
   ctx: BusContext,
-  tasks: readonly { id: TaskId; title: string; file: string; action: 'create' | 'modify' }[],
+  tasks: readonly Pick<Task, 'id' | 'title' | 'suggestedFiles' | 'action'>[],
 ): void {
   ctx.bus.publish({
     type: 'tasks_planned',
@@ -150,7 +149,7 @@ export function publishTasksPlanned(
       id: task.id,
       title: task.title,
       index,
-      file: task.file,
+      file: task.suggestedFiles[0],
       action: task.action,
     })),
     total: tasks.length,
@@ -164,6 +163,8 @@ export function publishTaskStart(
     title: string;
     index: number;
     total: number;
+    lineageAttempt: number;
+    attemptAllowance: number;
     file: string;
     files?: string[];
     action: 'create' | 'modify';
@@ -360,7 +361,14 @@ export function publishGitBranchCreated(ctx: BusContext, name: string): void {
 }
 
 export function publishRetry(
-  opts: BusContext & { taskId: TaskId; attempt: number; maxRetries: number; error: string },
+  opts: BusContext & {
+    taskId: TaskId;
+    attempt: number;
+    maxRetries: number;
+    lineageAttempt: number;
+    attemptAllowance: number;
+    error: string;
+  },
 ): void {
   opts.bus.publish({
     type: 'task_retry',
@@ -369,6 +377,8 @@ export function publishRetry(
     taskId: opts.taskId,
     attempt: opts.attempt,
     maxRetries: opts.maxRetries,
+    lineageAttempt: opts.lineageAttempt,
+    attemptAllowance: opts.attemptAllowance,
     error: opts.error,
   });
 }
@@ -638,8 +648,8 @@ export function publishImplementerGenerateDone(
     taskId: TaskId;
     file: string;
     diff?: string | undefined;
-    linesAdded: number;
-    linesRemoved: number;
+    linesAdded?: number | undefined;
+    linesRemoved?: number | undefined;
     duration: number;
     noChange?: boolean | undefined;
   },
@@ -650,8 +660,8 @@ export function publishImplementerGenerateDone(
     phase: ctx.phase,
     taskId: opts.taskId,
     file: opts.file,
-    linesAdded: opts.linesAdded,
-    linesRemoved: opts.linesRemoved,
+    ...(opts.linesAdded !== undefined && { linesAdded: opts.linesAdded }),
+    ...(opts.linesRemoved !== undefined && { linesRemoved: opts.linesRemoved }),
     duration: opts.duration,
     ...(opts.noChange === true && { noChange: true }),
   };
@@ -687,21 +697,4 @@ export function createImplementerPublisher(bus: EventBus): ImplementerPublisher 
     publishWarning: ({ phase, taskId, message, safety }) =>
       publishWarning({ bus, phase, taskId, message, safety }),
   };
-}
-
-export function publishDriftChainDetected(
-  ctx: BusContext,
-  chain: EmittedChain,
-  threshold: number,
-): void {
-  ctx.bus.publish({
-    type: 'drift_chain_detected',
-    ts: Date.now(),
-    phase: ctx.phase,
-    chainLength: chain.chainLength,
-    score: chain.score,
-    threshold,
-    uniqueOutOfBoundsFiles: chain.uniqueOutOfBoundsFiles,
-    representativePath: chain.representativePath,
-  });
 }

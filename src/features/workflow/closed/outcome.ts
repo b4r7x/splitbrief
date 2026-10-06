@@ -19,8 +19,10 @@ export const OUTCOME_LEADING_CELLS = getTerminalCellWidth(outcomeLeading(glyph('
 
 export function outcomeMarker(view: SummaryView): Readonly<{ glyph: GlyphName; tone: CopyTone }> {
   switch (view.outcome.kind) {
-    case 'ready':
     case 'applied':
+      if (view.applyUndo !== null) return { glyph: 'statusCancelled', tone: 'warning' };
+      return { glyph: 'check', tone: 'success' };
+    case 'complete':
       return { glyph: 'check', tone: 'success' };
     case 'needs-attention':
       return { glyph: 'statusWarning', tone: 'warning' };
@@ -60,9 +62,10 @@ function outcomeSegments(view: SummaryView): string[] {
     ];
   }
   const stoppedId = view.files.stoppedAt?.taskId ?? null;
+  const stage = stageWord(view);
   return [
     ENDED_LEAD,
-    `${stageWord(view)} ${view.briefs.passed}/${view.briefs.total}`,
+    stage === '' ? briefFraction(view) : `${stage} ${view.briefs.passed}/${view.briefs.total}`,
     ...(stoppedId === null ? [] : [`stopped in ${stoppedId}`]),
     haltedDisposition(view),
   ];
@@ -71,10 +74,10 @@ function outcomeSegments(view: SummaryView): string[] {
 /** The one word a run somebody closed ends on; the rail wears the same cancel mark. */
 const ENDED_LEAD = 'Ended';
 
-function settledSegments(view: SummaryView, kind: 'ready' | 'needs-attention'): string[] {
+function settledSegments(view: SummaryView, kind: 'complete' | 'needs-attention'): string[] {
   const failed = view.briefs.failed;
   return [
-    kind === 'ready' ? 'Ready' : 'Needs attention',
+    kind === 'complete' ? 'Complete' : 'Needs attention',
     briefFraction(view),
     ...(kind === 'needs-attention' && failed > 0 ? [`${failed} failed`] : []),
     reviewFact(view.review),
@@ -84,6 +87,8 @@ function settledSegments(view: SummaryView, kind: 'ready' | 'needs-attention'): 
 }
 
 function appliedSegments(view: SummaryView): string[] {
+  if (view.applyUndo !== null)
+    return ['Apply undone', briefFraction(view), reviewFact(view.review), scopeFact(view.scope)];
   const changed = view.files.changed;
   return [
     'Applied',
@@ -124,7 +129,7 @@ function haltedDisposition(view: SummaryView): string {
     return stoppedBeforeBuild(view) && view.briefs.earlierRows.length === 0
       ? 'nothing built'
       : 'files not recorded';
-  if (view.files.patch && view.files.changed.length > 0) return 'changes saved in run.patch';
+  if (view.files.patch !== null) return 'changes saved in run.patch';
   if (view.files.partial.size > 0) return 'partial changes kept';
   if (view.files.changed.length > 0) return 'changes kept';
   return 'nothing built';

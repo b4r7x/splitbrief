@@ -304,7 +304,7 @@ describe('buildRunnerChecks availability guidance', () => {
         model: 'shell',
       },
       workflow: { approve: 'plan' },
-      approval: { enabled: true, feedRejectionsToPlanner: true },
+      approval: { feedRejectionsToPlanner: true },
     });
 
     const check = buildRunnerChecks(config).find((c) => c.id === 'runners.planner.trust-boundary');
@@ -362,7 +362,7 @@ describe('buildRunnerChecks availability guidance', () => {
     expect(check?.metadata?.autoAllowFlags).toEqual(['--permission-mode acceptEdits']);
   });
 
-  it('reports approval.enabled: false as no approval automation, since only a protected write asks', () => {
+  it('says only a protected write asks, with no approval automation', () => {
     const config = makeConfig({
       planner: {
         kind: 'api',
@@ -373,7 +373,7 @@ describe('buildRunnerChecks availability guidance', () => {
         apiBase: 'https://api.example.test/v1',
       },
       implementer: { kind: 'agent', command: './agent', model: 'agent-default' },
-      approval: { enabled: false, feedRejectionsToPlanner: true },
+      approval: { feedRejectionsToPlanner: true },
     });
 
     const check = buildRunnerChecks(config).find(

@@ -68,7 +68,7 @@ describe('run with no reviewer configured', () => {
             makeTask({
               id: 'T001',
               action: 'create',
-              file: targetFile,
+              suggestedFiles: [targetFile],
               title: 'Create validated module',
               description: 'Create a module that satisfies the project validation script.',
               implementationSteps: ['Create src/loop.ts with the marker export.'],

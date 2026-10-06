@@ -1,6 +1,6 @@
 import { confinedFileIdentity } from '../../lib/confined-fs.js';
 import { assertModelWritablePathConfined } from '../../lib/path-confinement.js';
-import { taskFiles, type Task } from '../../core/schemas/task.js';
+import type { Task } from '../../core/schemas/task.js';
 import { readConfinedEntry } from '../orchestrator/approval/file-snapshots/entry.js';
 import { FILE_BUNDLE_MAX_FILES, type BundleBaseline } from './file-bundle.js';
 import { unsafePathReason } from './parse-file-bundle.js';
@@ -8,7 +8,7 @@ import { unsafePathReason } from './parse-file-bundle.js';
 export interface CaptureBundleBaselineInput {
   projectDir: string;
   /** The brief's anchor, its declared targets and the action the anchor claims. */
-  task: Pick<Task, 'file' | 'files' | 'action'>;
+  task: Pick<Task, 'suggestedFiles' | 'action'>;
   /**
    * Paths this same task is conclusively recorded to have created in an earlier
    * attempt. Only the anchor needs it: a non-anchor operation is derived.
@@ -104,11 +104,11 @@ export async function captureBundleBaseline(
   input: CaptureBundleBaselineInput,
 ): Promise<CaptureBundleBaselineResult> {
   const { projectDir, task } = input;
-  const paths = [...taskFiles(task)].sort(byPath);
+  const paths = [...task.suggestedFiles].sort(byPath);
   if (paths.length > FILE_BUNDLE_MAX_FILES) {
     return rejected(
       'output-limit',
-      task.file,
+      task.suggestedFiles[0],
       `${paths.length} declared targets exceeds the ${FILE_BUNDLE_MAX_FILES}-target limit`,
     );
   }
@@ -167,7 +167,7 @@ function anchorDisagreement(
   observed: 'missing' | 'text',
   input: CaptureBundleBaselineInput,
 ): string | undefined {
-  if (path !== input.task.file) return undefined;
+  if (path !== input.task.suggestedFiles[0]) return undefined;
   const { action } = input.task;
   if (action === 'create' && observed === 'text') {
     if (input.createdByThisTask?.includes(path) === true) return undefined;

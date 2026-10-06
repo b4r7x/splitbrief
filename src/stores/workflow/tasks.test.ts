@@ -44,14 +44,11 @@ describe('tasksStore — via addEvent', () => {
 
     addEvent(makeTaskComplete({ taskId: taskId('T010'), duration: 5000 }));
     expect(tasksStore.get().taskMap.get('T010')!.status).toBe('done');
-    expect(tasksStore.get().taskCompletionTimes).toEqual([5000]);
 
-    // task-complete for an unknown taskId does not add a new entry to taskMap,
-    // but its duration is still tracked (duration is event-sourced, not taskMap-sourced).
+    // task-complete for an unknown taskId does not add a new entry to taskMap.
     addEvent(makeTaskComplete({ taskId: taskId('T999'), duration: 8000 }));
     expect(tasksStore.get().taskMap.get('T999')).toBeUndefined();
     expect(tasksStore.get().taskMap.size).toBe(1);
-    expect(tasksStore.get().taskCompletionTimes).toEqual([5000, 8000]);
   });
 
   it('covers task-start → task-skipped path end-to-end', () => {
@@ -60,7 +57,6 @@ describe('tasksStore — via addEvent', () => {
 
     addEvent(makeTaskSkipped({ taskId: taskId('T001') }));
     expect(tasksStore.get().taskMap.get('T001')!.status).toBe('skipped');
-    expect(tasksStore.get().taskCompletionTimes).toEqual([]);
   });
 
   it('marks completed tasks by completion method instead of treating every completion as done', () => {
@@ -388,8 +384,8 @@ describe('selectTaskListView', () => {
     const view = selectTaskListView({
       currentTask: 0,
       currentAttempt: 1,
+      attemptAllowance: 8,
       totalTasks: 0,
-      taskCompletionTimes: [],
       taskMap: new Map(),
       tasks: [
         { id: 'T001', title: 'One', status: 'done' },

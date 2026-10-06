@@ -43,7 +43,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
       implement: vi.fn().mockImplementation(async (opts) => {
         opts.onOutput?.('streamed chunk');
         mkdirSync(join(projectDir, 'src'), { recursive: true });
-        writeFileSync(join(projectDir, task.file), 'implementation');
+        writeFileSync(join(projectDir, task.suggestedFiles[0]), 'implementation');
         return { success: true, output: 'code', usage: { inputTokens: 100, outputTokens: 50 } };
       }),
     });
@@ -114,8 +114,8 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
 
   it('persists per-task breakdowns and re-seeds them on re-entry (F-454)', async () => {
     const { projectDir, sessionId } = setupProject();
-    const first = makeTask({ id: 'T001', file: 'src/first.ts' });
-    const second = makeTask({ id: 'T002', file: 'src/second.ts' });
+    const first = makeTask({ id: 'T001', suggestedFiles: ['src/first.ts'] });
+    const second = makeTask({ id: 'T002', suggestedFiles: ['src/second.ts'] });
     const state = makeImplState([first, second]);
     const implementer = makeImplementer({
       implement: vi.fn().mockResolvedValue({
@@ -165,8 +165,8 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
 
   it('dispatches each task as a separate implementer call without prior task continuation text', async () => {
     const { projectDir, sessionId } = setupProject();
-    const first = makeTask({ id: 'T001', file: 'src/first.ts' });
-    const second = makeTask({ id: 'T002', file: 'src/second.ts' });
+    const first = makeTask({ id: 'T001', suggestedFiles: ['src/first.ts'] });
+    const second = makeTask({ id: 'T002', suggestedFiles: ['src/second.ts'] });
     const state = makeImplState([first, second]);
     const implementer = makeImplementer({
       implement: vi.fn().mockResolvedValue({
@@ -203,9 +203,9 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
 
   it('points the task index at the brief it runs after skipping a passed one', async () => {
     const { projectDir, sessionId } = setupProject();
-    const reopened = makeTask({ id: 'T001', file: 'src/first.ts' });
-    const passed = makeTask({ id: 'T002', file: 'src/second.ts', status: 'done' });
-    const next = makeTask({ id: 'T003', file: 'src/third.ts' });
+    const reopened = makeTask({ id: 'T001', suggestedFiles: ['src/first.ts'] });
+    const passed = makeTask({ id: 'T002', suggestedFiles: ['src/second.ts'], status: 'done' });
+    const next = makeTask({ id: 'T003', suggestedFiles: ['src/third.ts'] });
     const state = makeImplState([reopened, passed, next]);
     const ref = { projectDir, sessionId };
     const seen: { index: number | undefined; cut: unknown }[] = [];

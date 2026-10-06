@@ -9,9 +9,8 @@ import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
-import { focusStore } from '../../../stores/ui/focus.js';
 import { routerStore } from '../../../stores/navigation/router.js';
-import { focusHasResolvableCopy, resolveCopyValue } from './resolve.js';
+import { resolveCopyValue } from './resolve.js';
 
 beforeEach(() => {
   eventsStore.__testReset();
@@ -20,7 +19,6 @@ beforeEach(() => {
   modelCacheStore.reset();
   configStore.__testReset();
   reviewStore.reset();
-  focusStore.clear();
   routerStore.reset();
 });
 
@@ -63,14 +61,7 @@ describe('resolveCopyValue', () => {
     expect(resolveCopyValue('cost')).toBeNull();
   });
 
-  it('resolves the focused brief by index', () => {
-    seedVisibleBriefs(['first', 'second', 'third']);
-    focusStore.set('brief', 1);
-
-    expect(resolveCopyValue('brief')).toBe('second');
-  });
-
-  it('falls back to the top of the visible window when nothing is focused (keyboard path)', () => {
+  it('resolves the brief at the top of the visible window', () => {
     seedVisibleBriefs(['first', 'second', 'third'], 2);
     reviewStore.setScrollOffset(2);
 
@@ -81,60 +72,42 @@ describe('resolveCopyValue', () => {
 describe('brief copy negative visibility matrix', () => {
   it.each(
     [
-      {
-        label: 'no compiled briefs',
-        seed: () => {},
-        focusIndex: 0,
-      },
-      {
-        label: 'focused brief index out of range',
-        seed: () => seedVisibleBriefs(['only one']),
-        focusIndex: 5,
-      },
+      { label: 'no compiled briefs', seed: () => {} },
       {
         label: 'brief sources exist but no row is rendered',
         seed: () => seedVisibleBriefs(['hidden brief'], 0),
-        focusIndex: 0,
-      },
-      {
-        label: 'focused brief outside the visible window',
-        seed: () => seedVisibleBriefs(['b0', 'b1', 'b2', 'b3', 'b4'], 2),
-        focusIndex: 4,
       },
     ].flatMap((testCase) =>
       (['brief', 'path'] as const).map((target) => ({ ...testCase, target })),
     ),
-  )('$label blocks resolvable $target copy', ({ seed, focusIndex, target }) => {
+  )('$label blocks $target copy', ({ seed, target }) => {
     seed();
-    focusStore.set('brief', focusIndex);
 
-    expect(focusHasResolvableCopy(focusStore.get())).toBe(false);
     expect(resolveCopyValue(target)).toBeNull();
   });
 });
 
 describe('resolveCopyValue path target', () => {
-  it('relativizes an absolute focused brief file against the project dir', () => {
+  it('relativizes an absolute brief file against the project dir', () => {
     configStore.__testReset({ projectDir: '/repo/root', config: makeConfig() });
     reviewStore.setBriefPaths(['src/a.ts', '/repo/root/src/deep/b.ts']);
     reviewStore.setRenderedLineCount(2);
-    reviewStore.setVisibleBriefCount(2);
-    focusStore.set('brief', 1);
+    reviewStore.setVisibleBriefCount(1);
+    reviewStore.setScrollOffset(1);
 
     expect(resolveCopyValue('path')).toBe('src/deep/b.ts');
   });
 
-  it('returns the focused brief file unchanged when already repo-relative', () => {
+  it('returns the brief file unchanged when already repo-relative', () => {
     configStore.__testReset({ projectDir: '/repo/root', config: makeConfig() });
     reviewStore.setBriefPaths(['src/a.ts', 'src/b.ts']);
     reviewStore.setRenderedLineCount(2);
     reviewStore.setVisibleBriefCount(2);
-    focusStore.set('brief', 0);
 
     expect(resolveCopyValue('path')).toBe('src/a.ts');
   });
 
-  it('falls back to the scroll-top brief file when nothing is focused', () => {
+  it('resolves the scroll-top brief file', () => {
     configStore.__testReset({ projectDir: '/repo/root', config: makeConfig() });
     reviewStore.setBriefPaths(['src/a.ts', 'src/b.ts', 'src/c.ts']);
     reviewStore.setRenderedLineCount(3);
@@ -162,32 +135,5 @@ describe('resolveCopyValue command target', () => {
     });
 
     expect(resolveCopyValue('command')).toBeNull();
-  });
-});
-
-describe('brief focus reconciliation gates copy', () => {
-  it('does not yank a brief that has scrolled offscreen', () => {
-    reviewStore.setBriefSources(['b0', 'b1', 'b2', 'b3', 'b4']);
-    reviewStore.setRenderedLineCount(5);
-    reviewStore.setVisibleBriefCount(2);
-    focusStore.set('brief', 4);
-
-    reviewStore.setScrollOffset(0);
-
-    expect(focusStore.get()).toBeNull();
-    expect(resolveCopyValue('brief')).toBe('b0');
-  });
-});
-
-describe('focusHasResolvableCopy', () => {
-  it('is false when nothing is focused', () => {
-    expect(focusHasResolvableCopy(null)).toBe(false);
-  });
-
-  it('is true for a focused brief region with a compiled brief', () => {
-    seedVisibleBriefs(['raw brief markdown']);
-    focusStore.set('brief', 0);
-
-    expect(focusHasResolvableCopy(focusStore.get())).toBe(true);
   });
 });

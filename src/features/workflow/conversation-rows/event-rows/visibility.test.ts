@@ -10,7 +10,6 @@ describe('isTranscriptRowlessEvent', () => {
       ts: 0,
       phase: 'planning',
       elapsedMs: 1000,
-      accumulatedTokens: 10,
     };
     const status: EngineEvent = {
       type: 'planner_status',

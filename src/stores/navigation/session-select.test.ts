@@ -98,7 +98,7 @@ function openRecord(sessionId: string): RunRecord {
     ref: { projectDir: tmp, sessionId },
     status: {
       kind: 'open',
-      stop: { kind: 'interrupted' },
+      stop: { kind: 'stopped', on: { kind: 'interrupted' } },
       resumeAt: { kind: 'planner', call: 'tasks' },
     },
   });

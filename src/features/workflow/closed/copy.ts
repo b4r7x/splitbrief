@@ -67,8 +67,23 @@ export function findingCounts(counts: Readonly<{ critical: number; warning: numb
  */
 export function runRows(view: SummaryView): RunRow[] {
   const rows: RunRow[] = [{ label: 'Review', segments: reviewSegments(view.review) }];
+  if (view.applyUndo !== null) {
+    const conflicts = view.applyUndo.conflicts.length;
+    rows.push({
+      label: 'Apply',
+      segments: [
+        {
+          text: conflicts === 0 ? 'undone' : `undone, ${countNoun(conflicts, 'conflict')} kept`,
+          tone: conflicts === 0 ? 'text' : 'warning',
+        },
+      ],
+    });
+  }
   const packet = packetPath(view);
   if (packet !== null) rows.push({ label: 'Packet', segments: [{ text: packet, tone: 'link' }] });
+  if (view.files.patch !== null) {
+    rows.push({ label: 'Patch', segments: [{ text: view.files.patch, tone: 'link' }] });
+  }
   rows.push({ label: 'Scope', segments: scopeSegments(view.scope) });
   const quality = view.quality;
   if (quality !== null) {
@@ -132,15 +147,13 @@ function packetPath(view: SummaryView): string | null {
 
 function scopeSegments(scope: ScopeView): CopySegment[] {
   if (scope.kind === 'not-run') return [{ text: 'not checked', tone: 'textDim' }];
-  return [
-    {
-      text: formatScoreSummary(scope.score, {
-        errorCount: scope.errors,
-        warningCount: scope.warnings,
-      }),
-      tone: scope.passed ? 'text' : 'warning',
-    },
+  const tone = scope.passed ? 'text' : 'warning';
+  const counts = [
+    ...(scope.errors > 0 ? [countNoun(scope.errors, 'error')] : []),
+    ...(scope.warnings > 0 ? [countNoun(scope.warnings, 'warning')] : []),
   ];
+  if (counts.length === 0) return [{ text: 'clean', tone }];
+  return counts.map((text) => ({ text, tone }));
 }
 
 /** One phase would only restate the run clock the header already shows. */

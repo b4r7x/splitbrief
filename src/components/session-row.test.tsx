@@ -166,11 +166,8 @@ describe('SessionRow', () => {
   it.each([
     ['complete', undefined, '✓', 'complete'],
     ['ended', undefined, '×', 'ended'],
-    ['open', 'paused', '◌', 'paused'],
-    ['open', 'waiting', '◌', 'waiting'],
-    ['open', 'halted', '◌', 'halted'],
-    ['open', 'failed', '◌', 'failed'],
-    ['open', 'interrupted', '◌', 'interrupted'],
+    ['open', 'waiting-for-you', '◌', 'waiting for you'],
+    ['open', 'stopped', '◌', 'stopped'],
   ] as const)('leads a %s %s row with one glyph and one word', (status, stop, icon, word) => {
     const frame = frameOf(
       <Box width={72}>
@@ -198,16 +195,16 @@ describe('SessionRow', () => {
     expect(frame).toContain('◉');
   });
 
-  it('never leads a failed row with a ✗ glyph', () => {
+  it('never leads a stopped row with a ✗ glyph', () => {
     const frame = frameOf(
       <Box width={72}>
         <SessionRow
-          session={makeSession({ status: 'open', stop: 'failed', feature: 'flaky-test' })}
+          session={makeSession({ status: 'open', stop: 'stopped', feature: 'flaky-test' })}
         />
       </Box>,
     );
     expect(frame).not.toContain('✗');
-    expect(frame).toContain('failed');
+    expect(frame).toContain('stopped');
   });
 
   it('does not reserve a cursor cell when no cursor is requested', () => {

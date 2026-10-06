@@ -21,8 +21,6 @@ export interface TaskRecoveryContext {
   attempts?: number | undefined;
   maxAttempts?: number | undefined;
   selectedImplementerProfile?: string | undefined;
-  routeBiggerProfile?: string | undefined;
-  canRouteBigger?: boolean | undefined;
 }
 
 export function summarizeText(input: string): string {

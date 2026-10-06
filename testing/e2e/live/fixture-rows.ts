@@ -1,11 +1,8 @@
 import type { LiveSeat } from '../helpers/live-harness.js';
 import { resolveReleaseMatrixSeat } from './matrix.js';
 
-export type FixtureMode = 'quick' | 'standard';
-
 export type FixtureRow = Readonly<{
   id: string;
-  mode: FixtureMode;
   fixture: 'add-endpoint';
   feature: string;
   expectedBriefs: Readonly<{ min: number; max: number }>;
@@ -20,19 +17,7 @@ const FIXTURE_FEATURE =
 
 export const FIXTURE_ROWS: readonly FixtureRow[] = [
   {
-    id: 'fixture-quick-claude-cmd-codex',
-    mode: 'quick',
-    fixture: 'add-endpoint',
-    feature: FIXTURE_FEATURE,
-    expectedBriefs: { min: 1, max: 3 },
-    plan: 'claude-code',
-    build: 'command-code',
-    review: 'codex',
-    timeoutMs: 300_000,
-  },
-  {
-    id: 'fixture-standard-claude-cmd-codex',
-    mode: 'standard',
+    id: 'fixture-claude-cmd-codex',
     fixture: 'add-endpoint',
     feature: FIXTURE_FEATURE,
     expectedBriefs: { min: 1, max: 3 },

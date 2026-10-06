@@ -391,6 +391,18 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-complete-after-fix-tasks',
+      title: 'Workflow · complete after the review appended a fix task',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'complete-after-fix-tasks',
+        title: 'Every brief counted once',
+        kind: 'implementation',
+        marker: '4/4 briefs passed',
+      },
+      elements: [{ id: 'header', title: 'Workflow header' }],
+    }),
+    defineScenario({
       id: 'workflow-review-fix-no-change',
       title: 'Workflow · a reopened brief that needed no change',
       surface: screenSurface('workflow'),
@@ -424,18 +436,33 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-implementation-retry',
-      title: 'Workflow · brief on its second attempt',
+      title: 'Workflow · brief after an attempt allowance grant',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'implementation-retry',
         title: 'Retried brief',
         kind: 'implementation',
-        marker: 'attempt 2 of 3',
+        marker: 'attempt 7 of 12',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Implementation transcript' },
         { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-implementation-after-retry',
+      title: 'Workflow · the brief after a retried one',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'implementation-after-retry',
+        title: 'Next brief after a retried brief',
+        kind: 'implementation',
+        marker: 'Register the bounded fixture projection',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
       ],
     }),
     defineScenario({
@@ -499,21 +526,6 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Implementation transcript' },
         { id: 'sidebar', title: 'Workflow sidebar' },
-      ],
-    }),
-    defineScenario({
-      id: 'workflow-implementation-user-edits',
-      title: 'Workflow · a brief started after edits outside the run',
-      surface: screenSurface('workflow'),
-      checkpoint: {
-        id: 'implementation-user-edits',
-        title: 'The edits card, then the brief it let start',
-        kind: 'implementation',
-        marker: '~24,310',
-      },
-      elements: [
-        { id: 'header', title: 'Workflow header' },
-        { id: 'transcript', title: 'Implementation transcript' },
       ],
     }),
     defineScenario({
@@ -711,7 +723,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'paused-mid-brief',
         title: 'Parked mid-brief',
         kind: 'question',
-        marker: 'Paused at T',
+        marker: 'Stopped at T',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -783,7 +795,23 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'at-rest-paused',
         title: 'Paused run at rest',
         kind: 'ready',
-        marker: 'Paused at',
+        marker: 'Stopped at',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-at-rest-long-park',
+      title: 'Workflow · a run at rest after a night stopped',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'at-rest-long-park',
+        title: 'Run clock without the park',
+        kind: 'ready',
+        marker: 'Stopped at',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -808,22 +836,6 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
-      id: 'workflow-recovery-paused',
-      title: 'Workflow · a recovery paused from its menu',
-      surface: screenSurface('workflow'),
-      checkpoint: {
-        id: 'recovery-paused',
-        title: 'Paused recovery at rest',
-        kind: 'ready',
-        marker: 'Recovery paused',
-      },
-      elements: [
-        { id: 'header', title: 'Workflow header' },
-        { id: 'transcript', title: 'Replayed transcript' },
-        { id: 'composer', title: 'Workflow composer' },
-      ],
-    }),
-    defineScenario({
       id: 'workflow-at-rest-halted',
       title: 'Workflow · a halted run at rest',
       surface: screenSurface('workflow'),
@@ -831,7 +843,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'at-rest-halted',
         title: 'Halted run at rest',
         kind: 'ready',
-        marker: 'Halted',
+        marker: 'Seat down · Usage limit on Ollama',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -912,6 +924,38 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Applied run',
         kind: 'success',
         marker: 'visual-closed-applied',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Closed run ledger' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-closed-undone',
+      title: 'Workflow · Apply undone',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'closed-undone',
+        title: 'Apply undone',
+        kind: 'success',
+        marker: 'visual-closed-undone',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Closed run ledger' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-closed-undo-conflicts',
+      title: 'Workflow · Apply undone with later edits kept',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'closed-undo-conflicts',
+        title: 'Undo conflicts kept',
+        kind: 'success',
+        marker: 'visual-closed-undo-conflicts',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -1023,7 +1067,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'replayed',
         title: 'Replayed run history',
         kind: 'ready',
-        marker: 'Interrupted',
+        marker: 'Stopped at',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -1055,7 +1099,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'gate-stopped',
         title: 'Run stopped while a gate was open',
         kind: 'ready',
-        marker: 'Paused at the plan',
+        marker: 'Stopped at the plan',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -1215,7 +1259,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'recovery-plan-swapped',
         title: 'Plan-seat swap in the transcript',
         kind: 'planning',
-        marker: 'Change PLAN tool',
+        marker: 'continued',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -1251,7 +1295,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         kind: 'question',
         // The headline is the one line the panel keeps at 60x18, where the row budget
         // leaves room for the actions and nothing else.
-        marker: 'Recovery needed · T901 exhausted its retries',
+        marker: 'Needs you · T901 failed',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -1268,7 +1312,23 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Consult-bound recovery menu',
         kind: 'question',
         // The headline is the one line the panel keeps at 60x18.
-        marker: 'Recovery needed · T901 used its consult allowance',
+        marker: 'Needs you · T901 used its consult allowance',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-consult-bound-note',
+      title: 'Workflow · a note typed beside the consult-bound menu',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'consult-bound-note',
+        title: 'Consult-bound menu with the composer focused',
+        kind: 'question',
+        marker: 'Needs you · T901 used its consult allowance',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -1278,7 +1338,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-recovery-review-failed',
-      title: 'Workflow · a final review that failed after its repair cycles',
+      title: 'Workflow · a checkout final review that failed after its repair cycles',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'review-failed',
@@ -1300,7 +1360,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'left-isolation',
         title: 'Left-isolation recovery menu',
         kind: 'question',
-        marker: 'Recovery needed · T901 left the isolation directory',
+        marker: 'Seat down · T901 left the isolation directory',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -1316,7 +1376,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'left-isolation',
         title: 'Checkout mode left-isolation recovery menu',
         kind: 'question',
-        marker: 'Recovery needed · T901 left the isolation directory',
+        marker: 'Seat down · T901 left the isolation directory',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -1332,12 +1392,27 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'checkout-changed',
         title: 'Checkout-changed recovery menu',
         kind: 'question',
-        marker: 'Recovery needed · Your checkout changed under T901',
+        marker: 'Needs you · Your checkout changed under T901',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
         { id: 'question-panel', title: 'Recovery menu panel' },
         { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-resolved-retry',
+      title: 'Workflow · a checkout halt resolved with Try again',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'recovery-resolved-retry',
+        title: 'Halt and Try again folded above the retry',
+        kind: 'implementation',
+        marker: 'back to pending',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
       ],
     }),
     // The same halt read back later: the transcript rows the halt wrote and the byline naming it.
@@ -1349,7 +1424,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'at-rest-left-isolation',
         title: 'Left-isolation halt at rest',
         kind: 'ready',
-        marker: 'Halted',
+        marker: 'Seat down',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -1458,6 +1533,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Silence stated once, in the build block',
         kind: 'implementation',
         marker: 'Still working',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-implementation-tool-running',
+      title: 'Workflow · a seat quiet while its tool runs',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'implementation-tool-running',
+        title: 'The running tool named in the build block',
+        kind: 'implementation',
+        marker: 'running npx vitest run',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -1702,6 +1792,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: PICKER_TITLE_MARKER,
       },
       {
+        id: 'overlay-planner-picker-claude-custom-twin',
+        title: 'Overlay · planner picker · custom row holding an alias full id',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
         id: 'overlay-planner-picker-copilot',
         title: 'Overlay · planner picker · GitHub Copilot models',
         marker: PICKER_TITLE_MARKER,
@@ -1881,7 +1976,7 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       {
         id: 'workflow-stop-menu-parked-gate',
         title: 'Workflow · parked at the plan gate',
-        marker: 'Paused at the plan',
+        marker: 'Stopped at the plan',
       },
       {
         id: 'workflow-stop-menu-ended-gate',
@@ -1911,6 +2006,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       },
       { id: 'workflow-stop-menu-failed', title: 'Workflow · failed stop', marker: 'Retry stop' },
       { id: 'workflow-stop-menu-pause', title: 'Workflow · pause option', marker: 'finish T002' },
+      {
+        id: 'workflow-stop-sheet-after-continue',
+        title: 'Workflow · stop options right after a continue',
+        marker: 'Pause after this brief',
+      },
     ],
   }),
   sessions: overlayGroup({

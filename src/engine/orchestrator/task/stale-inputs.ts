@@ -49,9 +49,18 @@ export function movedInputFiles(
   );
 }
 
-/** Whether the task's recorded input hashes still match the checkout. A task that records none is not stale. */
-export function inputsMoved(projectDir: string, task: Task): boolean {
+/**
+ * Whether the task's inputs moved in a way the plan did not expect. A task that records no hashes
+ * is not stale, and neither is one whose every moved input is a file an earlier task of the plan
+ * was to write: the plan ordered that change before this brief.
+ */
+export function inputsMovedUnexpectedly(
+  projectDir: string,
+  task: Task,
+  earlierTasks: readonly Pick<Task, 'suggestedFiles'>[],
+): boolean {
   if (task.inputHashes === undefined) return false;
-  const files = taskInputFiles(task);
-  return movedInputFiles(task.inputHashes, inputHashesNow(projectDir, files)).length > 0;
+  const moved = movedInputFiles(task.inputHashes, inputHashesNow(projectDir, taskInputFiles(task)));
+  const expected = new Set(earlierTasks.flatMap((earlier) => earlier.suggestedFiles));
+  return moved.some((file) => !expected.has(file));
 }

@@ -13,7 +13,6 @@ import {
   updateDefaultImplementerConfig,
 } from '../../core/config/accessors/implementer-profiles.js';
 import type { Config } from '../../core/schemas/config.js';
-import { defaultApprovalConfig } from '../../core/schemas/config.js';
 import { configError } from '../../core/config/errors.js';
 import {
   cloneConfig,
@@ -181,22 +180,6 @@ function getDetectedContextLength(): number | undefined {
   return store.get().detectedContextLength;
 }
 
-function setApprovalEnabled(enabled: boolean) {
-  store.set((s) => {
-    if (!s.config) return s;
-    const currentEnabled = s.config.approval?.enabled !== false;
-    if (currentEnabled === enabled) return s;
-    const base = s.config.approval ?? defaultApprovalConfig();
-    return {
-      ...s,
-      config: {
-        ...s.config,
-        approval: { ...base, enabled },
-      },
-    };
-  });
-}
-
 // Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
 function __testReset(next?: Partial<ConfigState>): void {
   saveQueue = Promise.resolve();
@@ -221,6 +204,5 @@ export const configStore = {
   useConfig,
   setContextLength,
   getDetectedContextLength,
-  setApprovalEnabled,
   __testReset,
 };

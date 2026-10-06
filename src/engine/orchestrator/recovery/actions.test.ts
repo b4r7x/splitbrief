@@ -7,17 +7,13 @@ import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir, writeSpecFile } from '../../../core/paths-io.js';
-import type { Config } from '../../../core/schemas/config.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { applyRecoveryAction } from './actions.js';
 import { buildConsultBoundRecoveryIssue } from './builders/consult.js';
-import {
-  buildDependencyBlockedRecoveryIssue,
-  buildReviewFailedRecoveryIssue,
-} from './builders/task.js';
+import { buildReviewFailedRecoveryIssue } from './builders/task.js';
 
 const createdAt = '2026-04-28T12:00:00.000Z';
 
@@ -95,70 +91,20 @@ function setupSession(name: string): { projectDir: string; sessionId: string } {
   return { projectDir, sessionId };
 }
 
-function routeBiggerIssue(task: Task, facts?: RecoveryIssue['facts']): RecoveryIssue {
-  return {
-    id: `rec_${task.id}_route_bigger`,
-    reason: 'context-overflow',
-    phase: 'implementing',
-    status: 'awaiting-user',
-    taskId: task.id,
-    taskTitle: task.title,
-    files: [task.file],
-    affectedTaskIds: [task.id],
-    message: `${task.id} needs a larger worker`,
-    details: [],
-    ...(facts !== undefined ? { facts } : {}),
-    availableActions: ['route-bigger-worker'],
-    recommendedAction: 'route-bigger-worker',
-    createdAt,
-  };
-}
-
-function configWithProfiles(): Config {
-  const implementerProfiles: NonNullable<Config['implementerProfiles']> = {
-    default: 'local-fast',
-    profiles: {
-      'cloud-capable': {
-        kind: 'api',
-        provider: 'custom-endpoint',
-        service: 'custom-endpoint',
-        offering: 'payg',
-        apiBase: 'https://api.example.com/v1',
-        apiKey: 'test-key',
-        model: 'claude-sonnet',
-      },
-      'local-fast': {
-        kind: 'api',
-        provider: 'ollama',
-        service: 'ollama',
-        offering: 'local',
-        apiBase: 'http://localhost:11434/v1',
-        model: 'qwen2.5-coder:7b',
-      },
-    },
-  };
-  return { ...makeConfig(), implementerProfiles };
-}
-
-describe('applyRecoveryAction: reason policy', () => {
-  it('blocks actions that violate the reason policy even when advertised in state', async () => {
+describe('applyRecoveryAction: halt policy', () => {
+  it("blocks an action its cause's halt does not offer even when advertised in state", async () => {
     const { projectDir, sessionId } = setupSession('policy-block');
     const task = makeTask({ id: 'T200', status: 'in_progress' });
-    const issue: RecoveryIssue = {
-      id: 'rec_review_skip',
-      reason: 'review-failed',
+    const issue = makeRecoveryIssue({
+      reason: 'runner-usage-limit',
       phase: 'implementing',
-      status: 'awaiting-user',
       taskId: task.id,
       taskTitle: task.title,
-      files: [task.file],
+      files: [task.suggestedFiles[0]],
       affectedTaskIds: [task.id],
-      message: 'Review failed',
-      details: [],
-      availableActions: ['skip-current-task', 'pause-run', 'end-run'],
-      recommendedAction: 'pause-run',
-      createdAt,
-    };
+      availableActions: ['retry-same-worker', 'accept-as-is', 'end-run'],
+      recommendedAction: 'retry-same-worker',
+    });
     const state = { ...makeImplState([task]), pendingRecovery: issue };
     const { bus } = makeBusRecorder();
 
@@ -166,7 +112,7 @@ describe('applyRecoveryAction: reason policy', () => {
       projectDir,
       sessionId,
       state,
-      action: 'skip-current-task',
+      action: 'accept-as-is',
       bus,
       config: makeConfig(),
     });
@@ -178,100 +124,15 @@ describe('applyRecoveryAction: reason policy', () => {
   });
 });
 
-describe('applyRecoveryAction: route-bigger-worker blocked', () => {
-  it('blocks when the recovery issue does not name a bigger profile', async () => {
-    const { projectDir, sessionId } = setupSession('route-bigger-missing-fact');
-    const task = makeTask({ id: 'T101', status: 'in_progress' });
-    const issue = routeBiggerIssue(task, {});
-    const state = { ...makeImplState([task]), pendingRecovery: issue };
-    const { bus } = makeBusRecorder();
-
-    const result = await applyRecoveryAction({
-      projectDir,
-      sessionId,
-      state,
-      action: 'route-bigger-worker',
-      bus,
-      config: configWithProfiles(),
-    });
-
-    expect(result).toMatchObject({
-      ok: false,
-      status: 'blocked',
-      code: 'missing-profile',
-    });
-    expect(issue.selectedImplementerProfile).toBeUndefined();
-    expect(result.state.pendingRecovery).toBe(issue);
-  });
-
-  it('blocks when the named bigger profile is not in config', async () => {
-    const { projectDir, sessionId } = setupSession('route-bigger-unknown-profile');
-    const task = makeTask({ id: 'T102', status: 'in_progress' });
-    const issue = routeBiggerIssue(task, { routeBiggerProfile: 'frontier-big' });
-    const state = { ...makeImplState([task]), pendingRecovery: issue };
-    const { bus } = makeBusRecorder();
-
-    const result = await applyRecoveryAction({
-      projectDir,
-      sessionId,
-      state,
-      action: 'route-bigger-worker',
-      bus,
-      config: configWithProfiles(),
-    });
-
-    expect(result).toMatchObject({
-      ok: false,
-      status: 'blocked',
-      code: 'profile-not-found',
-      implementerProfile: 'frontier-big',
-    });
-    expect(result.state.pendingRecovery).toBe(issue);
-  });
-
-  it('blocks when config is undefined', async () => {
-    const { projectDir, sessionId } = setupSession('route-bigger-no-config');
-    const task = makeTask({ id: 'T103', status: 'in_progress' });
-    const issue = routeBiggerIssue(task, { routeBiggerProfile: 'cloud-capable' });
-    const state = { ...makeImplState([task]), pendingRecovery: issue };
-    const { bus } = makeBusRecorder();
-
-    const result = await applyRecoveryAction({
-      projectDir,
-      sessionId,
-      state,
-      action: 'route-bigger-worker',
-      bus,
-      config: undefined,
-    });
-
-    expect(result).toMatchObject({
-      ok: false,
-      status: 'blocked',
-      code: 'profile-not-found',
-    });
-  });
-});
-
-describe('applyRecoveryAction: unsafe continue blocked', () => {
-  it('blocks ordinary continue for an unsafe conflict even if an issue was malformed to advertise it', async () => {
-    const { projectDir, sessionId } = setupSession('continue-unsafe-conflict');
-    const conflictTask = makeTask({ id: 'T031', file: 'src/current.ts' });
-    const persistedIssue = makeRecoveryIssue({
-      reason: 'user-edit-conflict',
-      phase: 'implementing',
-      taskId: conflictTask.id,
-      taskTitle: conflictTask.title,
-      files: ['src/current.ts'],
-      facts: { conflictKind: 'current-task-conflict', safeToContinue: false },
-      availableActions: ['pause-run', 'skip-current-task', 'end-run'],
-      recommendedAction: 'pause-run',
-    });
+describe('applyRecoveryAction: continue', () => {
+  it('blocks continue on a live cause that is not a spent bound, even if the issue advertised it', async () => {
+    const { projectDir, sessionId } = setupSession('continue-unsafe');
+    const persistedIssue = makeRecoveryIssue();
     const issue: RecoveryIssue = {
       ...persistedIssue,
-      availableActions: ['continue', 'pause-run', 'end-run'],
+      availableActions: ['continue', 'retry-same-worker', 'skip-current-task', 'end-run'],
     };
-    const base = makeImplState([makeTask({ id: 'T031' })]);
+    const base = makeImplState([makeTask({ id: 'T001' })]);
     saveState({ projectDir, sessionId }, { ...base, pendingRecovery: persistedIssue });
     const state = { ...base, pendingRecovery: issue };
     const { bus, events } = makeBusRecorder();
@@ -290,7 +151,31 @@ describe('applyRecoveryAction: unsafe continue blocked', () => {
     expect(events.map((event) => event.type)).toEqual(
       expect.arrayContaining(['recovery_action_selected', 'recovery_action_failed']),
     );
-    expect(state.pendingRecovery).toEqual(issue);
+  });
+
+  it('continues past a halt on a retired cause, which names nothing the run still checks', async () => {
+    const { projectDir, sessionId } = setupSession('continue-retired');
+    const issue = makeRecoveryIssue({
+      reason: 'constitution-check-failed',
+      availableActions: ['continue', 'end-run'],
+      recommendedAction: 'continue',
+    });
+    const base = makeImplState([makeTask({ id: 'T001' })]);
+    saveState({ projectDir, sessionId }, { ...base, pendingRecovery: issue });
+    const { bus, events } = makeBusRecorder();
+
+    const result = await applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state: { ...base, pendingRecovery: issue },
+      action: 'continue',
+      bus,
+    });
+
+    expect(result).toMatchObject({ ok: true, status: 'continued' });
+    expect(result.state.pendingRecovery).toBeUndefined();
+    expect(loadState({ projectDir, sessionId })?.pendingRecovery).toBeUndefined();
+    expect(events.map((event) => event.type)).toContain('recovery_resolved');
   });
 });
 
@@ -314,9 +199,8 @@ describe('applyRecoveryAction: the run-level answers', () => {
       affectedTaskIds: [],
       message: 'the planner needs a correction',
       details: [],
-      availableActions:
-        reason === 'constitution-check-failed' ? ['revise-spec', 'end-run'] : ['revise', 'end-run'],
-      recommendedAction: reason === 'constitution-check-failed' ? 'revise-spec' : 'revise',
+      availableActions: ['revise', 'end-run'],
+      recommendedAction: 'revise',
       createdAt,
     };
   }
@@ -366,8 +250,8 @@ describe('applyRecoveryAction: the run-level answers', () => {
 
   // No spec step is left to rewind to: an old run's constitution halt sends its note to the one
   // planning session as a queued correction.
-  it('revise-spec on an old constitution halt queues the note and clears the halt', async () => {
-    const { projectDir, sessionId } = setupSession('recovery-revise-spec');
+  it('revise on an old constitution halt queues the note and clears the halt', async () => {
+    const { projectDir, sessionId } = setupSession('recovery-revise-constitution');
     const issue = {
       ...reviseIssue('constitution-check-failed'),
       phase: 'constitution-check' as const,
@@ -379,7 +263,7 @@ describe('applyRecoveryAction: the run-level answers', () => {
       projectDir,
       sessionId,
       state,
-      action: 'revise-spec',
+      action: 'revise',
       bus,
       comment: 'drop the class',
     });
@@ -404,7 +288,7 @@ describe('applyRecoveryAction: the run-level answers', () => {
       message: 'Planning failed.',
       details: [],
       switchSeat: { seat: 'plan', candidates: [{ tool: 'claude-code' }] },
-      availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
+      availableActions: ['retry-same-worker', 'switch-seat', 'end-run'],
       recommendedAction: 'switch-seat',
       createdAt,
     };
@@ -494,7 +378,9 @@ describe('applyRecoveryAction: revise on a failed review', () => {
       createdAt,
     });
     const state = {
-      ...makeImplState([makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' })]),
+      ...makeImplState([
+        makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' }),
+      ]),
       phase: 'complete' as const,
       reviewStatus: 'failed' as const,
       fixCycles: { used: 2, allowance: 2, notes: [] },
@@ -570,46 +456,6 @@ describe('applyRecoveryAction: revise on a failed review', () => {
   });
 });
 
-describe('applyRecoveryAction: planner-split-rebase blocked', () => {
-  it('blocks planner-split-rebase until a proposal approval flow exists', async () => {
-    const { projectDir, sessionId } = setupSession('planner-proposal-required');
-    const task = makeTask({ id: 'T037' });
-    const persistedIssue = buildDependencyBlockedRecoveryIssue({
-      task,
-      createdAt,
-      blockedByTaskIds: ['T001' as Task['id']],
-    });
-    const issue = {
-      ...persistedIssue,
-      availableActions: ['planner-split-rebase', 'pause-run', 'end-run'],
-      recommendedAction: 'planner-split-rebase',
-    } satisfies ReturnType<typeof buildDependencyBlockedRecoveryIssue>;
-    const base = makeImplState([task]);
-    saveState({ projectDir, sessionId }, { ...base, pendingRecovery: persistedIssue });
-    const state = { ...base, pendingRecovery: issue };
-    const { bus, events } = makeBusRecorder();
-
-    const result = await applyRecoveryAction({
-      projectDir,
-      sessionId,
-      state,
-      action: 'planner-split-rebase',
-      bus,
-    });
-
-    expect(result).toMatchObject({
-      ok: false,
-      status: 'blocked',
-      code: 'planner-proposal-required',
-    });
-    expect(result.state.pendingRecovery).toEqual(issue);
-    expect(loadState({ projectDir, sessionId })?.pendingRecovery).toEqual(persistedIssue);
-    expect(events.map((event) => event.type)).toEqual(
-      expect.arrayContaining(['recovery_action_selected', 'recovery_action_failed']),
-    );
-  });
-});
-
 function usageLimitIssue(task: Task): RecoveryIssue {
   return {
     id: `rec_${task.id}_usage_limit`,
@@ -618,12 +464,12 @@ function usageLimitIssue(task: Task): RecoveryIssue {
     status: 'awaiting-user',
     taskId: task.id,
     taskTitle: task.title,
-    files: [task.file],
+    files: [task.suggestedFiles[0]],
     affectedTaskIds: [task.id],
     message: 'Codex hit its usage limit.',
     details: [],
     switchSeat: { seat: 'build', candidates: [{ tool: 'claude-code' }, { tool: 'opencode' }] },
-    availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
+    availableActions: ['retry-same-worker', 'switch-seat', 'skip-current-task', 'end-run'],
     recommendedAction: 'switch-seat',
     createdAt,
   };

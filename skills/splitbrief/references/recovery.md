@@ -56,7 +56,7 @@ A hand-back with new decisions gets one decision-confirm before validation: conf
 Decision-confirm runs at most once per attempt, bounded by the brief's attempts.
 It spends no run counter, never a lineage consult or a planner decision.
 A failed or malformed confirm answer warns, leaves the decisions out of the ledger and validates. It never pauses.
-When a bound is spent, pause and keep the work. Ask: continue with a note / skip / end.
+When a bound is spent, halt as needs you and keep the work. Ask: continue with a note / skip / end.
 Continuing grants 1 more consult and 4 more attempts, or 5 more planner decisions, and replays the brief as a retry with the last failing output.
 <!-- /generated -->
 
@@ -183,7 +183,7 @@ Before starting a fix cycle, persist its allowance use. Never charge the same sa
 - Keep criteria when repairing a check command. Ask the user before changing the accepted outcome.
 - Allow 2 fix cycles across the run, up to 3 reviews at end cadence. Task cadence adds reviews and shares this fix cap.
 - Prepare each fresh review with references/gates.md.
-- After the cap, pause for the user. Preserve open findings and never claim verification passed.
+- After the cap, halt as needs you. Preserve open findings and never claim verification passed.
 <!-- /generated -->
 
 When the cap is spent, show remaining findings and ask whether to fix again with a note, accept as is, or end.

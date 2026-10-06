@@ -17,6 +17,7 @@ const TRANSCRIPT_ROWLESS_EVENT_TYPES = [
   'planner_status',
   'planner_heartbeat',
   'drift_chain_detected',
+  'approval_mode_changed',
   'snapshot_created',
   'snapshot_restored',
   'snapshot_restore_conflict',

@@ -15,6 +15,9 @@ import { reactivateExistingSession } from '../../core/sessions/active-pointer.js
 import { loadState, saveState } from '../../core/state/persistence.js';
 import type { PreparedExecution } from '../../engine/runners/prepared-execution.js';
 import { configStore } from '../../stores/project/config.js';
+import { composerDraftStore } from '../../stores/ui/composer-draft.js';
+import { composerLiveStore } from '../../stores/ui/composer-live.js';
+import { createDraftDocument } from '../../core/composer/document.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import {
@@ -32,6 +35,12 @@ import { buildReviewFailedRecoveryIssue } from '../../engine/orchestrator/recove
 import { addTuiEvent } from './tui-sink.js';
 
 let dirs: string[] = [];
+
+const CONSULT_BOUND: Partial<RecoveryIssue> = {
+  reason: 'consult-bound-spent',
+  availableActions: ['continue', 'skip-current-task', 'end-run'],
+  recommendedAction: 'continue',
+};
 
 afterEach(() => {
   for (const dir of dirs) cleanupTempDir(dir);
@@ -137,7 +146,7 @@ function setupFailedReview(): { prepared: PreparedExecution; state: WorkflowStat
   const { prepared } = setupSession();
   const ref = prepared.session.ref;
   const halted: WorkflowState = {
-    ...makeImplState([makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' })]),
+    ...makeImplState([makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })]),
     phase: 'complete',
     reviewStatus: 'failed',
     completedAt: '2026-09-24T00:00:00.000Z',
@@ -179,13 +188,13 @@ describe('createRecoveryDriver', () => {
 
   it('applies a valid action on the first answer without re-prompting', async () => {
     const { prepared, state } = setupSession();
-    const { inputMode, feedbackAtPrompt } = makeInputMode(['pause']);
+    const { inputMode, feedbackAtPrompt } = makeInputMode(['skip']);
 
     const result = await runDriver(prepared, state, inputMode);
 
     expect(feedbackAtPrompt).toHaveLength(1);
-    expect(result.shouldRun).toBe(false);
-    expect(feedbackStore.get().message).toBe('Recovery paused.');
+    expect(result.shouldRun).toBe(true);
+    expect(feedbackStore.get().isError).toBe(false);
   });
 
   it('keeps the halt menu open when an action cannot be applied', async () => {
@@ -195,17 +204,17 @@ describe('createRecoveryDriver', () => {
       taskTitle: 'Missing review task',
       files: [],
       affectedTaskIds: [],
-      availableActions: ['retry-same-worker', 'pause-run'],
+      availableActions: ['retry-same-worker', 'end-run'],
       recommendedAction: 'retry-same-worker',
     });
-    const { inputMode, feedbackAtPrompt } = makeInputMode(['retry-same-worker', 'pause']);
+    const { inputMode, feedbackAtPrompt } = makeInputMode(['retry-same-worker', 'end']);
 
     const result = await runDriver(prepared, state, inputMode);
 
     expect(feedbackAtPrompt).toHaveLength(2);
     expect(feedbackAtPrompt[1]?.isError).toBe(true);
     expect(result.shouldRun).toBe(false);
-    expect(feedbackStore.get().message).toBe('Recovery paused.');
+    expect(result.state?.closed?.as).toBe('ended');
   });
 
   it('resumes the run on a retry and carries the selected worker as the profile override', async () => {
@@ -231,7 +240,7 @@ describe('createRecoveryDriver', () => {
         phase: 'final-review',
         seat: 'review',
         taskId: undefined,
-        availableActions: ['retry-same-worker', 'pause-run', 'end-run'],
+        availableActions: ['retry-same-worker', 'end-run'],
       });
       const onDisk = makeConfig({
         planner: { kind: 'agent', command: 'changed-on-disk' },
@@ -258,19 +267,6 @@ describe('createRecoveryDriver', () => {
     },
   );
 
-  it('reopens paused recovery and applies the selected action', async () => {
-    const { prepared, state } = setupSession({ status: 'paused', selectedAction: 'pause-run' });
-    const { inputMode, feedbackAtPrompt } = makeInputMode(['retry-same-worker']);
-
-    const result = await runDriver(prepared, state, inputMode);
-
-    expect(feedbackAtPrompt).toHaveLength(1);
-    expect(result.shouldRun).toBe(true);
-    if (result.shouldRun) {
-      expect(result.state.pendingRecovery).toBeUndefined();
-    }
-  });
-
   it('replays an applying selected action without prompting', async () => {
     const { prepared, state } = setupSession({
       status: 'applying',
@@ -292,7 +288,7 @@ describe('createRecoveryDriver', () => {
     const { prepared, state } = setupSession({
       reason: 'runner-usage-limit',
       message: 'T001 hit the implementer usage limit',
-      availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
+      availableActions: ['retry-same-worker', 'switch-seat', 'skip-current-task', 'end-run'],
       recommendedAction: 'switch-seat',
       switchSeat: { seat: 'build', candidates: [{ tool: 'claude-code', model: 'opus' }] },
     });
@@ -315,7 +311,7 @@ describe('createRecoveryDriver', () => {
     const { prepared, state } = setupSession({
       reason: 'runner-usage-limit',
       message: 'T001 hit the implementer usage limit',
-      availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
+      availableActions: ['retry-same-worker', 'switch-seat', 'skip-current-task', 'end-run'],
       recommendedAction: 'switch-seat',
       switchSeat: { seat: 'build', candidates: [{ tool: 'claude-code' }] },
     });
@@ -353,27 +349,28 @@ describe('createRecoveryDriver', () => {
     const { prepared, state } = setupSession({
       reason: 'runner-usage-limit',
       message: 'T001 hit the implementer usage limit',
-      availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
+      availableActions: ['retry-same-worker', 'switch-seat', 'skip-current-task', 'end-run'],
       recommendedAction: 'switch-seat',
       switchSeat: { seat: 'build', candidates: [{ tool: 'claude-code' }] },
     });
-    const { inputMode, feedbackAtPrompt } = makeInputMode(['switch-seat', 'pause']);
+    const { inputMode, feedbackAtPrompt } = makeInputMode(['switch-seat', 'end']);
 
     const pending = runDriver(prepared, state, inputMode);
     await closeSeatPicker(prepared);
     const result = await pending;
 
+    // The halt asks again rather than resuming on a seat nobody changed.
     expect(feedbackAtPrompt).toHaveLength(2);
+    expect(feedbackAtPrompt[1]?.isError).toBe(false);
     expect(result.shouldRun).toBe(false);
-    expect(result.state?.pendingRecovery?.status).toBe('paused');
-    expect(loadState(prepared.session.ref)?.pendingRecovery).toBeDefined();
+    expect(result.state?.closed?.as).toBe('ended');
   });
 
   it('takes the tool the pressed row named, not the first one offered', async () => {
     const { prepared, state } = setupSession({
       reason: 'runner-usage-limit',
       message: 'T001 hit the implementer usage limit',
-      availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
+      availableActions: ['retry-same-worker', 'switch-seat', 'skip-current-task', 'end-run'],
       recommendedAction: 'switch-seat',
       resetAt: '2026-07-13T17:00:00.000Z',
       switchSeat: {
@@ -401,7 +398,7 @@ describe('createRecoveryDriver', () => {
     const { prepared, state } = setupSession({
       reason: 'runner-usage-limit',
       message: 'T001 hit the implementer usage limit',
-      availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
+      availableActions: ['retry-same-worker', 'switch-seat', 'skip-current-task', 'end-run'],
       recommendedAction: 'switch-seat',
       resetAt: '2026-07-13T17:00:00.000Z',
       switchSeat: { seat: 'build', candidates: [{ tool: 'opencode' }] },
@@ -443,7 +440,7 @@ describe('createRecoveryDriver', () => {
       message: 'OpenAI Codex CLI hit its usage limit',
       resetAt: '2026-10-03T13:02:00.000Z',
       switchSeat: { seat: 'plan', candidates: [{ tool: 'claude-code' }] },
-      availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
+      availableActions: ['retry-same-worker', 'switch-seat', 'skip-current-task', 'end-run'],
       recommendedAction: 'switch-seat',
     });
     const { inputMode } = makeInputMode(['switch-seat']);
@@ -491,11 +488,11 @@ describe('createRecoveryDriver', () => {
         apiContextRequiredTokens: 412_096,
         apiContextAvailableTokens: 32_768,
       },
-      availableActions: ['retry-same-worker', 'pause-run', 'end-run'],
-      recommendedAction: 'pause-run',
+      availableActions: ['retry-same-worker', 'end-run'],
+      recommendedAction: 'retry-same-worker',
     });
     const noticeAtPrompt: RecoveryNoticeState[] = [];
-    const { inputMode } = makeInputMode(['pause']);
+    const { inputMode } = makeInputMode(['end']);
     const observed: UseInputModeResult = {
       ...inputMode,
       setQuestionMode: async (hint: string) => {
@@ -516,8 +513,8 @@ describe('createRecoveryDriver', () => {
     const { prepared, state } = setupSession({
       reason: 'review-failed',
       taskId: undefined,
-      availableActions: ['pause-run', 'end-run'],
-      recommendedAction: 'pause-run',
+      availableActions: ['retry-same-worker', 'end-run'],
+      recommendedAction: 'retry-same-worker',
     });
     const { inputMode } = makeInputMode(['a']);
 
@@ -529,6 +526,37 @@ describe('createRecoveryDriver', () => {
     const persisted = loadState(prepared.session.ref);
     expect(persisted?.closed?.as).toBe('ended');
     expect(feedbackStore.get().message).toContain('Run ended');
+  });
+
+  it('accept as is stops a checkout run without changing its failed review', async () => {
+    const { prepared, state } = setupFailedReview();
+    const halted: WorkflowState = {
+      ...state,
+      workspace: {
+        kind: 'checkout',
+        path: prepared.session.ref.projectDir,
+        base: { snapshotId: 'base', head: null },
+      },
+      pendingRecovery: buildReviewFailedRecoveryIssue({
+        blocking: 1,
+        phase: 'complete',
+        acceptAsIs: true,
+        createdAt: '2026-09-24T00:00:00.000Z',
+      }),
+    };
+    saveState(prepared.session.ref, halted);
+    const { inputMode, feedbackAtPrompt } = makeInputMode(['accept-as-is']);
+
+    const result = await runDriver(prepared, halted, inputMode);
+
+    expect(feedbackAtPrompt).toHaveLength(1);
+    expect(result.shouldRun).toBe(false);
+    expect(result.state?.acceptedAsIs).toBeDefined();
+    expect(result.state?.reviewStatus).toBe('failed');
+    expect(result.state?.pendingRecovery).toBeUndefined();
+    expect(loadState(prepared.session.ref)?.reviewStatus).toBe('failed');
+    expect(recoveryNoticeStore.get().issue).toBeNull();
+    expect(feedbackStore.get().message).toContain('Run closed');
   });
 
   it('retries the brief with a typed correction as the steer', async () => {
@@ -550,6 +578,60 @@ describe('createRecoveryDriver', () => {
     }
   });
 
+  it('continues a consult-bound halt with a typed sentence as its note and the brief steer', async () => {
+    const { prepared, state } = setupSession(CONSULT_BOUND);
+    const { inputMode, feedbackAtPrompt } = makeInputMode(['run the formatter before the tests']);
+
+    const result = await runDriver(prepared, state, inputMode);
+
+    expect(feedbackAtPrompt).toHaveLength(1);
+    expect(feedbackStore.get().isError).toBe(false);
+    expect(result.shouldRun).toBe(true);
+    if (result.shouldRun) {
+      expect(result.steer).toBe('run the formatter before the tests');
+      expect(result.state.pendingRecovery).toBeUndefined();
+      expect(JSON.stringify(result.state.lineages)).toContain('run the formatter before the tests');
+    }
+  });
+
+  it('takes the composer draft as the note when Continue is chosen on the panel', async () => {
+    const { prepared, state } = setupSession(CONSULT_BOUND);
+    composerLiveStore.setDraft(createDraftDocument('run the formatter before the tests'));
+    const { inputMode } = makeInputMode(['c']);
+
+    const result = await runDriver(prepared, state, inputMode);
+
+    expect(result.shouldRun).toBe(true);
+    if (result.shouldRun) {
+      expect(result.steer).toBe('run the formatter before the tests');
+      expect(JSON.stringify(result.state.lineages)).toContain('run the formatter before the tests');
+    }
+    expect(composerDraftStore.get().request?.value).toBe('');
+  });
+
+  it('takes the composer draft as the steer when Try again is chosen on the panel', async () => {
+    const { prepared, state } = setupSession();
+    composerLiveStore.setDraft(createDraftDocument('the prop is optional'));
+    const { inputMode } = makeInputMode(['r']);
+
+    const result = await runDriver(prepared, state, inputMode);
+
+    expect(result.shouldRun).toBe(true);
+    if (result.shouldRun) expect(result.steer).toBe('the prop is optional');
+    expect(composerDraftStore.get().request?.value).toBe('');
+  });
+
+  it('leaves the composer draft alone when an action that takes no note is chosen', async () => {
+    const { prepared, state } = setupSession(CONSULT_BOUND);
+    composerLiveStore.setDraft(createDraftDocument('run the formatter before the tests'));
+    const { inputMode } = makeInputMode(['a']);
+
+    const result = await runDriver(prepared, state, inputMode);
+
+    expect(result.shouldRun).toBe(false);
+    expect(composerDraftStore.get().request).toBeNull();
+  });
+
   it('carries no steer when the retry keyword itself is typed', async () => {
     const { prepared, state } = setupSession();
     const { inputMode } = makeInputMode(['retry']);
@@ -563,10 +645,10 @@ describe('createRecoveryDriver', () => {
   it('refuses a sentence at a halt that offers nothing to carry it, and says why', async () => {
     const { prepared, state } = setupSession({
       reason: 'dependency-blocked',
-      availableActions: ['pause-run', 'end-run'],
-      recommendedAction: 'pause-run',
+      availableActions: ['skip-current-task', 'end-run'],
+      recommendedAction: 'skip-current-task',
     });
-    const { inputMode, feedbackAtPrompt } = makeInputMode(['make the prop optional', 'pause']);
+    const { inputMode, feedbackAtPrompt } = makeInputMode(['make the prop optional', 'end']);
 
     const result = await runDriver(prepared, state, inputMode);
 
@@ -576,13 +658,14 @@ describe('createRecoveryDriver', () => {
       isError: true,
     });
     expect(result.shouldRun).toBe(false);
+    expect(result.state?.closed?.as).toBe('ended');
   });
 
   it('turns a sentence at a planner halt into the revise note, not a steer', async () => {
     const { prepared, state } = setupSession({
-      reason: 'brief-review-no-progress',
+      reason: 'plan-checks-failed',
       taskId: undefined,
-      phase: 'reviewing-briefs',
+      phase: 'planning',
       availableActions: ['revise', 'end-run'],
       recommendedAction: 'revise',
     });
@@ -602,9 +685,9 @@ describe('createRecoveryDriver', () => {
 
   it('revise asks for the correction and carries it into the queue', async () => {
     const { prepared, state } = setupSession({
-      reason: 'brief-review-no-progress',
+      reason: 'plan-checks-failed',
       taskId: undefined,
-      phase: 'reviewing-briefs',
+      phase: 'planning',
       availableActions: ['revise', 'end-run'],
       recommendedAction: 'revise',
     });

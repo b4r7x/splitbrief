@@ -19,7 +19,7 @@ describe('createStdoutTextSink', () => {
   it('writes one line per phase change, task, review and completion', () => {
     const lines = collect([
       { type: 'workflow_started', ts, phase: 'researching', feature: 'add a widget' },
-      { type: 'planner_heartbeat', ts, phase: 'researching', elapsedMs: 5, accumulatedTokens: 1 },
+      { type: 'planner_heartbeat', ts, phase: 'researching', elapsedMs: 5 },
       {
         type: 'validate',
         ts,

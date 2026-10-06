@@ -35,7 +35,9 @@ function settled(resumeAt: StepRef, at: 'mid-step' | 'boundary' = 'mid-step') {
     phase: 'parked',
     parked: { kind: 'mid-brief', taskId: null },
     currentTaskId: null,
-    record: makeRunRecord({ status: { kind: 'open', stop: { kind: 'paused', at }, resumeAt } }),
+    record: makeRunRecord({
+      status: { kind: 'open', stop: { kind: 'stopped', on: { kind: 'paused', at } }, resumeAt },
+    }),
   });
 }
 
@@ -99,7 +101,7 @@ describe('stopByline', () => {
         }),
       ),
     ).toEqual({
-      lead: 'Paused at T002 · Partial changes kept',
+      lead: 'Stopped at T002 · Partial changes kept',
       hint: '/resume · /stop options · esc back to sessions · ctrl+c quit',
     });
   });
@@ -122,27 +124,27 @@ describe('stopByline', () => {
 
   it('names the gate a planning stop settled at and claims no changes', () => {
     expect(stopByline(settled({ kind: 'gate', gate: 'plan' }))).toEqual({
-      lead: 'Paused at the plan',
+      lead: 'Stopped at the plan',
       hint: PARKED_HINT,
     });
   });
 
   it('names the planner step a stop cut, which changed no files', () => {
     expect(stopByline(settled({ kind: 'planner', call: 'tasks' }))?.lead).toBe(
-      'Paused at the plan',
+      'Stopped at the plan',
     );
   });
 
   it('keeps the partial-changes claim for a brief the stop cut mid-step', () => {
     expect(stopByline(settled({ kind: 'brief', taskId: taskId('T003'), attempt: 0 }))?.lead).toBe(
-      'Paused at T003 · Partial changes kept',
+      'Stopped at T003 · Partial changes kept',
     );
   });
 
   it('claims no partial changes for a brief the run stopped before', () => {
     expect(
       stopByline(settled({ kind: 'brief', taskId: taskId('T003'), attempt: 0 }, 'boundary'))?.lead,
-    ).toBe('Paused at T003');
+    ).toBe('Stopped at T003');
   });
 
   it('says only that it paused when a park names no step at all', () => {
@@ -155,7 +157,7 @@ describe('stopByline', () => {
           currentTaskId: null,
         }),
       )?.lead,
-    ).toBe('Paused');
+    ).toBe('Stopped');
   });
 
   it('reports an ended run as cancelled with its changes kept', () => {

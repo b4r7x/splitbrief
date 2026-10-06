@@ -27,7 +27,7 @@ function project() {
   createTestGitRepo(projectDir, { [file]: operator });
   const ref = { projectDir, sessionId: 'run-scope-test' };
   ensureSessionDir(projectDir, ref.sessionId);
-  const task = makeTask({ file, action: 'modify', status: 'in_progress' });
+  const task = makeTask({ suggestedFiles: [file], action: 'modify', status: 'in_progress' });
   return { projectDir, ref, task };
 }
 

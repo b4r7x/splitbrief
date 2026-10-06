@@ -5,7 +5,6 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { execFileSync } from 'node:child_process';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
-import { makeTask } from '#testing/helpers/factories/task.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import type { PlannerConfig } from '../../../core/schemas/planner-config.js';
 import { runWorkflow } from '../../../engine/orchestrator/run/workflow.js';
@@ -19,16 +18,13 @@ import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { configStore } from '../../../stores/project/config.js';
-import { clearAllHandlers, requestRewind } from '../handlers.js';
+import { clearAllHandlers } from '../handlers.js';
 import { ensureSplitbriefDir, ensureSessionDir } from '../../../core/paths-io.js';
 import {
   clearActiveReceipt,
   reactivateExistingSession,
 } from '../../../core/sessions/active-pointer.js';
-import { saveState } from '../../../core/state/persistence.js';
-import { createInitialState } from '../../../core/state/machine.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
 
 const FIRST_FEATURE = 'first run';
 const SECOND_FEATURE = 'second run';
@@ -207,69 +203,4 @@ describe('useRunLoop abort race', () => {
     await secondRunFinished;
     ui.unmount();
   }, 30_000);
-
-  it('keeps an immediate rewind scoped to its originating feature', async () => {
-    const calls: Array<{
-      feature: string;
-      savedState: WorkflowState | undefined;
-      sessionId: string;
-    }> = [];
-    const runWorkflow: RunWorkflowFn = async (opts) => {
-      const { signal } = opts;
-      if (signal === undefined) throw new Error('expected the runner to provide an abort signal');
-      const sessionId = opts.prepared.session.ref.sessionId;
-      calls.push({
-        feature: opts.prepared.runtime.feature,
-        savedState: opts.savedState,
-        sessionId,
-      });
-      if (!signal.aborted) {
-        await new Promise<void>((resolve) => {
-          signal.addEventListener('abort', () => resolve(), { once: true });
-        });
-      }
-      return makeSummary();
-    };
-    const firstPrepared = preparedExecution({
-      projectDir,
-      feature: FIRST_FEATURE,
-      sessionId: 'first-rewind-race',
-      planner: MISSING_PLANNER,
-    });
-    const ui = render(<Harness prepared={firstPrepared} runWorkflow={runWorkflow} />);
-
-    await vi.waitFor(() => {
-      expect(calls).toHaveLength(1);
-    });
-    const firstCall = calls[0];
-    if (firstCall === undefined) throw new Error('expected the first workflow call');
-    const savedState: WorkflowState = {
-      ...createInitialState(FIRST_FEATURE),
-      phase: 'implementing',
-      tasks: [makeTask({ id: 'T001', status: 'done' })],
-    };
-    ensureSessionDir(projectDir, firstCall.sessionId);
-    saveState({ projectDir, sessionId: firstCall.sessionId }, savedState);
-
-    expect(requestRewind({ target: 'task', taskId: 'T001' })).toBe(true);
-
-    clearActiveReceipt(firstPrepared.session.ref, firstPrepared.session.active);
-    const secondPrepared = preparedExecution({
-      projectDir,
-      feature: SECOND_FEATURE,
-      sessionId: 'second-rewind-race',
-      planner: MISSING_PLANNER,
-    });
-    ui.rerender(<Harness prepared={secondPrepared} runWorkflow={runWorkflow} />);
-
-    await vi.waitFor(() => {
-      expect(calls.some((call) => call.feature === SECOND_FEATURE)).toBe(true);
-    });
-    const secondCall = calls.find((call) => call.feature === SECOND_FEATURE);
-    if (secondCall === undefined)
-      throw new Error('expected a workflow invocation for the second feature');
-    expect(secondCall.savedState).toBeUndefined();
-    expect(eventsStore.get().events.some((event) => event.type === 'task_reset')).toBe(false);
-    ui.unmount();
-  });
 });

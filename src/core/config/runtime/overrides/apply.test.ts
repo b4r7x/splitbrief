@@ -26,37 +26,6 @@ describe('applyCLIOverrides — plannerEffort', () => {
   });
 });
 
-describe('applyCLIOverrides — yolo', () => {
-  it('yolo override disables approval', () => {
-    const result = applyCLIOverrides(baseConfig, { yolo: true });
-    expect(result.approval?.enabled).toBe(false);
-  });
-
-  it('yolo override preserves other approval fields', () => {
-    const config: Config = {
-      ...baseConfig,
-      approval: {
-        enabled: true,
-        feedRejectionsToPlanner: true,
-        allowedPaths: ['docs/**'],
-      },
-    };
-    const result = applyCLIOverrides(config, { yolo: true });
-    expect(result.approval?.enabled).toBe(false);
-    expect(result.approval?.allowedPaths).toEqual(['docs/**']);
-    expect(result.approval?.feedRejectionsToPlanner).toBe(true);
-  });
-
-  it('non-yolo override does not change approval', () => {
-    const config: Config = {
-      ...baseConfig,
-      approval: { enabled: true, feedRejectionsToPlanner: true },
-    };
-    const result = applyCLIOverrides(config, {});
-    expect(result.approval?.enabled).toBe(true);
-  });
-});
-
 describe('applyCLIOverrides — contextLength', () => {
   it('applies contextLength override', () => {
     const result = applyCLIOverrides(baseConfig, { contextLength: 16384 });

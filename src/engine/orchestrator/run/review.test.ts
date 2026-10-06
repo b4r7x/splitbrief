@@ -22,7 +22,7 @@ import {
 } from '#testing/helpers/typed-planner.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
-import { awaitsApply } from '../../../core/sessions/run-status.js';
+import { deriveRunStatus } from '../../../core/sessions/run-status.js';
 import { recoveryActionLabel } from '../../../core/recovery/action-label.js';
 import type { FinalReviewResult } from '../final-review.js';
 import type { Planner } from '../../planners/types.js';
@@ -299,8 +299,8 @@ describe('runScheduledReview saved recovery', () => {
     expect(skipped.state.pendingRecovery).toBeUndefined();
     expect(skipped.state.review?.scope).toBe('task');
     expect(skipped.state.acceptedAsIs?.findings).toContain('Reviewed the diff by hand.');
-    // Skipping one task's review never makes the whole run ready to apply.
-    expect(awaitsApply(skipped.state)).toBe(false);
+    // Skipping one task's review never makes the whole run ready to apply or closes it.
+    expect(deriveRunStatus({ state: skipped.state, liveness: 'not-alive' }).kind).toBe('open');
     expect(events.filter((event) => event.type === 'workflow_complete')).toEqual([]);
   });
 
@@ -439,79 +439,58 @@ describe('runScheduledReview saved recovery', () => {
     expect(loadState(ref)?.pendingScheduledReview).toBeUndefined();
   });
 
-  it('keeps the accept-as-is offer when the final review hits the input cap', async () => {
-    const ref = setupProject();
-    const workspace = {
-      kind: 'worktree' as const,
-      path: ref.projectDir,
-      base: { snapshotId: 'base', head: null },
-    };
-    const state: WorkflowState = {
-      ...makeImplState([makeTask({ id: 'T001', status: 'done' })]),
-      phase: 'final-review',
-      workspace,
-    };
-    saveState(ref, state);
-    const { bus } = makeBusRecorder();
-    const wctx = makeWctx({ ...ref, config: makeNoValidationConfig(), bus });
-    const review: FinalReviewResult = {
-      state,
-      verdict: null,
-      reviewText: '',
-      reviewStatus: 'failed',
-      failure: {
-        kind: 'input-too-large',
-        chars: 1_106_026,
-        maxChars: 1_048_576,
-        largestFiles: [],
-      },
-    };
+  it.each(['worktree', 'checkout', 'no-workspace'] as const)(
+    'offers accept as is when the final review hits the input cap in %s',
+    async (kind) => {
+      const ref = setupProject();
+      const workspace = {
+        kind: kind === 'checkout' ? ('checkout' as const) : ('worktree' as const),
+        path: ref.projectDir,
+        base: { snapshotId: 'base', head: null },
+      };
+      const state: WorkflowState = {
+        ...makeImplState([makeTask({ id: 'T001', status: 'done' })]),
+        phase: 'final-review',
+        ...(kind !== 'no-workspace' && { workspace }),
+      };
+      saveState(ref, state);
+      const { bus } = makeBusRecorder();
+      const wctx = makeWctx({ ...ref, config: makeNoValidationConfig(), bus });
+      const review: FinalReviewResult = {
+        state,
+        verdict: null,
+        reviewText: '',
+        reviewStatus: 'failed',
+        failure: {
+          kind: 'input-too-large',
+          chars: 1_106_026,
+          maxChars: 1_048_576,
+          largestFiles: [],
+        },
+      };
 
-    const halted = await haltVerdictlessReview({ wctx, state, setTrackedState: vi.fn(), review });
+      const halted = await haltVerdictlessReview({ wctx, state, setTrackedState: vi.fn(), review });
 
-    expect(halted?.pendingRecovery?.reason).toBe('review-input-too-large');
-    expect(halted?.pendingRecovery?.availableActions).toEqual(
-      expect.arrayContaining(['accept-as-is', 'end-run']),
-    );
-    expect(halted?.pendingTriage).toBeUndefined();
-    expect(halted?.pendingScheduledReview).toBeUndefined();
-  });
-
-  it('offers only end-run when a checkout run final review hits the input cap', async () => {
-    const ref = setupProject();
-    const workspace = {
-      kind: 'checkout' as const,
-      path: ref.projectDir,
-      base: { snapshotId: 'base', head: null },
-    };
-    const state: WorkflowState = {
-      ...makeImplState([makeTask({ id: 'T001', status: 'done' })]),
-      phase: 'final-review',
-      workspace,
-    };
-    saveState(ref, state);
-    const { bus } = makeBusRecorder();
-    const wctx = makeWctx({ ...ref, config: makeNoValidationConfig(), bus });
-    const review: FinalReviewResult = {
-      state,
-      verdict: null,
-      reviewText: '',
-      reviewStatus: 'failed',
-      failure: {
-        kind: 'input-too-large',
-        chars: 1_106_026,
-        maxChars: 1_048_576,
-        largestFiles: [],
-      },
-    };
-
-    const halted = await haltVerdictlessReview({ wctx, state, setTrackedState: vi.fn(), review });
-
-    expect(halted?.pendingRecovery?.reason).toBe('review-input-too-large');
-    expect(halted?.pendingRecovery?.availableActions).toEqual(['end-run']);
-    expect(halted?.pendingTriage).toBeUndefined();
-    expect(halted?.pendingScheduledReview).toBeUndefined();
-  });
+      expect(halted?.pendingRecovery?.reason).toBe('review-input-too-large');
+      expect(halted?.pendingRecovery?.availableActions).toEqual(
+        expect.arrayContaining(['accept-as-is', 'end-run']),
+      );
+      expect(halted?.pendingTriage).toBeUndefined();
+      expect(halted?.pendingScheduledReview).toBeUndefined();
+      if (halted === undefined) throw new Error('Review did not halt');
+      const accepted = await applyRecoveryAction({
+        ...ref,
+        state: halted,
+        action: 'accept-as-is',
+        bus,
+      });
+      expect(accepted.ok).toBe(true);
+      expect(accepted.state.reviewStatus).toBe('failed');
+      expect(deriveRunStatus({ state: accepted.state, liveness: 'not-alive' }).kind).toBe(
+        kind === 'worktree' ? 'ready-to-apply' : 'closed',
+      );
+    },
+  );
 
   it('resumes a verdictless scheduled review instead of triaging an older task verdict', async () => {
     const ref = setupProject();

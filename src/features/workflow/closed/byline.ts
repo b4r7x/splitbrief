@@ -1,9 +1,7 @@
-import { join } from 'node:path';
-import { SESSIONS_DIR, SPLITBRIEF_DIR } from '../../../core/paths.js';
 import type { StepRef } from '../../../core/schemas/run-step.js';
 import type { RunStatus, StopReason } from '../../../core/sessions/run-status.js';
 import type { SummaryView } from './view-model.js';
-import { formatRecoveryHeadline } from '../../../core/recovery/headline.js';
+import { formatRecoveryHeadline, formatRecoveryTitle } from '../../../core/recovery/headline.js';
 import { fitKeyLegend } from '../../../core/key-legend.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../../utils/display-text.js';
@@ -29,6 +27,12 @@ function fitByline(byline: Byline, width: number): string {
   if (reason !== null) {
     const whole = `${reason}${SOFT_SEP}${lowercaseLead(action)}`;
     if (getTerminalCellWidth(whole) <= width) return whole;
+    // A reason in parts leads with its name ("Seat down", "Stopped by an error"): keep that much.
+    const lead = reason.split(SOFT_SEP)[0];
+    if (lead !== undefined && lead !== reason) {
+      const named = `${lead}${SOFT_SEP}${lowercaseLead(action)}`;
+      if (getTerminalCellWidth(named) <= width) return named;
+    }
   }
   if (getTerminalCellWidth(action) <= width) return action;
   const at = action.indexOf(ALTERNATIVE);
@@ -50,6 +54,12 @@ function lowercaseLead(sentence: string): string {
 }
 
 function bylineFor(view: SummaryView): Byline {
+  if (view.applyUndo !== null) {
+    return {
+      reason: null,
+      action: `Apply undone${SOFT_SEP}${view.applyUndo.conflicts.length > 0 ? 'your later edits were kept' : 'nothing left to undo'}`,
+    };
+  }
   if (view.checkpoint === 'accepted') {
     return { reason: null, action: `Accepted${SOFT_SEP}nothing left to do` };
   }
@@ -58,13 +68,13 @@ function bylineFor(view: SummaryView): Byline {
   }
   const kind = view.outcome.kind;
   if (kind === 'applied') {
-    return { reason: null, action: `Applied${SOFT_SEP}undo it with /run reject confirm` };
+    return { reason: null, action: 'Undo the Apply with /run reject confirm' };
   }
-  if (kind === 'discarded') {
-    const patchPath = join(SPLITBRIEF_DIR, SESSIONS_DIR, view.run.sessionId, 'run.patch');
-    return { reason: null, action: `Bring the changes back with git apply ${patchPath}` };
+  // The path is the Run block's Patch row; a byline cut at 80 columns would name no file.
+  if (view.files.patch !== null) {
+    return { reason: null, action: 'Bring the changes back with git apply on the Patch file' };
   }
-  if (kind === 'ready') {
+  if (kind === 'complete') {
     return { reason: null, action: `Keep it with /run accept${ALTERNATIVE}${REVERT}` };
   }
   if (kind === 'needs-attention') return { reason: null, action: attentionByline(view) };
@@ -105,7 +115,7 @@ export function openRunByline(
     return fitByline(
       {
         reason: status.override ? 'Ready to apply as is' : 'Ready to apply',
-        action: 'Choose Apply, Show diff or Discard',
+        action: `Pick ${status.override ? 'Apply as is' : 'Apply'}, Show diff or Discard`,
       },
       width,
     );
@@ -118,33 +128,33 @@ export function openRunByline(
 }
 
 function openByline(stop: StopReason, resumeAt: StepRef): Byline {
-  switch (stop.kind) {
+  switch (stop.on.kind) {
     case 'paused':
       return {
-        reason: `Paused at ${stepWord(resumeAt)}`,
+        reason: `Stopped at ${stepWord(resumeAt)}`,
         action: 'Type a correction or ⏎ to continue',
       };
     // Only a typed plan's card reopens. An old run parked at a gate of the old chain continues as one
     // planning session, which takes a typed correction as its lead.
-    case 'waiting':
+    case 'gate':
       return {
         reason: `Waiting at ${stepWord(resumeAt)}`,
-        action: stop.reopens ? '⏎ to reopen it' : '⏎ to continue',
+        action: stop.on.reopens ? '⏎ to reopen it' : '⏎ to continue',
       };
-    case 'input-required':
+    case 'question':
       return { reason: 'Waiting for your answer', action: 'Type a reply or ⏎ to continue' };
-    case 'halted':
+    case 'halt':
       return {
-        reason: `Halted${SOFT_SEP}${formatRecoveryHeadline(stop.issue)}`,
+        reason: formatRecoveryTitle(formatRecoveryHeadline(stop.on.issue), stop.on.issue),
         action: '⏎ to decide',
       };
     case 'failed':
       return {
-        reason: `Stopped by an error${SOFT_SEP}${stop.message}`,
+        reason: `Stopped by an error${SOFT_SEP}${stop.on.message}`,
         action: '⏎ to retry the step',
       };
     default:
-      return { reason: 'Interrupted', action: `⏎ to continue from ${stepWord(resumeAt)}` };
+      return { reason: `Stopped at ${stepWord(resumeAt)}`, action: '⏎ to continue' };
   }
 }
 

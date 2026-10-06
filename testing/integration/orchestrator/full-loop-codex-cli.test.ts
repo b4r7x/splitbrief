@@ -136,7 +136,7 @@ async function runCodexLoop(opts: {
   const task = makeTask({
     id: 'T001',
     action: 'create',
-    file: TARGET_FILE,
+    suggestedFiles: [TARGET_FILE],
     title: opts.requiredPromptText,
     description: 'Create a module using a Codex-style cheap CLI implementer.',
     implementationSteps: ['Create src/loop.ts with the Codex CLI marker export.'],

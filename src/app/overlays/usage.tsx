@@ -13,8 +13,8 @@ import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 
 /** The halt a run is parked on, read off the record that already states how the run stands. */
 function haltedIssue(status: RunStatus): RecoveryIssue | null {
-  if (status.kind !== 'open' || status.stop.kind !== 'halted') return null;
-  return status.stop.issue;
+  if (status.kind !== 'open' || status.stop.on.kind !== 'halt') return null;
+  return status.stop.on.issue;
 }
 
 /**

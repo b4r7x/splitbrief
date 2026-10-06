@@ -1,4 +1,5 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { arrowSep } from '../../core/separators.js';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -11,6 +12,7 @@ import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { EngineEvent } from '../../engine/events/types.js';
 import { toEngineEventEntry } from '../../core/sessions/log-writer.js';
 import { eventRows } from '#testing/helpers/event-rows.js';
+import { buildConversationRows } from './conversation-rows/build.js';
 import { rowText } from './conversation-rows/row-format/rows.js';
 import { addEvent } from '../../stores/workflow/actions/event.js';
 import { resetWorkflow } from '../../stores/workflow/actions/reset.js';
@@ -240,22 +242,15 @@ describe('hydrateRun replaying a seat swap', () => {
         hydration: { kind: 'loaded', state: savedState() },
       }),
     );
-    return eventsStore
-      .get()
-      .events.flatMap((event, globalIndex) =>
-        eventRows({
-          event,
-          globalIndex,
-          expanded: false,
-          ctx: {
-            width: 80,
-            viewportRows: 20,
-            streaming: { taskId: null, lines: [], active: false },
-          },
-        }),
-      )
-      .map(rowText)
-      .join('\n');
+    const { rows } = buildConversationRows({
+      sections: [{ type: 'events', startIndex: 0, items: [...eventsStore.get().events] }],
+      expandedDiffs: new Set(),
+      expandedActivityBatches: new Set(),
+      cols: 80,
+      viewportHeight: 20,
+      streaming: { taskId: null, lines: [], active: false },
+    });
+    return rows.map(rowText).join('\n');
   }
 
   it('names no seat for a swap a log recorded before the seat was on the event', async () => {
@@ -267,8 +262,7 @@ describe('hydrateRun replaying a seat swap', () => {
 
     const text = await replayedTranscript();
 
-    expect(text).toContain('Selected Change tool for Runner usage limit');
-    expect(text).toContain('Continued via Change tool');
+    expect(text).toBe(`Recovery  Change tool${arrowSep()}continued`);
     expect(text).not.toContain('Change BUILD tool');
   });
 
@@ -288,8 +282,7 @@ describe('hydrateRun replaying a seat swap', () => {
 
     const text = await replayedTranscript();
 
-    expect(text).toContain('Selected Change PLAN tool for Runner usage limit');
-    expect(text).toContain('Continued via Change PLAN tool');
+    expect(text).toBe(`Recovery  Change PLAN tool${arrowSep()}continued`);
   });
 });
 

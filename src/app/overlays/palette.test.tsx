@@ -898,7 +898,7 @@ describe('CommandPaletteOverlay', () => {
     const frame = instance.lastFrame() ?? '';
     const sessionRow = rowContaining(paletteResultRows(frame), feature);
     expect(stripAnsiStyles(sessionRow)).toContain(feature);
-    expect(sessionRow).toContain('interrupted');
+    expect(sessionRow).toContain('stopped');
     expect(sessionRow).not.toContain('…');
     instance.unmount();
   });

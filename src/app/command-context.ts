@@ -38,7 +38,7 @@ import { conversationScrollStore } from '../stores/workflow/conversation-scroll.
 import { getDefaultDetectionService } from '../engine/detection/service.js';
 import { refreshDetectionForCurrentConfig } from '../engine/detection/store-publication.js';
 import { detectionStore } from '../stores/project/detection.js';
-import { readActive, readActiveRecord } from '../core/sessions/active-pointer.js';
+import { readActive } from '../core/sessions/active-pointer.js';
 import type {
   AcceptRunResult,
   AttachImageResult,
@@ -61,10 +61,10 @@ import { copyToClipboard } from '../lib/clipboard/clipboard.js';
 import { acceptRunSnapshot, rejectRunSnapshot } from '../engine/snapshots/run/lifecycle.js';
 import { rejectCheckoutRun } from '../engine/snapshots/run/rollback.js';
 import { runApply } from '../engine/orchestrator/apply/run.js';
-import { restoreApplyBackup } from '../engine/orchestrator/apply/restore.js';
+import { undoApply } from '../engine/orchestrator/apply/restore.js';
 import { createRecoveryBus } from '../engine/orchestrator/recovery/bus.js';
 import { closeRunIfOpen } from '../engine/orchestrator/run/close.js';
-import { finalizeEndedRun } from '../engine/orchestrator/session-lifecycle/finalize.js';
+import { finalizeRunAtRest } from '../engine/orchestrator/session-lifecycle/finalize.js';
 import { addTuiEvent } from '../features/workflow/tui-sink.js';
 import { readRunRecord } from '../core/sessions/run-record-io.js';
 import { writeUiPrefs } from '../core/ui-prefs.js';
@@ -125,18 +125,6 @@ function isRunAtRest(ref: SessionRef): boolean {
   );
 }
 
-function prepareRunFinalization(ref: SessionRef, config: Config): (state: WorkflowState) => void {
-  const active = readActiveRecord(ref.projectDir);
-  const receipt =
-    active?.kind === 'v1' && active.receipt.sessionId === ref.sessionId
-      ? active.receipt
-      : undefined;
-  return (state) => {
-    finalizeEndedRun({ ref, active: receipt, config, state });
-    sessionsStore.refresh();
-  };
-}
-
 async function acceptRun(
   projectDir: string,
   sessionId: string,
@@ -168,11 +156,13 @@ async function acceptRun(
   if (config === null) {
     return { status: 'unavailable', message: 'Apply requires a project configuration.' };
   }
-  const finalize = prepareRunFinalization(record.ref, config);
   const bus = createRecoveryBus({ projectDir, sessionId, sink: addTuiEvent });
   if (state.workspace?.kind === 'checkout') {
     const closure = await closeRunIfOpen({ projectDir, sessionId, bus }, state);
-    if (closure.closedNow) finalize(closure.state);
+    if (closure.closedNow) {
+      finalizeRunAtRest({ ref: record.ref, config, state: closure.state });
+      sessionsStore.refresh();
+    }
     return { status: 'ended' };
   }
   const result = await runApply({
@@ -182,10 +172,9 @@ async function acceptRun(
   });
   if (result.outcome === 'halted') return { status: 'halted' };
   if (result.outcome === 'review') return { status: 'review' };
-  if (result.outcome === 'needs-confirmation') {
-    return { status: 'confirm-override', findings: result.state.acceptedAsIs?.findings ?? [] };
-  }
-  finalize(result.state);
+  if (result.outcome === 'needs-confirmation') return { status: 'confirm-override' };
+  finalizeRunAtRest({ ref: record.ref, config, state: result.state });
+  sessionsStore.refresh();
   return { status: 'applied', files: result.files };
 }
 
@@ -202,13 +191,8 @@ async function rejectRun(projectDir: string, sessionId: string): Promise<RejectR
     };
   }
   if (state.workspace?.kind !== 'checkout' && record.status.kind === 'closed') {
-    if (record.status.as === 'applied' && state.applied !== undefined) {
-      const result = await restoreApplyBackup({
-        projectDir,
-        sessionId,
-        backupId: state.applied.backupId,
-      });
-      return { status: 'undone', ...result };
+    if (record.status.as === 'applied') {
+      return { status: 'undone', ...(await undoApply(record.ref, state)) };
     }
     return { status: 'unavailable', message: `Run is closed (${record.status.as}).` };
   }
@@ -216,18 +200,23 @@ async function rejectRun(projectDir: string, sessionId: string): Promise<RejectR
   if (config === null) {
     return { status: 'unavailable', message: 'Discard requires a project configuration.' };
   }
-  const finalize = prepareRunFinalization(record.ref, config);
   const bus = createRecoveryBus({ projectDir, sessionId, sink: addTuiEvent });
   if (state.workspace?.kind === 'checkout') {
     const result = await rejectCheckoutRun(projectDir, sessionId);
     if (result.missingSnapshotFiles.length === 0) {
       const closure = await closeRunIfOpen({ projectDir, sessionId, bus }, state, 'discarded');
-      if (closure.closedNow) finalize(closure.state);
+      if (closure.closedNow) {
+        finalizeRunAtRest({ ref: record.ref, config, state: closure.state });
+        sessionsStore.refresh();
+      }
     }
     return result;
   }
   const closure = await closeRunIfOpen({ projectDir, sessionId, bus }, state, 'discarded');
-  if (closure.closedNow) finalize(closure.state);
+  if (closure.closedNow) {
+    finalizeRunAtRest({ ref: record.ref, config, state: closure.state });
+    sessionsStore.refresh();
+  }
   return { status: 'discarded' };
 }
 

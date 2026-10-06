@@ -1,25 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import { DriftReportSchema } from './drift.js';
 
-const baseReport = {
-  version: 1 as const,
-  passed: true,
-  score: 1,
-  changedFiles: [],
-  expectedFiles: [],
-  findings: [],
-};
+describe('DriftReportSchema', () => {
+  it('opens a report an older run saved with a score and a retired out-of-bounds finding', () => {
+    const parsed = DriftReportSchema.parse({
+      version: 1,
+      passed: false,
+      score: 0.75,
+      changedFiles: ['src/a.ts'],
+      expectedFiles: [],
+      findings: [
+        {
+          severity: 'error',
+          code: 'out_of_bounds_text_match',
+          message: 'Out-of-bounds pattern "SECRET" appears in diff.',
+        },
+        {
+          severity: 'info',
+          code: 'out_of_scope_file',
+          file: 'src/a.ts',
+          message: 'src/a.ts touched, not suggested by any task.',
+        },
+      ],
+    });
 
-describe('DriftReportSchema score validation', () => {
-  it('accepts a finite score', () => {
-    const result = DriftReportSchema.safeParse(baseReport);
-    expect(result.success).toBe(true);
-  });
-
-  it('rejects non-finite scores', () => {
-    expect(
-      DriftReportSchema.safeParse({ ...baseReport, score: Number.POSITIVE_INFINITY }).success,
-    ).toBe(false);
-    expect(DriftReportSchema.safeParse({ ...baseReport, score: Number.NaN }).success).toBe(false);
+    expect(parsed).not.toHaveProperty('score');
+    expect(parsed.findings.map((finding) => finding.code)).toEqual(['out_of_scope_file']);
   });
 });

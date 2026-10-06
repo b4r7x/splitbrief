@@ -153,7 +153,7 @@ function configuredProfileConfig(
 
   return ConfigSchema.parse({
     ...makeNoValidationConfig({
-      approval: { enabled: false, feedRejectionsToPlanner: true },
+      approval: { feedRejectionsToPlanner: true },
     }),
     implementer: fallbackImplementer,
     implementerProfiles: {
@@ -279,7 +279,7 @@ describe('runTaskLoop configured custom routing', { timeout: 90_000 }, () => {
       const fallbackMarkerPath = join(markerDir, 'fallback-runner.json');
       const task = makeTask({
         id: 'T001',
-        file: taskFile,
+        suggestedFiles: [taskFile],
         ...(scope === undefined ? {} : { scope: { inBounds: [...scope.inBounds] } }),
       });
       const config = configuredProfileConfig({

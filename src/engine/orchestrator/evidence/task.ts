@@ -1,4 +1,4 @@
-import { taskFiles, type Task } from '../../../core/schemas/task.js';
+import type { Task } from '../../../core/schemas/task.js';
 import type { TaskCompletionMethod, TaskStatus } from '../../../core/schemas/enums.js';
 import type { ValidationResult } from '../validation/result.js';
 import type { CheckRunResult } from '../validation/run-checks.js';
@@ -103,7 +103,7 @@ function apiApplyReceipt(result: BundleApplyResult): EvidenceApiApply {
  * recorded at all — §6 keeps evidence on the applied set, never the declared one.
  */
 function observedChangedFiles(entry: EvidenceTask, task: Task): string[] {
-  if (entry.apiApply === undefined) return [...taskFiles(task)];
+  if (entry.apiApply === undefined) return [...task.suggestedFiles];
   if (entry.apiApply.workspacePath !== undefined) return [...entry.changedFiles];
   return entry.apiApply.applied.map((file) => file.path);
 }

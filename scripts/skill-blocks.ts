@@ -47,7 +47,7 @@ const PLACEHOLDER_TASK = TaskSchema.parse({
   id: 'T001',
   title: '<title>',
   action: 'create',
-  file: '<file>',
+  suggestedFiles: ['<file>'],
   dependsOn: [],
   description: "<the brief's Description>",
   signature: "<the brief's Signature, when it has one>",
@@ -362,7 +362,7 @@ function consultTable(): string {
     "Decision-confirm runs at most once per attempt, bounded by the brief's attempts.",
     'It spends no run counter, never a lineage consult or a planner decision.',
     'A failed or malformed confirm answer warns, leaves the decisions out of the ledger and validates. It never pauses.',
-    'When a bound is spent, pause and keep the work. Ask: continue with a note / skip / end.',
+    'When a bound is spent, halt as needs you and keep the work. Ask: continue with a note / skip / end.',
     `Continuing grants ${BOUNDS.extraConsultsPerLineage} more consult and ${BOUNDS.extraAttemptsPerLineage} more attempts, or ${BOUNDS.extraPlannerCallsPerRun} more planner decisions, and replays the brief as a retry with the last failing output.`,
   ].join('\n');
 }
@@ -509,7 +509,7 @@ function bodyOrder(): string {
 
 function completionInstruction(files: readonly [string, ...string[]]): string {
   const prompt = formatTaskPrompt({
-    task: { ...PLACEHOLDER_TASK, file: files[0], files: [...files] },
+    task: { ...PLACEHOLDER_TASK, suggestedFiles: [...files] },
     context: { name: '<project>', dir: '$D' },
     writesFiles: 'direct',
   });
@@ -579,7 +579,7 @@ function fixCycle(): string {
     'Keep criteria when repairing a check command. Ask the user before changing the accepted outcome.',
     `Allow ${REVIEW_CYCLE_CAP} fix cycles across the run, up to ${REVIEW_CYCLE_CAP + 1} reviews at end cadence. Task cadence adds reviews and shares this fix cap.`,
     'Prepare each fresh review with references/gates.md.',
-    'After the cap, pause for the user. Preserve open findings and never claim verification passed.',
+    'After the cap, halt as needs you. Preserve open findings and never claim verification passed.',
   ]);
 }
 

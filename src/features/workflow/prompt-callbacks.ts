@@ -2,6 +2,7 @@ import { openApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
 import { markWorkflowPaused } from '../../stores/workflow/actions/pause.js';
 import { stopStore } from '../../stores/workflow/stop.js';
 import { selectRunningBrief, tasksStore } from '../../stores/workflow/tasks.js';
+import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { isTaskCompleted } from '../../core/schemas/task.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import type { OrchestratorCallbacks } from '../../engine/orchestrator/types.js';
@@ -10,7 +11,7 @@ import { questionPromptStore } from '../../stores/question-prompt/prompt.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 
 function runningTaskId(): string | null {
-  return selectRunningBrief(tasksStore.get()).current?.id ?? null;
+  return selectRunningBrief(tasksStore.get(), lifecycleStore.get().phase).current?.id ?? null;
 }
 
 /** A boundary park has no running brief; the one it stopped after is the subject. */

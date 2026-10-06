@@ -6,7 +6,6 @@ import type { DriftReport } from '../../../core/schemas/drift.js';
 export function formatDriftReportForPrompt(report: DriftReport): string {
   const lines: string[] = [];
   lines.push(`passed: ${report.passed}`);
-  lines.push(`score: ${report.score.toFixed(2)}`);
   if (report.findings.length === 0) {
     lines.push('findings: none');
   } else {
@@ -25,7 +24,6 @@ export function publishDriftReport(bus: EventBus, phase: Phase, report: DriftRep
     ts: Date.now(),
     phase,
     passed: report.passed,
-    score: report.score,
     errorCount,
     warningCount,
   };

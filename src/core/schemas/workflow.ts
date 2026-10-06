@@ -8,7 +8,7 @@ import {
   ValidationStageSchema,
   type Phase,
 } from './enums.js';
-import { TaskSchema, TaskIdSchema } from './task.js';
+import { TaskSchema, TaskIdSchema, type Task } from './task.js';
 import { PlanSchema } from './plan.js';
 import { ReviewVerdictSchema, TriageInputSchema, TriageResultSchema } from './review.js';
 import { REVIEW_CYCLE_CAP } from '../pipeline-spec/review.js';
@@ -19,6 +19,7 @@ import { RecoveryIssueSchema } from './recovery/schemas.js';
 import { StepCutSchema, StepRefSchema } from './run-step.js';
 import { CREW_SEAT_IDS } from '../crew/identity.js';
 import { topoSort } from '../state/topo-sort.js';
+import { lineageIdOf } from '../state/task-insert.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { ClarificationQuestionSchema } from './question.js';
 
@@ -169,6 +170,18 @@ export function plannerCallsOf(state: Pick<WorkflowState, 'plannerCalls'>): Plan
   return state.plannerCalls ?? { used: 0, allowance: BOUNDS.plannerCallsPerRun };
 }
 
+/** The attempts a task's lineage has spent and may spend; a lineage with no record starts fresh. */
+export function lineageAttemptsOf(
+  state: Pick<WorkflowState, 'lineages'>,
+  task: Pick<Task, 'id' | 'parentId'>,
+): { used: number; allowance: number } {
+  const lineage = state.lineages?.[lineageIdOf(task)];
+  return {
+    used: lineage?.attempts ?? 0,
+    allowance: lineage?.attemptAllowance ?? BOUNDS.attemptsPerLineage,
+  };
+}
+
 export const FixCyclesSchema = z.object({
   used: nonnegativeInteger,
   allowance: nonnegativeInteger,
@@ -306,7 +319,13 @@ const WorkflowStateFields = {
     .optional(),
   applying: z.object({ at: z.string(), backupId: z.string() }).optional(),
   applied: z
-    .object({ at: z.string(), backupId: z.string(), files: z.array(z.string()) })
+    .object({
+      at: z.string(),
+      backupId: z.string(),
+      files: z.array(z.string()),
+      /** Undo put the checkout back from the backup; `conflicts` are the files it left as you changed them. */
+      undone: z.object({ at: z.string(), conflicts: z.array(z.string()) }).optional(),
+    })
     .optional(),
   acceptedAsIs: z.object({ at: z.string(), findings: z.array(z.string()) }).optional(),
   /** The run diff of the workspace the last final review judged: path → entry key. */
@@ -320,7 +339,14 @@ const WorkflowStateFields = {
     .optional(),
   /** The checkout hash Apply recorded for each text conflict whose markers it wrote into the workspace. */
   applyIntegrated: z.array(z.object({ path: z.string(), checkoutHash: z.string() })).optional(),
-  closed: z.object({ at: z.string(), as: z.enum(['ended', 'applied', 'discarded']) }).optional(),
+  closed: z
+    .object({
+      at: z.string(),
+      as: z.enum(['ended', 'applied', 'discarded']),
+      /** The project-relative run.patch the close saved the workspace changes in. */
+      patch: z.string().optional(),
+    })
+    .optional(),
   lastFailure: z.object({ step: StepRefSchema, message: z.string(), at: z.string() }).optional(),
   external: z.record(z.string(), z.unknown()).optional(),
 };

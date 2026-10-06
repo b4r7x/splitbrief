@@ -60,7 +60,6 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
     implementerTool: 'codex',
     implementerModel: 'gpt-5',
   },
-  paused_external_changes: { phase: 'implementing' },
   recovery_prompted: {
     phase: 'implementing',
     issueId: 'issue-1',
@@ -95,7 +94,7 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
   },
   planner_status: { phase: 'researching', status: 'running', tool: 'claude-code' },
   planner_text: { phase: 'researching', text: 'Reading the log format.' },
-  planner_heartbeat: { phase: 'researching', elapsedMs: 500, accumulatedTokens: 12 },
+  planner_heartbeat: { phase: 'researching', elapsedMs: 500 },
   runner_call_started: { phase: 'implementing', ...callContext },
   runner_call_runtime_status: {
     phase: 'implementing',
@@ -194,16 +193,6 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
   rewind_to_plan: { phase: 'planning' },
   task_reset: { phase: 'implementing', taskId: 'T001' },
   all_tasks_done: { phase: 'implementing' },
-  brief_quality_passed: { phase: 'planning', score: 92, warningCount: 0 },
-  brief_quality_failed: { phase: 'planning', score: 41, errorCount: 2, warningCount: 1 },
-  brief_readiness_passed: { phase: 'planning', taskCount: 3 },
-  brief_readiness_blocked: {
-    phase: 'planning',
-    taskCount: 3,
-    blockedCount: 1,
-    blockedTaskIds: ['T002'],
-    kinds: ['missing-file'],
-  },
   drift_report: { phase: 'implementing', passed: true, score: 1, errorCount: 0, warningCount: 0 },
   drift_chain_detected: {
     phase: 'implementing',
@@ -599,6 +588,51 @@ describe('readRunEvents', () => {
         skippedOversized: 0,
       },
     });
+  });
+
+  it('reads the retired recovery vocabulary of an older run', async () => {
+    const dir = sessionDir(projectDir, sessionId);
+    mkdirSync(dir, { recursive: true });
+    const entries = [
+      { type: 'paused_external_changes', phase: 'implementing', data: {} },
+      {
+        type: 'recovery_action_selected',
+        phase: 'implementing',
+        data: { issueId: 'issue-1', reason: 'retry-exhausted', action: 'pause-run' },
+      },
+      {
+        type: 'recovery_prompted',
+        phase: 'implementing',
+        data: {
+          issueId: 'issue-1',
+          reason: 'context-overflow',
+          files: [],
+          affectedTaskIds: [],
+          availableActions: ['route-bigger-worker', 'pause-run', 'end-run'],
+          recommendedAction: 'pause-run',
+          headline: 'T001 does not fit',
+          resumeCommand: 'splitbrief resume',
+        },
+      },
+    ];
+    for (const entry of entries) {
+      appendFileSync(
+        join(dir, SESSION_LOG_FILE),
+        `${JSON.stringify({ kind: 'event', ts: new Date(TS).toISOString(), ...entry })}\n`,
+      );
+    }
+
+    const { events } = await readRunEvents(ref());
+
+    // The external-changes pause and a selected pause are gone; the prompt keeps what its halt
+    // still offers, and a recommendation it dropped becomes the first action left.
+    expect(events.slice(1, -1)).toEqual([
+      expect.objectContaining({
+        type: 'recovery_prompted',
+        availableActions: ['retry-same-worker', 'end-run'],
+        recommendedAction: 'retry-same-worker',
+      }),
+    ]);
   });
 
   it('replays the payload_omitted warning the sink writes for an oversized event', async () => {

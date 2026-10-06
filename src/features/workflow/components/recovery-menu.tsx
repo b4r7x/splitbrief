@@ -3,6 +3,7 @@ import type { RecoveryAction } from '../../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { borderStyleFor } from '../../../lib/glyphs.js';
 import { fitKeyLegend } from '../../../core/key-legend.js';
+import { SOFT_SEP } from '../../../core/separators.js';
 import { useTheme } from '../../../components/theme.js';
 import { ListRow } from '../../../components/list-row.js';
 import { ListViewport } from '../../../components/pickers/list-viewport.js';
@@ -48,13 +49,14 @@ function renderAction(
   recommended: boolean,
   width: number,
   keyWidth: number,
+  keysLive: boolean,
 ) {
   return (
     <ListRow
       label={item.label}
       width={width}
       state={selected ? 'active' : 'default'}
-      accelerator={item.key}
+      accelerator={keysLive ? item.key : undefined}
       acceleratorWidth={keyWidth}
       metadata={recommended ? 'recommended' : undefined}
       metadataAfterLabel
@@ -105,10 +107,6 @@ export function RecoveryMenu({
 
   useInput(
     (input, key) => {
-      if (input === ' ' && actions.some((item) => item.action === 'pause-run')) {
-        onResolve('space');
-        return;
-      }
       // A letter is the row's own key; one that matches no offered row does nothing.
       if (input.length === 1 && !key.ctrl && !key.meta) {
         const letter = input.toLowerCase();
@@ -123,14 +121,21 @@ export function RecoveryMenu({
     { isActive: focused },
   );
 
+  // Tab hands the keys to the composer, where a letter is a typed letter, so the panel stops
+  // advertising its keys until focus comes back and says what ⏎ there does instead.
+  const correctionAction = correctionActionFor(issue);
+  const composerLegend =
+    correctionAction === undefined
+      ? 'typing goes to the composer'
+      : `⏎ ${recoveryMenuLabel(correctionAction, issue)} with the typed correction`;
   const legend = fitKeyLegend(
-    formatKeyHints([
-      SELECT_HINT,
-      { key: '⏎', verb: 'confirm' },
-      ...(correctionActionFor(issue) === undefined
-        ? []
-        : [{ key: 'tab', verb: 'type a correction' }]),
-    ]),
+    focused
+      ? formatKeyHints([
+          SELECT_HINT,
+          { key: '⏎', verb: 'confirm' },
+          ...(correctionAction === undefined ? [] : [{ key: 'tab', verb: 'type a correction' }]),
+        ])
+      : `${composerLegend}${SOFT_SEP}tab back to the actions`,
     innerWidth,
   );
   return (
@@ -202,6 +207,7 @@ function ActionList({
           item.action === recommended,
           ctx.contentWidth,
           keyWidth,
+          focused,
         )
       }
     />

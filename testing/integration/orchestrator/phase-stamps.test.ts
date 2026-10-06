@@ -64,7 +64,7 @@ async function runConsultedBrief(): Promise<EngineEvent[]> {
   const task = makeTask({
     id: 'T001',
     action: 'create',
-    file: targetFile,
+    suggestedFiles: [targetFile],
     title: 'Create the retry-validated module',
     description: 'Create a module that needs a planner consult before validation passes.',
     implementationSteps: ['Create src/loop.ts with the retry marker export.'],

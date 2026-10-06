@@ -10,6 +10,8 @@ import { eventsStore } from '../../../stores/workflow/events.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { skillsStore } from '../../../stores/project/skills.js';
+import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { getRailStages } from '../../../core/rail-stages.js';
 import {
   RAIL_MARKER_SLOT_WIDTH,
@@ -25,14 +27,9 @@ import { Rail, railFormCText } from './rail.js';
 
 const STAGES = ['Plan', 'Build', 'Review'];
 
-const ACTIVE = glyph('stageActive');
 const DONE = glyph('stageDone');
 const PENDING = glyph('stagePending');
 const CANCELLED = glyph('statusCancelled');
-
-function countActiveMarkers(frame: string): number {
-  return stripAnsiStyles(frame).split(ACTIVE).length - 1;
-}
 
 // 0-based column of a stage label as actually painted, to compare against the hit-test zones (which
 // are laid out in the same space, from RAIL_CONTENT_LEFT_COL onward).
@@ -73,7 +70,7 @@ beforeEach(() => {
 });
 
 describe('Rail — Form B (horizontal pipeline)', () => {
-  it('renders the three stages on one row with state-encoding markers, exactly one active', async () => {
+  it('renders the three stages on one row, done and active filled and pending a ring', async () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
     tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
@@ -83,9 +80,8 @@ describe('Rail — Form B (horizontal pipeline)', () => {
 
     const railLine = frame.split('\n').find((row) => row.includes('Plan')) ?? '';
     for (const stage of STAGES) expect(railLine).toContain(stage);
-    // plan done (●), build active (◉), review pending (○).
-    expect(countActiveMarkers(frame)).toBe(1);
-    expect(railLine).toContain(`${ACTIVE} Build`);
+    // plan done and build active wear the filled mark (weight tells them apart), review the ring.
+    expect(railLine).toContain(`${DONE} Build`);
     expect(railLine).toContain(`${DONE} Plan`);
     expect(railLine).toContain(`${PENDING} Review`);
     ui.unmount();
@@ -106,10 +102,10 @@ describe('Rail — Form B (horizontal pipeline)', () => {
     running.unmount();
 
     expect(runningFrame).not.toBe(idleFrame);
-    expect(idleFrame).not.toContain(ACTIVE);
-    expect(countActiveMarkers(runningFrame)).toBe(1);
+    expect(idleFrame).not.toContain(DONE);
     // The active marker sits on the first stage, ahead of its label.
-    expect(runningFrame).toContain(`${ACTIVE} Plan`);
+    expect(runningFrame).toContain(`${DONE} Plan`);
+    expect(runningFrame).toContain(`${PENDING} Build`);
   });
 
   it('aligns every Form-B stage label with its hit-test zone (marker at the zone left edge)', async () => {
@@ -132,7 +128,7 @@ describe('Rail — Form B (horizontal pipeline)', () => {
     ui.unmount();
   });
 
-  it('paints no background pill behind the active stage — bold and the marker carry it', async () => {
+  it('paints no background pill behind the active stage — weight carries it', async () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
     tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
@@ -176,7 +172,7 @@ describe('Rail — Form B (horizontal pipeline)', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     for (const stage of STAGES) expect(frame).toContain(stage);
-    expect(countActiveMarkers(frame)).toBe(0);
+    expect(frame).toContain(`${CANCELLED} Build`);
     expect(frame).not.toContain('Implementing…');
     ui.unmount();
   });
@@ -192,8 +188,15 @@ describe('Rail — completion reward', () => {
       endedAt: 1,
       durationMs: 1,
     });
-    tasksStore.__testReset({ currentTask: 7, totalTasks: 7 });
-    tokensStore.__testReset({ localCount: 7 });
+    tasksStore.__testReset({
+      currentTask: 7,
+      totalTasks: 7,
+      tasks: Array.from({ length: 7 }, (_, index) => ({
+        id: `T00${index + 1}`,
+        title: `Brief ${index + 1}`,
+        status: 'done' as const,
+      })),
+    });
     eventsStore.__testReset({
       events: [
         {
@@ -212,9 +215,8 @@ describe('Rail — completion reward', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     expect(frame).toContain(`${glyph('statusDone')} done`);
-    expect(frame).toContain('7/7 local');
+    expect(frame).toContain('7/7 briefs passed');
     expect(frame).toContain('no drift');
-    expect(countActiveMarkers(frame)).toBe(0);
     expect(frame).not.toContain('Plan');
     ui.unmount();
   });
@@ -229,7 +231,6 @@ describe('Rail — completion reward', () => {
       durationMs: 1,
     });
     tasksStore.__testReset({ currentTask: 7, totalTasks: 7 });
-    tokensStore.__testReset({ localCount: 7 });
     eventsStore.__testReset({
       events: [
         {
@@ -252,16 +253,103 @@ describe('Rail — completion reward', () => {
   });
 });
 
+describe('Rail — completion after a failed review', () => {
+  const briefs = (count: number) =>
+    Array.from({ length: count }, (_, index) => ({
+      id: `T${String(index + 1).padStart(3, '0')}`,
+      title: `Brief ${index + 1}`,
+      status: 'done' as const,
+    }));
+
+  beforeEach(() => {
+    terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
+    lifecycleStore.__testReset({
+      phase: 'complete',
+      status: 'complete',
+      startedAt: 0,
+      endedAt: 1,
+      durationMs: 1,
+    });
+  });
+
+  // The plan had ten briefs and the review's triage appended two fix tasks: twelve briefs, each
+  // counted once, however many completions the log carried for them.
+  it('counts passed briefs out of the plan the fix tasks joined', async () => {
+    tasksStore.__testReset({ currentTask: 12, totalTasks: 10, tasks: briefs(12) });
+    tokensStore.__testReset({ localCount: 14 });
+    eventsStore.__testReset({
+      events: [{ type: 'workflow_complete', ts: 1, phase: 'complete', review: 'passed' }],
+    });
+    const ui = renderRail('B');
+    await tick();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('12/12 briefs passed');
+    expect(frame).not.toContain('local');
+    // No drift report landed, so the line claims no drift check it never saw.
+    expect(frame).toContain('drift not run');
+    expect(frame).not.toContain('no drift');
+    ui.unmount();
+  });
+
+  it('never says done while the review failed, and marks the review stage failed', async () => {
+    tasksStore.__testReset({ currentTask: 10, totalTasks: 10, tasks: briefs(10) });
+    eventsStore.__testReset({
+      events: [
+        { type: 'workflow_complete', ts: 1, phase: 'complete', review: 'failed', blocking: 2 },
+      ],
+    });
+    const ui = renderRail('B');
+    await tick();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).not.toContain('done');
+    expect(frame).toContain(`${DONE} Build`);
+    expect(frame).toContain(`${glyph('statusFailed')} Review`);
+    ui.unmount();
+  });
+});
+
+describe('Rail — completion with a halt open', () => {
+  // A run read back with its failed review pending recovery carries the halt, not the log event that
+  // announced it; the rail reads the halt.
+  it('marks the review failed while a recovery waits at the end of the run', async () => {
+    terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
+    lifecycleStore.__testReset({
+      phase: 'complete',
+      status: 'complete',
+      startedAt: 0,
+      endedAt: 1,
+      durationMs: 1,
+    });
+    recoveryNoticeStore.open({
+      seat: null,
+      resetAt: null,
+      issue: makeRecoveryIssue({
+        reason: 'review-failed',
+        availableActions: ['revise', 'end-run'],
+        recommendedAction: 'revise',
+      }),
+    });
+    const ui = renderRail('B');
+    await tick();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).not.toContain('done');
+    expect(frame).toContain(`${glyph('statusFailed')} Review`);
+    ui.unmount();
+    recoveryNoticeStore.reset();
+  });
+});
+
 describe('Rail — Form C (narrow floor)', () => {
   it('builds the active stage line without a task fraction outside task stages', () => {
-    expect(railFormCText({ stages: getRailStages('planning'), fraction: '' })).toBe(
-      `${ACTIVE} Plan`,
-    );
+    expect(railFormCText({ stages: getRailStages('planning'), fraction: '' })).toBe(`${DONE} Plan`);
   });
 
   it('builds the active task stage line with its task fraction', () => {
     expect(railFormCText({ stages: getRailStages('implementing'), fraction: '3/7' })).toBe(
-      `${ACTIVE} Build  task 3/7`,
+      `${DONE} Build  task 3/7`,
     );
   });
 
@@ -283,7 +371,7 @@ describe('Rail — Form C (narrow floor)', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     expect(frame).toContain('Build');
-    expect(frame).toContain(ACTIVE);
+    expect(frame).toContain(`${DONE} Build`);
     expect(frame).toContain('task 3/7');
     expect(frame).not.toContain('implementing');
     expect(frame).not.toContain('Review');
@@ -331,7 +419,7 @@ describe('Rail — Form C (narrow floor)', () => {
 
     expect(frame).toContain('cancelled');
     expect(frame).not.toContain('task 3/7');
-    expect(countActiveMarkers(frame)).toBe(0);
+    expect(frame).toContain(`${CANCELLED} Build`);
 
     const zones = getRailStageZones({
       form: 'C',

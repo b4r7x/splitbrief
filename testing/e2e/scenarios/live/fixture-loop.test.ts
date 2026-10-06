@@ -32,13 +32,12 @@ describe('live fixture loop', () => {
 
   for (const row of FIXTURE_ROWS) {
     itFixture(
-      `fixture row ${row.id}: ${row.mode}, plan ${row.plan}, build ${row.build}, review ${row.review}`,
+      `fixture row ${row.id}: plan ${row.plan}, build ${row.build}, review ${row.review}`,
       async (ctx) => {
         const seats = resolveFixtureRowSeats(row);
         const startedAt = Date.now();
         const manifestBase = {
           id: row.id,
-          mode: row.mode,
           plan: seats.plan,
           build: seats.build,
           review: seats.review,
@@ -89,7 +88,7 @@ describe('live fixture loop', () => {
           rmSync(run.tmpDir, { recursive: true, force: true });
         }
       },
-      row.mode === 'quick' ? 300_000 : 900_000,
+      row.timeoutMs,
     );
   }
 });

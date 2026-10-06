@@ -51,6 +51,7 @@ export async function closeRunIfOpen(
   };
   let workspaceToRemove: NonNullable<WorkflowState['workspace']> | undefined;
   let patchHandled = false;
+  let patch: string | undefined;
 
   for (let attempt = 0; ; attempt += 1) {
     // A run stopped before it ever saved a state still closes: the close then
@@ -73,9 +74,9 @@ export async function closeRunIfOpen(
       } else if (workspace !== undefined) {
         workspaceToRemove = workspace;
         if (existsSync(workspace.path)) {
-          const patchPath = await writeRunPatch(scope, workspace);
+          patch = relative(scope.projectDir, await writeRunPatch(scope, workspace));
           warn(
-            `Run changes not applied are saved in ${relative(scope.projectDir, patchPath)}; apply them with git apply.`,
+            `Run changes not applied are saved in ${patch}; apply them with git apply.`,
             latest.phase,
           );
         } else {
@@ -94,6 +95,7 @@ export async function closeRunIfOpen(
       next: transition(latest, {
         type: 'CLOSE_RUN',
         ...(closedAs !== undefined && { as: closedAs }),
+        ...(patch !== undefined && { patch }),
       }),
     });
     if (result.kind === 'committed') {

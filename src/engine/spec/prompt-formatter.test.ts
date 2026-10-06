@@ -20,7 +20,7 @@ type TaskOverrides = Omit<Partial<Task>, 'id' | 'dependsOn'> & {
 function makeTask(overrides: TaskOverrides = {}): Task {
   return makeBaseTask({
     title: 'Create utility module',
-    file: 'src/utils/helpers.ts',
+    suggestedFiles: ['src/utils/helpers.ts'],
     description: 'Implement helper functions for string manipulation.',
     ...overrides,
   });
@@ -175,8 +175,7 @@ describe('formatTaskPrompt', () => {
   it('renders every declared file and current code per file', () => {
     const task = makeTask({
       action: 'modify',
-      file: 'src/x.ts',
-      files: ['src/x.ts', 'src/x.test.ts'],
+      suggestedFiles: ['src/x.ts', 'src/x.test.ts'],
       currentCode: 'export function x(): void {}\n',
       currentCodeByFile: { 'src/x.test.ts': "it('x', () => {});\n" },
     });
@@ -202,8 +201,7 @@ describe('formatTaskPrompt', () => {
       `export function ${name}(): void {}\n${'// filler\n'.repeat(2000)}`;
     const task = makeTask({
       action: 'modify',
-      file: 'src/a.ts',
-      files: ['src/a.ts', 'src/b.ts', 'src/c.ts', 'src/d.ts', 'src/e.ts'],
+      suggestedFiles: ['src/a.ts', 'src/b.ts', 'src/c.ts', 'src/d.ts', 'src/e.ts'],
       currentCode: body('a'),
       currentCodeByFile: {
         'src/b.ts': body('b'),
@@ -222,8 +220,7 @@ describe('formatTaskPrompt', () => {
   it('renders sibling code for a create anchor whose sibling already exists', () => {
     const task = makeTask({
       action: 'create',
-      file: 'src/health.ts',
-      files: ['src/health.ts', 'src/health.test.ts'],
+      suggestedFiles: ['src/health.ts', 'src/health.test.ts'],
       currentCodeByFile: { 'src/health.test.ts': "it('health', () => {});\n" },
     });
 
@@ -238,7 +235,7 @@ describe('formatTaskPrompt', () => {
   it('carries context files whole under a read-only heading, for a new file and a bundle', () => {
     const task = makeTask({
       action: 'create',
-      file: 'src/health.ts',
+      suggestedFiles: ['src/health.ts'],
       contextFiles: ['src/types.ts'],
       contextCodeByFile: { 'src/types.ts': 'export type Health = "ok";\n' },
     });
@@ -321,8 +318,7 @@ describe('formatTaskPrompt', () => {
 describe('direct writer', () => {
   const task = makeTask({
     action: 'modify',
-    file: 'src/x.ts',
-    files: ['src/x.ts', 'src/x.test.ts'],
+    suggestedFiles: ['src/x.ts', 'src/x.test.ts'],
     currentCode: 'export function x(): void {}\n',
     currentCodeByFile: { 'src/x.test.ts': "it('x', () => {});\n" },
     contextCodeByFile: { 'src/y.ts': 'export const y = 1;\n' },
@@ -428,7 +424,7 @@ describe('formatRetryPrompt', () => {
     const prompt = formatRetryPrompt({ task, context, error, attempt });
     expect(prompt).toContain(expectedText);
     expect(prompt).toContain(error);
-    expect(prompt).toContain(task.file);
+    expect(prompt).toContain(task.suggestedFiles[0]);
   });
 
   it('attempt 2 and 3 still include currentCode (v0.2: full context preserved)', () => {

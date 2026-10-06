@@ -41,12 +41,12 @@ describe('promptBodyRows', () => {
 
   it('splits the serialized action row into its key and text', () => {
     expect(splitActionRow('[c]  continue')).toEqual({ key: 'c', text: 'continue' });
-    expect(splitActionRow('[space] pause')).toEqual({ key: 'space', text: 'pause' });
+    expect(splitActionRow('[w2] switch BUILD')).toEqual({ key: 'w2', text: 'switch BUILD' });
     expect(splitActionRow('plain')).toEqual({ key: '', text: 'plain' });
   });
 
   it('fits a recommended text by dropping trailing middot parts before truncating', () => {
-    expect(fitRecommendedText('pause · no new brief starts, changes kept', 20)).toBe('pause');
+    expect(fitRecommendedText('end run · closes this run, changes kept', 20)).toBe('end run');
     expect(fitRecommendedText('continue', 20)).toBe('continue');
   });
 
@@ -55,7 +55,7 @@ describe('promptBodyRows', () => {
       'recovery needed',
       '',
       '[r]  retry same worker',
-      '[space]  pause',
+      '[s]  skip task',
       '[a]  abort',
     ].join('\n');
     expect(countPromptBodyRows(prompt, 80)).toBe(5);
@@ -87,8 +87,18 @@ describe('promptBodyRows', () => {
     const factLines = rows.filter((row) => row.kind === 'facts-line');
 
     expect(factLines.length).toBeGreaterThan(1);
-    for (const line of factLines) expect(line.text.startsWith('  ')).toBe(true);
+    for (const line of factLines) {
+      expect(line.text.startsWith('  ')).toBe(true);
+      expect(line.text.startsWith('   ')).toBe(false);
+    }
     expect(factLines.map((line) => line.text.trim()).join(' ')).toBe(sentence);
+  });
+
+  it('starts a wrapped fact line on its word when the break falls on a space', () => {
+    const rows = promptBodyRows(['recovery needed', '', 'alpha beta'].join('\n'), 7);
+    const factLines = rows.filter((row) => row.kind === 'facts-line').map((row) => row.text);
+
+    expect(factLines).toEqual(['  alpha', '  beta']);
   });
 
   it('wraps an odd trailing grid fact through the same counted body rows', () => {

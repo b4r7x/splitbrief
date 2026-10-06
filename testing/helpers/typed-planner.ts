@@ -4,7 +4,7 @@ import type { ClarificationQuestion } from '../../src/core/schemas/question.js';
 import type { ConsultAnswer } from '../../src/core/schemas/consult.js';
 import type { ReviewVerdict, TriageResult } from '../../src/core/schemas/review.js';
 import type { ReviewScope } from '../../src/core/review/verdict.js';
-import { taskFiles, taskId, type Task } from '../../src/core/schemas/task.js';
+import { taskId, type Task } from '../../src/core/schemas/task.js';
 import type {
   Planner,
   PlannerOutputCallbacks,
@@ -174,7 +174,7 @@ export function planFromTasks(tasks: readonly Task[]): PlanProposal {
         tests.length > 0
           ? tests
           : [{ id: `${task.id}-K1`, kind: 'cmd' as const, value: 'true', required: false }],
-      suggestedFiles: [...taskFiles(task)],
+      suggestedFiles: [...task.suggestedFiles],
       contextFiles: task.scope?.inBounds ?? [],
       exclusions: task.scope?.outOfBounds ?? [],
       protectedOperations: null,

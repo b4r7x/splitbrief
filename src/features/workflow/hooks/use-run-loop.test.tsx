@@ -8,13 +8,10 @@ import { Box, Text } from 'ink';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { tick } from '#testing/helpers/ink.js';
 import { execFileSync } from 'node:child_process';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
-import {
-  captureChangedFilesBaseline,
-  serializeChangedFilesBaseline,
-} from '../../../engine/orchestrator/changed-files-baseline.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -47,17 +44,14 @@ import {
   requestBoundaryPause,
   requestStopNow,
   requestCancel,
-  requestRewind,
   requestEndRun,
   clearAllHandlers,
 } from '../handlers.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import {
-  clearActiveReceipt,
   reactivateExistingSession,
   readActive,
   readActiveRecord,
-  writeActive,
 } from '../../../core/sessions/active-pointer.js';
 import { inspectSessionLiveness } from '../../../core/sessions/liveness.js';
 import { ensureSplitbriefDir, ensureSessionDir } from '../../../core/paths-io.js';
@@ -209,35 +203,10 @@ function recordedEngine(script: Partial<Record<number, RunWorkflowFn>> = {}) {
   return { engine, entered, returned: () => returned };
 }
 
-/** A pass that saves the run at `state` and waits there until the loop aborts it. */
-function parkAt(state: WorkflowState, transcript?: string): RunWorkflowFn {
-  return async (options) => {
-    saveState(options.prepared.session.ref, state);
-    if (transcript !== undefined) {
-      options.tuiSink?.({
-        type: 'user_message',
-        ts: Date.now(),
-        phase: state.phase,
-        text: transcript,
-      });
-    }
-    if (options.signal?.aborted !== true) {
-      await new Promise<void>((resolve) => {
-        options.signal?.addEventListener('abort', () => resolve(), { once: true });
-      });
-    }
-    return makeSummary();
-  };
-}
-
 function errorMessages(): string[] {
   return eventsStore
     .get()
     .events.flatMap((event) => (event.type === 'error' ? [event.message] : []));
-}
-
-async function flush(ms = 60) {
-  await new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
 /** A run halted on a brief whose panel offers a retry, saved where the loop reads it back. */
@@ -256,7 +225,7 @@ async function answerRecoveryPanel(
   await vi.waitFor(() => {
     expect(controlsStore.get().inputMode).toBe('question');
   });
-  await flush();
+  await tick(60);
   const runner = captureRunner.current;
   if (!runner) throw new Error('expected captureRunner.current to be populated');
   runner.answer(text);
@@ -312,7 +281,7 @@ describe('useRunLoop', () => {
     await vi.waitFor(() => {
       expect(received).toHaveLength(1);
     });
-    await flush();
+    await tick(60);
 
     const authority = received[0];
     expect(authority).toBe(prepared);
@@ -329,7 +298,7 @@ describe('useRunLoop', () => {
     const prepared = preparedExecution({ projectDir, feature: 'add auth' });
 
     const inst = renderHarness({ prepared, captureRunner });
-    await flush();
+    await tick(60);
 
     expect(lifecycleStore.get().cancelled).toBe(false);
     expect(lifecycleStore.get().queueDepth).toBe(0);
@@ -480,44 +449,6 @@ describe('useRunLoop', () => {
     inst.unmount();
   });
 
-  it('stops at a paused recovery on resume without re-entering runWorkflow (F-510)', async () => {
-    const sessionId = '2024-01-01-paused';
-    ensureSessionDir(projectDir, sessionId);
-    const task = makeTask({ id: 'T001' });
-    const issue = buildContextOverflowRecoveryIssue({
-      task,
-      phase: 'implementing',
-      createdAt: '2026-04-28T12:00:00.000Z',
-    });
-    const paused: WorkflowState = {
-      ...makeImplState([task]),
-      pendingRecovery: { ...issue, status: 'paused' },
-    };
-    saveState({ projectDir, sessionId }, paused);
-    const prepared = preparedExecution({
-      projectDir,
-      feature: 'add auth',
-      sessionId,
-      resumeState: paused,
-    });
-
-    const inst = renderHarness({ prepared });
-    await flush();
-
-    // The paused issue is carried, not resolved: the host never resumes the run,
-    // so the recovery stays on disk for an explicit `splitbrief resume` later.
-    const persisted = loadState({ projectDir, sessionId });
-    if (!persisted) throw new Error('expected persisted state on disk');
-    expect(persisted.pendingRecovery?.status).toBe('paused');
-
-    // The host did not re-enter runWorkflow: no resume event was published, so the
-    // budget-pause answer cannot drive an infinite runWorkflow loop.
-    const resumedEvents = eventsStore.get().events.filter((e) => e.type === 'workflow_resumed');
-    expect(resumedEvents).toHaveLength(0);
-
-    inst.unmount();
-  });
-
   it('writes the session record when a halt is answered with End run', async () => {
     const sessionId = '2024-01-01-end-run';
     ensureSessionDir(projectDir, sessionId);
@@ -539,7 +470,7 @@ describe('useRunLoop', () => {
       resumeState: closed,
     });
     const inst = renderHarness({ prepared });
-    await flush();
+    await tick(60);
 
     expect(existsSync(join(sessionDir(projectDir, sessionId), 'summary.json'))).toBe(true);
     expect(settledRun()?.status).toEqual({ kind: 'closed', as: 'ended' });
@@ -562,7 +493,7 @@ describe('useRunLoop', () => {
     await vi.waitFor(() => {
       expect(controlsStore.get().inputMode).toBe('question');
     });
-    await flush();
+    await tick(60);
     expect(requestStopNow()).toBe(true);
     await vi.waitFor(() => {
       expect(settledRun()).not.toBeNull();
@@ -585,14 +516,14 @@ describe('useRunLoop', () => {
         return makeSummary();
       },
     });
-    await flush();
+    await tick(60);
 
     // Simulate a pending review mode (as if the engine had called onApprovalNeeded).
     controlsStore.setInputMode('review');
 
     const cancelled = requestCancel();
     expect(cancelled).toBe(true);
-    await flush();
+    await tick(60);
 
     expect(lifecycleStore.get().cancelled).toBe(true);
     // Cancel handler registered by the runner calls inputMode.resetMode(),
@@ -626,148 +557,19 @@ describe('useRunLoop', () => {
     });
     const inst = renderHarness({ prepared, runWorkflow: runWorkflowWithCompletion });
     const logPath = join(sessionDir(projectDir, sessionId), 'session.jsonl');
-    await vi.waitFor(
-      () => {
-        expect(existsSync(logPath)).toBe(true);
-      },
-      { timeout: 5_000 },
-    );
+    await vi.waitFor(() => {
+      expect(existsSync(logPath)).toBe(true);
+    });
 
     expect(requestCancel()).toBe(true);
 
-    await vi.waitFor(
-      () => {
-        const log = readFileSync(logPath, 'utf-8');
-        expect(log).toContain('"type":"workflow_cancelled"');
-        expect(log).toContain('"reason":"user_cancelled"');
-      },
-      { timeout: 5_000 },
-    );
+    await vi.waitFor(() => {
+      const log = readFileSync(logPath, 'utf-8');
+      expect(log).toContain('"type":"workflow_cancelled"');
+      expect(log).toContain('"reason":"user_cancelled"');
+    });
 
     await runFinished;
-    inst.unmount();
-  });
-
-  it('persists a task-reset event when the user rewinds to a task', async () => {
-    const sessionId = '2024-01-01-rewind-task';
-    const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
-    const ref = prepared.session.ref;
-    const run = recordedEngine({
-      1: parkAt(makeImplState([makeTask({ id: 'T001', status: 'done' })])),
-    });
-
-    const inst = renderHarness({ prepared, runWorkflow: run.engine });
-    await vi.waitFor(() => {
-      expect(loadState(ref)?.phase).toBe('implementing');
-    });
-
-    const didRewind = requestRewind({ target: 'task', taskId: 'T001' });
-    expect(didRewind).toBe(true);
-    await vi.waitFor(() => {
-      expect(run.returned()).toBe(2);
-    });
-
-    const logPath = join(sessionDir(projectDir, sessionId), 'session.jsonl');
-    const log = readFileSync(logPath, 'utf-8');
-    expect(log).toContain('task_reset');
-    expect(log).toContain('T001');
-    expect(run.entered.map((entry) => entry.purpose)).toEqual(['new-workflow', 'resume']);
-    expect(loadState(ref)?.tasks.map((task) => task.status)).toEqual(['pending']);
-    expect(errorMessages()).toEqual([expect.stringContaining('is not available')]);
-
-    inst.unmount();
-  });
-
-  it('rewind retry reuses prepared runner authority after store changes', async () => {
-    const sessionId = '2024-01-01-prepared-rewind';
-    const saved = makeImplState([makeTask({ id: 'T001', status: 'done' })]);
-    ensureSessionDir(projectDir, sessionId);
-    saveState({ projectDir, sessionId }, saved);
-    const prepared = preparedExecution({
-      projectDir,
-      feature: 'prepared rewind',
-      sessionId,
-      resumeState: saved,
-    });
-    const attempts: PreparedExecution[] = [];
-    const runWorkflowStub: RunWorkflowFn = async (options) => {
-      attempts.push(options.prepared);
-      if (attempts.length === 1 && !options.signal?.aborted) {
-        await new Promise<void>((resolve) => {
-          options.signal?.addEventListener('abort', () => resolve(), { once: true });
-        });
-      }
-      return makeSummary();
-    };
-    const inst = renderHarness({ prepared, runWorkflow: runWorkflowStub });
-
-    await vi.waitFor(() => {
-      expect(attempts).toHaveLength(1);
-    });
-    configStore.__testReset({
-      projectDir,
-      config: makeConfig({
-        planner: { kind: 'agent', command: '/changed/after/admission' },
-      }),
-    });
-
-    expect(requestRewind({ target: 'task', taskId: 'T001' })).toBe(true);
-
-    await vi.waitFor(() => {
-      expect(attempts).toHaveLength(2);
-    });
-    expect(attempts).toEqual([prepared, prepared]);
-    expect(attempts[1]?.config).toBe(prepared.config);
-    expect(attempts[1]?.gates).toBe(prepared.gates);
-    expect(attempts[1]?.report).toBe(prepared.report);
-    expect(attempts[1]?.session).toBe(prepared.session);
-    expect(attempts[1]?.session.active).toBe(prepared.session.active);
-    expect(Object.isFrozen(attempts[1]?.config)).toBe(true);
-
-    inst.unmount();
-  });
-
-  it('rewinds the in-scope session even when .splitbrief/active names a different session', async () => {
-    // pointer=A (a foreign interrupted session) while the screen is scoped to sessionId=B.
-    // The rewind handler must use the in-scope id (B) and never touch A.
-    const foreignSessionId = '2024-01-01-foreign';
-    const scopedSessionId = '2024-01-01-scoped';
-    ensureSessionDir(projectDir, foreignSessionId);
-    ensureSessionDir(projectDir, scopedSessionId);
-    const foreignState = makeImplState([makeTask({ id: 'T001', status: 'done' })]);
-    const scopedState = makeImplState([makeTask({ id: 'T001', status: 'done' })]);
-    saveState({ projectDir, sessionId: foreignSessionId }, foreignState);
-    const prepared = preparedExecution({
-      projectDir,
-      feature: 'add auth',
-      sessionId: scopedSessionId,
-    });
-    const run = recordedEngine({ 1: parkAt(scopedState) });
-
-    const inst = renderHarness({ prepared, runWorkflow: run.engine });
-    await vi.waitFor(() => {
-      expect(loadState(prepared.session.ref)?.phase).toBe('implementing');
-    });
-    // The pointer now names a FOREIGN interrupted session while the screen stays scoped to B.
-    // A pointer-keyed rewind would corrupt the foreign session; the in-scope id (B) must win.
-    clearActiveReceipt(prepared.session.ref, prepared.session.active);
-    writeActive({ projectDir, sessionId: foreignSessionId });
-
-    const didRewind = requestRewind({ target: 'task', taskId: 'T001' });
-    expect(didRewind).toBe(true);
-    await vi.waitFor(() => {
-      expect(run.returned()).toBe(2);
-    });
-
-    const scopedLog = readFileSync(
-      join(sessionDir(projectDir, scopedSessionId), 'session.jsonl'),
-      'utf-8',
-    );
-    expect(scopedLog).toContain('task_reset');
-    expect(scopedLog).toContain('T001');
-
-    expect(existsSync(join(sessionDir(projectDir, foreignSessionId), 'session.jsonl'))).toBe(false);
-
     inst.unmount();
   });
 
@@ -777,7 +579,7 @@ describe('useRunLoop', () => {
     const runWorkflowStub: RunWorkflowFn = vi.fn(async () => makeSummary());
 
     const inst = renderHarness({ prepared, captureRunner, runWorkflow: runWorkflowStub });
-    await flush();
+    await tick(60);
 
     // No active session was written — handleResume should surface a feedback
     // error instead of trying to resume.
@@ -795,7 +597,7 @@ describe('useRunLoop', () => {
       ],
     });
     runner.handleResume();
-    await flush();
+    await tick(60);
 
     expect(feedbackStore.get().message).toMatch(/no saved state/i);
     expect(feedbackStore.get().isError).toBe(true);
@@ -832,23 +634,23 @@ describe('useRunLoop', () => {
         return runWorkflow(options);
       };
       const inst = renderHarness({ prepared, captureRunner, runWorkflow: runWorkflowSpy });
-      await flush();
+      await vi.waitFor(() => {
+        expect(settledRun()).not.toBeNull();
+      });
       expect(userMessageEvents()).toHaveLength(0);
 
       const runner = captureRunner.current;
       if (!runner) throw new Error('expected captureRunner.current to be populated');
       runner.handleResume(text);
-      await flush();
+      await vi.waitFor(() => {
+        expect(userMessageEvents()).toHaveLength(1);
+        const log = readFileSync(join(sessionDir(projectDir, sessionId), 'session.jsonl'), 'utf-8');
+        expect(loggedMessageRows(log, text)).toBe(1);
+        expect(loadState({ projectDir, sessionId })?.messageQueue).toHaveLength(0);
+      });
 
       expect(seen.at(-1)).toBe(text);
-      const userMessages = userMessageEvents();
-      expect(userMessages).toHaveLength(1);
-      expect(userMessages[0]).toMatchObject({ type: 'user_message', phase, text });
-      const log = readFileSync(join(sessionDir(projectDir, sessionId), 'session.jsonl'), 'utf-8');
-      expect(loggedMessageRows(log, text)).toBe(1);
-      const persisted = loadState({ projectDir, sessionId });
-      if (!persisted) throw new Error('expected persisted state on disk');
-      expect(persisted.messageQueue).toHaveLength(0);
+      expect(userMessageEvents()[0]).toMatchObject({ type: 'user_message', phase, text });
       expect(feedbackStore.get().isError).toBe(false);
 
       inst.unmount();
@@ -873,13 +675,13 @@ describe('useRunLoop', () => {
       return runWorkflow(options);
     };
     const inst = renderHarness({ prepared, captureRunner, runWorkflow: runWorkflowSpy });
-    await flush();
+    await tick(60);
     expect(userMessageEvents()).toHaveLength(0);
 
     const runner = captureRunner.current;
     if (!runner) throw new Error('expected captureRunner.current to be populated');
     runner.handleResume();
-    await flush();
+    await tick(60);
 
     expect(seen.at(-1)).toBeUndefined();
     expect(userMessageEvents()).toHaveLength(0);
@@ -916,17 +718,26 @@ describe('useRunLoop', () => {
       sessionId,
       resumeState: resume,
     });
+    let returned = 0;
     const inst = renderHarness({
       prepared,
       captureRunner,
-      runWorkflow: async (options) => runWorkflow(options),
+      runWorkflow: async (options) => {
+        const summary = await runWorkflow(options);
+        returned += 1;
+        return summary;
+      },
     });
-    await flush();
+    await vi.waitFor(() => {
+      expect(returned).toBe(1);
+    });
 
     const runner = captureRunner.current;
     if (!runner) throw new Error('expected captureRunner.current to be populated');
     runner.handleResume(answer);
-    await flush();
+    await vi.waitFor(() => {
+      expect(returned).toBe(2);
+    });
 
     // The planning session's pending question owns the answer: the session records it when it
     // consumes the seed, so the re-entry itself publishes nothing.
@@ -1000,29 +811,6 @@ describe('useRunLoop', () => {
     await vi.waitFor(() => {
       expect(seen).toEqual(['original']);
     });
-
-    inst.unmount();
-  });
-
-  it('settles the run without re-entering when the panel pauses it', async () => {
-    const sessionId = '2026-09-21-recovery-pauses';
-    const halted = saveHaltedRun(sessionId);
-    const captureRunner: HarnessProps['captureRunner'] = { current: null };
-    const prepared = preparedExecution({
-      projectDir,
-      feature: 'add auth',
-      sessionId,
-      resumeState: halted,
-    });
-    const runWorkflowStub: RunWorkflowFn = vi.fn(async () => makeSummary());
-
-    const inst = renderHarness({ prepared, captureRunner, runWorkflow: runWorkflowStub });
-    await answerRecoveryPanel(captureRunner, 'pause');
-    await vi.waitFor(() => {
-      expect(settledRun()).not.toBeNull();
-    });
-    expect(runWorkflowStub).not.toHaveBeenCalled();
-    expect(loadState({ projectDir, sessionId })?.pendingRecovery?.status).toBe('paused');
 
     inst.unmount();
   });
@@ -1107,7 +895,7 @@ describe('useRunLoop', () => {
     const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
     const runWorkflowStub: RunWorkflowFn = vi.fn(async () => makeSummary());
     const inst = renderHarness({ prepared, captureRunner, runWorkflow: runWorkflowStub });
-    await flush();
+    await tick(60);
     const runsBefore = (runWorkflowStub as unknown as { mock: { calls: unknown[] } }).mock.calls
       .length;
 
@@ -1116,7 +904,7 @@ describe('useRunLoop', () => {
     const settled = vi.fn();
     stopStore.park('mid-brief', 'T001', settled);
     runner.handleResume('use the other adapter');
-    await flush();
+    await tick(60);
 
     expect(settled).toHaveBeenCalledWith('use the other adapter');
     expect((runWorkflowStub as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBe(
@@ -1129,26 +917,22 @@ describe('useRunLoop', () => {
   it('cleans up all handlers on unmount so later events do not leak into the suite', async () => {
     const prepared = preparedExecution({ projectDir, feature: 'add auth' });
     const inst = renderHarness({ prepared });
-    await flush();
+    await tick(60);
 
     inst.unmount();
-    await flush();
+    await tick(60);
 
     expect(abortTurn()).toBe(false);
-    expect(requestRewind({ target: 'task', taskId: 'T001' })).toBe(false);
   });
 
-  it('asks nothing about a file halt whose files are back at the baseline', async () => {
+  it('asks nothing about a halt on a retired cause', async () => {
     const sessionId = '2026-09-21-stale-file-halt';
     ensureSessionDir(projectDir, sessionId);
     const halted = makeImplState([makeTask({ id: 'T001', status: 'failed' })], {
-      changedFilesBaseline: serializeChangedFilesBaseline(
-        await captureChangedFilesBaseline(projectDir),
-      ),
       pendingRecovery: makeRecoveryIssue({
         reason: 'user-edit-conflict',
         files: ['src/reverted.ts'],
-        availableActions: ['continue', 'pause-run', 'end-run'],
+        availableActions: ['continue', 'end-run'],
         recommendedAction: 'continue',
       }),
     });
@@ -1277,15 +1061,11 @@ describe('useRunLoop', () => {
       ensureSessionDir(projectDir, sessionId);
       const halted = makeImplState([makeTask({ id: 'T001', status: 'done' })], {
         phase: 'final-review',
-        pendingRecovery: {
-          ...buildRequiredChecksUnrunnableRecoveryIssue({
-            phase: 'final-review',
-            checks: [{ checkId: 'K-render', output: 'validation.render is not set' }],
-            createdAt: '2026-10-06T16:58:06.000Z',
-          }),
-          status: 'paused',
-          selectedAction: 'pause-run',
-        },
+        pendingRecovery: buildRequiredChecksUnrunnableRecoveryIssue({
+          phase: 'final-review',
+          checks: [{ checkId: 'K-render', output: 'validation.render is not set' }],
+          createdAt: '2026-10-06T16:58:06.000Z',
+        }),
       });
       saveState(ref, halted);
       writeConfig(projectDir, makeConfig({ validation: { render: 'true {id} {out}' } }));
@@ -1394,7 +1174,12 @@ describe('useRunLoop', () => {
               mode: 'speckit',
               pendingRecovery: makeRecoveryIssue({
                 reason: 'runner-usage-limit',
-                availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
+                availableActions: [
+                  'retry-same-worker',
+                  'switch-seat',
+                  'skip-current-task',
+                  'end-run',
+                ],
                 recommendedAction: 'switch-seat',
                 switchSeat: { seat: 'build', candidates: [{ tool: 'claude-code' }] },
               }),
@@ -1477,33 +1262,6 @@ describe('useRunLoop', () => {
       });
 
       expect(readActive(projectDir)).toBeNull();
-
-      inst.unmount();
-    });
-
-    it('re-enters the engine as the same session after a rewind and keeps its transcript', async () => {
-      const sessionId = '2026-09-23-start-rewind';
-      const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
-      const ref = prepared.session.ref;
-      const run = recordedEngine({
-        1: parkAt(makeImplState([makeTask({ id: 'T001', status: 'done' })]), 'the build so far'),
-      });
-
-      const inst = renderHarness({ prepared, runWorkflow: run.engine });
-      await vi.waitFor(() => {
-        expect(userMessageEvents()).toHaveLength(1);
-      });
-
-      expect(requestRewind({ target: 'task', taskId: 'T001' })).toBe(true);
-      await vi.waitFor(() => {
-        expect(run.returned()).toBe(2);
-      });
-
-      expect(run.entered.map((entry) => entry.purpose)).toEqual(['new-workflow', 'resume']);
-      expect(run.entered[1]?.session.ref).toEqual(ref);
-      expect(userMessageEvents()).toEqual([expect.objectContaining({ text: 'the build so far' })]);
-      expect(eventsStore.get().events.map((event) => event.type)).toContain('task_reset');
-      expect(errorMessages()).toEqual([expect.stringContaining('is not available')]);
 
       inst.unmount();
     });

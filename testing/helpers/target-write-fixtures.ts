@@ -53,7 +53,7 @@ export function createTargetWriteProject(): { projectDir: string; task: Task } {
       id: 'T001',
       status: 'in_progress',
       action: 'modify',
-      file: TARGET_WRITE_FILE,
+      suggestedFiles: [TARGET_WRITE_FILE],
     }),
   };
 }
@@ -81,7 +81,7 @@ export async function createTargetWriteWorkspace(
 }
 
 export function makeTargetWriteConfig(): Config {
-  return makeNoValidationConfig({ approval: { enabled: false, feedRejectionsToPlanner: true } });
+  return makeNoValidationConfig({ approval: { feedRejectionsToPlanner: true } });
 }
 
 function ledgerFor(projectDir: string, task: Task): EvidenceLedger {

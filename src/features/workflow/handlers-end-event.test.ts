@@ -122,9 +122,7 @@ describe('/resume and /end on a run at rest at a gate', () => {
     const ref = { projectDir, sessionId: 'gate-at-rest' };
     ensureSessionDir(projectDir, ref.sessionId);
     const started = transition(createInitialState('Gate at rest'), { type: 'START' });
-    const atGate = transition(transition(started, { type: 'RESEARCH_DONE' }), {
-      type: 'SPEC_DONE',
-    });
+    const atGate = { ...started, phase: 'reviewing-spec' as const };
     saveState(ref, atGate);
     const record = readRunRecord(ref);
     if (record === null) throw new Error('missing run record');

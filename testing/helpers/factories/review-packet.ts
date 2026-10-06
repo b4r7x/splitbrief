@@ -95,7 +95,6 @@ export function makeReviewPacket(overrides?: Partial<ReviewPacket>): ReviewPacke
       path: null,
       present: false,
       passed: null,
-      score: null,
       errorCount: 0,
       warningCount: 0,
       changedFiles: [],
@@ -103,20 +102,6 @@ export function makeReviewPacket(overrides?: Partial<ReviewPacket>): ReviewPacke
       findings: [],
       findingsBySeverity: { info: [], warning: [], error: [] },
       briefHash: null,
-      chainSummary: {
-        path: 'drift-chains.json',
-        present: false,
-        emittedChainCount: 0,
-        topChain: null,
-        briefQuality: {
-          path: 'brief-quality.json',
-          present: false,
-          passed: null,
-          score: null,
-          errorCount: 0,
-          warningCount: 0,
-        },
-      },
       briefQuality: {
         path: 'brief-quality.json',
         present: false,

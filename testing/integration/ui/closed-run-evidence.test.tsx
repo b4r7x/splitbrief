@@ -61,7 +61,7 @@ describe('closed-run evidence ledger (integration)', () => {
     const task = makeTask({
       id: 'T001',
       title: 'Evidence \u001b]52;c;clipboard-title\u0007detail',
-      file: 'src/evidence.ts',
+      suggestedFiles: ['src/evidence.ts'],
       tests: ['visible expected \u001b]52;c;clipboard-expected\u0007'],
     });
     let ledger = createEvidenceLedger({

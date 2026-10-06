@@ -70,7 +70,7 @@ describe('validateCommitAndAdvance — index preservation', () => {
         bus,
         method: 'local',
         transitionType: 'VALIDATION_PASS',
-        taskChangedFiles: [task.file],
+        taskChangedFiles: [task.suggestedFiles[0]],
       });
 
       expect(result.completed).toBe(true);

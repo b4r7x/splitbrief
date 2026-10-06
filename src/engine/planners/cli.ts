@@ -37,7 +37,6 @@ import { resolveCliExecutableAliases } from '../runners/resolve-cli-executable.j
 import { assertCliStartGate } from '../runners/start-gate.js';
 import { processError } from '../../lib/process/errors.js';
 import { createRunnerSandboxEnv, resolveCliRunnerAuth } from '../runners/sandbox-env.js';
-import { createQuestionAccumulator } from '../parsers/question.js';
 import { withCliInvocationIdentity } from '../runners/invocation-identity.js';
 import { TIMEOUTS } from '../../core/pipeline-spec/timeouts.js';
 const isCliExecutableUnavailable = matches('cli-executable-unavailable');
@@ -99,7 +98,7 @@ export function createCliPlanner(
   async function runOnce(opts: {
     prompt: string;
     projectDir: string;
-    callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onQuestion' | 'onSessionId' | 'onCallEvent'>;
+    callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onSessionId' | 'onCallEvent'>;
     callContext: RunnerCallContext;
     mode: 'plan' | 'escalate';
     threaded: boolean;
@@ -123,13 +122,6 @@ export function createCliPlanner(
     } = opts;
     let unexpectedResumeSessionId: string | null = null;
     let stderrOutput = '';
-    const questionAccumulator = callbacks.onQuestion ? createQuestionAccumulator() : null;
-    const onOutput = (text: string): void => {
-      callbacks.onOutput(text);
-      if (questionAccumulator === null) return;
-      const newQuestions = questionAccumulator.addChunk(text);
-      if (newQuestions.length > 0) callbacks.onQuestion?.(newQuestions);
-    };
 
     const effectiveSignal = composeAbortSignal(signal, timeout);
     const onCallEvent = (event: RunnerCallEvent): void => {
@@ -174,7 +166,7 @@ export function createCliPlanner(
       },
       prompt,
       callContext: withCliInvocationIdentity({ runner: plannerCfg, callContext, executable }),
-      onOutput,
+      onOutput: (text: string) => callbacks.onOutput(text),
       onCallEvent,
       onSessionId: threaded
         ? (id: string) => {
@@ -211,7 +203,7 @@ export function createCliPlanner(
     projectDir: string;
     callbacks: Pick<
       PlannerCallbacks,
-      'onOutput' | 'onQuestion' | 'onSessionId' | 'onSessionExpired' | 'onCallEvent'
+      'onOutput' | 'onSessionId' | 'onSessionExpired' | 'onCallEvent'
     >;
     callContext: RunnerCallContext;
     accessMode: 'planning' | 'read-only' | 'write-files';

@@ -11,7 +11,7 @@ export function emptyEvidenceTask(task: Task): EvidenceTask {
   return {
     id: task.id,
     title: task.title,
-    file: task.file,
+    file: task.suggestedFiles[0],
     status: task.status,
     retries: 0,
     changedFiles: [],
@@ -84,7 +84,7 @@ export function findOrSeed(
     return {
       ...existing,
       title: task.title,
-      file: task.file,
+      file: task.suggestedFiles[0],
       changedFiles: [...existing.changedFiles],
       validation: existing.validation.map((v) => ({
         ...v,

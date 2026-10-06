@@ -63,37 +63,43 @@ afterEach(() => {
 
 describe('api BUILD — file-bundle-v1 through the public pipeline', () => {
   it('honours revoked checkout ownership when the user recreates a reverted target', async () => {
-    const task = makeTask({ id: 'T001', file: 'src/owned.ts', action: 'create' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/owned.ts'], action: 'create' });
     const implementer = createApiImplementer(makeConfig());
     const opts = { ...call(task), fileIgnoreProjectDir: projectDir, createdByThisTask: [] };
-    respond(bundleText([{ path: task.file, action: 'create', content: 'worker content\n' }]));
+    respond(
+      bundleText([{ path: task.suggestedFiles[0], action: 'create', content: 'worker content\n' }]),
+    );
     expect((await implementer.implement(opts)).success).toBe(true);
-    rmSync(join(projectDir, task.file));
-    write(task.file, 'user replacement\n');
+    rmSync(join(projectDir, task.suggestedFiles[0]));
+    write(task.suggestedFiles[0], 'user replacement\n');
     const requestCount = fetchMock.mock.calls.length;
 
     const result = await implementer.implement(opts);
 
     expect(result.applyResult).toMatchObject({ status: 'rejected', code: 'baseline-conflict' });
     expect(fetchMock.mock.calls.length).toBe(requestCount);
-    expect(read(task.file)).toBe('user replacement\n');
+    expect(read(task.suggestedFiles[0])).toBe('user replacement\n');
   });
 
   it('does not transfer in-memory creation ownership from another workspace', async () => {
     const workerDir = createTempDir('api-bundle-worker');
     try {
-      const task = makeTask({ id: 'T001', file: 'src/owned.ts', action: 'create' });
+      const task = makeTask({ id: 'T001', suggestedFiles: ['src/owned.ts'], action: 'create' });
       const implementer = createApiImplementer(makeConfig());
-      respond(bundleText([{ path: task.file, action: 'create', content: 'worker content\n' }]));
+      respond(
+        bundleText([
+          { path: task.suggestedFiles[0], action: 'create', content: 'worker content\n' },
+        ]),
+      );
       expect((await implementer.implement({ ...call(task), projectDir: workerDir })).success).toBe(
         true,
       );
-      write(task.file, 'user target content\n');
+      write(task.suggestedFiles[0], 'user target content\n');
       const requestCount = fetchMock.mock.calls.length;
       const result = await implementer.implement(call(task));
       expect(result.applyResult).toMatchObject({ status: 'rejected', code: 'baseline-conflict' });
       expect(fetchMock.mock.calls.length).toBe(requestCount);
-      expect(read(task.file)).toBe('user target content\n');
+      expect(read(task.suggestedFiles[0])).toBe('user target content\n');
     } finally {
       cleanupTempDir(workerDir);
     }
@@ -108,8 +114,7 @@ describe('api BUILD — file-bundle-v1 through the public pipeline', () => {
     );
     const task = makeTask({
       id: 'T001',
-      file: 'src/a.ts',
-      files: ['src/a.ts', 'src/b.ts'],
+      suggestedFiles: ['src/a.ts', 'src/b.ts'],
       action: 'create',
     });
 
@@ -147,8 +152,12 @@ describe('api BUILD — file-bundle-v1 through the public pipeline', () => {
         },
       ]),
     );
-    const done: Array<{ file: string; linesAdded: number; linesRemoved: number; diff?: string }> =
-      [];
+    const done: Array<{
+      file: string;
+      linesAdded?: number | undefined;
+      linesRemoved?: number | undefined;
+      diff?: string;
+    }> = [];
     const publisher: ImplementerPublisher = {
       publishRunning: () => {},
       publishCallEvent: () => {},
@@ -160,8 +169,7 @@ describe('api BUILD — file-bundle-v1 through the public pipeline', () => {
     };
     const task = makeTask({
       id: 'T012',
-      file: 'src/a.ts',
-      files: ['src/a.ts', 'src/b.ts'],
+      suggestedFiles: ['src/a.ts', 'src/b.ts'],
       action: 'create',
     });
 
@@ -185,7 +193,7 @@ describe('api BUILD — file-bundle-v1 through the public pipeline', () => {
     respond(
       bundleText([{ path: 'src/only.ts', action: 'create', content: 'export const x = 1;\n' }]),
     );
-    const task = makeTask({ id: 'T002', file: 'src/only.ts', action: 'create' });
+    const task = makeTask({ id: 'T002', suggestedFiles: ['src/only.ts'], action: 'create' });
 
     const result = await createApiImplementer(makeConfig()).implement(call(task));
 
@@ -204,8 +212,7 @@ describe('api BUILD — file-bundle-v1 through the public pipeline', () => {
     );
     const task = makeTask({
       id: 'T003',
-      file: 'src/moved.ts',
-      files: ['src/kept.ts', 'src/moved.ts'],
+      suggestedFiles: ['src/kept.ts', 'src/moved.ts'],
       action: 'modify',
     });
 
@@ -219,7 +226,7 @@ describe('api BUILD — file-bundle-v1 through the public pipeline', () => {
 
   it('writes nothing when the response is prose and a code fence instead of a bundle', async () => {
     respond('Here you go:\n```ts\nexport const x = 1;\n```');
-    const task = makeTask({ id: 'T004', file: 'src/none.ts', action: 'create' });
+    const task = makeTask({ id: 'T004', suggestedFiles: ['src/none.ts'], action: 'create' });
 
     const result = await createApiImplementer(makeConfig()).implement(call(task));
 
@@ -238,7 +245,7 @@ describe('api BUILD — file-bundle-v1 through the public pipeline', () => {
       '{"version":1,"files":[{"path":"src/cut.ts","action":"create","content":"export con',
       'length',
     );
-    const task = makeTask({ id: 'T005', file: 'src/cut.ts', action: 'create' });
+    const task = makeTask({ id: 'T005', suggestedFiles: ['src/cut.ts'], action: 'create' });
 
     const result = await createApiImplementer(makeConfig()).implement(call(task));
 
@@ -255,7 +262,7 @@ describe('api BUILD — file-bundle-v1 through the public pipeline', () => {
         { path: 'src/taken.ts', action: 'create', content: 'export const taken = 2;\n' },
       ]),
     );
-    const task = makeTask({ id: 'T006', file: 'src/taken.ts', action: 'create' });
+    const task = makeTask({ id: 'T006', suggestedFiles: ['src/taken.ts'], action: 'create' });
 
     const result = await createApiImplementer(makeConfig()).implement(call(task));
 
@@ -274,7 +281,7 @@ describe('api BUILD — file-bundle-v1 through the public pipeline', () => {
     );
     const task = makeTask({
       id: 'T007',
-      file: 'src/same.ts',
+      suggestedFiles: ['src/same.ts'],
       action: 'modify',
       // What disk holds is the baseline; a brief carrying something else does not
       // turn an unchanged answer into a change.
@@ -302,8 +309,7 @@ describe('api BUILD — file-bundle-v1 through the public pipeline', () => {
       );
       const task = makeTask({
         id: 'T008',
-        file: 'src/a.ts',
-        files: ['src/a.ts', 'src/locked/b.ts'],
+        suggestedFiles: ['src/a.ts', 'src/locked/b.ts'],
         action: 'create',
       });
       const implementer = createApiImplementer(makeConfig());
@@ -361,7 +367,7 @@ describe('api BUILD — file-bundle-v1 through the public pipeline', () => {
         { path: 'src/recorded.ts', action: 'modify', content: 'export const recorded = 2;\n' },
       ]),
     );
-    const task = makeTask({ id: 'T013', file: 'src/recorded.ts', action: 'create' });
+    const task = makeTask({ id: 'T013', suggestedFiles: ['src/recorded.ts'], action: 'create' });
 
     const result = await createApiImplementer(makeConfig()).implement({
       ...call(task),
@@ -381,12 +387,12 @@ describe('api BUILD — file-bundle-v1 through the public pipeline', () => {
       bundleText([{ path: 'src/mine.ts', action: 'create', content: 'export const mine = 1;\n' }]),
     );
     const implementer = createApiImplementer(makeConfig());
-    const mine = makeTask({ id: 'T009', file: 'src/mine.ts', action: 'create' });
+    const mine = makeTask({ id: 'T009', suggestedFiles: ['src/mine.ts'], action: 'create' });
 
     expect((await implementer.implement(call(mine))).success).toBe(true);
 
     write('src/theirs.ts', 'export const theirs = 1;\n');
-    const theirs = makeTask({ id: 'T010', file: 'src/theirs.ts', action: 'create' });
+    const theirs = makeTask({ id: 'T010', suggestedFiles: ['src/theirs.ts'], action: 'create' });
 
     const result = await implementer.implement(call(theirs));
 
@@ -409,7 +415,7 @@ describe('shell BUILD — the legacy code grammar is untouched', () => {
         contextLength: 8192,
       },
     });
-    const task = makeTask({ id: 'T011', file: 'src/legacy.ts', action: 'create' });
+    const task = makeTask({ id: 'T011', suggestedFiles: ['src/legacy.ts'], action: 'create' });
 
     const result = await createShellImplementer(config).implement(call(task, config));
 

@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  briefListTopOffset,
   buildRailFraction,
   getRailStageZones,
-  hitBriefTaskRow,
   hitRailStage,
   hitTranscriptRow,
   RAIL_CONTENT_LEFT_COL,
@@ -51,116 +49,6 @@ describe('hitTranscriptRow calibration', () => {
     ).toBeNull();
     expect(
       hitTranscriptRow({ rect: r, sgrX: r.right + 1, sgrY: r.top, visibleCount: r.height }),
-    ).toBeNull();
-  });
-});
-
-describe('hitBriefTaskRow', () => {
-  it('offsets the list by header chrome and divides by the row height', () => {
-    const r = rect();
-    const listTop = r.top + briefListTopOffset({ hasLoadError: false });
-    expect(
-      hitBriefTaskRow({
-        rect: r,
-        sgrX: 2,
-        sgrY: listTop,
-        hasLoadError: false,
-        visibleCount: 4,
-        previousCount: 0,
-      }),
-    ).toBe(0);
-    expect(
-      hitBriefTaskRow({
-        rect: r,
-        sgrX: 2,
-        sgrY: listTop + 2,
-        hasLoadError: false,
-        visibleCount: 4,
-        previousCount: 0,
-      }),
-    ).toBe(2);
-    expect(
-      hitBriefTaskRow({
-        rect: r,
-        sgrX: 2,
-        sgrY: listTop + 3,
-        hasLoadError: false,
-        visibleCount: 4,
-        previousCount: 0,
-      }),
-    ).toBe(3);
-  });
-
-  it('adds the windowed previousCount offset', () => {
-    const r = rect();
-    const listTop = r.top + briefListTopOffset({ hasLoadError: false });
-    expect(
-      hitBriefTaskRow({
-        rect: r,
-        sgrX: 2,
-        sgrY: listTop + 3,
-        hasLoadError: false,
-        visibleCount: 4,
-        previousCount: 2,
-      }),
-    ).toBe(5);
-  });
-
-  it('shifts the list down by one when a load error is shown', () => {
-    expect(briefListTopOffset({ hasLoadError: true })).toBe(
-      briefListTopOffset({ hasLoadError: false }) + 1,
-    );
-  });
-
-  it('maps rows past the error line when an error co-renders above the task list', () => {
-    const r = rect();
-    const errorListTop = r.top + briefListTopOffset({ hasLoadError: true });
-    // The first task row sits one line below the no-error case, after the error chrome row.
-    expect(
-      hitBriefTaskRow({
-        rect: r,
-        sgrX: 2,
-        sgrY: errorListTop,
-        hasLoadError: true,
-        visibleCount: 4,
-        previousCount: 0,
-      }),
-    ).toBe(0);
-    expect(
-      hitBriefTaskRow({
-        rect: r,
-        sgrX: 2,
-        sgrY: errorListTop + 2,
-        hasLoadError: true,
-        visibleCount: 4,
-        previousCount: 0,
-      }),
-    ).toBe(2);
-    // A click at the no-error offset lands on the error line itself: inert.
-    expect(
-      hitBriefTaskRow({
-        rect: r,
-        sgrX: 2,
-        sgrY: r.top + briefListTopOffset({ hasLoadError: false }),
-        hasLoadError: true,
-        visibleCount: 4,
-        previousCount: 0,
-      }),
-    ).toBeNull();
-  });
-
-  it('returns null past the last visible row', () => {
-    const r = rect();
-    const listTop = r.top + briefListTopOffset({ hasLoadError: false });
-    expect(
-      hitBriefTaskRow({
-        rect: r,
-        sgrX: 2,
-        sgrY: listTop + 12,
-        hasLoadError: false,
-        visibleCount: 4,
-        previousCount: 0,
-      }),
     ).toBeNull();
   });
 });

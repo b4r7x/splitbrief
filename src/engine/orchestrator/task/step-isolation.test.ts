@@ -52,13 +52,13 @@ describe('runSingleTask — worktree isolation', () => {
     const failing = makeTask({
       id: 'T001',
       action: 'modify',
-      file: 'src/main.ts',
+      suggestedFiles: ['src/main.ts'],
       scope: { inBounds: ['src/main.ts'] },
     });
     const passing = makeTask({
       id: 'T002',
       action: 'create',
-      file: 'src/b.ts',
+      suggestedFiles: ['src/b.ts'],
       scope: { inBounds: ['src/b.ts'] },
     });
     const state = implementingState([failing, passing]);
@@ -69,9 +69,12 @@ describe('runSingleTask — worktree isolation', () => {
       capabilities: { writesFiles: 'direct' },
       implement: vi.fn().mockImplementation(async (opts: ImplementerOptions) => {
         receivedDirs.push(opts.projectDir);
-        const target = join(opts.projectDir, opts.task.file);
+        const target = join(opts.projectDir, opts.task.suggestedFiles[0]);
         mkdirSync(dirname(target), { recursive: true });
-        writeFileSync(target, `export const ${basename(opts.task.file, '.ts')} = 999;\n`);
+        writeFileSync(
+          target,
+          `export const ${basename(opts.task.suggestedFiles[0], '.ts')} = 999;\n`,
+        );
         return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
       }),
       retry: vi.fn().mockResolvedValue({
@@ -156,7 +159,7 @@ describe('runSingleTask — worktree isolation', () => {
     const task = makeTask({
       id: 'T001',
       action: 'create',
-      file: 'src/partial.ts',
+      suggestedFiles: ['src/partial.ts'],
       scope: { inBounds: ['src/partial.ts'] },
     });
     const controller = new AbortController();

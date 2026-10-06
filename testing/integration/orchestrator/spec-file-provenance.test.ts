@@ -7,7 +7,6 @@ import {
 } from '../../../src/core/paths-io.js';
 import { TASKS_FILE } from '../../../src/core/paths.js';
 import { formatTasks } from '../../../src/engine/spec/formatter.js';
-import { parseTasksStrict } from '../../../src/engine/spec/tasks/parse.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 
@@ -31,7 +30,7 @@ afterEach(() => {
 function provenanceTask() {
   return makeTask({
     title: 'Create thing',
-    file: 'src/thing.ts',
+    suggestedFiles: ['src/thing.ts'],
     description: 'Make the thing.',
     tests: ['it works'],
     implementationSteps: ['write it'],
@@ -51,9 +50,6 @@ describe('tasks.md spec-file provenance', () => {
     expect(content.startsWith('---\ngenerated_by: splitbrief v')).toBe(true);
     expect(content).toContain('planner: claude-code');
     expect(content).toContain('id: T001');
-
-    const parsed = parseTasksStrict(content);
-    expect(parsed.map((t) => t.id)).toEqual([task.id]);
   });
 
   it('does not double-prepend provenance when tasks.md already carries file frontmatter', () => {

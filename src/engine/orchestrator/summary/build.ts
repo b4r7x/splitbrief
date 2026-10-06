@@ -3,17 +3,17 @@ import {
   reviewOutcomeOf,
   reviewOutcomeWord,
 } from '../../../core/review/verdict.js';
+import { readSpecFileOrEmpty } from '../../../core/paths-io.js';
+import { REVIEW_FILE } from '../../../core/paths.js';
+import { parseFinalReview } from '../../parsers/final-review.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { CallUsageEvidence } from '../../../core/schemas/usage-evidence.js';
 import type { RunnerKind } from '../../../core/schemas/enums.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { readSpecFileOrEmpty } from '../../../core/paths-io.js';
-import { REVIEW_FILE } from '../../../core/paths.js';
 import { readFinalReviewRecord } from '../../../core/review/store.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { hashTaskBrief } from '../../brief-hash.js';
-import { parseFinalReview } from '../../parsers/final-review.js';
 import { calculateCostBreakdown } from '../../providers/cost/breakdown.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import { getFailedTaskIds, getSkippedTaskIds } from '../../../core/state/selectors.js';
@@ -75,6 +75,7 @@ function readReviewOutcome(projectDir: string, sessionId: string): Summary['revi
       notes: counts.note,
     };
   }
+  // A session saved before the typed review has only its Markdown.
   const markdown = readSpecFileOrEmpty(ref, REVIEW_FILE);
   if (markdown === '') return undefined;
   const { verdict, findings } = parseFinalReview(markdown);
@@ -108,7 +109,7 @@ function readFileAttribution(
     booked.status === 'in_progress' &&
     (booked.briefHash != null
       ? booked.briefHash === currentPlanHash
-      : booked.title === current.title && booked.file === current.file);
+      : booked.title === current.title && booked.file === current.suggestedFiles[0]);
   return {
     changedFiles,
     stoppedAt: { taskId: current.id, partialFiles: sameBrief && booked ? booked.changedFiles : [] },
@@ -198,7 +199,6 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
   let evidenceSummary: Summary['evidenceSummary'];
   let briefQuality: Summary['briefQuality'];
   let driftSummary: Summary['driftSummary'];
-  let chainDriftSummary: Summary['chainDriftSummary'];
   let checkpointSummary: Summary['checkpointSummary'];
   let reviewPacket: Summary['reviewPacket'];
   let review: Summary['review'];
@@ -209,7 +209,6 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     evidenceSummary = rollups.evidenceSummary;
     briefQuality = rollups.briefQuality;
     driftSummary = rollups.driftSummary;
-    chainDriftSummary = rollups.chainDriftSummary;
     checkpointSummary = rollups.checkpointSummary;
     reviewPacket = rollups.reviewPacket;
     review = readReviewOutcome(projectDir, sessionId);
@@ -242,7 +241,6 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     ...(evidenceSummary && { evidenceSummary }),
     ...(briefQuality && { briefQuality }),
     ...(driftSummary && { driftSummary }),
-    ...(chainDriftSummary && { chainDriftSummary }),
     ...(checkpointSummary && { checkpointSummary }),
     ...(reviewPacket && { reviewPacket }),
     ...(review && { review }),

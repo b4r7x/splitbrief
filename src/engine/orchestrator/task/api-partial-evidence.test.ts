@@ -34,7 +34,7 @@ const SECOND = 'src/b.ts';
 const LANDED = 'export const a = 1;\n';
 
 function bundleTask(): Task {
-  return makeTask({ id: 'T001', action: 'create', file: ANCHOR, files: [ANCHOR, SECOND] });
+  return makeTask({ id: 'T001', action: 'create', suggestedFiles: [ANCHOR, SECOND] });
 }
 
 /**
@@ -190,6 +190,8 @@ describe('partial evidence and resume', () => {
       details: [
         `The partial writes stay in the run workspace at ${implState.workspace.projectDir}; the checkout is unchanged.`,
       ],
+      availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
+      recommendedAction: 'retry-same-worker',
     });
     expect(parked.currentTaskIndex).toBe(implState.state.currentTaskIndex);
     expect(

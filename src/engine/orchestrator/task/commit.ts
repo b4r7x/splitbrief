@@ -8,7 +8,7 @@ import type { BundleApplyResult } from '../../implementers/file-bundle.js';
 import { publishWarning, publishTaskComplete } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { isInDeclaredSet, taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
-import { isTaskCompleted, taskFiles } from '../../../core/schemas/task.js';
+import { isTaskCompleted } from '../../../core/schemas/task.js';
 
 type ValidateCommitOptions = {
   task: Task;
@@ -41,7 +41,7 @@ export function touchedNotSuggestedFiles(opts: {
 }): string[] {
   const suggested = [
     ...taskDeclaredPatterns(opts.task),
-    ...opts.tasks.filter((t) => isTaskCompleted(t.status)).flatMap((t) => taskFiles(t)),
+    ...opts.tasks.filter((t) => isTaskCompleted(t.status)).flatMap((t) => t.suggestedFiles),
   ];
   return opts.taskChangedFiles.filter((file) => !isInDeclaredSet(file, suggested));
 }

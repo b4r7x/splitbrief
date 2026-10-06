@@ -11,7 +11,7 @@ import { refreshCurrentCode } from '../task/refresh-code.js';
  */
 export async function estimatePlanContextFits(
   plan: PlanProposal,
-  opts: Parameters<typeof buildRoutingPreviewMetadata>[1],
+  opts: Omit<Parameters<typeof buildRoutingPreviewMetadata>[1], 'plan'>,
 ): Promise<Map<string, PlanTaskFit>> {
   const tasks = await Promise.all(
     plan.tasks

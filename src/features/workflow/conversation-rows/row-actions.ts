@@ -48,6 +48,7 @@ export function buildConversationRowActions(
       flushActivityBatch(step.batch);
       continue;
     }
+    if (step.kind === 'recovery') continue;
     const { event, globalIndex } = step;
     if (event.type === 'implementer_generate_done' && event.diff) {
       const key = diffEventKey(event, globalIndex);

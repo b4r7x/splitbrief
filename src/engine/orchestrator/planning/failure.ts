@@ -3,7 +3,6 @@ import type { PlanningPhaseResult } from './types.js';
 import type { PlannerCallbacksContext } from '../types.js';
 import { publishError } from '../events.js';
 import { workflowCancelledReasonFromSignal } from '../../events/workflow-cancel.js';
-import { WORKFLOW_REWIND_ABORT_REASON } from '../../../core/phases.js';
 import {
   parkStoppedRun,
   raisePendingRecovery,
@@ -39,10 +38,9 @@ export async function handlePlanningFailure(opts: {
     // End run closes the run behind this branch and keeps no park, so a stop row here would sit
     // in a closed run's log inviting a retry.
     const ending = workflowCancelledReasonFromSignal(wctx.signal) !== undefined;
-    const rewinding = wctx.signal?.reason === WORKFLOW_REWIND_ABORT_REASON;
     return {
       disposition: 'terminal',
-      state: ending || rewinding ? latest : parkStoppedRun({ ...ref, bus: wctx.bus }, latest),
+      state: ending ? latest : parkStoppedRun({ ...ref, bus: wctx.bus }, latest),
       outcome: ending ? 'cancelled' : 'interrupted',
     };
   }

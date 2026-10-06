@@ -31,7 +31,7 @@ describe('direct API receipt limits', () => {
   it('records a real partial API prefix and keeps the failed target unowned', async () => {
     const { projectDir, task: initial } = createTargetWriteProject();
     const second = 'src/nested/later.ts';
-    const task = { ...initial, files: [TARGET_WRITE_FILE, second] };
+    const task = { ...initial, suggestedFiles: [TARGET_WRITE_FILE, second] as [string, string] };
     mkdirSync(join(projectDir, 'src', 'nested'), { recursive: true });
     writeFileSync(join(projectDir, second), 'unchanged');
     const captured = await captureBundleBaseline({ projectDir, task });

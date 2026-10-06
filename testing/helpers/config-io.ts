@@ -35,7 +35,6 @@ export function optionalSectionsYaml(): Record<string, unknown> {
       ],
     },
     approval: {
-      enabled: true,
       feed_rejections_to_planner: false,
     },
   };

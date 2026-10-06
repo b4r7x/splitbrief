@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { createDraftDocument } from '../../core/composer/document.js';
 import { composerLiveStore } from './composer-live.js';
 
 describe('composerLiveStore', () => {
@@ -7,15 +8,15 @@ describe('composerLiveStore', () => {
   });
 
   it('starts empty and follows the composer draft', () => {
-    expect(composerLiveStore.get().empty).toBe(true);
-    composerLiveStore.setEmpty(false);
-    expect(composerLiveStore.get().empty).toBe(false);
+    expect(composerLiveStore.get()).toEqual({ empty: true, text: '' });
+    composerLiveStore.setDraft(createDraftDocument('add a default'));
+    expect(composerLiveStore.get()).toEqual({ empty: false, text: 'add a default' });
   });
 
-  it('keeps the same snapshot when the emptiness does not change', () => {
-    composerLiveStore.setEmpty(false);
+  it('keeps the same snapshot when the draft does not change', () => {
+    composerLiveStore.setDraft(createDraftDocument('x'));
     const first = composerLiveStore.get();
-    composerLiveStore.setEmpty(false);
+    composerLiveStore.setDraft(createDraftDocument('x'));
     expect(composerLiveStore.get()).toBe(first);
   });
 });

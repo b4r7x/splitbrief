@@ -442,7 +442,7 @@ describe('WorkflowScreen chrome calibration', () => {
     // The stop's own words keep the frame: the footer states where it parked and the legend names
     // the key that lifts it. The block's rows stand down with the attempt that is no longer in
     // flight, so neither the brief fraction nor the freshness line paints over the parked run.
-    expect(frame).toContain('Paused at T001');
+    expect(frame).toContain('Stopped at T001');
     expect(frame).toContain('/resume');
     expect(frame).not.toContain('briefs passed');
     expect(frame).not.toContain('no update yet');
@@ -471,7 +471,7 @@ describe('WorkflowScreen showing a run at rest', () => {
       ref: { projectDir, sessionId: 'at-rest-session' },
       status: {
         kind: 'open',
-        stop: { kind: 'paused', at: 'mid-step' },
+        stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } },
         resumeAt: { kind: 'brief', taskId: taskId('T003'), attempt: 0 },
       },
       hydration: { kind: 'loaded', state: makeWorkflowState({ phase: 'implementing' }) },
@@ -534,7 +534,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     );
     await flushEffects();
     const byline = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(byline).toContain('Paused at T003');
+    expect(byline).toContain('Stopped at T003');
     expect(byline).toContain('type a correction or ⏎ to continue');
 
     ui.stdin.write('use the cached parser');
@@ -555,26 +555,23 @@ describe('WorkflowScreen showing a run at rest', () => {
 
   /** A run at rest on a final review that failed after its repair cycles ran out. */
   function renderFailedReviewRun() {
-    const issue = {
-      ...buildReviewFailedRecoveryIssue({
-        blocking: 1,
-        phase: 'complete',
-        createdAt: '2026-09-24T00:00:00.000Z',
-      }),
-      status: 'paused' as const,
-    };
+    const issue = buildReviewFailedRecoveryIssue({
+      blocking: 1,
+      phase: 'complete',
+      createdAt: '2026-09-24T00:00:00.000Z',
+    });
     const halted = makeWorkflowState({
       phase: 'complete',
       reviewStatus: 'failed',
       fixCycles: { used: 2, allowance: 2, notes: [] },
-      tasks: [makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' })],
+      tasks: [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })],
       currentTaskIndex: 1,
       pendingRecovery: issue,
     });
     const record = openRun({
       status: {
         kind: 'open',
-        stop: { kind: 'halted', issue },
+        stop: { kind: 'waiting-for-you', on: { kind: 'halt', issue } },
         resumeAt: { kind: 'review', cycle: 2 },
       },
       hydration: { kind: 'loaded', state: halted },
@@ -679,8 +676,8 @@ describe('WorkflowScreen showing a run at rest', () => {
     const issue = makeRecoveryIssue({
       reason: 'dependency-blocked',
       phase: 'implementing',
-      availableActions: ['pause-run', 'end-run'],
-      recommendedAction: 'pause-run',
+      availableActions: ['skip-current-task', 'end-run'],
+      recommendedAction: 'skip-current-task',
     });
     const halted = makeWorkflowState({
       phase: 'implementing',
@@ -690,7 +687,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     const record = openRun({
       status: {
         kind: 'open',
-        stop: { kind: 'halted', issue },
+        stop: { kind: 'waiting-for-you', on: { kind: 'halt', issue } },
         resumeAt: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
       },
       hydration: { kind: 'loaded', state: halted },
@@ -725,7 +722,7 @@ describe('WorkflowScreen showing a run at rest', () => {
 
     ui.stdin.write('\r');
     await vi.waitFor(() => {
-      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Pause run');
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip task');
     });
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain('Tab to choose an action…');
@@ -780,7 +777,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
     await flushEffects();
     const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
-    expect(lines.at(-1)?.trim()).toBe('Choose Apply, Show diff or Discard');
+    expect(lines.at(-1)?.trim()).toBe('Pick Apply as is, Show diff or Discard');
     ui.unmount();
   });
 
@@ -880,9 +877,7 @@ describe('WorkflowScreen showing a run at rest', () => {
     const commands = workflowCommands(
       makeCtx({
         acceptRun: async (confirm) =>
-          confirm
-            ? { status: 'applied', files: ['src/form.ts'] }
-            : { status: 'confirm-override', findings: ['missing null check'] },
+          confirm ? { status: 'applied', files: ['src/form.ts'] } : { status: 'confirm-override' },
         setFeedbackMessage: feedbackStore.setMessage,
         setFeedbackError: feedbackStore.setError,
       }),
@@ -1020,20 +1015,20 @@ describe('WorkflowScreen stating a silent seat', () => {
     await flushEffects();
 
     const beside = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(beside).toContain('No update for 5m 10s');
+    expect(beside).toContain('a tool is running · 5m 10s');
     expect(beside).toContain('Still working · tools report when done');
     expect(beside).not.toContain('silent 5m');
 
     vi.advanceTimersByTime(3_000);
     await flushEffects();
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('No update for 5m 13s');
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('a tool is running · 5m 13s');
 
     overlayStore.open('stop-sheet');
     await flushEffects();
 
     const menuOpen = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(menuOpen).toContain('Stop options');
-    expect(menuOpen).not.toContain('No update');
+    expect(menuOpen).not.toContain('a tool is running');
     expect(menuOpen).toContain('Still working — silent 5m 13s · tools report when done');
 
     vi.advanceTimersByTime(2_000);

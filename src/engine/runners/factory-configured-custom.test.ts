@@ -462,7 +462,7 @@ describe('configured custom runner factory behavior', () => {
       ].join('\n'),
       legacyProgram: `require('node:fs').writeFileSync(${JSON.stringify(fixture.legacyMarker)}, 'legacy');`,
     });
-    const task = makeTask({ file: 'src/factory-output.ts' });
+    const task = makeTask({ suggestedFiles: ['src/factory-output.ts'] });
 
     const implementer = await createImplementer(config, {
       customRuntime: factoryRuntime(fixture, 'interactive'),
@@ -475,7 +475,7 @@ describe('configured custom runner factory behavior', () => {
       onOutput: () => {},
     });
     const observation = parseObservation(readFileSync(fixture.configuredMarker, 'utf8'));
-    const target = readFileSync(join(fixture.projectDir, task.file), 'utf8');
+    const target = readFileSync(join(fixture.projectDir, task.suggestedFiles[0]), 'utf8');
 
     expect(result.success).toBe(true);
     expect(result.output).toContain('***REDACTED***');
@@ -504,7 +504,7 @@ describe('configured custom runner factory behavior', () => {
       ].join('\n'),
       legacyProgram: `require('node:fs').writeFileSync(${JSON.stringify(fixture.legacyMarker)}, 'legacy');`,
     });
-    const task = makeTask({ file: 'src/factory-direct.ts' });
+    const task = makeTask({ suggestedFiles: ['src/factory-direct.ts'] });
     const outerStage = await createStagedProject({ projectDir: fixture.projectDir });
 
     try {
@@ -519,14 +519,14 @@ describe('configured custom runner factory behavior', () => {
         onOutput: () => {},
       });
       const observation = parseObservation(readFileSync(fixture.configuredMarker, 'utf8'));
-      const target = readFileSync(join(outerStage.projectDir, task.file), 'utf8');
+      const target = readFileSync(join(outerStage.projectDir, task.suggestedFiles[0]), 'utf8');
 
       expect(result.success).toBe(true);
       expect(existsSync(fixture.configuredMarker)).toBe(true);
       expect(existsSync(fixture.legacyMarker)).toBe(false);
       expect(observation.source).toBe(fixture.sourceValue);
       expect(realpathSync(observation.cwd)).toBe(realpathSync(outerStage.projectDir));
-      expect(existsSync(join(fixture.projectDir, task.file))).toBe(false);
+      expect(existsSync(join(fixture.projectDir, task.suggestedFiles[0]))).toBe(false);
       expect(exportedString(target, 'source')).toBe(fixture.sourceValue);
       expect(exportedString(target, 'childCwd')).toBe(observation.cwd);
       expect(implementer.capabilities).toEqual({ writesFiles: 'direct' });

@@ -64,7 +64,7 @@ describe('runHeadless — every pending recovery status fails the run', () => {
     dirs = [];
   });
 
-  it.each(['paused', 'applying'] as const)(
+  it.each(['awaiting-user', 'applying'] as const)(
     'a run ending with a %s recovery exits 1, emits the record and names the resolution route',
     async (status) => {
       const projectDir = createHeadlessGitProject(`headless-pending-${status}`);
@@ -113,24 +113,24 @@ describe('runHeadless — every pending recovery status fails the run', () => {
 
       expect(error).toMatchObject({
         exitCode: 1,
-        message: expect.stringContaining('Recovery required (context-overflow)'),
+        message: expect.stringMatching(/^Seat down \(context-overflow\): /),
       });
-      expect(error.message).toContain(`Recommended: ${issue.recommendedAction}`);
-      // The recommended pause is a row of the recovery panel, which a headless continue cannot show.
+      expect(error.message).toContain('Recommended: retry-same-worker');
       expect(error.message).toContain(
-        `Continue with: splitbrief continue ${sessionId}, then choose Pause run in the recovery panel`,
+        `Continue with: splitbrief continue ${sessionId} --action retry [--plain|--json]`,
       );
-      expect(error.message).not.toContain('[--plain|--json]');
 
       const jsonLines = stdoutChunks
         .join('')
         .trim()
         .split('\n')
         .filter((line) => line.trim().startsWith('{'))
-        .map((line) => JSON.parse(line) as { type?: string; status?: string });
+        .map((line) => HeadlessJsonRecordSchema.parse(JSON.parse(line)));
       expect(jsonLines).toContainEqual(
         expect.objectContaining({
           type: 'recovery_required',
+          halt: 'seat-down',
+          reason: 'context-overflow',
           status,
           resumeCommand: formatResumeCommand(sessionId, issue),
         }),
@@ -147,7 +147,7 @@ describe('runHeadless — every pending recovery status fails the run', () => {
     writeActive({ projectDir, sessionId });
 
     const task = makeTask({ id: 'T001' });
-    const issue = makeRecoveryIssue({ status: 'paused', recommendedAction: 'skip-current-task' });
+    const issue = makeRecoveryIssue({ recommendedAction: 'skip-current-task' });
     const state = transition(
       { ...createInitialState('recover me'), phase: 'implementing', tasks: [task] },
       { type: 'SET_PENDING_RECOVERY', issue },
@@ -185,14 +185,11 @@ describe('runHeadless — every pending recovery status fails the run', () => {
     writeActive({ projectDir, sessionId });
 
     const task = makeTask({ id: 'T001' });
-    const issue = {
-      ...buildContextOverflowRecoveryIssue({
-        task,
-        phase: 'implementing',
-        createdAt: '2026-04-28T12:00:00.000Z',
-      }),
-      status: 'paused' as const,
-    };
+    const issue = buildContextOverflowRecoveryIssue({
+      task,
+      phase: 'implementing',
+      createdAt: '2026-04-28T12:00:00.000Z',
+    });
     const state = transition(
       {
         ...createInitialState('recover me'),
@@ -223,7 +220,7 @@ describe('runHeadless — every pending recovery status fails the run', () => {
     );
 
     expect(error).toMatchObject({ exitCode: 1 });
-    expect(error.message).toContain('Recovery required (context-overflow)');
+    expect(error.message).toContain('Seat down (context-overflow)');
     expect(stdoutChunks.join('')).not.toContain('recovery_required');
   });
 });
@@ -249,7 +246,7 @@ describe('emitRecoveryAndFailIfPending — a usage-limit halt', () => {
     try {
       expect(() =>
         emitRecoveryAndFailIfPending({ state, sessionId: 'sess-limit', writeRecord: vi.fn() }),
-      ).toThrow(`Recovery required (runner-usage-limit): ${message} (${note})\n`);
+      ).toThrow(`Seat down (runner-usage-limit): ${message} (${note})\n`);
     } finally {
       vi.useRealTimers();
     }
@@ -261,7 +258,7 @@ describe('emitRecoveryAndFailIfPending — an answered partial Apply', () => {
     reason: 'apply-partial',
     phase: 'complete',
     message: 'Apply stopped part way',
-    availableActions: ['retry-same-worker', 'restore-backup', 'pause-run', 'end-run'],
+    availableActions: ['retry-same-worker', 'restore-backup', 'end-run'],
     recommendedAction: 'retry-same-worker',
   });
 
@@ -278,11 +275,20 @@ describe('emitRecoveryAndFailIfPending — an answered partial Apply', () => {
     },
   );
 
-  it('still stops on a partial Apply nobody answered', () => {
+  it('still stops on a partial Apply nobody answered, as a halt that needs you', () => {
     const state = { ...createInitialState('apply me'), pendingRecovery: partial };
+    const writeRecord = vi.fn();
     expect(() =>
-      emitRecoveryAndFailIfPending({ state, sessionId: 'sess-apply', writeRecord: vi.fn() }),
-    ).toThrow('Recovery required (apply-partial)');
+      emitRecoveryAndFailIfPending({ state, sessionId: 'sess-apply', writeRecord }),
+    ).toThrow('Needs you (apply-partial): Apply stopped part way\nRecommended: retry-same-worker');
+    expect(writeRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'recovery_required',
+        halt: 'needs-you',
+        reason: 'apply-partial',
+      }),
+      process.stdout,
+    );
   });
 });
 
@@ -326,14 +332,11 @@ describe('runHeadless — with a reviewer configured', () => {
       },
       {
         type: 'SET_PENDING_RECOVERY',
-        issue: {
-          ...buildContextOverflowRecoveryIssue({
-            task,
-            phase: 'implementing',
-            createdAt: '2026-04-28T12:00:00.000Z',
-          }),
-          status: 'paused',
-        },
+        issue: buildContextOverflowRecoveryIssue({
+          task,
+          phase: 'implementing',
+          createdAt: '2026-04-28T12:00:00.000Z',
+        }),
       },
     );
     saveState({ projectDir, sessionId }, state);
@@ -352,7 +355,7 @@ describe('runHeadless — with a reviewer configured', () => {
         _planner: makePlanner(),
         _implementer: makeImplementer(),
       }),
-    ).rejects.toMatchObject({ message: expect.stringContaining('Recovery required') });
+    ).rejects.toMatchObject({ message: expect.stringContaining('Seat down (context-overflow)') });
 
     const lines = stdoutChunks
       .join('')
@@ -430,7 +433,7 @@ describe('runHeadless — with a reviewer configured', () => {
     );
     expect(error).toMatchObject({
       exitCode: 1,
-      message: expect.stringContaining('Recovery required (seat-protocol-error)'),
+      message: expect.stringContaining('Seat down (seat-protocol-error)'),
     });
 
     const lines = stdoutChunks
@@ -613,6 +616,110 @@ describe('runHeadless — the run\u2019s terminal outcome sets the exit code', (
         `Discard with: splitbrief continue ${sessionId} --action discard`,
       ].join('\n'),
     );
-    expect(records()).toEqual([]);
+    expect(records()).toEqual([
+      {
+        type: 'ready_to_apply',
+        sessionId,
+        override: false,
+        applyCommand: `splitbrief continue ${sessionId} --action apply`,
+        discardCommand: `splitbrief continue ${sessionId} --action discard`,
+      },
+    ]);
+  });
+
+  it('a run accepted as is in a workspace ends ready to apply as an override', async () => {
+    const { projectDir, sessionId } = seedFinishedSession('ready-override', {
+      reviewStatus: 'failed',
+      acceptedAsIs: { at: '2026-09-01T00:00:00.000Z', findings: ['F1'] },
+      workspace: {
+        kind: 'worktree',
+        path: '/nonexistent/splitbrief-ready-workspace',
+        base: { snapshotId: 'workspace-base', head: null },
+      },
+    });
+
+    await runHeadless({
+      prepared: preparedHeadlessExecution({ projectDir, sessionId, feature: 'finish me' }),
+    });
+
+    expect(records()).toEqual([
+      {
+        type: 'ready_to_apply',
+        sessionId,
+        override: true,
+        applyCommand: `splitbrief continue ${sessionId} --action apply`,
+        discardCommand: `splitbrief continue ${sessionId} --action discard`,
+      },
+    ]);
+  });
+
+  it.each(['checkout', 'no-workspace'] as const)(
+    'a %s run accepted as is exits 0 and keeps its failed review',
+    async (kind) => {
+      const { projectDir, sessionId } = seedFinishedSession(`accepted-${kind}`, {
+        reviewStatus: 'failed',
+        acceptedAsIs: { at: '2026-09-01T00:00:00.000Z', findings: ['F1'] },
+        ...(kind === 'checkout' && {
+          workspace: {
+            kind: 'checkout',
+            path: '/checkout',
+            base: { snapshotId: 'base', head: null },
+          },
+        }),
+      });
+      await runHeadless({
+        prepared: preparedHeadlessExecution({ projectDir, sessionId, feature: 'finish me' }),
+      });
+      expect(loadState({ projectDir, sessionId })?.reviewStatus).toBe('failed');
+      expect(records()).toEqual([]);
+    },
+  );
+
+  it('a run whose state recorded a failure exits 1, whatever its session row says', async () => {
+    const { projectDir, sessionId } = seedFinishedSession('failed', {
+      phase: 'implementing',
+      lastFailure: {
+        step: { kind: 'planner', call: 'plan' },
+        message: 'Planning failed.',
+        at: '2026-09-01T00:00:00.000Z',
+      },
+    });
+
+    const error = await runAndCatch(projectDir, sessionId);
+
+    expect(error).toMatchObject({
+      exitCode: 1,
+      message: 'Workflow failed \u2014 see the error output above.',
+    });
+    expect(records()).toEqual([
+      { type: 'error', message: `Session ${sessionId} ended with status failed.` },
+    ]);
+  });
+
+  it('a stopped run with no recorded failure does not report a failure', async () => {
+    const { projectDir, sessionId } = seedFinishedSession('stopped', { phase: 'implementing' });
+    saveSummary(
+      { projectDir, sessionId },
+      {
+        id: sessionId,
+        feature: 'finish me',
+        startedAt: Date.now(),
+        completedAt: null,
+        stateVersion: 4,
+        status: 'open',
+        stop: 'stopped',
+        summary: null,
+      },
+    );
+
+    const error = await runAndCatch(projectDir, sessionId);
+
+    expect(error).toMatchObject({
+      exitCode: 1,
+      message: 'Workflow did not complete \u2014 the run stopped early.',
+    });
+    expect(records()).toEqual([
+      { type: 'error', message: `Session ${sessionId} ended with status open.` },
+    ]);
   });
 });

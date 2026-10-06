@@ -243,4 +243,34 @@ describe('planModelRows on the captured listings', () => {
 
     expect(plan.rows.get('claude-opus-5-5')?.label).toBe('Opus 5.5');
   });
+
+  it('leaves the alias its name and gives a custom full id beside it its own id', () => {
+    const item = buildPickerOptions(
+      'planner',
+      assemblePickerDescriptors(),
+      { cliTools: [cliDetectionFor('ready', 'claude-code')], providers: [], providerOutcomes: [] },
+      undefined,
+    ).find((option) => option.id === 'claude-code');
+    const customModels = ['claude-opus-5-5'];
+    const models = buildRightModels({ role: 'planner', customModels, currentItem: item });
+    const rows = buildRightRows({
+      models,
+      expandedModelId: null,
+      providerAuth: undefined,
+      hasOracle: false,
+      catalogLane: 'ready',
+      persistedModel: 'claude-opus-5-5',
+      customModels,
+      browseCatalog: false,
+    });
+
+    for (const width of ROW_WIDTHS.slice(0, 2)) {
+      const plan = planModelRows({ rows, width, providerId: 'claude-code' });
+      expect({
+        width,
+        alias: plan.rows.get('opus')?.label,
+        custom: plan.rows.get('claude-opus-5-5')?.label,
+      }).toEqual({ width, alias: 'Opus 5.5', custom: 'claude-opus-5-5' });
+    }
+  });
 });

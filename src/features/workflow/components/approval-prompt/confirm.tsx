@@ -42,6 +42,11 @@ function confirmWith(reason: string): void {
   closeApprovalPrompt({ decision: 'confirm', phrase: CONFIRM_PHRASE, reason });
 }
 
+// An answer, unlike a prompt closed by a stop: the engine reads `user_cancelled` as the stop.
+function deny(): void {
+  closeApprovalPrompt({ decision: 'deny', reason: 'user_denied' });
+}
+
 interface ConfirmApprovalPromptProps {
   request: TieredApprovalRequest;
   promptRows: number;
@@ -82,7 +87,7 @@ export function ConfirmApprovalPrompt({
       return;
     }
     if (key === 'x') {
-      closeApprovalPrompt();
+      deny();
       return;
     }
     confirmWith(CONFIRM_REASON_UNSTATED);
@@ -92,7 +97,7 @@ export function ConfirmApprovalPrompt({
     (input, key) => {
       if (Date.now() < graceUntil) return;
       if (key.escape) {
-        closeApprovalPrompt();
+        deny();
         return;
       }
 
@@ -135,7 +140,7 @@ export function ConfirmApprovalPrompt({
         return;
       }
       if (letter === 'x' || letter === 'n') {
-        closeApprovalPrompt();
+        deny();
         return;
       }
       if (letter !== 'y') return;

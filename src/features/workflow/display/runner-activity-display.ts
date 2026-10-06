@@ -55,7 +55,6 @@ export interface RunnerActivityLedgerItem {
   valueTone: RunnerActivityLedgerTone;
   fitMode: ActivityDisplayValueFit;
   severity: RunnerActivitySeverity;
-  pinned: boolean;
   rawMarker: string | null;
   diagnosticPreview: string | null;
 }
@@ -107,7 +106,6 @@ export function runnerActivityLedgerItem(
     valueTone: valueTone(display.stage, severity),
     fitMode: activityFitMode(label, display),
     severity,
-    pinned: severity !== 'info',
     rawMarker,
     diagnosticPreview,
   };
@@ -213,19 +211,6 @@ export function runnerActivityRoleLabel(
       return 'Escalation';
     default:
       return assertNever(role);
-  }
-}
-
-export function runnerActivitySeverityRank(severity: RunnerActivitySeverity): number {
-  switch (severity) {
-    case 'info':
-      return 0;
-    case 'warning':
-      return 1;
-    case 'error':
-      return 2;
-    default:
-      return assertNever(severity);
   }
 }
 

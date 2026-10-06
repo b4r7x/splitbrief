@@ -1,4 +1,4 @@
-import type { EngineEvent } from '../../../engine/events/types.js';
+import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import {
   cancelRunningOperations,
   operationStatusFromFailure,
@@ -7,7 +7,7 @@ import {
   updateKnownOperation,
 } from './runner.js';
 import { closePlannerStatusFallbacks, updatePlannerStatusFallback } from './planner-status.js';
-import type { OperationsState, RunningValidationStage } from './state.js';
+import type { OpenTool, OperationsState, RunningValidationStage } from './state.js';
 import { appendWarning, showsWarningOnPrimarySurface } from './warnings.js';
 
 type ValidationEvent = Extract<EngineEvent, { type: 'validate' | 'validation_baseline' }>;
@@ -32,6 +32,36 @@ function applyValidationStage(state: OperationsState, event: ValidationEvent): O
   return { ...state, validationStage: next };
 }
 
+// Activity that is not a tool the seat runs: it never opens, so it never holds a silence open.
+const NOT_A_TOOL: ReadonlySet<EngineEventOf<'runner_call_activity'>['kind']> = new Set([
+  'text',
+  'session',
+  'artifact',
+  'warning',
+  'error',
+]);
+
+// A tool stays open from its first started or updated activity until any other stage of the same
+// activity closes it; the time it opened is the first one, however many updates follow.
+function nextOpenTools(
+  open: readonly OpenTool[],
+  event: EngineEventOf<'runner_call_activity'>,
+): readonly OpenTool[] {
+  const opened = open.find((tool) => tool.activityId === event.activityId);
+  const rest = open.filter((tool) => tool.activityId !== event.activityId);
+  if (event.stage !== 'started' && event.stage !== 'updated') return rest;
+  return [
+    ...rest,
+    {
+      activityId: event.activityId,
+      kind: event.kind,
+      label: event.label,
+      ...(event.target !== undefined && { target: event.target }),
+      since: opened?.since ?? event.ts,
+    },
+  ];
+}
+
 export function updateOperations(state: OperationsState, event: EngineEvent): OperationsState {
   switch (event.type) {
     case 'validate':
@@ -43,6 +73,13 @@ export function updateOperations(state: OperationsState, event: EngineEvent): Op
       return updateKnownOperation(state, event.callId, (operation) =>
         operation.status === 'running' && operation.apiRuntimeStatus?.phase !== 'finished'
           ? { ...operation, apiRuntimeStatus: event.runtimeStatus }
+          : operation,
+      );
+    case 'runner_call_activity':
+      if (NOT_A_TOOL.has(event.kind)) return state;
+      return updateKnownOperation(state, event.callId, (operation) =>
+        operation.status === 'running'
+          ? { ...operation, openTools: nextOpenTools(operation.openTools ?? [], event) }
           : operation,
       );
     case 'runner_call_usage':

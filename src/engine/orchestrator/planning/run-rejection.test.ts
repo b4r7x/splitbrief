@@ -79,7 +79,7 @@ describe('runPlanningPhase — planner rejection context', () => {
   it('does not include prior rejection context when feedRejectionsToPlanner is false', async () => {
     const { result, prompts } = await runSeededPlanning({
       workflow: {},
-      approval: { enabled: true, feedRejectionsToPlanner: false },
+      approval: { feedRejectionsToPlanner: false },
     });
 
     expect(result.disposition).toBe('ready-for-tasks');

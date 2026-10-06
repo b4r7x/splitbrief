@@ -94,6 +94,20 @@ describe('buildSummary', () => {
     ).toThrow('Invalid typed review');
   });
 
+  it('reads the verdict of a run that saved only review.md', () => {
+    const ref = setupProject(dirs);
+    writeSpecFile(ref, 'review.md', '### Verdict\npass');
+    const summary = buildSummary({
+      ...ref,
+      feature: 'auth',
+      state: makeState(),
+      startTime: Date.now(),
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+    });
+    expect(summary.review).toEqual({ verdict: 'pass', critical: 0, warnings: 0, notes: 0 });
+  });
+
   it('all tasks completed locally → escalationRate 0', () => {
     const summary = buildSummary({
       feature: 'auth',

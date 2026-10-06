@@ -36,12 +36,16 @@ describe('escalation prompts', () => {
     const common = { task, lastAttempt: 'old code', error: 'failed', isolationDir: '/work' };
 
     const filePrompt = escalationPrompts.buildEscalationPrompt({ ...common, outputMode: 'files' });
-    expect(filePrompt).toContain(`Edit \`${task.file}\` directly in the current working directory`);
+    expect(filePrompt).toContain(
+      `Edit \`${task.suggestedFiles[0]}\` directly in the current working directory`,
+    );
     expect(filePrompt).toContain('Make the changes on disk');
     expect(filePrompt).not.toContain('Respond with the complete file content');
 
     const textPrompt = escalationPrompts.buildEscalationPrompt({ ...common, outputMode: 'text' });
-    expect(textPrompt).toContain(`Respond with the complete file content for \`${task.file}\``);
+    expect(textPrompt).toContain(
+      `Respond with the complete file content for \`${task.suggestedFiles[0]}\``,
+    );
     expect(textPrompt).not.toContain('Make the changes on disk');
   });
 

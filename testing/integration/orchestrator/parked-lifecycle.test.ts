@@ -13,7 +13,6 @@ import { consultCallAnswering, guidanceConsult } from '#testing/helpers/typed-pl
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
 import { loadState } from '../../../src/core/state/persistence.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../../src/engine/events/workflow-cancel.js';
-import { WORKFLOW_REWIND_ABORT_REASON } from '../../../src/core/phases.js';
 import { runSingleTask } from '../../../src/engine/orchestrator/task/step.js';
 
 const roots: string[] = [];
@@ -26,10 +25,10 @@ function fixture() {
   execFileSync('git', ['init', '--quiet'], { cwd: projectDir });
   const sessionId = 'retention';
   ensureSessionDir(projectDir, sessionId);
-  const task = makeTask({ file: 'partial.ts' });
+  const task = makeTask({ suggestedFiles: ['partial.ts'] });
   const state = makeImplStateWithMetadata([task]);
   const config = makeNoValidationConfig({
-    approval: { enabled: false, feedRejectionsToPlanner: false },
+    approval: { feedRejectionsToPlanner: false },
   });
   return { projectDir, sessionId, task, state, config };
 }
@@ -101,7 +100,6 @@ it.each(['initial', 'local', 'consult'] as const)(
     let approvals = 0;
     const config = makeNoValidationConfig({
       approval: {
-        enabled: true,
         feedRejectionsToPlanner: false,
       },
     });
@@ -248,7 +246,7 @@ it.each(['returned', 'thrown', 'success'] as const)(
   },
 );
 
-it.each(['end', 'rewind', 'failure'] as const)('discards initial output for %s', async (kind) => {
+it.each(['end', 'failure'] as const)('discards initial output for %s', async (kind) => {
   const f = fixture();
   const stop = new AbortController();
   let workspace = '';
@@ -260,13 +258,7 @@ it.each(['end', 'rewind', 'failure'] as const)('discards initial output for %s',
       implement: async (opts) => {
         workspace = opts.projectDir;
         writeFileSync(join(workspace, 'partial.ts'), 'discarded output');
-        stop.abort(
-          kind === 'end'
-            ? WORKFLOW_USER_CANCELLED_ABORT_REASON
-            : kind === 'rewind'
-              ? WORKFLOW_REWIND_ABORT_REASON
-              : undefined,
-        );
+        stop.abort(kind === 'end' ? WORKFLOW_USER_CANCELLED_ABORT_REASON : undefined);
         return kind === 'failure'
           ? { success: false, output: '', error: 'ordinary error' }
           : { success: true, output: '' };

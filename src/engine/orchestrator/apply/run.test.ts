@@ -13,9 +13,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type ApplyRun, withApplyRun } from '#testing/helpers/apply-run.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
-import { REVIEW_FILE } from '../../../core/paths.js';
-import { writeSpecFile } from '../../../core/paths-io.js';
-import { allowedActionsForReason } from '../../../core/schemas/recovery/policy.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { deriveRunStatus } from '../../../core/sessions/run-status.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
@@ -290,16 +287,12 @@ describe('runApply', { timeout: 60_000 }, () => {
           ]),
         );
         expect(issue?.details.some((line) => line.includes(run.ws))).toBe(true);
-        expect(issue?.availableActions).toEqual(['retry-same-worker', 'pause-run', 'end-run']);
-        expect(
-          issue?.availableActions.every((a) =>
-            allowedActionsForReason('apply-conflict').includes(a),
-          ),
-        ).toBe(true);
+        expect(issue?.availableActions).toEqual(['retry-same-worker', 'end-run']);
+        expect(issue?.recommendedAction).toBe('retry-same-worker');
         const status = deriveRunStatus({ state, liveness: 'not-alive' });
         expect(status).toMatchObject({
           kind: 'open',
-          stop: { kind: 'halted' },
+          stop: { kind: 'waiting-for-you', on: { kind: 'halt' } },
           resumeAt: { kind: 'apply' },
         });
       },
@@ -336,7 +329,7 @@ describe('runApply', { timeout: 60_000 }, () => {
     );
   });
 
-  it('partial apply leaves a durable record and the run reads open halted (not ready)', async () => {
+  it('partial apply leaves a durable record and the run waits for you on the halt (not ready)', async () => {
     await withApplyRun(
       { 'a.txt': 'base a\n', 'b.txt': 'base b\n' },
       { sessionId: SESSION_ID },
@@ -366,7 +359,7 @@ describe('runApply', { timeout: 60_000 }, () => {
         const status = deriveRunStatus({ state, liveness: 'not-alive' });
         expect(status).toMatchObject({
           kind: 'open',
-          stop: { kind: 'halted' },
+          stop: { kind: 'waiting-for-you', on: { kind: 'halt' } },
           resumeAt: { kind: 'apply' },
         });
 
@@ -401,8 +394,8 @@ describe('runApply', { timeout: 60_000 }, () => {
           affectedTaskIds: [],
           message: 'Apply found 1 conflicting file',
           details: [],
-          availableActions: ['retry-same-worker', 'pause-run', 'end-run'],
-          recommendedAction: 'pause-run',
+          availableActions: ['retry-same-worker', 'end-run'],
+          recommendedAction: 'retry-same-worker',
           createdAt: '2026-10-04T09:00:00.000Z',
         },
       });
@@ -457,7 +450,7 @@ describe('runApply', { timeout: 60_000 }, () => {
 
   it.each([
     ['apply-checkout-changed', 'changed in your checkout during Apply'],
-    ['apply-workspace-changed', undefined],
+    ['apply-workspace-changed', 'changed in the run workspace during Apply'],
   ] as const)(
     '%s during the merge becomes an apply-conflict halt without a promote',
     async (code, words) => {
@@ -475,8 +468,7 @@ describe('runApply', { timeout: 60_000 }, () => {
         expect(state.applying).toBeUndefined();
         expect(state.pendingRecovery?.reason).toBe('apply-conflict');
         expect(state.pendingRecovery?.files).toEqual(['a.txt']);
-        if (words !== undefined)
-          expect(state.pendingRecovery?.details).toContain(`a.txt · ${words}`);
+        expect(state.pendingRecovery?.details).toContain(`a.txt · ${words}`);
       });
     },
   );
@@ -945,11 +937,6 @@ describe('runApply integration review', { timeout: 60_000 }, () => {
     await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
       writeFileSync(join(run.ws, 'a.txt'), lines('ONE', 'two', 'three', 'four', 'five'));
       const ref = { projectDir: run.dir, sessionId: run.sessionId };
-      writeSpecFile(
-        ref,
-        REVIEW_FILE,
-        '### Verdict\nfail\n\n### Findings\n- **Critical**: a.txt drops the error\n',
-      );
       const issue = buildReviewFailedRecoveryIssue({
         blocking: 1,
         phase: 'complete',
@@ -962,6 +949,30 @@ describe('runApply integration review', { timeout: 60_000 }, () => {
         reviewStatus: 'failed',
         workspace: run.workspace,
         pendingRecovery: issue,
+        review: {
+          cycle: 0,
+          at: new Date().toISOString(),
+          outcome: 'fail',
+          verification: [],
+          verdict: {
+            tasks: [],
+            criteria: [],
+            findings: [
+              {
+                id: 'F1',
+                kind: 'defect',
+                severity: 'blocking',
+                taskId: null,
+                file: 'a.txt',
+                line: null,
+                text: 'a.txt drops the error',
+                acceptance: null,
+                checkIds: [],
+                criterionId: null,
+              },
+            ],
+          },
+        },
         reviewedCandidate: await captureReviewedCandidate({ ...ref, workspace: run.workspace }),
       });
       saveState(ref, failed);

@@ -69,10 +69,9 @@ describe('reviewArtifactForPhase', () => {
 });
 
 describe('reviewDocumentOptions', () => {
-  it('gives every row a distinct key and the command it dispatches', () => {
+  it('gives every row the command it dispatches', () => {
     const rows = reviewDocumentOptions('plan');
 
-    expect(rows.map((row) => row.key)).toEqual(['y', 'c', 'e', 'q']);
     expect(rows.map((row) => row.command)).toEqual(['approve', 'comment', 'edit-file', 'end-run']);
   });
 

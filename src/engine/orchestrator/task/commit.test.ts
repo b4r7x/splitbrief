@@ -67,7 +67,7 @@ describe('validateCommitAndAdvance', () => {
       bus,
       method: 'local',
       transitionType: 'VALIDATION_PASS',
-      taskChangedFiles: [task.file, 'src/shared/button.ts'],
+      taskChangedFiles: [task.suggestedFiles[0], 'src/shared/button.ts'],
     });
 
     expect(events.filter((e) => e.type === 'task_touched_not_suggested')).toEqual([
@@ -77,8 +77,8 @@ describe('validateCommitAndAdvance', () => {
 
   it('counts the files of a brief already done as suggested', async () => {
     const { projectDir, sessionId } = setupProject();
-    const done = makeTask({ id: 'T001', file: 'src/shared/button.ts', status: 'done' });
-    const task = makeTask({ id: 'T002', file: 'src/page.ts', status: 'in_progress' });
+    const done = makeTask({ id: 'T001', suggestedFiles: ['src/shared/button.ts'], status: 'done' });
+    const task = makeTask({ id: 'T002', suggestedFiles: ['src/page.ts'], status: 'in_progress' });
     const state = makeCommitState({ tasks: [done, task], currentTaskIndex: 1 });
     const { bus, events } = makeBusRecorder();
 
@@ -92,7 +92,7 @@ describe('validateCommitAndAdvance', () => {
       bus,
       method: 'local',
       transitionType: 'VALIDATION_PASS',
-      taskChangedFiles: [task.file, 'src/shared/button.ts'],
+      taskChangedFiles: [task.suggestedFiles[0], 'src/shared/button.ts'],
     });
 
     expect(events.some((e) => e.type === 'task_touched_not_suggested')).toBe(false);
@@ -114,7 +114,7 @@ describe('validateCommitAndAdvance', () => {
       bus,
       method: 'local',
       transitionType: 'VALIDATION_PASS',
-      taskChangedFiles: [task.file],
+      taskChangedFiles: [task.suggestedFiles[0]],
     });
 
     expect(events.some((e) => e.type === 'task_touched_not_suggested')).toBe(false);

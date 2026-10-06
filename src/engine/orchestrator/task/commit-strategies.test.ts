@@ -81,7 +81,7 @@ describe('validateCommitAndAdvance — legacy commit strategies', () => {
           method,
           transitionType: 'VALIDATION_PASS',
           commitSuffix: 'with hints',
-          taskChangedFiles: [task.file],
+          taskChangedFiles: [task.suggestedFiles[0]],
         });
 
         expect(result.completed).toBe(true);

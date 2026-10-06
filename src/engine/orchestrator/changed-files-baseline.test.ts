@@ -620,8 +620,7 @@ describe('inferTaskAcceptedChangedFiles', () => {
         writeFileSync(join(dir, 'src', file), 'export const changed = true;\n');
       }
       const task = makeTask({
-        file: 'src/a.ts',
-        files: ['src/a.ts', 'src/a.test.ts'],
+        suggestedFiles: ['src/a.ts', 'src/a.test.ts'],
         scope: { inBounds: ['`src/x.ts` \u2014 the union collapse'] },
       });
 

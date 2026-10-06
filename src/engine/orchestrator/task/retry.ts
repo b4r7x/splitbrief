@@ -20,10 +20,7 @@ import { getRunnerDisplayName } from '../../../core/config/accessors/runner-conf
 import { recordTaskUsage } from '../tokens.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
 import { retryProfileOverrideForTask } from './routing.js';
-import {
-  buildRetryExhaustedRecoveryIssue,
-  routeBiggerProfileFromDecision,
-} from '../recovery/builders/task.js';
+import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/task.js';
 import {
   diagnosePlannerCallFailure,
   plannerCallHaltIssue,
@@ -152,7 +149,6 @@ export async function handleTaskPlannerCallFailure(
           maxAttempts: DEFAULT_LOCAL_RETRIES,
           allowRetryOverride: true,
           selectedImplementerProfile: wctx.implementerProfile,
-          routeBiggerProfile: routeBiggerProfileFromDecision(wctx.routingDecision),
           createdAt: nowIso(),
         })
       : await plannerCallHaltIssue({
@@ -252,7 +248,6 @@ export async function retryAndRecord(
         maxAttempts: DEFAULT_LOCAL_RETRIES,
         allowRetryOverride: true,
         selectedImplementerProfile: retryImplementerProfile,
-        routeBiggerProfile: routeBiggerProfileFromDecision(wctx.routingDecision),
         ...(result.handBack !== undefined && { handBack: result.handBack }),
         createdAt: nowIso(),
       });

@@ -180,6 +180,29 @@ describe('validateConfig', () => {
     ]);
   });
 
+  it.each([
+    [
+      'approval.enabled',
+      { approval: { enabled: false }, workflow: {} },
+      'approval.enabled was retired and is ignored: a write to a protected path always asks, and no other write does. Delete approval.enabled.',
+    ],
+    [
+      'workflow.drift_chain_threshold',
+      { approval: {}, workflow: { driftChainThreshold: 0.4 } },
+      'workflow.drift_chain_threshold was retired and is ignored: SPLITBRIEF no longer scores drift chains; the reviewer reads the files a brief touched but did not suggest. Delete workflow.drift_chain_threshold.',
+    ],
+  ])('loads the retired %s with exactly one notice', (_key, retired, notice) => {
+    const base = makeConfig();
+    const config = {
+      ...base,
+      approval: { ...base.approval, ...retired.approval },
+      workflow: { ...base.workflow, ...retired.workflow },
+    };
+
+    expect(validateConfig(config).errors).toEqual([]);
+    expect(retiredValueNotices(config)).toEqual([notice]);
+  });
+
   it.each(['all', 'spec', 'default'])(
     'loads the retired approve level %s as plan with one notice',
     (approve) => {
@@ -212,7 +235,6 @@ describe('validateConfig', () => {
   it('loads a retired approval.tiers map with exactly one notice', () => {
     const config = makeConfig({
       approval: {
-        enabled: true,
         feedRejectionsToPlanner: true,
         tiers: {
           destructive: 'auto',

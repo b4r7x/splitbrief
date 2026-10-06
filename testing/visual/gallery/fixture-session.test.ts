@@ -477,10 +477,11 @@ describe('the preview answers for the effects it cannot simulate', () => {
   it('opens the plan card edit row on the fixture plan.json in the editor overlay', async () => {
     const preview = await open('workflow-plan-card');
 
-    // y, c, then the row that files `edit-file` — the route the gate's own legend advertises.
+    // Approve, request changes, then the row that files `edit-file` — the route the gate's own
+    // legend advertises.
     await press(preview.ui, DOWN);
     await press(preview.ui, DOWN);
-    expect(frame(preview.ui)).toContain('e   Edit plan.json');
+    expect(frame(preview.ui)).toContain('Edit plan.json');
     await press(preview.ui, ENTER);
     await vi.waitFor(() => expect(overlayStore.get().active).toBe('editor'));
     const editor = editorStore.get();

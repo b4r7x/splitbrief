@@ -34,7 +34,7 @@ describe('restoreInterruptedTaskFiles', () => {
     const taskStartSnapshot = await getChangedFilesSnapshot(workspaceDir);
     writeFileSync(join(workspaceDir, 'a.ts'), 'export const a = 3;\n');
     writeFileSync(join(workspaceDir, 'c.ts'), 'unfinished task\n');
-    const task = makeTask({ id: 'T002', file: 'a.ts' });
+    const task = makeTask({ id: 'T002', suggestedFiles: ['a.ts'] });
     const sessionId = 'interrupted-rollback';
     ensureSessionDir(projectDir, sessionId);
     const ref = { projectDir, sessionId };

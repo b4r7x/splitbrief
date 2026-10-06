@@ -97,8 +97,7 @@ describe('workspace acquisition conformance', () => {
     const task = makeTask({
       id: 'T001',
       status: 'in_progress',
-      file: 'source.txt',
-      files: ['source.txt', 'deleted.txt'],
+      suggestedFiles: ['source.txt', 'deleted.txt'],
     });
     const state = {
       ...makeImplState([task]),

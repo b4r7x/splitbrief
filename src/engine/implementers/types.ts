@@ -38,8 +38,9 @@ export interface ImplementerPublisher {
     taskId: TaskId;
     file: string;
     diff?: string | undefined;
-    linesAdded: number;
-    linesRemoved: number;
+    /** Absent when the call's baseline kept no content to count against (a hash baseline). */
+    linesAdded?: number | undefined;
+    linesRemoved?: number | undefined;
     duration: number;
     noChange?: boolean | undefined;
   }): void;

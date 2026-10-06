@@ -1,6 +1,9 @@
 import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { getCurrentChangedFiles } from '../lib/git/files.js';
+import { showFileAtHead } from '../lib/git/refs.js';
+import { computeDiff } from '../utils/diff.js';
 import { collectTrackedFiles, hashFile } from './snapshots/files.js';
 
 function hasGitMetadata(projectDir: string): boolean {
@@ -8,7 +11,12 @@ function hasGitMetadata(projectDir: string): boolean {
 }
 
 export type ChangeDetectorBaseline =
-  | { kind: 'git-status'; files: string[] }
+  | {
+      kind: 'git-status';
+      files: string[];
+      /** What each file already changed at the start held then; null when it was absent. */
+      contents: Record<string, string | null>;
+    }
   | {
       kind: 'file-hashes';
       hashes: Record<string, string | null>;
@@ -75,13 +83,58 @@ export async function captureChangeDetectorBaseline(
 ): Promise<ChangeDetectorBaseline> {
   const kind = opts.kind ?? (hasGitMetadata(projectDir) ? 'git-status' : 'file-hashes');
   if (kind === 'git-status') {
-    return { kind: 'git-status', files: await getCurrentChangedFiles(projectDir) };
+    const files = await getCurrentChangedFiles(projectDir);
+    return { kind: 'git-status', files, contents: await readContents(projectDir, files) };
   }
   return {
     kind: 'file-hashes',
     hashes: await captureFileHashes(projectDir, opts),
     ignoreProjectDir: opts.ignoreProjectDir,
   };
+}
+
+async function readText(projectDir: string, file: string): Promise<string | null> {
+  try {
+    return await readFile(join(projectDir, file), 'utf8');
+  } catch {
+    // Absent, a directory, or unreadable: there is no text to count against.
+    return null;
+  }
+}
+
+async function readContents(
+  projectDir: string,
+  files: readonly string[],
+): Promise<Record<string, string | null>> {
+  const entries = await Promise.all(
+    files.map(async (file) => [file, await readText(projectDir, file)] as const),
+  );
+  return Object.fromEntries(entries);
+}
+
+/**
+ * The lines a call added and removed, counted against what each file held when the call started:
+ * the content captured then for a file already changed, else its committed version. Only a git
+ * baseline can say; a hash baseline kept no content, so it answers undefined.
+ */
+export async function countChangedLines(
+  projectDir: string,
+  before: ChangeDetectorBaseline,
+): Promise<{ linesAdded: number; linesRemoved: number } | undefined> {
+  if (before.kind !== 'git-status') return undefined;
+  const files = new Set([...before.files, ...(await getCurrentChangedFiles(projectDir))]);
+  let linesAdded = 0;
+  let linesRemoved = 0;
+  for (const file of files) {
+    const start = Object.hasOwn(before.contents, file)
+      ? before.contents[file]
+      : await showFileAtHead(projectDir, file);
+    const now = await readText(projectDir, file);
+    const counted = computeDiff(start ?? '', now ?? '');
+    linesAdded += counted.linesAdded;
+    linesRemoved += counted.linesRemoved;
+  }
+  return { linesAdded, linesRemoved };
 }
 
 export function createChangeDetector(

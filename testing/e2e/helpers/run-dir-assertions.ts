@@ -7,11 +7,10 @@ import {
   DRIFT_REPORT_FILE,
   EVIDENCE_FILE,
   PLAN_FILE,
-  REVIEW_FILE,
   SESSION_LOG_FILE,
   SPLITBRIEF_DIR,
+  STATE_FILE,
   SUMMARY_FILE,
-  TASKS_FILE,
 } from '../../../src/core/paths.js';
 import { phaseTokenRole } from '../../../src/core/phases.js';
 import { DriftReportSchema } from '../../../src/core/schemas/drift.js';
@@ -21,9 +20,8 @@ import {
   type SessionLogEventEntry,
   SessionLogEventEntrySchema,
 } from '../../../src/core/schemas/session-log.js';
-import { type Task, taskFiles } from '../../../src/core/schemas/task.js';
-import { parseFinalReview } from '../../../src/engine/parsers/final-review.js';
-import { parseTasksStrict } from '../../../src/engine/spec/tasks/parse.js';
+import type { Task } from '../../../src/core/schemas/task.js';
+import { WorkflowStateSchema } from '../../../src/core/schemas/workflow.js';
 import { isRecord } from '../../../src/utils/type-guards.js';
 
 const PLAIN_LINE =
@@ -67,7 +65,7 @@ export function assertSessionDir(
     completed: number;
   },
 ): SessionDirFacts {
-  const tasks = parseTasksStrict(readText(sessionDir, TASKS_FILE));
+  const { tasks } = WorkflowStateSchema.parse(readJson(sessionDir, STATE_FILE));
   expect(tasks.length).toBeGreaterThanOrEqual(opts.expectedBriefs.min);
   expect(tasks.length).toBeLessThanOrEqual(opts.expectedBriefs.max);
   expect(tasks.filter((task) => task.action === 'modify').length).toBeGreaterThanOrEqual(1);
@@ -76,15 +74,13 @@ export function assertSessionDir(
 
   EvidenceLedgerSchema.parse(readJson(sessionDir, EVIDENCE_FILE));
   expect(DriftReportSchema.parse(readJson(sessionDir, DRIFT_REPORT_FILE)).passed).toBe(true);
-  expect(['pass', 'pass_with_notes']).toContain(
-    parseFinalReview(readText(sessionDir, REVIEW_FILE)).verdict,
-  );
 
   const session = SessionSchema.parse(readJson(sessionDir, SUMMARY_FILE));
   if (session.status !== 'complete') {
     throw new Error(`${SUMMARY_FILE} status is '${session.status}', expected 'complete'`);
   }
   const summary = session.summary;
+  expect(['pass', 'pass_with_notes']).toContain(summary.review?.verdict);
   expect(summary.totalTasks).toBe(tasks.length);
   expect(opts.completed, 'stdout `done:` count').toBe(summary.totalTasks);
   expect(summary.failed).toBe(0);
@@ -119,7 +115,7 @@ export function assertFixtureQuality(projectDir: string): Promise<void> {
 }
 
 export function assertWorkingTree(projectDir: string, tasks: readonly Task[]): void {
-  const declared = new Set(tasks.flatMap((task) => [...taskFiles(task)]));
+  const declared = new Set(tasks.flatMap((task) => [...task.suggestedFiles]));
   // `-uall` so a brief that created the first file of a new directory is
   // reported as that file rather than as the collapsed `dir/` entry.
   const status = execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], {

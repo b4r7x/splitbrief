@@ -1,4 +1,3 @@
-import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import type { RunnerCallContext, RunnerCallEvent } from './types.js';
 import { RUNNER_CALL_OUTPUT_MAX_BYTES } from './output-limit.js';
 import { isRunnerCallTerminalEvent } from './status.js';
@@ -7,7 +6,6 @@ import { normalizeRunnerCallWarning } from './warnings.js';
 export interface RunnerAttemptCallbacks {
   onOutput: (text: string) => void;
   onSessionId?: ((id: string) => void) | undefined;
-  onQuestion?: ((questions: ClarificationQuestion[]) => void) | undefined;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
 }
 
@@ -127,11 +125,6 @@ export function createRunnerAttemptCallbackBuffer(
       onSessionId: (id) => {
         addOrMarkOverflow(() => callbacks.onSessionId?.(id), {
           bytes: Buffer.byteLength(id, 'utf8'),
-        });
-      },
-      onQuestion: (questions) => {
-        addOrMarkOverflow(() => callbacks.onQuestion?.(questions), {
-          bytes: Buffer.byteLength(JSON.stringify(questions), 'utf8'),
         });
       },
       onCallEvent: (event) => {

@@ -2,7 +2,6 @@ import { realpathSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 import type { RunnerCallContext } from '../../calls/types.js';
-import { parseFinalReview } from '../../parsers/final-review.js';
 import { codexPlannerAdapter } from './codex.js';
 import type { CliPlannerAdapter } from './contract.js';
 import { cursorPlannerAdapter } from './cursor.js';
@@ -134,7 +133,7 @@ describe.each(Object.keys(RUNNERS))('%s final text', (runner) => {
     expectEachShownOnce(live, steps);
   });
 
-  it('hands the final-review reader a verdict heading that the narration before it does not prefix', async () => {
+  it('keeps a verdict heading on its own paragraph after the narration before it', async () => {
     const steps: Step[] = [
       'tool',
       { message: 'Checking the gates once more.' },
@@ -143,7 +142,6 @@ describe.each(Object.keys(RUNNERS))('%s final text', (runner) => {
     const { text, live } = await call(runner, steps);
 
     expect(text).toBe(`Checking the gates once more.\n\n${REVIEW}`);
-    expect(parseFinalReview(text).verdict).toBe('pass');
     expectEachShownOnce(live, steps);
   });
 

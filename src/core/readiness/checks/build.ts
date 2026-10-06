@@ -6,7 +6,7 @@ import {
   selectNextAction,
 } from '../status.js';
 import { buildConfigChecks } from './config.js';
-import { buildApprovalChecks } from './approval.js';
+import { buildPlanApprovalChecks } from './plan-approval.js';
 import { buildRunnerChecks } from './runners.js';
 import { buildContextChecks } from './context.js';
 import { buildValidationChecks } from './validation.js';
@@ -77,7 +77,7 @@ function buildSections(input: BuildReadinessReportInput): ReadinessSection[] {
     {
       id: 'workflow',
       title: 'Workflow',
-      checks: buildApprovalChecks(input.config, input.interaction),
+      checks: buildPlanApprovalChecks(input.config, input.interaction),
     },
     {
       id: 'runners',

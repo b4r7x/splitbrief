@@ -3,11 +3,14 @@ import { reviewOutcomeOf } from '../../../core/review/verdict.js';
 import { randomUUID } from 'node:crypto';
 import { phaseRole } from '../../../core/phases.js';
 import type { RecoveryAction } from '../../../core/schemas/enums.js';
-import { allowedActionsForReason } from '../../../core/schemas/recovery/policy.js';
+import {
+  allowedActionsForHalt,
+  haltOf,
+  isRetiredRecoveryReason,
+} from '../../../core/recovery/halt.js';
 import type { RecoveryIssue, SeatSwapCandidate } from '../../../core/schemas/recovery/schemas.js';
 import type { CrewSeatId } from '../../../core/crew/identity.js';
 import { configWithSwitchedSeat } from './switch-seat.js';
-import { recoveryFactBoolean, recoveryFactString } from '../../../core/schemas/recovery/facts.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { isTaskCompleted } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
@@ -31,10 +34,7 @@ import {
 } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { closeRunIfOpen } from '../run/close.js';
-import { readSpecFileOrEmpty } from '../../../core/paths-io.js';
-import { REVIEW_FILE } from '../../../core/paths.js';
 import { appendMessage } from '../../../core/sessions/log-writer.js';
-import { parseFinalReview } from '../../parsers/final-review.js';
 
 export type RecoveryActionBlockedCode =
   | 'no-pending-recovery'
@@ -42,15 +42,12 @@ export type RecoveryActionBlockedCode =
   | 'unsafe-continue'
   | 'missing-current-task'
   | 'skip-evidence-failed'
-  | 'missing-profile'
   | 'profile-not-found'
   | 'seat-swap-unavailable'
-  | 'candidate-not-offered'
-  | 'planner-proposal-required';
+  | 'candidate-not-offered';
 
 export type RecoveryActionAppliedStatus =
   | 'continued'
-  | 'paused'
   | 'closed'
   | 'skipped-current-task'
   | 'retry-current-task';
@@ -103,7 +100,7 @@ export interface ApplyRecoveryActionOptions {
   config?: Config | undefined;
   /** `switch-seat` only: which offered tool the seat moves to. Defaults to the first offer. */
   candidate?: SeatSwapCandidate | undefined;
-  /** `revise` only (and an old run's `revise-spec`): what the operator wants changed. */
+  /** `revise`, `continue` and a seat-level retry: what the operator wants changed. */
   comment?: string | undefined;
 }
 
@@ -135,19 +132,7 @@ export async function applyRecoveryAction(
     return applyContinueRecoveryAction(opts, issue);
   }
 
-  if (opts.action === 'planner-split-rebase') {
-    return blockRecoveryAction({
-      ...opts,
-      issue,
-      code: 'planner-proposal-required',
-      message:
-        'Planner split/rebase requires a parseable proposed Task Brief and explicit approve/edit/reject before execution can resume.',
-      implementerProfile: issue.selectedImplementerProfile,
-      publishSelected: true,
-    });
-  }
-
-  if (!allowedActionsForReason(issue.reason).includes(opts.action)) {
+  if (!allowedActionsForHalt(haltOf(issue.reason)).includes(opts.action)) {
     return blockRecoveryAction({
       ...opts,
       issue,
@@ -157,14 +142,9 @@ export async function applyRecoveryAction(
   }
 
   switch (opts.action) {
-    case 'pause-run':
-      return applyPauseRecoveryAction(opts, issue);
     case 'end-run':
       return applyEndRunRecoveryAction(opts, issue);
-    // `revise-spec` is offered only by an old run's constitution halt. No spec step is left to
-    // rewind to, so its note goes to the one planning session like any other correction.
     case 'revise':
-    case 'revise-spec':
       return applyReviseRecoveryAction(opts, issue);
     case 'accept-as-is':
       return applyAcceptAsIsRecoveryAction(opts, issue);
@@ -181,8 +161,6 @@ export async function applyRecoveryAction(
       }
       return applyRetrySameWorkerRecoveryAction(opts, issue);
     }
-    case 'route-bigger-worker':
-      return applyRouteBiggerWorkerRecoveryAction(opts, issue);
     case 'switch-seat':
       return applySwitchSeatRecoveryAction(opts);
     default:
@@ -344,22 +322,6 @@ function applyConsultGrantRecoveryAction(
   return { ok: true, action: opts.action, issue, state, status: 'retry-current-task' };
 }
 
-function applyPauseRecoveryAction(
-  opts: ApplyRecoveryActionOptions,
-  issue: RecoveryIssue,
-): ApplyRecoveryActionResult {
-  let state = markRecoveryApplying(opts, issue);
-  state = transitionAndSave(
-    opts,
-    state,
-    {
-      type: 'PAUSE_PENDING_RECOVERY',
-    },
-    { expectedRevision: state.stateRevision ?? 0 },
-  );
-  return { ok: true, action: opts.action, issue, state, status: 'paused' };
-}
-
 /**
  * Recovery's End run uses the stop sheet's close path, which writes the run patch
  * and removes the workspace.
@@ -448,12 +410,7 @@ function readCriticalFindings(
       ...(state.applyReview?.failures ?? []),
     ];
   }
-  return [
-    ...parseFinalReview(readSpecFileOrEmpty(ref, REVIEW_FILE))
-      .findings.filter((finding) => finding.severity === 'critical')
-      .map((finding) => finding.text),
-    ...(state.applyReview?.failures ?? []),
-  ];
+  return state.applyReview?.failures ?? [];
 }
 
 /** Record the open findings as accepted as is and resolve the recovery halt. */
@@ -658,44 +615,10 @@ function applyRetrySameWorkerRecoveryAction(
   return { ...applied, currentConfig };
 }
 
-function applyRouteBiggerWorkerRecoveryAction(
-  opts: ApplyRecoveryActionOptions,
-  issue: RecoveryIssue,
-): ApplyRecoveryActionResult {
-  const profile = recoveryFactString(issue.facts, 'routeBiggerProfile');
-  if (!profile) {
-    return blockRecoveryAction({
-      ...opts,
-      issue,
-      code: 'missing-profile',
-      message: 'No bigger profile identified in recovery issue facts.',
-      publishSelected: true,
-    });
-  }
-
-  if (!opts.config || !hasImplementerProfile(opts.config, profile)) {
-    return blockRecoveryAction({
-      ...opts,
-      issue,
-      code: 'profile-not-found',
-      message: `Profile '${profile}' not found in config.`,
-      implementerProfile: profile,
-      publishSelected: true,
-    });
-  }
-
-  return applyRetryCurrentTaskRecoveryAction(
-    opts,
-    issue,
-    'Route bigger worker requires the pending recovery task to match the current task index.',
-    profile,
-  );
-}
-
 /**
- * Move a quota-blocked seat onto one of the tools the issue offered, then take
- * the same retry path `route-bigger-worker` takes: the current task is reset
- * and replayed, this time on the chosen seat.
+ * Move a halted seat onto one of the tools the issue offered, then take the
+ * same retry path `retry-same-worker` takes: the current task is reset and
+ * replayed, this time on the chosen seat.
  *
  * The swap itself travels on the result: `switchedConfig` is the run config
  * with that seat repointed, which the caller hands to `createPlanner` /
@@ -1007,11 +930,15 @@ function recordRecoverySkipEvidence(opts: {
   writeEvidenceLedger(opts, updated);
 }
 
+/**
+ * A consult-bound halt continues by a grant the operator chose; it resolves the halt itself, so
+ * there is no state the run must first come back to. A halt on a retired cause names nothing the
+ * run still checks, so continuing is all that is left of it.
+ */
 function isSafeContinue(issue: RecoveryIssue): boolean {
-  if (issue.reason === 'user-edit-conflict') {
-    return recoveryFactBoolean(issue.facts, 'safeToContinue') === true;
-  }
-  // A consult-bound halt continues by a grant the operator chose; it resolves
-  // the halt itself, so there is no state the run must first come back to.
-  return issue.reason === 'consult-bound-spent' || issue.reason === 'planner-calls-spent';
+  return (
+    issue.reason === 'consult-bound-spent' ||
+    issue.reason === 'planner-calls-spent' ||
+    isRetiredRecoveryReason(issue.reason)
+  );
 }

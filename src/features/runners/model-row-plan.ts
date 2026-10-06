@@ -107,7 +107,9 @@ function cellsOf(row: ModelRow, name: string): RowCells {
 
 /**
  * Two models the list would name alike are told apart by the id their provider gives them —
- * `Kimi K3 · kimi-k3` and `Kimi K3 · k3` — or by the whole id where even that is shared.
+ * `Kimi K3 · kimi-k3` and `Kimi K3 · k3` — or by the whole id where even that is shared. A custom
+ * row leaves the name to the row the tool lists and reads the id it was given: `claude-opus-5-5`
+ * pins the model the `opus` alias points at today, so the two stay two selections.
  */
 function nameRows(
   rows: readonly ModelRow[],
@@ -120,7 +122,11 @@ function nameRows(
   const twinsByName = new Map<string, ModelRow[]>();
   for (const { row, name } of named) twinsByName.set(name, [...(twinsByName.get(name) ?? []), row]);
   return named.map(({ row, name }) => {
-    const twins = twinsByName.get(name) ?? [];
+    const sameName = twinsByName.get(name) ?? [];
+    const custom = row.provenance === 'Custom';
+    const listed = sameName.filter((twin) => twin.provenance !== 'Custom');
+    if (custom && listed.length > 0) return { row, name: row.model.id };
+    const twins = custom ? sameName : listed;
     if (twins.length < 2) return { row, name };
     const own = modelIdUnderProvider(row.model.id);
     const shared = twins.some(

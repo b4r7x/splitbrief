@@ -194,24 +194,17 @@ describe('WorkflowFooter', () => {
     ui.unmount();
   });
 
-  it('keeps the done mark on a complete priced run and still names no amount', async () => {
+  // A complete run can still be waiting on a correction after a failed review: a done mark beside
+  // the caret would contradict it, and the closed block and the rail already state the outcome.
+  it('paints no done mark in the composer once the phase is complete', async () => {
     seedPricedRun();
     lifecycleStore.__testReset({ phase: 'complete', status: 'complete', startedAt: 0, endedAt: 1 });
     const ui = renderFooter();
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain(glyph('check'));
+    expect(frame).not.toContain(glyph('check'));
     expect(frame).not.toContain('$');
-    ui.unmount();
-  });
-
-  it('appends a done token to the footer key cluster when the phase is complete', async () => {
-    lifecycleStore.__testReset({ phase: 'complete', status: 'complete', startedAt: 0, endedAt: 1 });
-    const ui = renderFooter();
-    await tick();
-
-    expect(ui.lastFrame() ?? '').toContain(glyph('check'));
     ui.unmount();
   });
 
@@ -229,12 +222,11 @@ describe('WorkflowFooter', () => {
     ui.unmount();
   });
 
-  it('omits the done token and the ⏎ hint while the workflow is still running', async () => {
+  it('omits the ⏎ hint while the workflow is still running', async () => {
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
     const ui = renderFooter();
     await tick();
 
-    expect(ui.lastFrame() ?? '').not.toContain(glyph('check'));
     expect(ui.lastFrame() ?? '').not.toContain('⏎');
     ui.unmount();
   });

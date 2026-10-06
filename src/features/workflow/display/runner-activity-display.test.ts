@@ -26,7 +26,6 @@ describe('runnerActivityLedgerItem', () => {
       tone: 'warning',
       valueTone: 'warning',
       severity: 'warning',
-      pinned: true,
     });
   });
 
@@ -93,7 +92,6 @@ describe('runnerActivityLedgerItem', () => {
       tone: 'error',
       valueTone: 'error',
       severity: 'error',
-      pinned: true,
     });
   });
 });

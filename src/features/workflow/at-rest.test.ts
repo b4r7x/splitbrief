@@ -43,10 +43,42 @@ describe('atRestRailStages', () => {
   });
 
   it.each([
-    ['paused', { kind: 'paused', at: 'mid-step' } as const, 'cancelled'],
-    ['waiting', { kind: 'waiting', gate: 'spec', reopens: false } as const, 'cancelled'],
-    ['interrupted', { kind: 'interrupted' } as const, 'cancelled'],
-    ['failed', { kind: 'failed', message: 'boom' } as const, 'failed'],
+    [
+      'paused',
+      { kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } } satisfies StopReason,
+      'cancelled',
+    ],
+    [
+      'gate',
+      {
+        kind: 'waiting-for-you',
+        on: { kind: 'gate', gate: 'spec', reopens: false },
+      } satisfies StopReason,
+      'cancelled',
+    ],
+    [
+      'question',
+      { kind: 'waiting-for-you', on: { kind: 'question' } } satisfies StopReason,
+      'cancelled',
+    ],
+    [
+      'halt',
+      {
+        kind: 'waiting-for-you',
+        on: { kind: 'halt', issue: makeRecoveryIssue() },
+      } satisfies StopReason,
+      'failed',
+    ],
+    [
+      'interrupted',
+      { kind: 'stopped', on: { kind: 'interrupted' } } satisfies StopReason,
+      'cancelled',
+    ],
+    [
+      'failed',
+      { kind: 'stopped', on: { kind: 'failed', message: 'boom' } } satisfies StopReason,
+      'failed',
+    ],
   ])('wears the %s mark the stop earned', (_label, stop, expected) => {
     const stages = atRestRailStages(recordAt({ status: openWith(stop), phase: 'implementing' }));
     expect(stages[1]?.status).toBe(expected);
@@ -61,7 +93,11 @@ describe('atRestRailStages', () => {
     'folds an old %s research stop into Plan',
     (mode) => {
       const stages = atRestRailStages(
-        recordAt({ status: openWith({ kind: 'interrupted' }), phase: 'researching', mode }),
+        recordAt({
+          status: openWith({ kind: 'stopped', on: { kind: 'interrupted' } }),
+          phase: 'researching',
+          mode,
+        }),
       );
       expect(stages.map((stage) => stage.status)).toEqual(['cancelled', 'pending', 'pending']);
     },
@@ -121,7 +157,10 @@ describe('atRestRailStages on a run with a workspace', () => {
     const stages = atRestRailStages(
       workspaceRecord({
         kind: 'open',
-        stop: { kind: 'halted', issue: makeRecoveryIssue({ reason: 'apply-conflict' }) },
+        stop: {
+          kind: 'waiting-for-you',
+          on: { kind: 'halt', issue: makeRecoveryIssue({ reason: 'apply-conflict' }) },
+        },
         resumeAt: { kind: 'apply' },
       }),
     );
@@ -147,7 +186,10 @@ describe('atRestComposer', () => {
 
   it('takes a correction from a run that can be picked up', () => {
     const composer = atRestComposer(
-      recordAt({ status: openWith({ kind: 'interrupted' }), phase: 'implementing' }),
+      recordAt({
+        status: openWith({ kind: 'stopped', on: { kind: 'interrupted' } }),
+        phase: 'implementing',
+      }),
     );
     expect(composer).toEqual({
       continuable: true,
@@ -164,7 +206,9 @@ describe('atRestComposer', () => {
 
   it('takes commands only when the saved state cannot be read', () => {
     const composer = atRestComposer(
-      makeRunRecord({ status: openWith({ kind: 'failed', message: 'unreadable' }) }),
+      makeRunRecord({
+        status: openWith({ kind: 'stopped', on: { kind: 'failed', message: 'unreadable' } }),
+      }),
     );
     expect(composer.continuable).toBe(false);
   });

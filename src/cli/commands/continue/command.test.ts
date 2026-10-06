@@ -289,7 +289,7 @@ describe('continueCommand', () => {
         action: 'switch-seat:codex',
         issue: {
           reason: 'runner-usage-limit',
-          availableActions: ['switch-seat', 'pause-run', 'end-run'],
+          availableActions: ['retry-same-worker', 'switch-seat', 'end-run'],
           recommendedAction: 'switch-seat',
           switchSeat: { seat: 'build', candidates: [{ tool: 'codex' }] },
         } as Partial<RecoveryIssue>,
@@ -307,7 +307,7 @@ describe('continueCommand', () => {
           ...createInitialState('test-feature'),
           phase: testCase.phase,
           tasks: [makeTask({ id: 'T001' })],
-          pendingRecovery: makeRecoveryIssue({ status: 'paused', ...testCase.issue }),
+          pendingRecovery: makeRecoveryIssue(testCase.issue),
         },
       );
 
@@ -370,7 +370,6 @@ describe('continueCommand', () => {
         tasks: [makeTask({ id: 'T001', status: 'done' })],
         currentTaskIndex: 1,
         pendingRecovery: makeRecoveryIssue({
-          status: 'paused',
           reason: 'runner-usage-limit',
           seat: 'review',
           phase: 'final-review',
@@ -378,7 +377,7 @@ describe('continueCommand', () => {
           taskTitle: undefined,
           files: [],
           affectedTaskIds: [],
-          availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
+          availableActions: ['retry-same-worker', 'switch-seat', 'end-run'],
           recommendedAction: 'switch-seat',
           switchSeat: { seat: 'plan', candidates: [{ tool: 'claude-code' }] },
         }),
@@ -434,9 +433,8 @@ describe('continueCommand', () => {
         phase: 'implementing',
         tasks: [makeTask({ id: 'T001' })],
         pendingRecovery: makeRecoveryIssue({
-          status: 'paused',
-          availableActions: ['pause-run', 'end-run'],
-          recommendedAction: 'pause-run',
+          availableActions: ['retry-same-worker', 'end-run'],
+          recommendedAction: 'retry-same-worker',
         }),
       },
     );
@@ -476,9 +474,9 @@ describe('continueCommand', () => {
           base: { snapshotId: 'snapshot-1', head: null },
         },
         pendingRecovery: makeRecoveryIssue({
-          status: 'paused',
-          availableActions: ['pause-run', 'end-run'],
-          recommendedAction: 'pause-run',
+          status: 'awaiting-user',
+          availableActions: ['end-run'],
+          recommendedAction: 'end-run',
         }),
       },
     );
@@ -516,8 +514,8 @@ describe('continueCommand', () => {
         pendingRecovery: makeRecoveryIssue({
           reason: 'apply-partial',
           phase: 'complete',
-          status: 'paused',
-          availableActions: ['retry-same-worker', 'restore-backup', 'pause-run', 'end-run'],
+          status: 'awaiting-user',
+          availableActions: ['retry-same-worker', 'restore-backup', 'end-run'],
           recommendedAction: 'retry-same-worker',
         }),
       },
@@ -547,7 +545,7 @@ describe('continueCommand', () => {
         ...createInitialState('test-feature'),
         phase: 'implementing',
         tasks: [makeTask({ id: 'T001' })],
-        pendingRecovery: makeRecoveryIssue({ status: 'paused' }),
+        pendingRecovery: makeRecoveryIssue({ status: 'awaiting-user' }),
       },
     );
 
@@ -573,9 +571,8 @@ describe('continueCommand', () => {
         phase: 'implementing',
         tasks: [makeTask({ id: 'T001' })],
         pendingRecovery: makeRecoveryIssue({
-          status: 'paused',
-          availableActions: ['pause-run', 'end-run'],
-          recommendedAction: 'pause-run',
+          availableActions: ['retry-same-worker', 'end-run'],
+          recommendedAction: 'retry-same-worker',
         }),
       },
     );
@@ -862,7 +859,7 @@ describe('continueCommand --action apply|discard', () => {
         ),
       ).rejects.toMatchObject({
         exitCode: 1,
-        message: expect.stringContaining('Recovery required (apply-conflict)'),
+        message: expect.stringContaining('Needs you (apply-conflict)'),
       });
       expect(read(run.dir, 'a.txt')).toBe('USER\0\ntwo\nthree\nfour\nfive\n');
       expect(headlessRuns).toHaveLength(0);

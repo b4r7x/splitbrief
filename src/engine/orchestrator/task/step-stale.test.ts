@@ -69,17 +69,17 @@ function staleTask(projectDir: string): Task {
   const task = makeTask({
     id: 'T002',
     action: 'create',
-    file: 'src/b.ts',
-    files: ['src/b.ts'],
     suggestedFiles: ['src/b.ts'],
     contextFiles: ['src/shared.ts'],
     criteria: ['C1'],
   });
-  const suggestedFiles = task.suggestedFiles ?? [task.file];
   const contextFiles = task.contextFiles ?? [];
   return {
     ...task,
-    inputHashes: inputHashesNow(projectDir, specInputFiles({ suggestedFiles, contextFiles })),
+    inputHashes: inputHashesNow(
+      projectDir,
+      specInputFiles({ suggestedFiles: task.suggestedFiles, contextFiles }),
+    ),
   };
 }
 
@@ -88,8 +88,7 @@ function trailingTask(): Task {
   return makeTask({
     id: 'T003',
     action: 'create',
-    file: 'src/c.ts',
-    files: ['src/c.ts'],
+    suggestedFiles: ['src/c.ts'],
     criteria: ['C1'],
   });
 }
@@ -190,6 +189,50 @@ describe('runSingleTask — stale refresh', () => {
     const after = typed.mock.calls.length;
 
     expect(after).toBe(before);
+  });
+
+  it('asks no stale consult when every moved input is a suggested file of an earlier task', async () => {
+    const { projectDir, sessionId } = setupProject({ 'src/shared.ts': SHARED });
+    const task = staleTask(projectDir);
+    const producer = makeTask({
+      id: 'T001',
+      action: 'modify',
+      suggestedFiles: ['src/shared.ts'],
+      criteria: ['C1'],
+      status: 'done',
+    });
+    const state = { ...implementingState([producer, task, trailingTask()]), currentTaskIndex: 1 };
+    const typed = consultCallAnswering(() => guidanceAnswer('unused'));
+    const planner = makePlanner({ typedCall: typed });
+
+    // T001, which the plan ordered first, wrote the file T002 reads.
+    writeFileSync(join(projectDir, 'src/shared.ts'), EDITED_SHARED);
+
+    const after = await runForTask({ projectDir, sessionId, task, state, planner });
+
+    expect(staleConsultsOf(after)).toEqual([]);
+    expect(typed).not.toHaveBeenCalled();
+  });
+
+  it('still consults when a moved input is outside what earlier tasks were to write', async () => {
+    const { projectDir, sessionId } = setupProject({ 'src/shared.ts': SHARED });
+    const task = staleTask(projectDir);
+    const producer = makeTask({
+      id: 'T001',
+      action: 'modify',
+      suggestedFiles: ['src/elsewhere.ts'],
+      criteria: ['C1'],
+      status: 'done',
+    });
+    const state = { ...implementingState([producer, task, trailingTask()]), currentTaskIndex: 1 };
+    const typed = consultCallAnswering(() => guidanceAnswer('Read the new shared file first.'));
+    const planner = makePlanner({ typedCall: typed });
+
+    writeFileSync(join(projectDir, 'src/shared.ts'), EDITED_SHARED);
+
+    const after = await runForTask({ projectDir, sessionId, task, state, planner });
+
+    expect(staleConsultsOf(after)).toHaveLength(1);
   });
 
   it('stale refresh hashes the workspace, not the checkout', async () => {

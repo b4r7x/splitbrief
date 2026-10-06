@@ -304,9 +304,30 @@ export function seedSessions(): void {
     status: 'ended',
     apply: 'discarded',
   });
+  const waitingSession = makeSession({
+    id: 'visual-session-waiting',
+    feature: 'Retry the flaky upload',
+    startedAt: 1_735_736_000_000,
+    status: 'open',
+    stop: 'waiting-for-you',
+  });
+  const stoppedSession = makeSession({
+    id: 'visual-session-stopped',
+    feature: 'Split the settings page',
+    startedAt: 1_735_734_000_000,
+    status: 'open',
+    stop: 'stopped',
+  });
   // The sessions overlay re-reads the project directory on mount, so every
   // session has to exist on disk to survive to the capture.
-  const sessions = [session, readySession, appliedSession, discardedSession];
+  const sessions = [
+    waitingSession,
+    stoppedSession,
+    session,
+    readySession,
+    appliedSession,
+    discardedSession,
+  ];
   for (const item of sessions) {
     const dir = join(sessionsRoot(VISUAL_FIXTURE_PROJECT_DIR), item.id);
     mkdirSync(dir, { recursive: true });
@@ -879,6 +900,23 @@ const createPlannerPickerClaudeFixture: FixtureFactory = () =>
     seed: seedClaudeAliasRows,
     focus: 'tool:claude-code',
   });
+// A custom row that holds the full id an alias resolves to: the two rows name one model two ways.
+const createPlannerPickerClaudeCustomTwinFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      seedClaudeAliasRows();
+      seedConfig({
+        planner: {
+          kind: 'cli',
+          tool: 'claude-code',
+          model: 'claude-opus-5-5',
+          customModels: ['claude-opus-5-5'],
+        },
+      })();
+    },
+    focus: 'tool:claude-code',
+  });
 const createPlannerPickerCopilotFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'planner-picker',
@@ -1226,7 +1264,7 @@ function usageRoute(costBreakdown: CostBreakdown): () => RouteData {
       feature: 'Report what each seat spent',
       status: {
         kind: 'open',
-        stop: { kind: 'paused', at: 'boundary' },
+        stop: { kind: 'stopped', on: { kind: 'paused', at: 'boundary' } },
         resumeAt: { kind: 'planner', call: 'tasks' },
       },
       summary: makeSummary({ feature: 'Report what each seat spent', costBreakdown }),
@@ -1264,8 +1302,8 @@ const USAGE_CONTEXT_HALT: RecoveryIssue = {
     apiContextAvailableTokens: 32_768,
     apiContextOutputCap: 8_192,
   },
-  availableActions: ['retry-same-worker', 'pause-run', 'end-run'],
-  recommendedAction: 'pause-run',
+  availableActions: ['retry-same-worker', 'end-run'],
+  recommendedAction: 'retry-same-worker',
   createdAt: '2026-09-14T00:00:00.000Z',
 };
 
@@ -1278,7 +1316,7 @@ function usageContextRoute(): RouteData {
       feature: 'Review the bounded fixture branch',
       status: {
         kind: 'open',
-        stop: { kind: 'halted', issue: USAGE_CONTEXT_HALT },
+        stop: { kind: 'waiting-for-you', on: { kind: 'halt', issue: USAGE_CONTEXT_HALT } },
         resumeAt: { kind: 'review', cycle: 0 },
       },
       summary: makeSummary({
@@ -1292,14 +1330,26 @@ function usageContextRoute(): RouteData {
 
 const PLAN_GATE_FEATURE = 'Fix the capped validation record';
 const PLAN_GATE_TASKS = [
-  makeTask({ id: 'T001', title: 'Record the initial result', file: 'src/validation/result.ts' }),
-  makeTask({ id: 'T002', title: 'Apply the retry result', file: 'src/validation/retry.ts' }),
-  makeTask({ id: 'T003', title: 'Show the final result', file: 'src/validation/display.ts' }),
+  makeTask({
+    id: 'T001',
+    title: 'Record the initial result',
+    suggestedFiles: ['src/validation/result.ts'],
+  }),
+  makeTask({
+    id: 'T002',
+    title: 'Apply the retry result',
+    suggestedFiles: ['src/validation/retry.ts'],
+  }),
+  makeTask({
+    id: 'T003',
+    title: 'Show the final result',
+    suggestedFiles: ['src/validation/display.ts'],
+  }),
 ];
 const OLD_PLAN_TASK = makeTask({
   id: 'T001',
   title: 'Write the old validation path',
-  file: 'src/validation/old.ts',
+  suggestedFiles: ['src/validation/old.ts'],
   status: 'done',
 });
 const OLD_PLAN_LEDGER = createEvidenceLedger({
@@ -1665,6 +1715,10 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-planner-picker-kilo-free'), createPlannerPickerKiloFreeFixture],
   [scenarioId('overlay-planner-picker-malformed'), createPlannerPickerMalformedFixture],
   [scenarioId('overlay-planner-picker-claude'), createPlannerPickerClaudeFixture],
+  [
+    scenarioId('overlay-planner-picker-claude-custom-twin'),
+    createPlannerPickerClaudeCustomTwinFixture,
+  ],
   [scenarioId('overlay-planner-picker-copilot'), createPlannerPickerCopilotFixture],
   [scenarioId('overlay-planner-picker-command-code'), createPlannerPickerCommandCodeFixture],
   [scenarioId('overlay-planner-picker-codex'), createPlannerPickerCodexFixture],
@@ -1822,6 +1876,31 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
     () => ({ ...createStopSheetFixture(), afterMount: (write) => write('\x1b[B') }),
   ],
   [
+    scenarioId('workflow-stop-sheet-after-continue'),
+    // Continuing a halt resets its brief to pending before the build starts it again. The reset
+    // lands once, after the screen's own store reset has run to its end, so the run stays in the
+    // build.
+    () => {
+      let reset: NodeJS.Immediate | undefined;
+      return createOverlayFixture({
+        overlay: 'stop-sheet',
+        underlyingScreen: 'workflow',
+        seed: () => {
+          seedStopSheet();
+          clearImmediate(reset);
+          reset = setImmediate(() =>
+            addEvent({
+              type: 'task_reset',
+              ts: STOP_SHEET_TS + 200,
+              phase: 'implementing',
+              taskId: STOP_SHEET_RUNNING,
+            }),
+          );
+        },
+      });
+    },
+  ],
+  [
     scenarioId('workflow-stop-menu-parked-gate'),
     () => ({
       ...createOverlayFixture({
@@ -1829,7 +1908,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
         underlyingScreen: 'workflow',
         workflowRoute: planGateRoute({
           kind: 'open',
-          stop: { kind: 'paused', at: 'mid-step' },
+          stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } },
           resumeAt: { kind: 'gate', gate: 'plan' },
         }),
         seed: () => {

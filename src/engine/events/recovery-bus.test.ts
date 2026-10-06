@@ -17,8 +17,8 @@ function recoveryEvent(overrides: Record<string, unknown> = {}): EngineEvent {
     reason: 'context-overflow',
     files: [],
     affectedTaskIds: [],
-    availableActions: ['pause-run', 'end-run'],
-    recommendedAction: 'pause-run',
+    availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
+    recommendedAction: 'retry-same-worker',
     headline: 'Context overflowed',
     resumeCommand: 'splitbrief resume',
     ...overrides,
@@ -68,7 +68,7 @@ describe('recovery EventBus boundary', () => {
         type: 'recovery_prompted',
         issueId: 'issue-1',
         reason: 'context-overflow',
-        recommendedAction: 'pause-run',
+        recommendedAction: 'retry-same-worker',
       },
     });
   });

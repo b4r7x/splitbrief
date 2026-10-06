@@ -1,10 +1,9 @@
 import type { Config } from '../../../core/schemas/config.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { readActiveRecord } from '../../../core/sessions/active-pointer.js';
 import { runApply } from '../../../engine/orchestrator/apply/run.js';
 import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js';
 import { closeRunIfOpen } from '../../../engine/orchestrator/run/close.js';
-import { finalizeEndedRun } from '../../../engine/orchestrator/session-lifecycle/finalize.js';
+import { finalizeRunAtRest } from '../../../engine/orchestrator/session-lifecycle/finalize.js';
 import { countNoun } from '../../../utils/pluralize.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { cliError } from '../../errors.js';
@@ -27,11 +26,8 @@ export async function settleReadyRun(input: {
       if (event.type === 'warning') process.stderr.write(`${event.message}\n`);
     },
   });
-  const active = readActiveRecord(projectDir);
-  const receipt =
-    active?.kind === 'v1' && active.receipt.sessionId === sessionId ? active.receipt : undefined;
   const finalize = (state: WorkflowState): void => {
-    finalizeEndedRun({ ref, active: receipt, config, state });
+    finalizeRunAtRest({ ref, config, state });
   };
 
   if (action === 'discard') {

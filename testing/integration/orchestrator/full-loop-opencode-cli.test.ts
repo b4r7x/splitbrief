@@ -118,7 +118,7 @@ describe('full workflow OpenCode CLI implementer', { timeout: 90_000 }, () => {
     const task = makeTask({
       id: 'T001',
       action: 'create',
-      file: targetFile,
+      suggestedFiles: [targetFile],
       title: requiredPromptText,
       description: 'Create a module using an OpenCode-style cheap CLI implementer.',
       implementationSteps: ['Create src/loop.ts with the OpenCode CLI marker export.'],

@@ -1,7 +1,6 @@
 import type { Phase } from '../../../core/schemas/enums.js';
 import { resolveGlyphTier } from '../../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
-import { SIMPLE_REVIEW_BASE_CHROME_ROWS, SIMPLE_TASK_ROW_HEIGHT } from './brief-review.js';
 import {
   getActiveRailStage,
   getRailStages,
@@ -18,14 +17,6 @@ import {
 } from './chrome-rows.js';
 import type { WorkflowContentRect } from './rect.js';
 
-// The brief list starts directly below the review chrome (header + blank). Derived from the
-// renderer's own chrome-row count so the hit-test offset can never drift from the rendered layout.
-export const BRIEF_LIST_BASE_TOP_OFFSET = SIMPLE_REVIEW_BASE_CHROME_ROWS;
-
-export function briefListTopOffset(options: { hasLoadError: boolean }): number {
-  return BRIEF_LIST_BASE_TOP_OFFSET + (options.hasLoadError ? 1 : 0);
-}
-
 function withinRectX(rect: WorkflowContentRect, sgrX: number): boolean {
   return sgrX >= rect.left && sgrX <= rect.right;
 }
@@ -37,18 +28,16 @@ export interface RowHitInput {
   listTop: number;
   rowHeight: number;
   visibleCount: number;
-  offset?: number;
 }
 
 export function hitRowIndex(input: RowHitInput): number | null {
   const { rect, sgrX, sgrY, listTop, rowHeight, visibleCount } = input;
-  const offset = input.offset ?? 0;
   if (rowHeight <= 0 || visibleCount <= 0) return null;
   if (!withinRectX(rect, sgrX)) return null;
   if (sgrY < listTop || sgrY > rect.bottom) return null;
   const windowIndex = Math.floor((sgrY - listTop) / rowHeight);
   if (windowIndex < 0 || windowIndex >= visibleCount) return null;
-  return offset + windowIndex;
+  return windowIndex;
 }
 
 export function hitTranscriptRow(input: {
@@ -64,33 +53,6 @@ export function hitTranscriptRow(input: {
     listTop: input.rect.top,
     rowHeight: 1,
     visibleCount: input.visibleCount,
-  });
-}
-
-export function hitBriefTaskRow(
-  input: {
-    rect: WorkflowContentRect;
-    sgrX: number;
-    sgrY: number;
-    visibleCount: number;
-    previousCount: number;
-  } & (
-    | { hasLoadError: boolean; taskTopOffset?: never }
-    | { taskTopOffset: number; hasLoadError?: never }
-  ),
-): number | null {
-  const taskTopOffset =
-    'taskTopOffset' in input && input.taskTopOffset !== undefined
-      ? input.taskTopOffset
-      : briefListTopOffset({ hasLoadError: input.hasLoadError });
-  return hitRowIndex({
-    rect: input.rect,
-    sgrX: input.sgrX,
-    sgrY: input.sgrY,
-    listTop: input.rect.top + taskTopOffset,
-    rowHeight: SIMPLE_TASK_ROW_HEIGHT,
-    visibleCount: input.visibleCount,
-    offset: input.previousCount,
   });
 }
 

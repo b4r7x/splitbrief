@@ -20,7 +20,11 @@ function leadAfterStopAt(resumeAt: StepRef): string {
   routerStore.init({
     screen: 'workflow',
     run: makeRunRecord({
-      status: { kind: 'open', stop: { kind: 'paused', at: 'mid-step' }, resumeAt },
+      status: {
+        kind: 'open',
+        stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } },
+        resumeAt,
+      },
     }),
     execution: { kind: 'at-rest' },
   });
@@ -37,12 +41,12 @@ describe('useStopByline', () => {
   afterEach(resetAllStores);
 
   it('names the gate a stop settled at from the run record, with no changes to keep', () => {
-    expect(leadAfterStopAt({ kind: 'gate', gate: 'plan' })).toBe('Paused at the plan');
+    expect(leadAfterStopAt({ kind: 'gate', gate: 'plan' })).toBe('Stopped at the plan');
   });
 
   it('names the brief the record says the stop cut', () => {
     expect(leadAfterStopAt({ kind: 'brief', taskId: taskId('T004'), attempt: 1 })).toBe(
-      'Paused at T004 · Partial changes kept',
+      'Stopped at T004 · Partial changes kept',
     );
   });
 

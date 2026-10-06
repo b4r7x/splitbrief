@@ -56,9 +56,13 @@ export function implementerExpandedDiffCardBlock(
     labelTone: 'textDim' as const,
     metaSegments: [
       { text: formatDuration(event.duration), tone: 'textDim' as const },
-      { text: '  ', tone: 'textDim' as const },
-      { text: `+${event.linesAdded}`, tone: 'diffAdded' as const },
-      { text: ` -${event.linesRemoved}`, tone: 'diffRemoved' as const },
+      ...(event.linesAdded === undefined || event.linesRemoved === undefined
+        ? []
+        : [
+            { text: '  ', tone: 'textDim' as const },
+            { text: `+${event.linesAdded}`, tone: 'diffAdded' as const },
+            { text: ` -${event.linesRemoved}`, tone: 'diffRemoved' as const },
+          ]),
     ],
     bodyLines,
     width: ctx.width,

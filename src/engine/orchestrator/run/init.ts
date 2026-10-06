@@ -1,4 +1,5 @@
 import type { Config } from '../../../core/schemas/config.js';
+import { isRetiredRecoveryReason } from '../../../core/recovery/halt.js';
 import { isImplementerPhase, isLivePhase } from '../../../core/phases.js';
 import type { ProjectContext } from '../../../core/state/types.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
@@ -93,7 +94,6 @@ function plannerUnavailableMessage(plannerConfig: Config['planner'], planner: Pl
 
 export type RunWorkflowOptions = {
   prepared: PreparedExecution;
-  getApprovalEnabled?: (() => boolean) | undefined;
   callbacks: OrchestratorCallbacks;
   sinks: WorkflowSinks;
   savedState?: WorkflowState | undefined;
@@ -211,9 +211,6 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     sessionId,
     getTrackedState: args.getTrackedState,
   });
-  if (config.approval?.enabled === false) {
-    bus.publish({ type: 'approval_mode_changed', ts: Date.now(), mode: 'yolo' });
-  }
 
   let savedState = newWorkflow ? undefined : (args.savedState ?? opts.savedState);
   if (savedState) {
@@ -263,7 +260,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
   if (savedState !== undefined) {
     savedState = realignPassedTaskIndex(bus, savedState);
     savedState = await restoreUnresumedBriefCut({ projectDir, sessionId, bus, state: savedState });
-    savedState = await settleFileHalt({ projectDir, sessionId, bus, state: savedState });
+    savedState = await settleStaleHalt({ projectDir, sessionId, bus, state: savedState });
     setTrackedState(savedState);
   }
   if (
@@ -452,7 +449,6 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     sessionId,
     config,
     isolation,
-    ...(opts.getApprovalEnabled !== undefined && { getApprovalEnabled: opts.getApprovalEnabled }),
     callbacks,
     bus,
     planner,
@@ -548,26 +544,25 @@ export async function resumeContinuation(input: {
   });
 }
 
-const RETIRED_FILE_HALTS = new Set(['user-edit-conflict', 'approval-promotion-conflict']);
-
 /**
- * User-edit and approval-promotion halts are always stale. A checkout-changed halt that names only
- * HEAD and branch moves is stale only when the run has no saved workspace. Other halts still stand.
+ * A halt on a retired cause is always stale: nothing the run still checks raised it. A
+ * checkout-changed halt that names only HEAD and branch moves is stale only when the run has no
+ * saved workspace. Other halts still stand.
  */
-function isRetiredFileHalt(issue: RecoveryIssue, state: WorkflowState): boolean {
-  if (RETIRED_FILE_HALTS.has(issue.reason)) return true;
+function isStaleHalt(issue: RecoveryIssue, state: WorkflowState): boolean {
+  if (isRetiredRecoveryReason(issue.reason)) return true;
   if (issue.reason !== 'checkout-changed' || state.workspace !== undefined) return false;
   const changes = issue.message.split(' — ').at(-1)?.split(' · ') ?? [];
   return changes.every((change) => change === 'HEAD' || change.startsWith('branch '));
 }
 
-/** A pending file halt on re-entry that is stale; the entry resolves it. */
-export function hasStaleFileHalt(state: WorkflowState): boolean {
-  return state.pendingRecovery !== undefined && isRetiredFileHalt(state.pendingRecovery, state);
+/** A pending halt on re-entry that is stale; the entry resolves it. */
+export function hasStaleHalt(state: WorkflowState): boolean {
+  return state.pendingRecovery !== undefined && isStaleHalt(state.pendingRecovery, state);
 }
 
 /** The entry that acts on it: a stale halt is over and the run continues. */
-async function settleFileHalt(args: {
+async function settleStaleHalt(args: {
   projectDir: string;
   sessionId: string;
   bus: EventBus;
@@ -575,7 +570,7 @@ async function settleFileHalt(args: {
 }): Promise<WorkflowState> {
   const { projectDir, sessionId, bus, state } = args;
   const issue = state.pendingRecovery;
-  if (issue === undefined || !isRetiredFileHalt(issue, state)) return state;
+  if (issue === undefined || !isStaleHalt(issue, state)) return state;
 
   const resolved = transitionAndSave(
     { projectDir, sessionId },
@@ -593,7 +588,7 @@ async function settleFileHalt(args: {
   publishWarning({
     bus,
     phase: resolved.phase,
-    message: 'The files the halt named no longer block this brief; continuing.',
+    message: 'The halt this run saved no longer applies; continuing.',
     safety: { category: 'recovery', code: 'stale_file_halt_resolved' },
   });
   return resolved;

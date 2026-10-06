@@ -11,7 +11,6 @@ import { controlsStore } from '../../src/stores/ui/controls.js';
 import { terminalSizeStore } from '../../src/stores/ui/terminal-size.js';
 import { overlayStore } from '../../src/stores/ui/overlay.js';
 import { feedbackStore } from '../../src/stores/ui/feedback.js';
-import { focusStore } from '../../src/stores/ui/focus.js';
 import { hoverStore } from '../../src/stores/ui/hover.js';
 import { inputHistoryStore } from '../../src/stores/ui/input-history.js';
 import { inputHeightStore } from '../../src/stores/ui/input-height.js';
@@ -54,7 +53,6 @@ export function resetAllStores(): void {
   terminalSizeStore.reset();
   overlayStore.reset();
   feedbackStore.reset();
-  focusStore.reset();
   hoverStore.reset();
   inputHistoryStore.reset();
   inputHeightStore.reset();

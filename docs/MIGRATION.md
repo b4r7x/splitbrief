@@ -36,7 +36,7 @@ New actions: `CLOSE_RUN`, `INTERRUPT_STEP`, `RESUME_STEP`, `BEGIN_PLANNING`. New
 
 ### `Session.status` values
 
-`open` | `complete` | `ended`, derived by `deriveRunStatus` rather than taken from the exit path. The legacy literals `interrupted`, `failed` and `cancelled` still parse and map to `open` (`failed` additionally sets `stop: 'failed'`). A row also carries optional `phase`, `mode` and `stop` (`paused` | `waiting` | `halted` | `failed` | `interrupted`).
+`open` | `complete` | `ended`, derived by `deriveRunStatus` rather than taken from the exit path. The legacy literals `interrupted`, `failed` and `cancelled` still parse and map to `open` (`failed` additionally sets `stop: 'stopped'`). A row also carries optional `phase`, `mode` and `stop` (`waiting-for-you` | `stopped`); an older row's `paused`, `waiting`, `halted`, `input-required`, `failed` or `interrupted` reads as the kind it put the run in.
 
 `WorkflowState` gains three optional fields — `closed`, `interruptedStep`, `lastFailure` — with no `stateVersion` bump; a state written before them reads identically. `budgetPauseAcknowledgedAtCost` joins the legacy strip list.
 

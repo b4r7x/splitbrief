@@ -11,8 +11,6 @@ import {
 import type { EditorAffinity, VisualLine } from './grapheme-motions.js';
 import { assertNever } from '../../utils/type-guards.js';
 
-export type EditorSurface = 'raw' | 'field';
-
 export type EditClass = 'insert' | 'delete' | 'newline' | 'paste' | 'motion';
 
 export type EditorMotion =
@@ -36,7 +34,6 @@ export interface EditorSnapshot {
 }
 
 export interface EditorState {
-  surface: EditorSurface;
   value: string;
   cursor: number;
   goalCol: number | null;
@@ -64,9 +61,8 @@ export interface EditorLayout {
 
 export const UNDO_RING_CAP = 200;
 
-export function createEditorState(surface: EditorSurface, value: string): EditorState {
+export function createEditorState(value: string): EditorState {
   return {
-    surface,
     value,
     cursor: 0,
     goalCol: null,

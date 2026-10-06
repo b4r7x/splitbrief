@@ -1,19 +1,30 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { addEvent } from './event.js';
 import { hydrateFromState } from './hydrate.js';
+import { loadEvents } from './load.js';
 import { resetWorkflow } from './reset.js';
 import { tasksStore } from '../tasks.js';
 import { tokensStore } from '../tokens.js';
 import { lifecycleStore } from '../lifecycle.js';
 import { configStore } from '../../project/config.js';
 import { taskId } from '../../../core/schemas/task.js';
-import { makeCostUpdate } from '#testing/helpers/events/task.js';
+import { makeCostUpdate, makeTaskStart, makeRetry } from '#testing/helpers/events/task.js';
+import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 
 describe('hydrateFromState', () => {
   beforeEach(() => resetWorkflow());
+
+  it('keeps replayed lineage attempts and allowance after state hydration', () => {
+    loadEvents([
+      makeTaskStart({ lineageAttempt: 6, attemptAllowance: 12 }),
+      makeRetry({ attempt: 1, lineageAttempt: 7, attemptAllowance: 12 }),
+    ]);
+    hydrateFromState(makeWorkflowState({ phase: 'implementing', tasks: [makeTask()] }));
+    expect(tasksStore.get()).toMatchObject({ currentAttempt: 7, attemptAllowance: 12 });
+  });
 
   it('restores observable workflow state from a persisted snapshot', () => {
     hydrateFromState({
@@ -24,7 +35,12 @@ describe('hydrateFromState', () => {
       attempt: 0,
       tasks: [
         makeTask({ id: 'T001', status: 'done' }),
-        makeTask({ id: 'T002', status: 'done', file: 'src/resumed.ts', action: 'modify' }),
+        makeTask({
+          id: 'T002',
+          status: 'done',
+          suggestedFiles: ['src/resumed.ts'],
+          action: 'modify',
+        }),
         makeTask({ id: 'T003', status: 'pending' }),
       ],
       plannerSessionId: null,

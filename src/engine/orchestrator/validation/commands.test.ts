@@ -32,7 +32,7 @@ describe('runValidation', () => {
   });
 
   function mkTask(file: string): Task {
-    return makeTask({ file, action: 'modify' });
+    return makeTask({ suggestedFiles: [file], action: 'modify' });
   }
 
   const fakeBus = { publish: () => {}, subscribe: () => () => {} };
@@ -460,7 +460,7 @@ describe('runValidation', () => {
     writeFileSync(join(tempDir, 'src', 'b.test.ts'), '');
 
     await validator.runValidation({
-      task: makeTask({ file: 'src/a.ts', files: ['src/a.ts', 'src/b.ts'], action: 'modify' }),
+      task: makeTask({ suggestedFiles: ['src/a.ts', 'src/b.ts'], action: 'modify' }),
       projectDir: tempDir,
       config,
       bus: fakeBus,

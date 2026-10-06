@@ -142,7 +142,7 @@ Outcome events include `task_retry`, `task_escalating`, `consult_answered`, `tas
 
 **What it does.** After all tasks reach a terminal state, the review seat — the `reviewer` runner when one is configured, the planner when none is — reviews the entire diff against the Task Brief and any supporting spec. The deterministic drift report (see below) is rendered into the prompt under `## Deterministic Drift Report` so the reviewer sees both signals at once.
 
-**How to use.** Always runs at end cadence; with `workflow.review: task`, one scoped review also runs after every brief that passed its validation. The seat answers one typed `ReviewVerdict` (`src/core/schemas/review.ts`), SPLITBRIEF derives `pass`, `pass-with-notes` or `fail` and writes the record to `.splitbrief/sessions/<id>/review.json` (rendered as `review.md`). A failed review goes to one planner triage call whose fix tasks are appended with fresh ids; at most 2 fix cycles run (at most 3 reviews), and after the cap the run halts on `review-failed` with **fix again with a note**, **accept as is** on a workspace run, or end. Fires `workflow_complete` and writes `summary.json`.
+**How to use.** Always runs at end cadence; with `workflow.review: task`, one scoped review also runs after every brief that passed its validation. The seat answers one typed `ReviewVerdict` (`src/core/schemas/review.ts`), SPLITBRIEF derives `pass`, `pass-with-notes` or `fail` and writes the record to `.splitbrief/sessions/<id>/review.json` (rendered as `review.md`). A failed review goes to one planner triage call whose fix tasks are appended with fresh ids; at most 2 fix cycles run (at most 3 reviews), and after the cap the run halts on `review-failed` with **fix again with a note**, **accept as is** at final review for every run, or end. Fires `workflow_complete` and writes `summary.json`.
 
 **When to use.** No opt-out — final review is the closing safety check before the workflow is marked complete.
 
@@ -266,13 +266,13 @@ The second row appears only while a brief is running, and reads `Keep running` o
 - `/resume` — continue a parked run; the stopped menu also offers Resume, End run and Back to sessions. `/stop` reopens the menu. An open run at rest accepts Enter to continue; typed instructions become its steer.
 - `/end` closes the run through [the shared close path](./WORKFLOW.md#apply). End run on a ready workspace run means Discard.
 
-**On-screen.** The byline reports stop progress; the legend shows keys while the stop menu is closed. It reads `Waiting for processes to exit` while owned processes remain, then `Finishing cleanup and saving`. A boundary pause reads `Finishing T<id>` and `Pause requested; no next brief will start`. A mid-brief park reads `Paused at T<id> · Partial changes kept`. A stop outside a brief names its step, such as `Paused at the plan gate`.
+**On-screen.** The byline reports stop progress; the legend shows keys while the stop menu is closed. It reads `Waiting for processes to exit` while owned processes remain, then `Finishing cleanup and saving`. A boundary pause reads `Finishing T<id>` and `Pause requested; no next brief will start`. A mid-brief park reads `Stopped at T<id> · Partial changes kept`. A stop outside a brief names its step, such as `Stopped at the plan`.
 
 Stopping keeps workspace changes. Closing follows [the Apply close path](./WORKFLOW.md#apply). A ready run uses [the result menu](#run-result-menu); its closed outcome appears in [the run block](#run-screen-at-rest).
 
 ### Recovery stops
 
-**What it does.** A recovery stop saves `pendingRecovery` in `state.json`, appends events to `session.jsonl`, and shows a decision prompt. Causes include spent bounds, blocked dependencies, runner failures, protected-write denials, Apply conflicts, partial writes and failed reviews. Planning can also halt on a failed call, excess questions, failed checks or an invalid typed answer. Each issue names its seat and fires `on_halt`. [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#recovery) owns the cause codes and action policy.
+**What it does.** A recovery stop saves `pendingRecovery` in `state.json`, appends events to `session.jsonl`, and shows a decision prompt. Causes include spent bounds, blocked dependencies, runner failures, protected-write denials, Apply conflicts, partial writes and failed reviews. Planning can also halt on a failed call, excess questions, failed checks or an invalid typed answer. Each issue names its seat and fires `on_halt`. The prompt shows one of two halts and then the cause: `Needs you · <cause>` for a decision only the operator can make, or `Seat down · <cause>` when the seat cannot run (`haltOf`, `src/core/recovery/halt.ts`). [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#recovery) owns the cause codes and action policy.
 
 **Actions.** Available actions are filtered per issue:
 
@@ -281,15 +281,13 @@ Stopping keeps workspace changes. Closing follows [the Apply close path](./WORKF
 | `retry-same-worker` | Retries the recorded PLAN/REVIEW step without requiring a task; BUILD resets and reruns only the matching current task. |
 | `continue` | Grants extra allowance on a spent consult or planner-call bound. |
 | `skip-current-task` | Marks the task skipped, records evidence, and leaves dependents for normal blocked-dependency recovery. |
-| `pause-run` | Leaves the active session resumable with the issue intact. |
 | `end-run` | Closes through [the shared close path](./WORKFLOW.md#apply), preserving unapplied workspace work first. |
-| `accept-as-is` | Records an owner override on a workspace review halt. See [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is). |
+| `accept-as-is` | Records an owner override at final review for every run. See [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is). |
 | `restore-backup` | Restores a partial Apply. See [Partial Apply recovery](./APPROVAL-AND-RECOVERY.md#partial-apply-recovery). |
 | `revise` | Queues the operator's correction for the next planner turn, then clears the halt. After a failed final review, it records the correction and sends the review's findings back through one more repair cycle. |
-| `revise-spec` | Kept for an older `constitution-check-failed` halt: it acts as `revise` and queues the note as a correction for the planning session. |
-| `route-bigger-worker` | Resets the current task and reruns it with the larger implementer profile named by the recovery issue. |
-| `switch-seat` | Offered for the halts the seat itself caused or can have caused — `runner-usage-limit`, `runner-unauthenticated`, `implementer-recipe-invalid`, `implementer-left-isolation`, `checkout-changed`, `runner-timeout-repeated`, `planner-call-failed` — on the plan seat as readily as the build seat: moves the blocked seat to another ready detected tool and re-prepares the same session on it. In the TUI, taking it opens that seat's own picker on the first offered tool, where the tool and its model are chosen; closing the picker with no change leaves the halt open. |
-| `planner-split-rebase` | Legacy/manual only; new recovery prompts do not offer it, and old states block with `planner-proposal-required`. |
+| `switch-seat` | A *Seat down* action, offered on `runner-usage-limit`, `runner-unauthenticated`, `implementer-recipe-invalid`, `implementer-left-isolation`, `runner-timeout-repeated`, `planner-call-failed` and `seat-protocol-error` when another ready tool was detected — on the plan seat as readily as the build seat: moves the blocked seat to another ready detected tool and re-prepares the same session on it. In the TUI, taking it opens that seat's own picker on the first offered tool, where the tool and its model are chosen; closing the picker with no change leaves the halt open. |
+
+Older files can name retired actions; `RETIRED_RECOVERY_ACTIONS` reads `revise-spec` as `revise` and `route-bigger-worker` as `retry-same-worker`, and drops `pause-run` and `planner-split-rebase`. A halt you leave stays pending, and the run shows it again when you continue.
 
 **Resume/headless.** `splitbrief resume` shows pending recovery before any planner or implementer call. Headless JSON runs emit `recovery_required` with reason, task/files, available actions, and recommendation, then exit non-zero; both headless renderings print the recommended action and the exact `splitbrief continue <session> --action …` line to stderr, and `continue --action <skip|retry|restore|switch-seat:<tool>[:<model>]|end-run>` applies it without a TUI. `restore` takes `restore-backup` and answers only an `apply-partial` halt.
 
@@ -301,7 +299,7 @@ Stopping keeps workspace changes. Closing follows [the Apply close path](./WORKF
 
 ### Protected-path confirmation
 
-**What it does.** A write to a protected path asks before it reaches the project, and no other write does. The protected paths are dependency manifests and lockfiles (`package_change`), CI configuration and env and key files (`sensitive_change`), and `.git` and `.splitbrief` (`destructive`). A brief's files are suggestions: an unplanned ordinary file is recorded as touched, not suggested, and does not ask. A confirmation holds for that path for the rest of the run, and approving a plan card that lists the write confirms it in advance. `approval.enabled: false` and `--yolo` do not change the rule. There are no sticky grants, no `.splitbrief/approvals.json`, no `/approval` command, no `splitbrief approval` command, and no tier overrides (`approval.tiers` loads with one notice and is ignored). There is no check for shell commands or network access; SPLITBRIEF does not sandbox either.
+**What it does.** A write to a protected path asks before it reaches the project, and no other write does. The protected paths are dependency manifests and lockfiles (`package_change`), CI configuration and env and key files (`sensitive_change`), and `.git` and `.splitbrief` (`destructive`). A brief's files are suggestions: an unplanned ordinary file is recorded as touched, not suggested, and does not ask. A confirmation holds for that path for the rest of the run, and approving a plan card that lists the write confirms it in advance. `--yolo` is removed. The retired `approval.enabled` key loads with one notice and is ignored. There are no sticky grants, no `.splitbrief/approvals.json`, no `/approval` command, no `splitbrief approval` command, and no tier overrides (`approval.tiers` loads with one notice and is ignored). There is no check for shell commands or network access; SPLITBRIEF does not sandbox either.
 
 **How to use.** Nothing to configure. Answer the prompt with Confirm (and an optional reason) or deny it; a denial discards only the denied file. A headless run has no reply channel, so a protected write fails closed with `APPROVAL_REQUIRED`.
 
@@ -317,22 +315,9 @@ Stopping keeps workspace changes. Closing follows [the Apply close path](./WORKF
 
 **What it does.** Before final review, the orchestrator computes a deterministic drift report comparing the Task Brief against the actual git diff and the captured brief diffs. Findings include out-of-scope file edits, missing target files, orphan diffs, out-of-bounds substring matches, and failed tasks that nevertheless left changes.
 
-**How to use.** Always runs. Persisted as `.splitbrief/sessions/<id>/drift-report.json`; rendered into the final review prompt under `## Deterministic Drift Report`. Event: `drift_report` carrying `passed`, `score`, `errorCount`, `warningCount`. Visible in a closed run’s `Run` block's `Scope` row — `score 1.00`, `score 0.60 · 1 error · 1 warning`, or `not checked`. That row is the only place the screen names the concept.
+**How to use.** Always runs. Persisted as `.splitbrief/sessions/<id>/drift-report.json`; rendered into the final review prompt under `## Deterministic Drift Report`. Event: `drift_report` carrying `passed`, `errorCount`, `warningCount`. Visible in a closed run’s `Run` block's `Scope` row — `clean`, `1 error · 1 warning`, or `not checked`. That row is the only place the screen names the concept.
 
-**When to use.** No setup needed; the report is the deterministic input to the planner reviewer's qualitative judgment.
-
-### Drift action chains (cross-task)
-
-**What it does.** A second-tier scorer that scores chains of consecutive out-of-bounds writes across tasks. A single out-of-scope file is usually a refactor; three across consecutive tasks is the implementer wandering. Score formula: `length(0.3) + overlap(0.5) + newFiles(0.2)`, capped to `[0,1]`. Emits `drift_chain_detected` when the score meets or exceeds the configured threshold.
-
-**How to use.**
-
-```yaml
-workflow:
-  driftChainThreshold: 0.6     # 0.0–1.0; default 0.6
-```
-
-Persisted as `drift-chains.json`. Surfaces as `chainDriftSummary` in `summary.json`.
+**When to use.** No setup needed; the report is the deterministic input to the planner reviewer's qualitative judgment. There are no cross-task drift chains and no drift score: `workflow.driftChainThreshold` is a retired key that loads with one notice and is ignored.
 
 ### Checks log
 
@@ -424,7 +409,7 @@ palette:
 
 ### Sessions picker
 
-**What it does.** Browses summary-backed past sessions from `.splitbrief/sessions/`. Open via `/sessions` or from the home screen. Each row shows status icon, feature, and relative start time.
+**What it does.** Browses summary-backed past sessions from `.splitbrief/sessions/`. Open via `/sessions` or from the home screen. Each row shows a status icon, the feature, the relative start time and the run's state in words (`sessionStatusWord`, `src/core/sessions/display.ts`): `running`, `waiting for you`, `stopped`, `ready to apply`, or the closed outcome `applied`, `discarded`, `ended` or `complete`.
 
 Sessions are execution records scoped to one workflow each. The plan card is scoped to the current session's plan: its summary, decisions, criteria, tasks with their checks and batches, and the protected writes it lists.
 
@@ -460,30 +445,30 @@ Start the local server yourself, configure its address, and use Retry to check t
 
 **Narrow widths.** A picker row never cuts a word. A model name keeps its whole leading words (`Gemini 3.8…`, never `Gemini 3.8 Fla…`), and a name another row also starts with keeps its whole trailing words instead (`…Fin (free)`); only twins no whole-word form can tell apart in the room are cut inside a word. A route row keeps its provider whole and gives up its sign-in word first (`signed in · api key` sheds `api key`, then goes); an axis row keeps its value whole and gives up the axis name first; a tool row drops its version before its name sheds a word. Before a word goes, the row spends its blank chevron and check cells, so its value may run past the column. A status word (`Unavailable`, `Auth required`) shows on every status row of the tool list or on none, because a list that states it on one row and not the next reads as though the others are ready.
 
-**Custom model entry.** `+ Add custom model…` offers example ids from the highlighted tool's own listing, spelled as that tool takes them: Claude Code shows the full ids its aliases resolve to (`claude-sonnet-5`), Kilo and OpenCode `provider/model`, one example per provider. A tool whose listing has not landed names the command that lists its ids instead (`an id from kilo models --verbose`).
+**Custom model entry.** `+ Add custom model…` offers example ids from the highlighted tool's own listing, spelled as that tool takes them: Claude Code shows the full ids its aliases resolve to (`claude-sonnet-5`), Kilo and OpenCode `provider/model`, one example per provider. A tool whose listing has not landed names the command that lists its ids instead (`an id from kilo models --verbose`). A custom row whose display name equals a listed row's name reads its own id (`claude-opus-5-5`) with the `Custom` tag, and the listed alias row keeps the plain name, so the two stay two selections (`src/features/runners/model-row-plan.ts`).
 
 **A refused save.** A save the config refuses leaves the picker open and takes its byline in the error colour until the error clears, because the overlay hides the composer that would otherwise carry it. The line names the field and the rule the new config broke (`Failed to save config: planner.outputFormat: …`), not only the file. A second `⏎` while a save is still in flight starts no second write, so one confirm stays one save. A save refused because another writer changed the config keeps the bytes that writer put on disk and says `Config changed on disk. Reload before saving again.`; the focused row retries after a failure.
 
 ### Build progress block
 
-**What it does.** While the run is `implementing`, a persistent block sits under the header rail at every width and says what the build is doing without a scroll:
+**What it does.** While the run is `implementing` or in the final review, a persistent block sits under the header rail at every width and says what the build is doing without a scroll:
 
 ```
-3/7 briefs passed · attempt 2 of 8 · ETA ~4m
+3/7 briefs passed · attempt 2 of 8
 OpenAI Codex CLI · implementing · last event 3s ago
 ```
 
-The fraction counts briefs that **passed their checks** — a started brief is not a settled one, and an escalated brief is never counted as settled. Attempts are stated as attempts (`attempt 2 of 8`, where the maximum is the lineage's `BOUNDS.attemptsPerLineage`), never as retries. The ETA is an average of the briefs that finished, printed in whole minutes, and it appears only after two briefs finished; with none it reads `ETA unavailable: no brief finished yet`, with one `ETA unavailable: one brief finished so far`, and a seat swap retires it with `ETA unavailable: worker changed`. The activity line names the seat, the operation and recent activity; while a gate command runs it names the command instead (`npm test · running 41s`). The freshness line is the one place the block states silence, and it counts every second: `last event 8s ago`, and once the idle watchdog has warned that a seat on a call has sent nothing — five minutes by default (`RUNNER_IDLE_WARN_MS`, tunable per runner as `idleWarnMs`) — `No update for 5m 12s` in the warning colour. A gate command is no seat's silence, so while one runs the line keeps reading `last event …`. The same five facts regroup rather than disappear as the terminal narrows: two rows at 120 columns and wider, four at 80, five below that. During the final review no brief runs: the block shows no attempt and no ETA (two rows at 120 columns and wider, three below), the byline quotes no ETA, and the composer invites `Queue a message for the reviewer…`. An appended fix task counts as not passed until its attempt passes.
+The fraction counts briefs that **passed their checks** — a started brief is not a settled one, and an escalated brief is never counted as settled. Attempts are stated as attempts (`attempt 2 of 8`), never as retries: the count and the maximum are the lineage's own, as `task_started` and `task_retry` record them (`lineageAttempt`, `attemptAllowance`), so a brief continued after a granted allowance reads `attempt 7 of 12`, and the transcript's retry row states the same numbers. The count shows only from attempt 2: a brief's first attempt is the normal case, so the counts line carries no attempt. No surface prints an ETA. The activity line names the seat and the operation; while a gate command runs it names the command instead (`npm test · running 41s`). The freshness line is the one place the block states silence, and it counts every second: `last event 8s ago`. Once the idle watchdog has warned that a seat on a call has sent nothing — five minutes by default (`RUNNER_IDLE_WARN_MS`, tunable per runner as `idleWarnMs`) — the line names what the seat is doing through the silence. A tool the stream opened and has not closed reads `running npm test · 5m 12s`. A runner that reports a tool only when the tool ends reads `a tool is running · 5m 12s` in the warning colour. Any other runner reads `No update for 5m 12s` in the warning colour. A gate command is no seat's silence, so while one runs the line keeps reading `last event …`. The block is two rows at 120 columns and wider (counts, then activity and freshness on one row) and three rows below, in the build and in the final review alike (`buildProgressRowCount(width)`). During the final review no brief runs, so the block shows no attempt and the composer invites `Queue a message for the reviewer…`. An appended fix task counts as not passed until its attempt passes.
 
 ### Input footer
 
 **What it does.** One byline under the composer carrying the run's live state.
 
-**Format.** The lead is the live status — `⠙ Implementing… 1:12`, `⠙ Planning… 0:41` during the planning session (`Compiling briefs…` only on an older run's briefs call), `Waiting for you`, `Still working — silent 3m 0s` (only `Still working` while the build block is on screen, whose freshness line states the silence; where no block is painted — during planning, or while the stop menu takes its rows — the byline carries the count), a stop state such as `Paused at T003 · Partial changes kept`, or the closing `Stopped by you` / `Build failed`. After it, in this order and dropped from the right as the width shrinks: a hint, the queued text, the ETA, `y copy` when the focused region has something to copy, and the worktree name. Queued text reads `<n> queued` while the planner or reviewer owns the queue, and `queued for after T00N` while a brief is building, naming the brief the text waits for. The elapsed time is the step's own. During planning the step is the planner call that is open, counted from the moment that call opened; the first call after the run starts or resumes counts from that start, so the preparation before it stays on the clock. In the build and the final review the step is the stage. A resume starts the clock again, and the minutes the run spent waiting on you — a planner question, an approval gate — are subtracted, so answering a question does not make the next brief look slow.
+**Format.** The lead is the live status — `⠙ Implementing… 1:12`, `⠙ Planning… 0:41` during the planning session (`Compiling briefs…` only on an older run's briefs call), `Waiting for your answer`, `Still working — silent 3m 0s` (only `Still working` while the build block is on screen, whose freshness line states the silence; where no block is painted — during planning, or while the stop menu takes its rows — the byline carries the count), a stop state such as `Stopped at T003 · Partial changes kept`, or the closing `Stopped by you` / `Build failed`. After it, in this order and dropped from the right as the width shrinks: a hint, the queued text, and the worktree name. Queued text reads `<n> queued` while the planner or reviewer owns the queue, and `queued for after T00N` while a brief is building, naming the brief the text waits for. The elapsed time is the step's own. During planning the step is the planner call that is open, counted from the moment that call opened; the first call after the run starts or resumes counts from that start, so the preparation before it stays on the clock. In the build and the final review the step is the stage. A resume starts the clock again, and the minutes the run spent waiting on you — a planner question, an approval gate — are subtracted, so answering a question does not make the next brief look slow.
 
 **Steer, queue, interrupt.** The composer means a different thing in each state, and its placeholder says which:
 
-- **Queue** — while a planning call is running, the placeholder reads `Queue a message for the planner…`; while a brief is building, it reads `Queue a message for after this brief…`; text you send waits for the next safe boundary. At that boundary it is delivered as the next brief's implementer steer and to the next consult on that task. `/queue show` and `/queue clear` inspect and discard what is pending.
+- **Queue** — while a planning call is running, the placeholder reads `Queue a message for the planner…`, and during the final review `Queue a message for the reviewer…`; while a brief is building, it reads `Queue a message for after this brief…`. Text you send waits for the next safe boundary. A message queued during a brief is delivered at that boundary as the next brief's implementer steer and to the next consult on that task. `/queue show` and `/queue clear` inspect and discard what is pending.
 - **Steer** — while the run is parked (`Stop now`, or an interrupted call), text you send steers the resumed run, but a blank Enter does not resume a run parked in this process — it answers with `type instructions or /resume`. A continuable run at rest resumes on a blank Enter. `/steer <correction>` is the explicit form: it stops the run now and continues it with the correction, holding the text through the stop race.
 - **Interrupt** — `ctrl+c` stops the run at once, `esc` opens the stop menu. Neither is reachable by typing.
 
@@ -493,37 +478,38 @@ A ready workspace run shows an inline result menu above the composer. The rows a
 
 **Show diff** writes the run patch and opens it in your configured external editor. **Apply** uses [`/run accept`](./SLASH-COMMANDS-REFERENCE.md#run-acceptreject). **Discard** uses `/run reject confirm`. Their effects are in [Apply](./WORKFLOW.md#apply). The menu lives in `src/features/workflow/result/`.
 
-An owner override changes the first row to **Apply as is**. Its confirmation lists the open findings and offers **Apply as is** or **Back**. See [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is).
+The byline under the menu reads `Ready to apply · pick Apply, Show diff or Discard`. An owner override changes the first row to **Apply as is**, and the byline to `Ready to apply as is · pick Apply as is, Show diff or Discard`. Its confirmation lists the open findings and offers **Apply as is** or **Back**. See [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is).
 
 ### Run screen at rest
 
 **What it does.** The workflow screen is the run's home whether anything is running on it or not. Opening a run from `/sessions`, from the home list or from the palette replays its `session.jsonl` into the workflow stores and shows the run exactly where it stopped: the same header rail, the same transcript, the same footer. Nothing navigates to a second screen, and continuing the run flips it back to live in place. There is no summary screen.
 
-**Format (header).** The rail has Plan, Build and Review stages; a checkout-mode run (`workflow.isolation: none`) has no Apply stage. A worktree or staged-copy run adds an Apply stage, pending while the run is ready, done when applied, cancelled when discarded, and marked when Apply halted. Cleared stages show `●`; unreached stages show dim `○`. A paused, waiting or interrupted stage shows `×`. A halted or failed stage shows `✗`. A ready-to-apply or closed complete run shows three `●`. A closed run names its recorded crew; an open run names the crew it will use.
+**Format (header).** The rail has Plan, Build and Review stages; a checkout-mode run (`workflow.isolation: none`) has no Apply stage. A worktree or staged-copy run adds an Apply stage, pending while the run is ready, done when applied, cancelled when discarded, and marked when Apply halted. Cleared stages and the active stage show `●`, and only the active stage is bright and bold; unreached stages show dim `○`. A run that stopped at a halt or on an error shows `✗` on its stage. Every other open run — stopped by you, interrupted, or waiting at a question or a gate — shows `×`. A ready-to-apply or closed complete run shows three `●`. A closed run names its recorded crew; an open run names the crew it will use.
 
 **Format (composer and byline).** A ready run shows [the result menu](#run-result-menu). Its composer takes `/commands`; bare Enter does not continue it. An open run takes a correction or bare Enter to continue. The placeholder reads `Type a correction, or ⏎ to continue…`. Typed text becomes the next step's steer. The byline names the stop and its action:
 
-- `Paused at T003 · type a correction or ⏎ to continue`
+- `Stopped at T003 · type a correction or ⏎ to continue` (stopped by you)
 - `Waiting at the plan · ⏎ to reopen it` (an older run waiting at its spec or briefs gate reads `Waiting at the plan · ⏎ to continue`: it continues as one planning session)
-- `Halted · Usage limit on ollama · ⏎ to decide`
+- `Waiting for your answer · type a reply or ⏎ to continue`
+- `Seat down · Usage limit on ollama · ⏎ to decide` (a *Needs you* halt reads `Needs you · <cause> · ⏎ to decide`)
 - `Stopped by an error · Planning failed. · ⏎ to retry the step`
-- `Interrupted · ⏎ to continue from T003`
+- `Stopped at T003 · ⏎ to continue` (the process went away)
 
 A run nothing can pick up says why before where — `Saved state unreadable · start it again from home` — and takes `/commands` only. A run another process is driving reads `Running in another process`.
 
 **Format (closed run).** Applied, discarded, ended and older completed runs take `/commands` only. The placeholder reads `/ for a command · ⏎ for home…`. Bare Enter goes home. The ledger appends to the transcript as a `Closed ─` rule, outcome sentence and these sections:
 
-- One outcome sentence names Applied, Discarded or Ended. Older completed runs keep Ready or Needs attention. The fraction counts briefs that passed. Whole ` · ` tokens drop from the right when the line exceeds its width.
+- One outcome sentence names Applied, Discarded or Ended. Older completed runs keep Complete or Needs attention. The fraction counts briefs that passed. Whole ` · ` tokens drop from the right when the line exceeds its width.
 - `Briefs` — one row per brief in the saved current plan, including a plan ended at its approval gate before evidence was written. The rows use the transcript's grammar: `✓ T001 Add validator module  src/validate.ts · local · 84.2s`, `▲` escalated, `✗` failed, `–` skipped, `×` the brief the run stopped inside (`· stopped · 2 partial files`), `○` a brief that never started.
 - `Earlier work` — present when ledger or spend entries cannot be joined safely to the current plan, as on an older run that rewound its plan. An old T001 remains distinct from a newly compiled T001. The outcome fraction counts only current briefs; the Files section and `/usage` keep the run's earlier work and spend.
 - `Files` — the changed set, sorted, project-relative and middle-cut, with ` · partial` on a file the stopped brief left half-written.
-- `Run` — labelled facts, one home each: `Crew` (only when the header named fewer than three seats), `Review`, `Packet`, `Scope`, `Briefs` (brief quality, only on an older run that wrote `brief-quality.json`), `Phases`, `Session`. A fact with no value carries one absence word — `not run`, `not checked`, `not estimated` — never `—`, `n/a` or `$0.00`. The run's cost and token counts are not ledger facts; `/usage` keeps those counters and the spend.
+- `Run` — labelled facts, one home each: `Crew` (only when the header named fewer than three seats), `Review`, `Packet`, `Patch` (the project-relative `run.patch` path in the link colour, only when the close saved a patch of changed files), `Scope` (`clean`, or the counts such as `1 error · 1 warning`), `Briefs` (brief quality, only on an older run that wrote `brief-quality.json`), `Phases`, `Session`. A fact with no value carries one absence word — `not run`, `not checked`, `not estimated` — never `—`, `n/a` or `$0.00`. The run's cost and token counts are not ledger facts; `/usage` keeps those counters and the spend.
 
 A closed run whose record was never written says so in one line rather than painting an empty ledger: `× Ended · no run record was written`.
 
 Saved task status and matching evidence control stopped-brief attribution, including when an older summary names a reused task ID. Earlier work with no saved file list reads `files not recorded`. Overwritten ledger evidence cannot be recovered. Identical task IDs and brief hashes can leave different plan revisions indistinguishable; the display retains the available records without inventing history.
 
-**Format (closed byline).** An applied run reads `Applied · undo it with /run reject confirm`. A discarded run names `git apply .splitbrief/sessions/<id>/run.patch`. An ended run reads `esc home`. Older completed runs keep their snapshot-ledger bylines. See [`/run`](./SLASH-COMMANDS-REFERENCE.md#run-acceptreject).
+**Format (closed byline).** An applied run reads `Undo the Apply with /run reject confirm`; once the Apply is undone it reads `Apply undone · nothing left to undo`, or `Apply undone · your later edits were kept` when the undo kept files you changed after it. A discarded or ended run that saved a patch reads `Bring the changes back with git apply on the Patch file`; the `Patch` row of the `Run` section names the file. An ended run with no patch reads `esc home`. Older completed runs keep their snapshot-ledger bylines. See [`/run`](./SLASH-COMMANDS-REFERENCE.md#run-acceptreject).
 
 **How to use.** `⏎` on a session row opens the run. `esc` leaves a run at rest for home — there is nothing to stop, so no stop sheet opens. When the transcript outgrows its height it scrolls a line at a time with `shift+↑↓` (plain arrows stay with the composer history) or a page with `pgup`/`pgdn`, the legend gains `shift+↑↓ scroll`, and the byline never scrolls away.
 

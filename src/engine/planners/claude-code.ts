@@ -1,6 +1,5 @@
 import { error } from '../../utils/error.js';
 import type { Planner, EscalationResult, PlannerUserTurnResult } from './types.js';
-import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import type { EffortLevel } from '../../core/schemas/enums.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import { CONVERSATIONAL_CAPS } from './types.js';
@@ -117,7 +116,6 @@ export function createClaudeCodePlanner(opts: {
       onOutput: (text: string) => void;
       onSessionId?: ((id: string) => void) | undefined;
       onSessionExpired?: ((id: string) => void) | undefined;
-      onQuestion?: ((q: ClarificationQuestion[]) => void) | undefined;
       onCallEvent?: Parameters<typeof runClaudePlannerStream>[0]['onCallEvent'];
     },
     callContext: RunnerCallContext,
@@ -160,7 +158,6 @@ export function createClaudeCodePlanner(opts: {
           session.capture(id);
           attemptCallbacks.onSessionId?.(id);
         },
-        onQuestion: attemptCallbacks.onQuestion,
         onCallEvent: attemptCallbacks.onCallEvent,
         callContext,
         ...claudeRunnerPrep({ env, signal: effectiveSignal }),
@@ -293,7 +290,7 @@ export function createClaudeCodePlanner(opts: {
     capabilities: CONVERSATIONAL_CAPS,
 
     escalateFullPostProcess(task, result, extracted, projectDir): EscalationResult {
-      writeProjectFile(projectDir, task.file, extracted.code);
+      writeProjectFile(projectDir, task.suggestedFiles[0], extracted.code);
       return { success: true, output: result.text, code: extracted.code, usage: result.usage };
     },
   });

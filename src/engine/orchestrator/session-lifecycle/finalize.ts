@@ -3,6 +3,7 @@ import type { Summary } from '../../../core/schemas/summary.js';
 import { WORKFLOW_STATE_VERSION, type WorkflowState } from '../../../core/schemas/workflow.js';
 import {
   clearActiveReceipt,
+  readActiveRecord,
   type ActiveSessionReceipt,
 } from '../../../core/sessions/active-pointer.js';
 import { readSession, rowFor, saveSummary } from '../../../core/sessions/io.js';
@@ -28,7 +29,7 @@ export type SaveFinalSessionOpts = {
 // with no tracked state never reached a phase, so it is open and interrupted.
 const NO_STATE: RunStatus = {
   kind: 'open',
-  stop: { kind: 'interrupted' },
+  stop: { kind: 'stopped', on: { kind: 'interrupted' } },
   resumeAt: { kind: 'planner', call: 'plan' },
 };
 
@@ -102,6 +103,18 @@ export function finalizeEndedRun(
     state,
   });
   return summary;
+}
+
+/** A run settled at rest — no live loop holds its receipt — clears the active session only while it is this run's. */
+export function finalizeRunAtRest(
+  input: Readonly<{ ref: SessionRef; config: Config; state: WorkflowState }>,
+): Summary {
+  const active = readActiveRecord(input.ref.projectDir);
+  const receipt =
+    active?.kind === 'v1' && active.receipt.sessionId === input.ref.sessionId
+      ? active.receipt
+      : undefined;
+  return finalizeEndedRun({ ...input, active: receipt });
 }
 
 /**

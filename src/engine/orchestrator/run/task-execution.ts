@@ -49,7 +49,7 @@ export type RunTasksAndReviewOptions = {
   summaryBase: SummaryBase;
   phaseTimings: Record<string, number>;
   setTrackedState: (s: WorkflowState) => void;
-  setCurrentTask: (t: Pick<Task, 'file' | 'files' | 'action'> | undefined) => void;
+  setCurrentTask: (t: Pick<Task, 'suggestedFiles' | 'action'> | undefined) => void;
 };
 
 /**
@@ -273,7 +273,7 @@ async function recheckMergedCandidate(
 
 export async function runTasksAndReview(
   opts: RunTasksAndReviewOptions,
-): Promise<{ summary: Summary; completed: boolean; cancelled: boolean; state: WorkflowState }> {
+): Promise<{ summary: Summary; completed: boolean; state: WorkflowState }> {
   const { phaseTimings, setTrackedState, setCurrentTask } = opts;
   const initialWctx = opts.wctx;
   const { summaryBase } = opts;
@@ -282,7 +282,6 @@ export async function runTasksAndReview(
   const bail = () => ({
     summary: buildSummary({ ...summaryBase, state, phaseTimings }),
     completed: false,
-    cancelled: false,
     state,
   });
 
@@ -389,7 +388,6 @@ export async function runTasksAndReview(
         phaseTimings,
       }),
       completed: false,
-      cancelled: false,
       state,
     };
   }
@@ -407,7 +405,6 @@ export async function runTasksAndReview(
         phaseTimings,
       }),
       completed: false,
-      cancelled: taskResult.status === 'cancelled',
       state,
     };
   }
@@ -436,7 +433,6 @@ export async function runTasksAndReview(
   const stopHere = () => ({
     summary: summaryNow(),
     completed: false,
-    cancelled: false,
     state,
   });
 
@@ -459,7 +455,6 @@ export async function runTasksAndReview(
     return {
       summary: summaryNow(),
       completed: false,
-      cancelled: rerun.status === 'cancelled',
       state,
     };
   };
@@ -610,7 +605,7 @@ export async function runTasksAndReview(
         });
         const summary = summaryNow();
         callbacks.onComplete(summary);
-        return { summary, completed: true, cancelled: false, state };
+        return { summary, completed: true, state };
       }
     }
 

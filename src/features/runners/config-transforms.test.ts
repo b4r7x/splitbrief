@@ -62,7 +62,6 @@ function makeConfigWithOptionalSections(): Config {
       ],
     },
     approval: {
-      enabled: true,
       feedRejectionsToPlanner: false,
     },
   };

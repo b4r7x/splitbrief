@@ -251,7 +251,7 @@ describe('createImplementerBase — prompt write contracts', () => {
     });
 
     expect(seenPrompt).toContain(
-      `Edit ${task.file} directly in the isolation directory. SPLITBRIEF runs the typecheck, lint and test gates after you hand back, so run at most the focused test files the brief lists, once. End your reply with the one JSON report object the rules describe: status done with the files you changed, or status blocked with your question and the files you need.`,
+      `Edit ${task.suggestedFiles[0]} directly in the isolation directory. SPLITBRIEF runs the typecheck, lint and test gates after you hand back, so run at most the focused test files the brief lists, once. End your reply with the one JSON report object the rules describe: status done with the files you changed, or status blocked with your question and the files you need.`,
     );
     expect(seenPrompt).not.toContain('Output ONLY the complete file contents');
     expect(seenPrompt).not.toContain('Output the complete file contents');
@@ -285,7 +285,7 @@ describe('createImplementerBase — prompt write contracts', () => {
 
     expect(seenPrompt).toContain('- Output ONLY the complete file contents');
     expect(seenPrompt).toContain(
-      `Output the complete file contents for ${task.file}. No markdown fences. No explanations.`,
+      `Output the complete file contents for ${task.suggestedFiles[0]}. No markdown fences. No explanations.`,
     );
     expect(seenPrompt).not.toContain('staged working directory');
   });
@@ -498,7 +498,7 @@ describe('createImplementerBase — typed implementer report', () => {
     );
 
     const result = await implementer.implement({
-      task: makeTask({ file: 'src/hello.ts', action: 'create' }),
+      task: makeTask({ suggestedFiles: ['src/hello.ts'], action: 'create' }),
       projectDir,
       config: makeConfig(),
       context: defaultContext,
@@ -636,7 +636,7 @@ describe('createImplementerBase — wrote-nothing warning', () => {
           ),
       }),
     );
-    const task = makeTask({ id: 'T001', file: 'src/hello.ts' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/hello.ts'] });
 
     const result = await implementer.implement({
       task,
@@ -685,7 +685,7 @@ describe('createImplementerBase — wrote-nothing warning', () => {
     );
 
     const result = await implementer.implement({
-      task: makeTask({ id: 'T001', file: 'src/hello.ts' }),
+      task: makeTask({ id: 'T001', suggestedFiles: ['src/hello.ts'] }),
       projectDir,
       config: makeConfig(),
       context: defaultContext,
@@ -754,7 +754,7 @@ describe('createImplementerBase — retry', () => {
       const implementer = createImplementerBase(
         makeBaseConfig({ invoke, retryTemperatureStep: 0.1 }),
       );
-      const task = makeTask({ id: 'T001', file: 'src/retry.ts', action: 'create' });
+      const task = makeTask({ id: 'T001', suggestedFiles: ['src/retry.ts'], action: 'create' });
 
       const result = await implementer.retry({
         task,

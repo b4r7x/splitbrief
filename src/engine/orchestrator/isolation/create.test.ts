@@ -935,7 +935,7 @@ describe('createRunIsolation', () => {
       writeFileSync(join(ws.projectDir, 'package.json'), '{"denied":true}\n');
       writeFileSync(join(ws.projectDir, '.env.local'), 'EXTRA=1\n');
 
-      const task = makeTask({ id: 'T001', file: 'src/main.ts' });
+      const task = makeTask({ id: 'T001', suggestedFiles: ['src/main.ts'] });
       const outcome = await gateAttemptChanges({
         wctx: makeWctx({
           projectDir: dir,
@@ -946,7 +946,6 @@ describe('createRunIsolation', () => {
           }).callbacks,
           config: makeNoValidationConfig({
             approval: {
-              enabled: true,
               feedRejectionsToPlanner: false,
             },
           }),

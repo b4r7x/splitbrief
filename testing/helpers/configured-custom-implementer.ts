@@ -88,7 +88,7 @@ export function implement(
   }>,
 ) {
   return implementer.implement({
-    task: makeTask({ file: options.file, action: 'create' }),
+    task: makeTask({ suggestedFiles: [options.file], action: 'create' }),
     projectDir,
     config: makeConfig(),
     context: { ...defaultContext, dir: projectDir },

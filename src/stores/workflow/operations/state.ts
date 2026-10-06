@@ -23,6 +23,17 @@ export interface OperationWarningGroup {
   latestMessage: string;
 }
 
+type ActivityEvent = EngineEventOf<'runner_call_activity'>;
+
+/** A tool the call's stream opened and has not closed yet, and when it opened. */
+export interface OpenTool {
+  activityId: string;
+  kind: ActivityEvent['kind'];
+  label: string;
+  target?: string;
+  since: number;
+}
+
 interface OperationBase {
   callId: string;
   role: OperationRole;
@@ -38,6 +49,7 @@ interface OperationBase {
   usage: unknown | null;
   warnings: readonly OperationWarningGroup[];
   apiRuntimeStatus?: EngineEventOf<'runner_call_runtime_status'>['runtimeStatus'];
+  openTools?: readonly OpenTool[];
 }
 
 export interface RunningOperation extends OperationBase {

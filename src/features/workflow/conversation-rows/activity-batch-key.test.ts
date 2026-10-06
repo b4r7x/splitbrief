@@ -186,7 +186,7 @@ describe('findLatestExpandableActivityBatchKey', () => {
           makeTaskTokens({ ts: 3 }),
           activity({ callId: 'call-1', sequence: 4, activityId: 'd', label: 'reading d.ts' }),
           activity({ callId: 'call-2', sequence: 1, activityId: 'e', label: 'reading e.ts' }),
-          makePlannerHeartbeat({ ts: 4, elapsedMs: 900, accumulatedTokens: 9 }),
+          makePlannerHeartbeat({ ts: 4, elapsedMs: 900 }),
           activity({ callId: 'call-2', sequence: 2, activityId: 'f', label: 'reading f.ts' }),
           activity({ callId: 'call-2', sequence: 3, activityId: 'g', label: 'reading g.ts' }),
           activity({ callId: 'call-2', sequence: 4, activityId: 'h', label: 'reading h.ts' }),

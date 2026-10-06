@@ -73,7 +73,7 @@ const REPLAYED_RUN = makeRunRecord({
   feature: 'Route the usage details overlay',
   status: {
     kind: 'open',
-    stop: { kind: 'paused', at: 'boundary' },
+    stop: { kind: 'stopped', on: { kind: 'paused', at: 'boundary' } },
     resumeAt: { kind: 'planner', call: 'tasks' },
   },
 });
@@ -272,8 +272,8 @@ const CONTEXT_HALT: RecoveryIssue = {
     apiContextAvailableTokens: 32_768,
     apiContextOutputCap: 8_192,
   },
-  availableActions: ['retry-same-worker', 'pause-run', 'end-run'],
-  recommendedAction: 'pause-run',
+  availableActions: ['retry-same-worker', 'end-run'],
+  recommendedAction: 'retry-same-worker',
   createdAt: '2026-09-14T00:00:00.000Z',
 };
 
@@ -281,7 +281,7 @@ const HALTED_RUN = makeRunRecord({
   ...REPLAYED_RUN,
   status: {
     kind: 'open',
-    stop: { kind: 'halted', issue: CONTEXT_HALT },
+    stop: { kind: 'waiting-for-you', on: { kind: 'halt', issue: CONTEXT_HALT } },
     resumeAt: { kind: 'review', cycle: 0 },
   },
 });

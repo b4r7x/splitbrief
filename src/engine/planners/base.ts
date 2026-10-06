@@ -61,7 +61,7 @@ type InternalInvokeOptions = {
   callContext: RunnerCallContext;
   callbacks: Pick<
     PlannerCallbacks,
-    'onOutput' | 'onQuestion' | 'onSessionId' | 'onSessionExpired' | 'onCallEvent'
+    'onOutput' | 'onSessionId' | 'onSessionExpired' | 'onCallEvent'
   >;
   priorMessages?: PriorMessage[] | undefined;
   images?: Attachment[] | undefined;

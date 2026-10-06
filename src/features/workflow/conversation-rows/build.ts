@@ -19,7 +19,7 @@ import {
   rememberEventRowBlock,
   type EventBlockCacheKey,
 } from './block-cache.js';
-import { eventRowBlock } from './event-rows/dispatch.js';
+import { eventRowBlock, recoveryRowBlock } from './event-rows/dispatch.js';
 import { isPlannerTextRenderedAsMarkdown } from './event-rows/planner-text.js';
 import { runnerActivityBatchRowBlock } from './activity-rows.js';
 import {
@@ -112,6 +112,15 @@ function buildConversationRowsProjectionWithContext(
   for (const step of walkTranscript(inputs.sections)) {
     if (step.kind === 'activity-batch') {
       flushActivityBatch(step.batch);
+      continue;
+    }
+    if (step.kind === 'recovery') {
+      const block = recoveryRowBlock(
+        `event-${step.recovery.firstIndex}-recovery`,
+        step.recovery,
+        ctx.width,
+      );
+      if (block !== null) appendBlock(block, step.recovery.firstIndex);
       continue;
     }
     const { event, globalIndex } = step;

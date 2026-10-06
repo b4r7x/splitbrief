@@ -77,7 +77,7 @@ describe('CLI integration: resume interrupted session', { timeout: 90_000 }, () 
       phase: 'implementing' as const,
       tasks: [
         makeTask({ id: 'T001', status: 'done' }),
-        makeTask({ id: 'T002', status: 'in_progress', file: 'src/two.ts' }),
+        makeTask({ id: 'T002', status: 'in_progress', suggestedFiles: ['src/two.ts'] }),
       ],
       currentTaskIndex: 1,
     };
@@ -99,7 +99,7 @@ describe('CLI integration: resume interrupted session', { timeout: 90_000 }, () 
     const state = {
       ...createInitialState('validate me'),
       phase: 'validating-task' as const,
-      tasks: [makeTask({ id: 'T001', status: 'in_progress', file: 'src-two.ts' })],
+      tasks: [makeTask({ id: 'T001', status: 'in_progress', suggestedFiles: ['src-two.ts'] })],
       currentTaskIndex: 0,
       attempt: 2,
     };
@@ -154,7 +154,7 @@ describe('CLI integration: resume interrupted session', { timeout: 90_000 }, () 
       phase: 'implementing' as const,
       tasks: [
         makeTask({ id: 'T001', status: 'done' }),
-        makeTask({ id: 'T002', status: 'in_progress', file: 'src/two.ts' }),
+        makeTask({ id: 'T002', status: 'in_progress', suggestedFiles: ['src/two.ts'] }),
       ],
       currentTaskIndex: 1,
     };

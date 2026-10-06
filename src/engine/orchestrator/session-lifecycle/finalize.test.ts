@@ -18,6 +18,7 @@ import type { Summary } from '../../../core/schemas/summary.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import {
   finalizeEndedRun,
+  finalizeRunAtRest,
   reopenSessionRecord,
   saveFinalSession,
   shouldPreserveActiveState,
@@ -103,13 +104,13 @@ describe('saveFinalSession', () => {
 
     expect(persisted(projectDir, sessionId)).toMatchObject({
       status: 'open',
-      stop: 'interrupted',
+      stop: 'stopped',
       phase: 'implementing',
     });
     expect(readActive(projectDir)).toBe(sessionId);
   });
 
-  it('records the failure a run left on its state', () => {
+  it('records a run that left a failure on its state as stopped', () => {
     const projectDir = makeProjectDir();
     const sessionId = 'sess-failed';
 
@@ -131,10 +132,10 @@ describe('saveFinalSession', () => {
       },
     });
 
-    expect(persisted(projectDir, sessionId)).toMatchObject({ status: 'open', stop: 'failed' });
+    expect(persisted(projectDir, sessionId)).toMatchObject({ status: 'open', stop: 'stopped' });
   });
 
-  it('records a run with no tracked state as open and interrupted', () => {
+  it('records a run with no tracked state as open and stopped', () => {
     const projectDir = makeProjectDir();
     const sessionId = 'sess-no-state';
 
@@ -148,7 +149,7 @@ describe('saveFinalSession', () => {
       state: undefined,
     });
 
-    expect(persisted(projectDir, sessionId)).toMatchObject({ status: 'open', stop: 'interrupted' });
+    expect(persisted(projectDir, sessionId)).toMatchObject({ status: 'open', stop: 'stopped' });
   });
 
   it('writes a summary.json that carries no stateFile key', () => {
@@ -233,7 +234,7 @@ describe('reopenSessionRecord', () => {
       summary: makeSummary(),
       state: haltedState(),
     });
-    expect(persisted(projectDir, sessionId).stop).toBe('halted');
+    expect(persisted(projectDir, sessionId).stop).toBe('waiting-for-you');
 
     reopenSessionRecord({ projectDir, sessionId });
 
@@ -340,6 +341,56 @@ describe('finalizeEndedRun seat identity', () => {
       reviewerTool: 'codex',
       reviewerKind: 'cli',
     });
+  });
+});
+
+describe('finalizeRunAtRest', () => {
+  const ended = (): WorkflowState => ({
+    ...createInitialState('feat'),
+    phase: 'implementing',
+    closed: { at: '2026-09-01T00:00:00.000Z', as: 'ended' },
+  });
+
+  it('clears the active session the ended run holds', () => {
+    const projectDir = makeProjectDir();
+    const ref = { projectDir, sessionId: 'sess-at-rest' };
+    reactivateExistingSession(ref);
+
+    finalizeRunAtRest({ ref, config: makeConfig(), state: ended() });
+
+    expect(readSession(ref)?.status).toBe('ended');
+    expect(existsSync(activeFile(projectDir))).toBe(false);
+  });
+
+  it('finalizes a checkout override as complete and clears its active receipt', () => {
+    const projectDir = makeProjectDir();
+    const ref = { projectDir, sessionId: 'sess-accepted-at-rest' };
+    reactivateExistingSession(ref);
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'complete',
+      reviewStatus: 'failed',
+      acceptedAsIs: { at: '2026-09-01T00:00:00.000Z', findings: ['F1'] },
+      workspace: { kind: 'checkout', path: projectDir, base: { snapshotId: 'base', head: null } },
+    };
+    finalizeRunAtRest({ ref, config: makeConfig(), state });
+    expect(readSession(ref)?.status).toBe('complete');
+    expect(shouldPreserveActiveState(state)).toBe(false);
+    expect(state.reviewStatus).toBe('failed');
+    expect(existsSync(activeFile(projectDir))).toBe(false);
+  });
+
+  it('leaves the active session of another run', () => {
+    const projectDir = makeProjectDir();
+    const other = reactivateExistingSession({ projectDir, sessionId: 'sess-other' });
+
+    finalizeRunAtRest({
+      ref: { projectDir, sessionId: 'sess-at-rest' },
+      config: makeConfig(),
+      state: ended(),
+    });
+
+    expect(readActiveRecord(projectDir)).toEqual({ kind: 'v1', receipt: other });
   });
 });
 

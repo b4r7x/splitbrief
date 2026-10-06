@@ -1,5 +1,3 @@
-import { BOUNDS } from '../../../core/pipeline-spec/bounds.js';
-import type { Phase } from '../../../core/schemas/enums.js';
 import { isImplementerPhase } from '../../../core/phases.js';
 import { isApiProviderId } from '../../../core/providers/api-provider-catalog.js';
 import { getProviderDisplayName } from '../../../core/providers/catalog.js';
@@ -9,11 +7,14 @@ import { formatTime } from '../../../utils/format-time.js';
 import type { LifecycleState } from '../../../stores/workflow/lifecycle.js';
 import type {
   ActiveOperation,
+  OpenTool,
   OperationRole,
   OperationsState,
 } from '../../../stores/workflow/operations/state.js';
 import { selectTaskListView, type TasksState } from '../../../stores/workflow/tasks.js';
 import { inlineActiveVerb } from './phase-verb.js';
+import { stallRunnerHint } from './live-activity.js';
+import { runnerActivityLedgerItem } from './runner-activity-display.js';
 
 /**
  * The floor under the silence warning: the block never paints it for a seat quieter than this,
@@ -22,22 +23,19 @@ import { inlineActiveVerb } from './phase-verb.js';
  */
 export const UI_IDLE_WARN_MS = 60_000;
 
-export type BuildProgressEta =
-  | { kind: 'unavailable'; reason: string }
-  | { kind: 'estimate'; remainingMs: number };
-
 export interface BuildProgress {
   passed: number;
   total: number;
   escalated: number;
   failed: number;
-  /** `null` outside the build: the review seat runs no brief, so there is no attempt to count. */
+  /**
+   * `null` outside the build, where the review seat runs no brief, and on a brief's first attempt,
+   * which is the normal case: the bound matters once a retry has spent one.
+   */
   attempt: { current: number; max: number } | null;
-  /** `null` outside the build, where no brief is left to estimate. */
-  eta: BuildProgressEta | null;
   /** What the run is doing: the seat and its operation, or the gate command it is inside. */
   activity: string;
-  /** How long ago it last said so. */
+  /** How long ago it last said so, or the tool it runs through a silence. */
   freshness: string;
   /** True when the watchdog's stall makes freshness the silence warning, not the ordinary age. */
   silent: boolean;
@@ -61,20 +59,6 @@ function runnerTool(runnerName: string): string {
   return cliToolIdForCommand(runnerName) ?? runnerName;
 }
 
-/**
- * The worker a call ran on, as an identity two calls can be compared by. The backend kind is part
- * of that identity, so a shell command named `claude` never equals a CLI call on Claude Code or an
- * API worker of the same name. A call with no recorded kind keeps the old alias identity.
- */
-function runnerIdentity(operation: ActiveOperation): string | null {
-  const { backendKind, runnerName } = operation;
-  if (runnerName === undefined) return null;
-  if (backendKind === undefined || backendKind === 'cli') {
-    return `cli:${runnerTool(runnerName)}`;
-  }
-  return `${backendKind}:${runnerName}`;
-}
-
 function runnerLabel(
   backendKind: ActiveOperation['backendKind'],
   runnerName: string | undefined,
@@ -86,31 +70,6 @@ function runnerLabel(
   }
   if (backendKind === 'shell' || backendKind === 'agent') return runnerName;
   return getProviderDisplayName(runnerTool(runnerName));
-}
-
-function etaFor(input: DeriveBuildProgressInput, remaining: number): BuildProgressEta {
-  const { taskCompletionTimes } = input.tasks;
-  if (taskCompletionTimes.length === 0) {
-    return { kind: 'unavailable', reason: 'no brief finished yet' };
-  }
-  if (taskCompletionTimes.length === 1) {
-    return { kind: 'unavailable', reason: 'one brief finished so far' };
-  }
-  // An estimate built from one seat's pace says nothing about another's, so a swap retires it
-  // rather than quoting a number the new worker never earned.
-  const { active, last } = input.operations;
-  if (
-    active !== null &&
-    last !== null &&
-    active.runnerName !== undefined &&
-    last.runnerName !== undefined &&
-    runnerIdentity(active) !== runnerIdentity(last)
-  ) {
-    return { kind: 'unavailable', reason: 'worker changed' };
-  }
-  const average =
-    taskCompletionTimes.reduce((sum, value) => sum + value, 0) / taskCompletionTimes.length;
-  return { kind: 'estimate', remainingMs: Math.round(average * Math.max(0, remaining)) };
 }
 
 // What the run is doing, not what it has spent: usage is reported where a reader asks for it,
@@ -151,14 +110,37 @@ export function runnerSilenceMs(lifecycle: LifecycleState, now: number): number 
   return Math.max(0, now - stall.since + stall.silentMs);
 }
 
+/** The last tool the call opened and has not closed, in the words the activity rows use. */
+function openToolText(tool: OpenTool): string {
+  const item = runnerActivityLedgerItem({ stage: 'updated', ...tool });
+  return item.label === 'RUN' ? `running ${item.value}` : `${item.groupLabel} ${item.value}`;
+}
+
 // Silence is a seat's. With no call running — a gate command, the step between two calls — no one
 // is expected to speak, and the quiet is only how long ago the last word was. The seat's name is
-// already on the activity line beside this one, so the silence names only itself.
+// already on the activity line beside this one, so the silence names only itself. A tool the
+// stream opened and has not closed is what the seat is doing through that silence, so the line
+// names it; a stream that reports a tool only once it ends cannot name it, only say one runs.
 function freshnessOf(input: DeriveBuildProgressInput): Pick<BuildProgress, 'freshness' | 'silent'> {
   const call = input.operations.active;
   const silentMs = call === null ? null : runnerSilenceMs(input.lifecycle, input.now);
-  if (silentMs !== null && silentMs >= UI_IDLE_WARN_MS) {
-    return { freshness: `No update for ${formatTime(silentMs)}`, silent: true };
+  if (call !== null && silentMs !== null && silentMs >= UI_IDLE_WARN_MS) {
+    const tool = call.openTools?.at(-1);
+    if (tool !== undefined) {
+      return {
+        freshness: `${openToolText(tool)}${SOFT_SEP}${formatTime(input.now - tool.since)}`,
+        silent: false,
+      };
+    }
+    const quietStream =
+      call.runnerName !== undefined &&
+      stallRunnerHint(runnerTool(call.runnerName), call.backendKind) !== null;
+    return {
+      freshness: quietStream
+        ? `a tool is running${SOFT_SEP}${formatTime(silentMs)}`
+        : `No update for ${formatTime(silentMs)}`,
+      silent: true,
+    };
   }
   const lastTs = input.lifecycle.lastRunnerEventTs ?? null;
   if (lastTs === null) return { freshness: 'no update yet', silent: false };
@@ -167,70 +149,43 @@ function freshnessOf(input: DeriveBuildProgressInput): Pick<BuildProgress, 'fres
 
 export function deriveBuildProgress(input: DeriveBuildProgressInput): BuildProgress {
   const view = selectTaskListView(input.tasks);
-  const building = isImplementerPhase(input.lifecycle.phase);
+  const retrying = isImplementerPhase(input.lifecycle.phase) && input.tasks.currentAttempt >= 2;
   return {
     passed: view.passed,
     total: view.total,
     escalated: view.escalated,
     failed: view.failed,
-    attempt: building
-      ? { current: input.tasks.currentAttempt, max: BOUNDS.attemptsPerLineage }
+    attempt: retrying
+      ? { current: input.tasks.currentAttempt, max: input.tasks.attemptAllowance }
       : null,
-    eta: building ? etaFor(input, view.total - view.finished - view.failed) : null,
     activity: activityLine(input),
     ...freshnessOf(input),
   };
-}
-
-// An average of finished briefs projected onto the ones left is a guess in minutes; printing it to
-// the second ("ETA 2s") claims a precision the average never had.
-export function etaText(eta: BuildProgressEta): string {
-  if (eta.kind === 'unavailable') return `ETA unavailable: ${eta.reason}`;
-  const minutes = Math.round(eta.remainingMs / 60_000);
-  return minutes === 0 ? 'ETA under a minute' : `ETA ~${minutes}m`;
 }
 
 function countsText(progress: BuildProgress): string {
   const parts = [`${progress.passed}/${progress.total} briefs passed`];
   if (progress.escalated > 0) parts.push(`${progress.escalated} escalated`);
   if (progress.failed > 0) parts.push(`${progress.failed} failed`);
+  if (progress.attempt !== null) {
+    parts.push(`attempt ${progress.attempt.current} of ${progress.attempt.max}`);
+  }
   return parts.join(SOFT_SEP);
 }
 
-function rowCount(width: number, building: boolean): number {
-  if (width >= 120) return 2;
-  if (!building) return 3;
-  if (width >= 80) return 4;
-  return 5;
-}
-
 /**
- * How many rows the block occupies at a width in a phase. The chrome budgets from this without
- * knowing the rest of the run's state, so the block never paints over the body it was measured
- * around.
+ * How many rows the block occupies at a width. The chrome budgets from this without knowing the
+ * rest of the run's state, so the block never paints over the body it was measured around.
  */
-export function buildProgressRowCount(width: number, phase: Phase): number {
-  return rowCount(width, isImplementerPhase(phase));
+export function buildProgressRowCount(width: number): number {
+  return width >= 120 ? 2 : 3;
 }
 
 /** The same facts at every width, regrouped rather than dropped. */
 export function buildProgressLines(progress: BuildProgress, width: number): string[] {
   const counts = countsText(progress);
-  const perAttempt =
-    progress.attempt === null || progress.eta === null
-      ? []
-      : [`attempt ${progress.attempt.current} of ${progress.attempt.max}`, etaText(progress.eta)];
-  switch (rowCount(width, perAttempt.length > 0)) {
-    case 2:
-      return [
-        [counts, ...perAttempt].join(SOFT_SEP),
-        [progress.activity, progress.freshness].join(SOFT_SEP),
-      ];
-    case 3:
-      return [counts, progress.activity, progress.freshness];
-    case 4:
-      return [counts, perAttempt.join(SOFT_SEP), progress.activity, progress.freshness];
-    default:
-      return [counts, ...perAttempt, progress.activity, progress.freshness];
+  if (buildProgressRowCount(width) === 2) {
+    return [counts, [progress.activity, progress.freshness].join(SOFT_SEP)];
   }
+  return [counts, progress.activity, progress.freshness];
 }

@@ -14,7 +14,7 @@ import {
 const L: EditorLayout = { columns: 5, rows: 10 };
 
 function at(value: string, index: number) {
-  return applyEditorEvent(createEditorState('field', value), { kind: 'set-cursor', index }, L);
+  return applyEditorEvent(createEditorState(value), { kind: 'set-cursor', index }, L);
 }
 
 // The PAINTED caret cell (row, col) as the render path resolves it: the reducer's affinity fed
@@ -48,7 +48,7 @@ describe('selection', () => {
   });
 
   it('select-all spans 0..end', () => {
-    const s = applyEditorEvent(createEditorState('field', 'hello'), { kind: 'select-all' }, L);
+    const s = applyEditorEvent(createEditorState('hello'), { kind: 'select-all' }, L);
     expect(selectionRange(s)).toEqual({ start: 0, end: 5 });
   });
 });
@@ -58,7 +58,7 @@ describe('scroll follows the caret so stored scrollTop matches the rendered view
   const value = 'a'.repeat(40);
 
   it('advances scrollTop when a motion pushes the caret below the viewport', () => {
-    let s = createEditorState('raw', value);
+    let s = createEditorState(value);
     expect(s.scrollTop).toBe(0);
 
     s = applyEditorEvent(s, { kind: 'motion', motion: 'doc-end', select: false }, layout);
@@ -70,7 +70,7 @@ describe('scroll follows the caret so stored scrollTop matches the rendered view
   });
 
   it('leaves scrollTop untouched while the caret stays inside the viewport', () => {
-    let s = createEditorState('field', 'hello world');
+    let s = createEditorState('hello world');
     s = applyEditorEvent(
       s,
       { kind: 'motion', motion: 'char-right', select: false },
@@ -147,11 +147,7 @@ describe('a non-selection char delete removes exactly one whole grapheme cluster
 
 describe('insert normalizes to NFC and keeps the caret after the text', () => {
   it('collapses a base+combining sequence into one NFC code unit', () => {
-    const s = applyEditorEvent(
-      createEditorState('field', ''),
-      { kind: 'insert', text: 'e\u0301' },
-      L,
-    );
+    const s = applyEditorEvent(createEditorState(''), { kind: 'insert', text: 'e\u0301' }, L);
     expect(s.value).toBe('\u00e9');
     expect(s.value.length).toBe(1);
     expect(s.cursor).toBe(1);
@@ -268,7 +264,7 @@ describe('vertical-nav affinity follows the landed row, not the motion direction
   // regresses these traces (Down landing on a row END, or Up landing on a row START).
   const C4: EditorLayout = { columns: 4, rows: 10 };
   const at4 = (value: string, index: number) =>
-    applyEditorEvent(createEditorState('field', value), { kind: 'set-cursor', index }, C4);
+    applyEditorEvent(createEditorState(value), { kind: 'set-cursor', index }, C4);
   const painted4 = (s: EditorState) =>
     visualPositionOf(wrapVisualLines(s.value, C4.columns), s.cursor, s.affinity);
 
@@ -321,7 +317,7 @@ describe('vertical-nav affinity follows the landed row, not the motion direction
 
 describe('undo and redo', () => {
   it('coalesces consecutive inserts, restores with redo, and clears redo after a new edit', () => {
-    let s = createEditorState('field', '');
+    let s = createEditorState('');
     s = applyEditorEvent(s, { kind: 'insert', text: 'a' }, L);
     s = applyEditorEvent(s, { kind: 'insert', text: 'b' }, L);
     expect(s.value).toBe('ab');
@@ -340,7 +336,7 @@ describe('undo and redo', () => {
   });
 
   it('steps undo through newline and delete boundaries by value', () => {
-    let s = createEditorState('field', '');
+    let s = createEditorState('');
     s = applyEditorEvent(s, { kind: 'insert', text: 'a' }, L);
     s = applyEditorEvent(s, { kind: 'insert', text: '\n' }, L);
     s = applyEditorEvent(s, { kind: 'undo' }, L);
@@ -348,7 +344,7 @@ describe('undo and redo', () => {
     s = applyEditorEvent(s, { kind: 'undo' }, L);
     expect(s.value).toBe('');
 
-    s = createEditorState('field', '');
+    s = createEditorState('');
     s = applyEditorEvent(s, { kind: 'insert', text: 'ab' }, L);
     s = applyEditorEvent(s, { kind: 'delete', dir: 'backward', unit: 'char' }, L);
     expect(s.value).toBe('a');
@@ -359,7 +355,7 @@ describe('undo and redo', () => {
   });
 
   it('a paste is one undo unit that fully reverts', () => {
-    let s = createEditorState('field', '');
+    let s = createEditorState('');
     s = applyEditorEvent(s, { kind: 'insert', text: 'hello pasted body', paste: true }, L);
     expect(s.value).toBe('hello pasted body');
     s = applyEditorEvent(s, { kind: 'undo' }, L);
@@ -367,7 +363,7 @@ describe('undo and redo', () => {
   });
 
   it('caps the undo ring at UNDO_RING_CAP, dropping the oldest snapshot while still restoring', () => {
-    let s = createEditorState('field', '');
+    let s = createEditorState('');
     for (let i = 0; i < UNDO_RING_CAP + 50; i++) {
       s = applyEditorEvent(s, { kind: 'insert', text: 'x' }, L);
       s = applyEditorEvent(s, { kind: 'insert', text: '\n' }, L);

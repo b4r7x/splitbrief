@@ -20,23 +20,40 @@ describe('outcomeLine', () => {
   it('states a discarded run and where its changes went', () => {
     const view = makeView({
       outcome: { kind: 'discarded' },
-      files: { ...makeView().files, patch: true },
+      files: {
+        ...makeView().files,
+        patch: '.splitbrief/sessions/2026-09-14-add-email-validation-with-tests/run.patch',
+      },
     });
     expect(outcomeLine(view, WIDE)).toBe(
       'Discarded · 3/3 briefs passed · 4 files saved in run.patch',
     );
   });
 
-  it('says an ended run with a workspace saved its changes in run.patch', () => {
-    const view = endedInBuild();
-    expect(outcomeLine({ ...view, files: { ...view.files, patch: true } }, WIDE)).toContain(
-      'changes saved in run.patch',
-    );
+  it('counts the briefs of a run ended after every stage ran, with no empty stage word', () => {
+    const view = makeView({ outcome: { kind: 'ended' } });
+    expect(outcomeLine(view, WIDE)).toBe('Ended · 3/3 briefs passed · changes kept');
   });
 
-  it('states a ready run in one sentence', () => {
+  it('says an ended run with a workspace saved its changes in run.patch', () => {
+    const view = endedInBuild();
+    expect(
+      outcomeLine(
+        {
+          ...view,
+          files: {
+            ...view.files,
+            patch: '.splitbrief/sessions/2026-09-14-add-email-validation-with-tests/run.patch',
+          },
+        },
+        WIDE,
+      ),
+    ).toContain('changes saved in run.patch');
+  });
+
+  it('states a complete run in one sentence', () => {
     expect(outcomeLine(makeView(), WIDE)).toBe(
-      'Ready · 3/3 briefs passed · review 0 blocking, 1 advisory · scope clean · 4 files changed',
+      'Complete · 3/3 briefs passed · review 0 blocking, 1 advisory · scope clean · 4 files changed',
     );
   });
 
@@ -62,12 +79,12 @@ describe('outcomeLine', () => {
         evidence: { validated: 3, total: 3 },
         missingArtifacts: 0,
       },
-      scope: { kind: 'checked', passed: false, score: 0.6, errors: 1, warnings: 1 },
+      scope: { kind: 'checked', passed: false, errors: 1, warnings: 1 },
       files: {
         changed: ['a', 'b', 'c', 'd', 'e'],
         partial: new Set(),
         stoppedAt: null,
-        patch: false,
+        patch: null,
       },
     });
     expect(outcomeLine(view, WIDE)).toBe(
@@ -92,7 +109,7 @@ describe('outcomeLine', () => {
 
   it('drops the brief when the run stopped between briefs', () => {
     const view = endedInBuild({
-      files: { changed: ['src/validate.ts'], partial: new Set(), stoppedAt: null, patch: false },
+      files: { changed: ['src/validate.ts'], partial: new Set(), stoppedAt: null, patch: null },
     });
     expect(outcomeLine(view, WIDE)).toBe('Ended · Build 2/5 · changes kept');
   });
@@ -126,7 +143,7 @@ describe('outcomeLine', () => {
           },
         ],
       },
-      files: { changed: ['src/old.ts'], partial: new Set(), stoppedAt: null, patch: false },
+      files: { changed: ['src/old.ts'], partial: new Set(), stoppedAt: null, patch: null },
     });
     expect(outcomeLine(view, WIDE)).toBe('Ended · Plan · no current briefs · changes kept');
   });
@@ -151,7 +168,7 @@ describe('outcomeLine', () => {
 
   it('keeps an unrecorded changed set unrecorded once the build has started', () => {
     const view = endedInBuild({
-      files: { changed: null, partial: new Set(), stoppedAt: null, patch: false },
+      files: { changed: null, partial: new Set(), stoppedAt: null, patch: null },
     });
     expect(outcomeLine(view, WIDE)).toBe('Ended · Build 2/5 · files not recorded');
   });
@@ -174,14 +191,14 @@ describe('outcomeLine', () => {
 
   it('reads a legacy run with no changed set as unrecorded, never as empty', () => {
     const view = makeView({
-      files: { changed: null, partial: new Set(), stoppedAt: null, patch: false },
+      files: { changed: null, partial: new Set(), stoppedAt: null, patch: null },
     });
     expect(outcomeLine(view, WIDE)).toContain('files not recorded');
   });
 
   it('distinguishes a run that changed nothing from one that never ran a brief', () => {
     const empty = makeView({
-      files: { changed: [], partial: new Set(), stoppedAt: null, patch: false },
+      files: { changed: [], partial: new Set(), stoppedAt: null, patch: null },
     });
     expect(outcomeLine(empty, WIDE)).toContain('no files changed');
     const none = makeView({
@@ -195,7 +212,7 @@ describe('outcomeLine', () => {
         rows: [],
         earlierRows: [],
       },
-      files: { changed: [], partial: new Set(), stoppedAt: null, patch: false },
+      files: { changed: [], partial: new Set(), stoppedAt: null, patch: null },
     });
     expect(outcomeLine(none, WIDE)).toContain('no briefs · ');
     expect(outcomeLine(none, WIDE)).toContain('nothing built');
@@ -215,10 +232,10 @@ describe('outcomeLine', () => {
     // budget, so deriving this bound from the same constant moved both sides and let a leading that
     // changed width pass unnoticed.
     expect(line.length).toBeLessThanOrEqual(width - 3);
-    expect(line.startsWith('Ready · 3/3 briefs passed')).toBe(true);
+    expect(line.startsWith('Complete · 3/3 briefs passed')).toBe(true);
     for (const token of line.split(' · ')) {
       expect(
-        'Ready · 3/3 briefs passed · review 0 blocking, 1 advisory · scope clean · 4 files changed'.split(
+        'Complete · 3/3 briefs passed · review 0 blocking, 1 advisory · scope clean · 4 files changed'.split(
           ' · ',
         ),
       ).toContain(token);
@@ -226,13 +243,13 @@ describe('outcomeLine', () => {
   });
 
   it('keeps the verdict when nothing else fits', () => {
-    expect(outcomeLine(makeView(), 12)).toBe('Ready');
+    expect(outcomeLine(makeView(), 14)).toBe('Complete');
   });
 });
 
 describe('outcomeMarker', () => {
   it.each([
-    ['ready', 'check', 'success'],
+    ['complete', 'check', 'success'],
     ['needs-attention', 'statusWarning', 'warning'],
     ['ended', 'statusCancelled', 'warning'],
     ['applied', 'check', 'success'],
@@ -240,4 +257,15 @@ describe('outcomeMarker', () => {
   ] as const)('marks a %s run with %s', (kind, name, tone) => {
     expect(outcomeMarker(makeView({ outcome: { kind } }))).toEqual({ glyph: name, tone });
   });
+
+  // An undone Apply put the checkout back: the run reads as reverted, the way a discard does, and
+  // never wears the success mark of an Apply that stands.
+  it.each([[[]], [['src/form.ts']]] as const)(
+    'marks an applied run whose Apply was undone (conflicts %j) as reverted',
+    (conflicts) => {
+      expect(
+        outcomeMarker(makeView({ outcome: { kind: 'applied' }, applyUndo: { conflicts } })),
+      ).toEqual({ glyph: 'statusCancelled', tone: 'warning' });
+    },
+  );
 });

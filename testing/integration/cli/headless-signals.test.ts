@@ -40,7 +40,7 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
   function makeTaskForFile(id: string, file: string) {
     return {
       ...makePassingTask(id),
-      file,
+      suggestedFiles: [file] as [string],
       scope: {
         inBounds: [file],
         outOfBounds: ['Do not touch anything outside the task file.'],

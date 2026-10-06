@@ -61,7 +61,7 @@ splitbrief start [feature] \
   [--reviewer-api-base <url>] [--reviewer-api-key-env <var>] [--reviewer-args <arg>] \
   [--reviewer-output-format <format>] [--reviewer-context-length <tokens>] \
   [--model <model>] [--provider <provider>] \
-  [--planner-effort <level>] [--reviewer-effort <level>] [--yolo] \
+  [--planner-effort <level>] [--reviewer-effort <level>] \
   [--skills <ids>] [--project <dir>] \
   [--no-fullscreen] [--no-mouse] [--hover] \
   [--allow-hooks] [--allow-repo-runners] [--allow-unverified-auth] \
@@ -101,7 +101,7 @@ splitbrief start [feature] \
 | `--model <model>` | string | — | Alias for `--implementer-model`. |
 | `--provider <provider>` | string | — | Alias for `--implementer`. |
 | `--skills <ids>` | string | — | Comma-separated skill ids to attach to every seat for this run, the headless equivalent of the `/skills` picker. Resolved against the same scan roots before planning starts; an id no root carries fails with `Unknown skill: <id> (scanned: <roots>)` and exit `2`. On `start` it applies to headless runs (`--json` / `--plain`); on `resume` and `continue` it applies in both modes, to that continue only — it is not saved, so a later continue without it uses the selection the run saved when it started. |
-| `--yolo` | boolean | `false` | Kept for compatibility. It skips nothing: only a write to a protected path (dependency manifests and lockfiles, CI configuration, env and key files, `.git`, `.splitbrief`) asks, and that write still asks. The plan card follows `workflow.approve`. This is not a shell or network sandbox setting. |
+| `--yolo` | removed | — | Rejected with a removed-flag error. Only a protected-path write asks; the plan card follows `workflow.approve`. |
 | `--project <dir>` | path | cwd | Project directory. |
 | `--no-fullscreen` | boolean | fullscreen on | Disable the alternate screen buffer. Useful when piping or debugging. |
 | `--no-mouse` | boolean | mouse on | Disable Ink mouse tracking — click, hover and scroll. Tracking runs only in fullscreen, so `--no-fullscreen` disables it too and leaves this flag a no-op. |
@@ -411,7 +411,7 @@ Other distinguishable runner outcomes (`spawn-not-found`, `protocol-failure`, `i
 ### Behavior notes
 
 - Missing config reports `splitbrief init`; legacy config warnings report `splitbrief init --reconfigure`, but `doctor` does not run setup commands.
-- Every load-time config notice is listed, one per retired key (`workflow.mode`, `workflow.approve: all|spec|default`, `workflow.task_review`, `workflow.brief_review`, `workflow.speckit`, `approval.tiers`; see [CONFIGURATION.md §16](./CONFIGURATION.md#retired-keys-that-still-load)). The **Workflow** section reports the plan approval level as the check `approval.resolved` (`Plan approval: plan.`), and the context check uses one floor for every run: 32,000 tokens.
+- Every load-time config notice is listed, one per retired key (`workflow.mode`, `workflow.approve: all|spec|default`, `workflow.task_review`, `workflow.brief_review`, `workflow.speckit`, `approval.tiers`; see [CONFIGURATION.md §16](./CONFIGURATION.md#retired-keys-that-still-load)). The **Workflow** section reports the plan approval level as the check `workflow.plan-approval` (`Plan approval: plan.`), and the context check uses one floor for every run: 32,000 tokens.
 - Validation readiness is posture only. It reports disabled checks or missing npm scripts without running validation commands; the exception is `--probe-validation`, which runs the configured commands.
 - Runner availability is probed for the `api` runners a run would call (`runners.availability.planner`, `runners.availability.implementer.<profile>`, and `runners.availability.reviewer` when a `reviewer` block is configured). Each probe is one model-list round trip against the endpoint the runner already targets, bounded by a 2s budget and run in parallel. An unreachable planner or default implementer is a blocker — the planning phase runs before the implementer is first used — while a non-default profile is a warning. A probe that could not run or overran its budget reports `not-probed` (info); it never reports available. When no probe runs at all, readiness says so and makes no claim (`runners.availability`).
 - The arg-vector preflight runs here too, so a blocker `start` would raise can be inspected without starting a run: a flag the installed binary's help does not advertise is a blocker (`runners.cli.<tool>.arg-vector.<role>`), a flag it marks deprecated is a warning, and a help text that cannot be read reports ok. See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md).
@@ -567,7 +567,7 @@ splitbrief resume \
   [--reviewer-api-base <url>] [--reviewer-api-key-env <var>] [--reviewer-args <arg>] \
   [--reviewer-output-format <format>] [--reviewer-context-length <tokens>] \
   [--model <model>] [--provider <provider>] \
-  [--planner-effort <level>] [--reviewer-effort <level>] [--yolo] \
+  [--planner-effort <level>] [--reviewer-effort <level>] \
   [--skills <ids>] [--project <dir>] \
   [--no-fullscreen] [--no-mouse] [--hover] \
   [--allow-hooks] [--allow-repo-runners] [--json] [--plain]
@@ -642,11 +642,11 @@ Continue a run by name, active session, or numeric alias. The run continues from
 | `--project <dir>` | path | cwd | Project directory. |
 | `--allow-hooks` | boolean | `false` | Trust hook config without prompting. |
 | `--allow-repo-runners` | boolean | `false` | Trust repo-local shell/agent runner commands from project config for resumed workflow execution. |
-| `--action <skip\|retry\|restore\|switch-seat:<tool>[:<model>]\|end-run\|apply\|discard>` | enum | — | Recovery actions answer the pending recovery. `skip` means `skip-current-task`. `retry` means `retry-same-worker`. `restore` means `restore-backup`: after a partial Apply (`apply-partial`) it puts back the checkout files Apply replaced, from the Apply backup. No other halt offers it. `switch-seat:<tool>[:<model>]` moves the blocked seat. These four actions continue the run. `end-run` closes the run, prints `Run <id> closed. The files it wrote are still on disk.`, and stops. `apply` runs Apply on a run that is ready to apply. Apply merges the run workspace into the checkout. It prints `Applied <n> files to your checkout.` on stderr and closes the run `applied`. If Apply changes the reviewed candidate, SPLITBRIEF runs its checks and whole-run review again. A run accepted as is needs confirmation on the run screen with `/run accept confirm`. An Apply conflict halts with `Recovery required (apply-conflict)`. `discard` closes the run `discarded`. It keeps the run changes in `run.patch` in the session folder and prints `Run <id> discarded.` and the patch path on stderr. The checkout stays untouched. Apply and Discard keep stdout for the `--plain` and `--json` records. |
+| `--action <skip\|retry\|restore\|switch-seat:<tool>[:<model>]\|end-run\|apply\|discard>` | enum | — | Recovery actions answer the pending recovery. `skip` means `skip-current-task`. `retry` means `retry-same-worker`. `restore` means `restore-backup`: after a partial Apply (`apply-partial`) it puts back the checkout files Apply replaced, from the Apply backup. No other halt offers it. `switch-seat:<tool>[:<model>]` moves the blocked seat. These four actions continue the run. `end-run` closes the run, prints `Run <id> closed. The files it wrote are still on disk.`, and stops. `apply` runs Apply on a run that is ready to apply. Apply merges the run workspace into the checkout. It prints `Applied <n> files to your checkout.` on stderr and closes the run `applied`. If Apply changes the reviewed candidate, SPLITBRIEF runs its checks and whole-run review again. A run accepted as is needs confirmation on the run screen with `/run accept confirm`. An Apply conflict halts with `Needs you (apply-conflict)`. `discard` closes the run `discarded`. It keeps the run changes in `run.patch` in the session folder and prints `Run <id> discarded.` and the patch path on stderr. The checkout stays untouched. Apply and Discard keep stdout for the `--plain` and `--json` records. |
 | `--skills <ids>` | string | — | Comma-separated skill ids for every seat, in headless and interactive mode alike. The list applies to that continue only: it is not saved, so a later continue without it uses the selection the run saved when it started. |
 | `--json` | boolean | `false` | Continue the run in headless NDJSON mode. |
 | `--plain` | boolean | `false` | Continue the run in headless plain-line mode. Mutually exclusive with `--json`. |
-| Other resume flags | — | — | Runner overrides, `--no-fullscreen`, `--no-mouse`, `--hover` and `--yolo`. |
+| Other resume flags | — | — | Runner overrides, `--no-fullscreen`, `--no-mouse`, `--hover`. `--yolo` was removed. |
 
 ### Examples
 
@@ -741,7 +741,7 @@ Commands in this section share stable `stateId` / `state` identifiers and copyab
 
 When `start`, `resume`, or an interrupted resumable `continue` runs with `--json`, stdout emits one public JSON record per line (NDJSON). Live workflow events use `{ "type": "event", "data": <EngineEvent> }`. Other records use named top-level types such as `readiness_report`, `recovery_required`, `final_review_failed` (with the `blocking` finding count), `final_review_incomplete` (the review never finished), `warning`, and `error`. Public records are bounded and secret-redacted before writing. The TUI is not started, the alternate screen buffer is never entered, and `--no-fullscreen`/`--no-mouse`/`--hover` are no-ops in this mode. The plan card is approved unattended, which pre-confirms nothing (set `workflow.approve: none` to skip the card). A planner question writes an `input_required` record and exits non-zero with the `splitbrief continue <id>` line to answer it. Continuation retry prompts never park (a watchdog idle-kill fails the run instead), recovery pauses such as unknown paid pricing exit non-zero, failed sessions exit non-zero, and a write to a protected path fails closed with `APPROVAL_REQUIRED` instead of waiting for input.
 
-The `recovery_required` record carries `reason`, `status` (`awaiting-user` | `paused` | `applying`), message, task/files when known, `availableActions`, and `recommendedAction`; `status` was added after the initial release and older consumers must treat it as optional. The command fails with exit code 1 for **every** pending recovery status — `paused` and `applying` exit non-zero exactly like `awaiting-user` — and the error message names the available resolution actions.
+The `recovery_required` record carries `reason`, `status` (`awaiting-user` | `applying`; a `paused` status that an older run saved reads as `awaiting-user`), message, task/files when known, `availableActions`, and `recommendedAction`; `status` was added after the initial release and older consumers must treat it as optional. The command fails with exit code 1 for **every** pending recovery status — `applying` exits non-zero exactly like `awaiting-user` — and the error message names the available resolution actions.
 
 ### Plain output stream (`--plain`)
 
@@ -763,7 +763,7 @@ done: 3 tasks
 - `phase: <name>` — written once each time the run enters a new phase.
 - `task <id>: done|failed (<gates>)` — the gates are the validation stages that passed for that task, or `no gates` when validation was skipped and `skipped` for a task a recovery skipped. A task that wrote outside its declared files reads `task <id>: failed (effect-invalid: <paths>)`.
 - `gates: NONE — review-only` — written once, in place of per-task gate names, when the project's stack is unrecognised and no stage could resolve a command. The run still implements and still reviews; nothing was verified by a gate.
-- `review: passed|failed [(<n> blocking)]` — the final review verdict. `failed` means the reviewer still reported blocking findings after its fix cycles and carries their count; the command then exits `1` even though every task reached `done`.
+- `review: passed|failed [(<n> blocking)]` — the final review verdict. `failed` means the reviewer still reported blocking findings after its fix cycles and carries their count. Without an Accept as is override, the command exits `1` even though every task reached `done`. A checkout run accepted as is exits `0` and keeps the failed verdict.
 - `done: <n> tasks` — the closing line, written on completion whatever the review said. `<n>` is the run's completed tasks, read from its state when it completes (`completedTasks` on `workflow_complete`): a task a review-fix cycle completes again counts once, a `continue` counts the tasks an earlier process completed, and a task that did not complete does not count, so `<n>` can be less than the length of the task list. The line carries no token count: token and money figures belong to the run's own record and `/usage`, not to the plain stream.
 
 Everything else the run emits is dropped — including `recovery_required`, which is a `--json` record. A halt no one is there to answer ends the plain stream: the failing task's `failed` line is the last line written, there is no `review:` or `done:` line, and the command exits 1. The halt itself is not silent — stderr carries the block below in both headless renderings.
@@ -775,12 +775,12 @@ Everything else the run emits is dropped — including `recovery_required`, whic
 Every headless run that stops on a recovery issue — `--json` and `--plain` alike — writes three lines to stderr and exits `1`:
 
 ```
-Error: Recovery required (runner-usage-limit): OpenAI Codex CLI hit its usage limit. Wait for the limit to reset or change the BUILD tool, then continue. (resets 17:00)
+Error: Seat down (runner-usage-limit): OpenAI Codex CLI hit its usage limit. Wait for the limit to reset or change the BUILD tool, then continue. (resets 17:00)
 Recommended: switch-seat
 Continue with: splitbrief continue 2026-09-13-add-auth --action switch-seat:claude-code [--plain|--json]
 ```
 
-A quota halt ends the first line with the clock its limit resets on, spelled when the line is printed; with `--json`, the halt's `error` event record carries it as `resetAt`. The last line is the command to paste. When the recommended action is one `continue` cannot take on its own, the line opens the recovery panel and names the row to choose there, in the panel's own words: `Continue with: splitbrief continue 2026-09-13-add-auth, then choose Pause run in the recovery panel`. That line carries no `[--plain|--json]`: the panel needs the TUI. With `--json` the same facts also arrive on stdout as a `recovery_required` record carrying `reason`, `status`, `message`, `taskId`, `files`, `availableActions`, `recommendedAction` and `resumeCommand`.
+A quota halt ends the first line with the clock its limit resets on, spelled when the line is printed; with `--json`, the halt's `error` event record carries it as `resetAt`. The last line is the command to paste. When the recommended action is one `continue` cannot take on its own, the line opens the recovery panel and names the row to choose there, in the panel's own words: `Continue with: splitbrief continue 2026-09-13-add-auth, then choose Continue in the recovery panel`. That line carries no `[--plain|--json]`: the panel needs the TUI. With `--json` the same facts also arrive on stdout as a `recovery_required` record carrying `reason`, `status`, `message`, `taskId`, `files`, `availableActions`, `recommendedAction` and `resumeCommand`.
 
 ### Planning session
 

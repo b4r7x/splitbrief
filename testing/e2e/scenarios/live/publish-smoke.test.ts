@@ -1,9 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { REVIEW_FILE, SUMMARY_FILE } from '../../../../src/core/paths.js';
+import { SUMMARY_FILE } from '../../../../src/core/paths.js';
 import { SessionSchema } from '../../../../src/core/schemas/session.js';
-import { parseFinalReview } from '../../../../src/engine/parsers/final-review.js';
 import {
   MATRIX_TIERS,
   type ReleaseMatrixRun,
@@ -19,8 +18,8 @@ if (!publishLiveOn) console.log('skipped: SPLITBRIEF_PUBLISH_LIVE not set');
 // only behind SPLITBRIEF_PUBLISH_LIVE, never under the easy/heavy tiers.
 const PUBLISH_SMOKE: ReleaseMatrixRun = {
   id: 'publish-smoke-claude-code',
-  mode: 'quick',
-  task: MATRIX_TIERS.quick.task,
+  tier: 'one-file',
+  task: MATRIX_TIERS['one-file'].task,
   plan: { tool: 'claude-code', model: 'opus' },
   build: { tool: 'claude-code', model: 'sonnet' },
   review: { tool: 'claude-code', model: 'opus' },
@@ -43,9 +42,8 @@ describe('publish smoke: opus plans and reviews, sonnet builds', () => {
       const session = SessionSchema.parse(
         JSON.parse(readFileSync(join(ARTIFACT_DIR, SUMMARY_FILE), 'utf-8')),
       );
-      expect(session.status).toBe('complete');
-      const review = parseFinalReview(readFileSync(join(ARTIFACT_DIR, REVIEW_FILE), 'utf-8'));
-      expect(['pass', 'pass_with_notes']).toContain(review.verdict);
+      if (session.status !== 'complete') throw new Error(`session is ${session.status}`);
+      expect(['pass', 'pass_with_notes']).toContain(session.summary.review?.verdict);
     },
     300_000,
   );

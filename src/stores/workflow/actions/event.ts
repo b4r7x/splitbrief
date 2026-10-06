@@ -44,8 +44,8 @@ export function reduceTasks(state: TasksState, event: EngineEvent): TasksState {
     tasks === state.tasks &&
     counts.currentTask === state.currentTask &&
     counts.currentAttempt === state.currentAttempt &&
-    counts.totalTasks === state.totalTasks &&
-    counts.taskCompletionTimes === state.taskCompletionTimes
+    counts.attemptAllowance === state.attemptAllowance &&
+    counts.totalTasks === state.totalTasks
   ) {
     return state;
   }

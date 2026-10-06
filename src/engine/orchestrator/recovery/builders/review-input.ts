@@ -1,7 +1,7 @@
 import type { Phase } from '../../../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../../../core/schemas/recovery/schemas.js';
 import type { FinalReviewFailure } from '../../final-review.js';
-import { orderedActions } from './actions.js';
+import { haltActions } from './actions.js';
 import { compactFacts, createRecoveryIssue, type RecoveryBuilderBase } from './issue.js';
 
 export function inputTooLargeSentence(
@@ -43,10 +43,15 @@ export function buildReviewInputTooLargeRecoveryIssue(
     message: reviewInputTooLargeMessage(opts.failure, opts.tool),
     details: [
       `Largest diffs: ${largestFiles.map((file) => `${file.path} (${file.chars.toLocaleString('en-US')} chars)`).join(', ')}`,
-      'A retry sends the same input. Skip the review with a note (recorded, not a verification) or End the run (a workspace run saves its changes in run.patch).',
+      opts.acceptAsIs
+        ? 'A retry sends the same input. Skip the review with a note (recorded, not a verification) or End the run (a workspace run saves its changes in run.patch).'
+        : 'A retry sends the same input. End the run (a workspace run saves its changes in run.patch).',
     ],
     facts: compactFacts({ tool: opts.tool, chars, maxChars: maxChars ?? undefined }),
-    availableActions: orderedActions([opts.acceptAsIs ? 'accept-as-is' : undefined, 'end-run']),
+    availableActions: haltActions('review-input-too-large', [
+      opts.acceptAsIs ? 'accept-as-is' : undefined,
+      'end-run',
+    ]),
     recommendedAction: 'end-run',
     createdAt: opts.createdAt,
   });

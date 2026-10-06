@@ -144,15 +144,15 @@ describe('rebaseOnPersistedWorkflowState', () => {
       });
       saveState(
         { projectDir, sessionId },
-        transition(staleState, {
-          type: 'REWIND_TO_PLAN',
-          comment: 'revise the approach',
-        }),
+        transition(
+          { ...staleState, phase: 'reviewing-plan' },
+          { type: 'CORRECT_PLAN', comment: 'revise the approach' },
+        ),
       );
 
       const rebased = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, staleState);
 
-      expect(rebased.phase).toBe('planning');
+      expect(rebased.phase).toBe('reviewing-plan');
       expect(rebased.rewindPending).toEqual({ target: 'plan', comment: 'revise the approach' });
       expect(rebased.messageQueue).toEqual([expect.objectContaining({ id: 'msg-one' })]);
     } finally {
@@ -170,10 +170,11 @@ describe('transitionAndSave', () => {
       saveState({ projectDir, sessionId }, { ...staleState, messageQueue: [makeQueuedMessage()] });
 
       const next = transitionAndSave({ projectDir, sessionId }, staleState, {
-        type: 'RESEARCH_DONE',
+        type: 'PLAN_DONE',
+        tasks: [],
       });
 
-      expect(next.phase).toBe('specifying');
+      expect(next.phase).toBe('reviewing-plan');
       expect(next.messageQueue).toEqual([expect.objectContaining({ id: 'msg-one' })]);
     } finally {
       cleanupTempDir(projectDir);

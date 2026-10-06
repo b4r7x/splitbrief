@@ -115,18 +115,18 @@ describe('buildPaletteResults', () => {
       makeInputs({
         commandItems: [
           {
-            label: '/mode',
-            description: 'Workflow mode',
+            label: '/crew',
+            description: 'Who fills each seat',
             hint: null,
             shortcut: null,
             category: 'crew',
-            action: { kind: 'prefill', text: '/mode ' },
+            action: { kind: 'prefill', text: '/crew ' },
           },
         ],
       }),
     );
 
-    expect(results[0]?.action).toEqual({ kind: 'prefill', text: '/mode ' });
+    expect(results[0]?.action).toEqual({ kind: 'prefill', text: '/crew ' });
   });
 
   it('filters unmatched items and orders visible matches by relevance then label', () => {

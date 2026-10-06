@@ -128,15 +128,15 @@ splitbrief start "extract the duplicated date-formatting logic into a shared uti
 ```
 phase: planning        → plan.json, plan.md, tasks.md
 phase: reviewing-plan  ← the plan card
-  y approve · c comment · q end run · e edit
-> y
+  approve · comment <text> · end-run · edit
+> approve
 phase: implementing
   T001 ✓  T002 ✓  T003 ✓
 phase: final-review    → review.md
 workflow_complete
 ```
 
-The plan card is on by default (`approve: plan`). While the composer is empty, one key settles it: `y` approves the plan and starts the build, `c` starts a correction, `e` opens `plan.json` in the in-app editor, and `q` ends the run. The typed commands still work — `approve`, `comment <text>`, `end-run`, `edit`. Typing anything turns the letters back into text, so a draft is never eaten by a shortcut.
+The plan card is on by default (`approve: plan`). Its rows carry no letter keys: `↑↓` move over the rows and `⏎` takes the highlighted one — approve the plan and start the build, request changes, edit `plan.json` in the in-app editor, or end the run. The typed commands do the same — `approve`, `comment <text>`, `end-run`, `edit`. The composer holds the keyboard, so a letter is always text and a draft is never eaten by a shortcut.
 
 **Variations:** `workflow.approve: none` skips the card. A correction (`comment split T002 in two`) goes back to the planning session, which answers with a new plan; the card shows again.
 
@@ -216,7 +216,7 @@ validation:
   test: true
 ```
 
-Load the model in LM Studio and start its server before the run; the model ID must match what `/v1/models` reports. Like every bundled row, a local default is **`compatible-only`**, so it carries no SPLITBRIEF quality claim (see the [bundled model catalog](./CONFIGURATION.md#bundled-model-catalog-t-081-runtime-state)). Named `implementerProfiles` persist in config; recovery can route a stuck task to another profile via `route-bigger-worker`. LM Studio is local: no key, no metered spend, and prompts never leave your machine.
+Load the model in LM Studio and start its server before the run; the model ID must match what `/v1/models` reports. Like every bundled row, a local default is **`compatible-only`**, so it carries no SPLITBRIEF quality claim (see the [bundled model catalog](./CONFIGURATION.md#bundled-model-catalog-t-081-runtime-state)). Named `implementerProfiles` persist in config. LM Studio is local: no key, no metered spend, and prompts never leave your machine.
 
 **Run:**
 
@@ -314,7 +314,7 @@ validate · tsc ✓ lint ✓ test ✓
 
 **When:** the implementer writes a control-plane path, a package manifest or lockfile, CI configuration, or an env or key file. Those writes always ask; no other write does.
 
-**Setup:** nothing to configure. `approval.enabled`, `--yolo` and the retired `approval.tiers` do not change the rule.
+**Setup:** nothing to configure. `--yolo` is removed. The retired `approval.enabled` and `approval.tiers` keys each load with one notice and are ignored.
 
 **Run:**
 
@@ -344,12 +344,7 @@ A confirmation holds for that path for the rest of the run. A plan that lists th
 
 **When:** you suspect the implementer is editing files outside the brief's scope across multiple tasks.
 
-**Setup (`.splitbrief/config.yaml`):**
-
-```yaml
-workflow:
-  driftChainThreshold: 0.6    # 0.0–1.0; emit drift_chain_detected at/above
-```
+**Setup:** none. The drift report always runs before the final review. `workflow.driftChainThreshold` is a retired key: it loads with one notice and is ignored.
 
 **Run:**
 
@@ -362,15 +357,11 @@ splitbrief status     # after a few tasks
 
 ```
 drift_report passed=true errors=0 warnings=2
-drift_chain_detected
-  score: 0.71
-  representativePath: src/utils/format.ts
-  tasks: T001, T002, T003 all touched src/utils/format.ts (out of scope)
 ```
 
-The drift chain detector tracks out-of-bounds files across tasks. A high score indicates the implementer is repeatedly straying into the same off-scope area — usually a sign the brief was wrong about scope.
+The drift report compares the briefs with the run's diff and evidence. An `out_of_scope_file` finding names a changed file that no brief suggested. It is an `info` finding, never a failure: a brief's files are suggestions, and the final reviewer reads the files the run touched but no brief suggested. Many such files usually mean the plan was wrong about scope.
 
-**Variations:** Inspect the final deterministic report directly: `cat .splitbrief/sessions/<id>/drift-report.json | jq`. Inspect `drift-chains.json` for cross-task chain state. A closed run shows a `Scope` row with the latest score.
+**Variations:** Inspect the final deterministic report directly: `cat .splitbrief/sessions/<id>/drift-report.json | jq`. A closed run shows a `Scope` row: `clean`, or the counts such as `1 error · 1 warning`.
 
 **See also:** [docs/TASK-CONTRACT.md](./TASK-CONTRACT.md) §Drift detection rules.
 
@@ -391,18 +382,18 @@ phase: reviewing-plan
   T001 add validator     src/auth/validate.ts
   T002 wire validator    src/auth/middleware.ts
   T003 add tests         src/auth/validate.test.ts
-  y approve · c comment · q end run · e edit
-> e
+  approve · comment <text> · end-run · edit
+> edit
 ```
 
-`e` on an empty composer, `Ctrl+E` and `edit` all open the run's `plan.json` in the in-app editor. `Ctrl+S` checks the text first — the JSON, the plan schema and the plan checks. A text that fails stays open with `Not saved: <first message> (+N more)`. A valid save closes the editor; SPLITBRIEF compiles the edited plan, rewrites `plan.md` and `tasks.md`, and shows the card again until you approve.
+The `Edit plan.json` row, `Ctrl+E` and the typed `edit` all open the run's `plan.json` in the in-app editor. `Ctrl+S` checks the text first — the JSON, the plan schema and the plan checks. A text that fails stays open with `Not saved: <first message> (+N more)`. A valid save closes the editor; SPLITBRIEF compiles the edited plan, rewrites `plan.md` and `tasks.md`, and shows the card again until you approve.
 
 **You'll see:**
 
 ```
 plan_regenerated (edited plan.json)
 phase: reviewing-plan
-> y
+> approve
 phase: implementing
 ```
 
@@ -559,7 +550,7 @@ Stop options · Changes and draft stay.
 ```
 ⠙ Stopping T002 · Waiting for processes to exit · 0:02
   esc back after stop · ctrl+c quit after stop
-◌ Paused at T002 · Partial changes kept
+◌ Stopped at T002 · Partial changes kept
   /resume · /stop options · esc back to sessions · ctrl+c quit
 ```
 
@@ -699,7 +690,7 @@ Cost is reported in tokens, not dollars: the event stream carries token counts, 
 **Run:** the halt tells you the command. Every headless run that stops on a recovery writes three lines to stderr and exits `1`:
 
 ```
-Recovery required (retry-exhausted): T002 failed after 3 attempts
+Needs you (retry-exhausted): T002 failed after 3 attempts
 Recommended: skip-current-task
 Continue with: splitbrief continue 2026-09-13-rate-limiter --action skip [--plain|--json]
 ```
@@ -730,7 +721,7 @@ done: 2 tasks
 | `switch-seat:<tool>[:<model>]` | Moves the blocked seat to another detected tool, then reruns the brief there — the answer to a quota halt |
 | `end-run` | Closes the run and starts nothing; the files it wrote stay on disk |
 
-**Variations:** `--action` is a `continue` flag; `resume` has no equivalent, and a bare `splitbrief resume --plain` on a session with a pending recovery prints the same three lines and exits `1`. An action the issue does not allow exits `1` and names the actions it does allow; a value that is not a continue action exits `2` with `'<value>' is not a continue action. Use skip, retry, restore, switch-seat:<tool>[:<model>], end-run, apply, or discard.` A recovery whose recommended action is a row of the recovery panel prints `Continue with: splitbrief continue <session>, then choose <row> in the recovery panel` instead — `Pause run`, for example — with no `[--plain|--json]`, because the panel needs the TUI.
+**Variations:** `--action` is a `continue` flag; `resume` has no equivalent, and a bare `splitbrief resume --plain` on a session with a pending recovery prints the same three lines and exits `1`. An action the issue does not allow exits `1` and names the actions it does allow; a value that is not a continue action exits `2` with `'<value>' is not a continue action. Use skip, retry, restore, switch-seat:<tool>[:<model>], end-run, apply, or discard.` A recovery whose recommended action is a row of the recovery panel prints `Continue with: splitbrief continue <session>, then choose <row> in the recovery panel` instead — `Continue`, for example — with no `[--plain|--json]`, because the panel needs the TUI.
 
 **See also:** [docs/CLI-REFERENCE.md](./CLI-REFERENCE.md#splitbrief-continue), [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md).
 

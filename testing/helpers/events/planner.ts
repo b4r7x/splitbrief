@@ -34,7 +34,6 @@ export function makePlannerHeartbeat(
     ts: Date.now(),
     phase: 'researching',
     elapsedMs: 500,
-    accumulatedTokens: 5,
     ...overrides,
   };
 }

@@ -320,7 +320,7 @@ describe('runTaskLoop routed context window', { timeout: 90_000 }, () => {
     const implementer = makeImplementer({
       implement: vi.fn().mockImplementation(async () => {
         mkdirSync(join(projectDir, 'src'), { recursive: true });
-        writeFileSync(join(projectDir, task.file), 'implementation');
+        writeFileSync(join(projectDir, task.suggestedFiles[0]), 'implementation');
         return { success: true, output: 'code', usage: { inputTokens: 100, outputTokens: 50 } };
       }),
     });

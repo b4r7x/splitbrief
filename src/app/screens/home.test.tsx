@@ -1404,14 +1404,14 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     ui.unmount();
   });
 
-  it('Enter on a failed session opens it at rest rather than refusing to show it', async () => {
+  it('Enter on a stopped session opens it at rest rather than refusing to show it', async () => {
     saveSummary(
       { projectDir, sessionId: 'failed-one' },
       makeSession({
         id: 'failed-one',
         feature: 'broken feature',
         status: 'open',
-        stop: 'failed',
+        stop: 'stopped',
         summary: null,
         startedAt: 1_700_000_600,
       }),

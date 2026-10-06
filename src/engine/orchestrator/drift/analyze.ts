@@ -1,5 +1,5 @@
 import type { Task } from '../../../core/schemas/task.js';
-import { isTaskCompleted, taskFiles } from '../../../core/schemas/task.js';
+import { isTaskCompleted } from '../../../core/schemas/task.js';
 import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
 import type { DriftFinding, DriftReport } from '../../../core/schemas/drift.js';
 import {
@@ -10,18 +10,11 @@ import {
   TASKS_FILE,
 } from '../../../core/paths.js';
 import { uniqueInOrder } from '../../../utils/collections.js';
-import { clamp01 } from '../../../utils/math.js';
-import {
-  isInDeclaredSet,
-  isScopePlaceholder,
-  matchesScopeEntry,
-  taskDeclaredPatterns,
-} from '../../../core/scope/declared-set.js';
+import { isInDeclaredSet, taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
 
 export type AnalyzeBriefDriftInput = {
   tasks: Task[];
   changedFiles: string[];
-  diff: string;
   ledger?: EvidenceLedger | null | undefined;
   briefHash?: string | null;
   preRunChangedFiles: readonly string[];
@@ -35,7 +28,7 @@ function isFailedOrSkipped(status: Task['status']): boolean {
 // during planning, so they are the session's own artifacts: their presence in
 // the diff is orchestration, not implementer drift — unless a Task Brief
 // explicitly targets one of them.
-export const SESSION_ARTIFACT_FILES: ReadonlySet<string> = new Set([
+const SESSION_ARTIFACT_FILES: ReadonlySet<string> = new Set([
   RESEARCH_FILE,
   SPEC_FILE,
   PLAN_FILE,
@@ -43,46 +36,10 @@ export const SESSION_ARTIFACT_FILES: ReadonlySet<string> = new Set([
   REVIEW_FILE,
 ]);
 
-const DIFF_SECTION_HEADER = /^diff --git a\/(\S+) b\/(\S+)/;
-
-// Strips session-artifact file sections from a unified diff so out-of-bounds
-// content matching cannot hit the brief's own text (tasks.md quotes every
-// out-of-bounds entry verbatim). Non-diff text passes through untouched.
-function stripSessionArtifactDiffSections(diff: string): string {
-  if (!diff.includes('diff --git ')) return diff;
-  return diff
-    .split(/^(?=diff --git )/m)
-    .filter((section) => {
-      const header = DIFF_SECTION_HEADER.exec(section);
-      return header === null || !SESSION_ARTIFACT_FILES.has(header[2] ?? '');
-    })
-    .join('');
-}
-
-type OutOfBoundsPatternKind = 'path' | 'symbol' | 'prose';
-
-// Brief out-of-bounds entries arrive in three shapes: paths ("src/slug.ts"),
-// bannable symbols ("SECRET_TOKEN"), and reviewer prose ("Modifying
-// `src/slug.ts`, or any config files."). Prose is guidance for the reviewer —
-// substring-matching it against paths or diff text only produces false errors.
-function classifyOutOfBoundsPattern(pattern: string): OutOfBoundsPatternKind {
-  const token = pattern.trim();
-  if (token === '' || /\s/.test(token)) return 'prose';
-  if (token.includes('/') || token.includes('*') || /\.[A-Za-z0-9]+$/.test(token)) return 'path';
-  if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(token)) return 'symbol';
-  return 'prose';
-}
-
-function matchesOutOfBoundsPath(file: string, pattern: string): boolean {
-  const token = pattern.trim().replace(/\/+$/, '');
-  if (matchesScopeEntry(file, token)) return true;
-  return !token.includes('*') && file.startsWith(`${token}/`);
-}
-
 export function analyzeBriefDrift(input: AnalyzeBriefDriftInput): DriftReport {
   const findings: DriftFinding[] = [];
   const expectedFiles = uniqueInOrder(
-    input.tasks.flatMap((task) => [...taskFiles(task)]).filter(Boolean),
+    input.tasks.flatMap((task) => [...task.suggestedFiles]).filter(Boolean),
   ).sort();
   const acceptedPatterns = input.tasks.flatMap((task) => [...taskDeclaredPatterns(task)]);
   const isSessionArtifact = (file: string): boolean =>
@@ -105,48 +62,6 @@ export function analyzeBriefDrift(input: AnalyzeBriefDriftInput): DriftReport {
   const preRunBaseline = new Set(input.preRunChangedFiles);
   const isPreExisting = (file: string): boolean =>
     !runAttributed.has(file) && preRunBaseline.has(file);
-
-  const outOfBoundsPatterns: string[] = [];
-  for (const task of input.tasks) {
-    for (const p of task.scope?.outOfBounds ?? []) {
-      if (p && !isScopePlaceholder(p)) outOfBoundsPatterns.push(p);
-    }
-  }
-
-  // A file some Task Brief declares is a brief-ordered change, never an
-  // out-of-bounds hit, even when another task's scope forbids it.
-  const isTaskTarget = (file: string): boolean =>
-    input.tasks.some((task) => isInDeclaredSet(file, taskFiles(task)));
-  const contentDiff = stripSessionArtifactDiffSections(input.diff);
-
-  for (const pattern of outOfBoundsPatterns) {
-    const kind = classifyOutOfBoundsPattern(pattern);
-    if (kind === 'prose') continue;
-    // A bare word is both a legal identifier and a legal directory name
-    // ("node_modules", "vendor"), so the changed-file list is consulted for
-    // every non-prose pattern: an attributed file names the offender, while
-    // the diff-text scan can only report that some line matched.
-    const fileHit = changedFiles.find(
-      (f) => !isTaskTarget(f) && matchesOutOfBoundsPath(f, pattern),
-    );
-    if (fileHit) {
-      findings.push({
-        severity: 'error',
-        code: 'out_of_bounds_text_match',
-        file: fileHit,
-        message: `Out-of-bounds pattern "${pattern}" matched changed file ${fileHit}.`,
-      });
-      continue;
-    }
-    if (kind === 'path') continue;
-    if (contentDiff.includes(pattern.trim())) {
-      findings.push({
-        severity: 'error',
-        code: 'out_of_bounds_text_match',
-        message: `Out-of-bounds pattern "${pattern}" appears in diff.`,
-      });
-    }
-  }
 
   for (const file of changedFiles) {
     if (isInDeclaredSet(file, acceptedPatterns)) continue;
@@ -171,15 +86,15 @@ export function analyzeBriefDrift(input: AnalyzeBriefDriftInput): DriftReport {
   for (const task of input.tasks) {
     if (
       isTaskCompleted(task.status) &&
-      task.file &&
-      !changedFiles.some((file) => isInDeclaredSet(file, taskFiles(task)))
+      task.suggestedFiles[0] &&
+      !changedFiles.some((file) => isInDeclaredSet(file, task.suggestedFiles))
     ) {
       findings.push({
         severity: 'warning',
         code: 'missing_expected_file',
         taskId: task.id,
-        file: task.file,
-        message: `Task ${task.id} reached ${task.status} but ${task.file} was not changed.`,
+        file: task.suggestedFiles[0],
+        message: `Task ${task.id} reached ${task.status} but ${task.suggestedFiles[0]} was not changed.`,
       });
     }
   }
@@ -187,15 +102,15 @@ export function analyzeBriefDrift(input: AnalyzeBriefDriftInput): DriftReport {
   for (const task of input.tasks) {
     if (
       task.status === 'failed' &&
-      task.file &&
-      changedFiles.some((file) => isInDeclaredSet(file, taskFiles(task)))
+      task.suggestedFiles[0] &&
+      changedFiles.some((file) => isInDeclaredSet(file, task.suggestedFiles))
     ) {
       findings.push({
         severity: 'error',
         code: 'failed_task_with_diff',
         taskId: task.id,
-        file: task.file,
-        message: `Failed task ${task.id} left changes in ${task.file}.`,
+        file: task.suggestedFiles[0],
+        message: `Failed task ${task.id} left changes in ${task.suggestedFiles[0]}.`,
       });
     }
   }
@@ -215,22 +130,9 @@ export function analyzeBriefDrift(input: AnalyzeBriefDriftInput): DriftReport {
     });
   }
 
-  let score = 1;
-  let errorCount = 0;
-  for (const f of findings) {
-    if (f.severity === 'error') {
-      score -= 0.25;
-      errorCount += 1;
-    } else if (f.severity === 'warning') {
-      score -= 0.08;
-    }
-  }
-  score = clamp01(score);
-
   return {
     version: 1,
-    passed: errorCount === 0,
-    score,
+    passed: !findings.some((finding) => finding.severity === 'error'),
     changedFiles,
     expectedFiles,
     findings,

@@ -254,6 +254,11 @@ const REFUSED_WARNING = {
   code: 'discovered_validation_refused',
 } as const;
 
+/** Why a test file pattern is refused, in the words of the rule it broke. */
+function testPatternRefusal(pattern: string): string {
+  return pattern.includes('..') ? 'it contains ".."' : 'it contains a path separator';
+}
+
 type StageResolutionContext = {
   projectDir: string;
   config: Config;
@@ -269,7 +274,12 @@ export function sanitizeDiscoveredValidation(
   if (!discovered) return undefined;
 
   const refuse = (message: string) =>
-    publishWarning({ ...notices, message, safety: REFUSED_WARNING });
+    publishWarning({
+      bus: notices.bus,
+      phase: notices.phase,
+      message,
+      safety: REFUSED_WARNING,
+    });
   const sanitized: DiscoveredValidation = {};
 
   if (discovered.language) sanitized.language = discovered.language;
@@ -278,7 +288,7 @@ export function sanitizeDiscoveredValidation(
       sanitized.testPattern = discovered.testPattern;
     } else {
       refuse(
-        `The test stage does not take the file pattern ${discovered.testPattern} from the planner: a test pattern may not contain ".." or a path separator, so the stack's test file patterns apply.`,
+        `The test stage does not take the file pattern ${discovered.testPattern} from the planner (${testPatternRefusal(discovered.testPattern)}) and uses config or the stack's test file patterns.`,
       );
     }
   }

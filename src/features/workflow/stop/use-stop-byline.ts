@@ -1,6 +1,7 @@
 import { routerStore } from '../../../stores/navigation/router.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import {
   briefAfter,
   selectRunningBrief,
@@ -17,7 +18,8 @@ export function useStopByline(): StopByline | null {
   const stop = stopStore.use((s) => s);
   const tasks = tasksStore.use((s) => s);
   const view = selectTaskListView(tasks);
-  const brief = selectRunningBrief(tasks);
+  const phase = lifecycleStore.use((s) => s.phase);
+  const brief = selectRunningBrief(tasks, phase);
   const questionPending = controlsStore.use((s) => s.inputMode === 'question');
   // A stop that ended the run loop settles it at rest, and the record it re-read says where it
   // stopped and what it kept.

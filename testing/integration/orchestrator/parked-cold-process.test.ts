@@ -77,7 +77,7 @@ function coldRouteFromEnv(): ColdRoute {
 
 function makeColdTask() {
   return makeTask({
-    file: 'partial.ts',
+    suggestedFiles: ['partial.ts'],
     scope: { inBounds: ['partial.ts'], outOfBounds: ['other files'] },
     evidence: ['The module exports complete'],
     typeDefs: 'export const complete: boolean',
@@ -87,7 +87,7 @@ function makeColdTask() {
 function makeColdConfig() {
   return makeNoValidationConfig({
     workflow: { approve: 'none', maxRetries: 1 },
-    approval: { enabled: false, feedRejectionsToPlanner: false },
+    approval: { feedRejectionsToPlanner: false },
   });
 }
 

@@ -175,37 +175,6 @@ describe('event row color-off legibility', () => {
   const streaming: StreamingOutputState = { taskId: null, lines: [], active: false };
   const ctx = { width: 80, viewportRows: 20, streaming } as const;
 
-  it('distinguishes brief-quality pass from fail with a word, not color alone', () => {
-    const passed = eventRows({
-      event: {
-        type: 'brief_quality_passed',
-        ts: 0,
-        phase: 'planning',
-        score: 0.95,
-        warningCount: 0,
-      },
-      globalIndex: 0,
-      expanded: false,
-      ctx,
-    });
-    const failed = eventRows({
-      event: {
-        type: 'brief_quality_failed',
-        ts: 0,
-        phase: 'planning',
-        score: 0.5,
-        errorCount: 0,
-        warningCount: 0,
-      },
-      globalIndex: 1,
-      expanded: false,
-      ctx,
-    });
-
-    expect(passed.map(rowText).join(' ')).toContain('passed');
-    expect(failed.map(rowText).join(' ')).toContain('failed');
-  });
-
   it('marks a failed validation run with the word failed even with color off', () => {
     const failed = eventRows({
       event: {

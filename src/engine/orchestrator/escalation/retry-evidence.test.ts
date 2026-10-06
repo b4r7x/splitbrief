@@ -72,7 +72,7 @@ describe('persistRetryApprovalEvidence', () => {
   it('writes approval evidence to ledger', async () => {
     const { ctx, projectDir, sessionId } = await makeRetryEvidenceCtx();
     const state = makeImplState([]);
-    const task = makeTask({ id: 'T001', file: 'src/test.ts' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/test.ts'] });
     const decision = {
       allow: true,
       changedFiles: ['src/test.ts'],
@@ -103,7 +103,7 @@ describe('persistRetryApprovalEvidence', () => {
       dirtyFileContents: {},
     });
     const state = makeImplState([]);
-    const task = makeTask({ id: 'T001', file: 'src/test.ts' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/test.ts'] });
     const decision = { allow: true, changedFiles: [] };
 
     persistRetryApprovalEvidence(ctx, state, task, decision);
@@ -116,7 +116,7 @@ describe('persistRetryRejectionEvidence', () => {
   it('writes rejection evidence to ledger', async () => {
     const { ctx, projectDir, sessionId } = await makeRetryEvidenceCtx();
     const state = makeImplState([]);
-    const task = makeTask({ id: 'T002', file: 'src/test.ts' });
+    const task = makeTask({ id: 'T002', suggestedFiles: ['src/test.ts'] });
     const decision = {
       allow: false,
       changedFiles: ['src/test.ts'],
@@ -143,7 +143,7 @@ describe('persistRetryRejectionEvidence', () => {
       dirtyFileContents: {},
     });
     const state = makeImplState([]);
-    const task = makeTask({ id: 'T003', file: 'src/test.ts' });
+    const task = makeTask({ id: 'T003', suggestedFiles: ['src/test.ts'] });
     const decision = { allow: false, changedFiles: [], tier: 'auto' as const };
 
     persistRetryRejectionEvidence(ctx, state, task, decision);
@@ -156,7 +156,7 @@ describe('recordRetryDenial', () => {
   it('records one rejection per denied file', async () => {
     const { ctx, projectDir, sessionId } = await makeRetryEvidenceCtx();
     const state = makeImplState([]);
-    const task = makeTask({ id: 'T004', file: 'src/test.ts' });
+    const task = makeTask({ id: 'T004', suggestedFiles: ['src/test.ts'] });
     const denied = (file: string) => ({
       allow: false as const,
       tier: 'confirm' as const,

@@ -51,7 +51,7 @@ Prefer these stable identifiers in automation and log correlation. Remediation s
 | Provider returned quota or rate-limit pressure (for example HTTP 429). | `quota-rate-limit` | Wait for quota or rate limits to reset, reduce request volume, or switch providers, then run `splitbrief doctor` again. |
 | Runner configuration contains mutually exclusive CLI arguments. | `conflicting-args` | Remove conflicting runner arguments from the config, then run `splitbrief doctor` again. |
 
-A quota that runs out mid-run is not a readiness failure and is not answered here: the run raises a `runner-usage-limit` recovery, and that panel offers `switch-seat` — its recommended action whenever the last readiness pass saw another ready tool for that seat — beside `pause-run` (wait for the reset the message names), `route-bigger-worker`, skip and end. The limit wording of these tools was captured live and classifies as a usage limit: codex, Claude Code, antigravity (`Individual quota reached … Resets in 2h6m30s` on stderr, with or without a `result` frame), opencode 2.x (the flat `provider.quota` error envelope) and command-code (`You've reached your weekly usage limit`), plus the Gemini API body behind antigravity (`RESOURCE_EXHAUSTED`). Copilot, cursor and kilo-code have no captured wording: their limits classify only through the shared phrases (`usage limit`, `quota exceeded`, `too many requests`, HTTP 429). A spent account is the same halt with no reset: a provider that will not bill the account (`Insufficient Balance`, HTTP 402, `payment required`, `insufficient_quota`) raises `runner-usage-limit` on the first failed call, with no retry and no planner consult; top up the account or take `switch-seat`. A provider that refuses the login (HTTP 401 or 403, `unauthenticated`, `sign in`) raises `runner-unauthenticated`, which offers `switch-seat` beside the re-login retry.
+A quota that runs out mid-run is not a readiness failure and is not answered here: the run raises a `runner-usage-limit` recovery, and that panel offers `switch-seat` — its recommended action whenever the last readiness pass saw another ready tool for that seat — beside `retry-same-worker` (take it after the reset the message names), skip and end. The limit wording of these tools was captured live and classifies as a usage limit: codex, Claude Code, antigravity (`Individual quota reached … Resets in 2h6m30s` on stderr, with or without a `result` frame), opencode 2.x (the flat `provider.quota` error envelope) and command-code (`You've reached your weekly usage limit`), plus the Gemini API body behind antigravity (`RESOURCE_EXHAUSTED`). Copilot, cursor and kilo-code have no captured wording: their limits classify only through the shared phrases (`usage limit`, `quota exceeded`, `too many requests`, HTTP 429). A spent account is the same halt with no reset: a provider that will not bill the account (`Insufficient Balance`, HTTP 402, `payment required`, `insufficient_quota`) raises `runner-usage-limit` on the first failed call, with no retry and no planner consult; top up the account or take `switch-seat`. A provider that refuses the login (HTTP 401 or 403, `unauthenticated`, `sign in`) raises `runner-unauthenticated`, which offers `switch-seat` beside the re-login retry.
 
 ### Runner `state` outcomes (workflow commands)
 
@@ -452,7 +452,7 @@ SPLITBRIEF tries to fix it before it tells you. Each Critical finding is mapped 
 A read, list or search outside the isolation directory does not halt. The tripwire logs it as an `isolation_outside_read` warning and the call goes on: `Task T004 searched ~ with run_command: find ~ -name "process-invoke.ts" 2>/dev/null`. The warning is in the transcript, in `session.jsonl` and in the review packet's warnings list. A tool whose shell does not start in the isolation directory is the usual source: it cannot find the project and searches the disk for it. See [Isolation checks](./APPROVAL-AND-RECOVERY.md#isolation-checks).
 
 **Fix:**
-1. Read the evidence on the recovery panel or in the `Recovery required (implementer-left-isolation): …` line a headless run printed.
+1. Read the evidence on the recovery panel or in the `Seat down (implementer-left-isolation): …` line a headless run printed.
 2. If the evidence reads `ran while your checkout changed`, look at each named change in your checkout first. SPLITBRIEF reverts nothing there: a new tag, a stash, a hook or a git config change stays until you undo it. The halted attempt writes nothing into your checkout; its output stays in the run workspace.
 3. Choose **Try again** (`splitbrief continue <session> --action retry`) to run the brief again; the implementer prompt names the isolation directory and tells the implementer to stay in it. Choose **Change BUILD tool** when the same tool keeps leaving, or **Skip task** to move on.
 4. If the evidence reads `ran a package-manager command`, the brief needs a dependency change: make it in your checkout yourself (`npm install <pkg>`), then retry. A package-manager install, ci, add, remove or update from the isolation directory writes into your checkout's shared `node_modules`, so it always halts. A write to a tool cache there (`node_modules/.vite`, `node_modules/.cache`) does not halt. A write to `node_modules/.bin` or to a package manager's lockfile marker halts.
@@ -470,7 +470,7 @@ A read, list or search outside the isolation directory does not halt. The tripwi
 A commit, a branch switch or a pull in your checkout does not halt the brief: a move of the checkout's `HEAD` or current branch is Apply's work. Apply merges it with the run's result, and an overlap it cannot merge stops Apply with an `apply-conflict` halt instead ([Apply conflicts](./APPROVAL-AND-RECOVERY.md#apply-conflicts)). A changed file does not halt the brief either, because an editor save changes files too. The run publishes the `checkout_changed_during_call` warning and continues: `Task T004: your checkout changed while Google Antigravity CLI ran — src/app.ts; nothing there was reverted`. The warning is in the transcript, in `session.jsonl` and in the review packet's warnings list.
 
 **Fix:**
-1. Read the evidence on the recovery panel or in the `Recovery required (checkout-changed): …` line a headless run printed.
+1. Read the evidence on the recovery panel or in the `Needs you (checkout-changed): …` line a headless run printed.
 2. Look at each named change in your checkout or in the run worktree. SPLITBRIEF reverts nothing there: a new tag, a stash, a hook or a git config change stays until you undo it. The halted attempt writes nothing into your checkout.
 3. If the change is yours, choose **Try again** (`splitbrief continue <session> --action retry`).
 4. If the change is not yours, undo it. Then choose **Try again**, **Change BUILD tool** or **Skip task**.
@@ -598,7 +598,7 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 
 **Fix:**
 1. `esc` opens the **Stop options** sheet, with or without a draft: `Stop now` (stop execution; keep partial changes — they stay in the run workspace), `Pause after this brief` (finish `T<id>` including checks and review; start no next brief), `End run` (stop execution; close this run; keep changes — a worktree or staged-copy run saves them in `run.patch` before its workspace goes). `↑↓ · ⏎ · esc`, no letter keys. `esc` from the sheet is Stop now — it goes back to sessions once the run is parked or at rest — and `Tab` dismisses the sheet without stopping. No option writes the run's changes into your checkout; only Apply does.
-2. `ctrl+c` is Stop now, immediately, one press. It aborts the in-flight call along with any retry, consult or per-task review call, and parks the run as `Paused at T<id> · Partial changes kept`.
+2. `ctrl+c` is Stop now, immediately, one press. It aborts the in-flight call along with any retry, consult or per-task review call, and parks the run as `Stopped at T<id> · Partial changes kept`.
 3. `ctrl+q` or `/quit` stops safely, saves the session, then exits.
 4. With text in the composer, `esc` opens the same sheet and leaves the draft in place — the composer swallows no part of the key.
 5. Restart with `/resume` (type instructions first if you want to steer) or from the shell with `splitbrief continue <session-id>`; a continuable run at rest continues on a bare `⏎`, while a run parked in this process answers a blank `⏎` with `type instructions or /resume`. `/end` closes a parked run; after that nothing picks it up.
@@ -615,7 +615,7 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 
 **Fix:**
 1. Read the issue's details: they carry the tool's own last message, the attempt count, and the implementer profile that was selected.
-2. The offered actions are retry, route to a bigger worker, switch seat, skip the brief, pause, or end the run. Headless, the stderr block prints the exact line to paste — for example `splitbrief continue <session> --action retry`.
+2. The halt is *Seat down*. The offered actions are retry, switch seat (when another ready tool was detected), skip the brief, or end the run. Headless, the stderr block prints the exact line to paste — for example `splitbrief continue <session> --action retry`.
 3. If the brief is simply too large for this seat, the durable fix is to split it in a new plan along its independent outcomes, so each brief is one coherent change the seat can finish.
 4. If the tool is genuinely slow rather than stuck, raise its seat's `timeout` toward the 1 200 000 ms cap, or move the seat to a faster model.
 5. Distinguish it from silence: `idleWarnMs` / `idleKillMs` watch for *no output*, while this halt is about total wall clock. A run producing output steadily for 20 minutes still times out.
@@ -696,7 +696,7 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 **Likely cause:** The run-start baseline probe is running. Before the first task, SPLITBRIEF probes every enabled validation stage once (typecheck → lint → test, with the test probe narrowed to the first task's affected file). Each stage can block for `validation.timeoutMs` (default 10 minutes) and the probe deliberately does not stop at the first red stage, so three slow stages can hold the phase for up to half an hour.
 
 **Fix:**
-1. Look at the conversation rows — the probe publishes a `baseline` row naming the stage currently being probed (`baseline typecheck (npx tsc --noEmit) running …`). The run is not hung; it is waiting on that command.
+1. Look at the conversation rows — the probe publishes a `Baseline` row naming the stage currently being probed (`Baseline typecheck (npx tsc --noEmit) running …`). The run is not hung; it is waiting on that command.
 2. If a stage is genuinely slow, lower `validation.timeoutMs` in `.splitbrief/config.yaml` (minimum 1000 ms) so each probe step gives up sooner.
 3. If a stage can never pass in this repository (a pre-existing type error, a broken linter), leave it red: the probe records it as a pre-existing failure and the run continues past it rather than failing every task on it.
 
@@ -713,7 +713,7 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 **Likely cause:** OpenCode's `run --format json` mode reports a tool only once that tool completes, and it never forwards child-session (subagent) events at all. A `task explore` subagent that runs for two minutes therefore produces no output until it lands, so the idle watchdog warns at `RUNNER_IDLE_WARN_MS` (5 minutes) even though the call is healthy. The run is not hung.
 
 **Fix:**
-1. Wait. The byline appends `· tools report when done` when the silent runner is one that only reports finished tools, which is the signal that this silence is expected rather than a hang. How long the runner has been silent is stated once: in the build block's freshness line (`No update for 5m 12s`) while the block is on screen, and on the byline itself (`Still working — silent 5m 12s`) whenever no block is painted — during planning, or while the stop menu takes its rows.
+1. Wait. The byline appends `· tools report when done` when the silent runner is one that only reports finished tools, which is the signal that this silence is expected rather than a hang. How long the runner has been silent is stated once: in the build block's freshness line (`a tool is running · 5m 12s` for such a runner) while the block is on screen, and on the byline itself (`Still working — silent 5m 12s`) whenever no block is painted — during planning, or while the stop menu takes its rows.
 2. If you want to confirm liveness, the watchdog is still armed underneath: a genuinely dead process is killed at `RUNNER_IDLE_KILL_MS` (20 minutes, and only when no child process is running), and the stall clears on the next activity, completion, or error event.
 3. To see what the tool actually did, read the run tree after the call completes — the tool uses land there in one batch.
 
@@ -755,12 +755,12 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 
 ### Symptom: continuing a run re-opens the planner halt instead of building
 
-**Likely cause:** The run stopped on a planner-seat recovery — `planner-call-failed`, `plan-questions-exhausted`, `plan-checks-failed`, a planner `seat-protocol-error`, or a seat-blocked `runner-unauthenticated` / `runner-usage-limit` on the **plan** seat. A halt is answered before any work runs, so continuing shows the panel first. That is the design: the run is waiting on a decision, not stuck.
+**Likely cause:** The run stopped on a planner-seat recovery — `planner-call-failed`, `plan-questions-exhausted`, `plan-checks-failed`, a planner `seat-protocol-error`, or a *Seat down* `runner-unauthenticated` / `runner-usage-limit` on the **plan** seat. A halt is answered before any work runs, so continuing shows the panel first. That is the design: the run is waiting on a decision, not stuck.
 
 **Fix:**
 1. In the TUI, answer the panel. The issue carries its own `seat`, so a swap offer names the seat that is actually blocked.
 2. Headlessly, the halt printed the exact line to run: `splitbrief continue <session-id> --action retry` (or `--action switch-seat:<tool>`, `--action skip`, `--action end-run`).
-3. `pause-run` leaves the halt in place, so the next continuation shows the same panel. That is deliberate — it is not a loop.
+3. A halt you leave stays in place, so the next continuation shows the same panel. That is deliberate — it is not a loop.
 
 **Prevention:** Nothing to prevent. A halt is a question; leaving it unanswered means it gets asked again.
 
@@ -835,7 +835,7 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 **Fix:**
 1. Set `implementer.contextLength` (or the `SPLITBRIEF_CONTEXT_LENGTH` environment variable) to the runner's real window — see [docs/CONFIGURATION.md](./CONFIGURATION.md).
 2. Use a profile whose declared or detected window fits the brief, or split the brief into smaller tasks.
-3. When the recovery prompt offers `route-bigger-worker`, take it so the task is retried on a larger-window profile.
+3. The halt offers `retry-same-worker`, `skip-current-task` and `end-run`. Fix the window or the profile first, then retry.
 
 **Prevention:** Configure `contextLength` on implementer profiles that run outside a known catalog, and keep briefs under roughly 28 000 estimated tokens when the window is unknown.
 
@@ -933,13 +933,12 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 
 ### Symptom: Drift report flags files I never touched
 
-**Likely cause:** Drift matching uses substring comparison against the brief's declared paths; loose globs and short tokens produce false positives.
+**Likely cause:** The report lists every changed file that no brief suggested as an `out_of_scope_file` finding. That finding is `info` and never fails drift. A file that was already changed before the run started gets a pre-existing note instead, unless the evidence ledger shows the run touched it.
 
 **Fix:**
 1. Inspect `.splitbrief/sessions/<id>/drift-report.json` and confirm whether the file was actually modified (run `git diff` against the pre-task snapshot).
-2. If the match is spurious, tighten the brief's scope strings (use full paths, not bare filenames).
-3. If the file is intentionally out of scope, add it to `scope.approvedOutOfBounds` in the brief.
-4. For repeat offenders, tighten future brief scope strings or add intentional shared files to `approvedOutOfBounds`.
+2. If the file was intentionally in scope, name it in the brief's `suggestedFiles`, `scope.inBounds` or `scope.approvedOutOfBounds`; those are the accepted change patterns.
+3. Leave the finding when the change is real: the final reviewer reads the files the run touched that no brief suggested.
 
 **Prevention:** Write brief scope sections with full project-relative paths (`src/engine/orchestrator/run/workflow.ts`), never bare names (`workflow.ts`).
 
@@ -947,32 +946,29 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 
 ---
 
-### Symptom: Chain-drift detection flags every task
+### Symptom: `workflow.drift_chain_threshold was retired` notice at start
 
-**Likely cause:** `workflow.driftChainThreshold` is set too low for your codebase — small overlaps in touched files trip the chain heuristic. If unset, the chain threshold defaults to `0.6`; there is no config-level off switch.
+**Likely cause:** The config still sets `workflow.driftChainThreshold`. SPLITBRIEF no longer scores drift chains across tasks, so the key loads with one notice and changes nothing.
 
 **Fix:**
-1. Inspect `.splitbrief/sessions/<id>/drift-chains.json`; `summary.json.chainDriftSummary` is only the aggregate/top emitted chain summary.
-2. Raise `workflow.driftChainThreshold` in config (try 0.75 or 0.85) until only meaningful chains trip it.
-3. Set it to `1.0` to make emissions least likely, or add a real disable flag before documenting off semantics.
+1. Delete `workflow.driftChainThreshold` from `.splitbrief/config.yaml`.
 
-**Prevention:** Tune the threshold against a representative session before relying on it as a gate.
+**Prevention:** Read the retired-key table in [CONFIGURATION.md](./CONFIGURATION.md) after an upgrade.
 
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), `src/engine/orchestrator/final-review.ts`.
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), `src/core/config/load/validation/config.ts`.
 
 ---
 
 ### Symptom: Edits to `drift.ts` do not change behavior
 
-**Likely cause:** Drift logic exists at two layers. Per-task chain analysis runs from `src/engine/orchestrator/task/analyze-drift.ts` (via `step.ts`) through `src/engine/orchestrator/drift/chain.ts` and persists to `drift-chains.json`. The final deterministic drift report runs from `src/engine/orchestrator/final-review.ts` through `src/engine/orchestrator/drift/analyze.ts`, persists to `drift-report.json`, and is summarized in `summary.json`.
+**Likely cause:** Drift logic lives in one place. The final deterministic drift report runs from `src/engine/orchestrator/final-review.ts` through `src/engine/orchestrator/drift/analyze.ts`, persists to `drift-report.json`, and is summarized in `summary.json`. There is no per-task chain analysis.
 
 **Fix:**
-1. For repeated off-scope edits across tasks, inspect `drift-chains.json` and `src/engine/orchestrator/drift/chain.ts`.
-2. For final review drift findings, inspect `drift-report.json` and `src/engine/orchestrator/drift/analyze.ts`.
-3. Use `summary.json` only for the aggregate drift summary.
-4. Edit the correct file, re-run, and re-verify in `drift-chains.json`, `drift-report.json`, or the drift summary in `summary.json`.
+1. For final review drift findings, inspect `drift-report.json` and `src/engine/orchestrator/drift/analyze.ts`.
+2. Use `summary.json` only for the aggregate drift summary.
+3. Edit `analyze.ts`, re-run, and re-verify in `drift-report.json` or the drift summary in `summary.json`.
 
-**Prevention:** Before editing drift code, grep for the symptom string in both files and confirm which one emits it.
+**Prevention:** Before editing drift code, grep for the symptom string and confirm which file emits it.
 
 **See also:** [docs/ARCHITECTURE.md](./ARCHITECTURE.md), `src/engine/orchestrator/`.
 
@@ -994,7 +990,7 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 
 ### Symptom: I discarded or ended a run and need its work
 
-**Likely cause:** The run closed without Apply. Its notice names the patch: `Run changes not applied are saved in .splitbrief/sessions/<id>/run.patch; apply them with git apply.` A discarded run's byline repeats it: `Bring the changes back with git apply .splitbrief/sessions/<id>/run.patch`. When the workspace was already gone, the notice reads `The run workspace at <path> is gone; no run patch was written.`
+**Likely cause:** The run closed without Apply. Its notice names the patch: `Run changes not applied are saved in .splitbrief/sessions/<id>/run.patch; apply them with git apply.` The closed run's `Run` block names the file in its `Patch` row, and the byline of a discarded or ended run points at it: `Bring the changes back with git apply on the Patch file`. When the workspace was already gone, the notice reads `The run workspace at <path> is gone; no run patch was written.`
 
 **Fix:** Inspect that patch. Use `git apply .splitbrief/sessions/<id>/run.patch` to bring the saved changes into a suitable checkout. Discarded and ended runs stay closed. If patch creation failed, the run remains open and keeps its workspace; resolve the reported failure, then close again.
 
@@ -1234,7 +1230,7 @@ Copied images remain in `~/.splitbrief/clipboard/` so history and runs retain re
 **Likely cause (fixed):** A resume over a state with a **paused** or **applying** `pendingRecovery` used to exit 0 silently — the headless driver only failed on `awaiting-user`. The task loop now publishes a transcript-safe `warning` with `code: 'recovery_pending_unresolved'` naming the reason, status, and available actions, and headless fails with exit code 1 for every recovery status.
 
 **Fix:**
-1. Inspect the `recovery_required` record in the NDJSON stream — it now carries `status` (`awaiting-user` | `paused` | `applying`).
+1. Inspect the `recovery_required` record in the NDJSON stream — it now carries `status` (`awaiting-user` | `applying`).
 2. Resolve it with `splitbrief resume` in the TUI and pick an action.
 3. If the run truly did nothing, check `state.json` for `pendingRecovery` before assuming CI passed.
 
@@ -1265,7 +1261,7 @@ Copied images remain in `~/.splitbrief/clipboard/` so history and runs retain re
 **Fix:**
 1. Inspect `drift-report.json` for per-finding details and `summary.json.driftSummary` for the final deterministic drift aggregate; `evidence.json` only contains the evidence ledger.
 2. To gate CI on drift, post-process `summary.json` and exit non-zero from your wrapper script when drift exceeds your threshold.
-3. Use `driftSummary.score`, `driftSummary.errorCount`, or `driftSummary.warningCount` as the numeric signal; use `chainDriftSummary.score` only when gating repeated cross-task drift chains.
+3. Use `driftSummary.passed`, `driftSummary.errorCount`, or `driftSummary.warningCount` as the signal. There is no drift score.
 
 **Prevention:** Wire drift checks into your CI script explicitly; do not assume SPLITBRIEF will fail the build for you.
 
@@ -1279,9 +1275,9 @@ Copied images remain in `~/.splitbrief/clipboard/` so history and runs retain re
 
 **Fix:**
 1. In your CI script, after `splitbrief start --json ...`, resolve the session id from readiness/session output, `.splitbrief/active`, or wrapper state, then parse `.splitbrief/sessions/<id>/summary.json`.
-2. Read `driftSummary.score`, `driftSummary.errorCount`, or `driftSummary.warningCount`; use `chainDriftSummary.score` only for chain-drift gating.
-3. Exit non-zero from the wrapper if the score exceeds your threshold:
-   `node -e "const s=JSON.parse(require('fs').readFileSync(process.argv[1])); process.exit((s.driftSummary?.score ?? 0) > 0.7 ? 1 : 0)" .splitbrief/sessions/<id>/summary.json`.
+2. Read `driftSummary.passed`, `driftSummary.errorCount`, or `driftSummary.warningCount`. There is no drift score.
+3. Exit non-zero from the wrapper if the counts exceed your threshold:
+   `node -e "const s=JSON.parse(require('fs').readFileSync(process.argv[1])); process.exit((s.driftSummary?.errorCount ?? 0) > 0 ? 1 : 0)" .splitbrief/sessions/<id>/summary.json`.
 4. Tune the threshold against representative runs.
 
 **Prevention:** Bake the drift gate into your CI workflow definition so it is uniform across branches.

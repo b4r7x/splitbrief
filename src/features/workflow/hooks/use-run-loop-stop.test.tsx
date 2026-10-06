@@ -421,7 +421,9 @@ describe('run-loop stop completion', () => {
       );
       const ended = action === 'End run';
       expect(readRunRecord(prepared.session.ref)?.status).toMatchObject(
-        ended ? { kind: 'closed', as: 'ended' } : { kind: 'open', stop: { kind: 'halted' } },
+        ended
+          ? { kind: 'closed', as: 'ended' }
+          : { kind: 'open', stop: { kind: 'waiting-for-you', on: { kind: 'halt' } } },
       );
       const saved = loadState(prepared.session.ref);
       expect(saved?.reviewStatus).toBe('failed');
@@ -429,7 +431,7 @@ describe('run-loop stop completion', () => {
       expect(saved?.pendingRecovery).toEqual(ended ? undefined : state.pendingRecovery);
       expect(stopStore.get().phase).toBe(ended ? 'ended' : 'parked');
       expect(mounted?.lastFrame()).toContain(
-        ended ? 'Cancelled by you at the review' : 'Paused at the review',
+        ended ? 'Cancelled by you at the review' : 'Stopped at the review',
       );
       const cancellations = (await readRunEvents(prepared.session.ref)).events.filter(
         (event) => event.type === 'workflow_cancelled',

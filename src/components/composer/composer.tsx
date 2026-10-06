@@ -11,7 +11,6 @@ import { inputHistoryStore } from '../../stores/ui/input-history.js';
 import { inputHeightStore } from '../../stores/ui/input-height.js';
 import { completionStore } from '../../stores/ui/completion.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
-import { focusStore } from '../../stores/ui/focus.js';
 import { configStore } from '../../stores/project/config.js';
 import { useStores } from '../../stores/use-stores.js';
 import { SOFT_SEP } from '../../core/separators.js';
@@ -206,9 +205,6 @@ function ComposerInput({
   } | null>(null);
   const pasteQueueRef = useRef<Array<{ request: ImagePaste; at: number }>>([]);
   const submittedImageIdsRef = useRef<readonly string[]>([]);
-
-  const briefFocusHeld =
-    focusStore.use((focus) => focus?.region === 'brief') && currentScreen === 'workflow';
 
   const [restoredDraft] = useState(() => {
     try {
@@ -559,12 +555,7 @@ function ComposerInput({
     return false;
   };
 
-  const { shouldHandleComposerInput } = useReviewKeys({
-    mode,
-    disabled,
-    briefFocusHeld,
-    draftEmpty: textDraftEmpty,
-  });
+  useReviewKeys({ mode, disabled, draftEmpty: textDraftEmpty });
 
   const isEditShortcut = (input: string, key: Key): boolean =>
     mode === 'review' && key.ctrl && input === 'e';
@@ -576,10 +567,6 @@ function ComposerInput({
       return true;
     }
     return handleBoundaryNavigate(direction);
-  };
-
-  const handleComposerInputAccepted = (): void => {
-    if (briefFocusHeld) focusStore.clear();
   };
 
   const hintBoxWidth = width ?? cols;
@@ -625,8 +612,8 @@ function ComposerInput({
   // The app-level esc ladder decides between the stop sheet and a protected draft, and it reads
   // keys outside this component, so what is typed here has to be published.
   useEffect(() => {
-    composerLiveStore.setEmpty(textDraftEmpty);
-  }, [textDraftEmpty]);
+    composerLiveStore.setDraft(document);
+  }, [document]);
 
   const completionOpen = showCommandSuggestions || showReferenceSuggestions;
   useEffect(() => {
@@ -654,7 +641,7 @@ function ComposerInput({
       <Box flexDirection="column" width="100%" overflow="visible">
         <Box
           borderStyle={borderStyleFor('round')}
-          borderColor={!disabled && !briefFocusHeld ? theme.accent : theme.border}
+          borderColor={!disabled ? theme.accent : theme.border}
           paddingX={inputPaddingX}
           width="100%"
           minHeight={3}
@@ -681,21 +668,18 @@ function ComposerInput({
               }}
               {...(commandsOnly === true ? {} : { onFileDrop: handleFileDrop })}
               columns={inputColumns}
-              focus={!disabled && !briefFocusHeld}
-              isActive={!disabled && (!briefFocusHeld || mode === 'review')}
+              focus={!disabled}
               shouldHandleInput={(input, key) => {
                 if (onTab !== undefined && (key.tab || (key.shift && key.tab))) {
                   onTab();
                   return false;
                 }
-                if (!shouldHandleComposerInput(input, key)) return false;
                 if (key.ctrl && input === 'v') {
                   handleImagePaste();
                   return false;
                 }
                 return commandsOnlyGate(input, key);
               }}
-              onInputAccepted={handleComposerInputAccepted}
               placeholder={placeholderForMode({
                 mode,
                 running: lifecycleRunning,

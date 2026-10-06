@@ -15,7 +15,7 @@ import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { transition } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import * as entry from '../approval/file-snapshots/entry.js';
-import { reconcileApplyBackup, restoreApplyBackup } from './restore.js';
+import { reconcileApplyBackup, restoreApplyBackup, undoApply } from './restore.js';
 import { runApply } from './run.js';
 import { captureReviewedCandidate } from './states.js';
 
@@ -153,6 +153,31 @@ describe('restoreApplyBackup', { timeout: 60_000 }, () => {
         conflicts: [],
       });
       expect(read(run.dir, 'a.txt')).toBe(USER_A);
+    });
+  });
+});
+
+describe('undoApply', { timeout: 60_000 }, () => {
+  it('puts the checkout back from the Apply backup and records the undo on the run', async () => {
+    await withApplyRun(FILES, { sessionId: SESSION_ID }, async (run) => {
+      writeFileSync(join(run.ws, 'a.txt'), USER_A);
+      const ref = { projectDir: run.dir, sessionId: run.sessionId };
+      saveState(
+        ref,
+        makeWorkflowState({ phase: 'complete', reviewStatus: 'passed', workspace: run.workspace }),
+      );
+      const { bus } = makeBusRecorder();
+      const applied = await runApply({ wctx: { ...ref, bus }, state: loadSaved(run) });
+      expect(applied.outcome).toBe('applied');
+      expect(read(run.dir, 'a.txt')).toBe(USER_A);
+
+      const undone = await undoApply(ref, loadSaved(run));
+
+      expect(undone.restored).toEqual(['a.txt']);
+      expect(read(run.dir, 'a.txt')).toBe(BASE_A);
+      expect(loadSaved(run).applied?.undone).toEqual({ at: expect.any(String), conflicts: [] });
+      expect(loadSaved(run).closed?.as).toBe('applied');
+      await expect(undoApply(ref, loadSaved(run))).rejects.toThrow('Apply already undone.');
     });
   });
 });

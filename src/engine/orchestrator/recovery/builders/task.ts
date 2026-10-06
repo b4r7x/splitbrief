@@ -1,5 +1,5 @@
 import type { Config } from '../../../../core/schemas/config.js';
-import type { Phase } from '../../../../core/schemas/enums.js';
+import type { Phase, RecoveryAction } from '../../../../core/schemas/enums.js';
 import type {
   RecoveryIssue,
   SeatSwapCandidate,
@@ -18,7 +18,6 @@ import {
   apiContextRecoveryFacts,
 } from '../../../providers/api-context-diagnostic.js';
 import type { FinalReviewFailure } from '../../final-review.js';
-import { allowedActionsForReason } from '../../../../core/schemas/recovery/policy.js';
 import type { Task, TaskId } from '../../../../core/schemas/task.js';
 import type { ValidationResult } from '../../validation/result.js';
 import type { RoutingDecision } from '../../context-routing/types.js';
@@ -38,19 +37,8 @@ import { uniqueSortedIds, uniqueSorted } from '../../../../utils/collections.js'
 import { includes } from '../../../../utils/type-guards.js';
 import type { RecoveryBuilderBase, TaskRecoveryContext } from './issue.js';
 import { compactFacts, createRecoveryIssue } from './issue.js';
-import {
-  availableActionsForReason,
-  chooseRecommended,
-  hasRouteBigger,
-  orderedActions,
-} from './actions.js';
-import {
-  attemptDetails,
-  implementerDetails,
-  routeBiggerDetails,
-  summarizeValidation,
-  taskFiles,
-} from './details.js';
+import { chooseRecommended, haltActions } from './actions.js';
+import { attemptDetails, implementerDetails, summarizeValidation, taskFiles } from './details.js';
 
 export interface ValidationRecoveryOptions extends RecoveryBuilderBase, TaskRecoveryContext {
   validationResults?: ValidationResult[] | undefined;
@@ -69,8 +57,6 @@ export interface ContextOverflowRecoveryOptions extends RecoveryBuilderBase {
   routingDecision?: RoutingDecision | undefined;
   phase?: Phase | undefined;
   selectedImplementerProfile?: string | undefined;
-  routeBiggerProfile?: string | undefined;
-  canRouteBigger?: boolean | undefined;
   estimatedTokens?: number | undefined;
   untruncatedEstimatedTokens?: number | undefined;
   contextLength?: number | undefined;
@@ -162,19 +148,6 @@ export function switchSeatOffer(context: SeatSwapContext | undefined): SwitchSea
   return { seat: context.seat, candidates };
 }
 
-/** The profile a limit-hit or exhausted task could be re-routed to, if any. */
-export function routeBiggerProfileFromDecision(
-  decision: RoutingDecision | undefined,
-): string | undefined {
-  if (!decision?.selectedProfile) return undefined;
-  const candidate = decision.rejected.find(
-    (profile) =>
-      profile.fit !== 'overflow' &&
-      (profile.requiredWriteMode !== 'direct' || profile.profileWriteMode === 'direct'),
-  );
-  return candidate?.profile;
-}
-
 /**
  * A runner that ran out of quota halts the run the same way a signed-out one
  * does: retrying cannot succeed until the limit resets, and silently
@@ -189,11 +162,12 @@ export function buildRunnerUsageLimitRecoveryIssue(
   const displayName = runnerAuthDisplayName(opts.runner);
   const resetsAt = parseUsageLimitReset(opts.toolMessage);
   const seatSwap = switchSeatOffer(opts.seatSwap);
-  const routeBigger = hasRouteBigger(opts);
-  const actions = availableActionsForReason('runner-usage-limit', {
-    switchSeat: seatSwap !== undefined,
-    routeBigger,
-  });
+  const actions = haltActions('runner-usage-limit', [
+    'retry-same-worker',
+    seatSwap === undefined ? undefined : 'switch-seat',
+    'skip-current-task',
+    'end-run',
+  ]);
 
   return createRecoveryIssue({
     id: opts.id,
@@ -209,7 +183,6 @@ export function buildRunnerUsageLimitRecoveryIssue(
       'The run stopped instead of escalating this task to the planner.',
       ...attemptDetails(opts.attempts, opts.maxAttempts),
       ...implementerDetails(opts.selectedImplementerProfile),
-      ...routeBiggerDetails(opts),
     ],
     ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
     ...(opts.maxAttempts !== undefined ? { maxAttempts: opts.maxAttempts } : {}),
@@ -220,15 +193,9 @@ export function buildRunnerUsageLimitRecoveryIssue(
       tool: displayName,
       limitMessage: opts.toolMessage,
       resetsAt: resetsAt?.toISOString(),
-      routeBiggerProfile: opts.routeBiggerProfile,
-      canRouteBigger: routeBigger ? true : undefined,
     }),
     availableActions: actions,
-    recommendedAction: chooseRecommended(actions, [
-      'switch-seat',
-      'route-bigger-worker',
-      'pause-run',
-    ]),
+    recommendedAction: chooseRecommended(actions, ['switch-seat']),
     createdAt: opts.createdAt,
   });
 }
@@ -256,10 +223,12 @@ export function buildRunnerUnauthenticatedRecoveryIssue(
   const displayName = runnerAuthDisplayName(opts.runner);
   const instruction = runnerLoginInstruction(opts.runner);
   const seatSwap = switchSeatOffer(opts.seatSwap);
-  const actions = availableActionsForReason('runner-unauthenticated', {
-    switchSeat: seatSwap !== undefined,
-    routeBigger: false,
-  });
+  const actions = haltActions('runner-unauthenticated', [
+    'retry-same-worker',
+    seatSwap === undefined ? undefined : 'switch-seat',
+    'skip-current-task',
+    'end-run',
+  ]);
 
   return createRecoveryIssue({
     id: opts.id,
@@ -286,7 +255,7 @@ export function buildRunnerUnauthenticatedRecoveryIssue(
       authMessage: opts.toolMessage,
     }),
     availableActions: actions,
-    recommendedAction: chooseRecommended(actions, ['retry-same-worker', 'pause-run']),
+    recommendedAction: chooseRecommended(actions),
     createdAt: opts.createdAt,
   });
 }
@@ -311,17 +280,10 @@ export function buildRetryExhaustedRecoveryIssue(
 ): RecoveryIssue {
   const phase = opts.phase ?? 'escalating';
   const validation = summarizeValidation(opts);
-  const actions = orderedActions([
+  const actions = haltActions('retry-exhausted', [
     opts.allowRetryOverride ? 'retry-same-worker' : undefined,
-    hasRouteBigger(opts) ? 'route-bigger-worker' : undefined,
     'skip-current-task',
-    'pause-run',
     'end-run',
-  ]);
-  const recommendedAction = chooseRecommended(actions, [
-    'route-bigger-worker',
-    'retry-same-worker',
-    'pause-run',
   ]);
 
   return createRecoveryIssue({
@@ -340,7 +302,6 @@ export function buildRetryExhaustedRecoveryIssue(
       lastErrorDetail(validation),
       ...(opts.attempts === 0 ? [] : attemptDetails(opts.attempts, opts.maxAttempts)),
       ...implementerDetails(opts.selectedImplementerProfile),
-      ...routeBiggerDetails(opts),
       ...(opts.handBack ? [`Implementer said: ${handBackQuote(opts.handBack)}`] : []),
     ],
     attempts: opts.attempts,
@@ -350,12 +311,10 @@ export function buildRetryExhaustedRecoveryIssue(
       validationStage: validation.stage,
       validationSummary: validation.summary,
       allowRetryOverride: opts.allowRetryOverride,
-      canRouteBigger: hasRouteBigger(opts),
-      routeBiggerProfile: opts.routeBiggerProfile,
       escalationBlockedBy: opts.escalationBlockedBy,
     }),
     availableActions: actions,
-    recommendedAction,
+    recommendedAction: chooseRecommended(actions),
     createdAt: opts.createdAt,
   });
 }
@@ -397,17 +356,11 @@ export function buildContextOverflowRecoveryIssue(
   const contextLength = opts.contextLength ?? routing?.contextLength;
   const routingReason = opts.routingReason ?? routing?.reason;
   const selectedImplementerProfile = opts.selectedImplementerProfile ?? routing?.selectedProfile;
-  const routeBiggerProfile = opts.routeBiggerProfile;
-  const canRouteBigger = hasRouteBigger({
-    routeBiggerProfile,
-    canRouteBigger: opts.canRouteBigger,
-  });
-  const actions = orderedActions([
-    canRouteBigger ? 'route-bigger-worker' : undefined,
-    'pause-run',
+  const actions = haltActions('context-overflow', [
+    'retry-same-worker',
+    'skip-current-task',
     'end-run',
   ]);
-  const recommendedAction = chooseRecommended(actions, ['route-bigger-worker', 'pause-run']);
 
   return createRecoveryIssue({
     id: opts.id,
@@ -426,7 +379,6 @@ export function buildContextOverflowRecoveryIssue(
         routingReason,
       }),
       ...rejectedProfileDetails(routing),
-      ...routeBiggerDetails({ routeBiggerProfile, canRouteBigger }),
     ],
     selectedImplementerProfile,
     facts: compactFacts({
@@ -437,11 +389,9 @@ export function buildContextOverflowRecoveryIssue(
       currentCodeContextMode: routing?.currentCodeContextMode,
       requiredWriteMode: routing?.requiredWriteMode,
       routingReason,
-      routeBiggerProfile,
-      canRouteBigger,
     }),
     availableActions: actions,
-    recommendedAction,
+    recommendedAction: chooseRecommended(actions),
     createdAt: opts.createdAt,
   });
 }
@@ -450,17 +400,10 @@ export function buildImplementerUnavailableRecoveryIssue(
   opts: ImplementerUnavailableRecoveryOptions,
 ): RecoveryIssue {
   const phase = opts.phase ?? 'implementing';
-  const actions = orderedActions([
-    hasRouteBigger(opts) ? 'route-bigger-worker' : undefined,
+  const actions = haltActions('implementation-error', [
     'retry-same-worker',
     'skip-current-task',
-    'pause-run',
     'end-run',
-  ]);
-  const recommendedAction = chooseRecommended(actions, [
-    'route-bigger-worker',
-    'retry-same-worker',
-    'pause-run',
   ]);
 
   return createRecoveryIssue({
@@ -479,18 +422,15 @@ export function buildImplementerUnavailableRecoveryIssue(
       opts.availabilityReason !== undefined
         ? `Availability: ${opts.availabilityReason}`
         : undefined,
-      ...routeBiggerDetails(opts),
     ].filter((detail): detail is string => detail !== undefined),
     selectedImplementerProfile: opts.selectedImplementerProfile,
     facts: compactFacts({
       tool: opts.tool,
       model: opts.model,
       availabilityReason: opts.availabilityReason,
-      canRouteBigger: hasRouteBigger(opts),
-      routeBiggerProfile: opts.routeBiggerProfile,
     }),
     availableActions: actions,
-    recommendedAction,
+    recommendedAction: chooseRecommended(actions),
     createdAt: opts.createdAt,
   });
 }
@@ -515,8 +455,8 @@ export function buildDependencyBlockedRecoveryIssue(
     ...(opts.blockedByTasks ?? []).map((task) => task.id),
   ]);
   const affectedTaskIds = uniqueSortedIds([opts.task.id, ...blockedByTaskIds]);
-  const blockedFiles = (opts.blockedByTasks ?? []).map((task) => task.file);
-  const actions = orderedActions(['skip-current-task', 'pause-run', 'end-run']);
+  const blockedFiles = (opts.blockedByTasks ?? []).map((task) => task.suggestedFiles[0]);
+  const actions = haltActions('dependency-blocked', ['skip-current-task', 'end-run']);
 
   return createRecoveryIssue({
     id: opts.id,
@@ -524,7 +464,10 @@ export function buildDependencyBlockedRecoveryIssue(
     reason: 'dependency-blocked',
     phase,
     task: opts.task,
-    files: uniqueSorted([opts.task.file, ...blockedFiles], { trim: true, nonEmpty: true }),
+    files: uniqueSorted([opts.task.suggestedFiles[0], ...blockedFiles], {
+      trim: true,
+      nonEmpty: true,
+    }),
     affectedTaskIds,
     message: `${opts.task.id} is blocked by dependency status`,
     details: [dependencyDetail(blockedByTaskIds, opts.blockedByTasks ?? [])],
@@ -532,7 +475,7 @@ export function buildDependencyBlockedRecoveryIssue(
       blockedByTaskIds: blockedByTaskIds.join(', '),
     }),
     availableActions: actions,
-    recommendedAction: chooseRecommended(actions, ['pause-run']),
+    recommendedAction: chooseRecommended(actions),
     createdAt: opts.createdAt,
   });
 }
@@ -544,10 +487,11 @@ function runnerModel(runner: Config['implementer']): string | undefined {
 function recipeHaltIssue(opts: RunnerFailureRecoveryOptions, message: string): RecoveryIssue {
   const displayName = runnerAuthDisplayName(opts.runner);
   const seatSwap = switchSeatOffer(opts.seatSwap);
-  const actions = availableActionsForReason('implementer-recipe-invalid', {
-    switchSeat: seatSwap !== undefined,
-    routeBigger: false,
-  });
+  const actions = haltActions('implementer-recipe-invalid', [
+    'retry-same-worker',
+    seatSwap === undefined ? undefined : 'switch-seat',
+    'end-run',
+  ]);
   return createRecoveryIssue({
     id: opts.id,
     seat: 'build',
@@ -573,7 +517,7 @@ function recipeHaltIssue(opts: RunnerFailureRecoveryOptions, message: string): R
       recipeMessage: opts.toolMessage,
     }),
     availableActions: actions,
-    recommendedAction: 'pause-run',
+    recommendedAction: chooseRecommended(actions, ['switch-seat']),
     createdAt: opts.createdAt,
   });
 }
@@ -611,11 +555,12 @@ export function buildRepeatedTimeoutRecoveryIssue(
 ): RecoveryIssue {
   const displayName = runnerAuthDisplayName(opts.runner);
   const seatSwap = switchSeatOffer(opts.seatSwap);
-  const routeBigger = hasRouteBigger(opts);
-  const actions = availableActionsForReason('runner-timeout-repeated', {
-    switchSeat: seatSwap !== undefined,
-    routeBigger,
-  });
+  const actions = haltActions('runner-timeout-repeated', [
+    'retry-same-worker',
+    seatSwap === undefined ? undefined : 'switch-seat',
+    'skip-current-task',
+    'end-run',
+  ]);
   return createRecoveryIssue({
     id: opts.id,
     seat: 'build',
@@ -630,7 +575,6 @@ export function buildRepeatedTimeoutRecoveryIssue(
       'The run stopped instead of escalating a brief the implementer cannot finish in time.',
       ...attemptDetails(opts.attempts, opts.maxAttempts),
       ...implementerDetails(opts.selectedImplementerProfile),
-      ...routeBiggerDetails(opts),
     ],
     ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
     ...(opts.maxAttempts !== undefined ? { maxAttempts: opts.maxAttempts } : {}),
@@ -639,18 +583,17 @@ export function buildRepeatedTimeoutRecoveryIssue(
     facts: compactFacts({
       tool: displayName,
       timeoutMessage: opts.toolMessage,
-      routeBiggerProfile: opts.routeBiggerProfile,
-      canRouteBigger: routeBigger ? true : undefined,
     }),
     availableActions: actions,
-    recommendedAction: 'pause-run',
+    recommendedAction: chooseRecommended(actions, ['switch-seat']),
     createdAt: opts.createdAt,
   });
 }
 
 /**
  * A halt on what the isolation checks found around one implementer call.
- * Nothing the attempt wrote was promoted, so the brief halts on the evidence
+ * The checkout gets nothing until Apply, or, in checkout mode, gets the attempt's
+ * edits put back, so the brief halts on the evidence
  * instead of retrying into the same place. The evidence rides in the message,
  * the one line the headless sinks print, and leads the details the panel lists
  * under its shorter header; the attempt count is left out, because no retry was
@@ -662,13 +605,10 @@ function isolationHaltIssue(
     reason: 'implementer-left-isolation' | 'checkout-changed';
     message: string;
     details: readonly string[];
+    actions: RecoveryAction[];
   },
+  seatSwap: SwitchSeatOffer | undefined,
 ): RecoveryIssue {
-  const seatSwap = switchSeatOffer(opts.seatSwap);
-  const actions = availableActionsForReason(halt.reason, {
-    switchSeat: seatSwap !== undefined,
-    routeBigger: false,
-  });
   return createRecoveryIssue({
     id: opts.id,
     seat: 'build',
@@ -682,8 +622,8 @@ function isolationHaltIssue(
     selectedImplementerProfile: opts.selectedImplementerProfile,
     ...(seatSwap !== undefined && { switchSeat: seatSwap }),
     facts: compactFacts({ tool: runnerAuthDisplayName(opts.runner) }),
-    availableActions: actions,
-    recommendedAction: chooseRecommended(actions, ['retry-same-worker', 'pause-run']),
+    availableActions: halt.actions,
+    recommendedAction: chooseRecommended(halt.actions),
     createdAt: opts.createdAt,
   });
 }
@@ -691,16 +631,27 @@ function isolationHaltIssue(
 /** A tool call named a path the implementer may not reach, and the call was stopped. */
 export function buildLeftIsolationRecoveryIssue(opts: RunnerFailureRecoveryOptions): RecoveryIssue {
   const evidence = `${runnerAuthDisplayName(opts.runner)} ${opts.toolMessage}`;
-  return isolationHaltIssue(opts, {
-    reason: 'implementer-left-isolation',
-    message: `${opts.task.id} left the isolation directory — ${evidence}`,
-    details: [
-      evidence,
-      opts.inPlace === undefined
-        ? 'Nothing from this attempt was promoted.'
-        : `SPLITBRIEF put back what this attempt changed in your checkout; the bytes it replaced are in ${opts.inPlace.revertedDir}.`,
-    ],
-  });
+  const seatSwap = switchSeatOffer(opts.seatSwap);
+  return isolationHaltIssue(
+    opts,
+    {
+      reason: 'implementer-left-isolation',
+      message: `${opts.task.id} left the isolation directory — ${evidence}`,
+      details: [
+        evidence,
+        opts.inPlace === undefined
+          ? "Your checkout gets the run's changes only through Apply."
+          : `SPLITBRIEF put back what this attempt changed in your checkout; the bytes it replaced are in ${opts.inPlace.revertedDir}.`,
+      ],
+      actions: haltActions('implementer-left-isolation', [
+        'retry-same-worker',
+        seatSwap === undefined ? undefined : 'switch-seat',
+        'skip-current-task',
+        'end-run',
+      ]),
+    },
+    seatSwap,
+  );
 }
 
 /**
@@ -711,16 +662,25 @@ export function buildLeftIsolationRecoveryIssue(opts: RunnerFailureRecoveryOptio
 export function buildCheckoutChangedRecoveryIssue(
   opts: RunnerFailureRecoveryOptions,
 ): RecoveryIssue {
-  return isolationHaltIssue(opts, {
-    reason: 'checkout-changed',
-    message: `Your checkout changed under ${opts.task.id} — ${opts.toolMessage}`,
-    details: [
-      `Changed while ${runnerAuthDisplayName(opts.runner)} ran: ${opts.toolMessage}`,
-      opts.inPlace === undefined
-        ? 'Nothing from this attempt was promoted, and nothing in your checkout was reverted.'
-        : `SPLITBRIEF put back the files this attempt changed in your checkout (the bytes it replaced are in ${opts.inPlace.revertedDir}); the git change stays for you to check.`,
-    ],
-  });
+  return isolationHaltIssue(
+    opts,
+    {
+      reason: 'checkout-changed',
+      message: `Your checkout changed under ${opts.task.id} — ${opts.toolMessage}`,
+      details: [
+        `Changed while ${runnerAuthDisplayName(opts.runner)} ran: ${opts.toolMessage}`,
+        opts.inPlace === undefined
+          ? "Your checkout gets the run's changes only through Apply, and nothing in your checkout was reverted."
+          : `SPLITBRIEF put back the files this attempt changed in your checkout (the bytes it replaced are in ${opts.inPlace.revertedDir}); the git change stays for you to check.`,
+      ],
+      actions: haltActions('checkout-changed', [
+        'retry-same-worker',
+        'skip-current-task',
+        'end-run',
+      ]),
+    },
+    undefined,
+  );
 }
 
 /**
@@ -735,10 +695,10 @@ export function buildRunnerInputTooLargeRecoveryIssue(
   const displayName = runnerAuthDisplayName(opts.runner);
   const figures = inputTooLargeFigures(opts.toolMessage);
   const chars = figures.chars ?? opts.toolMessage.length;
-  const routeBigger = hasRouteBigger(opts);
-  const actions = orderedActions([
-    routeBigger ? 'route-bigger-worker' : undefined,
-    'pause-run',
+  const seatSwap = switchSeatOffer(opts.seatSwap);
+  const actions = haltActions('context-overflow', [
+    seatSwap === undefined ? undefined : 'switch-seat',
+    'skip-current-task',
     'end-run',
   ]);
   return createRecoveryIssue({
@@ -759,20 +719,18 @@ export function buildRunnerInputTooLargeRecoveryIssue(
       'A retry sends the same prompt. Narrow the brief or end the run.',
       ...attemptDetails(opts.attempts, opts.maxAttempts),
       ...implementerDetails(opts.selectedImplementerProfile),
-      ...routeBiggerDetails(opts),
     ],
     ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
     ...(opts.maxAttempts !== undefined ? { maxAttempts: opts.maxAttempts } : {}),
     selectedImplementerProfile: opts.selectedImplementerProfile,
+    ...(seatSwap !== undefined && { switchSeat: seatSwap }),
     facts: compactFacts({
       tool: displayName,
       chars,
       maxChars: figures.maxChars ?? undefined,
-      routeBiggerProfile: opts.routeBiggerProfile,
-      canRouteBigger: routeBigger ? true : undefined,
     }),
     availableActions: actions,
-    recommendedAction: chooseRecommended(actions, ['route-bigger-worker', 'pause-run']),
+    recommendedAction: chooseRecommended(actions, ['switch-seat']),
     createdAt: opts.createdAt,
   });
 }
@@ -811,7 +769,11 @@ export function buildApprovalDeniedRecoveryIssue(
   opts: ApprovalDeniedRecoveryOptions,
 ): RecoveryIssue {
   const denied = opts.deniedFiles ?? [];
-  const actions = orderedActions(allowedActionsForReason('approval-denied'));
+  const actions = haltActions('approval-denied', [
+    'retry-same-worker',
+    'skip-current-task',
+    'end-run',
+  ]);
   return createRecoveryIssue({
     id: opts.id,
     seat: 'build',
@@ -830,7 +792,7 @@ export function buildApprovalDeniedRecoveryIssue(
     ...(opts.maxAttempts !== undefined ? { maxAttempts: opts.maxAttempts } : {}),
     facts: compactFacts({ tool: opts.tool, denialReason: opts.denialReason }),
     availableActions: actions,
-    recommendedAction: 'pause-run',
+    recommendedAction: chooseRecommended(actions),
     createdAt: opts.createdAt,
   });
 }
@@ -847,7 +809,7 @@ export interface SnapshotFailedRecoveryOptions extends RecoveryBuilderBase, Task
 export function buildSnapshotFailedRecoveryIssue(
   opts: SnapshotFailedRecoveryOptions,
 ): RecoveryIssue {
-  const actions = orderedActions(allowedActionsForReason('snapshot-failed'));
+  const actions = haltActions('snapshot-failed', ['retry-same-worker', 'end-run']);
   return createRecoveryIssue({
     id: opts.id,
     seat: 'build',
@@ -877,7 +839,7 @@ export interface ReviewFailedRecoveryOptions extends RecoveryBuilderBase {
   detail?: string | undefined;
   /** Why the review reached no verdict, when it reached none. */
   failure?: NoVerdictReviewFailure | undefined;
-  /** A reviewed workspace can be accepted with its open findings instead of repaired. */
+  /** A final review can be accepted with its open findings instead of repaired. */
   acceptAsIs?: boolean | undefined;
   /** The fix cycles spent when the cap stopped the review; fixes the halt's words. */
   fixCycles?: number | undefined;
@@ -899,7 +861,7 @@ function buildNoVerdictReviewIssue(
   opts: ReviewFailedRecoveryOptions,
   failure: NoVerdictReviewFailure,
 ): RecoveryIssue {
-  const actions = orderedActions(['retry-same-worker', 'pause-run', 'end-run']);
+  const actions = haltActions('review-failed', ['retry-same-worker', 'end-run']);
   const diagnostic = failure.kind === 'insufficient-context' ? failure.diagnostic : undefined;
   const missing = diagnostic?.missingSections ?? [];
   return createRecoveryIssue({
@@ -924,12 +886,7 @@ function buildNoVerdictReviewIssue(
       ...(diagnostic === undefined ? {} : apiContextRecoveryFacts(diagnostic)),
     }),
     availableActions: actions,
-    recommendedAction: chooseRecommended(
-      actions,
-      // A packet the seat cannot read refuses again unless the seat changes; a
-      // call that never landed is worth one more turn as it stands.
-      failure.kind === 'call-failed' ? ['retry-same-worker'] : ['pause-run'],
-    ),
+    recommendedAction: chooseRecommended(actions),
     createdAt: opts.createdAt,
   });
 }
@@ -941,10 +898,9 @@ function buildNoVerdictReviewIssue(
 export function buildReviewFailedRecoveryIssue(opts: ReviewFailedRecoveryOptions): RecoveryIssue {
   if (opts.failure !== undefined) return buildNoVerdictReviewIssue(opts, opts.failure);
   const blocking = opts.blocking ?? 0;
-  const actions = orderedActions([
+  const actions = haltActions('review-failed', [
     'revise',
     opts.acceptAsIs === true ? 'accept-as-is' : undefined,
-    'pause-run',
     'end-run',
   ]);
   const message =
@@ -968,7 +924,7 @@ export function buildReviewFailedRecoveryIssue(opts: ReviewFailedRecoveryOptions
       unverified: opts.unverified,
     }),
     availableActions: actions,
-    recommendedAction: 'pause-run',
+    recommendedAction: chooseRecommended(actions),
     createdAt: opts.createdAt,
   });
 }

@@ -94,7 +94,11 @@ function showAtRest(projectDir: string, sessionId: string, feature: string) {
   const record = makeRunRecord({
     ref: { projectDir, sessionId },
     feature,
-    status: { kind: 'open', stop: { kind: 'interrupted' }, resumeAt: { kind: 'review', cycle: 0 } },
+    status: {
+      kind: 'open',
+      stop: { kind: 'stopped', on: { kind: 'interrupted' } },
+      resumeAt: { kind: 'review', cycle: 0 },
+    },
   });
   routerStore.navigate({ to: 'workflow', run: record, execution: { kind: 'at-rest' } });
   return record;

@@ -36,8 +36,6 @@ const anytimeActions = [
   'SET_PLANNER_CONVERSATION',
   'CLEAR_PLANNER_CONVERSATION',
   'SET_PLANNER_SESSION_ID',
-  'REWIND_TO_SPEC',
-  'REWIND_TO_PLAN',
   'ENQUEUE_USER_MSG',
   'MARK_INJECTING_NATIVE',
   'MARK_DELIVERED_NATIVE',
@@ -45,7 +43,6 @@ const anytimeActions = [
   'DRAIN_QUEUE',
   'CLEAR_QUEUE',
   'SET_PENDING_RECOVERY',
-  'PAUSE_PENDING_RECOVERY',
   'MARK_RECOVERY_APPLYING',
   'RESOLVE_PENDING_RECOVERY',
   'REPLACE_TASK',
@@ -74,34 +71,22 @@ const VALIDATION_OR_ESCALATION_SHARED_ACTIONS = [
 ] as const satisfies readonly MachineAction['type'][];
 
 const phaseActions = {
-  idle: ['START', 'RESEARCH_DONE', 'SPEC_CLARIFY_START', 'BEGIN_PLANNING'],
-  researching: ['RESEARCH_DONE', 'SPEC_CLARIFY_START', 'PLAN_DONE', 'BEGIN_PLANNING'],
-  specifying: ['SPEC_DONE', 'RESEARCH_DONE', 'PLAN_DONE', 'SPEC_CLARIFY_START', 'BEGIN_PLANNING'],
-  'reviewing-spec': ['APPROVE_SPEC', 'SPEC_CLARIFY_START', 'PLAN_DONE', 'BEGIN_PLANNING'],
-  clarifying: ['SPEC_CLARIFY_DONE', 'BEGIN_PLANNING'],
-  'constitution-check': ['CONSTITUTION_CHECK_PASS', 'SPEC_DONE', 'BEGIN_PLANNING'],
-  planning: [
-    'RESEARCH_DONE',
-    'PLAN_DONE',
-    'BRIEFS_COMPILED',
-    'PLAN_COMPILED',
-    'SPEC_CLARIFY_START',
-    'BRIEF_ADMISSION_OPENED',
-    'BEGIN_IMPLEMENTATION',
-    'ANALYZE_START',
-  ],
+  idle: ['START', 'BEGIN_PLANNING'],
+  researching: ['PLAN_DONE', 'BEGIN_PLANNING'],
+  specifying: ['PLAN_DONE', 'BEGIN_PLANNING'],
+  'reviewing-spec': ['PLAN_DONE', 'BEGIN_PLANNING'],
+  clarifying: ['BEGIN_PLANNING'],
+  'constitution-check': ['BEGIN_PLANNING'],
+  planning: ['PLAN_DONE', 'PLAN_COMPILED', 'BEGIN_IMPLEMENTATION'],
   'reviewing-plan': [
     'CORRECT_PLAN',
     'PLAN_DONE',
-    'BRIEFS_COMPILED',
     'PLAN_COMPILED',
-    'BRIEF_ADMISSION_OPENED',
     'BEGIN_IMPLEMENTATION',
-    'ANALYZE_START',
     'BEGIN_PLANNING',
   ],
-  'reviewing-briefs': ['BRIEF_ADMISSION_OPENED', 'BEGIN_IMPLEMENTATION', 'BEGIN_PLANNING'],
-  analyzing: ['PLAN_DONE', 'BRIEFS_COMPILED', 'BEGIN_PLANNING'],
+  'reviewing-briefs': ['BEGIN_IMPLEMENTATION', 'BEGIN_PLANNING'],
+  analyzing: ['PLAN_DONE', 'BEGIN_PLANNING'],
   implementing: [
     'START_TASK',
     'UPDATE_TASK_CODE',
@@ -109,7 +94,6 @@ const phaseActions = {
     'VALIDATION_PASS',
     'SKIP_TASK',
     'RESET_TASK',
-    'ANALYZE_START',
     'ALL_DONE',
     'REVIEW_DONE',
     'RECORD_REVIEW',
@@ -139,6 +123,7 @@ const phaseActions = {
     'APPLY_START',
     'APPLY_DONE',
     'APPLY_RESTORED',
+    'APPLY_UNDONE',
   ],
 } as const satisfies Record<Phase, readonly MachineAction['type'][]>;
 
@@ -251,26 +236,6 @@ function markRecoveryApplying(
   };
 }
 
-function rewindReset(
-  state: WorkflowState,
-  target: 'spec' | 'plan',
-  comment?: string,
-): WorkflowState {
-  return {
-    ...state,
-    phase: target === 'spec' ? 'specifying' : 'planning',
-    tasks: [],
-    currentTaskIndex: 0,
-    attempt: 0,
-    awaitingContinue: false,
-    plannerSessionId: undefined,
-    changedFilesBaseline: undefined,
-    discoveredValidation: undefined,
-    pendingRecovery: undefined,
-    rewindPending: { target, ...(comment ? { comment } : {}) },
-  };
-}
-
 export function transition(
   state: WorkflowState,
   action: MachineAction,
@@ -279,7 +244,7 @@ export function transition(
   const now = opts.now ?? new Date();
   // A closed run is the one terminal state: nothing reopens it, so every action
   // but the close itself is refused rather than silently mutating a finished run.
-  if (state.closed !== undefined && action.type !== 'CLOSE_RUN') {
+  if (state.closed !== undefined && action.type !== 'CLOSE_RUN' && action.type !== 'APPLY_UNDONE') {
     throw transitionError.runClosed(action.type);
   }
   if (!canApplyAction(state.phase, action.type)) {
@@ -290,24 +255,11 @@ export function transition(
     case 'START':
       return { ...state, phase: 'planning' };
 
-    case 'RESEARCH_DONE':
-      return { ...state, phase: 'specifying' };
-
-    case 'SPEC_DONE':
-      return { ...state, phase: 'reviewing-spec' };
-
-    case 'APPROVE_SPEC':
-      return { ...state, phase: 'planning' };
-
     case 'BEGIN_PLANNING':
       return { ...state, phase: 'planning' };
 
     case 'PLAN_DONE':
       return { ...state, phase: 'reviewing-plan', tasks: action.tasks };
-
-    // A run whose steps open no plan gate keeps its compiled briefs in the phase that compiled them.
-    case 'BRIEFS_COMPILED':
-      return { ...state, phase: 'planning', tasks: action.tasks };
 
     case 'PLAN_COMPILED':
       return { ...state, plan: action.plan, tasks: action.tasks, rewindPending: undefined };
@@ -323,26 +275,6 @@ export function transition(
         currentTaskIndex: 0,
         attempt: 0,
       };
-
-    case 'BRIEF_ADMISSION_OPENED':
-      return {
-        ...state,
-        phase: 'reviewing-briefs',
-        currentTaskIndex: 0,
-        attempt: 0,
-      };
-
-    case 'SPEC_CLARIFY_START':
-      return { ...state, phase: 'clarifying' };
-
-    case 'SPEC_CLARIFY_DONE':
-      return { ...state, phase: 'constitution-check' };
-
-    case 'CONSTITUTION_CHECK_PASS':
-      return { ...state, phase: 'planning' };
-
-    case 'ANALYZE_START':
-      return { ...state, phase: 'analyzing' };
 
     case 'START_TASK': {
       const index = state.tasks.findIndex((t) => t.id === action.taskId);
@@ -577,13 +509,29 @@ export function transition(
       }
       return { ...state, applying: undefined };
 
+    case 'APPLY_UNDONE':
+      if (state.applied === undefined || state.applied.undone !== undefined) {
+        throw transitionError.invalidActionForPhase(state.phase, action.type);
+      }
+      return {
+        ...state,
+        applied: {
+          ...state.applied,
+          undone: { at: now.toISOString(), conflicts: action.conflicts },
+        },
+      };
+
     case 'CLOSE_RUN':
       if (deriveRunStatus({ state, liveness: 'not-alive' }).kind === 'closed') {
         return state;
       }
       return {
         ...state,
-        closed: { at: action.at ?? now.toISOString(), as: action.as ?? 'ended' },
+        closed: {
+          at: action.at ?? now.toISOString(),
+          as: action.as ?? 'ended',
+          ...(action.patch !== undefined && { patch: action.patch }),
+        },
         interruptedStep: undefined,
         pendingRecovery: undefined,
         pendingPlannerConversation: undefined,
@@ -664,12 +612,6 @@ export function transition(
 
     case 'SET_PLANNER_SESSION_ID':
       return { ...state, plannerSessionId: action.sessionId };
-
-    case 'REWIND_TO_SPEC':
-      return rewindReset(state, 'spec', action.comment);
-
-    case 'REWIND_TO_PLAN':
-      return rewindReset(state, 'plan', action.comment);
 
     case 'RESET_TASK': {
       const idx = state.tasks.findIndex((t) => t.id === action.taskId);
@@ -949,16 +891,6 @@ export function transition(
 
     case 'SET_PENDING_RECOVERY':
       return { ...state, pendingRecovery: action.issue };
-
-    case 'PAUSE_PENDING_RECOVERY':
-      if (!state.pendingRecovery) return state;
-      return {
-        ...state,
-        pendingRecovery: {
-          ...state.pendingRecovery,
-          status: 'paused',
-        },
-      };
 
     case 'MARK_RECOVERY_APPLYING':
       return markRecoveryApplying(state, action);

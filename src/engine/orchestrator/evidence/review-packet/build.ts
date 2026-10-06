@@ -1,20 +1,12 @@
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 import type { ReviewPacket } from '../../../../core/schemas/review-packet.js';
 import {
   ReviewPacketSchema,
   REVIEW_PACKET_VERSION,
 } from '../../../../core/schemas/review-packet.js';
-import {
-  DRIFT_CHAINS_FILE,
-  DRIFT_REPORT_FILE,
-  EVIDENCE_FILE,
-  sessionDir,
-} from '../../../../core/paths.js';
+import { DRIFT_REPORT_FILE, EVIDENCE_FILE } from '../../../../core/paths.js';
 import { nowIso } from '../../../../utils/format-time.js';
 import { readEvidenceLedger } from '../../../../core/evidence/ledger-storage.js';
 import { readDriftReport } from '../../drift/io.js';
-import { readDriftChainState } from '../../drift/chain-state.js';
 import {
   buildChanges,
   buildChecks,
@@ -53,9 +45,6 @@ export async function buildReviewPacket(opts: BuildReviewPacketOptions): Promise
   const drift = readDriftReport(opts);
   if (!drift) addMissing(missing, DRIFT_REPORT_FILE);
 
-  const chainState = readDriftChainState(opts);
-  if (!existsSync(join(sessionDir(opts.projectDir, opts.sessionId), DRIFT_CHAINS_FILE)))
-    addMissing(missing, DRIFT_CHAINS_FILE);
   const briefQuality = readBriefQuality(opts.projectDir, opts.sessionId, missing);
   const readiness = readReadiness(opts.projectDir, opts.sessionId, missing);
   const events = await readPacketEvents(opts.projectDir, opts.sessionId, missing);
@@ -100,7 +89,7 @@ export async function buildReviewPacket(opts: BuildReviewPacketOptions): Promise
     validation: buildValidation(opts.state, ledger),
     checks: buildChecks({ ledger, events }),
     evidence: buildEvidence(ledger),
-    drift: buildDrift({ chainState, drift, briefQuality }),
+    drift: buildDrift({ drift, briefQuality }),
     escalations: buildEscalations({ state: opts.state, ledger, events }),
     cost: buildCost(opts.summary, events),
     finalReview,

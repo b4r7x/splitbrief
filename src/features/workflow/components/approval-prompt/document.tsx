@@ -6,12 +6,10 @@ import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import {
   REVIEW_COMMENT_HINTS,
   REVIEW_DOCUMENT_HINTS,
-  approvalKeyColumnWidth,
-  approvalOptionKeyCell,
-  approvalOptionLabelText,
   REVIEW_CONFIRMS_INDENT,
   reviewDocumentForm,
   reviewDocumentOptions,
+  reviewDocumentRowLines,
   type ReviewArtifact,
 } from '../../prompt-rows/approval.js';
 import { approvalTextWidth } from '../../prompt-rows/measure.js';
@@ -42,7 +40,6 @@ export function DocumentReviewPrompt({
   const t = useTheme();
   const cols = terminalSizeStore.use((s) => s.cols);
   const options = reviewDocumentOptions(artifact);
-  const keyWidth = approvalKeyColumnWidth(options);
   const width = approvalTextWidth(cols);
   const showCursor = !commenting;
   const form = reviewDocumentForm({ artifact, confirms, cols, budgetRows });
@@ -79,14 +76,12 @@ export function DocumentReviewPrompt({
       {options.map((option, index) => {
         const active = showCursor && index === selectedIndex;
         return (
-          <Text key={option.key}>
+          <Text key={option.command}>
             <Text color={active ? t.accent : t.textDim}>
               {listRowLead(active ? 'active' : 'default')}
             </Text>
-            <Text color={t.textDim}>{approvalOptionKeyCell(option, keyWidth)}</Text>
-            {'   '}
             <Text color={active ? t.accent : t.text}>
-              {approvalOptionLabelText({ option, keyWidth, width })}
+              {reviewDocumentRowLines(option, width).join(`\n${' '.repeat(MARK_SLOT_CELLS)}`)}
             </Text>
           </Text>
         );

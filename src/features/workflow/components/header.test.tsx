@@ -37,7 +37,7 @@ const RESET_AT = (() => {
 /** The halt behind the bar's note; the header reads only the seat and the clock beside it. */
 const QUOTA_HALT = makeRecoveryIssue({
   reason: 'runner-usage-limit',
-  availableActions: ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run'],
+  availableActions: ['retry-same-worker', 'switch-seat', 'skip-current-task', 'end-run'],
   recommendedAction: 'switch-seat',
   switchSeat: { seat: 'build', candidates: [{ tool: 'opencode' }] },
 });
@@ -286,8 +286,8 @@ describe('Header — rail and elapsed', () => {
 
     // The active marker opens the rail on the gutter column the hit-test zones use, and its label
     // follows one marker slot in. A budget error blanks `Plan` while keeping its cells.
-    expect(row.indexOf(glyph('stageActive'))).toBe(WORKFLOW_GUTTER_X);
-    expect(row).toContain(`${glyph('stageActive')} Plan`);
+    expect(row.indexOf(glyph('stageDone'))).toBe(WORKFLOW_GUTTER_X);
+    expect(row).toContain(`${glyph('stageDone')} Plan`);
     // The seat line and the clock stop short of the right gutter.
     expect(row.length).toBeLessThanOrEqual(120 - WORKFLOW_GUTTER_X);
   });
@@ -390,7 +390,7 @@ describe('Header — rail and elapsed', () => {
     instance.unmount();
   });
 
-  it('freezes the elapsed clock while parked and resumes on resume', async () => {
+  it('freezes the elapsed clock while parked and counts on from there on resume', async () => {
     vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
     vi.setSystemTime(5_000);
     lifecycleStore.__testReset({
@@ -414,13 +414,14 @@ describe('Header — rail and elapsed', () => {
     await flushEffects();
     expect(instance.lastFrame() ?? '').toContain('0:10');
 
+    // Twenty seconds parked are no run time: the clock picks up where the park stopped it.
     markWorkflowResumed();
     await flushEffects();
-    expect(instance.lastFrame() ?? '').toContain('0:30');
+    expect(instance.lastFrame() ?? '').toContain('0:10');
 
     await vi.advanceTimersByTimeAsync(2_000);
     await flushEffects();
-    expect(instance.lastFrame() ?? '').toContain('0:32');
+    expect(instance.lastFrame() ?? '').toContain('0:12');
     instance.unmount();
   });
 

@@ -65,7 +65,7 @@ describe('createImplementerBase — bus events', () => {
         usage: { inputTokens: 10, outputTokens: 20 },
       }),
     );
-    const task = makeTask({ id: 'T001', file: 'src/hello.ts', action: 'modify' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/hello.ts'], action: 'modify' });
     const events: PublisherEvent[] = [];
     const implementer = createImplementerBase(
       makeBaseConfig({ invoke, publisher: makePublisher(events) }),
@@ -103,7 +103,7 @@ describe('createImplementerBase — bus events', () => {
 
   it('publishes implementer_generate_running then implementer_generate_failed on invoke error', async () => {
     const invoke = vi.fn().mockRejectedValue(new Error('connection refused'));
-    const task = makeTask({ id: 'T002', file: 'src/fail.ts', action: 'create' });
+    const task = makeTask({ id: 'T002', suggestedFiles: ['src/fail.ts'], action: 'create' });
     const events: PublisherEvent[] = [];
     const implementer = createImplementerBase(
       makeBaseConfig({ invoke, publisher: makePublisher(events) }),
@@ -129,7 +129,7 @@ describe('createImplementerBase — bus events', () => {
 
   it('publishes implementer_generate_failed without fabricating a backend-default model', async () => {
     const invoke = vi.fn().mockRejectedValue(new Error('connection refused'));
-    const task = makeTask({ id: 'T002', file: 'src/fail.ts', action: 'create' });
+    const task = makeTask({ id: 'T002', suggestedFiles: ['src/fail.ts'], action: 'create' });
     const events: PublisherEvent[] = [];
     const implementer = createImplementerBase(
       makeBaseConfig({ invoke, publisher: makePublisher(events) }),
@@ -162,7 +162,7 @@ describe('createImplementerBase — bus events', () => {
         partial: true,
       }),
     );
-    const task = makeTask({ id: 'T010', file: 'src/core/pipeline-spec/bounds.ts' });
+    const task = makeTask({ id: 'T010', suggestedFiles: ['src/core/pipeline-spec/bounds.ts'] });
     const events: PublisherEvent[] = [];
     const implementer = createImplementerBase(
       makeBaseConfig({ extractsCode: false, invoke, publisher: makePublisher(events) }),
@@ -213,7 +213,7 @@ describe('createImplementerBase — bus events', () => {
     );
 
     const result = await implementer.implement({
-      task: makeTask({ id: 'T011', file: 'src/a.ts' }),
+      task: makeTask({ id: 'T011', suggestedFiles: ['src/a.ts'] }),
       projectDir,
       config: makeConfig(),
       context: defaultContext,
@@ -233,7 +233,7 @@ describe('createImplementerBase — bus events', () => {
       controller.abort(new Error('cancelled'));
       return Promise.reject(new Error('cancelled'));
     });
-    const task = makeTask({ id: 'T003', file: 'src/abort.ts', action: 'create' });
+    const task = makeTask({ id: 'T003', suggestedFiles: ['src/abort.ts'], action: 'create' });
     const events: PublisherEvent[] = [];
     const implementer = createImplementerBase(
       makeBaseConfig({ invoke, publisher: makePublisher(events) }),

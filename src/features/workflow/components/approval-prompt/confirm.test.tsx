@@ -91,7 +91,7 @@ describe('ApprovalPrompt confirm tier', () => {
 
     await flushEffects();
     ui.stdin.write(ESC);
-    await expect(third).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
+    await expect(third).resolves.toEqual({ decision: 'deny', reason: 'user_denied' });
     ui.unmount();
   });
 
@@ -114,7 +114,7 @@ describe('ApprovalPrompt confirm tier', () => {
 
     await flushEffects();
     ui.stdin.write(ESC);
-    await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
+    await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_denied' });
     ui.unmount();
   });
 
@@ -150,7 +150,7 @@ describe('ApprovalPrompt confirm tier', () => {
 
     await flushEffects();
     ui.stdin.write(ENTER);
-    await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
+    await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_denied' });
     ui.unmount();
   });
 
@@ -170,7 +170,7 @@ describe('ApprovalPrompt confirm tier', () => {
     expect(approvalPromptStore.get().status).toBe('pending');
 
     ui.stdin.write(ESC);
-    await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
+    await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_denied' });
     ui.unmount();
   });
 
@@ -183,7 +183,7 @@ describe('ApprovalPrompt confirm tier', () => {
     ui.stdin.write(DOWN);
     ui.stdin.write(DOWN);
     ui.stdin.write(ENTER);
-    await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
+    await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_denied' });
     ui.unmount();
   });
 
@@ -213,7 +213,7 @@ describe('ApprovalPrompt confirm tier', () => {
     expect(cleared).toContain(`${bar}r   Confirm with a reason`);
 
     ui.stdin.write(ESC);
-    await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
+    await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_denied' });
     ui.unmount();
   });
 
@@ -303,7 +303,7 @@ describe('ApprovalPrompt confirm tier', () => {
     await flushEffects();
 
     ui.stdin.write('x');
-    await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
+    await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_denied' });
     ui.unmount();
   });
 
@@ -320,7 +320,7 @@ describe('ApprovalPrompt confirm tier', () => {
 
     await tick(PAST_GRACE);
     ui.stdin.write(ESC);
-    await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
+    await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_denied' });
     ui.unmount();
   });
 
@@ -362,7 +362,7 @@ describe('ApprovalPrompt confirm tier', () => {
       expect(reasonStep).toContain(CONFIRM_REASON_HINTS);
 
       ui.stdin.write(ESC);
-      await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
+      await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_denied' });
       ui.unmount();
     },
   );
@@ -394,7 +394,7 @@ describe('ApprovalPrompt confirm tier', () => {
 
     await flushEffects();
     ui.stdin.write(ESC);
-    await expect(second).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
+    await expect(second).resolves.toEqual({ decision: 'deny', reason: 'user_denied' });
     ui.unmount();
   });
 
@@ -423,7 +423,7 @@ describe('ApprovalPrompt confirm tier', () => {
     expect(frameRows(ui.lastFrame())).toBe(getApprovalPromptRows(approvalPromptStore.get(), 34));
 
     ui.stdin.write(ESC);
-    await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
+    await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_denied' });
     ui.unmount();
   });
 });
@@ -447,7 +447,7 @@ describe('short-viewport clamp on the confirm panel', () => {
     expect(lines.at(-2)).toContain(CHOOSE_HINTS);
 
     ui.stdin.write(ESC);
-    await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
+    await expect(pending).resolves.toEqual({ decision: 'deny', reason: 'user_denied' });
     ui.unmount();
   });
 });

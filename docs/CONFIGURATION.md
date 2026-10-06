@@ -36,7 +36,7 @@ sessions:       { scope: project }
 codebase:       { enabled, tokenBudget, include, exclude }
 hooks:          { pre_task, post_task, ... }
 palette:        { customActions: [...] }
-approval:       { enabled, feedRejectionsToPlanner, allowedPaths }
+approval:       { feedRejectionsToPlanner, allowedPaths }
 customCommands: { <id>: { label, contract, executable, argv, ... } }
 ```
 
@@ -441,8 +441,6 @@ If `implementerProfiles.default` is omitted, SPLITBRIEF resolves the default pro
 
 Task-start rows name the selected worker (`worker default`) and, when the brief is `tight` or `overflow`, its estimate against the context window (`~24,310 of 32K context tokens (tight)`). The full routing reason stays in the run log, and the run's recorded per-task metadata carries richer routing and context data for post-run inspection.
 
-When recovery offers `route-bigger-worker`, the issue names a target profile from this pool. Selecting that action resets only the current task and reruns it once with the named profile instead of the routing choice.
-
 ---
 
 ## 4. `validation`
@@ -520,7 +518,7 @@ SPLITBRIEF resolves each validation stage through one ladder — `config → man
 
 1. **Project config** — `typecheckCommand`, `lintCommand`, `testCommand` override everything.
 2. **Manifest** — a `package.json` script named `typecheck` / `lint` / `test`, a `Makefile` or `justfile` target of that name, or the matching `pyproject.toml` section (`[tool.mypy]` → `mypy .`, `[tool.ruff]` → `ruff check .`, `[tool.pytest.ini_options]` → `pytest`). Deterministic, and read before any model output.
-3. **Planner-discovered** — in the planning session, the planner reports the project's validation toolchain in the `validation` block of `plan.json` (`language`, `typecheck`, `lint`, `test`, `testPattern`). `sanitizeDiscoveredValidation` (`src/engine/orchestrator/planning/sanitize-discovered-validation.ts`) checks it, and the result is persisted to `WorkflowState.discoveredValidation`. A discovered command passes a safety check first. Among its rules, a package manager passes only as `<manager> test` with no path after it, `make` and `just` only as `<runner> <stage>`, `uv run` and `poetry run` only before a Python stack tool, and `node` or `python` only without a script, a module other than a Python stack tool, or inline code. A refused command becomes a `validation` warning that names the reason, and the stage uses config, the manifest or the stack default.
+3. **Planner-discovered** — in the planning session, the planner reports the project's validation toolchain in the `validation` block of `plan.json` (`language`, `typecheck`, `lint`, `test`, `testPattern`). `sanitizeDiscoveredValidation` (`src/engine/orchestrator/planning/sanitize-discovered-validation.ts`) checks it, and the result is persisted to `WorkflowState.discoveredValidation`. A discovered command passes a safety check first. Among its rules, a package manager passes only as `<manager> test` with no path after it, `make` and `just` only as `<runner> <stage>`, `uv run` and `poetry run` only before a Python stack tool, and `node` or `python` only without a script, a module other than a Python stack tool, or inline code. A refused command becomes a warning (code `discovered_validation_refused`) that names the reason; the transcript shows it as one dim `Validation` row, a note on the plan rather than a fault. The stage uses config, the manifest or the stack default.
 4. **Stack default** — the row `detectStack` picked from `src/core/validation/stacks/` (`validation.stack` pins it): rust, go, python, typescript or javascript, in that marker order. Per-stack commands are tabulated in [FEATURES.md §Validation pipeline](./FEATURES.md#validation-pipeline--checkpoints).
 5. **None** — the stage is recorded as `skipped` with the reason `no <stage> command for an unrecognised stack`, never as passed. A run where every enabled stage is skipped that way emits a warning and prints `gates: NONE — review-only`; it still implements and still reviews, but nothing was verified by a gate. SPLITBRIEF never guesses `npm test` or `npx tsc --noEmit` on a project that is neither JavaScript nor TypeScript.
 
@@ -566,8 +564,6 @@ workflow: {
   // The workspace used by every writer and validation
   isolation?:             'worktree' | 'staged-copy' | 'none'; // default worktree
 
-  driftChainThreshold?:   0..1;
-
   // Transcript
   compactionThreshold?:   number;  // int >= 10
   compactionFormat:       'auto' | 'freeform' | 'structured'; // default auto
@@ -581,6 +577,7 @@ workflow: {
   briefReview?:           unknown;
   taskReview?:            unknown;
   maxRetries?:            unknown;
+  driftChainThreshold?:   unknown;
 }
 ```
 
@@ -594,7 +591,7 @@ workflow: {
 | `git.commitStrategy` | retired | absent | Legacy `none` is accepted with a deprecation warning and removed from the loaded config; `checkpoint` and `per-task` are rejected. Omit the field. |
 | `git.createBranch` | boolean | `false` | Auto-create `splitbrief/<slug>` branch at workflow start. |
 | `isolation` | enum | `worktree` | Where every writer works: one linked git `worktree` or one `staged-copy` per run, used by tasks, retries, validation and code review until [Apply](./WORKFLOW.md#apply); or `none`, your checkout itself, with no Apply. Unset reads `worktree`. `splitbrief init` does not write this key. |
-| `driftChainThreshold` | 0..1 | `0.6` | Threshold used when omitted; higher = fewer drift-chain events. |
+| `driftChainThreshold` (`drift_chain_threshold`) | retired | absent | Loads with one notice and changes nothing: SPLITBRIEF no longer scores drift chains. Delete it. |
 | `compactionThreshold` | int >= 10 | unset | On resume, auto-compact persisted transcript context when compacted message count exceeds this threshold and the planner supports self-summarisation. |
 | `compactionFormat` | enum | `auto` | Summary format for transcript compaction: `auto` selects structured JSON for `api` planners, freeform text for `cli`, `shell`, and `agent`; `freeform` preserves legacy markdown/text summaries; `structured` requires Zod-validated JSON and falls back to freeform text if validation fails. |
 | `showSpend` (`show_spend`) | compatibility boolean | `true` | Retained in config, with no main-screen rendered effect. `/copy cost` copies the same spend text `/usage` reads rather than answering a switched-off display. Open `/usage` for usage details; there is no Show spend setting. |
@@ -646,12 +643,11 @@ workflow:
   review: task
 ```
 
-Plan approval with drift tuning:
+Plan approval on the current branch:
 
 ```yaml
 workflow:
   approve: plan
-  driftChainThreshold: 0.6
   git:
     createBranch: false
 ```
@@ -788,16 +784,16 @@ Protected-path confirmation for file writes during the build. It is separate fro
 
 ```ts
 approval: {
-  enabled:                    boolean;        // default true
   feedRejectionsToPlanner:    boolean;        // default true
   allowedPaths?:              string[];
+  enabled?:                   unknown;        // retired: one notice, ignored (§16)
   tiers?:                     unknown;        // retired: one notice, ignored (§16)
 }
 ```
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `enabled` | boolean | `true` | Kept for compatibility. It changes no decision: a write to a protected path asks whatever it says, and no other write asks. |
+| `enabled` | retired | absent | Loads with one notice and changes nothing: a write to a protected path asks whatever it says, and no other write asks. Delete it. |
 | `feedRejectionsToPlanner` | boolean | `true` | When the user rejects an op, send the rejection back to the planner so it can adapt. |
 
 ### approval.allowedPaths
@@ -821,13 +817,12 @@ Supported glob patterns: exact match (`src/config.ts`), recursive directory (`sr
 
 Note: `allowedPaths` only affects the action *class* (`write_in_scope` vs `write_out_of_scope`). Neither class asks.
 
-**The rule is fixed.** A write to a protected path — `destructive` (`.git`, `.splitbrief`), `sensitive_change` (CI configuration, env and key files) or `package_change` (manifests and lockfiles) — asks, and no other write does. `approval.enabled: false` and `--yolo` do not change that. A confirmation holds for the same path for the rest of the run, and approving a plan that lists the write under its protected operations confirms it in advance. There are no sticky grants and no tier overrides: `approval.tiers` is a retired key that loads with one notice and is ignored. There is no tier for validation, shell commands, or network access; SPLITBRIEF does not sandbox those. See [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#protected-path-confirmation).
+**The rule is fixed.** A write to a protected path — `destructive` (`.git`, `.splitbrief`), `sensitive_change` (CI configuration, env and key files) or `package_change` (manifests and lockfiles) — asks, and no other write does. `approval.enabled` is a retired key that loads with one notice and is ignored. `--yolo` is a removed flag. A confirmation holds for the same path for the rest of the run, and approving a plan that lists the write under its protected operations confirms it in advance. There are no sticky grants and no tier overrides: `approval.tiers` is a retired key that loads with one notice and is ignored. There is no tier for validation, shell commands, or network access; SPLITBRIEF does not sandbox those. See [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#protected-path-confirmation).
 
 YAML — strict:
 
 ```yaml
 approval:
-  enabled: true
   feedRejectionsToPlanner: true
 ```
 
@@ -1018,7 +1013,7 @@ Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `cont
 | `--allow-unverified-auth` | Let a headless run proceed with unverified CLI authentication (no effect interactively) | start, resume, continue |
 | `--json` | Headless: NDJSON `EngineEvent`s to stdout, no TUI | start, resume, continue |
 | `--plain` | Headless: one plain line per phase, task, review and completion (`phase:`, `task T00N: done\|failed (<gates>)`, `review:`, `done:`), no TUI. Refuses to run alongside `--json` (exit `2`) | start, resume, continue |
-| `--yolo` | Kept for compatibility. It skips nothing: only a write to a protected path asks, and it still asks | start, resume, continue |
+| `--yolo` | Removed; passing it fails with a removed-flag error | none |
 | `--skills <ids>` | Comma-separated skill ids to attach to every seat (unknown id → exit `2`); on resume and continue, for that continue only | start (headless), resume, continue |
 | `--action <action>` | Apply an action to the pending recovery before continuing: `skip`, `retry`, or `switch-seat:<tool>[:<model>]` | continue |
 | `--reconfigure` | Overwrite existing config | init |
@@ -1058,10 +1053,12 @@ The one-planning-session release retired the workflow modes, the extra gates and
 | `workflow.brief_review` (`briefReview`, any value, including `rich`) | `workflow.brief_review was retired and is ignored: you review the briefs on the plan card. Delete workflow.brief_review.` | Delete the key. |
 | `workflow.speckit` (the whole block) | `workflow.speckit was retired and is ignored: every run plans in one session. Delete workflow.speckit.` | Delete the block. |
 | `approval.tiers` (the whole block, any key) | `approval.tiers was retired and is ignored: a write to a protected path always asks, and no other write does. Delete approval.tiers.` | Delete the block. |
+| `approval.enabled` (any value) | `approval.enabled was retired and is ignored: a write to a protected path always asks, and no other write does. Delete approval.enabled.` | Delete the key. |
+| `workflow.drift_chain_threshold` (`driftChainThreshold`) | `workflow.drift_chain_threshold was retired and is ignored: SPLITBRIEF no longer scores drift chains; the reviewer reads the files a brief touched but did not suggest. Delete workflow.drift_chain_threshold.` | Delete the key. |
 | `workflow.max_retries` (`maxRetries`) | `workflow.max_retries was retired and is ignored: the lineage attempt allowance bounds the ladder now. Delete workflow.max_retries.` | Delete the key. The ladder is one local retry then the planner's consult, bounded per lineage. |
 | `escalation` (the whole block, any key) | `escalation was retired and is ignored: the planner's consult replaces the intermediate tier. Delete escalation.` | Delete the block. |
 
-The readiness report shows the plan approval level in its **Workflow** section, as the check `approval.resolved` (`Plan approval: plan.`). Readiness checks one context floor for every run: 32,000 tokens.
+The readiness report shows the plan approval level in its **Workflow** section, as the check `workflow.plan-approval` (`Plan approval: plan.`). Readiness checks one context floor for every run: 32,000 tokens.
 
 ### Removed identities
 
@@ -1150,7 +1147,6 @@ validation:
 # ---------- Workflow: plan approval, manual commits ----------
 workflow:
   approve: plan
-  driftChainThreshold: 0.6
   git:
     createBranch: false
   isolation: worktree
@@ -1189,7 +1185,6 @@ hooks:
 
 # ---------- Approval: a write to a protected path asks ----------
 approval:
-  enabled: true
   feedRejectionsToPlanner: true
 
 # ---------- Custom palette actions ----------
@@ -1367,7 +1362,7 @@ Writing the triple explicitly keeps save/load, run metadata, and billing present
 
 ### Named implementer profiles
 
-`implementerProfiles` (§3) reuses the same runner schema as top-level `implementer`, including `service`/`offering` on API profiles. Profile names are stable identifiers (`local-qwen`, `cheap-cloud`, …). Task routing picks one capable profile per Task Brief; recovery can target a named profile via `route-bigger-worker`.
+`implementerProfiles` (§3) reuses the same runner schema as top-level `implementer`, including `service`/`offering` on API profiles. Profile names are stable identifiers (`local-qwen`, `cheap-cloud`, …). Task routing picks one capable profile per Task Brief.
 
 ### Excluded API offerings
 

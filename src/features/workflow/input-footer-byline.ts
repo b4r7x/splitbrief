@@ -14,8 +14,6 @@ export interface InputFooterBylineInput {
   lead: string;
   hintText?: string | null;
   queuedText: string | null;
-  etaText: string | null;
-  copyHint?: string | null;
   worktreeLabel?: string | null;
 }
 
@@ -42,17 +40,15 @@ export function buildInputFooterByline(input: InputFooterBylineInput): InputFoot
   const queuedPart = input.queuedText && input.queuedText.length > 0 ? input.queuedText : null;
   const hintPart = input.hintText && input.hintText.length > 0 ? input.hintText : null;
 
-  const candidates: Array<{ hint: boolean; queued: boolean; tail: (string | null)[] }> = [
-    { hint: true, queued: true, tail: [input.etaText] },
-    { hint: true, queued: true, tail: [] },
-    { hint: false, queued: true, tail: [] },
-    { hint: false, queued: false, tail: [] },
+  const candidates: Array<{ hint: boolean; queued: boolean }> = [
+    { hint: true, queued: true },
+    { hint: false, queued: true },
+    { hint: false, queued: false },
   ];
 
   let leadOut = input.lead;
   let hintIncluded = false;
   let queuedIncluded = false;
-  let tail: (string | null)[] = [];
   let line = '';
   let matched = false;
 
@@ -61,13 +57,11 @@ export function buildInputFooterByline(input: InputFooterBylineInput): InputFoot
       input.lead,
       candidate.hint ? hintPart : null,
       candidate.queued ? queuedPart : null,
-      ...candidate.tail,
     ]);
     if (bylineCells(candidateStr) <= width) {
       line = candidateStr;
       hintIncluded = candidate.hint;
       queuedIncluded = candidate.queued;
-      tail = candidate.tail;
       matched = true;
       break;
     }
@@ -90,27 +84,7 @@ export function buildInputFooterByline(input: InputFooterBylineInput): InputFoot
         ? `${SOFT_SEP}${queuedPart}`
         : queuedPart
       : '';
-  const restCore = joinBylineParts(tail);
-  let restOut =
-    restCore.length > 0
-      ? leadOut.length > 0 || hintOut.length > 0 || queuedOut.length > 0
-        ? `${SOFT_SEP}${restCore}`
-        : restCore
-      : '';
-
-  const copyFull = input.copyHint && input.copyHint.length > 0 ? input.copyHint : null;
-  if (copyFull) {
-    const copyBare = copyFull.split(' ')[0] ?? copyFull;
-    const copyVariants = copyBare === copyFull ? [copyFull] : [copyFull, copyBare];
-    for (const variant of copyVariants) {
-      const combined = joinBylineParts([line, variant]);
-      if (bylineCells(combined) <= width) {
-        restOut += combined.slice(line.length);
-        line = combined;
-        break;
-      }
-    }
-  }
+  let restOut = '';
 
   const worktree =
     input.worktreeLabel && input.worktreeLabel.length > 0 ? input.worktreeLabel : null;

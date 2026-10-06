@@ -26,7 +26,7 @@ function refuseImplausibleRewrite(opts: {
   const kept = countNonEmptyLines(opts.candidate);
   if (had < MIN_GUARDED_BASELINE_LINES || kept >= had * MAX_WHOLE_FILE_SHRINK) return undefined;
   return [
-    `Refusing to overwrite ${opts.task.file}: the response keeps ${kept} of ${had} non-empty lines, which is not a plausible whole-file rewrite.`,
+    `Refusing to overwrite ${opts.task.suggestedFiles[0]}: the response keeps ${kept} of ${had} non-empty lines, which is not a plausible whole-file rewrite.`,
     'Return the complete new file content, or apply an exact patch:',
     '',
     '<<<<<<< SEARCH',
@@ -73,16 +73,16 @@ export async function processImplementerOutput(opts: {
     return { success: false, error: extractResult.error };
   }
 
-  const approval = approveWrite ? await approveWrite(task.file) : { allow: true };
+  const approval = approveWrite ? await approveWrite(task.suggestedFiles[0]) : { allow: true };
   if (!approval.allow) {
     return { success: false, error: approval.reason ?? 'write denied by approval gate' };
   }
 
-  const currentContent = await readTaskFileContent(projectDir, task.file);
+  const currentContent = await readTaskFileContent(projectDir, task.suggestedFiles[0]);
   if (currentContent !== approvedBaselineContent) {
     return {
       success: false,
-      error: extractedCodeApprovalRaceError(task.file),
+      error: extractedCodeApprovalRaceError(task.suggestedFiles[0]),
     };
   }
 
@@ -101,7 +101,7 @@ export async function processImplementerOutput(opts: {
     return { success: false, error: applyResult.error ?? 'Failed to apply code' };
   }
 
-  const newContent = (await readTaskFileContent(projectDir, task.file)) ?? '';
+  const newContent = (await readTaskFileContent(projectDir, task.suggestedFiles[0])) ?? '';
   const { diff, linesAdded, linesRemoved } = computeDiff(approvedBaselineContent ?? '', newContent);
 
   return { success: true, diff, linesAdded, linesRemoved };

@@ -58,7 +58,7 @@ it('applies real API bundles to one workspace on the first attempt, retry and co
       }),
     ),
   );
-  const task = makeTask({ id: 'T001', file, action: 'modify' });
+  const task = makeTask({ id: 'T001', suggestedFiles: [file], action: 'modify' });
   const wctx = makeWctx({ projectDir, sessionId, config, implementer: api });
   const opened = await wctx.isolation.open({ config });
   wctx.workspaceDir = opened.projectDir;

@@ -67,7 +67,7 @@ describe('a run the old step chain made', () => {
 
     expect(deriveRunStatus({ state, liveness: 'not-alive' })).toEqual({
       kind: 'open',
-      stop: { kind: 'interrupted' },
+      stop: { kind: 'stopped', on: { kind: 'interrupted' } },
       resumeAt: { kind: 'brief', taskId: 'T008', attempt: 1 },
     });
   });
@@ -100,13 +100,17 @@ describe('a run the old step chain made', () => {
   it.each([
     [
       'specifying',
-      { kind: 'open', stop: { kind: 'interrupted' }, resumeAt: { kind: 'planner', call: 'plan' } },
+      {
+        kind: 'open',
+        stop: { kind: 'stopped', on: { kind: 'interrupted' } },
+        resumeAt: { kind: 'planner', call: 'plan' },
+      },
     ],
     [
       'reviewing-spec',
       {
         kind: 'open',
-        stop: { kind: 'waiting', gate: 'spec', reopens: false },
+        stop: { kind: 'waiting-for-you', on: { kind: 'gate', gate: 'spec', reopens: false } },
         resumeAt: { kind: 'gate', gate: 'spec' },
       },
     ],

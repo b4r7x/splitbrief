@@ -26,6 +26,7 @@ const RETIRED_COMMANDS: Readonly<Record<string, string>> = {
 const RETIRED_FLAGS: Readonly<Record<string, string>> = {
   '--mode': 'every run plans in one session',
   '--approve': 'set workflow.approve (plan or none) in the config',
+  '--yolo': 'only a write to a protected path asks',
 };
 
 /**

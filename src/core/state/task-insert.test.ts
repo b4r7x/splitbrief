@@ -27,7 +27,7 @@ describe('insertTasks', () => {
 
     expect(inserted.map((task) => task.id)).toEqual(['T011', 'T012']);
     expect(inserted.map((task) => task.status)).toEqual(['pending', 'pending']);
-    expect(inserted[0]?.file).toBe('src/split-a.ts');
+    expect(inserted[0]?.suggestedFiles[0]).toBe('src/split-a.ts');
     expect(inserted[0]?.description).toBe('Return a greeting for a name');
   });
 

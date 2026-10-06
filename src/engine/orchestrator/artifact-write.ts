@@ -1,135 +1,35 @@
 import type { SpecMetadata } from '../../core/paths-io.js';
 import { writeSpecFile } from '../../core/paths-io.js';
-import { PLAN_FILE, RESEARCH_FILE, SPEC_FILE, TASKS_FILE } from '../../core/paths.js';
-import { admitPlanningArtifact } from '../spec/planning-artifact-admission.js';
-import type { EventBus } from '../events/types.js';
-import { publishArtifactWritten } from './artifact-card.js';
+import { PLAN_FILE, TASKS_FILE } from '../../core/paths.js';
 import type { Phase } from '../../core/schemas/enums.js';
+import type { Task } from '../../core/schemas/task.js';
+import type { EventBus } from '../events/types.js';
+import { formatTasks } from '../spec/formatter.js';
+import { publishArtifactWritten } from './artifact-card.js';
 
-export type ArtifactKind = 'research' | 'spec' | 'plan' | 'task-briefs';
-
-export type ArtifactAdmission = 'required' | 'already-admitted';
-
-export type ArtifactWriteOptions = {
+/**
+ * Persist `plan.md` and `tasks.md`, the projections of `plan.json`, and announce each as one card.
+ * Both files are written before either card is published.
+ */
+export function writeAndPublishPlanArtifacts(opts: {
   projectDir: string;
   sessionId: string;
   bus: EventBus;
   phase: Phase;
-  kind: ArtifactKind;
-  text: string;
-  metadata?: SpecMetadata | null | undefined;
-  admission?: ArtifactAdmission | undefined;
-};
-
-export type ArtifactBatchItem = Readonly<{
-  kind: ArtifactKind;
-  text: string;
-  admission?: ArtifactAdmission | undefined;
-}>;
-
-export type ArtifactBatchWriteOptions = Readonly<{
-  projectDir: string;
-  sessionId: string;
-  bus: EventBus;
-  phase: Phase;
-  items: readonly ArtifactBatchItem[];
-  metadata?: SpecMetadata | null | undefined;
-}>;
-
-const ARTIFACT_FILENAMES: Record<ArtifactKind, string> = {
-  research: RESEARCH_FILE,
-  spec: SPEC_FILE,
-  plan: PLAN_FILE,
-  'task-briefs': TASKS_FILE,
-};
-
-type PreparedArtifact = Readonly<{
-  filename: string;
-  text: string;
   metadata: SpecMetadata | null | undefined;
-}>;
-
-type ArtifactPrepareOptions = Readonly<{
-  kind: ArtifactKind;
-  text: string;
-  metadata?: SpecMetadata | null | undefined;
-  admission?: ArtifactAdmission | undefined;
-}>;
-
-/**
- * Validate one artifact before any byte changes: spec and plan replacements
- * are admitted first.
- */
-function prepareArtifact(opts: ArtifactPrepareOptions): PreparedArtifact {
-  const filename = ARTIFACT_FILENAMES[opts.kind];
-  if ((opts.kind === 'spec' || opts.kind === 'plan') && opts.admission !== 'already-admitted') {
-    admitPlanningArtifact({
-      phase: opts.kind === 'spec' ? 'specifying' : 'planning',
-      filename,
-      text: opts.text,
-    });
-  }
-  return { filename, text: opts.text, metadata: opts.metadata };
-}
-
-/**
- * Persist one planner artifact and announce the persisted document as one card.
- *
- * Spec and plan replacements are admitted before `writeSpecFile` can create a directory, mutate
- * a file, or publish an event. Callers that already admitted a planner phase can say so explicitly
- * to keep admission at its original boundary. Research skips planning admission.
- */
-export function writeAndPublishArtifact(opts: ArtifactWriteOptions): void {
-  const prepared = prepareArtifact(opts);
-  writeSpecFile(
-    { projectDir: opts.projectDir, sessionId: opts.sessionId },
-    prepared.filename,
-    prepared.text,
-    prepared.metadata,
-  );
+  planMarkdown: string;
+  tasks: Task[];
+}): void {
+  const ref = { projectDir: opts.projectDir, sessionId: opts.sessionId };
+  const tasksMarkdown = formatTasks(opts.tasks);
+  writeSpecFile(ref, PLAN_FILE, opts.planMarkdown, opts.metadata);
+  writeSpecFile(ref, TASKS_FILE, tasksMarkdown, opts.metadata);
+  const card = { bus: opts.bus, phase: opts.phase, ...ref };
+  publishArtifactWritten({ ...card, filename: PLAN_FILE, text: opts.planMarkdown });
   publishArtifactWritten({
-    bus: opts.bus,
-    phase: opts.phase,
-    projectDir: opts.projectDir,
-    sessionId: opts.sessionId,
-    filename: prepared.filename,
-    text: prepared.text,
+    ...card,
+    filename: TASKS_FILE,
+    text: tasksMarkdown,
+    briefs: opts.tasks,
   });
-}
-
-/**
- * Persist a whole array of planner artifacts as compatibility projections.
- *
- * Every item is validated before any file is written, so an invalid later item
- * cannot expose a partial batch; files are written only after all items pass
- * and events are published only after every write succeeded. A projection
- * fault therefore never touches owner state.
- */
-export function writeAndPublishArtifacts(opts: ArtifactBatchWriteOptions): void {
-  const prepared = opts.items.map((item) =>
-    prepareArtifact({
-      kind: item.kind,
-      text: item.text,
-      metadata: opts.metadata,
-      admission: item.admission,
-    }),
-  );
-  for (const item of prepared) {
-    writeSpecFile(
-      { projectDir: opts.projectDir, sessionId: opts.sessionId },
-      item.filename,
-      item.text,
-      item.metadata,
-    );
-  }
-  for (const item of prepared) {
-    publishArtifactWritten({
-      bus: opts.bus,
-      phase: opts.phase,
-      projectDir: opts.projectDir,
-      sessionId: opts.sessionId,
-      filename: item.filename,
-      text: item.text,
-    });
-  }
 }

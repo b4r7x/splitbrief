@@ -37,9 +37,9 @@ The orchestrator is split by concern under `src/engine/orchestrator/`:
 - **`run/`** — The run's own entry and exit. `workflow.ts` is `runWorkflow`, `init.ts` builds the context, `phases.ts` decides what a re-entry runs, and `continue.ts` is `continueRun` — the one path that picks a run up: it settles a park this process holds, re-enters a run at rest on its saved state with the operator's steer, or refuses a run that is missing, unreadable or closed, with the reason.
 - **`escalation/`** — The retry ladder when the implementer fails: one local retry (`local-retries.ts`), then the consult loop in `handle.ts` and the seat-trouble rules (`seat-wait.ts` for a ≤10-minute rate-limit wait, `transient.ts` for backoff retries). A spent bound opens recovery; the planner does not take over writing the code.
 - **`consult/`** — The read-only typed consult on the planner's session (`request.ts`) and the six answers applied to the task or the run (`apply.ts`: guidance, rewrite-task, split-task, verify, ask-user, confirm).
-- **`recovery/`** — User-facing recovery flow for anything a turn cannot decide alone: the ladder or a consult bound running out, and the planner-seat halts in `builders/planner.ts`. Presents the user with choices: retry same worker, route to a bigger worker, switch the seat, revise, skip, pause, or end the run. `bus.ts` builds the bus a recovery answered between two turns publishes on, so a host that holds no live orchestrator still records the prompt and the decision.
+- **`recovery/`** — User-facing recovery flow for anything a turn cannot decide alone: the ladder or a consult bound running out, and the planner-seat halts in `builders/planner.ts`. Presents the user with one of two halts, *Needs you* or *Seat down* (`src/core/recovery/halt.ts`), and the choices that halt allows: continue, retry the same worker, switch the seat, revise, accept as is, restore the backup, skip, or end the run. `bus.ts` builds the bus a recovery answered between two turns publishes on, so a host that holds no live orchestrator still records the prompt and the decision.
 - **`approval/`** — The write gate for declared file writes. Classifies changed paths by risk (in-scope, out-of-scope, control-plane, package change, CI or secret file) and asks only for a write to a protected path; `confirm.ts` also turns an approved plan's `protectedOperations` into confirmations (`planConfirmations`).
-- **`drift/`** — Brief drift detection. Checks whether implementer output drifted from the Task Brief and reports a score. `chain.ts` tracks chains of drifting tasks.
+- **`drift/`** — Brief drift detection. Checks the run's changed files against the briefs and the evidence ledger and reports findings (`analyze.ts`); the report passes when it has no `error` finding. There is no score and no cross-task chain.
 - **`evidence/`** — Collects evidence of task completion for the final review. The `review-packet/` subfolder assembles all evidence into a structured packet for the review seat. The review seat answers a typed `ReviewVerdict` (`src/core/schemas/review.ts`); the record lives in `review.json` and its rendering in `review.md`. `parseFinalReview()` in `src/engine/parsers/final-review.ts` stays only as the reader for sessions saved before the typed review. The verdict, criteria counts and finding counts land in the packet's final-review section and are rolled up into `summary.json` (`reviewPacket.finalReviewVerdict`, `reviewPacket.finalReviewFindingCounts`).
 - **`apply/`** — Writes a ready run into the checkout once (`runApply`, `run.ts`): a three-way merge of the workspace base, the checkout and the run workspace (`merge.ts`), the backup before the first write (`backup.ts`), one hash-guarded write (`write.ts`), backup restore (`restore.ts`) and the `run.patch` that Discard and End run keep (`patch.ts`). A checkout edit during a run is not a halt: Apply merges it. See [WORKFLOW.md §Apply](./WORKFLOW.md#apply).
 
@@ -311,7 +311,7 @@ type Summary = {
 
   // Quality signals
   briefQuality?: { score: number; passed: boolean; errorCount: number; warningCount: number }
-  driftSummary?: { passed: boolean; score: number; errorCount: number; warningCount: number }
+  driftSummary?: { passed: boolean; errorCount: number; warningCount: number }
   evidenceSummary?: { path: string; totalTasks: number; tasksWithValidationEvidence: number; ... }
   reviewPacket?: ReviewPacketSummary
   checkpointSummary?: CheckpointSummaryRollup
@@ -378,8 +378,7 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 // }
 
 // Planner heartbeat (emitted while the planner is running)
-{ type: 'planner_heartbeat'; elapsedMs: number;
-  accumulatedTokens: number }   // accumulatedTokens is always 0: nothing reports a call's tokens while it runs
+{ type: 'planner_heartbeat'; phase: Phase; elapsedMs: number; callId?: string }
 
 // Workflow config (emitted once at startup); `skills` names the skills every seat call carries
 { type: 'workflow_config'; mode?: WorkflowMode;   // older logs only; a new run writes none

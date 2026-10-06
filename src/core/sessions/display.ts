@@ -48,12 +48,8 @@ export function getMethodDisplay(
 }
 
 const STOP_WORDS: Record<StopKind, string> = {
-  'input-required': 'waiting for answer',
-  paused: 'paused',
-  waiting: 'waiting',
-  halted: 'halted',
-  failed: 'failed',
-  interrupted: 'interrupted',
+  'waiting-for-you': 'waiting for you',
+  stopped: 'stopped',
 };
 
 /** The one word a run's state spells, on every surface that names it. */
@@ -104,8 +100,7 @@ function statusColor(
   if (session.status === 'complete') return theme.success;
   if (session.status === 'ended') return theme.textDim;
   if (session.stop === undefined) return theme.accent;
-  if (session.stop === 'failed') return theme.error;
-  return session.stop === 'halted' ? theme.warning : theme.textDim;
+  return session.stop === 'waiting-for-you' ? theme.warning : theme.textDim;
 }
 
 export function getSessionStatusDisplay(

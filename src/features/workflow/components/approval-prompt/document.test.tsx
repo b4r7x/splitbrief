@@ -71,7 +71,25 @@ describe('DocumentReviewPrompt', () => {
     );
 
     expect(frame).toContain(REVIEW_DOCUMENT_HINTS);
-    expect(frame).toContain(`${listRowLead('active')}y   Approve plan and start the build`);
+    expect(frame).toContain(`${listRowLead('active')}Approve plan and start the build`);
+  });
+
+  // The composer holds the keyboard at the plan card, so a letter types into the draft: a row that
+  // advertised one would teach a key that does not exist.
+  it('advertises no letter on any row', () => {
+    const frame = frameOf(
+      <DocumentReviewPrompt
+        artifact="plan"
+        confirms={[]}
+        budgetRows={40}
+        selectedIndex={0}
+        commenting={false}
+      />,
+    );
+
+    for (const letter of ['y', 'c', 'e', 'q']) {
+      expect(frame).not.toMatch(new RegExp(`(^|\\s)${letter}\\s{3}[A-Z]`, 'm'));
+    }
   });
 
   it('shows no highlight while a comment is being typed', () => {

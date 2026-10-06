@@ -5,7 +5,6 @@ import { finishClaudeStream, createStreamHandler, interruptedError } from './str
 import type { RunnerCallContext, RunnerCallEvent } from '../../calls/types.js';
 import { projectRunnerCallEvents } from '../../calls/event-projection.js';
 import { RUNNER_CALL_OUTPUT_MAX_BYTES } from '../../calls/output-limit.js';
-import { parseFinalReview } from '../../parsers/final-review.js';
 
 const context: RunnerCallContext = {
   callId: 'claude-redaction-test',
@@ -306,7 +305,7 @@ describe('Claude stream final text', () => {
     expect(text).toBe(verdict);
   });
 
-  it('hands the final-review reader a verdict heading that narration does not prefix', () => {
+  it('keeps narration out of a final verdict heading', () => {
     const review = '### Verdict\npass';
     const { text } = replay([
       ...mainLoopMessage('msg_narration', 'Checking the gates once more.', 'tool_use'),
@@ -314,7 +313,7 @@ describe('Claude stream final text', () => {
       JSON.stringify({ type: 'result', result: review }),
     ]);
 
-    expect(parseFinalReview(text).verdict).toBe('pass');
+    expect(text).toBe(review);
   });
 
   it.each([
@@ -371,7 +370,6 @@ describe('Claude stream final text', () => {
     expect(text).toBe(
       '## Review\n\nCriteria one, cut mid-sentence; criteria two.\n\n### Verdict\npass',
     );
-    expect(parseFinalReview(text).verdict).toBe('pass');
   });
 
   it('closes the chain on end_turn so a later turn does not carry it', () => {

@@ -30,7 +30,7 @@ describe('runSingleTask — baseline-exempt validation', () => {
     const task = makeTask({
       id: 'T001',
       action: 'create',
-      file: 'src/main.ts',
+      suggestedFiles: ['src/main.ts'],
       scope: { inBounds: ['src/main.ts'] },
     });
     const state = implementingState([task]);
@@ -103,7 +103,7 @@ describe('runSingleTask — baseline-exempt validation', () => {
     const task = makeTask({
       id: 'T001',
       action: 'create',
-      file: 'src/main.ts',
+      suggestedFiles: ['src/main.ts'],
       scope: { inBounds: ['src/main.ts'] },
     });
     const state = implementingState([task]);

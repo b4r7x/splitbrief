@@ -17,7 +17,7 @@ import { configStore } from '../../../stores/project/config.js';
 import { sessionsStore } from '../../../stores/project/sessions.js';
 import { attachmentsStore } from '../../../stores/workflow/attachments.js';
 import { runWorkflow } from '../../../engine/orchestrator/run/workflow.js';
-import { hasStaleFileHalt } from '../../../engine/orchestrator/run/init.js';
+import { hasStaleHalt } from '../../../engine/orchestrator/run/init.js';
 import {
   applyOfferedSeatSwap,
   type SeatSwapChoice,
@@ -41,7 +41,6 @@ import {
   setClearQueueHandler,
   setQueueHandler,
   setResumeHandler,
-  setRewindHandler,
   clearAllHandlers,
   cancelBoundaryPause,
   consumeBoundaryInterrupt,
@@ -71,7 +70,6 @@ import { runResumePolicy } from '../resume-policy.js';
 import { finalizeEndedRun } from '../../../engine/orchestrator/session-lifecycle/finalize.js';
 import { hydrateResume, resumeFailureMessage } from '../resume-hydration.js';
 import { clearSessionScopedStores } from '../session-stores.js';
-import { type PendingRewind, buildRewindHandler } from '../rewind-handler.js';
 import type { UseRunContinueResult } from './use-run-continue.js';
 
 export type RunWorkflowFn = typeof runWorkflow;
@@ -87,7 +85,7 @@ interface UseRunLoopOptions {
   steer?: string | undefined;
   selectedSkills?: SkillMeta[] | undefined;
   inputMode: UseInputModeResult;
-  /** How this run is re-entered — the loop reads its state and the rewind path restarts through it. */
+  /** How this run is re-entered — the loop reads its state. */
   continuation: UseRunContinueResult;
   runWorkflow?: RunWorkflowFn | undefined;
   prepareExecution?: PrepareExecutionFn | undefined;
@@ -119,9 +117,8 @@ export function useRunLoop({
   continueAtRest,
 }: UseRunLoopOptions): UseRunLoopResult {
   const abortedRef = useRef(false);
-  const pendingRewindRef = useRef<PendingRewind | null>(null);
   const [startedAt] = useState(() => nowIso());
-  const { runId, inlineResume, setInlineResume, restart, handleResume } = continuation;
+  const { runId, inlineResume, setInlineResume, handleResume } = continuation;
 
   const inlineForPrepared =
     inlineResume !== undefined && inlineResume.prepared === prepared ? inlineResume : undefined;
@@ -164,8 +161,6 @@ export function useRunLoop({
       }
       stateForRun = hydrated.state;
     }
-    const pendingRewind = pendingRewindRef.current;
-    pendingRewindRef.current = null;
     let recoveryPromptAlreadyPublished = false;
 
     // A fresh run starts from an empty screen; a run this screen is continuing already has its
@@ -181,9 +176,6 @@ export function useRunLoop({
     resetMarkdownConversationRowsCache();
     resetConversationRowsProjectionCache();
     resetEventBlockCache();
-    if (pendingRewind?.prepared === prepared) {
-      addTuiEvent(pendingRewind.event);
-    }
     conversationScrollStore.reset();
     setStopHandler(() => {
       controller.abort();
@@ -197,20 +189,6 @@ export function useRunLoop({
       closeApprovalPrompt();
       stopStore.get().parked?.resolve?.('');
     });
-    setRewindHandler(
-      buildRewindHandler({
-        prepared,
-        controller,
-        hydrate: hydrateResume,
-        resetMode: () => inputMode.resetMode(),
-        setPendingRewind: (pending) => {
-          pendingRewindRef.current = pending;
-        },
-        onRewound: (next) => {
-          restart({ prepared, state: next });
-        },
-      }),
-    );
 
     // A re-entry re-prepares this session, and every later iteration belongs to the preparation
     // it made: the seats were built from it, and its receipt is the one on disk — otherwise the
@@ -297,7 +275,7 @@ export function useRunLoop({
       // A retired file halt is not a question any more: on this re-entry it travels into the
       // engine, which resolves it and says so in the transcript. Asked once — a halt this run
       // raises later is fresh by construction.
-      let staleHalt = stateForRun !== undefined && hasStaleFileHalt(stateForRun);
+      let staleHalt = stateForRun !== undefined && hasStaleHalt(stateForRun);
       while (!isWorkflowAborted(controller, abortedRef)) {
         if (stateForRun?.pendingRecovery !== undefined && !staleHalt) {
           const promptPendingRecovery = createRecoveryDriver({
@@ -326,7 +304,10 @@ export function useRunLoop({
             // Ending a run from the recovery panel never re-enters the engine, so
             // the session record is written here through the normal finalize.
             const closedState = recovery.state;
-            if (closedState?.closed !== undefined) {
+            if (
+              closedState !== undefined &&
+              deriveRunStatus({ state: closedState, liveness: 'not-alive' }).kind === 'closed'
+            ) {
               finalizeEndedRun({
                 ref: preparedForRun.session.ref,
                 active: preparedForRun.session.active,
@@ -417,7 +398,6 @@ export function useRunLoop({
         const detectedContextLength = configStore.getDetectedContextLength();
         await runWorkflowFn({
           prepared: preparedForRun,
-          getApprovalEnabled: () => configStore.get().config?.approval?.enabled !== false,
           sinks,
           tuiSink: addTuiEvent,
           modelCache: modelCacheStore,

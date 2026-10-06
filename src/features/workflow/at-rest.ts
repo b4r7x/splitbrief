@@ -6,21 +6,16 @@ import {
   type RailStageStatus,
 } from '../../core/rail-stages.js';
 import type { RunRecord } from '../../core/sessions/run-record.js';
-import type { StopKind } from '../../core/schemas/run-step.js';
+import type { StopReason } from '../../core/sessions/run-status.js';
 import { AT_REST_PLACEHOLDER } from './closed/byline.js';
 
 /**
  * A stop the operator can answer wears the cancel mark; a stop the run could not get past wears the
  * failure mark. One reading of the rail: warning means "waiting for you", error means "it broke".
  */
-const STOP_HALT: Record<StopKind, RailHalt> = {
-  paused: 'cancelled',
-  waiting: 'cancelled',
-  interrupted: 'cancelled',
-  halted: 'failed',
-  failed: 'failed',
-  'input-required': 'cancelled',
-};
+function stopMark(stop: StopReason): RailHalt {
+  return stop.on.kind === 'halt' || stop.on.kind === 'failed' ? 'failed' : 'cancelled';
+}
 
 /** The phase the record stands in: the saved state first, then what the summary recorded. */
 export function recordPhase(record: RunRecord): Phase {
@@ -44,7 +39,7 @@ export function atRestRailStages(record: RunRecord): RailStageState[] {
       : getRailStages(recordPhase(record), { halted: 'cancelled', ...applyOption });
   }
   const phase = status.resumeAt.kind === 'apply' ? 'complete' : recordPhase(record);
-  return getRailStages(phase, { halted: STOP_HALT[status.stop.kind], ...applyOption });
+  return getRailStages(phase, { halted: stopMark(status.stop), ...applyOption });
 }
 
 /**
@@ -58,11 +53,14 @@ export function applyStage(record: RunRecord): RailStageStatus | undefined {
   const status = record.status;
   if (status.kind === 'ready-to-apply') return 'pending';
   if (status.kind === 'closed') {
-    if (status.as === 'applied') return 'done';
+    // An undone Apply reverted the checkout, as a discard leaves it; kept later edits break nothing.
+    if (status.as === 'applied') {
+      return record.hydration.state.applied?.undone === undefined ? 'done' : 'cancelled';
+    }
     if (status.as === 'discarded') return 'cancelled';
   }
   if (status.kind === 'open' && status.resumeAt.kind === 'apply') {
-    return STOP_HALT[status.stop.kind];
+    return stopMark(status.stop);
   }
   return 'pending';
 }
@@ -88,7 +86,7 @@ export function atRestComposer(record: RunRecord): AtRestComposer {
         ? AT_REST_PLACEHOLDER.ready
         : !continuable
           ? AT_REST_PLACEHOLDER.closed
-          : record.status.kind === 'open' && record.status.stop.kind === 'input-required'
+          : record.status.kind === 'open' && record.status.stop.on.kind === 'question'
             ? AT_REST_PLACEHOLDER.inputRequired
             : AT_REST_PLACEHOLDER.open,
   };

@@ -423,8 +423,8 @@ describe('spec command — reporting', () => {
     createPlannerMock.mockResolvedValue(
       makePlanner({
         typedCall: typedCallFromTasks([
-          makeTask({ id: 'T001', file: 'src/a.ts' }),
-          makeTask({ id: 'T002', file: 'src/b.ts' }),
+          makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] }),
+          makeTask({ id: 'T002', suggestedFiles: ['src/b.ts'] }),
         ]),
       }),
     );

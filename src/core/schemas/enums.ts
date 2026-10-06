@@ -96,21 +96,18 @@ export const REVIEW_VERDICTS = ['pass', 'pass_with_notes', 'fail'] as const;
 export const REVIEW_STATUSES = ['passed', 'failed'] as const;
 export type ReviewStatus = (typeof REVIEW_STATUSES)[number];
 
+/** The halt causes a live producer raises. `scripts/invariants` checks each one has a producer. */
 export const RECOVERY_REASONS = [
   'implementation-error',
-  'validation-failed',
   'retry-exhausted',
   'consult-bound-spent',
   'planner-calls-spent',
   'runner-unauthenticated',
   'runner-usage-limit',
   'context-overflow',
-  'user-edit-conflict',
-  'approval-promotion-conflict',
   'apply-conflict',
   'apply-partial',
   'dependency-blocked',
-  'scope-violation',
   'implementer-recipe-invalid',
   'implementer-left-isolation',
   'checkout-changed',
@@ -121,68 +118,60 @@ export const RECOVERY_REASONS = [
   'approval-denied',
   'snapshot-failed',
   'planner-call-failed',
-  'planner-returned-no-briefs',
-  'constitution-check-failed',
-  'brief-review-no-progress',
-  'brief-quality-unrepaired',
   'seat-protocol-error',
   'plan-questions-exhausted',
   'plan-checks-failed',
 ] as const;
-export const RecoveryReasonSchema = z.enum(RECOVERY_REASONS);
+/**
+ * Causes nothing raises any more. A saved halt or a replayed event can still name one, so they
+ * parse; continuing a run parked on one resolves it as stale.
+ */
+export const RETIRED_RECOVERY_REASONS = [
+  'validation-failed',
+  'user-edit-conflict',
+  'approval-promotion-conflict',
+  'scope-violation',
+  'planner-returned-no-briefs',
+  'constitution-check-failed',
+  'brief-review-no-progress',
+  'brief-quality-unrepaired',
+] as const;
+export const RecoveryReasonSchema = z.enum([...RECOVERY_REASONS, ...RETIRED_RECOVERY_REASONS]);
 export type RecoveryReason = z.infer<typeof RecoveryReasonSchema>;
+export type RetiredRecoveryReason = (typeof RETIRED_RECOVERY_REASONS)[number];
 
+/** In the order a halt lists them: the least final first. */
 export const RECOVERY_ACTIONS = [
+  'continue',
   'retry-same-worker',
-  'restore-backup',
-  'route-bigger-worker',
   'switch-seat',
-  'planner-split-rebase',
   'revise',
   'accept-as-is',
-  'revise-spec',
-  'continue',
+  'restore-backup',
   'skip-current-task',
-  'pause-run',
   'end-run',
 ] as const;
 export const RecoveryActionSchema = z.enum(RECOVERY_ACTIONS);
 export type RecoveryAction = z.infer<typeof RecoveryActionSchema>;
 
-export const PROMPTABLE_RECOVERY_ACTIONS: RecoveryAction[] = [
-  'retry-same-worker',
-  'restore-backup',
-  'route-bigger-worker',
-  'switch-seat',
-  'revise',
-  'accept-as-is',
-  'revise-spec',
-  'continue',
-  'skip-current-task',
-  'pause-run',
-  'end-run',
-];
+/**
+ * Actions older runs saved or logged that no halt offers now. An old run's `revise-spec` sent its
+ * note to the planner as `revise` does, and a bigger worker was a retry on another profile; a pause
+ * and a split request have no successor and are dropped from the lists that held them.
+ */
+export const RETIRED_RECOVERY_ACTIONS: Readonly<Record<string, RecoveryAction | null>> = {
+  'revise-spec': 'revise',
+  'route-bigger-worker': 'retry-same-worker',
+  'pause-run': null,
+  'planner-split-rebase': null,
+};
 
-const RECOVERY_STATUSES = ['awaiting-user', 'paused', 'applying'] as const;
-export const RecoveryStatusSchema = z.enum(RECOVERY_STATUSES);
-
-export const USER_EDIT_CONFLICT_KINDS = [
-  'unrelated',
-  'current-task-conflict',
-  'future-task-stale-input',
-  'dependency-file-conflict',
-  'changed-during-approval-promotion',
-] as const;
-export const UserEditConflictKindSchema = z.enum(USER_EDIT_CONFLICT_KINDS);
-export type UserEditConflictKind = z.infer<typeof UserEditConflictKindSchema>;
-
-export const USER_EDIT_CONFLICT_ACTIONS = [
-  'continue-unrelated',
-  'pause',
-  'skip-current-task',
-  'abort-workflow',
-] as const;
-export const UserEditConflictActionSchema = z.enum(USER_EDIT_CONFLICT_ACTIONS);
+const RECOVERY_STATUSES = ['awaiting-user', 'applying'] as const;
+/** A pause left the halt waiting; runs that saved one read as the halt it still was. */
+export const RecoveryStatusSchema = z.preprocess(
+  (value) => (value === 'paused' ? 'awaiting-user' : value),
+  z.enum(RECOVERY_STATUSES),
+);
 
 export const TASK_CONTEXT_FITS = ['fits', 'tight', 'overflow'] as const;
 export const TaskContextFitSchema = z.enum(TASK_CONTEXT_FITS);

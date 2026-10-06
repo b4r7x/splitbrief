@@ -35,7 +35,7 @@ describe('runSingleTask — recovery', () => {
     const task = makeTask({
       id: 'T001',
       action: 'modify',
-      file: 'src/main.ts',
+      suggestedFiles: ['src/main.ts'],
       scope: { inBounds: ['src/main.ts'] },
     });
     const state = implementingState([task]);
@@ -99,13 +99,13 @@ describe('runSingleTask — recovery', () => {
     const taskOne = makeTask({
       id: 'T001',
       action: 'modify',
-      file: 'src/one.ts',
+      suggestedFiles: ['src/one.ts'],
       scope: { inBounds: ['src/one.ts'] },
     });
     const taskTwo = makeTask({
       id: 'T002',
       action: 'modify',
-      file: 'src/two.ts',
+      suggestedFiles: ['src/two.ts'],
       scope: { inBounds: ['src/two.ts'] },
     });
     const state = implementingState([taskOne, taskTwo]);
@@ -217,7 +217,7 @@ const CODEX_BURNED_REFRESH =
 describe('runSingleTask — signed-out runner', () => {
   it('halts on an unauthenticated first attempt with the login command instead of retrying or escalating', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', action: 'create', file: 'src/main.ts' });
+    const task = makeTask({ id: 'T001', action: 'create', suggestedFiles: ['src/main.ts'] });
     const state = implementingState([task]);
 
     const implementer = makeImplementer({
@@ -297,7 +297,7 @@ describe('runSingleTask — signed-out runner', () => {
     const task = makeTask({
       id: 'T001',
       action: 'modify',
-      file: 'src/main.ts',
+      suggestedFiles: ['src/main.ts'],
       scope: { inBounds: ['src/main.ts'] },
     });
     const state = implementingState([task]);
@@ -384,7 +384,7 @@ function expectResetNamedOnce(events: EngineEvent[]): void {
 describe('runSingleTask — usage-limited runner', () => {
   it('halts on a first-attempt usage limit with the reset time instead of retrying, escalating, or advising a re-login', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', action: 'create', file: 'src/main.ts' });
+    const task = makeTask({ id: 'T001', action: 'create', suggestedFiles: ['src/main.ts'] });
     const state = implementingState([task]);
 
     const implementer = makeImplementer({
@@ -431,8 +431,11 @@ describe('runSingleTask — usage-limited runner', () => {
     expect(result.pendingRecovery?.message).not.toMatch(/log ?in|log ?out/i);
     expect(result.pendingRecovery?.details.join('\n')).toContain(CODEX_USAGE_LIMIT);
     expect(result.pendingRecovery?.facts?.resetsAt).toMatch(/^2026-08-08T/);
-    expect(result.pendingRecovery?.availableActions).toContain('retry-same-worker');
-    expect(result.pendingRecovery?.availableActions).toContain('pause-run');
+    expect(result.pendingRecovery?.availableActions).toEqual([
+      'retry-same-worker',
+      'skip-current-task',
+      'end-run',
+    ]);
 
     expect(implementer.retry).not.toHaveBeenCalled();
     expect(planner.escalateFull).not.toHaveBeenCalled();
@@ -462,7 +465,7 @@ describe('runSingleTask — usage-limited runner', () => {
     const task = makeTask({
       id: 'T001',
       action: 'modify',
-      file: 'src/main.ts',
+      suggestedFiles: ['src/main.ts'],
       scope: { inBounds: ['src/main.ts'] },
     });
     const state = implementingState([task]);

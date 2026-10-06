@@ -24,7 +24,7 @@ import { createEvidenceLedger } from '../../core/evidence/ledger-state.js';
 import { writeEvidenceLedger } from '../../core/evidence/ledger-storage.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { loadState, saveState } from '../../core/state/persistence.js';
-import { allowedActionsForReason } from '../../core/schemas/recovery/policy.js';
+import { allowedActionsForHalt, haltOf } from '../../core/recovery/halt.js';
 import { RecoveryIssueSchema, type RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
 import { deriveRunStatus } from '../../core/sessions/run-status.js';
 import type { Config } from '../../core/schemas/config.js';
@@ -180,9 +180,8 @@ describe('a PLAN packet the seat was never given', () => {
     expect(issue?.facts?.apiContextSeat).toBe('plan');
     expect(issue?.facts?.apiContextCause).toBe('missing-required');
     expect(JSON.parse(factString(issue, 'apiContextMissingSectionsJson'))).toEqual(missingSections);
-    // There is no brief here to route, skip or repair: the seat runs again or it does not.
-    expect(issue?.availableActions).not.toContain('route-bigger-worker');
-    expect(issue?.availableActions).not.toContain('skip-current-task');
+    // There is no brief here to skip or repair: the seat runs again or it does not.
+    expect(issue?.availableActions).toEqual(['retry-same-worker', 'end-run']);
     expect(loadState(ref)?.pendingRecovery?.reason).toBe('planner-call-failed');
   });
 
@@ -278,7 +277,9 @@ async function review(opts: {
     ),
   });
   const implementer = makeImplementer();
-  const tasks: Task[] = [makeTask({ id: 'T001', file: 'src/login.ts', status: 'done' })];
+  const tasks: Task[] = [
+    makeTask({ id: 'T001', suggestedFiles: ['src/login.ts'], status: 'done' }),
+  ];
   const base: WorkflowState = {
     ...makeImplState(tasks),
     phase: 'final-review',
@@ -323,7 +324,6 @@ describe('a REVIEW that reached no verdict', () => {
 
     expect(reviewCalls).toBe(0);
     expect(result.completed).toBe(false);
-    expect(result.cancelled).toBe(false);
     // Nothing was judged, so nothing settles: the phase, the briefs and the
     // repair budget are exactly where the review found them.
     expect(result.state.phase).toBe('final-review');
@@ -427,7 +427,7 @@ describe('a REVIEW that reached no verdict', () => {
 });
 
 describe('a REVIEW that reached a verdict', () => {
-  it('keeps a fail on the build seat, with its count, a correction, accept as is and its two exits', async () => {
+  it('keeps a fail on the build seat, with its count, a correction, accept as is and the end', async () => {
     const ref = setupRun('review-substantive', { ledger: true });
 
     const { result, events } = await review({
@@ -441,7 +441,8 @@ describe('a REVIEW that reached a verdict', () => {
     expect(issue?.reason).toBe('review-failed');
     expect(issue?.seat).toBe('build');
     expect(issue?.facts?.blocking).toBe(1);
-    expect(issue?.availableActions).toEqual(['revise', 'accept-as-is', 'pause-run', 'end-run']);
+    expect(issue?.availableActions).toEqual(['revise', 'accept-as-is', 'end-run']);
+    expect(issue?.recommendedAction).toBe('revise');
     expect(result.state.phase).toBe('complete');
     expect(result.state.reviewStatus).toBe('failed');
     expect(events.find((event) => event.type === 'workflow_complete')).toMatchObject({
@@ -558,19 +559,13 @@ describe('answering a halt that names no brief', () => {
         });
   }
 
-  it('leaves the halt pending across a pause, then clears it without resetting a brief', async () => {
+  it('clears a review-seat halt on the retry without resetting a brief', async () => {
     const { ref, state } = halted('retry-review-seat', contextIssue('review'));
     const { bus, events } = makeBusRecorder();
 
-    const paused = await applyRecoveryAction({ ...ref, state, action: 'pause-run', bus, config });
-
-    expect(paused).toMatchObject({ ok: true, status: 'paused' });
-    // The pause parks it; nothing on the way back in clears it.
-    expect(loadState(ref)?.pendingRecovery?.status).toBe('paused');
-
     const retried = await applyRecoveryAction({
       ...ref,
-      state: paused.state,
+      state,
       action: 'retry-same-worker',
       bus,
       config,
@@ -636,8 +631,8 @@ describe('answering a halt that names no brief', () => {
 
     expect(blocked).toMatchObject({ ok: false, code: 'action-not-available' });
     expect(blocked.state.pendingRecovery?.reason).toBe('review-failed');
-    // The policy admits the action; only a non-verdict failure is offered it.
-    expect(allowedActionsForReason('review-failed')).toContain('retry-same-worker');
+    // The halt admits the action; only a non-verdict failure is offered it.
+    expect(allowedActionsForHalt(haltOf('review-failed'))).toContain('retry-same-worker');
   });
 
   it('still replays the brief when the halt names one', async () => {
@@ -748,12 +743,7 @@ describe('a REVIEW seat out of quota', () => {
     expect(row?.type === 'error' && row.resetAt).toBe(issue?.resetAt);
     const rowText = row?.type === 'error' ? row.message : '';
     expect(rowText).not.toMatch(/13:02|1:02 PM|try again/);
-    expect(issue?.availableActions).toEqual([
-      'retry-same-worker',
-      'switch-seat',
-      'pause-run',
-      'end-run',
-    ]);
+    expect(issue?.availableActions).toEqual(['retry-same-worker', 'switch-seat', 'end-run']);
     expect(issue?.recommendedAction).toBe('switch-seat');
     // Nothing was judged, so the run waits on the review it never finished.
     expect(result.state.phase).toBe('final-review');

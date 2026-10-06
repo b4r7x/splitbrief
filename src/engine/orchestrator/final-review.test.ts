@@ -921,7 +921,6 @@ describe('runFinalReviewPhase', () => {
     const tasks = [
       makeTask({
         id: 'T001',
-        file: 'src/alpha.ts',
         status: 'done',
         criteria: ['C1'],
         suggestedFiles: ['src/alpha.ts'],
@@ -930,7 +929,6 @@ describe('runFinalReviewPhase', () => {
       }),
       makeTask({
         id: 'T002',
-        file: 'src/beta.ts',
         status: 'done',
         criteria: ['C2'],
         suggestedFiles: ['src/beta.ts', 'src/shared.ts'],
@@ -1414,7 +1412,7 @@ describe('runFinalReviewPhase', () => {
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
     const { reviewer } = makeReviewer();
-    const task = makeTask({ id: 'T001', file: 'src/hello.ts', status: 'done' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/hello.ts'], status: 'done' });
     const tasks = [task];
 
     mkdirSync(join(projectDir, 'src'), { recursive: true });
@@ -1450,7 +1448,7 @@ describe('runFinalReviewPhase', () => {
     mkdirSync(join(projectDir, 'src'), { recursive: true });
     writeFileSync(join(projectDir, 'src/feature.ts'), 'export const feature = true;\n');
 
-    const task = makeTask({ id: 'T001', file: 'src/feature.ts', status: 'done' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/feature.ts'], status: 'done' });
     const { changedFilesBaseline: _dropped, ...state } = allTasksDoneState([task], runStartHead);
     const completions: Summary[] = [];
     const { callbacks } = makeCallbacks({
@@ -1495,7 +1493,7 @@ describe('runFinalReviewPhase', () => {
 
     const task = makeTask({
       id: 'T001',
-      file: 'src/feature.ts',
+      suggestedFiles: ['src/feature.ts'],
       status: 'done',
       scope: { outOfBounds: ['docs/**'] },
     });
@@ -1506,7 +1504,7 @@ describe('runFinalReviewPhase', () => {
     const ledger = withUpdatedTask(
       createEvidenceLedger({ sessionId, feature: 'feat', tasks: [task] }),
       task.id,
-      (entry) => ({ ...entry, changedFiles: [task.file] }),
+      (entry) => ({ ...entry, changedFiles: [task.suggestedFiles[0]] }),
     );
     writeEvidenceLedger({ projectDir, sessionId }, ledger);
     const state: WorkflowState = {
@@ -1560,7 +1558,7 @@ describe('runFinalReviewPhase', () => {
     const { reviewer, prompts } = makeReviewer();
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
-    const tasks = [makeTask({ id: 'T001', file: 'src/hello.ts', status: 'done' })];
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/hello.ts'], status: 'done' })];
 
     await runFinalReviewPhase({
       projectDir,
@@ -1600,7 +1598,7 @@ describe('runFinalReviewPhase', () => {
     const { reviewer, prompts } = makeReviewer();
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
-    const task = makeTask({ id: 'T001', file: 'src/feature.ts', status: 'done' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/feature.ts'], status: 'done' });
     const tasks = [task];
 
     await recordPromotion({ projectDir, sessionId, task, path: 'src/feature.ts' });
@@ -1663,7 +1661,7 @@ describe('runFinalReviewPhase', () => {
     const { reviewer, prompts } = makeReviewer();
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
-    const task = makeTask({ id: 'T001', file: 'src/post-run.ts', status: 'done' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/post-run.ts'], status: 'done' });
     await recordPromotion({ projectDir, sessionId, task, path: 'src/post-run.ts' });
     const state: WorkflowState = {
       ...allTasksDoneState([task], runStartHead),
@@ -1710,7 +1708,7 @@ describe('runFinalReviewPhase', () => {
     const { reviewer, prompts } = makeReviewer();
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
-    const task = makeTask({ id: 'T001', file: 'src/from-unborn.ts', status: 'done' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/from-unborn.ts'], status: 'done' });
     await recordPromotion({ projectDir, sessionId, task, path: 'src/from-unborn.ts' });
 
     await runFinalReviewPhase({
@@ -1740,7 +1738,7 @@ describe('runFinalReviewPhase', () => {
     expect(drift.changedFiles).toContain('src/from-unborn.ts');
   });
 
-  it('keeps the complete diff for drift while passing the full diff to the review prompt', async () => {
+  it('passes the full diff to the review prompt', async () => {
     const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
     mkdirSync(join(projectDir, 'src'), { recursive: true });
@@ -1755,9 +1753,8 @@ describe('runFinalReviewPhase', () => {
     const { bus } = makeBusRecorder();
     const task = makeTask({
       id: 'T001',
-      file: 'src/large.ts',
+      suggestedFiles: ['src/large.ts'],
       status: 'done',
-      scope: { outOfBounds: [prohibitedMarker] },
     });
     await recordPromotion({ projectDir, sessionId, task, path: 'src/large.ts' });
 
@@ -1774,15 +1771,6 @@ describe('runFinalReviewPhase', () => {
       taskBreakdowns: [],
     });
 
-    const drift = JSON.parse(
-      readFileSync(join(sessionDir(projectDir, sessionId), DRIFT_REPORT_FILE), 'utf8'),
-    );
-    expect(drift.findings).toContainEqual(
-      expect.objectContaining({
-        code: 'out_of_bounds_text_match',
-        message: expect.stringContaining(prohibitedMarker),
-      }),
-    );
     const promptDiff = prompts[0]
       ?.split('## Implementation Diff\n')[1]
       ?.split('\n## Workspace Context')[0];

@@ -44,20 +44,20 @@ describe('decision-confirm on the S6 shape', { timeout: 90_000 }, () => {
     });
     dirs.push(projectDir);
     const tasks = ['T001', 'T002'].map((id) =>
-      makeTask({ id, file: `src/${id.toLowerCase()}.ts` }),
+      makeTask({ id, suggestedFiles: [`src/${id.toLowerCase()}.ts`] }),
     );
 
     // Every hand-back carries the same decision, as DeepSeek's did on every brief of S6.
     const handBack = (opts: ImplementerOptions, marker: string) => {
       mkdirSync(join(opts.projectDir, 'src'), { recursive: true });
-      writeFileSync(join(opts.projectDir, opts.task.file), `${marker}\n`);
+      writeFileSync(join(opts.projectDir, opts.task.suggestedFiles[0]), `${marker}\n`);
       return {
         success: true,
         output: marker,
         usage: { inputTokens: 10, outputTokens: 5 },
         report: {
           status: 'done' as const,
-          filesChanged: [opts.task.file],
+          filesChanged: [opts.task.suggestedFiles[0]],
           touchedNotSuggested: [],
           notes: null,
           decisions: [DECISION],

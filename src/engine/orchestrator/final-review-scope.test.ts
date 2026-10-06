@@ -54,7 +54,7 @@ function project() {
   writeFileSync(join(projectDir, 'src/tool-fix.ts'), 'export const independentFix = true;\n');
   const ref = { projectDir, sessionId: 'scope-test' };
   ensureSessionDir(projectDir, ref.sessionId);
-  const task = makeTask({ file, action: 'modify', status: 'in_progress' });
+  const task = makeTask({ suggestedFiles: [file], action: 'modify', status: 'in_progress' });
   return { ...ref, ref, task };
 }
 
@@ -247,7 +247,12 @@ describe('final review task completion provenance', () => {
 
   it('shows a file two tasks touched once, attributed to both, with each hunk once', async () => {
     const p = project();
-    const second = makeTask({ id: 'T002', file, action: 'modify', status: 'in_progress' });
+    const second = makeTask({
+      id: 'T002',
+      suggestedFiles: [file],
+      action: 'modify',
+      status: 'in_progress',
+    });
     await completeTask(p);
     await completeTask(p, `${worker}export const extra = 2;\n`, undefined, second);
 
@@ -273,7 +278,12 @@ describe('final review task completion provenance', () => {
 
   it('shows a later edit of a file whose run effect cancelled out once', async () => {
     const p = project();
-    const second = makeTask({ id: 'T002', file, action: 'modify', status: 'in_progress' });
+    const second = makeTask({
+      id: 'T002',
+      suggestedFiles: [file],
+      action: 'modify',
+      status: 'in_progress',
+    });
     await completeTask(p);
     await completeTask(p, operator, undefined, second);
     writeFileSync(join(p.projectDir, file), `${operator}export const later = 'edit';\n`);
@@ -285,7 +295,12 @@ describe('final review task completion provenance', () => {
 
   it('keeps a file whose run effect cancelled out uncertain when it was edited afterwards', async () => {
     const p = project();
-    const second = makeTask({ id: 'T002', file, action: 'modify', status: 'in_progress' });
+    const second = makeTask({
+      id: 'T002',
+      suggestedFiles: [file],
+      action: 'modify',
+      status: 'in_progress',
+    });
     await completeTask(p);
     await completeTask(p, operator, undefined, second);
     writeFileSync(join(p.projectDir, file), 'export const restored = true;\n');

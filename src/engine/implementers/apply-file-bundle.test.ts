@@ -59,12 +59,12 @@ function read(dir: string, path: string): string {
 
 async function baselines(
   dir: string,
-  files: string[],
-  anchor?: { file: string; action: 'create' | 'modify' },
+  files: [string, ...string[]],
+  action: 'create' | 'modify' = 'modify',
 ): Promise<BundleBaseline[]> {
   const result = await captureBundleBaseline({
     projectDir: dir,
-    task: { file: anchor?.file ?? files[0] ?? '', files, action: anchor?.action ?? 'modify' },
+    task: { suggestedFiles: files, action },
   });
   if (result.kind !== 'captured') throw new Error(`capture failed: ${result.error}`);
   return result.baselines;
@@ -294,10 +294,7 @@ describe('applyFileBundle', () => {
 
   itUnix('never clobbers a file that appears between the recheck and the create', async () => {
     await withDir('no-clobber', async (dir) => {
-      const captured = await baselines(dir, ['src/new.ts'], {
-        file: 'src/new.ts',
-        action: 'create',
-      });
+      const captured = await baselines(dir, ['src/new.ts'], 'create');
       expect(captured[0]).toMatchObject({ operation: 'create', kind: 'missing' });
       beforeWrite = (path) => {
         if (path === 'src/new.ts') write(dir, path, 'written by someone else\n');

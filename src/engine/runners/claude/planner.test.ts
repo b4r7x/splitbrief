@@ -231,29 +231,6 @@ describe('runClaudePlannerStream', () => {
     );
   });
 
-  it('emits questions via onQuestion when the text stream contains question markers', async () => {
-    const q = { id: 'q1', type: 'input', text: 'which port?' };
-    const marker = `<!-- Q:${JSON.stringify(q)} -->`;
-    const assistantEvent = JSON.stringify({
-      type: 'assistant',
-      message: { content: [{ type: 'text', text: marker }] },
-    });
-    installClaudeShim(shimDir, [assistantEvent, '{"type":"result","result":""}']);
-
-    const questions: Array<{ id: string }> = [];
-    await runClaudePlannerStream({
-      prompt: 'p',
-      projectDir,
-      sessionId: null,
-      onOutput: () => {},
-      onQuestion: (qs) => {
-        for (const parsed of qs) questions.push(parsed);
-      },
-    });
-
-    expect(questions.map((it) => it.id)).toContain('q1');
-  });
-
   it('rejects before spawning when no trusted executable identity is supplied', async () => {
     const markerFile = `${shimDir}/started`;
     installClaudeNodeShim(

@@ -1,6 +1,9 @@
 import type { Task } from '../../../core/schemas/task.js';
-import { taskFiles } from '../../../core/schemas/task.js';
-import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
+import {
+  lineageAttemptsOf,
+  type ChangedFilesSnapshot,
+  type WorkflowState,
+} from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
 import type { EngineEvent } from '../../events/types.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
@@ -40,8 +43,8 @@ export async function runPreTaskHooksAndPublish(opts: {
       title: task.title,
       index,
       total: totalTasks,
-      file: task.file,
-      files: [...taskFiles(task)],
+      file: task.suggestedFiles[0],
+      files: [...task.suggestedFiles],
       action: task.action,
       ...(wctx.implementerProfile !== undefined && { implementerProfile: wctx.implementerProfile }),
       ...buildRoutingEventFields(wctx.routingDecision),
@@ -80,6 +83,7 @@ export async function runPreTaskHooksAndPublish(opts: {
     }
   }
 
+  const lineage = lineageAttemptsOf(state, task);
   publishTaskStart(
     { bus: wctx.bus, phase: state.phase },
     {
@@ -87,8 +91,10 @@ export async function runPreTaskHooksAndPublish(opts: {
       title: task.title,
       index,
       total: totalTasks,
-      file: task.file,
-      files: [...taskFiles(task)],
+      lineageAttempt: lineage.used + 1,
+      attemptAllowance: lineage.allowance,
+      file: task.suggestedFiles[0],
+      files: [...task.suggestedFiles],
       action: task.action,
       tool: getRunnerDisplayName(config.implementer),
       ...(config.implementer.model !== undefined && { model: config.implementer.model }),

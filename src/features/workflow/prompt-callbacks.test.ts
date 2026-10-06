@@ -127,6 +127,7 @@ describe('buildPromptCallbacks onContinuationNeeded', () => {
     stopStore.__testReset();
     tasksStore.__testReset({
       tasks: [{ id: 'T002', title: 'slice', status: 'in_progress' }],
+      currentTask: 1,
       totalTasks: 1,
     });
   });

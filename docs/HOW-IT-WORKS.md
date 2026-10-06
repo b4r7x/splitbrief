@@ -106,7 +106,7 @@ An older run parked in a retired planning phase or at an older gate continues as
 
 Before the session starts, `openingPlanPrompt` (`src/engine/orchestrator/planning/session.ts`) builds a repo map via `buildRepoMap()` (`src/engine/codebase/repomap.ts`) — a PageRank-weighted summary of the codebase focused on files relevant to the feature. It does this for every planning session, `splitbrief spec` included. This gives the planner structural context without sending the entire codebase.
 
-During planning, `planner_heartbeat` events (`src/engine/orchestrator/planning/heartbeat.ts`) fire every 2 seconds after a 5-second threshold, carrying `phase`, `elapsedMs` (restarts when `callId` changes), `accumulatedTokens` (always 0 now: nothing reports a call's tokens while it runs) and optional `callId`. These are proof-of-life signals during long waits — the TUI shows them as a spinning indicator. The planning session streams no narration, because its answer is typed JSON.
+During planning, `planner_heartbeat` events (`src/engine/orchestrator/planning/heartbeat.ts`) fire every 2 seconds after a 5-second threshold, carrying `phase`, `elapsedMs` (restarts when `callId` changes), optional `callId`. These are proof-of-life signals during long waits — the TUI shows them as a spinning indicator. The planning session streams no narration, because its answer is typed JSON.
 
 The plan lands as three files in the session folder: `plan.json` (`writePlanJson`, `src/core/sessions/plan-file.ts`), and `plan.md` and `tasks.md`, rendered from it and written with `artifact_written` events. A run planned by an older engine also has `research.md`, `spec.md` and possibly `brief-quality.json`; a new run writes none of them.
 
@@ -144,7 +144,7 @@ Filesystem snapshots, diffs, and validation remain available; the Git index and 
 4. Calls `runImplementation()` (`src/engine/orchestrator/task/run-implementation.ts`). Every writer receives the same run workspace. `cli` and `agent` write there directly. `api` and `shell` return code that SPLITBRIEF writes there. The extracted-code path keeps its guard against a destructive whole-file replacement.
 5. Calls `gateAttemptChanges()` (`src/engine/orchestrator/task/attempt-gate.ts`) on the attempt's changed files. The [protected gate](./APPROVAL-AND-RECOVERY.md#protected-path-confirmation) restores denied files inside the workspace. Task completion records before/after entries with `taskId` and `briefHash` through `captureTaskReviewChanges()` (`src/engine/orchestrator/evidence/review-capture.ts`).
 6. Runs validation in the run workspace: typecheck, then lint, then test (`wctx.validator.runValidation()`, built by `createValidator()` in `src/engine/orchestrator/validation/run.ts`). The pipeline stops at the first failure attributable to the task. A stage already red at baseline continues, so later stages get a verdict.
-7. On pass: transitions to `VALIDATION_PASS`, records evidence, runs drift chain analysis
+7. On pass: transitions to `VALIDATION_PASS` and records evidence
 8. On fail: retries once with the error message, then consults the planner for one typed answer — guidance, a rewritten or split brief, a check re-run, or one question for you — and a spent bound halts for recovery
 
 ---

@@ -26,7 +26,7 @@ import { planConfirmations } from './confirm.js';
 
 function makeInput(overrides: Partial<GateChangedFilesInput> = {}): GateChangedFilesInput {
   const { bus } = makeBusRecorder();
-  const task = makeTask({ file: 'src/foo.ts' });
+  const task = makeTask({ suggestedFiles: ['src/foo.ts'] });
   const projectDir = createTempDir('splitbrief-test');
   dirs.push(projectDir);
   return {
@@ -51,7 +51,7 @@ describe('gateChangedFiles', () => {
   it('normalizes unsorted duplicate changed files and allows each write', async () => {
     const input = makeInput({
       changedFiles: ['src/z.ts', 'src/a.ts', 'src/z.ts'],
-      config: makeApprovalConfig({ enabled: true }),
+      config: makeApprovalConfig(),
     });
 
     const result = await gateChangedFiles(input);
@@ -64,7 +64,7 @@ describe('gateChangedFiles', () => {
     const asked: string[] = [];
     const input = makeInput({
       changedFiles: ['package.json', '.env', 'go.mod'],
-      config: makeApprovalConfig({ enabled: true }),
+      config: makeApprovalConfig(),
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
         onComplete: () => {},
@@ -86,7 +86,7 @@ describe('gateChangedFiles', () => {
   it('returns the first rejected file and action when a later write is denied', async () => {
     const input = makeInput({
       changedFiles: ['package.json', '.env', 'package.json'],
-      config: makeApprovalConfig({ enabled: true }),
+      config: makeApprovalConfig(),
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
         onComplete: () => {},
@@ -112,7 +112,7 @@ describe('gateChangedFiles', () => {
     const reasons = ['config plane reason', 'package manifest reason'];
     const input = makeInput({
       changedFiles: ['package.json', '.splitbrief/config.yaml', 'package.json'],
-      config: makeApprovalConfig({ enabled: true }),
+      config: makeApprovalConfig(),
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
         onComplete: () => {},
@@ -153,9 +153,9 @@ describe('gateChangedFiles', () => {
     const requests: TieredApprovalRequest[] = [];
     const result = await gateChangedFiles(
       makeInput({
-        task: makeTask({ file: 'src/my app.ts' }),
+        task: makeTask({ suggestedFiles: ['src/my app.ts'] }),
         changedFiles: ['src/my app.ts'],
-        config: makeApprovalConfig({ enabled: true }),
+        config: makeApprovalConfig(),
         callbacks: recordingCallbacks(requests),
       }),
     );
@@ -170,7 +170,7 @@ describe('gateChangedFiles', () => {
       makeInput({
         changedFiles: ['src/shared/utils.ts'],
         dependsOnFiles: ['./src/shared/utils.ts'],
-        config: makeApprovalConfig({ enabled: true }),
+        config: makeApprovalConfig(),
         callbacks: recordingCallbacks(requests),
       }),
     );
@@ -195,7 +195,7 @@ describe('protected writes an approved plan lists', () => {
       },
     });
     const planned = makeTask({
-      file: 'src/foo.ts',
+      suggestedFiles: ['src/foo.ts'],
       protectedOperations: [{ path: 'package.json', operation: 'write' }],
     });
     persistApprovalEvidence({
@@ -208,7 +208,7 @@ describe('protected writes an approved plan lists', () => {
 
     expect(asked).toEqual(['write .env']);
     expect(result.allow).toBe(false);
-    if (result.allow) return;
+    if (result.allow || result.cancelled) return;
     expect(result.deniedFiles).toEqual(['.env']);
   });
 

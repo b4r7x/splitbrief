@@ -18,6 +18,7 @@ import { routerStore } from '../stores/navigation/router.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle.js';
 import { stopStore } from '../stores/workflow/stop.js';
 import { composerLiveStore } from '../stores/ui/composer-live.js';
+import { createDraftDocument } from '../core/composer/document.js';
 import { overlayStore } from '../stores/ui/overlay.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
 import { completionStore } from '../stores/ui/completion.js';
@@ -474,7 +475,7 @@ describe('useAppKeys: ESC stop ladder', () => {
   it('esc opens the menu without touching the run or draft', async () => {
     const abort = vi.fn();
     handlers.createAbortHandlerScope()(abort);
-    composerLiveStore.setEmpty(false);
+    composerLiveStore.setDraft(createDraftDocument('draft'));
     const exit = vi.fn();
     const ui = renderFeature(<Harness exit={exit} />);
     await tick();
@@ -537,7 +538,7 @@ describe('useAppKeys: ESC stop ladder', () => {
 
   it('parked Escape returns home even with an unsent draft', async () => {
     stopStore.park('mid-brief', null, null);
-    composerLiveStore.setEmpty(false);
+    composerLiveStore.setDraft(createDraftDocument('draft'));
     const exit = vi.fn();
     const ui = renderFeature(<Harness exit={exit} />);
     await tick();
@@ -650,7 +651,7 @@ describe('useAppKeys: ESC stop ladder', () => {
       ref: { projectDir: '/tmp/session-preparation-keys', sessionId: 'resume-from-run' },
       status: {
         kind: 'open',
-        stop: { kind: 'interrupted' },
+        stop: { kind: 'stopped', on: { kind: 'interrupted' } },
         resumeAt: { kind: 'planner', call: 'tasks' },
       },
     });

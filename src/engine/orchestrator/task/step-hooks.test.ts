@@ -38,7 +38,7 @@ describe('runSingleTask — pre_validation hooks', () => {
     const task = makeTask({
       id: 'T001',
       action: 'create',
-      file: 'src/hello.ts',
+      suggestedFiles: ['src/hello.ts'],
       scope: { inBounds: ['src/hello.ts'] },
     });
     const state = implementingState([task]);

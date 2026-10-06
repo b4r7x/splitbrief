@@ -78,7 +78,7 @@ describe('splitbrief start --plain', { timeout: 90_000 }, () => {
     const task = makeTask({
       id: 'T001',
       action: 'create',
-      file: TARGET_FILE,
+      suggestedFiles: [TARGET_FILE],
       title: 'Plain output backed module',
       description: 'Create a module so the plain sink has a task to report.',
       implementationSteps: ['Create src/loop.ts with the marker export.'],
@@ -197,7 +197,7 @@ describe('splitbrief start --plain', { timeout: 90_000 }, () => {
       }),
     ).rejects.toMatchObject({
       exitCode: 1,
-      message: expect.stringContaining('Recovery required'),
+      message: expect.stringContaining('Needs you ('),
     });
 
     const stdout = chunks.join('');

@@ -1,6 +1,5 @@
 import { clamp } from '../../utils/math.js';
 import { createStore, storeBase } from '../create-store.js';
-import { focusStore } from '../ui/focus.js';
 
 export type ReviewSource =
   | Readonly<{ kind: 'file'; filePath: string }>
@@ -105,20 +104,8 @@ export function getVisibleBriefWindow(s: ReviewState = store.get()): VisibleBrie
   };
 }
 
-export function isBriefIndexVisible(index: number, s: ReviewState = store.get()): boolean {
-  const { start, count } = getVisibleBriefWindow(s);
-  return count > 0 && index >= start && index < start + count;
-}
-
-function reconcileBriefFocus() {
-  const focus = focusStore.get();
-  if (focus === null || focus.region !== 'brief') return;
-  if (!isBriefIndexVisible(focus.index)) focusStore.clear();
-}
-
 function setScrollOffset(offset: number) {
   store.set((s) => (s.scrollOffset === offset ? s : { ...s, scrollOffset: offset }));
-  reconcileBriefFocus();
 }
 
 function setRenderedLineCount(count: number) {
@@ -146,7 +133,6 @@ function setLoadError(loadError: string | null) {
 }
 
 function clearReview() {
-  focusStore.clear();
   store.set((s) => (s.source === null ? s : initial));
 }
 

@@ -68,6 +68,23 @@ type AuthTask = { userId: string };
 - brief-quality.json records a passing gate
 `;
 
+/** The brief `REAL_TASKS_MD` writes, as the saved state holds it. */
+export const REAL_TASKS = [
+  makeTask({
+    id: 'T001',
+    title: 'Add auth',
+    action: 'create',
+    suggestedFiles: ['src/auth.ts'],
+    description: 'Add JWT-based authentication.',
+    tests: ['passes tsc'],
+    typeDefs: 'type AuthTask = { userId: string };',
+    implementationSteps: ['Implement the authentication module.'],
+    scope: { inBounds: ['src/auth.ts'], outOfBounds: ['unrelated UI or persistence changes'] },
+    escalation: ['Stop if existing auth behavior is ambiguous.'],
+    evidence: ['brief-quality.json records a passing gate'],
+  }),
+];
+
 export function setupProject(dirs: string[]): { projectDir: string; sessionId: string } {
   const projectDir = createTempDir('planning-test');
   dirs.push(projectDir);

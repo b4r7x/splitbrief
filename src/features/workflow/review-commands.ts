@@ -2,8 +2,8 @@ import type { ApprovalReviewResult } from '../../core/approval/types.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { assertNever } from '../../utils/type-guards.js';
 
-// Both review phases take the same four keys and the same typed commands.
-export const REVIEW_HINT = `y approve${SOFT_SEP}c comment${SOFT_SEP}q end run${SOFT_SEP}e edit`;
+// Both review phases take the same four typed commands; the composer holds the keys, so no letter acts.
+export const REVIEW_HINT = `approve${SOFT_SEP}comment <text>${SOFT_SEP}end-run${SOFT_SEP}edit`;
 // Named with the same words the legend just taught. Every one of them parses, so the recovery
 // message cannot send a user who read `q end run` off to type a word the legend never showed.
 export const REVIEW_UNKNOWN_COMMAND_MESSAGE =

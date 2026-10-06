@@ -15,6 +15,7 @@ import { routerStore } from '../../../src/stores/navigation/router.js';
 import { lifecycleStore } from '../../../src/stores/workflow/lifecycle.js';
 import { stopStore } from '../../../src/stores/workflow/stop.js';
 import { composerLiveStore } from '../../../src/stores/ui/composer-live.js';
+import { createDraftDocument } from '../../../src/core/composer/document.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
 import { overlayStore } from '../../../src/stores/ui/overlay.js';
 import { cancelEscapeAction } from '../../../src/lib/terminal/escape-debounce.js';
@@ -94,7 +95,7 @@ describe('ESC through the real FilteredStdin pipeline (live workflow)', () => {
   });
 
   it('opens the menu while preserving a draft', async () => {
-    composerLiveStore.setEmpty(false);
+    composerLiveStore.setDraft(createDraftDocument('draft'));
     const harness = renderThroughFilteredStdin(<WorkflowApp />);
     await tick(30);
     harness.pressBytes(ESC);

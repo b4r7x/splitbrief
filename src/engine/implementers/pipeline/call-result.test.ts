@@ -89,7 +89,7 @@ describe('createImplementerBase — invoke and runner-call projection', () => {
       makeBaseConfig({ extractsCode: false, backendKind: 'cli', invoke }),
     );
     const config = makeConfig({ implementer: { kind: 'cli', tool: 'codex', model: 'gpt-5' } });
-    const task = makeTask({ id: 'T001', file: 'src/context.ts', action: 'create' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/context.ts'], action: 'create' });
 
     await implementer.implement({
       task,
@@ -132,7 +132,7 @@ describe('createImplementerBase — invoke and runner-call projection', () => {
       }),
     );
     const implementer = createImplementerBase(makeBaseConfig({ invoke }));
-    const task = makeTask({ id: 'T001', file: 'src/truncated.ts', action: 'create' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/truncated.ts'], action: 'create' });
 
     const result = await implementer.implement({
       task,

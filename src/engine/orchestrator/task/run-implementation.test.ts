@@ -147,7 +147,7 @@ async function runIsolatedDirectScenario(approval: 'approved' | 'rejected'): Pro
   const outsideSentinel = join(outsideDir, 'child-can-reach-host');
   const task = makeTask({
     id: approval === 'approved' ? 'T029' : 'T030',
-    file: '.env.local',
+    suggestedFiles: ['.env.local'],
     action: 'create',
   });
   const state = makeImplState([task]);
@@ -193,7 +193,6 @@ async function runIsolatedDirectScenario(approval: 'approved' | 'rejected'): Pro
   });
   const config = makeNoValidationConfig({
     approval: {
-      enabled: true,
       feedRejectionsToPlanner: true,
     },
   });
@@ -255,7 +254,7 @@ describe('runImplementation configured custom contracts', () => {
       const { projectDir } = setupProject(`extracted-protected-${approval}`);
       const sessionId = 'sess-extracted-protected';
       ensureSessionDir(projectDir, sessionId);
-      const task = makeTask({ file: '.env.local', action: 'create' });
+      const task = makeTask({ suggestedFiles: ['.env.local'], action: 'create' });
       const onTieredApproval = vi
         .fn()
         .mockResolvedValue(
@@ -267,7 +266,7 @@ describe('runImplementation configured custom contracts', () => {
         projectDir,
         sessionId,
         config: makeNoValidationConfig({
-          approval: { enabled: true, feedRejectionsToPlanner: false },
+          approval: { feedRejectionsToPlanner: false },
         }),
         callbacks: makeCallbacks({ onTieredApproval }).callbacks,
         implementer: createImplementerBase(
@@ -326,7 +325,7 @@ describe('runImplementation configured custom contracts', () => {
     const original = 'export const value = 1;\n';
     mkdirSync(join(projectDir, 'src'), { recursive: true });
     writeFileSync(join(projectDir, file), original);
-    const task = makeTask({ file, action: 'modify' });
+    const task = makeTask({ suggestedFiles: [file], action: 'modify' });
     const receivedDirs: string[] = [];
     const wctx = makeWctx({
       projectDir,
@@ -367,7 +366,7 @@ describe('runImplementation configured custom contracts', () => {
   it('discards output-child writes while applying parsed output to the run workspace without stage env or session leakage', async () => {
     const { projectDir, stateDir } = setupProject('t028-output-workflow');
     ensureSessionDir(projectDir, 't028-session-must-not-reach-child');
-    const task = makeTask({ id: 'T028', file: 'src/output.ts', action: 'create' });
+    const task = makeTask({ id: 'T028', suggestedFiles: ['src/output.ts'], action: 'create' });
     const state = makeImplState([task]);
     const childStages: string[] = [];
     const runtime = runtimeFor({
@@ -455,7 +454,7 @@ describe('runImplementation workspace continuation', () => {
   ): Promise<boolean | undefined> {
     const { projectDir } = setupProject('reseed');
     ensureSessionDir(projectDir, 'reseed-session');
-    const task = makeTask({ id: 'T040', file: 'src/reseed.ts', action: 'create' });
+    const task = makeTask({ id: 'T040', suggestedFiles: ['src/reseed.ts'], action: 'create' });
     const state = makeImplState([task], stateOverrides);
     const resumeArgs: Array<boolean | undefined> = [];
     const sharedIsolation = makeCopyingIsolation({ projectDir, sessionId: 'reseed-session' });
@@ -520,7 +519,7 @@ describe('runImplementation seat trouble', () => {
     const { projectDir } = setupProject('seat-retry');
     const sessionId = 'seat-retry-session';
     ensureSessionDir(projectDir, sessionId);
-    const task = makeTask({ id: 'T060', file: 'src/retry.ts', action: 'create' });
+    const task = makeTask({ id: 'T060', suggestedFiles: ['src/retry.ts'], action: 'create' });
     const state = makeImplState([task]);
     const firstUsage = { inputTokens: 7, outputTokens: 3 };
     const secondUsage = { inputTokens: 2, outputTokens: 1 };
@@ -604,7 +603,7 @@ describe('runImplementation correction at a stop', () => {
     const { projectDir } = setupProject('stop-correction-usage');
     const sessionId = 'stop-correction-usage-session';
     ensureSessionDir(projectDir, sessionId);
-    const task = makeTask({ id: 'T061', file: 'src/retry.ts', action: 'create' });
+    const task = makeTask({ id: 'T061', suggestedFiles: ['src/retry.ts'], action: 'create' });
     const discardedUsage = { inputTokens: 7, outputTokens: 3 };
     const holder: { abort: { call: (() => void) | null } } = { abort: { call: null } };
     const implement = vi
@@ -665,7 +664,7 @@ describe('runImplementation correction at a stop', () => {
     const { projectDir } = setupProject('stop-correction-abort');
     const sessionId = 'stop-correction-abort-session';
     ensureSessionDir(projectDir, sessionId);
-    const task = makeTask({ id: 'T062', file: 'src/retry.ts', action: 'create' });
+    const task = makeTask({ id: 'T062', suggestedFiles: ['src/retry.ts'], action: 'create' });
     const run = new AbortController();
     const holder: { abort: { call: (() => void) | null } } = { abort: { call: null } };
     const implement = vi
@@ -766,7 +765,7 @@ describe('runImplementation continuation note', () => {
   it('names the declared files that changed since the brief started', async () => {
     const { projectDir } = setupProject('reseed-note');
     ensureSessionDir(projectDir, 'reseed-note-session');
-    const task = makeTask({ id: 'T041', file: 'src/reseed.ts', action: 'create' });
+    const task = makeTask({ id: 'T041', suggestedFiles: ['src/reseed.ts'], action: 'create' });
     const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
     // Written after the task-start snapshot and before the call, as a reset brief finds it.
     mkdirSync(join(projectDir, 'src'), { recursive: true });
@@ -821,7 +820,7 @@ describe('runImplementation continuation note', () => {
     const { projectDir } = setupProject('reseed-note-earlier');
     const sessionId = 'reseed-note-earlier-session';
     ensureSessionDir(projectDir, sessionId);
-    const task = makeTask({ id: 'T042', file: 'src/reseed.ts', action: 'modify' });
+    const task = makeTask({ id: 'T042', suggestedFiles: ['src/reseed.ts'], action: 'modify' });
     mkdirSync(join(projectDir, 'src'), { recursive: true });
     writeFileSync(join(projectDir, 'src/reseed.ts'), 'export const reseed = 1;\n');
     const taskStartSnapshot = await taskStartBaseline(projectDir);
@@ -842,7 +841,7 @@ describe('runImplementation continuation note', () => {
     const { projectDir } = setupProject('reseed-note-attempt');
     const sessionId = 'reseed-note-attempt-session';
     ensureSessionDir(projectDir, sessionId);
-    const task = makeTask({ id: 'T043', file: 'src/reseed.ts', action: 'create' });
+    const task = makeTask({ id: 'T043', suggestedFiles: ['src/reseed.ts'], action: 'create' });
     const taskStartSnapshot = await taskStartBaseline(projectDir);
     mkdirSync(join(projectDir, 'src'), { recursive: true });
     writeFileSync(join(projectDir, 'src/reseed.ts'), 'export const reseed = 1;\n');
@@ -869,7 +868,12 @@ describe('runImplementation plan context', () => {
     const { projectDir } = setupProject('plan-context');
     const sessionId = 'plan-context-session';
     ensureSessionDir(projectDir, sessionId);
-    const task = makeTask({ id: 'T070', file: 'src/plan.ts', action: 'create', criteria: ['C1'] });
+    const task = makeTask({
+      id: 'T070',
+      suggestedFiles: ['src/plan.ts'],
+      action: 'create',
+      criteria: ['C1'],
+    });
     const prompts: string[] = [];
     const invoke = vi.fn().mockImplementation(async (call: { prompt: string }) => {
       prompts.push(call.prompt);
@@ -931,7 +935,7 @@ describe('runImplementation live preview', () => {
   ): Promise<{ sink: StreamingSink; narration: string }> {
     const { projectDir } = setupProject('live-preview');
     ensureSessionDir(projectDir, 'live-preview-session');
-    const task = makeTask({ id: 'T050', file: 'src/preview.ts', action: 'modify' });
+    const task = makeTask({ id: 'T050', suggestedFiles: ['src/preview.ts'], action: 'modify' });
     const { bus, events } = makeBusRecorder();
     const isolation: RunIsolation = {
       open: async () => ({ kind: 'worktree', projectDir, head: null, keptFiles: [] }),
@@ -1024,7 +1028,7 @@ describe('runImplementation fix tasks', () => {
     ];
     const task = makeTask({
       id: 'T002',
-      file: 'src/shared/widget.ts',
+      suggestedFiles: ['src/shared/widget.ts'],
       action: 'modify',
       description: fixBriefDescription(
         'Rethrow the widget error instead of swallowing it.',
@@ -1075,7 +1079,7 @@ describe('runImplementation corrections against the persisted head', () => {
     const { projectDir } = setupProject('seed-correction-head');
     const sessionId = 'seed-correction-head-session';
     ensureSessionDir(projectDir, sessionId);
-    const task = makeTask({ id: 'T070', file: 'src/seeded.ts', action: 'create' });
+    const task = makeTask({ id: 'T070', suggestedFiles: ['src/seeded.ts'], action: 'create' });
     const stale = makeImplState([task]);
     saveState({ projectDir, sessionId }, stale);
     transitionAndSave({ projectDir, sessionId }, stale, {
@@ -1114,7 +1118,7 @@ describe('runImplementation corrections against the persisted head', () => {
     const { projectDir } = setupProject('queued-correction-once');
     const sessionId = 'queued-correction-once-session';
     ensureSessionDir(projectDir, sessionId);
-    const task = makeTask({ id: 'T071', file: 'src/queued.ts', action: 'create' });
+    const task = makeTask({ id: 'T071', suggestedFiles: ['src/queued.ts'], action: 'create' });
     const initial = makeImplState([task]);
     saveState({ projectDir, sessionId }, initial);
     const { bus } = makeBusRecorder();
@@ -1148,7 +1152,7 @@ describe('runImplementation corrections against the persisted head', () => {
     const { projectDir } = setupProject('queued-correction-stopped');
     const sessionId = 'queued-correction-stopped-session';
     ensureSessionDir(projectDir, sessionId);
-    const task = makeTask({ id: 'T073', file: 'src/stopped.ts', action: 'create' });
+    const task = makeTask({ id: 'T073', suggestedFiles: ['src/stopped.ts'], action: 'create' });
     const initial = makeImplState([task]);
     saveState({ projectDir, sessionId }, initial);
     const { bus } = makeBusRecorder();
@@ -1186,7 +1190,7 @@ describe('runImplementation corrections against the persisted head', () => {
     const { projectDir } = setupProject('queued-correction-cleared');
     const sessionId = 'queued-correction-cleared-session';
     ensureSessionDir(projectDir, sessionId);
-    const task = makeTask({ id: 'T072', file: 'src/cleared.ts', action: 'create' });
+    const task = makeTask({ id: 'T072', suggestedFiles: ['src/cleared.ts'], action: 'create' });
     const initial = makeImplState([task]);
     saveState({ projectDir, sessionId }, initial);
     const { bus } = makeBusRecorder();

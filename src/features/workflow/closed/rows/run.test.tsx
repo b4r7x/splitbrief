@@ -52,7 +52,7 @@ const priced = makeSummary({
   mode: 'standard',
   totalTasks: 3,
   completedByLocal: 3,
-  driftSummary: { passed: true, score: 1, errorCount: 0, warningCount: 0 },
+  driftSummary: { passed: true, errorCount: 0, warningCount: 0 },
   tokenUsage: makeUsage({
     plannerInput: 31_200,
     implementerInput: 204_500,

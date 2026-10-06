@@ -49,7 +49,7 @@ A typical run, step by step:
 5. User reviews the plan on one plan card: approve, request changes, edit `plan.json`, or end the run. Approving also confirms the protected writes the plan lists
 6. For each task, the implementer writes in the run workspace. SPLITBRIEF gates changed files and validates there (typecheck → lint → test).
 7. If validation fails: the implementer retries once, then the planner is consulted for one typed answer — guidance, a rewritten or split brief, a re-run of the checks, or one question for the user
-8. If the ladder cannot go on (a spent bound, a failed consult call, a runner halt): enter recovery — for a spent bound the user can continue with a note, skip the task or end the run; other halts offer retry same worker, route to a bigger worker, skip, pause or end the run
+8. If the ladder cannot go on (a spent bound, a failed consult call, a runner halt): enter recovery — for a spent bound the user can continue with a note, skip the task or end the run; other halts offer retry same worker, switch the seat, skip or end the run. Each halt shows as *Needs you* (a decision only you can make) or *Seat down* (the seat cannot run)
 9. The review seat reviews the final result against the briefs and the request — the planner, unless a `reviewer` is configured
 10. The summary is written to disk. A passing workspace review makes the result [ready to apply](./WORKFLOW.md#apply).
 
@@ -144,7 +144,7 @@ If validation fails, the implementer retries once with the error message. Then S
 - **Verify** — no implementer call: the validation pipeline and the named checks run again, and a clean run completes the task
 - **Ask-user** — the one question the ladder asks you, with a default; the answer continues as guidance
 
-The planner never writes the implementation itself, and each task's lineage is bounded (2 consults, 8 attempts; 10 planner calls per run). If the ladder cannot go on (a spent bound, a failed consult call, a runner halt), the recovery system takes over: for a spent bound the user can continue with a note to grant the extra allowance, skip the task or end the run; other halts offer retry same worker, route to a bigger worker, skip, pause or end the run.
+The planner never writes the implementation itself, and each task's lineage is bounded (2 consults, 8 attempts; 10 planner calls per run). If the ladder cannot go on (a spent bound, a failed consult call, a runner halt), the recovery system takes over: for a spent bound the user can continue with a note to grant the extra allowance, skip the task or end the run; other halts offer retry same worker, switch the seat, skip or end the run. Each halt shows as *Needs you* (a decision only you can make) or *Seat down* (the seat cannot run).
 
 ---
 
@@ -153,7 +153,7 @@ The planner never writes the implementation itself, and each task's lineage is b
 The workflow pauses at two kinds of point for human review:
 
 - **Plan card** — After the plan passes its checks, before any code is written. Approve, request changes (the planner revises the plan), edit `plan.json` (re-checked before it is applied), or end the run. Approving confirms the protected writes the plan lists. `workflow.approve: none` skips the card.
-- **Protected-path confirmation** — During implementation, each written path is classified as `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, `sensitive_change`, or `package_change`. A write to a protected path (`destructive`, `sensitive_change`, `package_change`) asks, even under `--yolo`, once per path per run; no other write asks.
+- **Protected-path confirmation** — During implementation, each written path is classified as `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, `sensitive_change`, or `package_change`. A write to a protected path (`destructive`, `sensitive_change`, `package_change`) asks once per path per run; no other write asks.
 
 ---
 

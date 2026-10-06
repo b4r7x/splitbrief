@@ -5,6 +5,7 @@ import type { ActionClass, Phase } from '../../../core/schemas/enums.js';
 import type { ApprovalPromptState } from '../../../stores/approval-prompt/prompt.js';
 import { PLAN_JSON_FILE } from '../../../core/paths.js';
 import { wrapHard } from '../../../utils/wrap.js';
+import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { countNoun } from '../../../utils/pluralize.js';
 import { REVIEW_DECORATION_ROWS } from '../layout/rect.js';
 import {
@@ -45,9 +46,10 @@ export function formatKeyHints(hints: ReadonlyArray<KeyHint>): string {
 export const DENY_HINT: KeyHint = { key: 'esc', verb: 'deny' };
 export const CONFIRM_HINT: KeyHint = { key: '⏎', verb: 'confirm' };
 
-// One selection grammar for both gate panels: the rows move under `↑↓` and settle on `⏎`, and the
-// letters stay live as accelerators. Only one gate panel is ever on screen, so this legend is the
-// single place either of them teaches the keys.
+// One selection grammar for both gate panels: the rows move under `↑↓` and settle on `⏎`. A panel
+// that holds the keyboard keeps its letters live as accelerators; the plan card leaves the keyboard
+// to the composer, where a letter is text, so its rows carry none. Only one gate panel is ever on
+// screen, so this legend is the single place either of them teaches the keys.
 export const SELECT_HINT: KeyHint = { key: '↑↓', verb: 'select' };
 export const CHOOSE_HINTS = formatKeyHints([SELECT_HINT, { key: '⏎', verb: 'confirm' }, DENY_HINT]);
 export const CONFIRM_REASON_HINTS = formatKeyHints([CONFIRM_HINT, DENY_HINT]);
@@ -78,22 +80,27 @@ export function reviewArtifactForPhase(phase: Phase): ReviewArtifact | null {
 
 export type ReviewDocumentCommand = 'approve' | 'comment' | 'edit-file' | 'end-run';
 
-export interface ReviewDocumentRow extends ApprovalOption {
+export interface ReviewDocumentRow {
+  label: string;
   command: ReviewDocumentCommand;
 }
 
-// Approving releases the build, and the row says so: that is what `y` does to the run. The card
-// shows plan.md, which is rendered from plan.json, so Edit opens plan.json and the engine checks
-// and compiles it again.
+// Approving releases the build, and the row says so: that is what approving does to the run. The
+// card shows plan.md, which is rendered from plan.json, so Edit opens plan.json and the engine
+// checks and compiles it again.
 export function reviewDocumentOptions(artifact: ReviewArtifact): ReadonlyArray<ReviewDocumentRow> {
   return [
-    { key: 'y', label: `Approve ${artifact} and start the build`, command: 'approve' },
-    { key: 'c', label: 'Request changes (type what to change)', command: 'comment' },
-    { key: 'e', label: `Edit ${PLAN_JSON_FILE}`, command: 'edit-file' },
+    { label: `Approve ${artifact} and start the build`, command: 'approve' },
+    { label: 'Request changes (type what to change)', command: 'comment' },
+    { label: `Edit ${PLAN_JSON_FILE}`, command: 'edit-file' },
     // A document gate opens before any brief of its plan has run, so the row promises no kept
     // changes: it says what the stop menu says at the same gate.
-    { key: 'q', label: 'End run (close this run)', command: 'end-run' },
+    { label: 'End run (close this run)', command: 'end-run' },
   ];
+}
+
+export function reviewDocumentRowLines(row: ReviewDocumentRow, width: number): string[] {
+  return wrapHard(row.label, Math.max(MIN_TEXT_WIDTH, width - MARK_SLOT_CELLS)).split('\n');
 }
 
 /** The confirms line opens on the key column, under the cursor gutter of the rows below it. */
@@ -120,8 +127,7 @@ function reviewConfirmsText(
 
 export const REVIEW_DOCUMENT_HINTS = formatKeyHints([SELECT_HINT, { key: '⏎', verb: 'confirm' }]);
 
-// While a comment is being typed the letters are text, so the panel stops advertising them and
-// names the two keys that are still live.
+// While a comment is being typed the rows take no keys, so the panel names the two that are live.
 export const REVIEW_COMMENT_HINTS = formatKeyHints([
   { key: '⏎', verb: 'send' },
   { key: 'esc', verb: 'back' },
@@ -145,7 +151,7 @@ function reviewDocumentFormRows(form: ReviewDocumentForm, artifact: ReviewArtifa
   return (
     (form.framed ? BORDER_ROWS + 1 : 0) +
     (form.confirmsText === null ? 0 : form.confirmsText.split('\n').length) +
-    approvalOptionRowCount(options, width, approvalKeyColumnWidth(options)) +
+    options.reduce((rows, option) => rows + reviewDocumentRowLines(option, width).length, 0) +
     (form.legend ? wrappedRows(REVIEW_DOCUMENT_HINTS, width) : 0)
   );
 }
@@ -153,7 +159,7 @@ function reviewDocumentFormRows(form: ReviewDocumentForm, artifact: ReviewArtifa
 /**
  * The panel the plan card can afford in `budgetRows` (`getReviewPanelBudget`): the first form that
  * leaves the plan its rows. The row that says least goes first: the border and its blank, then the
- * legend (every option carries its own key), then the list of what approving confirms, which
+ * legend (every option names what it does), then the list of what approving confirms, which
  * falls back to its count. Past that the options stay, and the body yields the plan. The border
  * and the legend are decoration, so they also leave the plan REVIEW_DECORATION_ROWS.
  */

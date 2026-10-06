@@ -6,6 +6,7 @@ const underCoverage = process.env.SPLITBRIEF_COVERAGE_DIR !== undefined;
 // Run isolation writes its worktrees under the user state directory; every
 // suite gets a throwaway one so a test run never touches the operator's.
 const stateHomeSetup = './testing/helpers/state-home.ts';
+const waitBudgetSetup = './testing/helpers/wait-budget.ts';
 
 const workflowScreenIntegration = [
   'testing/integration/ui/workflow-key-ownership.test.tsx',
@@ -54,7 +55,7 @@ export default defineConfig({
             'evals/*.test.ts',
           ],
           exclude: ['node_modules', 'dist', ...workflowScreenIntegration],
-          setupFiles: [stateHomeSetup],
+          setupFiles: [stateHomeSetup, waitBudgetSetup],
           environment: 'node',
           globals: false,
           // Coverage instrumentation + fork contention regularly blows past a
@@ -71,7 +72,7 @@ export default defineConfig({
           name: 'workflow-screen',
           include: [...workflowScreenIntegration],
           exclude: ['node_modules', 'dist'],
-          setupFiles: [stateHomeSetup],
+          setupFiles: [stateHomeSetup, waitBudgetSetup],
           environment: 'node',
           globals: false,
           testTimeout: underCoverage ? 60_000 : 20_000,

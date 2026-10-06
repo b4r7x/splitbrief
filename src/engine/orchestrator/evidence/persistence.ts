@@ -211,8 +211,8 @@ export async function raiseApiApplyRecovery(opts: {
           : `The partial writes stay in the run workspace at ${workspacePath}; the checkout is unchanged.`,
       ],
       facts: { apiApplyIncomplete: true, workspacePath },
-      availableActions: ['retry-same-worker', 'pause-run', 'end-run'],
-      recommendedAction: 'pause-run',
+      availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
+      recommendedAction: 'retry-same-worker',
       createdAt: nowIso(),
     }),
   );

@@ -108,7 +108,7 @@ describe('baseline-relative acceptance', { timeout: 90_000 }, () => {
     const task = makeTask({
       id: 'T001',
       action: 'create',
-      file: targetFile,
+      suggestedFiles: [targetFile],
       title: 'Create a module that leaves the broken file alone',
       description:
         'Create a module in a project whose configured validation command is red before the run.',

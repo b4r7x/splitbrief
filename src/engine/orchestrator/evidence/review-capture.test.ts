@@ -32,8 +32,8 @@ describe('captureTaskReviewChanges', () => {
     timeout: 60_000,
   }, async () => {
     const { projectDir, sessionId } = setupTaskProject();
-    const first = makeTask({ id: 'T001', action: 'create', file: SHARED });
-    const second = makeTask({ id: 'T002', action: 'modify', file: SHARED });
+    const first = makeTask({ id: 'T001', action: 'create', suggestedFiles: [SHARED] });
+    const second = makeTask({ id: 'T002', action: 'modify', suggestedFiles: [SHARED] });
     const implementer = makeImplementer({
       capabilities: { writesFiles: 'direct' },
       implement: vi
@@ -102,8 +102,7 @@ describe('captureTaskReviewChanges', () => {
     const task = makeTask({
       id: 'T001',
       action: 'create',
-      file: 'src/a.ts',
-      files: ['src/a.ts', 'src/b.ts'],
+      suggestedFiles: ['src/a.ts', 'src/b.ts'],
     });
     const write = (file: string) =>
       vi.fn().mockImplementation(async ({ projectDir: dir }: ImplementerOptions) => {
@@ -162,7 +161,7 @@ describe('captureTaskReviewChanges', () => {
   it('judges later edits against the run workspace, not the checkout', async () => {
     const { projectDir, sessionId } = setupTaskProject();
     const workspaceDir = setupTaskProject().projectDir;
-    const task = makeTask({ id: 'T001', action: 'create', file: SHARED });
+    const task = makeTask({ id: 'T001', action: 'create', suggestedFiles: [SHARED] });
     const after = 'export const a = 1;\n';
     for (const dir of [projectDir, workspaceDir]) mkdirSync(join(dir, 'src'), { recursive: true });
     writeFileSync(join(workspaceDir, SHARED), after);
@@ -215,7 +214,7 @@ describe('captureTaskReviewChanges from an entry snapshot (no git)', () => {
     writeFileSync(join(dir, 'edit.txt'), 'after\n');
     rmSync(join(dir, 'gone.txt'));
     chmodSync(join(dir, 'run.sh'), 0o755);
-    const task = makeTask({ id: 'T001', action: 'modify', file: 'edit.txt' });
+    const task = makeTask({ id: 'T001', action: 'modify', suggestedFiles: ['edit.txt'] });
 
     await captureTaskReviewChanges({ ref, workspaceDir: dir, task, taskStartSnapshot });
 

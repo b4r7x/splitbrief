@@ -217,7 +217,7 @@ async function runRetryStepAttempt(
     dependsOnFiles: ctx.dependsOnFiles,
     onApproved: (decision) => persistRetryApprovalEvidence(ctx, state, task, decision),
   });
-  if (gate.outcome === 'aborted') {
+  if (gate.outcome === 'aborted' || gate.outcome === 'cancelled') {
     return {
       state,
       task,

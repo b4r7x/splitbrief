@@ -84,7 +84,7 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
     const task = makeTask({
       id: 'T001',
       action: 'create',
-      file: targetFile,
+      suggestedFiles: [targetFile],
       title: 'Create retry-validated module',
       description: 'Create a module that satisfies the project validation script.',
       implementationSteps: ['Create src/loop.ts with the retry marker export.'],
@@ -211,7 +211,7 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
     const task = makeTask({
       id: 'T001',
       action: 'create',
-      file: targetFile,
+      suggestedFiles: [targetFile],
       title: 'Create consult-validated module',
       description: 'Create a module that needs a planner consult before validation passes.',
       implementationSteps: ['Create src/loop.ts with the retry marker export.'],

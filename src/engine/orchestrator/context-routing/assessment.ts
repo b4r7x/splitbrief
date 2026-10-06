@@ -1,4 +1,3 @@
-import { taskFiles } from '../../../core/schemas/task.js';
 import { selectBuildOutputContract } from '../../implementers/file-bundle.js';
 import { apiBuildTargets, estimateBundleOutputReserve } from '../../providers/api-budget.js';
 import type { ResolvedImplementerProfile } from '../../../core/config/accessors/implementer-profiles.js';
@@ -77,7 +76,7 @@ export function assessProfile(
   const mode =
     outputContract === 'file-bundle-v1'
       ? opts.task.currentCode ||
-        taskFiles(opts.task).some((path) => opts.task.currentCodeByFile?.[path] !== undefined)
+        opts.task.suggestedFiles.some((path) => opts.task.currentCodeByFile?.[path] !== undefined)
         ? 'whole-file'
         : 'none'
       : currentCodeContextMode(opts.task, prompt);
@@ -95,7 +94,7 @@ export function assessProfile(
   const capabilityFailure =
     requiredWriteMode === 'direct' && profile.capabilities.writesFiles !== 'direct'
       ? `Task scope requires direct file writes; profile writes via ${profile.capabilities.writesFiles}`
-      : outputContract === 'legacy-code-v1' && taskFiles(opts.task).length > 1
+      : outputContract === 'legacy-code-v1' && opts.task.suggestedFiles.length > 1
         ? 'Task requires a multi-file bundle; profile only extracts a single file'
         : undefined;
 

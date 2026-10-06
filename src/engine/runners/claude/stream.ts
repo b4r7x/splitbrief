@@ -1,8 +1,6 @@
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
-import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import { createStreamParser } from '../../streaming/parse-stream-json.js';
 import { appendMessage, reconcileFinalText } from '../../streaming/final-text.js';
-import { createQuestionAccumulator } from '../../parsers/question.js';
 import { createRunnerCallRecorder, type RunnerCallRecorder } from '../../calls/recorder.js';
 import {
   createRunnerCallCredentialRedactor,
@@ -40,7 +38,6 @@ interface StreamHandlerCallbacks {
   onOutput: (text: string) => void;
   onSessionId?: ((id: string) => void) | undefined;
   onSessionInit?: ((id: string) => void) | undefined;
-  onQuestion?: ((questions: ClarificationQuestion[]) => void) | undefined;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   credentialValues?: readonly string[] | undefined;
   context: RunnerCallContext;
@@ -75,7 +72,6 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
     activeToolUse: null,
     contentBlockTools: new Map(),
   };
-  const questionAccumulator = callbacks.onQuestion ? createQuestionAccumulator() : null;
   /** Main-loop text streamed since the last completed content block. */
   let blockText = '';
   /** Main-loop text of the open message; the terminal `result` restates it. */
@@ -99,15 +95,7 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
   });
 
   function emitAssistantOutput(text: string): void {
-    const safeText = redactCredential(text);
-    callbacks.onOutput(safeText);
-
-    if (callbacks.onQuestion && questionAccumulator) {
-      const newQuestions = questionAccumulator.addChunk(safeText);
-      if (newQuestions.length > 0) {
-        callbacks.onQuestion(newQuestions);
-      }
-    }
+    callbacks.onOutput(redactCredential(text));
   }
 
   function applyStreamText(

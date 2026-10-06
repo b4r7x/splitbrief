@@ -105,7 +105,7 @@ function shellProfile(name: string, contextLength?: number): ResolvedImplementer
 describe('routeTaskToImplementerProfile', () => {
   it('applies both files through the API profile selected by routing', async () => {
     await withTempDir('routed-bundle', async (projectDir) => {
-      const task = makeTask({ files: ['src/hello.ts', 'src/hello.test.ts'] });
+      const task = makeTask({ suggestedFiles: ['src/hello.ts', 'src/hello.test.ts'] });
       const api = profile('qwen2.5-coder:7b', 20_000);
       const decision = routeTaskToImplementerProfile({ task, context, profiles: [api] });
       expect(decision.selectedProfile).toBe(api.name);
@@ -165,7 +165,7 @@ describe('routeTaskToImplementerProfile', () => {
       isDefault: false,
     };
     const decision = routeTaskToImplementerProfile({
-      task: makeTask({ files: ['src/hello.ts', 'src/hello.test.ts'] }),
+      task: makeTask({ suggestedFiles: ['src/hello.ts', 'src/hello.test.ts'] }),
       context,
       profiles: [shell, profile('local-api', 20_000)],
     });
@@ -183,7 +183,7 @@ describe('routeTaskToImplementerProfile', () => {
 
   it('rejects API profiles whose bundle output reserve cannot fit', () => {
     const decision = routeTaskToImplementerProfile({
-      task: makeTask({ files: ['src/hello.ts', 'src/hello.test.ts'] }),
+      task: makeTask({ suggestedFiles: ['src/hello.ts', 'src/hello.test.ts'] }),
       context,
       profiles: [profile('small', 4_000), profile('large', 20_000)],
     });
@@ -194,7 +194,7 @@ describe('routeTaskToImplementerProfile', () => {
   it('keeps full API bundle contents and refuses an overflowing sibling file', () => {
     const decision = routeTaskToImplementerProfile({
       task: makeTask({
-        files: ['src/hello.ts', 'src/hello.test.ts'],
+        suggestedFiles: ['src/hello.ts', 'src/hello.test.ts'],
         currentCodeByFile: { 'src/hello.test.ts': 'export const x = 1;'.repeat(3000) },
       }),
       context,
@@ -361,7 +361,7 @@ describe('routeTaskToImplementerProfile', () => {
 
   it('rejects extracted-code profiles when task scope requires direct file writes', () => {
     const task = makeTask({
-      file: 'src/main.ts',
+      suggestedFiles: ['src/main.ts'],
       scope: { inBounds: ['src/main.ts', 'src/sidecar.ts'] },
     });
 
@@ -386,7 +386,7 @@ describe('routeTaskToImplementerProfile', () => {
 
   it('requires direct writes for an additional bare root-level target', () => {
     const task = makeTask({
-      file: 'src/main.ts',
+      suggestedFiles: ['src/main.ts'],
       scope: { inBounds: ['src/main.ts', 'package.json'] },
     });
 
@@ -402,7 +402,7 @@ describe('routeTaskToImplementerProfile', () => {
 
   it('does not treat unquoted paths with spaces as direct-write scope', () => {
     const task = makeTask({
-      file: 'src/main.ts',
+      suggestedFiles: ['src/main.ts'],
       scope: { inBounds: ['src/main.ts', 'docs/User Guide.md'] },
     });
 
@@ -418,7 +418,7 @@ describe('routeTaskToImplementerProfile', () => {
 
   it('requires direct writes for a second concrete path and for a glob scope pattern', () => {
     const secondPath = routeTaskToImplementerProfile({
-      task: makeTask({ file: 'src/main.ts', scope: { inBounds: ['src/sidecar.ts'] } }),
+      task: makeTask({ suggestedFiles: ['src/main.ts'], scope: { inBounds: ['src/sidecar.ts'] } }),
       context,
       profiles: [profile('local-api', 20_000), directProfile('agent-worker', 20_000)],
     });
@@ -426,7 +426,7 @@ describe('routeTaskToImplementerProfile', () => {
     expect(secondPath.selectedProfile).toBe('agent-worker');
 
     const globPath = routeTaskToImplementerProfile({
-      task: makeTask({ file: 'src/main.ts', scope: { inBounds: ['src/features/**'] } }),
+      task: makeTask({ suggestedFiles: ['src/main.ts'], scope: { inBounds: ['src/features/**'] } }),
       context,
       profiles: [profile('local-api', 20_000), directProfile('agent-worker', 20_000)],
     });
@@ -436,7 +436,7 @@ describe('routeTaskToImplementerProfile', () => {
 
   it('does not treat prose naming the task file itself as direct-write scope', () => {
     const task = makeTask({
-      file: 'src/main.ts',
+      suggestedFiles: ['src/main.ts'],
       scope: { inBounds: ['Modify only `src/main.ts`.'] },
     });
 
@@ -452,7 +452,7 @@ describe('routeTaskToImplementerProfile', () => {
 
   it('does not treat prose scope entries as direct-write file scope', () => {
     const task = makeTask({
-      file: 'src/main.ts',
+      suggestedFiles: ['src/main.ts'],
       scope: { inBounds: ['email validation', 'only touch helpers.ts'] },
     });
 

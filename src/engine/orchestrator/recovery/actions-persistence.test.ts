@@ -1,9 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { evidenceLedgerPath } from '../../../core/evidence/ledger-storage.js';
@@ -16,12 +14,8 @@ import { loadState, saveState } from '../../../core/state/persistence.js';
 import { createEventBus } from '../../events/bus.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
 import type { EngineEvent, EventBus } from '../../events/types.js';
-import type { RoutingDecision } from '../context-routing/types.js';
 import { applyRecoveryAction } from './actions.js';
-import {
-  buildContextOverflowRecoveryIssue,
-  buildRetryExhaustedRecoveryIssue,
-} from './builders/task.js';
+import { buildRetryExhaustedRecoveryIssue } from './builders/task.js';
 
 const createdAt = '2026-04-28T12:00:00.000Z';
 
@@ -56,106 +50,7 @@ function readSessionLog(projectDir: string, sessionId: string): string {
   return readFileSync(join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE), 'utf-8');
 }
 
-function contextOverflowRoutingDecision(taskId: Task['id']): RoutingDecision {
-  return {
-    taskId,
-    requiredWriteMode: 'extracted-code',
-    fit: 'overflow',
-    estimatedTokens: 45_000,
-    untruncatedEstimatedTokens: 48_000,
-    contextLength: 32_768,
-    currentCodeTruncated: false,
-    currentCodeContextMode: 'whole-file',
-    reason: 'No capable implementer profile can fit this task prompt',
-    rejected: [
-      {
-        profile: 'local-qwen',
-        profileWriteMode: 'extracted-code',
-        requiredWriteMode: 'extracted-code',
-        reason: 'Estimated 45000 tokens overflows 32768-token context',
-        fit: 'overflow',
-        estimatedTokens: 45_000,
-        untruncatedEstimatedTokens: 48_000,
-        contextLength: 32_768,
-        currentCodeTruncated: false,
-        currentCodeContextMode: 'whole-file',
-      },
-    ],
-  };
-}
-
 describe('applyRecoveryAction: persisted success effects', () => {
-  it('continues only a safe user-edit conflict and clears pending recovery', async () => {
-    const { projectDir, sessionId } = setupSession('continue-safe-conflict');
-    const task = makeTask({ id: 'T030', file: 'src/next.ts' });
-    const issue = makeRecoveryIssue({
-      reason: 'user-edit-conflict',
-      phase: 'implementing',
-      taskId: task.id,
-      taskTitle: task.title,
-      files: ['README.md'],
-      facts: { conflictKind: 'unrelated', safeToContinue: true },
-      availableActions: ['continue', 'pause-run', 'end-run'],
-      recommendedAction: 'continue',
-    });
-    const state = { ...implementingState([task]), pendingRecovery: issue };
-    const { bus, events } = makeBus(projectDir, sessionId);
-
-    const result = await applyRecoveryAction({
-      projectDir,
-      sessionId,
-      state,
-      action: 'continue',
-      bus,
-      config: makeConfig(),
-    });
-
-    expect(result).toMatchObject({ ok: true, status: 'continued' });
-    expect(result.state.pendingRecovery).toBeUndefined();
-    expect(loadState({ projectDir, sessionId })?.pendingRecovery).toBeUndefined();
-    expect(events.map((event) => event.type)).toEqual(
-      expect.arrayContaining(['recovery_action_selected', 'recovery_resolved']),
-    );
-    expect(readSessionLog(projectDir, sessionId)).toContain('"type":"recovery_resolved"');
-  });
-
-  it('pauses with the recovery issue still pending and selected action persisted', async () => {
-    const { projectDir, sessionId } = setupSession('pause-run');
-    const task = makeTask({ id: 'T032' });
-    const issue = buildRetryExhaustedRecoveryIssue({
-      task,
-      createdAt,
-      validationSummary: 'test failed',
-      attempts: 2,
-      maxAttempts: 3,
-    });
-    const state = { ...implementingState([task]), pendingRecovery: issue };
-    const { bus, events } = makeBus(projectDir, sessionId);
-
-    const result = await applyRecoveryAction({
-      projectDir,
-      sessionId,
-      state,
-      action: 'pause-run',
-      bus,
-    });
-
-    expect(result).toMatchObject({ ok: true, status: 'paused' });
-    expect(result.state.pendingRecovery).toMatchObject({
-      id: issue.id,
-      status: 'paused',
-      selectedAction: 'pause-run',
-    });
-    expect(loadState({ projectDir, sessionId })?.pendingRecovery).toMatchObject({
-      id: issue.id,
-      status: 'paused',
-      selectedAction: 'pause-run',
-    });
-    expect(events.map((event) => event.type)).toEqual(
-      expect.arrayContaining(['recovery_action_selected']),
-    );
-  });
-
   it('ends the run without mutating task status', async () => {
     const { projectDir, sessionId } = setupSession('end-run');
     const completedTask = makeTask({ id: 'T032', status: 'done' });
@@ -202,7 +97,7 @@ describe('applyRecoveryAction: persisted success effects', () => {
     const filePath = join(projectDir, 'src/user.ts');
     writeFileSync(filePath, 'export const owner = "user edit";\n');
 
-    const task = makeTask({ id: 'T034', file: 'src/user.ts' });
+    const task = makeTask({ id: 'T034', suggestedFiles: ['src/user.ts'] });
     const issue = buildRetryExhaustedRecoveryIssue({
       task,
       createdAt,
@@ -236,7 +131,7 @@ describe('applyRecoveryAction: persisted success effects', () => {
     const { projectDir, sessionId } = setupSession('skip-evidence-fail');
     mkdirSync(evidenceLedgerPath({ projectDir, sessionId }), { recursive: true });
 
-    const task = makeTask({ id: 'T099', file: 'src/x.ts' });
+    const task = makeTask({ id: 'T099', suggestedFiles: ['src/x.ts'] });
     const issue = buildRetryExhaustedRecoveryIssue({
       task,
       createdAt,
@@ -298,65 +193,7 @@ describe('applyRecoveryAction: persisted success effects', () => {
     expect(events.map((event) => event.type)).toEqual(
       expect.arrayContaining(['recovery_action_selected', 'recovery_resolved']),
     );
-  });
-
-  it('prepares route-bigger-worker by resetting the current task with the selected profile', async () => {
-    const { projectDir, sessionId } = setupSession('route-bigger-worker');
-    const task = makeTask({ id: 'T036', file: 'src/large.ts' });
-    const issue = buildContextOverflowRecoveryIssue({
-      task,
-      createdAt,
-      routingDecision: contextOverflowRoutingDecision(task.id),
-      routeBiggerProfile: 'cheap-cloud',
-    });
-    const state = { ...implementingState([task]), pendingRecovery: issue };
-    saveState({ projectDir, sessionId }, state);
-    const { bus, events } = makeBus(projectDir, sessionId);
-
-    const result = await applyRecoveryAction({
-      projectDir,
-      sessionId,
-      state,
-      action: 'route-bigger-worker',
-      bus,
-      config: makeConfig({
-        implementerProfiles: {
-          default: 'local-qwen',
-          profiles: {
-            'cheap-cloud': {
-              kind: 'api',
-              provider: 'custom-endpoint',
-              service: 'custom-endpoint',
-              offering: 'payg',
-              apiBase: 'https://api.example.com/v1',
-              apiKey: 'test-key',
-              model: 'deepseek-chat',
-            },
-            'local-qwen': {
-              kind: 'api',
-              provider: 'ollama',
-              service: 'ollama',
-              offering: 'local',
-              apiBase: 'http://localhost:11434/v1',
-              model: 'qwen-small',
-            },
-          },
-        },
-      }),
-    });
-
-    expect(result).toMatchObject({
-      ok: true,
-      status: 'retry-current-task',
-      implementerProfile: 'cheap-cloud',
-    });
-    expect(result.state.currentTaskIndex).toBe(0);
-    expect(result.state.tasks[0]?.status).toBe('pending');
-    expect(result.state.pendingRecovery).toBeUndefined();
-    expect(loadState({ projectDir, sessionId })?.pendingRecovery).toBeUndefined();
-    expect(events.map((event) => event.type)).toEqual(
-      expect.arrayContaining(['recovery_action_selected', 'recovery_resolved']),
-    );
+    expect(readSessionLog(projectDir, sessionId)).toContain('"type":"recovery_resolved"');
   });
 });
 

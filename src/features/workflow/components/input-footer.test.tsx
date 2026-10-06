@@ -17,16 +17,20 @@ import {
   type RunningOperation,
 } from '../../../stores/workflow/operations/state.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { focusStore } from '../../../stores/ui/focus.js';
-import { reviewStore } from '../../../stores/workflow/review.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { BRAILLE_SPINNER_FRAMES, glyph } from '../../../lib/glyphs.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { InputFooter } from './input-footer.js';
 
 import { makePlannerStatus } from '#testing/helpers/events/planner.js';
-import { makeRunnerCallStalled } from '#testing/helpers/events/runner-call.js';
+import {
+  makeRunnerCallActivity,
+  makeRunnerCallStarted,
+  makeRunnerCallStalled,
+} from '#testing/helpers/events/runner-call.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
+import { makeTaskComplete } from '#testing/helpers/events/task.js';
+import { taskId } from '../../../core/schemas/task.js';
 import { markWaitEnded, markWaitStarted } from '../../../stores/workflow/actions/wait.js';
 import { loadEvents } from '../../../stores/workflow/actions/load.js';
 import { hydrateFromState } from '../../../stores/workflow/actions/hydrate.js';
@@ -92,67 +96,14 @@ describe('InputFooter', () => {
   it('renders flush, leaving the gutter to the footer that wraps it', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
 
-    const ui = renderFeature(<InputFooter byline="Paused at T002 — stopped by you" />);
+    const ui = renderFeature(<InputFooter byline="Stopped at T002 — stopped by you" />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     // A live byline opens with its pip on the mark column; this one has none, so it keeps an empty
     // mark slot and puts its words on the text column instead of a letter where the pip would be.
-    expect(frame.indexOf('Paused at T002')).toBe(MARK_SLOT_CELLS);
+    expect(frame.indexOf('Stopped at T002')).toBe(MARK_SLOT_CELLS);
 
     ui.unmount();
-  });
-
-  it('renders the y copy affordance only while a focused row resolves a copy value', () => {
-    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    reviewStore.setReviewFile('specs/001/tasks.md');
-    reviewStore.setBriefSources(['raw brief markdown']);
-    reviewStore.setRenderedLineCount(1);
-    reviewStore.setVisibleBriefCount(1);
-
-    const idle = renderFeature(<InputFooter />);
-    expect(idle.lastFrame() ?? '').not.toContain('y copy');
-    idle.unmount();
-
-    focusStore.set('brief', 0);
-    const focused = renderFeature(<InputFooter />);
-    expect(focused.lastFrame() ?? '').toContain('y copy');
-    focused.unmount();
-
-    focusStore.clear();
-    reviewStore.clearReview();
-    terminalSizeStore.reset();
-  });
-
-  it('hides the y copy affordance when sources exist but no brief row is rendered', () => {
-    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    reviewStore.setReviewFile('specs/001/tasks.md');
-    reviewStore.setBriefSources(['raw brief markdown']);
-    reviewStore.setRenderedLineCount(1);
-    reviewStore.setVisibleBriefCount(0);
-    focusStore.set('brief', 0);
-
-    const focused = renderFeature(<InputFooter />);
-    expect(focused.lastFrame() ?? '').not.toContain('y copy');
-    focused.unmount();
-
-    focusStore.clear();
-    reviewStore.clearReview();
-    terminalSizeStore.reset();
-  });
-
-  it('hides the y copy affordance when the focused row resolves no value', () => {
-    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    reviewStore.clearReview();
-
-    // Region 'brief' maps to the brief target; with no compiled briefs there is nothing to copy, so
-    // the affordance must stay hidden rather than promise an empty yank.
-    focusStore.set('brief', 0);
-    const focused = renderFeature(<InputFooter />);
-    expect(focused.lastFrame() ?? '').not.toContain('y copy');
-    focused.unmount();
-
-    focusStore.clear();
-    terminalSizeStore.reset();
   });
 
   it('shows neutral API waiting beside the input until the first response, and honors cancellation', () => {
@@ -444,7 +395,7 @@ describe('InputFooter', () => {
     stopStore.park('mid-brief', 'T002', null);
     const parked = renderFeature(<InputFooter />);
     const parkedFrame = stripAnsiStyles(parked.lastFrame() ?? '');
-    expect(parkedFrame).toContain('Paused at T002');
+    expect(parkedFrame).toContain('Stopped at T002');
     parked.unmount();
 
     for (const frame of [runningFrame, atRestFrame, parkedFrame]) {
@@ -500,13 +451,12 @@ describe('InputFooter', () => {
     ui.unmount();
   });
 
-  it('quotes the build block estimate and drops it when a seat swap retires it', () => {
+  it('quotes no estimate of the time left while briefs build', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
     tasksStore.__testReset({
       currentTask: 3,
       totalTasks: 4,
-      taskCompletionTimes: [120_000, 120_000],
       tasks: [
         { id: 'T001', title: 'T1', status: 'done' as const },
         { id: 'T002', title: 'T2', status: 'done' as const },
@@ -514,39 +464,8 @@ describe('InputFooter', () => {
         { id: 'T004', title: 'T4', status: 'pending' as const },
       ],
     });
-
-    const quoted = renderFeature(<InputFooter />);
-    const quotedFrame = stripAnsiStyles(quoted.lastFrame() ?? '');
-
-    // Two briefs left at two minutes each, worded the way the block above words it — one
-    // estimate on the screen, not two dialects of it.
-    expect(quotedFrame).toContain('ETA ~4m');
-    expect(quotedFrame).not.toContain('remaining');
-    quoted.unmount();
-
-    operationsStore.__testReset({ active: runningOn('codex'), last: runningOn('claude-code') });
-
-    const retired = renderFeature(<InputFooter />);
-
-    // The block retires an estimate the new seat never earned; the byline stops quoting it too.
-    expect(stripAnsiStyles(retired.lastFrame() ?? '')).not.toContain('ETA');
-    retired.unmount();
-
-    terminalSizeStore.reset();
-  });
-
-  it('quotes no estimate during the final review, where no brief is left to build', () => {
-    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    lifecycleStore.__testReset({ phase: 'final-review', status: 'running' });
-    tasksStore.__testReset({
-      currentTask: 2,
-      totalTasks: 2,
-      taskCompletionTimes: [120_000, 120_000],
-      tasks: [
-        { id: 'T001', title: 'T1', status: 'done' as const },
-        { id: 'T002', title: 'T2', status: 'done' as const },
-      ],
-    });
+    addEvent(makeTaskComplete({ taskId: taskId('T001'), duration: 120_000 }));
+    addEvent(makeTaskComplete({ taskId: taskId('T002'), duration: 120_000 }));
 
     const ui = renderFeature(<InputFooter />);
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('ETA');
@@ -656,7 +575,7 @@ describe('InputFooter', () => {
     const ui = renderFeature(<InputFooter />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('Paused at T002 · Partial changes kept');
+    expect(frame).toContain('Stopped at T002 · Partial changes kept');
     // The keys live on the legend row above, so the byline carries the state alone.
     expect(frame).not.toContain('/resume');
     expect(BRAILLE_SPINNER_FRAMES.some((spinnerFrame) => frame.includes(spinnerFrame))).toBe(false);
@@ -674,13 +593,13 @@ describe('InputFooter', () => {
     const pending = renderFeature(<InputFooter />);
     const pendingFrame = stripAnsiStyles(pending.lastFrame() ?? '');
     expect(pendingFrame).toContain('Waiting for processes to exit');
-    expect(pendingFrame).not.toContain('Paused at');
+    expect(pendingFrame).not.toContain('Stopped at');
     pending.unmount();
 
     stopStore.park('mid-brief', 'T002', null);
 
     const parked = renderFeature(<InputFooter />);
-    expect(stripAnsiStyles(parked.lastFrame() ?? '')).toContain('Paused at T002');
+    expect(stripAnsiStyles(parked.lastFrame() ?? '')).toContain('Stopped at T002');
     parked.unmount();
     terminalSizeStore.reset();
   });
@@ -760,6 +679,35 @@ describe('InputFooter', () => {
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(
       'Still working — silent 1m 5s · tools report when done',
     );
+
+    ui.unmount();
+    terminalSizeStore.reset();
+  });
+
+  // The stream reported this tool as it opened and the build block names it running, so neither a
+  // silence warning nor a hint that tools report only when done may contradict it.
+  it('reads as working, not as a silence, while the call has a tool open', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    lifecycleStore.__testReset({
+      status: 'running',
+      phase: 'implementing',
+      startedAt: Date.now() - 120_000,
+    });
+    addEvent(
+      makeRunnerCallStarted({ ts: Date.now() - 90_000, callId: 'call-1', runnerName: 'opencode' }),
+    );
+    addEvent(
+      makeRunnerCallActivity({ ts: Date.now() - 80_000, runnerName: 'opencode', stage: 'updated' }),
+    );
+    addEvent(
+      makeRunnerCallStalled({ ts: Date.now() - 5_000, silentMs: 60_000, runnerName: 'opencode' }),
+    );
+
+    const ui = renderFeature(<InputFooter buildBlockShown />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Implementing');
+    expect(frame).not.toContain('Still working');
+    expect(frame).not.toContain('tools report when done');
 
     ui.unmount();
     terminalSizeStore.reset();

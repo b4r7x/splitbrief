@@ -35,14 +35,14 @@ const TASKS = [
   makeTask({
     id: 'T001',
     action: 'modify',
-    file: 'src/first.ts',
+    suggestedFiles: ['src/first.ts'],
     scope: { inBounds: ['src/first.ts'], outOfBounds: ['every other file'] },
     evidence: ['src/first.ts exports t001'],
   }),
   makeTask({
     id: 'T002',
     action: 'modify',
-    file: 'src/second.ts',
+    suggestedFiles: ['src/second.ts'],
     dependsOn: ['T001'],
     scope: { inBounds: ['src/second.ts'], outOfBounds: ['every other file'] },
     evidence: ['src/second.ts exports t002'],
@@ -103,7 +103,7 @@ async function runUntil(stopBeforeReview: boolean): Promise<Ref> {
   const implementer = makeImplementer({
     capabilities: { writesFiles: 'direct' },
     implement: vi.fn(async (opts: ImplementerOptions) => {
-      const path = join(opts.projectDir, opts.task.file);
+      const path = join(opts.projectDir, opts.task.suggestedFiles[0]);
       mkdirSync(dirname(path), { recursive: true });
       writeFileSync(path, `export const ${opts.task.id.toLowerCase()} = true;\n`);
       if (stopBeforeReview && opts.task.id === 'T002') controller.abort();
@@ -124,7 +124,7 @@ async function runUntil(stopBeforeReview: boolean): Promise<Ref> {
       feature: 'two briefs, then the result',
       config: makeNoValidationConfig({
         workflow: { approve: 'none', maxRetries: 1, isolation: 'worktree' },
-        approval: { enabled: false, feedRejectionsToPlanner: false },
+        approval: { feedRejectionsToPlanner: false },
       }),
     }),
     callbacks: makeCallbacks().callbacks,

@@ -78,7 +78,6 @@ export interface WorkflowContext {
   workspaceDir: string;
   sessionId: string;
   config: Config;
-  getApprovalEnabled?: (() => boolean) | undefined;
   callbacks: OrchestratorCallbacks;
   bus: EventBus;
   planner: Planner;

@@ -1,6 +1,5 @@
 import { useEffect, useEffectEvent } from 'react';
-import { setResumeHandler, setRewindHandler } from '../../handlers.js';
-import type { TaskRedoRequest } from '../../../../core/state/build-rewind-action.js';
+import { setResumeHandler } from '../../handlers.js';
 import { useInputMode } from '../use-input-mode.js';
 import { useRunContinue } from '../use-run-continue.js';
 import { useRunLoop, type RunWorkflowFn } from '../use-run-loop.js';
@@ -26,8 +25,6 @@ import { getShowSpend } from '../../../../core/config/accessors/values.js';
 import { atRestComposer, atRestRailStages } from '../../at-rest.js';
 import { deriveSummaryView } from '../../closed/view-model.js';
 import { hydrateResume } from '../../resume-hydration.js';
-import { rewindSavedState } from '../../rewind-handler.js';
-import { addTuiEvent } from '../../tui-sink.js';
 import { useWorkflowInlineEdit } from './use-inline-edit.js';
 
 /** Blank Enter never resumes a parked brief, so the row says what does. */
@@ -72,9 +69,8 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
   const atRestRecord = execution?.kind === 'at-rest' ? record : undefined;
 
   // One continuation path for a run at rest: the engine decides whether the run can be picked up,
-  // the preparation attempt re-enters it in place, and the screen never moves. A redone brief is
-  // reset on the saved state first, so the run re-enters at that brief.
-  const continueAtRest = (text: string, run = atRestRecord, rewind?: TaskRedoRequest): void => {
+  // the preparation attempt re-enters it in place, and the screen never moves.
+  const continueAtRest = (text: string, run = atRestRecord): void => {
     const sessionSelect = deps?.sessionSelect;
     if (run === undefined || sessionSelect === undefined) return;
     const outcome = continueRun({
@@ -84,16 +80,9 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
         resumeParked: () => false,
         loadState: hydrateResume,
         restart: ({ state, steer }) => {
-          let entry = state;
-          if (rewind !== undefined) {
-            const rewound = rewindSavedState(run.ref, rewind, state);
-            if (rewound === undefined) return;
-            addTuiEvent(rewound.event);
-            entry = rewound.next;
-          }
           void continueRunInPlace({
             record: run,
-            state: entry,
+            state,
             ...(steer !== undefined && { steer }),
             deps: sessionSelect,
           });
@@ -136,10 +125,8 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
   useEffect(() => {
     if (atRestRecord === undefined) return;
     setResumeHandler((text) => resumeAtRest(text));
-    setRewindHandler((request) => resumeAtRest('', atRestRecord, request));
     return () => {
       setResumeHandler(null);
-      setRewindHandler(null);
     };
   }, [atRestRecord]);
 

@@ -35,7 +35,7 @@ export type AcceptRunResult =
   | { status: 'ended' }
   | { status: 'halted' }
   | { status: 'review' }
-  | { status: 'confirm-override'; findings: string[] }
+  | { status: 'confirm-override' }
   | { status: 'unavailable'; message: string };
 
 export type RejectRunSnapshotResult =

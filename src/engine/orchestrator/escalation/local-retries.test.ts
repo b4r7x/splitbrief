@@ -164,6 +164,7 @@ describe('runLocalRetries — aborted outcomes', () => {
     expect(order).toEqual(['row 1', 'call']);
     const firstRow = events.find((e) => e.type === 'task_retry');
     expect(firstRow?.type === 'task_retry' && firstRow.error).toBe('type error');
+    expect(firstRow).toMatchObject({ lineageAttempt: 1, attemptAllowance: 8 });
   });
 
   it('ordinary failures still consume exactly the local retry', async () => {

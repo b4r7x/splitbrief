@@ -16,6 +16,7 @@ import {
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import {
+  REAL_TASKS,
   REAL_TASKS_MD,
   makePassingPlanner,
   makePassingTask,
@@ -41,7 +42,6 @@ import {
 import { writeSpecFile } from '../../../core/paths-io.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
-import { parseTasks } from '../../spec/tasks/parse.js';
 import { createValidator } from '../validation/run.js';
 import { createContinuationHolder } from '../continuation.js';
 import type { OrchestratorCallbacks, WorkflowContext, WorkflowSinks } from '../types.js';
@@ -167,7 +167,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
   it('does not run final review when the task loop stops before completion', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makePassingTask('T001');
-    task.file = 'src/too-large.ts';
+    task.suggestedFiles[0] = 'src/too-large.ts';
     const state = makeImplState([task]);
     const executionState = persistReadyExecutionState({ projectDir, sessionId }, state);
     const planner = makePlanner();
@@ -641,7 +641,7 @@ describe('runPlanningPhases', () => {
         phase,
         mode: 'standard',
         approve: 'plan',
-        ...(phase !== 'reviewing-spec' ? { tasks: parseTasks(REAL_TASKS_MD) } : {}),
+        ...(phase !== 'reviewing-spec' ? { tasks: REAL_TASKS } : {}),
       };
       saveState(ref, savedState);
 
@@ -863,7 +863,7 @@ describe('runPlanningPhases', () => {
         phase,
         mode,
         approve,
-        tasks: parseTasks(REAL_TASKS_MD),
+        tasks: REAL_TASKS,
         interruptedStep: {
           step: { kind: 'planner', call: 'tasks' },
           source: 'user',
@@ -941,7 +941,7 @@ describe('runPlanningPhases', () => {
       ...createInitialState('feat'),
       ...opts.saved,
       phase: opts.phase,
-      ...(opts.phase !== 'reviewing-spec' ? { tasks: parseTasks(REAL_TASKS_MD) } : {}),
+      ...(opts.phase !== 'reviewing-spec' ? { tasks: REAL_TASKS } : {}),
     };
     saveState(ref, savedState);
 

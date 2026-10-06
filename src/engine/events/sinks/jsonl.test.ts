@@ -209,7 +209,6 @@ describe('jsonlSink', () => {
       ts: 100,
       phase: 'planning',
       elapsedMs: 5000,
-      accumulatedTokens: 120,
     });
     expect(existsSync(logPath)).toBe(false);
   });

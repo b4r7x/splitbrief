@@ -71,7 +71,7 @@ describe('start command — liveness record', () => {
       ]),
     ).rejects.toMatchObject({
       exitCode: 1,
-      message: expect.stringContaining('Recovery required (plan-checks-failed)'),
+      message: expect.stringContaining('Needs you (plan-checks-failed)'),
     });
 
     const sessionId = onlySessionId(tmp);

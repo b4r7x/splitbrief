@@ -1,16 +1,28 @@
 import { opensPlanGate } from '../pipeline-spec/steps.js';
 import type { Phase } from '../schemas/enums.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
-import type { GateName, StepRef } from '../schemas/run-step.js';
+import type { GateName, StepCut, StepRef } from '../schemas/run-step.js';
 import { fixCyclesOf, type WorkflowState } from '../schemas/workflow.js';
 
-export type StopReason =
-  | { kind: 'input-required' }
-  | { kind: 'paused'; at: 'mid-step' | 'boundary' }
-  | { kind: 'waiting'; gate: GateName; reopens: boolean }
-  | { kind: 'halted'; issue: RecoveryIssue }
+/** What a run waiting for you waits on: the planner's question, a gate, or a halt. */
+export type WaitingOn =
+  | { kind: 'question' }
+  | { kind: 'gate'; gate: GateName; reopens: boolean }
+  | { kind: 'halt'; issue: RecoveryIssue };
+
+/** How a stopped run came to rest: a stop it was asked for, an error, or a process that went away. */
+export type StoppedOn =
+  | { kind: 'paused'; at: StepCut }
   | { kind: 'failed'; message: string }
   | { kind: 'interrupted' };
+
+/**
+ * An open run at rest is in one of two states. *Waiting for you*: it cannot go on without an
+ * answer, a gate decision or a halt decision. *Stopped*: it can go on as it stands.
+ */
+export type StopReason =
+  | { kind: 'waiting-for-you'; on: WaitingOn }
+  | { kind: 'stopped'; on: StoppedOn };
 
 export type RunStatus =
   | { kind: 'running' }
@@ -106,8 +118,9 @@ export function isAnsweredApplyRecovery(issue: RecoveryIssue): issue is Recovery
 
 /**
  * How a run stands, from the state it saved and whether a process still holds it.
- * A passing review closes a run without a workspace; a run with a worktree or
- * staged copy becomes ready to apply, and Apply, Discard or End close it.
+ * A passing review, or a failed one accepted as is, closes a run without a workspace or on the
+ * checkout; a run with a worktree or staged copy becomes ready to apply, and Apply, Discard or End
+ * close it. A halt still waiting for an answer keeps either open.
  */
 export function deriveRunStatus(
   input: Readonly<{
@@ -127,43 +140,51 @@ export function deriveRunStatus(
   }
   if (
     state.phase === 'complete' &&
-    state.reviewStatus === 'passed' &&
+    (state.reviewStatus === 'passed' || state.acceptedAsIs !== undefined) &&
+    state.pendingRecovery === undefined &&
     (state.workspace === undefined || state.workspace.kind === 'checkout')
   ) {
     return { kind: 'closed', as: 'complete' };
   }
   if (input.liveness === 'alive') return { kind: 'running' };
 
-  const open = (stop: StopReason): RunStatus => ({
+  const waiting = (on: WaitingOn): RunStatus => ({
     kind: 'open',
-    stop,
+    stop: { kind: 'waiting-for-you', on },
+    resumeAt: resumeStep(state),
+  });
+  const stopped = (on: StoppedOn): RunStatus => ({
+    kind: 'open',
+    stop: { kind: 'stopped', on },
     resumeAt: resumeStep(state),
   });
 
   if (state.pendingRecovery !== undefined) {
-    return open({ kind: 'halted', issue: state.pendingRecovery });
+    return waiting({ kind: 'halt', issue: state.pendingRecovery });
   }
   if (
     state.pendingPlannerConversation !== undefined &&
     !state.pendingPlannerConversation.answered
   ) {
-    return open({ kind: 'input-required' });
+    return waiting({ kind: 'question' });
   }
   // The stop records where it landed. States written before it did fall back to
   // the captured partial: only a call cut in flight leaves one.
   if (state.interruptedStep !== undefined) {
     const { cut, partialRef } = state.interruptedStep;
-    return open({
+    return stopped({
       kind: 'paused',
       at: cut ?? (partialRef === undefined ? 'boundary' : 'mid-step'),
     });
   }
-  if (state.awaitingContinue) return open({ kind: 'paused', at: 'mid-step' });
+  if (state.awaitingContinue) return stopped({ kind: 'paused', at: 'mid-step' });
 
   const gate = parkedGate(state);
-  if (gate !== undefined) return open({ kind: 'waiting', gate, reopens: reopensPlanCard(state) });
-  if (state.lastFailure !== undefined) {
-    return open({ kind: 'failed', message: state.lastFailure.message });
+  if (gate !== undefined) {
+    return waiting({ kind: 'gate', gate, reopens: reopensPlanCard(state) });
   }
-  return open({ kind: 'interrupted' });
+  if (state.lastFailure !== undefined) {
+    return stopped({ kind: 'failed', message: state.lastFailure.message });
+  }
+  return stopped({ kind: 'interrupted' });
 }

@@ -34,9 +34,9 @@ describe('classifyAction — command-shaped descriptions are not command-classif
     'npm publish',
     'curl https://api.example.com/data',
     'npm install lodash',
-  ])('%s is never destructive/network/package_change/validation', (desc) => {
+  ])('%s is never destructive/network/package_change', (desc) => {
     const { actionClass } = classifyAction(make(desc));
-    expect(['destructive', 'network', 'package_change', 'validation']).not.toContain(actionClass);
+    expect(['destructive', 'network', 'package_change']).not.toContain(actionClass);
   });
 });
 

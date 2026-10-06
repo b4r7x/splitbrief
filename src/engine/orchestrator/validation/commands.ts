@@ -1,6 +1,5 @@
 import { relative } from 'node:path';
 import type { Task } from '../../../core/schemas/task.js';
-import { taskFiles } from '../../../core/schemas/task.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { DiscoveredValidation } from '../../../core/schemas/workflow.js';
 import { findAffectedTestFiles } from '../../../core/validation/stacks/registry.js';
@@ -18,7 +17,7 @@ export type TestTargetMode = 'narrow' | 'full';
 /** The tests of the brief's declared files and of every file the attempt changed. */
 export function resolveTestTarget(opts: {
   resolved: ResolvedCommand;
-  task: Pick<Task, 'file' | 'files'>;
+  task: Pick<Task, 'suggestedFiles'>;
   changedFiles: readonly string[];
   projectDir: string;
   config: Config;
@@ -33,7 +32,7 @@ export function resolveTestTarget(opts: {
   if (!narrows || stack === null) return { run: true, targets: [] };
   const testPattern = config.validation.testPattern ?? discovered?.testPattern;
   const targets: string[] = [];
-  for (const file of new Set([...taskFiles(task), ...opts.changedFiles])) {
+  for (const file of new Set([...task.suggestedFiles, ...opts.changedFiles])) {
     for (const found of findAffectedTestFiles(file, projectDir, stack, testPattern)) {
       const target = relative(projectDir, found);
       if (!targets.includes(target)) targets.push(target);

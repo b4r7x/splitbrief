@@ -140,7 +140,7 @@ describe('recordLocalTaskEvidence', () => {
   });
 
   it('records the changed files without a prose diff label', () => {
-    const task = makeTask({ file: 'src/a.ts', files: ['src/a.ts', 'src/a.test.ts'] });
+    const task = makeTask({ suggestedFiles: ['src/a.ts', 'src/a.test.ts'] });
     const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
     const updated = recordLocalTaskEvidence({ ledger, task, status: 'done', validation: [] });
 
@@ -429,7 +429,7 @@ describe('recordedApiCreatedPaths', () => {
   });
 
   it('proves a creation only in the workspace whose receipt recorded it', () => {
-    const task = makeTask({ id: 'T001', action: 'create', file: 'src/a.ts' });
+    const task = makeTask({ id: 'T001', action: 'create', suggestedFiles: ['src/a.ts'] });
     const ref = { projectDir, sessionId: 'sess-1' };
     writeEvidenceLedger(
       ref,

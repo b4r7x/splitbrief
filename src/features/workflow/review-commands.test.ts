@@ -10,20 +10,20 @@ import { fitKeyLegend } from '../../core/key-legend.js';
 describe('REVIEW_HINT', () => {
   // Asserted against the literal legend rather than against the constant it names, so the
   // assertion still fails if the legend changes wording, order, or separator.
-  it('names four keys once each, in one order, for every review phase', () => {
-    expect(REVIEW_HINT).toBe('y approve · c comment · q end run · e edit');
+  it('names the four typed commands once each, with no letter key the card does not take', () => {
+    expect(REVIEW_HINT).toBe('approve · comment <text> · end-run · edit');
     expect(reviewOpeningPromptMessage()).toBe(
-      'Review prompt is opening. Once active, use: y approve · c comment · q end run · e edit',
+      'Review prompt is opening. Once active, use: approve · comment <text> · end-run · edit',
     );
   });
 
-  it('fits the review legend on one 78-column row and drops nothing above 40', () => {
+  it('fits the review legend on one 78-column row and drops nothing above 34', () => {
     expect(REVIEW_HINT.length).toBeLessThanOrEqual(78);
     expect(fitKeyLegend(REVIEW_HINT, 78)).toBe(REVIEW_HINT);
-    // At 40 columns the fourth token does not fit; it is dropped whole rather than ellipsised,
-    // and `e` stays reachable through ctrl+e and the composer placeholder.
-    expect(fitKeyLegend(REVIEW_HINT, 40)).toBe('y approve · c comment · q end run');
-    expect(fitKeyLegend(REVIEW_HINT, 40)).not.toContain('…');
+    // At 34 columns the fourth token does not fit; it is dropped whole rather than ellipsised,
+    // and edit stays reachable through ctrl+e and the composer placeholder.
+    expect(fitKeyLegend(REVIEW_HINT, 34)).toBe('approve · comment <text> · end-run');
+    expect(fitKeyLegend(REVIEW_HINT, 34)).not.toContain('…');
   });
 
   it('offers only commands the parser accepts when it rejects one', () => {

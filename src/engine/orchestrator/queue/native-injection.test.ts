@@ -396,7 +396,10 @@ describe('dispatchNativeInjection', () => {
     planner.injectUserTurn = async () => {
       saveState(
         { projectDir, sessionId },
-        transition(state, { type: 'REWIND_TO_PLAN', comment: 'change architecture' }),
+        transition(
+          { ...state, phase: 'reviewing-plan' },
+          { type: 'CORRECT_PLAN', comment: 'change architecture' },
+        ),
       );
       return { status: 'delivered', usage: null };
     };
@@ -414,13 +417,13 @@ describe('dispatchNativeInjection', () => {
     });
 
     expect(result).toEqual({ status: 'delivered' });
-    expect(state.phase).toBe('planning');
+    expect(state.phase).toBe('reviewing-plan');
     expect(state.rewindPending).toEqual({ target: 'plan', comment: 'change architecture' });
     expect(loadState({ projectDir, sessionId })?.rewindPending).toEqual({
       target: 'plan',
       comment: 'change architecture',
     });
-    expect(loadState({ projectDir, sessionId })?.phase).toBe('planning');
+    expect(loadState({ projectDir, sessionId })?.phase).toBe('reviewing-plan');
     expect(events.some((event) => event.type === 'message_injected_native')).toBe(true);
   });
 

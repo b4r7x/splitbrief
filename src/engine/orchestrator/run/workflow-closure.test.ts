@@ -51,7 +51,10 @@ vi.mock('../state-ops.js', async (importOriginal) => {
         latest.reviewStatus === 'failed'
       ) {
         race.writeOpenAfterRead = false;
-        actual.transitionAndSave(args[0], latest, { type: 'PAUSE_PENDING_RECOVERY' });
+        actual.transitionAndSave(args[0], latest, {
+          type: 'MARK_RECOVERY_APPLYING',
+          action: 'revise',
+        });
       }
       return latest;
     },

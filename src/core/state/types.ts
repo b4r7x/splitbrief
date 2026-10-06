@@ -21,19 +21,10 @@ export type ResumeLoadResult =
 
 export type StateAction =
   | { type: 'START' }
-  | { type: 'RESEARCH_DONE' }
-  | { type: 'SPEC_DONE' }
-  | { type: 'APPROVE_SPEC' }
   | { type: 'BEGIN_PLANNING' }
   | { type: 'PLAN_DONE'; tasks: Task[] }
-  | { type: 'BRIEFS_COMPILED'; tasks: Task[] }
   | { type: 'PLAN_COMPILED'; plan: Plan; tasks: Task[] }
-  | { type: 'BRIEF_ADMISSION_OPENED' }
   | { type: 'BEGIN_IMPLEMENTATION' }
-  | { type: 'SPEC_CLARIFY_START' }
-  | { type: 'SPEC_CLARIFY_DONE' }
-  | { type: 'CONSTITUTION_CHECK_PASS' }
-  | { type: 'ANALYZE_START' }
   | { type: 'START_TASK'; taskId: TaskId }
   | { type: 'TASK_SENT' }
   | { type: 'VALIDATION_PASS' }
@@ -72,7 +63,8 @@ export type StateAction =
   | { type: 'APPLY_START'; backupId: string }
   | { type: 'APPLY_DONE'; files: string[] }
   | { type: 'APPLY_RESTORED' }
-  | { type: 'CLOSE_RUN'; at?: string; as?: 'discarded' }
+  | { type: 'APPLY_UNDONE'; conflicts: string[] }
+  | { type: 'CLOSE_RUN'; at?: string; as?: 'discarded'; patch?: string }
   | {
       type: 'INTERRUPT_STEP';
       step: StepRef;
@@ -91,8 +83,6 @@ export type StateAction =
   | { type: 'SET_PLANNER_CONVERSATION'; conversation: PlannerConversation }
   | { type: 'CLEAR_PLANNER_CONVERSATION' }
   | { type: 'SET_PLANNER_SESSION_ID'; sessionId: string | null }
-  | { type: 'REWIND_TO_SPEC'; comment?: string }
-  | { type: 'REWIND_TO_PLAN'; comment?: string }
   | { type: 'RESET_TASK'; taskId: TaskId }
   | { type: 'REPLACE_TASK'; taskId: TaskId; task: Task }
   | { type: 'INSERT_TASKS'; parentId: TaskId | null; afterTaskId?: TaskId; tasks: Task[] }
@@ -131,7 +121,6 @@ export type StateAction =
   | { type: 'DRAIN_QUEUE'; ids?: string[]; destination?: 'implementer' | 'consult' | 'reviewer' }
   | { type: 'CLEAR_QUEUE' }
   | { type: 'SET_PENDING_RECOVERY'; issue: RecoveryIssue }
-  | { type: 'PAUSE_PENDING_RECOVERY' }
   | { type: 'MARK_RECOVERY_APPLYING'; action: RecoveryAction }
   | { type: 'RESOLVE_PENDING_RECOVERY' };
 

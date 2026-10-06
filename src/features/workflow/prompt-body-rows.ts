@@ -121,9 +121,16 @@ function wrappedMessageLines(text: string, width: number): PromptBodyLine[] {
 
 // A fact that outruns its width keeps its own column: the continuation hangs under the first
 // line rather than starting at the border, so a wrapped fact still reads as one fact.
+// A break that lands on a space leaves that space at the head of the next line, so a wrapped
+// continuation drops it; a line the fact itself starts keeps its own indentation.
 function wrappedFactLines(item: string, width: number): PromptBodyLine[] {
-  return wrapHard(clean(item, true), Math.max(1, width - FACT_INDENT.length))
+  return clean(item, true)
     .split('\n')
+    .flatMap((source) =>
+      wrapHard(source, Math.max(1, width - FACT_INDENT.length))
+        .split('\n')
+        .map((line, index) => (index === 0 ? line : line.trimStart())),
+    )
     .map((line) => ({ kind: 'facts-line', text: `${FACT_INDENT}${line}` }));
 }
 

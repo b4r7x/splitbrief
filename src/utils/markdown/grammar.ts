@@ -8,11 +8,6 @@ export interface MarkdownHeadingStart {
   text: string;
 }
 
-export interface MarkdownSetextHeadingStart {
-  marker: '=' | '-';
-  text: string;
-}
-
 export const REQUIRED_TASK_BRIEF_METADATA_KEYS = [
   'id',
   'title',
@@ -67,23 +62,6 @@ export function parseMarkdownHeadingStart(line: string): MarkdownHeadingStart | 
 
 export function isMarkdownHeadingLine(line: string): boolean {
   return parseMarkdownHeadingStart(line) !== undefined;
-}
-
-export function parseMarkdownSetextHeadingStart(
-  line: string,
-  nextLine: string | undefined,
-): MarkdownSetextHeadingStart | undefined {
-  if (!/^ {0,3}\S/.test(line)) return undefined;
-  if (!isMarkdownSetextUnderlineLine(nextLine ?? '')) return undefined;
-  if (startsMarkdownBlockLine(line, nextLine)) return undefined;
-
-  const marker = nextLine?.trimStart()[0];
-  if (marker !== '=' && marker !== '-') return undefined;
-  return { marker, text: line.trim() };
-}
-
-export function isMarkdownSetextHeadingLine(line: string, nextLine: string | undefined): boolean {
-  return parseMarkdownSetextHeadingStart(line, nextLine) !== undefined;
 }
 
 export function isMarkdownSetextUnderlineLine(line: string): boolean {

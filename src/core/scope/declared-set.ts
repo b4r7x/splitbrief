@@ -4,7 +4,6 @@ import {
   scopePathPatterns,
 } from '../../utils/path-patterns.js';
 import type { Task } from '../schemas/task.js';
-import { taskFiles } from '../schemas/task.js';
 
 /** A planner-approved scope bullet names its path, root-level files included; a bare backticked identifier is prose. */
 const LEADING_PATH = /^\s*`([^`\s]+)`\s*—\s*planner-approved:/;
@@ -41,7 +40,7 @@ export function matchesScopeEntry(file: string, entry: string): boolean {
 /** Patterns a brief may write: its files plus every In-bounds and Approved-out-of-bounds bullet. */
 export function taskDeclaredPatterns(task: Task): readonly string[] {
   return [
-    ...taskFiles(task),
+    ...task.suggestedFiles,
     ...(task.scope?.inBounds ?? []),
     ...(task.scope?.approvedOutOfBounds ?? []),
   ];

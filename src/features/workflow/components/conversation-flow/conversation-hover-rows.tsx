@@ -13,9 +13,7 @@ export function ConversationTranscriptRows({
   stickyLeadingLines: number;
   visibleActiveRowKey: string | null;
 }) {
-  const hoverConversationIndex = hoverStore.use((h) =>
-    h !== null && h.surface === 'conversation' ? h.index : null,
-  );
+  const hoverConversationIndex = hoverStore.use((index) => index);
   const focusedTranscriptIndex =
     hoverConversationIndex !== null && hoverConversationIndex >= stickyLeadingLines
       ? hoverConversationIndex - stickyLeadingLines
@@ -47,9 +45,7 @@ export function CompletedTaskSummariesWithHover({
   summaryCount: number;
   children: (focusedSummaryIndex: number | null) => ReactNode;
 }) {
-  const hoverConversationIndex = hoverStore.use((h) =>
-    h !== null && h.surface === 'conversation' ? h.index : null,
-  );
+  const hoverConversationIndex = hoverStore.use((index) => index);
   const focusedSummaryIndex =
     hoverConversationIndex !== null &&
     summaryCount > 0 &&

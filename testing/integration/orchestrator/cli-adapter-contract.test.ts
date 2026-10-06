@@ -401,7 +401,7 @@ async function runImplement(
 
 function contractTask() {
   return makeTask({
-    file: 'src/contract.ts',
+    suggestedFiles: ['src/contract.ts'],
     description: `${PROMPT_HEAD}create the contract module${PROMPT_TAIL}`,
   });
 }
@@ -722,7 +722,7 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
     let timeoutThrown: unknown;
     try {
       await timeoutImplementer.implement({
-        task: makeTask({ file: 'src/contract.ts' }),
+        task: makeTask({ suggestedFiles: ['src/contract.ts'] }),
         projectDir: fixture.projectDir,
         config: makeConfig({ implementer: implementerConfig(toolId, { timeout: 50 }) }),
         context: { ...defaultContext, dir: fixture.projectDir },

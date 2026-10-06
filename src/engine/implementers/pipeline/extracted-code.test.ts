@@ -31,7 +31,7 @@ describe('createImplementerBase — extracted-code pipeline', () => {
       }),
     );
     const implementer = createImplementerBase(makeBaseConfig({ invoke }));
-    const task = makeTask({ id: 'T001', file: 'src/nope.ts', action: 'create' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/nope.ts'], action: 'create' });
 
     const result = await implementer.implement({
       task,
@@ -61,7 +61,7 @@ describe('createImplementerBase — extracted-code pipeline', () => {
         }),
       );
       const implementer = createImplementerBase(makeBaseConfig({ invoke }));
-      const task = makeTask({ id: 'T001', file: 'src/leak.ts', action: 'modify' });
+      const task = makeTask({ id: 'T001', suggestedFiles: ['src/leak.ts'], action: 'modify' });
 
       const result = await implementer.implement({
         task,
@@ -90,7 +90,7 @@ describe('createImplementerBase — extracted-code pipeline', () => {
       }),
     );
     const implementer = createImplementerBase(makeBaseConfig({ invoke }));
-    const task = makeTask({ id: 'T001', file: '../escape.ts', action: 'create' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['../escape.ts'], action: 'create' });
 
     await expect(
       implementer.implement({
@@ -115,7 +115,7 @@ describe('createImplementerBase — extracted-code pipeline', () => {
       }),
     );
     const implementer = createImplementerBase(makeBaseConfig({ invoke }));
-    const task = makeTask({ id: 'T001', file: 'src/hello.ts', action: 'modify' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/hello.ts'], action: 'modify' });
 
     const result = await implementer.implement({
       task,
@@ -142,7 +142,7 @@ describe('createImplementerBase — extracted-code pipeline', () => {
     );
     const implementer = createImplementerBase(makeBaseConfig({ invoke }));
     const approveWrite = vi.fn().mockResolvedValue({ allow: false, reason: 'approval denied' });
-    const task = makeTask({ id: 'T001', file: 'src/denied.ts', action: 'create' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/denied.ts'], action: 'create' });
 
     const result = await implementer.implement({
       task,
@@ -174,7 +174,7 @@ describe('createImplementerBase — extracted-code pipeline', () => {
       writeFileSync(join(projectDir, 'src/race.ts'), 'export const value = "user";\n');
       return { allow: true };
     });
-    const task = makeTask({ id: 'T001', file: 'src/race.ts', action: 'modify' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/race.ts'], action: 'modify' });
 
     const result = await implementer.implement({
       task,
@@ -207,7 +207,7 @@ describe('createImplementerBase — extracted-code pipeline', () => {
       }),
     );
     const implementer = createImplementerBase(makeBaseConfig({ invoke }));
-    const task = makeTask({ id: 'T001', file: 'src/app.ts', action: 'modify' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/app.ts'], action: 'modify' });
 
     const result = await implementer.implement({
       task,
@@ -239,7 +239,7 @@ describe('createImplementerBase — extracted-code pipeline', () => {
       }),
     );
     const implementer = createImplementerBase(makeBaseConfig({ invoke }));
-    const task = makeTask({ id: 'T001', file: 'src/app.ts', action: 'modify' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/app.ts'], action: 'modify' });
 
     const result = await implementer.implement({
       task,
@@ -267,7 +267,7 @@ describe('createImplementerBase — extracted-code pipeline', () => {
       }),
     );
     const implementer = createImplementerBase(makeBaseConfig({ invoke }));
-    const task = makeTask({ id: 'T001', file: 'src/app.ts', action: 'modify' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/app.ts'], action: 'modify' });
 
     const result = await implementer.implement({
       task,
@@ -297,7 +297,7 @@ describe('createImplementerBase — extracted-code pipeline', () => {
       }),
     );
     const implementer = createImplementerBase(makeBaseConfig({ invoke }));
-    const task = makeTask({ id: 'T001', file: 'src/app.ts', action: 'modify' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/app.ts'], action: 'modify' });
 
     const result = await implementer.implement({
       task,
@@ -326,7 +326,7 @@ describe('createImplementerBase — extracted-code pipeline', () => {
       }),
     );
     const implementer = createImplementerBase(makeBaseConfig({ invoke }));
-    const task = makeTask({ id: 'T001', file: 'src/app.ts', action: 'modify' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/app.ts'], action: 'modify' });
 
     const result = await implementer.implement({
       task,
@@ -351,7 +351,7 @@ describe('createImplementerBase — extracted-code pipeline', () => {
       }),
     );
     const implementer = createImplementerBase(makeBaseConfig({ invoke }));
-    const task = makeTask({ id: 'T001', file: 'src/fresh.ts', action: 'modify' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/fresh.ts'], action: 'modify' });
 
     const result = await implementer.implement({
       task,

@@ -59,7 +59,7 @@ function setupProject(): { projectDir: string; sessionId: string } {
 function configWithProfiles() {
   return {
     ...makeNoValidationConfig({
-      approval: { enabled: false, feedRejectionsToPlanner: true },
+      approval: { feedRejectionsToPlanner: true },
       workflow: {},
     }),
     implementerProfiles: {
@@ -113,7 +113,7 @@ function retryConfigWithContracts(
   };
 
   return ConfigSchema.parse({
-    ...makeNoValidationConfig({ approval: { enabled: false, feedRejectionsToPlanner: true } }),
+    ...makeNoValidationConfig({ approval: { feedRejectionsToPlanner: true } }),
     implementerProfiles: {
       default: 'default-profile',
       profiles: {
@@ -374,7 +374,7 @@ describe('createRetryRuntime', () => {
         runtime: childRuntime,
       });
       const retryRuntime = await createRetryRuntime(ctx, 'retry-profile');
-      const task = makeTask({ id: 'T001', file: taskFile });
+      const task = makeTask({ id: 'T001', suggestedFiles: [taskFile] });
 
       if (retryContract === 'direct') {
         const workspace = await createStagedProject({

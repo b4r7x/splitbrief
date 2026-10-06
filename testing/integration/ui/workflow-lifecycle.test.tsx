@@ -27,13 +27,6 @@ function workflowStateInResearching(feature: string) {
   return transition(createInitialState(feature), { type: 'START' });
 }
 
-function workflowStateInPlanning(feature: string) {
-  let state = workflowStateInResearching(feature);
-  state = transition(state, { type: 'RESEARCH_DONE' });
-  state = transition(state, { type: 'SPEC_DONE' });
-  return transition(state, { type: 'APPROVE_SPEC' });
-}
-
 describe('WorkflowScreen lifecycle', () => {
   beforeEach(() => {
     resetAllStores();
@@ -195,7 +188,7 @@ describe('WorkflowScreen lifecycle', () => {
     const projectDir = createTempDir('workflow-screen-cancel-resumable');
     try {
       const sessionId = 'cancelled-planning';
-      const saved = workflowStateInPlanning('cancel during planning');
+      const saved = workflowStateInResearching('cancel during planning');
       saveState({ projectDir, sessionId }, saved);
       const config = makeConfig();
       const prepared = prepareWorkflowExecution({

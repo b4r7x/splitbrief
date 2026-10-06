@@ -189,7 +189,7 @@ describe('pre-review checks', () => {
   });
 
   it('attributes a required check diagnostic to the file it names and its last changer', async () => {
-    const task = makeTask({ id: 'T001', file: 'src/hello.ts', status: 'done' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/hello.ts'], status: 'done' });
     writeEvidenceLedger(
       { projectDir, sessionId: 'sess-pre-review' },
       ledgerFor([task], { T001: ['src/a.ts'] }),
@@ -305,7 +305,7 @@ describe('pre-review checks', () => {
     expect(issue.message).toContain('K1: missing-vitest not found');
     expect(issue.message).toContain('K2: npm scripts are not approved by the plan');
     expect(issue.details.join('\n')).toContain('K1: missing-vitest not found');
-    expect(issue.availableActions).toEqual(['retry-same-worker', 'pause-run', 'end-run']);
+    expect(issue.availableActions).toEqual(['retry-same-worker', 'end-run']);
     expect(issue.recommendedAction).toBe('retry-same-worker');
   });
 });

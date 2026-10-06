@@ -1,8 +1,4 @@
-import type { RecoveryAction } from '../../core/schemas/enums.js';
-import {
-  PROMPTABLE_RECOVERY_ACTIONS,
-  UserEditConflictKindSchema,
-} from '../../core/schemas/enums.js';
+import { RECOVERY_ACTIONS, type RecoveryAction } from '../../core/schemas/enums.js';
 import type {
   RecoveryIssue,
   SeatSwapCandidate,
@@ -17,20 +13,13 @@ import { CREW_SEAT_ROLES } from '../../core/crew/seats.js';
 import { resolveModelDisplayName } from '../../engine/providers/model/display-names.js';
 import { isSeatLevelRetry } from '../../engine/orchestrator/recovery/actions.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
-import {
-  recoveryFactBoolean,
-  recoveryFactNumber,
-  recoveryFactString,
-} from '../../core/schemas/recovery/facts.js';
-import { TaskIdSchema } from '../../core/schemas/task.js';
+import { recoveryFactNumber, recoveryFactString } from '../../core/schemas/recovery/facts.js';
 import { countNoun } from '../../utils/pluralize.js';
 import { glyph } from '../../lib/glyphs.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { formatResetAt, stripRecoveryResetClause } from '../../core/recovery/reset-clock.js';
-import { userEditConflictRelation } from '../../core/recovery/user-edit-conflict-words.js';
-import { formatRecoveryHeadline } from '../../core/recovery/headline.js';
+import { formatRecoveryHeadline, formatRecoveryTitle } from '../../core/recovery/headline.js';
 import {
-  rebaseVerb,
   recoveryActionLabel,
   type RecoveryActionChoiceContext,
 } from '../../core/recovery/action-label.js';
@@ -41,7 +30,12 @@ import {
   recoveryContextSeatLabel,
 } from './usage-details-model.js';
 
-const ACTION_ORDER = PROMPTABLE_RECOVERY_ACTIONS;
+const ACTION_ORDER = RECOVERY_ACTIONS;
+
+const BOUND_REASONS: ReadonlySet<RecoveryIssue['reason']> = new Set([
+  'consult-bound-spent',
+  'planner-calls-spent',
+]);
 
 export function recommendedRowPrefix(): string {
   return `${glyph('liveBar')} `;
@@ -75,22 +69,14 @@ export type PromptRow =
 
 type ActionRow = Extract<PromptRow, { kind: 'action' } | { kind: 'note' }>;
 
-const REBASE_CONTINUATION = '(approve / edit / reject the proposal)';
-
-// `revise` and `revise-spec` share a key: no reason offers both, and the answer
-// is matched only against the actions the issue itself carries.
 const ACTION_KEYS: Record<RecoveryAction, string> = {
   'retry-same-worker': 'r',
   'restore-backup': 'u',
-  'route-bigger-worker': 'b',
   'switch-seat': 'w',
-  'planner-split-rebase': 'p',
   revise: 'v',
   'accept-as-is': 'k',
-  'revise-spec': 'v',
   continue: 'c',
   'skip-current-task': 's',
-  'pause-run': 'space',
   'end-run': 'a',
 };
 
@@ -102,15 +88,11 @@ export function recoveryActionKey(action: RecoveryAction): string {
 export const ACTION_ALIASES: Record<RecoveryAction, string[]> = {
   'retry-same-worker': ['r', 'retry', 'retry same worker', 'retry-same-worker'],
   'restore-backup': ['u', 'restore', 'restore backup', 'restore-backup'],
-  'route-bigger-worker': ['b', 'bigger', 'route', 'route bigger', 'route-bigger-worker'],
   'switch-seat': ['w', 'switch', 'switch seat', 'switch-seat'],
-  'planner-split-rebase': [],
   revise: ['v', 'revise', 'comment'],
   'accept-as-is': ['k', 'accept', 'accept as is', 'accept-as-is'],
-  'revise-spec': ['v', 'revise', 'revise spec', 'revise-spec'],
   continue: ['c', 'continue', 'cont'],
   'skip-current-task': ['s', 'skip', 'skip task', 'skip-current-task'],
-  'pause-run': ['space', 'pause', 'pause run', 'pause-run'],
   'end-run': ['a', 'end', 'end run', 'end-run', 'abort', 'quit', 'q'],
 };
 
@@ -127,7 +109,12 @@ export function getRecoveryPromptActions(issue: RecoveryIssue): RecoveryAction[]
  * offers no retry sends them with its revise. A halt that offers neither takes no words.
  */
 export function correctionActionFor(issue: RecoveryIssue): RecoveryAction | undefined {
-  const offered: readonly RecoveryAction[] = ['retry-same-worker', 'revise', 'revise-spec'];
+  const offered: readonly RecoveryAction[] = [
+    'retry-same-worker',
+    'revise',
+    // A spent bound continues by a grant, and the grant records the note and steers the replay.
+    ...(BOUND_REASONS.has(issue.reason) ? (['continue'] as const) : []),
+  ];
   return offered.find((action) => issue.availableActions.includes(action));
 }
 
@@ -144,17 +131,9 @@ function formatRecoveryActionText(
         : `retry ${CREW_SEAT_LABELS[context.seatRetry]}`;
     case 'restore-backup':
       return 'restore backup';
-    case 'route-bigger-worker': {
-      const profile = recoveryFactString(context.facts, 'routeBiggerProfile');
-      return profile ? `route to bigger worker · ${profile}` : 'route to bigger worker';
-    }
     case 'switch-seat':
       return 'switch the seat to another tool';
-    case 'planner-split-rebase':
-      return `ask planner to ${rebaseVerb(context)}`;
-    // An old run's `revise-spec` sends its note to the planning session, as `revise` does.
     case 'revise':
-    case 'revise-spec':
       return context.reason === 'review-failed'
         ? 'fix again · add a note, grant one more fix cycle'
         : 'revise · send the planner a correction';
@@ -166,8 +145,6 @@ function formatRecoveryActionText(
       return 'continue';
     case 'skip-current-task':
       return 'skip task';
-    case 'pause-run':
-      return 'pause · no new brief starts, changes kept';
     case 'end-run':
       return 'end run · closes this run, changes kept';
   }
@@ -222,7 +199,6 @@ export function recoveryMenuLabel(action: RecoveryAction, issue: RecoveryIssue):
   if (apply !== undefined) return apply.charAt(0).toUpperCase() + apply.slice(1);
   const label = recoveryActionLabel(action, {
     reason: issue.reason,
-    facts: issue.facts,
     switchSeat: issue.switchSeat,
     seat: issue.seat,
   });
@@ -324,21 +300,8 @@ function buildRecoveryActionRows(
       text: formatRecoveryActionChoice(action, context),
       recommended: action === recommended,
     });
-    if (action === 'planner-split-rebase') {
-      rows.push({ kind: 'note', text: REBASE_CONTINUATION });
-    }
   }
   return rows;
-}
-
-export function formatRecoveryActionLines(
-  actions: RecoveryAction[],
-  context: RecoveryActionChoiceContext = {},
-  recommended?: RecoveryAction | undefined,
-): string[] {
-  return buildRecoveryActionRows(actions, context, recommended).map((row) =>
-    row.kind === 'note' || !row.recommended ? row.text : `${recommendedRowPrefix()}${row.text}`,
-  );
 }
 
 /**
@@ -361,7 +324,6 @@ function buildRecoveryPromptRows(issue: RecoveryIssue): PromptRow[] {
   const actions = getRecoveryPromptActions(issue);
   const context: RecoveryActionChoiceContext = {
     reason: issue.reason,
-    facts: issue.facts,
     switchSeat: issue.switchSeat,
     seat: issue.seat,
     seatRetry: seatLevelRetrySeat(issue),
@@ -439,10 +401,8 @@ export function parseRecoveryActionAnswer(
   issue: RecoveryIssue,
 ): RecoveryAction | null {
   const actions = getRecoveryPromptActions(issue);
-  if (input.length === 0) return resolveRecommendedAction(issue, actions) ?? null;
-  // The pause key is the space bar, so whitespace alone is that key press, not an empty answer.
-  const trimmed = input.trim();
-  const normalized = trimmed.length === 0 ? 'space' : trimmed.toLowerCase();
+  const normalized = input.trim().toLowerCase();
+  if (normalized.length === 0) return resolveRecommendedAction(issue, actions) ?? null;
   if (SWITCH_SEAT_ROW_KEY.test(normalized)) {
     return numberedSwitchSeatAction(normalized, issue, actions);
   }
@@ -479,15 +439,14 @@ function resolveRecommendedAction(
   actions: RecoveryAction[],
 ): RecoveryAction | undefined {
   if (actions.includes(issue.recommendedAction)) return issue.recommendedAction;
-  if (actions.includes('pause-run')) return 'pause-run';
   return actions[0];
 }
 
 function formatRecoveryHeader(issue: RecoveryIssue): string {
   const context = formatApiContextHeadline(issue);
-  if (context !== undefined) return context;
+  if (context !== undefined) return formatRecoveryTitle(context, issue);
   const usageLimit = formatUsageLimitHeadline(issue);
-  if (usageLimit !== undefined) return usageLimit;
+  if (usageLimit !== undefined) return formatRecoveryTitle(usageLimit, issue);
   // The engine's sentence carries the evidence for the headless sinks; here the evidence is the
   // first fact row, so the header names the halt and nothing is said twice.
   if (
@@ -500,7 +459,7 @@ function formatRecoveryHeader(issue: RecoveryIssue): string {
     issue.reason === 'plan-questions-exhausted' ||
     issue.reason === 'plan-checks-failed'
   ) {
-    return `Recovery needed · ${formatRecoveryHeadline(issue)}`;
+    return formatRecoveryTitle(formatRecoveryHeadline(issue), issue);
   }
   // "T003 validation failed" takes "after 3 attempts"; a cause that already
   // ends a sentence would read it as part of that sentence ("or abort after 2
@@ -513,7 +472,7 @@ function formatRecoveryHeader(issue: RecoveryIssue): string {
     issue.attempts !== undefined && issue.attempts > 0 && !cause.endsWith('.')
       ? ` after ${countNoun(issue.attempts, 'attempt')}`
       : '';
-  return `Recovery needed · ${cause}${attemptSuffix}`;
+  return formatRecoveryTitle(`${cause}${attemptSuffix}`, issue);
 }
 
 /**
@@ -570,81 +529,15 @@ function formatDetailLines(issue: RecoveryIssue): string[] {
           .filter((detail) => !detail.startsWith('Worker profile:'))
           .slice(0, MAX_DETAIL_LINES);
   return details
-    .map((detail) => formatDetailLine(detail, issue))
+    .map(formatDetailLine)
     .map((detail) => (dropQuotedReset ? stripRecoveryResetClause(detail) : detail));
 }
 
-function formatDetailLine(detail: string, issue: RecoveryIssue): string {
+function formatDetailLine(detail: string): string {
   if (detail.startsWith('Validation: ')) return `Last check ${detail.slice('Validation: '.length)}`;
   if (detail.startsWith('Validation ')) return `Last check ${detail.slice('Validation '.length)}`;
   if (detail.startsWith('Spent ')) return `Spent ${detail.slice('Spent '.length)}`;
-  if (isConflictRecovery(issue)) {
-    const conflictSummary = formatConflictSummary(detail, issue);
-    if (conflictSummary !== undefined) return conflictSummary;
-    const continuation = formatConflictContinuation(detail, issue);
-    if (continuation !== undefined) return continuation;
-    const fileConflict = formatFileConflictDetail(detail, issue);
-    if (fileConflict !== undefined) return fileConflict;
-  }
   return detail;
-}
-
-function isConflictRecovery(issue: RecoveryIssue): boolean {
-  return issue.reason === 'user-edit-conflict' || issue.reason === 'approval-promotion-conflict';
-}
-
-function formatConflictSummary(detail: string, issue: RecoveryIssue): string | undefined {
-  const prefix = 'Conflict kind: ';
-  if (!detail.startsWith(prefix)) return undefined;
-  const value = detail.slice(prefix.length);
-  const parsed = UserEditConflictKindSchema.safeParse(value);
-  const factKind = issue.facts?.conflictKind;
-  if (!parsed.success || (factKind !== undefined && factKind !== value)) return undefined;
-  return `Edit relation: ${userEditConflictRelation({
-    kind: parsed.data,
-    affectedTaskIds: issue.affectedTaskIds,
-    currentTaskId: issue.taskId,
-  })}`;
-}
-
-function formatConflictContinuation(detail: string, issue: RecoveryIssue): string | undefined {
-  const safeToContinue = recoveryFactBoolean(issue.facts, 'safeToContinue');
-  if (safeToContinue === undefined) return undefined;
-  const expected = `Safe to continue: ${safeToContinue ? 'yes' : 'no'}`;
-  if (detail !== expected) return undefined;
-  return safeToContinue ? 'Continuing is safe' : 'Continuing is not safe';
-}
-
-function formatFileConflictDetail(detail: string, issue: RecoveryIssue): string | undefined {
-  for (const file of issue.files) {
-    const prefix = `${file}: `;
-    if (!detail.startsWith(prefix)) continue;
-    const description = detail.slice(prefix.length);
-    for (const kind of UserEditConflictKindSchema.options) {
-      if (description === kind) {
-        return `${file}: ${userEditConflictRelation({
-          kind,
-          affectedTaskIds: issue.affectedTaskIds,
-          currentTaskId: issue.taskId,
-        })}`;
-      }
-      const affectedPrefix = `${kind} affects `;
-      if (!description.startsWith(affectedPrefix)) continue;
-      const affectedTaskIds = description.slice(affectedPrefix.length).split(', ');
-      if (
-        affectedTaskIds.length === 0 ||
-        affectedTaskIds.some((id) => !TaskIdSchema.safeParse(id).success)
-      ) {
-        return undefined;
-      }
-      return `${file}: ${userEditConflictRelation({
-        kind,
-        affectedTaskIds,
-        currentTaskId: issue.taskId,
-      })}`;
-    }
-  }
-  return undefined;
 }
 
 function formatWorkerLines(issue: RecoveryIssue): string[] {

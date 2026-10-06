@@ -5,13 +5,12 @@ import type { FilteredStdin, MouseEvent } from '../../../src/lib/terminal/filter
 import { _resetMouseZones, registerMouseZone } from '../../../src/lib/terminal/mouse-zones.js';
 import { ROW_ZONE_Z_OVERLAY, ROW_ZONE_Z_SCREEN } from '../../../src/components/pickers/row-zone.js';
 import { PROMPT_ZONE_Z } from '../../../src/features/workflow/components/approval-prompt.js';
-import { readBriefListSnapshot } from '../../../src/features/workflow/layout/snapshot.js';
+import { readConversationScrollSnapshot } from '../../../src/features/workflow/layout/snapshot.js';
 import { _resetHoverThrottle } from '../../../src/features/workflow/hooks/use-mouse-pointer.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { overlayStore } from '../../../src/stores/ui/overlay.js';
 import { editorStore } from '../../../src/stores/ui/editor.js';
 import { hoverStore } from '../../../src/stores/ui/hover.js';
-import { focusStore } from '../../../src/stores/ui/focus.js';
 import { controlsStore } from '../../../src/stores/ui/controls.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { inputHeightStore } from '../../../src/stores/ui/input-height.js';
@@ -90,22 +89,11 @@ function seedConversation(): void {
   });
 }
 
-function openBriefReview(taskCount: number) {
-  routerStore.init(WORKFLOW_ROUTE);
-  lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
-  controlsStore.setInputMode('review');
-  reviewStore.setReviewFile('briefs.md', taskCount);
-  const snapshot = readBriefListSnapshot();
-  if (snapshot === null) throw new Error('expected a brief-list snapshot');
-  return snapshot;
-}
-
 describe('wireAppMouse', () => {
   beforeEach(() => {
     routerStore.reset();
     overlayStore.reset();
     reviewStore.reset();
-    focusStore.clear();
     hoverStore.clear();
     terminalSizeStore.__testReset({ rows: 30, cols: 80, isSmall: false });
     conversationScrollStore.reset();
@@ -153,7 +141,7 @@ describe('wireAppMouse', () => {
   });
 
   it('routes clicks on non-workflow screens to registered zones and clears stale workflow hover', () => {
-    hoverStore.set('conversation', 2);
+    hoverStore.set(2);
     const click = vi.fn();
     registerMouseZone({
       id: 'home-row',
@@ -210,24 +198,24 @@ describe('wireAppMouse', () => {
 
     expect(composerClick).not.toHaveBeenCalled();
     expect(promptClick).toHaveBeenCalledOnce();
-    expect(focusStore.get()).toBeNull();
     dispose();
   });
 
   it('blocks workflow fallback hit testing while question input owns the prompt', () => {
-    const snapshot = openBriefReview(12);
-    const listTop = snapshot.rect.top + snapshot.taskTopOffset;
+    routerStore.init(WORKFLOW_ROUTE);
+    seedConversation();
+    const { left, top } = readConversationScrollSnapshot().contentRect;
     const mock = createMockFilteredStdin();
     const dispose = wireAppMouse(mock.filtered);
 
-    mock.emit(pointerEvent('press', snapshot.rect.left, listTop));
-    expect(focusStore.get()).toEqual({ region: 'brief', index: snapshot.previousCount });
+    mock.emit(pointerEvent('move', left, top));
+    expect(hoverStore.get()).not.toBeNull();
 
-    focusStore.clear();
+    _resetHoverThrottle();
     controlsStore.setInputMode('question');
-    mock.emit(pointerEvent('press', snapshot.rect.left, listTop));
+    mock.emit(pointerEvent('move', left, top));
 
-    expect(focusStore.get()).toBeNull();
+    expect(hoverStore.get()).toBeNull();
     dispose();
   });
 

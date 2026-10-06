@@ -321,8 +321,8 @@ function contextIssue(facts: Record<string, RecoveryFact>): RecoveryIssue {
     message: 'The review seat was not given the context this call needs.',
     details: [],
     facts,
-    availableActions: ['retry-same-worker', 'pause-run', 'end-run'],
-    recommendedAction: 'pause-run',
+    availableActions: ['retry-same-worker', 'end-run'],
+    recommendedAction: 'retry-same-worker',
     createdAt: '2026-04-29T12:00:00.000Z',
   };
 }

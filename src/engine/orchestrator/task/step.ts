@@ -10,6 +10,7 @@ import { isAbortError } from '../../../utils/abort.js';
 import { publishError, publishWarning } from '../events.js';
 import {
   addUsageAndSave,
+  parkStoppedRun,
   raisePendingRecovery,
   rebaseOnPersistedWorkflowState,
   transitionAndSave,
@@ -33,11 +34,10 @@ import { isResumableWorkspaceStop, retentionError } from '../isolation/retention
 import { runImplementation } from './run-implementation.js';
 import { gateAttemptChanges } from './attempt-gate.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
-import { runChainAnalysisSafe } from './analyze-drift.js';
 import { restoreExhaustedTaskFiles } from './rollback.js';
 import { handleFailedImplementation } from './implementation-failure.js';
 import { runPreValidationGate } from './pre-validation-gate.js';
-import { inputHashesNow, inputsMoved, taskInputFiles } from './stale-inputs.js';
+import { inputHashesNow, inputsMovedUnexpectedly, taskInputFiles } from './stale-inputs.js';
 import { runTaskChecksAfterAcceptance } from './task-checks.js';
 import { lineageIdOf } from '../../../core/state/task-insert.js';
 import { requestConsult } from '../consult/request.js';
@@ -88,7 +88,7 @@ type RunSingleTaskOptions = {
   state: WorkflowState;
   taskBreakdowns: TaskTokenUsage[];
   setTrackedState: (s: WorkflowState) => void;
-  setCurrentTask: (t: Pick<Task, 'file' | 'files' | 'action'> | undefined) => void;
+  setCurrentTask: (t: Pick<Task, 'suggestedFiles' | 'action'> | undefined) => void;
   onTaskStartSnapshot?:
     | ((state: WorkflowState, snapshot: ChangedFilesSnapshot) => WorkflowState)
     | undefined;
@@ -152,7 +152,17 @@ async function refreshStaleTask(
   const step = { kind: 'brief' as const, taskId: task.id, attempt: state.attempt };
   if (
     opts.wctx.continuation?.resumesAttempt(step, hashTaskBrief([task])) === true ||
-    !inputsMoved(opts.wctx.workspaceDir, task)
+    !inputsMovedUnexpectedly(
+      opts.wctx.workspaceDir,
+      task,
+      state.tasks.slice(
+        0,
+        Math.max(
+          0,
+          state.tasks.findIndex((t) => t.id === task.id),
+        ),
+      ),
+    )
   ) {
     return { kind: 'dispatch', state, task, guidance: undefined };
   }
@@ -355,12 +365,6 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       const rerun = await rerunReplacedTask(opts, retry.state);
       return rerun ?? retry.state;
     }
-    await runChainAnalysisSafe({
-      wctx,
-      task,
-      state: retry.state,
-      taskStartSnapshot,
-    });
     return retry.state;
   }
 
@@ -421,6 +425,11 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     onApproved: (decision) => persistApprovalEvidence({ wctx, state, decision, taskId: task.id }),
   });
   if (gate.outcome === 'aborted') return state;
+  if (gate.outcome === 'cancelled') {
+    state = parkStoppedRun({ projectDir, sessionId, bus: wctx.bus }, state);
+    setTrackedState(state);
+    return state;
+  }
   if (gate.denial !== undefined) {
     recordApprovalDenial({
       wctx,
@@ -610,12 +619,6 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
         exemptStages: acceptance.exemptStages,
       },
     });
-    await runChainAnalysisSafe({
-      wctx,
-      task,
-      state,
-      taskStartSnapshot,
-    });
     return state;
   }
 
@@ -648,11 +651,5 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       taskStartSnapshot,
     });
   }
-  await runChainAnalysisSafe({
-    wctx,
-    task,
-    state: retry.state,
-    taskStartSnapshot,
-  });
   return retry.state;
 }

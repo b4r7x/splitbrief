@@ -43,14 +43,14 @@ it.each(['initial', 'local', 'consult'] as const)(
     const sessionId = 'parked-workflow';
     const feature = 'Build partial module';
     const task = makeTask({
-      file: 'partial.ts',
+      suggestedFiles: ['partial.ts'],
       scope: { inBounds: ['partial.ts'], outOfBounds: ['other files'] },
       evidence: ['The module exports complete'],
       typeDefs: 'export const complete: boolean',
     });
     const config = makeNoValidationConfig({
       workflow: { approve: 'none', maxRetries: 1 },
-      approval: { enabled: false, feedRejectionsToPlanner: false },
+      approval: { feedRejectionsToPlanner: false },
     });
     const ref = { projectDir, sessionId };
     const expectedAttempt = route === 'consult' ? 2 : route === 'initial' ? 0 : 1;

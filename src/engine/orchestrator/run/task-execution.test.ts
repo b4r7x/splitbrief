@@ -163,7 +163,7 @@ function runOptions(opts: {
       // Each brief writes the file it declared, so a run with more than one brief
       // does not read as an undeclared write.
       implement: vi.fn().mockImplementation(async (call: ImplementerOptions) => {
-        const file = call.task.file ?? 'src/alpha.ts';
+        const file = call.task.suggestedFiles[0];
         mkdirSync(join(call.projectDir, dirname(file)), { recursive: true });
         writeFileSync(join(call.projectDir, file), `export const value = ${Date.now()};\n`);
         return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
@@ -293,8 +293,8 @@ describe('runTasksAndReview boundary pause', { timeout: 120_000 }, () => {
   it('parks between briefs, records the brief it stopped before, and continues into it', async () => {
     const { projectDir, sessionId, head } = setupProject();
     const tasks = [
-      makeTask({ id: 'T001', file: 'src/alpha.ts' }),
-      makeTask({ id: 'T002', file: 'src/beta.ts' }),
+      makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'] }),
+      makeTask({ id: 'T002', suggestedFiles: ['src/beta.ts'] }),
     ];
     const parks: { partial: string; at: string }[] = [];
     const { events, implementer, options } = runOptions({
@@ -331,13 +331,13 @@ describe('runTasksAndReview boundary pause', { timeout: 120_000 }, () => {
   it('a correction typed at the park holds for every attempt of the next brief and is recorded once', async () => {
     const { projectDir, sessionId, head } = setupProject();
     const tasks = [
-      makeTask({ id: 'T001', file: 'src/alpha.ts' }),
-      makeTask({ id: 'T002', file: 'src/beta.ts' }),
+      makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'] }),
+      makeTask({ id: 'T002', suggestedFiles: ['src/beta.ts'] }),
     ];
     const correction = 'Do not run any test, typecheck or lint command.';
     const steers: { call: 'implement' | 'retry'; taskId: string; steer: string | undefined }[] = [];
     const write = (call: ImplementerOptions): void => {
-      const file = call.task.file ?? 'src/alpha.ts';
+      const file = call.task.suggestedFiles[0];
       mkdirSync(join(call.projectDir, dirname(file)), { recursive: true });
       writeFileSync(join(call.projectDir, file), `export const value = ${Date.now()};\n`);
     };
@@ -403,7 +403,7 @@ describe('runTasksAndReview boundary pause', { timeout: 120_000 }, () => {
 
   it('a correction typed at a stop inside a brief holds for that brief retry too', async () => {
     const { projectDir, sessionId, head } = setupProject();
-    const tasks = [makeTask({ id: 'T001', file: 'src/alpha.ts' })];
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'] })];
     const correction = 'Keep the helper in src/alpha.ts.';
     let abortCall: (() => void) | null = null;
     const sinks: WorkflowSinks = {
@@ -481,8 +481,8 @@ describe('runTasksAndReview boundary pause', { timeout: 120_000 }, () => {
   it('records a boundary park and stops when nothing can continue the run in place', async () => {
     const { projectDir, sessionId, head } = setupProject();
     const tasks = [
-      makeTask({ id: 'T001', file: 'src/alpha.ts' }),
-      makeTask({ id: 'T002', file: 'src/beta.ts' }),
+      makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'] }),
+      makeTask({ id: 'T002', suggestedFiles: ['src/beta.ts'] }),
     ];
     const { implementer, options } = runOptions({
       projectDir,
@@ -497,7 +497,6 @@ describe('runTasksAndReview boundary pause', { timeout: 120_000 }, () => {
 
     expect(implementer.implement).toHaveBeenCalledTimes(1);
     expect(result.completed).toBe(false);
-    expect(result.cancelled).toBe(false);
     expect(result.state.interruptedStep).toMatchObject({
       step: { kind: 'brief', taskId: 'T002', attempt: 0 },
       source: 'user',
@@ -522,7 +521,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
 
   it('a failing review triages once, appends its fix task and the next review passes', async () => {
     const { projectDir, sessionId, head } = setupProject();
-    const tasks = [makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' })];
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
     const onComplete = vi.fn();
     let reviews = 0;
     const { events, implementer, triagePrompts, options } = runOptions({
@@ -576,7 +575,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
       ],
     });
     // The fix task edits a file no task suggested, and the completed brief stays untouched.
-    expect(fixed?.file).toBe('src/shared/widget.ts');
+    expect(fixed?.suggestedFiles[0]).toBe('src/shared/widget.ts');
     expect(result.state.tasks[0]?.status).toBe('done');
     expect(result.state.fixCycles?.used).toBe(1);
     expect(result.state.plannerCalls?.used).toBe(1);
@@ -591,7 +590,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
 
   it('spends a fix cycle even when the triage appends nothing, and halts at the cap', async () => {
     const { projectDir, sessionId, head } = setupProject();
-    const tasks = [makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' })];
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
     const onComplete = vi.fn();
     const { events, implementer, triagePrompts, options } = runOptions({
       projectDir,
@@ -625,7 +624,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
 
   it('the cap halt names the spent cycles and offers the exits', async () => {
     const { projectDir, sessionId, head } = setupProject();
-    const tasks = [makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' })];
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
     const { events, options, triagePrompts } = runOptions({
       projectDir,
       sessionId,
@@ -648,9 +647,9 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
     expect(result.state.pendingRecovery?.availableActions).toEqual([
       'revise',
       'accept-as-is',
-      'pause-run',
       'end-run',
     ]);
+    expect(result.state.pendingRecovery?.recommendedAction).toBe('revise');
     expect(result.state.reviewedCandidate).toBeDefined();
     expect(triagePrompts).toHaveLength(0);
     expect(events.find((e) => e.type === 'error' && e.code === 'review_failed')).toBeDefined();
@@ -660,19 +659,59 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
     });
   });
 
-  it('a checkout run never offers accept-as-is at the cap, and End run closes it as ended', async () => {
+  // A checkout run has nothing to apply: accepting the failed review as is records the override,
+  // keeps the failed verdict and closes the run, as a passing review would.
+  it('the cap halt of a checkout run offers accept as is, which closes the run on the failed verdict', async () => {
     const { projectDir, sessionId, head } = setupProject();
-    const tasks = [makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' })];
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
+    const { options } = runOptions({
+      projectDir,
+      sessionId,
+      state: {
+        ...resumedReviewState(tasks, head, 2),
+        workspace: { kind: 'checkout', path: projectDir, base: { snapshotId: 'base', head } },
+      },
+      review: (prompt) =>
+        failedReviewVerdict(prompt, 'src/alpha.ts still crashes', { taskId: 'T001' }),
+      onComplete: vi.fn(),
+      config: makeNoValidationConfig({ workflow: { isolation: 'none' } }),
+    });
+
+    const result = await runTasksAndReview(options);
+
+    expect(result.state.pendingRecovery?.reason).toBe('review-failed');
+    expect(result.state.pendingRecovery?.availableActions).toEqual([
+      'revise',
+      'accept-as-is',
+      'end-run',
+    ]);
+    const accepted = await applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state: result.state,
+      action: 'accept-as-is',
+      bus: makeBusRecorder().bus,
+      comment: 'Ship it as is',
+    });
+    expect(accepted.ok).toBe(true);
+    if (!accepted.ok) throw new Error(accepted.message);
+    expect(accepted.state.reviewStatus).toBe('failed');
+    expect(accepted.state.acceptedAsIs).toBeDefined();
+    expect(deriveRunStatus({ state: accepted.state, liveness: 'not-alive' })).toEqual({
+      kind: 'closed',
+      as: 'complete',
+    });
+  });
+
+  it('End run at the cap halt of a checkout run closes it as ended and writes no run.patch', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
     const { options, triagePrompts } = runOptions({
       projectDir,
       sessionId,
       state: {
         ...resumedReviewState(tasks, head, 2),
-        workspace: {
-          kind: 'checkout',
-          path: projectDir,
-          base: { snapshotId: 'base', head },
-        },
+        workspace: { kind: 'checkout', path: projectDir, base: { snapshotId: 'base', head } },
       },
       review: (prompt) =>
         failedReviewVerdict(prompt, 'src/alpha.ts still crashes', { taskId: 'T001' }),
@@ -689,11 +728,6 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
       seat: 'build',
       message: 'Final review failed after 2 fix cycles',
     });
-    expect(result.state.pendingRecovery?.availableActions).toEqual([
-      'revise',
-      'pause-run',
-      'end-run',
-    ]);
     expect(triagePrompts).toHaveLength(0);
 
     const ended = await applyRecoveryAction({
@@ -715,7 +749,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
 
   it('a spent planner-call bound halts the triage on the plan seat', async () => {
     const { projectDir, sessionId, head } = setupProject();
-    const tasks = [makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' })];
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
     const { options, triagePrompts } = runOptions({
       projectDir,
       sessionId,
@@ -742,7 +776,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
 
   it('a fail with only unverified criteria halts without a triage', async () => {
     const { projectDir, sessionId, head } = setupProject();
-    const tasks = [makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' })];
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
     const { options, triagePrompts } = runOptions({
       projectDir,
       sessionId,
@@ -779,7 +813,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
 
   it('a pending triage consumes the saved review without a new review call', async () => {
     const { projectDir, sessionId, head } = setupProject();
-    const tasks = [makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' })];
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
     const { reviewPrompts, triagePrompts, options } = runOptions({
       projectDir,
       sessionId,
@@ -845,7 +879,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
 
   it('obtains a typed review before triaging a correction to an old Markdown-only review', async () => {
     const { projectDir, sessionId, head } = setupProject();
-    const tasks = [makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' })];
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
     const old = {
       ...resumedReviewState(tasks, head, 2),
       phase: 'complete' as const,
@@ -897,7 +931,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
 
   it('a twice-invalid review halts with reviewer protocol recovery', async () => {
     const { projectDir, sessionId, head } = setupProject();
-    const tasks = [makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' })];
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
     const { reviewPrompts, events, options } = runOptions({
       projectDir,
       sessionId,
@@ -918,7 +952,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
 
   it('a triage protocol error halts on the plan seat', async () => {
     const { projectDir, sessionId, head } = setupProject();
-    const tasks = [makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' })];
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
     const { events, options } = runOptions({
       projectDir,
       sessionId,
@@ -942,8 +976,8 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
   it("closes a continued run with the run's completed briefs, not only the ones it ran", async () => {
     const { projectDir, sessionId, head } = setupProject();
     const tasks = [
-      makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' }),
-      makeTask({ id: 'T002', file: 'src/beta.ts' }),
+      makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' }),
+      makeTask({ id: 'T002', suggestedFiles: ['src/beta.ts'] }),
     ];
     const { events, options } = runOptions({
       projectDir,
@@ -992,8 +1026,8 @@ describe('runTasksAndReview review fix with nothing to change', { timeout: 120_0
   it('still escalates a brief that is not reopened when it changes nothing', async () => {
     const { projectDir, sessionId, head } = setupProject();
     const tasks = [
-      makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' }),
-      makeTask({ id: 'T002', file: 'src/beta.ts' }),
+      makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' }),
+      makeTask({ id: 'T002', suggestedFiles: ['src/beta.ts'] }),
     ];
     const implementer = noChangeImplementer();
     const { events, options } = runOptions({
@@ -1018,7 +1052,7 @@ describe('runTasksAndReview review fix with nothing to change', { timeout: 120_0
 /** A direct writer that writes its brief's file and records every retry prompt it is given. */
 function promptRecordingImplementer(prompts: string[]): Implementer {
   const write = (task: Task, projectDir: string): void => {
-    const file = task.file ?? 'src/alpha.ts';
+    const file = task.suggestedFiles[0];
     mkdirSync(join(projectDir, dirname(file)), { recursive: true });
     writeFileSync(join(projectDir, file), `export const value = ${Date.now()};\n`);
   };
@@ -1046,7 +1080,7 @@ function promptRecordingImplementer(prompts: string[]): Implementer {
 describe('runTasksAndReview review fix instruction', { timeout: 120_000 }, () => {
   it('leaves the review instruction out of a retry after a validation failure', async () => {
     const { projectDir, sessionId, head } = setupProject();
-    const tasks = [makeTask({ id: 'T001', file: 'src/alpha.ts' })];
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'] })];
     const prompts: string[] = [];
     let validations = 0;
     const { options } = runOptions({
@@ -1086,7 +1120,7 @@ describe('runTasksAndReview review fix instruction', { timeout: 120_000 }, () =>
 describe('runTasksAndReview review halt', { timeout: 120_000 }, () => {
   it('hands the final review the run\u2019s skills context', async () => {
     const { projectDir, sessionId, head } = setupProject();
-    const tasks = [makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' })];
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
     const skillsContext = '## Active Project Skills\n\n### AuthSkill\nREVIEW-SKILL-BODY';
     const { reviewPrompts, options } = runOptions({
       projectDir,
@@ -1104,7 +1138,7 @@ describe('runTasksAndReview review halt', { timeout: 120_000 }, () => {
 
   it('a correction after the failed review triages the saved review again and re-runs the review', async () => {
     const { projectDir, sessionId, head } = setupProject();
-    const tasks = [makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' })];
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
     const failed = runOptions({
       projectDir,
       sessionId,
@@ -1174,7 +1208,7 @@ describe('runTasksAndReview review halt', { timeout: 120_000 }, () => {
 
   it('a passing review still completes at persisted cycle 2', async () => {
     const { projectDir, sessionId, head } = setupProject();
-    const tasks = [makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' })];
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
     const onComplete = vi.fn();
     const { options } = runOptions({
       projectDir,
@@ -1193,7 +1227,7 @@ describe('runTasksAndReview review halt', { timeout: 120_000 }, () => {
 
   it('an abort during review leaves the run on final-review for a retry', async () => {
     const { projectDir, sessionId, head } = setupProject();
-    const tasks = [makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' })];
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
     const controller = new AbortController();
     const first = runOptions({
       projectDir,
@@ -1209,7 +1243,6 @@ describe('runTasksAndReview review halt', { timeout: 120_000 }, () => {
 
     const aborted = await runTasksAndReview(first.options);
     expect(aborted.completed).toBe(false);
-    expect(aborted.cancelled).toBe(false);
     expect(aborted.state.phase).toBe('final-review');
 
     const second = runOptions({
@@ -1251,7 +1284,7 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
     const tasks = [
       makeTask({
         id: 'T001',
-        file: 'src/alpha.ts',
+        suggestedFiles: ['src/alpha.ts'],
         status: 'done',
         checks: [
           { id: 'K-task-refused', kind: 'cmd', value: 'npm run deploy', required: true },
@@ -1304,7 +1337,7 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
 
   it('non-overlapping edit merges and the whole run diff is re-reviewed', async () => {
     const { projectDir, sessionId, head } = setupProject();
-    const tasks = [makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' })];
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
     const { reviewPrompts, options } = runOptions({
       projectDir,
       sessionId,
@@ -1341,7 +1374,7 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
     const tasks = [
       makeTask({
         id: 'T001',
-        file: 'src/alpha.ts',
+        suggestedFiles: ['src/alpha.ts'],
         status: 'done',
         checks: [{ id: 'C1', kind: 'cmd', value: 'make test', required: false }],
         checkResults: [{ id: 'C1', passed: true }],
@@ -1351,7 +1384,7 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
     const controller = new AbortController();
     const implementer = makeImplementer({
       implement: vi.fn().mockImplementation(async (call: ImplementerOptions) => {
-        const file = call.task.file ?? 'src/alpha.ts';
+        const file = call.task.suggestedFiles[0];
         mkdirSync(join(call.projectDir, dirname(file)), { recursive: true });
         writeFileSync(join(call.projectDir, file), 'export const value = 1;\n');
         controller.abort();
@@ -1425,7 +1458,7 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
 describe('runTasksAndReview required-checks halt retry', { timeout: 120_000 }, () => {
   it('a render command saved after the halt reaches the retried pre-review, whose render check runs before the review', async () => {
     const { projectDir, sessionId, head } = setupProject();
-    const tasks = [makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' })];
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
     const state = {
       ...reviewedState(tasks, head, tasks.length),
       plan: {

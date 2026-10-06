@@ -1,8 +1,6 @@
 import { join, resolve } from 'node:path';
-import type { z } from 'zod';
 import {
   SessionLogEntrySchema,
-  SessionLogEventEntrySchema,
   SESSION_LOG_MAX_ENTRY_BYTES,
   type SessionLogEventEntry,
   type SessionLogMessageEntry,
@@ -16,7 +14,6 @@ import { confinedAppendFileSync, confinedEnsureDir } from '../../lib/confined-fs
 import { warnStderr } from '../../lib/warn.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { nowIso } from '../../utils/format-time.js';
-import { boundConsumerPayload } from '../payload-bounds.js';
 import { assertSessionDirConfined } from './confinement.js';
 
 export type SessionLogAppender = (entry: SessionLogMessageEntry | SessionLogEventEntry) => void;
@@ -109,27 +106,4 @@ export function appendEngineEvent<TEvent extends { type: string; ts: number }>(
   event: TEvent,
 ): void {
   appendLine(ref, toEngineEventEntry(event));
-}
-
-export function appendProtectedEngineEvent<TEvent extends { type: string; ts: number }>(
-  ref: SessionRef,
-  event: TEvent,
-  schema: z.ZodType<TEvent>,
-): void {
-  const protectedEvent = boundConsumerPayload({ context: 'session-log', payload: event });
-  if (protectedEvent.oversized) return;
-
-  const parsedEvent = schema.safeParse(protectedEvent.payload);
-  if (!parsedEvent.success) return;
-
-  const protectedEntry = boundConsumerPayload({
-    context: 'session-log',
-    payload: toEngineEventEntry(parsedEvent.data),
-  });
-  if (protectedEntry.oversized) return;
-
-  const parsedEntry = SessionLogEventEntrySchema.safeParse(protectedEntry.payload);
-  if (!parsedEntry.success) return;
-
-  appendLine(ref, parsedEntry.data);
 }

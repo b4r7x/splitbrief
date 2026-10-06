@@ -141,10 +141,10 @@ describe('buildPaletteSources command items', () => {
     const items = buildCommandSources([
       {
         kind: 'arg',
-        name: '/mode',
-        description: 'Workflow mode',
+        name: '/crew',
+        description: 'Who fills each seat',
         category: 'crew',
-        args: { kind: 'closed', options: ['instant', 'quick'], optional: true },
+        args: { kind: 'closed', options: ['plan', 'build'], optional: true },
         validScreens: ['home'],
         handler: noop,
       },
@@ -160,7 +160,7 @@ describe('buildPaletteSources command items', () => {
     ]);
 
     expect(items.map((item) => [item.description, item.hint])).toEqual([
-      ['Workflow mode', '[instant|quick]'],
+      ['Who fills each seat', '[plan|build]'],
       ['Note command', '<text>'],
     ]);
   });

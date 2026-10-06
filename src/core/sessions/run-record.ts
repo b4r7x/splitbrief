@@ -33,7 +33,7 @@ function unreadableState(hydration: OwnedResumeState): RunStatus {
   // as resumable is the caller's decision, not this loader's.
   return {
     kind: 'open',
-    stop: { kind: 'failed', message },
+    stop: { kind: 'stopped', on: { kind: 'failed', message } },
     resumeAt: { kind: 'planner', call: 'plan' },
   };
 }

@@ -13,6 +13,16 @@ import {
 } from '../event-format.js';
 import { compositeBlock, rowsBlock, wrappedTextBlock } from '../row-block-compose.js';
 
+/** ` (+a -b)` when the call counted its lines; nothing when its baseline could not. */
+function lineCounts(event: {
+  linesAdded?: number | undefined;
+  linesRemoved?: number | undefined;
+}): string {
+  return event.linesAdded === undefined || event.linesRemoved === undefined
+    ? ''
+    : ` (+${event.linesAdded} -${event.linesRemoved})`;
+}
+
 export function runningImplementerRowBlock(
   keyPrefix: string,
   event: Extract<EngineEvent, { type: 'implementer_generate_running' }>,
@@ -65,7 +75,7 @@ export function implementerDoneRowBlock(
         text:
           event.noChange === true
             ? 'verified · no change needed'
-            : `${event.file} (+${event.linesAdded} -${event.linesRemoved})`,
+            : `${event.file}${lineCounts(event)}`,
         width: ctx.width,
         tone: 'textDim',
       }),
@@ -80,7 +90,7 @@ export function implementerDoneRowBlock(
       header,
       wrappedTextBlock({
         keyPrefix: `${keyPrefix}-collapsed-1`,
-        text: `${event.file} (+${event.linesAdded} -${event.linesRemoved})  ctrl+d`,
+        text: `${event.file}${lineCounts(event)}  ctrl+d`,
         width: ctx.width,
         tone: 'textDim',
       }),
@@ -117,7 +127,7 @@ export function validateRowBlock(
     event.status === 'done' && !event.passed && event.error
       ? preformattedOutputBlock({
           keyPrefix: `${keyPrefix}-error`,
-          label: 'error',
+          label: 'Error',
           // The header names the stage; the footer names the command. Carrying the command in both
           // put one string on screen twice, cut at two different columns because the two rows have
           // different budgets. It belongs at the foot, where it is the thing to act on.
@@ -178,7 +188,7 @@ export function escalateRowBlock(
   return compositeBlock(keyPrefix, [
     wrappedTextBlock({
       keyPrefix,
-      text: `escalate tier ${event.tier}${event.hint ? ' — hint' : ''}`,
+      text: `Escalate tier ${event.tier}${event.hint ? ' — hint' : ''}`,
       width,
       tone: 'textDim',
       bold: true,

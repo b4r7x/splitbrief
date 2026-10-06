@@ -16,7 +16,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 function makeTask(overrides: Partial<Task> = {}): Task {
   return makeBaseTask({
     title: 'Test task',
-    file: 'src/test.ts',
+    suggestedFiles: ['src/test.ts'],
     description: 'test',
     ...overrides,
   });
@@ -32,7 +32,7 @@ describe('applyCode', () => {
 
   it('create action writes a new file', async () => {
     tempDir = createTempDir('impl-test');
-    const task = makeTask({ action: 'create', file: 'src/new.ts' });
+    const task = makeTask({ action: 'create', suggestedFiles: ['src/new.ts'] });
     const code = 'export const x = 1;\n';
 
     const result = await applyCode(code, task, tempDir);
@@ -44,7 +44,7 @@ describe('applyCode', () => {
   it('modify action with file <200 lines does whole-file replacement', async () => {
     tempDir = createTempDir('impl-test');
     const filePath = join(tempDir, 'src', 'existing.ts');
-    const task = makeTask({ action: 'modify', file: 'src/existing.ts' });
+    const task = makeTask({ action: 'modify', suggestedFiles: ['src/existing.ts'] });
 
     mkdirSync(join(tempDir, 'src'), { recursive: true });
     writeFileSync(filePath, 'export const old = true;\n');
@@ -59,7 +59,7 @@ describe('applyCode', () => {
   it('modify action on a small file with markers patches instead of writing literal markers', async () => {
     tempDir = createTempDir('impl-test');
     const filePath = join(tempDir, 'src', 'small.ts');
-    const task = makeTask({ action: 'modify', file: 'src/small.ts' });
+    const task = makeTask({ action: 'modify', suggestedFiles: ['src/small.ts'] });
 
     mkdirSync(join(tempDir, 'src'), { recursive: true });
     writeFileSync(filePath, 'export const old = true;\nexport const keep = 1;\n');
@@ -80,7 +80,7 @@ describe('applyCode', () => {
   it('search/replace rejects an ambiguous search block matching multiple occurrences', async () => {
     tempDir = createTempDir('impl-test');
     const filePath = join(tempDir, 'src', 'repeated.ts');
-    const task = makeTask({ action: 'modify', file: 'src/repeated.ts' });
+    const task = makeTask({ action: 'modify', suggestedFiles: ['src/repeated.ts'] });
 
     mkdirSync(join(tempDir, 'src'), { recursive: true });
     const lines = Array.from({ length: 250 }, (_, i) => `// line ${i + 1}`);
@@ -101,7 +101,7 @@ describe('applyCode', () => {
   it('search/replace patches a single unique occurrence', async () => {
     tempDir = createTempDir('impl-test');
     const filePath = join(tempDir, 'src', 'unique.ts');
-    const task = makeTask({ action: 'modify', file: 'src/unique.ts' });
+    const task = makeTask({ action: 'modify', suggestedFiles: ['src/unique.ts'] });
 
     mkdirSync(join(tempDir, 'src'), { recursive: true });
     const lines = Array.from({ length: 250 }, (_, i) => `// line ${i + 1}`);
@@ -120,7 +120,7 @@ describe('applyCode', () => {
   it('search/replace returns error when search block not found', async () => {
     tempDir = createTempDir('impl-test');
     const filePath = join(tempDir, 'src', 'large2.ts');
-    const task = makeTask({ action: 'modify', file: 'src/large2.ts' });
+    const task = makeTask({ action: 'modify', suggestedFiles: ['src/large2.ts'] });
 
     mkdirSync(join(tempDir, 'src'), { recursive: true });
     const lines = Array.from({ length: 250 }, (_, i) => `// line ${i + 1}`);
@@ -138,7 +138,7 @@ describe('applyCode', () => {
   it('search/replace with CRLF markers patches an LF file without clobbering it', async () => {
     tempDir = createTempDir('impl-test');
     const filePath = join(tempDir, 'src', 'crlf-markers.ts');
-    const task = makeTask({ action: 'modify', file: 'src/crlf-markers.ts' });
+    const task = makeTask({ action: 'modify', suggestedFiles: ['src/crlf-markers.ts'] });
 
     mkdirSync(join(tempDir, 'src'), { recursive: true });
     const lines = Array.from({ length: 250 }, (_, i) => `// line ${i + 1}`);
@@ -166,7 +166,7 @@ describe('applyCode', () => {
   it('search/replace patches a CRLF file from LF markers and preserves CRLF endings', async () => {
     tempDir = createTempDir('impl-test');
     const filePath = join(tempDir, 'src', 'crlf-file.ts');
-    const task = makeTask({ action: 'modify', file: 'src/crlf-file.ts' });
+    const task = makeTask({ action: 'modify', suggestedFiles: ['src/crlf-file.ts'] });
 
     mkdirSync(join(tempDir, 'src'), { recursive: true });
     const lines = Array.from({ length: 250 }, (_, i) => `// line ${i + 1}`);
@@ -189,7 +189,7 @@ describe('applyCode', () => {
   it('search/replace preserves dollar sign patterns verbatim', async () => {
     tempDir = createTempDir('impl-test');
     const filePath = join(tempDir, 'src', 'dollar.ts');
-    const task = makeTask({ action: 'modify', file: 'src/dollar.ts' });
+    const task = makeTask({ action: 'modify', suggestedFiles: ['src/dollar.ts'] });
 
     mkdirSync(join(tempDir, 'src'), { recursive: true });
     const lines = Array.from({ length: 250 }, (_, i) => `// line ${i + 1}`);
@@ -251,7 +251,7 @@ describe('applyCode', () => {
     async (_label, patchCode) => {
       tempDir = createTempDir('impl-test');
       const filePath = join(tempDir, 'src', 'malformed.ts');
-      const task = makeTask({ action: 'modify', file: 'src/malformed.ts' });
+      const task = makeTask({ action: 'modify', suggestedFiles: ['src/malformed.ts'] });
 
       mkdirSync(join(tempDir, 'src'), { recursive: true });
       writeFileSync(filePath, baseline40);
@@ -267,7 +267,7 @@ describe('applyCode', () => {
   it('writes a whole-file rewrite that only mentions the marker token inside a line', async () => {
     tempDir = createTempDir('impl-test');
     const filePath = join(tempDir, 'src', 'mentions-marker.ts');
-    const task = makeTask({ action: 'modify', file: 'src/mentions-marker.ts' });
+    const task = makeTask({ action: 'modify', suggestedFiles: ['src/mentions-marker.ts'] });
 
     mkdirSync(join(tempDir, 'src'), { recursive: true });
     writeFileSync(filePath, 'export const marker = "old";\nexport const keep = 1;\n');
@@ -281,7 +281,7 @@ describe('applyCode', () => {
 
   it('modify action falls back to whole-file create when the file is absent (ENOENT)', async () => {
     tempDir = createTempDir('impl-test');
-    const task = makeTask({ action: 'modify', file: 'src/missing.ts' });
+    const task = makeTask({ action: 'modify', suggestedFiles: ['src/missing.ts'] });
     const code = 'export const created = true;\n';
 
     const result = await applyCode(code, task, tempDir);
@@ -298,7 +298,7 @@ describe('applyCode', () => {
     // Write-only: reading fails with EACCES while a write would otherwise clobber it.
     chmodSync(filePath, 0o200);
 
-    const task = makeTask({ action: 'modify', file: 'src/protected.ts' });
+    const task = makeTask({ action: 'modify', suggestedFiles: ['src/protected.ts'] });
     try {
       await expect(applyCode('export const clobbered = true;\n', task, tempDir)).rejects.toThrow();
     } finally {
@@ -309,7 +309,7 @@ describe('applyCode', () => {
 
   it('rejects path traversal in task file', async () => {
     tempDir = createTempDir('impl-test');
-    const task = makeTask({ action: 'create', file: '../../etc/evil.ts' });
+    const task = makeTask({ action: 'create', suggestedFiles: ['../../etc/evil.ts'] });
     const result = await applyCode('malicious code', task, tempDir);
     expect(result.success).toBe(false);
     expect(result.error).toContain('escapes project directory');
@@ -321,7 +321,7 @@ describe('applyCode', () => {
     try {
       mkdirSync(join(outside, 'target'), { recursive: true });
       symlinkSync(join(outside, 'target'), join(tempDir, 'linked'));
-      const task = makeTask({ action: 'create', file: 'linked/evil.ts' });
+      const task = makeTask({ action: 'create', suggestedFiles: ['linked/evil.ts'] });
 
       const result = await applyCode('malicious code', task, tempDir);
 
@@ -342,7 +342,7 @@ describe('applyCode', () => {
     'refuses to write model output into the control plane (%s, %s)',
     async (file, action) => {
       tempDir = createTempDir('impl-test');
-      const task = makeTask({ action, file });
+      const task = makeTask({ action, suggestedFiles: [file] });
 
       const result = await applyCode('[core]\n  evil = true\n', task, tempDir);
 
@@ -357,7 +357,7 @@ describe('applyCode', () => {
     mkdirSync(join(tempDir, '.git'), { recursive: true });
     const gitConfig = join(tempDir, '.git', 'config');
     writeFileSync(gitConfig, '[core]\n  bare = false\n');
-    const task = makeTask({ action: 'modify', file: '.git/config' });
+    const task = makeTask({ action: 'modify', suggestedFiles: ['.git/config'] });
 
     const result = await applyCode('[core]\n  evil = true\n', task, tempDir);
 

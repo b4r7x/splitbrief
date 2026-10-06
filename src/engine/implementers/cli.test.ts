@@ -295,6 +295,45 @@ describe('createCliImplementer (claude-code)', () => {
     expect(publisher.publishWarning).not.toHaveBeenCalled();
   });
 
+  it('counts the lines a direct writer changed against the attempt start', async () => {
+    // init.txt is committed as `init`; notes.txt is already dirty before the call starts.
+    writeFileSync(join(projectDir, 'notes.txt'), 'kept');
+    const shimPath = join(shimDir, 'claude');
+    const script = [
+      '#!/bin/bash',
+      'cat > /dev/null',
+      `printf 'INIT\\nmore' > '${join(projectDir, 'init.txt')}'`,
+      `printf 'kept\\nadded' > '${join(projectDir, 'notes.txt')}'`,
+      `printf '%s\\n' '{"type":"result","result":"done"}'`,
+    ].join('\n');
+    writeFileSync(shimPath, `${script}\n`, 'utf8');
+    chmodSync(shimPath, 0o755);
+    const publishDone = vi.fn();
+    const publisher = {
+      publishRunning: vi.fn(),
+      publishCallEvent: vi.fn(),
+      publishDone,
+      publishFailed: vi.fn(),
+      publishWarning: vi.fn(),
+    };
+
+    const implementer = createCliImplementer(cliClaudeImplementer, { publisher });
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config: makeClaudeConfig(),
+      context: { ...defaultContext, dir: projectDir },
+      onOutput: () => {},
+      phase: 'implementing',
+    });
+
+    expect(result.success).toBe(true);
+    // init.txt: init → INIT and more (+2 -1) against HEAD; notes.txt: +1 against its dirty start.
+    expect(publishDone).toHaveBeenCalledWith(
+      expect.objectContaining({ linesAdded: 3, linesRemoved: 1 }),
+    );
+  });
+
   it('allowNoChange false keeps nothing changed a no-staged-change failure', async () => {
     const shimPath = join(shimDir, 'claude');
     const script = [
@@ -437,7 +476,7 @@ describe('createCliImplementer (claude-code)', () => {
 
     const implementer = createCliImplementer(cliClaudeImplementer);
     const result = await implementer.implement({
-      task: makeTask({ files: ['src/hello.ts', 'src/hello.test.ts'] }),
+      task: makeTask({ suggestedFiles: ['src/hello.ts', 'src/hello.test.ts'] }),
       projectDir,
       config,
       context: { ...defaultContext, dir: projectDir },

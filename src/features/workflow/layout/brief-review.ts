@@ -35,11 +35,3 @@ export function getSimpleBriefVisibleTaskCount(input: {
       : input.rowBudget;
   return Math.max(0, Math.floor(rowsForTasks / SIMPLE_TASK_ROW_HEIGHT));
 }
-
-export function getSimpleBriefMaxTaskOffset(input: {
-  rowBudget: number;
-  taskCount: number;
-}): number {
-  const visibleCount = getSimpleBriefVisibleTaskCount(input);
-  return Math.max(0, input.taskCount - visibleCount);
-}

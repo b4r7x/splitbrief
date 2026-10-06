@@ -204,8 +204,8 @@ export async function runImplementation(opts: {
               bus: wctx.bus,
               callbacks,
               config,
-              getApprovalEnabled: wctx.getApprovalEnabled,
             });
+            if (decision.cancelled) return { allow: false, reason: decision.reason };
             if (!decision.allow) {
               preApplyApprovalDenied = true;
               const files = decision.changedFiles.join(', ');

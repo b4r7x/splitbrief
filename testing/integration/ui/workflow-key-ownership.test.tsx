@@ -118,7 +118,7 @@ describe('WorkflowScreen key ownership', () => {
     await tick(PAST_GRACE);
     await flushEffects();
     ui.stdin.write('x');
-    await expect(decision).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
+    await expect(decision).resolves.toEqual({ decision: 'deny', reason: 'user_denied' });
 
     ui.unmount();
   });

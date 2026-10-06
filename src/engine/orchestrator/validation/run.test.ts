@@ -16,7 +16,7 @@ import { processError } from '../../../lib/process/errors.js';
 import { makeConfig, makeCommandRunner } from '#testing/helpers/validation-fixtures.js';
 
 function mkTask(file: string): Task {
-  return makeTask({ file, action: 'modify' });
+  return makeTask({ suggestedFiles: [file], action: 'modify' });
 }
 
 function writeTsProject(dir: string): void {

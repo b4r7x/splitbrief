@@ -77,19 +77,10 @@ export function consultHaltDetails(taskId: TaskId): string[] {
   return [`The planner could not answer the consult for ${taskId}.`];
 }
 
-export function routeBiggerDetails(opts: {
-  routeBiggerProfile?: string | undefined;
-  canRouteBigger?: boolean | undefined;
-}): string[] {
-  if (opts.routeBiggerProfile) return [`Bigger worker available: ${opts.routeBiggerProfile}`];
-  if (opts.canRouteBigger) return ['Bigger worker available'];
-  return [];
-}
-
 export function taskFiles(task: Task): string[] {
   return uniqueSorted(
     [
-      task.file,
+      task.suggestedFiles[0],
       ...(task.scope?.inBounds ?? []).flatMap(scopePathPatterns),
       ...(task.scope?.approvedOutOfBounds ?? []).flatMap(scopePathPatterns),
     ],

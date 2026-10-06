@@ -24,7 +24,7 @@ afterEach(() => {
 
 describe('persistTaskEvidence — retry exempt stages', () => {
   it('leaves the initial blocking failure unexempt when only the retry exempted that stage', async () => {
-    const task = makeTask({ id: 'T001', file: 'src/task.ts' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/task.ts'] });
     const state = { ...createInitialState('feat'), tasks: [task] };
     const wctx = makeTaskWorkflowContext();
 
@@ -76,7 +76,7 @@ describe('persistTaskEvidence — retry exempt stages', () => {
   });
 
   it('keeps the initial attempt exemption when the retry no longer exempts that stage', async () => {
-    const task = makeTask({ id: 'T001', file: 'src/task.ts' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/task.ts'] });
     const state = { ...createInitialState('feat'), tasks: [task] };
     const wctx = makeTaskWorkflowContext();
 
@@ -110,7 +110,7 @@ describe('persistTaskEvidence — retry exempt stages', () => {
   });
 
   it('still records the local acceptance exemption for a task that never retried', async () => {
-    const task = makeTask({ id: 'T001', file: 'src/task.ts' });
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/task.ts'] });
     const state = { ...createInitialState('feat'), tasks: [task] };
     const wctx = makeTaskWorkflowContext();
 

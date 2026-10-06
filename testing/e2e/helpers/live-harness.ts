@@ -34,7 +34,8 @@ import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 
-export type LiveMatrixMode = 'quick' | 'standard' | 'speckit';
+/** What a tier tests: a one-file brief, a brief over two files, or a planner question round. */
+export type LiveMatrixTierId = 'one-file' | 'two-files' | 'question-round';
 
 type LiveScenario = Readonly<{
   tool: string;
@@ -328,7 +329,7 @@ export type LiveSeat = Readonly<{ tool: string; model: string | undefined }>;
 
 export type ReleaseMatrixRun = Readonly<{
   id: string;
-  mode: LiveMatrixMode;
+  tier: LiveMatrixTierId;
   task: string;
   plan: LiveSeat;
   build: LiveSeat;
@@ -336,18 +337,17 @@ export type ReleaseMatrixRun = Readonly<{
 }>;
 
 export type LiveMatrixTier = Readonly<{
-  mode: LiveMatrixMode;
   task: string;
   validateScript: string;
   implementerContextLength: number;
   maxRetries: number;
   artifact: Readonly<{ path: string; accessor: string; expected: string | number }>;
-  contextMd?: string | undefined;
+  /** The answer to a question the planner asks before it plans. */
+  plannerAnswer?: string | undefined;
 }>;
 
-export const MATRIX_TIERS: Readonly<Record<LiveMatrixMode, LiveMatrixTier>> = {
-  quick: {
-    mode: 'quick',
+export const MATRIX_TIERS: Readonly<Record<LiveMatrixTierId, LiveMatrixTier>> = {
+  'one-file': {
     task: 'Create src/live-easy.ts exporting a string constant named liveEasy with value "live-easy".',
     validateScript:
       [
@@ -358,8 +358,7 @@ export const MATRIX_TIERS: Readonly<Record<LiveMatrixMode, LiveMatrixTier>> = {
     maxRetries: 1,
     artifact: { path: 'src/live-easy.ts', accessor: 'mod.liveEasy', expected: 'live-easy' },
   },
-  standard: {
-    mode: 'standard',
+  'two-files': {
     task: 'Add src/live-heavy/value.ts exporting a number constant liveHeavyValue with value 42, and src/live-heavy/double.ts exporting a function doubleLiveHeavy that returns its numeric argument times two.',
     validateScript:
       [
@@ -372,20 +371,19 @@ export const MATRIX_TIERS: Readonly<Record<LiveMatrixMode, LiveMatrixTier>> = {
     maxRetries: 1,
     artifact: { path: 'src/live-heavy/value.ts', accessor: 'mod.liveHeavyValue', expected: 42 },
   },
-  speckit: {
-    mode: 'speckit',
-    task: 'Create src/live-speckit.ts exporting a string constant named liveSpeckit with value "live-speckit".',
+  'question-round': {
+    task: 'Create src/live-question.ts exporting a string constant named liveQuestion with value "live-question".',
     validateScript:
-      "const { liveSpeckit } = await import('./src/live-speckit.ts');\nif (liveSpeckit !== 'live-speckit') process.exit(1);\n",
+      "const { liveQuestion } = await import('./src/live-question.ts');\nif (liveQuestion !== 'live-question') process.exit(1);\n",
     implementerContextLength: 128_000,
     maxRetries: 1,
     artifact: {
-      path: 'src/live-speckit.ts',
-      accessor: 'mod.liveSpeckit',
-      expected: 'live-speckit',
+      path: 'src/live-question.ts',
+      accessor: 'mod.liveQuestion',
+      expected: 'live-question',
     },
-    contextMd:
-      "# Context\n\nThe deliverable is a single file, src/live-speckit.ts, with a named string export\nliveSpeckit whose value is exactly 'live-speckit'. No default export, no extra files,\nno config changes.\n",
+    plannerAnswer:
+      "The deliverable is a single file, src/live-question.ts, with a named string export liveQuestion whose value is exactly 'live-question'. No default export, no extra files, no config changes.",
   },
 };
 
@@ -417,7 +415,8 @@ export type LiveArtifactPaths = Readonly<{
 
 export type LiveManifestRow = Readonly<{
   id: string;
-  mode: LiveMatrixMode;
+  /** Absent on a fixture-loop row, which runs a fixture project instead of a tier task. */
+  tier?: LiveMatrixTierId | undefined;
   plan: LiveSeat;
   build: LiveSeat;
   review?: LiveSeat | null;
@@ -510,25 +509,22 @@ export function releaseMatrixConfig(run: ReleaseMatrixRun, tier: LiveMatrixTier)
 }
 
 export function releaseMatrixAssertions(
-  mode: LiveMatrixMode,
+  tier: LiveMatrixTierId,
   { summary, projectDir }: LiveRunResult,
 ): void {
-  const artifact = MATRIX_TIERS[mode].artifact;
+  const artifact = MATRIX_TIERS[tier].artifact;
   expect(summary.failed).toBe(0);
   expect(summary.totalTasks).toBeGreaterThanOrEqual(1);
   expect(summary.tokenUsage.implementerInput).toBeGreaterThan(0);
   expect(evaluateTsArtifact(join(projectDir, artifact.path), artifact.accessor)).toBe(
     artifact.expected,
   );
-  if (mode === 'quick') return;
   expect(summary.tokenUsage.plannerInput).toBeGreaterThan(0);
   expect(summary.reviewPacket).toBeDefined();
   expect(typeof summary.reviewPacket?.finalReviewStatus).toBe('string');
   for (const task of summary.taskBreakdown ?? []) {
     expect(task.retryCount).toBeLessThanOrEqual(1);
   }
-  if (mode !== 'speckit') return;
-  expect(existsSync(join(projectDir, 'context.md'))).toBe(true);
 }
 
 export type ReleaseMatrixRowResult = Readonly<{ outcome: 'pass' | 'skip'; reason?: string }>;
@@ -538,10 +534,11 @@ export async function runReleaseMatrixRow(run: ReleaseMatrixRun): Promise<Releas
     throw new Error('Live scenario invoked without SPLITBRIEF_REAL_CLI_E2E=1.');
   }
   const startedAt = Date.now();
-  const tier = MATRIX_TIERS[run.mode];
+  const tier = MATRIX_TIERS[run.tier];
+  const { plannerAnswer } = tier;
   const baseRowFields = {
     id: run.id,
-    mode: run.mode,
+    tier: run.tier,
     plan: run.plan,
     build: run.build,
     review: run.review ?? null,
@@ -589,9 +586,6 @@ export async function runReleaseMatrixRow(run: ReleaseMatrixRun): Promise<Releas
   try {
     createTestGitRepo(projectDir);
     writeFileSync(join(projectDir, 'validate.mjs'), tier.validateScript, 'utf-8');
-    if (run.mode === 'speckit') {
-      writeFileSync(join(projectDir, 'context.md'), tier.contextMd ?? '', 'utf-8');
-    }
     const config = releaseMatrixConfig(run, tier);
     mkdirSync(join(projectDir, '.splitbrief'), { recursive: true });
     writeFileSync(join(projectDir, '.splitbrief/config.yaml'), YAML.stringify(config), 'utf-8');
@@ -605,9 +599,9 @@ export async function runReleaseMatrixRow(run: ReleaseMatrixRun): Promise<Releas
       projectDir,
       feature: run.task,
       effectiveConfig: config,
-      ...(run.mode === 'speckit' ? { onPlannerReply: async () => tier.contextMd ?? '' } : {}),
+      ...(plannerAnswer !== undefined && { onPlannerReply: async () => plannerAnswer }),
     });
-    releaseMatrixAssertions(run.mode, { summary, projectDir });
+    releaseMatrixAssertions(run.tier, { summary, projectDir });
     const artifacts = copyLiveArtifacts({ projectDir, sessionId, rowId: run.id });
     appendLiveManifestRow({
       ...baseRowFields,

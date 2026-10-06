@@ -88,7 +88,7 @@ function directConfig(runners: readonly ReturnType<typeof makeDirectRunner>[]): 
       implementer: { kind: 'cli', tool: 'codex', authChannel: 'session' },
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       workflow: {},
-      approval: { enabled: false, feedRejectionsToPlanner: true },
+      approval: { feedRejectionsToPlanner: true },
     }),
     implementerProfiles: {
       default: defaultRunner.profileKey,
@@ -245,7 +245,9 @@ describe('configured direct stage canaries', () => {
             (
               await runTaskLoop({
                 wctx: init.wctx,
-                initialState: makeImplState([makeTask({ id: 'T001', file: 'src/main-direct.ts' })]),
+                initialState: makeImplState([
+                  makeTask({ id: 'T001', suggestedFiles: ['src/main-direct.ts'] }),
+                ]),
                 setTrackedState: () => {},
                 setCurrentTask: () => {},
               })
@@ -311,7 +313,7 @@ describe('configured direct stage canaries', () => {
             expect(
               (
                 await retryRuntime.implementer.retry({
-                  task: makeTask({ id: 'T002', file: 'src/retry-direct.ts' }),
+                  task: makeTask({ id: 'T002', suggestedFiles: ['src/retry-direct.ts'] }),
                   projectDir: stage.projectDir,
                   config: retryRuntime.config,
                   context: init.wctx.context,

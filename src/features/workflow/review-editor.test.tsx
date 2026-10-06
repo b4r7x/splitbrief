@@ -10,7 +10,6 @@ import { sessionDir } from '../../core/paths.js';
 import { controlsStore } from '../../stores/ui/controls.js';
 import { editorStore } from '../../stores/ui/editor.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
-import { focusStore } from '../../stores/ui/focus.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
@@ -53,7 +52,6 @@ describe('Ctrl+E at a review gate', () => {
     editorStore.close();
     overlayStore.close();
     reviewStore.clearReview();
-    focusStore.clear();
     controlsStore.__testReset();
     lifecycleStore.__testReset();
     feedbackStore.reset();
@@ -147,7 +145,6 @@ describe('Ctrl+E at a review gate', () => {
       });
 
       const state = editorStore.get();
-      expect(state.status === 'open' ? state.surface : null).toBe('raw');
       expect(state.status === 'open' ? state.ownerToken : null).toBe(token);
       expect(state.status === 'open' ? state.value : null).toContain('inline body');
     } finally {

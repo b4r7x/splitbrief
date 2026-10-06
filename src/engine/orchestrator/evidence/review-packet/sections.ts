@@ -3,15 +3,9 @@ import type { WorkflowState } from '../../../../core/schemas/workflow.js';
 import type { RunnerKind } from '../../../../core/schemas/enums.js';
 import type { EvidenceLedger, EvidenceTask } from '../../../../core/schemas/evidence.js';
 import type { ReviewPacket } from '../../../../core/schemas/review-packet.js';
-import { taskFiles, type Task, type TaskId } from '../../../../core/schemas/task.js';
-import {
-  BRIEF_QUALITY_FILE,
-  DRIFT_CHAINS_FILE,
-  DRIFT_REPORT_FILE,
-  EVIDENCE_FILE,
-} from '../../../../core/paths.js';
+import type { Task, TaskId } from '../../../../core/schemas/task.js';
+import { BRIEF_QUALITY_FILE, DRIFT_REPORT_FILE, EVIDENCE_FILE } from '../../../../core/paths.js';
 import { countBySeverity, countByValue, uniqueSorted } from '../../../../utils/collections.js';
-import type { DriftChainState } from '../../../../core/schemas/drift-chain.js';
 import type { DriftFinding, DriftReport } from '../../../../core/schemas/drift.js';
 import type { BuildReviewPacketOptions, BriefQualityArtifact, PacketEvent } from './types.js';
 import { retryCountsFromEvents } from '../retry-counts.js';
@@ -36,7 +30,7 @@ export function buildChanges(opts: {
 }): ReviewPacket['changes'] {
   const { state, ledger, drift, changedFiles } = opts;
   const expectedFiles = uniqueSorted(
-    drift?.expectedFiles ?? state.tasks.flatMap((task) => [...taskFiles(task)]).filter(Boolean),
+    drift?.expectedFiles ?? state.tasks.flatMap((task) => [...task.suggestedFiles]).filter(Boolean),
   );
   const outOfScopeFiles = uniqueSorted(
     (drift?.findings ?? [])
@@ -45,11 +39,11 @@ export function buildChanges(opts: {
   );
   const taskFileRows = state.tasks.map((task) => {
     const evidence = taskEvidence(task, ledger);
-    const declared = taskFiles(task);
+    const declared = task.suggestedFiles;
     return {
       taskId: task.id,
       title: task.title,
-      file: task.file,
+      file: task.suggestedFiles[0],
       files: [...declared],
       status: task.status,
       changedFiles:
@@ -142,15 +136,10 @@ export function buildEvidence(ledger: EvidenceLedger | null): ReviewPacket['evid
 }
 
 export function buildDrift(opts: {
-  chainState: DriftChainState | null;
   drift: DriftReport | null;
   briefQuality: BriefQualityArtifact | null;
 }): ReviewPacket['drift'] {
-  const { chainState, drift, briefQuality } = opts;
-  const topChain =
-    chainState && chainState.emittedChains.length > 0
-      ? chainState.emittedChains.reduce((best, chain) => (best.score >= chain.score ? best : chain))
-      : undefined;
+  const { drift, briefQuality } = opts;
   const findings = drift?.findings ?? [];
   const driftCounts = countBySeverity(findings);
   const briefQualityCounts = countBySeverity(briefQuality?.issues ?? []);
@@ -158,7 +147,6 @@ export function buildDrift(opts: {
     path: drift ? DRIFT_REPORT_FILE : null,
     present: drift !== null,
     passed: drift?.passed ?? null,
-    score: drift?.score ?? null,
     errorCount: driftCounts.error,
     warningCount: driftCounts.warning,
     changedFiles: drift?.changedFiles ?? [],
@@ -166,20 +154,6 @@ export function buildDrift(opts: {
     findings,
     findingsBySeverity: groupDriftFindings(findings),
     briefHash: drift?.briefHash ?? null,
-    chainSummary: {
-      path: DRIFT_CHAINS_FILE,
-      present: chainState !== null,
-      emittedChainCount: chainState?.emittedChains.length ?? 0,
-      topChain: topChain
-        ? {
-            chainLength: topChain.chainLength,
-            score: topChain.score,
-            uniqueOutOfBoundsFiles: topChain.uniqueOutOfBoundsFiles,
-            representativePath: topChain.representativePath,
-            detectedAtTaskId: topChain.detectedAtTaskId,
-          }
-        : null,
-    },
     briefQuality: {
       path: BRIEF_QUALITY_FILE,
       present: briefQuality !== null,

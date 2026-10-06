@@ -5,7 +5,6 @@ import { ReviewPacketSchema } from '../../../core/schemas/review-packet.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { buildEvidenceSummary } from '../evidence/reporting.js';
 import { readDriftReport } from '../drift/io.js';
-import { readDriftChainState } from '../drift/chain-state.js';
 import {
   BRIEF_QUALITY_FILE,
   REVIEW_PACKET_JSON_FILE,
@@ -21,7 +20,6 @@ export type SessionArtifactRollups = {
   evidenceSummary?: Summary['evidenceSummary'];
   briefQuality?: Summary['briefQuality'];
   driftSummary?: Summary['driftSummary'];
-  chainDriftSummary?: Summary['chainDriftSummary'];
   checkpointSummary?: Summary['checkpointSummary'];
   reviewPacket?: Summary['reviewPacket'];
 };
@@ -100,21 +98,8 @@ export function loadSessionArtifactRollups(
     const counts = countBySeverity(drift.findings);
     out.driftSummary = {
       passed: drift.passed,
-      score: drift.score,
       errorCount: counts.error,
       warningCount: counts.warning,
-    };
-  }
-
-  const chainState = readDriftChainState({ projectDir, sessionId });
-  if (chainState && chainState.emittedChains.length > 0) {
-    const best = chainState.emittedChains.reduce((a, b) => (a.score >= b.score ? a : b));
-    out.chainDriftSummary = {
-      score: best.score,
-      chainLength: best.chainLength,
-      uniqueOutOfBoundsFiles: best.uniqueOutOfBoundsFiles,
-      representativePath: best.representativePath,
-      emittedChainCount: chainState.emittedChains.length,
     };
   }
 

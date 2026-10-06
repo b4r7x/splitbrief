@@ -154,7 +154,7 @@ function makePorts() {
         ref,
         status: {
           kind: 'open',
-          stop: { kind: 'interrupted' },
+          stop: { kind: 'stopped', on: { kind: 'interrupted' } },
           resumeAt: { kind: 'planner', call: 'tasks' },
         },
       }),
@@ -291,7 +291,7 @@ beforeEach(() => {
       ref,
       status: {
         kind: 'open',
-        stop: { kind: 'interrupted' },
+        stop: { kind: 'stopped', on: { kind: 'interrupted' } },
         resumeAt: { kind: 'planner', call: 'tasks' },
       },
     }),
@@ -331,7 +331,7 @@ describe('App screens route to the supplied interaction ports', () => {
             ref: { projectDir, sessionId: 'clipboard-port' },
             status: {
               kind: 'open',
-              stop: { kind: 'interrupted' },
+              stop: { kind: 'stopped', on: { kind: 'interrupted' } },
               resumeAt: { kind: 'planner', call: 'tasks' },
             },
           }),
@@ -481,7 +481,7 @@ describe('Runtime commands run through the supplied context', () => {
         feature: 'copy through the port',
         status: {
           kind: 'open',
-          stop: { kind: 'interrupted' },
+          stop: { kind: 'stopped', on: { kind: 'interrupted' } },
           resumeAt: { kind: 'planner', call: 'tasks' },
         },
       }),
@@ -613,7 +613,7 @@ describe('App keys spend the supplied key ports', () => {
         feature: 'a run on screen',
         status: {
           kind: 'open',
-          stop: { kind: 'interrupted' },
+          stop: { kind: 'stopped', on: { kind: 'interrupted' } },
           resumeAt: { kind: 'planner', call: 'tasks' },
         },
       }),

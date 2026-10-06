@@ -55,97 +55,101 @@ export const ProtectedOperationSchema = z.object({
   operation: z.literal('write'),
 });
 
-export const TaskSchema = z.object({
-  /** Branded string ID in `TNNN` format. Stable for the lifetime of the session. @see docs/TASK-CONTRACT.md */
-  id: TaskIdSchema,
-  parentId: TaskIdSchema.optional(),
-  /** Short human-readable label. */
-  title: z.string(),
-  /** `create` if the file does not yet exist; `modify` if it does. */
-  action: FileActionSchema,
-  /** Project-relative anchor path; the first entry of `files` when that is present. */
-  file: z.string(),
-  /** Every path this brief may write. Absent means `[file]`. One file is the XS slice. */
-  files: z.array(z.string()).optional(),
-  /** Captured current code of the non-anchor `files` at task start, keyed by path. */
-  currentCodeByFile: z.record(z.string(), z.string()).optional(),
-  /** IDs of tasks that must reach a terminal state before this task may start. */
-  dependsOn: z.array(TaskIdSchema),
-  /** Full prose description of what the implementer must do. */
-  description: z.string(),
-  /** Optional function/interface signature hint for the implementer. */
-  signature: z.string().optional(),
-  /** Captured existing code at task start, used as context for modify tasks. */
-  currentCode: z.string().optional(),
-  /** Test cases / acceptance criteria. Each entry is a verifiable statement. */
-  tests: z.array(z.string()),
-  /** Additional constraints or requirements the implementation must satisfy. */
-  constraints: z.array(z.string()),
-  /** Optional code pattern hint (e.g. a relevant snippet from the codebase). */
-  pattern: z.string().optional(),
-  /** Language-specific type declarations, interfaces, or data shapes relevant to this task. */
-  typeDefs: z.string(),
-  /** Ordered list of implementation steps for the implementer to follow. */
-  implementationSteps: z.array(z.string()),
-  /**
-   * Optional Task Brief v1 §Scope: explicit in-bounds / out-of-bounds notes
-   * carried alongside the prose `description`. Older briefs may omit it.
-   */
-  scope: z
-    .object({
-      inBounds: z.array(z.string()).optional(),
-      outOfBounds: z.array(z.string()).optional(),
-      approvedOutOfBounds: z.array(z.string()).optional(),
-    })
-    .optional(),
-  /**
-   * Optional Task Brief v1 §Escalation: refusal/escalation conditions where the
-   * implementer must stop and ask instead of guessing.
-   */
-  escalation: z.array(z.string()).optional(),
-  /**
-   * Optional Task Brief v1 §Evidence: the final reviewable proof the workflow
-   * should preserve once the task is done.
-   */
-  evidence: z.array(z.string()).optional(),
-  /** Current task status. @see docs/TASK-CONTRACT.md §TaskStatus */
-  status: TaskStatusSchema,
-  /** Ids of the plan criteria this task serves. */
-  criteria: z.array(z.string()).optional(),
-  /** Focused checks that verify this task. */
-  checks: z.array(CheckSchema).optional(),
-  checkResults: z.array(CheckResultSchema).optional(),
-  /** Files the planner suggests the task writes; guidance, mapped onto `files`. */
-  suggestedFiles: z.array(z.string()).optional(),
-  /** Read-only context; SPLITBRIEF attaches their current code at dispatch. */
-  contextFiles: z.array(z.string()).optional(),
-  /** Captured current code of `contextFiles`, keyed by path. Never a write target. */
-  contextCodeByFile: z.record(z.string(), z.string()).optional(),
-  /** Explicit "do not" notes. */
-  exclusions: z.array(z.string()).optional(),
-  /** Absent means batch 1. */
-  batch: z.number().int().min(1).optional(),
-  /** Protected writes the approved plan confirms in advance. */
-  protectedOperations: z.array(ProtectedOperationSchema).optional(),
-  revision: z.number().int().min(1).optional(),
-  /** Content hashes of the input files of this revision, keyed by path. */
-  inputHashes: z.record(z.string(), z.string()).optional(),
-  fix: z
-    .object({
-      cycle: z.number().int().min(1),
-      findings: z.array(
-        z.object({
-          id: z.string(),
-          text: z.string(),
-          acceptance: z.string().nullable(),
-        }),
-      ),
-    })
-    .optional(),
-});
+/** A brief saved before `suggestedFiles` named its writes in `file` and `files`. */
+function foldSavedFiles(value: unknown): unknown {
+  if (typeof value !== 'object' || value === null || 'suggestedFiles' in value) return value;
+  if ('files' in value && Array.isArray(value.files) && value.files.length > 0) {
+    return { ...value, suggestedFiles: value.files };
+  }
+  return { ...value, suggestedFiles: 'file' in value ? [value.file] : [] };
+}
+
+export const TaskSchema = z.preprocess(
+  foldSavedFiles,
+  z.object({
+    /** Branded string ID in `TNNN` format. Stable for the lifetime of the session. @see docs/TASK-CONTRACT.md */
+    id: TaskIdSchema,
+    parentId: TaskIdSchema.optional(),
+    /** Short human-readable label. */
+    title: z.string(),
+    /** `create` if the file does not yet exist; `modify` if it does. */
+    action: FileActionSchema,
+    /** Every path this brief may write, first the anchor. One file is the XS slice. */
+    suggestedFiles: z.tuple([z.string()], z.string()),
+    /** Captured current code of the non-anchor `files` at task start, keyed by path. */
+    currentCodeByFile: z.record(z.string(), z.string()).optional(),
+    /** IDs of tasks that must reach a terminal state before this task may start. */
+    dependsOn: z.array(TaskIdSchema),
+    /** Full prose description of what the implementer must do. */
+    description: z.string(),
+    /** Optional function/interface signature hint for the implementer. */
+    signature: z.string().optional(),
+    /** Captured existing code at task start, used as context for modify tasks. */
+    currentCode: z.string().optional(),
+    /** Test cases / acceptance criteria. Each entry is a verifiable statement. */
+    tests: z.array(z.string()),
+    /** Additional constraints or requirements the implementation must satisfy. */
+    constraints: z.array(z.string()),
+    /** Optional code pattern hint (e.g. a relevant snippet from the codebase). */
+    pattern: z.string().optional(),
+    /** Language-specific type declarations, interfaces, or data shapes relevant to this task. */
+    typeDefs: z.string(),
+    /** Ordered list of implementation steps for the implementer to follow. */
+    implementationSteps: z.array(z.string()),
+    /**
+     * Optional Task Brief v1 §Scope: explicit in-bounds / out-of-bounds notes
+     * carried alongside the prose `description`. Older briefs may omit it.
+     */
+    scope: z
+      .object({
+        inBounds: z.array(z.string()).optional(),
+        outOfBounds: z.array(z.string()).optional(),
+        approvedOutOfBounds: z.array(z.string()).optional(),
+      })
+      .optional(),
+    /**
+     * Optional Task Brief v1 §Escalation: refusal/escalation conditions where the
+     * implementer must stop and ask instead of guessing.
+     */
+    escalation: z.array(z.string()).optional(),
+    /**
+     * Optional Task Brief v1 §Evidence: the final reviewable proof the workflow
+     * should preserve once the task is done.
+     */
+    evidence: z.array(z.string()).optional(),
+    /** Current task status. @see docs/TASK-CONTRACT.md §TaskStatus */
+    status: TaskStatusSchema,
+    /** Ids of the plan criteria this task serves. */
+    criteria: z.array(z.string()).optional(),
+    /** Focused checks that verify this task. */
+    checks: z.array(CheckSchema).optional(),
+    checkResults: z.array(CheckResultSchema).optional(),
+    /** Read-only context; SPLITBRIEF attaches their current code at dispatch. */
+    contextFiles: z.array(z.string()).optional(),
+    /** Captured current code of `contextFiles`, keyed by path. Never a write target. */
+    contextCodeByFile: z.record(z.string(), z.string()).optional(),
+    /** Explicit "do not" notes. */
+    exclusions: z.array(z.string()).optional(),
+    /** Absent means batch 1. */
+    batch: z.number().int().min(1).optional(),
+    /** Protected writes the approved plan confirms in advance. */
+    protectedOperations: z.array(ProtectedOperationSchema).optional(),
+    revision: z.number().int().min(1).optional(),
+    /** Content hashes of the input files of this revision, keyed by path. */
+    inputHashes: z.record(z.string(), z.string()).optional(),
+    fix: z
+      .object({
+        cycle: z.number().int().min(1),
+        findings: z.array(
+          z.object({
+            id: z.string(),
+            text: z.string(),
+            acceptance: z.string().nullable(),
+          }),
+        ),
+      })
+      .optional(),
+  }),
+);
 
 export type Task = z.infer<typeof TaskSchema>;
-
-export function taskFiles(task: Pick<Task, 'file' | 'files'>): readonly string[] {
-  return task.files !== undefined && task.files.length > 0 ? task.files : [task.file];
-}

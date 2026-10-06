@@ -11,7 +11,7 @@ function mapLegacyStatus(value: unknown): unknown {
   if (!isRecord(value)) return value;
   const status = value.status;
   if (typeof status !== 'string' || !LEGACY_OPEN_STATUSES.includes(status)) return value;
-  return { ...value, status: 'open', ...(status === 'failed' && { stop: 'failed' }) };
+  return { ...value, status: 'open', ...(status === 'failed' && { stop: 'stopped' }) };
 }
 
 const SessionBaseSchema = z.object({

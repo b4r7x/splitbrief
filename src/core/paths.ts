@@ -84,7 +84,6 @@ export const CONSTITUTION_CHECK_FILE = 'constitution-check.json';
 export const ANALYZE_FILE = 'analyze.json';
 export const EVIDENCE_FILE = 'evidence.json';
 export const DRIFT_REPORT_FILE = 'drift-report.json';
-export const DRIFT_CHAINS_FILE = 'drift-chains.json';
 export const BRIEF_QUALITY_FILE = 'brief-quality.json';
 export const READINESS_FILE = 'readiness.json';
 export const REVIEW_PACKET_JSON_FILE = 'review-packet.json';

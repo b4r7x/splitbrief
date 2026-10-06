@@ -1,6 +1,5 @@
 import type { EffortLevel } from '../../../core/schemas/enums.js';
 import type { Attachment } from '../../../core/schemas/attachment.js';
-import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import type { CliSchemaInput } from '../cli-tools/contract.js';
 import { spawnWithStdin } from '../../../lib/process/spawn/line-stream.js';
 import type { CliAuthChannelId } from '../../../core/runners/cli-tool-catalog.js';
@@ -69,7 +68,6 @@ interface ClaudeCallRunOptions {
   onOutput: (text: string) => void;
   onSessionId?: ((id: string) => void) | undefined;
   onSessionInit?: ((id: string) => void) | undefined;
-  onQuestion?: ((questions: ClarificationQuestion[]) => void) | undefined;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   model?: string | undefined;
   authChannel?: CliAuthChannelId | undefined;
@@ -105,7 +103,6 @@ async function runClaudeCall(
     onOutput: opts.onOutput,
     onSessionId: opts.onSessionId,
     onSessionInit: opts.onSessionInit,
-    onQuestion: opts.onQuestion,
     onCallEvent: opts.onCallEvent,
     credentialValues: claudeCredentialValues(opts.authChannel, opts.spawnEnv),
     context,
@@ -176,7 +173,6 @@ export interface ClaudePlannerStreamOpts {
   onOutput: (text: string) => void;
   onSessionId?: ((id: string) => void) | undefined;
   onSessionInit?: ((id: string) => void) | undefined;
-  onQuestion?: ((questions: ClarificationQuestion[]) => void) | undefined;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   model?: string | undefined;
   authChannel?: CliAuthChannelId | undefined;
@@ -220,7 +216,6 @@ export async function runClaudePlannerStream(
     onOutput: opts.onOutput,
     onSessionId: opts.onSessionId,
     onSessionInit: opts.onSessionInit,
-    onQuestion: opts.onQuestion,
     onCallEvent: opts.onCallEvent,
     model: opts.model,
     authChannel: opts.authChannel,

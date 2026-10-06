@@ -72,7 +72,7 @@ describe('shutdownWorkflow', () => {
       projectDir,
       sessionId,
       getTrackedState: () => undefined,
-      getCurrentTask: () => ({ file, action: 'create' }),
+      getCurrentTask: () => ({ suggestedFiles: [file], action: 'create' }),
     });
 
     expect(readFileSync(filePath, 'utf-8')).toBe('export const generated = true;\n');
@@ -103,7 +103,7 @@ describe('shutdownWorkflow', () => {
       projectDir,
       sessionId,
       getTrackedState: () => trackedState,
-      getCurrentTask: () => ({ file, action: 'create' }),
+      getCurrentTask: () => ({ suggestedFiles: [file], action: 'create' }),
     });
 
     const statePath = join(sessionDir(projectDir, sessionId), 'state.json');
@@ -131,7 +131,7 @@ describe('awaitActiveWorkflowShutdown — TUI exit alignment', () => {
         projectDir,
         sessionId,
         getTrackedState: () => stateDuringRun,
-        getCurrentTask: () => ({ file, action: 'create' }),
+        getCurrentTask: () => ({ suggestedFiles: [file], action: 'create' }),
       },
       async () => {
         stateDuringRun = { ...createInitialState('feat'), feature: 'tui-exit' };

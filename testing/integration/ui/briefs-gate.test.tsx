@@ -96,11 +96,7 @@ describe('an old run parked at the briefs gate on the workflow screen', () => {
     let state = createInitialState('guard the login route');
     for (const action of [
       { type: 'START' },
-      { type: 'RESEARCH_DONE' },
-      { type: 'SPEC_DONE' },
-      { type: 'APPROVE_SPEC' },
       { type: 'PLAN_DONE', tasks },
-      { type: 'BRIEF_ADMISSION_OPENED' },
       {
         type: 'INTERRUPT_STEP',
         step: { kind: 'gate', gate: 'briefs' },
@@ -110,7 +106,7 @@ describe('an old run parked at the briefs gate on the workflow screen', () => {
     ] as const) {
       state = transition(state, action);
     }
-    const parked: WorkflowState = { ...state, approve: 'plan' };
+    const parked: WorkflowState = { ...state, phase: 'reviewing-briefs', approve: 'plan' };
     ensureSessionDir(projectDir, sessionId);
     saveState(ref, parked);
     writeFileSync(join(sessionDir(projectDir, sessionId), TASKS_FILE), formatTasks(tasks), 'utf-8');
@@ -123,13 +119,6 @@ describe('an old run parked at the briefs gate on the workflow screen', () => {
       ts: Date.now(),
       phase: 'reviewing-plan',
       status: 'running',
-    });
-    history.publish({
-      type: 'brief_quality_passed',
-      ts: Date.now(),
-      phase: 'reviewing-plan',
-      score: 1,
-      warningCount: 0,
     });
 
     const { prepared } = mountRun(sessionId, parked);

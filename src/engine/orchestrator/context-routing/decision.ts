@@ -1,7 +1,6 @@
 import type { ImplementerWriteMode } from '../../../core/schemas/implementer-config.js';
 import { scopeEntryPatterns, taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
 import type { Task } from '../../../core/schemas/task.js';
-import { taskFiles } from '../../../core/schemas/task.js';
 import { declaredPathProblem } from '../../implementers/bundle-baseline.js';
 import { FILE_BUNDLE_MAX_FILES } from '../../implementers/file-bundle.js';
 import type { ProfileFit } from './types.js';
@@ -11,7 +10,7 @@ function normalizeScopePattern(pattern: string): string {
 }
 
 export function requiredWriteModeForTask(task: Task): ImplementerWriteMode {
-  const files = taskFiles(task);
+  const files = task.suggestedFiles;
   if (task.action !== 'create' && task.action !== 'modify') return 'direct';
   if (files.length > FILE_BUNDLE_MAX_FILES) return 'direct';
   if (files.some((path, index) => declaredPathProblem(path, files.slice(0, index))))

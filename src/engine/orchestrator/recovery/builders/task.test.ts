@@ -9,12 +9,14 @@ import {
   buildCheckoutChangedRecoveryIssue,
   buildContextOverflowRecoveryIssue,
   buildDependencyBlockedRecoveryIssue,
+  buildImplementerUnavailableRecoveryIssue,
   buildLeftIsolationRecoveryIssue,
   buildMissingModelRecoveryIssue,
   buildRecipeInvalidRecoveryIssue,
   buildRepeatedTimeoutRecoveryIssue,
   buildRetryExhaustedRecoveryIssue,
   buildReviewFailedRecoveryIssue,
+  buildRunnerInputTooLargeRecoveryIssue,
   buildRunnerUnauthenticatedRecoveryIssue,
   buildRunnerUsageLimitRecoveryIssue,
   buildSnapshotFailedRecoveryIssue,
@@ -59,26 +61,19 @@ function overflowRoutingDecision(overrides: Partial<RoutingDecision> = {}): Rout
 }
 
 describe('buildRetryExhaustedRecoveryIssue', () => {
-  it('escalates to a bigger worker without offering ordinary retry', () => {
-    const task = makeTask({ id: 'T012' });
-
+  it('offers skip and end without the retry by default, and recommends skip', () => {
     const issue = buildRetryExhaustedRecoveryIssue({
-      task,
+      task: makeTask({ id: 'T012' }),
       createdAt,
       validationSummary: 'lint failed after all attempts',
       attempts: 3,
       maxAttempts: 3,
-      routeBiggerProfile: 'agent-cli',
     });
 
     expect(issue.reason).toBe('retry-exhausted');
     expect(issue.phase).toBe('escalating');
-    expect(issue.recommendedAction).toBe('route-bigger-worker');
-    expect(issue.availableActions).toEqual(
-      expect.arrayContaining(['route-bigger-worker', 'skip-current-task', 'pause-run', 'end-run']),
-    );
-    expect(issue.availableActions).not.toContain('retry-same-worker');
-    expect(issue.availableActions).not.toContain('planner-split-rebase');
+    expect(issue.availableActions).toEqual(['skip-current-task', 'end-run']);
+    expect(issue.recommendedAction).toBe('skip-current-task');
     expectValidRecoveryIssue(issue);
   });
 
@@ -91,7 +86,11 @@ describe('buildRetryExhaustedRecoveryIssue', () => {
       maxAttempts: 3,
       allowRetryOverride: true,
     });
-    expect(override.availableActions).toContain('retry-same-worker');
+    expect(override.availableActions).toEqual([
+      'retry-same-worker',
+      'skip-current-task',
+      'end-run',
+    ]);
     expect(override.recommendedAction).toBe('retry-same-worker');
     expectValidRecoveryIssue(override);
   });
@@ -188,12 +187,12 @@ describe('buildRetryExhaustedRecoveryIssue', () => {
     expect(five.details).toContain('Attempts: 5');
   });
 
-  it('defaults to task exhausted its retries when neither verdict nor hook reason is set', () => {
+  it('defaults to task failed when neither verdict nor hook reason is set', () => {
     const issue = buildRetryExhaustedRecoveryIssue({
       task: makeTask({ id: 'T012' }),
       createdAt,
     });
-    expect(issue.message).toBe('T012 exhausted its retries');
+    expect(issue.message).toBe('T012 failed');
   });
 
   it('sets message and fact when escalationBlockedBy is provided', () => {
@@ -232,36 +231,8 @@ describe('buildRunnerUsageLimitRecoveryIssue', () => {
     expect(issue.details.join('\n')).toContain(codexLimit);
     expect(issue.details.join('\n')).toContain('stopped instead of escalating');
     expect(issue.facts?.resetsAt).toMatch(/^2026-08-08T/);
-    expect(issue.availableActions).toEqual([
-      'retry-same-worker',
-      'skip-current-task',
-      'pause-run',
-      'end-run',
-    ]);
-    expect(issue.recommendedAction).toBe('pause-run');
-    expectValidRecoveryIssue(issue);
-  });
-
-  it('offers and recommends the profile switch when a bigger worker exists', () => {
-    const issue = buildRunnerUsageLimitRecoveryIssue({
-      task: makeTask({ id: 'T003' }),
-      runner: makeConfig({
-        implementer: {
-          kind: 'api',
-          provider: 'custom-endpoint',
-          apiBase: 'https://api.example.com/v1',
-          apiKey: 'test-key',
-        },
-      }).implementer,
-      toolMessage:
-        'Rate limit reached for model `llama-3.3-70b-versatile`. Please try again in 7.66s.',
-      routeBiggerProfile: 'cloud-big',
-      createdAt,
-    });
-
-    expect(issue.availableActions).toContain('route-bigger-worker');
-    expect(issue.recommendedAction).toBe('route-bigger-worker');
-    expect(issue.facts?.routeBiggerProfile).toBe('cloud-big');
+    expect(issue.availableActions).toEqual(['retry-same-worker', 'skip-current-task', 'end-run']);
+    expect(issue.recommendedAction).toBe('retry-same-worker');
     expectValidRecoveryIssue(issue);
   });
 
@@ -288,7 +259,12 @@ describe('buildRunnerUsageLimitRecoveryIssue', () => {
     });
     expect(issue.details.join('\n')).not.toContain('claude-code');
     expect(issue.resetAt).toMatch(/^2026-08-08T/);
-    expect(issue.availableActions).toContain('switch-seat');
+    expect(issue.availableActions).toEqual([
+      'retry-same-worker',
+      'switch-seat',
+      'skip-current-task',
+      'end-run',
+    ]);
     expect(issue.recommendedAction).toBe('switch-seat');
     expectValidRecoveryIssue(issue);
   });
@@ -349,7 +325,6 @@ describe('a seat whose account the provider refuses', () => {
       'retry-same-worker',
       'switch-seat',
       'skip-current-task',
-      'pause-run',
       'end-run',
     ]);
     expect(issue.switchSeat).toEqual({
@@ -376,7 +351,6 @@ describe('a seat whose account the provider refuses', () => {
       'retry-same-worker',
       'switch-seat',
       'skip-current-task',
-      'pause-run',
       'end-run',
     ]);
     expect(issue.switchSeat).toEqual({
@@ -385,19 +359,6 @@ describe('a seat whose account the provider refuses', () => {
     });
     expect(issue.details).toContain('OpenCode CLI reported: HTTP 403 Forbidden');
     expectValidRecoveryIssue(issue);
-  });
-
-  it('offers no bigger worker to a signed-out seat: a login is the fix, not a bigger profile', () => {
-    const issue = buildRunnerUnauthenticatedRecoveryIssue({
-      task: makeTask({ id: 'T001' }),
-      runner,
-      toolMessage: 'HTTP 403 Forbidden',
-      routeBiggerProfile: 'cloud-big',
-      createdAt,
-    });
-
-    expect(issue.availableActions).not.toContain('route-bigger-worker');
-    expect(issue.recommendedAction).toBe('retry-same-worker');
   });
 });
 
@@ -427,65 +388,87 @@ describe('switchSeatOffer', () => {
 });
 
 describe('buildContextOverflowRecoveryIssue', () => {
-  it('builds context-overflow issues with route-bigger only when a larger worker is available', () => {
-    const task = makeTask({ id: 'T013', file: 'src/large.ts' });
-    const routingDecision = overflowRoutingDecision({ taskId: task.id });
+  it('offers a retry, skip or end and recommends the retry', () => {
+    const task = makeTask({ id: 'T013', suggestedFiles: ['src/large.ts'] });
 
-    const withRoute = buildContextOverflowRecoveryIssue({
+    const issue = buildContextOverflowRecoveryIssue({
       task,
       createdAt,
-      routingDecision,
-      routeBiggerProfile: 'frontier-big',
+      routingDecision: overflowRoutingDecision({ taskId: task.id }),
     });
 
-    expect(withRoute.reason).toBe('context-overflow');
-    expect(withRoute.recommendedAction).toBe('route-bigger-worker');
-    expect(withRoute.availableActions).toEqual(
-      expect.arrayContaining(['route-bigger-worker', 'pause-run', 'end-run']),
-    );
-    expect(withRoute.availableActions).not.toContain('planner-split-rebase');
-    expect(withRoute.facts).toMatchObject({
-      estimatedTokens: 45_000,
-      contextLength: 32_768,
-      routeBiggerProfile: 'frontier-big',
-    });
-    expectValidRecoveryIssue(withRoute);
+    expect(issue.reason).toBe('context-overflow');
+    expect(issue.availableActions).toEqual(['retry-same-worker', 'skip-current-task', 'end-run']);
+    expect(issue.recommendedAction).toBe('retry-same-worker');
+    expect(issue.facts).toMatchObject({ estimatedTokens: 45_000, contextLength: 32_768 });
+    expectValidRecoveryIssue(issue);
+  });
+});
 
-    const withoutRoute = buildContextOverflowRecoveryIssue({
-      task,
+describe('buildImplementerUnavailableRecoveryIssue', () => {
+  it('offers a retry, skip or end and recommends the retry', () => {
+    const issue = buildImplementerUnavailableRecoveryIssue({
+      task: makeTask({ id: 'T014' }),
       createdAt,
-      routingDecision,
+      tool: 'codex',
+      availabilityReason: 'not installed',
     });
 
-    expect(withoutRoute.recommendedAction).toBe('pause-run');
-    expect(withoutRoute.availableActions).toEqual(expect.arrayContaining(['pause-run', 'end-run']));
-    expect(withoutRoute.availableActions).not.toContain('planner-split-rebase');
-    expectValidRecoveryIssue(withoutRoute);
+    expect(issue.reason).toBe('implementation-error');
+    expect(issue.availableActions).toEqual(['retry-same-worker', 'skip-current-task', 'end-run']);
+    expect(issue.recommendedAction).toBe('retry-same-worker');
+    expectValidRecoveryIssue(issue);
+  });
+});
 
-    const explicitlyUnavailableRoute = buildContextOverflowRecoveryIssue({
-      task,
+describe('buildRunnerUnauthenticatedRecoveryIssue', () => {
+  const runner = makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }).implementer;
+
+  it('offers a retry, skip or end and recommends the retry', () => {
+    const issue = buildRunnerUnauthenticatedRecoveryIssue({
+      task: makeTask({ id: 'T015' }),
+      runner,
+      toolMessage: 'Not logged in',
       createdAt,
-      routingDecision,
-      routeBiggerProfile: 'frontier-big',
-      canRouteBigger: false,
     });
 
-    expect(explicitlyUnavailableRoute.recommendedAction).toBe('pause-run');
-    expect(explicitlyUnavailableRoute.availableActions).toEqual(
-      expect.arrayContaining(['pause-run', 'end-run']),
-    );
-    expect(explicitlyUnavailableRoute.availableActions).not.toContain('route-bigger-worker');
-    expect(explicitlyUnavailableRoute.availableActions).not.toContain('planner-split-rebase');
-    expectValidRecoveryIssue(explicitlyUnavailableRoute);
+    expect(issue.reason).toBe('runner-unauthenticated');
+    expect(issue.availableActions).toEqual(['retry-same-worker', 'skip-current-task', 'end-run']);
+    expect(issue.recommendedAction).toBe('retry-same-worker');
+    expectValidRecoveryIssue(issue);
+  });
+
+  it('offers the seat switch when another ready tool was detected, still recommending the retry', () => {
+    const issue = buildRunnerUnauthenticatedRecoveryIssue({
+      task: makeTask({ id: 'T015' }),
+      runner,
+      toolMessage: 'Not logged in',
+      createdAt,
+      seatSwap: {
+        seat: 'build',
+        currentTool: 'codex',
+        detectedTools: [{ tool: 'claude-code', ready: true }],
+      },
+    });
+
+    expect(issue.availableActions).toEqual([
+      'retry-same-worker',
+      'switch-seat',
+      'skip-current-task',
+      'end-run',
+    ]);
+    expect(issue.recommendedAction).toBe('retry-same-worker');
+    expect(issue.switchSeat).toEqual({ seat: 'build', candidates: [{ tool: 'claude-code' }] });
+    expectValidRecoveryIssue(issue);
   });
 });
 
 describe('buildDependencyBlockedRecoveryIssue', () => {
   it('builds dependency-blocked issues with affected tasks and safe actions', () => {
-    const dependency = makeTask({ id: 'T018', file: 'src/base.ts', status: 'failed' });
+    const dependency = makeTask({ id: 'T018', suggestedFiles: ['src/base.ts'], status: 'failed' });
     const task = makeTask({
       id: 'T019',
-      file: 'src/followup.ts',
+      suggestedFiles: ['src/followup.ts'],
       dependsOn: ['T018'],
     });
 
@@ -499,17 +482,14 @@ describe('buildDependencyBlockedRecoveryIssue', () => {
     expect(issue.files).toEqual(['src/base.ts', 'src/followup.ts']);
     expect(issue.affectedTaskIds).toEqual([dependency.id, task.id]);
     expect(issue.details).toEqual(['Blocked dependencies: T018 (failed)']);
-    expect(issue.availableActions).toEqual(
-      expect.arrayContaining(['skip-current-task', 'pause-run', 'end-run']),
-    );
-    expect(issue.availableActions).not.toContain('planner-split-rebase');
-    expect(issue.recommendedAction).toBe('pause-run');
+    expect(issue.availableActions).toEqual(['skip-current-task', 'end-run']);
+    expect(issue.recommendedAction).toBe('skip-current-task');
     expectValidRecoveryIssue(issue);
   });
 });
 
 describe('buildRecipeInvalidRecoveryIssue', () => {
-  it('names the tool that refused the command line and never recommends a retry', () => {
+  it('names the tool that refused the command line and offers a retry or end', () => {
     const issue = buildRecipeInvalidRecoveryIssue({
       task: makeTask({ id: 'T022' }),
       runner: makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }).implementer,
@@ -520,9 +500,8 @@ describe('buildRecipeInvalidRecoveryIssue', () => {
     expect(issue.reason).toBe('implementer-recipe-invalid');
     expect(issue.message).toContain('rejected the command');
     expect(issue.details.join('\n')).toContain("unknown option '--nope'");
-    expect(issue.recommendedAction).toBe('pause-run');
-    expect(issue.availableActions).not.toContain('skip-current-task');
-    expect(issue.availableActions).not.toContain('switch-seat');
+    expect(issue.availableActions).toEqual(['retry-same-worker', 'end-run']);
+    expect(issue.recommendedAction).toBe('retry-same-worker');
     expectValidRecoveryIssue(issue);
   });
 });
@@ -548,16 +527,11 @@ describe('buildLeftIsolationRecoveryIssue', () => {
     );
     expect(issue.details).toEqual([
       `Google Antigravity CLI ${toolMessage}`,
-      'Nothing from this attempt was promoted.',
+      "Your checkout gets the run's changes only through Apply.",
     ]);
     expect(issue.attempts).toBeUndefined();
     expect(issue.facts).toEqual({ tool: 'Google Antigravity CLI' });
-    expect(issue.availableActions).toEqual([
-      'retry-same-worker',
-      'skip-current-task',
-      'pause-run',
-      'end-run',
-    ]);
+    expect(issue.availableActions).toEqual(['retry-same-worker', 'skip-current-task', 'end-run']);
     expect(issue.recommendedAction).toBe('retry-same-worker');
     expectValidRecoveryIssue(issue);
   });
@@ -575,7 +549,13 @@ describe('buildLeftIsolationRecoveryIssue', () => {
       },
     });
 
-    expect(issue.availableActions).toContain('switch-seat');
+    expect(issue.availableActions).toEqual([
+      'retry-same-worker',
+      'switch-seat',
+      'skip-current-task',
+      'end-run',
+    ]);
+    expect(issue.recommendedAction).toBe('retry-same-worker');
     expect(issue.switchSeat).toEqual({ seat: 'build', candidates: [{ tool: 'codex' }] });
     expectValidRecoveryIssue(issue);
   });
@@ -638,18 +618,31 @@ describe('buildCheckoutChangedRecoveryIssue', () => {
     );
     expect(issue.details).toEqual([
       'Changed while Google Antigravity CLI ran: branch escaped · hook pre-commit',
-      'Nothing from this attempt was promoted, and nothing in your checkout was reverted.',
+      "Your checkout gets the run's changes only through Apply, and nothing in your checkout was reverted.",
     ]);
     expect(issue.attempts).toBeUndefined();
     expect(issue.facts).toEqual({ tool: 'Google Antigravity CLI' });
-    expect(issue.availableActions).toEqual([
-      'retry-same-worker',
-      'skip-current-task',
-      'pause-run',
-      'end-run',
-    ]);
+    expect(issue.availableActions).toEqual(['retry-same-worker', 'skip-current-task', 'end-run']);
     expect(issue.recommendedAction).toBe('retry-same-worker');
+    expect(issue.switchSeat).toBeUndefined();
     expectValidRecoveryIssue(issue);
+  });
+
+  it('offers no seat switch even when another ready tool was detected', () => {
+    const issue = buildCheckoutChangedRecoveryIssue({
+      task: makeTask({ id: 'T001' }),
+      runner,
+      toolMessage: 'branch escaped',
+      createdAt,
+      seatSwap: {
+        seat: 'build',
+        currentTool: 'antigravity',
+        detectedTools: [{ tool: 'codex', ready: true }],
+      },
+    });
+
+    expect(issue.availableActions).toEqual(['retry-same-worker', 'skip-current-task', 'end-run']);
+    expect(issue.switchSeat).toBeUndefined();
   });
 });
 
@@ -691,7 +684,8 @@ describe('buildMissingModelRecoveryIssue', () => {
     });
 
     expect(issue.message).toContain('pick a listed model');
-    expect(issue.availableActions).toContain('switch-seat');
+    expect(issue.availableActions).toEqual(['retry-same-worker', 'switch-seat', 'end-run']);
+    expect(issue.recommendedAction).toBe('switch-seat');
     expect(issue.switchSeat).toEqual({
       seat: 'build',
       candidates: [{ tool: 'claude-code', model: 'sonnet' }],
@@ -701,7 +695,7 @@ describe('buildMissingModelRecoveryIssue', () => {
 });
 
 describe('buildRepeatedTimeoutRecoveryIssue', () => {
-  it('reports the repeated timeout without offering a bigger worker', () => {
+  it('reports the repeated timeout and recommends the retry when no other tool is ready', () => {
     const issue = buildRepeatedTimeoutRecoveryIssue({
       task: makeTask({ id: 'T024' }),
       runner: makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }).implementer,
@@ -713,24 +707,18 @@ describe('buildRepeatedTimeoutRecoveryIssue', () => {
 
     expect(issue.reason).toBe('runner-timeout-repeated');
     expect(issue.message).toContain('timed out twice in a row on T024');
-    expect(issue.availableActions).toEqual([
-      'retry-same-worker',
-      'skip-current-task',
-      'pause-run',
-      'end-run',
-    ]);
-    expect(issue.recommendedAction).toBe('pause-run');
+    expect(issue.availableActions).toEqual(['retry-same-worker', 'skip-current-task', 'end-run']);
+    expect(issue.recommendedAction).toBe('retry-same-worker');
     expectValidRecoveryIssue(issue);
   });
 
-  it('offers the seat switch and the bigger worker when both exist', () => {
+  it('offers and recommends the seat switch when another ready tool exists', () => {
     const issue = buildRepeatedTimeoutRecoveryIssue({
       task: makeTask({ id: 'T024' }),
       runner: makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }).implementer,
       toolMessage: 'implementer timed out',
       attempts: 2,
       maxAttempts: 3,
-      routeBiggerProfile: 'cloud-big',
       createdAt,
       seatSwap: {
         seat: 'build',
@@ -741,13 +729,11 @@ describe('buildRepeatedTimeoutRecoveryIssue', () => {
 
     expect(issue.availableActions).toEqual([
       'retry-same-worker',
-      'route-bigger-worker',
       'switch-seat',
       'skip-current-task',
-      'pause-run',
       'end-run',
     ]);
-    expect(issue.facts?.routeBiggerProfile).toBe('cloud-big');
+    expect(issue.recommendedAction).toBe('switch-seat');
     expect(issue.switchSeat).toEqual({ seat: 'build', candidates: [{ tool: 'claude-code' }] });
     expectValidRecoveryIssue(issue);
   });
@@ -756,7 +742,7 @@ describe('buildRepeatedTimeoutRecoveryIssue', () => {
 describe('buildApprovalDeniedRecoveryIssue', () => {
   it('carries the denied files and the denial reason', () => {
     const issue = buildApprovalDeniedRecoveryIssue({
-      task: makeTask({ id: 'T025', file: 'src/main.ts' }),
+      task: makeTask({ id: 'T025', suggestedFiles: ['src/main.ts'] }),
       createdAt,
       deniedFiles: ['src/secret.ts'],
       denialReason: 'operator denied',
@@ -765,7 +751,8 @@ describe('buildApprovalDeniedRecoveryIssue', () => {
     expect(issue.reason).toBe('approval-denied');
     expect(issue.files).toEqual(['src/secret.ts']);
     expect(issue.details.join('\n')).toContain('Denied: operator denied');
-    expect(issue.recommendedAction).toBe('pause-run');
+    expect(issue.availableActions).toEqual(['retry-same-worker', 'skip-current-task', 'end-run']);
+    expect(issue.recommendedAction).toBe('retry-same-worker');
     expectValidRecoveryIssue(issue);
   });
 });
@@ -783,13 +770,14 @@ describe('buildSnapshotFailedRecoveryIssue', () => {
       'git status failed: not a repository',
       'Scope and revert cannot be enforced without the snapshot.',
     ]);
+    expect(issue.availableActions).toEqual(['retry-same-worker', 'end-run']);
     expect(issue.recommendedAction).toBe('retry-same-worker');
     expectValidRecoveryIssue(issue);
   });
 });
 
 describe('buildReviewFailedRecoveryIssue', () => {
-  it('counts the blocking findings and offers a correction, pause or abort', () => {
+  it('counts the blocking findings and offers a correction or the end, recommending the correction', () => {
     const issue = buildReviewFailedRecoveryIssue({
       createdAt,
       blocking: 3,
@@ -799,8 +787,65 @@ describe('buildReviewFailedRecoveryIssue', () => {
     expect(issue.reason).toBe('review-failed');
     expect(issue.phase).toBe('final-review');
     expect(issue.message).toBe('Final review failed with 3 blocking findings');
-    expect(issue.availableActions).toEqual(['revise', 'pause-run', 'end-run']);
-    expect(issue.recommendedAction).toBe('pause-run');
+    expect(issue.availableActions).toEqual(['revise', 'end-run']);
+    expect(issue.recommendedAction).toBe('revise');
+    expectValidRecoveryIssue(issue);
+  });
+
+  it('offers accept as is on a reviewed workspace', () => {
+    const issue = buildReviewFailedRecoveryIssue({ createdAt, blocking: 1, acceptAsIs: true });
+
+    expect(issue.availableActions).toEqual(['revise', 'accept-as-is', 'end-run']);
+    expect(issue.recommendedAction).toBe('revise');
+    expectValidRecoveryIssue(issue);
+  });
+
+  it('offers a retry on the review seat when the review reached no verdict', () => {
+    const issue = buildReviewFailedRecoveryIssue({
+      createdAt,
+      failure: { kind: 'call-failed', code: 'exit-1', message: 'Review call failed.' },
+    });
+
+    expect(issue.seat).toBe('review');
+    expect(issue.availableActions).toEqual(['retry-same-worker', 'end-run']);
+    expect(issue.recommendedAction).toBe('retry-same-worker');
+    expectValidRecoveryIssue(issue);
+  });
+});
+
+describe('buildRunnerInputTooLargeRecoveryIssue', () => {
+  const runner = makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }).implementer;
+
+  it('halts the seat with no retry, since a retry sends the same prompt', () => {
+    const issue = buildRunnerInputTooLargeRecoveryIssue({
+      task: makeTask({ id: 'T030' }),
+      runner,
+      toolMessage: 'Input exceeds the maximum length',
+      createdAt,
+    });
+
+    expect(issue.reason).toBe('context-overflow');
+    expect(issue.availableActions).toEqual(['skip-current-task', 'end-run']);
+    expect(issue.recommendedAction).toBe('skip-current-task');
+    expectValidRecoveryIssue(issue);
+  });
+
+  it('offers and recommends the seat switch when another ready tool exists', () => {
+    const issue = buildRunnerInputTooLargeRecoveryIssue({
+      task: makeTask({ id: 'T030' }),
+      runner,
+      toolMessage: 'Input exceeds the maximum length',
+      createdAt,
+      seatSwap: {
+        seat: 'build',
+        currentTool: 'codex',
+        detectedTools: [{ tool: 'claude-code', ready: true }],
+      },
+    });
+
+    expect(issue.availableActions).toEqual(['switch-seat', 'skip-current-task', 'end-run']);
+    expect(issue.recommendedAction).toBe('switch-seat');
+    expect(issue.switchSeat).toEqual({ seat: 'build', candidates: [{ tool: 'claude-code' }] });
     expectValidRecoveryIssue(issue);
   });
 });

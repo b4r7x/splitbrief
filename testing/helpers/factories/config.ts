@@ -154,7 +154,6 @@ export function makeApprovalConfig(
 ): Config {
   return makeConfig({
     approval: {
-      enabled: approval.enabled ?? true,
       feedRejectionsToPlanner: approval.feedRejectionsToPlanner ?? true,
       ...(approval.allowedPaths !== undefined && { allowedPaths: approval.allowedPaths }),
     },

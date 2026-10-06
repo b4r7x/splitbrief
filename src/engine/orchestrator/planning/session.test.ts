@@ -266,7 +266,7 @@ describe('the planning session on the live path', () => {
     ]);
     expect(loadState(run)?.userAnswers).toEqual(run.result.state.userAnswers);
     expect(run.result.state.plan?.summary).toBe('Greet people by name');
-    expect(run.result.state.tasks.map((task) => task.file)).toEqual(['src/hello.ts']);
+    expect(run.result.state.tasks.map((task) => task.suggestedFiles[0])).toEqual(['src/hello.ts']);
     expect(parsePlanJson(readSpecFileOrEmpty(run, PLAN_JSON_FILE))).toEqual({
       plan: makePlanProposal(),
     });
@@ -863,7 +863,7 @@ describe('the plan card', () => {
     expect(onApprovalNeeded).toHaveBeenCalledTimes(2);
     expect(run.result.disposition).toBe('ready-for-tasks');
     expect(run.result.state.plan?.summary).toBe('Edited by hand');
-    expect(run.result.state.tasks.map((task) => task.file)).toEqual(['src/greet.ts']);
+    expect(run.result.state.tasks.map((task) => task.suggestedFiles[0])).toEqual(['src/greet.ts']);
     expect(
       readFileSync(join(sessionDir(run.projectDir, run.sessionId), 'plan.md'), 'utf8'),
     ).toContain('Edited by hand');

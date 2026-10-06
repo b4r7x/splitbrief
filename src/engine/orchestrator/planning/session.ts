@@ -41,7 +41,6 @@ import { buildRepoMap } from '../../codebase/repomap.js';
 import { buildProjectContextMarkdown } from '../../planners/context.js';
 import type { Planner, PriorMessage } from '../../planners/types.js';
 import { fallbackInstruction, type RequestTypedResult } from '../../runners/typed-output.js';
-import { formatTasks } from '../../spec/formatter.js';
 import {
   blocksPlan,
   checkPlan,
@@ -62,7 +61,7 @@ import {
   type BuildSeat,
 } from '../../spec/prompts/plan-session.js';
 import { planConfirmations } from '../approval/confirm.js';
-import { writeAndPublishArtifacts } from '../artifact-write.js';
+import { writeAndPublishPlanArtifacts } from '../artifact-write.js';
 import {
   profileEffectiveModelId,
   resolveProfileContextLength,
@@ -554,19 +553,14 @@ function compilePlan(
   const ref = { projectDir, sessionId };
   const tasks = plan.tasks.map((spec) => taskFromSpec(spec, projectDir));
   writePlanJson(ref, plan);
-  writeAndPublishArtifacts({
+  writeAndPublishPlanArtifacts({
     projectDir,
     sessionId,
     bus,
     phase: state.phase,
     metadata: wctx.metadata,
-    items: [
-      {
-        kind: 'plan',
-        text: formatPlanMarkdown(plan, renderCheckNotes(plan, config.validation.render)),
-      },
-      { kind: 'task-briefs', text: formatTasks(tasks) },
-    ],
+    planMarkdown: formatPlanMarkdown(plan, renderCheckNotes(plan, config.validation.render)),
+    tasks,
   });
   const manifest = readManifestCommands(projectDir);
   const stack = detectStack(projectDir, config.validation.stack);

@@ -548,6 +548,72 @@ describe('ConversationFlow', () => {
     ui.unmount();
   });
 
+  it('heads the not-started briefs with the word the task status uses, not the message queue word', () => {
+    const events = makeActivityReads(['src/a.ts']);
+    tasksStore.__testReset({
+      tasks: [{ id: taskId('T002'), title: 'wire login route', status: 'pending' }],
+    });
+    terminalSizeStore.__testReset({ cols: 90, rows: 30, isSmall: true });
+
+    const ui = renderConversation(events, 12, 90);
+    const rows = normalizedRows(ui.lastFrame() ?? '');
+
+    expect(rows).toContain('Pending 1');
+    expect(rows.some((line) => line.startsWith('Queued'))).toBe(false);
+    expect(rows.some((line) => line.endsWith('wire login route'))).toBe(true);
+    expect(rows.some((line) => /more$/.test(line))).toBe(false);
+
+    ui.unmount();
+  });
+
+  it('says how many briefs the pending block cannot show, inside its own row budget', () => {
+    const events = makeActivityReads(['src/a.ts']);
+    const titles = ['one', 'two', 'three', 'four', 'five', 'six'].map((word) => `brief ${word}`);
+    tasksStore.__testReset({
+      tasks: titles.map((title, index) => ({
+        id: taskId(`T00${index + 2}`),
+        title,
+        status: 'pending' as const,
+      })),
+    });
+    terminalSizeStore.__testReset({ cols: 90, rows: 30, isSmall: true });
+
+    const ui = renderConversation(events, 12, 90);
+    const rows = normalizedRows(ui.lastFrame() ?? '');
+    const heading = rows.indexOf('Pending 6');
+
+    expect(heading).toBeGreaterThan(-1);
+    expect(rows.slice(heading + 1)).toEqual([
+      `${QUEUED_MARK} brief one`,
+      `${QUEUED_MARK} brief two`,
+      '+4 more',
+    ]);
+
+    ui.unmount();
+  });
+
+  it('leaves the brief a recovery set back to pending out of the pending block while the run is on it', () => {
+    const events = makeActivityReads(['src/a.ts']);
+    tasksStore.__testReset({
+      currentTask: 1,
+      tasks: [
+        { id: taskId('T001'), title: 'retried brief', status: 'pending' },
+        { id: taskId('T002'), title: 'next brief', status: 'pending' },
+      ],
+    });
+    lifecycleStore.__testReset({ status: 'running', phase: 'implementing' });
+    terminalSizeStore.__testReset({ cols: 90, rows: 30, isSmall: true });
+
+    const ui = renderConversation(events, 12, 90);
+    const rows = normalizedRows(ui.lastFrame() ?? '');
+
+    expect(rows).toContain('Pending 1');
+    expect(rows.some((line) => line.endsWith('retried brief'))).toBe(false);
+    expect(rows.some((line) => line.endsWith('next brief'))).toBe(true);
+
+    ui.unmount();
+  });
+
   it('keeps the queued block while the sidebar is suppressed below its column breakpoint', () => {
     const events = makeActivityReads(['src/a.ts']);
     tasksStore.__testReset({
@@ -781,7 +847,7 @@ describe('ConversationFlow', () => {
     const baseline = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(baseline).not.toContain(FOCUS_MARK);
 
-    hoverStore.set('conversation', 2);
+    hoverStore.set(2);
     await tick(20);
     const focused = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(countGlyphOccurrences(focused, FOCUS_MARK)).toBe(1);

@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { RewindEventSchema } from '../../core/state/rewind-event.js';
 import { parseEngineEvent } from './schema.js';
 import type { EngineEvent } from './types.js';
 
@@ -134,7 +133,7 @@ describe('parseEngineEvent', () => {
     expect(parsed).toMatchObject({ forwardCompatField: { nested: true } });
   });
 
-  it('parses core-owned rewind event variants with the same schemas used by rewind persistence', () => {
+  it('replays a rewind event an older run logged', () => {
     const event = {
       type: 'rewind_to_plan',
       ts: 1,
@@ -142,7 +141,6 @@ describe('parseEngineEvent', () => {
       comment: 'split up the tasks',
     } as const;
 
-    expect(RewindEventSchema.safeParse(event).success).toBe(true);
     expect(parseEngineEvent(event)).toEqual(expect.objectContaining(event));
   });
 
@@ -390,7 +388,6 @@ describe('parseEngineEvent', () => {
         ts: 1,
         phase: 'planning',
         elapsedMs: 5000,
-        accumulatedTokens: 900,
         callId: 'planner-call-1',
       }),
     ).toEqual(
@@ -399,6 +396,18 @@ describe('parseEngineEvent', () => {
         callId: 'planner-call-1',
       }),
     );
+  });
+
+  it('still reads an old planner heartbeat that carried a token count', () => {
+    expect(
+      parseEngineEvent({
+        type: 'planner_heartbeat',
+        ts: 1,
+        phase: 'planning',
+        elapsedMs: 5000,
+        accumulatedTokens: 0,
+      }),
+    ).toEqual(expect.objectContaining({ type: 'planner_heartbeat', elapsedMs: 5000 }));
   });
 
   it('accepts validate events with active stage command metadata', () => {
@@ -586,59 +595,19 @@ describe('parseEngineEvent', () => {
     );
   });
 
-  it('round-trips both brief readiness events', () => {
-    expect(
-      parseEngineEvent({
-        type: 'brief_readiness_passed',
-        ts: 1,
-        phase: 'reviewing-briefs',
-        taskCount: 4,
-      }),
-    ).toEqual(
-      expect.objectContaining({
-        type: 'brief_readiness_passed',
-        taskCount: 4,
-      }),
-    );
-    expect(
-      parseEngineEvent({
-        type: 'brief_readiness_blocked',
-        ts: 1,
-        phase: 'reviewing-briefs',
-        taskCount: 4,
-        blockedCount: 2,
-        blockedTaskIds: ['T001', 'T002'],
-        kinds: ['stale-conflict', 'context-overflow'],
-      }),
-    ).toEqual(
-      expect.objectContaining({
-        type: 'brief_readiness_blocked',
-        taskCount: 4,
-        blockedCount: 2,
-        blockedTaskIds: ['T001', 'T002'],
-        kinds: ['stale-conflict', 'context-overflow'],
-      }),
-    );
-  });
-
-  it('rejects brief readiness events missing required fields', () => {
-    expect(
-      parseEngineEvent({
-        type: 'brief_readiness_passed',
-        ts: 1,
-        phase: 'reviewing-briefs',
-      }),
-    ).toBeNull();
-    expect(
-      parseEngineEvent({
-        type: 'brief_readiness_blocked',
-        ts: 1,
-        phase: 'reviewing-briefs',
-        taskCount: 4,
-        blockedCount: 1,
-        blockedTaskIds: ['T001'],
-      }),
-    ).toBeNull();
+  it.each([
+    { type: 'brief_quality_passed', score: 0.9, warningCount: 0 },
+    { type: 'brief_quality_failed', score: 0.4, errorCount: 2, warningCount: 1 },
+    { type: 'brief_readiness_passed', taskCount: 4 },
+    {
+      type: 'brief_readiness_blocked',
+      taskCount: 4,
+      blockedCount: 1,
+      blockedTaskIds: ['T001'],
+      kinds: ['stale-conflict'],
+    },
+  ])('reads an old $type event as no event', (event) => {
+    expect(parseEngineEvent({ ...event, ts: 1, phase: 'reviewing-briefs' })).toBeNull();
   });
 
   it.each([
@@ -666,24 +635,4 @@ describe('parseEngineEvent', () => {
       expect(parseEngineEvent({ ...base, seat: 'desk' })).toBeNull();
     },
   );
-
-  it('publishing brief_quality_failed still parses as a public event', () => {
-    expect(
-      parseEngineEvent({
-        type: 'brief_quality_failed',
-        ts: 1,
-        phase: 'reviewing-briefs',
-        score: 0.4,
-        errorCount: 2,
-        warningCount: 1,
-      }),
-    ).toEqual(
-      expect.objectContaining({
-        type: 'brief_quality_failed',
-        score: 0.4,
-        errorCount: 2,
-        warningCount: 1,
-      }),
-    );
-  });
 });

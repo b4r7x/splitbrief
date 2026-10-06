@@ -18,7 +18,6 @@ import { deriveRunStatus } from '../../../core/sessions/run-status.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { abortError, composeAbortSignal } from '../../../utils/abort.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../events/workflow-cancel.js';
-import { WORKFLOW_REWIND_ABORT_REASON } from '../../../core/phases.js';
 import { error } from '../../../utils/error.js';
 import { runnerCallInterruptedStatus } from '../../calls/status.js';
 import { createPlannerBase, type PlannerBaseConfig } from '../../planners/base.js';
@@ -175,43 +174,6 @@ describe('handlePlanningFailure', () => {
     expect(events.some((event) => event.type === 'turn_interrupted')).toBe(false);
   });
 
-  it('preserves the persisted rewind request when planning aborts', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const staleState = { ...createInitialState('feature'), phase: 'planning' as const };
-    const persistedState = {
-      ...staleState,
-      rewindPending: { target: 'plan' as const, comment: 'rewind to the plan' },
-    };
-    saveState({ projectDir, sessionId }, persistedState);
-
-    const { bus, events } = makeBusRecorder();
-    const controller = new AbortController();
-    controller.abort(WORKFLOW_REWIND_ABORT_REASON);
-    const wctx = makeWctx({ projectDir, sessionId, bus, signal: controller.signal });
-
-    const result = await handlePlanningFailure({
-      err: error('operation-aborted', 'approval gate cancelled'),
-      projectDir,
-      sessionId,
-      state: staleState,
-      wctx,
-    });
-
-    expect(result).toMatchObject({ disposition: 'terminal', outcome: 'interrupted' });
-    expect(result.state.rewindPending).toEqual({
-      target: 'plan',
-      comment: 'rewind to the plan',
-    });
-    expect(loadState({ projectDir, sessionId })?.rewindPending).toEqual({
-      target: 'plan',
-      comment: 'rewind to the plan',
-    });
-    expect(loadState({ projectDir, sessionId })?.phase).toBe('planning');
-    expect(result.state.interruptedStep).toBeUndefined();
-    expect(loadState({ projectDir, sessionId })?.interruptedStep).toBeUndefined();
-    expect(events.filter((event) => event.type === 'turn_interrupted')).toEqual([]);
-  });
-
   it('rebases the halt after planner usage booking so the paid usage remains persisted', async () => {
     const { projectDir, sessionId } = setupProject();
     const staleState = { ...createInitialState('feature'), phase: 'planning' as const };
@@ -257,10 +219,8 @@ describe('handlePlanningFailure', () => {
     expect(issue?.reason).toBe('planner-call-failed');
     expect(issue?.seat).toBe('plan');
     expect(issue?.phase).toBe('planning');
-    expect(issue?.availableActions).toEqual(
-      expect.arrayContaining(['retry-same-worker', 'pause-run', 'end-run']),
-    );
-    expect(issue?.availableActions).not.toContain('skip-current-task');
+    expect(issue?.availableActions).toEqual(['retry-same-worker', 'end-run']);
+    expect(issue?.recommendedAction).toBe('retry-same-worker');
     expect(loadState({ projectDir, sessionId })?.pendingRecovery?.reason).toBe(
       'planner-call-failed',
     );
@@ -548,7 +508,7 @@ describe('a stop during a planner call', () => {
     });
     expect(status).toEqual({
       kind: 'open',
-      stop: { kind: 'paused', at: 'mid-step' },
+      stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } },
       resumeAt: { kind: 'planner', call: 'plan' },
     });
     expect(events.some((event) => event.type === 'error')).toBe(false);
@@ -565,6 +525,9 @@ describe('a stop during a planner call', () => {
     expect(result).toMatchObject({ disposition: 'terminal', outcome: 'halted' });
     expect(saved.interruptedStep).toBeUndefined();
     expect(saved.pendingRecovery?.reason).toBe('planner-call-failed');
-    expect(status).toMatchObject({ kind: 'open', stop: { kind: 'halted' } });
+    expect(status).toMatchObject({
+      kind: 'open',
+      stop: { kind: 'waiting-for-you', on: { kind: 'halt' } },
+    });
   });
 });

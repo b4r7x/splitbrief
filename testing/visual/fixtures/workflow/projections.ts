@@ -122,12 +122,12 @@ export const WORKFLOW_FIXTURE_TEXT = Object.freeze({
     'Edit bundle did not apply: testing/visual/fixtures/workflow/projections.ts hunk 2 no longer matches\nHint: the next attempt reads the current file',
   recovery: 'Change BUILD tool',
   recoveryPlan: 'Change PLAN tool',
-  retryExhausted: 'exhausted its retries',
+  retryExhausted: 'failed',
   consultBound: 'used its consult allowance',
   reviewFailed: 'Fix again',
   reviewFixTask: 'Fix the finding the review raised',
-  leftIsolation: 'Recovery needed · T901 left the isolation directory',
-  checkoutChanged: 'Recovery needed · Your checkout changed under T901',
+  leftIsolation: 'Seat down · T901 left the isolation directory',
+  checkoutChanged: 'Needs you · Your checkout changed under T901',
   apiContext: 'Nothing was sent to PLAN',
 });
 
@@ -519,7 +519,7 @@ const validationProjection: WorkflowFixtureProjection = {
   ],
 };
 
-// A --yolo run where a brief also changed files its brief did not suggest: the gates pass, the
+// A run where a brief also changed files its brief did not suggest: the gates pass, the
 // brief completes, and one dim row names the extra files for the reviewer.
 const touchedNotSuggestedProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-touched-not-suggested'),
@@ -528,7 +528,6 @@ const touchedNotSuggestedProjection: WorkflowFixtureProjection = {
   sidebarVisible: true,
   events: [
     { type: 'workflow_started', ts: FIXED_TS, phase: 'implementing', feature: WORKFLOW_FEATURE },
-    { type: 'approval_mode_changed', ts: FIXED_TS + 1, mode: 'yolo' },
     FIXTURE_TASKS_PLANNED,
     {
       type: 'task_started',
@@ -633,6 +632,8 @@ const implementationRetryProjection: WorkflowFixtureProjection = {
     FIXTURE_TASKS_PLANNED,
     {
       type: 'task_started',
+      lineageAttempt: 6,
+      attemptAllowance: 12,
       ts: FIXED_TS + 100,
       phase: 'implementing',
       taskId: WORKFLOW_FIXTURE_TASK_ID,
@@ -655,6 +656,8 @@ const implementationRetryProjection: WorkflowFixtureProjection = {
     },
     {
       type: 'task_retry',
+      lineageAttempt: 7,
+      attemptAllowance: 12,
       ts: FIXED_TS + 400,
       phase: 'implementing',
       taskId: WORKFLOW_FIXTURE_TASK_ID,
@@ -744,6 +747,55 @@ const reviewFixProjection: WorkflowFixtureProjection = {
         action: 'modify',
         tool: 'ollama',
         model: FIXED_RUNNER_MODEL,
+      },
+    ];
+  },
+};
+
+/** The fix task the triage appended passed, and so did the review: every brief counted once. */
+const completeAfterFixTasksProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-complete-after-fix-tasks'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  get events(): EngineEvent[] {
+    return [
+      { type: 'workflow_started', ts: FIXED_TS, phase: 'implementing', feature: WORKFLOW_FEATURE },
+      {
+        ...FIXTURE_TASKS_PLANNED,
+        total: 4,
+        tasks: [
+          ...FIXTURE_TASKS_PLANNED.tasks,
+          {
+            id: WORKFLOW_FIXTURE_FIX_TASK_ID,
+            title: WORKFLOW_FIXTURE_TEXT.reviewFixTask,
+            index: 3,
+            file: WORKFLOW_FIXTURE_SECOND_FILE,
+            action: 'modify',
+          },
+        ],
+      },
+      ...FIXTURE_PLANNED_BRIEFS.map((brief, index) =>
+        fixtureBriefPassed(brief, FIXED_TS + 100 * (index + 1)),
+      ),
+      {
+        type: 'task_completed',
+        ts: FIXED_TS + 500,
+        phase: 'implementing',
+        taskId: WORKFLOW_FIXTURE_FIX_TASK_ID,
+        title: WORKFLOW_FIXTURE_TEXT.reviewFixTask,
+        method: 'local',
+        retries: 0,
+        duration: 60_000,
+        tool: 'ollama',
+        model: FIXED_RUNNER_MODEL,
+      },
+      {
+        type: 'workflow_complete',
+        ts: FIXED_TS + 600,
+        phase: 'complete',
+        review: 'passed',
+        completedTasks: 4,
       },
     ];
   },
@@ -857,82 +909,6 @@ const implementationEscalatedProjection: WorkflowFixtureProjection = {
       method: 'escalated-full',
       retries: 2,
       duration: 500,
-    },
-  ],
-};
-
-const USER_EDITED_FILES = [
-  'CHANGELOG.md',
-  'docs/CLI-REFERENCE.md',
-  'docs/ENGINE.md',
-  'docs/FEATURES.md',
-  'src/app/keys.ts',
-];
-
-const implementationUserEditsProjection: WorkflowFixtureProjection = {
-  scenarioId: scenarioId('workflow-implementation-user-edits'),
-  feature: WORKFLOW_FEATURE,
-  inputMode: 'normal',
-  sidebarVisible: false,
-  events: [
-    {
-      type: 'workflow_started',
-      ts: FIXED_TS,
-      phase: 'implementing',
-      feature: WORKFLOW_FEATURE,
-    },
-    {
-      type: 'tasks_planned',
-      ts: FIXED_TS + 50,
-      phase: 'implementing',
-      total: 1,
-      tasks: [
-        {
-          id: WORKFLOW_FIXTURE_TASK_ID,
-          title: WORKFLOW_FIXTURE_TEXT.implementationTask,
-          index: 0,
-          file: WORKFLOW_FIXTURE_REVIEW_FILE,
-          action: 'modify',
-        },
-      ],
-    },
-    {
-      type: 'paused_external_changes',
-      ts: FIXED_TS + 80,
-      phase: 'implementing',
-      conflict: {
-        kind: 'unrelated',
-        files: USER_EDITED_FILES,
-        affectedTaskIds: [],
-        currentTaskId: WORKFLOW_FIXTURE_TASK_ID,
-        fileConflicts: USER_EDITED_FILES.map((file) => ({
-          file,
-          kind: 'unrelated',
-          affectedTaskIds: [],
-        })),
-        safeToContinue: true,
-        availableActions: ['continue-unrelated', 'pause', 'abort-workflow'],
-      },
-      selectedAction: 'continue-unrelated',
-    },
-    {
-      type: 'task_started',
-      ts: FIXED_TS + 100,
-      phase: 'implementing',
-      taskId: WORKFLOW_FIXTURE_TASK_ID,
-      title: WORKFLOW_FIXTURE_TEXT.implementationTask,
-      index: 0,
-      total: 1,
-      file: WORKFLOW_FIXTURE_REVIEW_FILE,
-      files: [WORKFLOW_FIXTURE_REVIEW_FILE, WORKFLOW_FIXTURE_SECOND_FILE],
-      action: 'modify',
-      tool: FIXED_RUNNER_NAME,
-      model: FIXED_RUNNER_MODEL,
-      implementerProfile: 'default',
-      contextFit: 'tight',
-      estimatedTokens: 24_310,
-      contextLength: 32_768,
-      routingReason: 'Selected profile default (tight, estimated 24310/32768 tokens)',
     },
   ],
 };
@@ -1087,6 +1063,8 @@ const planCardRenderNoteProjection: WorkflowFixtureProjection = {
   },
 };
 
+const PLAN_CARD_TASKS = PLAN_CARD_PLAN.tasks.map((spec) => taskFromSpec(spec, '/nonexistent'));
+
 // The planning session right after its plan passed the checks: the two cards it announces, plan.md
 // and tasks.md, both rendered from plan.json.
 const planCompiledProjection: WorkflowFixtureProjection = {
@@ -1119,10 +1097,7 @@ const planCompiledProjection: WorkflowFixtureProjection = {
       phase: 'planning',
       filename: 'tasks.md',
       path: '.splitbrief/sessions/2026-09-17-workflow-conversation-recovery/tasks.md',
-      ...buildArtifactExcerpt(
-        formatTasks(PLAN_CARD_PLAN.tasks.map((spec) => taskFromSpec(spec, '/nonexistent'))),
-        'tasks.md',
-      ),
+      ...buildArtifactExcerpt(formatTasks(PLAN_CARD_TASKS), 'tasks.md', PLAN_CARD_TASKS),
     },
   ],
 };
@@ -1406,7 +1381,7 @@ const AGY_LADDER_CREW: VisualConfigOverrides = {
 const HALTED_TASK = makeTask({
   id: WORKFLOW_FIXTURE_TASK_ID,
   title: WORKFLOW_FIXTURE_TEXT.implementationTask,
-  file: WORKFLOW_FIXTURE_REVIEW_FILE,
+  suggestedFiles: [WORKFLOW_FIXTURE_REVIEW_FILE],
   status: 'in_progress',
 });
 
@@ -1519,10 +1494,16 @@ const reviewFailedRecoveryProjection: WorkflowFixtureProjection = {
     startedAt: RESUMED_RUN_STARTED_AT,
     phase: 'complete',
     reviewStatus: 'failed',
+    workspace: {
+      kind: 'checkout',
+      path: VISUAL_FIXTURE_PROJECT_DIR,
+      base: { snapshotId: 'visual-base', head: null },
+    },
     pendingRecovery: buildReviewFailedRecoveryIssue({
       id: 'rec_visual_review_failed',
       blocking: 4,
       phase: 'complete',
+      acceptAsIs: true,
       createdAt: new Date(FIXED_TS).toISOString(),
     }),
   }),
@@ -1546,18 +1527,12 @@ const leftIsolationRecoveryIssue: RecoveryIssue = {
   message: `${WORKFLOW_FIXTURE_TASK_ID} left the isolation directory — Google Antigravity CLI searched ~ with run_command: find ~ -name "projections.ts" 2>/dev/null`,
   details: [
     'Google Antigravity CLI searched ~ with run_command: find ~ -name "projections.ts" 2>/dev/null',
-    'Nothing from this attempt was promoted.',
+    "Your checkout gets the run's changes only through Apply.",
   ],
   selectedImplementerProfile: 'default',
   switchSeat: { seat: 'build', candidates: [{ tool: 'codex' }] },
   facts: { tool: 'Google Antigravity CLI' },
-  availableActions: [
-    'retry-same-worker',
-    'switch-seat',
-    'skip-current-task',
-    'pause-run',
-    'end-run',
-  ],
+  availableActions: ['retry-same-worker', 'switch-seat', 'skip-current-task', 'end-run'],
   recommendedAction: 'retry-same-worker',
   createdAt: new Date(FIXED_TS).toISOString(),
 };
@@ -1607,7 +1582,7 @@ const checkoutChangedRecoveryIssue: RecoveryIssue = {
   message: `Your checkout changed under ${WORKFLOW_FIXTURE_TASK_ID} — branch main · hook pre-commit`,
   details: [
     'Changed while Google Antigravity CLI ran: branch main · hook pre-commit',
-    'Nothing from this attempt was promoted, and nothing in your checkout was reverted.',
+    "Your checkout gets the run's changes only through Apply, and nothing in your checkout was reverted.",
   ],
 };
 
@@ -1619,6 +1594,75 @@ const checkoutChangedRecoveryProjection: WorkflowFixtureProjection = {
   events: [],
   config: AGY_CREW,
   resumeState: haltedResumeState(checkoutChangedRecoveryIssue),
+};
+
+const retriedBriefStart: EngineEventOf<'task_started'> = {
+  type: 'task_started',
+  ts: FIXED_TS,
+  phase: 'implementing',
+  taskId: WORKFLOW_FIXTURE_TASK_ID,
+  title: WORKFLOW_FIXTURE_TEXT.implementationTask,
+  index: 0,
+  total: 3,
+  file: WORKFLOW_FIXTURE_REVIEW_FILE,
+  action: 'modify',
+  tool: 'ollama',
+  model: FIXED_RUNNER_MODEL,
+};
+
+/** The checkout halt, the Try again the person chose, and the reset and retry it made. */
+function checkoutHaltRetried(bus: EventBus, prompted: boolean): void {
+  const issue = checkoutChangedRecoveryIssue;
+  const phase = 'implementing';
+  const recovery = { bus, phase, issue, action: 'retry-same-worker' } as const;
+  bus.publish(retriedBriefStart);
+  publishError({ bus, phase, message: issue.message });
+  if (prompted) publishRecoveryPrompted({ bus, phase }, VISUAL_WORKFLOW_SESSION_ID, issue);
+  publishRecoveryActionSelected(recovery);
+  bus.publish({ type: 'task_reset', ts: FIXED_TS, phase, taskId: WORKFLOW_FIXTURE_TASK_ID });
+  publishRecoveryResolved({
+    ...recovery,
+    outcome: 'retry-current-task',
+    implementerProfile: 'default',
+  });
+  bus.publish(retriedBriefStart);
+}
+
+// The brief is on its second attempt: the halt, the Try again and the reset read as one error and
+// one Recovery row above the retry.
+const resolvedRetryRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-recovery-resolved-retry'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: false,
+  get events(): EngineEvent[] {
+    return [
+      FIXTURE_TASKS_PLANNED,
+      ...publishedEvents(FIXED_TS + 100, (bus) => checkoutHaltRetried(bus, true)),
+    ];
+  },
+};
+
+// The retried brief passed and the next one runs: the halt belongs to the brief it stopped, so it
+// leaves the scroll with that brief's completed row.
+const implementationAfterRetryProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-implementation-after-retry'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: false,
+  get events(): EngineEvent[] {
+    return publishedEvents(FIXED_TS + 100, (bus) => {
+      checkoutHaltRetried(bus, false);
+      bus.publish(fixtureBriefPassed(FIXTURE_PLANNED_BRIEFS[0], FIXED_TS));
+      bus.publish({
+        ...retriedBriefStart,
+        taskId: WORKFLOW_FIXTURE_TASK_ID_2,
+        title: FIXTURE_PLANNED_BRIEFS[1].title,
+        index: 1,
+        file: WORKFLOW_FIXTURE_SECOND_FILE,
+      });
+    });
+  },
 };
 
 /**
@@ -1646,8 +1690,8 @@ const apiContextRecoveryIssue: RecoveryIssue = {
     apiContextModel: 'qwen3-coder-30b',
     apiContextMissingSectionsJson: '["evidence.json","drift-report.json"]',
   },
-  availableActions: ['retry-same-worker', 'pause-run', 'end-run'],
-  recommendedAction: 'pause-run',
+  availableActions: ['retry-same-worker', 'end-run'],
+  recommendedAction: 'retry-same-worker',
   createdAt: new Date(FIXED_TS).toISOString(),
 };
 
@@ -2089,7 +2133,7 @@ const implementationNarrationProjection: WorkflowFixtureProjection = {
       ts: FIXED_TS + 400,
       phase: 'implementing',
       role: 'implementer',
-      text: 'The gallery file already carries an uncommitted change. I check that diff before I edit it, so my edit does not disturb it.',
+      text: 'I check the gallery diff before I edit it.',
     },
   ],
 };
@@ -2522,6 +2566,32 @@ const implementationSilentProjection: WorkflowFixtureProjection = {
   ],
 };
 
+// The same quiet seat, but the stream opened a tool and has not closed it: the test run inside the
+// worktree is what the seat is doing, and the build block names it with how long it has run.
+const implementationToolRunningProjection: WorkflowFixtureProjection = {
+  ...implementationSilentProjection,
+  scenarioId: scenarioId('workflow-implementation-tool-running'),
+  events: implementationSilentProjection.events.flatMap((event): EngineEvent[] =>
+    event.type === 'runner_call_started'
+      ? [
+          event,
+          {
+            type: 'runner_call_activity',
+            ts: event.ts + 1_000,
+            ...SILENT_CALL,
+            sequence: 1,
+            activityId: `${FIXED_CALL_ID}:tool:bash-1`,
+            stage: 'updated',
+            kind: 'command',
+            label: 'bash',
+            target: 'npx vitest run src/features/workflow',
+            redacted: false,
+          },
+        ]
+      : [event],
+  ),
+};
+
 const projections = [
   idleProjection,
   planningProjection,
@@ -2529,13 +2599,13 @@ const projections = [
   implementationProjection,
   implementationRetryProjection,
   reviewFixProjection,
+  completeAfterFixTasksProjection,
   reviewFixNoChangeProjection,
   finalReviewProjection,
   implementationEscalatedProjection,
   implementationNarrationProjection,
   implementationAdjacentNarrationProjection,
   validationProjection,
-  implementationUserEditsProjection,
   reviewProjection,
   approvalConfirmProjection,
   approvalConfirmSecretProjection,
@@ -2558,10 +2628,16 @@ const projections = [
   usageLimitRecoveryProjection,
   retryExhaustedRecoveryProjection,
   consultBoundRecoveryProjection,
+  {
+    ...consultBoundRecoveryProjection,
+    scenarioId: scenarioId('workflow-recovery-consult-bound-note'),
+  },
   reviewFailedRecoveryProjection,
   leftIsolationRecoveryProjection,
   leftIsolationInPlaceRecoveryProjection,
   checkoutChangedRecoveryProjection,
+  resolvedRetryRecoveryProjection,
+  implementationAfterRetryProjection,
   apiContextRecoveryProjection,
   planSeatRecoveryProjection,
   planChecksRecoveryProjection,
@@ -2572,6 +2648,7 @@ const projections = [
   planActivityProjection,
   planningClaudeFramesProjection,
   implementationSilentProjection,
+  implementationToolRunningProjection,
   plannerSessionExpiredProjection,
 ] as const;
 

@@ -199,7 +199,7 @@ describe('FeedbackRow', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     expect(frame).toContain('Failed to open editor (vi): spawn vi ENOENT');
-    expect(frame).not.toContain('y approve');
+    expect(frame).not.toContain('approve · comment');
 
     ui.unmount();
   });
@@ -211,7 +211,7 @@ describe('FeedbackRow', () => {
     const ui = renderFeature(<FeedbackRow inputHint={REVIEW_HINT} />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('y approve');
+    expect(frame).toContain('approve · comment');
     expect(frame).not.toContain('Failed to open editor');
 
     ui.unmount();

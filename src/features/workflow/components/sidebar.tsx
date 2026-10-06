@@ -9,7 +9,7 @@ import {
   truncateTerminalDisplayText,
 } from '../../../utils/display-text.js';
 import type { WorkflowTask } from '../../../stores/workflow/tasks.js';
-import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { lifecycleStore, runElapsedMs } from '../../../stores/workflow/lifecycle.js';
 import { selectTaskListView, taskTargetLabel, tasksStore } from '../../../stores/workflow/tasks.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { configStore } from '../../../stores/project/config.js';
@@ -162,7 +162,8 @@ function SidebarWaiting() {
   }
 
   const stage = getActiveRailStage(lifecycle.phase)?.stage ?? '';
-  const elapsed = lifecycle.startedAt !== null ? formatElapsedClock(now - lifecycle.startedAt) : '';
+  const runMs = runElapsedMs(lifecycle, now);
+  const elapsed = runMs === null ? '' : formatElapsedClock(runMs);
   return (
     <Box flexDirection="column">
       <Text color={t.textDim}>{`${LIST_INDENT}No tasks yet`}</Text>

@@ -1,10 +1,14 @@
 import type { Phase, RecoveryReason } from '../../../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../../../core/schemas/recovery/schemas.js';
 import type { Task } from '../../../../core/schemas/task.js';
-import { plannerCallsOf, type WorkflowState } from '../../../../core/schemas/workflow.js';
+import {
+  lineageAttemptsOf,
+  plannerCallsOf,
+  type WorkflowState,
+} from '../../../../core/schemas/workflow.js';
 import { BOUNDS } from '../../../../core/pipeline-spec/bounds.js';
 import { lineageIdOf } from '../../../../core/state/task-insert.js';
-import { availableActionsForReason } from './actions.js';
+import { haltActions } from './actions.js';
 import { compactFacts, createRecoveryIssue, type RecoveryBuilderBase } from './issue.js';
 import { taskFiles } from './details.js';
 
@@ -29,11 +33,12 @@ type ConsultBudget = Omit<ConsultBoundSpent, 'reason'>;
  */
 function consultBudget(state: WorkflowState, task: Task): ConsultBudget {
   const lineage = state.lineages?.[lineageIdOf(task)];
+  const attempts = lineageAttemptsOf(state, task);
   return {
     consults: lineage?.consults ?? 0,
     consultAllowance: lineage?.consultAllowance ?? BOUNDS.consultsPerLineage,
-    attempts: lineage?.attempts ?? 0,
-    attemptAllowance: lineage?.attemptAllowance ?? BOUNDS.attemptsPerLineage,
+    attempts: attempts.used,
+    attemptAllowance: attempts.allowance,
     plannerCalls: plannerCallsOf(state).used,
     plannerCallAllowance: plannerCallsOf(state).allowance,
   };
@@ -100,10 +105,11 @@ function countersLine(opts: ConsultBoundRecoveryOptions): string {
  * in the details so the operator decides the grant on the evidence.
  */
 export function buildConsultBoundRecoveryIssue(opts: ConsultBoundRecoveryOptions): RecoveryIssue {
-  const actions = availableActionsForReason(opts.reason, {
-    switchSeat: false,
-    routeBigger: false,
-  });
+  const actions = haltActions(opts.reason, [
+    'continue',
+    opts.task === undefined ? undefined : 'skip-current-task',
+    'end-run',
+  ]);
   return createRecoveryIssue({
     id: opts.id,
     seat: opts.task === undefined ? 'plan' : 'build',
@@ -127,10 +133,7 @@ export function buildConsultBoundRecoveryIssue(opts: ConsultBoundRecoveryOptions
       plannerCalls: opts.plannerCalls,
       plannerCallAllowance: opts.plannerCallAllowance,
     }),
-    availableActions:
-      opts.task === undefined
-        ? actions.filter((action) => action !== 'skip-current-task')
-        : actions,
+    availableActions: actions,
     recommendedAction: 'continue',
     ...(opts.attempts !== undefined && { attempts: opts.attempts }),
     createdAt: opts.createdAt,

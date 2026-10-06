@@ -227,7 +227,7 @@ export function renderReviewPacketMarkdown(packet: ReviewPacket): string {
     ...renderChecksLog(packet.checks),
     '',
     '## Drift And Scope',
-    `- Drift: ${formatStatus(packet.drift.passed)}${packet.drift.score === null ? '' : `, score ${packet.drift.score.toFixed(2)}`}`,
+    `- Drift: ${formatStatus(packet.drift.passed)}`,
     ...driftLines,
     '',
     '## Escalations, Retries, Skips, And Warnings',

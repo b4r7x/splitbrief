@@ -111,7 +111,7 @@ describe('runSingleTask — completion, abort and approval evidence', { timeout:
     const task = makeTask({
       id: 'T001',
       action: 'create',
-      file: 'src/main.ts',
+      suggestedFiles: ['src/main.ts'],
       scope: { inBounds: ['src/main.ts'] },
     });
     const state = implementingState([task]);
@@ -166,7 +166,7 @@ describe('runSingleTask — completion, abort and approval evidence', { timeout:
     const task = makeTask({
       id: 'T001',
       action: 'create',
-      file: 'src/main.ts',
+      suggestedFiles: ['src/main.ts'],
       scope: { inBounds: ['src/main.ts'] },
     });
     const state = implementingState([task]);
@@ -223,7 +223,7 @@ describe('runSingleTask — completion, abort and approval evidence', { timeout:
     const task = makeTask({
       id: 'T001',
       action: 'create',
-      file: 'package.json',
+      suggestedFiles: ['package.json'],
       scope: { inBounds: ['package.json'] },
     });
     const state = implementingState([task]);
@@ -251,7 +251,6 @@ describe('runSingleTask — completion, abort and approval evidence', { timeout:
         implementer,
         config: makeConfig({
           approval: {
-            enabled: true,
             feedRejectionsToPlanner: false,
           },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
@@ -285,7 +284,7 @@ describe('runSingleTask — checks log per validation attempt', { timeout: 60_00
     const task = makeTask({
       id: 'T001',
       action: 'create',
-      file: 'src/main.ts',
+      suggestedFiles: ['src/main.ts'],
       scope: { inBounds: ['src/main.ts'] },
     });
     const state = {

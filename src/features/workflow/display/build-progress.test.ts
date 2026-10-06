@@ -13,7 +13,11 @@ import type {
   RunningOperation,
   TerminalOperation,
 } from '../../../stores/workflow/operations/state.js';
-import type { TasksState, WorkflowTask } from '../../../stores/workflow/tasks.js';
+import { tasksStore, type TasksState, type WorkflowTask } from '../../../stores/workflow/tasks.js';
+import { addEvent } from '../../../stores/workflow/actions/event.js';
+import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
+import { makeRetry, makeTaskStart } from '#testing/helpers/events/task.js';
+import { taskId } from '../../../core/schemas/task.js';
 
 const NOW = 1_000_000;
 
@@ -21,8 +25,8 @@ function tasksState(tasks: WorkflowTask[], overrides: Partial<TasksState> = {}):
   return {
     currentTask: 1,
     currentAttempt: 1,
+    attemptAllowance: BOUNDS.attemptsPerLineage,
     totalTasks: tasks.length,
-    taskCompletionTimes: [],
     taskMap: new Map(tasks.map((task) => [task.id, task])),
     tasks,
     ...overrides,
@@ -136,6 +140,60 @@ describe('deriveBuildProgress', () => {
     expect(progress.silent).toBe(true);
   });
 
+  describe('a tool that runs through the silence', () => {
+    const silent = lifecycleState({
+      lastRunnerEventTs: NOW - 342_000,
+      stall: { since: NOW - 282_000, silentMs: 60_000, runnerName: 'opencode' },
+    });
+
+    const vitest = {
+      activityId: 'call-1:tool:bash-1',
+      kind: 'command',
+      label: 'bash',
+      target: 'npx vitest run src/features',
+      since: NOW - 342_000,
+    } as const;
+
+    it('names the tool the stream opened and how long it has run', () => {
+      const progress = deriveBuildProgress(
+        input({
+          operations: operationsState({
+            active: runningOperation({ runnerName: 'opencode', openTools: [vitest] }),
+          }),
+          lifecycle: silent,
+        }),
+      );
+
+      expect(progress.freshness).toBe('running npx vitest run src/features · 5m 42s');
+      expect(progress.silent).toBe(false);
+    });
+
+    it('says a tool is running when a quiet stream reports tools only once they end', () => {
+      const progress = deriveBuildProgress(
+        input({
+          operations: operationsState({
+            active: runningOperation({ runnerName: 'opencode', openTools: [] }),
+          }),
+          lifecycle: silent,
+        }),
+      );
+
+      expect(progress.freshness).toBe('a tool is running · 5m 42s');
+    });
+
+    it('keeps the silence warning for a stream that reports its tools as they start', () => {
+      const progress = deriveBuildProgress(
+        input({
+          operations: operationsState({ active: runningOperation({ runnerName: 'codex' }) }),
+          lifecycle: silent,
+        }),
+      );
+
+      expect(progress.freshness).toBe('No update for 5m 42s');
+      expect(progress.silent).toBe(true);
+    });
+  });
+
   it('reports freshness while the seat is still speaking', () => {
     const progress = deriveBuildProgress(
       input({ lifecycle: lifecycleState({ lastRunnerEventTs: NOW - 5_000 }) }),
@@ -144,28 +202,34 @@ describe('deriveBuildProgress', () => {
     expect(progress.freshness).toBe('last event 5s ago');
   });
 
-  it('ETA unavailable: no brief finished yet', () => {
+  // A brief's first attempt is the normal case: the bound only matters once a retry has spent one.
+  it('states no attempt while the first one runs', () => {
     const progress = deriveBuildProgress(input());
 
-    expect(progress.eta).toEqual({ kind: 'unavailable', reason: 'no brief finished yet' });
+    expect(progress.attempt).toBeNull();
+    for (const width of [120, 80, 60]) {
+      expect(buildProgressLines(progress, width).join('\n')).not.toContain('attempt');
+    }
   });
 
-  it('quotes no estimate from a single finished brief', () => {
-    const briefs: WorkflowTask[] = [
-      { id: 'T001', title: 'One', status: 'done' },
-      { id: 'T002', title: 'Two', status: 'done' },
-      { id: 'T003', title: 'Three', status: 'in_progress' },
-    ];
-    const one = deriveBuildProgress(
-      input({ tasks: tasksState(briefs, { taskCompletionTimes: [120_000] }) }),
+  it('quotes no estimate of the time left at any width', () => {
+    const progress = deriveBuildProgress(
+      input({
+        tasks: tasksState(
+          [
+            { id: 'T001', title: 'One', status: 'done' },
+            { id: 'T002', title: 'Two', status: 'done' },
+            { id: 'T003', title: 'Three', status: 'in_progress' },
+          ],
+          { currentAttempt: 3 },
+        ),
+      }),
     );
-    expect(one.eta).toEqual({ kind: 'unavailable', reason: 'one brief finished so far' });
-    expect(buildProgressLines(one, 120)[0]).toContain('ETA unavailable: one brief finished so far');
 
-    const two = deriveBuildProgress(
-      input({ tasks: tasksState(briefs, { taskCompletionTimes: [120_000, 60_000] }) }),
-    );
-    expect(two.eta).toEqual({ kind: 'estimate', remainingMs: 90_000 });
+    expect(progress).not.toHaveProperty('eta');
+    for (const width of [120, 80, 60]) {
+      expect(buildProgressLines(progress, width).join('\n')).not.toContain('ETA');
+    }
   });
 
   it('states the attempt against the lineage attempt allowance', () => {
@@ -183,30 +247,22 @@ describe('deriveBuildProgress', () => {
     );
   });
 
-  it('states the estimate in minutes and says so when it is under one', () => {
-    const twoBriefsLeft = tasksState(
-      [
-        { id: 'T001', title: 'One', status: 'done' },
-        { id: 'T002', title: 'Two', status: 'in_progress' },
-        { id: 'T003', title: 'Three', status: 'pending' },
-      ],
-      { taskCompletionTimes: [180_000, 180_000] },
-    );
-    const slow = deriveBuildProgress(input({ tasks: twoBriefsLeft }));
-    expect(buildProgressLines(slow, 120)[0]).toContain('ETA ~6m');
+  // A brief resumed after Continue granted more attempts is on its lineage's sixth attempt of
+  // twelve, not on a fresh first one: the block states the count the engine recorded.
+  it('states the lineage attempt and allowance the task events carry, after a grant', () => {
+    resetWorkflow();
+    addEvent(makeTaskStart({ taskId: taskId('T001'), lineageAttempt: 6, attemptAllowance: 12 }));
 
-    const quick = deriveBuildProgress(
-      input({
-        tasks: tasksState(
-          [
-            { id: 'T001', title: 'One', status: 'done' },
-            { id: 'T002', title: 'Two', status: 'in_progress' },
-          ],
-          { taskCompletionTimes: [2_000, 2_000] },
-        ),
-      }),
+    const resumed = deriveBuildProgress(input({ tasks: tasksStore.get() }));
+    expect(resumed.attempt).toEqual({ current: 6, max: 12 });
+    expect(buildProgressLines(resumed, 120)[0]).toContain('attempt 6 of 12');
+
+    addEvent(
+      makeRetry({ taskId: taskId('T001'), attempt: 1, lineageAttempt: 7, attemptAllowance: 12 }),
     );
-    expect(buildProgressLines(quick, 120)[0]).toContain('ETA under a minute');
+    const retried = deriveBuildProgress(input({ tasks: tasksStore.get() }));
+    expect(retried.attempt).toEqual({ current: 7, max: 12 });
+    resetWorkflow();
   });
 
   it('names the seat and what it is doing, and no usage beside them', () => {
@@ -291,126 +347,6 @@ describe('deriveBuildProgress', () => {
     expect(progress.activity).toBe('Claude Code CLI · implementing');
   });
 
-  it('keeps the estimate when an escalation and the brief ran on the same tool', () => {
-    const progress = deriveBuildProgress(
-      input({
-        tasks: tasksState(
-          [
-            { id: 'T001', title: 'One', status: 'done' },
-            { id: 'T002', title: 'Two', status: 'in_progress' },
-          ],
-          { taskCompletionTimes: [120_000, 120_000] },
-        ),
-        operations: operationsState({
-          active: runningOperation({ runnerName: 'claude-code' }),
-          last: completedOperation({ role: 'escalation', runnerName: 'claude' }),
-        }),
-      }),
-    );
-
-    expect(progress.eta).toEqual({ kind: 'estimate', remainingMs: 120_000 });
-  });
-
-  it('retires the estimate when the brief moved to another tool', () => {
-    const progress = deriveBuildProgress(
-      input({
-        tasks: tasksState(
-          [
-            { id: 'T001', title: 'One', status: 'done' },
-            { id: 'T002', title: 'Two', status: 'in_progress' },
-          ],
-          { taskCompletionTimes: [120_000, 120_000] },
-        ),
-        operations: operationsState({
-          active: runningOperation({ runnerName: 'codex' }),
-          last: completedOperation({ runnerName: 'claude-code' }),
-        }),
-      }),
-    );
-
-    expect(progress.eta).toEqual({ kind: 'unavailable', reason: 'worker changed' });
-  });
-
-  it('retires a CLI estimate when a shell call only shares its command name', () => {
-    const progress = deriveBuildProgress(
-      input({
-        tasks: tasksState(
-          [
-            { id: 'T001', title: 'One', status: 'done' },
-            { id: 'T002', title: 'Two', status: 'in_progress' },
-          ],
-          { taskCompletionTimes: [120_000, 120_000] },
-        ),
-        operations: operationsState({
-          active: runningOperation({ backendKind: 'shell', runnerName: 'claude' }),
-          last: completedOperation({ backendKind: 'cli', runnerName: 'claude-code' }),
-        }),
-      }),
-    );
-
-    expect(progress.eta).toEqual({ kind: 'unavailable', reason: 'worker changed' });
-  });
-
-  it('retires a CLI estimate when an API worker only shares its name', () => {
-    const progress = deriveBuildProgress(
-      input({
-        tasks: tasksState(
-          [
-            { id: 'T001', title: 'One', status: 'done' },
-            { id: 'T002', title: 'Two', status: 'in_progress' },
-          ],
-          { taskCompletionTimes: [120_000, 120_000] },
-        ),
-        operations: operationsState({
-          active: runningOperation({ backendKind: 'api', runnerName: 'claude-code' }),
-          last: completedOperation({ backendKind: 'cli', runnerName: 'claude-code' }),
-        }),
-      }),
-    );
-
-    expect(progress.eta).toEqual({ kind: 'unavailable', reason: 'worker changed' });
-  });
-
-  it('keeps the estimate across cli calls named by the command and by the id', () => {
-    const progress = deriveBuildProgress(
-      input({
-        tasks: tasksState(
-          [
-            { id: 'T001', title: 'One', status: 'done' },
-            { id: 'T002', title: 'Two', status: 'in_progress' },
-          ],
-          { taskCompletionTimes: [120_000, 120_000] },
-        ),
-        operations: operationsState({
-          active: runningOperation({ backendKind: 'cli', runnerName: 'claude' }),
-          last: completedOperation({ backendKind: 'cli', runnerName: 'claude-code' }),
-        }),
-      }),
-    );
-
-    expect(progress.eta).toEqual({ kind: 'estimate', remainingMs: 120_000 });
-  });
-
-  it('keeps the old alias identity when a call carries no backend kind', () => {
-    const progress = deriveBuildProgress(
-      input({
-        tasks: tasksState(
-          [
-            { id: 'T001', title: 'One', status: 'done' },
-            { id: 'T002', title: 'Two', status: 'in_progress' },
-          ],
-          { taskCompletionTimes: [120_000, 120_000] },
-        ),
-        operations: operationsState({
-          active: runningOperation({ runnerName: 'claude' }),
-          last: completedOperation({ runnerName: 'claude-code' }),
-        }),
-      }),
-    );
-
-    expect(progress.eta).toEqual({ kind: 'estimate', remainingMs: 120_000 });
-  });
-
   it('names the phase alone between calls', () => {
     expect(deriveBuildProgress(input()).activity).toBe('implementing');
   });
@@ -478,12 +414,19 @@ describe('buildProgressLines', () => {
     expect(buildProgressLines(deriveBuildProgress(input()), 120)).toHaveLength(2);
   });
 
-  it('4 lines at 80 columns', () => {
-    expect(buildProgressLines(deriveBuildProgress(input()), 80)).toHaveLength(4);
-  });
-
-  it('5 lines at 60 columns', () => {
-    expect(buildProgressLines(deriveBuildProgress(input()), 60)).toHaveLength(5);
+  it('3 lines at 80 and at 60 columns, with or without an attempt to state', () => {
+    const retry = input({
+      tasks: tasksState([{ id: 'T001', title: 'One', status: 'in_progress' }], {
+        currentAttempt: 2,
+      }),
+    });
+    for (const width of [80, 60]) {
+      expect(buildProgressLines(deriveBuildProgress(input()), width)).toHaveLength(3);
+      expect(buildProgressLines(deriveBuildProgress(retry), width)).toHaveLength(3);
+      expect(buildProgressLines(deriveBuildProgress(retry), width)[0]).toBe(
+        `0/1 briefs passed · attempt 2 of ${BOUNDS.attemptsPerLineage}`,
+      );
+    }
   });
 
   it('keeps the phase and both clocks at every width, and names a token count at none', () => {
@@ -499,7 +442,6 @@ describe('buildProgressLines', () => {
       expect(block).toContain('OpenAI Codex CLI · implementing');
       expect(block).toContain('last event 5s ago');
       expect(block).toContain('1/2 briefs passed');
-      expect(block).toContain('attempt 1 of');
       expect(block).not.toMatch(/token/i);
       expect(block).not.toMatch(/\d+k\b/);
     }
@@ -531,7 +473,7 @@ describe('the build block during the final review', () => {
           { id: 'T001', title: 'One', status: 'done' },
           { id: 'T002', title: 'Two', status: 'done' },
         ],
-        { currentAttempt: 1, taskCompletionTimes: [60_000, 60_000] },
+        { currentAttempt: 1 },
       ),
       lifecycle: lifecycleState({ phase: 'final-review' }),
       operations: operationsState({
@@ -541,35 +483,34 @@ describe('the build block during the final review', () => {
     });
   }
 
-  it('states no attempt and no estimate', () => {
+  it('states no attempt', () => {
     const progress = deriveBuildProgress(review());
     expect(progress.attempt).toBeNull();
-    expect(progress.eta).toBeNull();
     for (const width of [120, 80, 60]) {
       const block = buildProgressLines(progress, width).join('\n');
       expect(block).toContain('2/2 briefs passed');
       expect(block).not.toContain('attempt');
-      expect(block).not.toContain('ETA');
     }
   });
 
   it('paints exactly the rows the chrome budgets for it', () => {
     const progress = deriveBuildProgress(review());
     for (const width of [120, 80, 60]) {
-      expect(buildProgressLines(progress, width)).toHaveLength(
-        buildProgressRowCount(width, 'final-review'),
-      );
+      expect(buildProgressLines(progress, width)).toHaveLength(buildProgressRowCount(width));
     }
   });
 
-  it('keeps the attempt and the estimate while a brief builds', () => {
-    const progress = deriveBuildProgress(input());
+  it('paints the budgeted rows while a retry builds', () => {
+    const progress = deriveBuildProgress(
+      input({
+        tasks: tasksState([{ id: 'T001', title: 'One', status: 'in_progress' }], {
+          currentAttempt: 2,
+        }),
+      }),
+    );
     for (const width of [120, 80, 60]) {
-      expect(buildProgressLines(progress, width)).toHaveLength(
-        buildProgressRowCount(width, 'implementing'),
-      );
+      expect(buildProgressLines(progress, width)).toHaveLength(buildProgressRowCount(width));
     }
     expect(progress.attempt).not.toBeNull();
-    expect(progress.eta).not.toBeNull();
   });
 });

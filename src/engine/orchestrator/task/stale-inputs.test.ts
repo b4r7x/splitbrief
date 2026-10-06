@@ -7,7 +7,7 @@ import { sha256Hex } from '../../../utils/sha256.js';
 import {
   ABSENT_INPUT_HASH,
   inputHashesNow,
-  inputsMoved,
+  inputsMovedUnexpectedly,
   specInputFiles,
   taskInputFiles,
 } from './stale-inputs.js';
@@ -54,11 +54,11 @@ describe('specInputFiles', () => {
       suggestedFiles: ['src/new.ts'],
       inputHashes: inputHashesNow(projectDir, specInputFiles(spec)),
     });
-    expect(inputsMoved(projectDir, task)).toBe(false);
+    expect(inputsMovedUnexpectedly(projectDir, task, [])).toBe(false);
 
     writeFileSync(join(projectDir, 'src/new.ts'), 'export const created = 1;\n');
 
-    expect(inputsMoved(projectDir, task)).toBe(true);
+    expect(inputsMovedUnexpectedly(projectDir, task, [])).toBe(true);
   });
 });
 
@@ -76,37 +76,37 @@ describe('taskInputFiles', () => {
 describe('inputsMoved', () => {
   it('does not flag a task that recorded no hashes', () => {
     const task = makeTask({ inputHashes: undefined });
-    expect(inputsMoved(projectDir, task)).toBe(false);
+    expect(inputsMovedUnexpectedly(projectDir, task, [])).toBe(false);
   });
 
   it('does not flag a task whose recorded inputs are unchanged', () => {
     writeFileSync(join(projectDir, 'src/a.ts'), 'export const a = 1;\n');
     const task = makeTask({ inputHashes: inputHashesNow(projectDir, ['src/a.ts']) });
-    expect(inputsMoved(projectDir, task)).toBe(false);
+    expect(inputsMovedUnexpectedly(projectDir, task, [])).toBe(false);
   });
 
   it('flags an input whose content changed since the revision was recorded', () => {
     writeFileSync(join(projectDir, 'src/a.ts'), 'export const a = 1;\n');
     const task = makeTask({ inputHashes: inputHashesNow(projectDir, ['src/a.ts']) });
     writeFileSync(join(projectDir, 'src/a.ts'), 'export const a = 2;\n');
-    expect(inputsMoved(projectDir, task)).toBe(true);
+    expect(inputsMovedUnexpectedly(projectDir, task, [])).toBe(true);
   });
 
   it('flags an input that appeared since the revision was recorded', () => {
     const task = makeTask({ inputHashes: inputHashesNow(projectDir, ['src/a.ts']) });
     writeFileSync(join(projectDir, 'src/a.ts'), 'export const a = 1;\n');
-    expect(inputsMoved(projectDir, task)).toBe(true);
+    expect(inputsMovedUnexpectedly(projectDir, task, [])).toBe(true);
   });
 
   it('flags an input that disappeared since the revision was recorded', () => {
     writeFileSync(join(projectDir, 'src/a.ts'), 'export const a = 1;\n');
     const task = makeTask({ inputHashes: inputHashesNow(projectDir, ['src/a.ts']) });
     rmSync(join(projectDir, 'src/a.ts'));
-    expect(inputsMoved(projectDir, task)).toBe(true);
+    expect(inputsMovedUnexpectedly(projectDir, task, [])).toBe(true);
   });
 
   it('does not flag inputs that were absent at the revision and are still absent', () => {
     const task = makeTask({ inputHashes: inputHashesNow(projectDir, ['src/never.ts']) });
-    expect(inputsMoved(projectDir, task)).toBe(false);
+    expect(inputsMovedUnexpectedly(projectDir, task, [])).toBe(false);
   });
 });

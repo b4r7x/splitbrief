@@ -1,22 +1,26 @@
 import { formatRecoveryHeadline } from '../../../../core/recovery/headline.js';
-import { allowedActionsForReason } from '../../../../core/schemas/recovery/policy.js';
+import { haltActions } from './actions.js';
 import type { RecoveryIssue } from '../../../../core/schemas/recovery/schemas.js';
 import type { ApplyConflictKind } from '../../apply/merge.js';
 import type { ApplyBackupReconciliation } from '../../apply/restore.js';
 import { compactFacts, createRecoveryIssue } from './issue.js';
 
-const CONFLICT_WORDS: Record<ApplyConflictKind | 'changed', string> = {
+/** A file Apply found changed while it ran: in your checkout, or in the run workspace. */
+export type ApplyChangedSide = 'checkout-changed' | 'workspace-changed';
+
+const CONFLICT_WORDS: Record<ApplyConflictKind | ApplyChangedSide, string> = {
   text: 'both sides changed the same lines',
   binary: 'both sides changed a binary file',
   'delete-modify': 'deleted on one side, changed on the other',
   'add-add': 'added on both sides with different content',
   mode: 'file mode differs between the sides',
   'unsupported-entry': 'a symlink or directory is in the way',
-  changed: 'changed in your checkout during Apply',
+  'checkout-changed': 'changed in your checkout during Apply',
+  'workspace-changed': 'changed in the run workspace during Apply',
 };
 
 export function buildApplyConflictRecoveryIssue(input: {
-  conflicts: { path: string; kind: ApplyConflictKind | 'changed' }[];
+  conflicts: { path: string; kind: ApplyConflictKind | ApplyChangedSide }[];
   workspacePath: string;
   createdAt: string;
 }): RecoveryIssue {
@@ -36,8 +40,8 @@ export function buildApplyConflictRecoveryIssue(input: {
       ...ordered.map(({ path, kind }) => `${path} · ${CONFLICT_WORDS[kind]}`),
     ],
     facts: compactFacts({ workspacePath }),
-    availableActions: allowedActionsForReason('apply-conflict'),
-    recommendedAction: 'pause-run',
+    availableActions: haltActions('apply-conflict', ['retry-same-worker', 'end-run']),
+    recommendedAction: 'retry-same-worker',
     createdAt,
   });
   return { ...issue, message: formatRecoveryHeadline(issue) };
@@ -95,7 +99,11 @@ export function buildApplyPartialRecoveryIssue(
     message: '',
     details: [...details, `Backup of the replaced files: ${backupDir}`],
     facts: compactFacts({ backupId, written, total }),
-    availableActions: allowedActionsForReason('apply-partial'),
+    availableActions: haltActions('apply-partial', [
+      'retry-same-worker',
+      'restore-backup',
+      'end-run',
+    ]),
     recommendedAction: 'retry-same-worker',
     createdAt,
   });

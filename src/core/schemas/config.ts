@@ -39,16 +39,13 @@ const GitWorkflowConfigSchema = GitWorkflowFieldsSchema.superRefine((git, ctx) =
 );
 
 export const ApprovalConfigSchema = z.strictObject({
-  enabled: z.boolean().default(true),
+  /** Retired: loads with one notice and changes nothing. */
+  enabled: z.unknown().optional(),
   /** Retired: loads with one notice and changes nothing. */
   tiers: z.unknown().optional(),
   feedRejectionsToPlanner: z.boolean().default(true),
   allowedPaths: z.array(z.string().min(1)).optional(),
 });
-
-export function defaultApprovalConfig(): z.infer<typeof ApprovalConfigSchema> {
-  return ApprovalConfigSchema.parse({});
-}
 
 export const CONFIG_VERSION = 3;
 
@@ -86,7 +83,8 @@ export const ConfigSchema = z.object({
     briefReview: z.unknown().optional(),
     /** Retired: loads with one notice and changes nothing. */
     taskReview: z.unknown().optional(),
-    driftChainThreshold: z.number().min(0).max(1).optional(),
+    /** Retired: loads with one notice and changes nothing. */
+    driftChainThreshold: z.unknown().optional(),
     compactionThreshold: z.number().int().min(10).optional(),
     compactionFormat: CompactionFormatSchema.default('auto'),
     showSpend: z.boolean().optional(),

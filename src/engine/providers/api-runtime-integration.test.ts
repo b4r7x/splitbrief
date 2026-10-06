@@ -266,7 +266,7 @@ describe('three-seat identity and budget', () => {
     const moved = config({ implementer: lmStudioSeat('9999', 'other-model') } as Partial<Config>);
 
     const result = await implementer.implement({
-      task: makeTask({ id: 'T001', file: 'src/moved.ts', action: 'create' }),
+      task: makeTask({ id: 'T001', suggestedFiles: ['src/moved.ts'], action: 'create' }),
       projectDir,
       config: moved,
       context: { name: 'p', dir: projectDir },
@@ -317,7 +317,7 @@ describe('three-seat identity and budget', () => {
     expect(dispatches.at(-1)?.clientTimeoutMs).toBe(TIMEOUTS.reviewerMs);
 
     await createApiImplementer(cfg).implement({
-      task: makeTask({ id: 'T003', file: 'src/bounded.ts', action: 'create' }),
+      task: makeTask({ id: 'T003', suggestedFiles: ['src/bounded.ts'], action: 'create' }),
       projectDir,
       config: cfg,
       context: { name: 'p', dir: projectDir },
@@ -329,7 +329,7 @@ describe('three-seat identity and budget', () => {
       implementer: { ...lmStudioSeat('5678', 'build-model'), timeout: 90_000 },
     } as Partial<Config>);
     await createApiImplementer(bounded).implement({
-      task: makeTask({ id: 'T004', file: 'src/bounded-2.ts', action: 'create' }),
+      task: makeTask({ id: 'T004', suggestedFiles: ['src/bounded-2.ts'], action: 'create' }),
       projectDir,
       config: bounded,
       context: { name: 'p', dir: projectDir },
@@ -351,7 +351,12 @@ describe('three-seat identity and budget', () => {
     writeFileSync(join(projectDir, 'src/huge.ts'), huge);
 
     const result = await implementer.implement({
-      task: makeTask({ id: 'T002', file: 'src/huge.ts', action: 'modify', currentCode: huge }),
+      task: makeTask({
+        id: 'T002',
+        suggestedFiles: ['src/huge.ts'],
+        action: 'modify',
+        currentCode: huge,
+      }),
       projectDir,
       config: cfg,
       context: { name: 'p', dir: projectDir },

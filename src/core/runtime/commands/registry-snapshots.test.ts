@@ -180,26 +180,23 @@ describe('run snapshot runtime commands', () => {
     expect(error).toMatch(/recovery menu/i);
   });
 
-  it('names the open findings of a run accepted as is and applies only on confirm', async () => {
+  it('leaves the override confirmation to the Apply warning and applies only on confirm', async () => {
     const calls: boolean[] = [];
-    let error: string | undefined;
+    const feedback: string[] = [];
     const commands = createRuntimeCommands(
       makeCtx({
         acceptRun: async (confirm) => {
           calls.push(confirm);
           return confirm
             ? { status: 'applied', files: ['src/a.ts'] }
-            : { status: 'confirm-override', findings: ['src/a.ts drops the error'] };
+            : { status: 'confirm-override' };
         },
-        setFeedbackError: (m) => {
-          error = m;
-        },
+        setFeedbackError: (m) => feedback.push(m),
+        setFeedbackMessage: (m) => feedback.push(m),
       }),
     );
     await runCommandInTest({ commands, raw: '/run accept', screen: 'workflow', onError: noop });
-    expect(error).toContain('src/a.ts drops the error');
-    expect(error).toContain('/run accept confirm');
-    expect(error).not.toMatch(/passed/i);
+    expect(feedback).toEqual([]);
     await runCommandInTest({
       commands,
       raw: '/run accept confirm',

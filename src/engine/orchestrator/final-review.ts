@@ -53,7 +53,6 @@ import {
 import { transitionAndSave } from './state-ops.js';
 import { runReviewerCall } from './review-call.js';
 import { touchedNotSuggestedFiles } from './task/commit.js';
-import { taskFiles } from '../../core/schemas/task.js';
 import { hashTaskBrief } from '../brief-hash.js';
 import { writeReviewPacket } from './evidence/review-packet/write.js';
 import { formatTasks } from '../spec/formatter.js';
@@ -179,7 +178,7 @@ function reviewPlanData(state: WorkflowState): ReviewPlanData {
       title: task.title,
       intent: task.description,
       criteria: task.criteria ?? [],
-      suggestedFiles: task.suggestedFiles ?? [...taskFiles(task)],
+      suggestedFiles: task.suggestedFiles,
       exclusions: task.exclusions ?? task.scope?.outOfBounds ?? [],
     })),
   };
@@ -483,7 +482,6 @@ export async function runFinalReviewPhase(opts: {
       const driftReport = analyzeBriefDrift({
         tasks: state.tasks,
         changedFiles: reviewScope.provenance.promotedFiles,
-        diff: reviewScope.files.map((file) => file.diff).join('\n'),
         ledger,
         briefHash: hashTaskBrief(state.tasks),
         preRunChangedFiles: baseline.runStartChangedFiles,

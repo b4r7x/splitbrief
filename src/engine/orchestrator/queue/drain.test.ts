@@ -86,12 +86,18 @@ describe('drain', () => {
     const { projectDir, sessionId } = setupProject(dirs);
     const ref = { projectDir, sessionId };
     const saved = transitionAndSave(ref, createInitialState('feature'), { type: 'START' });
-    transitionAndSave(ref, saved, { type: 'REWIND_TO_PLAN', comment: 'new direction' });
+    saveState(
+      ref,
+      transition(
+        { ...saved, phase: 'reviewing-plan' },
+        { type: 'CORRECT_PLAN', comment: 'new direction' },
+      ),
+    );
     const { bus } = makeBusRecorder();
     expect(
       drainQueue({ ...ref, state: { ...saved, plannerSessionId: 'stale-session' }, bus }).state,
     ).toMatchObject({
-      phase: 'planning',
+      phase: 'reviewing-plan',
       rewindPending: { target: 'plan', comment: 'new direction' },
     });
   });

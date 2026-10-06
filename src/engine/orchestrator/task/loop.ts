@@ -35,13 +35,13 @@ type RunTaskLoopOptions = {
   wctx: WorkflowContext;
   initialState: WorkflowState;
   setTrackedState: (s: WorkflowState) => void;
-  setCurrentTask: (t: Pick<Task, 'file' | 'files' | 'action'> | undefined) => void;
+  setCurrentTask: (t: Pick<Task, 'suggestedFiles' | 'action'> | undefined) => void;
 };
 
 export type TaskLoopResult = {
   state: WorkflowState;
   taskBreakdowns: TaskTokenUsage[];
-  status: 'complete' | 'stopped' | 'cancelled' | 'paused';
+  status: 'complete' | 'stopped' | 'paused';
 };
 
 export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopResult> {

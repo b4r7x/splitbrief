@@ -17,11 +17,3 @@ export function recoveryFactNumber(
   const value = facts?.[key];
   return typeof value === 'number' ? value : undefined;
 }
-
-export function recoveryFactBoolean(
-  facts: Record<string, RecoveryFact> | undefined,
-  key: string,
-): boolean | undefined {
-  const value = facts?.[key];
-  return typeof value === 'boolean' ? value : undefined;
-}

@@ -285,18 +285,23 @@ describe('sanitizeDiscoveredValidation', () => {
     expect(warnings()).toEqual(
       refused.map((pattern) =>
         expect.stringContaining(
-          `${pattern} from the planner: a test pattern may not contain ".." or a path separator`,
+          `${pattern} from the planner (it contains ${pattern.includes('..') ? '".."' : 'a path separator'})`,
         ),
       ),
     );
   });
 
-  it('names the real rule from isTestPatternSafe when it refuses a testPattern', () => {
+  it('names the path separator for a pattern that has one and no ".."', () => {
     const result = sanitize({ language: 'typescript', testPattern: '**/*.test.{ts,tsx}' });
     expect(result).toEqual({ language: 'typescript' });
-    const [reason = ''] = warnings();
-    expect(reason).toContain('a test pattern may not contain ".." or a path separator');
-    expect(reason).toContain("stack's test file patterns apply");
+    expect(warnings()).toEqual([expect.stringContaining('(it contains a path separator)')]);
+    expect(warnings().join('\n')).not.toContain('..');
+    expect(warnings().join('\n')).toContain("stack's test file patterns");
+  });
+
+  it('names ".." for a pattern that climbs out', () => {
+    sanitize({ testPattern: '..test.ts' });
+    expect(warnings()).toEqual([expect.stringContaining('(it contains "..")')]);
   });
 
   it('publishes nothing when the stage resolves to the refused command', () => {

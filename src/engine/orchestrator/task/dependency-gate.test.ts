@@ -12,10 +12,10 @@ afterEach(cleanupTaskProjects);
 
 describe('checkDependencyGate', () => {
   it('one prompt lists every dependent', async () => {
-    const skipped = makeTask({ id: 'T001', file: 'src/a.ts', status: 'skipped' });
-    const first = makeTask({ id: 'T002', file: 'src/b.ts', dependsOn: ['T001'] });
-    const second = makeTask({ id: 'T003', file: 'src/c.ts', dependsOn: ['T001'] });
-    const unrelated = makeTask({ id: 'T004', file: 'src/d.ts' });
+    const skipped = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'], status: 'skipped' });
+    const first = makeTask({ id: 'T002', suggestedFiles: ['src/b.ts'], dependsOn: ['T001'] });
+    const second = makeTask({ id: 'T003', suggestedFiles: ['src/c.ts'], dependsOn: ['T001'] });
+    const unrelated = makeTask({ id: 'T004', suggestedFiles: ['src/d.ts'] });
     const state = {
       ...implementingState([skipped, first, second, unrelated]),
       currentTaskIndex: 1,

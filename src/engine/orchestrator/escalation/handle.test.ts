@@ -381,7 +381,7 @@ describe('handleRetryAndEscalation', () => {
     const { projectDir, sessionId } = setupProject();
     // Create a dirty file so the exhausted ladder has real worktree state to leave untouched.
     writeFileSync(join(projectDir, 'task-file.ts'), 'pending content');
-    const task = makeTask({ file: 'task-file.ts', action: 'create' });
+    const task = makeTask({ suggestedFiles: ['task-file.ts'], action: 'create' });
     const state = makeValidatingState();
     // Update task list with the file-matching task so shutdown cleanup finds a real path.
     const stateWithTask: WorkflowState = {
@@ -555,7 +555,6 @@ describe('handleRetryAndEscalation', () => {
       'retry-same-worker',
       'switch-seat',
       'skip-current-task',
-      'pause-run',
       'end-run',
     ]);
   });

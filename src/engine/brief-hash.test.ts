@@ -24,7 +24,7 @@ describe('hashTaskBrief', () => {
   });
 
   it('excludes currentCodeByFile while retaining real brief revisions', () => {
-    const task = makeTask({ files: ['src/first.ts', 'src/second.ts'] });
+    const task = makeTask({ suggestedFiles: ['src/first.ts', 'src/second.ts'] });
     const first = hashTaskBrief([{ ...task, currentCodeByFile: { 'src/second.ts': 'before' } }]);
     const second = hashTaskBrief([{ ...task, currentCodeByFile: { 'src/second.ts': 'after' } }]);
     expect(first).toBe(second);

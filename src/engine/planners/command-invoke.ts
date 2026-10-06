@@ -4,7 +4,6 @@ import {
   invokeCommandBasedRunner,
   invokeCustomCommandBasedRunner,
 } from '../runners/command-based.js';
-import { extractQuestionsFromStream } from '../parsers/question.js';
 import { createCommandExistsAvailability, DEFAULT_AVAILABILITY } from '../availability.js';
 import type { AgentPlannerConfig, ShellPlannerConfig } from '../../core/schemas/planner-config.js';
 import type { RunnerCallContext } from '../calls/types.js';
@@ -47,7 +46,7 @@ export type LegacyCommandInvokeInput = Readonly<{
   prompt: string;
   projectDir: string;
   callContext: RunnerCallContext;
-  callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onQuestion' | 'onCallEvent'>;
+  callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onCallEvent'>;
   signal?: AbortSignal | undefined;
   sandboxEnv?: NodeJS.ProcessEnv | undefined;
 }>;
@@ -72,13 +71,6 @@ export function createLegacyCommandInvoke(
       ...(runner.idleWarnMs !== undefined && { idleWarnMs: runner.idleWarnMs }),
       ...(runner.idleKillMs !== undefined && { idleKillMs: runner.idleKillMs }),
     });
-
-    if (input.callbacks.onQuestion) {
-      const questions = extractQuestionsFromStream(result.stdout);
-      if (questions.length > 0) {
-        input.callbacks.onQuestion(questions);
-      }
-    }
 
     return result.callResult;
   };
@@ -158,7 +150,7 @@ export function createConfiguredCustomPlanner(
     prompt: string;
     projectDir: string;
     callContext: RunnerCallContext;
-    callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onQuestion' | 'onCallEvent'>;
+    callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onCallEvent'>;
     signal?: AbortSignal | undefined;
     sandboxEnv?: NodeJS.ProcessEnv | undefined;
   }): Promise<RunnerCallResult> => {

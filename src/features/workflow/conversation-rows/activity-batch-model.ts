@@ -11,7 +11,6 @@ import {
   runnerActivityLedgerItem,
   runnerActivityModelRole,
   runnerActivityRoleLabel,
-  runnerActivitySeverityRank,
   type RunnerActivityLedgerItem,
   type RunnerActivityLedgerLabel,
   type RunnerActivitySeverity,
@@ -30,7 +29,6 @@ export interface ActivityDisplayItem {
   valueTone: ConversationRowTone;
   fitMode: ActivityDisplayValueFit;
   severity: RunnerActivitySeverity;
-  pinned: boolean;
   rawMarker: string | null;
   groupLabel: string;
 }
@@ -137,7 +135,6 @@ function collapsedActivityItemsProjection(
   maxItems: number,
 ): ActivityItemsProjection {
   const summaries = new Map<string, ActivityItemSummary>();
-  const pinnedCandidates = new Map<string, RunnerActivityLedgerItem>();
   const recent = new Map<string, RunnerActivityLedgerItem>();
 
   for (const event of events) {
@@ -146,42 +143,15 @@ function collapsedActivityItemsProjection(
     if (recent.has(item.visibleKey)) recent.delete(item.visibleKey);
     recent.set(item.visibleKey, item);
     trimRecentActivityItems(recent, maxItems);
-    if (pinnedCandidates.has(item.visibleKey)) pinnedCandidates.delete(item.visibleKey);
-    if (item.pinned) {
-      pinnedCandidates.set(item.visibleKey, item);
-    }
   }
 
-  const pinned = selectPinnedActivityItem(pinnedCandidates.values());
-  const visibleKeys = collapsedVisibleKeys({
-    recent: Array.from(recent.keys()),
-    pinned: pinned?.visibleKey ?? null,
-  });
-
   return {
-    visibleItems: activityLedgerItems(events)
-      .filter((item) => visibleKeys.has(item.visibleKey))
-      .map(activityDisplayItem),
+    visibleItems: Array.from(recent.values()).map(activityDisplayItem),
     headerCount: summaries.size,
     severityCounts: activitySeverityCounts(summaries.values()),
     groups: activityGroups(summaries.values()),
     rawMarkers: activityRawMarkerCount(summaries.values()),
   };
-}
-
-function selectPinnedActivityItem(
-  items: Iterable<RunnerActivityLedgerItem>,
-): RunnerActivityLedgerItem | null {
-  let pinned: RunnerActivityLedgerItem | null = null;
-  for (const item of items) {
-    if (
-      pinned === null ||
-      runnerActivitySeverityRank(item.severity) >= runnerActivitySeverityRank(pinned.severity)
-    ) {
-      pinned = item;
-    }
-  }
-  return pinned;
 }
 
 function activityDisplayItem(display: RunnerActivityLedgerItem): ActivityDisplayItem {
@@ -193,7 +163,6 @@ function activityDisplayItem(display: RunnerActivityLedgerItem): ActivityDisplay
     valueTone: toneToConversationTone(display.valueTone),
     fitMode: display.fitMode,
     severity: display.severity,
-    pinned: display.pinned,
     rawMarker: display.rawMarker,
     groupLabel: display.groupLabel,
   };
@@ -246,18 +215,6 @@ function activityBatchRunner(events: readonly RunnerActivityEvent[]): string | n
     formatToolModel({ tool: runner, model: latest.model, displayName, kind: latest.backendKind }),
   );
   return identity === '' ? null : identity;
-}
-
-function collapsedVisibleKeys(input: {
-  recent: readonly string[];
-  pinned: string | null;
-}): Set<string> {
-  const keys = new Set(input.recent);
-  if (input.pinned === null || keys.has(input.pinned)) return keys;
-  const oldest = keys.values().next();
-  if (oldest.done !== true) keys.delete(oldest.value);
-  keys.add(input.pinned);
-  return keys;
 }
 
 function activityItemSummary(item: ActivityItemSummary): ActivityItemSummary {

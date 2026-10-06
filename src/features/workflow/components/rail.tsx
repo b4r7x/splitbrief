@@ -6,7 +6,6 @@ import { SOFT_SEP } from '../../../core/separators.js';
 import { useTheme, type Theme } from '../../../components/theme.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
-import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { useStores } from '../../../stores/use-stores.js';
@@ -30,15 +29,15 @@ import {
 } from '../layout/chrome-rows.js';
 import { RAIL_FORM_C_CANCELLED_SUFFIX, resolveRailFraction } from '../layout/hit-test.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
-import type { TasksState } from '../../../stores/workflow/tasks.js';
+import { selectTaskListView, type TasksState } from '../../../stores/workflow/tasks.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { deriveWorkflowDisplay } from '../display/workflow-status.js';
 
 interface RailDoneSummary {
-  totalTasks: number;
-  localCount: number;
+  passed: number;
+  total: number;
   driftPassed: boolean | undefined;
 }
 
@@ -48,9 +47,11 @@ function roleColor(role: RailRole, t: Theme): string {
   return t.planner;
 }
 
+// Done and active share the filled mark, so the three marks a live rail paints are one family of
+// one width on every font: weight and brightness tell the stage the run is on from the ones behind
+// it, and the ring tells the ones ahead.
 function stageMarkerGlyph(status: RailStageStatus): string {
-  if (status === 'done') return glyph('stageDone');
-  if (status === 'active') return glyph('stageActive');
+  if (status === 'done' || status === 'active') return glyph('stageDone');
   if (status === 'cancelled') return glyph('statusCancelled');
   if (status === 'failed') return glyph('statusFailed');
   return glyph('stagePending');
@@ -86,11 +87,11 @@ function RailFormBNode({
 }) {
   const t = useTheme();
   const live = state.status === 'active';
-  // Three-tier weight: pending stays faint, done steps up to full hue (it happened), active gets
-  // bold plus the ◉ marker so the eye lands on exactly one node without adding any characters
-  // (the marker+label text keeps its cell count, so the hit-test geometry never moves).
+  // The stage the run is on is the one bright, bold node; the stages behind it and ahead of it are
+  // faint, told apart by the filled mark and the ring (the marker+label text keeps its cell count,
+  // so the hit-test geometry never moves).
   const halt = haltColor(state.status, t);
-  const dim = state.status === 'pending' || halt !== null;
+  const dim = !live;
   const rc = roleColor(railStageRole(state.stage), t);
   const label = railFormBLabel(state, { short });
   const left = index > 0 ? stages[index - 1] : undefined;
@@ -157,10 +158,13 @@ function RailFormC({ stages, fraction }: { stages: RailStageState[]; fraction: s
   );
 }
 
+// The fraction the build block states, out of the plan as it stands — fix tasks a review appended
+// included — so a brief is counted once however many completions the log carried for it.
 function railCompleteText(summary: RailDoneSummary): string {
   const parts = ['done'];
-  if (summary.totalTasks > 0) parts.push(`${summary.localCount}/${summary.totalTasks} local`);
-  parts.push(summary.driftPassed === false ? 'drift found' : 'no drift');
+  if (summary.total > 0) parts.push(`${summary.passed}/${summary.total} briefs passed`);
+  if (summary.driftPassed === undefined) parts.push('drift not run');
+  else parts.push(summary.driftPassed ? 'no drift' : 'drift found');
   return `${glyph('statusDone')} ${parts.join(SOFT_SEP)}`;
 }
 
@@ -173,6 +177,30 @@ function RailComplete({ summary }: { summary: RailDoneSummary }) {
   );
 }
 
+function railDoneSummary(tasks: TasksState, events: readonly EngineEvent[]): RailDoneSummary {
+  const view = selectTaskListView(tasks);
+  return { passed: view.passed, total: view.total, driftPassed: getRailDriftPassed(events) };
+}
+
+// A run reaches `complete` whichever way its review went. One whose review failed stopped on that
+// review — the log says so, or the halt it raised still waits — so the rail marks the review failed
+// and never calls the run done.
+function reviewFailed(
+  phase: Phase,
+  events: readonly EngineEvent[],
+  recoveryPending: boolean,
+): boolean {
+  if (phase !== 'complete') return false;
+  if (recoveryPending) return true;
+  for (let index = events.length - 1; index >= 0; index--) {
+    const event = events[index];
+    if (event?.type === 'workflow_complete') return event.review === 'failed';
+  }
+  return false;
+}
+
+const FAILED_REVIEW_STAGES = getRailStages('final-review', { halted: 'failed' });
+
 // The rail's actually-rendered width, so the header budgets the runner/clock tail against what the
 // rail paints — not the full three-stage pipeline. `complete` collapses to a short done line and a
 // narrow terminal collapses to Form C, both far shorter than the Form-B measure.
@@ -182,21 +210,21 @@ export function measureRailCells(input: {
   form: RailForm;
   cols: number;
   tasks: TasksState;
-  localCount: number;
   events: readonly EngineEvent[];
+  recoveryPending: boolean;
   /** Stages the caller already knows; a run at rest wears the mark its own status earned. */
   stages?: readonly RailStageState[] | undefined;
 }): number {
-  if (input.stages === undefined && input.phase === 'complete') {
-    return getTerminalCellWidth(
-      railCompleteText({
-        totalTasks: input.tasks.totalTasks,
-        localCount: input.localCount,
-        driftPassed: getRailDriftPassed(input.events),
-      }),
-    );
+  const failedReview = reviewFailed(input.phase, input.events, input.recoveryPending);
+  if (input.stages === undefined && input.phase === 'complete' && !failedReview) {
+    return getTerminalCellWidth(railCompleteText(railDoneSummary(input.tasks, input.events)));
   }
-  const stages = [...(input.stages ?? getRailStages(input.phase, { cancelled: input.cancelled }))];
+  const stages = [
+    ...(input.stages ??
+      (failedReview
+        ? FAILED_REVIEW_STAGES
+        : getRailStages(input.phase, { cancelled: input.cancelled }))),
+  ];
   if (input.form === 'C') {
     const fraction = resolveRailFraction({
       phase: input.phase,
@@ -218,11 +246,10 @@ export function Rail({
   /** A run at rest paints the stages its record names, not the ones a live phase implies. */
   stages?: readonly RailStageState[] | undefined;
 }) {
-  const [{ cols }, lifecycle, tasks, tokens, eventsState, controls, approval, recovery] = useStores(
+  const [{ cols }, lifecycle, tasks, eventsState, controls, approval, recovery] = useStores(
     terminalSizeStore,
     lifecycleStore,
     tasksStore,
-    tokensStore,
     eventsStore,
     controlsStore,
     approvalPromptStore,
@@ -239,12 +266,15 @@ export function Rail({
     pendingRecovery: recovery.issue !== null,
     pendingApproval: approval.status === 'pending',
   });
+  const failedReview = reviewFailed(phase, eventsState.events, recovery.issue !== null);
   const stages = [
     ...(givenStages ??
-      getRailStages(phase, {
-        cancelled,
-        ...(display.halted === undefined ? {} : { halted: display.halted }),
-      })),
+      (failedReview
+        ? FAILED_REVIEW_STAGES
+        : getRailStages(phase, {
+            cancelled,
+            ...(display.halted === undefined ? {} : { halted: display.halted }),
+          }))),
   ];
   const fraction = resolveRailFraction({
     phase,
@@ -253,16 +283,8 @@ export function Rail({
     cancelled,
   });
 
-  if (givenStages === undefined && phase === 'complete') {
-    return (
-      <RailComplete
-        summary={{
-          totalTasks: tasks.totalTasks,
-          localCount: tokens.localCount,
-          driftPassed: getRailDriftPassed(eventsState.events),
-        }}
-      />
-    );
+  if (givenStages === undefined && phase === 'complete' && !failedReview) {
+    return <RailComplete summary={railDoneSummary(tasks, eventsState.events)} />;
   }
   if (resolved === 'C') {
     return <RailFormC stages={stages} fraction={fraction} />;

@@ -1,20 +1,58 @@
+import type { RunStatus } from '../../../core/sessions/run-status.js';
 import { describe, expect, it } from 'vitest';
 import { WIDE, endedInBuild, makeView } from '#testing/helpers/factories/summary-view.js';
 import type { SummaryView } from './view-model.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { bylineText, legendText, openRunByline, stepWord } from './byline.js';
 
 describe('bylineText', () => {
   it('offers the undo on an applied run', () => {
     expect(bylineText(makeView({ outcome: { kind: 'applied' } }), WIDE)).toBe(
-      'Applied · undo it with /run reject confirm',
+      'Undo the Apply with /run reject confirm',
     );
   });
 
   it('says how to bring the changes of a discarded run back', () => {
-    expect(bylineText(makeView({ outcome: { kind: 'discarded' } }), WIDE)).toBe(
-      'Bring the changes back with git apply .splitbrief/sessions/2026-09-14-add-email-validation-with-tests/run.patch',
-    );
+    const view = makeView({
+      outcome: { kind: 'discarded' },
+      files: {
+        ...makeView().files,
+        patch: '.splitbrief/sessions/2026-09-14-add-email-validation-with-tests/run.patch',
+      },
+    });
+    expect(bylineText(view, WIDE)).toBe('Bring the changes back with git apply on the Patch file');
+  });
+
+  it('names the Patch row instead of a path a narrow line would cut', () => {
+    const view = makeView({
+      outcome: { kind: 'discarded' },
+      files: {
+        ...makeView().files,
+        patch: '.splitbrief/sessions/2026-09-14-add-email-validation-with-tests/run.patch',
+      },
+    });
+    expect(bylineText(view, 56)).toBe('Bring the changes back with git apply on the Patch file');
+  });
+
+  it('offers no git apply for a discarded run that saved no changes', () => {
+    expect(bylineText(makeView({ outcome: { kind: 'discarded' } }), WIDE)).toBe('esc home');
+  });
+
+  it('says how to bring the changes of an ended workspace run back', () => {
+    const view = endedInBuild();
+    expect(
+      bylineText(
+        {
+          ...view,
+          files: {
+            ...view.files,
+            patch: '.splitbrief/sessions/2026-09-14-add-email-validation-with-tests/run.patch',
+          },
+        },
+        WIDE,
+      ),
+    ).toBe('Bring the changes back with git apply on the Patch file');
   });
 
   it('offers both choices on a ready run', () => {
@@ -35,7 +73,7 @@ describe('bylineText', () => {
         evidence: { validated: 3, total: 3 },
         missingArtifacts: 0,
       },
-      scope: { kind: 'checked', passed: false, score: 0.6, errors: 1, warnings: 1 },
+      scope: { kind: 'checked', passed: false, errors: 1, warnings: 1 },
     });
     expect(bylineText(view, WIDE)).toBe(
       'Read the 2 blocking findings in the packet, or revert it with /run reject confirm',
@@ -49,7 +87,7 @@ describe('bylineText', () => {
         ...makeView().review,
         counts: { critical: 0, warning: 1, note: 0 },
       } as SummaryView['review'],
-      scope: { kind: 'checked', passed: false, score: 0.6, errors: 1, warnings: 1 },
+      scope: { kind: 'checked', passed: false, errors: 1, warnings: 1 },
     });
     expect(bylineText(view, WIDE)).toBe(
       'Check the 2 scope deviations in the packet, or revert it with /run reject confirm',
@@ -130,7 +168,7 @@ describe('openRunByline', () => {
         width: WIDE,
         status: { kind: 'ready-to-apply', override: false },
       }),
-    ).toBe('Ready to apply · choose Apply, Show diff or Discard');
+    ).toBe('Ready to apply · pick Apply, Show diff or Discard');
   });
 
   it('says an override is applied as is', () => {
@@ -140,7 +178,7 @@ describe('openRunByline', () => {
         width: WIDE,
         status: { kind: 'ready-to-apply', override: true },
       }),
-    ).toBe('Ready to apply as is · choose Apply, Show diff or Discard');
+    ).toBe('Ready to apply as is · pick Apply as is, Show diff or Discard');
   });
 
   it('names the brief a paused run is holding, then the key that moves it', () => {
@@ -149,11 +187,11 @@ describe('openRunByline', () => {
         ...OPEN,
         status: {
           kind: 'open',
-          stop: { kind: 'paused', at: 'mid-step' },
+          stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } },
           resumeAt: { kind: 'brief', taskId: taskId('T003'), attempt: 0 },
         },
       }),
-    ).toBe('Paused at T003 · type a correction or ⏎ to continue');
+    ).toBe('Stopped at T003 · type a correction or ⏎ to continue');
   });
 
   it('reopens the plan card a run with a typed plan is parked at', () => {
@@ -162,7 +200,7 @@ describe('openRunByline', () => {
         ...OPEN,
         status: {
           kind: 'open',
-          stop: { kind: 'waiting', gate: 'plan', reopens: true },
+          stop: { kind: 'waiting-for-you', on: { kind: 'gate', gate: 'plan', reopens: true } },
           resumeAt: { kind: 'gate', gate: 'plan' },
         },
       }),
@@ -177,7 +215,7 @@ describe('openRunByline', () => {
           ...OPEN,
           status: {
             kind: 'open',
-            stop: { kind: 'waiting', gate, reopens: false },
+            stop: { kind: 'waiting-for-you', on: { kind: 'gate', gate, reopens: false } },
             resumeAt: { kind: 'gate', gate },
           },
         }),
@@ -185,33 +223,62 @@ describe('openRunByline', () => {
     },
   );
 
-  it('quotes the halt headline rather than the raw reason', () => {
+  it('names a seat-down halt and quotes its headline rather than the raw reason', () => {
     expect(
       openRunByline({
         ...OPEN,
         status: {
           kind: 'open',
           stop: {
-            kind: 'halted',
-            issue: {
-              id: 'h1',
-              reason: 'runner-unauthenticated',
-              phase: 'implementing',
-              status: 'awaiting-user',
-              files: [],
-              affectedTaskIds: [],
-              message: 'Signed out',
-              details: [],
-              facts: { tool: 'codex' },
-              availableActions: ['switch-seat', 'end-run'],
-              recommendedAction: 'switch-seat',
-              createdAt: '2026-09-14T00:00:00.000Z',
+            kind: 'waiting-for-you',
+            on: {
+              kind: 'halt',
+              issue: {
+                id: 'h1',
+                reason: 'runner-unauthenticated',
+                phase: 'implementing',
+                status: 'awaiting-user',
+                files: [],
+                affectedTaskIds: [],
+                message: 'Signed out',
+                details: [],
+                facts: { tool: 'codex' },
+                availableActions: ['retry-same-worker', 'end-run'],
+                recommendedAction: 'retry-same-worker',
+                createdAt: '2026-09-14T00:00:00.000Z',
+              },
             },
           },
           resumeAt: { kind: 'brief', taskId: taskId('T002'), attempt: 1 },
         },
       }),
-    ).toBe('Halted · Signed out of codex · ⏎ to decide');
+    ).toBe('Seat down · Signed out of codex · ⏎ to decide');
+  });
+
+  it('names a halt only the operator can decide as needing you', () => {
+    expect(
+      openRunByline({
+        ...OPEN,
+        status: {
+          kind: 'open',
+          stop: { kind: 'waiting-for-you', on: { kind: 'halt', issue: makeRecoveryIssue() } },
+          resumeAt: { kind: 'brief', taskId: taskId('T001'), attempt: 3 },
+        },
+      }),
+    ).toBe('Needs you · T001 failed · ⏎ to decide');
+  });
+
+  it('asks for the answer a run waiting on a question needs', () => {
+    expect(
+      openRunByline({
+        ...OPEN,
+        status: {
+          kind: 'open',
+          stop: { kind: 'waiting-for-you', on: { kind: 'question' } },
+          resumeAt: { kind: 'planner', call: 'plan' },
+        },
+      }),
+    ).toBe('Waiting for your answer · type a reply or ⏎ to continue');
   });
 
   it('quotes the error a failed run recorded', () => {
@@ -220,7 +287,7 @@ describe('openRunByline', () => {
         ...OPEN,
         status: {
           kind: 'open',
-          stop: { kind: 'failed', message: 'Planning failed.' },
+          stop: { kind: 'stopped', on: { kind: 'failed', message: 'Planning failed.' } },
           resumeAt: { kind: 'planner', call: 'spec' },
         },
       }),
@@ -233,11 +300,11 @@ describe('openRunByline', () => {
         ...OPEN,
         status: {
           kind: 'open',
-          stop: { kind: 'interrupted' },
+          stop: { kind: 'stopped', on: { kind: 'interrupted' } },
           resumeAt: { kind: 'planner', call: 'tasks' },
         },
       }),
-    ).toBe('Interrupted · ⏎ to continue from the plan');
+    ).toBe('Stopped at the plan · ⏎ to continue');
   });
 
   it('says why a run nothing can pick up cannot be continued', () => {
@@ -247,7 +314,10 @@ describe('openRunByline', () => {
         width: WIDE,
         status: {
           kind: 'open',
-          stop: { kind: 'failed', message: 'Session has no saved state to read.' },
+          stop: {
+            kind: 'stopped',
+            on: { kind: 'failed', message: 'Session has no saved state to read.' },
+          },
           resumeAt: { kind: 'planner', call: 'research' },
         },
       }),
@@ -260,10 +330,37 @@ describe('openRunByline', () => {
     );
   });
 
+  it('keeps the halt name when a narrow line cannot hold its cause', () => {
+    const status: RunStatus = {
+      kind: 'open',
+      stop: {
+        kind: 'waiting-for-you',
+        on: {
+          kind: 'halt',
+          issue: {
+            id: 'h1',
+            reason: 'implementer-left-isolation',
+            phase: 'implementing',
+            status: 'awaiting-user',
+            files: [],
+            affectedTaskIds: [],
+            message: 'T002 left the isolation directory',
+            details: [],
+            availableActions: ['retry-same-worker', 'end-run'],
+            recommendedAction: 'retry-same-worker',
+            createdAt: '2026-09-14T00:00:00.000Z',
+          },
+        },
+      },
+      resumeAt: { kind: 'brief', taskId: taskId('T002'), attempt: 1 },
+    };
+    expect(openRunByline({ continuable: true, status, width: 40 })).toBe('Seat down · ⏎ to decide');
+  });
+
   it('sheds the reason before the action when the line will not fit', () => {
     const status = {
       kind: 'open',
-      stop: { kind: 'paused', at: 'mid-step' },
+      stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } },
       resumeAt: { kind: 'brief', taskId: taskId('T003'), attempt: 0 },
     } as const;
     expect(openRunByline({ continuable: true, status, width: 30 })).toBe(

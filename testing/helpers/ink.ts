@@ -99,23 +99,26 @@ export function renderFeature(
   };
 }
 
-export function tick(ms = 0): Promise<void> {
-  if (ms > 0) {
+// React on Node schedules renders and passive effects via setImmediate, and expired
+// timers run before the check phase when a starved process wakes, so a timer alone can
+// resume the test before Ink has painted or useInput has (re)subscribed, and the next
+// stdin.write lands on a stale or absent handler. tick(ms) therefore drains that work
+// after its timer, however late the timer fires.
+export async function tick(ms = 0): Promise<void> {
+  if (ms === 0) {
     return new Promise<void>((resolve) => {
-      setTimeout(resolve, ms);
+      setImmediate(resolve);
     });
   }
-  return new Promise<void>((resolve) => {
-    setImmediate(resolve);
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
   });
+  await flushEffects();
 }
 
-// React on Node schedules renders and passive effects via setImmediate, and expired
-// timers run before the check phase when a starved process wakes, so a timer-based
-// tick(ms) can resume the test before Ink's useInput has (re)subscribed and the next
-// stdin.write lands on a stale or absent handler. Awaiting setImmediate turns queues
-// behind that pending work: turn 1 covers the render+commit, turn 2 the passive-effect
-// flush it schedules, turn 3 is margin. Await this before each stdin.write.
+// Awaiting setImmediate turns queues behind pending React work: turn 1 covers the
+// render+commit, turn 2 the passive-effect flush it schedules, turn 3 is margin. Await
+// this before each stdin.write.
 export async function flushEffects(): Promise<void> {
   for (let i = 0; i < 3; i++) {
     await tick();

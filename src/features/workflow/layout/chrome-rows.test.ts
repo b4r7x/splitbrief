@@ -303,9 +303,9 @@ describe('getProgressRows', () => {
 
   it('collapses with the width inside the gutter while a brief is building', () => {
     expect(getProgressRows({ phase: 'implementing', cols: 122 })).toBe(2);
-    expect(getProgressRows({ phase: 'implementing', cols: 120 })).toBe(4);
-    expect(getProgressRows({ phase: 'validating-task', cols: 82 })).toBe(4);
-    expect(getProgressRows({ phase: 'validating-task', cols: 80 })).toBe(5);
+    expect(getProgressRows({ phase: 'implementing', cols: 120 })).toBe(3);
+    expect(getProgressRows({ phase: 'validating-task', cols: 82 })).toBe(3);
+    expect(getProgressRows({ phase: 'validating-task', cols: 80 })).toBe(3);
   });
 
   it('budgets the review block without the attempt row it no longer paints', () => {
@@ -321,7 +321,7 @@ describe('getProgressRows', () => {
     expect(getProgressRows({ ...building, promptRows: 3 })).toBe(0);
     expect(getProgressRows({ ...building, atRest: true })).toBe(0);
     expect(getProgressRows({ ...building, parked: true })).toBe(0);
-    expect(getProgressRows({ ...building, promptRows: 0, halted: false, atRest: false })).toBe(4);
+    expect(getProgressRows({ ...building, promptRows: 0, halted: false, atRest: false })).toBe(3);
   });
 
   it('stands the block down while the stop ladder has the run parked', () => {
@@ -330,7 +330,7 @@ describe('getProgressRows', () => {
     expect(getProgressRows({ phase: 'implementing', cols: 120, parked: true })).toBe(0);
     expect(getProgressRows({ phase: 'validating-task', cols: 80, parked: true })).toBe(0);
     expect(getProgressRows({ phase: 'final-review', cols: 60, parked: true })).toBe(0);
-    expect(getProgressRows({ phase: 'implementing', cols: 120, parked: false })).toBe(4);
+    expect(getProgressRows({ phase: 'implementing', cols: 120, parked: false })).toBe(3);
   });
 
   it('leaves its rows to the chrome, so the body is measured around it', () => {

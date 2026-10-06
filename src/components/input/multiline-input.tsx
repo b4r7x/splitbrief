@@ -162,7 +162,6 @@ interface MultilineInputProps extends ControlledMultilineInputProps {
   focus?: boolean;
   isActive?: boolean;
   shouldHandleInput?: ((input: string, key: Key) => boolean) | undefined;
-  onInputAccepted?: ((input: string, key: Key) => void) | undefined;
   onBoundaryNavigate?: ((direction: 'up' | 'down') => boolean | undefined) | undefined;
 }
 
@@ -183,7 +182,6 @@ export function MultilineInput({
   focus = true,
   isActive = focus,
   shouldHandleInput,
-  onInputAccepted,
   onBoundaryNavigate,
   ...controlledProps
 }: MultilineInputProps) {
@@ -272,7 +270,6 @@ export function MultilineInput({
     const currentCursor = cursorRef.current;
     if (shouldHandleInput !== undefined && !shouldHandleInput(input, key)) return;
     if (Date.now() < suppressUntilRef.current) return;
-    onInputAccepted?.(input, key);
 
     if (key.shift && (key.upArrow || key.downArrow)) return;
     if (key.pageUp || key.pageDown) return;

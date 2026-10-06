@@ -17,7 +17,7 @@ type TaskOverrides = Omit<Partial<Task>, 'id' | 'dependsOn'> & {
 function makeTask(overrides: TaskOverrides = {}): Task {
   return makeBaseTask({
     title: 'Create utility module',
-    file: 'src/utils/helpers.ts',
+    suggestedFiles: ['src/utils/helpers.ts'],
     description: 'Implement helper functions for string manipulation.',
     ...overrides,
   });

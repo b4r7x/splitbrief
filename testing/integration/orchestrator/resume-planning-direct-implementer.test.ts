@@ -44,9 +44,6 @@ function setupProject(): string {
 function savedPlanningContinuationState(feature: string): WorkflowState {
   let state = createInitialState(feature);
   state = transition(state, { type: 'START' });
-  state = transition(state, { type: 'RESEARCH_DONE' });
-  state = transition(state, { type: 'SPEC_DONE' });
-  state = transition(state, { type: 'APPROVE_SPEC' });
   return { ...state, awaitingContinue: true };
 }
 
@@ -64,7 +61,7 @@ describe('resume planning continuation with a direct-writing implementer', {
     const task = makeTask({
       id: 'T001',
       action: 'create',
-      file: targetFile,
+      suggestedFiles: [targetFile],
       title: 'Create resumed module',
       description: 'Create the resumed module after session continuation.',
       implementationSteps: ['Create src/resumed.ts with the resumed export.'],

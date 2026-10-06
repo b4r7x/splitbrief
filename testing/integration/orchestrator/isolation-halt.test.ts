@@ -71,7 +71,7 @@ const greetTask = () =>
   makeTask({
     id: 'T001',
     action: 'create',
-    file: TARGET,
+    suggestedFiles: [TARGET],
     title: 'Add the greeting helper',
     description: 'Create a greeting helper module.',
     implementationSteps: ['Create src/greet.ts exporting greet.'],
@@ -174,12 +174,12 @@ describe('isolation halt through the orchestrator', { timeout: 90_000 }, () => {
       reason: 'implementer-left-isolation',
       taskId: 'T001',
       message: `T001 left the isolation directory — OpenCode CLI wrote to ${checkoutFile} (your checkout) with bash: printf x > ${checkoutFile}`,
-      availableActions: ['retry-same-worker', 'skip-current-task', 'pause-run', 'end-run'],
+      availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
       recommendedAction: 'retry-same-worker',
     });
     expect(state.pendingRecovery?.details).toEqual([
       `OpenCode CLI wrote to ${checkoutFile} (your checkout) with bash: printf x > ${checkoutFile}`,
-      'Nothing from this attempt was promoted.',
+      "Your checkout gets the run's changes only through Apply.",
       'Worker profile: default',
     ]);
     expect(events).toContainEqual(
@@ -305,7 +305,7 @@ describe('isolation halt through the orchestrator', { timeout: 90_000 }, () => {
       expect(state.pendingRecovery).toMatchObject({
         reason: 'checkout-changed',
         taskId: 'T001',
-        availableActions: ['retry-same-worker', 'skip-current-task', 'pause-run', 'end-run'],
+        availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
       });
       expect(state.pendingRecovery?.message).toBe(
         'Your checkout changed under T001 — branch escaped',

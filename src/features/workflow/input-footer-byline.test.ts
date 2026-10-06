@@ -20,23 +20,11 @@ describe('buildInputFooterByline', () => {
   const marker = glyph('stageDone');
   const stageLead = `${marker} build 3/7`;
 
-  it('renders one dim middot byline with the lead and eta', () => {
-    const byline = buildInputFooterByline({
-      cols: 120,
-      lead: stageLead,
-      queuedText: null,
-      etaText: '~2m left',
-    });
-
-    expect(fullByline(byline)).toBe(`${marker} build 3/7 · ~2m left`);
-  });
-
   it('passes a live status lead through at the head of the byline', () => {
     const byline = buildInputFooterByline({
       cols: 120,
       lead: '⠋ Researching… 2:24',
       queuedText: null,
-      etaText: null,
     });
 
     expect(fullByline(byline)).toBe('⠋ Researching… 2:24');
@@ -47,65 +35,9 @@ describe('buildInputFooterByline', () => {
       cols: 120,
       lead: stageLead,
       queuedText: null,
-      etaText: '~2m left',
     });
 
     expect(fullByline(byline)).not.toContain('Ctrl+C');
-  });
-
-  it('drops the eta as width tightens, then truncates the lead', () => {
-    const base = {
-      lead: stageLead,
-      queuedText: null,
-      etaText: '~2m left',
-    } as const;
-
-    const withEta = `${stageLead} · ~2m left`;
-    const noEta = stageLead;
-
-    expect(fullByline(buildInputFooterByline({ ...base, cols: colsForLine(withEta) }))).toBe(
-      withEta,
-    );
-    expect(fullByline(buildInputFooterByline({ ...base, cols: colsForLine(noEta) }))).toBe(noEta);
-
-    const crampedWidth = getTerminalCellWidth(stageLead);
-    const cramped = fullByline(buildInputFooterByline({ ...base, cols: crampedWidth }));
-    expect(getTerminalCellWidth(cramped)).toBeLessThanOrEqual(getChromeContentWidth(crampedWidth));
-  });
-
-  it('includes the y copy token only when a focus exists, reserved at the tail', () => {
-    const base = {
-      cols: 120,
-      lead: stageLead,
-      queuedText: null,
-      etaText: null,
-    } as const;
-
-    expect(fullByline(buildInputFooterByline(base))).not.toContain('y copy');
-    expect(fullByline(buildInputFooterByline({ ...base, copyHint: 'y copy' }))).toBe(
-      `${marker} build 3/7 · y copy`,
-    );
-  });
-
-  it('drops the copy hint first as width tightens: y copy → bare y → gone', () => {
-    const base = {
-      lead: stageLead,
-      queuedText: null,
-      etaText: null,
-      copyHint: 'y copy',
-    } as const;
-    const withCopy = `${stageLead} · y copy`;
-    const withBareY = `${stageLead} · y`;
-
-    expect(fullByline(buildInputFooterByline({ ...base, cols: colsForLine(withCopy) }))).toBe(
-      withCopy,
-    );
-    expect(fullByline(buildInputFooterByline({ ...base, cols: colsForLine(withBareY) }))).toBe(
-      withBareY,
-    );
-    expect(fullByline(buildInputFooterByline({ ...base, cols: colsForLine(stageLead) }))).toBe(
-      stageLead,
-    );
   });
 
   it('appends the worktree name at the tail with a subtle cursor marker', () => {
@@ -113,7 +45,6 @@ describe('buildInputFooterByline', () => {
       cols: 120,
       lead: stageLead,
       queuedText: null,
-      etaText: null,
       worktreeLabel: 'my-feature',
     });
 
@@ -128,7 +59,6 @@ describe('buildInputFooterByline', () => {
       cols: 120,
       lead: stageLead,
       queuedText: null,
-      etaText: null,
       worktreeLabel,
     });
 
@@ -139,7 +69,6 @@ describe('buildInputFooterByline', () => {
     const base = {
       lead: stageLead,
       queuedText: null,
-      etaText: null,
       worktreeLabel: 'my-feature',
     } as const;
     const core = `${marker} build 3/7`;
@@ -156,7 +85,6 @@ describe('buildInputFooterByline', () => {
         cols: width,
         lead: stageLead,
         queuedText: null,
-        etaText: null,
         worktreeLabel,
       }),
     );
@@ -173,7 +101,6 @@ describe('buildInputFooterByline', () => {
         cols,
         lead: stageLead,
         queuedText: null,
-        etaText: '~2m left',
       }),
     );
 
@@ -185,7 +112,6 @@ describe('buildInputFooterByline', () => {
       cols: 120,
       lead: stageLead,
       queuedText: '2 queued',
-      etaText: null,
     });
 
     expect(byline.queued).toBe(`${SOFT_SEP}2 queued`);
@@ -198,7 +124,6 @@ describe('buildInputFooterByline', () => {
       lead: '⚠ Still working — silent 5m 12s',
       hintText: 'tools report when done',
       queuedText: '2 queued',
-      etaText: null,
     });
 
     expect(byline.hint).toBe(`${SOFT_SEP}tools report when done`);
@@ -212,7 +137,6 @@ describe('buildInputFooterByline', () => {
       cols: 120,
       lead: stageLead,
       queuedText: null,
-      etaText: null,
     });
 
     expect(byline.hint).toBe('');
@@ -224,7 +148,6 @@ describe('buildInputFooterByline', () => {
       lead: stageLead,
       hintText: 'tools report when done',
       queuedText: '2 queued',
-      etaText: null,
     } as const;
     const withHint = `${stageLead} · tools report when done · 2 queued`;
     const withoutHint = `${stageLead} · 2 queued`;
@@ -243,7 +166,6 @@ describe('buildInputFooterByline', () => {
       cols: 120,
       lead: '',
       queuedText: '2 queued',
-      etaText: null,
     });
 
     expect(byline.queued).toBe('2 queued');
@@ -271,7 +193,6 @@ describe('the stop byline through the footer', () => {
         lead: stopped.lead,
         hintText: stopped.hint,
         queuedText: null,
-        etaText: null,
       }),
     );
   }

@@ -1,4 +1,4 @@
-import { taskFiles, type Task } from '../../../core/schemas/task.js';
+import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { confinedExists, confinedReadFileAsync } from '../../../lib/confined-fs.js';
 import { assertPathConfined, pathConfinementError } from '../../../lib/path-confinement.js';
@@ -31,7 +31,7 @@ export const CONTEXT_CODE_BUDGET_CHARS = 40_000;
 const TRUNCATED_MARKER = '\n…truncated';
 
 async function readContextCode(task: Task, projectDir: string): Promise<Record<string, string>> {
-  const writable = new Set(taskFiles(task));
+  const writable = new Set(task.suggestedFiles);
   const codeByFile: Record<string, string> = {};
   let remaining = CONTEXT_CODE_BUDGET_CHARS;
   for (const file of task.contextFiles ?? []) {
@@ -51,11 +51,11 @@ async function readContextCode(task: Task, projectDir: string): Promise<Record<s
  * the action its anchor takes now, since an earlier brief may have created the anchor since the plan.
  */
 export async function refreshCurrentCode(task: Task, projectDir: string): Promise<Task> {
-  const currentCode = await readConfined(projectDir, task.file);
+  const currentCode = await readConfined(projectDir, task.suggestedFiles[0]);
 
   const codeByFile: Record<string, string> = {};
-  for (const file of taskFiles(task)) {
-    if (file === task.file) continue;
+  for (const file of task.suggestedFiles) {
+    if (file === task.suggestedFiles[0]) continue;
     const content = await readConfined(projectDir, file);
     if (content !== undefined) codeByFile[file] = content;
   }
@@ -69,7 +69,7 @@ export async function refreshCurrentCode(task: Task, projectDir: string): Promis
   } = task;
   return {
     ...base,
-    action: anchorAction(task.file, projectDir),
+    action: anchorAction(task.suggestedFiles[0], projectDir),
     ...(currentCode !== undefined ? { currentCode } : {}),
     ...(Object.keys(codeByFile).length > 0 ? { currentCodeByFile: codeByFile } : {}),
     ...(Object.keys(contextCodeByFile).length > 0 ? { contextCodeByFile } : {}),

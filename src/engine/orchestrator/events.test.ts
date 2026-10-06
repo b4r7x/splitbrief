@@ -10,7 +10,6 @@ import {
   publishError,
   publishWarning,
   publishGitCommit,
-  publishDriftChainDetected,
   createImplementerPublisher,
   publishRecoveryActionFailed,
   publishRecoveryActionSelected,
@@ -511,29 +510,6 @@ describe('publish* payload forwarding', () => {
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ type: 'git_commit', message: 'chore: commit' });
     expect('file' in (events[0] as Record<string, unknown>)).toBe(false);
-  });
-
-  it('publishDriftChainDetected — publishes event with correct type and all required fields', () => {
-    const { bus, events } = makeBusRecorder();
-    const chain = {
-      chainLength: 3,
-      score: 0.75,
-      uniqueOutOfBoundsFiles: ['src/a.ts', 'src/b.ts'],
-      representativePath: 'src/a.ts',
-      detectedAtTaskId: taskId('T003'),
-    };
-    publishDriftChainDetected({ bus: bus, phase: 'implementing' }, chain, 0.6);
-    expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({
-      type: 'drift_chain_detected',
-      phase: 'implementing',
-      chainLength: 3,
-      score: 0.75,
-      threshold: 0.6,
-      uniqueOutOfBoundsFiles: ['src/a.ts', 'src/b.ts'],
-      representativePath: 'src/a.ts',
-    });
-    expect((events[0] as { ts: number }).ts).toBeGreaterThan(0);
   });
 });
 

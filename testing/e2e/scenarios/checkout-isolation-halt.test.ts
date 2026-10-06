@@ -36,7 +36,7 @@ describe('e2e: a checkout whose git state changes during an in-place implementer
     const sessionId = readActive(fixture.projectDir);
     if (sessionId === null) throw new Error(`the halted run left no session: ${halted.stderr}`);
     expect(halted.stderr).toContain(
-      `Recovery required (checkout-changed): Your checkout changed under T001 — branch ${ESCAPED_BRANCH}`,
+      `Needs you (checkout-changed): Your checkout changed under T001 — branch ${ESCAPED_BRANCH}`,
     );
     expect(halted.stderr).toContain(
       `Continue with: splitbrief continue ${sessionId} --action retry`,

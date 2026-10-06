@@ -137,7 +137,7 @@ afterEach(() => {
 });
 
 const config = makeNoValidationConfig({
-  approval: { enabled: false, feedRejectionsToPlanner: true },
+  approval: { feedRejectionsToPlanner: true },
 });
 const sessionId = 'sess-filesystem';
 async function fixture() {

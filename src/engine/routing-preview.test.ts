@@ -99,7 +99,7 @@ describe('buildRoutingPreviewMetadata', () => {
     writeFileSync(join(projectDir, 'src', 'app.ts'), 'export const ok = true;');
     const task = makeTask({
       action: 'modify',
-      file: 'src/app.ts',
+      suggestedFiles: ['src/app.ts'],
       currentCode: 'export const stale = true;',
     });
 
@@ -120,7 +120,7 @@ describe('buildRoutingPreviewMetadata', () => {
   it('marks confined missing modify targets as needing review refresh', async () => {
     const task = makeTask({
       action: 'modify',
-      file: 'src/missing.ts',
+      suggestedFiles: ['src/missing.ts'],
       currentCode: 'export const stale = true;',
     });
 
@@ -140,11 +140,11 @@ describe('buildRoutingPreviewMetadata', () => {
   });
 
   it('reports a modify target an earlier task creates as pending, not missing', async () => {
-    const created = makeTask({ id: 'T001', action: 'create', file: 'src/new.ts' });
+    const created = makeTask({ id: 'T001', action: 'create', suggestedFiles: ['src/new.ts'] });
     const modified = makeTask({
       id: 'T002',
       action: 'modify',
-      file: 'src/new.ts',
+      suggestedFiles: ['src/new.ts'],
       currentCode: 'export const stale = true;',
     });
 
@@ -169,10 +169,10 @@ describe('buildRoutingPreviewMetadata', () => {
     const modified = makeTask({
       id: 'T001',
       action: 'modify',
-      file: 'src/new.ts',
+      suggestedFiles: ['src/new.ts'],
       currentCode: 'export const stale = true;',
     });
-    const created = makeTask({ id: 'T002', action: 'create', file: 'src/new.ts' });
+    const created = makeTask({ id: 'T002', action: 'create', suggestedFiles: ['src/new.ts'] });
 
     const [metadata] = await buildRoutingPreviewMetadata([modified, created], {
       config: makeConfig(),
@@ -189,8 +189,8 @@ describe('buildRoutingPreviewMetadata', () => {
   });
 
   it('normalises ./ prefixes when matching a create task to a modify target', async () => {
-    const created = makeTask({ id: 'T001', action: 'create', file: './src/new.ts' });
-    const modified = makeTask({ id: 'T002', action: 'modify', file: 'src/new.ts' });
+    const created = makeTask({ id: 'T001', action: 'create', suggestedFiles: ['./src/new.ts'] });
+    const modified = makeTask({ id: 'T002', action: 'modify', suggestedFiles: ['src/new.ts'] });
 
     const [, modifiedMetadata] = await buildRoutingPreviewMetadata([created, modified], {
       config: makeConfig(),
@@ -204,7 +204,7 @@ describe('buildRoutingPreviewMetadata', () => {
     ['relative traversal', join('..', 'outside', 'secret.txt')],
     ['absolute path', join(tmpdir(), 'secret-outside.ts')],
   ])('treats %s targets as unavailable current code', async (_label, file) => {
-    const task = makeTask({ action: 'modify', file, currentCode: 'stale' });
+    const task = makeTask({ action: 'modify', suggestedFiles: [file], currentCode: 'stale' });
 
     const [metadata] = await buildRoutingPreviewMetadata([task], {
       config: makeConfig(),
@@ -225,7 +225,7 @@ describe('buildRoutingPreviewMetadata', () => {
     symlinkSync(outsideDir, join(projectDir, 'linked'));
     const task = makeTask({
       action: 'modify',
-      file: 'linked/secret.txt',
+      suggestedFiles: ['linked/secret.txt'],
       currentCode: 'stale',
     });
 

@@ -18,11 +18,12 @@ export type GateActionInput = {
   bus: EventBus;
   callbacks: OrchestratorCallbacks;
   config: Config;
-  getApprovalEnabled?: (() => boolean) | undefined;
 };
 
 export type GateDecision = {
   allow: boolean;
+  /** The confirmation was cancelled: the user stopped the run there, and denied nothing. */
+  cancelled?: true;
   reason?: string;
   tier?: ApprovalTier;
   actionClass?: ActionClass;

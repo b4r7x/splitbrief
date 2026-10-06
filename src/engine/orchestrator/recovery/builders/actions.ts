@@ -1,48 +1,29 @@
-import type { RecoveryAction, RecoveryReason } from '../../../../core/schemas/enums.js';
-import { PROMPTABLE_RECOVERY_ACTIONS } from '../../../../core/schemas/enums.js';
-import { allowedActionsForReason } from '../../../../core/schemas/recovery/policy.js';
-
-const ACTION_ORDER = PROMPTABLE_RECOVERY_ACTIONS;
-
-export function orderedActions(actions: Array<RecoveryAction | undefined>): RecoveryAction[] {
-  const requested = new Set(actions.filter((action) => action !== undefined));
-  return ACTION_ORDER.filter((action) => requested.has(action));
-}
+import { RECOVERY_ACTIONS, type RecoveryAction } from '../../../../core/schemas/enums.js';
+import type { HaltAction, HaltOf } from '../../../../core/recovery/halt.js';
+import type { RecoveryReason } from '../../../../core/schemas/enums.js';
 
 /**
- * What one issue can actually offer: the policy's actions for its reason, minus
- * the two that need something this issue may not carry — `switch-seat` a seat to
- * move to, `route-bigger-worker` a profile to route to. An action the operator
- * picks only to be refused is worse than one the panel never showed, and a
- * literal beside a builder that subtracts anything else is a second policy.
+ * The actions one cause offers, in the order every halt lists them. The type admits only the
+ * actions of the cause's halt, so a builder cannot offer what its halt does not; an `undefined`
+ * entry is an action this issue cannot carry and is left out.
  */
-export function availableActionsForReason(
-  reason: RecoveryReason,
-  offers: { switchSeat: boolean; routeBigger: boolean },
+export function haltActions<R extends RecoveryReason>(
+  _reason: R,
+  actions: ReadonlyArray<HaltAction<HaltOf<R>> | undefined>,
 ): RecoveryAction[] {
-  return orderedActions(
-    allowedActionsForReason(reason).filter((action) => {
-      if (action === 'switch-seat') return offers.switchSeat;
-      if (action === 'route-bigger-worker') return offers.routeBigger;
-      return true;
-    }),
-  );
+  const requested = new Set<RecoveryAction>(actions.filter((action) => action !== undefined));
+  return RECOVERY_ACTIONS.filter((action) => requested.has(action));
 }
 
+/** The first preference the issue offers, else the least final action it lists. */
 export function chooseRecommended(
-  actions: RecoveryAction[],
-  preferences: RecoveryAction[],
+  actions: readonly RecoveryAction[],
+  preferences: readonly RecoveryAction[] = [],
 ): RecoveryAction {
   for (const preference of preferences) {
     if (actions.includes(preference)) return preference;
   }
-  return actions[0] ?? 'pause-run';
-}
-
-export function hasRouteBigger(opts: {
-  routeBiggerProfile?: string | undefined;
-  canRouteBigger?: boolean | undefined;
-}): boolean {
-  if (opts.canRouteBigger === false) return false;
-  return opts.routeBiggerProfile !== undefined || opts.canRouteBigger === true;
+  const [first] = actions;
+  if (first === undefined) return 'end-run';
+  return first;
 }

@@ -38,9 +38,9 @@ function setup(name: string, offered: boolean, selectedImplementerProfile?: stri
       taskId: task.id,
       affectedTaskIds: [task.id],
       availableActions: offered
-        ? ['retry-same-worker', 'switch-seat', 'pause-run', 'end-run']
-        : ['retry-same-worker', 'pause-run', 'end-run'],
-      recommendedAction: offered ? 'switch-seat' : 'pause-run',
+        ? ['retry-same-worker', 'switch-seat', 'skip-current-task', 'end-run']
+        : ['retry-same-worker', 'skip-current-task', 'end-run'],
+      recommendedAction: offered ? 'switch-seat' : 'retry-same-worker',
       ...(offered && {
         switchSeat: { seat: 'build', candidates: [{ tool: 'claude-code', model: 'sonnet' }] },
       }),

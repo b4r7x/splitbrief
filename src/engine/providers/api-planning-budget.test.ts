@@ -106,10 +106,9 @@ describe('API planning wire budgets', () => {
   it('reserves empty existing files as modifications and absent files as creations', () => {
     const targets = apiBuildTargets(
       makeTask({
-        file: 'empty.ts',
         action: 'modify',
         currentCode: '',
-        files: ['empty.ts', 'other.ts', 'new.ts'],
+        suggestedFiles: ['empty.ts', 'other.ts', 'new.ts'],
         currentCodeByFile: { 'other.ts': '' },
       }),
     );

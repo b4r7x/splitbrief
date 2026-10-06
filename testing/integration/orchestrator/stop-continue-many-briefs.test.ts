@@ -41,7 +41,7 @@ const TASKS = TASK_IDS.map((id, i) =>
   makeTask({
     id,
     title: `Create module ${id}`,
-    file: `src/${id.toLowerCase()}.ts`,
+    suggestedFiles: [`src/${id.toLowerCase()}.ts`],
     dependsOn: i === 0 ? [] : [TASK_IDS[i - 1] ?? ''],
     scope: { inBounds: [`src/${id.toLowerCase()}.ts`], outOfBounds: ['every other file'] },
     evidence: [`src/${id.toLowerCase()}.ts exports ${id.toLowerCase()}`],
@@ -78,7 +78,7 @@ describe('a thirteen-brief run stopped between briefs and continued', { timeout:
     const feature = 'thirteen coherent briefs';
     const config = makeNoValidationConfig({
       workflow: { approve: 'none', maxRetries: 1, isolation: 'staged-copy' },
-      approval: { enabled: false, feedRejectionsToPlanner: false },
+      approval: { feedRejectionsToPlanner: false },
     });
 
     const builds: string[] = [];
@@ -88,7 +88,7 @@ describe('a thirteen-brief run stopped between briefs and continued', { timeout:
       implement: vi.fn(async (opts: ImplementerOptions) => {
         builds.push(opts.task.id);
         continuations.push(opts.continuation);
-        const path = join(opts.projectDir, opts.task.file);
+        const path = join(opts.projectDir, opts.task.suggestedFiles[0]);
         mkdirSync(dirname(path), { recursive: true });
         writeFileSync(path, `export const ${opts.task.id.toLowerCase()} = true;\n`);
         return { success: true, output: 'written', usage: { inputTokens: 10, outputTokens: 5 } };

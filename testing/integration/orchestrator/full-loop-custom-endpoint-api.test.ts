@@ -76,7 +76,7 @@ describe('full workflow custom-endpoint API implementer', { timeout: 90_000 }, (
     const task = makeTask({
       id: 'T001',
       action: 'create',
-      file: targetFile,
+      suggestedFiles: [targetFile],
       title: 'Create custom-endpoint-backed module',
       description: 'Create a module using an API-backed cheap implementer.',
       implementationSteps: ['Create src/loop.ts with the custom-endpoint marker export.'],
