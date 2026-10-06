@@ -1,4 +1,5 @@
-import { mkdirSync, rmSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { modelCacheStore } from '../../../src/stores/discovery/model-cache/state.js';
 import type { RouteData } from '../../../src/stores/navigation/router.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
@@ -13,6 +14,8 @@ import {
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { resetWorkflow } from '../../../src/stores/workflow/actions/reset.js';
 import type { ReadinessCheck, ReadinessReport } from '../../../src/core/readiness/types.js';
+import { buildIsolationChecks } from '../../../src/core/readiness/checks/isolation.js';
+import { selectNextAction } from '../../../src/core/readiness/status.js';
 import type { PreparationOutcome } from '../../../src/engine/runners/prepared-execution.js';
 import type { CliToolDetection } from '../../../src/core/discovery/detection.js';
 import type { ClaudeCodeModelOption } from '../../../src/core/providers/claude-code-options.js';
@@ -515,20 +518,23 @@ const TRUST_BOUNDARY_CHECK: ReadinessCheck = {
   ],
 };
 
-function preparationReport(checks: readonly ReadinessCheck[]): ReadinessReport {
+function preparationReport(
+  checks: readonly ReadinessCheck[],
+  options: {
+    readonly section?: { readonly id: string; readonly title: string } | undefined;
+  } = {},
+): ReadinessReport {
   const blocker = checks.filter((check) => check.severity === 'blocker').length;
   const warning = checks.filter((check) => check.severity === 'warning').length;
+  const status = blocker > 0 ? 'blocked' : 'ready-with-warnings';
+  const section = options.section ?? { id: 'runners', title: 'Runners' };
   return {
     generatedAt: '2026-08-04T00:00:00.000Z',
     projectDir: VISUAL_FIXTURE_PROJECT_DIR,
-    status: blocker > 0 ? 'blocked' : 'ready-with-warnings',
+    status,
     counts: { ok: 4, info: 0, warning, blocker },
-    nextAction: {
-      kind: blocker > 0 ? 'prepare-runner' : 'continue',
-      label: blocker > 0 ? 'Prepare the runner' : 'Continue',
-      reason: blocker > 0 ? 'Resolve the blockers.' : 'Tools are ready.',
-    },
-    sections: [{ id: 'runners', title: 'Runners', checks: [...checks] }],
+    nextAction: selectNextAction([...checks], status),
+    sections: [{ id: section.id, title: section.title, checks: [...checks] }],
     metadata: {},
   };
 }
@@ -566,6 +572,40 @@ function createHomePreparationBlockedFixture(): FixtureLifecycle {
             details: ['Start Ollama with: ollama serve', 'Then retry this connection.'],
           },
         ]),
+      });
+    },
+    teardown: home.teardown,
+  };
+}
+
+/**
+ * The readiness blocker that recommends the checkout. The check comes from the real
+ * `buildIsolationChecks` against a throwaway workspace manifest, so the panel shows the summary
+ * and the fix line an operator really reads, and the report is filed in the `repo` section with
+ * the `fix-config` next action `collect.ts` and `status.ts` produce.
+ */
+function createHomePreparationIsolationBlockedFixture(): FixtureLifecycle {
+  const home = createHomeFixture();
+  return {
+    setup: async (context) => {
+      await home.setup(context);
+      const manifestDir = join(VISUAL_FIXTURE_WORK_DIR, 'isolation-workspace-manifest');
+      mkdirSync(manifestDir, { recursive: true });
+      writeFileSync(
+        join(manifestDir, 'package.json'),
+        JSON.stringify({
+          name: 'isolation-workspace-fixture',
+          private: true,
+          workspaces: ['packages/*'],
+        }),
+      );
+      const checks = buildIsolationChecks(manifestDir, undefined);
+      rmSync(manifestDir, { recursive: true, force: true });
+      submitSettledCheck({
+        kind: 'blocked',
+        report: preparationReport(checks, {
+          section: { id: 'repo', title: 'Repository' },
+        }),
       });
     },
     teardown: home.teardown,
@@ -744,6 +784,7 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('home-preparing'), createHomePreparingFixture],
   [scenarioId('home-preparation-failed'), createHomePreparationFailedFixture],
   [scenarioId('home-preparation-blocked'), createHomePreparationBlockedFixture],
+  [scenarioId('home-preparation-isolation-blocked'), createHomePreparationIsolationBlockedFixture],
   [scenarioId('home-skills-completion'), createSkillsCompletionFixture],
   [scenarioId('home-reference-completion'), createReferenceCompletionFixture],
   [scenarioId('home-recent-sessions'), createRecentSessionsFixture],

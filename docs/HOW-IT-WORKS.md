@@ -167,7 +167,7 @@ The worktree path is `$XDG_STATE_HOME/splitbrief/trees/<repo-key>/<session-id>/`
 
 `mergeApplyStates()` (`apply/merge.ts`) merges into the workspace. Text merges use `mergeFileEntries()` (`src/lib/git/entry-merge.ts`), which calls `git merge-file`. The resulting workspace is the candidate. The [Apply sequence](./WORKFLOW.md#apply) owns conflict handling, checks, re-review, backup and the guarded checkout write.
 
-An open run retains its workspace across stops and restarts. Discard and End run preserve its work before removal. See [Apply](./WORKFLOW.md#apply).
+An open run retains its workspace across stops and restarts. After Apply commits its record, it removes the worktree with its branch, or the staged-copy directory. It also clears the retained-workspace record. A removal failure publishes a warning; the run stays applied. Discard and End run preserve its work before removal. See [Apply](./WORKFLOW.md#apply).
 
 In checkout mode (`workflow.isolation: none`) `openWorkspace()` (`src/engine/orchestrator/isolation/create.ts`) creates no worktree and keeps no workspace record. The run records `workspace.kind: 'checkout'` in `state.json` once, so a later config change does not move it. Every task, check and review reads the checkout. There is no Apply: a passing review closes the run, and the close writes no `run.patch`.
 

@@ -477,6 +477,42 @@ describe('runScheduledReview saved recovery', () => {
     expect(halted?.pendingScheduledReview).toBeUndefined();
   });
 
+  it('offers only end-run when a checkout run final review hits the input cap', async () => {
+    const ref = setupProject();
+    const workspace = {
+      kind: 'checkout' as const,
+      path: ref.projectDir,
+      base: { snapshotId: 'base', head: null },
+    };
+    const state: WorkflowState = {
+      ...makeImplState([makeTask({ id: 'T001', status: 'done' })]),
+      phase: 'final-review',
+      workspace,
+    };
+    saveState(ref, state);
+    const { bus } = makeBusRecorder();
+    const wctx = makeWctx({ ...ref, config: makeNoValidationConfig(), bus });
+    const review: FinalReviewResult = {
+      state,
+      verdict: null,
+      reviewText: '',
+      reviewStatus: 'failed',
+      failure: {
+        kind: 'input-too-large',
+        chars: 1_106_026,
+        maxChars: 1_048_576,
+        largestFiles: [],
+      },
+    };
+
+    const halted = await haltVerdictlessReview({ wctx, state, setTrackedState: vi.fn(), review });
+
+    expect(halted?.pendingRecovery?.reason).toBe('review-input-too-large');
+    expect(halted?.pendingRecovery?.availableActions).toEqual(['end-run']);
+    expect(halted?.pendingTriage).toBeUndefined();
+    expect(halted?.pendingScheduledReview).toBeUndefined();
+  });
+
   it('resumes a verdictless scheduled review instead of triaging an older task verdict', async () => {
     const ref = setupProject();
     const state = makeImplState(

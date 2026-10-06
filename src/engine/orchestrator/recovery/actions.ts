@@ -16,6 +16,7 @@ import { toErrorMessage } from '../../../utils/format-errors.js';
 import { nowIso } from '../../../utils/format-time.js';
 import type { EventBus } from '../../events/types.js';
 import type { Config } from '../../../core/schemas/config.js';
+import { loadConfig } from '../../../core/config/load/io.js';
 import { hashTaskBrief } from '../../brief-hash.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { getOrCreateLedger } from '../../../core/evidence/ledger-state.js';
@@ -64,6 +65,7 @@ export type ApplyRecoveryActionResult =
       implementerProfile?: string | undefined;
       switchedSeat?: Readonly<{ seat: CrewSeatId; candidate: SeatSwapCandidate }> | undefined;
       switchedConfig?: Config | undefined;
+      currentConfig?: Config | undefined;
     }
   | {
       ok: false;
@@ -641,12 +643,19 @@ function applyRetrySameWorkerRecoveryAction(
   opts: ApplyRecoveryActionOptions,
   issue: RecoveryIssue,
 ): ApplyRecoveryActionResult {
-  if (isSeatLevelRetry(issue)) return resolveSeatIssueWithoutTask(opts, issue);
-  return applyRetryCurrentTaskRecoveryAction(
-    opts,
-    issue,
-    'Retry same worker requires the pending recovery task to match the current task index.',
-  );
+  const currentConfig =
+    issue.reason === 'required-checks-unrunnable' && opts.config !== undefined
+      ? { ...opts.config, validation: loadConfig(opts.projectDir).config.validation }
+      : undefined;
+  const applied = isSeatLevelRetry(issue)
+    ? resolveSeatIssueWithoutTask(opts, issue)
+    : applyRetryCurrentTaskRecoveryAction(
+        opts,
+        issue,
+        'Retry same worker requires the pending recovery task to match the current task index.',
+      );
+  if (!applied.ok || currentConfig === undefined) return applied;
+  return { ...applied, currentConfig };
 }
 
 function applyRouteBiggerWorkerRecoveryAction(

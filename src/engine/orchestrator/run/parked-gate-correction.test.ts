@@ -32,7 +32,10 @@ function setup(steer: string | undefined = CORRECTION) {
   ensureSessionDir(projectDir, sessionId);
   const proposal = makePlanProposal();
   writePlanJson(ref, proposal);
-  writeFileSync(join(sessionDir(projectDir, sessionId), PLAN_FILE), formatPlanMarkdown(proposal));
+  writeFileSync(
+    join(sessionDir(projectDir, sessionId), PLAN_FILE),
+    formatPlanMarkdown(proposal, []),
+  );
   const phase = 'reviewing-plan';
   const state: WorkflowState = {
     ...createInitialState('add parsing'),

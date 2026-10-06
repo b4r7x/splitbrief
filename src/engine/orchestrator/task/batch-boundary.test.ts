@@ -142,6 +142,7 @@ function failingSuite(): RunFullSuiteResult {
     ],
     failures: { test: ['src/second.ts:5'] },
     newFailures: { test: ['src/second.ts:5'] },
+    stages: {},
   };
 }
 
@@ -344,6 +345,7 @@ describe('runBatchBoundary', () => {
         results: [],
         failures: {},
         newFailures: {},
+        stages: {},
       }),
     };
     const wctx = makeWctx({
@@ -450,12 +452,14 @@ describe('runTaskLoop batch boundaries', { timeout: 120_000 }, () => {
             ],
             failures: { test: [`${regressionFile}:5`] },
             newFailures: { test: [`${regressionFile}:5`] },
+            stages: {},
           };
         }
         return {
           results: [{ passed: true, stage: 'test', command: 'npm test' }],
           failures: {},
           newFailures: {},
+          stages: {},
         };
       },
     };
@@ -549,7 +553,7 @@ describe('runTaskLoop batch boundaries', { timeout: 120_000 }, () => {
       ...createValidator(),
       runFullSuite: async (opts) => {
         suiteCalls.push(opts);
-        return { results: [], failures: {}, newFailures: {} };
+        return { results: [], failures: {}, newFailures: {}, stages: {} };
       },
     };
 
@@ -572,6 +576,64 @@ describe('runTaskLoop batch boundaries', { timeout: 120_000 }, () => {
     expect(suiteCalls[0]?.baseline).toBeUndefined();
     expect(suiteCalls[1]?.baseline).toEqual({});
     expect(result.state.tasks.map((task) => task.status)).toEqual(['done', 'done', 'done']);
+  });
+
+  it('keeps a stage that timed out at the run-start baseline out of the run, and says so', async () => {
+    const { projectDir, sessionId } = setupGitSessionProject({
+      prefix: 'batch-boundary-timeout',
+      sessionId: 'sess-batch-timeout',
+    });
+    dirs.push(projectDir);
+    const state = makeImplState([
+      pendingTask('T001', 'src/first.ts'),
+      pendingTask('T002', 'src/second.ts', 2),
+    ]);
+    const implementer = makeImplementer({
+      implement: vi.fn().mockResolvedValue({
+        success: true,
+        output: 'code',
+        usage: { inputTokens: 10, outputTokens: 5 },
+      }),
+    });
+    const suiteCalls: RunFullSuiteOptions[] = [];
+    const baselineStages = {
+      test: { kind: 'timed-out' as const, durationMs: 600_123, timeoutMs: 600_000 },
+    };
+    const validator: Validator = {
+      ...createValidator(),
+      runFullSuite: async (opts) => {
+        suiteCalls.push(opts);
+        return suiteCalls.length === 1
+          ? { results: [], failures: {}, newFailures: {}, stages: baselineStages }
+          : { results: [], failures: {}, newFailures: {}, stages: {} };
+      },
+    };
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runTaskLoop({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig(),
+        callbacks: makeCallbacks().callbacks,
+        implementer,
+        validator,
+        bus,
+      }),
+      initialState: state,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.state.fullSuiteBaseline).toEqual({});
+    expect(result.state.fullSuiteBaselineStages).toEqual(baselineStages);
+    expect(suiteCalls[1]?.baselineStages).toEqual(baselineStages);
+    const warnings = events
+      .filter((event) => event.type === 'warning')
+      .map((event) => (event as { message: string }).message);
+    expect(warnings).toContainEqual(
+      expect.stringMatching(/test stage .*timed out after 600s.*600\.1s.*validation\.timeoutMs/),
+    );
   });
 
   it('resumes a pending boundary before the next batch dispatches its first task', async () => {
@@ -611,7 +673,7 @@ describe('runTaskLoop batch boundaries', { timeout: 120_000 }, () => {
       runFullSuite: async (opts) => {
         order.push('suite');
         suiteCalls.push(opts);
-        return { results: [], failures: {}, newFailures: {} };
+        return { results: [], failures: {}, newFailures: {}, stages: {} };
       },
     };
 

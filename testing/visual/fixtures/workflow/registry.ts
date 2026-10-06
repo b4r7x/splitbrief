@@ -114,6 +114,7 @@ const checkpointPredicates = [
   [checkpointId('approval-confirm'), includesAll('Confirm with a reason')],
   [checkpointId('approval-confirm-secret'), includesAll('Confirm with a reason')],
   [checkpointId('plan-card'), includesAll('End run', 'Edit plan.json')],
+  [checkpointId('plan-card-render-note'), includesAll('End run', 'Edit plan.json')],
   // The two briefs whose long headers the card once skipped, beside the first and the last.
   [checkpointId('tasks-card'), includesAll('T001', 'T004', 'T006', 'T007')],
   // The subsections the spec card does not nest, and the briefs after T001's unclosed sample.

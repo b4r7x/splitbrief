@@ -109,6 +109,7 @@ export async function runValidationStep(opts: {
       return {
         passed: false,
         stage,
+        timedOut: true,
         error: boundedOutputTail(err.message),
         output: '',
         command,

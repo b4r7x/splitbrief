@@ -3,6 +3,7 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { ValidationStage } from '../../../core/schemas/enums.js';
 import type {
   DiscoveredValidation,
+  FullSuiteStageRuns,
   PersistedValidationBaseline,
 } from '../../../core/schemas/workflow.js';
 import type { ValidationStageCommands, ValidationStages } from '../../events/types.js';
@@ -236,8 +237,10 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
       });
       results.push(result);
       if (!result.passed) {
-        failingStages.add(stage);
-        failures[stage] = new Set(stageFailureKeys(result));
+        if (result.timedOut !== true) {
+          failingStages.add(stage);
+          failures[stage] = new Set(stageFailureKeys(result));
+        }
       } else if (result.skipped !== true) {
         stages[stage] = true;
       }
@@ -247,7 +250,16 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
   }
 
   async function runFullSuite(opts: RunFullSuiteOptions): Promise<RunFullSuiteResult> {
-    const { projectDir, config, bus, phase, discoveredValidation, signal, baseline } = opts;
+    const {
+      projectDir,
+      config,
+      bus,
+      phase,
+      discoveredValidation,
+      signal,
+      baseline,
+      baselineStages,
+    } = opts;
     const ctx = buildStageContext({
       projectDir,
       config,
@@ -257,34 +269,62 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
     const results: ValidationResult[] = [];
     const failures: Partial<Record<ValidationStage, string[]>> = {};
     const newFailures: Partial<Record<ValidationStage, string[]>> = {};
+    const stages: FullSuiteStageRuns = {};
+    const configuredTimeout = resolveValidationTimeout(config);
     for (const stage of GATE_ORDER) {
       if (!config.validation[stage]) continue;
+      const baselineStage = baselineStages?.[stage];
+      if (baselineStage?.kind === 'timed-out') {
+        results.push(
+          skippedStage(
+            stage,
+            `timed out after ${Math.round(baselineStage.timeoutMs / 1000)}s at the run-start baseline`,
+          ),
+        );
+        continue;
+      }
       const plan = planStage(stage, FULL_SUITE_TASK, ctx, [], 'full');
       if (plan.kind === 'skip') {
         results.push(skippedStage(stage, plan.reason));
         continue;
       }
+      const timeout =
+        baselineStage?.kind === 'completed'
+          ? Math.max(configuredTimeout, 3 * baselineStage.durationMs)
+          : configuredTimeout;
+      const startedAt = Date.now();
       const result = await runValidationStep({
         stage,
         cmd: plan.resolved.cmd,
         args: plan.args,
         source: plan.resolved.source,
         cwd: ctx.projectDir,
-        timeout: resolveValidationTimeout(config),
+        timeout,
         runCommand: commandRunner,
         command: plan.command,
         stack: ctx.stack,
         signal,
       });
+      const durationMs = Date.now() - startedAt;
       results.push(result);
+      if (result.skipped !== true) {
+        stages[stage] =
+          result.timedOut === true
+            ? { kind: 'timed-out', durationMs, timeoutMs: timeout }
+            : { kind: 'completed', durationMs };
+      }
       if (result.passed) continue;
       const keys = stageFailureKeys(result);
+      if (result.timedOut === true) {
+        if (baseline !== undefined) newFailures[stage] = keys;
+        continue;
+      }
       failures[stage] = keys;
       const known = baseline?.[stage];
       const fresh = known === undefined ? keys : keys.filter((key) => !known.includes(key));
       if (fresh.length > 0) newFailures[stage] = fresh;
     }
-    return { results, failures, newFailures };
+    return { results, failures, newFailures, stages };
   }
 
   async function validateTask(

@@ -338,6 +338,7 @@ export function useRunLoop({
             settleRun(session.ref);
             return;
           }
+          if (recovery.prepared !== undefined) preparedForRun = recovery.prepared;
           stateForRun = recovery.state;
           retryProfileOverride = recovery.retryProfileOverride;
           retryProfileOverrideTaskId = recovery.retryProfileOverrideTaskId;

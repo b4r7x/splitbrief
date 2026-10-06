@@ -151,8 +151,20 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
         discoveredValidation: state.discoveredValidation,
         signal: wctx.signal,
       });
-      state = syncBaselineIntoState({ ...state, fullSuiteBaseline: suite.failures });
+      state = syncBaselineIntoState({
+        ...state,
+        fullSuiteBaseline: suite.failures,
+        fullSuiteBaselineStages: suite.stages,
+      });
       setTrackedState(state);
+      for (const [stage, stageRun] of Object.entries(suite.stages)) {
+        if (stageRun.kind !== 'timed-out') continue;
+        publishWarning({
+          bus: wctx.bus,
+          phase: state.phase,
+          message: `The ${stage} stage of the full suite timed out after ${Math.round(stageRun.timeoutMs / 1000)}s at the run-start baseline (measured ${(stageRun.durationMs / 1000).toFixed(1)}s); this run does not run it again. Set validation.timeoutMs above the suite's time to check it.`,
+        });
+      }
       await recordCheckRuns({
         projectDir,
         sessionId,

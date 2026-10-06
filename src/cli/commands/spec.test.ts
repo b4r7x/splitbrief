@@ -232,6 +232,40 @@ describe('spec command', () => {
     expect(typed.prompts[1]).toContain('sqlite');
   });
 
+  it('sends render checks back once without validation.render, then names them in plan.md', async () => {
+    const base = planFromTasks([makeTask()]);
+    const withRender = {
+      ...base,
+      checks: [
+        ...base.checks,
+        { id: 'K-render', kind: 'render' as const, value: 'overlay-picker', required: true },
+      ],
+    };
+    const typed = scriptedTypedCall([withRender, withRender]);
+    createPlannerMock.mockResolvedValue(makePlanner({ typedCall: typed.typedCall }));
+    const program = new Command();
+    program.exitOverride();
+    registerSpecCommand(program, { createPlanner: createPlannerMock });
+
+    await program.parseAsync([
+      'node',
+      'splitbrief',
+      'spec',
+      '--project',
+      tmp,
+      '--allow-hooks',
+      'add health endpoint',
+    ]);
+
+    expect(typed.prompts).toHaveLength(2);
+    expect(typed.prompts[1]).toContain('Render check K-render needs validation.render');
+    const [session] = readdirSync(sessionsRoot());
+    if (!session) throw new Error('expected one session folder');
+    const card = readFileSync(join(sessionsRoot(), session, PLAN_FILE), 'utf8');
+    expect(card).toContain('## Before you approve');
+    expect(card).toContain('Render check K-render needs validation.render');
+  });
+
   it('tells the planner the BUILD context the model catalog publishes, as a run does', async () => {
     writeConfig(
       makeConfig({ implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-opus-5' } }),

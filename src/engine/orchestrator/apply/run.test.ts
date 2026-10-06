@@ -1,7 +1,14 @@
 import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  readFileSync,
+  realpathSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { open } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type ApplyRun, withApplyRun } from '#testing/helpers/apply-run.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
@@ -24,6 +31,7 @@ import { applyBackupDir, readApplyBackup, writeApplyBackup } from './backup.js';
 import * as merge from './merge.js';
 import { restoreApplyBackup } from './restore.js';
 import { runApply } from './run.js';
+import { readWorkspaceRecord } from '../isolation/retention.js';
 import { captureReviewedCandidate } from './states.js';
 
 vi.mock('../approval/staged-project.js', async (importOriginal) => {
@@ -188,6 +196,67 @@ describe('runApply', { timeout: 60_000 }, () => {
       );
     },
   );
+
+  it.each(['worktree', 'staged-copy'] as const)(
+    '%s: an applied run removes its workspace, and a worktree its branch',
+    async (strategy) => {
+      await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID, strategy }, async (run) => {
+        writeFileSync(join(run.ws, 'a.txt'), lines('ONE', 'two', 'three', 'four', 'five'));
+        const git = (...args: string[]) =>
+          execFileSync('git', args, { cwd: run.dir, encoding: 'utf8' });
+        const branch = `splitbrief/${basename(run.ws)}`;
+        if (strategy === 'worktree') {
+          expect(git('worktree', 'list', '--porcelain')).toContain(realpathSync(run.ws));
+          expect(git('branch', '--list', branch)).toContain(branch);
+        }
+
+        const result = await apply(run, await reviewedReadyState(run));
+
+        expect(result.outcome).toBe('applied');
+        expect(read(run.dir, 'a.txt')).toBe(lines('ONE', 'two', 'three', 'four', 'five'));
+        expect(existsSync(run.ws)).toBe(false);
+        expect(git('worktree', 'list', '--porcelain')).not.toContain(basename(run.ws));
+        expect(git('branch', '--list', branch).trim()).toBe('');
+        expect(
+          await readWorkspaceRecord({ projectDir: run.dir, sessionId: run.sessionId }),
+        ).toBeNull();
+        expect(deriveRunStatus({ state: savedState(run), liveness: 'not-alive' })).toEqual({
+          kind: 'closed',
+          as: 'applied',
+        });
+      });
+    },
+  );
+
+  it('a workspace Apply cannot remove stays named in a warning, and the run stays applied', async () => {
+    await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
+      writeFileSync(join(run.ws, 'a.txt'), lines('ONE', 'two', 'three', 'four', 'five'));
+      // A locked worktree refuses a single --force removal.
+      execFileSync('git', ['worktree', 'lock', run.ws], { cwd: run.dir });
+      const state = await reviewedReadyState(run);
+      const { bus, events } = makeBusRecorder();
+
+      const result = await runApply({
+        wctx: { projectDir: run.dir, sessionId: run.sessionId, bus },
+        state,
+      });
+
+      expect(result.outcome).toBe('applied');
+      expect(read(run.dir, 'a.txt')).toBe(lines('ONE', 'two', 'three', 'four', 'five'));
+      expect(
+        events.filter(
+          (event) =>
+            event.type === 'warning' &&
+            event.message.startsWith(`Could not remove the run workspace at ${run.ws}:`),
+        ),
+      ).toHaveLength(1);
+      expect(deriveRunStatus({ state: savedState(run), liveness: 'not-alive' })).toEqual({
+        kind: 'closed',
+        as: 'applied',
+      });
+      execFileSync('git', ['worktree', 'unlock', run.ws], { cwd: run.dir });
+    });
+  });
 
   it('apply-conflict halt lists files with kinds and writes nothing to the checkout', async () => {
     await withApplyRun(
@@ -860,12 +929,12 @@ describe('runApply integration review', { timeout: 60_000 }, () => {
       });
       saveState({ projectDir: run.dir, sessionId: run.sessionId }, finished);
       vi.mocked(stagedProject.promoteStagedChanges).mockClear();
+      expect(read(run.ws, 'a.txt')).toBe(resolved);
 
       const result = await apply(run, finished);
 
       expect(result.outcome).toBe('applied');
       expect(read(run.dir, 'a.txt')).toBe(resolved);
-      expect(read(run.ws, 'a.txt')).toBe(resolved);
       const promote = vi.mocked(stagedProject.promoteStagedChanges);
       expect(promote).toHaveBeenCalledTimes(1);
       expect([...(promote.mock.calls[0]?.[0].files ?? [])]).toEqual(['a.txt']);

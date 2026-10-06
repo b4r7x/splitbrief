@@ -391,6 +391,42 @@ describe('the planning session on the live path', () => {
     });
   });
 
+  it('sends render checks back once while validation.render is unset, then names them on the card', async () => {
+    const renderPlan = makePlanProposal({
+      checks: [{ id: 'K-render', kind: 'render', value: 'overlay-picker', required: true }],
+      criteria: [{ id: 'C1', text: 'A name gets a greeting', checkIds: ['K1', 'K-render'] }],
+    });
+    const run = await plan({ script: [renderPlan, renderPlan] });
+
+    expect(run.prompts[1]).toContain(
+      'Render check K-render needs validation.render, which is not set; drop it or ask the user.',
+    );
+    expect(run.onApprovalNeeded).toHaveBeenCalledTimes(1);
+    expect(run.result.disposition).toBe('ready-for-tasks');
+    const card = readFileSync(join(sessionDir(run.projectDir, run.sessionId), 'plan.md'), 'utf8');
+    expect(card).toContain('## Before you approve');
+    expect(card).toContain('K-render');
+    expect(card).toContain('validation.render');
+  });
+
+  it('takes render checks without a word when validation.render is set', async () => {
+    const renderPlan = makePlanProposal({
+      checks: [{ id: 'K-render', kind: 'render', value: 'overlay-picker', required: true }],
+      criteria: [{ id: 'C1', text: 'A name gets a greeting', checkIds: ['K1', 'K-render'] }],
+    });
+    const run = await plan({
+      script: [renderPlan],
+      config: makeConfig({
+        codebase: { enabled: false, tokenBudget: 4000 },
+        validation: { render: 'npm run tui-shots -- --scenario {id} --output {out}' },
+      }),
+    });
+
+    expect(run.prompts).toHaveLength(1);
+    const card = readFileSync(join(sessionDir(run.projectDir, run.sessionId), 'plan.md'), 'utf8');
+    expect(card).not.toContain('## Before you approve');
+  });
+
   it('halts on a third round of questions and keeps the answered rounds', async () => {
     const run = await plan({
       script: [questions(1), questions(2), questions(3)],
@@ -831,6 +867,31 @@ describe('the plan card', () => {
     expect(
       readFileSync(join(sessionDir(run.projectDir, run.sessionId), 'plan.md'), 'utf8'),
     ).toContain('Edited by hand');
+  });
+
+  it('compiles an edit that adds a render check with no render command and names it on the card', async () => {
+    const edited = makePlanProposal({
+      summary: 'Edited by hand',
+      checks: [{ id: 'K-render', kind: 'render', value: 'overlay-picker', required: true }],
+      criteria: [{ id: 'C1', text: 'A name gets a greeting', checkIds: ['K1', 'K-render'] }],
+    });
+    const onApprovalNeeded = vi
+      .fn()
+      .mockImplementationOnce(editPlanJson(JSON.stringify(edited)))
+      .mockResolvedValue({ approved: true });
+    const run = await plan({ script: [makePlanProposal()], callbacks: { onApprovalNeeded } });
+
+    expect(run.prompts).toHaveLength(1);
+    expect(onApprovalNeeded).toHaveBeenCalledTimes(2);
+    expect(run.result.state.plan?.checks.map((check) => check.id)).toEqual(['K-render']);
+    expect(
+      run.events.filter(
+        (event) => event.type === 'warning' && event.message.startsWith('The edited plan'),
+      ),
+    ).toEqual([]);
+    const card = readFileSync(join(sessionDir(run.projectDir, run.sessionId), 'plan.md'), 'utf8');
+    expect(card).toContain('## Before you approve');
+    expect(card).toContain('Render check K-render needs validation.render');
   });
 
   it.each([

@@ -18,6 +18,7 @@ import {
   buildApplyConflictRecoveryIssue,
   buildApplyPartialRecoveryIssue,
 } from '../recovery/builders/apply.js';
+import { removeClosedRunWorkspace } from '../run/close.js';
 import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
 import type { WorkflowContext } from '../types.js';
 import { writeConfinedEntry } from '../approval/file-snapshots/entry.js';
@@ -315,6 +316,7 @@ export async function runApply(input: {
         }),
       );
     case 'applied':
+      await removeClosedRunWorkspace(wctx, workspace, state.phase);
       return { outcome: 'applied', state, files: result.files };
   }
 }

@@ -4,6 +4,7 @@ import type { EventBus, ValidationStageCommands } from '../../events/types.js';
 import type { Phase, ValidationStage } from '../../../core/schemas/enums.js';
 import type {
   DiscoveredValidation,
+  FullSuiteStageRuns,
   PersistedValidationBaseline,
 } from '../../../core/schemas/workflow.js';
 import type { runCommand } from '../../../lib/process/spawn/run-command.js';
@@ -50,12 +51,14 @@ export type RunFullSuiteOptions = {
   discoveredValidation?: DiscoveredValidation | undefined;
   signal?: AbortSignal | undefined;
   baseline?: FullSuiteFailureKeys | undefined;
+  baselineStages?: FullSuiteStageRuns | undefined;
 };
 
 export type RunFullSuiteResult = {
   results: ValidationResult[];
   failures: FullSuiteFailureKeys;
   newFailures: FullSuiteFailureKeys;
+  stages: FullSuiteStageRuns;
 };
 
 export interface Validator {

@@ -41,7 +41,9 @@ function versionCheck(): Check[] {
 function acceptingValidator(): Validator {
   return {
     primeBaseline: vi.fn().mockResolvedValue(undefined),
-    runFullSuite: vi.fn().mockResolvedValue({ results: [], failures: {}, newFailures: {} }),
+    runFullSuite: vi
+      .fn()
+      .mockResolvedValue({ results: [], failures: {}, newFailures: {}, stages: {} }),
     runValidation: vi.fn().mockResolvedValue([{ stage: 'test' as const, passed: true }]),
     decideAcceptance: ({ results, changedFiles }) =>
       decideValidationAcceptance({

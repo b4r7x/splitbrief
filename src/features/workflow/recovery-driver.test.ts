@@ -7,6 +7,7 @@ import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import type { ApprovalReviewResult } from '../../core/approval/types.js';
+import { writeConfig } from '../../core/config/load/io.js';
 import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
 import { taskId } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
@@ -221,6 +222,41 @@ describe('createRecoveryDriver', () => {
       expect(result.retryProfileOverrideTaskId).toBe(taskId('T001'));
     }
   });
+
+  it.each(['required-checks-unrunnable', 'review-failed'] as const)(
+    'returns refreshed preparation only for required-checks recovery on a %s retry',
+    async (reason) => {
+      const { prepared, state } = setupSession({
+        reason,
+        phase: 'final-review',
+        seat: 'review',
+        taskId: undefined,
+        availableActions: ['retry-same-worker', 'pause-run', 'end-run'],
+      });
+      const onDisk = makeConfig({
+        planner: { kind: 'agent', command: 'changed-on-disk' },
+        validation: { render: 'true {id} {out}', lint: false, testCommand: 'disk-tests' },
+      });
+      writeConfig(prepared.session.ref.projectDir, onDisk);
+      const { inputMode } = makeInputMode(['retry-same-worker']);
+
+      const result = await runDriver(prepared, state, inputMode);
+
+      expect(result.shouldRun).toBe(true);
+      if (result.shouldRun) {
+        expect(result.state.pendingRecovery).toBeUndefined();
+        if (reason === 'required-checks-unrunnable') {
+          expect(result.prepared).toEqual({
+            ...prepared,
+            config: { ...prepared.config, validation: onDisk.validation },
+          });
+        } else {
+          expect(result.prepared).toBeUndefined();
+        }
+      }
+      expect(prepared.config.validation.render).toBeUndefined();
+    },
+  );
 
   it('reopens paused recovery and applies the selected action', async () => {
     const { prepared, state } = setupSession({ status: 'paused', selectedAction: 'pause-run' });

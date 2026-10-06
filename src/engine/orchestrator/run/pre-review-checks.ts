@@ -153,6 +153,7 @@ export async function runPreReviewChecks(
           discoveredValidation: opts.state.discoveredValidation,
           signal: opts.signal,
           baseline: opts.state.fullSuiteBaseline,
+          baselineStages: opts.state.fullSuiteBaselineStages,
         });
   const runs =
     ids.length === 0

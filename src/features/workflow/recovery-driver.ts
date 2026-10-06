@@ -16,7 +16,10 @@ import { publishRecoveryPrompted } from '../../engine/orchestrator/events.js';
 import { applyRecoveryAction } from '../../engine/orchestrator/recovery/actions.js';
 import type { SeatSwapChoice } from '../../engine/orchestrator/run/seat-swap.js';
 import { filesStillOnDiskSuffix } from '../../engine/orchestrator/run/close.js';
-import type { PreparedExecution } from '../../engine/runners/prepared-execution.js';
+import {
+  parsePreparedConfig,
+  type PreparedExecution,
+} from '../../engine/runners/prepared-execution.js';
 import { configStore } from '../../stores/project/config.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
@@ -40,6 +43,7 @@ type PendingRecoveryResult =
   | {
       shouldRun: true;
       state: WorkflowState;
+      prepared?: PreparedExecution | undefined;
       retryProfileOverride?: string | undefined;
       retryProfileOverrideTaskId?: TaskId | undefined;
       switchSeat?: SeatSwapChoice | undefined;
@@ -256,15 +260,20 @@ export function createRecoveryDriver(
       // revise already carried them to the planner as the comment.
       const steered =
         result.status === 'retry-current-task' && steer.trim() !== '' ? { steer } : {};
+      const updatedPreparation =
+        result.currentConfig === undefined
+          ? {}
+          : { prepared: { ...prepared, config: parsePreparedConfig(result.currentConfig) } };
       const retryProfileOverride = result.implementerProfile ?? issue.selectedImplementerProfile;
       if (retryProfileOverride === undefined || result.status !== 'retry-current-task') {
-        return { shouldRun: true, state: result.state, ...steered };
+        return { shouldRun: true, state: result.state, ...updatedPreparation, ...steered };
       }
       return {
         shouldRun: true,
         state: result.state,
         retryProfileOverride,
         ...(retryProfileOverrideTaskId !== undefined && { retryProfileOverrideTaskId }),
+        ...updatedPreparation,
         ...steered,
       };
     };

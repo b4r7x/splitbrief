@@ -84,6 +84,7 @@ export async function runBatchBoundary(args: {
     discoveredValidation: state.discoveredValidation,
     signal: wctx.signal,
     baseline: state.fullSuiteBaseline,
+    baselineStages: state.fullSuiteBaselineStages,
   });
   await recordBoundarySuite({ wctx, state, task: args.completedTask, results: suite.results });
   if (!hasNewFailures(suite.newFailures)) {

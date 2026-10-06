@@ -241,6 +241,8 @@ Continue resolves saved `user-edit-conflict` and `approval-promotion-conflict` h
 
 `retry-same-worker` — For a taskless PLAN or REVIEW issue, resolves the issue and retries the recorded step. For BUILD, the pending issue must match the current task before `RESET_TASK` can replay it. A rejected action keeps the recovery menu available.
 
+On a `required-checks-unrunnable` halt, "Run the checks again" reads the `validation` block from `.splitbrief/config.yaml` again, so a `validation.render` added while the halt is open is used by the retried pre-review.
+
 `route-bigger-worker` — Same as retry, but the recovery issue carries a `routeBiggerProfile` fact. The orchestrator uses this profile name to create a more capable implementer for the retry. Blocked if the profile doesn't exist in config.
 
 `switch-seat` — Offered when another ready detected tool can take the blocked seat. The inline recovery menu above the composer starts on the recommended action. Use Up/Down and Enter to choose; **Change PLAN tool** (or BUILD/REVIEW) opens that seat's own picker — the same overlay Settings and Setup open — with the cursor on the first offered tool, so the tool and the model beside it are chosen in one place. The row says what the swap runs again: `runs this step again` after a planning halt, `runs the review again` after a final-review halt, and `restarts this brief` after a halt that names a brief, which runs again from its first attempt. The panel lists no tools of its own. Escape in the picker returns to the action list without changing the seat.
@@ -283,7 +285,7 @@ An `apply-conflict` halt lists every conflicted file and the workspace path. For
 
 ## Accept as is
 
-A workspace run's `review-failed` halt offers **Accept as is**. It records an owner override and the open findings, then makes the result ready to apply. It preserves failed and unverified verdicts. It does not claim that verification passed.
+A workspace run's `review-failed` halt offers **Accept as is**. It records an owner override and the open findings, then makes the result ready to apply. It preserves failed and unverified verdicts. It does not claim that verification passed. A checkout-mode run (`workflow.isolation: none`) offers no **Accept as is**, because its edits are already in your checkout: **End run** or `/run accept` closes it as ended.
 
 Apply lists those findings and requires one explicit confirmation. The result menu calls this **Apply as is**. The command is `/run accept confirm`. Returning to the menu without confirmation writes nothing. A changed candidate still follows the Apply checks and review cycle.
 

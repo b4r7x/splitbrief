@@ -92,6 +92,7 @@ The planning session's answer is typed. Its schemas live in `src/core/schemas/pl
 | `dependency-cycle` | The dependencies have no cycle (`topoSort`) |
 | `context-overflow` | The task fits the implementer's context (`estimatePlanContextFits`, which refreshes each task's code and reuses the routing preview); the message names the task's context files and their sizes |
 | `no-capable-worker` | Some implementer can take the task (credentials, write mode, single-file contract); the message carries the routing reason |
+| `render-check-unconfigured` | Every render check of the plan needs `validation.render`; the plan goes back to the planner once with the reason, and when the planner keeps them the plan card opens with a "Before you approve" note naming them, since without the command the run halts before its review |
 
 A task with no suggested file is refused by the schema, not by `checkPlan`. `checkFullPlan` (`src/engine/orchestrator/planning/session.ts`) runs `checkPlan` with the context fit; the session and the plan card's edit path both call it. The in-app editor's save check runs `checkPlan` without the context fit (`planSaveErrors`), and the engine checks the fit after the save.
 

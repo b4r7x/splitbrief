@@ -10,6 +10,7 @@ import type { WorkflowState } from '../../../../src/core/schemas/workflow.js';
 import { makeTask } from '../../../helpers/factories/task.js';
 import { makePlanProposal, makeTaskSpec } from '../../../helpers/factories/plan.js';
 import { formatPlanMarkdown } from '../../../../src/engine/spec/plan-markdown.js';
+import { renderCheckNotes } from '../../../../src/engine/spec/plan-checks.js';
 import { MAX_QUESTION_ROUNDS } from '../../../../src/engine/spec/prompts/plan-session.js';
 import { DEFAULT_LOCAL_RETRIES } from '../../../../src/core/pipeline-spec/retries.js';
 import { BOUNDS } from '../../../../src/core/pipeline-spec/bounds.js';
@@ -1055,12 +1056,34 @@ const planCardProjection: WorkflowFixtureProjection = {
   reviewArtifact: 'plan',
   review: {
     filePath: 'testing/visual/fixtures/workflow/plan-card/plan.md',
-    source: formatPlanMarkdown(PLAN_CARD_PLAN),
+    source: formatPlanMarkdown(PLAN_CARD_PLAN, []),
     planJson: `${JSON.stringify(PLAN_CARD_PLAN, null, 2)}\n`,
     confirms: planConfirmations(
       PLAN_CARD_PLAN.tasks.map((spec) => taskFromSpec(spec, VISUAL_FIXTURE_PROJECT_DIR)),
       VISUAL_FIXTURE_PROJECT_DIR,
     ).map((confirmation) => confirmation.actionDescription),
+  },
+};
+
+// The plan card of a plan whose render checks have no validation.render to run them: the planner
+// kept them after its one repair, so the card opens with the note before anything it confirms.
+const RENDER_NOTE_PLAN = makePlanProposal({
+  ...PLAN_CARD_PLAN,
+  checks: [{ id: 'K-render', kind: 'render', value: 'overlay-settings', required: true }],
+  criteria: [
+    { id: 'C1', text: 'A name gets a greeting', checkIds: ['K1'] },
+    { id: 'C2', text: 'The CLI prints the greeting', checkIds: ['K2', 'K-render'] },
+  ],
+});
+
+const planCardRenderNoteProjection: WorkflowFixtureProjection = {
+  ...planCardProjection,
+  scenarioId: scenarioId('workflow-plan-card-render-note'),
+  review: {
+    filePath: 'testing/visual/fixtures/workflow/plan-card/plan.md',
+    source: formatPlanMarkdown(RENDER_NOTE_PLAN, renderCheckNotes(RENDER_NOTE_PLAN, undefined)),
+    planJson: `${JSON.stringify(RENDER_NOTE_PLAN, null, 2)}\n`,
+    confirms: planCardProjection.review?.confirms ?? [],
   },
 };
 
@@ -1088,7 +1111,7 @@ const planCompiledProjection: WorkflowFixtureProjection = {
       phase: 'planning',
       filename: 'plan.md',
       path: '.splitbrief/sessions/2026-09-17-workflow-conversation-recovery/plan.md',
-      ...buildArtifactExcerpt(formatPlanMarkdown(PLAN_CARD_PLAN), 'plan.md'),
+      ...buildArtifactExcerpt(formatPlanMarkdown(PLAN_CARD_PLAN, []), 'plan.md'),
     },
     {
       type: 'artifact_written',
@@ -2517,6 +2540,7 @@ const projections = [
   approvalConfirmProjection,
   approvalConfirmSecretProjection,
   planCardProjection,
+  planCardRenderNoteProjection,
   { ...planCardProjection, scenarioId: scenarioId('workflow-selection-copy') },
   tasksCardProjection,
   questionProjection,
@@ -2629,6 +2653,8 @@ function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
     (value) =>
       value !== planCardProjection.review?.source &&
       value !== planCardProjection.review?.planJson &&
+      value !== planCardRenderNoteProjection.review?.source &&
+      value !== planCardRenderNoteProjection.review?.planJson &&
       value !== ANSWERED_QUESTIONS_TEXT &&
       !retainedWorkspaceNotices.includes(value) &&
       !engineHaltText.includes(value) &&

@@ -60,7 +60,10 @@ it('reopens a parked plan card and sends the correction typed at it to the plann
   ensureSessionDir(projectDir, sessionId);
   const proposal = makePlanProposal();
   writePlanJson({ projectDir, sessionId }, proposal);
-  writeFileSync(join(sessionDir(projectDir, sessionId), PLAN_FILE), formatPlanMarkdown(proposal));
+  writeFileSync(
+    join(sessionDir(projectDir, sessionId), PLAN_FILE),
+    formatPlanMarkdown(proposal, []),
+  );
   const state: WorkflowState = {
     ...transition(createInitialState('feature'), { type: 'START' }),
     phase: 'reviewing-plan',

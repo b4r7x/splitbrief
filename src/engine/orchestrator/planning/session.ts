@@ -42,7 +42,12 @@ import { buildProjectContextMarkdown } from '../../planners/context.js';
 import type { Planner, PriorMessage } from '../../planners/types.js';
 import { fallbackInstruction, type RequestTypedResult } from '../../runners/typed-output.js';
 import { formatTasks } from '../../spec/formatter.js';
-import { checkPlan, type PlanCheckError } from '../../spec/plan-checks.js';
+import {
+  blocksPlan,
+  checkPlan,
+  renderCheckNotes,
+  type PlanCheckError,
+} from '../../spec/plan-checks.js';
 import { formatPlanMarkdown } from '../../spec/plan-markdown.js';
 import { taskFromSpec } from '../../spec/plan-tasks.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
@@ -556,7 +561,10 @@ function compilePlan(
     phase: state.phase,
     metadata: wctx.metadata,
     items: [
-      { kind: 'plan', text: formatPlanMarkdown(plan) },
+      {
+        kind: 'plan',
+        text: formatPlanMarkdown(plan, renderCheckNotes(plan, config.validation.render)),
+      },
       { kind: 'task-briefs', text: formatTasks(tasks) },
     ],
   });
@@ -597,6 +605,7 @@ export async function checkFullPlan(
       detectedContextLength: wctx.detectedContextLength,
       skillsContext: wctx.skillsContext,
     }),
+    wctx.config.validation.render,
   );
 }
 
@@ -615,7 +624,7 @@ async function applyPlanEdit(
   const parsed = parsePlanJson(edited);
   const errors =
     'plan' in parsed
-      ? (await checkFullPlan(wctx, parsed.plan)).map((error) => error.message)
+      ? (await checkFullPlan(wctx, parsed.plan)).filter(blocksPlan).map((error) => error.message)
       : parsed.errors;
   if ('plan' in parsed && errors.length === 0) {
     wctx.bus.publish({

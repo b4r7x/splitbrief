@@ -217,6 +217,20 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       },
       elements: [{ id: 'preparation-panel', title: 'Preparation problem panel' }],
     }),
+    // The readiness blocker that recommends the checkout: its summary and fix line come from
+    // `buildIsolationChecks`, not from this catalog.
+    defineScenario({
+      id: 'home-preparation-isolation-blocked',
+      title: 'Home · preparation blocked by workspace links',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'failure',
+        title: 'Workspace links recommend the checkout',
+        kind: 'failure',
+        marker: 'The project links workspace packages',
+      },
+      elements: [{ id: 'preparation-panel', title: 'Preparation problem panel' }],
+    }),
     defineScenario({
       id: 'home-draft-image',
       title: 'Home · a draft with images at the caret',
@@ -559,6 +573,25 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       checkpoint: {
         id: 'plan-card',
         title: 'Plan card',
+        kind: 'review',
+        marker: 'Approve plan and start the build',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Plan transcript' },
+        { id: 'approval-panel', title: 'Plan card panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    // A plan whose render checks have no validation.render: the card opens with the note.
+    defineScenario({
+      id: 'workflow-plan-card-render-note',
+      title: 'Workflow · plan card naming render checks with no render command',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'plan-card-render-note',
+        title: 'Plan card with the render note',
         kind: 'review',
         marker: 'Approve plan and start the build',
       },

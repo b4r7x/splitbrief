@@ -33,7 +33,8 @@ export type PlanCheckCode =
   | 'batch-out-of-order'
   | 'dependency-cycle'
   | 'context-overflow'
-  | 'no-capable-worker';
+  | 'no-capable-worker'
+  | 'render-check-unconfigured';
 
 /** BUILD's fit for one task, and the routing reason when no implementer can take it. */
 export type PlanTaskFit = Readonly<{ fit: TaskContextFit; blocked?: string | undefined }>;
@@ -154,6 +155,43 @@ export function checkTaskIdentities(
 }
 
 /**
+ * The ids of every `render` check the plan carries, run-level then task-level in plan order, or
+ * none when the run sets `validation.render`.
+ */
+export function unconfiguredRenderCheckIds(
+  plan: PlanProposal,
+  renderCommand: string | undefined,
+): string[] {
+  if (renderCommand !== undefined) return [];
+  return [...plan.checks, ...plan.tasks.flatMap((task) => task.checks)]
+    .filter((check) => check.kind === 'render')
+    .map((check) => check.id);
+}
+
+/** "Render checks A, B need validation.render, which is not set", in the number the ids have. */
+function renderChecksNeedCommand(ids: readonly string[]): string {
+  return `${pluralize(ids.length, 'Render check')} ${ids.join(', ')} ${pluralize(ids.length, 'needs', 'need')} validation.render, which is not set`;
+}
+
+/** The plan card's note for every render check without a command; none when the command is set. */
+export function renderCheckNotes(plan: PlanProposal, renderCommand: string | undefined): string[] {
+  const ids = unconfiguredRenderCheckIds(plan, renderCommand);
+  return ids.length === 0
+    ? []
+    : [
+        `${renderChecksNeedCommand(ids)}. Add it to .splitbrief/config.yaml, or request changes to drop ${pluralize(ids.length, 'it', 'them')}; without it the run halts before its review.`,
+      ];
+}
+
+/**
+ * An unconfigured render check is the user's to settle, so after the planner's one repair it stands
+ * on the plan card instead of halting the run.
+ */
+export function blocksPlan(error: PlanCheckError): boolean {
+  return error.code !== 'render-check-unconfigured';
+}
+
+/**
  * The deterministic checks a plan passes before anyone approves it. `taskFits` is BUILD's fit per
  * task id, estimated with the task's fresh code: `overflow` blocks, and so does a task that no
  * implementer can take.
@@ -162,6 +200,7 @@ export function checkPlan(
   plan: PlanProposal,
   projectDir: string,
   taskFits: ReadonlyMap<string, PlanTaskFit>,
+  renderCommand: string | undefined,
 ): PlanCheckError[] {
   const errors: PlanCheckError[] = [];
   const fail = (code: PlanCheckCode, message: string) => errors.push({ code, message });
@@ -261,6 +300,14 @@ export function checkPlan(
         `Task ${task.id} has no implementer that can take it: ${estimate.blocked}.`,
       );
     }
+  }
+
+  const renderCheckIds = unconfiguredRenderCheckIds(plan, renderCommand);
+  if (renderCheckIds.length > 0) {
+    fail(
+      'render-check-unconfigured',
+      `${renderChecksNeedCommand(renderCheckIds)}; drop ${pluralize(renderCheckIds.length, 'it', 'them')} or ask the user.`,
+    );
   }
   return errors;
 }

@@ -1,7 +1,8 @@
 import { writeSpecFile } from '../../../core/paths-io.js';
+import { writeConfig } from '../../../core/config/load/io.js';
 import { describe, expect, it, afterEach, vi } from 'vitest';
 import { execSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -39,9 +40,10 @@ import type {
 import { createContinuationHolder, type ContinuationHolder } from '../continuation.js';
 import { deriveRunStatus } from '../../../core/sessions/run-status.js';
 import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
-import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import { readEvidenceLedger, writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
 import { loadState } from '../../../core/state/persistence.js';
+import { sessionDir } from '../../../core/paths.js';
 import { readMessages } from '../../../core/sessions/log-reader.js';
 import { listSnapshots, readManifest } from '../../snapshots/manifest.js';
 import { createStdoutTextSink } from '../../events/sinks/stdout-text.js';
@@ -656,6 +658,59 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
       review: 'failed',
       blocking: 1,
     });
+  });
+
+  it('a checkout run never offers accept-as-is at the cap, and End run closes it as ended', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' })];
+    const { options, triagePrompts } = runOptions({
+      projectDir,
+      sessionId,
+      state: {
+        ...resumedReviewState(tasks, head, 2),
+        workspace: {
+          kind: 'checkout',
+          path: projectDir,
+          base: { snapshotId: 'base', head },
+        },
+      },
+      review: (prompt) =>
+        failedReviewVerdict(prompt, 'src/alpha.ts still crashes', { taskId: 'T001' }),
+      onComplete: vi.fn(),
+      config: makeNoValidationConfig({ workflow: { isolation: 'none' } }),
+    });
+
+    const result = await runTasksAndReview(options);
+
+    expect(result.completed).toBe(false);
+    expect(result.state.reviewStatus).toBe('failed');
+    expect(result.state.pendingRecovery).toMatchObject({
+      reason: 'review-failed',
+      seat: 'build',
+      message: 'Final review failed after 2 fix cycles',
+    });
+    expect(result.state.pendingRecovery?.availableActions).toEqual([
+      'revise',
+      'pause-run',
+      'end-run',
+    ]);
+    expect(triagePrompts).toHaveLength(0);
+
+    const ended = await applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state: result.state,
+      action: 'end-run',
+      bus: makeBusRecorder().bus,
+    });
+    expect(ended.ok).toBe(true);
+    if (!ended.ok) throw new Error(ended.message);
+    expect(ended.status).toBe('closed');
+    expect(deriveRunStatus({ state: ended.state, liveness: 'not-alive' })).toEqual({
+      kind: 'closed',
+      as: 'ended',
+    });
+    expect(existsSync(join(sessionDir(projectDir, sessionId), 'run.patch'))).toBe(false);
   });
 
   it('a spent planner-call bound halts the triage on the plan seat', async () => {
@@ -1363,6 +1418,81 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
       expect(result.completed).toBe(false);
     } finally {
       await options.wctx.isolation.dispose();
+    }
+  });
+});
+
+describe('runTasksAndReview required-checks halt retry', { timeout: 120_000 }, () => {
+  it('a render command saved after the halt reaches the retried pre-review, whose render check runs before the review', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [makeTask({ id: 'T001', file: 'src/alpha.ts', status: 'done' })];
+    const state = {
+      ...reviewedState(tasks, head, tasks.length),
+      plan: {
+        summary: 'Render the picker',
+        decisions: [],
+        criteria: [],
+        validation: null,
+        checks: [
+          { id: 'K-render', kind: 'render' as const, value: 'overlay-picker', required: true },
+        ],
+      },
+    };
+    const stale = makeNoValidationConfig({ workflow: {} });
+    const halted = runOptions({
+      projectDir,
+      sessionId,
+      state,
+      review: (prompt) => passingReviewVerdict(prompt),
+      onComplete: vi.fn(),
+      config: stale,
+    });
+    let haltedState: WorkflowState;
+    try {
+      const first = await runTasksAndReview(halted.options);
+      expect(first.state.pendingRecovery?.reason).toBe('required-checks-unrunnable');
+      expect(halted.reviewPrompts).toEqual([]);
+      haltedState = first.state;
+    } finally {
+      await halted.options.wctx.isolation.dispose();
+    }
+
+    writeConfig(
+      projectDir,
+      makeNoValidationConfig({ workflow: {}, validation: { render: 'true {id} {out}' } }),
+    );
+    const retried = await applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state: haltedState,
+      action: 'retry-same-worker',
+      bus: halted.options.wctx.bus,
+      config: stale,
+    });
+    expect(retried.ok).toBe(true);
+    if (!retried.ok) return;
+    expect(retried.currentConfig?.validation.render).toBe('true {id} {out}');
+
+    const resumed = runOptions({
+      projectDir,
+      sessionId,
+      state: retried.state,
+      review: (prompt) => passingReviewVerdict(prompt),
+      onComplete: vi.fn(),
+      config: retried.currentConfig ?? stale,
+    });
+    try {
+      const second = await runTasksAndReview(resumed.options);
+      expect(second.state.pendingRecovery).toBeUndefined();
+      expect(resumed.reviewPrompts).toHaveLength(1);
+      expect(second.completed).toBe(true);
+      const renders = (readEvidenceLedger({ projectDir, sessionId })?.tasks ?? []).flatMap(
+        (entry) => (entry.checks ?? []).filter((check) => check.id === 'K-render'),
+      );
+      // The halt's run left no exit code; the retried pre-review ran the command.
+      expect(renders.map((check) => check.exitCode)).toEqual([undefined, 0]);
+    } finally {
+      await resumed.options.wctx.isolation.dispose();
     }
   });
 });

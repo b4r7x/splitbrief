@@ -37,7 +37,7 @@ function makePlan(checks: Check[]): Plan {
   };
 }
 
-const emptySuite: RunFullSuiteResult = { results: [], failures: {}, newFailures: {} };
+const emptySuite: RunFullSuiteResult = { results: [], failures: {}, newFailures: {}, stages: {} };
 const validator: Pick<Validator, 'runFullSuite'> = { runFullSuite: async () => emptySuite };
 
 /** A ledger whose entries carry exactly the accepted changed files given. */
@@ -218,12 +218,36 @@ describe('pre-review checks', () => {
     ).toEqual(['src/a.ts', 'src/b.ts']);
   });
 
+  it('hands the full suite the baseline stage runs the run-start baseline recorded', async () => {
+    const baselineStages = { test: { kind: 'completed' as const, durationMs: 400_000 } };
+    const calls: Parameters<Validator['runFullSuite']>[0][] = [];
+    const suiteValidator: Pick<Validator, 'runFullSuite'> = {
+      runFullSuite: async (opts) => {
+        calls.push(opts);
+        return { ...emptySuite, stages: {} };
+      },
+    };
+    await runPreReviewChecks(
+      options({
+        validator: suiteValidator,
+        state: makeImplState([], {
+          plan: makePlan([]),
+          fullSuiteBaseline: {},
+          fullSuiteBaselineStages: baselineStages,
+        }),
+      }),
+    );
+
+    expect(calls[0]?.baselineStages).toEqual(baselineStages);
+  });
+
   it('turns a new full-suite failure into a defect keyed by its file', async () => {
     const suiteValidator: Pick<Validator, 'runFullSuite'> = {
       runFullSuite: async () => ({
         results: [],
         failures: { test: ['src/a.ts(1,1): boom'] },
         newFailures: { test: ['src/a.ts(1,1): boom'] },
+        stages: {},
       }),
     };
     const result = await runPreReviewChecks(options({ validator: suiteValidator }));

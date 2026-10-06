@@ -55,6 +55,22 @@ export const ValidationBaselineSchema = z.object({
 
 export type PersistedValidationBaseline = z.infer<typeof ValidationBaselineSchema>;
 
+export const FullSuiteStageRunSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('completed'), durationMs: nonnegativeInteger }),
+  z.object({
+    kind: z.literal('timed-out'),
+    durationMs: nonnegativeInteger,
+    timeoutMs: z.number().int().positive(),
+  }),
+]);
+
+export const FullSuiteStageRunsSchema = z.partialRecord(
+  ValidationStageSchema,
+  FullSuiteStageRunSchema,
+);
+
+export type FullSuiteStageRuns = z.infer<typeof FullSuiteStageRunsSchema>;
+
 export const QueuedMessageSchema = z.object({
   id: z.string(),
   text: z.string(),
@@ -256,6 +272,7 @@ const WorkflowStateFields = {
   plan: PlanSchema.optional(),
   validationBaseline: ValidationBaselineSchema.optional(),
   fullSuiteBaseline: z.partialRecord(ValidationStageSchema, z.array(z.string())).optional(),
+  fullSuiteBaselineStages: FullSuiteStageRunsSchema.optional(),
   reviewFixes: z
     .object({
       cycle: z.number().int(),

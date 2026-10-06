@@ -39,13 +39,18 @@ export function planProtectedOperations(
 }
 
 /** `plan.md`, rendered from `plan.json` for people. Nothing parses it back. */
-export function formatPlanMarkdown(plan: PlanProposal): string {
+export function formatPlanMarkdown(plan: PlanProposal, notes: readonly string[]): string {
   const batches = [...new Set(plan.tasks.map((task) => task.batch))].sort((a, b) => a - b);
   // No `# Plan` heading: the card's frame already names plan.md, and on a short terminal the
   // heading would be all the card shows.
   return [
     plan.summary,
     '',
+    // What the reader must settle first, so it sits above everything the approval lists.
+    ...section(
+      '## Before you approve',
+      notes.map((note) => `- ${note}`),
+    ),
     // Protected operations stand right under the summary, not below the fold.
     ...section(
       '## Protected operations',

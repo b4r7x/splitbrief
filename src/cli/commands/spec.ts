@@ -17,6 +17,7 @@ import {
 import { writePlanJson } from '../../core/sessions/plan-file.js';
 import { requestTyped } from '../../engine/runners/typed-output.js';
 import { formatTasks } from '../../engine/spec/formatter.js';
+import { renderCheckNotes } from '../../engine/spec/plan-checks.js';
 import { formatPlanMarkdown } from '../../engine/spec/plan-markdown.js';
 import { taskFromSpec } from '../../engine/spec/plan-tasks.js';
 import {
@@ -225,7 +226,11 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
 
       const tasks = plan.tasks.map((spec) => taskFromSpec(spec, projectDir));
       writePlanJson(ref, plan);
-      writeSpecFile(ref, PLAN_FILE, formatPlanMarkdown(plan));
+      writeSpecFile(
+        ref,
+        PLAN_FILE,
+        formatPlanMarkdown(plan, renderCheckNotes(plan, execution.config.validation.render)),
+      );
       writeSpecFile(ref, TASKS_FILE, formatTasks(tasks));
 
       const sessionPath = sessionDir(projectDir, sessionId);

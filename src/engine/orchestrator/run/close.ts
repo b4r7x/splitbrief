@@ -23,6 +23,24 @@ export function filesStillOnDiskSuffix(workspace: WorkflowState['workspace']): s
     : '';
 }
 
+export async function removeClosedRunWorkspace(
+  scope: SessionRef & { bus?: EventBus | undefined },
+  workspace: NonNullable<WorkflowState['workspace']>,
+  phase: WorkflowState['phase'],
+): Promise<void> {
+  try {
+    await removeRunWorkspace(scope.projectDir, scope.sessionId, workspace);
+  } catch (err) {
+    if (scope.bus !== undefined) {
+      publishWarning({
+        bus: scope.bus,
+        phase,
+        message: `Could not remove the run workspace at ${workspace.path}: ${toErrorMessage(err)}`,
+      });
+    }
+  }
+}
+
 export async function closeRunIfOpen(
   scope: SessionRef & { bus?: EventBus | undefined },
   state: WorkflowState,
@@ -80,14 +98,7 @@ export async function closeRunIfOpen(
     });
     if (result.kind === 'committed') {
       if (workspaceToRemove !== undefined) {
-        try {
-          await removeRunWorkspace(scope.projectDir, scope.sessionId, workspaceToRemove);
-        } catch (err) {
-          warn(
-            `Could not remove the run workspace at ${workspaceToRemove.path}: ${toErrorMessage(err)}`,
-            result.state.phase,
-          );
-        }
+        await removeClosedRunWorkspace(scope, workspaceToRemove, result.state.phase);
       }
       return { state: result.state, closedNow: true };
     }

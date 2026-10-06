@@ -72,7 +72,9 @@ function fakeValidator(opts?: { results?: ValidationResult[]; accepted?: boolean
   const accepted = opts?.accepted ?? true;
   return {
     primeBaseline: vi.fn().mockResolvedValue(undefined),
-    runFullSuite: vi.fn().mockResolvedValue({ results: [], failures: {}, newFailures: {} }),
+    runFullSuite: vi
+      .fn()
+      .mockResolvedValue({ results: [], failures: {}, newFailures: {}, stages: {} }),
     runValidation: vi.fn().mockResolvedValue(results),
     decideAcceptance: vi.fn().mockReturnValue({
       accepted,

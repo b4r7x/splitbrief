@@ -25,6 +25,8 @@ import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import { questionsText } from '../../../core/state/planning-conversation.js';
 import type { PlannerConfig } from '../../../core/schemas/planner-config.js';
 import { buildContextOverflowRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/task.js';
+import { buildRequiredChecksUnrunnableRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/checks.js';
+import { writeConfig } from '../../../core/config/load/io.js';
 import { runWorkflow } from '../../../engine/orchestrator/run/workflow.js';
 import { readRunEvents } from '../../../engine/events/replay.js';
 import type { PrepareExecutionInput } from '../../../engine/runners/prepare-execution/prepare-execution.js';
@@ -1222,6 +1224,123 @@ describe('useRunLoop', () => {
       expect(errorMessages()).not.toContainEqual(
         expect.stringContaining('already holds workflow state'),
       );
+
+      inst.unmount();
+    });
+
+    it('re-enters a retried required-checks halt on the validation block saved since the halt', async () => {
+      const sessionId = '2026-10-06-start-checks-retry';
+      const captureRunner: HarnessProps['captureRunner'] = { current: null };
+      const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
+      const ref = prepared.session.ref;
+      const run = recordedEngine({
+        1: async () => {
+          saveState(
+            ref,
+            makeImplState([makeTask({ id: 'T001', status: 'done' })], {
+              phase: 'final-review',
+              pendingRecovery: buildRequiredChecksUnrunnableRecoveryIssue({
+                phase: 'final-review',
+                checks: [{ checkId: 'K-render', output: 'validation.render is not set' }],
+                createdAt: '2026-10-06T16:58:06.000Z',
+              }),
+            }),
+          );
+          // The operator adds the render command while the halt panel is open.
+          writeConfig(projectDir, makeConfig({ validation: { render: 'true {id} {out}' } }));
+          return makeSummary();
+        },
+        2: async () => makeSummary(),
+      });
+
+      const inst = renderHarness({
+        prepared,
+        captureRunner,
+        runWorkflow: run.engine,
+        prepareExecution: reprepareSameSession(),
+      });
+      await answerRecoveryPanel(captureRunner, 'retry');
+      await vi.waitFor(() => {
+        expect(run.returned()).toBe(2);
+      });
+
+      expect(prepared.config.validation.render).toBeUndefined();
+      expect(run.entered[1]?.config.validation.render).toBe('true {id} {out}');
+      expect(run.entered[1]?.config.planner).toEqual(prepared.config.planner);
+
+      inst.unmount();
+    });
+
+    it('continues a run parked on the required-checks halt with the validation block saved since', async () => {
+      const sessionId = '2026-10-06-at-rest-checks-retry';
+      const ref = { projectDir, sessionId };
+      ensureSessionDir(projectDir, sessionId);
+      const halted = makeImplState([makeTask({ id: 'T001', status: 'done' })], {
+        phase: 'final-review',
+        pendingRecovery: {
+          ...buildRequiredChecksUnrunnableRecoveryIssue({
+            phase: 'final-review',
+            checks: [{ checkId: 'K-render', output: 'validation.render is not set' }],
+            createdAt: '2026-10-06T16:58:06.000Z',
+          }),
+          status: 'paused',
+          selectedAction: 'pause-run',
+        },
+      });
+      saveState(ref, halted);
+      writeConfig(projectDir, makeConfig({ validation: { render: 'true {id} {out}' } }));
+      const captureRunner: HarnessProps['captureRunner'] = { current: null };
+      const prepared = preparedExecution({
+        projectDir,
+        feature: 'add auth',
+        sessionId,
+        resumeState: halted,
+      });
+      const run = recordedEngine({ 1: async () => makeSummary() });
+
+      const inst = renderHarness({ prepared, captureRunner, runWorkflow: run.engine });
+      await answerRecoveryPanel(captureRunner, 'retry');
+      await vi.waitFor(() => {
+        expect(run.returned()).toBe(1);
+      });
+
+      expect(prepared.config.validation.render).toBeUndefined();
+      expect(run.entered[0]?.config.validation.render).toBe('true {id} {out}');
+
+      inst.unmount();
+    });
+
+    it('keeps the required-checks halt and says why when the saved config no longer loads', async () => {
+      const sessionId = '2026-10-06-start-checks-retry-broken';
+      const captureRunner: HarnessProps['captureRunner'] = { current: null };
+      const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
+      const ref = prepared.session.ref;
+      const run = recordedEngine({
+        1: async () => {
+          saveState(
+            ref,
+            makeImplState([makeTask({ id: 'T001', status: 'done' })], {
+              phase: 'final-review',
+              pendingRecovery: buildRequiredChecksUnrunnableRecoveryIssue({
+                phase: 'final-review',
+                checks: [{ checkId: 'K-render', output: 'validation.render is not set' }],
+                createdAt: '2026-10-06T16:58:06.000Z',
+              }),
+            }),
+          );
+          writeFileSync(join(projectDir, '.splitbrief', 'config.yaml'), 'version: 99\n');
+          return makeSummary();
+        },
+      });
+
+      const inst = renderHarness({ prepared, captureRunner, runWorkflow: run.engine });
+      await answerRecoveryPanel(captureRunner, 'retry');
+      await vi.waitFor(() => {
+        expect(errorMessages().some((message) => message.includes('config'))).toBe(true);
+      });
+
+      expect(run.entered).toHaveLength(1);
+      expect(loadState(ref)?.pendingRecovery?.reason).toBe('required-checks-unrunnable');
 
       inst.unmount();
     });

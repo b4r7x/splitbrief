@@ -1,11 +1,29 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import YAML from 'yaml';
 import { SPLITBRIEF_IDENTITY } from '../../../src/core/identity.js';
-import { ISOLATION_TREES_DIR, SPLITBRIEF_DIR } from '../../../src/core/paths.js';
+import {
+  ISOLATION_TREES_DIR,
+  SPLITBRIEF_DIR,
+  STATE_FILE,
+  sessionDir,
+} from '../../../src/core/paths.js';
 import type { Config } from '../../../src/core/schemas/config.js';
+import type { IsolationStrategy } from '../../../src/core/schemas/enums.js';
+import {
+  type PersistedWorkflowState,
+  WorkflowStateSchema,
+} from '../../../src/core/schemas/workflow.js';
+import { readActive } from '../../../src/core/sessions/active-pointer.js';
 import { canSignalProcess } from '../../../src/lib/process/liveness.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
@@ -104,6 +122,7 @@ function implementerHoldScript(tmpDir: string): string {
   const pidPath = join(tmpDir, 'implementer-hold.pid');
   const exitPath = join(tmpDir, 'implementer-hold-exited');
   const invocationsPath = join(tmpDir, 'implementer-invocations');
+  const replaySawPartialPath = join(tmpDir, 'replay-saw-partial');
   return `import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 
@@ -117,6 +136,7 @@ try {
 writeFileSync(countPath, String(invocations + 1));
 
 if (invocations > 0) {
+  writeFileSync(${JSON.stringify(replaySawPartialPath)}, String(existsSync(${JSON.stringify(MARKER_FILE)})));
   mkdirSync('src', { recursive: true });
   writeFileSync(${JSON.stringify(MARKER_FILE)}, ${JSON.stringify(MARKER_SOURCE)});
   writeFileSync(${JSON.stringify(GREET_FILE)}, ${JSON.stringify(GREET_SOURCE)});
@@ -152,6 +172,8 @@ export type StopContinueFixture = Readonly<{
   implementerPidPath: string;
   /** Written by the first implementer once it has left its hold, whether reaped or released. */
   implementerExitPath: string;
+  /** Written by a replay before it writes: `true` when the stopped attempt's marker was still there. */
+  replaySawPartialPath: string;
 }>;
 
 /** Releases a first implementer still holding, so teardown never leaves the handshake open. */
@@ -212,7 +234,90 @@ writeFileSync(${JSON.stringify(GREET_FILE)}, ${JSON.stringify(GREET_SOURCE)});
 /** The branch the escaping implementer leaves in the checkout on its first attempt. */
 export const ESCAPED_BRANCH = 'escaped';
 
+const RUN_TIMEOUT_MS = 60_000;
+const START_TIMEOUT_MS = 90_000;
+const CONTINUE_TIMEOUT_MS = 120_000;
+const MARKER_WAIT_MS = 75_000;
 const APPLY_TIMEOUT_MS = 60_000;
+
+export function cli(
+  target: StopContinueFixture,
+  args: readonly string[],
+  options: Pick<Parameters<typeof spawnCli>[0], 'timeoutMs' | 'onSpawn'> = {
+    timeoutMs: RUN_TIMEOUT_MS,
+  },
+): ReturnType<typeof spawnCli> {
+  return spawnCli({
+    args: [
+      '--import',
+      'tsx',
+      'src/cli.ts',
+      ...args,
+      '--plain',
+      '--allow-repo-runners',
+      '--project',
+      target.projectDir,
+    ],
+    stateHome: target.stateHome,
+    ...options,
+  });
+}
+
+export async function startAndSignal(
+  target: StopContinueFixture,
+  signal: NodeJS.Signals,
+  markerDir: string,
+): Promise<{ exitCode: number | null; stdout: string; sessionId: string }> {
+  let groupPid: number | undefined;
+  const run = cli(target, ['start', 'smoke'], {
+    timeoutMs: START_TIMEOUT_MS,
+    onSpawn: (pid) => {
+      groupPid = pid;
+    },
+  });
+
+  await waitForMarker(markerDir, MARKER_WAIT_MS);
+  if (groupPid === undefined) throw new Error('the CLI reported no pid to signal');
+  process.kill(-groupPid, signal);
+
+  const outcome = await run;
+  const sessionId = readActive(target.projectDir);
+  if (sessionId === null) {
+    throw new Error(`the interrupted run left no active session: ${outcome.stderr}`);
+  }
+  return { exitCode: outcome.exitCode, stdout: outcome.stdout, sessionId };
+}
+
+export function continueRun(target: StopContinueFixture): ReturnType<typeof spawnCli> {
+  return cli(target, ['continue'], { timeoutMs: CONTINUE_TIMEOUT_MS });
+}
+
+async function waitForMarker(dir: string, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (findMarker(dir) !== null) return;
+    await delay(100);
+  }
+  throw new Error(`the implementer never wrote ${MARKER_FILE} under ${dir} within ${timeoutMs}ms`);
+}
+
+export function findMarker(dir: string): string | null {
+  if (!existsSync(dir)) return null;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isFile() && path.endsWith(MARKER_FILE)) return path;
+    if (entry.isDirectory() && entry.name !== '.git') {
+      const found = findMarker(path);
+      if (found !== null) return found;
+    }
+  }
+  return null;
+}
+
+export function readState(target: StopContinueFixture, sessionId: string): PersistedWorkflowState {
+  const file = join(sessionDir(target.projectDir, sessionId), STATE_FILE);
+  return WorkflowStateSchema.parse(JSON.parse(readFileSync(file, 'utf-8')));
+}
 
 /** Applies a run that is ready to apply the way an operator does from the shell. */
 export function applyRun(
@@ -243,6 +348,7 @@ export function applyRun(
  */
 export function createStopContinueFixture(
   implementerScript?: (projectDir: string) => string,
+  options: { isolation?: IsolationStrategy } = {},
 ): StopContinueFixture {
   const tmpDir = mkdtempSync(join(tmpdir(), 'splitbrief-stop-continue-'));
   const projectDir = join(tmpDir, 'project');
@@ -258,7 +364,7 @@ export function createStopContinueFixture(
   mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
   writeFileSync(
     join(projectDir, SPLITBRIEF_DIR, 'config.yaml'),
-    YAML.stringify(fixtureConfig()),
+    YAML.stringify(fixtureConfig(options.isolation)),
     'utf-8',
   );
 
@@ -275,10 +381,11 @@ export function createStopContinueFixture(
     releaseHoldPath: join(tmpDir, 'release-implementer'),
     implementerPidPath: join(tmpDir, 'implementer-hold.pid'),
     implementerExitPath: join(tmpDir, 'implementer-hold-exited'),
+    replaySawPartialPath: join(tmpDir, 'replay-saw-partial'),
   };
 }
 
-function fixtureConfig(): Config {
+function fixtureConfig(isolation?: IsolationStrategy): Config {
   return makeConfig({
     planner: {
       kind: 'shell',
@@ -302,6 +409,10 @@ function fixtureConfig(): Config {
     },
     // The plan's `test` checks are prose; a command that exits 0 lets them run without a project test script.
     validation: { typecheck: false, lint: false, test: false, testCommand: 'node --version' },
-    workflow: { approve: 'none', maxRetries: 1 },
+    workflow: {
+      approve: 'none',
+      maxRetries: 1,
+      ...(isolation !== undefined ? { isolation } : {}),
+    },
   });
 }

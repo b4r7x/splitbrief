@@ -30,6 +30,12 @@ const uncovered: PlanCheckError = {
   message: 'Criterion C2 is served by no task.',
 };
 
+const unconfiguredRender: PlanCheckError = {
+  code: 'render-check-unconfigured',
+  message:
+    'Render check K-render needs validation.render, which is not set; drop it or ask the user.',
+};
+
 function scripted(results: RequestTypedResult<PlanAnswer>[]) {
   const turns: PlanTurn[] = [];
   const ask = vi.fn(async (turn: PlanTurn) => {
@@ -170,6 +176,31 @@ describe('runPlanSession', () => {
     });
     expect(outcome).toEqual({ kind: 'checks-failed', errors: [uncovered] });
     expect(ask).toHaveBeenCalledTimes(2);
+  });
+
+  it('sends unconfigured render checks back once, then lets the plan reach the card with them', async () => {
+    const plan = makePlanProposal();
+    const { ask, turns } = scripted([answer(plan), answer(plan)]);
+    const outcome = await runPlanSession({
+      rounds: 0,
+      ask,
+      answer: async () => '',
+      check: async () => [unconfiguredRender],
+    });
+    expect(turns[1]).toEqual({ kind: 'repair', errors: [unconfiguredRender], plan });
+    expect(outcome).toEqual({ kind: 'plan', plan });
+    expect(ask).toHaveBeenCalledTimes(2);
+  });
+
+  it('halts on a second plan that still fails a blocking check beside an unconfigured render check', async () => {
+    const { ask } = scripted([answer(makePlanProposal()), answer(makePlanProposal())]);
+    const outcome = await runPlanSession({
+      rounds: 0,
+      ask,
+      answer: async () => '',
+      check: async () => [uncovered, unconfiguredRender],
+    });
+    expect(outcome).toEqual({ kind: 'checks-failed', errors: [uncovered, unconfiguredRender] });
   });
 
   it('hands a seat protocol error back without another call', async () => {

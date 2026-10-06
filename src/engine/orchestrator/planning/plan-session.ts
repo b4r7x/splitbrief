@@ -1,7 +1,7 @@
 import type { PlanAnswer, PlanProposal, PlanResult } from '../../../core/schemas/plan.js';
 import type { ClarificationQuestion, PlannerReplyAnswer } from '../../../core/schemas/question.js';
 import type { RequestTypedResult, SeatProtocolError } from '../../runners/typed-output.js';
-import type { PlanCheckError } from '../../spec/plan-checks.js';
+import { blocksPlan, type PlanCheckError } from '../../spec/plan-checks.js';
 import { MAX_QUESTION_ROUNDS } from '../../spec/prompts/plan-session.js';
 
 /** What the next planner call of the session carries. */
@@ -109,7 +109,11 @@ export async function runPlanSession(
 
     const errors = await io.check(result);
     if (errors.length === 0) return { kind: 'plan', plan: result };
-    if (repaired) return { kind: 'checks-failed', errors };
+    if (repaired) {
+      return errors.every((error) => !blocksPlan(error))
+        ? { kind: 'plan', plan: result }
+        : { kind: 'checks-failed', errors };
+    }
     repaired = true;
     turn = { kind: 'repair', errors, plan: result };
   }

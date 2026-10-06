@@ -21,7 +21,7 @@ describe('formatPlanMarkdown', () => {
       ],
     });
 
-    expect(formatPlanMarkdown(plan)).toBe(
+    expect(formatPlanMarkdown(plan, [])).toBe(
       [
         'Greet people by name',
         '',
@@ -67,5 +67,22 @@ describe('formatPlanMarkdown', () => {
         '',
       ].join('\n'),
     );
+  });
+
+  it('opens with what the reader has to settle before approving', () => {
+    const plan = makePlanProposal({
+      checks: [{ id: 'K-render', kind: 'render', value: 'overlay-picker', required: true }],
+    });
+    const lines = formatPlanMarkdown(plan, [
+      'Render check K-render needs validation.render, which is not set.',
+    ]).split('\n');
+    expect(lines.slice(0, 6)).toEqual([
+      'Greet people by name',
+      '',
+      '## Before you approve',
+      '',
+      '- Render check K-render needs validation.render, which is not set.',
+      '',
+    ]);
   });
 });

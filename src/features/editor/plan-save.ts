@@ -1,5 +1,5 @@
 import { parsePlanJson } from '../../core/sessions/plan-file.js';
-import { checkPlan } from '../../engine/spec/plan-checks.js';
+import { blocksPlan, checkPlan } from '../../engine/spec/plan-checks.js';
 
 /**
  * Why an edited plan.json cannot be saved, or nothing when it can. The context fit needs the
@@ -9,5 +9,7 @@ import { checkPlan } from '../../engine/spec/plan-checks.js';
 export function planSaveErrors(text: string, projectDir: string): readonly string[] {
   const parsed = parsePlanJson(text);
   if ('errors' in parsed) return parsed.errors;
-  return checkPlan(parsed.plan, projectDir, new Map()).map((error) => error.message);
+  return checkPlan(parsed.plan, projectDir, new Map(), undefined)
+    .filter(blocksPlan)
+    .map((error) => error.message);
 }

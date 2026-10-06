@@ -37,6 +37,42 @@ describe('run-start baseline of pre-existing failures', () => {
     cleanupTempDir(tempDir);
   });
 
+  it('does not accept a task failure after its baseline stage timed out', async () => {
+    const timeout = processError.timeout({
+      command: 'npm test',
+      label: 'test validation',
+      timeoutMs: 600_000,
+      output: '',
+    });
+    const validator = createValidator({
+      captureBaseline: true,
+      runCommand: makeCommandRunner(
+        timeout,
+        processError.exitCode({
+          command: 'npm test',
+          code: 1,
+          stderr: timeout.message,
+          output: '',
+        }),
+      ),
+    });
+    const opts = {
+      task: mkTask('src/app.ts'),
+      projectDir: tempDir,
+      config: makeConfig({ typecheck: false, lint: false, test: true, testCommand: 'npm test' }),
+      bus: fakeBus,
+      phase: 'implementing' as const,
+    };
+
+    const baseline = await validator.primeBaseline(opts);
+    const results = await validator.runValidation({ ...opts, changedFiles: ['src/app.ts'] });
+
+    expect(validator.decideAcceptance({ results, changedFiles: ['src/app.ts'] }).accepted).toBe(
+      false,
+    );
+    expect(baseline).toMatchObject({ failingStages: [], failures: {} });
+  });
+
   it('continues to lint and test when typecheck was already red at baseline', async () => {
     const typeError = () =>
       processError.exitCode({ command: 'tsc', code: 1, stderr: 'type error', output: '' });
@@ -1530,6 +1566,106 @@ describe('runFullSuite', () => {
     expect(validator.decideAcceptance({ results, changedFiles: ['src/app.ts'] }).accepted).toBe(
       false,
     );
+  });
+
+  const timedOut = () =>
+    processError.timeout({
+      command: 'npm test',
+      label: 'test validation',
+      timeoutMs: 600_000,
+      output: '',
+    });
+
+  it('never keys a stage that timed out at the baseline as a known failure, and runs it no more', async () => {
+    writeTsProject(tempDir);
+    const runner = makeCommandRunner(timedOut());
+    const validator = createValidator({ runCommand: runner });
+    const opts = {
+      projectDir: tempDir,
+      config: testOnly,
+      bus: fakeBus,
+      phase: 'implementing' as const,
+    };
+
+    const baseline = await validator.runFullSuite(opts);
+
+    expect(baseline.failures).toEqual({});
+    expect(baseline.stages.test).toMatchObject({ kind: 'timed-out', timeoutMs: 600_000 });
+    expect(baseline.stages.test?.durationMs).toBeGreaterThanOrEqual(0);
+
+    const boundary = await validator.runFullSuite({
+      ...opts,
+      baseline: baseline.failures,
+      baselineStages: baseline.stages,
+    });
+
+    expect(runner.calls).toHaveLength(1);
+    expect(boundary.results).toEqual([
+      expect.objectContaining({
+        stage: 'test',
+        passed: true,
+        skipped: true,
+        skippedReason: expect.stringContaining('timed out after 600s at the run-start baseline'),
+      }),
+    ]);
+    expect(boundary.newFailures).toEqual({});
+  });
+
+  it('counts a timeout after a completed baseline as a new failure', async () => {
+    writeTsProject(tempDir);
+    const validator = createValidator({
+      runCommand: makeCommandRunner({ stdout: 'ok', stderr: '', code: 0 }, timedOut()),
+    });
+    const opts = {
+      projectDir: tempDir,
+      config: testOnly,
+      bus: fakeBus,
+      phase: 'implementing' as const,
+    };
+
+    const baseline = await validator.runFullSuite(opts);
+    const boundary = await validator.runFullSuite({
+      ...opts,
+      baseline: baseline.failures,
+      baselineStages: baseline.stages,
+    });
+
+    expect(baseline.stages.test).toMatchObject({ kind: 'completed' });
+    expect(boundary.failures).toEqual({});
+    expect(boundary.newFailures.test).toEqual([expect.stringContaining('timed out after 600s')]);
+  });
+
+  it('gives a run-level stage three times its measured baseline, never less than the configured timeout', async () => {
+    writeTsProject(tempDir);
+    const runner = makeCommandRunner();
+    const validator = createValidator({ runCommand: runner });
+    const opts = {
+      projectDir: tempDir,
+      config: testOnly,
+      bus: fakeBus,
+      phase: 'implementing' as const,
+    };
+
+    await validator.runFullSuite({
+      ...opts,
+      baseline: {},
+      baselineStages: { test: { kind: 'completed', durationMs: 400_000 } },
+    });
+    await validator.runFullSuite({
+      ...opts,
+      baseline: {},
+      baselineStages: { test: { kind: 'completed', durationMs: 1_000 } },
+    });
+    await validator.runFullSuite({
+      ...opts,
+      config: makeConfig({ typecheck: false, lint: false, test: true, timeoutMs: 2_000_000 }),
+      baseline: {},
+      baselineStages: { test: { kind: 'completed', durationMs: 400_000 } },
+    });
+
+    expect(runner.calls.map((call) => call.options?.timeout)).toEqual([
+      1_200_000, 600_000, 2_000_000,
+    ]);
   });
 
   it('runs the whole test suite, not a narrowed target, and records its failure keys', async () => {
