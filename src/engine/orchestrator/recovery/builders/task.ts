@@ -103,6 +103,12 @@ export interface RunnerFailureRecoveryOptions extends RecoveryBuilderBase, TaskR
   runner: Config['implementer'];
   toolMessage: string;
   seatSwap?: SeatSwapContext | undefined;
+  /**
+   * The call ran in the checkout itself (`workflow.isolation: none`): nothing is
+   * promoted there, and the attempt's files were put back with the bytes they
+   * replaced saved in `revertedDir`.
+   */
+  inPlace?: { revertedDir: string } | undefined;
 }
 
 /**
@@ -688,7 +694,12 @@ export function buildLeftIsolationRecoveryIssue(opts: RunnerFailureRecoveryOptio
   return isolationHaltIssue(opts, {
     reason: 'implementer-left-isolation',
     message: `${opts.task.id} left the isolation directory — ${evidence}`,
-    details: [evidence, 'Nothing from this attempt was promoted.'],
+    details: [
+      evidence,
+      opts.inPlace === undefined
+        ? 'Nothing from this attempt was promoted.'
+        : `SPLITBRIEF put back what this attempt changed in your checkout; the bytes it replaced are in ${opts.inPlace.revertedDir}.`,
+    ],
   });
 }
 
@@ -705,7 +716,9 @@ export function buildCheckoutChangedRecoveryIssue(
     message: `Your checkout changed under ${opts.task.id} — ${opts.toolMessage}`,
     details: [
       `Changed while ${runnerAuthDisplayName(opts.runner)} ran: ${opts.toolMessage}`,
-      'Nothing from this attempt was promoted, and nothing in your checkout was reverted.',
+      opts.inPlace === undefined
+        ? 'Nothing from this attempt was promoted, and nothing in your checkout was reverted.'
+        : `SPLITBRIEF put back the files this attempt changed in your checkout (the bytes it replaced are in ${opts.inPlace.revertedDir}); the git change stays for you to check.`,
     ],
   });
 }

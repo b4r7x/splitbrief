@@ -84,7 +84,28 @@ describe('SETTINGS_DEFS dead settings', () => {
       'workflow.approve',
       'workflow.compactionFormat',
       'workflow.git.createBranch',
+      'workflow.isolation',
     ]);
+  });
+});
+
+describe('SETTINGS_DEFS isolation', () => {
+  const isolation = SETTINGS_DEFS.find((def) => def.id === 'workflow.isolation');
+
+  it.each([
+    [
+      'cli',
+      makeConfig({ implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet' } }),
+    ],
+    ['api', createDefaultConfig()],
+  ])('shows the isolation row as a choice for a %s build seat', (_kind, config) => {
+    expect(isolation?.appliesTo?.(config) ?? true).toBe(true);
+    expect(isolation?.kind).toBe('enum');
+    expect(isolation?.options).toEqual(['worktree', 'staged-copy', 'none']);
+  });
+
+  it('reads an unset isolation as worktree', () => {
+    expect(isolation?.readValue?.(makeConfig())).toBe('worktree');
   });
 });
 

@@ -86,7 +86,7 @@ export function parseSeatSpecOption(value: string): SeatSpec {
 export type RecoveryActionOption = Readonly<{
   action: Extract<
     RecoveryAction,
-    'skip-current-task' | 'retry-same-worker' | 'switch-seat' | 'end-run'
+    'skip-current-task' | 'retry-same-worker' | 'restore-backup' | 'switch-seat' | 'end-run'
   >;
   candidate?: SeatSwapCandidate;
 }>;
@@ -97,13 +97,15 @@ export type ContinueActionOption =
   | Readonly<{ action: 'discard' }>;
 
 /**
- * `skip`, `retry`, and `switch-seat:<tool>[:<model>]` answer a pending recovery.
+ * `skip`, `retry`, `restore` and `switch-seat:<tool>[:<model>]` answer a pending recovery;
+ * `restore` puts back the checkout files a partial Apply replaced.
  * `end-run` closes the run. `apply` and `discard` settle a run that is ready to apply.
  */
 export function parseContinueActionOption(value: string): ContinueActionOption {
   const spec = value.trim();
   if (spec === 'skip') return { action: 'skip-current-task' };
   if (spec === 'retry') return { action: 'retry-same-worker' };
+  if (spec === 'restore') return { action: 'restore-backup' };
   if (spec === 'end-run') return { action: 'end-run' };
   if (spec === 'apply') return { action: 'apply' };
   if (spec === 'discard') return { action: 'discard' };
@@ -115,7 +117,7 @@ export function parseContinueActionOption(value: string): ContinueActionOption {
     };
   }
   throw cliError(
-    `'${value}' is not a continue action. Use skip, retry, switch-seat:<tool>[:<model>], end-run, apply, or discard.`,
+    `'${value}' is not a continue action. Use skip, retry, restore, switch-seat:<tool>[:<model>], end-run, apply, or discard.`,
     2,
   );
 }
@@ -280,7 +282,7 @@ export function addWorkflowOptions(cmd: Command): Command {
     )
     .option(
       '--action <action>',
-      '`continue` only: skip, retry, switch-seat:<tool>[:<model>], or end-run answer recovery; apply and discard settle a run that is ready to apply',
+      '`continue` only: skip, retry, restore, switch-seat:<tool>[:<model>], or end-run answer recovery; apply and discard settle a run that is ready to apply',
       parseContinueActionOption,
     )
     .hook('preAction', (command) => {

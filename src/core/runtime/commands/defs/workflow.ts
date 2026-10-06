@@ -135,6 +135,12 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
                   `Applied ${countNoun(result.files.length, 'file')} to your checkout.`,
                 );
                 break;
+              case 'ended':
+                ctx.refreshRun();
+                ctx.setFeedbackMessage(
+                  'Run closed as it is; its changes are already in your checkout.',
+                );
+                break;
               case 'review':
                 ctx.refreshRun();
                 ctx.setFeedbackMessage(

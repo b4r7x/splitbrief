@@ -153,7 +153,7 @@ Events worth acting on: `artifact_written`, `recovery_prompted{reason}`, `task_r
 A stalled-call event requires inspection of the terminal and the child's activity. Silence alone does not prove a tool defect.
 Do not wait through repeated identical failures without classification. If the cause is uncertain, park and diagnose it.
 
-**Live progress is in the run workspace.** The worktree lives at `~/.local/state/splitbrief/trees/<repo-key>/<session>` by default. Tasks and validation use that workspace or the run's staged copy. The project checkout receives the assessed result once, at Apply. Before Apply, `git status` in the checkout does not show the run's implementation changes.
+**Live progress is in the run workspace.** The worktree lives at `~/.local/state/splitbrief/trees/<repo-key>/<session>` by default. Tasks and validation use that workspace or the run's staged copy. The project checkout receives the assessed result once, at Apply. Before Apply, `git status` in the checkout does not show the run's implementation changes. With `workflow.isolation: none` (shown as "your checkout") the implementer edits the checkout itself: live progress is in the checkout, `git status` shows it as it happens, there is no result menu and no Apply, and a passing review closes the run. Do not edit the checkout while a brief runs; an edit between calls is a warning, and a git write during a call halts `checkout-changed`.
 
 ## Answering prompts
 

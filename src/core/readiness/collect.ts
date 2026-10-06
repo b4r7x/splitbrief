@@ -3,7 +3,12 @@ import { join } from 'node:path';
 import { readPackageJson } from '../project-meta.js';
 import { configErrorDiagnosticState } from '../config/errors.js';
 import { loadConfig } from '../config/load/io.js';
-import { configPath } from '../config/load/document.js';
+import {
+  configPath,
+  readConfigDocument,
+  type ConfigDocumentSnapshot,
+} from '../config/load/document.js';
+import { getIsolationStrategy } from '../config/accessors/values.js';
 import { workflowOptsToCLIOverrides } from '../config/runtime/overrides/from-options.js';
 import { resolveEffectiveConfig } from '../config/runtime/effective-config.js';
 import { readActive } from '../sessions/active-pointer.js';
@@ -24,6 +29,7 @@ import {
   selectNextAction,
 } from './status.js';
 import type { Config } from '../schemas/config.js';
+import type { IsolationStrategy } from '../schemas/enums.js';
 import { cliReadinessCheckId, type CliReadinessResult } from '../schemas/readiness.js';
 import { CLI_TOOL_IDS } from '../runners/cli-tool-catalog.js';
 import type { WorkflowOpts } from '../types/config-options.js';
@@ -157,7 +163,7 @@ export async function collectReadiness(
   let report = buildReadinessReport(input);
   let isolationChecks: ReadinessCheck[];
   try {
-    isolationChecks = buildIsolationChecks(options.projectDir);
+    isolationChecks = buildIsolationChecks(options.projectDir, loaded.isolation);
   } catch (err) {
     isolationChecks = [
       {
@@ -219,10 +225,18 @@ function loadReadinessConfig(
   options: CollectReadinessOptions,
   filePath: string,
   configExists: boolean,
-): { config?: Config | undefined; configLoad: ConfigReadinessInput } {
+): {
+  config?: Config | undefined;
+  configLoad: ConfigReadinessInput;
+  isolation?: IsolationStrategy | undefined;
+} {
   if (options.config) {
     return {
       config: options.config,
+      isolation: configuredIsolation(
+        options.config,
+        readConfigDocument(options.projectDir).document,
+      ),
       configLoad: {
         state: configExists ? 'loaded' : 'missing',
         path: filePath,
@@ -252,6 +266,7 @@ function loadReadinessConfig(
     return {
       config,
       configLoad: { state: 'loaded', path: filePath, warnings: effectiveWarnings },
+      isolation: configuredIsolation(config, loaded.document),
     };
   } catch (err) {
     const diagnosticState = configErrorDiagnosticState(err);
@@ -265,6 +280,14 @@ function loadReadinessConfig(
       },
     };
   }
+}
+
+/** The loaded config always carries a default; only the file says whether the user chose one. */
+function configuredIsolation(
+  config: Config,
+  document: ConfigDocumentSnapshot['document'],
+): IsolationStrategy | undefined {
+  return document.hasIn(['workflow', 'isolation']) ? getIsolationStrategy(config) : undefined;
 }
 
 function readPackageScripts(projectDir: string): PackageScriptsReadinessInput {

@@ -17,6 +17,8 @@ import { writeActive } from '../sessions/active-pointer.js';
 import { HEARTBEAT_STALENESS_MS } from '../sessions/lockfile-status.js';
 import { makeSessionLockfile } from '#testing/helpers/factories/session-lockfile.js';
 import { applyRunnerPreparationChecks, collectReadiness } from './collect.js';
+import { initConfig } from '../config/load/io.js';
+import { configPath } from '../config/load/document.js';
 import { flattenReadinessChecks } from './status.js';
 
 // Stands in for the git binary so repository posture is read from a scripted
@@ -248,8 +250,8 @@ describe('collectReadiness git posture', () => {
     cleanupTempDir(tempDir);
   });
 
-  it('puts the workspace-links warning in the repository section', async () => {
-    const config = makeConfig({
+  function monorepoConfig(workflow?: { isolation: 'none' | 'worktree' }) {
+    return makeConfig({
       planner: {
         kind: 'api',
         provider: 'ollama',
@@ -262,7 +264,12 @@ describe('collectReadiness git posture', () => {
         lintCommand: 'node -e "process.exit(0)"',
         testCommand: 'node -e "process.exit(0)"',
       },
+      ...(workflow !== undefined && { workflow }),
     });
+  }
+
+  it('blocks a workspace monorepo with workflow.isolation unset and recommends the checkout', async () => {
+    const config = monorepoConfig();
     writeConfigYaml(tempDir, config);
     writeFileSync(join(tempDir, 'package.json'), JSON.stringify({ name: 'mono' }));
     const { report: baseline } = await collectReadiness({ projectDir: tempDir, config });
@@ -278,8 +285,71 @@ describe('collectReadiness git posture', () => {
 
     const repo = report.sections.find((section) => section.id === 'repo');
     const check = repo?.checks.find((c) => c.id === 'isolation.workspace-links');
+    expect(check?.severity).toBe('blocker');
+    expect(check?.fix).toContain('`workflow.isolation: none`');
+    expect(report.counts).toEqual({ ...baseline.counts, blocker: 1 });
+    expect(report.status).toBe('blocked');
+    expect(report.nextAction.kind).toBe('fix-config');
+  });
+
+  it('recommends the checkout for a monorepo freshly set up with splitbrief init', async () => {
+    writeFileSync(
+      join(tempDir, 'package.json'),
+      JSON.stringify({ name: 'mono', workspaces: ['packages/*'] }),
+    );
+    await initConfig(tempDir);
+
+    expect(readFileSync(configPath(tempDir), 'utf8')).not.toContain('isolation');
+    const { report } = await collectReadiness({ projectDir: tempDir });
+
+    const check = report.sections
+      .find((section) => section.id === 'repo')
+      ?.checks.find((c) => c.id === 'isolation.workspace-links');
+    expect(check?.severity).toBe('blocker');
+    expect(check?.fix).toContain('`workflow.isolation: none`');
+  });
+
+  it('reads workflow.isolation from the config file on disk when no config is passed', async () => {
+    writeConfigYaml(tempDir, { workflow: { isolation: 'none' } });
+    writeFileSync(
+      join(tempDir, 'package.json'),
+      JSON.stringify({ name: 'mono', workspaces: ['packages/*'] }),
+    );
+
+    const { report } = await collectReadiness({ projectDir: tempDir });
+
+    const ids = flattenReadinessChecks(report.sections).map((check) => check.id);
+    expect(ids).not.toContain('isolation.workspace-links');
+  });
+
+  it('emits no isolation check for a workspace monorepo that set workflow.isolation: none', async () => {
+    const config = monorepoConfig({ isolation: 'none' });
+    writeConfigYaml(tempDir, config);
+    writeFileSync(
+      join(tempDir, 'package.json'),
+      JSON.stringify({ name: 'mono', workspaces: ['packages/*'] }),
+    );
+
+    const { report } = await collectReadiness({ projectDir: tempDir, config });
+
+    const ids = flattenReadinessChecks(report.sections).map((check) => check.id);
+    expect(ids).not.toContain('isolation.workspace-links');
+    expect(report.status).toBe('ready');
+  });
+
+  it('keeps the workspace-links warning when workflow.isolation: worktree is explicit', async () => {
+    const config = monorepoConfig({ isolation: 'worktree' });
+    writeConfigYaml(tempDir, config);
+    writeFileSync(
+      join(tempDir, 'package.json'),
+      JSON.stringify({ name: 'mono', workspaces: ['packages/*'] }),
+    );
+
+    const { report } = await collectReadiness({ projectDir: tempDir, config });
+
+    const repo = report.sections.find((section) => section.id === 'repo');
+    const check = repo?.checks.find((c) => c.id === 'isolation.workspace-links');
     expect(check?.severity).toBe('warning');
-    expect(report.counts).toEqual({ ...baseline.counts, warning: baseline.counts.warning + 1 });
     expect(report.status).toBe('ready-with-warnings');
     expect(report.nextAction).toEqual({
       kind: 'continue',

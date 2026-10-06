@@ -596,3 +596,48 @@ describe('isolation boundary around a linked node_modules', () => {
     });
   });
 });
+
+describe('isolation boundary in the checkout itself (workflow.isolation: none)', () => {
+  async function withCheckout(run: (boundary: IsolationBoundary, checkout: string) => void) {
+    await withTempDir('splitbrief-isolation-in-place', async (dir) => {
+      const checkout = join(dir, 'checkout');
+      mkdirSync(join(checkout, 'src'), { recursive: true });
+      mkdirSync(join(checkout, 'node_modules', 'pkg'), { recursive: true });
+      run(
+        createIsolationBoundary({
+          isolationDir: checkout,
+          checkoutDir: checkout,
+          env: { HOME: '/home/probe', PATH: ENV_PATH },
+          tool: 'claude-code',
+        }),
+        checkout,
+      );
+    });
+  }
+
+  it('lets the call write its own files, because the checkout is where it works', async () => {
+    await withCheckout((boundary, checkout) => {
+      const { guard, reads } = loggingGuard(boundary);
+      const file = join(checkout, 'src', 'a.ts');
+      expect(guard({ name: 'Write', input: { file_path: file, content: 'x' } })).toBeNull();
+      expect(guard({ name: 'Bash', input: { command: 'touch src/b.ts && npm test' } })).toBeNull();
+      expect(reads).toEqual([]);
+    });
+  });
+
+  it('still halts a package install and a write outside, and only logs a read outside', async () => {
+    await withCheckout((boundary) => {
+      const { guard, reads } = loggingGuard(boundary);
+      expect(guard({ name: 'Bash', input: { command: 'npm install zod' } })).toMatchObject({
+        code: 'implementer-left-isolation',
+        message: expect.stringContaining('ran a package-manager command with Bash'),
+      });
+      expect(guard({ name: 'Bash', input: { command: 'touch /home/probe/x' } })).toEqual({
+        code: 'implementer-left-isolation',
+        message: 'wrote to ~/x with Bash: touch ~/x',
+      });
+      expect(guard({ name: 'Bash', input: { command: 'cat /home/probe/x' } })).toBeNull();
+      expect(reads).toEqual(['read ~/x with Bash: cat ~/x']);
+    });
+  });
+});

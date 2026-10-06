@@ -1873,3 +1873,156 @@ describe('run workspace attempts', () => {
     }
   });
 });
+
+describe('the checkout mode (workflow.isolation: none)', () => {
+  function checkoutRun(dir: string, warnings: string[] = []) {
+    return createRunIsolation({
+      projectDir: dir,
+      sessionId: SESSION_ID,
+      strategy: 'none',
+      onFallback: () => {
+        throw new Error('the checkout mode never falls back');
+      },
+      onRetained: () => {},
+      warningPublisher: (message) => warnings.push(message),
+    });
+  }
+
+  const worktreeList = (dir: string): string =>
+    execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: dir, encoding: 'utf8' });
+
+  it('hands every attempt the checkout itself and creates no worktree', {
+    timeout: 60_000,
+  }, async () => {
+    const dir = createTempDir('isolation-none');
+    try {
+      createTestGitRepo(dir, { 'README.md': '# test\n' });
+      const before = worktreeList(dir);
+      const run = checkoutRun(dir);
+
+      const opened = await run.open({ config });
+      const attempt = await run.acquire({ role: 'implementer', config });
+      writeFileSync(join(attempt.projectDir, 'live.ts'), 'export {};\n');
+
+      expect(opened).toMatchObject({ kind: 'checkout', projectDir: dir, keptFiles: [] });
+      expect(opened.head).toBe(
+        execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim(),
+      );
+      expect(attempt.projectDir).toBe(dir);
+      expect(attempt.targetBaseline).toBeUndefined();
+      expect(await attempt.changedFiles()).toEqual(['live.ts']);
+      expect(worktreeList(dir)).toBe(before);
+      expect(await readWorkspaceRecord({ projectDir: dir, sessionId: SESSION_ID })).toBeNull();
+      await run.dispose();
+      expect(readFileSync(join(dir, 'live.ts'), 'utf8')).toBe('export {};\n');
+      expect(worktreeList(dir)).toBe(before);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it('puts a failed attempt back in the checkout and saves the bytes it replaced', {
+    timeout: 60_000,
+  }, async () => {
+    const dir = createTempDir('isolation-none-revert');
+    try {
+      createTestGitRepo(dir, { 'src/a.ts': 'export const a = 1;\n' });
+      const warnings: string[] = [];
+      const run = checkoutRun(dir, warnings);
+      const attempt = await run.acquire({ role: 'implementer', config });
+      writeFileSync(join(dir, 'src', 'a.ts'), 'export const a = 2;\n');
+
+      await attempt.revert(['src/a.ts']);
+
+      expect(readFileSync(join(dir, 'src', 'a.ts'), 'utf8')).toBe('export const a = 1;\n');
+      const reverted = join(sessionDir(dir, SESSION_ID), 'reverted');
+      const [stamp] = readdirSync(reverted);
+      expect(readFileSync(join(reverted, stamp ?? '', 'src', 'a.ts'), 'utf8')).toBe(
+        'export const a = 2;\n',
+      );
+      expect(warnings).toEqual([expect.stringContaining('.splitbrief/sessions/')]);
+      await run.dispose();
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it('works in a project with no git at all, and puts an attempt back without git', {
+    timeout: 60_000,
+  }, async () => {
+    const dir = createTempDir('isolation-none-nogit');
+    try {
+      mkdirSync(join(dir, 'src'));
+      writeFileSync(join(dir, 'src', 'a.ts'), 'one\n');
+      const run = checkoutRun(dir);
+      const opened = await run.open({ config });
+      const attempt = await run.acquire({ role: 'implementer', config });
+      writeFileSync(join(dir, 'src', 'a.ts'), 'two\n');
+      writeFileSync(join(dir, 'src', 'b.ts'), 'new\n');
+
+      expect(opened).toMatchObject({ kind: 'checkout', projectDir: dir, head: null });
+      expect(await attempt.changedFiles()).toEqual(['src/a.ts', 'src/b.ts']);
+      await attempt.revert(['src/a.ts', 'src/b.ts']);
+
+      expect(readFileSync(join(dir, 'src', 'a.ts'), 'utf8')).toBe('one\n');
+      expect(existsSync(join(dir, 'src', 'b.ts'))).toBe(false);
+      await run.dispose();
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it('keeps a recorded worktree run on its worktree after the config moves to none', {
+    timeout: 60_000,
+  }, async () => {
+    const dir = createTempDir('isolation-none-recorded');
+    try {
+      createTestGitRepo(dir, { 'README.md': '# test\n' });
+      const first = createRunIsolation({
+        projectDir: dir,
+        sessionId: SESSION_ID,
+        strategy: 'worktree',
+        onFallback: () => {},
+        onRetained: () => {},
+      });
+      const opened = await first.open({ config });
+      await first.dispose();
+
+      const next = checkoutRun(dir);
+      const reopened = await next.open({ config, recorded: 'worktree' });
+
+      expect(reopened).toMatchObject({ kind: 'worktree', projectDir: opened.projectDir });
+      await next.dispose();
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it('keeps a recorded checkout run in the checkout after the config moves to worktree', {
+    timeout: 60_000,
+  }, async () => {
+    const dir = createTempDir('isolation-none-recorded-checkout');
+    try {
+      createTestGitRepo(dir, { 'README.md': '# test\n' });
+      const before = worktreeList(dir);
+      const first = checkoutRun(dir);
+      await first.open({ config });
+      await first.dispose();
+
+      const next = createRunIsolation({
+        projectDir: dir,
+        sessionId: SESSION_ID,
+        strategy: 'worktree',
+        onFallback: () => {},
+        onRetained: () => {},
+      });
+      const reopened = await next.open({ config, recorded: 'checkout' });
+
+      expect(reopened).toMatchObject({ kind: 'checkout', projectDir: dir });
+      expect(worktreeList(dir)).toBe(before);
+      await next.dispose();
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+});

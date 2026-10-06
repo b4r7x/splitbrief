@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os';
 import { execSync } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -165,9 +166,10 @@ async function withRunWorktree(run: (worktree: string) => Promise<void>): Promis
 }
 
 async function workspaceChangesAcross(worktree: string, act: () => void): Promise<string[]> {
-  const before = await snapshotWorkspaceGit(worktree);
+  // The run worktree is never the checkout the audit compares it with.
+  const before = await snapshotWorkspaceGit(worktree, tmpdir());
   act();
-  return workspaceGitChanges({ before, after: await snapshotWorkspaceGit(worktree) });
+  return workspaceGitChanges({ before, after: await snapshotWorkspaceGit(worktree, tmpdir()) });
 }
 
 describe('run worktree audit', () => {
@@ -236,11 +238,11 @@ describe('run worktree audit', () => {
     });
   });
 
-  it('reads no git of its own for a staged copy inside the checkout', async () => {
+  it("reads the checkout's git for a staged copy inside the checkout", async () => {
     await withCheckout(async (checkout) => {
       const staged = join(checkout, '.splitbrief', 'sessions', 's1', 'stage-1');
       mkdirSync(staged, { recursive: true });
-      expect(await snapshotWorkspaceGit(staged)).toBeNull();
+      expect((await snapshotWorkspaceGit(staged, checkout))?.scope).toBe('checkout');
     });
   });
 });

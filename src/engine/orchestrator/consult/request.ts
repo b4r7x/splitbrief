@@ -18,6 +18,8 @@ import type { SeatProtocolError } from '../../runners/typed-output.js';
 import { buildConsultPrompt, type ConsultPromptInput } from '../../spec/prompts/consult.js';
 import { readConfinedEntry } from '../approval/file-snapshots/entry.js';
 import { entryToRestore } from '../approval/file-snapshots/restore.js';
+import type { SessionRef } from '../../../core/types/session-ref.js';
+import { entryStoreDir } from '../isolation/entry-snapshot.js';
 import { publishConsultAnswered, publishRunnerCallEvent } from '../events.js';
 import {
   askPlannerSession,
@@ -66,9 +68,10 @@ async function attemptFileDiff(
   projectDir: string,
   snapshot: ChangedFilesSnapshot,
   file: string,
+  ref: SessionRef,
 ): Promise<string> {
   try {
-    const before = await entryToRestore(projectDir, snapshot, file);
+    const before = await entryToRestore(projectDir, snapshot, file, entryStoreDir(ref));
     const after = await readConfinedEntry(projectDir, file);
     return await diffFileEntries({
       path: file,
@@ -90,10 +93,11 @@ async function attemptDiff(
   projectDir: string,
   snapshot: ChangedFilesSnapshot,
   files: readonly string[],
+  ref: SessionRef,
 ): Promise<string> {
   const diffs: string[] = [];
   for (const file of files) {
-    const diff = await attemptFileDiff(projectDir, snapshot, file);
+    const diff = await attemptFileDiff(projectDir, snapshot, file, ref);
     if (diff !== '') diffs.push(diff);
   }
   return diffs.join('\n');
@@ -164,7 +168,7 @@ export async function requestConsult(
     ctx.onStateChange?.(next);
   };
 
-  const diff = await attemptDiff(ctx.workspaceDir, input.snapshot, input.changedFiles);
+  const diff = await attemptDiff(ctx.workspaceDir, input.snapshot, input.changedFiles, ref);
   const prompt = promptInput(ctx.state, input, diff, ctx.workspaceDir);
   const compose = (turn: PlannerSessionTurn): string =>
     buildConsultPrompt({ ...prompt, resumed: turn.onSession });

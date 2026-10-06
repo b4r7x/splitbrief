@@ -1,11 +1,14 @@
 import { afterEach, expect, it } from 'vitest';
+import { entryStoreDir } from '../../../src/engine/orchestrator/isolation/entry-snapshot.js';
 import { execFileSync } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   renameSync,
+  statSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -195,9 +198,10 @@ it('keeps staged rollback bytes outside the continuation record', async () => {
   expect(
     readFileSync(join(sessionDir(f.projectDir, f.sessionId), 'retained-workspace.json')).length,
   ).toBeLessThan(16 * 1024);
-  expect(
-    readFileSync(join(dirname(workspace.projectDir), 'attempt-base', 'partial.ts')).length,
-  ).toBe(7 * 1024 * 1024);
+  const store = entryStoreDir({ projectDir: f.projectDir, sessionId: f.sessionId });
+  expect(readdirSync(store).map((blob) => statSync(join(store, blob)).size)).toContain(
+    7 * 1024 * 1024,
+  );
 });
 
 it('rejects oversized metadata without changing the retained bytes', async () => {
@@ -283,9 +287,12 @@ it('keeps run ownership after promotion and cleanup', async () => {
   await next.dispose();
 });
 
-it('preserves a retained staged attempt when its rollback directory is unavailable', async () => {
+it('preserves a retained staged attempt when its rollback bytes are unavailable', async () => {
   const f = await parked();
-  rmSync(join(dirname(f.workspace.projectDir), 'attempt-base'), { recursive: true, force: true });
+  rmSync(entryStoreDir({ projectDir: f.projectDir, sessionId: f.sessionId }), {
+    recursive: true,
+    force: true,
+  });
   const next = isolation(f);
   await expect(next.acquire({ role: 'implementer', config: f.config })).rejects.toThrow(
     'automatic continuation is blocked',

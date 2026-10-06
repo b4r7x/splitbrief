@@ -4,6 +4,7 @@ import {
   type ChangedFilesBaseline,
   inferTaskOwnChangedFiles,
   refreshChangedFilesBaseline,
+  withActiveTaskSnapshot,
 } from '../changed-files-baseline.js';
 
 export async function absorbAcceptedFiles(opts: {
@@ -28,9 +29,14 @@ export async function absorbAcceptedFiles(opts: {
     ))
       taskAcceptedFiles.add(file);
   }
-  return refreshChangedFilesBaseline({
+  const refreshed = await refreshChangedFilesBaseline({
     projectDir,
     baseline: opts.baseline,
     absorbedFiles: taskAcceptedFiles,
   });
+  // A brief stopped in flight keeps its task-start snapshot: its continuation compares against it.
+  const active = opts.baseline.activeTaskSnapshot;
+  return completedTask?.status === 'in_progress' && active !== undefined
+    ? withActiveTaskSnapshot(refreshed, active)
+    : refreshed;
 }

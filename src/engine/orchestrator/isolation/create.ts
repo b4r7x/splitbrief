@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
-import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises';
+import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, relative } from 'node:path';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type {
@@ -23,21 +23,13 @@ import {
 } from '../../runners/sandbox-env.js';
 import { clearBridgedCliState } from '../../runners/sandbox-state-bridge.js';
 import { removeSandboxTempDirs } from '../../runners/sandbox-state-paths.js';
-import { collectTrackedFiles } from '../../snapshots/files.js';
 import { removeWorktree } from './remove-worktree.js';
 import { attemptCleanupError } from './errors.js';
-import {
-  getChangedFilesSinceSnapshot,
-  getChangedFilesSnapshot,
-} from '../approval/file-snapshots/capture.js';
+import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import {
   captureAcquisitionBaseline,
   type AcquisitionBaseline,
-  readConfinedEntry,
-  removeConfinedSymlink,
-  writeConfinedEntry,
 } from '../approval/file-snapshots/entry.js';
-import { restoreDirtyFilesFromSnapshot } from '../approval/file-snapshots/restore.js';
 import { createStagedProject } from '../approval/staged-project.js';
 import type {
   AttemptWorkspace,
@@ -49,11 +41,7 @@ import type {
 import { ensureIsolationWorktree, removeNodeModulesExclude } from './worktree.js';
 import { resolveConfinedIsolationWorktreePath } from './path.js';
 import { prepareWorktreeAcquisition } from './acquisition.js';
-import {
-  captureStagedSnapshot,
-  changedStagedFiles,
-  restoreStagedFiles,
-} from './staged-snapshot.js';
+import { captureWorkspaceSnapshot, restoreWorkspaceFiles } from './entry-snapshot.js';
 import {
   readWorkspaceRecord,
   retainedDirectoryMatches,
@@ -257,17 +245,36 @@ export function createRunIsolation(opts: {
     recordRetained = retained;
   }
 
-  function open(input: { config: Config }): Promise<RunWorkspace> {
+  function open(input: Parameters<RunIsolation['open']>[0]): Promise<RunWorkspace> {
     if (disposed) return Promise.reject(retentionError.unavailable());
-    if (openPromise === undefined) openPromise = trackOperation(openWorkspace(input.config));
+    if (openPromise === undefined) {
+      openPromise = trackOperation(openWorkspace(input.config, input.recorded));
+    }
     return openPromise;
   }
 
-  async function openWorkspace(config: Config): Promise<RunWorkspace> {
+  async function openWorkspace(
+    config: Config,
+    recorded: RunWorkspace['kind'] | undefined,
+  ): Promise<RunWorkspace> {
     const ref = { projectDir, sessionId };
     ensureSessionDir(projectDir, sessionId);
     const previous = await readWorkspaceRecord(ref);
     if (disposed) throw retentionError.unavailable();
+    // The checkout mode keeps no workspace of its own: the run works in the project itself, and a
+    // run records its mode once, so a later config edit cannot move it.
+    if (
+      previous === null &&
+      (recorded === 'checkout' || (recorded === undefined && latchedStrategy === 'none'))
+    ) {
+      runWorkspace = {
+        kind: 'checkout',
+        projectDir,
+        head: (await hasCommits(projectDir)) ? await getCurrentCommitSha(projectDir) : null,
+        keptFiles: [],
+      };
+      return runWorkspace;
+    }
     let dir: string | null = null;
     if (previous !== null) {
       if (previous.location.kind === 'staged-copy') {
@@ -299,7 +306,7 @@ export function createRunIsolation(opts: {
         if ((await resolveWorktreeDir()) !== dir) throw retentionError.unavailable();
       }
       await assertWorkspaceIdentity(dir);
-    } else if (latchedStrategy === 'worktree') {
+    } else if (latchedStrategy !== 'staged-copy') {
       dir = await resolveWorktreeDir();
     }
     if (dir === null) {
@@ -334,12 +341,11 @@ export function createRunIsolation(opts: {
       initialTargetBaseline,
     });
     initialTargetBaseline = undefined;
-    const snapshot =
-      location.kind === 'worktree'
-        ? await getChangedFilesSnapshot(dir)
-        : await captureStagedSnapshot(dir, projectDir);
+    const snapshot = await captureWorkspaceSnapshot(dir, ref);
     const keptFiles =
-      retainedAttempt === null ? [] : await changedAttemptFiles(dir, retainedAttempt.snapshot);
+      retainedAttempt === null
+        ? []
+        : await getChangedFilesSinceSnapshot(dir, retainedAttempt.snapshot);
     runWorkspace = {
       kind: location.kind,
       projectDir: dir,
@@ -360,10 +366,8 @@ export function createRunIsolation(opts: {
     return runWorkspace;
   }
 
-  function changedAttemptFiles(dir: string, snapshot: ChangedFilesSnapshot): Promise<string[]> {
-    return location?.kind === 'staged-copy'
-      ? changedStagedFiles(dir, snapshot)
-      : getChangedFilesSinceSnapshot(dir, snapshot);
+  async function assertAttemptDir(dir: string): Promise<void> {
+    if (runWorkspace?.kind !== 'checkout') await assertWorkspaceIdentity(dir);
   }
 
   async function revertAttempt(
@@ -371,14 +375,19 @@ export function createRunIsolation(opts: {
     snapshot: ChangedFilesSnapshot,
     files?: readonly string[],
   ): Promise<void> {
-    await assertWorkspaceIdentity(dir);
-    const changed = await changedAttemptFiles(dir, snapshot);
+    await assertAttemptDir(dir);
+    const changed = await getChangedFilesSinceSnapshot(dir, snapshot);
     const selected = files === undefined ? changed : changed.filter((file) => files.includes(file));
-    if (location?.kind === 'worktree') {
-      for (const file of selected) await removeConfinedSymlink(dir, file);
-      await restoreDirtyFilesFromSnapshot(dir, snapshot, selected);
-    } else {
-      await restoreStagedFiles(dir, snapshot, selected);
+    const { savedTo } = await restoreWorkspaceFiles({
+      ref: { projectDir, sessionId },
+      dir,
+      snapshot,
+      files: selected,
+    });
+    if (savedTo !== undefined) {
+      warningPublisher?.(
+        `Put back what the attempt changed in your checkout: ${selected.join(', ')}. The replaced bytes are in ${relative(projectDir, savedTo)}.`,
+      );
     }
   }
 
@@ -400,15 +409,6 @@ export function createRunIsolation(opts: {
     if (cleanupFailure !== undefined) throw cleanupFailure;
   }
 
-  async function captureAttemptBase(dir: string): Promise<void> {
-    const attemptBase = join(dirname(dir), 'attempt-base');
-    await rm(attemptBase, { recursive: true, force: true });
-    await mkdir(attemptBase);
-    for (const file of await collectTrackedFiles(dir, { ignoreProjectDir: projectDir })) {
-      await writeConfinedEntry(attemptBase, file, await readConfinedEntry(dir, file));
-    }
-  }
-
   function acquire(input: Parameters<RunIsolation['acquire']>[0]): Promise<AttemptWorkspace> {
     if (disposed) return Promise.reject(retentionError.unavailable());
     const operation = acquisitionQueue.then(() => acquireWorkspace(input));
@@ -421,29 +421,33 @@ export function createRunIsolation(opts: {
   ): Promise<AttemptWorkspace> {
     const opened = await open({ config: input.config });
     const dir = opened.projectDir;
+    const inCheckout = opened.kind === 'checkout';
     await settledCleanup();
-    await assertWorkspaceIdentity(dir);
+    await assertAttemptDir(dir);
     if (disposed) throw retentionError.unavailable();
-    const previous = retainedAttempt ?? (await readWorkspaceRecord({ projectDir, sessionId }));
+    const previous = inCheckout
+      ? null
+      : (retainedAttempt ?? (await readWorkspaceRecord({ projectDir, sessionId })));
     const retained = previous?.retained === true ? previous : null;
     if (retained !== null && input.resume !== true) await revertAttempt(dir, retained.snapshot);
     const resumed = retained !== null && input.resume === true;
-    const { targetBaseline } = await prepareWorktreeAcquisition({
-      projectDir,
-      sessionId,
-      worktreeDir: dir,
-      initialTargetBaseline: undefined,
-    });
+    const targetBaseline = inCheckout
+      ? undefined
+      : (
+          await prepareWorktreeAcquisition({
+            projectDir,
+            sessionId,
+            worktreeDir: dir,
+            initialTargetBaseline: undefined,
+          })
+        ).targetBaseline;
     const snapshot = resumed
       ? retained.snapshot
-      : opened.kind === 'worktree'
-        ? await getChangedFilesSnapshot(dir)
-        : await captureStagedSnapshot(dir, projectDir);
-    if (opened.kind === 'staged-copy' && !resumed) await captureAttemptBase(dir);
+      : await captureWorkspaceSnapshot(dir, { projectDir, sessionId });
     const sandboxEnv = resumed
       ? await resumedSandboxEnv(dir, input.role, input.config)
       : await workspaceSandboxEnv({ dir, role: input.role, config: input.config });
-    await assertWorkspaceIdentity(dir);
+    await assertAttemptDir(dir);
     if (disposed) throw retentionError.unavailable();
     let preserved = false;
     const workspace: AttemptWorkspace = {
@@ -452,7 +456,7 @@ export function createRunIsolation(opts: {
       snapshot,
       targetBaseline,
       changeDetection: 'file-hashes',
-      changedFiles: () => changedAttemptFiles(dir, snapshot),
+      changedFiles: () => getChangedFilesSinceSnapshot(dir, snapshot),
       cleanup: (files) => {
         if (disposed || preserved || ownedWorkspace !== workspace) return;
         queueCleanup(dir, snapshot, files);
@@ -466,6 +470,8 @@ export function createRunIsolation(opts: {
         if (disposed || ownedWorkspace !== workspace)
           return Promise.reject(retentionError.unavailable());
         preserved = true;
+        // A stopped call's partial stays in the checkout as it is; there is no record to keep.
+        if (inCheckout) return Promise.resolve();
         return trackOperation(
           (async () => {
             try {
@@ -481,7 +487,7 @@ export function createRunIsolation(opts: {
         );
       },
     };
-    await saveRecord(workspace, false);
+    if (!inCheckout) await saveRecord(workspace, false);
     retainedAttempt = null;
     ownedWorkspace = workspace;
     return workspace;

@@ -203,7 +203,8 @@ export function createIsolationBoundary(input: {
 
   const zones: Zone[] = [
     { root: isolationDir, allows: ANY },
-    { root: checkoutDir, allows: NONE },
+    // In the checkout mode the call works in the checkout itself, so it is not closed to it.
+    ...(checkoutDir === isolationDir ? [] : [{ root: checkoutDir, allows: NONE }]),
     { root: canonicalPath(join(checkoutDir, 'node_modules')), allows: READS },
     ...temp.map((dir) => ({ root: canonicalPath(dir), allows: ANY })),
     ...DEVICES.map((device) => ({ root: device, allows: ANY })),

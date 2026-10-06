@@ -220,10 +220,10 @@ describe('WorkflowModeSchema', () => {
 });
 
 describe('IsolationStrategySchema', () => {
-  it.each(['worktree', 'staged-copy'])('accepts "%s"', (input) => {
+  it.each(['worktree', 'staged-copy', 'none'])('accepts "%s"', (input) => {
     expect(IsolationStrategySchema.parse(input)).toBe(input);
   });
-  it.each(['clone', 'none', 'bogus', ''])('rejects "%s"', (input) => {
+  it.each(['clone', 'checkout', 'bogus', ''])('rejects "%s"', (input) => {
     expect(IsolationStrategySchema.safeParse(input).success).toBe(false);
   });
 });

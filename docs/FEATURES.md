@@ -90,6 +90,8 @@ splitbrief start --json "fix parser edge case"
 
 `splitbrief doctor` is strictly read-only and writes no config, sessions, worktrees, snapshots, or model calls. It runs no validation subprocesses unless `--probe-validation` is given. Its one network call is the runner availability probe: a model-list request to the `api` endpoint each configured runner already targets, so an unreachable planner or default implementer is a blocker here instead of a `fetch failed` after the planning phase has been paid for. A local workflow start prepares every runner context it may select and persists that attempt's compact `.splitbrief/sessions/<id>/readiness.json` before execution begins. If fresh preparation is blocked, cached success cannot create a session or start a process. In headless mode the readiness report is emitted as the first structured JSON line.
 
+**Isolation recommendation.** Some stacks only work in the checkout: linked Node workspace packages, a Python editable install in a virtualenv under the project, `go.work`, or a Cargo workspace with `target/` in the checkout. When readiness finds one and `workflow.isolation` is not set in `.splitbrief/config.yaml`, it raises a blocker that recommends the checkout. Set `workflow.isolation: none` (recommended) or `workflow.isolation: worktree` to keep the worktree. Writing the key is the one-time confirmation. An explicit `worktree` or `staged-copy` keeps the finding as a warning; `none` raises nothing.
+
 **When to use.** Run `doctor` while setting up a repo, before CI automation, or when a start run is blocked by config/repo posture. Use the pre-start report to decide whether to continue through warnings such as dirty files, missing context length, or disabled validation.
 
 **Events/output.** Human output groups checks into config, runners, context, validation, repository, and cost. JSON output uses `{ type: "readiness_report", report: ... }`. Validation readiness is posture only by default — disabled checks, missing npm scripts, and configured commands are reported without running them; `--probe-validation` runs the real commands and can take minutes.
@@ -289,7 +291,13 @@ Stopping keeps workspace changes. Closing follows [the Apply close path](./WORKF
 | `switch-seat` | Offered for the halts the seat itself caused or can have caused — `runner-usage-limit`, `runner-unauthenticated`, `implementer-recipe-invalid`, `implementer-left-isolation`, `checkout-changed`, `runner-timeout-repeated`, `planner-call-failed` — on the plan seat as readily as the build seat: moves the blocked seat to another ready detected tool and re-prepares the same session on it. In the TUI, taking it opens that seat's own picker on the first offered tool, where the tool and its model are chosen; closing the picker with no change leaves the halt open. |
 | `planner-split-rebase` | Legacy/manual only; new recovery prompts do not offer it, and old states block with `planner-proposal-required`. |
 
-**Resume/headless.** `splitbrief resume` shows pending recovery before any planner or implementer call. Headless JSON runs emit `recovery_required` with reason, task/files, available actions, and recommendation, then exit non-zero; both headless renderings print the recommended action and the exact `splitbrief continue <session> --action …` line to stderr, and `continue --action <skip|retry|switch-seat:<tool>[:<model>]|end-run>` applies it without a TUI.
+**Resume/headless.** `splitbrief resume` shows pending recovery before any planner or implementer call. Headless JSON runs emit `recovery_required` with reason, task/files, available actions, and recommendation, then exit non-zero; both headless renderings print the recommended action and the exact `splitbrief continue <session> --action …` line to stderr, and `continue --action <skip|retry|restore|switch-seat:<tool>[:<model>]|end-run>` applies it without a TUI. `restore` takes `restore-backup` and answers only an `apply-partial` halt.
+
+### Where the implementer works
+
+**What it does.** `workflow.isolation` chooses where every build seat writes. `worktree` (the default) gives the run one linked git worktree. `staged-copy` gives it one project copy. Both deliver the result to your checkout at Apply. `none` ("your checkout") lets the implementer edit your checkout directly: validation and review run there, and a passing review closes the run with no Apply. In `none`, a git write during a call halts `checkout-changed`, an edit of yours between calls is a warning, and every revert first saves the replaced bytes under `.splitbrief/sessions/<id>/reverted/<stamp>/`.
+
+**How to use.** Set the key in `.splitbrief/config.yaml`; `splitbrief init` does not write it. In Settings, highlight `Isolation` and press Space to cycle the choices. Details and trade-offs: [CONFIGURATION.md §5](./CONFIGURATION.md#implementer-isolation).
 
 ### Protected-path confirmation
 
@@ -428,6 +436,8 @@ Sessions are execution records scoped to one workflow each. The plan card is sco
 
 **Reading the list.** Values are as bright as the labels they belong to; only the section headers, the help and the key legend stay dim. The blank row between sections is spent only where the list has rows to spare: below an 18-row list budget the sections close up, which is what keeps a settings row on screen at 80x24 rather than a gap. An unset `Test command` reads `auto`, the stack's own runner, not a dash. The legend names the one key the highlighted row answers to — `space cycle` on an enum, `space toggle` on a boolean, `⏎ edit` on a string or number, `⏎ change seat` on a crew row.
 
+**The Isolation row.** The Workflow section offers `Isolation` for every build seat. Space cycles `worktree` → `staged copy` → `your checkout` → `worktree`. Settings saves the YAML values `worktree`, `staged-copy` and `none`. Its help lists the three display labels.
+
 ### Settings ∋ Crew
 
 **What it does.** The crew section is one row per seat — `PLAN`, `BUILD`, `REVIEW` — each carrying the seat identity (`Claude Code CLI · Claude Sonnet 4`) and a right-aligned posture word. There is no rail and no connector glyph; the seat label, coloured and bold, is what groups the block. A REVIEW seat with no `reviewer:` block shows the planner's identity with the inheritance mark.
@@ -489,7 +499,7 @@ An owner override changes the first row to **Apply as is**. Its confirmation lis
 
 **What it does.** The workflow screen is the run's home whether anything is running on it or not. Opening a run from `/sessions`, from the home list or from the palette replays its `session.jsonl` into the workflow stores and shows the run exactly where it stopped: the same header rail, the same transcript, the same footer. Nothing navigates to a second screen, and continuing the run flips it back to live in place. There is no summary screen.
 
-**Format (header).** The rail has Plan, Build and Review stages; a worktree or staged-copy run adds an Apply stage, pending while the run is ready, done when applied, cancelled when discarded, and marked when Apply halted. Cleared stages show `●`; unreached stages show dim `○`. A paused, waiting or interrupted stage shows `×`. A halted or failed stage shows `✗`. A ready-to-apply or closed complete run shows three `●`. A closed run names its recorded crew; an open run names the crew it will use.
+**Format (header).** The rail has Plan, Build and Review stages; a checkout-mode run (`workflow.isolation: none`) has no Apply stage. A worktree or staged-copy run adds an Apply stage, pending while the run is ready, done when applied, cancelled when discarded, and marked when Apply halted. Cleared stages show `●`; unreached stages show dim `○`. A paused, waiting or interrupted stage shows `×`. A halted or failed stage shows `✗`. A ready-to-apply or closed complete run shows three `●`. A closed run names its recorded crew; an open run names the crew it will use.
 
 **Format (composer and byline).** A ready run shows [the result menu](#run-result-menu). Its composer takes `/commands`; bare Enter does not continue it. An open run takes a correction or bare Enter to continue. The placeholder reads `Type a correction, or ⏎ to continue…`. Typed text becomes the next step's steer. The byline names the stop and its action:
 

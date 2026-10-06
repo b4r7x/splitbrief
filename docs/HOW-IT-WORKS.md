@@ -169,6 +169,8 @@ The worktree path is `$XDG_STATE_HOME/splitbrief/trees/<repo-key>/<session-id>/`
 
 An open run retains its workspace across stops and restarts. Discard and End run preserve its work before removal. See [Apply](./WORKFLOW.md#apply).
 
+In checkout mode (`workflow.isolation: none`) `openWorkspace()` (`src/engine/orchestrator/isolation/create.ts`) creates no worktree and keeps no workspace record. The run records `workspace.kind: 'checkout'` in `state.json` once, so a later config change does not move it. Every task, check and review reads the checkout. There is no Apply: a passing review closes the run, and the close writes no `run.patch`.
+
 A worktree shares repository hooks and config, and the host's ports, sockets and databases. It is a file boundary, not a sandbox. The [tripwire and git audit](./APPROVAL-AND-RECOVERY.md#isolation-checks) check implementer calls. `createRunnerSandboxEnv()` (`src/engine/runners/sandbox-env.ts`) provides credential and path hygiene. Keychain-backed session channels keep host `HOME` and `USER`; see [API-KEYS.md](./API-KEYS.md#what-a-host-account-child-can-and-cannot-reach).
 
 ---
@@ -216,7 +218,11 @@ Every workflow run produces files on disk under `.splitbrief/sessions/<id>/`:
 
 **`summary.json`** — final cost, timing, task outcomes. Written at the end of each pass by `saveFinalSession()` (`src/engine/orchestrator/session-lifecycle/finalize.ts`), which also clears the `.splitbrief/active` lock file once the run is closed. A resumed pass drops the stop the last pass recorded as it starts (`reopenSessionRecord`).
 
-**`snapshots/`** — the run's content-addressed snapshots: the run-start `baseline`, the `workspace-base` a workspace run starts from, `pre-final-review`, and for a run without a workspace the accepted-run snapshot, plus the run ledger. There are no configurable trigger points. See [SUBSYSTEMS.md](./SUBSYSTEMS.md).
+**`snapshots/`** — the run's content-addressed snapshots: the run-start `baseline`, the `workspace-base` a workspace run starts from, `pre-final-review`, and for a run without a workspace or a checkout-mode run the accepted-run snapshot, plus the run ledger. There are no configurable trigger points. See [SUBSYSTEMS.md](./SUBSYSTEMS.md).
+
+**`entries/`** — the content-addressed byte store of the entry snapshots. A staged copy, and a no-git checkout in checkout mode, take their task-start and attempt snapshots without git: hashes and modes in the snapshot, bytes once in this store. A restart restores from it.
+
+**`reverted/<stamp>/`** — the bytes SPLITBRIEF replaced when it reverted files in the checkout in checkout mode: a failed attempt's rollback, a denied protected write, an exhausted brief or an interrupted brief on restart. A symlink is saved as a link. The revert's warning names the folder.
 
 **On interrupt** (SIGINT/SIGTERM), `withSignalHandlers()` (`src/engine/orchestrator/signals.ts`) runs `shutdownWorkflow()` (`src/engine/orchestrator/session-lifecycle/shutdown.ts`): it kills all child processes and saves the current state to `state.json`. It does not touch the `.splitbrief/active` marker: `saveFinalSession()` clears that only once the run is closed. Continue later with `splitbrief continue <session-id>` when the saved state is resumable.
 

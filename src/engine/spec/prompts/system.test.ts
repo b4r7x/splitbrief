@@ -132,6 +132,26 @@ describe('buildImplementerSystemPreamble', () => {
     );
   });
 
+  it('tells an in-place writer its edits land in the checkout, not in an isolation directory', () => {
+    const inPlace = buildImplementerSystemPreamble(
+      buildLanguageContext('typescript'),
+      'direct',
+      '/work/project',
+      undefined,
+      true,
+    );
+    expect(inPlace).toContain("directly in the user's checkout");
+    expect(inPlace).not.toContain('isolation directory');
+    expect(inPlace).not.toContain('promoted');
+    expect(inPlace).toContain('- Stay inside /work/project:');
+    const isolated = buildImplementerSystemPreamble(
+      buildLanguageContext('typescript'),
+      'direct',
+      '/work/project',
+    );
+    expect(isolated).toContain('directly in the isolation directory');
+  });
+
   it('no longer describes the direct workspace as staged', () => {
     const prompt = buildImplementerSystemPreamble(
       buildLanguageContext('typescript'),

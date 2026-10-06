@@ -370,7 +370,7 @@ describe('config document transaction safety', () => {
     try {
       writeConfig(dir, createDefaultConfig());
       const before = readConfigDocument(dir);
-      const external = before.rawYaml.replace('isolation: worktree', 'isolation: staged-copy');
+      const external = before.rawYaml.replace('review: end', 'review: task');
       writeFileSync(configPath(dir), external);
 
       const result = await transactConfigDocument(dir, before.revision, [

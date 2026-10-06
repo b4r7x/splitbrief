@@ -629,7 +629,7 @@ splitbrief resume --implementer claude-code --implementer-model claude-sonnet-4-
 **Synopsis**
 
 ```
-splitbrief continue [session-id-or-number] [--action <skip|retry|switch-seat:<tool>[:<model>]|end-run|apply|discard>] [resume options]
+splitbrief continue [session-id-or-number] [--action <skip|retry|restore|switch-seat:<tool>[:<model>]|end-run|apply|discard>] [resume options]
 ```
 
 Continue a run by name, active session, or numeric alias. The run continues from its saved state. Recovery actions first answer the pending recovery. Use `--action apply` or `--action discard` to settle a run whose review passed in its workspace. Any open run can continue. The command refuses a closed run.
@@ -642,7 +642,7 @@ Continue a run by name, active session, or numeric alias. The run continues from
 | `--project <dir>` | path | cwd | Project directory. |
 | `--allow-hooks` | boolean | `false` | Trust hook config without prompting. |
 | `--allow-repo-runners` | boolean | `false` | Trust repo-local shell/agent runner commands from project config for resumed workflow execution. |
-| `--action <skip\|retry\|switch-seat:<tool>[:<model>]\|end-run\|apply\|discard>` | enum | — | Recovery actions answer the pending recovery. `skip` means `skip-current-task`. `retry` means `retry-same-worker`. `switch-seat:<tool>[:<model>]` moves the blocked seat. These three actions continue the run. `end-run` closes the run, prints `Run <id> closed. The files it wrote are still on disk.`, and stops. `apply` runs Apply on a run that is ready to apply. Apply merges the run workspace into the checkout. It prints `Applied <n> files to your checkout.` on stderr and closes the run `applied`. If Apply changes the reviewed candidate, SPLITBRIEF runs its checks and whole-run review again. A run accepted as is needs confirmation on the run screen with `/run accept confirm`. An Apply conflict halts with `Recovery required (apply-conflict)`. `discard` closes the run `discarded`. It keeps the run changes in `run.patch` in the session folder and prints `Run <id> discarded.` and the patch path on stderr. The checkout stays untouched. Apply and Discard keep stdout for the `--plain` and `--json` records. |
+| `--action <skip\|retry\|restore\|switch-seat:<tool>[:<model>]\|end-run\|apply\|discard>` | enum | — | Recovery actions answer the pending recovery. `skip` means `skip-current-task`. `retry` means `retry-same-worker`. `restore` means `restore-backup`: after a partial Apply (`apply-partial`) it puts back the checkout files Apply replaced, from the Apply backup. No other halt offers it. `switch-seat:<tool>[:<model>]` moves the blocked seat. These four actions continue the run. `end-run` closes the run, prints `Run <id> closed. The files it wrote are still on disk.`, and stops. `apply` runs Apply on a run that is ready to apply. Apply merges the run workspace into the checkout. It prints `Applied <n> files to your checkout.` on stderr and closes the run `applied`. If Apply changes the reviewed candidate, SPLITBRIEF runs its checks and whole-run review again. A run accepted as is needs confirmation on the run screen with `/run accept confirm`. An Apply conflict halts with `Recovery required (apply-conflict)`. `discard` closes the run `discarded`. It keeps the run changes in `run.patch` in the session folder and prints `Run <id> discarded.` and the patch path on stderr. The checkout stays untouched. Apply and Discard keep stdout for the `--plain` and `--json` records. |
 | `--skills <ids>` | string | — | Comma-separated skill ids for every seat, in headless and interactive mode alike. The list applies to that continue only: it is not saved, so a later continue without it uses the selection the run saved when it started. |
 | `--json` | boolean | `false` | Continue the run in headless NDJSON mode. |
 | `--plain` | boolean | `false` | Continue the run in headless plain-line mode. Mutually exclusive with `--json`. |
@@ -677,7 +677,7 @@ splitbrief continue 2026-05-01-add-auth --action end-run
 
 - `0`: The run continued, `--action end-run` closed it, or `--action apply|discard` settled it.
 - `1`: No run to continue, a running run, unusable saved state, a closed run, or an underlying failure. This code also covers a recovery action the pending recovery does not allow. The refusal names the available actions. It also covers `--action apply|discard` on a run that is not ready to apply.
-- `2`: `--action` did not name a continue action. The message is `'<value>' is not a continue action. Use skip, retry, switch-seat:<tool>[:<model>], end-run, apply, or discard.`
+- `2`: `--action` did not name a continue action. The message is `'<value>' is not a continue action. Use skip, retry, restore, switch-seat:<tool>[:<model>], end-run, apply, or discard.`
 
 ### Files affected
 

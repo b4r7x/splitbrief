@@ -30,18 +30,61 @@ describe('buildIsolationChecks', () => {
     expect(realpathSync(join(projectDir, 'node_modules/a'))).toBe(
       realpathSync(join(projectDir, 'packages/a')),
     );
-    const checks = buildIsolationChecks(projectDir);
+    const checks = buildIsolationChecks(projectDir, 'worktree');
 
     expect(checks).toHaveLength(1);
     expect(checks[0]?.id).toBe('isolation.workspace-links');
     expect(checks[0]?.severity).toBe('warning');
   });
 
+  it('recommends the checkout when a linked monorepo leaves workflow.isolation unset', () => {
+    write('package.json', JSON.stringify({ name: 'mono', workspaces: ['packages/*'] }));
+    write('packages/a/package.json', JSON.stringify({ name: 'a' }));
+    mkdirSync(join(projectDir, 'node_modules'));
+    symlinkSync(join(projectDir, 'packages/a'), join(projectDir, 'node_modules/a'), 'dir');
+
+    const checks = buildIsolationChecks(projectDir, undefined);
+
+    expect(checks).toEqual([
+      expect.objectContaining({
+        id: 'isolation.workspace-links',
+        severity: 'blocker',
+        nextAction: 'fix-config',
+      }),
+    ]);
+    expect(checks[0]?.fix).toContain('`workflow.isolation: none`');
+    expect(checks[0]?.fix).toContain('`workflow.isolation: worktree`');
+  });
+
+  it('emits nothing for a linked monorepo that confirmed workflow.isolation: none', () => {
+    write('package.json', JSON.stringify({ name: 'mono', workspaces: ['packages/*'] }));
+    write('go.work', 'go 1.22\n');
+
+    expect(buildIsolationChecks(projectDir, 'none')).toEqual([]);
+  });
+
+  it.each(['worktree', 'staged-copy'] as const)(
+    'keeps the warning for a linked monorepo with explicit %s',
+    (isolation) => {
+      write('package.json', JSON.stringify({ name: 'mono', workspaces: ['packages/*'] }));
+
+      expect(buildIsolationChecks(projectDir, isolation)).toEqual([
+        expect.objectContaining({ id: 'isolation.workspace-links', severity: 'warning' }),
+      ]);
+    },
+  );
+
+  it('emits nothing for a plain package with workflow.isolation unset', () => {
+    write('package.json', JSON.stringify({ name: 'app' }));
+
+    expect(buildIsolationChecks(projectDir, undefined)).toEqual([]);
+  });
+
   it('warns for a pnpm workspace that lists packages', () => {
     write('package.json', JSON.stringify({ name: 'mono' }));
     write('pnpm-workspace.yaml', 'packages:\n  - packages/*\n');
 
-    expect(buildIsolationChecks(projectDir).map((check) => check.id)).toEqual([
+    expect(buildIsolationChecks(projectDir, 'worktree').map((check) => check.id)).toEqual([
       'isolation.workspace-links',
     ]);
   });
@@ -49,7 +92,7 @@ describe('buildIsolationChecks', () => {
   it('warns for object-form package workspaces', () => {
     write('package.json', JSON.stringify({ workspaces: { packages: ['packages/*'] } }));
 
-    expect(buildIsolationChecks(projectDir)).toEqual([
+    expect(buildIsolationChecks(projectDir, 'worktree')).toEqual([
       expect.objectContaining({ id: 'isolation.workspace-links', severity: 'warning' }),
     ]);
   });
@@ -57,33 +100,33 @@ describe('buildIsolationChecks', () => {
   it('propagates malformed pnpm workspace YAML', () => {
     write('pnpm-workspace.yaml', 'packages: [\n');
 
-    expect(() => buildIsolationChecks(projectDir)).toThrow();
+    expect(() => buildIsolationChecks(projectDir, 'worktree')).toThrow();
   });
 
   it('propagates a pnpm workspace read error', () => {
     mkdirSync(join(projectDir, 'pnpm-workspace.yaml'));
 
-    expect(() => buildIsolationChecks(projectDir)).toThrow();
+    expect(() => buildIsolationChecks(projectDir, 'worktree')).toThrow();
   });
 
   it('does not warn for a pnpm-workspace.yaml that holds only settings', () => {
     write('package.json', JSON.stringify({ name: 'app' }));
     write('pnpm-workspace.yaml', 'onlyBuiltDependencies:\n  - esbuild\n');
 
-    expect(buildIsolationChecks(projectDir)).toEqual([]);
+    expect(buildIsolationChecks(projectDir, 'worktree')).toEqual([]);
   });
 
   it('no warning for a plain package', () => {
     write('package.json', JSON.stringify({ name: 'app', scripts: { test: 'vitest' } }));
 
-    expect(buildIsolationChecks(projectDir)).toEqual([]);
+    expect(buildIsolationChecks(projectDir, 'worktree')).toEqual([]);
   });
 
   it('warns for a Python editable install in a venv under the project', () => {
     write('.venv/pyvenv.cfg', 'home = /usr/bin\n');
     write('.venv/lib/python3.12/site-packages/__editable__.app-0.1.pth', '/project/src\n');
 
-    expect(buildIsolationChecks(projectDir).map((check) => check.id)).toEqual([
+    expect(buildIsolationChecks(projectDir, 'worktree').map((check) => check.id)).toEqual([
       'isolation.python-editable',
     ]);
   });
@@ -92,7 +135,7 @@ describe('buildIsolationChecks', () => {
     write('venv/pyvenv.cfg', 'home = /usr/bin\n');
     write('venv/lib/python3.9/site-packages/app.egg-link', '/project\n.\n');
 
-    expect(buildIsolationChecks(projectDir).map((check) => check.id)).toEqual([
+    expect(buildIsolationChecks(projectDir, 'worktree').map((check) => check.id)).toEqual([
       'isolation.python-editable',
     ]);
   });
@@ -104,7 +147,7 @@ describe('buildIsolationChecks', () => {
     write(`${venv}/pyvenv.cfg`, 'home = /usr/bin\n');
     write(`${venv}/lib/python3.12/site-packages/${marker}`, '/project/src\n');
 
-    expect(buildIsolationChecks(projectDir)).toEqual([
+    expect(buildIsolationChecks(projectDir, 'worktree')).toEqual([
       expect.objectContaining({ id: 'isolation.python-editable', severity: 'warning' }),
     ]);
   });
@@ -113,13 +156,13 @@ describe('buildIsolationChecks', () => {
     write('.venv/pyvenv.cfg', 'home = /usr/bin\n');
     write('.venv/lib/python3.12/site-packages/requests/__init__.py', '');
 
-    expect(buildIsolationChecks(projectDir)).toEqual([]);
+    expect(buildIsolationChecks(projectDir, 'worktree')).toEqual([]);
   });
 
   it('warns for a go.work file', () => {
     write('go.work', 'go 1.22\n\nuse ./svc\n');
 
-    expect(buildIsolationChecks(projectDir).map((check) => check.id)).toEqual([
+    expect(buildIsolationChecks(projectDir, 'worktree').map((check) => check.id)).toEqual([
       'isolation.build-cache',
     ]);
   });
@@ -128,7 +171,7 @@ describe('buildIsolationChecks', () => {
     write('Cargo.toml', '[workspace]\nmembers = ["crates/*"]\n');
     mkdirSync(join(projectDir, 'target'));
 
-    expect(buildIsolationChecks(projectDir).map((check) => check.id)).toEqual([
+    expect(buildIsolationChecks(projectDir, 'worktree').map((check) => check.id)).toEqual([
       'isolation.build-cache',
     ]);
   });
@@ -136,20 +179,20 @@ describe('buildIsolationChecks', () => {
   it('does not warn for a Cargo workspace with no target in the checkout', () => {
     write('Cargo.toml', '[workspace]\nmembers = ["crates/*"]\n');
 
-    expect(buildIsolationChecks(projectDir)).toEqual([]);
+    expect(buildIsolationChecks(projectDir, 'worktree')).toEqual([]);
   });
 
   it('does not warn for a Cargo workspace with a regular target file', () => {
     write('Cargo.toml', '[workspace]\nmembers = ["crates/*"]\n');
     write('target', 'not a build cache\n');
 
-    expect(buildIsolationChecks(projectDir)).toEqual([]);
+    expect(buildIsolationChecks(projectDir, 'worktree')).toEqual([]);
   });
 
   it('does not warn for a single Cargo crate with a target', () => {
     write('Cargo.toml', '[package]\nname = "app"\n');
     mkdirSync(join(projectDir, 'target'));
 
-    expect(buildIsolationChecks(projectDir)).toEqual([]);
+    expect(buildIsolationChecks(projectDir, 'worktree')).toEqual([]);
   });
 });

@@ -70,6 +70,10 @@ vi.mock('simple-git', () => ({
     status: async () => ({ files: control.statusFiles.map((path) => ({ path })) }),
     raw: async (args: string[]) => {
       control.gitCalls.push(args);
+      // The workspace is its own work tree top, so its snapshots are git's.
+      if (args[0] === 'rev-parse' && args.includes('--show-toplevel')) {
+        return `${control.workspace}\nfake-head`;
+      }
       if (args[0] === 'rev-parse') return 'fake-head';
       if (args[0] === 'ls-files') return '';
       if (args[0] === 'ls-tree') {

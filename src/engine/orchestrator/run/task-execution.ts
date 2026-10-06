@@ -319,12 +319,15 @@ export async function runTasksAndReview(
       );
     }
     const opened = await initialWctx.isolation.open({ config: initialWctx.config });
-    await reconcileWorkspaceToBase({
-      ...ref,
-      snapshotId: base.manifest.id,
-      workspaceDir: opened.projectDir,
-      keep: opened.keptFiles,
-    });
+    // The checkout is its own base: there is no second tree to bring level with it.
+    if (opened.kind !== 'checkout') {
+      await reconcileWorkspaceToBase({
+        ...ref,
+        snapshotId: base.manifest.id,
+        workspaceDir: opened.projectDir,
+        keep: opened.keptFiles,
+      });
+    }
     state = transitionAndSave(ref, state, {
       type: 'RECORD_WORKSPACE',
       workspace: {
@@ -335,7 +338,10 @@ export async function runTasksAndReview(
     });
     setTrackedState(state);
   } else {
-    const opened = await initialWctx.isolation.open({ config: initialWctx.config });
+    const opened = await initialWctx.isolation.open({
+      config: initialWctx.config,
+      recorded: state.workspace.kind,
+    });
     if (opened.projectDir !== state.workspace.path) {
       throw error(
         'run-workspace-moved',

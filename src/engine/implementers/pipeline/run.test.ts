@@ -3,6 +3,7 @@ import { execSync } from 'node:child_process';
 import { existsSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createImplementerBase } from './run.js';
+import type { ImplementerOptions } from '../types.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -19,6 +20,21 @@ import { readInterruptedPartial } from '../../orchestrator/continuation.js';
 import { readPacketEvents } from '../../orchestrator/evidence/review-packet/artifacts.js';
 import { buildEscalations } from '../../orchestrator/evidence/review-packet/sections.js';
 import { createInitialState } from '../../../core/state/machine.js';
+
+const checkoutReads = vi.hoisted(() => ({ failing: 0 }));
+vi.mock('../isolation/checkout-audit.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../isolation/checkout-audit.js')>();
+  return {
+    ...actual,
+    snapshotCheckout: async (dir: string) => {
+      if (checkoutReads.failing > 0) {
+        checkoutReads.failing -= 1;
+        throw new Error('checkout unreadable');
+      }
+      return actual.snapshotCheckout(dir);
+    },
+  };
+});
 
 let projectDir: string;
 
@@ -964,22 +980,150 @@ describe('createImplementerBase — isolation audit', () => {
       error: 'branch topic',
     });
   });
+});
 
-  it('audits nothing for a call that runs in the checkout itself', async () => {
+describe('createImplementerBase — git writes during an in-place call (workflow.isolation: none)', () => {
+  function inPlaceCall(extra: Partial<ImplementerOptions> = {}) {
+    return {
+      task: makeTask(),
+      projectDir,
+      fileIgnoreProjectDir: projectDir,
+      sessionId: 'checkout-run',
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+      ...extra,
+    };
+  }
+
+  function implementerThat(act: () => void, bus?: ReturnType<typeof makeBusRecorder>['bus']) {
     const invoke = vi.fn().mockImplementation(async (opts) => {
-      expect(opts.checkoutDir).toBeUndefined();
+      expect(opts.checkoutDir).toBe(projectDir);
       writeFileSync(join(projectDir, 'written.ts'), 'export {};\n');
+      act();
+      return makeRunnerCallResult({ status: 'completed', text: 'done', usage: null });
+    });
+    return createImplementerBase(
+      makeBaseConfig({
+        extractsCode: false,
+        invoke,
+        ...(bus !== undefined && { publisher: createImplementerPublisher(bus) }),
+      }),
+    );
+  }
+
+  const git = (command: string) => () =>
+    execSync(`git ${command}`, { cwd: projectDir, stdio: 'pipe' });
+
+  it('lets a call that writes in the checkout stand, with no checkout-changed warning', async () => {
+    const { bus, events } = makeBusRecorder();
+
+    const result = await implementerThat(() => {}, bus).implement(
+      inPlaceCall({ phase: 'implementing' }),
+    );
+
+    expect(result.success).toBe(true);
+    expect(events.filter((event) => event.type === 'warning')).toEqual([]);
+  });
+
+  it('halts on git branch topic during the call', async () => {
+    const result = await implementerThat(git('branch topic')).implement(inPlaceCall());
+
+    expect(result).toMatchObject({ outcome: 'checkout-changed', error: 'branch topic' });
+  });
+
+  it('halts on git add during the call, naming the git index', async () => {
+    const result = await implementerThat(git('add written.ts')).implement(inPlaceCall());
+
+    expect(result).toMatchObject({ outcome: 'checkout-changed', error: 'git index' });
+  });
+
+  it('halts on git commit during the call, naming the moved branch and the index', async () => {
+    const result = await implementerThat(() => {
+      git('add written.ts')();
+      git('commit -qm escaped')();
+    }).implement(inPlaceCall());
+
+    expect(result.outcome).toBe('checkout-changed');
+    expect(result.error).toMatch(/^branch \S+ · git index$/);
+  });
+
+  it('only warns about a commit and an edit the user made between two calls', async () => {
+    const { bus, events } = makeBusRecorder();
+    const implementer = implementerThat(() => {}, bus);
+    await implementer.implement(inPlaceCall({ phase: 'implementing' }));
+    writeFileSync(join(projectDir, 'init.txt'), 'the user edits\n');
+    git('commit -qam user-commit')();
+    writeFileSync(join(projectDir, 'notes.md'), 'a user note\n');
+
+    const result = await implementer.implement(inPlaceCall({ phase: 'implementing' }));
+
+    expect(result.success).toBe(true);
+    const warnings = events.filter((event) => event.type === 'warning');
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatchObject({ code: 'checkout_changed_between_calls' });
+    expect(warnings[0]?.message).toMatch(/notes\.md/);
+    expect(warnings[0]?.message).toMatch(/branch \S+/);
+    expect(warnings[0]?.message).not.toMatch(/written\.ts/);
+  });
+
+  it('warns about a user edit between two calls of one run made by two implementer instances', async () => {
+    // Routing builds a fresh implementer for a brief on another profile; the run is the same.
+    const { bus, events } = makeBusRecorder();
+    const call = inPlaceCall({ phase: 'implementing', sessionId: 'run-1' });
+    await implementerThat(() => {}, bus).implement(call);
+    writeFileSync(join(projectDir, 'notes.md'), 'a user note\n');
+
+    const result = await implementerThat(() => {}, bus).implement(call);
+
+    expect(result.success).toBe(true);
+    const warnings = events.filter((event) => event.type === 'warning');
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatchObject({ code: 'checkout_changed_between_calls' });
+    expect(warnings[0]?.message).toMatch(/notes\.md/);
+  });
+
+  it('does not blame the user for a call whose closing checkout read failed', async () => {
+    const { bus, events } = makeBusRecorder();
+    const call = inPlaceCall({ phase: 'implementing', sessionId: 'run-read-failed' });
+    await implementerThat(() => {}, bus).implement(call);
+    await implementerThat(() => {
+      writeFileSync(join(projectDir, 'second.ts'), 'export {};\n');
+      // The call's own audit read and the closing read both fail.
+      checkoutReads.failing = 2;
+    }, bus).implement(call);
+
+    await implementerThat(() => {}, bus).implement(call);
+
+    expect(
+      events.filter(
+        (event) => event.type === 'warning' && event.code === 'checkout_changed_between_calls',
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe('createImplementerBase — a staged copy inside the checkout', () => {
+  it("halts on git add from the staged copy, which writes the checkout's index", async () => {
+    const staged = join(projectDir, '.splitbrief', 'sessions', 's1', 'stage-1', 'workspace');
+    mkdirSync(staged, { recursive: true });
+    writeFileSync(join(projectDir, 'loose.ts'), 'export {};\n');
+    const invoke = vi.fn().mockImplementation(async () => {
+      execSync('git add :/loose.ts', { cwd: staged, stdio: 'pipe' });
       return makeRunnerCallResult({ status: 'completed', text: 'done', usage: null });
     });
     const implementer = createImplementerBase(makeBaseConfig({ extractsCode: false, invoke }));
 
     const result = await implementer.implement({
-      ...isolatedCall(),
-      projectDir,
+      task: makeTask(),
+      projectDir: staged,
       fileIgnoreProjectDir: projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
     });
 
-    expect(result.success).toBe(true);
+    expect(result).toMatchObject({ outcome: 'checkout-changed', error: 'git index' });
   });
 });
 

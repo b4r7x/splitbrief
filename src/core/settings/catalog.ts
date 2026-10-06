@@ -1,7 +1,8 @@
 import type { Config } from '../schemas/config.js';
-import { APPROVE_LEVELS } from '../schemas/enums.js';
+import { APPROVE_LEVELS, ISOLATION_STRATEGIES } from '../schemas/enums.js';
 import { CompactionFormatSchema } from '../schemas/compaction.js';
 import { resolveImplementerProfiles } from '../config/accessors/implementer-profiles.js';
+import { getIsolationStrategy } from '../config/accessors/values.js';
 import { RUNNER_IDLE_KILL_MS } from '../schemas/runner-fields.js';
 
 const isApiImplementer = (config: Config): boolean =>
@@ -20,6 +21,7 @@ export interface SettingDef {
   description: string;
   kind: SettingKind;
   options?: string[];
+  optionLabels?: Readonly<Record<string, string>>;
   min?: number;
   max?: number;
   integer?: boolean;
@@ -94,6 +96,16 @@ export const SETTINGS_DEFS: SettingDef[] = [
     description: 'Auto-create a splitbrief/<slug> branch at workflow start',
     kind: 'boolean',
     readValue: (config) => config.workflow.git?.createBranch ?? false,
+  },
+  {
+    id: 'workflow.isolation',
+    label: 'Isolation',
+    section: 'Workflow',
+    description: 'Where the build seat writes its changes; worktree by default',
+    kind: 'enum',
+    options: [...ISOLATION_STRATEGIES],
+    optionLabels: { 'staged-copy': 'staged copy', none: 'your checkout' },
+    readValue: getIsolationStrategy,
   },
   {
     id: 'validation.typecheck',

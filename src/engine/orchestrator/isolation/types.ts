@@ -34,14 +34,18 @@ export type AttemptWorkspace = IsolatedWorkspace & {
 };
 
 export type RunWorkspace = {
-  kind: 'worktree' | 'staged-copy';
+  kind: 'worktree' | 'staged-copy' | 'checkout';
   projectDir: string;
   head: string | null;
   keptFiles: string[];
 };
 
 export type RunIsolation = {
-  open: (opts: { config: Config }) => Promise<RunWorkspace>;
+  /** `recorded` is the kind the run already holds; a run never changes mode once recorded. */
+  open: (opts: {
+    config: Config;
+    recorded?: RunWorkspace['kind'] | undefined;
+  }) => Promise<RunWorkspace>;
   acquire: (opts: {
     role: IsolationRole;
     config: Config;

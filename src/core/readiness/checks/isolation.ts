@@ -4,12 +4,25 @@ import { parse } from 'yaml';
 import { readPackageJson } from '../../project-meta.js';
 import { INTERNAL_SKIP_DIRS } from '../../paths.js';
 import { isRecord } from '../../../utils/type-guards.js';
+import type { IsolationStrategy } from '../../schemas/enums.js';
 import type { ReadinessCheck } from '../types.js';
 
 const CARGO_WORKSPACE_RE = /^\[workspace\]/m;
 
-/** Warnings for stacks a run worktree cannot serve because they resolve into the checkout. */
-export function buildIsolationChecks(projectDir: string): ReadinessCheck[] {
+const CHECKOUT_FIX =
+  'Set `workflow.isolation: none` in .splitbrief/config.yaml to run in your checkout (recommended for this stack), or `workflow.isolation: worktree` to keep the worktree.';
+
+/**
+ * Stacks a run worktree cannot serve because they resolve into the checkout. With
+ * `workflow.isolation` unset each one blocks and recommends the checkout, so the user
+ * confirms the choice once by writing the key; `none` silences them, an explicit
+ * worktree or staged copy keeps them as warnings.
+ */
+export function buildIsolationChecks(
+  projectDir: string,
+  isolation: IsolationStrategy | undefined,
+): ReadinessCheck[] {
+  if (isolation === 'none') return [];
   const checks: ReadinessCheck[] = [];
   const pkg = readPackageJson(projectDir);
   const workspaces = pkg === null ? undefined : pkg['workspaces'];
@@ -84,7 +97,14 @@ export function buildIsolationChecks(projectDir: string): ReadinessCheck[] {
       details: ['The Go workspace or the Cargo build cache is tied to the checkout.'],
     });
   }
-  return checks;
+  if (isolation !== undefined) return checks;
+  return checks.map((check) => ({
+    ...check,
+    severity: 'blocker',
+    summary: `${check.summary} Run in your checkout.`,
+    fix: CHECKOUT_FIX,
+    nextAction: 'fix-config',
+  }));
 }
 
 function isNonEmptyArray(value: unknown): boolean {

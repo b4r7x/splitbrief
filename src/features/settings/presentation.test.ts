@@ -12,6 +12,16 @@ function getDef(id: string) {
 }
 
 describe('displayValue', () => {
+  it.each([
+    ['none', 'your checkout'],
+    ['staged-copy', 'staged copy'],
+    ['worktree', 'worktree'],
+  ] as const)('reads isolation %s as %s', (isolation, label) => {
+    const def = getDef('workflow.isolation');
+    const config = makeConfig({ workflow: { isolation } });
+    expect(displayValue(def, def.readValue?.(config))).toBe(label);
+  });
+
   it('shows the raw value for string defs', () => {
     const def = getDef('validation.testCommand');
     expect(displayValue(def, 'npm test')).toBe('npm test');

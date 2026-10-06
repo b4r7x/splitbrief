@@ -12,6 +12,7 @@ import {
 } from '../approval/file-snapshots/entry.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import { entryToRestore } from '../approval/file-snapshots/restore.js';
+import { entryStoreDir } from '../isolation/entry-snapshot.js';
 
 function serialized(entry: FileSnapshotEntry): ReviewFileEntry {
   return entry.kind === 'absent'
@@ -39,7 +40,12 @@ export async function captureTaskReviewChanges(opts: {
       path: file,
     };
     try {
-      const before = await entryToRestore(opts.workspaceDir, opts.taskStartSnapshot, file);
+      const before = await entryToRestore(
+        opts.workspaceDir,
+        opts.taskStartSnapshot,
+        file,
+        entryStoreDir(opts.ref),
+      );
       const after = await readConfinedEntry(opts.workspaceDir, file);
       if (sameFileEntry(before, after)) continue;
       changes.push({

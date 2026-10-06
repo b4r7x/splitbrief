@@ -1,4 +1,5 @@
 import type { Task } from '../../../core/schemas/task.js';
+import { revertedDir } from '../isolation/entry-snapshot.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TokenUsage, TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { WorkflowContext } from '../types.js';
@@ -47,20 +48,17 @@ export async function handleFailedImplementation(opts: {
     implState.workspace.cleanup();
     return state;
   }
-  // A bundle that stopped mid-application already changed the target. Retrying
-  // would write over a prefix nobody has reviewed, and a later user edit is not
-  // something to undo, so the brief parks on what the receipt already names.
   const applyResult = implState.implResult.applyResult;
   if (
     applyResult?.status === 'partial' ||
     (applyResult?.status === 'failed' && applyResult.code === 'write-uncertain')
   ) {
-    state = raiseApiApplyRecovery({
+    state = await raiseApiApplyRecovery({
       wctx,
       state,
       task,
       result: applyResult,
-      workspacePath: implState.workspace.projectDir,
+      workspace: implState.workspace,
     });
     setTrackedState(state);
     return state;
@@ -152,6 +150,7 @@ export async function handleFailedImplementation(opts: {
         selectedImplementerProfile: wctx.implementerProfile,
       }),
       ...(seatSwap !== undefined && { seatSwap }),
+      ...(state.workspace?.kind === 'checkout' && { inPlace: { revertedDir: revertedDir(wctx) } }),
       createdAt: nowIso(),
     });
     publishError({ bus: wctx.bus, phase: state.phase, message: issue.message });

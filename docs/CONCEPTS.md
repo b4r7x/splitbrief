@@ -40,7 +40,7 @@ The "typing" side. Responsibilities:
 2. Produce code: either whole-file write or search/replace markers.
 3. Return code for SPLITBRIEF to write (`api`, `shell`), or write directly (`cli`, `agent`). Both paths use the run workspace.
 
-**Isolation directory**: the run workspace used by every writer. See [Run workspace](#run-workspace) and [isolation checks](./APPROVAL-AND-RECOVERY.md#isolation-checks).
+**Isolation directory**: the run workspace used by every writer. In checkout mode it is the checkout itself. See [Run workspace](#run-workspace) and [isolation checks](./APPROVAL-AND-RECOVERY.md#isolation-checks).
 
 The implementer is *stateless per task*. No conversation is maintained between tasks. This is deliberate: atomic tasks keep the context small enough to fit in an 8K model.
 
@@ -117,6 +117,10 @@ The retired phases `researching`, `specifying`, `reviewing-spec`, `clarifying`, 
 ## Run workspace
 
 The **run workspace** is one worktree or staged copy shared by all tasks, retries, checks and code reviews. The checkout receives the run result at Apply. [HOW-IT-WORKS.md](./HOW-IT-WORKS.md#run-workspace-and-apply) defines its creation and data flow.
+
+**Checkout mode** is `workflow.isolation: none`. The implementer of every transport works in your checkout itself, and checks and review run there. The run records `workspace.kind: 'checkout'` once. It has no Apply: a passing review closes it, and closing it writes no `run.patch`. Every revert SPLITBRIEF makes there first saves the replaced bytes under `.splitbrief/sessions/<id>/reverted/<stamp>/`. See [Implementer isolation](./CONFIGURATION.md#implementer-isolation).
+
+**Staged copy** is one project copy per run. It is the `staged-copy` value and the fallback when the worktree is unavailable. Its task-start and attempt snapshots are **entry snapshots**: each file's hash and mode, with the bytes stored once in the content-addressed store `.splitbrief/sessions/<id>/entries/`. They need no git, so a no-git project runs and restarts from that store. A no-git checkout in checkout mode uses the same snapshots.
 
 **Workspace-base** is the named snapshot captured when the run workspace is created. Apply uses it as the merge base. It includes captured uncommitted files. See [the three Apply states](./HOW-IT-WORKS.md#run-workspace-and-apply).
 

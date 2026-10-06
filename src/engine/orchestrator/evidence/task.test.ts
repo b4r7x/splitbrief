@@ -13,6 +13,7 @@ import {
   recordSkippedTaskEvidence,
   recordedTargetOutput,
   recordApiApplyEvidence,
+  recordedApiCreatedPaths,
 } from './task.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -413,5 +414,52 @@ describe('recordedTargetOutput', () => {
     mkdirSync(dirname(evidenceLedgerPath(ref)), { recursive: true });
     writeFileSync(evidenceLedgerPath(ref), '{"version": 2}\n');
     expect(recordedTargetOutput(ref, task).files).toEqual([]);
+  });
+});
+
+describe('recordedApiCreatedPaths', () => {
+  let projectDir: string;
+
+  beforeEach(() => {
+    projectDir = createTempDir('recorded-created-paths');
+  });
+
+  afterEach(() => {
+    cleanupTempDir(projectDir);
+  });
+
+  it('proves a creation only in the workspace whose receipt recorded it', () => {
+    const task = makeTask({ id: 'T001', action: 'create', file: 'src/a.ts' });
+    const ref = { projectDir, sessionId: 'sess-1' };
+    writeEvidenceLedger(
+      ref,
+      recordApiApplyEvidence({
+        ledger: createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] }),
+        task,
+        workspacePath: '/tmp/workspace-a',
+        result: {
+          callId: 'call-1',
+          status: 'applied',
+          candidatePaths: ['src/a.ts'],
+          applied: [
+            {
+              path: 'src/a.ts',
+              action: 'create',
+              beforeSha256: null,
+              afterSha256: 'a1',
+              afterMode: 0o644,
+              diff: '',
+              linesAdded: 1,
+              linesRemoved: 0,
+            },
+          ],
+          noops: [],
+          untouched: [],
+        },
+      }),
+    );
+
+    expect(recordedApiCreatedPaths(ref, task, '/tmp/workspace-a')).toEqual(['src/a.ts']);
+    expect(recordedApiCreatedPaths(ref, task, '/tmp/workspace-b')).toEqual([]);
   });
 });

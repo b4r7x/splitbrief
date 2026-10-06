@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeCallbacks, makeImplementer } from '#testing/helpers/orchestrator-factories.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -10,6 +10,10 @@ import {
   makeTaskWorkflowContext,
   setupTaskProject,
 } from '#testing/helpers/orchestrator-task-context.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { sessionDir } from '../../../core/paths.js';
+import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
+import { captureTaskReviewChanges } from './review-capture.js';
 import { appendReviewChanges, readReviewChanges } from '../../../core/evidence/review-changes.js';
 import { hashTaskBrief } from '../../brief-hash.js';
 import type { ImplementerOptions } from '../../implementers/types.js';
@@ -189,5 +193,48 @@ describe('captureTaskReviewChanges', () => {
     expect(scope.laterDiff).toBe('');
     expect(scope.provenance.uncertainFiles).toEqual([]);
     expect(scope.files[0]?.diff).toContain('+export const a = 1;');
+  });
+});
+
+describe('captureTaskReviewChanges from an entry snapshot (no git)', () => {
+  let dir = '';
+  afterEach(() => {
+    if (dir) cleanupTempDir(dir);
+    dir = '';
+  });
+
+  it('records the real before bytes, a deletion and a mode-only change', async () => {
+    dir = createTempDir('review-capture-entries-');
+    const ref = { projectDir: dir, sessionId: 'sess-entries' };
+    mkdirSync(sessionDir(dir, ref.sessionId), { recursive: true });
+    writeFileSync(join(dir, 'edit.txt'), 'before\n');
+    writeFileSync(join(dir, 'gone.txt'), 'deleted by the task\n');
+    writeFileSync(join(dir, 'run.sh'), '#!/bin/sh\n');
+    chmodSync(join(dir, 'run.sh'), 0o644);
+    const taskStartSnapshot = await captureWorkspaceSnapshot(dir, ref);
+    writeFileSync(join(dir, 'edit.txt'), 'after\n');
+    rmSync(join(dir, 'gone.txt'));
+    chmodSync(join(dir, 'run.sh'), 0o755);
+    const task = makeTask({ id: 'T001', action: 'modify', file: 'edit.txt' });
+
+    await captureTaskReviewChanges({ ref, workspaceDir: dir, task, taskStartSnapshot });
+
+    const changes = new Map(
+      (readReviewChanges(ref)?.changes ?? []).map((change) => [change.path, change]),
+    );
+    const decoded = (path: string, side: 'before' | 'after') => {
+      const change = changes.get(path);
+      if (change?.kind !== 'captured') return `not captured: ${change?.kind}`;
+      const entry = change[side];
+      return entry === null ? null : Buffer.from(entry.base64, 'base64').toString('utf8');
+    };
+    expect(decoded('edit.txt', 'before')).toBe('before\n');
+    expect(decoded('edit.txt', 'after')).toBe('after\n');
+    expect(decoded('gone.txt', 'before')).toBe('deleted by the task\n');
+    expect(decoded('gone.txt', 'after')).toBeNull();
+    const mode = changes.get('run.sh');
+    expect(mode?.kind === 'captured' && [mode.before?.mode, mode.after?.mode]).toEqual([
+      0o644, 0o755,
+    ]);
   });
 });

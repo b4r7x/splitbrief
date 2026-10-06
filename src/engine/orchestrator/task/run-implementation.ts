@@ -14,7 +14,6 @@ import { gateChangedFiles, type GateChangedFilesDenial } from '../approval/gate-
 import { persistApiApplyEvidence, persistApprovalEvidence } from '../evidence/persistence.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
-import { inferTaskAcceptedChangedFiles } from '../changed-files-baseline.js';
 import { hashTaskBrief } from '../../brief-hash.js';
 import { isAbortError } from '../../../utils/abort.js';
 import { implementerSeatAttempt, runSeatCall } from '../escalation/seat-wait.js';
@@ -44,12 +43,9 @@ async function changedDeclaredFilesNote(
 ): Promise<{ extra?: string }> {
   try {
     const patterns = taskDeclaredPatterns(task);
-    const changed =
-      taskStartSnapshot.baselineFileHashes === undefined
-        ? await inferTaskAcceptedChangedFiles(projectDir, task, taskStartSnapshot.head)
-        : (await getChangedFilesSinceSnapshot(projectDir, taskStartSnapshot)).filter((file) =>
-            isInDeclaredSet(file, patterns),
-          );
+    const changed = (await getChangedFilesSinceSnapshot(projectDir, taskStartSnapshot)).filter(
+      (file) => isInDeclaredSet(file, patterns),
+    );
     if (changed.length === 0) return {};
     return {
       extra: `These declared files changed since this brief started (an earlier attempt of this brief left them): ${changed.join(', ')}`,
@@ -192,7 +188,9 @@ export async function runImplementation(opts: {
           fileIgnoreProjectDir: projectDir,
           changeDetection: workspace.changeDetection,
           ...(continuation !== undefined && { continuation }),
-          ...(createdByThisTask.length > 0 && { createdByThisTask }),
+          ...((createdByThisTask.length > 0 || state.workspace?.kind === 'checkout') && {
+            createdByThisTask,
+          }),
           phase: state.phase,
           approveWrite: async (file) => {
             const decision = await gateChangedFiles({

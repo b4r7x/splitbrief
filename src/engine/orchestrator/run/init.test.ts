@@ -935,11 +935,16 @@ describe('initializeWorkflow — a task interrupted mid-gate', () => {
         'edited by the operator after the kill',
       );
       expect(readFileSync(join(projectDir, 'src/two.ts'), 'utf-8')).toBe('original');
+      // A run without a workspace worked in the checkout, so the restore saved what it replaced.
       expect(
         events
           .filter((e): e is Extract<EngineEvent, { type: 'warning' }> => e.type === 'warning')
           .map((e) => e.message),
-      ).toContain('Restored 1 unfinished change(s) from the interrupted T001: src/two.ts');
+      ).toContainEqual(
+        expect.stringMatching(
+          /^Restored 1 unfinished change\(s\) from the interrupted T001: src\/two\.ts\. The replaced bytes are in \.splitbrief\/sessions\/session-init-operator-edit\/reverted\//,
+        ),
+      );
     });
   });
   it('restores an unplanned file the interrupted brief promoted, as well as its declared files', async () => {

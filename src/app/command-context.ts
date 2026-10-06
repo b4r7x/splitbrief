@@ -59,6 +59,7 @@ import { modelCacheStore } from '../stores/discovery/model-cache/state.js';
 import { createCommandContext } from '../core/runtime/commands/context-factory.js';
 import { copyToClipboard } from '../lib/clipboard/clipboard.js';
 import { acceptRunSnapshot, rejectRunSnapshot } from '../engine/snapshots/run/lifecycle.js';
+import { rejectCheckoutRun } from '../engine/snapshots/run/rollback.js';
 import { runApply } from '../engine/orchestrator/apply/run.js';
 import { restoreApplyBackup } from '../engine/orchestrator/apply/restore.js';
 import { createRecoveryBus } from '../engine/orchestrator/recovery/bus.js';
@@ -111,9 +112,7 @@ function runCommandState(
   }
   if (hydration.kind === 'missing') return { kind: 'snapshot' };
   const { state } = hydration;
-  return state.workspace?.kind === 'worktree' || state.workspace?.kind === 'staged-copy'
-    ? { kind: 'workspace', state }
-    : { kind: 'snapshot' };
+  return state.workspace !== undefined ? { kind: 'workspace', state } : { kind: 'snapshot' };
 }
 
 function isRunAtRest(ref: SessionRef): boolean {
@@ -162,7 +161,7 @@ async function acceptRun(
   if (!isRunAtRest(record.ref) || record.status.kind === 'running') {
     return { status: 'unavailable', message: 'Apply is unavailable while the run is active.' };
   }
-  if (record.status.kind !== 'ready-to-apply') {
+  if (state.workspace?.kind !== 'checkout' && record.status.kind !== 'ready-to-apply') {
     return { status: 'unavailable', message: 'Run is not ready to apply.' };
   }
   const config = configStore.get().config;
@@ -171,6 +170,11 @@ async function acceptRun(
   }
   const finalize = prepareRunFinalization(record.ref, config);
   const bus = createRecoveryBus({ projectDir, sessionId, sink: addTuiEvent });
+  if (state.workspace?.kind === 'checkout') {
+    const closure = await closeRunIfOpen({ projectDir, sessionId, bus }, state);
+    if (closure.closedNow) finalize(closure.state);
+    return { status: 'ended' };
+  }
   const result = await runApply({
     wctx: { projectDir, sessionId, bus },
     state,
@@ -197,7 +201,7 @@ async function rejectRun(projectDir: string, sessionId: string): Promise<RejectR
       message: 'Run rejection is unavailable while the run is active.',
     };
   }
-  if (record.status.kind === 'closed') {
+  if (state.workspace?.kind !== 'checkout' && record.status.kind === 'closed') {
     if (record.status.as === 'applied' && state.applied !== undefined) {
       const result = await restoreApplyBackup({
         projectDir,
@@ -214,6 +218,14 @@ async function rejectRun(projectDir: string, sessionId: string): Promise<RejectR
   }
   const finalize = prepareRunFinalization(record.ref, config);
   const bus = createRecoveryBus({ projectDir, sessionId, sink: addTuiEvent });
+  if (state.workspace?.kind === 'checkout') {
+    const result = await rejectCheckoutRun(projectDir, sessionId);
+    if (result.missingSnapshotFiles.length === 0) {
+      const closure = await closeRunIfOpen({ projectDir, sessionId, bus }, state, 'discarded');
+      if (closure.closedNow) finalize(closure.state);
+    }
+    return result;
+  }
   const closure = await closeRunIfOpen({ projectDir, sessionId, bus }, state, 'discarded');
   if (closure.closedNow) finalize(closure.state);
   return { status: 'discarded' };

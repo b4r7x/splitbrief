@@ -165,7 +165,7 @@ async function runRetryStepAttempt(
     applyResult?.status === 'partial' ||
     (applyResult?.status === 'failed' && applyResult.code === 'write-uncertain')
   ) {
-    state = raiseApiApplyRecovery({ wctx: ctx, state, task, result: applyResult, workspacePath });
+    state = await raiseApiApplyRecovery({ wctx: ctx, state, task, result: applyResult, workspace });
     return { state, task, lastError: applyResult.error, attempts, result: failedRetry(attempts) };
   }
 

@@ -47,7 +47,12 @@ export async function closeRunIfOpen(
     if (!patchHandled) {
       patchHandled = true;
       const workspace = latest.workspace;
-      if (workspace !== undefined && workspace.kind !== 'checkout') {
+      if (workspace?.kind === 'checkout') {
+        warn(
+          'This run edited your checkout directly: its changes are already there, so nothing is unapplied and no run patch was written.',
+          latest.phase,
+        );
+      } else if (workspace !== undefined) {
         workspaceToRemove = workspace;
         if (existsSync(workspace.path)) {
           const patchPath = await writeRunPatch(scope, workspace);

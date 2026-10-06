@@ -20,7 +20,12 @@ export function settingsHelpLines(item: SettingsItem): HelpLine[] {
     return [{ text: `${def.description} · ${def.min}–${def.max}` }];
   }
   if (def.kind === 'enum') {
-    return [{ text: def.description }, { text: (def.options ?? []).join(' · ') }];
+    return [
+      { text: def.description },
+      {
+        text: (def.options ?? []).map((option) => def.optionLabels?.[option] ?? option).join(' · '),
+      },
+    ];
   }
   return [{ text: def.description }];
 }

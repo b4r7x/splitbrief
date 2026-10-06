@@ -9,6 +9,7 @@ import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
 import { mutateEvidenceLedger, readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import {
   recordApiApplyEvidence,
+  recordApiRevertEvidence,
   recordLocalTaskEvidence,
   recordRetryOrEscalationEvidence,
   recordSkippedTaskEvidence,
@@ -21,6 +22,8 @@ import { hashTaskBrief } from '../../brief-hash.js';
 import type { GateDecision } from '../approval/types.js';
 import type { EvidenceLedger, EvidenceValidationEntry } from '../../../core/schemas/evidence.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
+import type { AttemptWorkspace } from '../isolation/types.js';
+import { revertedDir } from '../isolation/entry-snapshot.js';
 
 export function getOrCreateLedger(opts: { ref: SessionRef; state: WorkflowState }): EvidenceLedger {
   const { ref, state } = opts;
@@ -163,20 +166,33 @@ export function persistApiApplyEvidence(opts: {
   }
 }
 
-/** Stop on a known partial apply or an uncertain write without erasing its workspace. */
-export function raiseApiApplyRecovery(opts: {
+/** A checkout attempt is put back before recovery; an isolated attempt keeps its partial output. */
+export async function raiseApiApplyRecovery(opts: {
   wctx: WorkflowContext;
   state: WorkflowState;
   task: Task;
   result: Extract<BundleApplyResult, { status: 'partial' | 'failed' }>;
-  workspacePath: string;
-}): WorkflowState {
-  const { wctx, state, task, result, workspacePath } = opts;
+  workspace: AttemptWorkspace;
+}): Promise<WorkflowState> {
+  const { wctx, state, task, result, workspace } = opts;
+  const workspacePath = workspace.projectDir;
+  const inPlace = state.workspace?.kind === 'checkout';
+  if (inPlace) {
+    await workspace.revert(await workspace.changedFiles());
+    mutateEvidenceLedger(wctx, (existing) =>
+      recordApiRevertEvidence({
+        ledger: existing ?? getOrCreateLedger({ ref: wctx, state }),
+        task,
+      }),
+    );
+  }
   const landed = result.applied.map((file) => file.path).join(', ');
   const message =
     result.status === 'partial'
-      ? `${task.id}: the response stopped at ${result.failedPath} after applying ${landed}; partial changes kept in the run workspace, and the brief did not advance (${result.error})`
-      : `${task.id}: the outcome of writing ${result.failedPath} is uncertain in the run workspace; reconcile this file before continuing (${result.error})`;
+      ? `${task.id}: the response stopped at ${result.failedPath} after applying ${landed}; ${inPlace ? 'partial changes put back in your checkout' : 'partial changes kept in the run workspace'}, and the brief did not advance (${result.error})`
+      : inPlace
+        ? `${task.id}: the outcome of writing ${result.failedPath} was uncertain; the attempt changes were put back in your checkout (${result.error})`
+        : `${task.id}: the outcome of writing ${result.failedPath} is uncertain in the run workspace; reconcile this file before continuing (${result.error})`;
   publishError({ bus: wctx.bus, phase: state.phase, message });
   return raisePendingRecovery(
     wctx,
@@ -190,7 +206,9 @@ export function raiseApiApplyRecovery(opts: {
       affectedTaskIds: [task.id],
       message,
       details: [
-        `The partial writes stay in the run workspace at ${workspacePath}; the checkout is unchanged.`,
+        inPlace
+          ? `The partial writes were put back to the attempt start in your checkout. The replaced bytes are in ${revertedDir(wctx)}.`
+          : `The partial writes stay in the run workspace at ${workspacePath}; the checkout is unchanged.`,
       ],
       facts: { apiApplyIncomplete: true, workspacePath },
       availableActions: ['retry-same-worker', 'pause-run', 'end-run'],

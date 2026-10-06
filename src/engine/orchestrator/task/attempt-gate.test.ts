@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { entryStoreDir } from '../isolation/entry-snapshot.js';
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { makeCallbacks, makeImplementer } from '#testing/helpers/orchestrator-factories.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -400,7 +401,7 @@ describe('gateAttemptChanges', () => {
     disposers.push(() => isolation.dispose());
     const failed = await isolation.acquire({ role: 'implementer', config });
     writeFileSync(join(failed.projectDir, HELLO), 'export const hello = "failed";\n');
-    rmSync(join(dirname(failed.projectDir), 'attempt-base'), { recursive: true, force: true });
+    rmSync(entryStoreDir({ projectDir, sessionId }), { recursive: true, force: true });
 
     failed.cleanup();
 

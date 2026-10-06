@@ -107,13 +107,16 @@ export function setupE2eScenario(scenario: E2eScenario): E2eContext {
 }
 
 /**
- * Runs the scenario to its passing review, then applies it the way an operator
- * does from the shell. The run builds in its own workspace, so the checkout must
- * be exactly as it started until Apply writes the run into it.
+ * Runs the scenario to its passing review. A worktree run builds in its own
+ * workspace, so the checkout must be exactly as it started until Apply, run the
+ * way an operator does from the shell, writes the run into it. A checkout-mode
+ * run (`workflow.isolation: none`) edits the checkout as it goes and closes on
+ * its passing review: there is nothing to apply.
  */
 export async function runE2eWorkflow(
   ctx: E2eContext,
   scenario: E2eScenario,
+  onEvent?: (event: EngineEvent) => void,
 ): ReturnType<typeof runWorkflow> {
   const checkoutAtStart = checkoutEntries(ctx.projectDir);
   const bus = createEventBus();
@@ -155,7 +158,10 @@ export async function runE2eWorkflow(
     headless: true,
     sinks: TEST_WORKFLOW_SINKS,
     eventBus: bus,
-    _eventSink: (event) => ctx.events.push(event),
+    _eventSink: (event) => {
+      ctx.events.push(event);
+      onEvent?.(event);
+    },
     callbacks: {
       onApprovalNeeded: async () => ({ approved: true }),
       onPlannerReply: async () => '',
@@ -165,6 +171,10 @@ export async function runE2eWorkflow(
   });
 
   const { sessionId } = preparation.execution.session.ref;
+  if (scenario.config.workflow.isolation === 'none') {
+    expect(loadState({ projectDir: ctx.projectDir, sessionId })?.workspace?.kind).toBe('checkout');
+    return summary;
+  }
   expect(checkoutEntries(ctx.projectDir), 'the checkout changed before Apply').toEqual(
     checkoutAtStart,
   );

@@ -78,6 +78,8 @@ type CheckoutRead = Readonly<{
   workspace: WorkspaceGitSnapshot | null;
 }>;
 
+const lastInPlaceByRun = new Map<string, { before: CheckoutRead; after: CheckoutRead }>();
+
 export interface ImplementerBaseConfig {
   extractsCode: boolean;
   backendKind?: RunnerCallContext['backendKind'] | undefined;
@@ -100,6 +102,11 @@ export interface ImplementerBaseConfig {
   isAvailable?: () => Promise<boolean>;
   unavailabilityReason?: () => string | undefined;
   publisher?: ImplementerPublisher | undefined;
+}
+
+/** The call edits the checkout itself: `workflow.isolation: none` hands every writer the project. */
+function worksInPlace(opts: ImplementerOptions): boolean {
+  return opts.fileIgnoreProjectDir !== undefined && opts.fileIgnoreProjectDir === opts.projectDir;
 }
 
 function retryTemperature(
@@ -195,6 +202,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         writesFiles,
         outputContract,
         plan: opts.plan,
+        inPlace: worksInPlace(opts),
       }));
   const buildRetryPrompt =
     baseConfig.buildRetryPrompt ??
@@ -209,6 +217,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         writesFiles,
         outputContract,
         plan: opts.plan,
+        inPlace: worksInPlace(opts),
       }));
 
   function failTask(opts: ImplementerOptions, error: string): void {
@@ -253,10 +262,10 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
     const captured = await captureBundleBaseline({
       projectDir: opts.projectDir,
       task: opts.task,
-      createdByThisTask: [
-        ...(createdByTask.get(creationScope(opts)) ?? []),
-        ...(opts.createdByThisTask ?? []),
-      ],
+      createdByThisTask:
+        worksInPlace(opts) && opts.createdByThisTask !== undefined
+          ? opts.createdByThisTask
+          : [...(createdByTask.get(creationScope(opts)) ?? []), ...(opts.createdByThisTask ?? [])],
     });
     if (captured.kind === 'rejected') {
       const error = `${captured.path}: ${captured.error}`;
@@ -381,7 +390,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
     try {
       const [checkout, workspace] = await Promise.all([
         snapshotCheckout(checkoutDir),
-        snapshotWorkspaceGit(workspaceDir),
+        snapshotWorkspaceGit(workspaceDir, checkoutDir),
       ]);
       return { checkout, workspace };
     } catch (err) {
@@ -402,8 +411,10 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
    * across one implementer call — a change that went around the isolation
    * directory instead of through promotion. The window is the call alone, so
    * edits between calls never count. A changed file is only reported: an editor
-   * save changes files too, and the audit cannot tell who made it. A stopped
-   * call only reports its state change: the run is already halting.
+   * save changes files too, and the audit cannot tell who made it. In the
+   * checkout itself the call's own writes are the files that change, so none
+   * is reported. A stopped call only reports its state change: the run is
+   * already halting.
    */
   async function checkoutEscape(
     opts: ImplementerOptions,
@@ -421,7 +432,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
       ...checkoutState,
       ...workspaceGitChanges({ before: before.workspace, after: after.workspace }),
     ];
-    if (files.length > 0 && opts.phase) {
+    if (files.length > 0 && !worksInPlace(opts) && opts.phase) {
       baseConfig.publisher?.publishWarning({
         phase: opts.phase,
         taskId: opts.task.id,
@@ -441,6 +452,33 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
     return [];
   }
 
+  /**
+   * An in-place call warns about what changed in the checkout since the last
+   * one ended — an edit or a commit of yours. It never halts: the next checks
+   * read the checkout as it is.
+   */
+  function warnChangedBetweenCalls(
+    opts: ImplementerOptions,
+    now: CheckoutRead,
+    runKey: string,
+  ): void {
+    const last = lastInPlaceByRun.get(runKey);
+    if (last === undefined || !opts.phase) return;
+    const { files, state } = checkoutChanges({ before: last.after.checkout, after: now.checkout });
+    const changes = [
+      ...files.filter((file) => now.checkout.files[file] !== last.before.checkout.files[file]),
+      ...state,
+      ...workspaceGitChanges({ before: last.after.workspace, after: now.workspace }),
+    ];
+    if (changes.length === 0) return;
+    baseConfig.publisher?.publishWarning({
+      phase: opts.phase,
+      taskId: opts.task.id,
+      message: `Task ${opts.task.id}: your checkout changed since the last call — ${formatCheckoutChanges(changes)}; the next checks read it as it is`,
+      safety: { category: 'implementer', code: 'checkout_changed_between_calls' },
+    });
+  }
+
   async function runPipeline(
     opts: ImplementerOptions,
     rawPrompt: string,
@@ -448,12 +486,44 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
     temperature: number | undefined,
     baselines: readonly BundleBaseline[],
   ): Promise<ImplementerResult> {
+    // A writer handed its own workspace may not touch the checkout it came from; one that works
+    // in the checkout itself is audited there.
+    const checkoutDir = opts.fileIgnoreProjectDir;
+    const checkoutBefore =
+      checkoutDir === undefined
+        ? undefined
+        : await readCheckout(opts, checkoutDir, opts.projectDir);
+    if (!worksInPlace(opts)) {
+      return runCall(opts, rawPrompt, attempt, temperature, baselines, checkoutBefore);
+    }
+    const runKey =
+      opts.sessionId === undefined ? undefined : JSON.stringify([opts.projectDir, opts.sessionId]);
+    if (checkoutBefore !== undefined && runKey !== undefined)
+      warnChangedBetweenCalls(opts, checkoutBefore, runKey);
+    const result = await runCall(opts, rawPrompt, attempt, temperature, baselines, checkoutBefore);
+    const after = await readCheckout(opts, opts.projectDir, opts.projectDir);
+    if (runKey === undefined) return result;
+    // Without both reads this call's own writes cannot be told from yours, so the next call starts fresh.
+    if (checkoutBefore === undefined || after === undefined) lastInPlaceByRun.delete(runKey);
+    else lastInPlaceByRun.set(runKey, { before: checkoutBefore, after });
+    return result;
+  }
+
+  async function runCall(
+    opts: ImplementerOptions,
+    rawPrompt: string,
+    attempt: number,
+    temperature: number | undefined,
+    baselines: readonly BundleBaseline[],
+    checkoutBefore: CheckoutRead | undefined,
+  ): Promise<ImplementerResult> {
     const languageContext = opts.languageContext ?? buildLanguageContext(undefined);
     const systemPreamble = formatImplementerSystemPreamble(
       languageContext,
       writesFiles,
       opts.projectDir,
       outputContract,
+      worksInPlace(opts),
     );
     const prompt =
       prependSystemPreamble && systemPreamble ? systemPreamble + '\n\n' + rawPrompt : rawPrompt;
@@ -488,13 +558,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
       implBuffer?.append(text);
     };
 
-    // A writer handed its own workspace may not touch the checkout it came from.
-    const checkoutDir =
-      opts.fileIgnoreProjectDir !== undefined && opts.fileIgnoreProjectDir !== projectDir
-        ? opts.fileIgnoreProjectDir
-        : undefined;
-    const checkoutBefore =
-      checkoutDir === undefined ? undefined : await readCheckout(opts, checkoutDir, projectDir);
+    const checkoutDir = opts.fileIgnoreProjectDir;
 
     if (phase) baseConfig.publisher?.publishRunning({ phase, taskId: task.id, file: task.file });
     const startTime = Date.now();

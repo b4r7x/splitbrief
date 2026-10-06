@@ -568,7 +568,7 @@ Stop options · Changes and draft stay.
 - **`End run`** stops the same way as Stop now and persists the session with status `ended`: `Cancelled by you at T002 · Changes kept`.
 - **`ctrl+q` / `/quit`** stops safely, saves the session, and then exits.
 
-No option writes the run's changes into your checkout or reverts it: the briefs build in the run workspace, and only Apply writes the reviewed result into the checkout. End run on a worktree or staged-copy run keeps the changes in `.splitbrief/sessions/<id>/run.patch`. Opening the menu preserves the draft; `Tab` dismisses it and returns to writing.
+No option writes the run's changes into your checkout or reverts it: the briefs build in the run workspace, and only Apply writes the reviewed result into the checkout. In the checkout mode (`workflow.isolation: none`) the briefs build in the checkout itself, so their changes are already there and nothing is applied later. End run on a worktree or staged-copy run keeps the changes in `.splitbrief/sessions/<id>/run.patch`. Opening the menu preserves the draft; `Tab` dismisses it and returns to writing.
 
 **Variations:** `/resume` continues an open run — typed instructions steer it, a blank Enter resumes a continuable run at rest but not a run parked in this process; `/end` closes a parked one. From the shell, `splitbrief resume` re-enters the active saved run and `splitbrief continue <session-id>` works when the active pointer is gone. Every open run is continuable, one stopped in its planning session included; a run killed during validation or escalation re-enters at the start of the brief it was on. Only a closed run is refused, and a saved state that is not the current version must be migrated before it will resume.
 
@@ -726,10 +726,11 @@ done: 2 tasks
 |---|---|
 | `skip` | `skip-current-task` — marks the blocked brief skipped, records evidence, and moves on |
 | `retry` | `retry-same-worker` — resets the brief and reruns it in a fresh worker context |
+| `restore` | `restore-backup` — after a partial Apply (`apply-partial`), puts back the checkout files Apply replaced, from the Apply backup |
 | `switch-seat:<tool>[:<model>]` | Moves the blocked seat to another detected tool, then reruns the brief there — the answer to a quota halt |
 | `end-run` | Closes the run and starts nothing; the files it wrote stay on disk |
 
-**Variations:** `--action` is a `continue` flag; `resume` has no equivalent, and a bare `splitbrief resume --plain` on a session with a pending recovery prints the same three lines and exits `1`. An action the issue does not allow exits `1` and names the actions it does allow; a value that is not a recovery action exits `2` with `'<value>' is not a recovery action. Use skip, retry, switch-seat:<tool>[:<model>], or end-run.` A recovery whose recommended action is a row of the recovery panel prints `Continue with: splitbrief continue <session>, then choose <row> in the recovery panel` instead — `Pause run`, for example — with no `[--plain|--json]`, because the panel needs the TUI.
+**Variations:** `--action` is a `continue` flag; `resume` has no equivalent, and a bare `splitbrief resume --plain` on a session with a pending recovery prints the same three lines and exits `1`. An action the issue does not allow exits `1` and names the actions it does allow; a value that is not a continue action exits `2` with `'<value>' is not a continue action. Use skip, retry, restore, switch-seat:<tool>[:<model>], end-run, apply, or discard.` A recovery whose recommended action is a row of the recovery panel prints `Continue with: splitbrief continue <session>, then choose <row> in the recovery panel` instead — `Pause run`, for example — with no `[--plain|--json]`, because the panel needs the TUI.
 
 **See also:** [docs/CLI-REFERENCE.md](./CLI-REFERENCE.md#splitbrief-continue), [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md).
 

@@ -123,6 +123,10 @@ describe('parseContinueActionOption', () => {
     expect(parseContinueActionOption('discard')).toEqual({ action: 'discard' });
   });
 
+  it('maps restore to the backup restore a partial Apply offers', () => {
+    expect(parseContinueActionOption('restore')).toEqual({ action: 'restore-backup' });
+  });
+
   it('exits 2 on an action it does not offer', () => {
     expect(() => parseContinueActionOption('abort')).toThrowError(
       expect.objectContaining({ exitCode: 2 }),

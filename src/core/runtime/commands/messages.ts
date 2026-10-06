@@ -10,5 +10,7 @@ export function formatRejectRunMessage(
     result.missingSnapshotFiles.length > 0
       ? `, ${result.missingSnapshotFiles.length} missing snapshot file(s)`
       : '';
-  return `Run rejected from snapshot ${result.snapshotId}: ${changedCount} file(s) restored/deleted${conflictText}${missingText}.`;
+  const savedText =
+    result.savedTo === undefined ? '' : ` The replaced bytes are in ${result.savedTo}.`;
+  return `Run rejected from snapshot ${result.snapshotId}: ${changedCount} file(s) restored/deleted${conflictText}${missingText}.${savedText}`;
 }

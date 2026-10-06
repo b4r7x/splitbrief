@@ -38,6 +38,7 @@ import {
   buildRetryExhaustedRecoveryIssue,
   buildReviewFailedRecoveryIssue,
   buildRunnerUsageLimitRecoveryIssue,
+  buildLeftIsolationRecoveryIssue,
   runnerHaltRow,
   type SeatSwapContext,
 } from '../../../../src/engine/orchestrator/recovery/builders/task.js';
@@ -1538,6 +1539,22 @@ const leftIsolationRecoveryIssue: RecoveryIssue = {
   createdAt: new Date(FIXED_TS).toISOString(),
 };
 
+const leftIsolationInPlaceRecoveryIssue = buildLeftIsolationRecoveryIssue({
+  id: 'rec_visual_left_isolation_in_place',
+  task: HALTED_TASK,
+  runner: AGY_BUILD_SEAT,
+  toolMessage: 'wrote outside the checkout with run_command: touch ../outside.txt',
+  attempts: 0,
+  maxAttempts: DEFAULT_LOCAL_RETRIES,
+  inPlace: { revertedDir: `.splitbrief/sessions/${VISUAL_WORKFLOW_SESSION_ID}/reverted` },
+  seatSwap: {
+    seat: 'build',
+    currentTool: 'antigravity',
+    detectedTools: [{ tool: 'codex', ready: true }],
+  },
+  createdAt: new Date(FIXED_TS).toISOString(),
+});
+
 const leftIsolationRecoveryProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_RECOVERY_LEFT_ISOLATION_ID,
   feature: WORKFLOW_FEATURE,
@@ -1546,6 +1563,13 @@ const leftIsolationRecoveryProjection: WorkflowFixtureProjection = {
   events: [],
   config: AGY_CREW,
   resumeState: haltedResumeState(leftIsolationRecoveryIssue),
+};
+
+const leftIsolationInPlaceRecoveryProjection: WorkflowFixtureProjection = {
+  ...leftIsolationRecoveryProjection,
+  scenarioId: scenarioId('workflow-recovery-left-isolation-in-place'),
+  config: { ...AGY_CREW, workflow: { isolation: 'none' } },
+  resumeState: haltedResumeState(leftIsolationInPlaceRecoveryIssue),
 };
 
 /**
@@ -2512,6 +2536,7 @@ const projections = [
   consultBoundRecoveryProjection,
   reviewFailedRecoveryProjection,
   leftIsolationRecoveryProjection,
+  leftIsolationInPlaceRecoveryProjection,
   checkoutChangedRecoveryProjection,
   apiContextRecoveryProjection,
   planSeatRecoveryProjection,

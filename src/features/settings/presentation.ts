@@ -35,7 +35,8 @@ export function displayValue(
     return `auto (${formatContextLength(detectedContextLength)})`;
   }
   if (value !== undefined && value !== null) {
-    return String(value);
+    const raw = String(value);
+    return def.optionLabels?.[raw] ?? raw;
   }
   return def.unsetLabel ?? '—';
 }

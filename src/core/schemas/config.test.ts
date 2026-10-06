@@ -165,12 +165,21 @@ describe('ConfigSchema user config contracts', () => {
     ).toBe('staged-copy');
   });
 
+  it('accepts workflow.isolation none, the checkout mode', () => {
+    expect(
+      ConfigSchema.parse({
+        ...validConfig,
+        workflow: { ...validConfig.workflow, isolation: 'none' },
+      }).workflow.isolation,
+    ).toBe('none');
+  });
+
   it('rejects an unknown workflow.isolation strategy with a Zod enum error', () => {
     expect(
       hasIssueAtPath(
         issuesFor({
           ...validConfig,
-          workflow: { ...validConfig.workflow, isolation: 'none' },
+          workflow: { ...validConfig.workflow, isolation: 'clone' },
         }),
         'workflow.isolation',
       ),

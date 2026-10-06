@@ -32,6 +32,7 @@ export interface AcceptRunSnapshotResult {
 export type AcceptRunResult =
   | { status: 'snapshot-accepted'; snapshotId: string; isFirstSnapshot: boolean }
   | { status: 'applied'; files: string[] }
+  | { status: 'ended' }
   | { status: 'halted' }
   | { status: 'review' }
   | { status: 'confirm-override'; findings: string[] }
@@ -47,6 +48,7 @@ export type RejectRunSnapshotResult =
       deletedPaths: string[];
       conflictedPaths: string[];
       missingSnapshotFiles: string[];
+      savedTo?: string;
     };
 
 export type RejectRunResult =

@@ -17,9 +17,10 @@ import type {
   PersistedChangedFilesBaseline,
 } from '../../core/schemas/workflow.js';
 import { readProjectSymlink } from './approval/file-snapshots/entry.js';
+import { getChangedFilesSinceSnapshot } from './approval/file-snapshots/capture.js';
 import { recordedTargetOutput } from './evidence/task.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
-import { captureStagedSnapshot, changedStagedFiles } from './isolation/staged-snapshot.js';
+import { listWorkspaceEntries } from './isolation/entry-snapshot.js';
 
 export type ChangedFilesBaseline = {
   head: string | null;
@@ -83,8 +84,7 @@ async function captureHead(projectDir: string): Promise<string | null> {
 }
 
 async function candidateChangedFiles(projectDir: string, head: string | null): Promise<string[]> {
-  if (!existsSync(join(projectDir, '.git')))
-    return (await captureStagedSnapshot(projectDir, projectDir)).files;
+  if (!existsSync(join(projectDir, '.git'))) return listWorkspaceEntries(projectDir, projectDir);
   const base = await resolveRunStartBase({ projectDir, head });
   const working = userVisibleChangedFiles(await getCurrentChangedFiles(projectDir));
   const committed =
@@ -208,8 +208,8 @@ export async function inferTaskOwnChangedFiles(
   const recorded = new Set(recordedTargetOutput(ref, task).files.map((file) => file.path));
   const patterns = taskDeclaredPatterns(task);
   const changedFiles =
-    snapshot?.baselineFileHashes === undefined
+    snapshot === undefined
       ? await candidateChangedFiles(codeDir, head)
-      : await changedStagedFiles(codeDir, snapshot);
+      : await getChangedFilesSinceSnapshot(codeDir, snapshot);
   return changedFiles.filter((file) => recorded.has(file) || isInDeclaredSet(file, patterns));
 }

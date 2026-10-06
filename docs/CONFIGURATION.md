@@ -389,7 +389,7 @@ The first-response deadline defaults to 120000 ms and stream-idle to 60000 ms. `
 
 `implementer` remains required for backwards compatibility and existing configs do not need to change. New configs may also define named implementer profiles so task routing can choose a cheap capable worker per Task Brief.
 
-An implementer pool is still one product role: SPLITBRIEF selects one capable profile per Task Brief. Parallel implementer writes are out of scope. `workflow.isolation` separates one implementer's work from your checkout, not two implementers from each other.
+An implementer pool is still one product role: SPLITBRIEF selects one capable profile per Task Brief. Parallel implementer writes are out of scope. A worktree or staged copy (`workflow.isolation`) separates one implementer's work from your checkout, not two implementers from each other.
 
 Profile names must be stable event-safe identifiers: lowercase letters, numbers, and hyphens, starting with a letter, up to 64 characters.
 
@@ -564,7 +564,7 @@ workflow: {
   };
 
   // The workspace used by every writer and validation
-  isolation?:             'worktree' | 'staged-copy';
+  isolation?:             'worktree' | 'staged-copy' | 'none'; // default worktree
 
   driftChainThreshold?:   0..1;
 
@@ -593,7 +593,7 @@ workflow: {
 | `maxRetries` (`max_retries`) | retired | absent | Loads with one notice and changes nothing: `workflow.max_retries was retired and is ignored: the lineage attempt allowance bounds the ladder now. Delete workflow.max_retries.` The ladder is one local retry then the planner's consult; the lineage's bounds and grant live in `BOUNDS` (`src/core/pipeline-spec/bounds.ts`). |
 | `git.commitStrategy` | retired | absent | Legacy `none` is accepted with a deprecation warning and removed from the loaded config; `checkpoint` and `per-task` are rejected. Omit the field. |
 | `git.createBranch` | boolean | `false` | Auto-create `splitbrief/<slug>` branch at workflow start. |
-| `isolation` | enum | `worktree` | The run workspace strategy for every writer: one linked git `worktree` or one `staged-copy` per run. Tasks, retries, validation and code review use it until [Apply](./WORKFLOW.md#apply). |
+| `isolation` | enum | `worktree` | Where every writer works: one linked git `worktree` or one `staged-copy` per run, used by tasks, retries, validation and code review until [Apply](./WORKFLOW.md#apply); or `none`, your checkout itself, with no Apply. Unset reads `worktree`. `splitbrief init` does not write this key. |
 | `driftChainThreshold` | 0..1 | `0.6` | Threshold used when omitted; higher = fewer drift-chain events. |
 | `compactionThreshold` | int >= 10 | unset | On resume, auto-compact persisted transcript context when compacted message count exceeds this threshold and the planner supports self-summarisation. |
 | `compactionFormat` | enum | `auto` | Summary format for transcript compaction: `auto` selects structured JSON for `api` planners, freeform text for `cli`, `shell`, and `agent`; `freeform` preserves legacy markdown/text summaries; `structured` requires Zod-validated JSON and falls back to freeform text if validation fails. |
@@ -604,18 +604,23 @@ workflow: {
 
 ### Implementer isolation
 
-Every writer uses one run workspace. `cli` and `agent` write there directly; SPLITBRIEF writes extracted `api` and `shell` code there too. The deterministic validation pipeline runs in that directory. The implementer's own checks do not replace it. See [workspace data flow](./HOW-IT-WORKS.md#run-workspace-and-apply).
+Every writer uses one run workspace. `cli` and `agent` write there directly; SPLITBRIEF writes extracted `api` and `shell` code there too. `workflow.isolation` chooses that workspace. In Settings, Space cycles Isolation through worktree, staged copy and your checkout, saving `worktree`, `staged-copy` and `none`. The deterministic validation pipeline runs in that directory. The implementer's own checks do not replace it. See [workspace data flow](./HOW-IT-WORKS.md#run-workspace-and-apply).
 
 | Value | What it does | Cost |
 |---|---|---|
 | `worktree` (default) | One linked git worktree with its own branch and history. Installed Node dependencies are linked. Python virtualenvs, Go caches and Rust target directories are not linked. | One worktree creation per run. |
 | `staged-copy` | One project copy per run, reused by tasks, retries and continuation. It excludes `.git`, `node_modules`, `.splitbrief/`, `.trees/` and credential files. It has no git history or installed dependencies. | One full project copy per run. |
+| `none` (shown as "your checkout") | The implementer of every transport works in your checkout itself. SPLITBRIEF writes an extracted-code implementer's code there. Validation, checks and review run there. There is no worktree, no workspace record and no Apply: a passing review closes the run. | No setup. Your checkout holds the run's edits as they happen. |
 
-The fallback also creates one staged copy per run. SPLITBRIEF uses it when the project has no git repository or commit, or when worktree creation fails. In a git project, the copy uses git's tracked and untracked file list with its ignore rules. A fixture excluded by those rules is absent from the copy. The no-git fallback copies ordinary project files with the same internal exclusions.
+The fallback also creates one staged copy per run. SPLITBRIEF uses it when the project has no git repository or commit, or when worktree creation fails. The worktree never switches to the checkout automatically. In a git project, the copy uses git's tracked and untracked file list with its ignore rules. A fixture excluded by those rules is absent from the copy. The no-git fallback copies ordinary project files with the same internal exclusions.
 
-Readiness warns about stacks the worktree cannot serve. These include linked Node workspace packages, Python editable installs, `go.work`, and a Cargo workspace with a checkout `target/` directory. Links can resolve to checkout sources instead of workspace changes. These warnings do not select another mode automatically. Verify that configured checks assess the workspace candidate. The staged-copy fallback does not supply missing dependencies.
+A staged copy captures its task-start and attempt snapshots entry by entry, without git. A snapshot holds each file's hash and mode. The bytes go once into a content-addressed store at `.splitbrief/sessions/<id>/entries/`. A no-git project therefore runs past its first brief, and a restart restores from that store. A no-git checkout in `none` uses the same snapshots.
 
-The workspace survives while the run stays open. [HOW-IT-WORKS.md](./HOW-IT-WORKS.md#run-workspace-and-apply) owns its worktree location and persistence. [Apply](./WORKFLOW.md#apply) owns checkout integration and closure. [Isolation checks](./APPROVAL-AND-RECOVERY.md#isolation-checks) describe writes that halt and reads that are logged. Neither strategy provides shell or network confinement.
+**Checkout mode (`none`).** The run records its mode once in `state.json` (`workspace.kind: 'checkout'`). A later config change does not move a recorded run. Do not edit the checkout while a brief runs. An edit or a commit between two implementer calls publishes a warning, and the next checks read the checkout as it is. A git write during a call halts ([Isolation checks](./APPROVAL-AND-RECOVERY.md#isolation-checks)). The implementer sees your `.env` and your gitignored files, because it works in the checkout. Every revert SPLITBRIEF makes in the checkout first saves the bytes it replaces under `.splitbrief/sessions/<id>/reverted/<stamp>/`.
+
+Readiness checks for stacks the worktree cannot serve. These include linked Node workspace packages (`package.json` workspaces or `pnpm-workspace.yaml`), a Python editable install in a virtualenv under the project, `go.work`, and a Cargo workspace with a checkout `target/` directory. Links can resolve to checkout sources instead of workspace changes. With `workflow.isolation` unset, each one is a blocker that recommends the checkout: set `workflow.isolation: none` (recommended) or `workflow.isolation: worktree` to keep the worktree. Writing the key is the one-time confirmation. An explicit `worktree` or `staged-copy` keeps these as warnings, and `none` silences them. Readiness never selects another mode automatically. Verify that configured checks assess the workspace candidate. The staged-copy fallback does not supply missing dependencies.
+
+The workspace survives while the run stays open. [HOW-IT-WORKS.md](./HOW-IT-WORKS.md#run-workspace-and-apply) owns its worktree location and persistence. [Apply](./WORKFLOW.md#apply) owns checkout integration and closure. [Isolation checks](./APPROVAL-AND-RECOVERY.md#isolation-checks) describe writes that halt and reads that are logged. No strategy provides shell or network confinement.
 
 The worktree PATH includes the linked `node_modules/.bin`, resolved to its real path in the project. When the repository already ignores `node_modules`, SPLITBRIEF adds a rooted `/node_modules` line to the shared `.git/info/exclude`. This keeps the dependency symlink out of change detection. The entry uses a `# splitbrief run isolation <session id>` marker for cleanup. A repository that does not ignore `node_modules` falls back to `staged-copy`.
 
@@ -660,7 +665,8 @@ workflow:
 
 **When to use what:**
 - `git.createBranch: true` — when running SPLITBRIEF in CI or against `main` and you don't want the changes landing on the current branch.
-- `isolation: worktree` creates a run workspace with installed Node dependencies linked. Choose `staged-copy` when a linked worktree cannot serve the project. Both strategies need checks that can run inside the workspace.
+- `isolation: worktree` (the default) creates a run workspace with installed Node dependencies linked, and your checkout receives the result at Apply. Choose `staged-copy` when a linked worktree cannot serve the project and a copy can. Both strategies need checks that can run inside the workspace.
+- `isolation: none` when the stack only works in the checkout (linked workspaces, editable installs, a shared build cache), or when you want the edits in your project as they happen. Do not edit the checkout while a brief runs.
 
 **See also:** [WORKFLOW.md](./WORKFLOW.md), [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#the-plan-card). The plan approval level is set with `workflow.approve`, the review cadence with `workflow.review`.
 

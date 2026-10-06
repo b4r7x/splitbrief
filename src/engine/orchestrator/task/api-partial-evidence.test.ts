@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeImplStateWithMetadata as implementingState } from '#testing/helpers/factories/workflow-state.js';
 import { makeBusRecorder, makeImplementer } from '#testing/helpers/orchestrator-factories.js';
 import {
@@ -9,9 +10,12 @@ import {
   makeTaskWorkflowContext as makeWorkflowContext,
   setupTaskProject as setupProject,
 } from '#testing/helpers/orchestrator-task-context.js';
+import { sessionDir } from '../../../core/paths.js';
+import { createRunIsolation } from '../isolation/create.js';
 import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import { recordedApiCreatedPaths } from '../evidence/task.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { captureBundleBaseline } from '../../implementers/bundle-baseline.js';
 import type { BundleApplyResult } from '../../implementers/file-bundle.js';
@@ -378,5 +382,141 @@ describe('partial evidence and resume', () => {
       createdByThisTask: second[0]?.createdByThisTask,
     });
     expect(captured).toMatchObject({ kind: 'rejected', code: 'baseline-conflict' });
+  });
+});
+
+describe('a partial apply in the checkout mode', () => {
+  it('puts the applied prefix back in the checkout, saves its bytes and says so', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = bundleTask();
+    const isolation = createRunIsolation({
+      projectDir,
+      sessionId,
+      strategy: 'none',
+      onFallback: () => {},
+      onRetained: () => {},
+    });
+    const opened = await isolation.open({ config: makeConfig() });
+    const wctx = makeWorkflowContext({
+      projectDir,
+      sessionId,
+      implementer: stoppingImplementer([]),
+      isolation,
+    });
+    const state = {
+      ...implementingState([task]),
+      workspace: {
+        kind: 'checkout' as const,
+        path: opened.projectDir,
+        base: { snapshotId: 'base', head: opened.head },
+      },
+    };
+    const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
+    const implState = await runImplementation({
+      wctx,
+      task,
+      state,
+      taskStartSnapshot,
+      setTrackedState: vi.fn(),
+      recordApprovalDenial: vi.fn(),
+    });
+    expect(implState.workspace.projectDir).toBe(projectDir);
+    expect(readFileSync(join(projectDir, ANCHOR), 'utf-8')).toBe(LANDED);
+
+    const parked = await handleFailedImplementation({
+      wctx,
+      task,
+      state: implState.state,
+      implState,
+      taskStartTime: Date.now(),
+      taskStartSnapshot,
+      tokensBefore: { ...implState.state.tokenUsage },
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+    });
+    await isolation.dispose();
+
+    expect(existsSync(join(projectDir, ANCHOR))).toBe(false);
+    const reverted = join(sessionDir(projectDir, sessionId), 'reverted');
+    const saved = readdirSync(reverted).map((stamp) => join(reverted, stamp, ANCHOR));
+    expect(saved.some((path) => existsSync(path) && readFileSync(path, 'utf-8') === LANDED)).toBe(
+      true,
+    );
+    expect(parked.pendingRecovery?.details?.join('\n')).not.toContain('the checkout is unchanged');
+    expect(parked.pendingRecovery?.details?.join('\n')).toContain(relative(projectDir, reverted));
+    expect(recordedApiCreatedPaths(wctx, task, projectDir)).toEqual([]);
+    expect(
+      ledgerTask(readEvidenceLedger(wctx))?.apiApply?.applied.map((file) => file.path),
+    ).toEqual([ANCHOR]);
+    writeFileSync(join(projectDir, ANCHOR), 'user replacement\n');
+    expect(recordedApiCreatedPaths(wctx, task, projectDir)).toEqual([]);
+  });
+
+  it('a left-isolation halt puts the attempt back in the checkout through the real halt path', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = bundleTask();
+    const isolation = createRunIsolation({
+      projectDir,
+      sessionId,
+      strategy: 'none',
+      onFallback: () => {},
+      onRetained: () => {},
+    });
+    const opened = await isolation.open({ config: makeConfig() });
+    const implementer = makeImplementer({
+      capabilities: { writesFiles: 'direct' },
+      implement: vi.fn(async (opts: ImplementerOptions): Promise<ImplementerResult> => {
+        mkdirSync(join(opts.projectDir, 'src'), { recursive: true });
+        writeFileSync(join(opts.projectDir, ANCHOR), LANDED);
+        return {
+          success: false,
+          output: '',
+          outcome: 'implementer-left-isolation',
+          error: 'wrote ~/outside.txt',
+        };
+      }),
+      retry: vi.fn(),
+    });
+    const wctx = makeWorkflowContext({ projectDir, sessionId, implementer, isolation });
+    const state = {
+      ...implementingState([task]),
+      workspace: {
+        kind: 'checkout' as const,
+        path: opened.projectDir,
+        base: { snapshotId: 'base', head: opened.head },
+      },
+    };
+    const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
+    const implState = await runImplementation({
+      wctx,
+      task,
+      state,
+      taskStartSnapshot,
+      setTrackedState: vi.fn(),
+      recordApprovalDenial: vi.fn(),
+    });
+
+    const halted = await handleFailedImplementation({
+      wctx,
+      task,
+      state: implState.state,
+      implState,
+      taskStartTime: Date.now(),
+      taskStartSnapshot,
+      tokensBefore: { ...implState.state.tokenUsage },
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+    });
+    await isolation.dispose();
+
+    expect(halted.pendingRecovery?.reason).toBe('implementer-left-isolation');
+    expect(existsSync(join(projectDir, ANCHOR))).toBe(false);
+    const reverted = join(sessionDir(projectDir, sessionId), 'reverted');
+    expect(
+      readdirSync(reverted).some(
+        (stamp) => readFileSync(join(reverted, stamp, ANCHOR), 'utf-8') === LANDED,
+      ),
+    ).toBe(true);
+    expect(halted.pendingRecovery?.details?.join('\n')).toContain(relative(projectDir, reverted));
   });
 });

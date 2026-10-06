@@ -53,11 +53,19 @@ describe('settingsHelpLines', () => {
     ]);
   });
 
+  it('lists the isolation choices by their labels', () => {
+    expect(linesFor('workflow.isolation')).toEqual([
+      { text: 'Where the build seat writes its changes; worktree by default' },
+      { text: 'worktree · staged copy · your checkout' },
+    ]);
+  });
+
   it('never points a help line at a command the merge deleted', () => {
     for (const item of items) {
       for (const line of settingsHelpLines(item)) {
+        const commands = line.text.match(/(?<![\w.])\/[a-z-]+/g) ?? [];
         for (const removed of Object.keys(REMOVED_COMMANDS)) {
-          expect(line.text).not.toContain(removed);
+          expect(commands).not.toContain(removed);
         }
       }
     }

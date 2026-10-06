@@ -1,8 +1,18 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  lstatSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type ApplyRun, withApplyRun } from '#testing/helpers/apply-run.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
@@ -13,6 +23,9 @@ import { readRunRecord } from '../core/sessions/run-record-io.js';
 import { transition } from '../core/state/machine.js';
 import { loadState, saveState } from '../core/state/persistence.js';
 import { captureReviewedCandidate } from '../engine/orchestrator/apply/states.js';
+import { createEventBus } from '../engine/events/bus.js';
+import { recordRunSnapshotForRun } from '../engine/orchestrator/run/snapshots.js';
+import { createSnapshot } from '../engine/snapshots/create.js';
 import * as lifecycle from '../engine/snapshots/run/lifecycle.js';
 import { configStore } from '../stores/project/config.js';
 import { routerStore } from '../stores/navigation/router.js';
@@ -235,4 +248,196 @@ describe('/run on a run without a workspace', () => {
     expect(lifecycle.acceptRunSnapshot).not.toHaveBeenCalled();
     expect(lifecycle.rejectRunSnapshot).not.toHaveBeenCalled();
   });
+});
+
+describe('/run on a checkout run', () => {
+  let projectDir = '';
+  afterEach(() => {
+    if (projectDir) cleanupTempDir(projectDir);
+    projectDir = '';
+  });
+
+  async function checkoutRun(state: Partial<WorkflowState>): Promise<void> {
+    projectDir = createTempDir('run-command-checkout');
+    createTestGitRepo(projectDir, { 'a.txt': FIVE, 'keep.txt': 'keep\n' });
+    const base = await createSnapshot({
+      projectDir,
+      sessionId: SESSION_ID,
+      phase: 'manual',
+      name: 'run-baseline',
+    });
+    writeFileSync(join(projectDir, 'a.txt'), lines('ONE', 'two', 'three', 'four', 'five'));
+    writeFileSync(join(projectDir, 'b.txt'), 'created by the run\n');
+    openAtRest(
+      projectDir,
+      makeWorkflowState({
+        ...state,
+        workspace: {
+          kind: 'checkout',
+          path: projectDir,
+          base: { snapshotId: base.manifest.id, head: null },
+        },
+      }),
+    );
+  }
+
+  it('/run reject confirm keeps a project symlink that was there before the run', async () => {
+    projectDir = createTempDir('run-command-checkout-link');
+    createTestGitRepo(projectDir, { 'a.txt': FIVE });
+    symlinkSync('a.txt', join(projectDir, 'link-before'));
+    const base = await createSnapshot({
+      projectDir,
+      sessionId: SESSION_ID,
+      phase: 'manual',
+      name: 'run-baseline',
+    });
+    writeFileSync(join(projectDir, 'b.txt'), 'created by the run\n');
+    openAtRest(
+      projectDir,
+      makeWorkflowState({
+        phase: 'implementing',
+        workspace: {
+          kind: 'checkout',
+          path: projectDir,
+          base: { snapshotId: base.manifest.id, head: null },
+        },
+      }),
+    );
+
+    await build().rejectRun();
+
+    expect(existsSync(join(projectDir, 'b.txt'))).toBe(false);
+    expect(lstatSync(join(projectDir, 'link-before')).isSymbolicLink()).toBe(true);
+  });
+
+  function savedRevert(file: string): string | undefined {
+    const root = join(sessionDir(projectDir, SESSION_ID), 'reverted');
+    if (!existsSync(root)) return undefined;
+    for (const stamp of readdirSync(root)) {
+      const path = join(root, stamp, file);
+      if (existsSync(path)) return readFileSync(path, 'utf8');
+    }
+    return undefined;
+  }
+
+  it('/run accept closes a stopped checkout run as it is', async () => {
+    await checkoutRun({ phase: 'implementing' });
+
+    await build().acceptRun(false);
+
+    expect(savedState(projectDir).closed).toBeDefined();
+    expect(savedState(projectDir).closed?.as).toBe('ended');
+    expect(read(projectDir, 'a.txt')).toBe(lines('ONE', 'two', 'three', 'four', 'five'));
+    expect(read(projectDir, 'b.txt')).toBe('created by the run\n');
+  });
+
+  it('/run reject confirm on a checkout run stopped before its review puts the baseline back, saves the replaced bytes first and closes the run', async () => {
+    await checkoutRun({ phase: 'implementing' });
+
+    await build().rejectRun();
+
+    expect(read(projectDir, 'a.txt')).toBe(FIVE);
+    expect(existsSync(join(projectDir, 'b.txt'))).toBe(false);
+    expect(read(projectDir, 'keep.txt')).toBe('keep\n');
+    expect(savedRevert('a.txt')).toBe(lines('ONE', 'two', 'three', 'four', 'five'));
+    expect(savedRevert('b.txt')).toBe('created by the run\n');
+    expect(savedState(projectDir).closed?.as).toBe('discarded');
+  });
+
+  it('/run reject confirm on a completed checkout run saves the bytes it replaces before it restores them', async () => {
+    await checkoutRun({ phase: 'complete', reviewStatus: 'passed' });
+    await recordRunSnapshotForRun({
+      projectDir,
+      sessionId: SESSION_ID,
+      bus: createEventBus(),
+      phase: 'final-review',
+    });
+
+    await build().rejectRun();
+
+    expect(read(projectDir, 'a.txt')).toBe(FIVE);
+    expect(existsSync(join(projectDir, 'b.txt'))).toBe(false);
+    expect(savedRevert('a.txt')).toBe(lines('ONE', 'two', 'three', 'four', 'five'));
+    expect(savedRevert('b.txt')).toBe('created by the run\n');
+  });
+
+  it('/run reject confirm also puts back what the run wrote after its recorded run snapshot', async () => {
+    await checkoutRun({ phase: 'complete', reviewStatus: 'passed' });
+    await recordRunSnapshotForRun({
+      projectDir,
+      sessionId: SESSION_ID,
+      bus: createEventBus(),
+      phase: 'final-review',
+    });
+    // A fix task after a failed review writes after the pre-final-review snapshot.
+    writeFileSync(join(projectDir, 'a.txt'), 'fixed after the review\n');
+    writeFileSync(join(projectDir, 'c.txt'), 'fix task file\n');
+
+    await build().rejectRun();
+
+    expect(read(projectDir, 'a.txt')).toBe(FIVE);
+    expect(existsSync(join(projectDir, 'b.txt'))).toBe(false);
+    expect(existsSync(join(projectDir, 'c.txt'))).toBe(false);
+    expect(savedRevert('a.txt')).toBe('fixed after the review\n');
+    expect(savedRevert('c.txt')).toBe('fix task file\n');
+  });
+
+  it('saves created binary files, restores deletions and leaves a link the baseline cannot place', async () => {
+    await checkoutRun({ phase: 'implementing' });
+    const binary = Buffer.from([0, 255, 1, 2]);
+    writeFileSync(join(projectDir, 'created.bin'), binary);
+    symlinkSync('a.txt', join(projectDir, 'created-link'));
+    rmSync(join(projectDir, 'keep.txt'));
+
+    const result = await build().rejectRun();
+
+    if (result.status !== 'rejected' || result.savedTo === undefined)
+      throw new Error('missing revert backup');
+    expect(readFileSync(join(projectDir, result.savedTo, 'created.bin'))).toEqual(binary);
+    expect(existsSync(join(projectDir, 'created.bin'))).toBe(false);
+    // The baseline records files only: a link may predate the run, so it stays and is reported.
+    expect(readlinkSync(join(projectDir, 'created-link'))).toBe('a.txt');
+    expect(result.conflictedPaths).toEqual(['created-link']);
+    expect(read(projectDir, 'keep.txt')).toBe('keep\n');
+    expect(savedState(projectDir).closed?.as).toBe('discarded');
+  });
+
+  it('refuses accept on a closed checkout run', async () => {
+    await checkoutRun({ phase: 'complete', reviewStatus: 'passed' });
+
+    expect(await build().acceptRun(false)).toEqual({
+      status: 'unavailable',
+      message: 'Run is closed (complete).',
+    });
+    expect(lifecycle.acceptRunSnapshot).not.toHaveBeenCalled();
+  });
+
+  it.each(['accept', 'reject'] as const)(
+    'refuses %s while the checkout run is active',
+    async (action) => {
+      await checkoutRun({ phase: 'implementing' });
+      const route = routerStore.get();
+      if (route.screen !== 'workflow') throw new Error('workflow route expected');
+      routerStore.init({
+        ...route,
+        execution: {
+          kind: 'local',
+          prepared: makePreparedExecution({
+            projectDir,
+            sessionId: SESSION_ID,
+            feature: 'feat',
+            config: makeConfig(),
+          }),
+        },
+      });
+
+      const ctx = build();
+      const result = action === 'accept' ? await ctx.acceptRun(false) : await ctx.rejectRun();
+
+      expect(result.status).toBe('unavailable');
+      expect(read(projectDir, 'a.txt')).toBe(lines('ONE', 'two', 'three', 'four', 'five'));
+      expect(read(projectDir, 'b.txt')).toBe('created by the run\n');
+      expect(savedState(projectDir).closed).toBeUndefined();
+    },
+  );
 });

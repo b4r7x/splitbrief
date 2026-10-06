@@ -32,7 +32,7 @@ import { consultHaltDetails } from '../recovery/builders/details.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { classifyTaskCompletionMethod } from '../../../core/task-completion.js';
 import { persistTaskEvidence } from '../evidence/persistence.js';
-import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
+import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
 import { lineageIdOf } from '../../../core/state/task-insert.js';
 
 export type RetryAndRecordOptions = {
@@ -183,7 +183,7 @@ export async function retryAndRecord(
       : transitionAndSave(wctx, opts.state, { type: 'COUNT_ATTEMPT', taskId: task.id });
   if (!taskStartSnapshot) {
     try {
-      taskStartSnapshot = await getChangedFilesSnapshot(wctx.workspaceDir);
+      taskStartSnapshot = await captureWorkspaceSnapshot(wctx.workspaceDir, wctx);
     } catch (err) {
       publishError({
         bus: wctx.bus,

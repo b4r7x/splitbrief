@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { getIsolationStrategy } from '../accessors/values.js';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadConfig } from './io.js';
@@ -293,7 +294,6 @@ describe('config loading', () => {
         approve: 'plan',
         review: 'end',
         git: { createBranch: true },
-        isolation: 'worktree',
         driftChainThreshold: 0.4,
         compactionThreshold: 50,
         compactionFormat: 'structured',
@@ -316,7 +316,7 @@ describe('config loading', () => {
       expect(config.validation.lint).toBe(false);
       expect(config.validation.typecheck).toBe(true);
       expect(config.workflow.approve).toBe('none');
-      expect(config.workflow.isolation).toBe('worktree');
+      expect(getIsolationStrategy(config)).toBe('worktree');
     });
 
     it.each([
@@ -339,12 +339,13 @@ describe('config loading', () => {
       expect(() => loadConfig(dir)).toThrow(/Unsupported config version: undefined/);
     });
 
-    it('resolves workflow.isolation to worktree for configs predating the key', () => {
+    it('leaves workflow.isolation unset when the file does not name it, which reads as worktree', () => {
       const dir = join(TMP, 'pre-isolation-config');
       writeConfigYaml(dir, { workflow: { max_retries: 3 } });
 
       const { config } = loadConfig(dir);
-      expect(config.workflow.isolation).toBe('worktree');
+      expect(config.workflow.isolation).toBeUndefined();
+      expect(getIsolationStrategy(config)).toBe('worktree');
     });
 
     it('loads a workflow block without mode with no mode and no notice', () => {

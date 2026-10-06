@@ -581,6 +581,43 @@ describe('buildLeftIsolationRecoveryIssue', () => {
   });
 });
 
+describe('isolation halts of a call that ran in the checkout itself', () => {
+  const runner = makeConfig({ implementer: { kind: 'cli', tool: 'claude-code' } }).implementer;
+  const inPlace = { revertedDir: '.splitbrief/sessions/s1/reverted' };
+
+  it('says the attempt was put back and where the replaced bytes are, never promoted', () => {
+    const left = buildLeftIsolationRecoveryIssue({
+      task: makeTask({ id: 'T004' }),
+      runner,
+      toolMessage: 'wrote to ~/x with Bash: touch ~/x',
+      attempts: 0,
+      maxAttempts: 2,
+      inPlace,
+      createdAt,
+    });
+    const changed = buildCheckoutChangedRecoveryIssue({
+      task: makeTask({ id: 'T004' }),
+      runner,
+      toolMessage: 'branch topic',
+      attempts: 0,
+      maxAttempts: 2,
+      inPlace,
+      createdAt,
+    });
+
+    expect(left.details[1]).toBe(
+      'SPLITBRIEF put back what this attempt changed in your checkout; the bytes it replaced are in .splitbrief/sessions/s1/reverted.',
+    );
+    expect(changed.details[1]).toBe(
+      'SPLITBRIEF put back the files this attempt changed in your checkout (the bytes it replaced are in .splitbrief/sessions/s1/reverted); the git change stays for you to check.',
+    );
+    for (const issue of [left, changed]) {
+      expect(issue.details.join(' ')).not.toContain('promoted');
+      expectValidRecoveryIssue(issue);
+    }
+  });
+});
+
 describe('buildCheckoutChangedRecoveryIssue', () => {
   const runner = makeConfig({ implementer: { kind: 'cli', tool: 'antigravity' } }).implementer;
 

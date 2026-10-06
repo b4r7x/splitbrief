@@ -104,6 +104,8 @@ const EvidenceApiApplySchema = z.object({
   untouched: z.array(z.string()),
   failedPath: z.string().optional(),
   code: z.string().optional(),
+  /** Applied files a checkout recovery put back; they prove no creation. */
+  revertedPaths: z.array(z.string()).optional(),
 });
 export type EvidenceApiApply = z.infer<typeof EvidenceApiApplySchema>;
 

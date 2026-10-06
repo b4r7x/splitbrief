@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
@@ -16,6 +16,8 @@ import { appendMessage } from '../../../core/sessions/log-writer.js';
 import type { Planner, TypedCallContext } from '../../planners/types.js';
 import type { TypedSeatCall } from '../../runners/typed-output.js';
 import { requestConsult, type ConsultContext } from './request.js';
+import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
+import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -140,6 +142,43 @@ function emptySnapshot(): ChangedFilesSnapshot {
 }
 
 describe('requestConsult', () => {
+  it('shows modifications, deletions and modes from a no-git workspace entry snapshot', async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const workspaceDir = createTempDir('consult-entry-workspace');
+    dirs.push(workspaceDir);
+    const ref = { projectDir, sessionId };
+    writeFileSync(join(workspaceDir, 'edit.txt'), 'before\n');
+    writeFileSync(join(workspaceDir, 'gone.txt'), 'deleted\n');
+    writeFileSync(join(workspaceDir, 'run.sh'), '#!/bin/sh\n');
+    chmodSync(join(workspaceDir, 'run.sh'), 0o644);
+    const snapshot = await captureWorkspaceSnapshot(workspaceDir, ref);
+    writeFileSync(join(workspaceDir, 'edit.txt'), 'after\n');
+    rmSync(join(workspaceDir, 'gone.txt'));
+    chmodSync(join(workspaceDir, 'run.sh'), 0o755);
+    const { bus } = makeBusRecorder();
+    const planner = consultPlanner([guidanceAnswer('Answer', null)], true);
+    const state = consultState();
+    saveState(ref, state);
+    const task = state.tasks[0];
+    if (task === undefined) throw new Error('missing consult task');
+
+    await requestConsult(
+      { ...ref, workspaceDir, bus, planner: planner.planner, state },
+      {
+        task,
+        reason: 'failed',
+        failingOutput: 'boom',
+        snapshot,
+        changedFiles: await getChangedFilesSinceSnapshot(workspaceDir, snapshot),
+      },
+    );
+
+    expect(planner.prompts[0]).toContain('-before');
+    expect(planner.prompts[0]).toContain('+after');
+    expect(planner.prompts[0]).toContain('-deleted');
+    expect(planner.prompts[0]).toContain('old mode 100644');
+    expect(planner.prompts[0]).toContain('new mode 100755');
+  });
   it.each([
     {
       handle: 'valid',

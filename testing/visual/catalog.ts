@@ -1276,6 +1276,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-recovery-left-isolation-in-place',
+      title: 'Workflow · an implementer that wrote outside your checkout',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'left-isolation',
+        title: 'Checkout mode left-isolation recovery menu',
+        kind: 'question',
+        marker: 'Recovery needed · T901 left the isolation directory',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-recovery-checkout-changed',
       title: 'Workflow · a checkout whose git state changed during an implementer call',
       surface: screenSurface('workflow'),
@@ -1562,6 +1578,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       {
         id: 'overlay-settings-filter-workflow',
         title: 'Overlay · settings · filtered to the workflow section',
+        marker: 'Settings',
+      },
+      {
+        id: 'overlay-settings-isolation-checkout',
+        title: 'Overlay · settings · build seat working in your checkout',
         marker: 'Settings',
       },
     ],

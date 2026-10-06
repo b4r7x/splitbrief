@@ -1,8 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import type { Config } from '../../../core/schemas/config.js';
-import { isolationWorktreePath, isolationWorktreeRoot } from '../../../core/paths.js';
+import { isolationWorktreePath, isolationWorktreeRoot, sessionDir } from '../../../core/paths.js';
+import type { BundleApplyResult } from '../../implementers/file-bundle.js';
+import { sha256Hex } from '../../../utils/sha256.js';
+import { recordedApiCreatedPaths } from '../evidence/task.js';
 import type { RetryOptions } from '../../implementers/types.js';
 import { createImplementerBase } from '../../implementers/pipeline/run.js';
 import { createChangeDetector } from '../../change-detection.js';
@@ -107,6 +118,102 @@ function configWithProfiles(): Config {
 }
 
 describe('runRetryStep', () => {
+  it.each(['partial', 'failed'] as const)(
+    'puts back a checkout retry with a %s API write and saves the replaced bytes',
+    async (status) => {
+      const { projectDir, sessionId } = setupProject();
+      const task = makeTask({
+        id: 'T041',
+        action: 'create',
+        file: 'created.ts',
+        files: ['created.ts', 'uncertain.ts'],
+      });
+      const config = makeNoValidationConfig({ workflow: { isolation: 'none' } });
+      const isolation = createRunIsolation({
+        projectDir,
+        sessionId,
+        strategy: 'none',
+        onFallback: () => {},
+        onRetained: () => {},
+      });
+      const opened = await isolation.open({ config });
+      const state = makeImplState([task], {
+        workspace: {
+          kind: 'checkout',
+          path: projectDir,
+          base: { snapshotId: 'base', head: opened.head },
+        },
+      });
+      const bytes = 'export const created = true;\n';
+      const unknown = 'export const uncertain = true;\n';
+      const ctx = {
+        ...makeWctx({ projectDir, sessionId, config, isolation }),
+        taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
+        dependsOnFiles: [],
+      };
+      try {
+        const outcome = await runRetryStep({
+          ctx,
+          task,
+          state,
+          lastError: 'failed check',
+          attempts: 1,
+          method: 'local',
+          transitionType: 'VALIDATION_PASS',
+          usageCategory: 'implementer',
+          retryFailureFallback: 'retry failed',
+          invokeRetry: async ({ projectDir: dir }) => {
+            writeFileSync(join(dir, task.file), bytes);
+            writeFileSync(join(dir, 'uncertain.ts'), unknown);
+            const common = {
+              callId: 'retry-write',
+              candidatePaths: [task.file, 'uncertain.ts'],
+              error: 'write failed',
+              failedPath: 'uncertain.ts',
+              noops: [],
+              untouched: [],
+            };
+            const applyResult: Extract<BundleApplyResult, { status: 'partial' | 'failed' }> =
+              status === 'partial'
+                ? {
+                    ...common,
+                    status: 'partial',
+                    code: 'io-failure',
+                    applied: [
+                      {
+                        path: task.file,
+                        action: 'create',
+                        beforeSha256: null,
+                        afterSha256: sha256Hex(bytes),
+                        diff: '',
+                        linesAdded: 1,
+                        linesRemoved: 0,
+                      },
+                    ],
+                  }
+                : { ...common, status: 'failed', code: 'write-uncertain', applied: [] };
+            return { success: false, error: applyResult.error, applyResult };
+          },
+        });
+        expect(existsSync(join(projectDir, task.file))).toBe(false);
+        expect(existsSync(join(projectDir, 'uncertain.ts'))).toBe(false);
+        const reverted = join(sessionDir(projectDir, sessionId), 'reverted');
+        const stamp = readdirSync(reverted)[0];
+        if (stamp === undefined) throw new Error('missing retry backup');
+        expect(readFileSync(join(reverted, stamp, task.file), 'utf8')).toBe(bytes);
+        expect(readFileSync(join(reverted, stamp, 'uncertain.ts'), 'utf8')).toBe(unknown);
+        expect(outcome.state.pendingRecovery?.details?.join('\n')).toContain(
+          '.splitbrief/sessions/sess-retry-step/reverted',
+        );
+        expect(outcome.state.pendingRecovery?.details?.join('\n')).not.toContain(
+          'the checkout is unchanged',
+        );
+        expect(recordedApiCreatedPaths(ctx, task, projectDir)).toEqual([]);
+      } finally {
+        await isolation.dispose();
+      }
+    },
+  );
   it('a retry of an extracted-code writer acquires the same workspace as the first attempt', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ file: 'src/value.ts', action: 'modify' });

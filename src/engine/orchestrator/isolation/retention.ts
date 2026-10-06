@@ -170,7 +170,7 @@ export async function retainWorkspaceRecord(
     throw retentionError.unavailable();
   for (const file of workspace.targetBaseline.keys())
     assertPathConfined(file, workspace.projectDir);
-  // Staged rollback bytes stay in the attempt base; the record carries only hashes.
+  // Staged rollback bytes stay in the session's entry store; the record carries hashes and modes.
   const snapshot =
     workspace.snapshot.baselineFileHashes === undefined
       ? workspace.snapshot
@@ -179,6 +179,9 @@ export async function retainWorkspaceRecord(
           files: [],
           dirtyFileContents: {},
           baselineFileHashes: workspace.snapshot.baselineFileHashes,
+          ...(workspace.snapshot.baselineFileModes !== undefined && {
+            baselineFileModes: workspace.snapshot.baselineFileModes,
+          }),
           symlinks: workspace.snapshot.symlinks,
           ...(workspace.snapshot.ignoreProjectDir !== undefined && {
             ignoreProjectDir: workspace.snapshot.ignoreProjectDir,

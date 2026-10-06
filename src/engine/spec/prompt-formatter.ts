@@ -57,6 +57,7 @@ function buildTaskSections(
   writesFiles: ImplementerWriteMode,
   outputContract: BuildOutputContract | undefined,
   plan: PlanContext | undefined,
+  inPlace: boolean,
 ): string[] {
   const sections: string[] = [];
 
@@ -145,7 +146,7 @@ function buildTaskSections(
     outputContract === 'file-bundle-v1'
       ? `Answer with one JSON object: {"version":1,"files":[{"path":"...","action":"create"|"modify","content":"..."}]}. Carry the complete new contents of every file listed above that you change, and leave the rest out. No markdown fences. No explanations.`
       : writesFiles === 'direct'
-        ? `Edit ${files.join(', ')} directly in the isolation directory. SPLITBRIEF runs the typecheck, lint and test gates after you hand back, so run at most the focused test files the brief lists, once. End your reply with the one JSON report object the rules describe: status done with the files you changed, or status blocked with your question and the files you need.`
+        ? `Edit ${files.join(', ')} directly in ${inPlace ? "the user's checkout" : 'the isolation directory'}. SPLITBRIEF runs the typecheck, lint and test gates after you hand back, so run at most the focused test files the brief lists, once. End your reply with the one JSON report object the rules describe: status done with the files you changed, or status blocked with your question and the files you need.`
         : `Output the complete file contents for ${task.file}. No markdown fences. No explanations.`;
   sections.push('', completionInstruction);
 
@@ -268,6 +269,8 @@ export function formatTaskPrompt(opts: {
   writesFiles?: ImplementerWriteMode | undefined;
   outputContract?: BuildOutputContract | undefined;
   plan?: PlanContext | undefined;
+  /** The writer edits the user's checkout itself (`workflow.isolation: none`). */
+  inPlace?: boolean | undefined;
 }): string {
   const {
     task,
@@ -277,9 +280,10 @@ export function formatTaskPrompt(opts: {
     writesFiles = 'extracted-code',
     outputContract,
     plan,
+    inPlace = false,
   } = opts;
   const ctx = languageContext ?? buildLanguageContext(undefined);
-  const sections = buildTaskSections(task, context, writesFiles, outputContract, plan);
+  const sections = buildTaskSections(task, context, writesFiles, outputContract, plan, inPlace);
 
   // A bundle answer carries complete files, so every captured target goes in
   // whole: a formatter that cut one would ask for a rewrite of code the model
@@ -314,6 +318,8 @@ export function formatRetryPrompt(opts: {
   writesFiles?: ImplementerWriteMode | undefined;
   outputContract?: BuildOutputContract | undefined;
   plan?: PlanContext | undefined;
+  /** The writer edits the user's checkout itself (`workflow.isolation: none`). */
+  inPlace?: boolean | undefined;
 }): string {
   const {
     task,
@@ -325,10 +331,11 @@ export function formatRetryPrompt(opts: {
     writesFiles = 'extracted-code',
     outputContract,
     plan,
+    inPlace = false,
   } = opts;
   const ctx = languageContext ?? buildLanguageContext(undefined);
   const framing = framingForAttempt(attempt);
-  const sections = buildTaskSections(task, context, writesFiles, outputContract, plan);
+  const sections = buildTaskSections(task, context, writesFiles, outputContract, plan, inPlace);
 
   sections.unshift(framing, '', 'Error from previous attempt:', error, '');
 

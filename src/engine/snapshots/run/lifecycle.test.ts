@@ -88,6 +88,11 @@ describe('rejectRunSnapshot', () => {
     if (result.status === 'rejected') {
       expect(result.restoredPaths).toEqual(['feature.ts']);
       expect(result.conflictedPaths).toEqual([]);
+      expect(result.savedTo).toBeDefined();
+      if (result.savedTo === undefined) throw new Error('missing replaced file backup');
+      await expect(readFile(join(tmp, result.savedTo, 'feature.ts'), 'utf8')).resolves.toBe(
+        'after splitbrief',
+      );
     }
     await expect(readFile(join(tmp, 'feature.ts'), 'utf-8')).resolves.toBe('before');
 
@@ -190,6 +195,10 @@ describe('rejectRunSnapshot', () => {
     expect(result.status).toBe('rejected');
     if (result.status === 'rejected') {
       expect(result.deletedPaths).toEqual(['created.ts']);
+      if (result.savedTo === undefined) throw new Error('missing created file backup');
+      await expect(readFile(join(tmp, result.savedTo, 'created.ts'), 'utf8')).resolves.toBe(
+        'created by splitbrief',
+      );
     }
     expect(existsSync(join(tmp, 'created.ts'))).toBe(false);
   });

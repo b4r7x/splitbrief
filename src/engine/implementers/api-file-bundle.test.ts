@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { Config } from '../../core/schemas/config.js';
 import type { FileBundleEntry } from './file-bundle.js';
@@ -62,6 +62,23 @@ afterEach(() => {
 });
 
 describe('api BUILD — file-bundle-v1 through the public pipeline', () => {
+  it('honours revoked checkout ownership when the user recreates a reverted target', async () => {
+    const task = makeTask({ id: 'T001', file: 'src/owned.ts', action: 'create' });
+    const implementer = createApiImplementer(makeConfig());
+    const opts = { ...call(task), fileIgnoreProjectDir: projectDir, createdByThisTask: [] };
+    respond(bundleText([{ path: task.file, action: 'create', content: 'worker content\n' }]));
+    expect((await implementer.implement(opts)).success).toBe(true);
+    rmSync(join(projectDir, task.file));
+    write(task.file, 'user replacement\n');
+    const requestCount = fetchMock.mock.calls.length;
+
+    const result = await implementer.implement(opts);
+
+    expect(result.applyResult).toMatchObject({ status: 'rejected', code: 'baseline-conflict' });
+    expect(fetchMock.mock.calls.length).toBe(requestCount);
+    expect(read(task.file)).toBe('user replacement\n');
+  });
+
   it('does not transfer in-memory creation ownership from another workspace', async () => {
     const workerDir = createTempDir('api-bundle-worker');
     try {

@@ -502,6 +502,65 @@ describe('continueCommand', () => {
     expect(headlessRuns).toHaveLength(0);
   });
 
+  it('answers a partial Apply with --action restore: the run re-enters to restore the backup', async () => {
+    const projectDir = makeTmpProject();
+    const sessionId = '2025-04-01-action-restore';
+    const sessDir = makeSessionDir(projectDir, sessionId);
+    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId });
+    saveState(
+      { projectDir, sessionId },
+      {
+        ...createInitialState('test-feature'),
+        phase: 'complete',
+        tasks: [makeTask({ id: 'T001' })],
+        pendingRecovery: makeRecoveryIssue({
+          reason: 'apply-partial',
+          phase: 'complete',
+          status: 'paused',
+          availableActions: ['retry-same-worker', 'restore-backup', 'pause-run', 'end-run'],
+          recommendedAction: 'retry-same-worker',
+        }),
+      },
+    );
+
+    await continueCommand(
+      sessionId,
+      { projectDir, json: true, action: parseContinueActionOption('restore') },
+      deps,
+    );
+
+    const resumed = headlessRuns.find((run) => run.sessionId === sessionId);
+    expect(resumed?.state?.pendingRecovery).toMatchObject({
+      status: 'applying',
+      selectedAction: 'restore-backup',
+    });
+  });
+
+  it('exits 1 on --action restore when the halt is not a partial Apply', async () => {
+    const projectDir = makeTmpProject();
+    const sessionId = '2025-04-01-action-restore-blocked';
+    const sessDir = makeSessionDir(projectDir, sessionId);
+    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId });
+    saveState(
+      { projectDir, sessionId },
+      {
+        ...createInitialState('test-feature'),
+        phase: 'implementing',
+        tasks: [makeTask({ id: 'T001' })],
+        pendingRecovery: makeRecoveryIssue({ status: 'paused' }),
+      },
+    );
+
+    await expect(
+      continueCommand(
+        sessionId,
+        { projectDir, json: true, action: parseContinueActionOption('restore') },
+        deps,
+      ),
+    ).rejects.toMatchObject({ exitCode: 1 });
+    expect(headlessRuns).toHaveLength(0);
+  });
+
   it('exits 1 when the named action is not one the halt offers', async () => {
     const projectDir = makeTmpProject();
     const sessionId = '2025-04-01-action-blocked';

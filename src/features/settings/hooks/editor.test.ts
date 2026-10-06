@@ -1,6 +1,6 @@
 import { createElement } from 'react';
 import { Text } from 'ink';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -8,7 +8,7 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { configStore } from '../../../stores/project/config.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import type { Config } from '../../../core/schemas/config.js';
-import type { SettingDef } from '../../../core/settings/catalog.js';
+import { SETTINGS_DEFS, type SettingDef } from '../../../core/settings/catalog.js';
 import { buildSettingsItems, type SettingsItem } from '../items.js';
 import { hintFor, useSettingsEditor, type CrewSettingsItem } from './editor.js';
 
@@ -181,6 +181,26 @@ describe('useSettingsEditor', () => {
     ui.unmount();
   });
 
+  it('cycles the isolation row worktree → staged copy → your checkout and saves the YAML value', async () => {
+    const config = makeConfig();
+    seed(config);
+    const items = buildSettingsItems({ config, defs: SETTINGS_DEFS });
+
+    const ui = renderFeature(
+      createElement(Harness, { config, items, initialKey: 'workflow.isolation', activated: [] }),
+    );
+    await flushEffects();
+    ui.stdin.write(' ');
+    await vi.waitFor(() => {
+      expect(configStore.get().config?.workflow.isolation).toBe('staged-copy');
+    });
+    ui.stdin.write(' ');
+    await vi.waitFor(() => {
+      expect(configStore.get().config?.workflow.isolation).toBe('none');
+    });
+    ui.unmount();
+  });
+
   it('leaves a claude-code seat untouched and silent across multiple space presses', async () => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
     seed(config);
@@ -245,6 +265,13 @@ describe('hintFor', () => {
     };
     expect(hintFor({ kind: 'setting', def: stringDef, key: stringDef.id })).toBe('⏎ edit');
     expect(hintFor({ kind: 'setting', def: numberDef, key: numberDef.id })).toBe('⏎ edit');
+  });
+
+  it('cycles the isolation row with space', () => {
+    const isolation = SETTINGS_DEFS.find((def) => def.id === 'workflow.isolation');
+    expect(isolation && hintFor({ kind: 'setting', def: isolation, key: isolation.id })).toBe(
+      'space cycle',
+    );
   });
 
   it("returns '⏎ change seat' on a seat row", () => {

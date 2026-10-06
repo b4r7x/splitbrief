@@ -113,13 +113,33 @@ function provenCreatedPaths(
   workspacePath?: string | undefined,
 ): string[] {
   const paths = new Set(entry?.apiCreatedPaths ?? []);
-  const receiptPath = entry?.apiApply?.workspacePath;
-  if (receiptPath === undefined || receiptPath === workspacePath) {
-    for (const file of entry?.apiApply?.applied ?? []) {
-      if (file.action === 'create' && file.beforeSha256 === null) paths.add(file.path);
+  const receipt = entry?.apiApply;
+  if (receipt?.workspacePath === undefined || receipt.workspacePath === workspacePath) {
+    const reverted = new Set(receipt?.revertedPaths ?? []);
+    for (const file of receipt?.applied ?? []) {
+      if (file.action === 'create' && file.beforeSha256 === null && !reverted.has(file.path))
+        paths.add(file.path);
     }
   }
   return [...paths];
+}
+
+/** A checkout recovery put the receipt's applied files back, so they prove no creation. */
+export function recordApiRevertEvidence(input: {
+  ledger: EvidenceLedger;
+  task: Task;
+}): EvidenceLedger {
+  return withUpdatedTask(input.ledger, input.task.id, (entry) =>
+    entry.apiApply === undefined
+      ? entry
+      : {
+          ...entry,
+          apiApply: {
+            ...entry.apiApply,
+            revertedPaths: entry.apiApply.applied.map((file) => file.path),
+          },
+        },
+  );
 }
 
 /**
@@ -406,7 +426,7 @@ export function recordApiApplyEvidence(input: RecordApiApplyEvidenceInput): Evid
   if (created.length > 0) next.apiCreatedPaths = created;
   // An application that stopped mid-bundle leaves the brief failed until
   // recovery moves it: nothing after the failing path was attempted, and the
-  // prefix is not undone.
+  // prefix remains in the receipt even when checkout recovery puts it back.
   if (input.result.status === 'partial') next.status = 'failed';
   const updated = withUpdatedTask(input.ledger, next.id, () => next);
   if (input.workspacePath !== undefined) return updated;

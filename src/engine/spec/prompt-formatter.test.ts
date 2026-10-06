@@ -341,6 +341,22 @@ describe('direct writer', () => {
     expect(prompt).toContain('Edit src/x.ts, src/x.test.ts directly in the isolation directory');
   });
 
+  it('an in-place task and retry prompt name the checkout instead of the isolation directory', () => {
+    const prompt = formatTaskPrompt({ task, context, writesFiles: 'direct', inPlace: true });
+    const retry = formatRetryPrompt({
+      task,
+      context,
+      error: 'boom',
+      attempt: 1,
+      writesFiles: 'direct',
+      inPlace: true,
+    });
+    for (const text of [prompt, retry]) {
+      expect(text).toContain("Edit src/x.ts, src/x.test.ts directly in the user's checkout");
+      expect(text).not.toContain('isolation directory');
+    }
+  });
+
   it('retry prompt carries the context code and no current code either', () => {
     const retry = formatRetryPrompt({
       task,

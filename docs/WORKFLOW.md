@@ -201,11 +201,13 @@ How a run stands is not a phase. It is derived once, by `deriveRunStatus` (`src/
 | `running` | A live process holds the run. |
 | `open` | The run stopped. It carries `stop` and `resumeAt`. |
 | `ready-to-apply` | A worktree or staged-copy result has a passing review or an owner override. It awaits Apply or Discard. `override` names the override. |
-| `closed` | The run is over. Workspace outcomes are `applied`, `discarded` and `ended`. Older passed runs retain `complete`. |
+| `closed` | The run is over. Workspace outcomes are `applied`, `discarded` and `ended`. A passed checkout-mode run and an older passed run close as `complete`. |
 
 Continuation takes an open run. A ready run takes Apply or Discard, and a closed run takes nothing. A ready run has no pending recovery, interrupted step or Apply in progress. An `apply-conflict` or `apply-partial` halt is `open halted`. An unfinished Apply resumes at its Apply step.
 
-Older runs without `state.workspace` keep their status rules. A passed run stays closed; an interrupted or halted run stays open. Continuing an old open run creates its workspace at first acquisition. Its base captures the checkout then, including tasks already written there. A retained task workspace keeps its partial files. Checkout mode also closes on a passing review.
+Older runs without `state.workspace` keep their status rules. A passed run stays closed; an interrupted or halted run stays open. Continuing an old open run creates its workspace at first acquisition. Its base captures the checkout then, including tasks already written there. A retained task workspace keeps its partial files.
+
+**Closing a checkout run.** With `workflow.isolation: none` the implementer edits your checkout itself. The run records `workspace.kind: 'checkout'` once, so a later config change does not move it. There is no Apply step: a passing review closes the run as `closed complete`. End run, Discard and `CLOSE_RUN` write no `run.patch`, because nothing is unapplied. The close notice reads: "This run edited your checkout directly: its changes are already there, so nothing is unapplied and no run patch was written." On a checkout run, `/run accept` closes an open run as it is, and `/run reject confirm` restores the session baseline and closes it as discarded; see [`/run`](./SLASH-COMMANDS-REFERENCE.md#run-acceptreject).
 
 **`stop`** — why it is not running, in first-match order: `halted` (a `pendingRecovery` is waiting on an answer) · `input-required` (the planner is waiting for a reply) · `paused` (a park, `at: 'mid-step'` or `'boundary'`) · `waiting` (parked at the plan card, or at an older run's spec or briefs gate) · `failed` (`lastFailure` names the error a turn died on) · `interrupted` (the process went away without recording anything).
 
@@ -221,7 +223,7 @@ Older runs without `state.workspace` keep their status rules. A passed run stays
 
 ## Apply
 
-Apply writes an assessed run result into your checkout once. Use [the result menu](./FEATURES.md#run-result-menu) or [`/run accept`](./SLASH-COMMANDS-REFERENCE.md#run-acceptreject). An override follows [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is).
+Apply writes an assessed run result into your checkout once. A checkout-mode run (`workflow.isolation: none`) has no Apply; see [Closing a checkout run](#run-status). Use [the result menu](./FEATURES.md#run-result-menu) or [`/run accept`](./SLASH-COMMANDS-REFERENCE.md#run-acceptreject). An override follows [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is).
 
 Apply merges the current checkout into the run workspace. It uses the three states defined in [HOW-IT-WORKS.md](./HOW-IT-WORKS.md#run-workspace-and-apply). The checkout receives no candidate writes during this merge.
 
@@ -233,7 +235,7 @@ Before the first checkout write, Apply saves a backup under `.splitbrief/session
 
 Apply is not atomic. A failed write or a killed process can leave a partial result. The run keeps `applying` and offers restore or retry. See [Partial Apply recovery](./APPROVAL-AND-RECOVERY.md#partial-apply-recovery). `APPLY_DONE` records the applied files and closes the run as `applied`.
 
-Discard, End run and `CLOSE_RUN` preserve unapplied work in `.splitbrief/sessions/<id>/run.patch` before closing or removing the workspace. The notice names the patch. A patch failure keeps the run open and the workspace intact. End run on a ready run closes it as `discarded`; an earlier End run closes it as `ended`. Neither writes the run result into the checkout.
+For a worktree or staged-copy run, Discard, End run and `CLOSE_RUN` preserve unapplied work in `.splitbrief/sessions/<id>/run.patch` before closing or removing the workspace. The notice names the patch. A patch failure keeps the run open and the workspace intact. End run on a ready run closes it as `discarded`; an earlier End run closes it as `ended`. Neither writes the run result into the checkout.
 
 These state actions describe Apply:
 
@@ -448,7 +450,7 @@ Recovery actions:
 | `restore-backup` | Restores a partial Apply through its backup. See [Partial Apply recovery](./APPROVAL-AND-RECOVERY.md#partial-apply-recovery). |
 | `skip-current-task` | Records evidence, marks task `skipped`, advances index |
 | `pause-run` | Keeps issue pending and session resumable |
-| `end-run` | Uses the shared close path. Unapplied workspace work stays in `run.patch`; the run closes as `ended` or `discarded`. See [Apply](#apply). |
+| `end-run` | Uses the shared close path. Unapplied workspace work stays in `run.patch`; a checkout-mode run writes no patch. The run closes as `ended` or `discarded`. See [Apply](#apply). |
 | `planner-split-rebase` | Legacy/manual only; new prompts do not offer it, and old states block with `planner-proposal-required` |
 
 Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`) → cleared (via `RESOLVE_PENDING_RECOVERY`). Or `awaiting-user` → `paused` (via `PAUSE_PENDING_RECOVERY`) → resumable on next `splitbrief resume`.
@@ -508,7 +510,7 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
       last failing output)
       Every writer uses the run workspace selected by `workflow.isolation`.
       The protected gate checks changed files there before validation.
-      (worktree by default; see CONFIGURATION.md §5)
+      (worktree by default; `none` edits the checkout; see CONFIGURATION.md §5)
       A write to a protected path asks, unless the approved plan listed it.
       A hand-back that reports new decisions gets one decision-confirm first:
         confirm → the decisions join the ledger → validation

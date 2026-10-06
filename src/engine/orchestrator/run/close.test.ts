@@ -284,4 +284,33 @@ describe('closeRunIfOpen on a workspace run before Apply', () => {
     expect(existsSync(join(sessionDir(projectDir, SESSION_ID), 'run.patch'))).toBe(false);
     expect(removal.patchExisted).toEqual([]);
   });
+
+  it('a checkout-mode run closes without a patch and says nothing is unapplied', async () => {
+    const projectDir = createTempDir('close-run-checkout-mode-');
+    dirs.push(projectDir);
+    const ref = { projectDir, sessionId: SESSION_ID };
+    ensureSessionDir(projectDir, SESSION_ID);
+    writeFileSync(join(projectDir, 'kept.ts'), 'edited in place\n');
+    const state: WorkflowState = {
+      ...createInitialState('Checkout run'),
+      phase: 'implementing',
+      workspace: { kind: 'checkout', path: projectDir, base: { snapshotId: 'base', head: null } },
+    };
+    saveState(ref, state);
+    const { bus, events } = makeBusRecorder();
+
+    const closure = await closeRunIfOpen({ ...ref, bus }, state);
+
+    expect(closure.state.closed?.as).toBe('ended');
+    expect(existsSync(join(sessionDir(projectDir, SESSION_ID), 'run.patch'))).toBe(false);
+    expect(readFileSync(join(projectDir, 'kept.ts'), 'utf8')).toBe('edited in place\n');
+    expect(removal.patchExisted).toEqual([]);
+    expect(
+      events.some(
+        (event) =>
+          event.type === 'warning' &&
+          event.message.includes('nothing is unapplied and no run patch was written'),
+      ),
+    ).toBe(true);
+  });
 });

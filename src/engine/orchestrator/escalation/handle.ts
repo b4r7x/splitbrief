@@ -22,10 +22,8 @@ import { requestConsult } from '../consult/request.js';
 import { applyConsultAnswer } from '../consult/apply.js';
 import { commitQueueMessagesConsulted, readQueueForConsult } from '../queue/drain.js';
 import { formatMessage } from '../queue/prompt.js';
-import {
-  getChangedFilesSinceSnapshot,
-  getChangedFilesSnapshot,
-} from '../approval/file-snapshots/capture.js';
+import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
+import { captureWorkspaceSnapshot, revertedDir } from '../isolation/entry-snapshot.js';
 import { buildSeatProtocolErrorRecoveryIssue } from '../recovery/builders/seat-protocol.js';
 import {
   buildConsultBoundRecoveryIssue,
@@ -191,6 +189,9 @@ async function runnerDefectHalt(
     ...(failingProfile !== undefined && { selectedImplementerProfile: failingProfile }),
     ...(routeBiggerProfile !== undefined && { routeBiggerProfile }),
     ...(seatSwap !== undefined && { seatSwap }),
+    ...(stepOutcome.state.workspace?.kind === 'checkout' && {
+      inPlace: { revertedDir: revertedDir(ctx) },
+    }),
     createdAt: nowIso(),
   });
   publishError({ bus: ctx.bus, phase: stepOutcome.state.phase, message: issue.message });
@@ -312,7 +313,7 @@ export async function handleRetryAndEscalation(
   let taskStartSnapshot = opts.taskStartSnapshot;
   if (!taskStartSnapshot) {
     try {
-      taskStartSnapshot = await getChangedFilesSnapshot(wctx.workspaceDir);
+      taskStartSnapshot = await captureWorkspaceSnapshot(wctx.workspaceDir, wctx);
     } catch (err) {
       publishWarningFromError(
         { bus: wctx.bus, phase: currentState.phase },

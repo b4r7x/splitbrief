@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { lstat, readlink } from 'node:fs/promises';
 import { isInternalGitStatusPath } from '../../../../core/paths.js';
 import { isProcessOutputSink } from '../../../../lib/process/stdio-sinks.js';
 import type { ChangedFilesSnapshot } from '../../../../core/schemas/workflow.js';
@@ -11,7 +12,11 @@ import {
 } from '../../../../lib/git/files.js';
 import { GIT_EMPTY_TREE_HASH, getCurrentCommitSha } from '../../../../lib/git/refs.js';
 import { hasCommits } from '../../../../lib/git/repository.js';
-import { collectTrackedFiles, type CollectTrackedFilesOptions } from '../../../snapshots/files.js';
+import {
+  collectTrackedFiles,
+  walkProjectEntries,
+  type CollectTrackedFilesOptions,
+} from '../../../snapshots/files.js';
 import { hashFiles } from '../../../change-detection.js';
 import { error } from '../../../../utils/error.js';
 import { pathConfinementError } from '../../../../lib/path-confinement.js';
@@ -134,21 +139,43 @@ export async function getChangedFilesSnapshot(
   };
 }
 
-async function getChangedFilesSinceBaselineHashes(
-  projectDir: string,
-  baselineFileHashes: Record<string, string | null>,
-  opts: CollectTrackedFilesOptions = {},
-): Promise<string[]> {
-  const currentFiles = uniqueProjectFiles(await collectTrackedFiles(projectDir, opts));
-  const currentHashes = await hashFiles(projectDir, currentFiles);
-  const allFiles = new Set([...Object.keys(baselineFileHashes), ...currentFiles]);
-  const changedFiles: string[] = [];
-
-  for (const file of allFiles) {
-    if (currentHashes[file] !== baselineFileHashes[file]) changedFiles.push(file);
+async function changedEntryFiles(dir: string, snapshot: ChangedFilesSnapshot): Promise<string[]> {
+  const current = new Map<string, 'file' | 'symlink'>();
+  for await (const entry of walkProjectEntries(dir, {
+    ignoreProjectDir: snapshot.ignoreProjectDir,
+  })) {
+    if (entry.kind !== 'directory') current.set(entry.path, entry.kind);
   }
-
-  return changedFiles.sort();
+  const paths = new Set([
+    ...Object.keys(snapshot.baselineFileHashes ?? {}),
+    ...Object.keys(snapshot.symlinks ?? {}),
+    ...current.keys(),
+  ]);
+  const changed: string[] = [];
+  for (const file of paths) {
+    if (isProcessOutputSink(join(dir, file))) continue;
+    const link = snapshot.symlinks?.[file];
+    if (current.get(file) === 'symlink' || link !== undefined) {
+      if (current.get(file) !== 'symlink' || link !== (await readlink(join(dir, file)))) {
+        changed.push(file);
+      }
+      continue;
+    }
+    const savedHash = snapshot.baselineFileHashes?.[file] ?? undefined;
+    if (!current.has(file) || savedHash === undefined) {
+      if (current.has(file) || savedHash !== undefined) changed.push(file);
+      continue;
+    }
+    // Compare permissions before reading a file the attempt may have made unreadable.
+    const savedMode = snapshot.baselineFileModes?.[file];
+    if (savedMode !== undefined && savedMode !== ((await lstat(join(dir, file))).mode & 0o777)) {
+      changed.push(file);
+      continue;
+    }
+    const entry = await readConfinedEntry(dir, file);
+    if (entry.kind === 'absent' || entry.sha256 !== savedHash) changed.push(file);
+  }
+  return changed.sort();
 }
 
 // The run's own stdout/stderr redirect targets grow with the run itself, so a
@@ -163,24 +190,13 @@ export async function getChangedFilesSinceSnapshot(
   projectDir: string,
   snapshot: ChangedFilesSnapshot,
 ): Promise<string[]> {
+  if (snapshot.baselineFileHashes !== undefined) return changedEntryFiles(projectDir, snapshot);
   // A recorded project symlink changed once it no longer holds its target:
   // deleted, pointed elsewhere, or replaced by something that is not that link.
   // Neither the content hashes nor git status alone report every such change.
   const modifiedSymlinks: string[] = [];
   for (const [file, target] of Object.entries(snapshot.symlinks ?? {})) {
     if ((await readProjectSymlink(projectDir, file)) !== target) modifiedSymlinks.push(file);
-  }
-
-  if (snapshot.baselineFileHashes !== undefined) {
-    const hashed = await getChangedFilesSinceBaselineHashes(
-      projectDir,
-      snapshot.baselineFileHashes,
-      { ignoreProjectDir: snapshot.ignoreProjectDir },
-    );
-    return withoutProcessOutputSinks(
-      projectDir,
-      uniqueInOrder([...hashed, ...modifiedSymlinks]).sort(),
-    );
   }
 
   const baseline = new Set(snapshot.files);

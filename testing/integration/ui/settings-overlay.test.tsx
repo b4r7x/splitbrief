@@ -287,11 +287,11 @@ describe('settings overlay integration', () => {
     ui.stdin.write(PAGE_DOWN);
     await vi.waitFor(() => {
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(lineContaining(frame, CURSOR_GLYPH)).toContain('Lint');
+      expect(lineContaining(frame, CURSOR_GLYPH)).toContain('Type check');
       // The page steps over the Workflow section and lands with the whole of it on screen — its
       // first row included — so no row was stepped over unseen.
       expect(frame).toContain('Plan approval');
-      expect(frame).toContain('Create branch');
+      expect(frame).toContain('Isolation');
     });
     ui.unmount();
   });

@@ -13,11 +13,15 @@ export function buildImplementerSystemPreamble(
   writesFiles: ImplementerWriteMode,
   isolationDir: string,
   outputContract?: BuildOutputContract | undefined,
+  inPlace = false,
 ): string {
   if (outputContract === 'file-bundle-v1') return buildFileBundlePreamble(languageContext);
   if (writesFiles === 'extracted-code') return buildSystemPreamble(languageContext);
 
-  return `SYSTEM: You are a coding agent for ${languageContext.language}. You write clean, working code directly in the isolation directory. Your changes are promoted into the user's project afterwards.
+  const where = inPlace
+    ? "directly in the user's checkout. Your edits land in the user's project as you make them."
+    : "directly in the isolation directory. Your changes are promoted into the user's project afterwards.";
+  return `SYSTEM: You are a coding agent for ${languageContext.language}. You write clean, working code ${where}
 Rules:
 ${workspaceRules(isolationDir)}
 - Start from the files the Task Brief suggests. If the change needs another project file (a caller, a test, a shared component), edit it and name it in your report with the reason. Never edit dependency manifests, lockfiles, CI configuration, env or key files, .git or .splitbrief unless the brief explicitly asks for that operation.

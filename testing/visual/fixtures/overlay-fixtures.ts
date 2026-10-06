@@ -734,6 +734,12 @@ const createSettingsFilterApprovalFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'settings', focus: 'filter:approval' });
 const createSettingsFilterWorkflowFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'settings', focus: 'filter:workflow' });
+const createSettingsIsolationCheckoutFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'settings',
+    seed: seedConfig({ workflow: { isolation: 'none' } }),
+    focus: 'workflow.isolation',
+  });
 const createPlannerPickerFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'planner-picker' });
 const createPlannerPickerCatalogFixture: FixtureFactory = () =>
@@ -1639,6 +1645,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-settings-filter-plan'), createSettingsFilterPlanFixture],
   [scenarioId('overlay-settings-filter-approval'), createSettingsFilterApprovalFixture],
   [scenarioId('overlay-settings-filter-workflow'), createSettingsFilterWorkflowFixture],
+  [scenarioId('overlay-settings-isolation-checkout'), createSettingsIsolationCheckoutFixture],
   [scenarioId('overlay-planner-picker'), createPlannerPickerFixture],
   [scenarioId('overlay-planner-picker-catalog'), createPlannerPickerCatalogFixture],
   [scenarioId('overlay-picker-opencode-expanded'), createOpencodeExpandedFixture],

@@ -1,6 +1,21 @@
 <!--
 Sync Impact Report
-- Version change: 2.5.0 → 2.6.0 (MINOR: VI's mechanism text changes — the
+- Version change: 2.6.0 → 2.7.0 (MINOR: the Development Workflow section
+  expands — the user chooses where the implementer writes; the git
+  worktree stays the default, and `workflow.isolation: none` is the
+  user's choice to let the implementer edit the checkout directly)
+- Modified principles (2.7.0): none; V already keeps the checkout-run
+  rules (validation in the real project directory, no Apply)
+- Updated sections (2.7.0): Development Workflow (the run workspace bullet
+  names the worktree default, `staged-copy`, and `none` as the user's
+  choice; SPLITBRIEF never switches to the checkout automatically)
+- Templates requiring updates (2.7.0):
+  - .specify/templates/plan-template.md ✅ compatible
+  - .specify/templates/spec-template.md ✅ compatible
+  - .specify/templates/tasks-template.md ✅ compatible
+- Follow-up TODOs (2.7.0): none
+
+Prior pass — 2.5.0 → 2.6.0 (MINOR: VI's mechanism text changes — the
   configured review cadence replaces the single review moment; a per-batch
   review and any review outside the configured cadence stay forbidden)
 - Modified principles (2.6.0):
@@ -390,6 +405,13 @@ Explicit anti-goals that MUST NOT be implemented:
   to enable incremental delivery and independent testing
 - When product-level commits are enabled, each commit MUST correspond
   to one completed task or checkpoint
+- The user chooses where the implementer writes with
+  `workflow.isolation`. A git worktree per run is the default;
+  `staged-copy` is the explicit alternative and the fallback when the
+  worktree is unavailable. `none` is the user's choice to let the
+  implementer edit the checkout directly: validation and review run
+  there, a passing review closes the run, and there is no Apply.
+  SPLITBRIEF MUST NOT switch a run to the checkout automatically
 - In worktree and staged-copy runs, an implementer that writes files
   directly works in the run workspace created once per run, with the
   project's dependencies made available inside it so validation can run
@@ -422,4 +444,4 @@ MUST be documented in the plan.md Complexity Tracking table with:
 the violation, why it is needed, and why the simpler alternative
 was rejected.
 
-**Version**: 2.6.0 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-10-05
+**Version**: 2.7.0 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-10-05

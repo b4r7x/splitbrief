@@ -98,8 +98,13 @@ describe('restoreAttemptFiles', () => {
     expect(readFileSync(join(dir, 'a.ts'), 'utf-8')).toBe('export const a = 2;\n');
     expect(existsSync(join(dir, 'c.ts'))).toBe(false);
     expect(readFileSync(join(dir, 'b.ts'), 'utf-8')).toBe('export const b = 1;\n');
-    expect(events.flatMap((event) => (event.type === 'warning' ? [event.message] : []))).toContain(
-      'Restored 2 change(s) from the failed attempt: a.ts, c.ts',
+    // The attempt ran in the checkout itself, so the restore saved what it replaced first.
+    expect(
+      events.flatMap((event) => (event.type === 'warning' ? [event.message] : [])),
+    ).toContainEqual(
+      expect.stringMatching(
+        /^Restored 2 change\(s\) from the failed attempt: a\.ts, c\.ts\. The replaced bytes are in \.splitbrief\/sessions\/attempt-rollback\/reverted\//,
+      ),
     );
   });
 });

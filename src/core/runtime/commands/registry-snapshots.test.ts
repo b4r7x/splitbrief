@@ -56,6 +56,7 @@ describe('run snapshot runtime commands', () => {
           deletedPaths: ['src/b.ts'],
           conflictedPaths: [],
           missingSnapshotFiles: [],
+          savedTo: '.splitbrief/sessions/run-1/reverted/stamp',
         }),
         setFeedbackMessage: (m) => {
           message = m;
@@ -70,6 +71,26 @@ describe('run snapshot runtime commands', () => {
     });
     expect(message).toContain('2 file(s)');
     expect(message).toContain('snap-2');
+    expect(message).toContain('.splitbrief/sessions/run-1/reverted/stamp');
+  });
+
+  it('reports a checkout run closed as it is and refreshes it', async () => {
+    let message: string | undefined;
+    let refreshed = false;
+    const commands = createRuntimeCommands(
+      makeCtx({
+        acceptRun: async () => ({ status: 'ended' }),
+        refreshRun: () => {
+          refreshed = true;
+        },
+        setFeedbackMessage: (m) => {
+          message = m;
+        },
+      }),
+    );
+    await runCommandInTest({ commands, raw: '/run accept', screen: 'workflow', onError: noop });
+    expect(message).toBe('Run closed as it is; its changes are already in your checkout.');
+    expect(refreshed).toBe(true);
   });
 
   it('blocks run rejection while the workflow is live', async () => {

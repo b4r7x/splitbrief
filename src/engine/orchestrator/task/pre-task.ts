@@ -10,7 +10,7 @@ import { buildSnapshotFailedRecoveryIssue } from '../recovery/builders/task.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { publishTaskStart, publishTaskSkipped, publishWarning, publishError } from '../events.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
-import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
+import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { persistTaskEvidence } from '../evidence/persistence.js';
 import { buildRoutingEventFields } from './routing-fields.js';
@@ -110,7 +110,7 @@ export async function runPreTaskHooksAndPublish(opts: {
 
   let taskStartSnapshot: ChangedFilesSnapshot;
   try {
-    taskStartSnapshot = await getChangedFilesSnapshot(wctx.workspaceDir, (dir) =>
+    taskStartSnapshot = await captureWorkspaceSnapshot(wctx.workspaceDir, wctx, (dir) =>
       publishWarning({
         bus: wctx.bus,
         phase: state.phase,

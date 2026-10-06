@@ -1,4 +1,6 @@
 import type { ChangedFilesSnapshot } from '../../../../core/schemas/workflow.js';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { readFileEntryAtRef } from '../../../../lib/git/refs.js';
 import { sha256Hex } from '../../../../utils/sha256.js';
 import { error } from '../../../../utils/error.js';
@@ -15,6 +17,8 @@ import type { FileContentSnapshot, RestoreChangedFilesResult } from './types.js'
 const restoreError = {
   conflict: (file: string) =>
     error('approval-restore-conflict', `File changed before restoration: ${file}`, { file }),
+  storeMissing: (file: string) =>
+    error('approval-snapshot-store-missing', 'Entry snapshot needs its session store', { file }),
 } as const;
 
 /** The entry a file held when the snapshot was taken: its own capture, or the commit it names. */
@@ -22,7 +26,20 @@ export async function entryToRestore(
   projectDir: string,
   snapshot: ChangedFilesSnapshot,
   file: string,
+  store: string | undefined,
 ): Promise<FileSnapshotEntry> {
+  if (snapshot.baselineFileModes !== undefined) {
+    const hash = snapshot.baselineFileHashes?.[file];
+    if (hash == null) return { kind: 'absent' };
+    if (store === undefined) throw restoreError.storeMissing(file);
+    const bytes = await readFile(join(store, hash));
+    return {
+      kind: 'file',
+      bytes,
+      sha256: sha256Hex(bytes),
+      mode: snapshot.baselineFileModes[file] ?? 0o644,
+    };
+  }
   const saved = snapshot.dirtyFileEntries?.[file];
   if (saved === null) return { kind: 'absent' };
   if (saved !== undefined) {
@@ -57,6 +74,7 @@ export async function restoreDirtyFilesFromSnapshot(
   files: string[],
   expectedCurrentContents: FileContentSnapshot = {},
   expectedCurrentEntries?: ReadonlyMap<string, FileSnapshotEntry>,
+  store?: string,
 ): Promise<RestoreChangedFilesResult> {
   const restoredFiles: string[] = [];
   const conflictedFiles: string[] = [];
@@ -93,7 +111,7 @@ export async function restoreDirtyFilesFromSnapshot(
       } else {
         // Reject unsafe paths even when the stored entry is absent.
         await readConfinedEntry(projectDir, file);
-        const entry = await entryToRestore(projectDir, snapshot, file);
+        const entry = await entryToRestore(projectDir, snapshot, file, store);
         await writeConfinedEntry(projectDir, file, entry, assertUnchanged);
       }
       restoredFiles.push(file);
