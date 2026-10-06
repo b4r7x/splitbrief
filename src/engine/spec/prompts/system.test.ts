@@ -29,12 +29,13 @@ describe('buildSystemPreamble', () => {
   });
 });
 
+const GATE_RULE =
+  "SPLITBRIEF runs the project's typecheck, lint and test gates after you hand back, and its verdict is the authority. Run no test, typecheck, lint, format, screenshot, render or other gate command, not even the tests you write or a command the brief names.";
+
 const DIRECT_WRITER_RULES = [
   'Start from the files the Task Brief suggests. If the change needs another project file (a caller, a test, a shared component), edit it and name it in your report with the reason. Never edit dependency manifests, lockfiles, CI configuration, env or key files, .git or .splitbrief unless the brief explicitly asks for that operation.',
   'The Task Brief inlines the read-only code of the context files it lists. Read the files it suggests before you edit them, and search only for a symbol the brief names.',
-  "SPLITBRIEF runs the project's typecheck, lint and test gates after you finish, and its verdict is the authority. Do not run them, and do not run the whole test suite, screenshot or render tools, or repeated git diffs.",
-  'Run at most the focused test files the brief lists under Tests, once, after your edits. If one fails and you cannot fix it, stop and report the failure.',
-  "When the brief's Tests or Evidence ask you to run a project-wide gate or to render screenshots, SPLITBRIEF and the review seat do that. Implement the change and its tests, then report.",
+  GATE_RULE,
   'Guidance only: another approach that passes the checks is fine.',
   'Report deviations as decisions with what and why; use [] when none.',
 ];
@@ -83,6 +84,30 @@ describe('buildImplementerSystemPreamble', () => {
     expect(prompt).not.toContain('Every other file is out of bounds');
     expect(prompt).not.toContain('touching a file outside scope');
     expect(prompt).not.toContain('Run the validation commands the brief lists');
+  });
+
+  it('forbids every gate command once across the assembled direct-writer prompt', () => {
+    const prompt = [
+      buildImplementerSystemPreamble(buildLanguageContext('typescript'), 'direct', '/work'),
+      formatTaskPrompt({
+        task: makeTask({
+          suggestedFiles: ['src/greet.ts', 'src/greet.test.ts'],
+          tests: ['src/greet.test.ts: greet("Ada") returns "Hello, Ada"'],
+          evidence: ['src/greet.test.ts passes'],
+        }),
+        context: defaultContext,
+        writesFiles: 'direct',
+      }),
+    ].join('\n\n');
+
+    expect(prompt.split(GATE_RULE)).toHaveLength(2);
+    const runTestSentences = prompt
+      .split(/(?<=\.)\s+|\n/)
+      .filter((sentence) => /\brun\b/i.test(sentence) && /\btests?\b/i.test(sentence));
+    expect(runTestSentences).toEqual([
+      'Run no test, typecheck, lint, format, screenshot, render or other gate command, not even the tests you write or a command the brief names.',
+      'SPLITBRIEF runs the typecheck, lint and test gates after you hand back, so run no test or other gate command.',
+    ]);
   });
 
   it('offers the blocked form in the file-bundle preamble', () => {

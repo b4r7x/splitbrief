@@ -38,7 +38,7 @@ import { READ_ONLY_CONTEXT_HEADING, TASK_BRIEF_HEADINGS } from '../src/engine/sp
 import { formatTaskPrompt } from '../src/engine/spec/prompt-formatter.js';
 import { buildConsultPrompt } from '../src/engine/spec/prompts/consult.js';
 import { buildLanguageContext } from '../src/engine/spec/prompts/language-context.js';
-import { workspaceRules } from '../src/engine/spec/prompts/system.js';
+import { IMPLEMENTER_RUNS_NO_GATES, workspaceRules } from '../src/engine/spec/prompts/system.js';
 import { buildTaskFormatExample } from '../src/engine/spec/prompts/task-format-example.js';
 
 const ctx = buildLanguageContext('typescript');
@@ -180,8 +180,11 @@ function preamble(): string {
       `Use ${ctx.importConvention}. Follow the project's instruction files.`,
       'Read the suggested files and the attached context before editing.',
       'Treat steps as guidance. Keep the accepted criteria and explicit exclusions.',
-      "The orchestrator runs the project's typecheck, lint and affected tests after each task.",
-      'Run at most the focused tests in the brief, once. Leave project gates to the orchestrator.',
+      substitute(
+        IMPLEMENTER_RUNS_NO_GATES,
+        [['SPLITBRIEF runs', 'The orchestrator runs']],
+        'gate rule',
+      ),
       'In these skills, render checks are unavailable. Do not claim render evidence.',
       implementerReport(),
     ].join('\n'),

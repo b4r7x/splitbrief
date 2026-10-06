@@ -175,6 +175,7 @@ Send a letter and Enter as separate terminal actions. Inspect the result of the 
 Classify each failure before allowing further work:
 
 - **Tool defect that blocks the run: END the run.** Includes crashes, lost artifacts, incorrect state, false security alarms, and broken recovery. Also includes a weak flow with no way forward: a dead end, or a wait with no feedback.
+- **An implementer that runs a gate: END the run.** The implementer prompt forbids every test, typecheck, lint, format, screenshot and render command. A gate command in an implementer's `runner_call_tool_use` events is therefore a tool defect that blocks the run (class 1): fix the prompt. Never park before each brief to type the rule as a composer correction.
 - **Cosmetic defect: record it in the debt list, and the run goes on.** Includes incorrect counters, labels, copy, and rendering. Also includes a weak flow the run can still get through: an unclear next action, a manual step that the tool can do, or different behavior for one action on neighboring surfaces. The debt list is a `Debt` section in `<session-dir>/babysit.md`, with terminal evidence per item.
 - **Weak seat output (a bad split, a misread task): correct it in the composer.** No code changes.
 - **Uncertain cause: stop resumably for diagnosis, with no code edits.** Do not spend retries to find out whether the tool itself is broken. Continue the run when the cause is not a blocking tool defect; end it when it is.

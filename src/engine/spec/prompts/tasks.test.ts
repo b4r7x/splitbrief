@@ -44,8 +44,8 @@ describe('the planner gives gates to SPLITBRIEF and treats scope as guidance', (
   const prompt = `${briefContract(ctx)}\n${criticalRules(ctx)}`;
 
   it.each([
-    'Name the focused test files and cases only. SPLITBRIEF runs typecheck, lint and the affected tests after every brief, so never tell the implementer to run a project-wide gate, the whole suite, or a screenshot/render tool.',
-    "(the focused tests that pass, the changed files, the behavior a reviewer can check). Renders and project-wide gates are the review seat's and SPLITBRIEF's evidence, not the implementer's steps.",
+    "Name the test files and cases only: the implementer writes or changes the test files among the brief's files, and SPLITBRIEF runs typecheck, lint and the affected tests after every brief. Never tell the implementer to run a test, typecheck, lint, format, screenshot or render command.",
+    "(the focused tests that pass, the changed files, the behavior a reviewer can check). Renders and gate runs are the review seat's and SPLITBRIEF's evidence, not the implementer's steps.",
     '`files` are the suggested files; **Out of bounds** lists the explicit exclusions the reviewer checks.',
   ])('says %j once', (sentence) => {
     expect(prompt.split(sentence)).toHaveLength(2);
@@ -53,6 +53,7 @@ describe('the planner gives gates to SPLITBRIEF and treats scope as guidance', (
 
   it('drops the scope fence and the gate-running evidence', () => {
     expect(prompt).not.toContain('so the implementer cannot drift into adjacent files');
+    expect(prompt).not.toContain('a project-wide gate, the whole suite');
     expect(prompt).not.toContain(
       '(passing tests, validation output, changed files, behavioral note)',
     );

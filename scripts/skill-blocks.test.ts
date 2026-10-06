@@ -83,8 +83,9 @@ describe('skill-blocks', () => {
     expect(preamble).not.toContain('promoted');
     expect(preamble).not.toContain('SPLITBRIEF');
     expect(preamble).toContain(
-      "The orchestrator runs the project's typecheck, lint and affected tests",
+      "The orchestrator runs the project's typecheck, lint and test gates after you hand back, and its verdict is the authority. Run no test, typecheck, lint, format, screenshot, render or other gate command, not even the tests you write or a command the brief names.",
     );
+    expect(preamble).not.toMatch(/run at most/i);
     expect(preamble).toContain('never run a package-manager install');
   });
 
@@ -92,7 +93,9 @@ describe('skill-blocks', () => {
     const closing = renderBlock('closing-line') ?? '';
     expect(closing).not.toContain('SPLITBRIEF');
     for (const line of closing.split('\n')) {
-      expect(line).toContain(`The orchestrator runs the ${GATE_ORDER.join(', ')} gates`);
+      expect(line).toContain(
+        `The orchestrator runs the ${GATE_ORDER.join(', ')} gates after you hand back, so run no test or other gate command.`,
+      );
       expect(line).not.toContain('format');
     }
   });

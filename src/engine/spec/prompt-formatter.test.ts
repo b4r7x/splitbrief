@@ -27,6 +27,38 @@ function makeTask(overrides: TaskOverrides = {}): Task {
 }
 
 describe('formatTaskPrompt', () => {
+  it('presents the Tests section as the tests SPLITBRIEF runs after the hand-back', () => {
+    const prompt = formatTaskPrompt({
+      task: makeTask({ tests: ['greet("Ada") returns "Hello, Ada"'] }),
+      context,
+      writesFiles: 'direct',
+    });
+    const lines = prompt.split('\n');
+    const at = lines.indexOf('### Tests');
+
+    expect(lines.slice(at + 1, at + 4)).toEqual([
+      'SPLITBRIEF runs these tests after you hand back. Write or change the ones in the files this brief lists.',
+      '- greet("Ada") returns "Hello, Ada"',
+      '',
+    ]);
+  });
+
+  it('limits the test files an extracted-code writer writes to its one file', () => {
+    const prompt = formatTaskPrompt({
+      task: makeTask({ tests: ['greet("Ada") returns "Hello, Ada"'] }),
+      context,
+      writesFiles: 'extracted-code',
+    });
+    const lines = prompt.trimEnd().split('\n');
+
+    expect(lines).toContain(
+      'SPLITBRIEF runs these tests after you hand back. Write or change the ones in the files this brief lists.',
+    );
+    expect(lines.at(-1)).toBe(
+      'Output the complete file contents for src/utils/helpers.ts. No markdown fences. No explanations.',
+    );
+  });
+
   it('create action task contains action, file path, and project info', () => {
     const task = makeTask();
     const prompt = formatTaskPrompt({ task, context });
