@@ -111,6 +111,7 @@ export function InputFooter({
           reviewerLabel: reviewerSeat === '' ? null : reviewerSeat,
           plannerCall: lifecycle.plannerCall ?? null,
           plannerCallStartedTs: lifecycle.plannerCallStartedTs ?? null,
+          suiteStage: operations.suiteStage ?? null,
         });
   const { frame } = useSpinnerFrame(display.animate || checkingStage !== null);
 

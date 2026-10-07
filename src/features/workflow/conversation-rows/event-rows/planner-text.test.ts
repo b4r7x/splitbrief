@@ -150,6 +150,67 @@ describe('planner text rows', () => {
     });
   });
 
+  // S11 run 2, 08:49: T005 fenced its report, and a bare ```json row stood above `Report  done`.
+  it.each([
+    ['```json', '```'],
+    ['````json', '````'],
+    ['```', '```'],
+  ])('drops the %s fence around a hand-back with the report it wrapped', (open, close) => {
+    const event: EngineEvent = {
+      type: 'planner_text',
+      ts: 0,
+      phase: 'implementing',
+      role: 'implementer',
+      text: [
+        'Implemented the row.',
+        '',
+        open,
+        '{"status":"done","filesChanged":["src/a.ts"],"touchedNotSuggested":[],"notes":null,"decisions":[]}',
+        close,
+      ].join('\n'),
+    };
+
+    const lines = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    }).map(rowText);
+
+    expect(lines).toEqual(['Implemented the row.', 'Report  done · 1 file · 0 decisions']);
+  });
+
+  it('keeps the closing fence of a code block the narration showed before a bare report', () => {
+    const event: EngineEvent = {
+      type: 'planner_text',
+      ts: 0,
+      phase: 'implementing',
+      role: 'implementer',
+      text: [
+        'The row reads:',
+        '```ts',
+        'row.render();',
+        '```',
+        '{"status":"done","filesChanged":["src/a.ts"],"touchedNotSuggested":[],"notes":null,"decisions":[]}',
+      ].join('\n'),
+    };
+
+    const lines = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    }).map(rowText);
+
+    expect(lines).toEqual([
+      'The row reads:',
+      '```ts',
+      'row.render();',
+      '```',
+      'Report  done · 1 file · 0 decisions',
+    ]);
+  });
+
   it('summarizes a blocked hand-back without its JSON', () => {
     const event: EngineEvent = {
       type: 'planner_text',

@@ -47,7 +47,9 @@ function npmScriptConfirmations(
 /**
  * The protected writes an approved plan lists, as the confirmations `confirmedEarlierInRun` reads:
  * the same ActionClass and `write <path>` the write gate asks about. The plan's run-level checks
- * join the task checks, so an approved `npm run` check on the plan is confirmed too.
+ * join the task checks, so an approved `npm run` check on the plan is confirmed too. Each
+ * operation is listed once, in first-seen order, even when two checks run one command or two
+ * tasks declare one write.
  */
 export function planConfirmations(
   tasks: readonly Task[],
@@ -69,7 +71,18 @@ export function planConfirmations(
           ];
     }),
   );
-  return [...protectedWrites, ...npmScriptConfirmations(checkRegistry({ tasks, plan }).values())];
+  const confirmations = [
+    ...protectedWrites,
+    ...npmScriptConfirmations(checkRegistry({ tasks, plan }).values()),
+  ];
+  return confirmations.filter(
+    (confirmation, index) =>
+      confirmations.findIndex(
+        (earlier) =>
+          earlier.actionClass === confirmation.actionClass &&
+          earlier.actionDescription === confirmation.actionDescription,
+      ) === index,
+  );
 }
 
 export type ConfirmTierInput = {

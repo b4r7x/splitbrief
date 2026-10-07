@@ -12,7 +12,7 @@ import type {
   OperationsState,
 } from '../../../stores/workflow/operations/state.js';
 import { selectTaskListView, type TasksState } from '../../../stores/workflow/tasks.js';
-import { inlineActiveVerb, suiteStageVerb } from './phase-verb.js';
+import { inlineActiveVerb, suiteStageText } from './phase-verb.js';
 import { stallRunnerHint } from './live-activity.js';
 import { runnerActivityLedgerItem } from './runner-activity-display.js';
 
@@ -77,8 +77,9 @@ function runnerLabel(
 function activityLine(input: DeriveBuildProgressInput): string {
   const suite = input.operations.suiteStage ?? null;
   if (suite !== null) {
-    const command = suite.command ?? suite.stage;
-    return [suiteStageVerb(suite.stage), command].filter((part) => part !== '').join(SOFT_SEP);
+    return [suiteStageText(suite), `running ${formatTime(input.now - suite.stageStartedTs)}`].join(
+      SOFT_SEP,
+    );
   }
   const stage = input.operations.validationStage ?? null;
   if (stage !== null) {

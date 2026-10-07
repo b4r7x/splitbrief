@@ -1,5 +1,6 @@
 import type { Section } from '../../../core/sections/event-sections.js';
 import { stripRecoveryResetClause } from '../../../core/recovery/reset-clock.js';
+import { SOFT_SEP } from '../../../core/separators.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import { isTranscriptRowlessEvent } from './event-rows/visibility.js';
 
@@ -144,13 +145,16 @@ function joinsRecovery(recovery: RecoveryFold, event: EngineEvent): boolean {
   }
 }
 
-// The error row already names the halt; the prompt's card would say it a second time.
+// The error row already names the halt; the prompt's card would say it a second time. A headline
+// that carries the halt's evidence joins it with ` · ` where the error sentence uses ` — `.
 function restatesHalt(
   previous: EngineEvent | null,
   prompted: EngineEventOf<'recovery_prompted'>,
 ): boolean {
   return (
     previous?.type === 'error' &&
-    previous.message.startsWith(stripRecoveryResetClause(prompted.headline))
+    previous.message
+      .replace(' — ', SOFT_SEP)
+      .startsWith(stripRecoveryResetClause(prompted.headline))
   );
 }

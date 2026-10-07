@@ -100,6 +100,7 @@ const checkpointPredicates = [
   // The brief's row is the transcript's tail, so its estimate is on screen at every width.
   [checkpointId('implementation-narration'), includesAll('briefs passed')],
   [checkpointId('implementation-adjacent-narration'), includesAll('briefs passed')],
+  [checkpointId('implementation-fenced-handback'), includesAll('briefs passed')],
   [checkpointId('implementation-retry'), includesAll('briefs passed')],
   [checkpointId('implementation-after-retry'), includesAll()],
   [checkpointId('recovery-resolved-retry'), includesAll()],
@@ -121,6 +122,7 @@ const checkpointPredicates = [
   [checkpointId('approval-confirm-secret'), includesAll('Confirm with a reason')],
   [checkpointId('plan-card'), includesAll('End run', 'Edit plan.json')],
   [checkpointId('plan-card-render-note'), includesAll('End run', 'Edit plan.json')],
+  [checkpointId('plan-card-shared-command'), includesAll('End run', 'Edit plan.json')],
   // The two briefs whose long headers the card once skipped, beside the first and the last.
   [checkpointId('tasks-card'), includesAll('T001', 'T004', 'T006', 'T007')],
   // The subsections the spec card does not nest, and the briefs after T001's unclosed sample.
@@ -130,10 +132,9 @@ const checkpointPredicates = [
   [checkpointId('planner-reply'), includesAll('Reply to the planner…', 'Waiting for your answer')],
   // The transcript pins the tail, so the block's last row is the width-stable marker.
   [checkpointId('question-answered'), includesAll('Simplify/clean up existing code')],
-  [checkpointId('paused-mid-brief'), includesAll('/resume', 'Stopped at T')],
+  [checkpointId('paused-mid-brief'), includesAll('⏎ resume', 'Stopped at T')],
   [checkpointId('paused-boundary'), includesAll('briefs complete', 'before T902')],
   [checkpointId('stopping'), includesAll('esc back after stop')],
-  [checkpointId('stopped'), includesAll('Changes kept')],
   // A run at rest carries its own name: the marker is the session the record names, which the
   // closed block states in full and the open byline carries. Nothing else is width-stable — the
   // byline sheds its reason and then its alternative as the terminal narrows.
@@ -152,6 +153,7 @@ const checkpointPredicates = [
   [checkpointId('closed-needs-attention'), includesAll()],
   [checkpointId('closed-ended'), includesAll()],
   [checkpointId('closed-ended-review'), includesAll()],
+  [checkpointId('closed-ended-review-workspace'), includesAll('run.patch')],
   [checkpointId('closed-seat-moved'), includesAll()],
   [checkpointId('closed-mixed-workers'), includesAll('visual-closed-mixed-workers')],
   [checkpointId('replayed'), includesAll()],
@@ -171,6 +173,10 @@ const checkpointPredicates = [
     includesAll('Continue with the typed correction', CONSULT_BOUND_NOTE),
   ],
   [checkpointId('review-failed'), includesAll(WORKFLOW_FIXTURE_TEXT.reviewFailed, 'Accept as is')],
+  [
+    checkpointId('review-unverified'),
+    includesAll(WORKFLOW_FIXTURE_TEXT.reviewFailed, 'Accept as is', 'unverified criteria'),
+  ],
   [checkpointId('left-isolation'), includesAll(WORKFLOW_FIXTURE_TEXT.leftIsolation)],
   [checkpointId('checkout-changed'), includesAll(WORKFLOW_FIXTURE_TEXT.checkoutChanged)],
   [checkpointId('at-rest-left-isolation'), includesAll()],
@@ -183,6 +189,7 @@ const checkpointPredicates = [
   ],
   [checkpointId('implementation-silent'), includesAll('Still working', 'a tool is running')],
   [checkpointId('implementation-tool-running'), includesAll('running npx vitest run')],
+  [checkpointId('implementation-full-suite'), includesAll('Pre-review suite')],
   [checkpointId('planner-session-expired'), includesAll('Planner session expired')],
 ] as const satisfies readonly (readonly [CheckpointId, CheckpointPredicate])[];
 

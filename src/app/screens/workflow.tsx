@@ -56,8 +56,8 @@ import { composerDraftStore } from '../../stores/ui/composer-draft.js';
 import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';
 import { questionOptions, questionPromptStore } from '../../stores/question-prompt/prompt.js';
 import {
-  correctionActionFor,
   formatRecoveryPrompt,
+  recoveryComposerHint,
 } from '../../features/workflow/recovery-prompt.js';
 import { queuePlaceholder } from '../../features/workflow/input-hints.js';
 import { REVIEW_COMMENT_DRAFT } from '../../features/workflow/review-commands.js';
@@ -95,7 +95,7 @@ export function WorkflowScreen({
   const [scrollAboveLabel, setScrollAboveLabel] = useState('');
   const [scrollBelowLabel, setScrollBelowLabel] = useState('');
   const [reviewSelected, setReviewSelected] = useState(0);
-  const reviewKeysArmed = reviewKeysStore.use((state) => state.armed);
+  const reviewKeysCommenting = reviewKeysStore.use((state) => state.commenting);
   const reviewOwnerToken = reviewStore.use((state) => state.ownerToken);
   const reviewConfirms = reviewStore.use((state) => state.confirms);
   const recoveryIssue = recoveryNoticeStore.use((state) => state.issue);
@@ -112,9 +112,9 @@ export function WorkflowScreen({
     model.inputMode.mode === 'review' && !model.promptPending && !model.hasOverlay
       ? reviewArtifactForPhase(model.phase)
       : null;
-  // A draft in the composer is what turns the letters back into text, so the same flag decides
-  // whether the panel advertises them or the two keys a comment answers to.
-  const reviewCommenting = reviewArtifact !== null && !reviewKeysArmed;
+  // A draft in the composer is what turns the letters back into text, so the flag the composer
+  // publishes decides whether the panel advertises them or the two keys a comment answers to.
+  const reviewCommenting = reviewArtifact !== null && reviewKeysCommenting;
 
   useLayoutEffect(() => {
     setReviewSelected(0);
@@ -373,9 +373,7 @@ export function WorkflowScreen({
             mode={model.inputMode.mode}
             inputHint={
               recoveryPromptOpen && recoveryIssue !== null
-                ? correctionActionFor(recoveryIssue) === undefined
-                  ? 'Tab to choose an action…'
-                  : 'Type a correction, or tab to choose an action…'
+                ? recoveryComposerHint(recoveryIssue, recoveryMenuFocused)
                 : structuredQuestion
                   ? 'New instruction — replaces these questions…'
                   : plannerQuestions !== undefined
@@ -401,6 +399,7 @@ export function WorkflowScreen({
                   onToggleMenu: () => {
                     setRecoveryFocus({ key: recoveryFocusKey, menu: !recoveryMenuFocused });
                   },
+                  keepPlaceholderWhileFocused: true,
                 }
               : resultMenuOpen
                 ? {

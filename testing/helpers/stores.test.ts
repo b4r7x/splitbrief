@@ -10,9 +10,9 @@ describe('resetAllStores', () => {
     expect(hoverStore.get()).toBeNull();
   });
 
-  it('resets review-key arming', () => {
-    reviewKeysStore.setArmed(true);
+  it('resets the review comment flag', () => {
+    reviewKeysStore.setCommenting(true);
     resetAllStores();
-    expect(reviewKeysStore.get().armed).toBe(false);
+    expect(reviewKeysStore.get().commenting).toBe(false);
   });
 });

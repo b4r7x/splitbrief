@@ -5,6 +5,7 @@ import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import {
   baselineValidationRow,
   formatTaskStartedValue,
+  fullSuiteRow,
   validationStageNotes,
   validationSummarySegments,
 } from './event-format.js';
@@ -166,6 +167,34 @@ function baselineEvent(
     ...overrides,
   };
 }
+
+describe('fullSuiteRow', () => {
+  // S8 run 18:06–18:58: the transcript read `Suite test (npm test) running` beside a block and a
+  // byline that name the suite by its moment.
+  it('names the suite stage the way the build block and the byline do', () => {
+    const suite = {
+      type: 'full_suite',
+      ts: 0,
+      phase: 'implementing',
+      stage: 'test',
+      command: 'npm test',
+      moment: 'pre-review',
+    } as const;
+
+    expect(fullSuiteRow({ ...suite, status: 'running' })).toBe(
+      'Pre-review suite · npm test · running',
+    );
+    expect(
+      fullSuiteRow({
+        ...suite,
+        moment: 'boundary',
+        status: 'done',
+        passed: false,
+        duration: 3_000,
+      }),
+    ).toBe('Batch suite · npm test · failed 3.0s');
+  });
+});
 
 describe('baselineValidationRow', () => {
   it('renders passed, failed, and not-run baseline stages as distinct states', () => {

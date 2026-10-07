@@ -430,9 +430,9 @@ describe('run-loop stop completion', () => {
       expect(saved?.completedAt).toBe(state.completedAt);
       expect(saved?.pendingRecovery).toEqual(ended ? undefined : state.pendingRecovery);
       expect(stopStore.get().phase).toBe(ended ? 'ended' : 'parked');
-      expect(mounted?.lastFrame()).toContain(
-        ended ? 'Cancelled by you at the review' : 'Stopped at the review',
-      );
+      // A run End run closed has no stop line: the closed run's own byline speaks for it, so the
+      // harness shows the input mode where a stop line would stand.
+      expect(mounted?.lastFrame()).toBe(ended ? 'normal' : 'Stopped at the review');
       const cancellations = (await readRunEvents(prepared.session.ref)).events.filter(
         (event) => event.type === 'workflow_cancelled',
       );

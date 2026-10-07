@@ -391,16 +391,23 @@ describe('deriveBuildProgress', () => {
     expect(progress.silent).toBe(false);
   });
 
-  it('names the full-suite stage the run is inside, not the seat', () => {
+  // S8 run 18:06–18:58: the pre-review `npm test` ran ten minutes and no surface said which stage
+  // it was or how long it had run.
+  it('names the full-suite stage, its command and how long it has run, not the seat', () => {
     const progress = deriveBuildProgress(
       input({
         operations: operationsState({
-          suiteStage: { stage: 'test', command: 'npm test', stageStartedTs: NOW - 5_000 },
+          suiteStage: {
+            stage: 'test',
+            command: 'npm test',
+            moment: 'pre-review',
+            stageStartedTs: NOW - 602_000,
+          },
         }),
       }),
     );
 
-    expect(progress.activity).toBe('Running the test suite · npm test');
+    expect(progress.activity).toBe('Pre-review suite · npm test · running 10m 2s');
   });
 
   it('spells a long silence the way every other elapsed span in the block reads', () => {

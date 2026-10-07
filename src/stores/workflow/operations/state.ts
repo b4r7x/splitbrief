@@ -78,13 +78,19 @@ export interface RunningValidationStage {
   stageStartedTs: number;
 }
 
+/** The full-suite stage the run is inside right now, and the moment of the run it runs at. */
+export interface RunningSuiteStage extends RunningValidationStage {
+  command: string;
+  moment: EngineEventOf<'full_suite'>['moment'];
+}
+
 export interface OperationsState {
   active: ActiveOperation | null;
   last: ActiveOperation | null;
   byCallId: Map<string, ActiveOperation>;
   /** Optional so the retention helpers can keep their narrow shape; the reducer always sets it. */
   validationStage?: RunningValidationStage | null;
-  suiteStage?: RunningValidationStage | null;
+  suiteStage?: RunningSuiteStage | null;
 }
 
 const initial = (): OperationsState => ({

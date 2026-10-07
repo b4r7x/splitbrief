@@ -39,7 +39,9 @@ describe('bylineText', () => {
     expect(bylineText(makeView({ outcome: { kind: 'discarded' } }), WIDE)).toBe('esc home');
   });
 
-  it('says how to bring the changes of an ended workspace run back', () => {
+  // S11 run, 04:55: one ended run was called cancelled at T005 on the byline and `× Ended` on the
+  // closed line. The closed byline names the outcome in the closed line's word.
+  it('says an ended workspace run ended and how to bring its changes back', () => {
     const view = endedInBuild();
     expect(
       bylineText(
@@ -52,7 +54,7 @@ describe('bylineText', () => {
         },
         WIDE,
       ),
-    ).toBe('Bring the changes back with git apply on the Patch file');
+    ).toBe('Ended · bring the changes back with git apply on the Patch file');
   });
 
   it('offers both choices on a ready run', () => {
@@ -137,7 +139,7 @@ describe('bylineText', () => {
   });
 
   it('sends an ended run home, because there is nothing left to accept', () => {
-    expect(bylineText(endedInBuild(), WIDE)).toBe('esc home');
+    expect(bylineText(endedInBuild(), WIDE)).toBe('Ended · esc home');
   });
 
   it('reports a decided checkpoint instead of offering one', () => {

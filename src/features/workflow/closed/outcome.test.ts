@@ -150,7 +150,6 @@ describe('outcomeLine', () => {
 
   it('says nothing was built when the run ended at a gate before its first brief', () => {
     const view = endedInPlanning({
-      run: { ...endedInPlanning().run, phase: 'reviewing-plan' },
       rail: getRailStages('reviewing-plan', { halted: 'cancelled' }),
       briefs: {
         total: 3,

@@ -1,8 +1,9 @@
 import { PHASES, type Phase, type RunnerKind } from '../../../core/schemas/enums.js';
 import type { PlannerCall } from '../../../core/schemas/run-step.js';
 import type { CliToolId } from '../../../core/runners/cli-tool-catalog.js';
-import { activeVerb } from './phase-verb.js';
+import { activeVerb, suiteStageText } from './phase-verb.js';
 import type { LifecycleState } from '../../../stores/workflow/lifecycle.js';
+import type { RunningSuiteStage } from '../../../stores/workflow/operations/state.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import {
   getActiveRailStage,
@@ -82,9 +83,20 @@ export function deriveLiveStatus(input: {
   reviewerLabel: string | null;
   plannerCall: PlannerCall | null;
   plannerCallStartedTs: number | null;
+  suiteStage: RunningSuiteStage | null;
 }): LiveStatus | null {
   if (input.status !== 'running') return null;
   if (input.cancelled) return null;
+  // A full-suite stage can run for minutes at the run start, between briefs or before the review:
+  // it is the run's work at that moment, so it leads on its own clock rather than the rail stage's.
+  if (input.suiteStage !== null) {
+    return {
+      verb: suiteStageText(input.suiteStage),
+      stageStart: input.suiteStage.stageStartedTs,
+      waitedMs: 0,
+      tone: 'validator',
+    };
+  }
   if (RAIL_GATE_PHASES.has(input.phase) && input.plannerCall === null) return null;
   const activeIndex = getRailActiveIndex(input.phase);
   const activeStage = getActiveRailStage(input.phase);

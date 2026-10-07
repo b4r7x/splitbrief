@@ -3,6 +3,9 @@ import { createElement } from 'react';
 import type { RecoveryIssue, SwitchSeatOffer } from '../../core/schemas/recovery/schemas.js';
 import { taskId } from '../../core/schemas/task.js';
 import { glyph } from '../../lib/glyphs.js';
+import { buildCheckoutChangedRecoveryIssue } from '../../engine/orchestrator/recovery/builders/task.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { PromptBody } from './components/prompt-body.js';
@@ -14,6 +17,7 @@ import {
   isActionRowLine,
   parseRecoveryActionAnswer,
   passHeadlinePrefix,
+  recoveryComposerHint,
   recoveryMenuLabel,
   recommendedRowPrefix,
   switchSeatCandidateForAnswer,
@@ -326,6 +330,32 @@ describe('recovery prompt', () => {
     expect(visible).toContain('a   end run · closes this run, changes kept');
     expect(visible).not.toContain('continue');
     expect(parseRecoveryActionAnswer('c', issue)).toBeNull();
+  });
+
+  // S11 run 2, 07:54: the panel blamed the checkout and listed T004's own file as a Files row,
+  // although only a branch another session created had changed.
+  it('heads a checkout-changed halt with the ref that changed and lists no brief file', async () => {
+    const issue = buildCheckoutChangedRecoveryIssue({
+      task: makeTask({
+        id: 'T004',
+        suggestedFiles: ['src/engine/runners/cli-tools/final-group.ts'],
+      }),
+      runner: makeConfig({ implementer: { kind: 'cli', tool: 'opencode' } }).implementer,
+      toolMessage: 'branch fix/implementer-never-runs-gates',
+      attempts: 0,
+      maxAttempts: 2,
+      createdAt: '2026-10-07T05:54:04.413Z',
+    });
+
+    const visible = await renderPromptBody(formatRecoveryPrompt(issue));
+
+    expect(visible).toContain(
+      'Needs you · Repository changed under T004 · branch fix/implementer-never-runs-gates',
+    );
+    expect(visible).not.toContain('Your checkout changed');
+    expect(visible).not.toContain('Files ');
+    expect(visible).not.toContain('final-group.ts');
+    expect(visible.match(/fix\/implementer-never-runs-gates/g)).toHaveLength(1);
   });
 
   it('uses the shared truncated-list spelling', () => {
@@ -693,4 +723,23 @@ describe('recovery prompt', () => {
       expect(prompt).toContain(`${file} · both sides changed the same lines`);
     expect(prompt).toContain('Resolve each file in /tmp/ws');
   });
+
+  it.each([
+    [true, true, 'Choose an action above, or tab to type a correction…'],
+    [true, false, 'Type a correction, or tab to choose an action…'],
+    [false, true, 'Choose an action above…'],
+    [false, false, 'Tab to choose an action…'],
+  ] as const)(
+    'names the focused side in the composer placeholder (correction %s, menu focused %s)',
+    (takesCorrection, menuFocused, hint) => {
+      const issue: RecoveryIssue = {
+        ...baseIssue,
+        availableActions: takesCorrection
+          ? ['retry-same-worker', 'skip-current-task', 'end-run']
+          : ['skip-current-task', 'end-run'],
+      };
+
+      expect(recoveryComposerHint(issue, menuFocused)).toBe(hint);
+    },
+  );
 });

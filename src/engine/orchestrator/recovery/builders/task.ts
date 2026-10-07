@@ -693,8 +693,9 @@ export function buildRepeatedTimeoutRecoveryIssue(
  * The checkout gets nothing until Apply, or, in checkout mode, gets the attempt's
  * edits put back, so the brief halts on the evidence
  * instead of retrying into the same place. The evidence rides in the message,
- * the one line the headless sinks print, and leads the details the panel lists
- * under its shorter header; the attempt count is left out, because no retry was
+ * the one line the headless sinks print, and the panel states it once: in the
+ * details under its shorter header, or, for a checkout halt, as the `changes`
+ * fact its header carries. The attempt count is left out, because no retry was
  * spent on it.
  */
 function isolationHaltIssue(
@@ -702,7 +703,9 @@ function isolationHaltIssue(
   halt: {
     reason: 'implementer-left-isolation' | 'checkout-changed';
     message: string;
+    files: string[];
     details: readonly string[];
+    changes?: string;
     actions: RecoveryAction[];
   },
   seatSwap: SwitchSeatOffer | undefined,
@@ -713,13 +716,13 @@ function isolationHaltIssue(
     reason: halt.reason,
     phase: opts.phase ?? 'implementing',
     task: opts.task,
-    files: taskFiles(opts.task),
+    files: halt.files,
     affectedTaskIds: [opts.task.id],
     message: halt.message,
     details: [...halt.details, ...implementerDetails(opts.selectedImplementerProfile)],
     selectedImplementerProfile: opts.selectedImplementerProfile,
     ...(seatSwap !== undefined && { switchSeat: seatSwap }),
-    facts: compactFacts({ tool: runnerAuthDisplayName(opts.runner) }),
+    facts: compactFacts({ tool: runnerAuthDisplayName(opts.runner), changes: halt.changes }),
     availableActions: halt.actions,
     recommendedAction: chooseRecommended(halt.actions),
     createdAt: opts.createdAt,
@@ -735,6 +738,7 @@ export function buildLeftIsolationRecoveryIssue(opts: RunnerFailureRecoveryOptio
     {
       reason: 'implementer-left-isolation',
       message: `${opts.task.id} left the isolation directory — ${evidence}`,
+      files: taskFiles(opts.task),
       details: [
         evidence,
         opts.inPlace === undefined
@@ -753,9 +757,10 @@ export function buildLeftIsolationRecoveryIssue(opts: RunnerFailureRecoveryOptio
 }
 
 /**
- * The checkout's git state changed while the call ran. The audit sees what
- * changed, not who changed it — a commit of yours lands here as readily as a
- * tool's — so the words name the checkout, never the implementer.
+ * The repository's git state changed while the call ran. The audit sees what
+ * changed, not who changed it — a commit of yours or a branch another session
+ * creates lands here as readily as a tool's — so the words name the repository,
+ * never the implementer. The halt is about git state, so it lists no brief file.
  */
 export function buildCheckoutChangedRecoveryIssue(
   opts: RunnerFailureRecoveryOptions,
@@ -764,9 +769,11 @@ export function buildCheckoutChangedRecoveryIssue(
     opts,
     {
       reason: 'checkout-changed',
-      message: `Your checkout changed under ${opts.task.id} — ${opts.toolMessage}`,
+      message: `Repository changed under ${opts.task.id} — ${opts.toolMessage}`,
+      files: [],
+      changes: opts.toolMessage,
       details: [
-        `Changed while ${runnerAuthDisplayName(opts.runner)} ran: ${opts.toolMessage}`,
+        `Changed while ${runnerAuthDisplayName(opts.runner)} ran; the audit cannot tell who made the change.`,
         opts.inPlace === undefined
           ? "Your checkout gets the run's changes only through Apply, and nothing in your checkout was reverted."
           : `SPLITBRIEF put back the files this attempt changed in your checkout (the bytes it replaced are in ${opts.inPlace.revertedDir}); the git change stays for you to check.`,

@@ -54,6 +54,7 @@ function derivationLoopMs(state: LifecycleState): number {
     reviewerLabel: null,
     plannerCall: state.plannerCall ?? null,
     plannerCallStartedTs: state.plannerCallStartedTs ?? null,
+    suiteStage: null,
   };
   let live = 0;
   const derivations = (): void => {

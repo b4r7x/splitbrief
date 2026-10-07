@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent } from 'react';
-import { setResumeHandler } from '../../handlers.js';
+import { requestResume, setResumeHandler } from '../../handlers.js';
 import { useInputMode } from '../use-input-mode.js';
 import { useRunContinue } from '../use-run-continue.js';
 import { useRunLoop, type RunWorkflowFn } from '../use-run-loop.js';
@@ -26,9 +26,6 @@ import { atRestComposer, atRestRailStages } from '../../at-rest.js';
 import { deriveSummaryView } from '../../closed/view-model.js';
 import { hydrateResume } from '../../resume-hydration.js';
 import { useWorkflowInlineEdit } from './use-inline-edit.js';
-
-/** Blank Enter never resumes a parked brief, so the row says what does. */
-export const PARKED_EMPTY_SUBMIT_HINT = 'type instructions or /resume';
 
 export interface WorkflowScreenDeps {
   runWorkflow?: RunWorkflowFn | undefined;
@@ -162,14 +159,14 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
     handleInput,
     handleRuntimeCommand: onRuntimeCommand,
     // A bare Enter does what the placeholder says it does: continues a run that can be continued,
-    // and goes home from one that cannot.
+    // and goes home from one that cannot. A parked run continues as `/resume` does.
     onEmptySubmit:
       atRestRecord !== undefined
         ? composer?.continuable === true
           ? () => continueAtRest('')
           : () => routerStore.navigate({ to: 'home' })
         : parked
-          ? () => feedbackStore.setMessage(PARKED_EMPTY_SUBMIT_HINT)
+          ? () => requestResume('')
           : undefined,
     inputHint,
     commandsOnly: composer?.commandsOnly ?? false,

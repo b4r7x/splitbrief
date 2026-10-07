@@ -1047,6 +1047,35 @@ const CLOSED_ENDED_REVIEW = record({
   },
 });
 
+/** The S9 run's close: a worktree run ended on its failed-review halt, the result in run.patch. */
+const ENDED_REVIEW_WORKSPACE_SESSION = 'visual-ended-review-workspace';
+const CLOSED_ENDED_REVIEW_WORKSPACE = record({
+  sessionId: ENDED_REVIEW_WORKSPACE_SESSION,
+  status: { kind: 'closed', as: 'ended' },
+  state: savedState({
+    phase: 'complete',
+    currentTaskIndex: 3,
+    briefs: WORKSPACE_BRIEFS,
+    reviewStatus: 'failed',
+    workspace: RUN_WORKSPACE,
+    completedAt: ENDED_REVIEW_AT,
+    closed: {
+      at: ENDED_REVIEW_AT,
+      as: 'ended',
+      patch: `.splitbrief/sessions/${ENDED_REVIEW_WORKSPACE_SESSION}/run.patch`,
+    },
+  }),
+  summary: {
+    ...READY_SUMMARY,
+    reviewPacket: {
+      ...ENDED_REVIEW_PACKET,
+      markdownPath: packetMarkdownPath(ENDED_REVIEW_WORKSPACE_SESSION),
+    },
+    review: legacyReview(ENDED_REVIEW_PACKET),
+  },
+  ledger: { ...READY_LEDGER, sessionId: ENDED_REVIEW_WORKSPACE_SESSION },
+});
+
 const REPLAYED_HISTORY = record({
   sessionId: 'visual-replayed-history',
   status: {
@@ -1156,6 +1185,10 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   }),
   atRestProjection({ id: 'workflow-closed-ended', route: { record: CLOSED_ENDED } }),
   atRestProjection({ id: 'workflow-closed-ended-review', route: { record: CLOSED_ENDED_REVIEW } }),
+  atRestProjection({
+    id: 'workflow-closed-ended-review-workspace',
+    route: { record: CLOSED_ENDED_REVIEW_WORKSPACE },
+  }),
   atRestProjection({ id: 'workflow-closed-seat-moved', route: { record: CLOSED_SEAT_MOVED } }),
   atRestProjection({
     id: 'workflow-closed-mixed-workers',

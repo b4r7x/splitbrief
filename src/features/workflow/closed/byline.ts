@@ -22,6 +22,9 @@ interface Byline {
 
 const HOME_AGAIN = 'Start it again from home';
 
+// The path is the Run block's Patch row; a byline cut at 80 columns would name no file.
+const BRING_BACK = 'Bring the changes back with git apply on the Patch file';
+
 /** One sentence for a line too narrow for both halves: the reason goes, the action stays. */
 function fitByline(byline: Byline, width: number): string {
   const { reason, action } = byline;
@@ -71,10 +74,10 @@ function bylineFor(view: SummaryView): Byline {
   if (kind === 'applied') {
     return { reason: null, action: 'Undo the Apply with /run reject confirm' };
   }
-  // The path is the Run block's Patch row; a byline cut at 80 columns would name no file.
-  if (view.files.patch !== null) {
-    return { reason: null, action: 'Bring the changes back with git apply on the Patch file' };
+  if (kind === 'ended') {
+    return { reason: 'Ended', action: view.files.patch === null ? 'esc home' : BRING_BACK };
   }
+  if (view.files.patch !== null) return { reason: null, action: BRING_BACK };
   if (kind === 'complete') {
     return { reason: null, action: `Keep it with /run accept${ALTERNATIVE}${REVERT}` };
   }

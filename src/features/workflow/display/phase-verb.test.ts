@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PHASES } from '../../../core/schemas/enums.js';
-import { activeVerb, inlineActiveVerb, suiteStageVerb } from './phase-verb.js';
+import { activeVerb, inlineActiveVerb, suiteStageText } from './phase-verb.js';
 
 describe('activeVerb', () => {
   it('says one verb for the planning session and names an old chain briefs call', () => {
@@ -51,10 +51,16 @@ describe('inlineActiveVerb', () => {
   });
 });
 
-describe('suiteStageVerb', () => {
-  it('names the full-suite stage instead of the seat verb', () => {
-    expect(suiteStageVerb('typecheck')).toBe('Running the typecheck');
-    expect(suiteStageVerb('lint')).toBe('Running the lint');
-    expect(suiteStageVerb('test')).toBe('Running the test suite');
+describe('suiteStageText', () => {
+  it('names the moment of the full suite and the command it runs', () => {
+    expect(suiteStageText({ moment: 'baseline', command: 'npm run typecheck' })).toBe(
+      'Run-start suite · npm run typecheck',
+    );
+    expect(suiteStageText({ moment: 'boundary', command: 'npm run lint' })).toBe(
+      'Batch suite · npm run lint',
+    );
+    expect(suiteStageText({ moment: 'pre-review', command: 'npm test' })).toBe(
+      'Pre-review suite · npm test',
+    );
   });
 });

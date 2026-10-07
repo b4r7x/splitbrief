@@ -120,6 +120,16 @@ export function correctionActionFor(issue: RecoveryIssue): RecoveryAction | unde
   return offered.find((action) => issue.availableActions.includes(action));
 }
 
+/** The composer placeholder on an open halt names what the focused side takes. */
+export function recoveryComposerHint(issue: RecoveryIssue, menuFocused: boolean): string {
+  const correction = correctionActionFor(issue) !== undefined;
+  if (menuFocused)
+    return correction
+      ? 'Choose an action above, or tab to type a correction…'
+      : 'Choose an action above…';
+  return correction ? 'Type a correction, or tab to choose an action…' : 'Tab to choose an action…';
+}
+
 function formatRecoveryActionText(
   action: RecoveryAction,
   context: RecoveryActionChoiceContext = {},
@@ -456,7 +466,8 @@ function formatRecoveryHeader(issue: RecoveryIssue): string {
   const usageLimit = formatUsageLimitHeadline(issue);
   if (usageLimit !== undefined) return formatRecoveryTitle(usageLimit, issue);
   // The engine's sentence carries the evidence for the headless sinks; here the evidence is the
-  // first fact row, so the header names the halt and nothing is said twice.
+  // first fact row, so the header names the halt and nothing is said twice. A checkout halt's
+  // rows do not repeat its changes, so its header names them.
   if (
     issue.reason === 'implementer-left-isolation' ||
     issue.reason === 'checkout-changed' ||

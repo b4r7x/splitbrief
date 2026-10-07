@@ -29,11 +29,11 @@ function reviewComposer(submissions: string[]) {
   );
 }
 
-// The workflow screen derives the panel's `commenting` from the armed flag the composer writes
-// (`src/app/screens/workflow.tsx:78`); mirroring that derivation is what lets the keystroke and
-// the legend be one render apart here as they are on screen.
+// The workflow screen reads the panel's `commenting` from the flag the composer writes
+// (`src/app/screens/workflow.tsx`); mirroring that read is what lets the keystroke and the legend
+// be one render apart here as they are on screen.
 function ReviewPanel() {
-  const armed = reviewKeysStore.use((s) => s.armed);
+  const commenting = reviewKeysStore.use((s) => s.commenting);
   return (
     <ApprovalPrompt
       review={{
@@ -41,7 +41,7 @@ function ReviewPanel() {
         confirms: [],
         budgetRows: 40,
         selectedIndex: 1,
-        commenting: !armed,
+        commenting,
       }}
     />
   );
@@ -87,23 +87,23 @@ describe('Composer review action keys', () => {
     ui.unmount();
   });
 
-  it('publishes the armed flag the review panel legend reads, so both change together', async () => {
+  it('publishes the comment flag the review panel legend reads, so both change together', async () => {
     const ui = renderFeature(reviewComposer([]));
     await tick(PAST_GRACE);
     await flushEffects();
 
     // Empty draft: the keys are live and the panel is entitled to advertise them.
-    expect(reviewKeysStore.get().armed).toBe(true);
+    expect(reviewKeysStore.get().commenting).toBe(false);
 
     ui.stdin.write('x');
     await flushEffects();
 
     // One keystroke starts a correction, and the panel stops promising its rows in the same
     // render — there is no second computation that could disagree.
-    expect(reviewKeysStore.get().armed).toBe(false);
+    expect(reviewKeysStore.get().commenting).toBe(true);
 
     ui.unmount();
-    expect(reviewKeysStore.get().armed).toBe(false);
+    expect(reviewKeysStore.get().commenting).toBe(false);
   });
 
   it('turns the review panel legend over to the comment keys when a draft starts', async () => {
@@ -122,7 +122,7 @@ describe('Composer review action keys', () => {
     ui.stdin.write('split T002');
     await flushEffects();
 
-    // The panel is a mirror of `reviewKeysStore.armed`, so the draft and the legend change in the
+    // The panel is a mirror of `reviewKeysStore.commenting`, so the draft and the legend change in the
     // same render.
     const frame = stripAnsiStyles(ui.lastFrame());
     expect(frame).toContain(REVIEW_COMMENT_HINTS);

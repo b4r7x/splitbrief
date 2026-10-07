@@ -1,13 +1,12 @@
-import type { Phase, TaskCompletionMethod } from '../../../core/schemas/enums.js';
+import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import type { BriefQualitySummary, ReviewVerdict, Summary } from '../../../core/schemas/summary.js';
 import type { TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { RunRecord } from '../../../core/sessions/run-record.js';
 import type { RunStatus } from '../../../core/sessions/run-status.js';
-import type { RailStageStatus } from '../../../core/rail-stages.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
-import { getRailStages, type RailHalt, type RailStageState } from '../../../core/rail-stages.js';
-import { applyStage } from '../at-rest.js';
+import type { RailStageState } from '../../../core/rail-stages.js';
+import { atRestRailStages } from '../at-rest.js';
 import {
   briefRows,
   buildSeatView,
@@ -85,7 +84,6 @@ export interface SummaryView {
   run: Readonly<{
     feature: string;
     totalMs: number;
-    phase: Phase;
     sessionId: string;
   }>;
   rail: RailStageState[];
@@ -143,10 +141,8 @@ export function deriveSummaryView(input: DeriveSummaryViewInput): SummaryView | 
     stoppedAt: stoppedAtForCurrentPlan({ summary: record.summary, ledger, state }),
   };
   const outcomeKind = outcomeKindFor(summary, record.status.as);
-  const phase = resolvePhase(summary, savedPhase(record));
   const tasks = state?.tasks ?? null;
   const rows = briefRows({ summary, ledger, currentTasks: tasks });
-  const apply = applyStage(record);
   const files = filesView(summary);
   const sessionId = sanitizeTerminalDisplayText(record.ref.sessionId);
   return {
@@ -154,10 +150,9 @@ export function deriveSummaryView(input: DeriveSummaryViewInput): SummaryView | 
     run: {
       feature: sanitizeTerminalDisplayText(summary.feature),
       totalMs: summary.totalTime,
-      phase,
       sessionId,
     },
-    rail: railFor(phase, outcomeKind, apply),
+    rail: atRestRailStages(record),
     seats: {
       plan: plannerSeatView(summary),
       build: buildSeatView(summary),
@@ -192,10 +187,6 @@ export function deriveSummaryView(input: DeriveSummaryViewInput): SummaryView | 
   };
 }
 
-function savedPhase(record: RunRecord): Phase | null {
-  return record.hydration.kind === 'loaded' ? record.hydration.state.phase : null;
-}
-
 /**
  * Complete is the whole run agreeing: it finished, the packet was written, the verdict allows it, the
  * scope check passed and no brief failed. Anything short of that on a finished run needs attention.
@@ -223,29 +214,3 @@ function savedPatch(state: WorkflowState | null, changed: readonly string[] | nu
   if (patch === undefined || changed?.length === 0) return null;
   return sanitizeTerminalDisplayText(patch);
 }
-
-/**
- * The phase the run stopped in. The saved state is read first, then the summary's own record, then
- * what the record does carry — so a legacy summary still freezes the rail at the right stage.
- */
-function resolvePhase(summary: Summary, saved: Phase | null): Phase {
-  // `idle` is where a run that never started stands, so it names no stage.
-  const recorded = saved ?? summary.phase ?? null;
-  if (recorded !== null && recorded !== 'idle') return recorded;
-  if (summary.stoppedAt !== undefined || summary.totalTasks > 0) return 'implementing';
-  if (summary.reviewPacket !== undefined) return 'final-review';
-  return 'planning';
-}
-
-function railFor(
-  phase: Phase,
-  kind: SummaryOutcomeKind,
-  apply: RailStageStatus | undefined,
-): RailStageState[] {
-  const applyOption = apply === undefined ? {} : { apply };
-  if (kind !== 'ended') return getRailStages('complete', applyOption);
-  return getRailStages(phase, { halted: ENDED_HALT, ...applyOption });
-}
-
-/** A run somebody ended is not a run that broke: the stage it stopped on wears the cancel mark. */
-const ENDED_HALT: RailHalt = 'cancelled';

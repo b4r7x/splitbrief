@@ -713,18 +713,45 @@ describe('buildCheckoutChangedRecoveryIssue', () => {
 
     expect(issue.reason).toBe('checkout-changed');
     expect(issue.seat).toBe('build');
-    expect(issue.message).toBe(
-      'Your checkout changed under T001 — branch escaped · hook pre-commit',
-    );
+    expect(issue.message).toBe('Repository changed under T001 — branch escaped · hook pre-commit');
     expect(issue.details).toEqual([
-      'Changed while Google Antigravity CLI ran: branch escaped · hook pre-commit',
+      'Changed while Google Antigravity CLI ran; the audit cannot tell who made the change.',
       "Your checkout gets the run's changes only through Apply, and nothing in your checkout was reverted.",
     ]);
     expect(issue.attempts).toBeUndefined();
-    expect(issue.facts).toEqual({ tool: 'Google Antigravity CLI' });
+    expect(issue.facts).toEqual({
+      tool: 'Google Antigravity CLI',
+      changes: 'branch escaped · hook pre-commit',
+    });
     expect(issue.availableActions).toEqual(['retry-same-worker', 'skip-current-task', 'end-run']);
     expect(issue.recommendedAction).toBe('retry-same-worker');
     expect(issue.switchSeat).toBeUndefined();
+    expectValidRecoveryIssue(issue);
+  });
+
+  // S11 run 2, 07:54: another session created a worktree on a new branch during T004's call. The
+  // checkout's HEAD, branch and files stayed as they were, and final-group.ts is only T004's file.
+  it('names the branch another session created, not the brief file, in its headline', () => {
+    const issue = buildCheckoutChangedRecoveryIssue({
+      task: makeTask({
+        id: 'T004',
+        suggestedFiles: ['src/engine/runners/cli-tools/final-group.ts'],
+      }),
+      runner: makeConfig({ implementer: { kind: 'cli', tool: 'opencode' } }).implementer,
+      toolMessage: 'branch fix/implementer-never-runs-gates',
+      attempts: 0,
+      maxAttempts: 2,
+      createdAt,
+    });
+
+    expect(formatRecoveryHeadline(issue)).toBe(
+      'Repository changed under T004 · branch fix/implementer-never-runs-gates',
+    );
+    expect(issue.message).toBe(
+      'Repository changed under T004 — branch fix/implementer-never-runs-gates',
+    );
+    expect(issue.files).toEqual([]);
+    expect(issue.details.join(' ')).not.toContain('final-group.ts');
     expectValidRecoveryIssue(issue);
   });
 

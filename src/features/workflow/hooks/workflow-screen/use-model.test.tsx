@@ -11,7 +11,7 @@ import { routerStore } from '../../../../stores/navigation/router.js';
 import { feedbackStore } from '../../../../stores/ui/feedback.js';
 import { stopStore } from '../../../../stores/workflow/stop.js';
 import { clearAllHandlers } from '../../handlers.js';
-import { PARKED_EMPTY_SUBMIT_HINT, useWorkflowScreen } from './use-model.js';
+import { useWorkflowScreen } from './use-model.js';
 
 type Model = ReturnType<typeof useWorkflowScreen>;
 
@@ -60,21 +60,24 @@ describe('useWorkflowScreen while a brief is parked', () => {
     projectDir = '';
   });
 
-  it('blank enter does not resume', async () => {
+  it.each([
+    ['mid-brief', 'stop-now'],
+    ['boundary', 'pause-after-brief'],
+  ] as const)('blank enter at a %s park resumes the run like /resume', async (kind, intent) => {
     const capture: { current: Model | null } = { current: null };
     const ui = renderFeature(<Harness capture={capture} />);
     await tick();
 
     const steer = vi.fn();
-    stopStore.request('stop-now');
-    stopStore.park('mid-brief', 'T002', steer);
+    stopStore.request(intent);
+    stopStore.park(kind, 'T004', steer);
     await tick();
 
     requireModel(capture).onEmptySubmit?.();
 
-    expect(steer).not.toHaveBeenCalled();
-    expect(stopStore.get().phase).toBe('parked');
-    expect(feedbackStore.get().message).toBe(PARKED_EMPTY_SUBMIT_HINT);
+    expect(steer).toHaveBeenCalledWith('');
+    expect(stopStore.get().phase).toBe('idle');
+    expect(feedbackStore.get().isError).toBe(false);
     ui.unmount();
   });
 

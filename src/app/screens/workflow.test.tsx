@@ -443,7 +443,7 @@ describe('WorkflowScreen chrome calibration', () => {
     // the key that lifts it. The block's rows stand down with the attempt that is no longer in
     // flight, so neither the brief fraction nor the freshness line paints over the parked run.
     expect(frame).toContain('Stopped at T001');
-    expect(frame).toContain('/resume');
+    expect(frame).toContain('⏎ resume');
     expect(frame).not.toContain('briefs passed');
     expect(frame).not.toContain('no update yet');
     ui.unmount();
@@ -642,6 +642,26 @@ describe('WorkflowScreen showing a run at rest', () => {
     ui.unmount();
   });
 
+  it('names the panel actions in the placeholder while the panel holds the keys', async () => {
+    const { ui } = renderFailedReviewRun();
+    await flushEffects();
+
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Fix again');
+    });
+    const panelFocused = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(panelFocused).toContain('Choose an action above, or tab to type a correction…');
+    expect(panelFocused).not.toContain('tab to choose an action');
+
+    ui.stdin.write('\t');
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(
+      'Type a correction, or tab to choose an action…',
+    );
+    ui.unmount();
+  });
+
   it('sends a failed final review back with the correction typed into the panel field', async () => {
     const { ui } = renderFailedReviewRun();
     await flushEffects();
@@ -725,8 +745,15 @@ describe('WorkflowScreen showing a run at rest', () => {
       expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skip task');
     });
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(frame).toContain('Tab to choose an action…');
-    expect(frame).not.toContain('Type a correction, or tab to choose an action…');
+    expect(frame).toContain('Choose an action above…');
+    expect(frame).not.toContain('Tab to choose an action…');
+    expect(frame).not.toContain('type a correction');
+
+    ui.stdin.write('\t');
+    await flushEffects();
+    const composerFocused = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(composerFocused).toContain('Tab to choose an action…');
+    expect(composerFocused).not.toContain('Type a correction, or tab to choose an action…');
     ui.unmount();
   });
 

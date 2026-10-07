@@ -74,6 +74,7 @@ export function WorkflowFooter({
   buildBlockShown = false,
   menuFocused = false,
   onToggleMenu,
+  keepPlaceholderWhileFocused,
   questionPanelFocused = false,
   onReturnToQuestion,
   readClipboardImage,
@@ -108,6 +109,8 @@ export function WorkflowFooter({
   onReturnToQuestion?: (() => void) | undefined;
   menuFocused?: boolean | undefined;
   onToggleMenu?: (() => void) | undefined;
+  /** The placeholder names what the composer takes on either side of the menu toggle, so focus keeps it. */
+  keepPlaceholderWhileFocused?: boolean | undefined;
   readClipboardImage?: typeof readSystemClipboardImage | undefined;
   listProjectFiles?: typeof listFiles | undefined;
 }) {
@@ -138,6 +141,7 @@ export function WorkflowFooter({
         commands={commands}
         mode={mode}
         hint={inputHint === '' ? (placeholder ?? '') : inputHint}
+        keepPlaceholderWhileFocused={keepPlaceholderWhileFocused}
         commandsOnly={commandsOnly}
         currentScreen="workflow"
         disabled={disabled || menuFocused || questionPanelFocused}

@@ -44,7 +44,11 @@ describe('formatRecoveryHeadline', () => {
         'Tool recipe rejected by Cursor',
       ],
       [{ reason: 'implementer-left-isolation' }, 'T001 left the isolation directory'],
-      [{ reason: 'checkout-changed' }, 'Your checkout changed under T001'],
+      [{ reason: 'checkout-changed' }, 'Repository changed under T001'],
+      [
+        { reason: 'checkout-changed', facts: { changes: 'branch topic · hook pre-commit' } },
+        'Repository changed under T001 · branch topic · hook pre-commit',
+      ],
       [{ reason: 'runner-timeout-repeated' }, 'Two timeouts in a row on T001'],
       [{ reason: 'planner-call-failed' }, 'Planner call failed'],
       [{ reason: 'planner-returned-no-briefs' }, 'Planner returned no briefs'],
@@ -99,6 +103,12 @@ describe('formatRecoveryHeadline', () => {
 
     expect(review({ blocking: 4 })).toBe('Final review failed with 4 blocking findings');
     expect(review({ blocking: 1 })).toBe('Final review failed with 1 blocking finding');
+    expect(review({ blocking: 0, unverified: 6 })).toBe(
+      'Final review failed with 6 unverified criteria',
+    );
+    expect(review({ blocking: 0, unverified: 1 })).toBe(
+      'Final review failed with 1 unverified criterion',
+    );
     expect(review({ reviewFailureKind: 'call-failed' })).toBe('Final review reached no verdict');
     expect(review({ reviewFailureKind: 'insufficient-context' })).toBe(
       'Final review reached no verdict',

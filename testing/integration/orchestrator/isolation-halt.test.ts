@@ -307,9 +307,7 @@ describe('isolation halt through the orchestrator', { timeout: 90_000 }, () => {
         taskId: 'T001',
         availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
       });
-      expect(state.pendingRecovery?.message).toBe(
-        'Your checkout changed under T001 — branch escaped',
-      );
+      expect(state.pendingRecovery?.message).toBe('Repository changed under T001 — branch escaped');
       // The brief's own file was never promoted: the halt came before the gate.
       expect(existsSync(join(projectDir, TARGET))).toBe(false);
       return { state, calls };

@@ -17,10 +17,25 @@ function stopMark(stop: StopReason): RailHalt {
   return stop.on.kind === 'halt' || stop.on.kind === 'failed' ? 'failed' : 'cancelled';
 }
 
-/** The phase the record stands in: the saved state first, then what the summary recorded. */
+/**
+ * The phase the record stands in: the saved state first, then what the summary recorded, then what
+ * the summary carries, so a legacy summary still stops the rail at the right stage. A final review
+ * that failed is the review stage until it is accepted as is.
+ */
 export function recordPhase(record: RunRecord): Phase {
-  if (record.hydration.kind === 'loaded') return record.hydration.state.phase;
-  return record.summary?.phase ?? 'idle';
+  const state = record.hydration.kind === 'loaded' ? record.hydration.state : null;
+  const failedReview =
+    state?.phase === 'complete' &&
+    state.reviewStatus === 'failed' &&
+    state.acceptedAsIs === undefined;
+  if (failedReview) return 'final-review';
+  const summary = record.summary;
+  const recorded = state?.phase ?? summary?.phase ?? 'idle';
+  // `idle` is where a run that never started stands, so it names no stage.
+  if (recorded !== 'idle' || summary === null) return recorded;
+  if (summary.stoppedAt !== undefined || summary.totalTasks > 0) return 'implementing';
+  if (summary.reviewPacket !== undefined) return 'final-review';
+  return 'planning';
 }
 
 /**
@@ -43,8 +58,8 @@ export function atRestRailStages(record: RunRecord): RailStageState[] {
 }
 
 /**
- * The Apply stage a workspace run wears on its header rail. A run with no workspace, or one whose
- * workspace is the checkout itself, has no Apply stage to show.
+ * The Apply stage a workspace run wears on its header rail. A run with no workspace, one whose
+ * workspace is the checkout itself, or an ended run nothing can apply has no Apply stage to show.
  */
 export function applyStage(record: RunRecord): RailStageStatus | undefined {
   if (record.hydration.kind !== 'loaded') return undefined;
@@ -58,6 +73,7 @@ export function applyStage(record: RunRecord): RailStageStatus | undefined {
       return record.hydration.state.applied?.undone === undefined ? 'done' : 'cancelled';
     }
     if (status.as === 'discarded') return 'cancelled';
+    if (status.as === 'ended') return undefined;
   }
   if (status.kind === 'open' && status.resumeAt.kind === 'apply') {
     return stopMark(status.stop);

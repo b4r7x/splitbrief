@@ -1,5 +1,6 @@
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
 import { recoveryFactNumber, recoveryFactString } from '../schemas/recovery/facts.js';
+import { SOFT_SEP } from '../separators.js';
 import { formatResetAt } from './reset-clock.js';
 import { haltOf, recoveryHaltLabel } from './halt.js';
 import { assertNever } from '../../utils/type-guards.js';
@@ -30,7 +31,7 @@ export function finalReviewCapCause(cycles: number): string {
 
 /** A final review that failed on claims no check could verify, with nothing for the planner to fix. */
 export function finalReviewUnverifiedCause(criteria: number): string {
-  return `Final review failed with ${countNoun(criteria, 'unverified criterion')}`;
+  return `Final review failed with ${countNoun(criteria, 'unverified criterion', 'unverified criteria')}`;
 }
 
 /** What stopped a retry-exhausted brief, in the one wording the transcript, the panel and the byline share. */
@@ -80,8 +81,11 @@ export function formatRecoveryHeadline(issue: RecoveryIssue, now: number = Date.
       return `Tool recipe rejected by ${toolName(issue)}`;
     case 'implementer-left-isolation':
       return `${taskName(issue)} left the isolation directory`;
-    case 'checkout-changed':
-      return `Your checkout changed under ${taskName(issue)}`;
+    case 'checkout-changed': {
+      const changes = recoveryFactString(issue.facts, 'changes');
+      const lead = `Repository changed under ${taskName(issue)}`;
+      return changes === undefined ? lead : `${lead}${SOFT_SEP}${changes}`;
+    }
     case 'runner-timeout-repeated':
       return `Two timeouts in a row on ${taskName(issue)}`;
     case 'planner-call-failed':

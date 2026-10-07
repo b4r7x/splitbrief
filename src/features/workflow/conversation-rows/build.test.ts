@@ -18,6 +18,10 @@ import { wrapWidthFor } from './row-markers.js';
 import type { ConversationRow } from './types.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { arrowSep, SOFT_SEP } from '../../../core/separators.js';
+import { formatRecoveryHeadline } from '../../../core/recovery/headline.js';
+import { buildCheckoutChangedRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/task.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 
 const streaming: StreamingOutputState = { taskId: null, lines: [], active: false };
 const CODEX_LABEL = 'OpenAI Codex CLI';
@@ -969,6 +973,30 @@ describe('one recovery reads as one block', () => {
     expect(lines).toEqual([
       'Error',
       'Your checkout changed under T002 — branch cli-budget-behaviour-fixes',
+      `Recovery  Try again${arrowSep()}T002 back to pending, retried`,
+    ]);
+  });
+
+  it('folds a checkout halt whose headline carries its changes under the error that names them', () => {
+    const issue = buildCheckoutChangedRecoveryIssue({
+      task: makeTask({ id: 'T002' }),
+      runner: makeConfig({ implementer: { kind: 'cli', tool: 'opencode' } }).implementer,
+      toolMessage: 'branch fix/implementer-never-runs-gates',
+      attempts: 0,
+      maxAttempts: 2,
+      createdAt: '2026-10-07T05:54:04.413Z',
+    });
+    const { lines } = transcript([
+      { ...halt, message: issue.message },
+      { ...prompted, headline: formatRecoveryHeadline(issue) },
+      selected,
+      reset,
+      resolved,
+    ]);
+
+    expect(lines).toEqual([
+      'Error',
+      'Repository changed under T002 — branch fix/implementer-never-runs-gates',
       `Recovery  Try again${arrowSep()}T002 back to pending, retried`,
     ]);
   });

@@ -7,6 +7,8 @@ import { routerStore } from '../stores/navigation/router.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle.js';
 import { approvalPromptStore } from '../stores/approval-prompt/prompt.js';
 import { completionStore } from '../stores/ui/completion.js';
+import { reviewKeysStore } from '../stores/ui/review-keys.js';
+import { composerDraftStore } from '../stores/ui/composer-draft.js';
 import { getActiveFilteredStdin } from '../lib/terminal/filtered-stdin/active.js';
 import {
   scheduleEscapeAction,
@@ -97,6 +99,10 @@ function goHome(): void {
   requestLeaveSession();
 }
 
+function cancelReviewComment(): void {
+  composerDraftStore.request('');
+}
+
 function stoppedOrStopping(): boolean {
   const { phase, intent } = stopStore.get();
   return (
@@ -152,12 +158,13 @@ export function useAppKeys({ exit, deps = defaultAppKeyDeps }: UseAppKeysOptions
     feedbackStore.setMessage('Press ctrl+c again to quit');
     quitTimer.current = setTimeout(clearQuitHint, 2000);
   };
-  const [route, overlay, approval, completion, sessionSelection] = useStores(
+  const [route, overlay, approval, completion, sessionSelection, reviewKeys] = useStores(
     routerStore,
     overlayStore,
     approvalPromptStore,
     completionStore,
     sessionSelectStore,
+    reviewKeysStore,
   );
   const { active: overlayActive, exclusive: overlayExclusive } = overlay;
   const isOpen = overlayActive !== 'none';
@@ -167,6 +174,8 @@ export function useAppKeys({ exit, deps = defaultAppKeyDeps }: UseAppKeysOptions
     (!overlayHasStack || GLOBAL_ESC_OVERLAYS.has(overlayActive));
   const promptPending = approval.status === 'pending';
   const completionOpen = completion.open;
+  // A plan card comment takes the first esc: it cancels the comment and the rows take the keys again.
+  const reviewCommenting = reviewKeys.commenting;
   const sessionPreparationActive = sessionSelection.preparation.kind !== 'idle';
 
   const sessionProject = route.screen === 'workflow' ? route.run.ref.projectDir : null;
@@ -248,33 +257,45 @@ export function useAppKeys({ exit, deps = defaultAppKeyDeps }: UseAppKeysOptions
     }
   });
 
+  const escapePress = (input: string): { immediate: () => void; deferred: () => void } | null => {
+    if (
+      (route.screen === 'workflow' && route.execution.kind === 'at-rest') ||
+      stoppedOrStopping() ||
+      lifecycleStore.get().status === 'paused'
+    )
+      return { immediate: goHome, deferred: goHome };
+    if (stopSheetReachable())
+      return {
+        immediate: () => {
+          deps.requestStopNow();
+          if (input.length > 1 && input.split('').every((char) => char === '\x1b'))
+            requestLeaveSession();
+        },
+        deferred: openStopSheet,
+      };
+    if (!lifecycleStore.get().cancelled) return null;
+    return { immediate: goHome, deferred: goHome };
+  };
+
   useInput(
     (input, key) => {
       if (!key.escape) return;
       // A pasted blob can carry a raw `\x1b`; ignore it while a bracketed paste is in flight.
       if (getActiveFilteredStdin()?.isPasteActive()) return;
-      if (
-        (route.screen === 'workflow' && route.execution.kind === 'at-rest') ||
-        stoppedOrStopping() ||
-        lifecycleStore.get().status === 'paused'
-      ) {
-        runDeferredEscape(input, goHome, goHome);
-        return;
-      }
-      if (stopSheetReachable()) {
+      const press = escapePress(input);
+      if (reviewCommenting) {
+        // Two presses inside the debounce read as the slow pair: the cancel, then the ladder's step.
         runDeferredEscape(
           input,
           () => {
-            deps.requestStopNow();
-            if (input.length > 1 && input.split('').every((char) => char === '\x1b'))
-              requestLeaveSession();
+            cancelReviewComment();
+            press?.deferred();
           },
-          openStopSheet,
+          cancelReviewComment,
         );
         return;
       }
-      if (!lifecycleStore.get().cancelled) return;
-      runDeferredEscape(input, goHome, goHome);
+      if (press !== null) runDeferredEscape(input, press.immediate, press.deferred);
     },
     {
       isActive:

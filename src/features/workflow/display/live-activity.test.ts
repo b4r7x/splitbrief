@@ -17,6 +17,7 @@ const base = {
   reviewerLabel: null,
   plannerCall: null,
   plannerCallStartedTs: null,
+  suiteStage: null,
 };
 
 describe('deriveLiveStatus', () => {
@@ -95,6 +96,23 @@ describe('deriveLiveStatus', () => {
     });
     expect(status?.tone).toBe('implementer');
     expect(status?.stageStart).toBe(5000);
+  });
+
+  // S8 run 18:06–18:58 and S11 run 02:29–02:39: a ten-minute `npm test` at the run start, a batch
+  // boundary or before the review read `Implementing… 10:49`, the brief stage's clock.
+  it.each([
+    ['baseline', 'Run-start suite · npm test'],
+    ['boundary', 'Batch suite · npm test'],
+    ['pre-review', 'Pre-review suite · npm test'],
+  ] as const)('names the %s suite stage and its command on its own clock', (moment, verb) => {
+    const status = deriveLiveStatus({
+      ...base,
+      phase: 'implementing',
+      phaseFirstSeenTs: { implementing: 5_000 },
+      waitedMs: { implementing: 2_000 },
+      suiteStage: { stage: 'test', command: 'npm test', moment, stageStartedTs: 90_000 },
+    });
+    expect(status).toEqual({ verb, stageStart: 90_000, waitedMs: 0, tone: 'validator' });
   });
 
   it('counts the stage from the later of its opening and the run resuming', () => {

@@ -22,11 +22,12 @@ function input(overrides: Partial<StopBylineInput> = {}): StopBylineInput {
     total: 5,
     elapsedMs: 3_000,
     questionPending: false,
+    suite: null,
     ...overrides,
   };
 }
 
-const PARKED_HINT = '/resume · /stop options · esc back to sessions · ctrl+c quit';
+const PARKED_HINT = '⏎ resume · /stop options · esc back to sessions · ctrl+c quit';
 
 /** A stop the run settled from: the park names no brief, and the record says where it stopped. */
 function settled(resumeAt: StepRef, at: 'mid-step' | 'boundary' = 'mid-step') {
@@ -115,6 +116,22 @@ describe('stopByline', () => {
     expect(stopByline(paused)?.lead).toBe('Finishing the run');
   });
 
+  // S8 run 18:06–18:58: with a pause armed, the ten-minute boundary suite read `Finishing the run`.
+  it('names the full-suite stage a pause waits on, with its command and its clock', () => {
+    const paused = input({
+      intent: 'pause-after-brief',
+      phase: 'requested',
+      currentTaskId: null,
+      finishedTaskId: 'T003',
+      suite: { moment: 'boundary', command: 'npm test', elapsedMs: 602_000 },
+    });
+
+    expect(stopByline(paused)).toEqual({
+      lead: 'Batch suite · npm test 10:02',
+      hint: 'Pause requested; no next brief will start',
+    });
+  });
+
   it('parks mid-brief with the keys that resume it', () => {
     expect(
       stopByline(
@@ -126,7 +143,7 @@ describe('stopByline', () => {
       ),
     ).toEqual({
       lead: 'Stopped at T002 · Partial changes kept',
-      hint: '/resume · /stop options · esc back to sessions · ctrl+c quit',
+      hint: '⏎ resume · /stop options · esc back to sessions · ctrl+c quit',
     });
   });
 
@@ -142,7 +159,7 @@ describe('stopByline', () => {
       ),
     ).toEqual({
       lead: 'Paused after T002 · 2 of 5 briefs complete',
-      hint: '/resume · /stop options · esc back to sessions · ctrl+c quit',
+      hint: '⏎ resume · /stop options · esc back to sessions · ctrl+c quit',
     });
   });
 
@@ -184,66 +201,35 @@ describe('stopByline', () => {
     ).toBe('Stopped');
   });
 
-  it('reports an ended run as cancelled with its changes kept', () => {
-    expect(stopByline(input({ intent: 'end-run', phase: 'ended' }))).toEqual({
-      lead: 'Cancelled by you at T002 · Changes kept',
-      hint: 'esc back to sessions · ctrl+c quit',
-    });
-  });
-
-  it('names the gate a run was ended at and claims no changes it never made', () => {
-    expect(stopByline(ended({ phase: 'reviewing-plan' }))).toEqual({
-      lead: 'Cancelled by you at the plan',
-      hint: 'esc back to sessions · ctrl+c quit',
-    });
-  });
-
-  it('claims the partial changes the brief it stopped in booked', () => {
-    const task = makeTask({ id: 'T003', status: 'in_progress' });
-    const ledger = createEvidenceLedger({ sessionId: 'proof', feature: 'proof', tasks: [task] });
-    ledger.tasks = ledger.tasks.map((entry) => ({ ...entry, changedFiles: ['src/b.ts'] }));
-    expect(
-      stopByline(
-        ended(
+  // S11 run, 04:55: after End run the byline called T005 cancelled with its changes kept, while
+  // the closed line read `× Ended · Build 4/13 · stopped in T005` and the changes sat in run.patch.
+  // A run End run closed is a closed run: its own closed byline speaks for it, and the closed block
+  // states where it stopped and what it kept.
+  it.each([
+    ['at the plan gate', () => ended({ phase: 'reviewing-plan' })],
+    [
+      'inside a brief',
+      () => {
+        const task = makeTask({ id: 'T003', status: 'in_progress' });
+        const ledger = createEvidenceLedger({
+          sessionId: 'proof',
+          feature: 'proof',
+          tasks: [task],
+        });
+        return ended(
           { phase: 'implementing', tasks: [task] },
           {
             changedFiles: ['src/a.ts', 'src/b.ts'],
             stoppedAt: { taskId: taskId('T003'), partialFiles: ['src/b.ts'] },
           },
           ledger,
-        ),
-      )?.lead,
-    ).toBe('Cancelled by you at T003 · Partial changes kept');
-  });
-
-  it('names the current gate when an older summary attributes partial work to a reused ID', () => {
-    expect(
-      stopByline(
-        ended(
-          { phase: 'reviewing-plan', tasks: [makeTask({ id: 'T001' })] },
-          {
-            changedFiles: ['src/old.ts'],
-            stoppedAt: { taskId: taskId('T001'), partialFiles: ['src/old.ts'] },
-          },
-        ),
-      )?.lead,
-    ).toBe('Cancelled by you at the plan · Changes kept');
-  });
-
-  it('claims the changes earlier briefs made', () => {
-    expect(stopByline(ended({ phase: 'final-review' }, { changedFiles: ['src/a.ts'] }))?.lead).toBe(
-      'Cancelled by you at the review · Changes kept',
-    );
-  });
-
-  it('names no step for a run ended inside a planner call, which its record does not keep', () => {
-    expect(stopByline(ended({ phase: 'planning' }))?.lead).toBe('Cancelled by you');
-  });
-
-  it('says only that it was cancelled when nothing names a brief', () => {
-    expect(
-      stopByline(input({ intent: 'end-run', phase: 'ended', currentTaskId: null }))?.lead,
-    ).toBe('Cancelled by you');
+        );
+      },
+    ],
+    ['at the review', () => ended({ phase: 'final-review' }, { changedFiles: ['src/a.ts'] })],
+    ['before the record was re-read', () => input({ intent: 'end-run', phase: 'ended' })],
+  ] as const)('leaves the byline to the closed run once End run closed it %s', (_label, make) => {
+    expect(stopByline(make())).toBeNull();
   });
 
   it('names the wait while a run is ending', () => {

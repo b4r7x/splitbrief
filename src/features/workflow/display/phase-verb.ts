@@ -1,5 +1,7 @@
-import type { Phase, ValidationStage } from '../../../core/schemas/enums.js';
+import type { Phase } from '../../../core/schemas/enums.js';
 import type { PlannerCall } from '../../../core/schemas/run-step.js';
+import { SOFT_SEP } from '../../../core/separators.js';
+import type { RunningSuiteStage } from '../../../stores/workflow/operations/state.js';
 import { assertNever } from '../../../utils/type-guards.js';
 
 // One vocabulary for what the run is doing right now: the byline says it as a heading, the build
@@ -55,15 +57,20 @@ export function inlineActiveVerb(phase: Phase): string {
   return activeVerb(phase, null, null).replace('…', '').toLowerCase();
 }
 
-export function suiteStageVerb(stage: ValidationStage): string {
-  switch (stage) {
-    case 'typecheck':
-      return 'Running the typecheck';
-    case 'lint':
-      return 'Running the lint';
-    case 'test':
-      return 'Running the test suite';
+/** The full suite a run-start, batch-boundary or pre-review stage runs, and its command. */
+export function suiteStageText(suite: Pick<RunningSuiteStage, 'moment' | 'command'>): string {
+  return `${suiteMomentLabel(suite.moment)}${SOFT_SEP}${suite.command}`;
+}
+
+function suiteMomentLabel(moment: RunningSuiteStage['moment']): string {
+  switch (moment) {
+    case 'baseline':
+      return 'Run-start suite';
+    case 'boundary':
+      return 'Batch suite';
+    case 'pre-review':
+      return 'Pre-review suite';
     default:
-      return assertNever(stage);
+      return assertNever(moment);
   }
 }

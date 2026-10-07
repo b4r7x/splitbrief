@@ -375,6 +375,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-implementation-fenced-handback',
+      title: 'Workflow · a build hand-back fenced as a json code block',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'implementation-fenced-handback',
+        title: 'Fenced hand-back report',
+        kind: 'implementation',
+        marker: 'Report  done',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'activity', title: 'Implementation activity block' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-review-fix',
       title: 'Workflow · the fix task the review triage appended',
       surface: screenSurface('workflow'),
@@ -604,6 +620,25 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       checkpoint: {
         id: 'plan-card-render-note',
         title: 'Plan card with the render note',
+        kind: 'review',
+        marker: 'Approve plan and start the build',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Plan transcript' },
+        { id: 'approval-panel', title: 'Plan card panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    // Two run checks under different ids run one command: the confirms line names it once.
+    defineScenario({
+      id: 'workflow-plan-card-shared-command',
+      title: 'Workflow · plan card whose checks share one command',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'plan-card-shared-command',
+        title: 'Plan card with one command under two check ids',
         kind: 'review',
         marker: 'Approve plan and start the build',
       },
@@ -1028,6 +1063,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-closed-ended-review-workspace',
+      title: 'Workflow · a worktree run ended after a failed review',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'closed-ended-review-workspace',
+        title: 'Ended failed review with its result in run.patch',
+        kind: 'failure',
+        marker: 'visual-ended-review-workspace',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Closed run ledger' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-closed-seat-moved',
       title: 'Workflow · closed after the build seat moved tools',
       surface: screenSurface('workflow'),
@@ -1104,22 +1155,6 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Replayed transcript' },
-        { id: 'composer', title: 'Workflow composer' },
-      ],
-    }),
-    defineScenario({
-      id: 'workflow-stopped',
-      title: 'Workflow · cancelled by the user',
-      surface: screenSurface('workflow'),
-      checkpoint: {
-        id: 'stopped',
-        title: 'Cancelled run',
-        kind: 'failure',
-        marker: 'Cancelled by you at T',
-      },
-      elements: [
-        { id: 'header', title: 'Workflow header' },
-        { id: 'transcript', title: 'Stopped transcript' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
@@ -1353,6 +1388,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-recovery-review-unverified',
+      title: 'Workflow · a final review that left criteria unverified',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-unverified',
+        title: 'Review-unverified recovery menu',
+        kind: 'question',
+        marker: 'Fix again',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-recovery-left-isolation',
       title: 'Workflow · an implementer that left its isolation directory',
       surface: screenSurface('workflow'),
@@ -1392,7 +1443,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'checkout-changed',
         title: 'Checkout-changed recovery menu',
         kind: 'question',
-        marker: 'Needs you · Your checkout changed under T901',
+        marker: 'Needs you · Repository changed under T901',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -1548,6 +1599,23 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'The running tool named in the build block',
         kind: 'implementation',
         marker: 'running npx vitest run',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    // S8 run 18:06–18:58: the ten-minute pre-review `npm test` read `Implementing… 10:02`.
+    defineScenario({
+      id: 'workflow-implementation-full-suite',
+      title: 'Workflow · the pre-review full suite ten minutes in',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'implementation-full-suite',
+        title: 'The suite stage, its command and its clock in the byline and the build block',
+        kind: 'implementation',
+        marker: 'Pre-review suite',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -1981,12 +2049,12 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       {
         id: 'workflow-stop-menu-ended-gate',
         title: 'Workflow · ended at the plan gate',
-        marker: 'Cancelled by you at the plan',
+        marker: 'Ended · esc home',
       },
       {
         id: 'workflow-stop-menu-ended-rewound-gate',
         title: 'Workflow · ended after revising the plan',
-        marker: 'Cancelled by you at the plan',
+        marker: 'Ended · esc home',
         viewports: [...REQUIRED_VIEWPORTS, viewport({ cols: 60, rows: 40 })],
       },
       {

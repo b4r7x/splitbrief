@@ -33,6 +33,38 @@ describe('planConfirmations', () => {
     ]);
   });
 
+  it('lists one command once when two check ids run it', () => {
+    const plan = makePlan([
+      { id: 'c-typecheck', kind: 'cmd', value: 'npm run typecheck', required: true },
+      { id: 'c-invariants', kind: 'cmd', value: 'npm run check:invariants', required: true },
+      { id: 'c-deleted-symbols', kind: 'cmd', value: 'npm run check:invariants', required: true },
+    ]);
+    const task = makeTask({
+      checks: [{ id: 'K1', kind: 'cmd', value: 'npm run typecheck', required: true }],
+    });
+
+    const confirmations = planConfirmations([task], projectDir, plan);
+
+    expect(confirmations.map((confirmation) => confirmation.actionDescription)).toEqual([
+      'npm run typecheck',
+      'npm run check:invariants',
+    ]);
+  });
+
+  it('lists one protected write once when two tasks declare it', () => {
+    const first = makeTask({ protectedOperations: [{ path: 'package.json', operation: 'write' }] });
+    const second = makeTask({
+      id: 'T002',
+      protectedOperations: [{ path: 'package.json', operation: 'write' }],
+    });
+
+    const confirmations = planConfirmations([first, second], projectDir);
+
+    expect(confirmations.map((confirmation) => confirmation.actionDescription)).toEqual([
+      'write package.json',
+    ]);
+  });
+
   it('keeps protected-write confirmations', () => {
     const task = makeTask({
       protectedOperations: [{ path: 'package.json', operation: 'write' }],

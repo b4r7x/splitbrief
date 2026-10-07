@@ -284,9 +284,11 @@ function foldBriefSpend(taskBreakdown: readonly TaskTokenUsage[]): BookedBrief[]
   return [...folded.values()];
 }
 
+/** A brief still in progress joins the unsettled entry: the ledger books a retried attempt failed. */
 function sameCurrentBrief(ledgerTask: EvidenceTask, task: Task, planHash: string): boolean {
   if (task.status === 'pending' && ledgerTask.status !== 'pending') return false;
-  if (task.status === 'in_progress' && ledgerTask.status !== 'in_progress') return false;
+  const unsettled = ledgerTask.status === 'in_progress' || ledgerTask.status === 'failed';
+  if (task.status === 'in_progress' && !unsettled) return false;
   if (ledgerTask.briefHash != null) return ledgerTask.briefHash === planHash;
   return ledgerTask.title === task.title && ledgerTask.file === task.suggestedFiles[0];
 }

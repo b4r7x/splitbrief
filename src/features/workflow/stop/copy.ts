@@ -1,11 +1,12 @@
-import type { Summary } from '../../../core/schemas/summary.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import type { RunRecord } from '../../../core/sessions/run-record.js';
-import { resumeStep } from '../../../core/sessions/run-status.js';
+import type { RunningSuiteStage } from '../../../stores/workflow/operations/state.js';
 import type { StopIntent, StopParkKind, StopPhase } from '../../../stores/workflow/stop.js';
 import { stepWord } from '../closed/byline.js';
-import { filesView, stoppedAtForCurrentPlan } from '../closed/projections.js';
 import { formatStageElapsed } from '../display/live-activity.js';
+import { suiteStageText } from '../display/phase-verb.js';
+
+const PARKED_HINT = `⏎ resume${SOFT_SEP}/stop options${SOFT_SEP}esc back to sessions${SOFT_SEP}ctrl+c quit`;
 
 export interface StopBylineInput {
   readonly intent: StopIntent;
@@ -20,6 +21,12 @@ export interface StopBylineInput {
   /** Since the stop was asked for, so the wait is reported rather than guessed at. */
   readonly elapsedMs: number;
   readonly questionPending: boolean;
+  /** The full-suite stage running now, which a pause armed between briefs waits on. */
+  readonly suite: {
+    readonly moment: RunningSuiteStage['moment'];
+    readonly command: string;
+    readonly elapsedMs: number;
+  } | null;
   readonly error?: string | undefined;
   /** The run's record once the stop has settled it at rest: where it stopped, and what it kept. */
   readonly record?: RunRecord | null | undefined;
@@ -53,55 +60,6 @@ function stoppedLead(input: StopBylineInput): string {
   return cutBrief ? `${lead}${SOFT_SEP}Partial changes kept` : lead;
 }
 
-/**
- * How an ended run stands, from the record it closed with: the step it stopped at when the record
- * can say, and kept changes only when its summary booked some.
- */
-function endedLead(input: StopBylineInput): string {
-  const { record } = input;
-  if (record?.status.kind !== 'closed') {
-    const brief = input.parked?.taskId ?? input.currentTaskId;
-    return brief === null
-      ? 'Cancelled by you'
-      : `Cancelled by you at ${brief}${SOFT_SEP}Changes kept`;
-  }
-  const summary =
-    record.summary === null
-      ? null
-      : {
-          ...record.summary,
-          stoppedAt: stoppedAtForCurrentPlan({
-            summary: record.summary,
-            ledger: record.ledger,
-            state: record.hydration.kind === 'loaded' ? record.hydration.state : null,
-          }),
-        };
-  const at = endedAt(record, summary?.stoppedAt);
-  const lead = at === null ? 'Cancelled by you' : `Cancelled by you at ${at}`;
-  const kept = summary === null ? null : keptChanges(summary);
-  return kept === null ? lead : `${lead}${SOFT_SEP}${kept}`;
-}
-
-/**
- * A closed record keeps no step. Its summary names the brief it stopped in, and its phase names a
- * gate or the review; which planner call was running needs artifacts the record does not carry.
- */
-function endedAt(record: RunRecord, stoppedAt: Summary['stoppedAt']): string | null {
-  const stopped = stoppedAt?.taskId;
-  if (stopped !== undefined) return stopped;
-  if (record.hydration.kind !== 'loaded') return null;
-  const step = resumeStep(record.hydration.state);
-  return step.kind === 'planner' ? null : stepWord(step);
-}
-
-/** The disposition the closed transcript block states, claimed only when there is one to keep. */
-function keptChanges(summary: Summary): string | null {
-  const files = filesView(summary);
-  if (files.partial.size > 0) return 'Partial changes kept';
-  if (files.changed !== null && files.changed.length > 0) return 'Changes kept';
-  return null;
-}
-
 export function stopByline(input: StopBylineInput): StopByline | null {
   const taskId = subject(input);
 
@@ -117,21 +75,17 @@ export function stopByline(input: StopBylineInput): StopByline | null {
     if (input.parked?.kind === 'boundary') {
       return {
         lead: `Paused after ${taskId}${SOFT_SEP}${input.passed} of ${input.total} briefs complete`,
-        hint: `/resume${SOFT_SEP}/stop options${SOFT_SEP}esc back to sessions${SOFT_SEP}ctrl+c quit`,
+        hint: PARKED_HINT,
       };
     }
     return {
       lead: stoppedLead(input),
-      hint: `/resume${SOFT_SEP}/stop options${SOFT_SEP}esc back to sessions${SOFT_SEP}ctrl+c quit`,
+      hint: PARKED_HINT,
     };
   }
 
-  if (input.phase === 'ended') {
-    return {
-      lead: endedLead(input),
-      hint: `esc back to sessions${SOFT_SEP}ctrl+c quit`,
-    };
-  }
+  // End run closed the run: the closed run's own byline speaks for it.
+  if (input.phase === 'ended') return null;
 
   if (input.intent === 'quit') {
     return { lead: 'Quitting', hint: 'Stopping processes and saving session' };
@@ -143,7 +97,11 @@ export function stopByline(input: StopBylineInput): StopByline | null {
     if (input.questionPending) {
       return { lead: `Answer needed to finish ${taskId}`, hint: 'Pause requested' };
     }
-    return { lead: `Finishing ${taskId}`, hint: 'Pause requested; no next brief will start' };
+    const lead =
+      input.suite === null
+        ? `Finishing ${taskId}`
+        : `${suiteStageText(input.suite)} ${formatStageElapsed(input.suite.elapsedMs)}`;
+    return { lead, hint: 'Pause requested; no next brief will start' };
   }
 
   const lead = input.intent === 'end-run' ? 'Ending run' : `Stopping ${taskId}`;

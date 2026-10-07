@@ -30,6 +30,9 @@ import { continueRunInPlace, sessionSelectStore } from '../stores/navigation/ses
 import { configStore } from '../stores/project/config.js';
 import { skillsStore } from '../stores/project/skills.js';
 import { SessionPreparation } from './session-preparation.js';
+import { Composer } from '../components/composer/composer.js';
+import { composerDraftStore } from '../stores/ui/composer-draft.js';
+import { reviewKeysStore } from '../stores/ui/review-keys.js';
 
 // Comfortably past the escape-debounce defer (DEFAULT_DELAY_MS in escape-debounce.ts)
 // so the deferred arm flushes without copying that module-private literal here.
@@ -519,6 +522,119 @@ describe('useAppKeys: ESC stop ladder', () => {
 
     expect(overlayStore.get().active).toBe('stop-sheet');
     expect(lifecycleStore.get().cancelled).toBe(false);
+    ui.unmount();
+  });
+
+  it('esc in the plan card comment returns to the card rows, and the next esc opens the sheet', async () => {
+    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    controlsStore.setInputMode('review');
+    const exit = vi.fn();
+    const ui = renderFeature(
+      <>
+        <Harness exit={exit} />
+        <Composer
+          commands={[]}
+          currentScreen="workflow"
+          mode="review"
+          hint=""
+          onSubmit={() => {}}
+          onRuntimeCommand={() => {}}
+        />
+      </>,
+    );
+    await tick();
+    composerDraftStore.request('comment drop T003');
+    await flushEffects();
+    expect(reviewKeysStore.get().commenting).toBe(true);
+
+    await writeEsc(ui);
+    await tick();
+    vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
+    await flushEffects();
+
+    expect(overlayStore.get().active).toBe('none');
+    expect(composerLiveStore.get().empty).toBe(true);
+    expect(reviewKeysStore.get().commenting).toBe(false);
+
+    await writeEsc(ui);
+    await tick();
+    vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
+
+    expect(overlayStore.get().active).toBe('stop-sheet');
+    expect(exit).not.toHaveBeenCalled();
+    ui.unmount();
+  });
+
+  it.each([
+    ['two presses', ['\x1b', '\x1b']],
+    ['one chunk', ['\x1b\x1b']],
+  ])(
+    'a double esc (%s) in the plan card comment clears the comment and opens the sheet',
+    async (_name, chunks) => {
+      lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+      controlsStore.setInputMode('review');
+      const ui = renderFeature(
+        <>
+          <Harness exit={vi.fn()} />
+          <Composer
+            commands={[]}
+            currentScreen="workflow"
+            mode="review"
+            hint=""
+            onSubmit={() => {}}
+            onRuntimeCommand={() => {}}
+          />
+        </>,
+      );
+      await tick();
+      composerDraftStore.request('comment drop T003');
+      await flushEffects();
+
+      // Two presses inside the debounce read as the slow sequence: the first cancels the comment,
+      // the second opens the sheet. Neither is lost and neither stops the run.
+      for (const chunk of chunks) {
+        await writeKey(ui, chunk);
+        await tick();
+      }
+      vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
+      await flushEffects();
+
+      expect(composerLiveStore.get().empty).toBe(true);
+      expect(overlayStore.get().active).toBe('stop-sheet');
+      expect(stopStore.get().intent).toBe('none');
+      ui.unmount();
+    },
+  );
+
+  it('a split escape sequence in the plan card comment keeps the comment', async () => {
+    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    controlsStore.setInputMode('review');
+    const ui = renderFeature(
+      <>
+        <Harness exit={vi.fn()} />
+        <Composer
+          commands={[]}
+          currentScreen="workflow"
+          mode="review"
+          hint=""
+          onSubmit={() => {}}
+          onRuntimeCommand={() => {}}
+        />
+      </>,
+    );
+    await tick();
+    composerDraftStore.request('comment drop T003');
+    await flushEffects();
+
+    await writeEsc(ui);
+    await tick();
+    await writeKey(ui, '[A');
+    await tick();
+    vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
+    await flushEffects();
+
+    expect(composerLiveStore.get().text).toContain('comment drop T003');
+    expect(overlayStore.get().active).toBe('none');
     ui.unmount();
   });
 

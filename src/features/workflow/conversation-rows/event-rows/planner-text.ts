@@ -64,9 +64,14 @@ export function plannerTextRowBlock(options: {
   }
 }
 
+/** A code-fence line: three or more backticks and an optional info string. */
+const FENCE_LINE = /^[ \t]*`{3,}[^`\n]*$/gm;
+const TRAILING_FENCE_LINE = /(^|\n)[ \t]*`{3,}[^`\n]*$/;
+
 /**
  * The direct writer ends its reply with one `ImplementerReport` object. It is the last JSON object
- * in the streamed text; the narration before it stays, the object itself becomes one report row.
+ * in the streamed text; the narration before it stays, the object itself becomes one report row,
+ * and so does the code fence that opens on it.
  */
 function splitImplementerHandBack(
   text: string,
@@ -77,7 +82,15 @@ function splitImplementerHandBack(
     if (extracted.kind === 'ok') {
       const parsed = ImplementerReportSchema.safeParse(extracted.value);
       if (parsed.success) {
-        return { narration: text.slice(0, start).trimEnd(), report: parsed.data };
+        const narration = text.slice(0, start).trimEnd();
+        // An odd count of fence lines leaves the last one open: it opens on the report.
+        const opensOnReport = (narration.match(FENCE_LINE)?.length ?? 0) % 2 === 1;
+        return {
+          narration: opensOnReport
+            ? narration.replace(TRAILING_FENCE_LINE, '').trimEnd()
+            : narration,
+          report: parsed.data,
+        };
       }
     }
     start = start === 0 ? -1 : text.lastIndexOf('{', start - 1);

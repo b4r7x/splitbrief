@@ -14,6 +14,7 @@ import { formatContextLength } from '../../../core/formatting.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { truncateTerminalDisplayText } from '../../../utils/display-text.js';
 import { formatUsageTokens } from '../usage-details-model.js';
+import { suiteStageText } from '../display/phase-verb.js';
 import type { ConversationRowSegment, ConversationRowTone } from './types.js';
 
 export function formatTaskStartedValue(
@@ -118,13 +119,14 @@ export function baselineValidationRow(
 }
 
 export function fullSuiteRow(event: Extract<EngineEvent, { type: 'full_suite' }>): string {
-  const command =
-    event.command.length > 0 ? ` (${truncateTerminalDisplayText(event.command, 48)})` : '';
-  const label = `Suite ${event.stage}${command}`;
-  if (event.status === 'running') return `${label} running`;
+  const label = suiteStageText({
+    moment: event.moment,
+    command: truncateTerminalDisplayText(event.command, 48),
+  });
+  if (event.status === 'running') return `${label}${SOFT_SEP}running`;
   const verdict = event.passed === true ? 'passed' : 'failed';
   const dur = event.duration === undefined ? '' : ` ${formatDuration(event.duration)}`;
-  return `${label} ${verdict}${dur}`;
+  return `${label}${SOFT_SEP}${verdict}${dur}`;
 }
 
 function formatEventContextFit(

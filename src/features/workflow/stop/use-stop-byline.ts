@@ -2,6 +2,7 @@ import { routerStore } from '../../../stores/navigation/router.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { operationsStore } from '../../../stores/workflow/operations/state.js';
 import {
   briefAfter,
   selectRunningBrief,
@@ -28,6 +29,7 @@ export function useStopByline(): StopByline | null {
       ? focused.id
       : null;
   const questionPending = controlsStore.use((s) => s.inputMode === 'question');
+  const suiteStage = operationsStore.use((s) => s.suiteStage ?? null);
   // A stop that ended the run loop settles it at rest, and the record it re-read says where it
   // stopped and what it kept.
   const record = routerStore.use((s) =>
@@ -49,6 +51,14 @@ export function useStopByline(): StopByline | null {
     total: view.total,
     elapsedMs: stop.requestedAt === null ? 0 : Date.now() - stop.requestedAt,
     questionPending,
+    suite:
+      suiteStage === null
+        ? null
+        : {
+            moment: suiteStage.moment,
+            command: suiteStage.command,
+            elapsedMs: Date.now() - suiteStage.stageStartedTs,
+          },
     error: stop.error,
     record,
   });

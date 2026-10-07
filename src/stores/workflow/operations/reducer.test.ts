@@ -4,12 +4,14 @@ import type { EngineEventOf } from '../../../engine/events/types.js';
 import type { RunnerCallWarningInput } from '../../../engine/calls/types.js';
 import { normalizeRunnerCallWarning } from '../../../engine/calls/warnings.js';
 import { addEvent } from '../actions/event.js';
+import { hydrateFromState } from '../actions/hydrate.js';
 import { markCancellationRequested } from '../actions/interrupt.js';
 import { resetWorkflow } from '../actions/reset.js';
 import { MAX_COMPLETED_OPERATIONS } from './retention.js';
 import { operationsStore } from './state.js';
 import { makePlannerStatus } from '#testing/helpers/events/planner.js';
 import { makeValidate } from '#testing/helpers/events/task.js';
+import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 
 it('retains admitted load metadata when cancellation finishes API waiting and ignores late status', () => {
   resetWorkflow();
@@ -625,6 +627,7 @@ describe('operationsStore', () => {
     expect(operationsStore.get().suiteStage).toEqual({
       stage: 'test',
       command: 'npm test',
+      moment: 'boundary',
       stageStartedTs: 5_000,
     });
 
@@ -640,5 +643,40 @@ describe('operationsStore', () => {
       duration: 7_000,
     });
     expect(operationsStore.get().suiteStage).toBeNull();
+  });
+
+  it('restarts the stage clocks when a stopped run runs the same stage again', () => {
+    const suiteRunning = (ts: number) =>
+      addEvent({
+        type: 'full_suite',
+        ts,
+        phase: 'implementing',
+        status: 'running',
+        stage: 'test',
+        command: 'npm test',
+        moment: 'pre-review',
+      });
+    const gateRunning = (ts: number) =>
+      addEvent(
+        makeValidate({
+          ts,
+          status: 'running',
+          activeStage: 'lint',
+          commands: { lint: 'npm run lint' },
+        }),
+      );
+    suiteRunning(5_000);
+    gateRunning(5_000);
+
+    addEvent({ type: 'workflow_cancelled', ts: 8_000, phase: 'implementing' });
+    expect(operationsStore.get().suiteStage).toBeNull();
+    expect(operationsStore.get().validationStage).toBeNull();
+
+    hydrateFromState(makeWorkflowState({ phase: 'implementing' }), { endedAt: 8_000 });
+    addEvent({ type: 'workflow_resumed', ts: 600_000, phase: 'implementing' });
+    suiteRunning(600_000);
+    gateRunning(600_000);
+    expect(operationsStore.get().suiteStage?.stageStartedTs).toBe(600_000);
+    expect(operationsStore.get().validationStage?.stageStartedTs).toBe(600_000);
   });
 });

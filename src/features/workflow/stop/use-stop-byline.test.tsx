@@ -52,7 +52,7 @@ describe('useStopByline', () => {
     );
   });
 
-  it('reads an ended run from the record it closed with, which booked no changes', () => {
+  it('says nothing once End run closed the run: the closed run speaks for itself', () => {
     routerStore.init({
       screen: 'workflow',
       run: makeRunRecord({
@@ -66,7 +66,7 @@ describe('useStopByline', () => {
     stopStore.end();
     const ui = renderFeature(<Lead />);
 
-    expect(ui.lastFrame().trim()).toBe('Cancelled by you at the plan');
+    expect(ui.lastFrame().trim()).toBe('none');
     ui.unmount();
   });
 

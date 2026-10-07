@@ -7,7 +7,12 @@ import {
   updateKnownOperation,
 } from './runner.js';
 import { closePlannerStatusFallbacks, updatePlannerStatusFallback } from './planner-status.js';
-import type { OpenTool, OperationsState, RunningValidationStage } from './state.js';
+import type {
+  OpenTool,
+  OperationsState,
+  RunningSuiteStage,
+  RunningValidationStage,
+} from './state.js';
 import { appendWarning, showsWarningOnPrimarySurface } from './warnings.js';
 
 type ValidationEvent = Extract<EngineEvent, { type: 'validate' | 'validation_baseline' }>;
@@ -33,9 +38,14 @@ function applyValidationStage(state: OperationsState, event: ValidationEvent): O
   return { ...state, validationStage: next };
 }
 
-function runningSuiteStage(event: SuiteEvent): RunningValidationStage | null {
+function runningSuiteStage(event: SuiteEvent): RunningSuiteStage | null {
   if (event.status !== 'running') return null;
-  return { stage: event.stage, command: event.command, stageStartedTs: event.ts };
+  return {
+    stage: event.stage,
+    command: event.command,
+    moment: event.moment,
+    stageStartedTs: event.ts,
+  };
 }
 
 function applySuiteStage(state: OperationsState, event: SuiteEvent): OperationsState {
@@ -44,6 +54,18 @@ function applySuiteStage(state: OperationsState, event: SuiteEvent): OperationsS
   if (next !== null && current?.stage === next.stage) return state;
   if (next === null && current === null) return state;
   return { ...state, suiteStage: next };
+}
+
+// A stopped command publishes no settled event, so the stop ends its stage: a resume that runs the
+// same stage again starts a new clock.
+function cancelOperations(
+  state: OperationsState,
+  cancellation: { ts: number; reason: string },
+): OperationsState {
+  const stageRunning =
+    (state.validationStage ?? null) !== null || (state.suiteStage ?? null) !== null;
+  const settled = stageRunning ? { ...state, validationStage: null, suiteStage: null } : state;
+  return cancelRunningOperations(settled, cancellation);
 }
 
 // Activity that is not a tool the seat runs: it never opens, so it never holds a silence open.
@@ -128,7 +150,7 @@ export function updateOperations(state: OperationsState, event: EngineEvent): Op
         partial: event.partial,
       });
     case 'workflow_cancelled':
-      return cancelRunningOperations(state, {
+      return cancelOperations(state, {
         ts: event.ts,
         reason: event.reason ?? 'workflow_cancelled',
       });
@@ -143,5 +165,5 @@ export function markOperationsCancellationRequested(
   state: OperationsState,
   cancellation: { ts: number; reason: string },
 ): OperationsState {
-  return cancelRunningOperations(state, cancellation);
+  return cancelOperations(state, cancellation);
 }

@@ -8,13 +8,16 @@ import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { hashTaskBrief } from '../../../engine/brief-hash.js';
 import type { RunRecord } from '../../../core/sessions/run-record.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { arrowSep } from '../../../core/separators.js';
 import { crewLine, runRows, runRowValue } from './copy.js';
 import { bylineText } from './byline.js';
+import { outcomeLine } from './outcome.js';
 import { deriveSummaryView, type SummaryView } from './view-model.js';
+import { atRestRailStages } from '../at-rest.js';
 
 function ledgerTask(overrides: Partial<EvidenceTask> & Pick<EvidenceTask, 'id'>): EvidenceTask {
   return {
@@ -54,19 +57,14 @@ function booked(overrides: Partial<TaskTokenUsage> & Pick<TaskTokenUsage, 'taskI
 }
 
 interface DeriveOverrides extends Partial<Omit<RunRecord, 'summary'>> {
-  /** The phase the saved state names; a record with none has no readable state. */
-  savedPhase?: Phase;
   showSpend?: boolean;
 }
 
 function derive(summary: Summary, overrides: DeriveOverrides = {}): SummaryView {
-  const { savedPhase, showSpend, ...record } = overrides;
+  const { showSpend, ...record } = overrides;
   const view = deriveSummaryView({
     record: makeRunRecord({
       summary,
-      ...(savedPhase !== undefined && {
-        hydration: { kind: 'loaded', state: makeWorkflowState({ phase: savedPhase }) },
-      }),
       ...record,
     }),
     ...(showSpend !== undefined && { showSpend }),
@@ -262,12 +260,45 @@ describe('a run with a workspace', () => {
     });
     expect(view.outcome.kind).toBe('ended');
     expect(view.files.patch).toBe(PATCH_PATH);
-    expect(view.rail.map((state) => state.status)).toEqual([
-      'done',
-      'cancelled',
-      'pending',
-      'pending',
+    expect(view.rail.map((state) => state.status)).toEqual(['done', 'cancelled', 'pending']);
+  });
+
+  // S9 run, 01:11: `× Ended · Apply 12/12 · changes saved in run.patch` under a rail whose failed
+  // review read done. The closed block and the header rail read one rail.
+  it('stops a run ended on a failed review at Review, on the rail the header paints', () => {
+    const passed = readySummary();
+    const record = makeRunRecord({
+      summary: {
+        ...passed,
+        changedFiles: CHANGED,
+        ...(passed.reviewPacket && {
+          reviewPacket: {
+            ...passed.reviewPacket,
+            finalReviewVerdict: 'fail',
+            finalReviewFindingCounts: { critical: 0, warning: 0, note: 7 },
+          },
+        }),
+      },
+      status: ENDED,
+      hydration: {
+        kind: 'loaded',
+        state: makeWorkflowState({
+          phase: 'complete',
+          reviewStatus: 'failed',
+          workspace: WORKSPACE,
+          closed: { at: CLOSED_AT, as: 'ended', patch: PATCH_PATH },
+        }),
+      },
+    });
+    const view = deriveSummaryView({ record });
+    if (view === null) throw new Error('expected a closed run to have a view');
+    expect(view.rail).toEqual([
+      { stage: 'plan', status: 'done' },
+      { stage: 'build', status: 'done' },
+      { stage: 'review', status: 'cancelled' },
     ]);
+    expect(view.rail).toEqual(atRestRailStages(record));
+    expect(outcomeLine(view, 120)).toBe('Ended · Review 3/3 · changes saved in run.patch');
   });
 
   it('names no patch the close did not record', () => {
@@ -295,43 +326,6 @@ describe('a run with a workspace', () => {
       }),
     });
     expect(view.files.patch).toBeNull();
-  });
-});
-
-describe('phase resolution', () => {
-  it('prefers the phase the saved state names', () => {
-    const summary = makeSummary({ phase: 'planning', totalTasks: 4 });
-    expect(derive(summary, { savedPhase: 'implementing' }).run.phase).toBe('implementing');
-  });
-
-  it('falls back to the summary when there is no saved state to read', () => {
-    expect(derive(makeSummary({ phase: 'final-review' })).run.phase).toBe('final-review');
-  });
-
-  it('infers implementing for a legacy summary that stopped inside a brief', () => {
-    const summary = makeSummary({
-      totalTasks: 0,
-      stoppedAt: { taskId: taskId('T003'), partialFiles: [] },
-    });
-    expect(derive(summary).run.phase).toBe('implementing');
-  });
-
-  it('infers implementing for a legacy summary that compiled briefs', () => {
-    expect(derive(makeSummary({ totalTasks: 2 })).run.phase).toBe('implementing');
-  });
-
-  it('infers final-review for a legacy summary that only has a packet', () => {
-    expect(derive(readySummary({ totalTasks: 0 })).run.phase).toBe('final-review');
-  });
-
-  it('infers planning when a legacy summary carries nothing later', () => {
-    expect(derive(makeSummary({ totalTasks: 0 })).run.phase).toBe('planning');
-  });
-
-  it('treats an idle saved phase as no stage and infers from the record', () => {
-    const view = derive(makeSummary({ totalTasks: 0 }), { savedPhase: 'idle', status: ENDED });
-    expect(view.run.phase).toBe('planning');
-    expect(view.rail.find((state) => state.status === 'cancelled')?.stage).toBe('plan');
   });
 });
 
@@ -753,6 +747,63 @@ describe('brief rows', () => {
     expect(view.briefs.rows[0]?.partialFiles).toBe(0);
   });
 
+  // S11 run, 04:55: End run on a consult-bound halt. The saved brief was still in progress, its
+  // ledger entry read failed: `Briefs ─` said T005 stopped with no file or duration, and
+  // `Earlier work ─` said T005 failed. One brief, one row, one status word.
+  it('joins the failed attempt the ledger booked to the brief the run stopped in', () => {
+    const tasks = [
+      makeTask({ id: 'T001', title: 'First brief', suggestedFiles: ['src/a.ts'], status: 'done' }),
+      makeTask({
+        id: 'T002',
+        title: 'Second brief',
+        suggestedFiles: ['src/b.ts'],
+        status: 'in_progress',
+      }),
+    ];
+    const planHash = hashTaskBrief(tasks);
+    const view = derive(
+      makeSummary({
+        totalTasks: 2,
+        completedByLocal: 1,
+        changedFiles: ['src/a.ts', 'src/b.ts'],
+        stoppedAt: { taskId: taskId('T002'), partialFiles: ['src/b.ts'] },
+      }),
+      {
+        status: ENDED,
+        hydration: {
+          kind: 'loaded',
+          state: makeWorkflowState({ phase: 'implementing', tasks, currentTaskIndex: 1 }),
+        },
+        ledger: makeLedger([
+          ledgerTask({
+            id: taskId('T001'),
+            title: 'First brief',
+            file: 'src/a.ts',
+            durationMs: 666_711,
+            changedFiles: ['src/a.ts'],
+            briefHash: planHash,
+          }),
+          ledgerTask({
+            id: taskId('T002'),
+            title: 'Second brief',
+            file: 'src/b.ts',
+            status: 'failed',
+            retries: 3,
+            durationMs: 3_236_892,
+            changedFiles: ['src/b.ts'],
+            briefHash: planHash,
+          }),
+        ]),
+      },
+    );
+    expect(view.briefs.rows.map((row) => [row.id, row.state, row.file, row.durationMs])).toEqual([
+      ['T001', 'local', 'src/a.ts', 666_711],
+      ['T002', 'stopped', 'src/b.ts', 3_236_892],
+    ]);
+    expect(view.briefs.earlierRows).toEqual([]);
+    expect(view.files.stoppedAt?.partialFiles).toEqual(['src/b.ts']);
+  });
+
   it.each([
     ['failed', 'failed'],
     ['skipped', 'skipped'],
@@ -1016,7 +1067,6 @@ describe('checkpoint, phases and pass-through', () => {
       feature: expect.any(String),
       sessionId: '2026-09-14-add-email-validation',
       totalMs: 133_000,
-      phase: expect.any(String),
     });
   });
 

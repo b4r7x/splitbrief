@@ -136,10 +136,10 @@ export SPLITBRIEF_CONTEXT_LENGTH=32768
 | Action | Key | Effect |
 |--------|-----|--------|
 | Queue a message | Type + Enter | During live planner phases, queues text for the next safe point; planners with `injectUserTurn()` also receive it immediately |
-| Stop options | `esc` (with or without a draft) | Opens the stop sheet — stop now, pause after this brief, or end the run. No option reverts files, and your draft is kept |
+| Stop options | `esc` (with or without a draft; on the plan card the first `esc` clears a comment) | Opens the stop sheet — stop now, pause after this brief, or end the run. No option reverts files, and your draft is kept |
 | Stop now | `ctrl+c` (one press) | Aborts the in-flight call, starts no new brief, and parks the run with its partial changes kept |
 | Quit | `ctrl+q` or `/quit` | Stops the run safely, saves the session, then exits; continue later with `splitbrief continue <session-id>` if the saved state is resumable |
-| Resume | `/resume`, or type + Enter | Restarts a parked run; typed text steers it. A blank Enter resumes a continuable run at rest but not a run parked in this process |
+| Resume | `/resume`, or type + Enter | Restarts a parked run; typed text steers it. A blank Enter resumes a parked run and a continuable run at rest |
 
 ## Commands
 

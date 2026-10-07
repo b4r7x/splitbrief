@@ -551,17 +551,17 @@ Stop options · Changes and draft stay.
 ⠙ Stopping T002 · Waiting for processes to exit · 0:02
   esc back after stop · ctrl+c quit after stop
 ◌ Stopped at T002 · Partial changes kept
-  /resume · /stop options · esc back to sessions · ctrl+c quit
+  ⏎ resume · /stop options · esc back to sessions · ctrl+c quit
 ```
 
 - **`Stop now`** (also `ctrl+c`, one press — that press also arms the two-second quit confirmation) aborts the in-flight call and any retry, escalation or per-task review call, schedules nothing new, and parks with the partial changes kept.
 - **`Pause after this brief`** lets `T002` finish its checks and per-task review, then parks before `T003`: `Paused after T002 · 2 of 7 briefs complete`. While the pause is pending, the sheet's second row reads `Keep running` — that is how you take it back.
-- **`End run`** stops the same way as Stop now and persists the session with status `ended`: `Cancelled by you at T002 · Changes kept`.
+- **`End run`** stops the same way as Stop now and persists the session with status `ended`: the closed run reads `× Ended · Build 1/7 · stopped in T002 · changes saved in run.patch` and its byline `Ended · bring the changes back with git apply on the Patch file`.
 - **`ctrl+q` / `/quit`** stops safely, saves the session, and then exits.
 
 No option writes the run's changes into your checkout or reverts it: the briefs build in the run workspace, and only Apply writes the reviewed result into the checkout. In the checkout mode (`workflow.isolation: none`) the briefs build in the checkout itself, so their changes are already there and nothing is applied later. End run on a worktree or staged-copy run keeps the changes in `.splitbrief/sessions/<id>/run.patch`. Opening the menu preserves the draft; `Tab` dismisses it and returns to writing.
 
-**Variations:** `/resume` continues an open run — typed instructions steer it, a blank Enter resumes a continuable run at rest but not a run parked in this process; `/end` closes a parked one. From the shell, `splitbrief resume` re-enters the active saved run and `splitbrief continue <session-id>` works when the active pointer is gone. Every open run is continuable, one stopped in its planning session included; a run killed during validation or escalation re-enters at the start of the brief it was on. Only a closed run is refused, and a saved state that is not the current version must be migrated before it will resume.
+**Variations:** `/resume` continues an open run — typed instructions steer it, and a blank Enter resumes a parked run and a continuable run at rest; `/end` closes a parked one. From the shell, `splitbrief resume` re-enters the active saved run and `splitbrief continue <session-id>` works when the active pointer is gone. Every open run is continuable, one stopped in its planning session included; a run killed during validation or escalation re-enters at the start of the brief it was on. Only a closed run is refused, and a saved state that is not the current version must be migrated before it will resume.
 
 **See also:** [docs/FEATURES.md](./FEATURES.md#stopping-a-run), [docs/WORKFLOW.md](./WORKFLOW.md) §1.5, §1.6.
 

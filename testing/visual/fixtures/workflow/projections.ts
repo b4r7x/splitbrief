@@ -40,6 +40,7 @@ import {
   buildReviewFailedRecoveryIssue,
   buildSeatDownIssue,
   buildLeftIsolationRecoveryIssue,
+  buildCheckoutChangedRecoveryIssue,
   runnerHaltRow,
   type SeatSwapContext,
 } from '../../../../src/engine/orchestrator/recovery/builders/task.js';
@@ -129,7 +130,7 @@ export const WORKFLOW_FIXTURE_TEXT = Object.freeze({
   reviewFailed: 'Fix again',
   reviewFixTask: 'Fix the finding the review raised',
   leftIsolation: 'Seat down · T901 left the isolation directory',
-  checkoutChanged: 'Needs you · Your checkout changed under T901',
+  checkoutChanged: 'Needs you · Repository changed under T901',
   apiContext: 'Nothing was sent to PLAN',
 });
 
@@ -210,6 +211,9 @@ const WORKFLOW_IMPLEMENTATION_NARRATION_ID = scenarioId('workflow-implementation
 const WORKFLOW_IMPLEMENTATION_ADJACENT_NARRATION_ID = scenarioId(
   'workflow-implementation-adjacent-narration',
 );
+const WORKFLOW_IMPLEMENTATION_FENCED_HANDBACK_ID = scenarioId(
+  'workflow-implementation-fenced-handback',
+);
 const WORKFLOW_REVIEW_ID = scenarioId('workflow-review');
 const WORKFLOW_REVIEW_FIX_ID = scenarioId('workflow-review-fix');
 const WORKFLOW_REVIEW_FIX_NO_CHANGE_ID = scenarioId('workflow-review-fix-no-change');
@@ -219,7 +223,6 @@ const WORKFLOW_QUESTION_ID = scenarioId('workflow-question');
 const WORKFLOW_PAUSED_MID_BRIEF_ID = scenarioId('workflow-paused-mid-brief');
 const WORKFLOW_PAUSED_BOUNDARY_ID = scenarioId('workflow-paused-boundary');
 const WORKFLOW_STOPPING_ID = scenarioId('workflow-stopping');
-const WORKFLOW_STOPPED_ID = scenarioId('workflow-stopped');
 const WORKFLOW_FAILURE_ID = scenarioId('workflow-failure');
 const WORKFLOW_RECOVERY_USAGE_LIMIT_ID = scenarioId('workflow-recovery-usage-limit');
 const WORKFLOW_RECOVERY_RETRY_EXHAUSTED_ID = scenarioId('workflow-recovery-retry-exhausted');
@@ -1065,6 +1068,38 @@ const planCardRenderNoteProjection: WorkflowFixtureProjection = {
   },
 };
 
+// Two run checks under different ids run one command, as `c-invariants` and `c-deleted-symbols`
+// did in the S11 run: the confirms line names the command once.
+const SHARED_COMMAND_PLAN = makePlanProposal({
+  ...PLAN_CARD_PLAN,
+  checks: [
+    { id: 'c-typecheck', kind: 'cmd', value: 'npm run typecheck', required: true },
+    { id: 'c-invariants', kind: 'cmd', value: 'npm run check:invariants', required: true },
+    { id: 'c-deleted-symbols', kind: 'cmd', value: 'npm run check:invariants', required: true },
+  ],
+});
+
+const planCardSharedCommandProjection: WorkflowFixtureProjection = {
+  ...planCardProjection,
+  scenarioId: scenarioId('workflow-plan-card-shared-command'),
+  review: {
+    filePath: 'testing/visual/fixtures/workflow/plan-card/plan.md',
+    source: formatPlanMarkdown(SHARED_COMMAND_PLAN, []),
+    planJson: `${JSON.stringify(SHARED_COMMAND_PLAN, null, 2)}\n`,
+    confirms: planConfirmations(
+      SHARED_COMMAND_PLAN.tasks.map((spec) => taskFromSpec(spec, VISUAL_FIXTURE_PROJECT_DIR)),
+      VISUAL_FIXTURE_PROJECT_DIR,
+      {
+        summary: SHARED_COMMAND_PLAN.summary,
+        decisions: [],
+        criteria: SHARED_COMMAND_PLAN.criteria,
+        checks: SHARED_COMMAND_PLAN.checks,
+        validation: SHARED_COMMAND_PLAN.validation,
+      },
+    ).map((confirmation) => confirmation.actionDescription),
+  },
+};
+
 const PLAN_CARD_TASKS = PLAN_CARD_PLAN.tasks.map((spec) => taskFromSpec(spec, '/nonexistent'));
 
 // The planning session right after its plan passed the checks: the two cards it announces, plan.md
@@ -1516,6 +1551,30 @@ const reviewFailedRecoveryProjection: WorkflowFixtureProjection = {
   }),
 };
 
+/** The final review left six criteria unverified, as in the S9 run: nothing for the planner to fix. */
+const reviewUnverifiedRecoveryProjection: WorkflowFixtureProjection = {
+  ...reviewFailedRecoveryProjection,
+  scenarioId: scenarioId('workflow-recovery-review-unverified'),
+  resumeState: makeImplState([{ ...HALTED_TASK, status: 'done' }], {
+    feature: WORKFLOW_FEATURE,
+    startedAt: RESUMED_RUN_STARTED_AT,
+    phase: 'complete',
+    reviewStatus: 'failed',
+    workspace: {
+      kind: 'checkout',
+      path: VISUAL_FIXTURE_PROJECT_DIR,
+      base: { snapshotId: 'visual-base', head: null },
+    },
+    pendingRecovery: buildReviewFailedRecoveryIssue({
+      id: 'rec_visual_review_unverified',
+      unverified: 6,
+      phase: 'complete',
+      acceptAsIs: true,
+      createdAt: new Date(FIXED_TS).toISOString(),
+    }),
+  }),
+};
+
 /**
  * The halt `buildLeftIsolationRecoveryIssue` writes when agy searched the whole home directory
  * from its scratch directory: the evidence rides in the message, and another ready tool is on
@@ -1578,20 +1637,19 @@ const leftIsolationInPlaceRecoveryProjection: WorkflowFixtureProjection = {
 };
 
 /**
- * The halt `buildCheckoutChangedRecoveryIssue` writes when a branch moved and a hook changed in the
- * checkout while agy ran: the words name the checkout, never the tool, because the audit cannot
- * tell who made the change.
+ * The halt `buildCheckoutChangedRecoveryIssue` writes when another session created a branch while
+ * agy ran: the words name the repository, never the tool, because the audit cannot tell who made
+ * the change.
  */
-const checkoutChangedRecoveryIssue: RecoveryIssue = {
-  ...leftIsolationRecoveryIssue,
+const checkoutChangedRecoveryIssue = buildCheckoutChangedRecoveryIssue({
   id: 'rec_visual_checkout_changed',
-  reason: 'checkout-changed',
-  message: `Your checkout changed under ${WORKFLOW_FIXTURE_TASK_ID} — branch main · hook pre-commit`,
-  details: [
-    'Changed while Google Antigravity CLI ran: branch main · hook pre-commit',
-    "Your checkout gets the run's changes only through Apply, and nothing in your checkout was reverted.",
-  ],
-};
+  task: HALTED_TASK,
+  runner: AGY_BUILD_SEAT,
+  toolMessage: 'branch fix/implementer-never-runs-gates',
+  attempts: 0,
+  maxAttempts: DEFAULT_LOCAL_RETRIES,
+  createdAt: new Date(FIXED_TS).toISOString(),
+});
 
 const checkoutChangedRecoveryProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_RECOVERY_CHECKOUT_CHANGED_ID,
@@ -1600,7 +1658,16 @@ const checkoutChangedRecoveryProjection: WorkflowFixtureProjection = {
   sidebarVisible: false,
   events: [],
   config: AGY_CREW,
-  resumeState: haltedResumeState(checkoutChangedRecoveryIssue),
+  // A halt that names only a branch is stale on a run with no workspace, so the run keeps its
+  // worktree, as the S11 run that raised it did.
+  resumeState: {
+    ...haltedResumeState(checkoutChangedRecoveryIssue),
+    workspace: {
+      kind: 'worktree',
+      path: `.splitbrief/worktrees/${VISUAL_WORKFLOW_SESSION_ID}`,
+      base: { snapshotId: 'visual-base', head: null },
+    },
+  },
 };
 
 const retriedBriefStart: EngineEventOf<'task_started'> = {
@@ -2182,6 +2249,28 @@ const implementationAdjacentNarrationProjection: WorkflowFixtureProjection = {
   ],
 };
 
+/** S11 run 2, 08:49: the build seat fenced its hand-back report in a json code block. */
+const implementationFencedHandBackProjection: WorkflowFixtureProjection = {
+  ...implementationNarrationProjection,
+  scenarioId: WORKFLOW_IMPLEMENTATION_FENCED_HANDBACK_ID,
+  events: [
+    ...implementationNarrationProjection.events.slice(0, -1),
+    {
+      type: 'planner_text',
+      ts: FIXED_TS + 400,
+      phase: 'implementing',
+      role: 'implementer',
+      text: [
+        'Both comment sites read the new field.',
+        '',
+        '```json',
+        '{"status":"done","filesChanged":["src/row.ts"],"touchedNotSuggested":[],"notes":null}',
+        '```',
+      ].join('\n'),
+    },
+  ],
+};
+
 const STOPPED_RUN_EVENTS: readonly EngineEvent[] = [
   {
     type: 'workflow_started',
@@ -2269,23 +2358,6 @@ const stoppingProjection: WorkflowFixtureProjection = {
   sidebarVisible: false,
   events: STOPPED_RUN_EVENTS,
   stop: { intent: 'stop-now', phase: 'settling' },
-};
-
-const stoppedProjection: WorkflowFixtureProjection = {
-  scenarioId: WORKFLOW_STOPPED_ID,
-  feature: WORKFLOW_FEATURE,
-  inputMode: 'normal',
-  sidebarVisible: false,
-  events: [
-    ...STOPPED_RUN_EVENTS,
-    {
-      type: 'workflow_cancelled',
-      ts: FIXED_TS + 700,
-      phase: 'implementing',
-      reason: 'user_cancelled',
-    },
-  ],
-  stop: { intent: 'end-run', phase: 'ended' },
 };
 
 function claudeSystemFrame(subtype: string, fields: Record<string, unknown> = {}) {
@@ -2603,6 +2675,70 @@ const implementationToolRunningProjection: WorkflowFixtureProjection = {
   ),
 };
 
+// Every brief passed, and the pre-review full suite is ten minutes into `npm test`. No seat is on a
+// call: the suite is the whole of what the run is doing.
+const PRE_REVIEW_TEST_STARTED_TS = FIXED_TS + 42_000 - 602_000;
+const PRE_REVIEW_SUITE = { phase: 'implementing', moment: 'pre-review' } as const;
+const LAST_BRIEF_PASSED_TS = PRE_REVIEW_TEST_STARTED_TS - 240_000;
+const LAST_BRIEF_CALL = {
+  phase: 'implementing',
+  taskId: WORKFLOW_FIXTURE_TASK_ID_3,
+  callId: 'visual-full-suite-last-build',
+  role: 'implementer',
+  backendKind: 'api',
+  runnerName: FIXED_RUNNER_NAME,
+  model: FIXED_RUNNER_MODEL,
+  attempt: 1,
+} as const;
+
+const implementationFullSuiteProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-implementation-full-suite'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  events: [
+    {
+      type: 'workflow_started',
+      ts: PRE_REVIEW_TEST_STARTED_TS - 900_000,
+      phase: 'implementing',
+      feature: WORKFLOW_FEATURE,
+    },
+    { ...FIXTURE_TASKS_PLANNED, ts: PRE_REVIEW_TEST_STARTED_TS - 890_000 },
+    ...FIXTURE_PLANNED_BRIEFS.slice(0, 2).map((brief, index) =>
+      fixtureBriefPassed(brief, PRE_REVIEW_TEST_STARTED_TS - 600_000 + 180_000 * index),
+    ),
+    {
+      type: 'runner_call_started',
+      ts: LAST_BRIEF_PASSED_TS - 115_000,
+      ...LAST_BRIEF_CALL,
+      sequence: 0,
+    },
+    {
+      type: 'runner_call_completed',
+      ts: LAST_BRIEF_PASSED_TS - 5_000,
+      ...LAST_BRIEF_CALL,
+      sequence: 1,
+      status: 'completed',
+      error: null,
+      partial: false,
+      startedAt: LAST_BRIEF_PASSED_TS - 115_000,
+      endedAt: LAST_BRIEF_PASSED_TS - 5_000,
+      durationMs: 110_000,
+      usage: null,
+      nativeSessionId: null,
+    },
+    fixtureBriefPassed(FIXTURE_PLANNED_BRIEFS[2], LAST_BRIEF_PASSED_TS),
+    {
+      type: 'full_suite',
+      ts: PRE_REVIEW_TEST_STARTED_TS,
+      ...PRE_REVIEW_SUITE,
+      status: 'running',
+      stage: 'test',
+      command: 'npm test',
+    },
+  ],
+};
+
 const projections = [
   idleProjection,
   planningProjection,
@@ -2616,12 +2752,14 @@ const projections = [
   implementationEscalatedProjection,
   implementationNarrationProjection,
   implementationAdjacentNarrationProjection,
+  implementationFencedHandBackProjection,
   validationProjection,
   reviewProjection,
   approvalConfirmProjection,
   approvalConfirmSecretProjection,
   planCardProjection,
   planCardRenderNoteProjection,
+  planCardSharedCommandProjection,
   { ...planCardProjection, scenarioId: scenarioId('workflow-selection-copy') },
   tasksCardProjection,
   questionProjection,
@@ -2632,7 +2770,6 @@ const projections = [
   pausedMidBriefProjection,
   pausedBoundaryProjection,
   stoppingProjection,
-  stoppedProjection,
   failureProjection,
   plannerCommandsRefusedProjection,
   touchedNotSuggestedProjection,
@@ -2644,6 +2781,7 @@ const projections = [
     scenarioId: scenarioId('workflow-recovery-consult-bound-note'),
   },
   reviewFailedRecoveryProjection,
+  reviewUnverifiedRecoveryProjection,
   leftIsolationRecoveryProjection,
   leftIsolationInPlaceRecoveryProjection,
   checkoutChangedRecoveryProjection,
@@ -2660,6 +2798,7 @@ const projections = [
   planningClaudeFramesProjection,
   implementationSilentProjection,
   implementationToolRunningProjection,
+  implementationFullSuiteProjection,
   plannerSessionExpiredProjection,
 ] as const;
 
@@ -2743,6 +2882,8 @@ function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
       value !== planCardProjection.review?.planJson &&
       value !== planCardRenderNoteProjection.review?.source &&
       value !== planCardRenderNoteProjection.review?.planJson &&
+      value !== planCardSharedCommandProjection.review?.source &&
+      value !== planCardSharedCommandProjection.review?.planJson &&
       value !== ANSWERED_QUESTIONS_TEXT &&
       !retainedWorkspaceNotices.includes(value) &&
       !engineHaltText.includes(value) &&
