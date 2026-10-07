@@ -5,6 +5,8 @@ import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { setupProject } from '#testing/helpers/planning-phase.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeCommandRunner, makeConfig } from '#testing/helpers/validation-fixtures.js';
+import { readSpecFile } from '../../core/paths-io.js';
+import { TASKS_FILE } from '../../core/paths.js';
 import type { ReviewVerdict, TriageResult } from '../../core/schemas/review.js';
 import { taskId } from '../../core/schemas/task.js';
 import { loadState, saveState } from '../../core/state/persistence.js';
@@ -195,12 +197,16 @@ describe('review fix work', () => {
     expect(verification).toEqual([{ id: 'finding:F1', status: 'pass', output: 'K1: pass — ok' }]);
   });
 
-  it('appends fix tasks with verbatim findings and keeps completed tasks done', () => {
+  it('appends fix tasks with verbatim findings, keeps completed tasks done and rewrites tasks.md', () => {
     const ref = setupProject(dirs);
     const state = triageState();
     saveState(ref, state);
     const applied = applyTriage(
-      { ...ref, workspaceDir: ref.projectDir },
+      {
+        ...ref,
+        workspaceDir: ref.projectDir,
+        metadata: { plannerTool: 'claude-code', implementerTool: 'codex' },
+      },
       state,
       state.review,
       [],
@@ -212,5 +218,8 @@ describe('review fix work', () => {
       findings: [{ id: 'F1', text: FAILING_FINDING.text, acceptance: FAILING_FINDING.acceptance }],
     });
     expect(loadState(ref)?.tasks[1]?.fix?.cycle).toBe(1);
+    const tasksMarkdown = readSpecFile(ref, TASKS_FILE) ?? '';
+    expect(tasksMarkdown).toContain('planner: claude-code');
+    for (const task of applied.state.tasks) expect(tasksMarkdown).toContain(task.id);
   });
 });

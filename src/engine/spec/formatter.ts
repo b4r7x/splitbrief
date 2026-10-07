@@ -135,7 +135,7 @@ function formatSingleTask(task: Task): string {
   return lines.join('\n');
 }
 
-export function formatTasks(tasks: Task[]): string {
+export function formatTasks(tasks: readonly Task[]): string {
   if (tasks.length === 0) return '';
   return tasks.map(formatSingleTask).join('\n');
 }
