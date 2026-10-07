@@ -1,0 +1,347 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import YAML from 'yaml';
+import type { Config } from '../../../src/core/schemas/config.js';
+import type { Task } from '../../../src/core/schemas/task.js';
+import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
+import type { EngineEvent } from '../../../src/engine/events/types.js';
+import { loadConfig } from '../../../src/core/config/load/io.js';
+import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../../src/core/paths.js';
+import { loadState } from '../../../src/core/state/persistence.js';
+import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
+import { applyOfferedSeatSwap } from '../../../src/engine/orchestrator/run/seat-swap.js';
+import type { prepareExecution } from '../../../src/engine/runners/prepare-execution/prepare-execution.js';
+import type { PreparationPolicy } from '../../../src/engine/runners/prepare-execution/types.js';
+import type { PreparedExecution } from '../../../src/engine/runners/prepared-execution.js';
+import { resolveCustomExecutable } from '../../../src/engine/runners/resolve-cli-executable.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
+import { cliDetectionFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
+import { writeConfigYamlText } from '#testing/helpers/config-io.js';
+import { prependPath } from '#testing/helpers/command-shim.js';
+import { createTestGitRepo } from '#testing/helpers/git.js';
+import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
+import {
+  makeBusRecorder,
+  makeCallbacks,
+  makePlanner,
+} from '#testing/helpers/orchestrator-factories.js';
+import { resetAllStores } from '#testing/helpers/stores.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
+
+const AGENT_COMMAND = 'sb-seat-agent';
+const TARGET = 'src/seat.ts';
+const FALLBACK_MODEL = 'opencode/fallback-model';
+const PARTIAL = 'export const seat = 0;';
+const COMPLETE = 'export const seat = 1;';
+const BALANCE_MESSAGE = 'Insufficient Balance (request_id: 021cfcdf-894e-4f9c-8e1b-85ac99f6a0fe)';
+const BALANCE_LINE = `provider.quota: ${BALANCE_MESSAGE}`;
+
+const RESUME_POLICY: Extract<PreparationPolicy, { purpose: 'resume' }> = {
+  purpose: 'resume',
+  interaction: 'headless',
+  allowRepoRunners: false,
+  allowHooks: false,
+  unverifiedAuth: 'denied',
+};
+
+const dirs: string[] = [];
+const restores: Array<() => void> = [];
+let originalPath: string | undefined;
+let originalXdgStateHome: string | undefined;
+
+beforeEach(() => {
+  resetAllStores();
+  originalPath = process.env.PATH;
+  originalXdgStateHome = process.env.XDG_STATE_HOME;
+  const stateHome = createTempDir('seat-down-switch-state');
+  dirs.push(stateHome);
+  process.env.XDG_STATE_HOME = stateHome;
+});
+
+afterEach(() => {
+  while (restores.length > 0) restores.pop()?.();
+  if (originalPath === undefined) delete process.env.PATH;
+  else process.env.PATH = originalPath;
+  if (originalXdgStateHome === undefined) delete process.env.XDG_STATE_HOME;
+  else process.env.XDG_STATE_HOME = originalXdgStateHome;
+  while (dirs.length > 0) cleanupTempDir(dirs.pop() as string);
+});
+
+function writeExecutable(path: string, lines: readonly string[]): void {
+  writeFileSync(path, `${lines.join('\n')}\n`, 'utf8');
+  chmodSync(path, 0o755);
+}
+
+/** The failing seat: an `agent` command that writes a partial file, prints the limit line, and exits. */
+function writeAgentShim(dir: string): void {
+  writeExecutable(join(dir, AGENT_COMMAND), [
+    '#!/bin/bash',
+    'cat >/dev/null 2>/dev/null || true',
+    'mkdir -p src',
+    `printf '%s\\n' '${PARTIAL}' > src/seat.ts`,
+    `printf '%s\\n' '${BALANCE_LINE}' >&2`,
+    'exit 1',
+  ]);
+}
+
+/** The fallback seat: an OpenCode CLI that answers on its JSON protocol. */
+function writeOpencodeSuccessShim(dir: string): void {
+  writeExecutable(join(dir, 'opencode'), [
+    '#!/bin/bash',
+    'if [[ " $* " == *" --version "* ]]; then printf \'opencode 2.0.14\\n\'; exit 0; fi',
+    'mkdir -p src',
+    `printf '%s\\n' '${COMPLETE}' > src/seat.ts`,
+    `printf '%s\\n' '{"type":"text","timestamp":1,"sessionID":"ses_seat","part":{"type":"text","text":"implemented"}}'`,
+    `printf '%s\\n' '{"type":"step_finish","timestamp":2,"sessionID":"ses_seat","part":{"type":"step-finish","tokens":{"input":10,"output":5}}}'`,
+    'exit 0',
+  ]);
+}
+
+/** The switched seat failing again: the same account refusal, as OpenCode reports it. */
+function writeOpencodeFailureShim(dir: string): void {
+  const envelope = JSON.stringify({
+    type: 'error',
+    error: { type: 'provider.quota', message: BALANCE_MESSAGE },
+  });
+  writeExecutable(join(dir, 'opencode'), [
+    '#!/bin/bash',
+    'if [[ " $* " == *" --version "* ]]; then printf \'opencode 2.0.14\\n\'; exit 0; fi',
+    'mkdir -p src',
+    "printf '%s\\n' 'export const seat = 2;' > src/seat.ts",
+    `printf '%s\\n' '${envelope}'`,
+    'exit 1',
+  ]);
+}
+
+function seatTask(): Task {
+  return makeTask({
+    id: 'T001',
+    action: 'create',
+    suggestedFiles: [TARGET],
+    title: 'Add the seat module',
+    description: 'Create src/seat.ts.',
+    implementationSteps: ['Create src/seat.ts.'],
+    tests: ['node -e "process.exit(0)"'],
+    scope: { inBounds: [TARGET], outOfBounds: ['everything else'] },
+    evidence: ['src/seat.ts exports seat'],
+    typeDefs: 'export const seat: number',
+  });
+}
+
+interface SeatDownRun {
+  projectDir: string;
+  sessionId: string;
+  config: Config;
+  prepared: PreparedExecution;
+  halted: WorkflowState;
+  partial: string;
+}
+
+/**
+ * Drives the real orchestrator until the declared fallback's seat goes down: an
+ * `agent` implementer built from config writes a partial file and then fails with
+ * the provider's balance line, with a declared `fallback` and a remembered
+ * readiness snapshot that lists it.
+ */
+async function runToFirstSeatDown(opencode: 'success' | 'fail'): Promise<SeatDownRun> {
+  const projectDir = createTempDir(`seat-down-switch-${opencode}`);
+  dirs.push(projectDir);
+  createTestGitRepo(projectDir, { '.gitignore': '.splitbrief/\n' });
+  const sessionId = `sess-seat-down-${opencode}`;
+
+  const shimDir = createTempDir(`seat-down-shim-${opencode}`);
+  dirs.push(shimDir);
+  writeAgentShim(shimDir);
+  if (opencode === 'success') writeOpencodeSuccessShim(shimDir);
+  else writeOpencodeFailureShim(shimDir);
+  restores.push(prependPath(shimDir));
+
+  const config = makeConfig({
+    implementer: {
+      kind: 'agent',
+      command: AGENT_COMMAND,
+      model: 'agent-model',
+      contextLength: 4096,
+      fallback: { tool: 'opencode', model: FALLBACK_MODEL },
+    },
+    validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+    workflow: { approve: 'none', maxRetries: 1 },
+  });
+  writeConfigYamlText(projectDir, YAML.stringify(config));
+  await rememberDetectedTools(projectDir, [
+    cliDetectionFor('ready', 'opencode'),
+    cliDetectionFor('ready', 'claude-code'),
+  ]);
+
+  const prepared = makePreparedExecution({
+    projectDir,
+    sessionId,
+    feature: 'seat down and switch',
+    config,
+  });
+
+  await runWorkflow({
+    prepared,
+    callbacks: makeCallbacks().callbacks,
+    sinks: TEST_WORKFLOW_SINKS,
+    _planner: makePlanner({ typedCall: typedCallFromTasks([seatTask()]) }),
+  });
+
+  const halted = loadState({ projectDir, sessionId });
+  if (halted === null) throw new Error('the halt saved no state');
+  const workspace = halted.workspace;
+  if (workspace === undefined) throw new Error('the halt recorded no workspace');
+  return {
+    projectDir,
+    sessionId,
+    config,
+    prepared,
+    halted,
+    partial: readFileSync(join(workspace.path, TARGET), 'utf8'),
+  };
+}
+
+/** Applies the auto intent the halt carries, through the same `applyOfferedSeatSwap` the run loop calls. */
+async function applyAutoSwitch(run: SeatDownRun): Promise<{
+  swapped: NonNullable<Awaited<ReturnType<typeof applyOfferedSeatSwap>>>;
+  events: EngineEvent[];
+}> {
+  const intent = run.halted.pendingRecovery?.switchSeat?.auto;
+  if (intent === undefined) throw new Error('the halt carried no automatic switch intent');
+
+  const resolution = await resolveCustomExecutable({
+    command: 'opencode',
+    projectDir: run.projectDir,
+  });
+  if (resolution.kind !== 'resolved') throw new Error('the opencode shim did not resolve');
+
+  const prepare = (async (request: Parameters<typeof prepareExecution>[0]) => {
+    const execution = makePreparedExecution({
+      projectDir: run.projectDir,
+      sessionId: run.sessionId,
+      feature: request.feature,
+      config: request.effectiveConfig,
+      ...(request.resumeState !== undefined && { resumeState: request.resumeState }),
+      gates: (preparationId) => [
+        {
+          kind: 'cli',
+          slot: { role: 'implementer', profile: 'default' },
+          preparationId,
+          tool: 'opencode',
+          executable: resolution.executable,
+        },
+      ],
+    });
+    return { kind: 'prepared', execution } as const;
+  }) as unknown as typeof prepareExecution;
+
+  const { bus, events } = makeBusRecorder();
+  const swapped = await applyOfferedSeatSwap({
+    choice: { candidate: intent.candidate, policy: RESUME_POLICY },
+    projectDir: run.projectDir,
+    sessionId: run.sessionId,
+    bus,
+    config: run.config,
+    prepared: run.prepared,
+    savedState: run.halted,
+    prepare,
+  });
+  if (swapped === undefined) throw new Error('the automatic seat switch was not applied');
+  return { swapped, events };
+}
+
+async function continueRun(input: {
+  prepared: PreparedExecution;
+  savedState: WorkflowState;
+}): Promise<{ summary: Awaited<ReturnType<typeof runWorkflow>>; events: EngineEvent[] }> {
+  const events: EngineEvent[] = [];
+  const summary = await runWorkflow({
+    prepared: input.prepared,
+    savedState: input.savedState,
+    callbacks: makeCallbacks().callbacks,
+    sinks: TEST_WORKFLOW_SINKS,
+    _planner: makePlanner({ typedCall: typedCallFromTasks([seatTask()]) }),
+    _eventSink: (event) => events.push(event),
+  });
+  return { summary, events };
+}
+
+describe('a spent implementer switches to its declared fallback', { timeout: 90_000 }, () => {
+  it('switches on the auto intent and completes on the fallback', async () => {
+    const run = await runToFirstSeatDown('success');
+
+    const switchSeat = run.halted.pendingRecovery?.switchSeat;
+    expect(run.halted.pendingRecovery?.reason).toBe('runner-usage-limit');
+    expect(run.halted.pendingRecovery?.taskId).toBe('T001');
+    expect(run.halted.pendingRecovery?.resetAt).toBeUndefined();
+    expect(switchSeat?.seat).toBe('build');
+    // The declared fallback leads the offer, so the halt can move the seat itself.
+    expect(switchSeat?.candidates[0]?.tool).toBe('opencode');
+    expect(switchSeat?.candidates[0]?.model).toBe(FALLBACK_MODEL);
+    expect(switchSeat?.auto?.candidate).toEqual({ tool: 'opencode', model: FALLBACK_MODEL });
+    expect(run.partial).toContain(PARTIAL);
+
+    const { swapped, events } = await applyAutoSwitch(run);
+
+    // The attempt is the brief's own, untouched by the move.
+    expect(swapped.state.attempt).toBe(run.halted.attempt);
+    expect(swapped.state.pendingRecovery).toBeUndefined();
+    expect(swapped.state.seatSwitches).toHaveLength(1);
+    expect(swapped.state.seatSwitches?.[0]?.auto).toBe(true);
+    expect(swapped.state.seatSwitches?.[0]?.seat).toBe('build');
+
+    // The fallback seat is what `config.yaml` now holds.
+    const implementerOfRecord = loadConfig(run.projectDir).config.implementer;
+    expect(implementerOfRecord).toMatchObject({ kind: 'cli', tool: 'opencode' });
+    expect(implementerOfRecord).toMatchObject({ model: FALLBACK_MODEL });
+    const configText = readFileSync(join(run.projectDir, SPLITBRIEF_DIR, CONFIG_FILE), 'utf8');
+    expect(configText).toContain('opencode');
+
+    const switchedEvent = events.find((event) => event.type === 'seat_switched');
+    if (switchedEvent === undefined || switchedEvent.type !== 'seat_switched') {
+      throw new Error('no seat_switched event');
+    }
+    expect(switchedEvent.auto).toBe(true);
+    expect(switchedEvent.seat).toBe('build');
+    expect(switchedEvent.from.tool).toBe('agent');
+    expect(switchedEvent.to).toEqual({ tool: 'opencode', model: FALLBACK_MODEL });
+
+    const workspace = swapped.state.workspace;
+    if (workspace === undefined) throw new Error('the switched state recorded no workspace');
+    // The partial the spent seat wrote is still in the run workspace.
+    expect(existsSync(join(workspace.path, TARGET))).toBe(true);
+
+    const { summary, events: resumed } = await continueRun({
+      prepared: swapped.prepared,
+      savedState: swapped.state,
+    });
+
+    expect(summary.totalTasks).toBe(1);
+    expect(summary.completedByLocal).toBe(1);
+    expect(summary.escalatedToPlanner).toBe(0);
+    expect(summary.failed).toBe(0);
+    expect(summary.implementerTool).toBe('opencode');
+    expect(resumed.some((event) => event.type === 'workflow_complete')).toBe(true);
+    expect(readFileSync(join(workspace.path, TARGET), 'utf8')).toContain(COMPLETE);
+  });
+
+  it('a second seat-down carries no auto intent', async () => {
+    const run = await runToFirstSeatDown('fail');
+    const { swapped } = await applyAutoSwitch(run);
+
+    await continueRun({ prepared: swapped.prepared, savedState: swapped.state });
+
+    const second = loadState({ projectDir: run.projectDir, sessionId: run.sessionId });
+    if (second === null) throw new Error('the second halt saved no state');
+    expect(second.pendingRecovery?.reason).toBe('runner-usage-limit');
+    expect(second.pendingRecovery?.taskId).toBe('T001');
+    // Only the other ready tool is offered; the run already auto-switched the build seat once.
+    expect(second.pendingRecovery?.switchSeat?.candidates).toEqual([{ tool: 'claude-code' }]);
+    expect(second.pendingRecovery?.switchSeat?.auto).toBeUndefined();
+    expect(second.seatSwitches).toHaveLength(1);
+  });
+});

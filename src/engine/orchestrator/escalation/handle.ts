@@ -130,8 +130,18 @@ async function seatDownHalt(
     message: runnerHaltRow(issue, stepOutcome.lastError),
     ...(issue.resetAt !== undefined && { resetAt: issue.resetAt }),
   });
-  const nextState = raisePendingRecovery(ctx, stepOutcome.state, issue);
-  return { state: nextState, result: failedRetry(stepOutcome.attempts) };
+  // A seat that is down cuts the brief it was running: the park names the step
+  // and keeps its workspace, so the switch resolves onto the same attempt.
+  const parked = transitionAndSave(ctx, stepOutcome.state, {
+    type: 'INTERRUPT_STEP',
+    step: { kind: 'brief', taskId: task.id, attempt: stepOutcome.state.attempt },
+    source: 'seat',
+    cut: 'mid-step',
+  });
+  return {
+    state: raisePendingRecovery(ctx, parked, issue),
+    result: failedRetry(stepOutcome.attempts),
+  };
 }
 
 /**

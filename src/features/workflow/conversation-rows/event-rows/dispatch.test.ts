@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CREW_SEAT_LABELS } from '../../../../core/crew/identity.js';
+import { CREW_SEAT_LABELS, formatSeatCandidateIdentity } from '../../../../core/crew/identity.js';
 import { taskId } from '../../../../core/schemas/task.js';
 import type { EngineEvent, EngineEventOf } from '../../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../../stores/workflow/streaming-output.js';
@@ -189,6 +189,54 @@ describe('event row dispatch', () => {
       ctx: { width: 80, viewportRows: 20, streaming },
     });
     expect(rows.map(rowText).join('\n')).toContain('attempt 7 of 12');
+  });
+
+  it('renders an automatic seat switch with the crew label, identity and cause', () => {
+    const to = { tool: 'claude-code', model: 'claude-sonnet-4' } as const;
+    const rows = eventRows({
+      event: {
+        type: 'seat_switched',
+        ts: 0,
+        phase: 'implementing',
+        seat: 'build',
+        from: { tool: 'opencode', model: 'deepseek/deepseek-flash' },
+        to,
+        cause: 'runner-usage-limit',
+        auto: true,
+        configRevision: 'abc123',
+      },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 120, viewportRows: 20, streaming },
+    });
+
+    expect(rows.map(rowText)).toEqual([
+      `${CREW_SEAT_LABELS.build} ${glyph('connectorHandoff')} ${formatSeatCandidateIdentity(to)} · usage limit`,
+    ]);
+    expect(rows[0]?.segments.every((segment) => segment.tone === 'textDim')).toBe(true);
+  });
+
+  it('names a signed-out seat switch in the words the halt uses', () => {
+    const rows = eventRows({
+      event: {
+        type: 'seat_switched',
+        ts: 0,
+        phase: 'implementing',
+        seat: 'plan',
+        from: { tool: 'codex' },
+        to: { tool: 'claude-code' },
+        cause: 'runner-unauthenticated',
+        auto: true,
+        configRevision: 'abc123',
+      },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 120, viewportRows: 20, streaming },
+    });
+
+    const text = rows.map(rowText).join('\n');
+    expect(text).toContain(CREW_SEAT_LABELS.plan);
+    expect(text).toContain('signed out');
   });
 
   it('strips OSC-52/CSI control bytes from a user prompt row now that it owns the title', () => {

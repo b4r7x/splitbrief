@@ -297,6 +297,10 @@ export function usePickerCatalog(
 
   const isCurrentTool = currentItem?.isCurrent ?? false;
   const currentModel = isCurrentTool ? persistedModel : undefined;
+  // A picker opened on another tool's row has no persisted model of its own, so the
+  // drafted model is where its right column lands; the current tool still lands on
+  // the model the seat runs.
+  const entryModel = isCurrentTool ? currentModel : (expandedModelId ?? undefined);
   const currentCommand = getRunnerCommand(runnerConfig);
   const currentCommandKind =
     runnerConfig.kind === 'shell' || runnerConfig.kind === 'agent' ? runnerConfig.kind : undefined;
@@ -307,8 +311,7 @@ export function usePickerCatalog(
     currentItem,
     selectedItemId: ownedItemId,
     initialLeftIdx,
-    initialRightIndex:
-      seatAxisIndex >= 0 ? seatAxisIndex : rowIndexForModel(rightRows, currentModel),
+    initialRightIndex: seatAxisIndex >= 0 ? seatAxisIndex : rowIndexForModel(rightRows, entryModel),
     resolveRightIndex,
     focusModels: focusedIndex >= 0 || seatAxisFocused,
     roleLabel: CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS[role]],

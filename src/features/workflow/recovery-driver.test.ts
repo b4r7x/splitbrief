@@ -20,6 +20,7 @@ import { composerLiveStore } from '../../stores/ui/composer-live.js';
 import { createDraftDocument } from '../../core/composer/document.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
+import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import {
   recoveryNoticeStore,
   type RecoveryNoticeState,
@@ -343,6 +344,108 @@ describe('createRecoveryDriver', () => {
       });
     }
     expect(recoveryNoticeStore.get().issue).toBeNull();
+  });
+
+  it('takes the automatic intent at once, with no panel question and no picker', async () => {
+    const { prepared, state } = setupSession({
+      reason: 'runner-usage-limit',
+      message: 'T001 hit the implementer usage limit',
+      availableActions: ['retry-same-worker', 'switch-seat', 'skip-current-task', 'end-run'],
+      recommendedAction: 'switch-seat',
+      switchSeat: {
+        seat: 'build',
+        candidates: [{ tool: 'claude-code', model: 'opus' }],
+        auto: { candidate: { tool: 'claude-code', model: 'opus' }, configRevision: 'revision' },
+      },
+    });
+    const { inputMode, feedbackAtPrompt } = makeInputMode([]);
+
+    const result = await runDriver(prepared, state, inputMode);
+
+    expect(feedbackAtPrompt).toHaveLength(0);
+    expect(overlayStore.get().active).toBe('none');
+    expect(result.shouldRun).toBe(true);
+    if (result.shouldRun) {
+      expect(result.switchSeat?.candidate).toEqual({ tool: 'claude-code', model: 'opus' });
+      expect(result.switchSeat?.policy.purpose).toBe('resume');
+      expect(result.state.pendingRecovery).toBeDefined();
+    }
+    expect(recoveryNoticeStore.get().issue).toBeNull();
+  });
+
+  it("drafts the chosen candidate's model and effort into the picker", async () => {
+    const { prepared, state } = setupSession({
+      reason: 'runner-usage-limit',
+      message: 'T001 hit the implementer usage limit',
+      availableActions: ['retry-same-worker', 'switch-seat', 'skip-current-task', 'end-run'],
+      recommendedAction: 'switch-seat',
+      switchSeat: {
+        seat: 'build',
+        candidates: [{ tool: 'claude-code', model: 'opus', effort: 'high' }],
+      },
+    });
+    const { inputMode } = makeInputMode(['switch-seat']);
+
+    const pending = runDriver(prepared, state, inputMode);
+    await vi.waitFor(() => {
+      expect(overlayStore.get()).toMatchObject({
+        active: 'implementer-picker',
+        focus: 'tool:claude-code',
+      });
+    });
+    expect(pickerViewStore.get()).toMatchObject({ expandedModelId: 'opus', effortDraft: 'high' });
+    await closeSeatPicker(prepared, {
+      kind: 'cli',
+      tool: 'claude-code',
+      model: 'opus',
+      effort: 'high',
+    });
+    const result = await pending;
+
+    expect(result.shouldRun).toBe(true);
+    if (result.shouldRun) {
+      expect(result.switchSeat?.candidate).toEqual({
+        tool: 'claude-code',
+        model: 'opus',
+        effort: 'high',
+      });
+    }
+  });
+
+  it('counts an effort-only change as a swap', async () => {
+    const { prepared, state } = setupSession({
+      reason: 'runner-usage-limit',
+      message: 'T001 hit the implementer usage limit',
+      availableActions: ['retry-same-worker', 'switch-seat', 'skip-current-task', 'end-run'],
+      recommendedAction: 'switch-seat',
+      switchSeat: { seat: 'build', candidates: [{ tool: 'claude-code' }] },
+    });
+    configStore.__testReset({
+      projectDir: prepared.session.ref.projectDir,
+      config: makeConfig({
+        planner: { kind: 'agent', command: 'test-planner' },
+        implementer: { kind: 'cli', tool: 'claude-code', model: 'opus' },
+      }),
+    });
+    const { inputMode } = makeInputMode(['switch-seat']);
+
+    const pending = runDriver(prepared, state, inputMode);
+    await closeSeatPicker(prepared, {
+      kind: 'cli',
+      tool: 'claude-code',
+      model: 'opus',
+      effort: 'high',
+    });
+    const result = await pending;
+
+    expect(result.shouldRun).toBe(true);
+    if (result.shouldRun) {
+      expect(result.switchSeat?.candidate).toEqual({
+        tool: 'claude-code',
+        model: 'opus',
+        effort: 'high',
+      });
+    }
   });
 
   it('keeps the halt when the picker closes without changing the seat', async () => {

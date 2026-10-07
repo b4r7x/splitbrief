@@ -1,4 +1,4 @@
-import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
+import type { RecoveryIssue, SeatSwapCandidate } from '../schemas/recovery/schemas.js';
 import { recoveryActionLabel } from './action-label.js';
 
 /**
@@ -30,10 +30,22 @@ function continueAction(issue: RecoveryIssue): string | undefined {
     case 'end-run':
       return 'end-run';
     case 'switch-seat': {
-      const tool = issue.switchSeat?.candidates[0]?.tool;
-      return tool === undefined ? undefined : `switch-seat:${tool}`;
+      const candidate = issue.switchSeat?.candidates[0];
+      return candidate === undefined ? undefined : switchSeatAction(candidate);
     }
     default:
       return undefined;
   }
+}
+
+/**
+ * The seat grammar `switch-seat:<tool>[:<model>][@<effort>]` the `--action` parser
+ * reads back into the same candidate: the model is spelled only when the offer
+ * names it, and the `@` word is the variant on a variant-channel tool, else the effort.
+ */
+function switchSeatAction(candidate: SeatSwapCandidate): string {
+  const model = candidate.model === undefined ? '' : `:${candidate.model}`;
+  const axis = candidate.variant ?? candidate.effort;
+  const effort = axis === undefined ? '' : `@${axis}`;
+  return `switch-seat:${candidate.tool}${model}${effort}`;
 }

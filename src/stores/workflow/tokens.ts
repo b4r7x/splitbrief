@@ -327,6 +327,7 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     case 'tasks_inserted':
     case 'checks_run':
     case 'seat_wait_started':
+    case 'seat_switched':
     case 'seat_retry':
     case 'no_progress_cut':
     case 'consult_bound_spent':

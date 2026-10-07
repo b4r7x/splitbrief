@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeImplementer, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
@@ -11,9 +13,14 @@ import {
 import { createInitialState, transition } from '../core/state/machine.js';
 import { ensureSessionDir } from '../core/paths-io.js';
 import { loadState, saveState } from '../core/state/persistence.js';
+import { readConfigDocument } from '../core/config/load/document.js';
+import { loadConfig, writeConfig } from '../core/config/load/io.js';
 import { HeadlessJsonRecordSchema } from '../engine/events/public-json.js';
 import { writeActive } from '../core/sessions/active-pointer.js';
-import { buildContextOverflowRecoveryIssue } from '../engine/orchestrator/recovery/builders/task.js';
+import {
+  buildContextOverflowRecoveryIssue,
+  buildSeatDownIssue,
+} from '../engine/orchestrator/recovery/builders/task.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { formatResumeCommand } from '../core/recovery/resume-command.js';
 import { emitRecoveryAndFailIfPending, runHeadless } from './headless.js';
@@ -721,5 +728,186 @@ describe('runHeadless — the run\u2019s terminal outcome sets the exit code', (
     expect(records()).toEqual([
       { type: 'error', message: `Session ${sessionId} ended with status open.` },
     ]);
+  });
+});
+
+describe('runHeadless — the seat-down policy and the record', () => {
+  let stdoutChunks: string[];
+  let stdoutSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    stdoutChunks = [];
+    stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      stdoutChunks.push(String(chunk));
+      return true;
+    });
+    skipTheRun.enabled = true;
+  });
+
+  afterEach(() => {
+    skipTheRun.enabled = false;
+    stderrSpy.mockRestore();
+    stdoutSpy.mockRestore();
+    vi.clearAllMocks();
+    for (const d of dirs) cleanupTempDir(d);
+    dirs = [];
+  });
+
+  function records() {
+    return stdoutChunks
+      .join('')
+      .trim()
+      .split('\n')
+      .filter((line) => line.trim().startsWith('{'))
+      .map((line) => HeadlessJsonRecordSchema.parse(JSON.parse(line)));
+  }
+
+  function seedAutoSwitchSession(name: string) {
+    const projectDir = createHeadlessGitProject(name);
+    dirs.push(projectDir);
+    const sessionId = `sess-${name}`;
+    ensureSessionDir(projectDir, sessionId);
+    writeActive({ projectDir, sessionId });
+    writeConfig(
+      projectDir,
+      makeConfig({
+        implementer: { kind: 'cli', tool: 'opencode', fallback: { tool: 'claude-code' } },
+      }),
+    );
+    const configRevision = readConfigDocument(projectDir).revision?.rawSha256;
+    const task = makeTask({ id: 'T001' });
+    const state = makeImplState([task], {
+      pendingRecovery: makeRecoveryIssue({
+        reason: 'runner-usage-limit',
+        taskId: task.id,
+        affectedTaskIds: [task.id],
+        availableActions: ['retry-same-worker', 'switch-seat', 'end-run'],
+        recommendedAction: 'switch-seat',
+        switchSeat: {
+          seat: 'build',
+          candidates: [{ tool: 'claude-code' }],
+          ...(configRevision !== undefined && {
+            auto: { candidate: { tool: 'claude-code' }, configRevision },
+          }),
+        },
+      }),
+    });
+    saveState({ projectDir, sessionId }, state);
+    return { projectDir, sessionId, state };
+  }
+
+  it('names the halt, cause, provider words, request id, reset and fallback', () => {
+    const runner = makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }).implementer;
+    const issue = buildSeatDownIssue({
+      seat: 'build',
+      runner,
+      classification: { class: 'account', cause: 'balance' },
+      words: 'provider.quota: Insufficient Balance',
+      requestId: 'req_123',
+      resetAt: new Date('2026-04-28T18:00:00.000Z'),
+      fallback: { tool: 'claude-code', model: 'sonnet' },
+      task: makeTask({ id: 'T001' }),
+      phase: 'implementing',
+      createdAt: '2026-04-28T12:00:00.000Z',
+    });
+    const state = {
+      ...createInitialState('recover me'),
+      phase: 'implementing' as const,
+      pendingRecovery: issue,
+    };
+    const writeRecord = vi.fn();
+
+    expect(() =>
+      emitRecoveryAndFailIfPending({ state, sessionId: 'sess-record', writeRecord }),
+    ).toThrow(/Seat down/);
+
+    expect(writeRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'recovery_required',
+        halt: 'seat-down',
+        reason: 'runner-usage-limit',
+        cause: 'balance',
+        providerMessage: 'provider.quota: Insufficient Balance',
+        requestId: 'req_123',
+        resetAt: '2026-04-28T18:00:00.000Z',
+        fallback: expect.stringContaining('Claude'),
+      }),
+      process.stdout,
+    );
+  });
+
+  it('applies the declared fallback automatically and records the switch', async () => {
+    const { projectDir, sessionId, state } = seedAutoSwitchSession('headless-auto-switch');
+    const prepared = preparedHeadlessExecution({
+      projectDir,
+      sessionId,
+      feature: 'recover me',
+      resumeState: state,
+    });
+
+    await runHeadless({
+      prepared,
+      _prepare: async (input) => ({
+        kind: 'prepared',
+        execution: preparedHeadlessExecution({
+          projectDir,
+          sessionId,
+          feature: 'recover me',
+          resumeState: input.resumeState,
+        }),
+      }),
+    });
+
+    const switched = records().flatMap((record) =>
+      record.type === 'event' && record.data.type === 'seat_switched' ? [record.data] : [],
+    );
+    expect(switched).toHaveLength(1);
+    expect(switched[0]).toMatchObject({ seat: 'build', auto: true, to: { tool: 'claude-code' } });
+    expect(loadConfig(projectDir).config.implementer).toMatchObject({ tool: 'claude-code' });
+  });
+
+  it('halts on the declared fallback when --on-seat-down is halt', async () => {
+    const { projectDir, sessionId, state } = seedAutoSwitchSession('headless-halt');
+    const error = await runHeadless({
+      prepared: preparedHeadlessExecution({
+        projectDir,
+        sessionId,
+        feature: 'recover me',
+        resumeState: state,
+      }),
+      onSeatDown: 'halt',
+    }).then(
+      () => {
+        throw new Error('runHeadless unexpectedly resolved');
+      },
+      (err: { exitCode?: number; message?: string }) => err,
+    );
+
+    expect(error).toMatchObject({ exitCode: 1, message: expect.stringContaining('Seat down') });
+    expect(stdoutChunks.join('')).not.toContain('seat_switched');
+    expect(loadConfig(projectDir).config.implementer).toMatchObject({ tool: 'opencode' });
+  });
+
+  it('exits 2 when an explicit switch has no fallback to switch to', async () => {
+    const projectDir = createHeadlessGitProject('headless-switch-no-fallback');
+    dirs.push(projectDir);
+    writeMinimalHeadlessConfigYaml(projectDir);
+    const sessionId = 'sess-headless-switch-no-fallback';
+    ensureSessionDir(projectDir, sessionId);
+    writeActive({ projectDir, sessionId });
+
+    const error = await runHeadless({
+      prepared: preparedHeadlessExecution({ projectDir, sessionId, feature: 'recover me' }),
+      onSeatDown: 'switch',
+    }).then(
+      () => {
+        throw new Error('runHeadless unexpectedly resolved');
+      },
+      (err: { exitCode?: number; message?: string }) => err,
+    );
+
+    expect(error).toMatchObject({ exitCode: 2 });
+    expect(error.message).toContain('fallback');
   });
 });

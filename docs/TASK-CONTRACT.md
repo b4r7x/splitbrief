@@ -334,9 +334,10 @@ If two tools need to coordinate, they agree on a key (e.g., `external.vcs-sync`)
 | `WorkflowState.pendingTriage` | no operator or Apply input waits for a triage |
 | `WorkflowState.reviewStatus` | the final review has not resolved |
 | `WorkflowState.validationBaseline` | the run-start gate probe is re-run on resume instead of reused |
-| `WorkflowState.interruptedStep` | nothing recorded where the run was cut; `cut` says which — `mid-step` inside a call, `boundary` where it cut nothing: between two briefs, or at a gate — and a record written before `cut` existed falls back to the presence of a `partialRef` |
+| `WorkflowState.interruptedStep` | nothing recorded where the run was cut; `cut` says which — `mid-step` inside a call, `boundary` where it cut nothing: between two briefs, or at a gate — and a record written before `cut` existed falls back to the presence of a `partialRef`. `source` is `user`, `watchdog` or `seat`, the last for a seat halt that cut a brief |
 | `WorkflowState.closed` | the run was never explicitly ended, so it is still continuable |
 | `WorkflowState.lastFailure` | the run recorded no failure; it stopped for some other reason |
+| `WorkflowState.seatSwitches` | no seat moved in this run. Each record holds `seat`, `from`, `to`, `cause`, `auto`, `configRevision` and `ts`. `auto` marks a switch the declared `fallback` applied; a run applies at most one per seat |
 | evidence `skipped` / `skippedReason` | the stage ran (a skipped stage was previously indistinguishable from a pass) |
 
 **`Session.status` (2026-09-15).** The session record's status is now `open` \| `complete` \| `ended`, derived from the state by `deriveRunStatus` rather than from the exit path the run happened to take. The legacy literals `interrupted`, `failed` and `cancelled` still parse: they map to `open`, and `failed` additionally sets `stop: 'stopped'`. The row also carries optional `phase`, `mode` and `stop` (`waiting-for-you` \| `stopped`); an absent `stop` on an open row means the run is still going. An older row's `stop` of `input-required`, `waiting` or `halted` reads as `waiting-for-you`, and `paused`, `failed` or `interrupted` reads as `stopped` (`StopKindSchema`, `src/core/schemas/run-step.ts`).

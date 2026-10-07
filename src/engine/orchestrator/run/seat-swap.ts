@@ -38,25 +38,24 @@ export type ApplyOfferedSeatSwapInput = Readonly<{
 }>;
 
 /**
- * A quota halt offered other tools and the operator took one: resolve the
- * pending recovery onto that tool and prepare this same session again on the
- * switched config, so the seat is rebuilt the one way every seat is built —
- * `init-seats.ts` → `runners/factory.ts`, against a preparation that admitted
- * the new tool.
+ * A quota halt offered other tools and the operator took one: prepare this same
+ * session on the switched config, write that one seat into `config.yaml`, and
+ * only then resolve the pending recovery onto the new tool — so the seat is
+ * rebuilt the one way every seat is built, `init-seats.ts` → `runners/factory.ts`,
+ * against a preparation that admitted the new tool.
  *
  * A swap the recovery itself refuses changes nothing — the halt is still
- * pending, so the task loop stops on it again. A swap that resolves but cannot
- * be admitted keeps the resolved state (it is already on disk) and the seat the
- * run already had: that seat is the one that hit the limit, so it halts again
- * rather than running on a tool nothing admitted. A re-preparation the operator
- * cancelled is that cancellation and not a refusal, so it is not warned about
- * here; a failed one names its own error.
+ * pending, so the task loop stops on it again. A preparation the operator
+ * cancelled, an admission that failed, and a config the operator changed
+ * underneath the halt all leave the halt pending with its intent: the write is
+ * skipped, so the run keeps the seat it had and stops on it again rather than
+ * running on a tool nothing admitted. Only a saved write resolves the halt.
  *
- * The TUI run loop applies the swap before it re-enters `runWorkflow`, and an admitted
- * swap is that re-entry's only preparation: the seat that halted is never admitted again,
- * so a tool that can no longer run cannot block the move away from it. The new preparation
- * goes to `onSeatSwapped`, and every later pass runs on it, not on the seat that hit the
- * limit. The seat record itself is reconciled by `init` once the swapped config is in place.
+ * The TUI run loop applies the swap before it re-enters `runWorkflow`, and an
+ * admitted swap is that re-entry's only preparation: the seat that halted is
+ * never admitted again, so a tool that can no longer run cannot block the move
+ * away from it. The new preparation goes to `onSeatSwapped`, and every later
+ * pass runs on it, not on the seat that hit the limit.
  */
 export async function applyOfferedSeatSwap(
   input: ApplyOfferedSeatSwapInput,
@@ -86,26 +85,31 @@ export async function applyOfferedSeatSwap(
     return undefined;
   }
 
-  const preparation = result.preparation;
-  if (preparation.kind !== 'prepared') {
-    // The resolved recovery is already on disk, so the state travels back even when
-    // the swap did not: the run keeps the seat it had and halts on it again.
-    const unswapped = { config: input.config, prepared: input.prepared, state: result.state };
-    // `aborted` is the operator's own cancellation during re-preparation, which the
-    // cancel path reports itself; nothing was refused, so nothing is warned here.
-    if (preparation.kind === 'aborted') return unswapped;
-    const reason =
-      preparation.kind === 'failed'
-        ? `preparing it failed: ${toErrorMessage(preparation.error)}`
-        : 'it could not be admitted';
-    publishWarning({
-      bus: input.bus,
-      phase: result.state.phase,
-      message: `Switched the ${result.seat} seat to '${result.candidate.tool}', but ${reason}; the run continues on its previous seat.`,
-    });
-    return unswapped;
+  if (result.kind === 'unswitched') {
+    // Nothing was written, so the halt stays pending and the run stops on it again
+    // on the seat it had. A cancellation is the operator's own, reported by the
+    // cancel path; a refused admission and a raced config name their own row.
+    if (result.outcome === 'conflict') {
+      publishWarning({
+        bus: input.bus,
+        phase: result.state.phase,
+        message: 'config changed meanwhile · the halt stays',
+      });
+    } else if (result.outcome === 'unadmitted') {
+      const reason =
+        result.preparation.kind === 'failed'
+          ? `preparing it failed: ${toErrorMessage(result.preparation.error)}`
+          : 'it could not be admitted';
+      publishWarning({
+        bus: input.bus,
+        phase: result.state.phase,
+        message: `The ${result.seat} seat was not switched to '${result.candidate.tool}': ${reason}; the halt stays.`,
+      });
+    }
+    return { config: input.config, prepared: input.prepared, state: result.state };
   }
 
+  const preparation = result.preparation;
   input.onSeatSwapped?.(preparation.execution);
   return {
     config: preparation.execution.config,

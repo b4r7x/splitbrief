@@ -1,5 +1,5 @@
 import { readActiveRunner } from '../../core/config/accessors/active-runner.js';
-import type { CrewSeatId } from '../../core/crew/identity.js';
+import { sameSeatCandidate, type CrewSeatId } from '../../core/crew/identity.js';
 import { CREW_SEAT_ROLES } from '../../core/crew/seats.js';
 import {
   seatPickerOverlayFor,
@@ -26,6 +26,7 @@ import { composerDraftStore } from '../../stores/ui/composer-draft.js';
 import { composerLiveStore } from '../../stores/ui/composer-live.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
+import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';
 import { runResumePolicy } from './resume-policy.js';
@@ -117,23 +118,31 @@ function seatOfRecord(seat: CrewSeatId): SeatSwapCandidate | undefined {
 }
 
 /**
- * The offered tool is preselected in the seat's own picker, the one place a seat's model and
- * effort are chosen. The picker writes the config of record and the swap is read back from it;
- * a picker closed on the seat it opened on is a cancelled swap.
+ * The chosen candidate is preselected in the seat's own picker, the one place a
+ * seat's model and effort are chosen: the picker opens on its tool row with its
+ * model and effort drafted. The picker writes the config of record and the swap
+ * is read back from it; a picker closed on the seat it opened on — same tool,
+ * model, effort and variant — is a cancelled swap.
  */
 async function pickSwappedSeat(
   seat: CrewSeatId,
-  tool: string,
+  candidate: SeatSwapCandidate,
   signal: AbortSignal,
 ): Promise<SeatSwapCandidate | undefined> {
   const before = seatOfRecord(seat);
   const overlay = seatPickerOverlayFor(CREW_SEAT_ROLES[seat]);
-  overlayStore.open(overlay, toolRowFocus(tool));
+  if (candidate.model !== undefined) {
+    pickerViewStore.expand(
+      candidate.model,
+      candidate.model,
+      candidate.effort ?? candidate.variant ?? null,
+    );
+  }
+  overlayStore.open(overlay, toolRowFocus(candidate.tool));
   await overlayClosed(overlay, signal);
   const after = seatOfRecord(seat);
-  if (after === undefined || (after.tool === before?.tool && after.model === before?.model)) {
-    return undefined;
-  }
+  if (after === undefined) return undefined;
+  if (before !== undefined && sameSeatCandidate(after, before)) return undefined;
   return after;
 }
 
@@ -170,6 +179,22 @@ export function createRecoveryDriver(
     const issue = state.pendingRecovery;
     if (issue === undefined) return { shouldRun: true, state };
 
+    // The halt's declaration is its automatic intent: the declared fallback is taken
+    // at once, with no panel question and no picker, and the run loop applies it
+    // through `applyOfferedSeatSwap` like any other switch. An unadmitted swap leaves
+    // the halt pending; the loop spends the intent, so the next entry asks the panel
+    // and the operator picks the seat by hand.
+    const auto = issue.switchSeat?.auto;
+    if (auto !== undefined) {
+      recoveryNoticeStore.clear();
+      feedbackStore.reset();
+      return {
+        shouldRun: true,
+        state,
+        switchSeat: { candidate: auto.candidate, policy: runResumePolicy(prepared) },
+      };
+    }
+
     const bus = createRecoveryBus({ projectDir, sessionId, sink });
 
     // `revise` carries the operator's words to the planner, so the panel asks for
@@ -200,7 +225,7 @@ export function createRecoveryDriver(
           openRecoveryNotice(issue);
           return null;
         }
-        const candidate = await pickSwappedSeat(offer.seat, offered.tool, controller.signal);
+        const candidate = await pickSwappedSeat(offer.seat, offered, controller.signal);
         if (controller.signal.aborted || abortedRef.current) return { shouldRun: false, state };
         if (candidate === undefined) {
           openRecoveryNotice(issue);

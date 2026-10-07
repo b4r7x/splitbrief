@@ -323,15 +323,39 @@ describe('continueCommand', () => {
     }
   });
 
-  it('records a seat the command line moved in the config of record, comments kept', async () => {
+  it('records the switched build seat, the file comment and its fallback kept', async () => {
     const projectDir = makeTmpProject();
     const sessionId = '2025-04-01-seat-of-record';
     const sessDir = makeSessionDir(projectDir, sessionId);
     writeLockfile(sessDir, { exitedAt: Date.now(), sessionId });
-    writeState(sessDir, 'implementing');
-    writeConfig(projectDir, makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }));
+    writeConfig(
+      projectDir,
+      makeConfig({
+        implementer: {
+          kind: 'cli',
+          tool: 'codex',
+          fallback: { tool: 'opencode' },
+        },
+      }),
+    );
     const configFile = join(projectDir, SPLITBRIEF_DIR, CONFIG_FILE);
     writeFileSync(configFile, `# the crew of record\n${readFileSync(configFile, 'utf8')}`);
+    saveState(
+      { projectDir, sessionId },
+      {
+        ...createInitialState('test-feature'),
+        phase: 'implementing',
+        tasks: [makeTask({ id: 'T001' })],
+        pendingRecovery: makeRecoveryIssue({
+          reason: 'runner-usage-limit',
+          seat: 'build',
+          selectedImplementerProfile: undefined,
+          availableActions: ['retry-same-worker', 'switch-seat', 'end-run'],
+          recommendedAction: 'switch-seat',
+          switchSeat: { seat: 'build', candidates: [{ tool: 'claude-code' }] },
+        }),
+      },
+    );
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     // `mockRestore` clears the recorded calls, so they are read before it runs.
     let warnings: string[] = [];
@@ -339,7 +363,7 @@ describe('continueCommand', () => {
     try {
       await continueCommand(
         sessionId,
-        { projectDir, json: true, implementerModel: 'gpt-6-astra' },
+        { projectDir, json: true, action: parseContinueActionOption('switch-seat:claude-code') },
         deps,
       );
       warnings = warnSpy.mock.calls.map((call) => call.join(' '));
@@ -350,7 +374,11 @@ describe('continueCommand', () => {
     const yaml = readFileSync(configFile, 'utf8');
     expect(yaml).toContain('# the crew of record');
     expect(YAML.parse(yaml)).toMatchObject({
-      implementer: { kind: 'cli', tool: 'codex', model: 'gpt-6-astra' },
+      implementer: {
+        kind: 'cli',
+        tool: 'claude-code',
+        fallback: { tool: 'opencode' },
+      },
     });
     expect(warnings).toContain('BUILD seat recorded in .splitbrief/config.yaml');
     expect(headlessRuns).toHaveLength(1);

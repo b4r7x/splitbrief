@@ -1,5 +1,10 @@
 import type { EffortLevel, OutputFormat, PlannerToolId, ProviderId } from '../schemas/enums.js';
 
+/** How a headless run answers a seat that goes down; unset defers to the seat's declared fallback. */
+export const SEAT_DOWN_POLICIES = ['halt', 'switch'] as const;
+
+export type SeatDownPolicy = (typeof SEAT_DOWN_POLICIES)[number];
+
 export interface WorkflowOpts {
   model?: string;
   provider?: ProviderId;
@@ -39,4 +44,5 @@ export interface WorkflowOpts {
   json?: boolean;
   plain?: boolean;
   skills?: string[];
+  onSeatDown?: SeatDownPolicy;
 }

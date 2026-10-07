@@ -684,4 +684,45 @@ describe('parseEngineEvent', () => {
       expect(parseEngineEvent({ ...base, seat: 'desk' })).toBeNull();
     },
   );
+
+  it('round-trips a seat switch naming the seat it left and the seat it moved to', () => {
+    const parsed = parseEngineEvent({
+      type: 'seat_switched',
+      ts: 1,
+      phase: 'implementing',
+      seat: 'build',
+      from: { tool: 'opencode', model: 'deepseek/deepseek-flash' },
+      to: { tool: 'claude-code', model: 'claude-sonnet-4' },
+      cause: 'runner-usage-limit',
+      auto: true,
+      configRevision: 'abc123',
+    });
+
+    expect(parsed).toEqual(
+      expect.objectContaining({
+        type: 'seat_switched',
+        seat: 'build',
+        from: { tool: 'opencode', model: 'deepseek/deepseek-flash' },
+        to: { tool: 'claude-code', model: 'claude-sonnet-4' },
+        cause: 'runner-usage-limit',
+        auto: true,
+        configRevision: 'abc123',
+      }),
+    );
+  });
+
+  it('rejects a seat switch that names no seat to move to', () => {
+    expect(
+      parseEngineEvent({
+        type: 'seat_switched',
+        ts: 1,
+        phase: 'implementing',
+        seat: 'build',
+        from: { tool: 'opencode' },
+        cause: 'runner-usage-limit',
+        auto: true,
+        configRevision: 'abc123',
+      }),
+    ).toBeNull();
+  });
 });

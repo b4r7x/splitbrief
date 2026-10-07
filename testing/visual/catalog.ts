@@ -1302,6 +1302,24 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
+    // The build seat moved to its declared fallback: the switch is one transcript row, and the
+    // header names the seat it moved to.
+    defineScenario({
+      id: 'workflow-seat-switched',
+      title: 'Workflow · build seat moved to its declared fallback',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'seat-switched',
+        title: 'Seat switch row in the transcript',
+        kind: 'implementation',
+        marker: 'usage limit',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
     defineScenario({
       id: 'workflow-plan-activity',
       title: 'Workflow · plan activity beside the seat that ran it',

@@ -33,6 +33,36 @@ describe('formatResumeCommand', () => {
     );
   });
 
+  it('spells the candidate model and effort the parser reads back', () => {
+    const issue = makeRecoveryIssue({
+      reason: 'runner-usage-limit',
+      availableActions: ['switch-seat', 'end-run'],
+      recommendedAction: 'switch-seat',
+      switchSeat: {
+        seat: 'build',
+        candidates: [{ tool: 'opencode', model: 'opencode-go/kimi-k3', effort: 'high' }],
+      },
+    });
+    expect(formatResumeCommand('s1', issue)).toBe(
+      'splitbrief continue s1 --action switch-seat:opencode:opencode-go/kimi-k3@high',
+    );
+  });
+
+  it('spells a variant candidate with its variant word', () => {
+    const issue = makeRecoveryIssue({
+      reason: 'runner-usage-limit',
+      availableActions: ['switch-seat', 'end-run'],
+      recommendedAction: 'switch-seat',
+      switchSeat: {
+        seat: 'build',
+        candidates: [{ tool: 'opencode', model: 'opencode-go/kimi-k3', variant: 'high' }],
+      },
+    });
+    expect(formatResumeCommand('s1', issue)).toBe(
+      'splitbrief continue s1 --action switch-seat:opencode:opencode-go/kimi-k3@high',
+    );
+  });
+
   // The recovery panel offers every action; `continue` opens it, so the line names the row there.
   it.each([
     ['consult-bound-spent', 'continue', 'Continue'],

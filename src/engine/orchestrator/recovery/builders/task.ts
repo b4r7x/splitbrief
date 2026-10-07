@@ -7,7 +7,11 @@ import type {
   SeatSwapCandidate,
   SwitchSeatOffer,
 } from '../../../../core/schemas/recovery/schemas.js';
-import { formatSeatCandidateIdentity, type CrewSeatId } from '../../../../core/crew/identity.js';
+import {
+  formatSeatCandidateIdentity,
+  sameSeatCandidate,
+  type CrewSeatId,
+} from '../../../../core/crew/identity.js';
 import { CREW_SEAT_ROLES } from '../../../../core/crew/seats.js';
 import type {
   DeepReadonly,
@@ -263,13 +267,7 @@ function autoSwitchIntent(
       classification.resetAt.getTime() - Date.now() > BOUNDS.rateLimitResetWaitMs);
   if (!switchable) return undefined;
   const first = offer.candidates[0];
-  const leadsWithFallback =
-    first !== undefined &&
-    first.tool === fallback.tool &&
-    first.model === fallback.model &&
-    first.effort === fallback.effort &&
-    first.variant === fallback.variant;
-  if (!leadsWithFallback) return undefined;
+  if (first === undefined || !sameSeatCandidate(first, fallback)) return undefined;
   return { candidate: fallback, configRevision };
 }
 
@@ -340,6 +338,10 @@ export function buildSeatDownIssue(opts: SeatDownRecoveryOptions): RecoveryIssue
     facts: compactFacts({
       tool: displayName,
       cause,
+      providerMessage: opts.words,
+      requestId: opts.requestId,
+      fallback:
+        opts.fallback === undefined ? undefined : formatSeatCandidateIdentity(opts.fallback),
       ...(resetAt !== undefined && { resetsAt: resetAt.toISOString() }),
     }),
     availableActions: actions,

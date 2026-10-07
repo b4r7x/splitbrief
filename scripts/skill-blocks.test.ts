@@ -108,6 +108,18 @@ describe('skill-blocks', () => {
     expect(recovery).toContain('Longer or unknown resets');
   });
 
+  it('states the account rule, the declared fallback and the retry-later row', () => {
+    const recovery = renderBlock('seat-recovery') ?? '';
+    expect(recovery).toContain('account refusal');
+    expect(recovery).toContain('balance, billing, a quota with no reset, or sign-in');
+    expect(recovery).toContain('halts at once as seat down');
+    expect(recovery).toContain(
+      'A declared `fallback` switches the seat once per run with no question',
+    );
+    expect(recovery).toContain('`Retry at <clock>`');
+    expect(recovery).toContain('offered only with a known reset');
+  });
+
   it('states the waiter process-group limit and reconciles fallback timeouts before recovery', () => {
     const timeouts = renderBlock('timeouts') ?? '';
     expect(timeouts).toContain('separate process group');

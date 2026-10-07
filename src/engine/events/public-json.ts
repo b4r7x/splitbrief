@@ -40,6 +40,12 @@ export const HeadlessJsonRecordSchema = z.discriminatedUnion('type', [
     availableActions: z.array(RecoveryActionSchema),
     recommendedAction: RecoveryActionSchema,
     resumeCommand: z.string(),
+    /** A seat-down halt's finer cause, tool words, request id, reset and declared fallback. */
+    cause: z.string().optional(),
+    providerMessage: z.string().optional(),
+    requestId: z.string().optional(),
+    resetAt: z.string().optional(),
+    fallback: z.string().optional(),
   }),
   z.strictObject({
     type: z.literal('ready_to_apply'),

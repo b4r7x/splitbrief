@@ -18,6 +18,7 @@ import { PlannerCallSchema, StepCutSchema, StepRefSchema } from '../../core/sche
 import { ConsultRecordSchema } from '../../core/schemas/workflow.js';
 import {
   readSavedRecoveryActions,
+  SeatSwapCandidateSchema,
   TaskReviewRecoverySchema,
 } from '../../core/schemas/recovery/schemas.js';
 import { CREW_SEAT_IDS } from '../../core/crew/identity.js';
@@ -559,6 +560,14 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   phaseEvent('seat_wait_started').extend({
     seat: z.enum(CREW_SEAT_IDS),
     resetAt: z.string(),
+  }),
+  phaseEvent('seat_switched').extend({
+    seat: z.enum(CREW_SEAT_IDS),
+    from: SeatSwapCandidateSchema,
+    to: SeatSwapCandidateSchema,
+    cause: RecoveryReasonSchema,
+    auto: z.boolean(),
+    configRevision: z.string(),
   }),
   phaseEvent('seat_retry').extend({
     seat: z.enum(CREW_SEAT_IDS),

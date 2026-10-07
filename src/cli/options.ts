@@ -1,10 +1,22 @@
 import { InvalidArgumentError, type Command } from 'commander';
 import { cliError } from './errors.js';
 import { IMPLEMENTER_API_PROVIDER_IDS } from '../core/providers/api-provider-catalog.js';
-import { IMPLEMENTER_CLI_TOOL_IDS } from '../core/runners/cli-tool-catalog.js';
-import { META_PROVIDER_IDS, OutputFormatSchema, PLANNER_TOOL_IDS } from '../core/schemas/enums.js';
-import type { RecoveryAction } from '../core/schemas/enums.js';
+import {
+  CLI_TOOL_CATALOG,
+  IMPLEMENTER_CLI_TOOL_IDS,
+  isCliToolId,
+} from '../core/runners/cli-tool-catalog.js';
+import type { CliEffortChannel } from '../core/runners/effort-channel.js';
+import {
+  EFFORT_LEVELS,
+  EffortLevelSchema,
+  META_PROVIDER_IDS,
+  OutputFormatSchema,
+  PLANNER_TOOL_IDS,
+} from '../core/schemas/enums.js';
+import type { EffortLevel, RecoveryAction } from '../core/schemas/enums.js';
 import type { SeatSwapCandidate } from '../core/schemas/recovery/schemas.js';
+import { SEAT_DOWN_POLICIES, type SeatDownPolicy } from '../core/types/config-options.js';
 
 const IMPLEMENTER_TOOL_IDS = [
   ...IMPLEMENTER_CLI_TOOL_IDS,
@@ -56,6 +68,16 @@ export function parseSkillIdsOption(value: string): string[] {
   return ids;
 }
 
+export function parseSeatDownPolicyOption(value: string): SeatDownPolicy {
+  const policy = SEAT_DOWN_POLICIES.find((candidate) => candidate === value);
+  if (policy === undefined) {
+    throw new InvalidArgumentError(
+      `'${value}' is not a valid seat-down policy. Must be one of: ${SEAT_DOWN_POLICIES.join(', ')}.`,
+    );
+  }
+  return policy;
+}
+
 export type SeatSpec = Readonly<{ tool: string; model?: string; effort?: string }>;
 
 /**
@@ -97,7 +119,7 @@ export type ContinueActionOption =
   | Readonly<{ action: 'discard' }>;
 
 /**
- * `skip`, `retry`, `restore` and `switch-seat:<tool>[:<model>]` answer a pending recovery;
+ * `skip`, `retry`, `restore` and `switch-seat:<tool>[:<model>][@<effort>]` answer a pending recovery;
  * `restore` puts back the checkout files a partial Apply replaced.
  * `end-run` closes the run. `apply` and `discard` settle a run that is ready to apply.
  */
@@ -111,15 +133,39 @@ export function parseContinueActionOption(value: string): ContinueActionOption {
   if (spec === 'discard') return { action: 'discard' };
   if (spec.startsWith('switch-seat:')) {
     const seat = parseSeatSpecOption(spec.slice('switch-seat:'.length));
+    const model = seat.model === undefined ? {} : { model: seat.model };
+    if (seat.effort !== undefined && effortChannelOfTool(seat.tool) === 'variant') {
+      return {
+        action: 'switch-seat',
+        candidate: { tool: seat.tool, ...model, variant: seat.effort },
+      };
+    }
+    const effort = seat.effort === undefined ? undefined : parseEffortLevel(seat.effort, value);
     return {
       action: 'switch-seat',
-      candidate: { tool: seat.tool, ...(seat.model !== undefined && { model: seat.model }) },
+      candidate: { tool: seat.tool, ...model, ...(effort !== undefined && { effort }) },
     };
   }
   throw cliError(
-    `'${value}' is not a continue action. Use skip, retry, restore, switch-seat:<tool>[:<model>], end-run, apply, or discard.`,
+    `'${value}' is not a continue action. Use skip, retry, restore, switch-seat:<tool>[:<model>][@<effort>], end-run, apply, or discard.`,
     2,
   );
+}
+
+/** A CLI tool's own effort channel; a provider or custom tool has none the seat can spend. */
+function effortChannelOfTool(tool: string): CliEffortChannel {
+  return isCliToolId(tool) ? CLI_TOOL_CATALOG[tool].effortChannel : 'none';
+}
+
+/** The seat grammar's `@<effort>` is the one effort spellings the seats admit. */
+function parseEffortLevel(effort: string, spec: string): EffortLevel {
+  const parsed = EffortLevelSchema.safeParse(effort);
+  if (!parsed.success) {
+    throw new InvalidArgumentError(
+      `'${spec}' names effort '${effort}', which is not one of: ${EFFORT_LEVELS.join(', ')}.`,
+    );
+  }
+  return parsed.data;
 }
 
 /**
@@ -277,8 +323,13 @@ export function addWorkflowOptions(cmd: Command): Command {
     )
     .option(
       '--action <action>',
-      '`continue` only: skip, retry, restore, switch-seat:<tool>[:<model>], or end-run answer recovery; apply and discard settle a run that is ready to apply',
+      '`continue` only: skip, retry, restore, switch-seat:<seat> (<tool>[:<model>][@<effort>]), or end-run answer recovery; apply and discard settle a run that is ready to apply',
       parseContinueActionOption,
+    )
+    .option(
+      '--on-seat-down <policy>',
+      "Headless: halt on a seat-down, or switch to the seat's declared fallback (halt|switch)",
+      parseSeatDownPolicyOption,
     )
     .hook('preAction', (command) => {
       assertOutputModeExclusive(command.opts<OutputModeOpts>());

@@ -13,12 +13,14 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { ContinueActionOption, RecoveryActionOption } from '../../options.js';
 import { resolveRunConfig } from '../../build-overrides.js';
-import { CONFIG_RELATIVE_PATH } from '../../../core/config/load/document.js';
-import { loadConfig, writeConfig, writeConfigDocument } from '../../../core/config/load/io.js';
-import { CREW_SEAT_IDS, CREW_SEAT_LABELS, type CrewSeatId } from '../../../core/crew/identity.js';
+import { CONFIG_RELATIVE_PATH, readConfigDocument } from '../../../core/config/load/document.js';
+import { CREW_SEAT_LABELS, type CrewSeatId } from '../../../core/crew/identity.js';
+import { recordSeatOfRecord } from '../../../core/config/load/record-seat.js';
 import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js';
-import { applyRecoveryAction } from '../../../engine/orchestrator/recovery/actions.js';
-import { deriveConfigEdits } from '../../../stores/project/config-persistence.js';
+import {
+  applyRecoveryAction,
+  seatRunnerValue,
+} from '../../../engine/orchestrator/recovery/actions.js';
 import { resumeSavedSession } from './resume.js';
 import { settleReadyRun } from './settle.js';
 import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';
@@ -60,6 +62,12 @@ type ContinueOpts = { projectDir: string } & WorkflowOpts & {
     action?: ContinueActionOption | undefined;
   };
 
+type SwitchedSeat = Readonly<{
+  seat: CrewSeatId;
+  profile?: string | undefined;
+  config: Config;
+}>;
+
 /**
  * A recovery action answers the pending recovery before the run re-enters: the same
  * transition the TUI panel applies, taken from the resume line an earlier halt
@@ -70,7 +78,7 @@ async function applyPendingRecoveryAction(args: {
   state: WorkflowState;
   action: RecoveryActionOption;
   opts: ContinueOpts;
-}): Promise<{ state: WorkflowState; config?: Config }> {
+}): Promise<{ state: WorkflowState; config?: Config; seatSwitch?: SwitchedSeat }> {
   const projectDir = args.opts.projectDir;
   const result = await applyRecoveryAction({
     projectDir,
@@ -91,41 +99,37 @@ async function applyPendingRecoveryAction(args: {
   return {
     state: result.state,
     ...(result.switchedConfig !== undefined && { config: result.switchedConfig }),
+    ...(result.switchedSeat !== undefined &&
+      result.switchedConfig !== undefined && {
+        seatSwitch: {
+          seat: result.switchedSeat.seat,
+          ...(result.implementerProfile !== undefined && { profile: result.implementerProfile }),
+          config: result.switchedConfig,
+        },
+      }),
   };
 }
 
-const SEAT_OF_YAML_KEY: Readonly<Record<string, CrewSeatId>> = {
-  planner: 'plan',
-  implementer: 'build',
-  implementer_profiles: 'build',
-  reviewer: 'review',
-};
-
 /**
- * A seat the command line or a switch-seat action moved becomes the config of record, so the
- * next continue lands on it without the flag. The file keeps its comments; a project without
- * one gets the resolved config. Reported on stderr, where the seat notices already go.
+ * The switch writes only its own seat into the config of record, through the
+ * revision-checked writer, so the next continue lands on it without the flag.
+ * The file keeps its comments and every other seat. Reported on stderr, where
+ * the seat notices already go.
  */
-function recordSeatsOfRecord(projectDir: string, config: Config): void {
-  const { config: persisted, rawYaml, revision } = loadConfig(projectDir);
-  const withSeats: Config = {
-    ...persisted,
-    planner: config.planner,
-    implementer: config.implementer,
-    ...(config.implementerProfiles !== undefined && {
-      implementerProfiles: config.implementerProfiles,
-    }),
-    ...(config.reviewer !== undefined && { reviewer: config.reviewer }),
-  };
-  const edits = deriveConfigEdits(persisted, withSeats);
-  if (edits.length === 0) return;
-  if (revision === null) writeConfig(projectDir, withSeats);
-  else writeConfigDocument(projectDir, rawYaml, edits);
-  const moved = new Set(edits.map((edit) => SEAT_OF_YAML_KEY[edit.path[0] ?? '']));
-  for (const seat of CREW_SEAT_IDS) {
-    if (moved.has(seat)) {
-      console.warn(`${CREW_SEAT_LABELS[seat]} seat recorded in ${CONFIG_RELATIVE_PATH}`);
-    }
+async function recordSwitchedSeat(
+  projectDir: string,
+  switched: SwitchedSeat,
+  expectedRevision: string,
+): Promise<void> {
+  const { seat, profile } = switched;
+  const written = await recordSeatOfRecord(
+    projectDir,
+    { seat, profile },
+    seatRunnerValue(switched.config, seat, profile),
+    expectedRevision,
+  );
+  if (written === 'saved') {
+    console.warn(`${CREW_SEAT_LABELS[seat]} seat recorded in ${CONFIG_RELATIVE_PATH}`);
   }
 }
 
@@ -157,8 +161,14 @@ export async function continueCommand(
     throw cliError(`session '${sessionId}' is still running — stop it before continuing.`, 1);
   }
 
-  let resumed: { state: WorkflowState; config?: Config };
+  let resumed: { state: WorkflowState; config?: Config; seatSwitch?: SwitchedSeat };
   const action = opts.action;
+  // The revision the operator answered the halt on, read before the switch is applied, so a
+  // config that changed underneath the halt is not overwritten by the write that follows.
+  const expectedRevision =
+    action?.action === 'switch-seat'
+      ? readConfigDocument(opts.projectDir).revision?.rawSha256
+      : undefined;
   if (action?.action === 'apply' || action?.action === 'discard') {
     if (record.status.kind !== 'ready-to-apply') {
       throw cliError(
@@ -196,7 +206,9 @@ export async function continueCommand(
   }
 
   const config = resumed.config ?? resolveRunConfig({ projectDir: opts.projectDir, opts });
-  recordSeatsOfRecord(opts.projectDir, config);
+  if (resumed.seatSwitch !== undefined && expectedRevision !== undefined) {
+    await recordSwitchedSeat(opts.projectDir, resumed.seatSwitch, expectedRevision);
+  }
 
   await resumeSavedSession({
     projectDir: opts.projectDir,

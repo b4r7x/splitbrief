@@ -252,7 +252,10 @@ export function useRunLoop({
         seatIdentitiesFromConfig(preparedForRun.config),
         seatIdentitiesFromConfig(config),
       );
-      if (changed.length > 0) requestSeatChangeAtBoundary();
+      if (changed.length > 0) {
+        const revision = configStore.get().revision?.rawSha256 ?? '';
+        for (const change of changed) requestSeatChangeAtBoundary(change.seat, revision);
+      }
     });
     let seatChangedAtBoundary = false;
     const promptCallbacks = buildPromptCallbacks({ inputMode, abortedRef, controller });
@@ -334,6 +337,10 @@ export function useRunLoop({
         // That is this re-entry's preparation: the seat that halted is not admitted again, so a
         // tool that can no longer run cannot block the move away from it.
         if (switchSeat !== undefined && stateForRun !== undefined) {
+          const swappedSeat = stateForRun.pendingRecovery?.switchSeat?.seat;
+          // The revision the swap is about to write against: a manual change to the same seat
+          // recorded at a newer one is not this swap's own and must win, so it is left standing.
+          const swapRevision = configStore.get().revision?.rawSha256 ?? '';
           const swapped = await applyOfferedSeatSwap({
             choice: switchSeat,
             projectDir: session.ref.projectDir,
@@ -346,7 +353,12 @@ export function useRunLoop({
             prepare: prepareExecutionFn,
             onSeatSwapped: (swappedPrepared) => {
               preparedForRun = swappedPrepared;
-              if (consumeSeatChange()) cancelBoundaryPause();
+              if (
+                swappedSeat !== undefined &&
+                consumeSeatChange({ seat: swappedSeat, configRevision: swapRevision })
+              ) {
+                cancelBoundaryPause();
+              }
             },
           });
           switchSeat = undefined;
@@ -355,6 +367,20 @@ export function useRunLoop({
             return;
           }
           if (swapped !== undefined) stateForRun = swapped.state;
+          // An automatic intent whose swap did not resolve the halt is spent: the halt
+          // stays pending, with no intent to take the same fallback again, so the next
+          // entry shows the panel and the operator picks the seat by hand.
+          const pending = stateForRun.pendingRecovery;
+          const spent = pending?.switchSeat;
+          if (pending !== undefined && spent?.auto !== undefined) {
+            stateForRun = {
+              ...stateForRun,
+              pendingRecovery: {
+                ...pending,
+                switchSeat: { seat: spent.seat, candidates: spent.candidates },
+              },
+            };
+          }
         }
 
         // A run started here was prepared to allocate its session, and that preparation starts a

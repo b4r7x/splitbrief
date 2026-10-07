@@ -478,7 +478,7 @@ function usageLimitIssue(task: Task): RecoveryIssue {
 }
 
 describe('applyRecoveryAction: switch-seat', () => {
-  it('resets the task onto the chosen tool and returns the switched config', async () => {
+  it('restarts the brief attempt on the chosen tool and returns the switched config', async () => {
     const { projectDir, sessionId } = setupSession('switch-seat-apply');
     const task = makeTask({ id: 'T400', status: 'in_progress' });
     const issue = usageLimitIssue(task);
@@ -504,9 +504,13 @@ describe('applyRecoveryAction: switch-seat', () => {
     expect(result.switchedSeat).toEqual({ seat: 'build', candidate: { tool: 'opencode' } });
     expect(result.switchedConfig?.implementer).toMatchObject({ kind: 'cli', tool: 'opencode' });
     expect(result.state.pendingRecovery).toBeUndefined();
+    expect(result.state.currentTaskIndex).toBe(0);
+    expect(result.state.seatSwitches?.[0]).toMatchObject({ seat: 'build', auto: false });
     expect(events.map((event) => event.type)).toEqual(
-      expect.arrayContaining(['recovery_action_selected', 'task_reset', 'recovery_resolved']),
+      expect.arrayContaining(['recovery_action_selected', 'seat_switched', 'recovery_resolved']),
     );
+    // A brief halt moves the seat without resetting the brief the halt named.
+    expect(events.map((event) => event.type)).not.toContain('task_reset');
   });
 
   it('takes the first offered tool when no candidate is named', async () => {

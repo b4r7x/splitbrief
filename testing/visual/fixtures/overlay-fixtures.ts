@@ -73,7 +73,7 @@ import {
   seedVisualConfig,
   setupVisualFixture,
   teardownVisualFixture,
-  type visualConfig,
+  visualConfig,
   VISUAL_FIXTURE_PROJECT_DIR,
   VISUAL_PUBLISHED_AT,
 } from './screen-fixtures.js';
@@ -318,10 +318,18 @@ export function seedSessions(): void {
     status: 'open',
     stop: 'stopped',
   });
+  const seatDownSession = makeSession({
+    id: 'visual-session-seat-down',
+    feature: 'Build the export on a seat that is signed out',
+    startedAt: 1_735_738_000_000,
+    status: 'open',
+    stop: 'waiting-for-you',
+  });
   // The sessions overlay re-reads the project directory on mount, so every
   // session has to exist on disk to survive to the capture.
   const sessions = [
     waitingSession,
+    seatDownSession,
     stoppedSession,
     session,
     readySession,
@@ -664,6 +672,12 @@ const BUILD_API_TWIN_SEAT = {
   apiKey: 'sk-inline',
   model: 'gpt-5',
 } as const;
+/** The fallback a seat declares in config: a seat that cannot work moves to it. */
+const SEAT_FALLBACK = {
+  tool: 'opencode',
+  model: 'opencode-go/deepseek-v4.1-flash',
+  variant: 'max',
+} as const;
 const PLANNER_HIGH_EFFORT = {
   kind: 'cli',
   tool: 'claude-code',
@@ -694,13 +708,17 @@ const createPaletteFixture: FixtureFactory = () =>
 const createSkillsFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'skills', seed: seedSkills });
 const createSkillsEmptyFixture: FixtureFactory = () => createOverlayFixture({ overlay: 'skills' });
-const createSettingsFixture: FixtureFactory = () => createOverlayFixture({ overlay: 'settings' });
+const createSettingsFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'settings',
+    seed: seedConfig({ implementer: { ...visualConfig().implementer, fallback: SEAT_FALLBACK } }),
+  });
 const createSettingsCrewFullFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'settings',
     seed: seedConfig({
       planner: PLANNER_HIGH_EFFORT,
-      implementer: BUILD_ANTHROPIC_SEAT,
+      implementer: { ...BUILD_ANTHROPIC_SEAT, fallback: SEAT_FALLBACK },
       reviewer: REVIEWER_SEAT,
       escalation: ESCALATION_SEAT,
     }),

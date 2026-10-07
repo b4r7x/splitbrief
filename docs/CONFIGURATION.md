@@ -81,6 +81,29 @@ Every variant is `.strict()` — unknown fields fail validation with a `ConfigEr
 
 `idleWarnMs` and `idleKillMs` apply to the `cli`, `shell`, and `agent` kinds only — `api` runners keep the 60s stream-idle guard, and their strict schema rejects both fields.
 
+### `fallback`
+
+A seat names the runner it moves to when it goes down. Write it on the seat block (`planner`, `reviewer` or `implementer`):
+
+```yaml
+planner:
+  kind: cli
+  tool: claude-code
+  model: opus
+  fallback:
+    tool: codex
+    model: gpt-5-codex
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `tool` | CLI tool id | Required. The tool the seat moves to. |
+| `model` | string | Optional. The model the tool runs. |
+| `effort` | `EffortLevel` | Optional. For a tool whose effort channel is `effort-flag`. |
+| `variant` | string | Optional. For a tool whose effort channel is `variant` (opencode, kilo-code). |
+
+A fallback is always a `cli` runner. The load validates it as a runner of the seat it sits on (`validateFallback`, `src/core/schemas/runner-fields.ts`). A `fallback.effort` on a variant-channel tool fails the load; write `variant` instead. No seat has a default fallback. Declaring one is the only authorization for an automatic switch. See [Seat down](./APPROVAL-AND-RECOVERY.md#seat-down).
+
 ### Pricing metadata
 
 Pricing is resolved from cached `models.dev` metadata first when available, then from runtime provider metadata or the bundled catalog. `models.dev` context pricing tiers are preserved: flat base rates apply below the tier threshold, and the highest matching context tier applies when prompt/cache context reaches that threshold. Local-only unpriced runners are displayed as local/unpriced rather than dollar-priced. Picker lane order is separate from this ladder — a CLI tool renders its own listing with the bundled `KNOWN_MODELS` aliases as the offline fallback, and an `api` runner adds models.dev rows beside its runtime list — and does not reorder pricing or context lookup; see [Model catalog lanes](./PLANNERS-AND-IMPLEMENTERS.md#model-catalog-lanes).
@@ -294,6 +317,7 @@ The reviewer is a planner-tier seat and shares the planner's admission set, so a
 
 - **No `reviewer` block:** the planner runner performs the review. Review tokens are priced at the planner's rates and folded into the planner line in the run summary.
 - **A `reviewer` block:** the reviewer performs the review and gets its own priced line in both.
+- **The review seat's fallback:** `reviewer.fallback` when a `reviewer` block exists, else `planner.fallback`. See [`fallback`](#fallback).
 - **A configured reviewer that fails admission** blocks the run before it starts, with a readiness blocker naming the reviewer seat. **A configured reviewer that fails mid-call** is reported as a failed review (`finalReviewStatus: "failed"` in the run summary, `finalReview.status` in the review packet), with the reviewer's identity in the error and the final-review evidence still recorded. SPLITBRIEF never silently hands the review back to the planner.
 
 ### YAML — cross-lab review
@@ -329,6 +353,8 @@ reviewer:
 The implementer is the weaker model. Model strength determines that role; transport does not. A `cli` or `agent` runner writes directly with `writesFiles: direct`. An `api` or `shell` runner returns code that SPLITBRIEF writes with `writesFiles: extracted-code`. Every writer uses the run workspace selected by `workflow.isolation` (§5).
 
 Same discriminated union as `planner`, with two schema differences: `model` is required on the `api`, `shell`, and `agent` implementer variants, and the `shell`/`agent` variants do **not** accept the planner-only `capabilities` field. The `cli` variant leaves `model` optional — omit it or write `model: auto` to follow the tool's own selection, which preparation reads from the tool's own config or state and passes as `--model`; the two spellings behave identically and neither is rewritten on save. On an `api` runner, `auto` resolves to that provider's catalog default model (for example `ollama` → `qwen3-coder:30b`), and a custom provider with no catalog default rejects `auto` — and model absence — at config load. Implementer write behavior (`extracted-code` vs `direct`) is not a choice: `capabilities.writesFiles` may be declared per profile under `implementerProfiles`, but it must match the runner kind's write mode, and config load rejects a mismatch.
+
+The implementer block takes `fallback` the same way as the other seats. See [`fallback`](#fallback).
 
 YAML — minimal (local Ollama):
 
@@ -1015,7 +1041,8 @@ Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `cont
 | `--plain` | Headless: one plain line per phase, task, review and completion (`phase:`, `task T00N: done\|failed (<gates>)`, `review:`, `done:`), no TUI. Refuses to run alongside `--json` (exit `2`) | start, resume, continue |
 | `--yolo` | Removed; passing it fails with a removed-flag error | none |
 | `--skills <ids>` | Comma-separated skill ids to attach to every seat (unknown id → exit `2`); on resume and continue, for that continue only | start (headless), resume, continue |
-| `--action <action>` | Apply an action to the pending recovery before continuing: `skip`, `retry`, or `switch-seat:<tool>[:<model>]` | continue |
+| `--action <action>` | Apply an action to the pending recovery before continuing: `skip`, `retry`, or `switch-seat:<tool>[:<model>][@<word>]`, where `@<word>` is the variant on opencode or kilo-code and the effort on other tools | continue |
+| `--on-seat-down <policy>` | Headless: `halt` stops on a seat-down halt; `switch` applies the seat's declared `fallback`. Unset applies a declared fallback too. See [Seat down](./APPROVAL-AND-RECOVERY.md#seat-down) | start, resume, continue |
 | `--reconfigure` | Overwrite existing config | init |
 
 `--mode` and `--approve` were removed. Passing either fails with exit code 1 before any work starts: `--mode was removed: every run plans in one session`, `--approve was removed: set workflow.approve (plan or none) in the config` (`RETIRED_FLAGS`, `src/cli/unknown-command.ts`).
@@ -1122,6 +1149,10 @@ planner:
   contextLength: 1000000
   effort: high
   timeout: 600000
+  # Moves the planner to Codex when Claude Code hits a spent account or a long limit.
+  fallback:
+    tool: codex
+    model: gpt-5-codex
 
 # ---------- Implementer: small local model through LM Studio ----------
 # contextLength is the input window, not the output cap; max_tokens is clamped to

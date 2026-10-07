@@ -44,5 +44,7 @@ export async function runHeadlessStart(
     prepared: execution,
     ...(mode === 'plain' && { plain: true }),
     ...(selectedSkills !== undefined && { selectedSkills }),
+    ...(opts.onSeatDown !== undefined && { onSeatDown: opts.onSeatDown }),
+    ...(opts.allowUnverifiedAuth === true && { allowUnverifiedAuth: true }),
   });
 }

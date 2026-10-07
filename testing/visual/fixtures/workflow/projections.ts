@@ -1371,6 +1371,13 @@ const failureProjection: WorkflowFixtureProjection = {
   ],
 };
 
+/** The fallback a seat declares in config: a seat that cannot work moves to it. */
+const SEAT_FALLBACK = {
+  tool: 'opencode',
+  model: 'opencode-go/deepseek-v4.1-flash',
+  variant: 'max',
+} as const;
+
 /** Ollama's words at its limit, in the shape that names its reset as a clock. */
 const OLLAMA_LIMIT_WORDS = 'quota exhausted · resets 5pm';
 
@@ -1388,7 +1395,7 @@ function usageLimitRecoveryIssue(): RecoveryIssue {
   return buildSeatDownIssue({
     id: 'rec_visual_usage_limit',
     seat: 'build',
-    runner: config.implementer,
+    runner: { ...config.implementer, fallback: SEAT_FALLBACK },
     classification,
     words: OLLAMA_LIMIT_WORDS,
     task: HALTED_TASK,
@@ -1831,7 +1838,7 @@ function planSeatRecoveryIssue(): RecoveryIssue {
       runner: planner,
     }),
     phase: 'planning',
-    runner: planner,
+    runner: { ...planner, fallback: SEAT_FALLBACK },
     seatSwap: planSeatSwap('claude-code', ['claude-code', 'codex', 'opencode']),
     createdAt: new Date(FIXED_TS).toISOString(),
   });
@@ -1851,7 +1858,7 @@ function reviewSeatRecoveryIssue(): RecoveryIssue {
     }),
     seat: 'review',
     phase: 'final-review',
-    runner: CODEX_PLAN_SEAT,
+    runner: { ...CODEX_PLAN_SEAT, fallback: SEAT_FALLBACK },
     details: reviewSeatDetails(true),
     seatSwap: planSeatSwap('codex', ['codex', 'claude-code', 'opencode']),
     createdAt: new Date(FIXED_TS).toISOString(),
@@ -2030,6 +2037,46 @@ const hintSeatRecoveryProjection: WorkflowFixtureProjection = {
   get resumeState() {
     return haltedResumeState(consultSeatRecoveryIssue());
   },
+};
+
+/**
+ * The build seat ran out on Ollama and moved to its declared fallback: one switch row, and the
+ * header names the new seat.
+ */
+const seatSwitchedProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-seat-switched'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  config: { implementer: { kind: 'cli', ...SEAT_FALLBACK } },
+  events: [
+    { type: 'workflow_started', ts: FIXED_TS, phase: 'implementing', feature: WORKFLOW_FEATURE },
+    FIXTURE_TASKS_PLANNED,
+    {
+      type: 'task_started',
+      ts: FIXED_TS + 100,
+      phase: 'implementing',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      title: WORKFLOW_FIXTURE_TEXT.implementationTask,
+      index: 0,
+      total: 3,
+      file: WORKFLOW_FIXTURE_REVIEW_FILE,
+      action: 'modify',
+      tool: 'ollama',
+      model: FIXED_RUNNER_MODEL,
+    },
+    {
+      type: 'seat_switched',
+      ts: FIXED_TS + 200,
+      phase: 'implementing',
+      seat: 'build',
+      from: { tool: 'ollama', model: FIXED_RUNNER_MODEL },
+      to: SEAT_FALLBACK,
+      cause: 'runner-usage-limit',
+      auto: true,
+      configRevision: 'visual-config-revision',
+    },
+  ],
 };
 
 /**
@@ -2794,6 +2841,7 @@ const projections = [
   planSeatSwappedProjection,
   reviewSeatRecoveryProjection,
   hintSeatRecoveryProjection,
+  seatSwitchedProjection,
   planActivityProjection,
   planningClaudeFramesProjection,
   implementationSilentProjection,

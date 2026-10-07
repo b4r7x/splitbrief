@@ -64,7 +64,7 @@ splitbrief start [feature] \
   [--planner-effort <level>] [--reviewer-effort <level>] \
   [--skills <ids>] [--project <dir>] \
   [--no-fullscreen] [--no-mouse] [--hover] \
-  [--allow-hooks] [--allow-repo-runners] [--allow-unverified-auth] \
+  [--allow-hooks] [--allow-repo-runners] [--allow-unverified-auth] [--on-seat-down <halt|switch>] \
   [--json]
 ```
 
@@ -111,6 +111,7 @@ splitbrief start [feature] \
 | `--allow-unverified-auth` | boolean | `false` | Let a headless run proceed when a compatible CLI runner's authentication could not be verified. Only affects headless runs (`--json` or `--plain`); interactive runs disclose the unverified state and prompt instead. |
 | `--json` | boolean | `false` | Headless: emit public NDJSON records to stdout, skip TUI. Workflow events are wrapped as `{ "type": "event", "data": <EngineEvent> }`. Requires a `feature`. |
 | `--plain` | boolean | `false` | Headless: emit one plain line per phase, task, review and completion instead of NDJSON. Requires a `feature`. Mutually exclusive with `--json`. |
+| `--on-seat-down <policy>` | enum | unset | Headless: `halt` stops on a seat-down halt; `switch` applies the seat's declared `fallback` at once. Unset applies a declared fallback too. `switch` with no declared fallback exits `2`. The swap goes through the TUI's own path, and a swap that leaves the halt pending exits `1` with `recovery_required`. See [Seat down](./APPROVAL-AND-RECOVERY.md#seat-down). |
 
 ### Examples
 
@@ -303,7 +304,7 @@ splitbrief review --project ../service-a
 **Synopsis**
 
 ```
-splitbrief doctor [--project <dir>] [--json] [--probe-validation]
+splitbrief doctor [--project <dir>] [--json] [--probe-validation] [--probe-seat <plan|build|review>]
 ```
 
 Check whether the current repository and SPLITBRIEF configuration are ready for a safe run. `doctor` is read-only: it does not create `.splitbrief/active`, session folders, worktrees, snapshots, config rewrites, planner calls, or implementer calls. It probes each configured CLI runner the way `start` does — installation, trust, version, authentication, and the arg vector SPLITBRIEF would emit compared against that binary's own `--help` — and runs no validation subprocesses unless `--probe-validation` is given.
@@ -311,7 +312,7 @@ Check whether the current repository and SPLITBRIEF configuration are ready for 
 ### Usage
 
 ```
-splitbrief doctor [--project <dir>] [--json] [--probe-validation]
+splitbrief doctor [--project <dir>] [--json] [--probe-validation] [--probe-seat <plan|build|review>]
 ```
 
 ### Options
@@ -321,6 +322,7 @@ splitbrief doctor [--project <dir>] [--json] [--probe-validation]
 | `--project <dir>` | path | cwd | Project directory. |
 | `--json` | boolean | `false` | Emit one stable JSON readiness object to stdout for automation (`doctor --json`). |
 | `--probe-validation` | boolean | `false` | Run the configured validation commands against the working tree and report a `validation.already-failing` warning naming every stage that is already red before any task. It runs real commands (`validation.timeoutMs` per stage) and can take minutes. The resolved commands are listed in the check details, and the check notes that during a run SPLITBRIEF may resolve different commands from planner discovery. |
+| `--probe-seat <seat>` | string | — | Make one paid call through the `plan`, `build` or `review` seat's CLI adapter, classify its output, and print `Seat probe <seat>: <class>`. CLI seats only: an `api`, `shell` or `agent` seat exits `1`. Runs only the probe: the readiness report and the preparation preflights do not run. The record is appended to `.splitbrief/probes/<tool>-<date>.jsonl`. |
 
 ### Examples
 
@@ -333,6 +335,9 @@ splitbrief doctor --json
 
 # Pre-run diagnostic: which validation stages are already red?
 splitbrief doctor --probe-validation
+
+# One paid call through the build seat: is its sign-in and quota working?
+splitbrief doctor --probe-seat build
 ```
 
 ### Exit codes
@@ -581,6 +586,7 @@ Resume accepts the same workflow override options as `start`. See [`splitbrief s
 |---|---|
 | `--json` | Resume the run in headless mode, streaming NDJSON to stdout. |
 | `--plain` | Resume the run in headless mode, writing plain lines to stdout. Mutually exclusive with `--json`. |
+| `--on-seat-down <halt\|switch>` | Headless seat-down policy, as on `start`: `halt` stops on a seat-down halt, `switch` applies the declared `fallback`. Unset applies a declared fallback too. |
 | `--skills <ids>` | Comma-separated skill ids for every seat. The list applies to that continue only: it is not saved, so a later continue without it uses the selection the run saved when it started. Applies in headless and interactive mode alike. |
 | Planner, implementer and reviewer flags | Override the persisted values for this run only. |
 
@@ -629,7 +635,7 @@ splitbrief resume --implementer claude-code --implementer-model claude-sonnet-4-
 **Synopsis**
 
 ```
-splitbrief continue [session-id-or-number] [--action <skip|retry|restore|switch-seat:<tool>[:<model>]|end-run|apply|discard>] [resume options]
+splitbrief continue [session-id-or-number] [--action <skip|retry|restore|switch-seat:<tool>[:<model>][@<word>]|end-run|apply|discard>] [resume options]
 ```
 
 Continue a run by name, active session, or numeric alias. The run continues from its saved state. Recovery actions first answer the pending recovery. Use `--action apply` or `--action discard` to settle a run whose review passed in its workspace. Any open run can continue. The command refuses a closed run.
@@ -642,10 +648,11 @@ Continue a run by name, active session, or numeric alias. The run continues from
 | `--project <dir>` | path | cwd | Project directory. |
 | `--allow-hooks` | boolean | `false` | Trust hook config without prompting. |
 | `--allow-repo-runners` | boolean | `false` | Trust repo-local shell/agent runner commands from project config for resumed workflow execution. |
-| `--action <skip\|retry\|restore\|switch-seat:<tool>[:<model>]\|end-run\|apply\|discard>` | enum | — | Recovery actions answer the pending recovery. `skip` means `skip-current-task`. `retry` means `retry-same-worker`. `restore` means `restore-backup`: after a partial Apply (`apply-partial`) it puts back the checkout files Apply replaced, from the Apply backup. No other halt offers it. `switch-seat:<tool>[:<model>]` moves the blocked seat. These four actions continue the run. `end-run` closes the run, prints `Run <id> closed. The files it wrote are still on disk.`, and stops. `apply` runs Apply on a run that is ready to apply. Apply merges the run workspace into the checkout. It prints `Applied <n> files to your checkout.` on stderr and closes the run `applied`. If Apply changes the reviewed candidate, SPLITBRIEF runs its checks and whole-run review again. A run accepted as is needs confirmation on the run screen with `/run accept confirm`. An Apply conflict halts with `Needs you (apply-conflict)`. `discard` closes the run `discarded`. It keeps the run changes in `run.patch` in the session folder and prints `Run <id> discarded.` and the patch path on stderr. The checkout stays untouched. Apply and Discard keep stdout for the `--plain` and `--json` records. |
+| `--action <skip\|retry\|restore\|switch-seat:<tool>[:<model>][@<word>]\|end-run\|apply\|discard>` | enum | — | Recovery actions answer the pending recovery. `switch-seat:<tool>[:<model>][@<word>]`: the `@<word>` is the variant on a variant-channel tool (opencode, kilo-code) and the effort on every other tool. `skip` means `skip-current-task`. `retry` means `retry-same-worker`. `restore` means `restore-backup`: after a partial Apply (`apply-partial`) it puts back the checkout files Apply replaced, from the Apply backup. No other halt offers it. `switch-seat:<tool>[:<model>]` moves the blocked seat. These four actions continue the run. `end-run` closes the run, prints `Run <id> closed. The files it wrote are still on disk.`, and stops. `apply` runs Apply on a run that is ready to apply. Apply merges the run workspace into the checkout. It prints `Applied <n> files to your checkout.` on stderr and closes the run `applied`. If Apply changes the reviewed candidate, SPLITBRIEF runs its checks and whole-run review again. A run accepted as is needs confirmation on the run screen with `/run accept confirm`. An Apply conflict halts with `Needs you (apply-conflict)`. `discard` closes the run `discarded`. It keeps the run changes in `run.patch` in the session folder and prints `Run <id> discarded.` and the patch path on stderr. The checkout stays untouched. Apply and Discard keep stdout for the `--plain` and `--json` records. |
 | `--skills <ids>` | string | — | Comma-separated skill ids for every seat, in headless and interactive mode alike. The list applies to that continue only: it is not saved, so a later continue without it uses the selection the run saved when it started. |
 | `--json` | boolean | `false` | Continue the run in headless NDJSON mode. |
 | `--plain` | boolean | `false` | Continue the run in headless plain-line mode. Mutually exclusive with `--json`. |
+| `--on-seat-down <halt\|switch>` | enum | unset | Headless seat-down policy, as on `start`. See [Seat down](./APPROVAL-AND-RECOVERY.md#seat-down). |
 | Other resume flags | — | — | Runner overrides, `--no-fullscreen`, `--no-mouse`, `--hover`. `--yolo` was removed. |
 
 ### Examples
@@ -677,7 +684,7 @@ splitbrief continue 2026-05-01-add-auth --action end-run
 
 - `0`: The run continued, `--action end-run` closed it, or `--action apply|discard` settled it.
 - `1`: No run to continue, a running run, unusable saved state, a closed run, or an underlying failure. This code also covers a recovery action the pending recovery does not allow. The refusal names the available actions. It also covers `--action apply|discard` on a run that is not ready to apply.
-- `2`: `--action` did not name a continue action. The message is `'<value>' is not a continue action. Use skip, retry, restore, switch-seat:<tool>[:<model>], end-run, apply, or discard.`
+- `2`: `--action` did not name a continue action. The message is `'<value>' is not a continue action. Use skip, retry, restore, switch-seat:<tool>[:<model>][@<effort>], end-run, apply, or discard.` The message says `@<effort>`, which fits every tool except opencode and kilo-code; their `@` word is the variant.
 
 ### Files affected
 

@@ -38,10 +38,16 @@ import { eventsStore } from '../../../stores/workflow/events.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
+import { pickerViewStore } from '../../../stores/ui/picker-view.js';
+import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
+import { ToolModelPicker } from '../../../app/overlays/runners.js';
+import { toolRowFocus } from '../../../core/navigation/types.js';
 import { configStore } from '../../../stores/project/config.js';
 import {
   abortTurn,
+  consumeSeatChange,
   requestBoundaryPause,
+  requestSeatChangeAtBoundary,
   requestStopNow,
   requestCancel,
   requestEndRun,
@@ -881,6 +887,52 @@ describe('useRunLoop', () => {
     expect(stopStore.get().phase).toBe('parked');
 
     inst.unmount();
+  });
+
+  it('consumes a boundary seat change per seat and only against the revision the swap wrote', () => {
+    requestSeatChangeAtBoundary('build', 'r1');
+    requestSeatChangeAtBoundary('plan', 'r2');
+    // A swap of build that wrote against a different revision is a newer manual change to
+    // the same seat: its own entry is left standing, and the manual change wins.
+    expect(consumeSeatChange({ seat: 'build', configRevision: 'r0' })).toBe(false);
+    // Another seat's entry is consumed on its own, against its own revision.
+    expect(consumeSeatChange({ seat: 'plan', configRevision: 'r2' })).toBe(true);
+    // build's entry was left standing, so the bare boundary consume still finds it.
+    expect(consumeSeatChange()).toBe(true);
+    expect(consumeSeatChange()).toBe(false);
+  });
+
+  it('keeps the drafted model and effort when the swap opens the picker, and Escape leaves with no change', async () => {
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }),
+    });
+    // What the driver does before it opens the overlay: draft the offered candidate's
+    // model and effort, then land the picker on that candidate's tool row. The seat's
+    // current tool is codex, so the picker opens on a tool that is not the current one.
+    pickerViewStore.expand('opus', 'opus', 'high');
+    overlayStore.open('implementer-picker', toolRowFocus('claude-code'));
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+
+    const ui = render(<ToolModelPicker role="implementer" />);
+    await tick(60);
+
+    // The picker's reset runs on unmount, not on the first render, so the draft is still there.
+    expect(pickerViewStore.get()).toMatchObject({ expandedModelId: 'opus', effortDraft: 'high' });
+    expect(ui.lastFrame()).toContain('tool, model, effort');
+
+    // The drafted row is an expansion, so the first Escape folds it the way it folds any
+    // expanded model row, and the second leaves the picker; the seat of record is untouched.
+    ui.stdin.write('\u001B');
+    await tick(60);
+    expect(pickerViewStore.get().expandedModelId).toBeNull();
+    expect(overlayStore.get().active).toBe('implementer-picker');
+    ui.stdin.write('\u001B');
+    await tick(60);
+    expect(overlayStore.get().active).toBe('none');
+    expect(configStore.get().config?.implementer).toMatchObject({ kind: 'cli', tool: 'codex' });
+
+    ui.unmount();
   });
 
   it('settles a park in place instead of re-entering the run', async () => {

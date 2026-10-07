@@ -1,4 +1,4 @@
-import { CREW_SEAT_LABELS } from '../../../../core/crew/identity.js';
+import { CREW_SEAT_LABELS, formatSeatCandidateIdentity } from '../../../../core/crew/identity.js';
 import { arrowSep, SOFT_SEP } from '../../../../core/separators.js';
 import type { EngineEvent, EngineEventOf } from '../../../../engine/events/types.js';
 import { glyph } from '../../../../lib/glyphs.js';
@@ -157,6 +157,13 @@ export function eventRowBlock(options: {
         // The build block counts attempts, first try included. A retry index over a retry budget
         // beside it would put two numbers on one screen for one fact.
         text: `Retry  attempt ${event.lineageAttempt ?? event.attempt + 1} of ${event.attemptAllowance ?? event.maxRetries + 1}`,
+        width: ctx.width,
+        tone: 'textDim',
+      });
+    case 'seat_switched':
+      return wrappedTextBlock({
+        keyPrefix,
+        text: `${CREW_SEAT_LABELS[event.seat]}${arrowSep()}${formatSeatCandidateIdentity(event.to)}${SOFT_SEP}${seatSwitchCauseWords(event.cause)}`,
         width: ctx.width,
         tone: 'textDim',
       });
@@ -368,6 +375,17 @@ export function implementerFailureCard(
 
 function queueMessageValue(base: string, preview: string | undefined): string {
   return preview ? `${base}: ${preview}` : base;
+}
+
+function seatSwitchCauseWords(cause: EngineEventOf<'seat_switched'>['cause']): string {
+  switch (cause) {
+    case 'runner-usage-limit':
+      return 'usage limit';
+    case 'runner-unauthenticated':
+      return 'signed out';
+    default:
+      return cause.replaceAll('-', ' ');
+  }
 }
 
 function queuedMessageHeader(origin: EngineEventOf<'message_queued'>['origin']): {

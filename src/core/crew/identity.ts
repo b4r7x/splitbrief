@@ -156,20 +156,39 @@ export function formatShortSeatIdentity(input: {
   return rest.join(' ');
 }
 
+type SeatCandidateAxes = Readonly<{
+  tool: string;
+  model?: string | undefined;
+  effort?: string | undefined;
+  variant?: string | undefined;
+}>;
+
+/** Two swap candidates name the same seat when tool, model, effort and variant all match. */
+export function sameSeatCandidate(left: SeatCandidateAxes, right: SeatCandidateAxes): boolean {
+  return (
+    left.tool === right.tool &&
+    left.model === right.model &&
+    left.effort === right.effort &&
+    left.variant === right.variant
+  );
+}
+
 /**
  * A tool this seat could move to, named before it is configured: the same
  * `<tool> · <model>` shape a configured seat shows, composed from ids and the
  * model's catalog label because a swap candidate is two strings, not a runner
  * block. A candidate that names no model is the tool's own default and says
- * only the tool.
+ * only the tool; the effort or variant it carries is its one axis word.
  */
 export function formatSeatCandidateIdentity(
-  candidate: Readonly<{ tool: string; model?: string | undefined }>,
+  candidate: SeatCandidateAxes,
   displayName?: string | undefined,
 ): string {
   const words = [getProviderDisplayName(candidate.tool)];
   if (candidate.model !== undefined)
     words.push(displayName ?? formatModelName(candidate.model, candidate.tool));
+  const axis = candidate.effort ?? candidate.variant;
+  if (axis !== undefined) words.push(axis);
   return sanitizeTerminalDisplayText(words.join(CREW_IDENTITY_SEPARATOR));
 }
 

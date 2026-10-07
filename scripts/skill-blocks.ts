@@ -375,6 +375,9 @@ function seatRecovery(): string {
     `Transient seat failures permit ${BOUNDS.transientRetries} retries with backoff.`,
     `A usage match with a reported reset within ${BOUNDS.rateLimitResetWaitMs / 60_000} minutes permits a bounded wait up to that limit.`,
     'After the wait bound, halt as seat down and ask the user. Longer or unknown resets need the user immediately.',
+    'An account refusal — balance, billing, a quota with no reset, or sign-in — halts at once as seat down.',
+    'A declared `fallback` switches the seat once per run with no question.',
+    'The `retry-later` action reads `Retry at <clock>`, and is offered only with a known reset.',
   ]);
 }
 

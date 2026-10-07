@@ -30,7 +30,7 @@ These overlays sit on top of any phase. They do not change `phase`:
 
 - **`closed`** records `{ at, as }`. `as` is `applied`, `discarded` or `ended`. Apply, Discard and `CLOSE_RUN` close worktree and staged-copy runs. A passing review or Accept as is override makes them ready to apply. Checkout runs and older runs without a recorded workspace close as `complete` on either result. An override preserves the failed verdict.
 - **`workspace`** records the run's directory, kind and base snapshot. **`applying`** records an Apply in progress and its backup. **`applied`** records the completed write. **`acceptedAsIs`** records an owner override and its open findings.
-- **`interruptedStep`** — the step a stop cut: `{ step, source, cut, partialRef?, at }`. `cut` says whether the stop landed `mid-step` inside a call or on a `boundary` where it cut nothing: between two briefs, or at a gate. The run stays open and picks that step up again.
+- **`interruptedStep`** — the step a stop cut: `{ step, source, cut, partialRef?, at }`. `cut` says whether the stop landed `mid-step` inside a call or on a `boundary` where it cut nothing: between two briefs, or at a gate. `source` says what cut it: `user`, `watchdog`, or `seat` for a seat halt. The run stays open and picks that step up again.
 - **`awaitingContinue`** — the boolean beside it, set by the same action and cleared by `RESUME_STEP`. It predates `interruptedStep`; a state written before that field existed still reads as parked.
 - **`lastFailure`** — `{ step, message, at }`, the error a turn died on. The run is still open; `deriveRunStatus` reports it as `failed` and the operator retries the step. `RESUME_STEP` clears it when the run is re-entered.
 - **`rewindPending`** — `{ target: 'spec' | 'plan', comment?: string }`. `CORRECT_PLAN` writes it when the user requests changes on the plan card, and an older state can carry one from the removed `/revise-spec` and `/revise-plan` commands. It stands until a plan compiles: `PLAN_COMPILED` clears it, so a replan that stops keeps the correction (§5).
@@ -404,6 +404,7 @@ Pending queue entries remain in `state.json`. A continuation excludes still-pend
 | `stopped` · `paused` · `boundary` | Pause after this brief, or Stop now at a gate | Starts the brief it stopped before; a typed steer is held for that brief. A stop at the plan card re-opens the card |
 | `waiting-for-you` · `gate` | Parked at the plan card, or at an older run's spec or briefs gate | Re-opens the plan card without re-spending the call behind it; an older gate continues as the planning session. At rest the byline reads `⏎ to reopen it` at the plan card and `⏎ to continue` at an older spec or briefs gate |
 | `waiting-for-you` · `halt` | A `pendingRecovery` nobody answered | Shows the recovery panel before any work |
+| `waiting-for-you` · `halt` · seat cut | A *Seat down* halt cut the brief it was running (`interruptedStep.source: seat`, `cut: mid-step`) | Shows the recovery panel. `switch-seat` restarts the cut attempt on the new seat. `retry-later` sets the seat wait to the reset |
 | `stopped` · `failed` | `lastFailure` — a turn died on an error | Retries the step it died on |
 | `stopped` · `interrupted` | The process went away recording nothing | Restarts at `resumeStep`; an `in_progress` brief with no `interruptedStep` is a crash, so its own writes — declared or attributed in the workspace — are restored from `activeTaskSnapshot` and it restarts clean |
 
@@ -427,7 +428,7 @@ A hand-back that reports `decisions` is not a consult. Before its attempt is val
 
 A lineage is bounded at 2 consults and 8 attempts, and the run at 10 planner calls after planning (`src/core/pipeline-spec/bounds.ts`). A spent bound halts with `consult-bound-spent` or `planner-calls-spent`, carrying the diagnosis of the failure that raised it — the planner's when a consult diagnosed that failure, else that failure's own output; the diagnosis of a validation failure is the failing stage and its first line that names a file of the brief, else its first error line. Continuing it grants one more consult and four more attempts, or five more planner calls, and replays the brief from the files its last attempt left, with the brief's first task-start snapshot, as a retry that carries the halt's last failing output and runs no stale consult; Skip restores the files; End run keeps them in `run.patch`. A stale consult spends no planner call and runs once per revision.
 
-Seat trouble is bounded before a halt: a transient failure on a seat call retries up to 3 times with backoff, and a reported rate-limit reset no more than 10 minutes away is waited for, its deadline persisted as `state.seatWait` (`src/engine/orchestrator/escalation/seat-wait.ts`). A longer or unreported reset halts as `runner-usage-limit` with the seat picker; there is no automatic seat switch. The idle watchdog cuts a call that emitted nothing for 20 minutes and has no running child process; the cut counts as one attempt and the ladder continues.
+Seat trouble is bounded before a halt: a transient failure on a seat call retries up to 3 times with backoff, and a reported rate-limit reset no more than 10 minutes away is waited for, its deadline persisted as `state.seatWait` (`src/engine/orchestrator/escalation/seat-wait.ts`). A longer or unreported reset halts as `runner-usage-limit` with the seat picker, or moves the seat at once when the seat declares a `fallback` ([Seat down](./APPROVAL-AND-RECOVERY.md#seat-down)). The idle watchdog cuts a call that emitted nothing for 20 minutes and has no running child process; the cut counts as one attempt and the ladder continues.
 
 Recovery follows a spent bound, a ladder that cannot continue — a consult call that failed, a `pre_escalation` hook that denied it — or a run-level failure: `pendingRecovery` is set and the phase stays where the stop occurred. Historical full-tier outcomes remain readable.
 
@@ -440,7 +441,8 @@ Recovery actions:
 | Action | Effect |
 |--------|--------|
 | `retry-same-worker` | Retries the recorded PLAN/REVIEW step, or resets and reruns the matching BUILD task |
-| `switch-seat` | A seat that cannot run at all: moves it to another ready detected tool and re-prepares the session on it |
+| `switch-seat` | A seat that cannot run at all: moves it to its declared `fallback` or another ready detected tool. The switch prepares the session, writes that one seat to `config.yaml` against the revision the halt read, then resolves the halt. See [Seat down](./APPROVAL-AND-RECOVERY.md#seat-down) |
+| `retry-later` | A *Seat down* action, offered only when the halt names a reset: the seat waits for that reset, then the run continues |
 | `revise` | Clears recovery and queues the operator's correction for the next planner turn; on `review-failed`, records the correction and opens one more review fix cycle |
 | `continue` | Grants extra allowance on `consult-bound-spent` or `planner-calls-spent` |
 | `accept-as-is` | Records an owner override at final review. Workspace runs become ready to apply; checkout runs and older runs without a workspace close. See [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is). |
@@ -448,7 +450,7 @@ Recovery actions:
 | `skip-current-task` | Records evidence, marks task `skipped`, advances index |
 | `end-run` | Uses the shared close path. Unapplied workspace work stays in `run.patch`; a checkout-mode run writes no patch. The run closes as `ended` or `discarded`. See [Apply](#apply). |
 
-A *Needs you* halt allows `continue`, `retry-same-worker`, `revise`, `accept-as-is`, `restore-backup`, `skip-current-task` and `end-run`; a *Seat down* halt allows `retry-same-worker`, `switch-seat`, `skip-current-task` and `end-run`. The retired actions of older files read through `RETIRED_RECOVERY_ACTIONS`: `revise-spec` as `revise`, `route-bigger-worker` as `retry-same-worker`, and `pause-run` and `planner-split-rebase` are dropped.
+A *Needs you* halt allows `continue`, `retry-same-worker`, `revise`, `accept-as-is`, `restore-backup`, `skip-current-task` and `end-run`; a *Seat down* halt allows `retry-same-worker`, `switch-seat`, `retry-later` (with a reset only), `skip-current-task` and `end-run`. The retired actions of older files read through `RETIRED_RECOVERY_ACTIONS`: `revise-spec` as `revise`, `route-bigger-worker` as `retry-same-worker`, and `pause-run` and `planner-split-rebase` are dropped.
 
 Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`) → cleared (via `RESOLVE_PENDING_RECOVERY`). A status `paused` saved by an older run reads as `awaiting-user`.
 

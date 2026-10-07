@@ -11,6 +11,7 @@ import {
   parseOutputFormatOption,
   parsePositiveIntegerOption,
   parseContinueActionOption,
+  parseSeatDownPolicyOption,
   parseSeatSpecOption,
   parseSkillIdsOption,
 } from './options.js';
@@ -118,6 +119,23 @@ describe('parseContinueActionOption', () => {
     });
   });
 
+  it('keeps the seat switch effort the seat grammar reads after the last @', () => {
+    expect(parseContinueActionOption('switch-seat:opencode:opencode-go/kimi-k3@high')).toEqual({
+      action: 'switch-seat',
+      candidate: { tool: 'opencode', model: 'opencode-go/kimi-k3', variant: 'high' },
+    });
+    expect(parseContinueActionOption('switch-seat:codex@xhigh')).toEqual({
+      action: 'switch-seat',
+      candidate: { tool: 'codex', effort: 'xhigh' },
+    });
+  });
+
+  it('rejects a seat switch whose effort is not an admitted level', () => {
+    expect(() => parseContinueActionOption('switch-seat:codex@furious')).toThrow(
+      InvalidArgumentError,
+    );
+  });
+
   it('maps apply and discard to the two ways a ready run settles', () => {
     expect(parseContinueActionOption('apply')).toEqual({ action: 'apply' });
     expect(parseContinueActionOption('discard')).toEqual({ action: 'discard' });
@@ -152,6 +170,25 @@ describe('parseSkillIdsOption', () => {
 
   it('registers --skills on the workflow options', () => {
     expect(parseWorkflowOptions(['--skills', 'a,b'])).toMatchObject({ skills: ['a', 'b'] });
+  });
+});
+
+describe('parseSeatDownPolicyOption', () => {
+  it.each(['halt', 'switch'] as const)('accepts %j', (value) => {
+    expect(parseSeatDownPolicyOption(value)).toBe(value);
+  });
+
+  it.each(['auto', 'HALT', ''])('rejects %j with a friendly error', (value) => {
+    expect(() => parseSeatDownPolicyOption(value)).toThrow(InvalidArgumentError);
+    expect(() => parseSeatDownPolicyOption(value)).toThrow(/not a valid seat-down policy/);
+    expect(() => parseSeatDownPolicyOption(value)).toThrow(/halt, switch/);
+  });
+
+  it('registers --on-seat-down on the workflow options', () => {
+    expect(parseWorkflowOptions(['--on-seat-down', 'switch'])).toMatchObject({
+      onSeatDown: 'switch',
+    });
+    expect(parseWorkflowOptions([]).onSeatDown).toBeUndefined();
   });
 });
 

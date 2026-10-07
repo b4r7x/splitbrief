@@ -9,8 +9,10 @@ import {
   isRetiredRecoveryReason,
 } from '../../../core/recovery/halt.js';
 import type { RecoveryIssue, SeatSwapCandidate } from '../../../core/schemas/recovery/schemas.js';
-import type { CrewSeatId } from '../../../core/crew/identity.js';
+import { formatSeatCandidateIdentity, type CrewSeatId } from '../../../core/crew/identity.js';
 import { configWithSwitchedSeat } from './switch-seat.js';
+import { readConfigDocument } from '../../../core/config/load/document.js';
+import type { SeatRunnerValue } from '../../../core/config/load/record-seat.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { isTaskCompleted } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
@@ -29,6 +31,7 @@ import {
   publishRecoveryActionFailed,
   publishRecoveryActionSelected,
   publishRecoveryResolved,
+  publishSeatSwitched,
   publishTaskSkipped,
   publishUserMessage,
 } from '../events.js';
@@ -634,20 +637,30 @@ function applyRetrySameWorkerRecoveryAction(
   return { ...applied, currentConfig };
 }
 
+/** What a seat switch would do before any state or file changes: the offer checked, the failing profile resolved, the switched config built. */
+export type SeatSwitchPlan = Readonly<{
+  issue: RecoveryIssue;
+  seat: CrewSeatId;
+  candidate: SeatSwapCandidate;
+  /** The identity the seat is leaving, so the record names both ends of the move. */
+  from: SeatSwapCandidate;
+  switchedConfig: Config;
+}>;
+
+export type SeatSwitchPlanResult =
+  | Readonly<{ ok: true; plan: SeatSwitchPlan }>
+  | ApplyRecoveryActionBlocked;
+
 /**
- * Move a halted seat onto one of the tools the issue offered, then take the
- * same retry path `retry-same-worker` takes: the current task is reset and
- * replayed, this time on the chosen seat.
- *
- * The swap itself travels on the result: `switchedConfig` is the run config
- * with that seat repointed, which the caller hands to `createPlanner` /
- * `createImplementer` / `createReviewer` — recovery is a synchronous
- * transition and never holds the preparation authority those factories
- * require. Omitting `candidate` takes the first tool the offer named.
+ * The half of a seat switch that decides and validates: which tool the halt
+ * offered, which profile failed, and the run config with that one seat
+ * repointed. No state is written and no file is touched, so the caller can
+ * prepare on `switchedConfig`, write the seat of record, and only then commit —
+ * a stop or a refusal in between leaves the halt pending.
  */
-export function applySwitchSeatRecoveryAction(
+export function planSwitchSeatRecoveryAction(
   opts: Omit<ApplyRecoveryActionOptions, 'action'>,
-): ApplySwitchSeatResult {
+): SeatSwitchPlanResult {
   const action: RecoveryAction = 'switch-seat';
   const issue = opts.state.pendingRecovery;
   if (!issue) {
@@ -730,22 +743,110 @@ export function applySwitchSeatRecoveryAction(
     });
   }
 
-  // A seat-level halt — a planner call that could not run at all — names no brief:
-  // resolving it is the whole move, and the run re-issues its step on the new seat.
-  // A halt that names a brief still replays that brief there.
-  const applied = isSeatLevelRetry(issue)
-    ? resolveSeatIssueWithoutTask({ ...opts, action }, issue)
-    : applyRetryCurrentTaskRecoveryAction(
-        { ...opts, action },
-        issue,
-        'Switching a seat requires the pending recovery task to match the current task index.',
-      );
-  if (!applied.ok) return applied;
   return {
-    ...applied,
-    switchedSeat: { seat: offer.seat, candidate: chosen },
-    switchedConfig,
+    ok: true,
+    plan: {
+      issue,
+      seat: offer.seat,
+      candidate: chosen,
+      from: seatCandidateOfRunner(seatRunnerValue(opts.config, offer.seat, failingProfile)),
+      switchedConfig,
+    },
   };
+}
+
+/**
+ * The state half of a seat switch, run only once the seat's block is already in
+ * `config.yaml`: the halt resolves, the switch is appended to `seatSwitches` and
+ * `seat_switched` reaches the transcript. A halt that names a brief resolves
+ * with `RESTART_ATTEMPT_ON_SEAT`, so the attempt and its parked step survive the
+ * move; a seat-level halt re-issues its step the way a retry does.
+ */
+export function commitSeatSwitch(
+  opts: ApplyRecoveryActionOptions,
+  plan: SeatSwitchPlan,
+  choice: Readonly<{ auto: boolean; configRevision: string }>,
+): ApplySwitchSeatResult {
+  const { issue, seat, candidate, from, switchedConfig } = plan;
+  const briefHalt = issue.taskId !== undefined;
+  let state = markRecoveryApplying(opts, issue);
+  state =
+    issue.taskId === undefined
+      ? transitionAndSave(
+          opts,
+          state,
+          { type: 'RESOLVE_PENDING_RECOVERY' },
+          { expectedRevision: state.stateRevision ?? 0 },
+        )
+      : transitionAndSave(
+          opts,
+          state,
+          { type: 'RESTART_ATTEMPT_ON_SEAT', taskId: issue.taskId },
+          { expectedRevision: state.stateRevision ?? 0 },
+        );
+  state = transitionAndSave(
+    opts,
+    state,
+    {
+      type: 'RECORD_SEAT_SWITCH',
+      seat,
+      from: formatSeatCandidateIdentity(from),
+      to: formatSeatCandidateIdentity(candidate),
+      cause: issue.reason,
+      auto: choice.auto,
+      configRevision: choice.configRevision,
+    },
+    { expectedRevision: state.stateRevision ?? 0 },
+  );
+  publishSeatSwitched(
+    { bus: opts.bus, phase: state.phase },
+    {
+      seat,
+      from,
+      to: candidate,
+      cause: issue.reason,
+      auto: choice.auto,
+      configRevision: choice.configRevision,
+    },
+  );
+  publishRecoveryResolved({
+    bus: opts.bus,
+    phase: state.phase,
+    issue,
+    action: 'switch-seat',
+    outcome: briefHalt ? 'retry-current-task' : 'continued',
+    ...(issue.selectedImplementerProfile !== undefined && {
+      implementerProfile: issue.selectedImplementerProfile,
+    }),
+  });
+  return {
+    ok: true,
+    action: 'switch-seat',
+    issue,
+    state,
+    status: briefHalt ? 'retry-current-task' : 'continued',
+    switchedSeat: { seat, candidate },
+    switchedConfig,
+    ...(issue.selectedImplementerProfile !== undefined && {
+      implementerProfile: issue.selectedImplementerProfile,
+    }),
+  };
+}
+
+/**
+ * The command line's switch: the plan, then the state commit. The command writes
+ * the one-seat config file itself, through the same revision-checked writer the
+ * run loop uses, once this has resolved the halt. The swap travels back as
+ * `switchedConfig`, which the caller hands to the seat factories.
+ */
+export function applySwitchSeatRecoveryAction(
+  opts: Omit<ApplyRecoveryActionOptions, 'action'>,
+): ApplySwitchSeatResult {
+  const planned = planSwitchSeatRecoveryAction(opts);
+  if (!planned.ok) return planned;
+  const configRevision = readConfigDocument(opts.projectDir).revision?.rawSha256 ?? '';
+  const choice = { auto: false, configRevision };
+  return commitSeatSwitch({ ...opts, action: 'switch-seat' }, planned.plan, choice);
 }
 
 /**
@@ -888,6 +989,53 @@ function hasImplementerProfile(config: Config, profile: string): boolean {
   return resolveImplementerProfiles(config).profiles.some(
     (candidate) => candidate.name === profile,
   );
+}
+
+/** The runner block a seat reads from a config: the failing build profile, the review seat, or the seat's own block. */
+export function seatRunnerValue(
+  config: Config,
+  seat: CrewSeatId,
+  profile: string | undefined,
+): SeatRunnerValue {
+  switch (seat) {
+    case 'plan':
+      return config.planner;
+    case 'review':
+      return config.reviewer ?? config.planner;
+    case 'build':
+      return (
+        (profile !== undefined ? config.implementerProfiles?.profiles[profile] : undefined) ??
+        config.implementer
+      );
+  }
+}
+
+function runnerTool(runner: SeatRunnerValue): string {
+  switch (runner.kind) {
+    case 'cli':
+      return runner.tool;
+    case 'api':
+      return runner.provider;
+    case 'shell':
+      return 'shell';
+    case 'agent':
+      return 'agent';
+    default:
+      return assertNever(runner);
+  }
+}
+
+/** A configured seat as a swap identity, so a switch can name the tool it leaves. */
+export function seatCandidateOfRunner(runner: SeatRunnerValue): SeatSwapCandidate {
+  const model = 'model' in runner && typeof runner.model === 'string' ? runner.model : undefined;
+  const effort = 'effort' in runner ? runner.effort : undefined;
+  const variant = 'variant' in runner ? runner.variant : undefined;
+  return {
+    tool: runnerTool(runner),
+    ...(model !== undefined && { model }),
+    ...(effort !== undefined && { effort }),
+    ...(variant !== undefined && { variant }),
+  };
 }
 
 function markRecoveryApplying(

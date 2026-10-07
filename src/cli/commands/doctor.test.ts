@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { execSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Command } from 'commander';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -27,7 +27,7 @@ import { CliExecutableReceiptSchema } from '../../core/discovery/detection.js';
 import type { RunnerEvidence } from '../../core/discovery/runner-evidence.js';
 import { runnerDiscoveryContextKey } from '../../engine/detection/runner-evidence.js';
 import { collectRunnerAdmissionChecks } from '../../engine/runners/prepare-execution/prepare-execution.js';
-import { registerDoctorCommand } from './doctor.js';
+import { registerDoctorCommand, type SeatProbeCall } from './doctor.js';
 
 const EXECUTABLE_DIGEST = 'a'.repeat(64);
 const codexExecutable = CliExecutableReceiptSchema.parse({
@@ -152,6 +152,7 @@ async function runDoctor(
   // Availability is a live network claim; unit runs make none unless they say so.
   probeRunnerAvailability: () => Promise<readonly RunnerAvailabilityFact[]> = async () => [],
   collectAdmissionChecks: typeof collectRunnerAdmissionChecks = collectRunnerAdmissionChecks,
+  probeSeatCall?: SeatProbeCall,
 ): Promise<void> {
   const program = new Command();
   program.exitOverride();
@@ -160,6 +161,7 @@ async function runDoctor(
     runArgVectorHelp,
     probeRunnerAvailability,
     collectRunnerAdmissionChecks: collectAdmissionChecks,
+    ...(probeSeatCall !== undefined && { probeSeatCall }),
   });
   await program.parseAsync(['node', 'splitbrief', 'doctor', ...args]);
 }
@@ -1057,5 +1059,102 @@ describe('custom runner consent preflight', () => {
     await withStdinTty(true, () => runDoctor(['--project', tmp]));
 
     expect(logged.join('\n')).toContain('Planner needs a one-time confirmation before it can run.');
+  });
+});
+
+describe('doctor --probe-seat', () => {
+  function captureLogged(): string[] {
+    const logged: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logged.push(args.map((arg) => String(arg)).join(' '));
+    });
+    return logged;
+  }
+
+  it('records one paid call and prints its class and first error line', async () => {
+    initGitRepo(tmp);
+    writeConfig(tmp);
+    const logged = captureLogged();
+    const calls: Array<{ projectDir: string; seat: string }> = [];
+    const probeSeatCall: SeatProbeCall = async (input) => {
+      calls.push({ projectDir: input.projectDir, seat: input.seat });
+      return {
+        seat: input.seat,
+        tool: 'claude-code',
+        stdout: '',
+        stderr: 'Insufficient balance: the account has no credits.\n',
+        exitStatus: 1,
+        timedOut: false,
+        outputExceeded: false,
+      };
+    };
+
+    await runDoctor(
+      ['--project', tmp, '--probe-seat', 'plan'],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      probeSeatCall,
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.seat).toBe('plan');
+    const output = logged.join('\n');
+    expect(output).toContain('Seat probe plan: account');
+    expect(output).toContain('Insufficient balance: the account has no credits.');
+
+    const probesDir = join(tmp, SPLITBRIEF_DIR, 'probes');
+    const files = readdirSync(probesDir);
+    expect(files).toHaveLength(1);
+    const record = JSON.parse(readFileSync(join(probesDir, files[0] ?? ''), 'utf8')) as {
+      class: string;
+      tool: string;
+      seat: string;
+      exitStatus: number;
+      stderr: string;
+    };
+    expect(record).toMatchObject({
+      class: 'account',
+      tool: 'claude-code',
+      seat: 'plan',
+      exitStatus: 1,
+    });
+    expect(record.stderr).toContain('Insufficient balance');
+  });
+
+  it('makes no seat call without the flag', async () => {
+    initGitRepo(tmp);
+    writeConfig(tmp);
+    captureLogged();
+    let probeCalls = 0;
+    const probeSeatCall: SeatProbeCall = async () => {
+      probeCalls += 1;
+      throw new Error('a seat probe must not run without --probe-seat');
+    };
+
+    await runDoctor(['--project', tmp], undefined, undefined, undefined, undefined, probeSeatCall);
+
+    expect(probeCalls).toBe(0);
+    expect(existsSync(join(tmp, SPLITBRIEF_DIR, 'probes'))).toBe(false);
+  });
+
+  it('describes the paid call it makes in its help text', async () => {
+    const program = new Command();
+    program.exitOverride();
+    registerDoctorCommand(program);
+    const writes = captureStdout();
+
+    await program.parseAsync(['node', 'splitbrief', 'doctor', '--help']).catch(() => undefined);
+
+    const help = writes.join('');
+    expect(help).toContain('--probe-seat');
+    expect(help).toContain('one paid call');
+  });
+
+  it('rejects a seat outside plan, build and review', async () => {
+    await expect(runDoctor(['--project', tmp, '--probe-seat', 'deploy'])).rejects.toThrow(
+      'plan, build, review',
+    );
   });
 });

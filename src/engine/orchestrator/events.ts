@@ -6,9 +6,10 @@ import type {
   CurrentCodeContextMode,
   TaskContextFit,
   Phase,
+  RecoveryReason,
   ValidationStage,
 } from '../../core/schemas/enums.js';
-import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
+import type { RecoveryIssue, SeatSwapCandidate } from '../../core/schemas/recovery/schemas.js';
 import type { ConsultReason } from '../../core/schemas/consult.js';
 import type { AnsweredQuestion } from '../../core/schemas/question.js';
 import type { PlannerCall } from '../../core/schemas/run-step.js';
@@ -471,6 +472,20 @@ export function publishChecksRun(
 
 export function publishSeatWaitStarted(ctx: BusContext, seat: CrewSeatId, resetAt: string): void {
   ctx.bus.publish({ type: 'seat_wait_started', ts: Date.now(), phase: ctx.phase, seat, resetAt });
+}
+
+export function publishSeatSwitched(
+  ctx: BusContext,
+  opts: {
+    seat: CrewSeatId;
+    from: SeatSwapCandidate;
+    to: SeatSwapCandidate;
+    cause: RecoveryReason;
+    auto: boolean;
+    configRevision: string;
+  },
+): void {
+  ctx.bus.publish({ type: 'seat_switched', ts: Date.now(), phase: ctx.phase, ...opts });
 }
 
 export function publishSeatRetry(

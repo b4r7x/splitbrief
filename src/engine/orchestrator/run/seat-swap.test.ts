@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
@@ -6,6 +8,8 @@ import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
+import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../../core/paths.js';
+import { writeConfig } from '../../../core/config/load/io.js';
 import { saveState } from '../../../core/state/persistence.js';
 import type { PreparationPolicy } from '../../runners/prepare-execution/types.js';
 import type { prepareExecution } from '../../runners/prepare-execution/prepare-execution.js';
@@ -52,7 +56,9 @@ function setup(name: string, offered: boolean) {
     }),
   });
   saveState({ projectDir, sessionId }, savedState);
-  return { projectDir, sessionId, savedState };
+  const config = makeConfig({ implementer: { kind: 'cli', tool: 'codex' } });
+  writeConfig(projectDir, config);
+  return { projectDir, sessionId, savedState, config };
 }
 
 function preparedFor(config: ReturnType<typeof makeConfig>): PreparedExecution {
@@ -65,9 +71,8 @@ function warningMessages(events: readonly EngineEvent[]): string[] {
 
 describe('applyOfferedSeatSwap', () => {
   it('does nothing when the operator chose nothing', async () => {
-    const { projectDir, sessionId, savedState } = setup('seat-swap-none', true);
+    const { projectDir, sessionId, savedState, config } = setup('seat-swap-none', true);
     const { bus } = makeBusRecorder();
-    const config = makeConfig({ implementer: { kind: 'cli', tool: 'codex' } });
 
     const outcome = await applyOfferedSeatSwap({
       choice: undefined,
@@ -83,9 +88,8 @@ describe('applyOfferedSeatSwap', () => {
   });
 
   it('does nothing when the halt carried no offer', async () => {
-    const { projectDir, sessionId, savedState } = setup('seat-swap-unoffered', false);
+    const { projectDir, sessionId, savedState, config } = setup('seat-swap-unoffered', false);
     const { bus } = makeBusRecorder();
-    const config = makeConfig({ implementer: { kind: 'cli', tool: 'codex' } });
 
     const outcome = await applyOfferedSeatSwap({
       choice: CHOICE,
@@ -101,9 +105,8 @@ describe('applyOfferedSeatSwap', () => {
   });
 
   it('hands back the re-prepared execution the switched seat was admitted under', async () => {
-    const { projectDir, sessionId, savedState } = setup('seat-swap-prepared', true);
+    const { projectDir, sessionId, savedState, config } = setup('seat-swap-prepared', true);
     const { bus } = makeBusRecorder();
-    const config = makeConfig({ implementer: { kind: 'cli', tool: 'codex' } });
     const switchedConfig = makeConfig({ implementer: { kind: 'cli', tool: 'claude-code' } });
     const execution = preparedFor(switchedConfig);
     const prepare = vi.fn(
@@ -132,9 +135,8 @@ describe('applyOfferedSeatSwap', () => {
   });
 
   it('keeps the run on its previous seat and names admission when the swap is blocked', async () => {
-    const { projectDir, sessionId, savedState } = setup('seat-swap-blocked', true);
+    const { projectDir, sessionId, savedState, config } = setup('seat-swap-blocked', true);
     const { bus, events } = makeBusRecorder();
-    const config = makeConfig({ implementer: { kind: 'cli', tool: 'codex' } });
     const prepared = preparedFor(config);
     const prepare = vi.fn(
       async () => ({ kind: 'blocked', report: {} }) as const,
@@ -152,16 +154,16 @@ describe('applyOfferedSeatSwap', () => {
     });
 
     expect(outcome?.prepared).toBe(prepared);
-    expect(outcome?.state.pendingRecovery).toBeUndefined();
+    // Nothing was written, so the halt stays pending and the run stops on it again.
+    expect(outcome?.state.pendingRecovery).toBeDefined();
     expect(warningMessages(events)).toEqual([
-      "Switched the build seat to 'claude-code', but it could not be admitted; the run continues on its previous seat.",
+      "The build seat was not switched to 'claude-code': it could not be admitted; the halt stays.",
     ]);
   });
 
   it('names the error when re-preparing the switched seat failed', async () => {
-    const { projectDir, sessionId, savedState } = setup('seat-swap-failed', true);
+    const { projectDir, sessionId, savedState, config } = setup('seat-swap-failed', true);
     const { bus, events } = makeBusRecorder();
-    const config = makeConfig({ implementer: { kind: 'cli', tool: 'codex' } });
     const prepared = preparedFor(config);
     const prepare = vi.fn(
       async () => ({ kind: 'failed', error: new Error('hook trust refused') }) as const,
@@ -179,13 +181,13 @@ describe('applyOfferedSeatSwap', () => {
     });
 
     expect(outcome?.prepared).toBe(prepared);
+    expect(outcome?.state.pendingRecovery).toBeDefined();
     expect(warningMessages(events)[0]).toContain('preparing it failed: hook trust refused');
   });
 
   it('warns about nothing when the operator cancelled the re-preparation', async () => {
-    const { projectDir, sessionId, savedState } = setup('seat-swap-aborted', true);
+    const { projectDir, sessionId, savedState, config } = setup('seat-swap-aborted', true);
     const { bus, events } = makeBusRecorder();
-    const config = makeConfig({ implementer: { kind: 'cli', tool: 'codex' } });
     const prepared = preparedFor(config);
     const prepare = vi.fn(
       async () => ({ kind: 'aborted' }) as const,
@@ -203,7 +205,35 @@ describe('applyOfferedSeatSwap', () => {
     });
 
     expect(outcome?.prepared).toBe(prepared);
-    expect(outcome?.state.pendingRecovery).toBeUndefined();
+    expect(outcome?.state.pendingRecovery).toBeDefined();
     expect(warningMessages(events)).toEqual([]);
+  });
+
+  it('keeps the halt with one row when the config changed underneath the write', async () => {
+    const { projectDir, sessionId, savedState, config } = setup('seat-swap-conflict', true);
+    const { bus, events } = makeBusRecorder();
+    const prepared = preparedFor(config);
+    // The operator edits the file while the seat is being prepared, so the revision
+    // the halt read no longer matches when the writer checks it.
+    const prepare = vi.fn(async () => {
+      const file = join(projectDir, SPLITBRIEF_DIR, CONFIG_FILE);
+      writeFileSync(file, `${readFileSync(file, 'utf8')}\n`);
+      return { kind: 'prepared', execution: preparedFor(config) } as const;
+    }) as unknown as typeof prepareExecution;
+
+    const outcome = await applyOfferedSeatSwap({
+      choice: CHOICE,
+      projectDir,
+      sessionId,
+      bus,
+      config,
+      prepared,
+      savedState,
+      prepare,
+    });
+
+    expect(outcome?.prepared).toBe(prepared);
+    expect(outcome?.state.pendingRecovery).toBeDefined();
+    expect(warningMessages(events)).toEqual(['config changed meanwhile · the halt stays']);
   });
 });

@@ -107,6 +107,8 @@ export async function resumeSavedSession(args: {
       prepared: execution,
       ...(opts.plain === true && { plain: true }),
       ...(selectedSkills !== undefined && { selectedSkills }),
+      ...(opts.onSeatDown !== undefined && { onSeatDown: opts.onSeatDown }),
+      ...(opts.allowUnverifiedAuth === true && { allowUnverifiedAuth: true }),
     });
     return;
   }

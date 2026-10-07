@@ -18,9 +18,9 @@ import {
   resolveProviderRunMetadata,
 } from '../../../../src/engine/providers/cost/breakdown.js';
 import { makeUsage } from '../../../helpers/factories/summary.js';
-import { usageLimitAdvice } from '../../../../src/engine/runners/usage-limit.js';
+import { buildSeatDownIssue } from '../../../../src/engine/orchestrator/recovery/builders/task.js';
 import { scenarioId } from '../../contracts/identifiers.js';
-import { VISUAL_FIXTURE_PROJECT_DIR } from '../screen-fixtures.js';
+import { VISUAL_FIXTURE_PROJECT_DIR, visualConfig } from '../screen-fixtures.js';
 import type { FixtureAtRestRoute, WorkflowFixtureProjection } from './projections.js';
 
 export const AT_REST_FIXTURE_FEATURE = 'Add email validation with tests';
@@ -647,6 +647,13 @@ const AT_REST_LONG_PARK = record({
   }),
 });
 
+/** The fallback the BUILD seat declares in config: a seat that cannot work moves to it. */
+const SEAT_FALLBACK = {
+  tool: 'opencode',
+  model: 'opencode-go/deepseek-v4.1-flash',
+  variant: 'max',
+} as const;
+
 const AT_REST_HALTED = record({
   sessionId: 'visual-at-rest-halted',
   status: {
@@ -655,26 +662,20 @@ const AT_REST_HALTED = record({
       kind: 'waiting-for-you',
       on: {
         kind: 'halt',
-        issue: {
+        issue: buildSeatDownIssue({
           id: 'visual-halt',
-          reason: 'runner-usage-limit',
-          phase: 'implementing',
-          status: 'awaiting-user',
           seat: 'build',
-          taskId: BRIEFS.wire.id,
-          files: [],
-          affectedTaskIds: [BRIEFS.wire.id],
-          // The halt `buildSeatDownIssue` writes: the tool by its display name.
-          message: usageLimitAdvice({ tool: 'Ollama', seat: 'build' }),
-          details: [
-            'Ollama reported: usage limit reached',
-            'The run stopped instead of escalating this task to the planner.',
-          ],
-          facts: { tool: 'Ollama', limitMessage: 'usage limit reached' },
-          availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
-          recommendedAction: 'retry-same-worker',
+          runner: { ...visualConfig().implementer, fallback: SEAT_FALLBACK },
+          classification: { class: 'account', cause: 'quota' },
+          words: 'usage limit reached',
+          task: makeTask({
+            id: BRIEFS.wire.id,
+            title: BRIEFS.wire.title,
+            suggestedFiles: [BRIEFS.wire.file],
+          }),
+          phase: 'implementing',
           createdAt: STARTED_AT_ISO,
-        },
+        }),
       },
     },
     resumeAt: { kind: 'brief', taskId: BRIEFS.wire.id, attempt: 2 },

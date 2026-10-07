@@ -127,3 +127,13 @@ The reviewer receives the captured brief diffs in order and the complete workspa
 **Where the sweep runs.** `pruneOrphanSessions` (`src/core/sessions/orphans.ts`) sweeps the collectable directories at run start, immediately after the process orphan reaper (`src/engine/orchestrator/run/orphan-reaper.ts`), mirroring its outer catch so an unreadable sessions root cannot abort the workflow. A directory holding only `tasks.md` is not collectable, because the allowlist admits only `readiness.json`.
 
 **Prevention half.** `splitbrief spec` is the one path that would otherwise hold an unguarded window: it never writes a lockfile or `state.json`, so a directory released before the planner call would sit as a plain orphan for the whole planning run. `spec` therefore keeps preparation ownership across the planner call — released only after planning resolves, rolled back (directory removed, active pointer cleared) when the call fails. T036's sweep is the collection half for everything that still lands on disk.
+
+---
+
+## 9. Seat probe
+
+`src/cli/commands/doctor.ts` (`--probe-seat`), `src/engine/runners/seat-failure.ts`
+
+`splitbrief doctor --probe-seat <plan|build|review>` makes one paid call through the named seat's CLI adapter, with the seat's own model, effort, variant and args. The probe runs alone: the readiness report and the preparation preflights do not run, so a readiness blocker does not stop it. The call uses the sandbox environment a run uses. Its captured stdout and stderr go to `classifySeatFailure` with `source: 'thrown'`, so an account, sign-in or limit message keeps its class. A non-zero exit status passes the `non-zero-exit` outcome to the classifier. The output is redacted of the seat's credential values before the record is written.
+
+The result prints as `Seat probe <seat>: <class>`. The record is appended as one JSON line to `.splitbrief/probes/<tool>-<date>.jsonl`. Only CLI seats are supported. An `api`, `shell` or `agent` seat exits `1` with an error that names the seat and its kind.

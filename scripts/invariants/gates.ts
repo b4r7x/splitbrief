@@ -333,6 +333,14 @@ export const gates: readonly Gate[] = [
       "{ rg -n \"'(pause-run|route-bigger-worker|planner-split-rebase|revise-spec)'|PAUSE_PENDING_RECOVERY\" src --glob '!**/*.test.ts' --glob '!**/*.test.tsx' | rg -v '^src/core/schemas/enums\\.ts:' || true; } | wc -l",
     expected: 0,
   },
+  {
+    id: '55',
+    description:
+      'Deleted seat-recovery symbols stay deleted (usage-limit and sign-out builders, usage-limit detail reader, seat-record writer without a revision check)',
+    command:
+      '{ rg -n "buildRunnerUsageLimitRecoveryIssue|buildRunnerUnauthenticatedRecoveryIssue|usageLimitDetailFromError|recordSeatsOfRecord" src || true; } | wc -l',
+    expected: 0,
+  },
 ];
 
 export function getInvariantGates(id: string): readonly Gate[] {

@@ -1,11 +1,18 @@
 import type { Planner } from '../engine/planners/types.js';
 import type { Implementer } from '../engine/implementers/types.js';
 import type { PreparedExecution } from '../engine/runners/prepared-execution.js';
+import type { prepareExecution } from '../engine/runners/prepare-execution/prepare-execution.js';
+import type { PreparationPolicy } from '../engine/runners/prepare-execution/types.js';
 import { loadOwnerWorkflowState } from '../core/state/resume-hydration.js';
 import type { SessionRef } from '../core/types/session-ref.js';
+import type { SeatDownPolicy } from '../core/types/config-options.js';
+import type { Config } from '../core/schemas/config.js';
 import type { WorkflowState } from '../core/schemas/workflow.js';
+import { recoveryFactString } from '../core/schemas/recovery/facts.js';
 import { readSession } from '../core/sessions/io.js';
 import { runWorkflow } from '../engine/orchestrator/run/workflow.js';
+import { applyOfferedSeatSwap } from '../engine/orchestrator/run/seat-swap.js';
+import { createRecoveryBus } from '../engine/orchestrator/recovery/bus.js';
 import { discoverSkills } from '../engine/skill-discovery.js';
 import type { SkillMeta } from '../core/skills/types.js';
 import {
@@ -93,6 +100,12 @@ export function emitRecoveryAndFailIfPending({
   const issue = state?.pendingRecovery;
   if (!issue || isAnsweredApplyRecovery(issue)) return;
   const resumeCommand = formatResumeCommand(sessionId, issue);
+  // A seat-down halt is self-contained for a machine consumer: the finer cause,
+  // the tool's own words, the request id, the reset and the declared fallback.
+  const cause = recoveryFactString(issue.facts, 'cause');
+  const providerMessage = recoveryFactString(issue.facts, 'providerMessage');
+  const requestId = recoveryFactString(issue.facts, 'requestId');
+  const fallback = recoveryFactString(issue.facts, 'fallback');
   writeRecord(
     {
       type: 'recovery_required',
@@ -107,6 +120,11 @@ export function emitRecoveryAndFailIfPending({
       availableActions: issue.availableActions,
       recommendedAction: issue.recommendedAction,
       resumeCommand,
+      ...(cause !== undefined && { cause }),
+      ...(providerMessage !== undefined && { providerMessage }),
+      ...(requestId !== undefined && { requestId }),
+      ...(issue.resetAt !== undefined && { resetAt: issue.resetAt }),
+      ...(fallback !== undefined && { fallback }),
     },
     process.stdout,
   );
@@ -231,51 +249,147 @@ export interface RunHeadlessOptions {
   plain?: boolean | undefined;
   /** `--skills`: the resolved skills every seat of this run carries. */
   selectedSkills?: SkillMeta[] | undefined;
+  /** `--on-seat-down`: how a seat-down halt is answered. Unset defers to the seat's fallback. */
+  onSeatDown?: SeatDownPolicy | undefined;
+  /** `--allow-unverified-auth`: admit a swapped-in seat on unverified auth as the first run did. */
+  allowUnverifiedAuth?: boolean | undefined;
   _planner?: Planner | undefined;
   _implementer?: Implementer | undefined;
+  /** Tests: the preparation the seat swap drives, so no real engine is needed. */
+  _prepare?: typeof prepareExecution | undefined;
+}
+
+/** Whether any seat — the three live ones and every build profile — declares a fallback. */
+function configDeclaresFallback(config: Config): boolean {
+  const runners = [
+    config.planner,
+    config.implementer,
+    ...(config.reviewer !== undefined ? [config.reviewer] : []),
+    ...Object.values(config.implementerProfiles?.profiles ?? {}),
+  ];
+  return runners.some((runner) => runner.fallback !== undefined);
+}
+
+/**
+ * The terms the swapped-in seat is admitted under: the run's own, as a headless
+ * resume. The seat swap is the run loop's re-entry, so it prepares the way the
+ * first headless admission did — hooks and repo runners as the run had them,
+ * unverified auth only when the operator asked for it.
+ */
+function headlessResumePolicy(
+  prepared: PreparedExecution,
+  allowUnverifiedAuth: boolean,
+): Extract<PreparationPolicy, { purpose: 'resume' }> {
+  return {
+    purpose: 'resume',
+    interaction: 'headless',
+    allowRepoRunners: prepared.runtime.allowRepoRunners,
+    allowHooks: prepared.runtime.allowHooks,
+    unverifiedAuth: allowUnverifiedAuth ? 'allowed' : 'denied',
+  };
 }
 
 export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
-  const { prepared, plain, selectedSkills, _planner, _implementer } = options;
-  const projectDir = prepared.session.ref.projectDir;
-  const sessionId = prepared.session.ref.sessionId;
+  const { plain, selectedSkills, _planner, _implementer } = options;
+  const projectDir = options.prepared.session.ref.projectDir;
+  const sessionId = options.prepared.session.ref.sessionId;
   installTerminalOutputErrorGuard();
   const writeRecord = recordWriterFor(plain === true);
 
-  // A resumed session with a pending recovery is already an owner-controlled
-  // state machine. A headless observation must report it, not manufacture a
-  // retry by entering the ordinary workflow loop (which would invoke a
-  // planner/provider).
-  if (prepared.purpose === 'resume') {
-    const preflight = loadOwnedState({ projectDir, sessionId });
-    if (preflight !== null) {
-      emitRecoveryAndFailIfPending({ state: preflight, sessionId, writeRecord });
-    }
-  }
-
+  // The handlers are installed before the pending-halt preflight: the preflight
+  // reads state and may stop, and an operator's interrupt must still land while
+  // it does.
   const abortController = new AbortController();
   const onSignal = () => abortController.abort();
   process.on('SIGINT', onSignal);
   process.on('SIGTERM', onSignal);
 
   try {
-    await runWorkflow({
-      prepared,
-      headless: true,
-      sinks: buildNoopSinks(),
-      modelCache: modelCacheStore,
-      drainPendingAttachments: () => attachmentsStore.drain(),
-      signal: abortController.signal,
-      ...(plain === true && { plain: true }),
-      selectedSkills,
-      _planner,
-      _implementer,
-      savedState: prepared.runtime.resumeState,
-      callbacks: {
-        onApprovalNeeded: async (_type, _input) => ({ approved: true, unattended: true }),
-        onComplete: () => undefined,
-      },
-    });
+    // An explicit `switch` with nothing to switch to is a usage error, named for
+    // the word the operator would have to add to the config.
+    if (options.onSeatDown === 'switch' && !configDeclaresFallback(options.prepared.config)) {
+      throw cliError(
+        '`--on-seat-down switch` needs a seat that declares `fallback`; this config declares none.',
+        2,
+      );
+    }
+
+    const swapPolicy = headlessResumePolicy(options.prepared, options.allowUnverifiedAuth === true);
+    let prepared = options.prepared;
+    let savedState = prepared.runtime.resumeState;
+
+    for (;;) {
+      // The automatic intent a halt left is taken before the run that would hit the
+      // same seat again: an admitted swap resolves the halt and prepares this
+      // session on the new seat, so `runWorkflow`'s re-entry runs on it.
+      const before = loadOwnedState({ projectDir, sessionId });
+      const auto = before?.pendingRecovery?.switchSeat?.auto;
+      if (before !== null && auto !== undefined && options.onSeatDown !== 'halt') {
+        const swapped = await applyOfferedSeatSwap({
+          choice: { candidate: auto.candidate, policy: swapPolicy },
+          projectDir,
+          sessionId,
+          bus: createRecoveryBus({
+            projectDir,
+            sessionId,
+            sink: (event) => writeRecord({ type: 'event', data: event }),
+          }),
+          config: prepared.config,
+          prepared,
+          savedState: before,
+          signal: abortController.signal,
+          ...(options._prepare !== undefined && { prepare: options._prepare }),
+        });
+        if (swapped !== undefined) {
+          prepared = swapped.prepared;
+          savedState = swapped.state;
+        }
+        // A swap that did not resolve the halt leaves the same intent pending; there
+        // is no picker headlessly, so the halt is reported exactly as one no one
+        // answered and the run stops.
+        const after = loadOwnedState({ projectDir, sessionId });
+        if (after !== null && after.pendingRecovery?.switchSeat?.auto !== undefined) {
+          emitRecoveryAndFailIfPending({ state: after, sessionId, writeRecord });
+        }
+      }
+
+      // A resumed session with a pending recovery is already an owner-controlled
+      // state machine. A headless observation must report it, not manufacture a
+      // retry by entering the ordinary workflow loop (which would invoke a
+      // planner/provider).
+      if (prepared.purpose === 'resume') {
+        const preflight = loadOwnedState({ projectDir, sessionId });
+        if (preflight !== null) {
+          emitRecoveryAndFailIfPending({ state: preflight, sessionId, writeRecord });
+        }
+      }
+
+      await runWorkflow({
+        prepared,
+        headless: true,
+        sinks: buildNoopSinks(),
+        modelCache: modelCacheStore,
+        drainPendingAttachments: () => attachmentsStore.drain(),
+        signal: abortController.signal,
+        ...(plain === true && { plain: true }),
+        selectedSkills,
+        _planner,
+        _implementer,
+        savedState,
+        callbacks: {
+          onApprovalNeeded: async (_type, _input) => ({ approved: true, unattended: true }),
+          onComplete: () => undefined,
+        },
+      });
+
+      if (abortController.signal.aborted) return;
+
+      // Another seat went down with its own intent: take it and re-enter. The loop
+      // ends when no automatic intent is pending.
+      if (options.onSeatDown === 'halt') break;
+      const next = loadOwnedState({ projectDir, sessionId });
+      if (next?.pendingRecovery?.switchSeat?.auto === undefined) break;
+    }
   } finally {
     process.removeListener('SIGINT', onSignal);
     process.removeListener('SIGTERM', onSignal);

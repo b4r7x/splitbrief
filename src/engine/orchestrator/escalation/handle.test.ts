@@ -521,6 +521,12 @@ describe('handleRetryAndEscalation', () => {
     expect(events.filter((e) => e.type === 'consult_answered')).toEqual([]);
     expect(state.pendingRecovery).toMatchObject({ reason: 'runner-usage-limit', taskId: 'T001' });
     expect(state.pendingRecovery?.details.join('\n')).toContain(balance);
+    // The brief the seat cut is parked mid-step, so a switch resolves onto the same attempt.
+    expect(state.interruptedStep).toMatchObject({
+      source: 'seat',
+      cut: 'mid-step',
+      step: { kind: 'brief', taskId: 'T001' },
+    });
   });
 
   it('a retry refused as signed out halts with the seat switch beside the login, without a consult', async () => {

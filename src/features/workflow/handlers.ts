@@ -13,6 +13,7 @@ import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import type { Phase } from '../../core/schemas/enums.js';
+import type { CrewSeatId } from '../../core/crew/identity.js';
 import { markCancellationRequested } from '../../stores/workflow/actions/interrupt.js';
 import { markWorkflowResumed } from '../../stores/workflow/actions/resume.js';
 import { stopStore } from '../../stores/workflow/stop.js';
@@ -37,7 +38,8 @@ const handlers: Partial<Handlers> = {};
 let abortHandlers: AbortHandler[] = [];
 let pendingBoundaryInterrupt = false;
 let pendingBoundaryPause = false;
-let pendingSeatChange = false;
+/** The seat changes saved under the running brief, keyed by seat: the revision each was seen at. */
+const pendingSeatChanges = new Map<CrewSeatId, string>();
 let pendingSteer: string | null = null;
 let steerUnsubscribe: (() => void) | undefined;
 let departure: { kind: 'home' | 'quit'; run: () => void } | null = null;
@@ -56,7 +58,7 @@ export function clearAllHandlers(): void {
   abortHandlers = [];
   pendingBoundaryInterrupt = false;
   pendingBoundaryPause = false;
-  pendingSeatChange = false;
+  pendingSeatChanges.clear();
   clearPendingSteer();
 }
 
@@ -120,23 +122,39 @@ export function consumeBoundaryPause(): boolean {
 
 export function cancelBoundaryPause(): void {
   pendingBoundaryPause = false;
-  pendingSeatChange = false;
+  pendingSeatChanges.clear();
   stopStore.reset();
 }
 
 /**
  * A seat changed under the running brief: the run pauses at the next brief boundary and
  * is re-prepared from the saved config there, so the next brief starts on the new seat.
+ * The seat and the config revision it was seen at are kept together, so a swap of that
+ * seat can tell its own change from a newer manual one.
  */
-export function requestSeatChangeAtBoundary(): void {
+export function requestSeatChangeAtBoundary(seat: CrewSeatId, configRevision: string): void {
   requestBoundaryPause();
-  pendingSeatChange = true;
+  pendingSeatChanges.set(seat, configRevision);
 }
 
-export function consumeSeatChange(): boolean {
-  const pending = pendingSeatChange;
-  pendingSeatChange = false;
-  return pending;
+/**
+ * Consumes the pending boundary seat changes: every seat's when called bare, for the
+ * boundary pause the run is picking up. Given the seat an admitted swap wrote and the
+ * revision it wrote against, only that seat's own entry is consumed, and only while its
+ * revision still matches — a newer manual change to the same seat is left standing and wins.
+ */
+export function consumeSeatChange(
+  swapped?: Readonly<{ seat: CrewSeatId; configRevision: string }>,
+): boolean {
+  if (swapped === undefined) {
+    const any = pendingSeatChanges.size > 0;
+    pendingSeatChanges.clear();
+    return any;
+  }
+  const recorded = pendingSeatChanges.get(swapped.seat);
+  if (recorded === undefined || recorded !== swapped.configRevision) return false;
+  pendingSeatChanges.delete(swapped.seat);
+  return true;
 }
 
 // A stop that has nothing to stop is not announced: the byline would report a run terminating
@@ -150,7 +168,7 @@ export function requestStopNow(): boolean {
   // Announce before calling a handler: an already-idle operation may settle synchronously.
   stopStore.request(state.intent === 'end-run' ? 'end-run' : 'stop-now');
   pendingBoundaryPause = false;
-  pendingSeatChange = false;
+  pendingSeatChanges.clear();
   if (handlers.stop) handlers.stop();
   else if (!abortTurn()) requestBoundaryInterrupt();
   return true;

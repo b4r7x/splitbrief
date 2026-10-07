@@ -543,7 +543,7 @@ describe('run-loop stop completion', () => {
   it.each([
     ['Stop now', requestStopNow],
     ['End run', requestEndRun],
-    ['a seat change', requestSeatChangeAtBoundary],
+    ['a seat change', () => requestSeatChangeAtBoundary('build', 'revision')],
   ] as const)('shows no stop when the final review passes as %s lands', async (_stop, request) => {
     const prepared = prepare(finalReviewState());
     const engine = vi.fn<RunWorkflowFn>(async (options) => {
@@ -571,7 +571,7 @@ describe('run-loop stop completion', () => {
 
   it.each([
     ['Stop now', requestStopNow],
-    ['a seat change', requestSeatChangeAtBoundary],
+    ['a seat change', () => requestSeatChangeAtBoundary('build', 'revision')],
   ] as const)(
     'stands the stop down for the result menu when the review passes as %s lands on a workspace run',
     async (_stop, request) => {
