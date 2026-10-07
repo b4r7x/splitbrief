@@ -9,6 +9,7 @@ import {
   onProcessRegistryChange,
   registerProcess,
   setProcessLedger,
+  SIGKILL_DELAY_MS,
   unregisterProcess,
 } from './registry.js';
 
@@ -388,10 +389,21 @@ describe('killAllProcesses', () => {
     registerProcess(proc, { group: true, ledger: false });
     await new Promise<void>((resolve) => proc.once('spawn', resolve));
 
+    // Only the grace deadline runs on the fake clock: the signals, the exit and
+    // the absence polling stay real, so the escalation itself is what is awaited.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const signals = vi.spyOn(process, 'kill');
     const controller = new AbortController();
     const aborted = abortProcess(proc, controller.signal, { group: true });
     controller.abort();
-    await aborted;
+    try {
+      await vi.waitFor(() => expect(signals).toHaveBeenCalledWith(-(proc.pid ?? 0), 'SIGTERM'));
+      await vi.advanceTimersByTimeAsync(SIGKILL_DELAY_MS);
+      await aborted;
+    } finally {
+      signals.mockRestore();
+      vi.useRealTimers();
+    }
 
     expect(() => process.kill(proc.pid ?? 0, 0)).toThrow(
       expect.objectContaining({ code: 'ESRCH' }),

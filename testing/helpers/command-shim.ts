@@ -1,7 +1,52 @@
-import { chmodSync, existsSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  linkSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
+import { afterAll } from 'vitest';
 import { CLI_TOOL_CATALOG, type CliToolId } from '../../src/core/runners/cli-tool-catalog.js';
 import type { CliStartGate } from '../../src/engine/runners/start-gate.js';
+import { cleanupTempDir, createTempDir } from './temp-dir.js';
+
+let fakeCliLauncher: { dir: string; path: string } | undefined;
+
+afterAll(() => {
+  if (fakeCliLauncher !== undefined) cleanupTempDir(fakeCliLauncher.dir);
+  fakeCliLauncher = undefined;
+});
+
+/**
+ * Installs `dir/command` as a fake CLI that runs `body` as bash. macOS checks
+ * every new executable on its first launch, which costs a fresh shim per test
+ * hundreds of milliseconds, so the file's shims are hard links to one launcher
+ * written once per test file; each shim keeps its own body in
+ * `dir/command.body`, which the launcher sources in its own shell.
+ */
+export function writeFakeCli(dir: string, command: string, body: string): string {
+  if (fakeCliLauncher === undefined) {
+    const launcherDir = createTempDir('fake-cli-launcher');
+    const path = join(launcherDir, 'launcher');
+    writeFileSync(path, '#!/bin/bash\n. "$0.body"\n', 'utf8');
+    chmodSync(path, 0o755);
+    fakeCliLauncher = { dir: launcherDir, path };
+  }
+  const shimPath = join(dir, command);
+  writeFileSync(`${shimPath}.body`, body, 'utf8');
+  rmSync(shimPath, { force: true });
+  linkSync(fakeCliLauncher.path, shimPath);
+  return shimPath;
+}
+
+/** Installs `dir/command` as a fake CLI that runs `script` under this Node. */
+export function writeFakeNodeCli(dir: string, command: string, script: string): string {
+  writeFileSync(join(dir, `${command}.cjs`), `${script}\n`, 'utf8');
+  return writeFakeCli(dir, command, `exec ${shellQuote(process.execPath)} "$0.cjs" "$@"\n`);
+}
 
 export interface CommandShimOptions {
   dir: string;
@@ -15,15 +60,11 @@ export interface CommandShimOptions {
 export function writeCommandShim(opts: CommandShimOptions): string {
   const printfLines = opts.lines.map((line) => `printf '%s\\n' '${line.replace(/'/g, "'\\''")}'`);
   const script = [
-    '#!/bin/bash',
     ...(opts.sleepSeconds === undefined ? [] : [`sleep ${opts.sleepSeconds}`]),
     ...printfLines,
     '',
   ].join('\n');
-  const shimPath = join(opts.dir, opts.command);
-  writeFileSync(shimPath, script, 'utf8');
-  chmodSync(shimPath, 0o755);
-  return shimPath;
+  return writeFakeCli(opts.dir, opts.command, script);
 }
 
 export function prependPath(dir: string): () => void {
@@ -122,7 +163,6 @@ export function writeContractShim(opts: ContractShimOptions): string {
   const authArgCount = opts.profile.authArgv.length;
 
   const script = [
-    '#!/bin/bash',
     'set -euo pipefail',
     `PROJECT_DIR=${shellQuote(opts.projectDir)}`,
     `CAPTURE_DIR=${shellQuote(captureDir)}`,
@@ -220,10 +260,7 @@ export function writeContractShim(opts: ContractShimOptions): string {
     '',
   ].join('\n');
 
-  const shimPath = join(opts.dir, opts.command);
-  writeFileSync(shimPath, script, 'utf8');
-  chmodSync(shimPath, 0o755);
-  return shimPath;
+  return writeFakeCli(opts.dir, opts.command, script);
 }
 
 export function writeConflictProbeShim(opts: {
@@ -231,9 +268,9 @@ export function writeConflictProbeShim(opts: {
   command: string;
   markerPath: string;
 }): string {
-  const script = ['#!/bin/bash', `touch ${shellQuote(opts.markerPath)}`, 'exit 0', ''].join('\n');
-  const shimPath = join(opts.dir, opts.command);
-  writeFileSync(shimPath, script, 'utf8');
-  chmodSync(shimPath, 0o755);
-  return shimPath;
+  return writeFakeCli(
+    opts.dir,
+    opts.command,
+    [`touch ${shellQuote(opts.markerPath)}`, 'exit 0', ''].join('\n'),
+  );
 }

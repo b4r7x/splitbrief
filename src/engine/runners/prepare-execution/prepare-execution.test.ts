@@ -55,6 +55,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
   for (const directory of tempDirs.splice(0)) cleanupTempDir(directory);
@@ -845,8 +846,18 @@ describe('prepareExecution', () => {
     const config = makeConfig({
       planner: { kind: 'cli', tool: 'codex', authChannel: 'session' },
     });
+    const detectRunnerEvidence = vi.fn<PrepareExecutionDependencies['detectRunnerEvidence']>(
+      async ({ context }) => ({
+        ...freshCliEvidence(context),
+        credential: 'absent',
+        auth: 'missing',
+      }),
+    );
 
-    const outcome = await prepareExecution({
+    // A session denial is probed again after the readiness retry delay; the
+    // fake clock spends that delay instead of the wall clock.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const pending = prepareExecution({
       projectDir: project,
       feature: 'unauthenticated planner',
       effectiveConfig: config,
@@ -855,11 +866,7 @@ describe('prepareExecution', () => {
       deps: {
         collectArgVectorPreflightChecks: async () => [],
         collectReadiness: async () => ({ report: readyReport(project), config }),
-        detectRunnerEvidence: async ({ context }) => ({
-          ...freshCliEvidence(context),
-          credential: 'absent',
-          auth: 'missing',
-        }),
+        detectRunnerEvidence,
         resolveCliExecutableAliases: async () => ({
           command: 'codex',
           executable,
@@ -868,6 +875,9 @@ describe('prepareExecution', () => {
         prepareNewSession: vi.fn(),
       },
     });
+    await vi.waitFor(() => expect(detectRunnerEvidence).toHaveBeenCalledTimes(1));
+    await vi.advanceTimersByTimeAsync(1_500);
+    const outcome = await pending;
 
     expect(outcome.kind).toBe('blocked');
     if (outcome.kind !== 'blocked') return;
