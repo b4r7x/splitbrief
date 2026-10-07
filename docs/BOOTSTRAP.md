@@ -153,7 +153,11 @@ It does **not** touch stores. Stores know nothing about TTY flags or the git che
 
 ## Render handoff
 
-After `initStoresForTuiMount()` returns, the interactive handler calls `renderApp()` (from `src/cli/render/app.ts`) while `awaitDiscovery` is still pending. `renderApp()` sets up Ink's fullscreen rendering and mounts `<App />`. Components subscribe via `store.use()` and see seeded project state and UI chrome on the first render; discovery results arrive through store updates.
+After `initStoresForTuiMount()` returns, the interactive handler calls `renderApp()` (from `src/cli/render/app.ts`) while `awaitDiscovery` is still pending. `renderApp()` queries the terminal background before Ink takes stdin in fullscreen.
+It stores the detected background in `terminalBackgroundStore` for the first frame.
+The query stops at the device attributes reply or after 300 ms.
+The filtered stdin skips late terminal replies.
+`renderApp()` then sets up Ink's fullscreen rendering and mounts `<App />`. Components subscribe via `store.use()` and see seeded project state and UI chrome on the first render; discovery results arrive through store updates.
 
 If a component calls `store.use()` on a field that was never set by `initStores()`, that is a contract violation: either the store has a sensible default, or `initStores()` populates the field.
 

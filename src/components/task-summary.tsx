@@ -1,5 +1,6 @@
-import { Box, Text } from 'ink';
-import { useTheme, type Theme } from './theme.js';
+import { ThemeText as Text, useTheme } from './theme.js';
+import { Box } from 'ink';
+import type { Theme } from '../core/theme/palette.js';
 import type { TaskCompletionMethod } from '../core/schemas/enums.js';
 import { getMethodDisplay } from '../core/sessions/display.js';
 import { classifyTaskCompletionMethod } from '../core/task-completion.js';
@@ -78,7 +79,7 @@ interface TaskSummaryProps {
 
 interface MarkerSpec {
   name: GlyphName;
-  color: string;
+  color: string | undefined;
 }
 
 function settledMarker(method: TaskCompletionMethod, t: Theme): MarkerSpec {
@@ -148,9 +149,7 @@ export function TaskSummary({
         <Text wrap="truncate-end">
           {markerSlot}
           <Text color={t.textDim}>{head}</Text>
-          <Text color={t.error} dimColor>
-            {' failed'}
-          </Text>
+          <Text color={t.dimError}>{' failed'}</Text>
         </Text>
       </Box>
     );

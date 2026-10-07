@@ -2,7 +2,11 @@ import sharp from 'sharp';
 import { CellGridSchema, type CellGrid } from '../contracts/cells.js';
 import { FailureSchema, type Failure } from '../contracts/failures.js';
 import { safeId } from '../contracts/identifiers.js';
-import { RendererMetadataSchema, type RendererMetadata } from '../contracts/manifest-fields.js';
+import {
+  RendererMetadataSchema,
+  type RendererMetadata,
+  type TerminalProfile,
+} from '../contracts/manifest-fields.js';
 import {
   getSvgDimensions,
   renderCellGridSvg,
@@ -55,13 +59,14 @@ export type PngRenderResult = PngRenderSuccess | PngRenderFailure;
 export async function renderCellGridPng(options: {
   readonly grid: CellGrid;
   readonly svg: string;
+  readonly profile: TerminalProfile;
   readonly rasterize?: PngRasterizer;
 }): Promise<PngRenderResult> {
   const grid = CellGridSchema.parse(options.grid);
   const dimensions = getSvgDimensions(grid);
 
   try {
-    if (options.svg !== renderCellGridSvg(grid)) {
+    if (options.svg !== renderCellGridSvg(grid, options.profile)) {
       throw new Error('PNG source does not match the canonical cell-grid SVG');
     }
 

@@ -1,5 +1,5 @@
-import { Box, Text } from 'ink';
-import { useTheme } from '../../../components/theme.js';
+import { ThemeText as Text, useTheme } from '../../../components/theme.js';
+import { Box } from 'ink';
 import { useSharedClock } from '../../../hooks/use-shared-clock.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { operationsStore } from '../../../stores/workflow/operations/state.js';

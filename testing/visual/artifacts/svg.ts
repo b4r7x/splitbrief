@@ -1,10 +1,17 @@
+import { readFileSync } from 'node:fs';
+import { z } from 'zod';
+import { xterm256Hex } from '../../../src/utils/color.js';
 import {
   CellGridSchema,
   type Cell,
   type CellGrid,
   type TerminalColor,
 } from '../contracts/cells.js';
-import { RendererMetadataSchema, type RendererMetadata } from '../contracts/manifest-fields.js';
+import {
+  RendererMetadataSchema,
+  type RendererMetadata,
+  type TerminalProfile,
+} from '../contracts/manifest-fields.js';
 
 const DEFAULT_FOREGROUND = '#d4d4d4';
 const DEFAULT_BACKGROUND = '#101010';
@@ -26,7 +33,43 @@ const ANSI_PALETTE: readonly string[] = [
   '#29b8db',
   '#ffffff',
 ];
-const COLOR_CUBE_LEVELS = [0, 95, 135, 175, 215, 255] as const;
+const lightPaletteFixture = z
+  .object({
+    light: z.array(
+      z.object({
+        name: z.string(),
+        foreground: z.string(),
+        background: z.string(),
+        slots: z.array(z.string()).length(16),
+      }),
+    ),
+  })
+  .parse(
+    JSON.parse(
+      readFileSync(
+        new URL('../../fixtures/terminal-palettes/ghostty-themes.json', import.meta.url),
+        'utf8',
+      ),
+    ),
+  )
+  .light.find((palette) => palette.name === 'GitHub Light Default');
+if (lightPaletteFixture === undefined) {
+  throw new Error('GitHub Light Default terminal fixture is missing');
+}
+
+interface TerminalPalette {
+  readonly foreground: string;
+  readonly background: string;
+  readonly slots: readonly string[];
+}
+
+const lightPalette: TerminalPalette = lightPaletteFixture;
+
+const darkPalette: TerminalPalette = {
+  foreground: DEFAULT_FOREGROUND,
+  background: DEFAULT_BACKGROUND,
+  slots: ANSI_PALETTE,
+};
 
 export const SVG_FONT_FAMILY =
   'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace';
@@ -37,7 +80,7 @@ export const SVG_BASELINE_PX = 13;
 
 export const SVG_RENDERER_METADATA: RendererMetadata = RendererMetadataSchema.parse({
   name: 'splitbrief-cell-svg',
-  version: '1.1.0',
+  version: '1.2.0',
   fontFamily: SVG_FONT_FAMILY,
   cellWidthPx: SVG_CELL_WIDTH_PX,
   cellHeightPx: SVG_CELL_HEIGHT_PX,
@@ -61,17 +104,18 @@ export function getSvgDimensions(gridInput: CellGrid): SvgDimensions {
   };
 }
 
-export function renderCellGridSvg(gridInput: CellGrid): string {
+export function renderCellGridSvg(gridInput: CellGrid, profile: TerminalProfile): string {
   const grid = CellGridSchema.parse(gridInput);
   const { widthPx, heightPx } = getSvgDimensions(grid);
+  const palette = profile === 'unicode-light' ? lightPalette : darkPalette;
   const backgrounds: string[] = [];
   const text: string[] = [];
 
   for (const [row, cells] of grid.cells.entries()) {
     for (const [column, cell] of cells.entries()) {
       if (cell.continuation) continue;
-      const colors = effectiveColors(cell);
-      if (colors.background !== DEFAULT_BACKGROUND) {
+      const colors = effectiveColors(cell, palette);
+      if (colors.background !== palette.background) {
         backgrounds.push(renderBackground({ cell, row, column, color: colors.background }));
       }
       if (cell.grapheme !== ' ' && !cell.style.invisible) {
@@ -94,7 +138,7 @@ export function renderCellGridSvg(gridInput: CellGrid): string {
     '<?xml version="1.0" encoding="UTF-8"?>',
     `<svg xmlns="http://www.w3.org/2000/svg" width="${widthPx}" height="${heightPx}" viewBox="0 0 ${widthPx} ${heightPx}" role="img" aria-label="Terminal capture" xml:space="preserve" shape-rendering="crispEdges" data-source-kind="${grid.identity.kind}" data-cell-width="${SVG_CELL_WIDTH_PX}" data-cell-height="${SVG_CELL_HEIGHT_PX}">`,
     `  <metadata>${metadata}</metadata>`,
-    `  <rect width="${widthPx}" height="${heightPx}" fill="${DEFAULT_BACKGROUND}"/>`,
+    `  <rect width="${widthPx}" height="${heightPx}" fill="${palette.background}"/>`,
     ...backgrounds,
     ...text,
     '</svg>',
@@ -196,20 +240,27 @@ function textDecorationAttributes(
   return decorations.length === 0 ? [] : [`text-decoration="${decorations.join(' ')}"`];
 }
 
-function effectiveColors(cell: Extract<Cell, { readonly continuation: false }>): EffectiveColors {
-  const foreground = terminalColor(cell.foreground, DEFAULT_FOREGROUND);
-  const background = terminalColor(cell.background, DEFAULT_BACKGROUND);
+function effectiveColors(
+  cell: Extract<Cell, { readonly continuation: false }>,
+  palette: TerminalPalette,
+): EffectiveColors {
+  const foreground = terminalColor(cell.foreground, palette.foreground, palette.slots);
+  const background = terminalColor(cell.background, palette.background, palette.slots);
   return cell.style.inverse
     ? { foreground: background, background: foreground }
     : { foreground, background };
 }
 
-function terminalColor(color: TerminalColor, defaultColor: string): string {
+function terminalColor(
+  color: TerminalColor,
+  defaultColor: string,
+  slots: readonly string[],
+): string {
   switch (color.kind) {
     case 'default':
       return defaultColor;
     case 'indexed':
-      return indexedColor(color.index);
+      return slots[color.index] ?? xterm256Hex(color.index);
     case 'rgb':
       return `#${hex(color.red)}${hex(color.green)}${hex(color.blue)}`;
     default: {
@@ -217,23 +268,6 @@ function terminalColor(color: TerminalColor, defaultColor: string): string {
       return unhandled;
     }
   }
-}
-
-function indexedColor(index: number): string {
-  const paletteColor = ANSI_PALETTE[index];
-  if (paletteColor !== undefined) return paletteColor;
-  if (index < 232) {
-    const cubeIndex = index - 16;
-    const red = COLOR_CUBE_LEVELS[Math.floor(cubeIndex / 36)];
-    const green = COLOR_CUBE_LEVELS[Math.floor((cubeIndex % 36) / 6)];
-    const blue = COLOR_CUBE_LEVELS[cubeIndex % 6];
-    if (red === undefined || green === undefined || blue === undefined) {
-      throw new Error('Indexed terminal color is outside the color cube');
-    }
-    return `#${hex(red)}${hex(green)}${hex(blue)}`;
-  }
-  const level = 8 + (index - 232) * 10;
-  return `#${hex(level)}${hex(level)}${hex(level)}`;
 }
 
 function hex(value: number): string {

@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { getTheme } from '../../../components/theme.js';
+import { defaultTheme } from '../../../components/theme.js';
 import type { MarkdownLayoutSegment } from '../../../utils/markdown/types.js';
 import { workflowMarkdownRenderSegments } from './markdown-rows/review-segments.js';
 
 describe('workflowMarkdownRenderSegments', () => {
   it('colors only the status word, leaving the doc region free of accent/state hues', () => {
-    const theme = getTheme();
+    const theme = defaultTheme;
     const segment: MarkdownLayoutSegment = {
       kind: 'text',
       text: 'T001 in src/foo.ts is HIGH risk and FAILED',
@@ -29,7 +29,7 @@ describe('workflowMarkdownRenderSegments', () => {
   });
 
   it('does not color short prose verdict words on the doc surface', () => {
-    const theme = getTheme();
+    const theme = defaultTheme;
     const segment: MarkdownLayoutSegment = {
       kind: 'text',
       text: 'all checks PASS and tasks DONE, nothing is OK to skip',
@@ -44,7 +44,7 @@ describe('workflowMarkdownRenderSegments', () => {
   });
 
   it('folds an inconclusive verdict to a dim word on the doc surface', () => {
-    const theme = getTheme();
+    const theme = defaultTheme;
     const segment: MarkdownLayoutSegment = { kind: 'text', text: 'result is INCONCLUSIVE' };
 
     const parts = workflowMarkdownRenderSegments({ segment, theme, projectDir: undefined });

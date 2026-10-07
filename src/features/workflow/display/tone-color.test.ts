@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { getTheme } from '../../../components/theme.js';
+import { defaultTheme } from '../../../components/theme.js';
 import { colorForTone } from './tone-color.js';
 
 describe('the tone palette resolves to exactly the rendered colors', () => {
-  const theme = getTheme();
+  const theme = defaultTheme;
 
   it('maps every surviving tone onto its theme color', () => {
     expect(colorForTone(undefined, theme)).toBe(theme.text);

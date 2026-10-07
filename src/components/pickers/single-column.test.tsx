@@ -8,7 +8,7 @@ import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { glyph } from '../../lib/glyphs.js';
 import { _resetMouseZones, hitTopmostZone } from '../../lib/terminal/mouse-zones.js';
 import { ListRow } from '../list-row.js';
-import { getTheme, ThemeProvider } from '../theme.js';
+import { defaultTheme, ThemeProvider } from '../theme.js';
 import { SingleColumnPicker } from './single-column.js';
 
 beforeEach(() => {
@@ -275,7 +275,7 @@ describe('SingleColumnPicker row zones', () => {
   it('renders an overflow thumb with the muted scrollbar color, not the accent color', async () => {
     const originalColorLevel = chalk.level;
     chalk.level = 1;
-    const theme = { ...getTheme(), accent: 'red', scrollIndicator: 'green' };
+    const theme = { ...defaultTheme, accent: 'red', scrollIndicator: 'green' };
     const ui = renderFeature(
       <ThemeProvider theme={theme}>
         <SingleColumnPicker

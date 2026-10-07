@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Command } from 'commander';
+import chalk from 'chalk';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
@@ -10,6 +11,8 @@ import { SPLITBRIEF_DIR, STATE_FILE, SESSION_LOG_FILE } from '../../core/paths.j
 import { createInitialState } from '../../core/state/machine.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { plainTheme, resolveTheme } from '../../core/theme/resolve.js';
+import { paint } from '../../core/theme/paint.js';
 
 let tmp: string;
 // console.log is a sanctioned global spy — see docs/TESTING.md core rules.
@@ -76,6 +79,48 @@ async function runStatus(args: string[]): Promise<void> {
 }
 
 describe('status command', () => {
+  it('uses light truecolor colours when COLORFGBG decides the background', async () => {
+    writeActiveSession(tmp, '2026-10-08-theme', 'theme output');
+    const originalLevel = chalk.level;
+    const originalColorfgbg = process.env.COLORFGBG;
+    chalk.level = 3;
+    process.env.COLORFGBG = '0;15';
+    try {
+      await runStatus([]);
+
+      expect(captureOutput()).toContain(paint(plainTheme().textDim, 'Feature:'));
+      expect(plainTheme().textDim).toBe(
+        resolveTheme({ variant: 'light', level: 3, terminalBackground: undefined }).textDim,
+      );
+      expect(stripVTControlCharacters(captureOutput())).toContain('theme output');
+    } finally {
+      chalk.level = originalLevel;
+      if (originalColorfgbg === undefined) delete process.env.COLORFGBG;
+      else process.env.COLORFGBG = originalColorfgbg;
+    }
+  });
+
+  it('uses terminal ANSI colours when COLORFGBG is absent', async () => {
+    writeActiveSession(tmp, '2026-10-08-theme', 'theme output');
+    const originalLevel = chalk.level;
+    const originalColorfgbg = process.env.COLORFGBG;
+    chalk.level = 3;
+    delete process.env.COLORFGBG;
+    try {
+      await runStatus([]);
+
+      expect(captureOutput()).toContain(paint(plainTheme().textDim, 'Feature:'));
+      expect(plainTheme().textDim).toMatch(
+        /^(black|red|green|yellow|blue|magenta|cyan|white|gray)(Bright)?$/,
+      );
+      expect(stripVTControlCharacters(captureOutput())).toContain('theme output');
+    } finally {
+      chalk.level = originalLevel;
+      if (originalColorfgbg === undefined) delete process.env.COLORFGBG;
+      else process.env.COLORFGBG = originalColorfgbg;
+    }
+  });
+
   it('reports no active workflow when .splitbrief has no active marker', async () => {
     await runStatus([]);
     const out = captureOutput();

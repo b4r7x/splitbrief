@@ -1,5 +1,6 @@
+import { ThemeText as Text, useTheme } from '../theme.js';
 import type { ReactNode } from 'react';
-import { Box, Text } from 'ink';
+import { Box } from 'ink';
 import { glyph } from '../../lib/glyphs.js';
 import {
   getScrollbarThumb,
@@ -8,7 +9,6 @@ import {
   scrollbarCell,
   type ScrollbarColumn,
 } from '../scrollbar.js';
-import { useTheme } from '../theme.js';
 import { ScrollIndicator } from '../scroll-indicator.js';
 import { computeListDisplayWindow } from './scroll-window.js';
 import { RowZone, ROW_ZONE_Z_OVERLAY } from './row-zone.js';

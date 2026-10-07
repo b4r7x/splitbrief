@@ -1,6 +1,6 @@
+import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import type { ReactNode } from 'react';
-import { Box, Text } from 'ink';
-import { useTheme } from '../../../components/theme.js';
+import { Box } from 'ink';
 import { assertNever } from '../../../utils/type-guards.js';
 import {
   clipPromptBodyRows,
@@ -35,15 +35,13 @@ function renderHeadline(
       return (
         <Text key={key} wrap="truncate">
           <Text color={t.textDim}>{`${row.text} `}</Text>
-          <Text color={t.error} dimColor>
-            failed
-          </Text>
+          <Text color={t.dimError}>failed</Text>
           <Text color={t.textDim}>{` review · ${row.detail}`}</Text>
         </Text>
       );
     }
     return (
-      <Text key={key} wrap="truncate" color={t.error} dimColor>
+      <Text key={key} wrap="truncate" color={t.dimError}>
         {row.text || ' '}
       </Text>
     );

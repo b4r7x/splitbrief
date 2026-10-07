@@ -1,8 +1,8 @@
-import { Box, Text, useInput } from 'ink';
+import { ThemeText as Text, useTheme } from '../../../components/theme.js';
+import { Box, useInput } from 'ink';
 import { borderStyleFor } from '../../../lib/glyphs.js';
 import { listRowLead } from '../../../components/list-row.js';
 import { fitKeyLegend } from '../../../core/key-legend.js';
-import { useTheme } from '../../../components/theme.js';
 import { useStaticSelector } from '../../../hooks/use-static-selector.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';

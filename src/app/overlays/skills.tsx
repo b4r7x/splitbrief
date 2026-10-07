@@ -1,6 +1,6 @@
+import { ThemeText as Text, useTheme } from '../../components/theme.js';
 import { useState } from 'react';
-import { Box, Text } from 'ink';
-import { useTheme } from '../../components/theme.js';
+import { Box } from 'ink';
 import type { SkillMeta } from '../../core/skills/types.js';
 import { filterByFields } from '../../components/pickers/filtering.js';
 import { ListRow } from '../../components/list-row.js';

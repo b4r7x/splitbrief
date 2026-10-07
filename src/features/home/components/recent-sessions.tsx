@@ -1,5 +1,5 @@
-import { Box, Text } from 'ink';
-import { useTheme } from '../../../components/theme.js';
+import { ThemeText as Text, useTheme } from '../../../components/theme.js';
+import { Box } from 'ink';
 import { sessionsStore } from '../../../stores/project/sessions.js';
 import { SessionRow } from '../../../components/session-row.js';
 import type { Session } from '../../../core/schemas/session.js';

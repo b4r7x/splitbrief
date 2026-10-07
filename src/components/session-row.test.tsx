@@ -6,8 +6,13 @@ import { glyph } from '../lib/glyphs.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { SessionRow } from './session-row.js';
+import chalk from 'chalk';
+import { defaultTheme } from './theme.js';
+import { paint } from '../core/theme/paint.js';
+import { SOFT_SEP } from '../core/separators.js';
 
 const CURSOR_GLYPH = '▸';
+const originalColorLevel = chalk.level;
 const envSnapshot = { ...process.env };
 let ttyDescriptor: PropertyDescriptor | undefined;
 
@@ -56,6 +61,7 @@ describe('SessionRow', () => {
   });
 
   afterEach(() => {
+    chalk.level = originalColorLevel;
     resetAllStores();
   });
 
@@ -193,6 +199,23 @@ describe('SessionRow', () => {
     );
     expect(frame).toContain('running');
     expect(frame).toContain('◉');
+  });
+
+  it('paints the status word as secondary text', () => {
+    chalk.level = 3;
+    const ui = renderFeature(
+      <Box width={72}>
+        <SessionRow
+          session={makeSession({
+            status: 'complete',
+            feature: 'status colour',
+            startedAt: Date.now(),
+          })}
+        />
+      </Box>,
+    );
+    expect(ui.lastFrame()).toContain(paint(defaultTheme.textDim, ` just now${SOFT_SEP}complete`));
+    ui.unmount();
   });
 
   it('never leads a stopped row with a ✗ glyph', () => {

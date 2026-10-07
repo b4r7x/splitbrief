@@ -1,5 +1,6 @@
-import { Box, Text } from 'ink';
-import { useTheme, type Theme } from '../../components/theme.js';
+import { ThemeText as Text, useTheme } from '../../components/theme.js';
+import { Box } from 'ink';
+import type { Theme } from '../../core/theme/palette.js';
 import type { CrewLabVerdict } from '../../core/crew/labs.js';
 import type { CrewRow } from '../../core/crew/rows.js';
 import { CREW_SEAT_ROLES } from '../../core/crew/seats.js';
@@ -22,7 +23,7 @@ const VERDICT_WORDS: Readonly<Record<CrewLabVerdict, string>> = {
   'same-lab': 'same lab as the build',
 };
 
-function seatHue(theme: Theme, row: CrewRow): string {
+function seatHue(theme: Theme, row: CrewRow): string | undefined {
   return theme[CREW_SEAT_ROLES[row.id]];
 }
 

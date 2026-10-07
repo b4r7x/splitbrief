@@ -1,5 +1,6 @@
+import { ThemeText as Text, useTheme } from '../../components/theme.js';
 import type { ReactNode } from 'react';
-import { Text, useInput } from 'ink';
+import { useInput } from 'ink';
 import { OverlayPanel, overlayInnerRowCapacity } from '../../components/overlays/overlay-panel.js';
 import { RuleHeader } from '../../components/rule-header.js';
 import {
@@ -8,7 +9,6 @@ import {
 } from '../../components/scrollable-document.js';
 import { getScrollViewportContentWidth } from '../../components/scrollbar.js';
 import { SOFT_SEP } from '../../core/separators.js';
-import { useTheme } from '../../components/theme.js';
 import { glyph } from '../../lib/glyphs.js';
 import { overlayRect, type OverlayDensity } from '../../core/navigation/overlay-rect.js';
 import type { ReadinessCheck, ReadinessReport } from '../../core/readiness/types.js';
@@ -344,7 +344,11 @@ export function StartPreparationPanel({
   );
 }
 
-function toneColor(t: ReturnType<typeof useTheme>, tone: LineTone, failed: boolean): string {
+function toneColor(
+  t: ReturnType<typeof useTheme>,
+  tone: LineTone,
+  failed: boolean,
+): string | undefined {
   if (tone === 'cause') return failed ? t.error : t.warning;
   return tone === 'dim' ? t.textDim : t.text;
 }

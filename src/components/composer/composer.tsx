@@ -1,11 +1,12 @@
+import { ThemeText as Text, useTheme } from '../theme.js';
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
-import { Box, Text, type Key } from 'ink';
+import { Box, type Key } from 'ink';
 import { MultilineInput, type InputEdit } from '../input/multiline-input.js';
 import { CommandCompletionMenu } from './completion/command/menu.js';
 import { ReferenceCompletionMenu } from './completion/reference/menu.js';
 import { useCommandCompletion } from './completion/command/hook.js';
 import { useReferenceCompletion } from './completion/reference/hook.js';
-import { useTheme, type Theme } from '../theme.js';
+import type { Theme } from '../../core/theme/palette.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { inputHistoryStore } from '../../stores/ui/input-history.js';
 import { inputHeightStore } from '../../stores/ui/input-height.js';
@@ -82,7 +83,11 @@ const CLIPBOARD_IMAGE_ERRORS = {
 // and position carry it, never hue — so normal and review draw the same mark. Question mode keeps
 // its tone for now because the answer gate has no other cue at the caret; if that becomes a
 // different glyph, this whole function goes.
-function promptColorForMode(mode: InputMode, theme: Pick<Theme, 'text' | 'warning'>): string {
+function promptColorForMode(
+  mode: InputMode,
+  theme: Pick<Theme, 'text' | 'textDim' | 'warning'>,
+): string | undefined {
+  if (mode === 'review') return theme.textDim;
   if (mode === 'question') return theme.warning;
   return theme.text;
 }
@@ -647,7 +652,7 @@ function ComposerInput({
           minHeight={3}
           flexShrink={0}
         >
-          <Text color={promptColorForMode(mode, theme)} dimColor={mode === 'review'}>
+          <Text color={promptColorForMode(mode, theme)}>
             {`${promptGlyph ?? glyph('prompt')} `}
           </Text>
           <Box flexGrow={1} overflow="hidden">

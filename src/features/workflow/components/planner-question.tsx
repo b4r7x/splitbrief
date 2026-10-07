@@ -1,9 +1,9 @@
+import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import { useLayoutEffect, useState } from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, useInput } from 'ink';
 import { questionOptions, questionPromptStore } from '../../../stores/question-prompt/prompt.js';
 import { questionMenu, questionRows, QUESTION_ANSWER_ROWS } from '../prompt-rows/question.js';
 import { MultilineInput } from '../../../components/input/multiline-input.js';
-import { useTheme } from '../../../components/theme.js';
 import { borderStyleFor } from '../../../lib/glyphs.js';
 import { listRowLead } from '../../../components/list-row.js';
 import { formatKeyHints, SELECT_HINT } from '../prompt-rows/approval.js';

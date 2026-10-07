@@ -1,5 +1,5 @@
-import { Box, Text } from 'ink';
-import { useTheme } from '../../../components/theme.js';
+import { ThemeText as Text, useTheme } from '../../../components/theme.js';
+import { Box } from 'ink';
 import { configStore } from '../../../stores/project/config.js';
 import { detectionStore } from '../../../stores/project/detection.js';
 import { skillsStore } from '../../../stores/project/skills.js';
@@ -68,7 +68,7 @@ export function HomeSeatBlock({ rows, width }: { rows: number; width: number }) 
   const displayNames = useCrewDisplayNames(config);
 
   const seats = deriveCrewSeats({ config, displayNames });
-  const seatColor: Record<CrewSeatId, string> = {
+  const seatColor: Record<CrewSeatId, string | undefined> = {
     plan: theme.planner,
     build: theme.implementer,
     review: theme.reviewer,

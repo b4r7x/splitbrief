@@ -18,7 +18,10 @@ Stores are module-scoped singletons. Import the store, call its methods. No prov
 
 `storeBase(store)` strips `set` from the public surface, exposing only `use`, `get`, `subscribe`, `reset`. The `set` method is kept in a private `_nameInternal` export so only the store's own actions file can write to it.
 
-**What the codebase does not use:** No React Context for state (only a static `ThemeContext` for colors). No `useMemo`, `useCallback`, `React.memo`, `forwardRef`, `useImperativeHandle`. The store pattern makes them unnecessary.
+**What the codebase does not use:** No React Context for state (only `ThemeContext` for colours). No `useMemo`, `useCallback`, `React.memo`, `forwardRef`, `useImperativeHandle`. The store pattern makes them unnecessary.
+
+Every colour is a theme token from `src/core/theme/palette.ts`; `resolveTheme` maps it per colour level to a readable truecolor, 256-index or ANSI value against the detected background; components paint no faint (SGR 2) or fixed colours.
+Every `Text` in `src` is `ThemeText`, which drops an `undefined` colour so the terminal's own colour shows.
 
 ---
 

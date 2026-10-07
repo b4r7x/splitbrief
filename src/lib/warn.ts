@@ -26,7 +26,7 @@ export function warnStderr(
     owner.sink(text, presentation);
     return;
   }
-  process.stderr.write(`\x1b[2m${text}\x1b[0m\n`);
+  process.stderr.write(`${text}\n`);
 }
 
 export function warnError(context: string, err?: unknown): void {

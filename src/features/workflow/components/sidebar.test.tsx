@@ -16,6 +16,11 @@ import { tokensStore } from '../../../stores/workflow/tokens.js';
 import type { WorkflowTask } from '../../../stores/workflow/tasks.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { Sidebar } from './sidebar.js';
+import chalk from 'chalk';
+import { defaultTheme } from '../../../components/theme.js';
+import { paint } from '../../../core/theme/paint.js';
+
+const originalColorLevel = chalk.level;
 
 function task(
   id: string,
@@ -31,6 +36,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  chalk.level = originalColorLevel;
   resetAllStores();
 });
 
@@ -372,6 +378,7 @@ describe('Sidebar — title budget', () => {
   });
 
   it('keeps the status word for the rare states even at the narrow floor', async () => {
+    chalk.level = 3;
     tasksStore.__testReset({
       tasks: [
         task('1', 'escalated', LONG_TITLE),
@@ -390,6 +397,7 @@ describe('Sidebar — title budget', () => {
     // the user has to act on keep their word however narrow the panel gets.
     expect(rows[0]).toContain('escalated');
     expect(rows[1]).toContain('failed');
+    expect(ui.lastFrame()).toContain(paint(defaultTheme.dimError, '  failed'));
     expect(rows[2]).toContain('skipped');
 
     ui.unmount();

@@ -1,6 +1,6 @@
+import { ThemeText as Text, useTheme } from '../../components/theme.js';
 import { useEffect } from 'react';
-import { Text } from 'ink';
-import { useTheme } from '../../components/theme.js';
+
 import { sessionsStore } from '../../stores/project/sessions.js';
 import { configStore } from '../../stores/project/config.js';
 import { useStores } from '../../stores/use-stores.js';

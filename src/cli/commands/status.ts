@@ -1,5 +1,7 @@
 import type { Command } from 'commander';
-import ansis from 'ansis';
+import chalk from 'chalk';
+import { plainTheme } from '../../core/theme/resolve.js';
+import { paint } from '../../core/theme/paint.js';
 import { loadState } from '../../core/state/persistence.js';
 import {
   getCompletedTaskIds,
@@ -50,6 +52,7 @@ export function registerStatusCommand(program: Command): void {
     .option('--project <dir>', 'Project directory (default: cwd)')
     .action(async (opts: { project?: string }) => {
       const projectDir = await canonicalizeProjectDir(opts);
+      const theme = plainTheme();
 
       const sessionId = readActive(projectDir);
       const state = sessionId ? loadState({ projectDir, sessionId }) : null;
@@ -79,23 +82,27 @@ export function registerStatusCommand(program: Command): void {
           return stripTerminalControls(formatModelName(model, provider));
         };
         console.log(
-          `${ansis.dim('Feature:')}  ${ansis.bold(stripTerminalControls(state.feature))}`,
+          `${paint(theme.textDim, 'Feature:')}  ${chalk.bold(stripTerminalControls(state.feature))}`,
         );
-        const phaseSuffix = state.awaitingContinue ? ` ${ansis.yellow('(awaiting continue)')}` : '';
-        console.log(`${ansis.dim('Phase:')}    ${ansis.bold(state.phase)}${phaseSuffix}`);
+        const phaseSuffix = state.awaitingContinue
+          ? ` ${paint(theme.warning, '(awaiting continue)')}`
+          : '';
+        console.log(
+          `${paint(theme.textDim, 'Phase:')}    ${chalk.bold(state.phase)}${phaseSuffix}`,
+        );
         // The cursor points one past the last brief once every brief has settled, so the
         // position is the brief it names, never a brief the run does not have.
         const position = Math.min(state.currentTaskIndex + 1, state.tasks.length);
-        console.log(`${ansis.dim('Task:')}     ${position}/${state.tasks.length}`);
-        console.log(`${ansis.dim('Started:')}  ${state.startedAt}`);
-        console.log(`${ansis.dim('Session:')}  ${sessionId}`);
+        console.log(`${paint(theme.textDim, 'Task:')}     ${position}/${state.tasks.length}`);
+        console.log(`${paint(theme.textDim, 'Started:')}  ${state.startedAt}`);
+        console.log(`${paint(theme.textDim, 'Session:')}  ${sessionId}`);
 
         if (state.plannerTool) {
           const model = state.plannerModel
             ? ` (${seatModelLabel('planner', state.plannerTool, state.plannerModel)})`
             : '';
           console.log(
-            `${ansis.dim('Planner:')}  ${stripTerminalControls(seatLabel('planner', state.plannerTool))}${model}`,
+            `${paint(theme.textDim, 'Planner:')}  ${stripTerminalControls(seatLabel('planner', state.plannerTool))}${model}`,
           );
         }
         if (state.implementerTool) {
@@ -103,7 +110,7 @@ export function registerStatusCommand(program: Command): void {
             ? ` (${seatModelLabel('implementer', state.implementerTool, state.implementerModel)})`
             : '';
           console.log(
-            `${ansis.dim('Impl:')}     ${stripTerminalControls(seatLabel('implementer', state.implementerTool))}${model}`,
+            `${paint(theme.textDim, 'Impl:')}     ${stripTerminalControls(seatLabel('implementer', state.implementerTool))}${model}`,
           );
         }
 
@@ -111,13 +118,19 @@ export function registerStatusCommand(program: Command): void {
         const escalated = getEscalatedTaskIds(state);
         const failed = getFailedTaskIds(state);
         if (completed.length > 0) {
-          console.log(`${ansis.dim('Done:')}     ${ansis.green(String(completed.length))}`);
+          console.log(
+            `${paint(theme.textDim, 'Done:')}     ${paint(theme.success, String(completed.length))}`,
+          );
         }
         if (escalated.length > 0) {
-          console.log(`${ansis.dim('Escalated:')} ${ansis.yellow(String(escalated.length))}`);
+          console.log(
+            `${paint(theme.textDim, 'Escalated:')} ${paint(theme.warning, String(escalated.length))}`,
+          );
         }
         if (failed.length > 0) {
-          console.log(`${ansis.dim('Failed:')}   ${ansis.red(String(failed.length))}`);
+          console.log(
+            `${paint(theme.textDim, 'Failed:')}   ${paint(theme.error, String(failed.length))}`,
+          );
         }
       }
     });

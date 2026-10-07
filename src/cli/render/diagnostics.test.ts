@@ -230,7 +230,7 @@ describe('renderApp diagnostics ownership', () => {
 
     expect(writesWhileMounted).toEqual([]);
     const restoredAt = terminalWrites.indexOf(terminalSequences.exitAltBuffer);
-    const reportedAt = terminalWrites.indexOf(`\x1b[2m${DIAGNOSTIC}: recoverable\x1b[0m\n`);
+    const reportedAt = terminalWrites.indexOf(`${DIAGNOSTIC}: recoverable\n`);
     expect(restoredAt).toBeGreaterThanOrEqual(0);
     expect(reportedAt).toBeGreaterThan(restoredAt);
     expect(rawDiagnosticWrites()).toHaveLength(1);

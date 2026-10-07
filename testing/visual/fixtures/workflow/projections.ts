@@ -625,6 +625,13 @@ const implementationRetryProjection: WorkflowFixtureProjection = {
     },
     FIXTURE_TASKS_PLANNED,
     {
+      type: 'task_full_fail',
+      ts: FIXED_TS + 50,
+      phase: 'implementing',
+      taskId: WORKFLOW_FIXTURE_TASK_ID_2,
+      reason: WORKFLOW_FIXTURE_TEXT.failure,
+    },
+    {
       type: 'task_started',
       lineageAttempt: 6,
       attemptAllowance: 12,

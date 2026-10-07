@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import chalk from 'chalk';
+import { defaultTheme } from './theme.js';
+import { paint } from '../core/theme/paint.js';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { TaskSummary } from './task-summary.js';
@@ -6,6 +9,12 @@ import { glyph } from '../lib/glyphs.js';
 
 const jwt =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.sflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
+
+const originalColorLevel = chalk.level;
+
+afterEach(() => {
+  chalk.level = originalColorLevel;
+});
 
 describe('TaskSummary', () => {
   it('sanitizes completed task title and file text', () => {
@@ -49,6 +58,7 @@ describe('TaskSummary', () => {
   });
 
   it('paints the ✗ marker and a single failed word', () => {
+    chalk.level = 3;
     const ui = renderFeature(
       <TaskSummary
         width={100}
@@ -61,6 +71,7 @@ describe('TaskSummary', () => {
 
     expect(frame).toContain('T3 wire login route');
     expect(frame).toContain('failed');
+    expect(frame).toContain(paint(defaultTheme.dimError, ' failed'));
     expect(frame).toContain(glyph('statusFailed'));
 
     ui.unmount();

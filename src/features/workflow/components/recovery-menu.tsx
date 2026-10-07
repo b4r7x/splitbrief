@@ -1,10 +1,10 @@
-import { Box, Text, useInput } from 'ink';
+import { ThemeText as Text, useTheme } from '../../../components/theme.js';
+import { Box, useInput } from 'ink';
 import type { RecoveryAction } from '../../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { borderStyleFor } from '../../../lib/glyphs.js';
 import { fitKeyLegend } from '../../../core/key-legend.js';
 import { SOFT_SEP } from '../../../core/separators.js';
-import { useTheme } from '../../../components/theme.js';
 import { ListRow } from '../../../components/list-row.js';
 import { ListViewport } from '../../../components/pickers/list-viewport.js';
 import { useStaticSelector } from '../../../hooks/use-static-selector.js';

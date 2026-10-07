@@ -1,7 +1,7 @@
+import { ThemeText as Text, useTheme } from '../../components/theme.js';
 import { useState } from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, useInput } from 'ink';
 import { FilterInput } from '../../components/filter-input.js';
-import { useTheme } from '../../components/theme.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { OverlayPanel, overlayInnerRowCapacity } from '../../components/overlays/overlay-panel.js';
 import { ListRow } from '../../components/list-row.js';

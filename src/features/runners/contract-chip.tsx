@@ -1,10 +1,11 @@
-import { Box, Text } from 'ink';
+import { ThemeText as Text, useTheme } from '../../components/theme.js';
+import { Box } from 'ink';
 import { SOFT_SEP } from '../../core/separators.js';
-import { useTheme, type Theme } from '../../components/theme.js';
+import type { Theme } from '../../core/theme/palette.js';
 import { glyph } from '../../lib/glyphs.js';
 import type { CustomCommandContract } from '../../core/config/custom-commands.js';
 
-export function tierColor(t: Theme, tier: CustomCommandContract): string {
+export function tierColor(t: Theme, tier: CustomCommandContract): string | undefined {
   return tier === 'output' ? t.info : t.warning;
 }
 

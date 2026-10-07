@@ -1,4 +1,5 @@
-import { Box, Text } from 'ink';
+import { ThemeText as Text } from './theme.js';
+import { Box } from 'ink';
 import type { ReactNode } from 'react';
 import { sanitizeTerminalDisplayText } from '../utils/display-text.js';
 import { markdownLayoutGlyphs } from '../lib/glyphs.js';
@@ -14,10 +15,10 @@ import type {
   MarkdownLayoutSegment,
 } from '../utils/markdown/types.js';
 import type { ScrollableDocumentRow } from './scrollable-document.js';
-import type { Theme } from './theme.js';
+import type { Theme } from '../core/theme/palette.js';
 
 export interface MarkdownSegmentStyle {
-  color: string;
+  color: string | undefined;
   bold?: boolean;
   italic?: boolean;
   strikethrough?: boolean;

@@ -1,5 +1,6 @@
-import { Text } from 'ink';
-import type { Theme } from '../../../../components/theme.js';
+import { ThemeText as Text } from '../../../../components/theme.js';
+
+import type { Theme } from '../../../../core/theme/palette.js';
 import type { ScrollableDocumentRow } from '../../../../components/scrollable-document.js';
 import type { CopySegment, RunRow } from '../copy.js';
 import type { SummaryView } from '../view-model.js';

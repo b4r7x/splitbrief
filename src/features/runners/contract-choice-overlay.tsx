@@ -1,7 +1,7 @@
+import { ThemeText as Text, useTheme } from '../../components/theme.js';
 import { useEffect } from 'react';
-import { Box, Text } from 'ink';
+import { Box } from 'ink';
 import { SOFT_SEP } from '../../core/separators.js';
-import { useTheme } from '../../components/theme.js';
 import { listRowLead } from '../../components/list-row.js';
 import { useStaticSelector } from '../../hooks/use-static-selector.js';
 import type { ActiveRunnerRole } from '../../core/runners/seat-roles.js';

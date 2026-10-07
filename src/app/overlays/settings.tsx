@@ -1,5 +1,5 @@
-import { Box, Text } from 'ink';
-import { useTheme } from '../../components/theme.js';
+import { ThemeText as Text, useTheme } from '../../components/theme.js';
+import { Box } from 'ink';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
 import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
@@ -205,7 +205,7 @@ export function SettingsOverlay() {
               label={label}
               state={isCursor ? 'active' : 'default'}
               metadata={boolTrue ? undefined : displayValue(def, value, { detectedContextLength })}
-              metadataColor={t.text}
+              metadataTone="text"
               selected={boolTrue ? true : undefined}
               width={contentWidth}
             />

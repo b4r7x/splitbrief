@@ -341,6 +341,20 @@ export const gates: readonly Gate[] = [
       '{ rg -n "buildRunnerUsageLimitRecoveryIssue|buildRunnerUnauthenticatedRecoveryIssue|usageLimitDetailFromError|recordSeatsOfRecord" src || true; } | wc -l',
     expected: 0,
   },
+  {
+    id: '56',
+    description:
+      'No faint text (SGR 2): every secondary colour is a theme token that keeps its contrast',
+    command:
+      "{ rg -n -F -e dimColor -e ansis.dim -e chalk.dim -e '\\x1b[2m' -e '\\u001b[2m' src --glob '!**/*.test.ts' --glob '!**/*.test.tsx' || true; } | wc -l",
+    expected: 0,
+  },
+  {
+    id: '57',
+    description: 'Ink Text is imported only by components/theme.tsx',
+    command: String.raw`{ rg -l -U "\bimport\s*\{[^}]*\bText\b[^}]*\}\s*from ['\"]ink['\"]" src --glob '!**/*.test.ts' --glob '!**/*.test.tsx' --glob '!**/components/theme.tsx' || true; } | wc -l`,
+    expected: 0,
+  },
 ];
 
 export function getInvariantGates(id: string): readonly Gate[] {

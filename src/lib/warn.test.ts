@@ -25,11 +25,7 @@ describe('warn diagnostics ownership', () => {
     warnStderr(HOSTILE);
     warnStderr(HOSTILE, 'log-only');
 
-    expect(stderr).toEqual([
-      `\x1b[2m${SANITIZED}: boom\x1b[0m\n`,
-      `\x1b[2m${SANITIZED}\x1b[0m\n`,
-      `\x1b[2m${SANITIZED}\x1b[0m\n`,
-    ]);
+    expect(stderr).toEqual([`${SANITIZED}: boom\n`, `${SANITIZED}\n`, `${SANITIZED}\n`]);
   });
 
   it('hands each diagnostic to the installed sink once and keeps stderr silent', () => {
@@ -45,7 +41,7 @@ describe('warn diagnostics ownership', () => {
     expect(stderr).toEqual([]);
 
     warnStderr('after teardown');
-    expect(stderr).toEqual(['\x1b[2mafter teardown\x1b[0m\n']);
+    expect(stderr).toEqual(['after teardown\n']);
     expect(received).toHaveLength(2);
   });
 
@@ -70,6 +66,6 @@ describe('warn diagnostics ownership', () => {
 
     expect(inner).toEqual(['to inner', 'to late']);
     expect(outer).toEqual(['to outer']);
-    expect(stderr).toEqual(['\x1b[2mto stderr\x1b[0m\n']);
+    expect(stderr).toEqual(['to stderr\n']);
   });
 });

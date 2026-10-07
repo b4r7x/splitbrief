@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import chalk from 'chalk';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
@@ -9,7 +10,10 @@ import { deriveModelCatalogCapability } from './model-catalog/posture.js';
 import type { ModelOption } from './model-catalog/recency.js';
 import { glyph } from '../../lib/glyphs.js';
 import { SOFT_SEP } from '../../core/separators.js';
-import { getTheme } from '../../components/theme.js';
+import { defaultTheme, ThemeProvider } from '../../components/theme.js';
+import { paint } from '../../core/theme/paint.js';
+import { resolveTheme } from '../../core/theme/resolve.js';
+import { formatPickerStatusLabel } from './picker-format.js';
 import { ELLIPSIS } from '../../utils/display-text.js';
 import type { ProvenanceWord } from '../../core/providers/provenance.js';
 import {
@@ -353,10 +357,27 @@ describe('runner row grammar', () => {
       currentCommandKind: undefined,
       showStatus: true,
     } as const;
-    const unavailableColor = renderToolRow({ item: unavailable, ...rowArgs }).props.metadataColor;
-    const readyColor = renderToolRow({ item: ready, ...rowArgs }).props.metadataColor;
-    expect(unavailableColor).toBe(getTheme().warning);
-    expect(readyColor).not.toBe(unavailableColor);
+    const level = chalk.level;
+    chalk.level = 3;
+    const theme = { ...defaultTheme, warning: '#a40e26', textDim: '#454c59' };
+    const unavailableUi = renderFeature(
+      <ThemeProvider theme={theme}>
+        {renderToolRow({ item: unavailable, ...rowArgs })}
+      </ThemeProvider>,
+    );
+    const readyUi = renderFeature(
+      <ThemeProvider theme={theme}>{renderToolRow({ item: ready, ...rowArgs })}</ThemeProvider>,
+    );
+    try {
+      expect(unavailableUi.lastFrame()).toContain(
+        paint(theme.warning, ` ${formatPickerStatusLabel(unavailable.status) ?? ''}`),
+      );
+      expect(readyUi.lastFrame()).toContain(paint(theme.textDim, ' 1.2.3'));
+    } finally {
+      unavailableUi.unmount();
+      readyUi.unmount();
+      chalk.level = level;
+    }
   });
 
   it('renders custom/default model provenance without parens badges', async () => {
@@ -620,6 +641,32 @@ describe('runner row grammar', () => {
     expect(line).not.toContain(glyph('stagePending'));
     expect(line).not.toContain(glyph('statusWarning'));
     expect(line.includes(glyph('treeBranch')) || line.includes(glyph('treeLast'))).toBe(true);
+  });
+
+  it('keeps a signed-in route word on the terminal foreground at level 1', async () => {
+    const originalLevel = chalk.level;
+    chalk.level = 3;
+    const theme = resolveTheme({ variant: 'dark', level: 1, terminalBackground: undefined });
+    const ui = renderFeature(
+      <ThemeProvider theme={theme}>
+        {renderModelRow({
+          row: routeRow({ kind: 'configured', source: 'oauth' }),
+          isCursor: false,
+          maxWidth: 60,
+          currentModel: undefined,
+          auth: AUTH,
+        })}
+      </ThemeProvider>,
+    );
+    try {
+      await tick();
+      const word = ` signed in${SOFT_SEP}oauth`;
+      expect(ui.lastFrame()).toContain(word);
+      expect(ui.lastFrame()).not.toContain(paint(theme.textDim, word));
+    } finally {
+      ui.unmount();
+      chalk.level = originalLevel;
+    }
   });
 
   it('renders an unchecked route as the tag alone', async () => {

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { markdownSegmentStyle } from '../../../components/markdown.js';
-import { getTheme } from '../../../components/theme.js';
+import { defaultTheme } from '../../../components/theme.js';
 import { configStore } from '../../../stores/project/config.js';
 import { glyph, markdownLayoutGlyphs } from '../../../lib/glyphs.js';
 import { getTerminalCellWidth, sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
@@ -1336,7 +1336,7 @@ describe('streamed rows equal a cold render', () => {
 // markdownSegmentStyle and the transcript through a ConversationRowTone. A rank that resolves
 // differently on the two paths turns one document into two different outlines.
 describe('review and transcript resolve a segment the same way', () => {
-  const theme = getTheme();
+  const theme = defaultTheme;
 
   function reviewStyles(source: string, width: number) {
     return layoutMarkdown(parseMarkdownBlocks(source), { width, glyphs: GLYPHS })

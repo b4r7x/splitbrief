@@ -1,3 +1,4 @@
+import type { TerminalProfile } from '../contracts/manifest-fields.js';
 import type { ArtifactIdentity } from '../contracts/artifact-identity.js';
 import { ArtifactRecordSchema, type ArtifactRecord } from '../contracts/artifacts.js';
 import { CellGridSchema, type CellGrid } from '../contracts/cells.js';
@@ -75,7 +76,12 @@ export async function buildRunArtifacts(options: {
     consumedTargets.add(captureKey);
 
     appendOutcome(
-      await buildArtifact({ grid: capture.grid, locator: null, rasterize: options.rasterize }),
+      await buildArtifact({
+        grid: capture.grid,
+        locator: null,
+        rasterize: options.rasterize,
+        profile: options.selection.profile,
+      }),
       artifacts,
       failures,
     );
@@ -88,6 +94,7 @@ export async function buildRunArtifacts(options: {
       appendOutcome(
         await buildArtifact({
           grid: crop.grid,
+          profile: options.selection.profile,
           locator: crop.locator,
           rasterize: options.rasterize,
         }),
@@ -181,6 +188,7 @@ function resolveCrop(options: {
 }
 
 async function buildArtifact(options: {
+  readonly profile: TerminalProfile;
   readonly grid: CellGrid;
   readonly locator: ResolvedElementLocator | null;
   readonly rasterize: PngRasterizer | undefined;
@@ -205,7 +213,7 @@ async function buildArtifact(options: {
 
   let svg: string;
   try {
-    svg = renderCellGridSvg(grid);
+    svg = renderCellGridSvg(grid, options.profile);
   } catch {
     return buildWithoutDerived({ grid, locator: options.locator, truth });
   }
@@ -213,6 +221,7 @@ async function buildArtifact(options: {
   const png = await renderCellGridPng({
     grid,
     svg,
+    profile: options.profile,
     ...(options.rasterize === undefined ? {} : { rasterize: options.rasterize }),
   });
   const files = createArtifactFiles({

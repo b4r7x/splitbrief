@@ -1,4 +1,5 @@
-import { Box, Text, useInput } from 'ink';
+import { ThemeText as Text, useTheme } from '../../components/theme.js';
+import { Box, useInput } from 'ink';
 import { OverlayPanel, overlayInnerRowCapacity } from '../../components/overlays/overlay-panel.js';
 import { RuleHeader } from '../../components/rule-header.js';
 import { getScrollViewportContentWidth } from '../../components/scrollbar.js';
@@ -6,7 +7,7 @@ import {
   ScrollableDocument,
   type ScrollableDocumentRow,
 } from '../../components/scrollable-document.js';
-import { useTheme, type Theme } from '../../components/theme.js';
+import type { Theme } from '../../core/theme/palette.js';
 import { overlayRect, type OverlayDensity } from '../../core/navigation/overlay-rect.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
@@ -27,7 +28,7 @@ const LABEL_WIDTH = 12;
 /** The two spaces every labelled column on every other surface puts after its label. */
 const LABEL_GAP = '  ';
 
-function toneColor(theme: Theme, tone: UsageDetailRow['tone']): string {
+function toneColor(theme: Theme, tone: UsageDetailRow['tone']): string | undefined {
   if (tone === 'text') return theme.text;
   if (tone === 'warning') return theme.warning;
   return theme.textDim;

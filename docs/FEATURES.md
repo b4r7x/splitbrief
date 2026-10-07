@@ -516,6 +516,14 @@ Saved task status and matching evidence control stopped-brief attribution, inclu
 
 **How to use.** `⏎` on a session row opens the run. `esc` leaves a run at rest for home — there is nothing to stop, so no stop sheet opens. When the transcript outgrows its height it scrolls a line at a time with `shift+↑↓` (plain arrows stay with the composer history) or a page with `pgup`/`pgdn`, the legend gains `shift+↑↓ scroll`, and the byline never scrolls away.
 
+### Terminal colours
+
+The TUI follows the terminal. At fullscreen startup, it reads the background through OSC 11, then `COLORFGBG`. It uses dark when neither is known. There is no theme setting. The project config is shared, and the colours belong to each person's terminal.
+
+Every colour resolves per colour level to a readable value against that background. No text is faint.
+
+Plain commands (`status`, `spec`, `review`, snapshot diffs, the crash line) do not probe. They use `COLORFGBG` when it is set. Otherwise, they use the terminal's own 16 colours.
+
 ---
 
 ## Hooks (user-declared shell commands)

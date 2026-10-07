@@ -1,6 +1,6 @@
+import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import { formatCopyResult } from '../../../core/runtime/commands/types.js';
-import { Box, Text } from 'ink';
-import { useTheme } from '../../../components/theme.js';
+import { Box } from 'ink';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
@@ -113,7 +113,15 @@ export function FeedbackRow({
   );
 }
 
-function StateWordVoice({ lead, text, color }: { lead: string; text: string; color: string }) {
+function StateWordVoice({
+  lead,
+  text,
+  color,
+}: {
+  lead: string;
+  text: string;
+  color: string | undefined;
+}) {
   const t = useTheme();
   const spaceIndex = text.indexOf(' ');
   if (spaceIndex === -1) {

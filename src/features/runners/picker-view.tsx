@@ -1,8 +1,8 @@
-import { Box, Text } from 'ink';
+import { ThemeText as Text, useTheme } from '../../components/theme.js';
+import { Box } from 'ink';
 import { TwoColumnPicker, type PreviewContext } from './two-column-picker/picker.js';
 import type { TerminalPane } from './two-column-picker/types.js';
 import { SOFT_SEP } from '../../core/separators.js';
-import { useTheme } from '../../components/theme.js';
 import { useSpinnerFrame } from '../../hooks/use-spinner-frame.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
@@ -127,7 +127,7 @@ function ModelGuidance({
         {guidance.headline}
       </Text>
       {guidance.detail ? (
-        <Text color={t.textDim} dimColor wrap="truncate-end">
+        <Text color={t.textDim} wrap="truncate-end">
           {guidance.detail}
         </Text>
       ) : null}

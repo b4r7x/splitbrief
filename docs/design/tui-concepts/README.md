@@ -7,9 +7,8 @@ See the complete set in [`overview.png`](overview.png).
 
 ## Direction
 
-- Keep the palette from [`src/components/theme.tsx`](../../../src/components/theme.tsx): default
-  terminal background, white and gray, planner magenta, implementer/accent cyan, success green,
-  warning yellow, and error red.
+- Use the dark and light palettes from [`src/core/theme/palette.ts`](../../../src/core/theme/palette.ts).
+  The theme keeps secondary text readable and reserves distinct colours for seats, severity and links.
 - Improve hierarchy with spacing, alignment, restrained rules, and consistent label columns.
 - Use one straight phase rail. Do not introduce branches, git-like graphs, or a visual metaphor.
 - Keep the composer and keyboard hints visually stable across workflow states.

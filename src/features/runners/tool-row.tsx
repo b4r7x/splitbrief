@@ -1,6 +1,5 @@
 import { ListRow, wholeWordLabelForms } from '../../components/list-row.js';
 import { SOFT_SEP } from '../../core/separators.js';
-import { getTheme } from '../../components/theme.js';
 import { glyph } from '../../lib/glyphs.js';
 import { getTerminalCellWidth, sanitizeTerminalDisplayText } from '../../utils/display-text.js';
 import { modelRowMatchesId } from './model-catalog/catalog.js';
@@ -82,7 +81,7 @@ export function renderToolRow({
       label={label}
       state={state}
       metadata={metadata}
-      metadataColor={statusLabel === undefined ? undefined : getTheme().warning}
+      metadataTone={statusLabel !== undefined ? 'warning' : 'dim'}
       selected={isSelected || !!item.isCurrent}
       width={maxWidth}
       // A status outranks the tail of the name it qualifies; a version never does.
@@ -135,7 +134,7 @@ export function renderModelRow({
         label={sanitizeTerminalDisplayText(row.variant.tag)}
         state={isCursor ? 'active' : 'default'}
         metadata={word}
-        metadataColor={dim ? undefined : getTheme().text}
+        metadataTone={dim ? 'dim' : 'text'}
         trailing={' '}
         selected={currentModel !== undefined && row.variant.fullId === currentModel}
         width={maxWidth}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getTheme } from '../../../components/theme.js';
+import { defaultTheme } from '../../../components/theme.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
 import { taskId } from '../../../core/schemas/task.js';
@@ -60,7 +60,7 @@ describe('runnerActivityBatchRowBlock tree markers', () => {
       activity({ sequence: 3, activityId: 'c', kind: 'read', label: 'reading src/c.ts' }),
     ]);
     const header = rows.find((rowValue) => rowValue.kind === 'activity');
-    const theme = getTheme();
+    const theme = defaultTheme;
 
     expect(header?.segments[0]?.tone).toBe('planner');
     expect(colorForTone(header?.segments[0]?.tone, theme)).toBe(theme.planner);

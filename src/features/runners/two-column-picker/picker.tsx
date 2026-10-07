@@ -1,5 +1,5 @@
-import { Box, Text } from 'ink';
-import { useTheme } from '../../../components/theme.js';
+import { ThemeText as Text, useTheme } from '../../../components/theme.js';
+import { Box } from 'ink';
 import { ListRow } from '../../../components/list-row.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import type { FilterableItem } from '../../../components/pickers/filtering.js';

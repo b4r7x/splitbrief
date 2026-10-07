@@ -1,8 +1,8 @@
-import { Box, Text } from 'ink';
+import { ThemeText as Text, useTheme } from '../../../components/theme.js';
+import { Box } from 'ink';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { borderStyleFor, glyph, type GlyphName } from '../../../lib/glyphs.js';
-import { useTheme } from '../../../components/theme.js';
-import type { Theme } from '../../../components/theme.js';
+import type { Theme } from '../../../core/theme/palette.js';
 import {
   getTerminalCellWidth,
   sanitizeTerminalDisplayText,
@@ -48,10 +48,10 @@ interface SidebarProps {
 interface RowSpec {
   bar: string;
   marker: string;
-  markerColor: string;
-  labelColor: string;
+  markerColor: string | undefined;
+  labelColor: string | undefined;
   bold: boolean;
-  tail?: { text: string; color: string; dim?: boolean };
+  tail?: { text: string; color: string | undefined };
 }
 
 const TASK_STATUS_GLYPH_NAME: Record<WorkflowTask['status'], GlyphName> = {
@@ -115,7 +115,7 @@ function rowSpec(status: WorkflowTask['status'], t: Theme): RowSpec {
         markerColor: t.error,
         labelColor: t.text,
         bold: false,
-        tail: { text: 'failed', color: t.error, dim: true },
+        tail: { text: 'failed', color: t.dimError },
       };
     case 'skipped':
       return {
@@ -181,7 +181,7 @@ function SidebarWaiting() {
   );
 }
 
-function rateColor(rate: number, routed: number, t: Theme): string {
+function rateColor(rate: number, routed: number, t: Theme): string | undefined {
   if (routed === 0) return t.textDim;
   if (rate >= 50) return t.success;
   if (rate >= 25) return t.warning;
@@ -216,11 +216,7 @@ function TaskRow({
           {taskLabel}
         </Text>
       </Box>
-      {spec.tail && (
-        <Text color={spec.tail.color} dimColor={spec.tail.dim === true}>
-          {`  ${spec.tail.text}`}
-        </Text>
-      )}
+      {spec.tail && <Text color={spec.tail.color}>{`  ${spec.tail.text}`}</Text>}
     </Box>
   );
 }

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
-import { Box, Text, type TextProps } from 'ink';
+import { Box, type TextProps } from 'ink';
+import { ThemeText as Text } from '../theme.js';
 import { getTerminalCellWidth, stripTerminalControls } from '../../utils/display-text.js';
 
 export interface AlignedOptionLabelWidthOptions {
@@ -71,10 +72,7 @@ export function AlignedOptionRow({
             overflow="hidden"
             backgroundColor={backgroundColor}
           >
-            <Text
-              {...(cleanMeta.color !== undefined ? { color: cleanMeta.color } : {})}
-              wrap="truncate-end"
-            >
+            <Text color={cleanMeta.color} wrap="truncate-end">
               {cleanMeta.text}
             </Text>
           </Box>
@@ -85,7 +83,7 @@ export function AlignedOptionRow({
       ) : null}
       <Box width={labelWidth} flexShrink={0} overflow="hidden" backgroundColor={backgroundColor}>
         <Text
-          {...(labelColor !== undefined ? { color: labelColor } : {})}
+          color={labelColor}
           {...(labelBold !== undefined ? { bold: labelBold } : {})}
           wrap="truncate-end"
         >
@@ -103,7 +101,7 @@ export function AlignedOptionRow({
           overflow="hidden"
           backgroundColor={backgroundColor}
         >
-          <Text {...(detailColor !== undefined ? { color: detailColor } : {})} wrap={detailWrap}>
+          <Text color={detailColor} wrap={detailWrap}>
             {cleanDetail}
           </Text>
         </Box>

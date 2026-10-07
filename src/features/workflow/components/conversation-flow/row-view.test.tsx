@@ -1,10 +1,11 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Box, Text } from 'ink';
+import { Box } from 'ink';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import type { ConversationRow } from '../../conversation-rows/types.js';
 import { glyph } from '../../../../lib/glyphs.js';
-import { getTheme, resolveTheme, ThemeProvider } from '../../../../components/theme.js';
+import { defaultTheme, ThemeProvider, ThemeText as Text } from '../../../../components/theme.js';
+import { resolveTheme } from '../../../../core/theme/resolve.js';
 import { ConversationRowView } from './row-view.js';
 
 // Ink resolves chalk color level 0 against the capture stdout unless FORCE_COLOR is set before
@@ -28,7 +29,7 @@ const LIVE_MARK = glyph('statusInProgress');
 const FOCUS_MARK = glyph('liveBar');
 const TREE_BRANCH_MARK = glyph('treeBranch');
 
-function colorOpen(color: string): string {
+function colorOpen(color: string | undefined): string {
   const ui = renderFeature(<Text color={color}>x</Text>);
   const frame = ui.lastFrame();
   ui.unmount();
@@ -94,7 +95,7 @@ describe('ConversationRowView lifecycle and focus glyphs', () => {
   });
 
   it('paints the task-header marker in the sidebar in-progress colour, not the success colour', () => {
-    const theme = getTheme();
+    const theme = defaultTheme;
     // Dim segment text, so the only cell that can carry theme.text is the marker itself.
     const row: ConversationRow = {
       key: 'task-header:T001',
@@ -230,7 +231,7 @@ describe('ConversationRowView code background', () => {
     codeBg: true,
   };
 
-  function backgroundOpen(color: string): string {
+  function backgroundOpen(color: string | undefined): string {
     const ui = renderFeature(
       <Box backgroundColor={color}>
         <Text>x</Text>
@@ -244,7 +245,7 @@ describe('ConversationRowView code background', () => {
   }
 
   it('paints a code row with the themed background', () => {
-    const theme = getTheme();
+    const theme = defaultTheme;
     const codeBg = theme.markdown.codeBg;
     if (codeBg === undefined) throw new Error('the theme must define markdown.codeBg');
 
@@ -264,7 +265,7 @@ describe('ConversationRowView code background', () => {
   // bgBlack, which is that terminal's own ground. resolveTheme hands such a terminal a preset
   // with no codeBg at all, and the rail has to carry the frame on its own.
   it('renders a code row unpainted on a terminal without hex color, leaving the rail to frame it', () => {
-    const theme = resolveTheme({ TERM: 'xterm' });
+    const theme = resolveTheme({ variant: 'dark', level: 1, terminalBackground: undefined });
     const ui = renderFeature(
       <ThemeProvider theme={theme}>
         <ConversationRowView row={codeRow} />
@@ -279,7 +280,7 @@ describe('ConversationRowView code background', () => {
   });
 
   it('leaves a row without the flag unpainted under the same theme', () => {
-    const theme = getTheme();
+    const theme = defaultTheme;
     const plainRow: ConversationRow = {
       key: 'markdown-code-1',
       kind: 'message',

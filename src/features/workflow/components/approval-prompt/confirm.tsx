@@ -1,6 +1,6 @@
+import { ThemeText as Text, useTheme } from '../../../../components/theme.js';
 import { useEffect, useRef, useState } from 'react';
-import { Box, Text, useInput } from 'ink';
-import { useTheme } from '../../../../components/theme.js';
+import { Box, useInput } from 'ink';
 import { RuleHeader } from '../../../../components/rule-header.js';
 import { borderStyleFor, glyph } from '../../../../lib/glyphs.js';
 import { listRowLead } from '../../../../components/list-row.js';

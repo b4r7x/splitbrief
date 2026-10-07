@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getTheme } from '../../../components/theme.js';
+import { defaultTheme } from '../../../components/theme.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
 import { colorForTone } from '../display/tone-color.js';
 import {
@@ -203,7 +203,7 @@ describe('buildActivityBatchViewModel', () => {
 });
 
 describe('activity batch tone resolution', () => {
-  const theme = getTheme();
+  const theme = defaultTheme;
   const roles = [
     'planner',
     'implementer',
@@ -214,7 +214,7 @@ describe('activity batch tone resolution', () => {
   ] as const satisfies readonly NonNullable<EngineEventOf<'runner_call_activity'>['role']>[];
 
   it('resolves work roles to their own hue and ancillary roles to dim', () => {
-    const expected: Record<(typeof roles)[number], string> = {
+    const expected: Record<(typeof roles)[number], string | undefined> = {
       planner: theme.planner,
       implementer: theme.implementer,
       review: theme.validator,

@@ -4,7 +4,13 @@ import { MAX_RENDERER_CELL_METRIC_PX, MIN_RENDERER_CELL_METRIC_PX } from './limi
 import { NonBlankPersistedTextSchema, ToolVersionSchema } from './persisted-data.js';
 import { CONTROL_POLICY_VERSION, HYPERLINK_POLICY_VERSION } from './schema-versions.js';
 
-export const TerminalProfileSchema = z.enum(['unicode-color', 'unicode-mono', 'ascii-mono']);
+export const TerminalProfileSchema = z.enum([
+  'unicode-color',
+  'unicode-256',
+  'unicode-light',
+  'unicode-mono',
+  'ascii-mono',
+]);
 export type TerminalProfile = z.infer<typeof TerminalProfileSchema>;
 
 export const WarningSchema = z

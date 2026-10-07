@@ -1,6 +1,7 @@
+import { ThemeText as Text, useTheme } from '../../../../components/theme.js';
 import { useState, useEffect } from 'react';
-import { Box, Text } from 'ink';
-import { useTheme, type Theme } from '../../../../components/theme.js';
+import { Box } from 'ink';
+import type { Theme } from '../../../../core/theme/palette.js';
 import { glyph } from '../../../../lib/glyphs.js';
 import { osc8Hyperlink, terminalSupportsHyperlinks } from '../../../../lib/terminal/hyperlinks.js';
 import { getTerminalCellWidth, stripTerminalControls } from '../../../../utils/display-text.js';
@@ -69,7 +70,7 @@ function RowLeading({
   kind: ConversationRow['kind'];
   lifecycle: RowLifecycle;
   focused?: boolean;
-  markerColor: string;
+  markerColor: string | undefined;
   headerContinuation?: boolean;
 }) {
   const t = useTheme();
@@ -111,7 +112,11 @@ function RowLeading({
   );
 }
 
-function markerColorFor(row: ConversationRow, lifecycle: RowLifecycle, t: Theme): string {
+function markerColorFor(
+  row: ConversationRow,
+  lifecycle: RowLifecycle,
+  t: Theme,
+): string | undefined {
   if (row.markerTone !== undefined) return colorForTone(row.markerTone, t);
   if (lifecycle === 'queued') return t.textDim;
   if (row.kind === 'activity' || row.kind === 'callout-top' || row.kind === 'callout-body') {

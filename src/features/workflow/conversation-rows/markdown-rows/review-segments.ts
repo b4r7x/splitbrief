@@ -2,7 +2,7 @@ import type {
   MarkdownRenderSegment,
   MarkdownSegmentDecorator,
 } from '../../../../components/markdown.js';
-import type { Theme } from '../../../../components/theme.js';
+import type { Theme } from '../../../../core/theme/palette.js';
 import { assertNever } from '../../../../utils/type-guards.js';
 import { filePathUrl, projectRelativePathLabel } from '../../../../utils/path-links.js';
 import { workflowMarkdownParts, type WorkflowMarkdownPart } from './workflow-markers.js';
@@ -62,7 +62,7 @@ function filePathRenderSegment(
   };
 }
 
-function statusColor(text: string, theme: Theme): string {
+function statusColor(text: string, theme: Theme): string | undefined {
   const value = text.toUpperCase();
   if (
     value.includes('FAIL') ||

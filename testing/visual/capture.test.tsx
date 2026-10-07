@@ -236,7 +236,13 @@ interface CaptureEntryInput {
   readonly elementIds: readonly ElementId[];
 }
 
-const TERMINAL_PROFILES = ['unicode-color', 'unicode-mono', 'ascii-mono'] as const;
+const TERMINAL_PROFILES = [
+  'unicode-color',
+  'unicode-256',
+  'unicode-light',
+  'unicode-mono',
+  'ascii-mono',
+] as const;
 type TerminalProfile = (typeof TERMINAL_PROFILES)[number];
 
 function captureEntry(

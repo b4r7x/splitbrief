@@ -1,10 +1,10 @@
+import { ThemeText as Text, useTheme } from '../../components/theme.js';
 import { useState, useEffect } from 'react';
 import type { ReactElement, ReactNode } from 'react';
-import { Box, Text } from 'ink';
+import { Box } from 'ink';
 import { MultilineInput } from '../../components/input/multiline-input.js';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
 import { SOFT_SEP } from '../../core/separators.js';
-import { useTheme } from '../../components/theme.js';
 import type { SeatPickerRole } from '../../core/runners/seat-roles.js';
 import { borderStyleFor, glyph } from '../../lib/glyphs.js';
 import { overlayStore } from '../../stores/ui/overlay.js';

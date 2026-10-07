@@ -5,7 +5,8 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { listRowLead } from '../../components/list-row.js';
-import { getTheme, ThemeProvider } from '../../components/theme.js';
+import { defaultTheme, ThemeProvider } from '../../components/theme.js';
+import { paint } from '../../core/theme/paint.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { glyph } from '../../lib/glyphs.js';
@@ -100,7 +101,7 @@ describe('ContractChoiceOverlay', () => {
     chalk.level = 1;
     try {
       const ui = renderFeature(
-        <ThemeProvider theme={{ ...getTheme(), accent: 'red' }}>
+        <ThemeProvider theme={{ ...defaultTheme, accent: 'red' }}>
           <ContractChoiceOverlay role="planner" initialKind={undefined} onChoose={() => {}} />
         </ThemeProvider>,
         { cols: 100, rows: 30 },
@@ -125,7 +126,7 @@ describe('ContractChoiceOverlay', () => {
 
       expect(rawShellRow).toContain(`\u001B[31m${listRowLead('active')}`);
       expect(rawShellRow).toContain('\u001B[31m Output command');
-      expect(rawAgentRow).toContain('\u001B[37m Direct-write agent');
+      expect(rawAgentRow).toContain(paint(defaultTheme.text, ' Direct-write agent'));
       expect(rawAgentRow).not.toContain('\u001B[31m');
       ui.unmount();
     } finally {

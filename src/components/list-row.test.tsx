@@ -6,6 +6,9 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { glyph } from '../lib/glyphs.js';
 import { ELLIPSIS } from '../utils/display-text.js';
 import { ListGroupHeader, ListRow, listRowLead } from './list-row.js';
+import { defaultTheme, ThemeProvider } from './theme.js';
+import { resolveTheme } from '../core/theme/resolve.js';
+import { paint } from '../core/theme/paint.js';
 
 const originalForceColor = vi.hoisted(() => {
   const saved = process.env['FORCE_COLOR'];
@@ -384,15 +387,37 @@ describe('ListRow', () => {
     expect(withoutTree).toContain('high');
   });
 
-  it('does not change cell text when metadataColor is set', () => {
+  it('does not change cell text when metadataTone is set', () => {
     const withoutColor = stripAnsiStyles(
       frameOf(<ListRow label="tool" metadata="warn" width={40} />, 40),
     );
     const withColor = stripAnsiStyles(
-      frameOf(<ListRow label="tool" metadata="warn" metadataColor="#ffcc00" width={40} />, 40),
+      frameOf(<ListRow label="tool" metadata="warn" metadataTone="warning" width={40} />, 40),
     );
 
     expect(withColor).toBe(withoutColor);
+  });
+
+  it.each(['text', 'warning', 'dim'] as const)(
+    'resolves the %s metadata tone from the theme',
+    (tone) => {
+      const frame = frameOf(
+        <ListRow label="tool" metadata="value" metadataTone={tone} width={40} />,
+      );
+      const color = tone === 'dim' ? defaultTheme.textDim : defaultTheme[tone];
+      expect(frame).toContain(paint(color, ' value'));
+    },
+  );
+
+  it('keeps the terminal foreground for text metadata at level 1', () => {
+    const theme = resolveTheme({ variant: 'dark', level: 1, terminalBackground: undefined });
+    const frame = frameOf(
+      <ThemeProvider theme={theme}>
+        <ListRow label="tool" metadata="value" metadataTone="text" width={40} />
+      </ThemeProvider>,
+    );
+    expect(frame).toContain(' value');
+    expect(frame).not.toContain(paint(theme.textDim, ' value'));
   });
 });
 

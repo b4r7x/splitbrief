@@ -42,6 +42,9 @@ The task is a file attached with `@`, for example `.nuke/<date>-<topic>/tasks/<i
 
 ## 2. Launch and gates
 
+Readability does not depend on tmux settings. SPLITBRIEF maps every token to a readable value at 256 colours.
+Add `set -as terminal-features ',xterm-ghostty:RGB'` only for exact truecolor values inside tmux. Use the outer `$TERM` instead of `xterm-ghostty` when needed.
+
 Interactive runs go through tmux so the operator can read the pane and type into it:
 
 ```bash

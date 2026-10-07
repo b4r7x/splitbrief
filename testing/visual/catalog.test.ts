@@ -29,6 +29,7 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-implementation', ['120x40', '80x24', '60x18', '160x45', '220x45']],
   ['workflow-implementation-silent', ['120x40', '80x24', '60x18', '160x45', '220x45']],
   ['workflow-implementation-full-suite', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-implementation-retry', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-plan-card', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-plan-card-render-note', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-plan-card-shared-command', ['120x40', '80x24', '60x18', '160x45']],
@@ -44,6 +45,22 @@ afterEach(() => {
 });
 
 describe('visual catalog', () => {
+  it('shows a failed task beside the retried task at a sidebar viewport', async () => {
+    const scenario = findVisualScenario('workflow-implementation-retry');
+    if (scenario === undefined) throw new Error('Missing retry scenario');
+    const checkpoint = scenario.checkpoints[0];
+    const wide = scenario.viewports.find((size) => size.cols > 120);
+    if (checkpoint === undefined || wide === undefined) throw new Error('Missing wide checkpoint');
+    const handle = await mountGalleryScenario({ scenario, checkpoint, viewport: wide });
+    try {
+      const frame = await handle.waitForCheckpoint();
+      expect(frame).toContain('attempt 7 of 12');
+      expect(frame.split('\n').some((row) => /Register.*failed/.test(row))).toBe(true);
+    } finally {
+      await handle.unmount();
+    }
+  });
+
   it('retains fixtures for the changed composer, preparation, usage and local-server surfaces', () => {
     for (const id of [
       'home-preparing',

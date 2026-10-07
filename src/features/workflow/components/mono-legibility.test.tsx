@@ -15,7 +15,7 @@ import { approvalPromptStore, openApprovalPrompt } from '../../../stores/approva
 import type { TieredApprovalRequest } from '../../../core/approval/types.js';
 
 // Stripping every ANSI style sequence reproduces exactly what a NO_COLOR / FORCE_COLOR=0 terminal
-// paints: both hue (SGR colour) and the dimColor faint attribute are gone. What survives is the
+// paints: hue (SGR colour) is gone. What survives is the
 // glyph and layout layer. These tests assert the redesign never lets required state ride on colour
 // or dim alone — every state is also carried by a distinct shape, connector, border weight, or sign.
 

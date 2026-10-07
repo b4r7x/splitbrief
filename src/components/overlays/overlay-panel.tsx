@@ -1,6 +1,6 @@
+import { ThemeText as Text, useTheme } from '../theme.js';
 import type { ReactNode } from 'react';
-import { Box, Text } from 'ink';
-import { useTheme } from '../theme.js';
+import { Box } from 'ink';
 import { borderStyleFor } from '../../lib/glyphs.js';
 import { fitKeyLegend } from '../../core/key-legend.js';
 import { SOFT_SEP } from '../../core/separators.js';

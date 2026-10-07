@@ -1,5 +1,5 @@
-import { Box, Text } from 'ink';
-import { useTheme } from '../../../theme.js';
+import { ThemeText as Text, useTheme } from '../../../theme.js';
+import { Box } from 'ink';
 import { listRowLead } from '../../../list-row.js';
 import {
   AlignedOptionRow,
@@ -90,7 +90,7 @@ function CommandRow({
 }: {
   cmd: CommandCompletionRow;
   isSelected: boolean;
-  rowBg: string;
+  rowBg: string | undefined;
   nameWidth: number;
 }) {
   const t = useTheme();

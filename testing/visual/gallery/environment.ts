@@ -26,6 +26,29 @@ const PROFILE_ENVIRONMENT = {
     colorterm: 'truecolor',
     forceColor: '3',
     noColor: undefined,
+    colorfgbg: undefined,
+    isTTY: true,
+  },
+  'unicode-256': {
+    locale: 'en_US.UTF-8',
+    determinismLocale: 'en-US',
+    term: 'xterm-256color',
+    colorLevel: 2,
+    colorterm: undefined,
+    forceColor: '2',
+    noColor: undefined,
+    colorfgbg: undefined,
+    isTTY: true,
+  },
+  'unicode-light': {
+    locale: 'en_US.UTF-8',
+    determinismLocale: 'en-US',
+    term: 'xterm-256color',
+    colorLevel: 3,
+    colorterm: 'truecolor',
+    forceColor: '3',
+    noColor: undefined,
+    colorfgbg: '0;15',
     isTTY: true,
   },
   'unicode-mono': {
@@ -36,6 +59,7 @@ const PROFILE_ENVIRONMENT = {
     colorterm: 'truecolor',
     forceColor: '0',
     noColor: '1',
+    colorfgbg: undefined,
     isTTY: true,
   },
   'ascii-mono': {
@@ -46,6 +70,7 @@ const PROFILE_ENVIRONMENT = {
     colorterm: undefined,
     forceColor: '0',
     noColor: '1',
+    colorfgbg: undefined,
     isTTY: true,
   },
 } as const satisfies Record<
@@ -54,8 +79,9 @@ const PROFILE_ENVIRONMENT = {
     locale: string;
     determinismLocale: string;
     term: string;
-    colorLevel: 0 | 3;
+    colorLevel: 0 | 2 | 3;
     colorterm: string | undefined;
+    colorfgbg: string | undefined;
     forceColor: string;
     noColor: string | undefined;
     isTTY: boolean;
@@ -69,6 +95,7 @@ const ENVIRONMENT_KEYS = [
   'LC_CTYPE',
   'TERM',
   'COLORTERM',
+  'COLORFGBG',
   'FORCE_COLOR',
   'FORCE_HYPERLINK',
   'NO_COLOR',
@@ -181,6 +208,7 @@ function applyEnvironment(profile: (typeof PROFILE_ENVIRONMENT)[TerminalProfile]
     LC_CTYPE: profile.locale,
     TERM: profile.term,
     COLORTERM: profile.colorterm,
+    COLORFGBG: profile.colorfgbg,
     FORCE_COLOR: profile.forceColor,
     FORCE_HYPERLINK: '0',
     NO_COLOR: profile.noColor,

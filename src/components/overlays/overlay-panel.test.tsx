@@ -1,9 +1,8 @@
 import type { ReactElement } from 'react';
-import { Text } from 'ink';
 import { render } from 'ink-testing-library';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
-import { getTheme } from '../theme.js';
+import { defaultTheme, ThemeText as Text } from '../theme.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { overlayRect } from '../../core/navigation/overlay-rect.js';
 import { OverlayPanel, overlayInnerRowCapacity } from './overlay-panel.js';
@@ -22,7 +21,7 @@ afterAll(() => {
   else process.env['FORCE_COLOR'] = originalForceColor;
 });
 
-function colorOpen(color: string): string {
+function colorOpen(color: string | undefined): string {
   const ui = render(<Text color={color}>x</Text>);
   const frame = ui.lastFrame() ?? '';
   ui.unmount();
@@ -49,7 +48,7 @@ describe('OverlayPanel title', () => {
   // §1.1 accent budget: surface titles are quiet dim metadata; the lone accent per region is the
   // focused row's `▌` bar. A `·`-separated title must never accent its head (the prior regression).
   it.each(['help · commands & shortcuts'])('renders "%s" dim with no accent head', (title) => {
-    const theme = getTheme();
+    const theme = defaultTheme;
     const accentOpen = colorOpen(theme.accent);
     const dimOpen = colorOpen(theme.textDim);
 

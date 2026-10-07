@@ -1,5 +1,5 @@
-import { Box, Text } from 'ink';
-import { useTheme } from './theme.js';
+import { ThemeText as Text, useTheme } from './theme.js';
+import { Box } from 'ink';
 import { listRowLead } from './list-row.js';
 import { glyph } from '../lib/glyphs.js';
 import { SOFT_SEP } from '../core/separators.js';
@@ -83,9 +83,7 @@ export function SessionRow({ session, cursor = NO_ROW_CURSOR }: SessionRowProps)
         <Text wrap="truncate-end">
           <Text color={t.textDim}> {time}</Text>
           <Text color={t.textDim}>{SOFT_SEP}</Text>
-          <Text color={iconColor} dimColor>
-            {display.word}
-          </Text>
+          <Text color={t.textDim}>{display.word}</Text>
         </Text>
       </Box>
     </Box>

@@ -14,7 +14,13 @@ import {
   requireProvenance,
 } from './visual-contract-fixtures.js';
 
-const profiles = ['unicode-color', 'unicode-mono', 'ascii-mono'] as const;
+const profiles = [
+  'unicode-color',
+  'unicode-256',
+  'unicode-light',
+  'unicode-mono',
+  'ascii-mono',
+] as const;
 
 function selectionInput() {
   const provenance = createVisualProvenance();

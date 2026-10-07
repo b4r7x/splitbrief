@@ -44,6 +44,7 @@ src/stores/
 ├── ui/                       # Ephemeral screen chrome
 │   ├── controls.ts           # Sidebar visibility + input mode (cross-tree flags)
 │   ├── terminal-size.ts      # Terminal dimensions + responsive layout
+│   ├── terminal-background.ts # Detected terminal background
 │   ├── overlay.ts            # Active overlay panel + stack
 │   ├── feedback.ts           # Info/error feedback messages (subscribes channels/feedback)
 │   ├── input-history.ts      # Command history — pure in-memory state; persistence lives in stores/ui/persistence.ts
@@ -195,6 +196,7 @@ routerStore.navigate('workflow', { feature: 'auth' });
 | `overlayStore` | `ui/overlay.ts` | `{ active, exclusive, focus?, stack[] }` | `open()`, `close()`, `setExclusive()` |
 | `feedbackStore` | `ui/feedback.ts` | `{ message: string \| null, isError: boolean }` | `setMessage()`, `setError()`, `setTransientError()`, `reset()` |
 | `terminalSizeStore` | `ui/terminal-size.ts` | `{ cols, rows, isSmall }` | `set()`, `subscribeToResize()` |
+| `terminalBackgroundStore` | `ui/terminal-background.ts` | `string \| undefined` | `detected(hex)`, `reset()` |
 | `inputHistoryStore` | `ui/input-history.ts` | `{ entries: string[] }` | `push()`, `hydrate()` — disk I/O lives in `stores/ui/persistence.ts` wired from `init-stores.ts` |
 | `inputHeightStore` | `ui/input-height.ts` | `{ rows: number }` | `setRows()` |
 | `commandPaletteMruStore` | `ui/command-palette-mru.ts` | `{ ids: string[] }` | `record()` |

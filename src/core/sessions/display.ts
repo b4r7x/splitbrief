@@ -5,22 +5,22 @@ import { glyph } from '../../lib/glyphs.js';
 import { assertNever } from '../../utils/type-guards.js';
 
 export interface SessionDisplayColors {
-  accent: string;
-  success: string;
-  warning: string;
-  error: string;
-  textDim: string;
+  accent: string | undefined;
+  success: string | undefined;
+  warning: string | undefined;
+  error: string | undefined;
+  textDim: string | undefined;
 }
 
 export interface SessionStatusDisplay {
   icon: string;
-  color: string;
+  color: string | undefined;
   word: string;
 }
 
 export interface MethodDisplay {
   text: string;
-  color: string;
+  color: string | undefined;
 }
 
 export function getMethodDisplay(
@@ -93,7 +93,7 @@ function statusIcon(session: Pick<Session, 'status' | 'stop' | 'apply'>): string
 function statusColor(
   session: Pick<Session, 'status' | 'stop' | 'apply'>,
   theme: SessionDisplayColors,
-): string {
+): string | undefined {
   if (session.apply === 'ready') return theme.accent;
   if (session.apply === 'applied') return theme.success;
   if (session.apply === 'discarded') return theme.textDim;

@@ -1,5 +1,5 @@
-import { Box, Text } from 'ink';
-import { useTheme } from '../../../theme.js';
+import { ThemeText as Text, useTheme } from '../../../theme.js';
+import { Box } from 'ink';
 import { listRowLead } from '../../../list-row.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';

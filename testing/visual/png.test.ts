@@ -13,7 +13,11 @@ const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 describe('cell-grid PNG rendering', () => {
   it('returns valid PNG bytes, dimensions, and pinned renderer provenance', async () => {
     const grid = await createGrid();
-    const result = await renderCellGridPng({ grid, svg: renderCellGridSvg(grid) });
+    const result = await renderCellGridPng({
+      grid,
+      svg: renderCellGridSvg(grid, 'unicode-color'),
+      profile: 'unicode-color',
+    });
     if (result.kind !== 'success') throw new Error('Expected sharp rasterization to succeed');
     const metadata = await sharp(result.bytes).metadata();
 
@@ -42,7 +46,8 @@ describe('cell-grid PNG rendering', () => {
     const diagnostic = serializeTerminalTruth(grid);
     const result = await renderCellGridPng({
       grid,
-      svg: renderCellGridSvg(grid),
+      svg: renderCellGridSvg(grid, 'unicode-color'),
+      profile: 'unicode-color',
       rasterize: async () => {
         throw new Error('forced rasterizer failure');
       },

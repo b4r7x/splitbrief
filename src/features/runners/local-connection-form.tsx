@@ -1,10 +1,10 @@
+import { ThemeText as Text, useTheme } from '../../components/theme.js';
 import { useRef, useState } from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, useInput } from 'ink';
 import { ListRow } from '../../components/list-row.js';
 import { MultilineInput } from '../../components/input/multiline-input.js';
 import { OverlayPanel, overlayInnerRowCapacity } from '../../components/overlays/overlay-panel.js';
 import { windowSlice } from '../../components/pickers/scroll-window.js';
-import { useTheme } from '../../components/theme.js';
 import { parseApiKeyEnvRef } from '../../core/config/credentials.js';
 import { CREW_SEAT_LABELS } from '../../core/crew/identity.js';
 import type { DetectedModel } from '../../core/discovery/detection.js';
@@ -291,11 +291,11 @@ const FIELD_ROW_COUNT = 3;
 const OVERLAY_CHROME_ROWS = 4;
 const LABEL_WIDTH = 10;
 
-function DimLine({ text, color }: { text: string; color?: string | undefined }) {
+function DimLine({ text, tone = 'dim' }: { text: string; tone?: 'warning' | 'dim' }) {
   const t = useTheme();
   return (
     <Box height={1} overflow="hidden">
-      <Text color={color ?? t.textDim} wrap="truncate-end">
+      <Text color={tone === 'warning' ? t.warning : t.textDim} wrap="truncate-end">
         {text}
       </Text>
     </Box>
@@ -526,7 +526,7 @@ export function LocalConnectionForm({
       {status.detail === undefined ? (
         <Box height={1} />
       ) : (
-        <DimLine text={status.detail} color={t.warning} />
+        <DimLine text={status.detail} tone="warning" />
       )}
       {slice.visibleSlice.map((model) => (
         <ListRow

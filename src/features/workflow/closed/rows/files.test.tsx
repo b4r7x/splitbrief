@@ -6,7 +6,7 @@ import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import type { Summary } from '../../../../core/schemas/summary.js';
 import { taskId } from '../../../../core/schemas/task.js';
-import { terminalTheme } from '../../../../components/theme.js';
+import { defaultTheme } from '../../../../components/theme.js';
 import { glyph } from '../../../../lib/glyphs.js';
 import { configStore } from '../../../../stores/project/config.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
@@ -24,7 +24,7 @@ function renderFiles(summary: Summary, width: number) {
     }),
   });
   if (view === null) throw new Error('expected a closed run to have a view');
-  const rows = filesSectionRows({ view, width, theme: terminalTheme });
+  const rows = filesSectionRows({ view, width, theme: defaultTheme });
   return renderFeature(
     <Box flexDirection="column">
       {rows.map((row) => (

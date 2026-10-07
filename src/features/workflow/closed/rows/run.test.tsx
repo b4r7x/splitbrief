@@ -4,7 +4,7 @@ import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeSummary, makeUsage } from '#testing/helpers/factories/summary.js';
 import type { Summary } from '../../../../core/schemas/summary.js';
-import { terminalTheme } from '../../../../components/theme.js';
+import { defaultTheme } from '../../../../components/theme.js';
 import { glyph } from '../../../../lib/glyphs.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import type { RunnerCallCounterCoverage } from '../../../../core/runner-call-contract.js';
@@ -32,7 +32,7 @@ function renderRun(input: { summary: Summary; width: number; crewNamed: boolean 
   const rows = runSectionRows({
     view,
     width: input.width,
-    theme: terminalTheme,
+    theme: defaultTheme,
     crewNamed: input.crewNamed,
   });
   return renderFeature(

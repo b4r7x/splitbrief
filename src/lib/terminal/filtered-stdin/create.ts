@@ -215,6 +215,7 @@ export function createFilteredStdin(
     active = true;
     setTerminalInputModes('enable', { mouse: mouseEnabled, paste: true, hover: hoverEnabled });
     stdin.on('data', dataHandler);
+    stdin.resume();
   };
 
   if (opts?.activate !== false) activate();

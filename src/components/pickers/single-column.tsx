@@ -1,6 +1,6 @@
+import { ThemeText as Text, useTheme } from '../theme.js';
 import type { ReactNode } from 'react';
-import { Box, Text } from 'ink';
-import { useTheme } from '../theme.js';
+import { Box } from 'ink';
 import { borderStyleFor, glyph } from '../../lib/glyphs.js';
 import { getScrollbarThumb, hasScrollbarOverflow, scrollbarCell } from '../scrollbar.js';
 import { windowSlice } from './scroll-window.js';
@@ -35,7 +35,7 @@ function ScrollbarGutter({
 }: {
   onThumb: boolean;
   visible: boolean;
-  color: string;
+  color: string | undefined;
 }) {
   let mark = ' ';
   if (onThumb) mark = glyph('scrollThumb');
@@ -70,7 +70,15 @@ function FilterRow({
   );
 }
 
-function FillerRows({ count, color, visible }: { count: number; color: string; visible: boolean }) {
+function FillerRows({
+  count,
+  color,
+  visible,
+}: {
+  count: number;
+  color: string | undefined;
+  visible: boolean;
+}) {
   return Array.from({ length: count }, (_, index) => (
     <Box key={`scrollbar-filler-${index}`}>
       <Box flexGrow={1} />

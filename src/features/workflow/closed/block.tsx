@@ -1,5 +1,6 @@
-import { Text } from 'ink';
-import type { Theme } from '../../../components/theme.js';
+import { ThemeText as Text } from '../../../components/theme.js';
+
+import type { Theme } from '../../../core/theme/palette.js';
 import type { ScrollableDocumentRow } from '../../../components/scrollable-document.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { glyph } from '../../../lib/glyphs.js';

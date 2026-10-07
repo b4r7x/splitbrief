@@ -2,7 +2,8 @@ import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import ansis from 'ansis';
+import { plainTheme } from '../../core/theme/resolve.js';
+import { paint } from '../../core/theme/paint.js';
 import { readFileSafeAsync } from '../../lib/fs.js';
 import { computeDiff } from '../../utils/diff.js';
 import { isENOENT } from '../../lib/process/errors.js';
@@ -201,10 +202,11 @@ export async function computeSnapshotDiff(opts: DiffOptions): Promise<SnapshotDi
 
 export function formatSnapshotDiff(result: SnapshotDiffResult, opts?: { color?: boolean }): string {
   const useColor = opts?.color !== false;
+  const theme = useColor ? plainTheme() : undefined;
   const lines: string[] = [];
 
   const header = `Snapshot: ${result.snapshotId}  (${result.createdAt})`;
-  lines.push(useColor ? ansis.dim(header) : header);
+  lines.push(theme ? paint(theme.textDim, header) : header);
 
   if (result.changedCount === 0) {
     lines.push(`No differences from snapshot ${result.snapshotId}.`);
@@ -222,10 +224,10 @@ export function formatSnapshotDiff(result: SnapshotDiffResult, opts?: { color?: 
       }
     } else if (file.status === 'added') {
       const text = `+++ ${file.path}  (added after snapshot)`;
-      lines.push(useColor ? ansis.cyan(text) : text);
+      lines.push(theme ? paint(theme.review.file, text) : text);
     } else if (file.status === 'removed') {
       const text = `--- ${file.path}  (removed after snapshot)`;
-      lines.push(useColor ? ansis.cyan(text) : text);
+      lines.push(theme ? paint(theme.review.file, text) : text);
     }
   }
 
@@ -233,7 +235,7 @@ export function formatSnapshotDiff(result: SnapshotDiffResult, opts?: { color?: 
   const added = result.files.filter((f) => f.status === 'added').length;
   const removed = result.files.filter((f) => f.status === 'removed').length;
   const summary = `${result.changedCount} file(s) changed (modified: ${modified}, added: ${added}, removed: ${removed})`;
-  lines.push(useColor ? ansis.dim(summary) : summary);
+  lines.push(theme ? paint(theme.textDim, summary) : summary);
 
   return lines.join('\n');
 }

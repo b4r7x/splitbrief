@@ -71,21 +71,15 @@ function ScenarioChooser({ state }: { readonly state: PreviewState }): ReactNode
           {line(state, `Selected: ${scenario.id} · viewport ${formatViewport(declared)}`)}
         </Text>
         {state.message === null ? (
-          <Text dimColor wrap="truncate-end">
-            {line(state, 'Ready to open this scenario.')}
-          </Text>
+          <Text wrap="truncate-end">{line(state, 'Ready to open this scenario.')}</Text>
         ) : (
           <Text color="yellow" wrap="truncate-end">
             {line(state, state.message)}
           </Text>
         )}
       </Box>
-      <Text dimColor wrap="truncate-end">
-        {line(state, '↑↓ choose · Enter open · F2 back · F5 reset')}
-      </Text>
-      <Text dimColor wrap="truncate-end">
-        {line(state, 'F6 viewport · Ctrl+Q quit')}
-      </Text>
+      <Text wrap="truncate-end">{line(state, '↑↓ choose · Enter open · F2 back · F5 reset')}</Text>
+      <Text wrap="truncate-end">{line(state, 'F6 viewport · Ctrl+Q quit')}</Text>
     </Box>
   );
 }
@@ -97,7 +91,7 @@ function LoadingView({ state }: { readonly state: PreviewState }): ReactNode {
       <Text color="cyan" wrap="truncate-end">
         {line(state, `Opening ${scenario?.id ?? 'scenario'}…`)}
       </Text>
-      <Text dimColor wrap="truncate-end">
+      <Text wrap="truncate-end">
         {line(state, 'F2 returns to the gallery selection · Ctrl+Q quits.')}
       </Text>
     </Box>

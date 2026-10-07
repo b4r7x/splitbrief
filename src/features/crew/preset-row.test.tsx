@@ -3,7 +3,8 @@ import chalk from 'chalk';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { listRowLead } from '../../components/list-row.js';
-import { getTheme, ThemeProvider } from '../../components/theme.js';
+import { defaultTheme, ThemeProvider } from '../../components/theme.js';
+import { paint } from '../../core/theme/paint.js';
 import type { CrewPreset } from '../../core/crew/presets.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { PresetRowView } from './preset-row.js';
@@ -43,7 +44,7 @@ async function lineFor(width: number, cols: number, isCursor = true): Promise<st
 
 async function themedFrameFor(isCursor: boolean): Promise<string> {
   const ui = renderFeature(
-    <ThemeProvider theme={{ ...getTheme(), accent: 'red' }}>
+    <ThemeProvider theme={{ ...defaultTheme, accent: 'red' }}>
       <PresetRowView
         preset={PRESET}
         isCursor={isCursor}
@@ -106,7 +107,9 @@ describe('crew preset row', () => {
       const plain = await themedFrameFor(false);
 
       expect(cursored).toContain(`\u001B[31m${listRowLead('active')}\u001B[1m${PRESET.label}`);
-      expect(plain).toContain(`\u001B[31m${listRowLead('default')}\u001B[37m${PRESET.label}`);
+      expect(plain).toContain(
+        `\u001B[31m${listRowLead('default')}${paint(defaultTheme.text, PRESET.label).replace('\u001B[39m', '')}`,
+      );
     } finally {
       chalk.level = originalLevel;
     }

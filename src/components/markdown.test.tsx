@@ -2,12 +2,12 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vites
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
-import { Box, Text } from 'ink';
+import { Box } from 'ink';
 import { render } from 'ink-testing-library';
 import { glyph } from '../lib/glyphs.js';
 import { getTerminalCellWidth } from '../utils/display-text.js';
 import { renderMarkdownRows, type RenderMarkdownRowsOptions } from './markdown.js';
-import { getTheme } from './theme.js';
+import { defaultTheme, ThemeText as Text } from './theme.js';
 
 // ink-testing-library's stdout mock resolves chalk color level 0 unless FORCE_COLOR is set before
 // ink (and its chalk dependency) first load, so every color assertion below would silently no-op
@@ -30,7 +30,7 @@ forceUnicodeGlyphs();
 const RAIL = glyph('codeRail');
 const HOOK = glyph('wrapContinuation');
 
-function colorOpen(color: string): string {
+function colorOpen(color: string | undefined): string {
   const ui = render(<Text color={color}>x</Text>);
   const frame = ui.lastFrame() ?? '';
   ui.unmount();
@@ -39,7 +39,7 @@ function colorOpen(color: string): string {
   return prefix;
 }
 
-function expectFrameUsesThemeColor(raw: string, color: string): void {
+function expectFrameUsesThemeColor(raw: string, color: string | undefined): void {
   const prefix = colorOpen(color);
   expect(prefix.length).toBeGreaterThan(0);
   expect(raw).toContain(prefix);
@@ -83,7 +83,7 @@ describe('Markdown', () => {
     const rows = renderMarkdownRows({
       source: markdownSample,
       width: 32,
-      theme: getTheme(),
+      theme: defaultTheme,
     });
     const ui = renderFeature(
       <Box flexDirection="column">
@@ -113,7 +113,7 @@ describe('Markdown', () => {
     const rows = renderMarkdownRows({
       source: markdownSample,
       width: 32,
-      theme: getTheme(),
+      theme: defaultTheme,
     });
 
     expect(rows.some((row) => (row.lines ?? 1) > 1)).toBe(true);
@@ -124,8 +124,8 @@ describe('Markdown', () => {
 
   it('opens a mid-document heading with one blank line', async () => {
     const source = 'intro line\n\n## Section';
-    const rows = renderMarkdownRows({ source, width: 32, theme: getTheme() });
-    const { stripped, unmount } = await renderMarkdown({ source, width: 32, theme: getTheme() });
+    const rows = renderMarkdownRows({ source, width: 32, theme: defaultTheme });
+    const { stripped, unmount } = await renderMarkdown({ source, width: 32, theme: defaultTheme });
 
     expect(rows.map((row) => row.lines ?? 1).reduce((sum, lines) => sum + lines, 0)).toBe(3);
     expect(stripped.split('\n')).toEqual(['intro line', '', 'Section']);
@@ -144,7 +144,7 @@ describe('Markdown', () => {
         '```',
       ].join('\n'),
       width: 80,
-      theme: getTheme(),
+      theme: defaultTheme,
     });
 
     expect(stripped).toContain('Safe heading');
@@ -175,7 +175,7 @@ describe('inline links (REQ-002, REQ-010)', () => {
   });
 
   it('renders a styled label without the raw link syntax or target', async () => {
-    const theme = getTheme();
+    const theme = defaultTheme;
     const { raw, stripped, unmount } = await renderMarkdown({
       source: '[Read the docs](https://example.com/docs)',
       width: 60,
@@ -194,7 +194,7 @@ describe('inline links (REQ-002, REQ-010)', () => {
     const { stripped, unmount } = await renderMarkdown({
       source: '[README](docs/readme.md)',
       width: 60,
-      theme: getTheme(),
+      theme: defaultTheme,
     });
 
     expect(stripped).toContain('README');
@@ -205,7 +205,7 @@ describe('inline links (REQ-002, REQ-010)', () => {
 
 describe('GFM pipe tables (REQ-003)', () => {
   it('renders a well-formed table with aligned columns and a distinguished header', async () => {
-    const theme = getTheme();
+    const theme = defaultTheme;
     const source = ['| Name | Age |', '| --- | --- |', '| Alice | 30 |', '| Bob | 40 |'].join('\n');
     const { raw, stripped, unmount } = await renderMarkdown({ source, width: 40, theme });
 
@@ -230,7 +230,7 @@ describe('GFM pipe tables (REQ-003)', () => {
       '| --- | --- |',
       '| an overflowing body cell value | y |',
     ].join('\n');
-    const { stripped, unmount } = await renderMarkdown({ source, width, theme: getTheme() });
+    const { stripped, unmount } = await renderMarkdown({ source, width, theme: defaultTheme });
 
     const lines = stripped.split('\n').filter((line) => line.length > 0);
     expect(lines.length).toBeGreaterThan(0);
@@ -251,7 +251,7 @@ describe('headings depth 4-6 (REQ-004)', () => {
     const { stripped, unmount } = await renderMarkdown({
       source: `${marker} Section Title`,
       width: 40,
-      theme: getTheme(),
+      theme: defaultTheme,
     });
 
     expect(stripped).toContain('Section Title');
@@ -265,7 +265,7 @@ describe('strikethrough (REQ-005)', () => {
     const { stripped, unmount } = await renderMarkdown({
       source: '~~deprecated~~',
       width: 40,
-      theme: getTheme(),
+      theme: defaultTheme,
     });
 
     expect(stripped).toContain('deprecated');
@@ -276,7 +276,7 @@ describe('strikethrough (REQ-005)', () => {
 
 describe('heading rank ladder (REQ-006)', () => {
   it('resolves the top ranks from theme.markdown.heading and the deep ranks from textDim', async () => {
-    const theme = getTheme();
+    const theme = defaultTheme;
     const top = await renderMarkdown({ source: '## T', width: 40, theme });
     const deep = await renderMarkdown({ source: '##### T', width: 40, theme });
 
@@ -289,7 +289,7 @@ describe('heading rank ladder (REQ-006)', () => {
   // The review overlay renders through this module and the transcript through
   // markdown-rows; a rank that reads the same as its neighbour flattens the outline in both.
   it('gives each of the six ranks its own rendered form', async () => {
-    const theme = getTheme();
+    const theme = defaultTheme;
     const forms: string[] = [];
     for (const depth of [1, 2, 3, 4, 5, 6]) {
       const { raw, unmount } = await renderMarkdown({
@@ -307,7 +307,7 @@ describe('heading rank ladder (REQ-006)', () => {
 
 describe('fenced code highlighting (REQ-007)', () => {
   it('renders a ts fence with at least two distinct syntax colors', async () => {
-    const theme = getTheme();
+    const theme = defaultTheme;
     const source = ['```ts', "const x = 'y';", '```'].join('\n');
     const { raw, unmount } = await renderMarkdown({ source, width: 40, theme });
 
@@ -317,7 +317,7 @@ describe('fenced code highlighting (REQ-007)', () => {
   });
 
   it('renders an unknown-tag fence in the monochrome code style with no syntax color', async () => {
-    const theme = getTheme();
+    const theme = defaultTheme;
     const source = ['```zzz', "const x = 'y';", '```'].join('\n');
     const { raw, stripped, unmount } = await renderMarkdown({ source, width: 40, theme });
 
@@ -332,7 +332,7 @@ describe('fenced code highlighting (REQ-007)', () => {
 describe('code block framing', () => {
   const codeSource = ['intro prose', '', '```zzz', "const x = 'y';", '```'].join('\n');
 
-  function backgroundOpen(color: string): string {
+  function backgroundOpen(color: string | undefined): string {
     const ui = render(
       <Box backgroundColor={color}>
         <Text>x</Text>
@@ -349,7 +349,7 @@ describe('code block framing', () => {
     const { stripped, unmount } = await renderMarkdown({
       source: ['intro prose', '', '```', "const x = 'y';", '```'].join('\n'),
       width: 40,
-      theme: getTheme(),
+      theme: defaultTheme,
     });
     const lines = stripped.split('\n').map((line) => line.trimEnd());
 
@@ -359,7 +359,7 @@ describe('code block framing', () => {
 
   it('marks wrapped code lines with the continuation gutter', async () => {
     const source = ['```zzz', `const value = '${'x'.repeat(60)}';`, '```'].join('\n');
-    const { stripped, unmount } = await renderMarkdown({ source, width: 30, theme: getTheme() });
+    const { stripped, unmount } = await renderMarkdown({ source, width: 30, theme: defaultTheme });
     const lines = stripped
       .split('\n')
       .map((line) => line.trimEnd())
@@ -378,7 +378,7 @@ describe('code block framing', () => {
     const { stripped, unmount } = await renderMarkdown({
       source: codeSource,
       width: 40,
-      theme: getTheme(),
+      theme: defaultTheme,
     });
     const lines = stripped.split('\n').map((line) => line.trimEnd());
 
@@ -392,7 +392,7 @@ describe('code block framing', () => {
   });
 
   it('paints the code background for the terminal preset', async () => {
-    const theme = getTheme();
+    const theme = defaultTheme;
     const codeBg = theme.markdown.codeBg;
     if (codeBg === undefined) throw new Error('the theme must define markdown.codeBg');
     const { raw, unmount } = await renderMarkdown({ source: codeSource, width: 40, theme });
@@ -402,7 +402,7 @@ describe('code block framing', () => {
   });
 
   it('paints the code background across the full layout width, not just the text', async () => {
-    const theme = getTheme();
+    const theme = defaultTheme;
     const width = 40;
     const { stripped, unmount } = await renderMarkdown({
       source: ['```zzz', 'x', '```'].join('\n'),
@@ -433,7 +433,7 @@ describe('OSC 8 hyperlink environment (REQ-012, REQ-013)', () => {
     const { raw, unmount } = await renderMarkdown({
       source: '[src/app/root.tsx:14](src/app/root.tsx:14)',
       width: 60,
-      theme: getTheme(),
+      theme: defaultTheme,
       projectDir: '/repo',
     });
 
@@ -446,7 +446,7 @@ describe('OSC 8 hyperlink environment (REQ-012, REQ-013)', () => {
     const { raw, stripped, unmount } = await renderMarkdown({
       source: '[src/app/root.tsx:14](src/app/root.tsx:14)',
       width: 60,
-      theme: getTheme(),
+      theme: defaultTheme,
       projectDir: '/repo',
     });
 
@@ -461,7 +461,7 @@ describe('OSC 8 hyperlink environment (REQ-012, REQ-013)', () => {
     const { raw, unmount } = await renderMarkdown({
       source: '[src/app/root.tsx:14](src/app/root.tsx:14)',
       width: 60,
-      theme: getTheme(),
+      theme: defaultTheme,
       projectDir: '/repo',
     });
 
@@ -478,7 +478,7 @@ describe('HTML comments render invisibly (REQ-016)', () => {
       source: '<!-- Q:{"id":"q1","type":"choice","text":"?","options":["a","b"],"default":0} -->',
     },
   ])('produces no visible text for $name', async ({ source }) => {
-    const { stripped, unmount } = await renderMarkdown({ source, width: 40, theme: getTheme() });
+    const { stripped, unmount } = await renderMarkdown({ source, width: 40, theme: defaultTheme });
 
     expect(stripped.trim()).toBe('');
     unmount();

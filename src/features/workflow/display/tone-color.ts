@@ -1,8 +1,11 @@
-import type { Theme } from '../../../components/theme.js';
+import type { Theme } from '../../../core/theme/palette.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import type { ConversationRowTone } from '../conversation-rows/types.js';
 
-export function colorForTone(tone: ConversationRowTone | undefined, theme: Theme): string {
+export function colorForTone(
+  tone: ConversationRowTone | undefined,
+  theme: Theme,
+): string | undefined {
   switch (tone) {
     case undefined:
     case 'text':

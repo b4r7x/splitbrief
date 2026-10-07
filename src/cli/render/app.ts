@@ -10,6 +10,8 @@ import { createFilteredStdin } from '../../lib/terminal/filtered-stdin/create.js
 import type { FilteredStdin } from '../../lib/terminal/filtered-stdin/types.js';
 import { setActiveFilteredStdin } from '../../lib/terminal/filtered-stdin/active.js';
 import { detectKittyKeyboardFlags } from '../../lib/terminal/kitty-keyboard.js';
+import { queryTerminalBackground } from '../../lib/terminal/background.js';
+import { terminalBackgroundStore } from '../../stores/ui/terminal-background.js';
 import {
   configureSplitbriefKeyDebugLog,
   isConfiguredKeyDebugEnabled,
@@ -56,6 +58,7 @@ interface RenderOptions {
 type TerminationSignal = 'SIGINT' | 'SIGTERM' | 'SIGHUP';
 
 const diagnosticLog = createLogger('diagnostics');
+const BACKGROUND_QUERY_TIMEOUT_MS = 300;
 
 function createSettledProcessListener<T>(deps: {
   handle: (value: T) => Promise<void>;
@@ -128,6 +131,14 @@ export async function renderApp(
     mouse,
     hover,
   });
+  if (useFilteredStdin && process.stdin.isTTY && process.stdout.isTTY) {
+    const background = await queryTerminalBackground(
+      process.stdin,
+      process.stdout,
+      BACKGROUND_QUERY_TIMEOUT_MS,
+    );
+    if (background !== undefined) terminalBackgroundStore.detected(background);
+  }
   let filteredStdin: FilteredStdin | undefined;
   let filteredDisabled = false;
   const selection =

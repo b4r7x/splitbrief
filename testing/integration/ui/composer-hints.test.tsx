@@ -1,9 +1,8 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Text } from 'ink';
 import { render } from 'ink-testing-library';
 import { flushEffects } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { getTheme } from '../../../src/components/theme.js';
+import { defaultTheme, ThemeText as Text } from '../../../src/components/theme.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { COMMANDS, renderDockedComposer } from '#testing/helpers/composer.js';
 
@@ -18,7 +17,7 @@ afterAll(() => {
   else process.env['FORCE_COLOR'] = originalForceColor;
 });
 
-function colorOpen(color: string): string {
+function colorOpen(color: string | undefined): string {
   const ui = render(<Text color={color}>x</Text>);
   const frame = ui.lastFrame() ?? '';
   ui.unmount();
@@ -36,7 +35,7 @@ function ansiRunEnclosing(frame: string, literal: string): string {
   return runs.at(-1) ?? '';
 }
 
-function expectFrameUsesThemeColor(raw: string, color: string, literal: string): void {
+function expectFrameUsesThemeColor(raw: string, color: string | undefined, literal: string): void {
   const prefix = colorOpen(color);
   expect(ansiRunEnclosing(raw, literal)).toBe(prefix);
 }
@@ -44,6 +43,22 @@ function expectFrameUsesThemeColor(raw: string, color: string, literal: string):
 describe('composer in-box footer hints', () => {
   beforeEach(() => {
     resetAllStores();
+  });
+
+  it('paints the review prompt glyph as secondary text', async () => {
+    const ui = renderDockedComposer({
+      commands: COMMANDS,
+      currentScreen: 'workflow',
+      mode: 'review',
+      promptGlyph: 'review-prompt',
+      hint: '',
+      onSubmit: () => {},
+      onRuntimeCommand: () => {},
+    });
+    await flushEffects();
+
+    expectFrameUsesThemeColor(ui.lastFrame() ?? '', defaultTheme.textDim, 'review-prompt');
+    ui.unmount();
   });
 
   it('renders override keys inside the rounded box and nothing else beside them', async () => {
@@ -62,7 +77,7 @@ describe('composer in-box footer hints', () => {
     expect(frame).toContain('Ctrl+D diff');
     expect(frame).not.toContain('tab');
     expect(frame).not.toContain('$');
-    expectFrameUsesThemeColor(frame, getTheme().textDim, 'Ctrl+D diff');
+    expectFrameUsesThemeColor(frame, defaultTheme.textDim, 'Ctrl+D diff');
     ui.unmount();
   });
 

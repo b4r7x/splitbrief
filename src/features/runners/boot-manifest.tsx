@@ -1,5 +1,5 @@
-import { Box, Text } from 'ink';
-import { useTheme } from '../../components/theme.js';
+import { ThemeText as Text, useTheme } from '../../components/theme.js';
+import { Box } from 'ink';
 import { glyph } from '../../lib/glyphs.js';
 import { FIRST_RUN_NOTE } from '../../core/discovery/copy.js';
 import {
@@ -79,7 +79,7 @@ export function BootManifest() {
   const { frame } = useSpinnerFrame(true);
 
   const seats = deriveCrewSeats({ config, displayNames });
-  const seatColor: Record<CrewSeatId, string> = {
+  const seatColor: Record<CrewSeatId, string | undefined> = {
     plan: t.planner,
     build: t.implementer,
     review: t.reviewer,

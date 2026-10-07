@@ -149,7 +149,7 @@ function manifestWithoutProfiles(manifest: Manifest): ManifestWithoutProfiles {
 }
 
 describe('visual manifest contracts', () => {
-  it.each(['unicode-color', 'unicode-mono', 'ascii-mono'] as const)(
+  it.each(['unicode-color', 'unicode-256', 'unicode-light', 'unicode-mono', 'ascii-mono'] as const)(
     'accepts a homogeneous %s profile triple',
     (profile) => {
       const manifest = makeManifest();

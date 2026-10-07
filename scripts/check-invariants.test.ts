@@ -413,6 +413,84 @@ describe('check-invariants', () => {
     }
   });
 
+  it('passes the no-faint-text gate 56 on the maintained tree', () => {
+    const gates = getInvariantGates('56');
+    expect(gates).toHaveLength(1);
+    const { lines, log } = captureLog();
+
+    expect(runInvariantGates(gates, undefined, log)).toBe(0);
+    expect(lines).toEqual(
+      gates.map((gate) => `  ✓ [${gate.id}] ${gate.description}: 0 (expected 0) PASS`),
+    );
+    expect(readFileSync('docs/INVARIANTS.md', 'utf8')).toContain('| 56 |');
+  });
+
+  it('gate 56 detects every spelling of faint text in a synthetic tree', () => {
+    const root = mkdtempSync(join(tmpdir(), 'splitbrief-gate-56-'));
+    try {
+      mkdirSync(join(root, 'components'), { recursive: true });
+      writeFileSync(
+        join(root, 'components/row.tsx'),
+        [
+          'export const A = <Text dimColor>a</Text>;',
+          "export const b = ansis.dim('b');",
+          "export const c = chalk.dim('c');",
+          "export const d = '\\x1b[2md\\x1b[0m';",
+          "export const e = '\\u001b[2me\\u001b[0m';",
+          '',
+        ].join('\n'),
+      );
+      writeFileSync(join(root, 'components/row.test.tsx'), 'const ok = <Text dimColor />;\n');
+      const [gate] = getInvariantGates('56');
+      if (gate === undefined) throw new Error('gate 56 is not registered');
+      const { lines, log } = captureLog();
+      const retargeted = { ...gate, command: gate.command.replace(' src ', ` ${root} `) };
+
+      expect(runInvariantGates([retargeted], undefined, log)).toBe(1);
+      expect(lines).toEqual([expect.stringContaining('[56]')]);
+      expect(lines[0]).toContain(': 5 (expected 0) FAIL');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('passes the ThemeText gate 57 on the maintained tree', () => {
+    const gates = getInvariantGates('57');
+    expect(gates).toHaveLength(1);
+    const { lines, log } = captureLog();
+
+    expect(runInvariantGates(gates, undefined, log)).toBe(0);
+    expect(lines).toEqual(
+      gates.map((gate) => `  ✓ [${gate.id}] ${gate.description}: 0 (expected 0) PASS`),
+    );
+    expect(readFileSync('docs/INVARIANTS.md', 'utf8')).toContain('| 57 |');
+  });
+
+  it('gate 57 detects named Ink Text imports and exempts the wrapper and tests', () => {
+    const root = mkdtempSync(join(tmpdir(), 'splitbrief-gate-57-'));
+    try {
+      mkdirSync(join(root, 'components'), { recursive: true });
+      writeFileSync(join(root, 'components/row.tsx'), "import { Box, Text } from 'ink';\n");
+      writeFileSync(
+        join(root, 'components/aliased.tsx'),
+        'import {\n  Text as InkText,\n  Box,\n} from "ink";\n',
+      );
+      writeFileSync(join(root, 'components/theme.tsx'), "import { Text } from 'ink';\n");
+      writeFileSync(join(root, 'components/row.test.tsx'), "import { Text } from 'ink';\n");
+      writeFileSync(join(root, 'components/types.tsx'), "import { type TextProps } from 'ink';\n");
+      const [gate] = getInvariantGates('57');
+      if (gate === undefined) throw new Error('gate 57 is not registered');
+      const { lines, log } = captureLog();
+      const retargeted = { ...gate, command: gate.command.replace(' src ', ` ${root} `) };
+
+      expect(runInvariantGates([retargeted], undefined, log)).toBe(1);
+      expect(lines).toEqual([expect.stringContaining('[57]')]);
+      expect(lines[0]).toContain(': 2 (expected 0) FAIL');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('gate 50 matches retired tokens as whole words, not compound names', () => {
     const root = mkdtempSync(join(tmpdir(), 'splitbrief-run-contract-words-'));
     try {

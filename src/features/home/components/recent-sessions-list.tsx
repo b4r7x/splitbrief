@@ -1,7 +1,7 @@
-import { Box, Text } from 'ink';
+import { ThemeText as Text, useTheme } from '../../../components/theme.js';
+import { Box } from 'ink';
 import type { Session } from '../../../core/schemas/session.js';
 import { SOFT_SEP } from '../../../core/separators.js';
-import { useTheme } from '../../../components/theme.js';
 import { SessionRow } from '../../../components/session-row.js';
 import { RecentSessionsShell } from './recent-sessions-shell.js';
 import { FilterInput } from '../../../components/filter-input.js';

@@ -1,5 +1,6 @@
+import { ThemeText as Text, useTheme } from '../../components/theme.js';
 import { Fragment, useEffect, useState } from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, useInput } from 'ink';
 import {
   BOOT_MANIFEST_TITLE,
   FIRST_RUN_NOTE,
@@ -10,7 +11,6 @@ import { useCrewDisplayNames } from '../../hooks/use-crew-display-names.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { prepareExecution } from '../../engine/runners/prepare-execution/prepare-execution.js';
-import { useTheme } from '../../components/theme.js';
 import { Composer } from '../../components/composer/composer.js';
 import { ScreenShell } from '../../components/screen-shell.js';
 import { SOFT_SEP } from '../../core/separators.js';

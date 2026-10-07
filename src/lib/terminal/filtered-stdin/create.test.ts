@@ -100,6 +100,31 @@ describe('createFilteredStdin input filtering', () => {
     filtered.disable();
   });
 
+  it('resumes explicitly paused input when activated', async () => {
+    const input = new PassThrough();
+    Object.assign(input, {
+      isTTY: false,
+      isRaw: false,
+      setRawMode: () => input,
+      ref: () => input,
+      unref: () => input,
+    });
+    input.pause();
+    const filtered = createFilteredStdin(input as unknown as NodeJS.ReadStream, {
+      activate: false,
+    });
+    try {
+      const received = readFiltered(filtered.stdin, 1);
+      filtered.activate();
+      input.write('x');
+
+      expect(await received).toBe('x');
+    } finally {
+      filtered.disable();
+      input.destroy();
+    }
+  });
+
   it('delivers complete copy keys to the input filter while keeping paste and mouse separate', async () => {
     const fakeStdin = makeFakeStdin();
     const inputs: string[] = [];

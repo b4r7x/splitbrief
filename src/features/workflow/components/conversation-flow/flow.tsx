@@ -1,6 +1,6 @@
+import { ThemeText as Text, useTheme } from '../../../../components/theme.js';
 import { useEffect } from 'react';
-import { Box, Text } from 'ink';
-import { useTheme } from '../../../../components/theme.js';
+import { Box } from 'ink';
 import { TaskSummary } from '../../../../components/task-summary.js';
 import { getScrollWindowState } from '../../layout/scroll-window.js';
 import { getWorkflowSidebarWidth } from '../../layout/rect.js';

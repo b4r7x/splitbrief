@@ -205,7 +205,7 @@ The shared pipeline for each role lives in planner `base.ts` (`createPlannerBase
 
 Full rationale in `docs/STORES.md`. Short version:
 
-- No React Context (except a static ThemeContext).
+- ThemeContext follows the detected terminal background; stores own all other state.
 - No `useMemo`, `useCallback`, `React.memo`, `forwardRef`, `useImperativeHandle` — stores make them unnecessary.
 - Stores are module-scoped singletons built on `useSyncExternalStore`.
 - Components subscribe to slices from the relevant workflow store, for example `tasksStore.use(s => s.currentTask)`.
@@ -530,6 +530,7 @@ src/
 │   │                              the route changes so no screen does IO)
 │   ├── settings/                  catalog (settings registry),
 │   │                              presentation (UI labels)
+│   ├── theme/                     palette, resolve, paint
 │   ├── runtime/commands/          registry, dispatch, lookup, types
 │   ├── keybindings/registry.ts    Keyboard shortcut table (Ctrl+K, Ctrl+/, …)
 │   ├── state/                     machine (reducer), persistence (state.json
@@ -692,7 +693,7 @@ src/
 │   ├── ui/                        controls, feedback, input-height,
 │   │                              input-history, overlay, picker-view,
 │   │                              composer-draft, command-palette-mru,
-│   │                              persistence, terminal-size
+│   │                              persistence, terminal-size, terminal-background
 │   └── workflow/                  actions, attachments,
 │                                  conversation-scroll, events, lifecycle,
 │                                  operations, review, stop, tasks, tokens
@@ -791,11 +792,11 @@ src/
 │   │                              diff, files, refs, repository, staging
 │   ├── path-confinement.ts        isPathConfined, assertPathConfined
 │   ├── process/                   errors, line-buffer, registry, spawn
-│   ├── terminal/                  kitty-keyboard, escape-debounce, filtered-stdin, key-debug, editor-handover
+│   ├── terminal/                  background, kitty-keyboard, escape-debounce, filtered-stdin, key-debug, editor-handover
 │   └── warn.ts                    process.stderr warn helper
 │
 └── utils/                         Pure helpers (no domain)
-    canonical-json, diff, error, format-errors, format-time, frontmatter,
+    canonical-json, color, diff, error, format-errors, format-time, frontmatter,
     fuzzy-match, parse-shell-command, redact, slugify,
     truncate, type-guards, validate-identifier, with-timeout
 ```

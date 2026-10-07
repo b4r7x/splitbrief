@@ -1,5 +1,7 @@
 import type { Command } from 'commander';
-import ansis from 'ansis';
+import chalk from 'chalk';
+import { plainTheme } from '../../core/theme/resolve.js';
+import { paint } from '../../core/theme/paint.js';
 import { createPlanner } from '../../engine/runners/factory.js';
 import type { Planner } from '../../engine/planners/types.js';
 import { getRunnerDisplayName } from '../../core/config/accessors/runner-config.js';
@@ -105,6 +107,7 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
       clearStaleSessionForCli(projectDir);
 
       const loaded = loadConfigOrExit(projectDir);
+      const theme = plainTheme();
       await ensureHooksTrusted({
         projectDir,
         hooks: loaded.config.hooks,
@@ -208,7 +211,7 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
             // Without a terminal nobody can answer, so every question takes its default.
             answer: async (questions) => {
               asked = questionsText(questions);
-              console.log(`${ansis.bold('The planner asks:')}\n${stripTerminalControls(asked)}\n`);
+              console.log(`${chalk.bold('The planner asks:')}\n${stripTerminalControls(asked)}\n`);
               return interaction === 'interactive'
                 ? promptForLine('Your answer (⏎ takes the defaults): ')
                 : '';
@@ -235,9 +238,11 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
 
       const sessionPath = sessionDir(projectDir, sessionId);
       console.log('\nPlanning complete.');
-      console.log(`  Session: ${ansis.dim(sessionId)}`);
-      console.log(`  ${ansis.dim(`${sessionPath}/${PLAN_JSON_FILE}`)}`);
-      console.log(`  ${ansis.dim(`${sessionPath}/${PLAN_FILE}`)}`);
-      console.log(`  ${ansis.dim(`${sessionPath}/${TASKS_FILE}`)} (${tasks.length} tasks)`);
+      console.log(`  Session: ${paint(theme.textDim, sessionId)}`);
+      console.log(`  ${paint(theme.textDim, `${sessionPath}/${PLAN_JSON_FILE}`)}`);
+      console.log(`  ${paint(theme.textDim, `${sessionPath}/${PLAN_FILE}`)}`);
+      console.log(
+        `  ${paint(theme.textDim, `${sessionPath}/${TASKS_FILE}`)} (${tasks.length} tasks)`,
+      );
     });
 }

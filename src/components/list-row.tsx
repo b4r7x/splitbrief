@@ -1,5 +1,5 @@
-import { Box, Text } from 'ink';
-import { useTheme } from './theme.js';
+import { ThemeText as Text, useTheme } from './theme.js';
+import { Box } from 'ink';
 import { glyph } from '../lib/glyphs.js';
 import { SOFT_SEP } from '../core/separators.js';
 import {
@@ -20,8 +20,7 @@ interface ListRowProps {
   /** The connector drawn between the lead gutter and the label, in the border hue. */
   treeLead?: string | undefined;
   metadata?: string | undefined;
-  /** Overrides the metadata hue; defaults to the dim text colour. */
-  metadataColor?: string | undefined;
+  metadataTone?: 'text' | 'warning' | 'dim' | undefined;
   trailing?: string | undefined;
   trailingColor?: string | undefined;
   selected?: boolean | undefined;
@@ -155,7 +154,7 @@ export function ListRow({
   metadataAfterLabel,
   treeLead,
   metadata,
-  metadataColor,
+  metadataTone = 'dim',
   trailing,
   trailingColor,
   selected,
@@ -166,6 +165,7 @@ export function ListRow({
   keepWhole,
 }: ListRowProps) {
   const t = useTheme();
+  const metadataColor = metadataTone === 'dim' ? t.textDim : t[metadataTone];
   const accentRow = state === 'active';
   const leadColor = accentRow ? t.accent : t.textDim;
   const labelColor = accentRow ? t.accent : t.text;
@@ -287,7 +287,7 @@ export function ListRow({
           overflow="hidden"
           backgroundColor={backgroundColor}
         >
-          <Text color={metadataColor ?? t.textDim} wrap="truncate-end">
+          <Text color={metadataColor} wrap="truncate-end">
             {' '}
             {displayMeta}
           </Text>

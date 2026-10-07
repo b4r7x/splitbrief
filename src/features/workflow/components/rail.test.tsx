@@ -1,4 +1,7 @@
-import { describe, expect, it, beforeEach } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import chalk from 'chalk';
+import { defaultTheme } from '../../../components/theme.js';
+import { paint } from '../../../core/theme/paint.js';
 import { Box } from 'ink';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
@@ -26,6 +29,7 @@ import {
 import { Rail, railFormCText } from './rail.js';
 
 const STAGES = ['Plan', 'Build', 'Review'];
+const originalColorLevel = chalk.level;
 
 const DONE = glyph('stageDone');
 const PENDING = glyph('stagePending');
@@ -69,8 +73,13 @@ beforeEach(() => {
   skillsStore.reset();
 });
 
+afterEach(() => {
+  chalk.level = originalColorLevel;
+});
+
 describe('Rail — Form B (horizontal pipeline)', () => {
   it('renders the three stages on one row, done and active filled and pending a ring', async () => {
+    chalk.level = 3;
     terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
     tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
@@ -84,6 +93,12 @@ describe('Rail — Form B (horizontal pipeline)', () => {
     expect(railLine).toContain(`${DONE} Build`);
     expect(railLine).toContain(`${DONE} Plan`);
     expect(railLine).toContain(`${PENDING} Review`);
+    const raw = ui.lastFrame() ?? '';
+    expect(raw).toContain(paint(defaultTheme.textDim, `${DONE} Plan`).replace('\u001b[39m', ''));
+    expect(raw).toContain(paint(defaultTheme.textDim, `${railConnectorString()}${PENDING} Review`));
+    expect(raw).toContain(
+      chalk.bold(paint(defaultTheme.implementer, `${DONE} Build`)).replace('\u001b[39m', ''),
+    );
     ui.unmount();
   });
 

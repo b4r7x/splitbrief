@@ -1,5 +1,5 @@
-import { Box, Text } from 'ink';
-import { useTheme } from '../../components/theme.js';
+import { ThemeText as Text, useTheme } from '../../components/theme.js';
+import { Box } from 'ink';
 import { listRowLead } from '../../components/list-row.js';
 import type { CrewPreset } from '../../core/crew/presets.js';
 import {

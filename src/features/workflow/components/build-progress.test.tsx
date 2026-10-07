@@ -1,5 +1,4 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Text } from 'ink';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -8,7 +7,7 @@ import {
   makeRunnerCallStalled,
 } from '#testing/helpers/events/runner-call.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { getTheme } from '../../../components/theme.js';
+import { defaultTheme, ThemeText as Text } from '../../../components/theme.js';
 import { configStore } from '../../../stores/project/config.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { markWorkflowPaused } from '../../../stores/workflow/actions/pause.js';
@@ -32,7 +31,7 @@ afterAll(() => {
 
 const NOW = 1_783_958_400_000;
 
-function colorOpen(color: string): string {
+function colorOpen(color: string | undefined): string {
   const ui = renderFeature(<Text color={color}>x</Text>);
   const frame = ui.lastFrame();
   ui.unmount();
@@ -142,7 +141,7 @@ describe('BuildProgressBlock', () => {
     vi.setSystemTime(NOW);
     addEvent(makeRunnerCallStarted({ ts: NOW - 312_000, runnerName: 'opencode' }));
     addEvent(makeRunnerCallStalled({ ts: NOW - 12_000, silentMs: 300_000 }));
-    const warning = colorOpen(getTheme().warning);
+    const warning = colorOpen(defaultTheme.warning);
 
     const ui = renderFeature(<BuildProgressBlock cols={160} />, { cols: 160, rows: 24 });
     const frame = ui.lastFrame();

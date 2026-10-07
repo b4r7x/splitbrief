@@ -9,7 +9,13 @@ import { renderFeature } from '#testing/helpers/ink.js';
 import { inCaptureOrder, withCaptureEnvironment } from './gallery/environment.js';
 
 const VIEWPORT = { cols: 80, rows: 24 } as const;
-const PROFILES = ['unicode-color', 'unicode-mono', 'ascii-mono'] as const;
+const PROFILES = [
+  'unicode-color',
+  'unicode-256',
+  'unicode-light',
+  'unicode-mono',
+  'ascii-mono',
+] as const;
 const ENV_KEYS = [
   'TZ',
   'LANG',
@@ -17,6 +23,7 @@ const ENV_KEYS = [
   'LC_CTYPE',
   'TERM',
   'COLORTERM',
+  'COLORFGBG',
   'FORCE_COLOR',
   'FORCE_HYPERLINK',
   'NO_COLOR',
@@ -118,7 +125,7 @@ describe('visual capture environment', () => {
     } else {
       expect(rendered.glyph).toBe('✓');
     }
-    if (profile === 'unicode-color') {
+    if (profile !== 'unicode-mono' && profile !== 'ascii-mono') {
       expect(rendered.frame).not.toBe(stripAnsiStyles(rendered.frame));
     } else {
       expect(rendered.frame).toBe(stripAnsiStyles(rendered.frame));
@@ -127,6 +134,8 @@ describe('visual capture environment', () => {
 
   it.each([
     ['unicode-color', 3],
+    ['unicode-256', 2],
+    ['unicode-light', 3],
     ['unicode-mono', 0],
     ['ascii-mono', 0],
   ] as const)('applies the %s colour level its envelope declares', async (profile, expected) => {

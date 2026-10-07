@@ -1,6 +1,6 @@
+import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import type { ReactNode } from 'react';
-import { Box, Text } from 'ink';
-import { useTheme } from '../../../components/theme.js';
+import { Box } from 'ink';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { formatElapsedClock } from '../../../utils/format-time.js';

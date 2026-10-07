@@ -8,7 +8,13 @@ import {
 import { CaptureSelectionSchema } from '../contracts/selection.js';
 import { createPublicationLayout } from './publication.js';
 
-const TERMINAL_PROFILES = ['unicode-color', 'unicode-mono', 'ascii-mono'] as const;
+const TERMINAL_PROFILES = [
+  'unicode-color',
+  'unicode-256',
+  'unicode-light',
+  'unicode-mono',
+  'ascii-mono',
+] as const;
 
 describe('visual artifact layout paths', () => {
   it('creates distinct relative paths and rejects collisions', () => {

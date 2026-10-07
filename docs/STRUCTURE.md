@@ -100,6 +100,7 @@ src/cli/
 src/stores/ui/
 ├── controls.ts        # sidebarVisible + inputMode (cross-tree flags)
 ├── terminal-size.ts   # terminal resize tracking + responsive layout
+├── terminal-background.ts # detected terminal background
 ├── overlay.ts         # overlay active/exclusive/stack state
 ├── feedback.ts        # feedback/error message state
 ├── input-history.ts   # command input history (in-memory)
@@ -167,6 +168,12 @@ src/core/recovery/           # halt.ts, headline.ts, action-label.ts, resume-com
 
 `pipeline-spec/` is read by the orchestrator instead of literals, and `scripts/skill-blocks.ts` renders the skills' countable rules from the same modules — see [`SKILLS.md`](./SKILLS.md).
 
+### `src/core/theme/` and `src/lib/terminal/`
+
+`core/theme/palette.ts` owns the theme types, roles and bundled swatches.
+`core/theme/resolve.ts` maps tokens for the terminal. `core/theme/paint.ts` paints plain output.
+`lib/terminal/background.ts` queries and parses the terminal background at startup.
+
 ### `src/core/hooks/` — hook config domain
 
 ```
@@ -227,6 +234,7 @@ src/core/sessions/
 
 ```
 src/utils/
+├── color.ts           # luminance, contrast, OKLab distance and readable colour selection
 ├── diff.ts            # LCS diff algorithm
 ├── error.ts           # error(kind, msg, data?, cause?) factory + matches(kind) predicate — see ERRORS.md
 ├── format-errors.ts   # error → string with redaction

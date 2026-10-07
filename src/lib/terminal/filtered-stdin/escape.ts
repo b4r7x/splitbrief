@@ -85,6 +85,28 @@ export function readEscape(
   if (isPasteMarkerPrefix(source)) return { kind: 'hold' };
   if (pasteActive) return readPasteEscape(source);
 
+  if (source.length >= 2 && source.readUInt8(1) === 0x5d) {
+    for (let i = 2; i < source.length; i++) {
+      if (source.readUInt8(i) === 0x07) return { kind: 'skip', length: i + 1 };
+      if (
+        source.readUInt8(i) === ESC_BYTE &&
+        i + 1 < source.length &&
+        source.readUInt8(i + 1) === 0x5c
+      ) {
+        return { kind: 'skip', length: i + 2 };
+      }
+    }
+    return { kind: 'hold' };
+  }
+  const csiLength = readCsiSequenceLength(source);
+  if (
+    typeof csiLength === 'number' &&
+    source.readUInt8(2) === 0x3f &&
+    source.readUInt8(csiLength - 1) === 0x63
+  ) {
+    return { kind: 'skip', length: csiLength };
+  }
+
   if (mouseEnabled) {
     const x10 = readX10Mouse(source);
     if (x10?.kind === 'incomplete') return { kind: 'hold' };
@@ -99,7 +121,7 @@ export function readEscape(
     }
   }
 
-  const keyLength = readCsiSequenceLength(source) ?? readSs3SequenceLength(source);
+  const keyLength = csiLength ?? readSs3SequenceLength(source);
   if (keyLength === 'incomplete') return { kind: 'hold' };
   if (typeof keyLength === 'number') return { kind: 'text', length: keyLength };
 

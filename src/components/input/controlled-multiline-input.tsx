@@ -1,8 +1,8 @@
+import { ThemeText as Text, useTheme } from '../theme.js';
 import { useEffect, useRef, useState } from 'react';
-import { Box, Spacer, Text } from 'ink';
+import { Box, Spacer } from 'ink';
 import { buildSegments, type SegmentType } from './segments.js';
 import { computeViewportScroll } from './viewport-scroll.js';
-import { useTheme } from '../theme.js';
 import { MeasureBox } from './measure-box.js';
 
 export interface TextStyle {
@@ -10,9 +10,8 @@ export interface TextStyle {
   italic?: boolean;
   underline?: boolean;
   strikethrough?: boolean;
-  dimColor?: boolean;
-  color?: string;
-  backgroundColor?: string;
+  color?: string | undefined;
+  backgroundColor?: string | undefined;
   inverse?: boolean;
 }
 
@@ -117,7 +116,7 @@ export function ControlledMultilineInput({
   const getStyle = (type: SegmentType): TextStyle => {
     switch (type) {
       case 'placeholder':
-        return { ...textStyle, dimColor: true };
+        return { ...textStyle, color: t.textDim };
       case 'highlight':
         return resolvedHighlightStyle;
       case 'cursor':

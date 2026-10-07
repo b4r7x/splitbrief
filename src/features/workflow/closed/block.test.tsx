@@ -6,7 +6,7 @@ import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { taskId } from '../../../core/schemas/task.js';
-import { terminalTheme } from '../../../components/theme.js';
+import { defaultTheme } from '../../../components/theme.js';
 import type { ScrollableDocumentRow } from '../../../components/scrollable-document.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { deriveSummaryView } from './view-model.js';
@@ -37,7 +37,7 @@ function closedRows(width: number): ScrollableDocumentRow[] {
     }),
   });
   if (view === null) throw new Error('expected a closed run to have a view');
-  return closedBlockRows({ view, width, theme: terminalTheme, crewNamed: true });
+  return closedBlockRows({ view, width, theme: defaultTheme, crewNamed: true });
 }
 
 function renderRows(rows: ScrollableDocumentRow[], width: number) {

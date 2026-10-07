@@ -1,6 +1,6 @@
-import { Box, Text } from 'ink';
+import { ThemeText as Text, useTheme } from '../../../components/theme.js';
+import { Box } from 'ink';
 import type { ReactNode } from 'react';
-import { useTheme } from '../../../components/theme.js';
 import { borderStyleFor } from '../../../lib/glyphs.js';
 import {
   getTerminalCellWidth,
@@ -49,7 +49,12 @@ export function FramePanel({ filePath, aside, width, height, children }: FramePa
   );
 }
 
-function renderFrameTitle(filePath: string, width: number, dim: string, fg: string) {
+function renderFrameTitle(
+  filePath: string,
+  width: number,
+  dim: string | undefined,
+  fg: string | undefined,
+) {
   const pip = '◇ ';
   const pathBudget = Math.max(1, width - getTerminalCellWidth(pip));
   const path = truncateTerminalDisplayTextStart(filePath, pathBudget);

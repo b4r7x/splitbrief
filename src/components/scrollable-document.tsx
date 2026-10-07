@@ -1,6 +1,7 @@
+import { ThemeText as Text, useTheme } from './theme.js';
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, useInput } from 'ink';
 import {
   resolveScrollKey,
   type ScrollKeyAction,
@@ -15,7 +16,6 @@ import {
   scrollbarCell,
   type ScrollbarColumn,
 } from './scrollbar.js';
-import { useTheme } from './theme.js';
 import { ScrollIndicator } from './scroll-indicator.js';
 
 export interface ScrollableDocumentRow {

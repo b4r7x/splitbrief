@@ -1,5 +1,5 @@
-import { Box, Text } from 'ink';
-import { useTheme } from '../../../components/theme.js';
+import { ThemeText as Text, useTheme } from '../../../components/theme.js';
+import { Box } from 'ink';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { configStore } from '../../../stores/project/config.js';

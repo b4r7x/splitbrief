@@ -1,6 +1,7 @@
+import { ThemeText as Text, useTheme } from '../../components/theme.js';
 import { useEffect, useState } from 'react';
 import { basename, dirname } from 'node:path';
-import { Box, Text } from 'ink';
+import { Box } from 'ink';
 import { editorStore } from '../../stores/ui/editor.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
@@ -10,7 +11,6 @@ import { externalEditRequestStore } from '../../stores/ui/external-edit-request.
 import { writeSpecFile } from '../../core/paths-io.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { planSaveErrors } from '../../features/editor/plan-save.js';
-import { useTheme } from '../../components/theme.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { useEditorKeys } from '../../features/editor/use-editor-keys.js';
 import { EditorBufferView } from '../../features/editor/editor-buffer-view.js';

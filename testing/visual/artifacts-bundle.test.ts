@@ -16,7 +16,12 @@ import { createRunKey } from './artifacts/layout.js';
 import { writeArtifactBundle } from './artifacts/write.js';
 import { parseTerminalFrame } from './terminal/parse.js';
 
-type TerminalProfile = 'unicode-color' | 'unicode-mono' | 'ascii-mono';
+type TerminalProfile =
+  | 'unicode-color'
+  | 'unicode-256'
+  | 'unicode-light'
+  | 'unicode-mono'
+  | 'ascii-mono';
 
 const temporaryRoots: string[] = [];
 
@@ -27,7 +32,7 @@ afterEach(async () => {
 });
 
 describe('visual artifact bundle writer', () => {
-  it.each(['unicode-color', 'unicode-mono', 'ascii-mono'] as const)(
+  it.each(['unicode-color', 'unicode-256', 'unicode-light', 'unicode-mono', 'ascii-mono'] as const)(
     'persists the %s profile through publication and reparsing',
     async (profile) => {
       const fixture = await createBundleFixture(profile);

@@ -1,6 +1,6 @@
+import { ThemeText as Text, useTheme } from '../../theme.js';
 import { useRef, type ReactNode } from 'react';
-import { Box, Text } from 'ink';
-import { useTheme } from '../../theme.js';
+import { Box } from 'ink';
 import { borderStyleFor, glyph } from '../../../lib/glyphs.js';
 import { getScrollbarThumb, scrollbarCell } from '../../scrollbar.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
@@ -26,10 +26,10 @@ export function CompletionPanel<T>({
     item: T;
     globalIndex: number;
     isSelected: boolean;
-    rowBg: string;
-    panelBg: string;
+    rowBg: string | undefined;
+    panelBg: string | undefined;
   }) => ReactNode;
-  renderEmpty?: ((panelBg: string) => ReactNode) | undefined;
+  renderEmpty?: ((panelBg: string | undefined) => ReactNode) | undefined;
 }) {
   const t = useTheme();
   const cols = terminalSizeStore.use((s) => s.cols);

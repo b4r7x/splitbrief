@@ -1,10 +1,10 @@
+import { ThemeText as Text, useTheme } from '../../components/theme.js';
 import { useEffect, useState } from 'react';
-import { Box, Text, useApp, useInput } from 'ink';
+import { Box, useApp, useInput } from 'ink';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
 import { ListViewport } from '../../components/pickers/list-viewport.js';
 import { listRowLead } from '../../components/list-row.js';
 import { SOFT_SEP } from '../../core/separators.js';
-import { useTheme } from '../../components/theme.js';
 import type { CrewLabVerdict } from '../../core/crew/labs.js';
 import type { CrewPreset } from '../../core/crew/presets.js';
 import { type CrewRow, crewRowKey } from '../../core/crew/rows.js';

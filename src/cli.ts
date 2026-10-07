@@ -2,7 +2,8 @@
 
 import './node-env.js';
 import { Command } from 'commander';
-import ansis from 'ansis';
+import { plainTheme } from './core/theme/resolve.js';
+import { paint } from './core/theme/paint.js';
 import { registerStartCommand } from './cli/commands/start/register.js';
 import { registerDoctorCommand } from './cli/commands/doctor.js';
 import { registerSpecCommand } from './cli/commands/spec.js';
@@ -59,6 +60,7 @@ main().catch((err) => {
     message,
     stack: err instanceof Error ? err.stack : undefined,
   });
-  console.error(`${ansis.red('Error:')} ${message}`);
+  const theme = plainTheme();
+  console.error(`${paint(theme.error, 'Error:')} ${message}`);
   process.exit(isCliError(err) ? err.exitCode : 1);
 });

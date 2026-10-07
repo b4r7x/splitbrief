@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import chalk from 'chalk';
+import { defaultTheme } from '../../../components/theme.js';
+import { paint } from '../../../core/theme/paint.js';
 import { render } from 'ink-testing-library';
 import { PromptBody } from './prompt-body.js';
 import { countPromptBodyRows } from '../prompt-body-rows.js';
@@ -15,6 +18,8 @@ const RECOVERY_PROMPT = [
   '[b] route to bigger worker · claude-sonnet',
   '[a] abort',
 ].join('\n');
+
+const originalColorLevel = chalk.level;
 
 const CONFLICT_PROMPT = [
   'recovery needed · your edits conflict with t4',
@@ -53,6 +58,10 @@ describe('PromptBody', () => {
     Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
   });
 
+  afterEach(() => {
+    chalk.level = originalColorLevel;
+  });
+
   it('paints the dim key column and marks the recommended row with words, without a bar', () => {
     const ui = render(<PromptBody prompt={RECOVERY_PROMPT} height={20} width={60} />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
@@ -82,10 +91,14 @@ describe('PromptBody', () => {
   });
 
   it('keeps the failed review headline word and cause readable', () => {
+    chalk.level = 3;
     const ui = render(<PromptBody prompt={FAILED_REVIEW_PROMPT} height={20} width={70} />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     expect(frame).toContain('t3 failed review · add session middleware');
+    expect(ui.lastFrame()).toContain(
+      paint(defaultTheme.dimError, 'failed').replace('\u001b[39m', ''),
+    );
     expect(frame).toContain('r   redo task recommended');
   });
 

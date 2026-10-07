@@ -454,6 +454,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       id: 'workflow-implementation-retry',
       title: 'Workflow · brief after an attempt allowance grant',
       surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
       checkpoint: {
         id: 'implementation-retry',
         title: 'Retried brief',

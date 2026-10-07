@@ -1,5 +1,5 @@
-import { Box, Text } from 'ink';
-import { useTheme } from './theme.js';
+import { ThemeText as Text, useTheme } from './theme.js';
+import { Box } from 'ink';
 import { glyph } from '../lib/glyphs.js';
 
 interface FilterInputProps {

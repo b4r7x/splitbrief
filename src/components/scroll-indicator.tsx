@@ -1,5 +1,4 @@
-import { Text } from 'ink';
-import { useTheme } from './theme.js';
+import { ThemeText as Text, useTheme } from './theme.js';
 
 export function ScrollIndicator({
   show,

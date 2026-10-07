@@ -1,4 +1,5 @@
-import { Box, Text } from 'ink';
+import { Box } from 'ink';
+import { ThemeText as Text } from '../../../../components/theme.js';
 import { RuleHeader } from '../../../../components/rule-header.js';
 import { rowLeadingCells } from '../../conversation-rows/row-markers.js';
 

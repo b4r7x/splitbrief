@@ -1,9 +1,10 @@
-import { Box, Text } from 'ink';
+import { ThemeText as Text, useTheme } from '../../../components/theme.js';
+import { Box } from 'ink';
 import { formatStageLabel } from '../../../core/phase-display.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { SOFT_SEP } from '../../../core/separators.js';
-import { useTheme, type Theme } from '../../../components/theme.js';
+import type { Theme } from '../../../core/theme/palette.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
@@ -41,7 +42,7 @@ interface RailDoneSummary {
   driftPassed: boolean | undefined;
 }
 
-function roleColor(role: RailRole, t: Theme): string {
+function roleColor(role: RailRole, t: Theme): string | undefined {
   if (role === 'implementer') return t.implementer;
   if (role === 'validator') return t.validator;
   return t.planner;
@@ -57,7 +58,7 @@ function stageMarkerGlyph(status: RailStageStatus): string {
   return glyph('stagePending');
 }
 
-function haltColor(status: RailStageStatus, t: Theme): string | null {
+function haltColor(status: RailStageStatus, t: Theme): string | undefined | null {
   if (status === 'cancelled') return t.warning;
   if (status === 'failed') return t.error;
   return null;
@@ -88,10 +89,9 @@ function RailFormBNode({
   const t = useTheme();
   const live = state.status === 'active';
   // The stage the run is on is the one bright, bold node; the stages behind it and ahead of it are
-  // faint, told apart by the filled mark and the ring (the marker+label text keeps its cell count,
+  // secondary, told apart by the filled mark and the ring (the marker+label text keeps its cell count,
   // so the hit-test geometry never moves).
   const halt = haltColor(state.status, t);
-  const dim = !live;
   const rc = roleColor(railStageRole(state.stage), t);
   const label = railFormBLabel(state, { short });
   const left = index > 0 ? stages[index - 1] : undefined;
@@ -106,15 +106,13 @@ function RailFormBNode({
     <Box>
       {connector !== undefined && <Text color={connector.color}>{connector.text}</Text>}
       {halt === null ? (
-        <Text color={rc} bold={live} dimColor={dim}>
+        <Text color={live ? rc : t.textDim} bold={live}>
           {`${stageMarkerGlyph(state.status)} ${label}`}
         </Text>
       ) : (
         <>
           <Text color={halt}>{`${stageMarkerGlyph(state.status)} `}</Text>
-          <Text color={rc} dimColor>
-            {label}
-          </Text>
+          <Text color={t.textDim}>{label}</Text>
         </>
       )}
     </Box>
@@ -151,7 +149,7 @@ function RailFormC({ stages, fraction }: { stages: RailStageState[]; fraction: s
   const rc = roleColor(railStageRole(state?.stage ?? 'plan'), t);
   return (
     <Box height={1} overflow="hidden">
-      <Text color={rc} bold={live} dimColor={!live}>
+      <Text color={live ? rc : t.textDim} bold={live}>
         {railFormCText({ stages, fraction })}
       </Text>
     </Box>

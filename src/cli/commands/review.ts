@@ -1,6 +1,9 @@
 import { join } from 'node:path';
 import type { Command } from 'commander';
-import ansis from 'ansis';
+import chalk from 'chalk';
+import { plainTheme } from '../../core/theme/resolve.js';
+import type { Theme } from '../../core/theme/palette.js';
+import { paint } from '../../core/theme/paint.js';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import { getRunnerCatalogDisplayName } from '../../core/config/accessors/runner-config.js';
 import {
@@ -81,8 +84,8 @@ function seatOverrides(seat: SeatSpec | undefined): CLIOverrides {
   };
 }
 
-function printReview(outcome: ReviewOutcome, relativePath: string): void {
-  console.log(`\n${ansis.bold('Verdict:')} ${reviewOutcomeWord(outcome)}`);
+function printReview(outcome: ReviewOutcome, relativePath: string, theme: Theme): void {
+  console.log(`\n${chalk.bold('Verdict:')} ${reviewOutcomeWord(outcome)}`);
   for (const [severity, findings] of [
     ['critical', outcome.blocking],
     ['warning', outcome.minor],
@@ -90,7 +93,7 @@ function printReview(outcome: ReviewOutcome, relativePath: string): void {
     for (const finding of findings)
       console.log(`  ${severity}: ${stripTerminalControls(finding.text)}`);
   }
-  console.log(ansis.dim(relativePath));
+  console.log(paint(theme.textDim, relativePath));
 }
 
 export function registerReviewCommand(program: Command, deps: ReviewCommandDeps = {}): void {
@@ -245,6 +248,6 @@ export function registerReviewCommand(program: Command, deps: ReviewCommandDeps 
       const relativePath = join(relativeDir, REVIEW_FILE);
       confinedWriteFile(projectDir, relativePath, markdown);
       process.stdout.write(sanitizeTerminalDisplayText(markdown, { preserveLineBreaks: true }));
-      printReview(outcome, relativePath);
+      printReview(outcome, relativePath, plainTheme());
     });
 }

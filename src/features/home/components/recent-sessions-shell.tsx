@@ -1,6 +1,6 @@
+import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import type { ReactNode } from 'react';
-import { Box, Text } from 'ink';
-import { useTheme } from '../../../components/theme.js';
+import { Box } from 'ink';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';

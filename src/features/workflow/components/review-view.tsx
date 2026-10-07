@@ -1,4 +1,5 @@
-import { Box, Text } from 'ink';
+import { ThemeText as Text, useTheme } from '../../../components/theme.js';
+import { Box } from 'ink';
 import { useEffect } from 'react';
 import { renderReviewRows } from './review-rows-cache.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
@@ -13,7 +14,6 @@ import {
 } from '../../../components/scrollable-document.js';
 import { Divider } from '../../../components/divider.js';
 import { FramePanel } from './frame-panel.js';
-import { useTheme } from '../../../components/theme.js';
 import { getReviewColumnWidth, getReviewContentLayout, REVIEW_FRAME_ROWS } from '../layout/rect.js';
 import { WORKFLOW_GUTTER_X } from '../layout/chrome-rows.js';
 import { normalizeScrollRows } from '../layout/scroll-window.js';
