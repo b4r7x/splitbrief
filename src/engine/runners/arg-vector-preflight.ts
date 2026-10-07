@@ -358,7 +358,7 @@ export async function collectArgVectorPreflightChecks(
   }
   const checks: ReadinessCheck[] = [];
   for (const runner of runners) {
-    checks.push(await buildPreflightCheck(runner, runHelp));
+    checks.push(await buildPreflightCheck(runner, input.projectDir, runHelp));
   }
   return checks;
 }
@@ -375,11 +375,12 @@ type PreflightRunner = Readonly<{
 
 async function buildPreflightCheck(
   runner: PreflightRunner,
+  projectDir: string,
   runHelp: (tool: CliToolId, argv: readonly string[]) => Promise<string | null>,
 ): Promise<ReadinessCheck> {
   const semantic = semanticConfiguredArgViolations(runner.args ?? []);
   if (semantic.length > 0) return semanticOverrideCheck(runner, semantic);
-  const vectors = emittedArgVectors(runner);
+  const vectors = emittedArgVectors(runner, projectDir);
   const conflicts = vectors.flatMap(({ validation }) =>
     validation.valid ? [] : validation.conflicts,
   );
@@ -477,14 +478,17 @@ function checkedVector<Input>(
   };
 }
 
-function emittedArgVectors(runner: PreflightRunner): readonly PreflightVector[] {
+function emittedArgVectors(
+  runner: PreflightRunner,
+  projectDir: string,
+): readonly PreflightVector[] {
   switch (runner.role) {
     case 'implementer':
       return [
         checkedVector(lookupCliImplementerAdapter(runner.tool), {
           prompt: CLI_PROMPT_SENTINEL,
           model: runner.model,
-          projectDir: '.',
+          projectDir,
           configuredArgs: runner.args ?? [],
           effort: runner.effort,
           variant: runner.variant,
@@ -495,7 +499,7 @@ function emittedArgVectors(runner: PreflightRunner): readonly PreflightVector[] 
       const adapter = lookupCliPlannerAdapter(runner.tool);
       return [
         checkedVector(adapter, {
-          ...plannerCommonArgs(runner, adapter),
+          ...plannerCommonArgs(runner, adapter, projectDir),
           mode: 'plan',
           sessionId: null,
           oneShot: true,
@@ -504,7 +508,7 @@ function emittedArgVectors(runner: PreflightRunner): readonly PreflightVector[] 
     }
     case 'planner': {
       const adapter = lookupCliPlannerAdapter(runner.tool);
-      const common = plannerCommonArgs(runner, adapter);
+      const common = plannerCommonArgs(runner, adapter, projectDir);
       const variants = [
         checkedVector(adapter, { ...common, mode: 'plan', sessionId: null }),
         checkedVector(adapter, { ...common, mode: 'plan', sessionId: null, oneShot: true }),
@@ -531,11 +535,12 @@ function emittedArgVectors(runner: PreflightRunner): readonly PreflightVector[] 
 function plannerCommonArgs(
   runner: PreflightRunner,
   adapter: Readonly<{ supportsEffort: boolean }>,
+  projectDir: string,
 ) {
   return {
     prompt: CLI_PROMPT_SENTINEL,
     model: runner.model,
-    projectDir: '.',
+    projectDir,
     configuredArgs: runner.args ?? [],
     effort: adapter.supportsEffort ? runner.effort : undefined,
     variant: runner.variant,

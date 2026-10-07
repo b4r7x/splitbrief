@@ -1,4 +1,12 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -671,9 +679,9 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
       severity: 'ok',
     });
     expect(checks[0]?.details).toEqual([
-      'Emitted argv: --model gpt-5 -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --json --cd . -',
-      'Emitted argv: --model gpt-5 -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --ephemeral --json --cd . -',
-      'Emitted argv: --model gpt-5 -c model_reasoning_effort=high --sandbox workspace-write --ask-for-approval never exec --ignore-user-config --ephemeral --json --skip-git-repo-check --cd . -',
+      'Emitted argv: --model gpt-5 -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --json --cd /project -',
+      'Emitted argv: --model gpt-5 -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --ephemeral --json --cd /project -',
+      'Emitted argv: --model gpt-5 -c model_reasoning_effort=high --sandbox workspace-write --ask-for-approval never exec --ignore-user-config --ephemeral --json --skip-git-repo-check --cd /project -',
       'Emitted argv: -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec resume --model gpt-5 --ignore-user-config --ignore-rules --json 00000000-0000-4000-8000-000000000000 -',
     ]);
   });
@@ -687,7 +695,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
     });
 
     expect(checks[0]?.details).toEqual([
-      'Emitted argv: --model gpt-5 --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --ephemeral --json --cd . -',
+      'Emitted argv: --model gpt-5 --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --ephemeral --json --cd /project -',
     ]);
   });
 
@@ -942,6 +950,24 @@ describe('collectArgVectorPreflightChecks — default help invocation', () => {
     return readFileSync(log, 'utf8').split('\n').filter(Boolean);
   }
 
+  it('allows reads from the project node_modules symlink target on the Claude Code implementer argv', async () => {
+    const project = tempDir('preflight-project');
+    const target = tempDir('preflight-node-modules');
+    symlinkSync(target, join(project, 'node_modules'));
+
+    const checks = await collectArgVectorPreflightChecks({
+      config: makeConfig({
+        implementer: { kind: 'cli', tool: 'claude-code', model: 'sonnet' },
+      }),
+      projectDir: project,
+      roles: ['implementer'],
+      runHelp: async () => null,
+    });
+
+    const settings = JSON.parse(String(checks[0]?.details?.[0]).replace(/^.*--settings /, ''));
+    expect(settings.sandbox.filesystem.allowRead).toEqual([realpathSync(target)]);
+  });
+
   it('never runs a project-local executable the trust ladder refuses, and reports ok', async () => {
     const project = tempDir('preflight-project');
     const binDir = join(project, 'node_modules', '.bin');
@@ -1086,9 +1112,9 @@ describe('collectArgVectorPreflightChecks — default help invocation', () => {
       }),
     ]);
     expect(checks[0]?.details).toEqual([
-      'Emitted argv: -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --json --cd . -',
-      'Emitted argv: -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --ephemeral --json --cd . -',
-      'Emitted argv: -c model_reasoning_effort=high --sandbox workspace-write --ask-for-approval never exec --ignore-user-config --ephemeral --json --skip-git-repo-check --cd . -',
+      `Emitted argv: -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --json --cd ${project} -`,
+      `Emitted argv: -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --ephemeral --json --cd ${project} -`,
+      `Emitted argv: -c model_reasoning_effort=high --sandbox workspace-write --ask-for-approval never exec --ignore-user-config --ephemeral --json --skip-git-repo-check --cd ${project} -`,
       'Emitted argv: -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec resume --ignore-user-config --ignore-rules --json 00000000-0000-4000-8000-000000000000 -',
     ]);
     expect(helpInvocations(log)).toEqual(['--help', 'exec --help']);
