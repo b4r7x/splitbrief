@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { isNodeError } from './errors.js';
+import { systemPsPath } from './start-time.js';
 
 // EPERM means the process exists but belongs to another user, which is still alive for the
 // purposes of every caller here.
@@ -27,9 +28,12 @@ export function canSignalProcess(pid: number): boolean {
 export function hasLiveDescendants(pid: number): boolean {
   if (!Number.isInteger(pid) || pid <= 1) return false;
 
+  const psPath = systemPsPath();
+  if (psPath === null) return true;
+
   let table: string;
   try {
-    table = execFileSync('ps', ['-A', '-o', 'ppid=,stat='], {
+    table = execFileSync(psPath, ['-A', '-o', 'ppid=,stat='], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     });

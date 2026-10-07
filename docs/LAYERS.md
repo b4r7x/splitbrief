@@ -79,7 +79,7 @@ Moral: validators (pure) split from error factories (domain). If a "validator" a
 - `lib/git/` — `simple-git` boundary in `client.ts` (commit, diff, status helpers in sibling modules)
 - `lib/fs.ts` — security-aware filesystem helpers (`ensureSecureDir`, `writeSecureFile`)
 - `lib/warn.ts` — `stderr` formatter
-- `lib/process/` — subprocess lifecycle (`spawn`, `errors`, `registry`, `line-buffer`)
+- `lib/process/` — subprocess lifecycle (`spawn`, `errors`, `registry`, `line-buffer`, `command-path`)
 - `lib/terminal/` — terminal I/O (`mouse` events, `kitty-keyboard` protocol)
 - `lib/http/policy-fetch.ts` — manual-redirect `fetch` transport; the caller supplies the initial endpoint and the rejection factory, so the module carries no provider knowledge
 
@@ -89,7 +89,7 @@ Moral: validators (pure) split from error factories (domain). If a "validator" a
 
 **Why `lib/` is not `core/`:** these modules don't know anything about SPLITBRIEF. A workflow runner, a `.splitbrief/` session store, a cost calculation — all domain. A git-commit wrapper, a process spawner, a terminal mouse parser — all infrastructure. Swap `simple-git` for another implementation, `lib/git/client.ts` changes; `core/` doesn't.
 
-**Nesting rule:** create a sub-folder under `lib/` only when you have ≥3 closely-coupled files for a single subsystem (`lib/process/` has `spawn`, `errors`, `registry`, `line-buffer`). Git helpers live under `lib/git/` (`client.ts` owns the `simple-git` boundary).
+**Nesting rule:** create a sub-folder under `lib/` only when you have ≥3 closely-coupled files for a single subsystem (`lib/process/` has `spawn`, `errors`, `registry`, `line-buffer`, `command-path`). Git helpers live under `lib/git/` (`client.ts` owns the `simple-git` boundary).
 
 **Single-source rules for wrapped subsystems:**
 - **No `simple-git` imports outside `src/lib/git/client.ts`** (and colocated test files). Every git operation routes through named exports under `lib/git/`. Engine, core, and features import named helpers only.

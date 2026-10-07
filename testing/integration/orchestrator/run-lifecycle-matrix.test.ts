@@ -12,7 +12,7 @@ import { createEventBus } from '../../../src/engine/events/bus.js';
 import type { ImplementerOptions } from '../../../src/engine/implementers/types.js';
 import { runApply } from '../../../src/engine/orchestrator/apply/run.js';
 import { closeRunIfOpen } from '../../../src/engine/orchestrator/run/close.js';
-import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
+import { runTrackedWorkflow, settleTrackedWorkflows } from '#testing/helpers/tracked-workflow.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -60,7 +60,8 @@ const dirs: string[] = [];
 
 beforeEach(() => resetAllStores());
 
-afterEach(() => {
+afterEach(async () => {
+  await settleTrackedWorkflows();
   while (dirs.length > 0) cleanupTempDir(dirs.pop() as string);
 });
 
@@ -118,7 +119,7 @@ async function runUntil(stopBeforeReview: boolean): Promise<Ref> {
       return passingReviewVerdict(prompt);
     },
   );
-  await runWorkflow({
+  await runTrackedWorkflow({
     prepared: makePreparedExecution({
       ...ref,
       feature: 'two briefs, then the result',

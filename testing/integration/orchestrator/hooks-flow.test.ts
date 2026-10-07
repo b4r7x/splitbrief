@@ -11,7 +11,7 @@ import { makeShellRunnerConfig } from '#testing/helpers/faux/shell-runner.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import { persistReadyExecutionState } from '#testing/helpers/persisted-execution.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
-import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
+import { runTrackedWorkflow, settleTrackedWorkflows } from '#testing/helpers/tracked-workflow.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import type { HooksConfig } from '../../../src/core/schemas/hooks.js';
 import type { Config } from '../../../src/core/schemas/config.js';
@@ -43,7 +43,8 @@ beforeEach(() => {
   trustHome = useTrustHome('hooks-flow-trust-home');
   resetAllStores();
 });
-afterEach(() => {
+afterEach(async () => {
+  await settleTrackedWorkflows();
   while (dirs.length) cleanupTempDir(dirs.pop() as string);
   trustHome.restore();
 });
@@ -143,7 +144,7 @@ describe('hooks integration flow', { timeout: 90_000 }, () => {
 
     const config = makeShellRunnerConfig({ hooks: DENY_PRE_TASK_HOOKS });
 
-    await runWorkflow({
+    await runTrackedWorkflow({
       prepared: preparedExecution(projectDir, 'add foo', config),
       callbacks,
       sinks: TEST_WORKFLOW_SINKS,
@@ -173,7 +174,7 @@ describe('hooks integration flow', { timeout: 90_000 }, () => {
 
     const config = makeShellRunnerConfig({ hooks: postTaskMarkerHooks(projectDir) });
 
-    await runWorkflow({
+    await runTrackedWorkflow({
       prepared: preparedExecution(projectDir, 'add foo', config),
       callbacks,
       sinks: TEST_WORKFLOW_SINKS,

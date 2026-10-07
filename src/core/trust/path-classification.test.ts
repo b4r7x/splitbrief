@@ -13,7 +13,6 @@ import {
   isShellEvaluatedPromptArg,
   packageManagerScriptName,
   packageManagerScriptNames,
-  resolveBareCommandOnPath,
   scriptsRunFor,
 } from './path-classification.js';
 
@@ -240,20 +239,7 @@ describe('isPackageManagerScriptInvocation', () => {
   });
 });
 
-describe('resolveBareCommandOnPath', () => {
-  it('resolves bare commands through PATH', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'splitbrief-path-classification-'));
-    try {
-      const bin = join(dir, 'runner');
-      writeFileSync(bin, '#!/bin/sh\n');
-      chmodSync(bin, 0o755);
-
-      expect(resolveBareCommandOnPath('runner', '/tmp/project', dir)).toBe(bin);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
+describe('isBareCommandResolvedInsideProject', () => {
   it('classifies a bare command as repo-local when PATH resolves inside the project', () => {
     const projectDir = mkdtempSync(join(tmpdir(), 'splitbrief-project-path-'));
     try {

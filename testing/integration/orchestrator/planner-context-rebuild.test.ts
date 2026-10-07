@@ -9,7 +9,7 @@ import { ensureSessionDir } from '../../../src/core/paths-io.js';
 import { appendMessage } from '../../../src/core/sessions/log-writer.js';
 import { reactivateExistingSession } from '../../../src/core/sessions/active-pointer.js';
 import type { SessionRef } from '../../../src/core/types/session-ref.js';
-import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
+import { runTrackedWorkflow, settleTrackedWorkflows } from '#testing/helpers/tracked-workflow.js';
 import { applyRecoveryAction } from '../../../src/engine/orchestrator/recovery/actions.js';
 import { resolveCustomExecutable } from '../../../src/engine/runners/resolve-cli-executable.js';
 import { parsePreparedConfig } from '../../../src/engine/runners/prepared-execution.js';
@@ -27,7 +27,8 @@ beforeEach(() => {
   resetAllStores();
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await settleTrackedWorkflows();
   vi.unstubAllEnvs();
   while (dirs.length > 0) cleanupTempDir(dirs.pop() as string);
 });
@@ -173,7 +174,11 @@ async function resumeRun(ref: SessionRef, config: Config, plannerCommand: string
       },
     ],
   });
-  await runWorkflow({ prepared, callbacks: makeCallbacks().callbacks, sinks: TEST_WORKFLOW_SINKS });
+  await runTrackedWorkflow({
+    prepared,
+    callbacks: makeCallbacks().callbacks,
+    sinks: TEST_WORKFLOW_SINKS,
+  });
 }
 
 function setup(): {

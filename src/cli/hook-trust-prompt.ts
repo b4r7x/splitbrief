@@ -7,7 +7,8 @@ import {
 } from '../core/hooks/trust.js';
 import { HOOK_EVENTS, type HookEntry, type HooksConfig } from '../core/schemas/hooks.js';
 import { escapeTrustLiteral } from '../core/trust/literal.js';
-import { isPathLike, resolveBareCommandOnPath } from '../core/trust/path-classification.js';
+import { isPathLike } from '../core/trust/path-classification.js';
+import { resolveBareCommandOnPath } from '../lib/process/command-path.js';
 import { cliError } from './errors.js';
 
 export interface HookTrustOptions {

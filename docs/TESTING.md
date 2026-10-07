@@ -232,15 +232,21 @@ import { fauxPlanner } from '#testing/helpers/faux/planner.js';
 import { fauxImplementer } from '#testing/helpers/faux/implementer.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
+import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { runTrackedWorkflow, settleTrackedWorkflows } from '#testing/helpers/tracked-workflow.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
+
+afterEach(async () => {
+  await settleTrackedWorkflows();
+  cleanupTempDir(projectDir);
+});
 
 it('completes one task via local implementer', async () => {
   const task = makeTask();
   const { planner } = fauxPlanner({ plans: [{ tasks: [task] }] });
   const { implementer } = fauxImplementer({ steps: [{ success: true, output: 'done' }] });
   const events: EngineEvent[] = [];
-  await runWorkflow({
+  await runTrackedWorkflow({
     feature: 'add hello module',
     projectDir,
     config: makeConfig(),
@@ -255,6 +261,8 @@ it('completes one task via local implementer', async () => {
   expect(events.at(-1)).toMatchObject({ type: 'workflow_complete' });
 });
 ```
+
+Teardown aborts and awaits runs left in flight by timed-out tests so their git calls cannot use deleted directories or reach the next test.
 
 **Headless `--json` CLI flow** (`testing/integration/cli/`):
 

@@ -791,7 +791,7 @@ src/
 │   ├── git/                       simple-git boundary in client.ts;
 │   │                              diff, files, refs, repository, staging
 │   ├── path-confinement.ts        isPathConfined, assertPathConfined
-│   ├── process/                   errors, line-buffer, registry, spawn
+│   ├── process/                   command-path, errors, line-buffer, registry, spawn
 │   ├── terminal/                  background, kitty-keyboard, escape-debounce, filtered-stdin, key-debug, editor-handover
 │   └── warn.ts                    process.stderr warn helper
 │

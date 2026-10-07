@@ -33,7 +33,7 @@ import {
   retainedStagedDirectory,
   workspaceOwner,
 } from '../../../src/engine/orchestrator/isolation/retention.js';
-import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
+import { runTrackedWorkflow, settleTrackedWorkflows } from '#testing/helpers/tracked-workflow.js';
 import {
   guidanceConsult,
   planFromTasks,
@@ -66,7 +66,8 @@ const proofRoute = coldRouteFromEnv();
 const matrixActive = proofDir !== undefined && Number.isInteger(proofEntry) && proofEntry >= 0;
 
 const roots: string[] = [];
-afterEach(() => {
+afterEach(async () => {
+  await settleTrackedWorkflows();
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
@@ -161,7 +162,7 @@ async function runColdEntry(input: {
     stop.abort();
     return { success: false, output: '', outcome: 'user-abort' as const };
   };
-  await runWorkflow({
+  await runTrackedWorkflow({
     prepared: makePreparedExecution({
       ...ref,
       feature: COLD_FEATURE,

@@ -1,6 +1,7 @@
-import { accessSync, constants, lstatSync, realpathSync, statSync } from 'node:fs';
-import { delimiter, dirname, extname, join, relative, resolve } from 'node:path';
+import { lstatSync, realpathSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
 import { isInsideRoot } from '../../lib/path-confinement.js';
+import { resolveBareCommandOnPath } from '../../lib/process/command-path.js';
 import { readPackageJson } from '../project-meta.js';
 import { parseShellCommand } from '../../utils/parse-shell-command.js';
 import { executableName } from './interpreter-command-string.js';
@@ -490,43 +491,6 @@ export function runsProjectDefinedCode(argv: readonly string[], projectDir: stri
   if (forms === undefined) return false;
   if (args.length === 0) return !forms.bare;
   return args.length > 1 || !forms.alone.includes(args[0] ?? '');
-}
-
-function executableExtensions(command: string): string[] {
-  if (process.platform !== 'win32' || extname(command) !== '') return [''];
-  const pathext = process.env['PATHEXT'] ?? '.COM;.EXE;.BAT;.CMD';
-  return pathext
-    .split(';')
-    .map((ext) => ext.trim())
-    .filter((ext) => ext.length > 0);
-}
-
-function isExecutableFile(path: string): boolean {
-  try {
-    if (!statSync(path).isFile()) return false;
-    accessSync(path, constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export function resolveBareCommandOnPath(
-  command: string,
-  cwd: string,
-  pathEnv = process.env['PATH'] ?? '',
-): string | null {
-  if (command.length === 0 || isPathLike(command)) return null;
-
-  for (const entry of pathEnv.split(delimiter)) {
-    const dir = entry.length > 0 ? entry : cwd;
-    for (const ext of executableExtensions(command)) {
-      const candidate = resolve(dir, `${command}${ext}`);
-      if (isExecutableFile(candidate)) return candidate;
-    }
-  }
-
-  return null;
 }
 
 function realpathOrResolve(path: string): string {

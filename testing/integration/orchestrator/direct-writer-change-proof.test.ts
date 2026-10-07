@@ -20,7 +20,7 @@ import { isolationWorktreePath, SANDBOX_DIR } from '../../../src/core/paths.js';
 import { createCliImplementer } from '../../../src/engine/implementers/cli.js';
 import { runImplementation } from '../../../src/engine/orchestrator/task/run-implementation.js';
 import { runSingleTask } from '../../../src/engine/orchestrator/task/step.js';
-import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
+import { runTrackedWorkflow, settleTrackedWorkflows } from '#testing/helpers/tracked-workflow.js';
 import { getChangedFilesSnapshot } from '../../../src/engine/orchestrator/approval/file-snapshots/capture.js';
 import type { CliStartGate } from '../../../src/engine/runners/start-gate.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
@@ -319,7 +319,8 @@ beforeEach(() => {
   process.env.XDG_STATE_HOME = testStateHome;
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await settleTrackedWorkflows();
   while (fixtures.length > 0) {
     const fixture = fixtures.pop();
     if (fixture === undefined) continue;
@@ -555,7 +556,7 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
       ],
     });
 
-    const summary = await runWorkflow({
+    const summary = await runTrackedWorkflow({
       prepared,
       callbacks: makeCallbacks().callbacks,
       sinks: TEST_WORKFLOW_SINKS,

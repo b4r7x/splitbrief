@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { assertPathConfined } from '../path-confinement.js';
 import { error } from '../../utils/error.js';
+import { gitBinary } from './client.js';
 
 type Entry = { bytes: Buffer; mode: number } | null;
 
@@ -45,7 +46,7 @@ export async function diffFileEntries(input: {
     if (before === null && after === null) return '';
     return await new Promise<string>((resolve, reject) => {
       const child = spawn(
-        'git',
+        gitBinary(),
         [
           'diff',
           '--no-index',

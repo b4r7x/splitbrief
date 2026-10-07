@@ -1,8 +1,29 @@
 import { simpleGit, type SimpleGit } from 'simple-git';
 import { error } from '../../utils/error.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
+import { resolveBareCommandOnPath } from '../process/command-path.js';
 
-const getGit = (dir: string): SimpleGit => simpleGit(dir);
+// simple-git rejects a binary outside its custom-binary rule; keep the bare name then.
+const SIMPLE_GIT_BINARY_PATTERN = /^([a-z]:)?([a-z0-9/.\\_~-]+)$/i;
+
+let cachedGitBinary: { path: string | undefined; binary: string } | undefined;
+
+export function gitBinary(): string {
+  const path = process.env.PATH;
+  if (cachedGitBinary === undefined || cachedGitBinary.path !== path) {
+    cachedGitBinary = {
+      path,
+      binary: resolveBareCommandOnPath('git', process.cwd(), path ?? '') ?? 'git',
+    };
+  }
+  return cachedGitBinary.binary;
+}
+
+const getGit = (dir: string): SimpleGit => {
+  const resolved = gitBinary();
+  const binary = SIMPLE_GIT_BINARY_PATTERN.test(resolved) ? resolved : 'git';
+  return simpleGit(dir, { binary });
+};
 
 export type GitClient = SimpleGit;
 

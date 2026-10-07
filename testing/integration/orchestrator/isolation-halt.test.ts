@@ -15,7 +15,7 @@ import { createImplementerBase } from '../../../src/engine/implementers/pipeline
 import type { ImplementerPublisher, InvokeOpts } from '../../../src/engine/implementers/types.js';
 import { createImplementerPublisher } from '../../../src/engine/orchestrator/events.js';
 import { applyRecoveryAction } from '../../../src/engine/orchestrator/recovery/actions.js';
-import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
+import { runTrackedWorkflow, settleTrackedWorkflows } from '#testing/helpers/tracked-workflow.js';
 import { runTaskLoop } from '../../../src/engine/orchestrator/task/loop.js';
 import { createEventBus } from '../../../src/engine/events/bus.js';
 import { makeConfig, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
@@ -52,7 +52,8 @@ beforeEach(() => {
   process.env.XDG_STATE_HOME = stateHome;
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await settleTrackedWorkflows();
   restorePath?.();
   restorePath = undefined;
   if (ORIGINAL_XDG_STATE_HOME === undefined) delete process.env.XDG_STATE_HOME;
@@ -272,7 +273,7 @@ describe('isolation halt through the orchestrator', { timeout: 90_000 }, () => {
       resumeState?: WorkflowState | undefined;
     }) {
       const config = agentConfig();
-      await runWorkflow({
+      await runTrackedWorkflow({
         prepared: makePreparedExecution({
           projectDir: input.projectDir,
           sessionId: input.sessionId,

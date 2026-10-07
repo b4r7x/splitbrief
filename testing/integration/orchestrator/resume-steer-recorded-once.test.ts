@@ -5,7 +5,7 @@ import { createInitialState, transition } from '../../../src/core/state/machine.
 import { saveState } from '../../../src/core/state/persistence.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
-import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
+import { runTrackedWorkflow, settleTrackedWorkflows } from '#testing/helpers/tracked-workflow.js';
 import type { ImplementerOptions } from '../../../src/engine/implementers/types.js';
 import {
   makeCallbacks,
@@ -34,7 +34,8 @@ const dirs: string[] = [];
 
 beforeEach(() => resetAllStores());
 
-afterEach(() => {
+afterEach(async () => {
+  await settleTrackedWorkflows();
   while (dirs.length > 0) cleanupTempDir(dirs.pop() as string);
 });
 
@@ -157,7 +158,7 @@ describe('a steer that resumes a run is recorded exactly once', { timeout: 90_00
       },
     };
 
-    const summary = await runWorkflow({
+    const summary = await runTrackedWorkflow({
       prepared,
       savedState: resumeState,
       steer,
@@ -234,7 +235,7 @@ describe('a steer that resumes a run is recorded exactly once', { timeout: 90_00
       capabilities: makePlanner().capabilities,
     });
 
-    await runWorkflow({
+    await runTrackedWorkflow({
       prepared: makePreparedExecution({
         ...ref,
         feature: cut.feature,

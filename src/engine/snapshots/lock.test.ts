@@ -96,6 +96,27 @@ describe('acquireSnapshotLock', () => {
     await release();
   });
 
+  it('judges a stale lock with the system ps, not a ps supplied by the ambient PATH', async () => {
+    const lockPath = await writeAgedLock('sess-01', { pid: process.ppid, startedAt: 1 });
+    const shadowDir = join(tmp, 'shadow-bin');
+    await mkdir(shadowDir);
+    const shadowPs = join(shadowDir, 'ps');
+    await writeFile(shadowPs, '#!/bin/sh\n: > "$0.executed"\n', { mode: 0o755 });
+    const originalPath = process.env.PATH;
+    process.env.PATH = shadowDir;
+
+    try {
+      const release = await acquireSnapshotLock(tmp, 'sess-01');
+
+      expect(existsSync(`${shadowPs}.executed`)).toBe(false);
+      expect(JSON.parse(await readFile(lockPath, 'utf-8')).pid).toBe(process.pid);
+      await release();
+    } finally {
+      if (originalPath === undefined) delete process.env.PATH;
+      else process.env.PATH = originalPath;
+    }
+  });
+
   it('release does not delete a lock owned by another holder', async () => {
     const release = await acquireSnapshotLock(tmp, 'sess-01');
 

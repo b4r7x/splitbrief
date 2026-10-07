@@ -9,7 +9,7 @@ import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { loadConfig } from '../../../src/core/config/load/io.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../../src/core/paths.js';
 import { loadState } from '../../../src/core/state/persistence.js';
-import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
+import { runTrackedWorkflow, settleTrackedWorkflows } from '#testing/helpers/tracked-workflow.js';
 import { applyOfferedSeatSwap } from '../../../src/engine/orchestrator/run/seat-swap.js';
 import type { prepareExecution } from '../../../src/engine/runners/prepare-execution/prepare-execution.js';
 import type { PreparationPolicy } from '../../../src/engine/runners/prepare-execution/types.js';
@@ -62,7 +62,8 @@ beforeEach(() => {
   process.env.XDG_STATE_HOME = stateHome;
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await settleTrackedWorkflows();
   while (restores.length > 0) restores.pop()?.();
   if (originalPath === undefined) delete process.env.PATH;
   else process.env.PATH = originalPath;
@@ -184,7 +185,7 @@ async function runToFirstSeatDown(opencode: 'success' | 'fail'): Promise<SeatDow
     config,
   });
 
-  await runWorkflow({
+  await runTrackedWorkflow({
     prepared,
     callbacks: makeCallbacks().callbacks,
     sinks: TEST_WORKFLOW_SINKS,
@@ -257,9 +258,9 @@ async function applyAutoSwitch(run: SeatDownRun): Promise<{
 async function continueRun(input: {
   prepared: PreparedExecution;
   savedState: WorkflowState;
-}): Promise<{ summary: Awaited<ReturnType<typeof runWorkflow>>; events: EngineEvent[] }> {
+}): Promise<{ summary: Awaited<ReturnType<typeof runTrackedWorkflow>>; events: EngineEvent[] }> {
   const events: EngineEvent[] = [];
-  const summary = await runWorkflow({
+  const summary = await runTrackedWorkflow({
     prepared: input.prepared,
     savedState: input.savedState,
     callbacks: makeCallbacks().callbacks,

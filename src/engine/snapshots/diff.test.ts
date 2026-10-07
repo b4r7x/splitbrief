@@ -9,6 +9,7 @@ import { createSnapshot } from './create.js';
 import { computeSnapshotDiff, fallbackDiff, formatSnapshotDiff } from './diff.js';
 import { encodeSnapshotPath } from './path-codec.js';
 
+const itUnix = process.platform === 'win32' ? it.skip : it;
 let tmp: string;
 
 beforeEach(async () => {
@@ -201,6 +202,40 @@ describe('computeSnapshotDiff', () => {
     const fooDiff = result.files.find((f) => f.path === 'foo.ts');
     expect(fooDiff?.status).toBe('modified');
     expect(fooDiff?.diff ?? '').not.toContain('EVIL SNAPSHOT CONTENT');
+  });
+});
+
+describe('computeSnapshotDiff — the diff binary', () => {
+  itUnix('does not execute a diff binary supplied by the ambient PATH', async () => {
+    await writeFile(join(tmp, 'foo.ts'), 'original content\n');
+    await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
+    const snap = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+      name: 'snap1',
+    });
+    await writeFile(join(tmp, 'foo.ts'), 'modified content\n');
+    const shadowDir = await mkdtemp(join(tmpdir(), 'splitbrief-shadow-diff-'));
+    const shadowDiff = join(shadowDir, 'diff');
+    await writeFile(shadowDiff, '#!/bin/sh\n: > "$0.executed"\n', { mode: 0o755 });
+    const originalPath = process.env.PATH;
+    process.env.PATH = shadowDir;
+
+    try {
+      const result = await computeSnapshotDiff({
+        projectDir: tmp,
+        sessionId: 'sess-01',
+        manifest: snap.manifest,
+      });
+
+      expect(existsSync(`${shadowDiff}.executed`)).toBe(false);
+      expect(result.files.find((f) => f.path === 'foo.ts')?.diff).toContain('+modified content');
+    } finally {
+      if (originalPath === undefined) delete process.env.PATH;
+      else process.env.PATH = originalPath;
+      await rm(shadowDir, { recursive: true, force: true });
+    }
   });
 });
 

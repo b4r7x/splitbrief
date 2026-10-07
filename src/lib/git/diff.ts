@@ -1,13 +1,17 @@
 import { spawn } from 'node:child_process';
-import { getGitForDir, gitError, parseNulSeparated, runGit } from './client.js';
+import { getGitForDir, gitBinary, gitError, parseNulSeparated, runGit } from './client.js';
 
 const NULL_DEVICE = process.platform === 'win32' ? 'NUL' : '/dev/null';
 
 function diffUntrackedFile(dir: string, file: string): Promise<string> {
   return new Promise<string>((resolve) => {
-    const child = spawn('git', ['diff', '--no-color', '--no-index', '--', NULL_DEVICE, file], {
-      cwd: dir,
-    });
+    const child = spawn(
+      gitBinary(),
+      ['diff', '--no-color', '--no-index', '--', NULL_DEVICE, file],
+      {
+        cwd: dir,
+      },
+    );
     const chunks: Buffer[] = [];
     child.stdout.on('data', (chunk: Buffer) => chunks.push(chunk));
     child.on('error', () => resolve(''));

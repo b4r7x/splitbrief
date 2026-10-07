@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { isInternalGitStatusPath, sessionDir, SNAPSHOT_BASELINE_ID } from '../../../core/paths.js';
 import type { SnapshotManifest } from '../../../core/schemas/snapshot.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
+import { gitBinary } from '../../../lib/git/client.js';
 import { assertPathConfined } from '../../../lib/path-confinement.js';
 import { isENOENT } from '../../../lib/process/errors.js';
 import { error } from '../../../utils/error.js';
@@ -59,7 +60,7 @@ async function readBaseBytes(input: {
 function runGitDiff(root: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(
-      'git',
+      gitBinary(),
       [
         'diff',
         '--no-index',
