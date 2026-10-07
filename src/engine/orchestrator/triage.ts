@@ -3,6 +3,7 @@ import type { Config } from '../../core/schemas/config.js';
 import type { Plan } from '../../core/schemas/plan.js';
 import type { TriageInput } from '../../core/schemas/review.js';
 import type { TriageResult } from '../../core/schemas/review.js';
+import type { SpecMetadata } from '../../core/paths-io.js';
 import type { Task, TaskId } from '../../core/schemas/task.js';
 import {
   fixCyclesOf,
@@ -15,6 +16,7 @@ import { insertTasks } from '../../core/state/task-insert.js';
 import type { EventBus } from '../events/types.js';
 import { checkTaskIdentities } from '../spec/plan-checks.js';
 import { taskFromSpec } from '../spec/plan-tasks.js';
+import { writeTasksArtifact } from './artifact-write.js';
 import { transitionAndSave } from './state-ops.js';
 import type { WorkflowContext } from './types.js';
 import {
@@ -204,7 +206,9 @@ function maxPlanBatch(tasks: readonly Task[]): number {
 }
 
 export function applyTriage(
-  ctx: Pick<TriageContext, 'projectDir' | 'sessionId' | 'workspaceDir'>,
+  ctx: Pick<TriageContext, 'projectDir' | 'sessionId' | 'workspaceDir'> & {
+    metadata: SpecMetadata;
+  },
   state: WorkflowState,
   review: ReviewRecord | undefined,
   inputs: readonly TriageInput[],
@@ -228,12 +232,14 @@ export function applyTriage(
       description: fixBriefDescription(task.description, findings),
     };
   });
-  const next = transitionAndSave({ projectDir: ctx.projectDir, sessionId: ctx.sessionId }, state, {
+  const ref = { projectDir: ctx.projectDir, sessionId: ctx.sessionId };
+  const next = transitionAndSave(ref, state, {
     type: 'INSERT_TASKS',
     parentId: null,
     ...(afterTaskId !== undefined && { afterTaskId }),
     tasks: converted,
   });
+  writeTasksArtifact(ref, next.tasks, ctx.metadata);
   return {
     state: next,
     tasks: converted.map(

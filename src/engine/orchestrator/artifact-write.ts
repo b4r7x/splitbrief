@@ -1,4 +1,4 @@
-import type { SpecMetadata } from '../../core/paths-io.js';
+import type { SpecFileRef, SpecMetadata } from '../../core/paths-io.js';
 import { writeSpecFile } from '../../core/paths-io.js';
 import { PLAN_FILE, TASKS_FILE } from '../../core/paths.js';
 import type { Phase } from '../../core/schemas/enums.js';
@@ -6,6 +6,17 @@ import type { Task } from '../../core/schemas/task.js';
 import type { EventBus } from '../events/types.js';
 import { formatTasks } from '../spec/formatter.js';
 import { publishArtifactWritten } from './artifact-card.js';
+
+/** Rewrite `tasks.md` from the run's tasks, so every reader of the file sees the current brief list. */
+export function writeTasksArtifact(
+  ref: SpecFileRef,
+  tasks: readonly Task[],
+  metadata: SpecMetadata | null | undefined,
+): string {
+  const tasksMarkdown = formatTasks(tasks);
+  writeSpecFile(ref, TASKS_FILE, tasksMarkdown, metadata);
+  return tasksMarkdown;
+}
 
 /**
  * Persist `plan.md` and `tasks.md`, the projections of `plan.json`, and announce each as one card.
@@ -21,9 +32,8 @@ export function writeAndPublishPlanArtifacts(opts: {
   tasks: Task[];
 }): void {
   const ref = { projectDir: opts.projectDir, sessionId: opts.sessionId };
-  const tasksMarkdown = formatTasks(opts.tasks);
   writeSpecFile(ref, PLAN_FILE, opts.planMarkdown, opts.metadata);
-  writeSpecFile(ref, TASKS_FILE, tasksMarkdown, opts.metadata);
+  const tasksMarkdown = writeTasksArtifact(ref, opts.tasks, opts.metadata);
   const card = { bus: opts.bus, phase: opts.phase, ...ref };
   publishArtifactWritten({ ...card, filename: PLAN_FILE, text: opts.planMarkdown });
   publishArtifactWritten({
