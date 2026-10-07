@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   makeCallbacks,
@@ -20,15 +20,18 @@ import {
 import { loadState } from '../../../core/state/persistence.js';
 import { consultCallAnswering, guidanceConsult } from '#testing/helpers/typed-planner.js';
 import type { ImplementerOptions } from '../../implementers/types.js';
-import type { EngineEvent } from '../../events/types.js';
+import type { EngineEvent, EngineEventOf } from '../../events/types.js';
+import type { ValidationCommandRunner } from '../validation/types.js';
+import { processError } from '../../../lib/process/errors.js';
 import { createValidator } from '../validation/run.js';
+import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow.js';
 import { runSingleTask } from './step.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
 
 afterEach(cleanupTaskProjects);
 
 describe('runSingleTask — recovery', () => {
-  it('restores failing task changes to the pre-task state when the retry ladder exhausts', {
+  it("keeps the brief's files in place when the ladder halts on its consult bound", {
     timeout: 90_000,
   }, async () => {
     const { projectDir, sessionId } = setupProject({ 'src/main.ts': 'export const main = 0;\n' });
@@ -84,9 +87,68 @@ describe('runSingleTask — recovery', () => {
     });
 
     expect(result.pendingRecovery?.reason).toBe('consult-bound-spent');
+    // Continue replays the brief as a retry carrying the failure, so the files it fails on stay.
+    expect(readFileSync(join(wctx.workspaceDir, 'src/main.ts'), 'utf-8')).toBe(
+      'export const main = 999; // broken\n',
+    );
+  });
+
+  it("restores the brief's files to the task start when the ladder halts outside the consult bound", {
+    timeout: 90_000,
+  }, async () => {
+    const { projectDir, sessionId } = setupProject({ 'src/main.ts': 'export const main = 0;\n' });
+    const task = makeTask({
+      id: 'T001',
+      action: 'modify',
+      suggestedFiles: ['src/main.ts', 'src/extra.ts'],
+      scope: { inBounds: ['src/main.ts', 'src/extra.ts'] },
+    });
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async ({ projectDir: runDir }: ImplementerOptions) => {
+        writeFileSync(join(runDir, 'src/main.ts'), 'export const main = 999; // broken\n');
+        writeFileSync(join(runDir, 'src/extra.ts'), 'export const extra = 1;\n');
+        return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
+      }),
+      retry: vi.fn().mockResolvedValue({
+        success: false,
+        error: CODEX_BURNED_REFRESH,
+        outcome: 'unauthenticated',
+        usage: { inputTokens: 2, outputTokens: 0 },
+      }),
+    });
+    const runValidation = vi
+      .fn()
+      .mockResolvedValue([{ stage: 'test' as const, passed: false, error: 'test failed' }]);
+    const wctx = await openRunWorkspace(
+      makeWorkflowContext({
+        projectDir,
+        sessionId,
+        isolation: makeWorktreeIsolation({ projectDir, sessionId }),
+        implementer,
+        config: makeConfig({
+          implementer: { kind: 'cli', tool: 'codex' },
+          validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
+        }),
+        validator: { ...createValidator(), runValidation },
+      }),
+    );
+    const result = await runSingleTask({
+      wctx,
+      task,
+      index: 0,
+      totalTasks: 1,
+      state: implementingState([task]),
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.pendingRecovery?.reason).toBe('runner-unauthenticated');
+    // Every file the brief changed since its task start goes back: the edit and the new file.
     expect(readFileSync(join(wctx.workspaceDir, 'src/main.ts'), 'utf-8')).toBe(
       'export const main = 0;\n',
     );
+    expect(existsSync(join(wctx.workspaceDir, 'src/extra.ts'))).toBe(false);
   });
 
   it("does not leak a skipped task's exhausted changes into the next task's validation", {
@@ -157,6 +219,7 @@ describe('runSingleTask — recovery', () => {
       }),
     );
 
+    let taskOneStart: ChangedFilesSnapshot | undefined;
     const afterTaskOne = await runSingleTask({
       wctx,
       task: taskOne,
@@ -166,25 +229,40 @@ describe('runSingleTask — recovery', () => {
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
+      onTaskStartSnapshot: (startState, snapshot) => {
+        taskOneStart = snapshot;
+        return startState;
+      },
     });
 
-    // Task 1 exhausts the ladder and its broken change is restored to the pre-task state.
+    // Task 1 exhausts the ladder; its broken change stays for a Continue to start from.
     expect(afterTaskOne.pendingRecovery?.reason).toBe('consult-bound-spent');
     expect(readFileSync(join(wctx.workspaceDir, 'src/one.ts'), 'utf-8')).toBe(
-      'export const one = 0;\n',
+      'export const one = 999; // broken\n',
     );
 
-    // Skip the exhausted task via the real recovery action, then run task 2.
+    // Skip the exhausted task via the real recovery action: the skip restores its files.
     const skipResult = await applyRecoveryAction({
       projectDir,
       sessionId,
-      state: afterTaskOne,
+      state: {
+        ...afterTaskOne,
+        workspace: {
+          kind: 'worktree',
+          path: wctx.workspaceDir,
+          base: { snapshotId: 'workspace-base', head: null },
+        },
+        changedFilesBaseline: { head: null, fingerprints: {}, activeTaskSnapshot: taskOneStart },
+      },
       action: 'skip-current-task',
       bus,
     });
     expect(skipResult.ok).toBe(true);
     expect(skipResult.state.tasks[0]?.status).toBe('skipped');
     expect(skipResult.state.currentTaskIndex).toBe(1);
+    expect(readFileSync(join(wctx.workspaceDir, 'src/one.ts'), 'utf-8')).toBe(
+      'export const one = 0;\n',
+    );
 
     const validationsBeforeTaskTwo = oneSeenByValidation.length;
 
@@ -213,6 +291,199 @@ describe('runSingleTask — recovery', () => {
 // Captured verbatim from `codex exec --json` (codex-cli 0.146.0, 2026-08-06).
 const CODEX_BURNED_REFRESH =
   'Your access token could not be refreshed because your refresh token was already used. Please log out and sign in again.';
+
+// A Biome run whose output opens with a config notice before the brief's own diagnostic,
+// the shape the S11 run's consult-bound panel truncated (babysit #54).
+const BIOME_NOTICE_THEN_FORMAT = [
+  'biome.json:38:13 deserialize  DEPRECATED  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+  '',
+  '  i The use of the recommended field has been deprecated, and will removed in the next major version of Biome. Use preset instead.',
+  '',
+  'src/main.ts format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+  '',
+  '  × Formatter would have printed the following content:',
+  '',
+  'check ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+  '',
+  '  × Some errors were emitted while running checks.',
+].join('\n');
+
+describe('runSingleTask — the consult-bound halt names the last failure', () => {
+  it("quotes the failing stage's first error line, not the notice before it", {
+    timeout: 90_000,
+  }, async () => {
+    const { projectDir, sessionId } = setupProject({ 'src/main.ts': 'export const main = 0;\n' });
+    const task = makeTask({
+      id: 'T001',
+      action: 'modify',
+      suggestedFiles: ['src/main.ts'],
+      scope: { inBounds: ['src/main.ts'] },
+    });
+    let writes = 0;
+    const write = (runDir: string) => {
+      writes += 1;
+      writeFileSync(join(runDir, 'src/main.ts'), `export const main = [ ${writes} ];\n`);
+    };
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async ({ projectDir: runDir }: ImplementerOptions) => {
+        write(runDir);
+        return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
+      }),
+      retry: vi.fn().mockImplementation(async ({ projectDir: runDir }: ImplementerOptions) => {
+        write(runDir);
+        return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
+      }),
+    });
+    const runValidation = vi.fn().mockResolvedValue([
+      { stage: 'typecheck' as const, passed: true },
+      {
+        stage: 'lint' as const,
+        passed: false,
+        error: BIOME_NOTICE_THEN_FORMAT,
+        failureFiles: ['src/main.ts'],
+      },
+    ]);
+    const { bus } = makeBusRecorder();
+    const wctx = await openRunWorkspace(
+      makeWorkflowContext({
+        projectDir,
+        sessionId,
+        isolation: makeWorktreeIsolation({ projectDir, sessionId }),
+        callbacks: makeCallbacks().callbacks,
+        implementer,
+        bus,
+        config: makeConfig({
+          validation: { typecheck: true, lint: true, test: false, lintCommand: 'noop' },
+        }),
+        planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
+        validator: { ...createValidator(), runValidation },
+      }),
+    );
+
+    const result = await runSingleTask({
+      wctx,
+      task,
+      index: 0,
+      totalTasks: 1,
+      state: implementingState([task]),
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.pendingRecovery?.reason).toBe('consult-bound-spent');
+    expect(result.pendingRecovery?.details[0]).toBe(
+      'Last diagnosis: lint failed: src/main.ts format',
+    );
+  });
+});
+
+describe('runSingleTask — a layout-only lint failure', () => {
+  it('formats every file the brief wrote across its attempts, so the layout costs no consult', {
+    timeout: 90_000,
+  }, async () => {
+    const { projectDir, sessionId } = setupProject({
+      'biome.json': '{}\n',
+      'src/a.ts': 'export const a = 0;\n',
+      'src/a.test.ts': "import { a } from './a.js';\n",
+      'src/b.ts': 'export const b = 0;\n',
+    });
+    const task = makeTask({
+      id: 'T001',
+      action: 'modify',
+      suggestedFiles: ['src/a.ts', 'src/a.test.ts', 'src/b.ts'],
+      scope: { inBounds: ['src/a.ts', 'src/a.test.ts', 'src/b.ts'] },
+    });
+    // Attempt 1 writes an unformatted test and leaves a type error in src/b.ts; the
+    // local retry fixes src/b.ts only, as T008's attempts 8 to 10 did in the S11 run.
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async ({ projectDir: runDir }: ImplementerOptions) => {
+        writeFileSync(join(runDir, 'src/a.ts'), 'export const a = 1;\n');
+        writeFileSync(join(runDir, 'src/a.test.ts'), 'UNFORMATTED\n');
+        return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
+      }),
+      retry: vi.fn().mockImplementation(async ({ projectDir: runDir }: ImplementerOptions) => {
+        writeFileSync(join(runDir, 'src/b.ts'), 'export const b = 1;\n');
+        return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
+      }),
+    });
+    const commands: string[] = [];
+    const runCommand: ValidationCommandRunner = async (cmd, args, options) => {
+      const line = [cmd, ...args].join(' ');
+      commands.push(line);
+      const dir = options?.cwd ?? projectDir;
+      const read = (file: string) => readFileSync(join(dir, file), 'utf-8');
+      if (line === 'npx tsc --noEmit' && read('src/b.ts') !== 'export const b = 1;\n') {
+        throw processError.exitCode({
+          command: line,
+          code: 2,
+          stderr: '',
+          output: "src/b.ts(1,14): error TS2322: Type 'number' is not assignable to type 'string'.",
+        });
+      }
+      if (line.startsWith('npx biome format --write ')) {
+        for (const file of args.slice(3)) {
+          if (read(file) === 'UNFORMATTED\n') writeFileSync(join(dir, file), 'export {};\n');
+        }
+      }
+      if (line === 'npx biome check .' && read('src/a.test.ts') === 'UNFORMATTED\n') {
+        throw processError.exitCode({
+          command: line,
+          code: 1,
+          stderr:
+            'src/a.test.ts format ━━━━━━━━━━\n\n  × Formatter would have printed the following content:',
+          output: '',
+        });
+      }
+      return { stdout: '', stderr: '', code: 0 };
+    };
+    const consult = vi.fn(() => guidanceConsult());
+    const { bus, events } = makeBusRecorder();
+    const wctx = await openRunWorkspace(
+      makeWorkflowContext({
+        projectDir,
+        sessionId,
+        isolation: makeWorktreeIsolation({ projectDir, sessionId }),
+        callbacks: makeCallbacks().callbacks,
+        implementer,
+        bus,
+        config: makeConfig({
+          validation: {
+            typecheck: true,
+            lint: true,
+            test: false,
+            typecheckCommand: 'npx tsc --noEmit',
+            lintCommand: 'npx biome check .',
+          },
+        }),
+        planner: makePlanner({ typedCall: consultCallAnswering(consult) }),
+        validator: createValidator({ runCommand }),
+      }),
+    );
+
+    const result = await runSingleTask({
+      wctx,
+      task,
+      index: 0,
+      totalTasks: 1,
+      state: implementingState([task]),
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.pendingRecovery).toBeUndefined();
+    expect(result.tasks[0]?.status).toBe('done');
+    expect(consult).not.toHaveBeenCalled();
+    expect(events.filter((event) => event.type === 'task_escalating')).toEqual([]);
+    expect(readFileSync(join(wctx.workspaceDir, 'src/a.test.ts'), 'utf-8')).toBe('export {};\n');
+    const formatted = events.find(
+      (event): event is EngineEventOf<'warning'> =>
+        event.type === 'warning' && event.code === 'validation_formatted',
+    );
+    expect(formatted?.message).toContain('src/a.test.ts');
+  });
+});
 
 describe('runSingleTask — signed-out runner', () => {
   it('halts on an unauthenticated first attempt with the login command instead of retrying or escalating', async () => {
@@ -433,6 +704,7 @@ describe('runSingleTask — usage-limited runner', () => {
     expect(result.pendingRecovery?.facts?.resetsAt).toMatch(/^2026-08-08T/);
     expect(result.pendingRecovery?.availableActions).toEqual([
       'retry-same-worker',
+      'retry-later',
       'skip-current-task',
       'end-run',
     ]);

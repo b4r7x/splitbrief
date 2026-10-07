@@ -34,4 +34,25 @@ describe('buildConsultBoundRecoveryIssue', () => {
     expect(issue.seat).toBe('plan');
     expect(RecoveryIssueSchema.safeParse(issue).success).toBe(true);
   });
+
+  it('says that Continue starts from the files the last attempt left when the halt names a brief', () => {
+    const lineageHalt = buildConsultBoundRecoveryIssue({
+      reason: 'consult-bound-spent',
+      phase: 'escalating',
+      task: makeTask({ id: 'T008' }),
+      lastDiagnosis: 'lint failed: src/main.ts format',
+      createdAt,
+    });
+    const runHalt = buildConsultBoundRecoveryIssue({
+      reason: 'planner-calls-spent',
+      phase: 'final-review',
+      lastDiagnosis: 'The review needs triage',
+      createdAt,
+    });
+
+    expect(lineageHalt.details).toContain(
+      "Continuing grants one more consult and four more attempts, starting from the last attempt's files.",
+    );
+    expect(runHalt.details).toContain('Continuing grants five more planner calls.');
+  });
 });

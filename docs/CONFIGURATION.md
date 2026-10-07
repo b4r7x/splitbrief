@@ -445,7 +445,7 @@ Task-start rows name the selected worker (`worker default`) and, when the brief 
 
 ## 4. `validation`
 
-What runs after every implementer task. The three master switches (`typecheck`, `lint`, `test`) are **required** in the schema; the loader fills them from `createDefaultConfig()` if absent. The command overrides are all optional and let you pin exact validation commands per project. When the lint stage is on, the brief's own changed files are formatted first with the project's own formatter — `npx biome format --write` when a Biome config file is present, `npx prettier --write` when a Prettier config is, and nothing when neither is; a formatter that exits non-zero is one warning (`validation_format_failed`) and the lint stage runs regardless.
+What runs after every implementer task. The three master switches (`typecheck`, `lint`, `test`) are **required** in the schema; the loader fills them from `createDefaultConfig()` if absent. The command overrides are all optional and let you pin exact validation commands per project. When the lint stage is on, the brief's own changed files are formatted first with the project's own formatter — `npx biome format --write` when a Biome config file is present, `npx prettier --write` when a Prettier config is, and nothing when neither is; a formatter that exits non-zero is one warning (`validation_format_failed`) and the lint stage runs regardless. The brief's changed files are every file it changed since its task-start snapshot, across its attempts; a pass that rewrote files records one `validation_formatted` warning that names them.
 
 ### Schema
 

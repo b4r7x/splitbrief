@@ -98,7 +98,7 @@ splitbrief start --json "fix parser edge case"
 
 ### Validation pipeline + checkpoints
 
-**What it does.** After each implementer task, SPLITBRIEF runs typecheck → lint → test inside the run workspace. It stops at the first failure attributable to the task. Commands follow the project's stack. Before lint, the project formatter formats the brief's changed files: Biome when configured, otherwise Prettier. A formatter failure logs `validation_format_failed`; lint still runs. Success records evidence, without staging or committing files.
+**What it does.** After each implementer task, SPLITBRIEF runs typecheck → lint → test inside the run workspace. It stops at the first failure attributable to the task. Commands follow the project's stack. Before lint, the project formatter formats the brief's changed files: Biome when configured, otherwise Prettier. A formatter failure logs `validation_format_failed`; lint still runs. The brief's changed files are every file it changed since its task-start snapshot, across its attempts; a pass that rewrote files records one `validation_formatted` warning that names them. Success records evidence, without staging or committing files.
 
 **Stack coverage.** The registry is `src/core/validation/stacks/`; `detectStack` picks the first row whose marker file exists, in this order:
 

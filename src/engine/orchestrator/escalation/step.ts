@@ -1,10 +1,11 @@
 import { loadState } from '../../../core/state/persistence.js';
 import { ImplementerReportSchema, type ImplementerReport } from '../../../core/schemas/consult.js';
-import { formatValidationError } from '../validation/format-error.js';
+import { formatValidationError, validationFailureLine } from '../validation/format-error.js';
 import { addUsageAndSave } from '../state-ops.js';
 import { refreshAndPersistCode } from '../task/refresh-code.js';
 import { gateAttemptChanges } from '../task/attempt-gate.js';
 import { captureTaskReviewChanges } from '../evidence/review-capture.js';
+import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import { withPerCallAbort } from '../cancellable-call.js';
 import { createRetryRuntime, type RetryRuntime, stateForRetryProfile } from './retry-runtime.js';
 import { persistRetryApprovalEvidence, recordRetryDenial } from './retry-evidence.js';
@@ -279,7 +280,10 @@ async function runRetryStepAttempt(
     transitionType,
     retryCount: attempts,
     commitSuffix,
-    preApprovedChangedFiles: actualChangedFiles,
+    preApprovedChangedFiles: await getChangedFilesSinceSnapshot(
+      ctx.workspaceDir,
+      ctx.taskStartSnapshot,
+    ),
   });
   if ('blockedReason' in commitResult) {
     return {
@@ -322,5 +326,11 @@ async function runRetryStepAttempt(
     commitResult.acceptance,
   );
   onValidationAfterRetryFail?.(validationError);
-  return { state: commitResult.state, task, lastError: validationError, attempts };
+  return {
+    state: commitResult.state,
+    task,
+    lastError: validationError,
+    diagnosis: validationFailureLine(commitResult.validationResults, commitResult.acceptance),
+    attempts,
+  };
 }

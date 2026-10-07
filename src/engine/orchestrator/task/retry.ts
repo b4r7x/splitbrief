@@ -36,6 +36,8 @@ export type RetryAndRecordOptions = {
   wctx: WorkflowContext;
   task: Task;
   initialError: string;
+  /** The first attempt's validation failure line, quoted as the diagnosis in place of `initialError`. */
+  initialDiagnosis?: string | undefined;
   state: WorkflowState;
   taskStartTime: number;
   taskStartSnapshot?: ChangedFilesSnapshot;
@@ -158,6 +160,7 @@ export async function handleTaskPlannerCallFailure(
           diagnosis,
           task,
           phase: recoveryBaseState.phase,
+          seatSwitches: recoveryBaseState.seatSwitches,
           swap: { seat: 'plan', runner: wctx.config.planner },
           details: consultHaltDetails(task.id),
         });
@@ -198,6 +201,7 @@ export async function retryAndRecord(
       wctx,
       task,
       initialError,
+      ...(opts.initialDiagnosis !== undefined && { initialDiagnosis: opts.initialDiagnosis }),
       currentState: state,
       taskStartTime,
       taskStartSnapshot,

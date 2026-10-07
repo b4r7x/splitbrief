@@ -77,6 +77,7 @@ function raiseConsultBound(
   ctx: EscalationContext,
   state: WorkflowState,
   task: Task,
+  lastDiagnosis: string,
   lastError: string,
   attempts: number,
   spent: ConsultBoundSpent,
@@ -85,7 +86,7 @@ function raiseConsultBound(
     reason: spent.reason,
     phase: state.phase,
     task,
-    lastDiagnosis: lastError,
+    lastDiagnosis,
     failingOutput: lastError,
     consults: spent.consults,
     consultAllowance: spent.consultAllowance,
@@ -120,6 +121,8 @@ export async function runLocalRetries(
     task: Task;
     state: WorkflowState;
     lastError: string;
+    /** The line a consult-bound halt quotes for `lastError`. */
+    lastDiagnosis: string;
     initialFailure?: RetryAttemptFailure | undefined;
     answer?: string | undefined;
   }>,
@@ -128,6 +131,7 @@ export async function runLocalRetries(
   let state = opts.state;
   let task = opts.task;
   let lastError = opts.lastError;
+  let lastDiagnosis = opts.lastDiagnosis;
   let attempts = 0;
   let consecutiveTimeouts = opts.initialFailure?.outcome === 'timeout' ? 1 : 0;
   let lastFailure: RetryAttemptFailure | undefined;
@@ -171,7 +175,7 @@ export async function runLocalRetries(
     if (ctx.signal?.aborted) break;
     const spent = attemptBoundSpent(state, task);
     if (spent !== undefined) {
-      return raiseConsultBound(ctx, state, task, lastError, attempts, spent);
+      return raiseConsultBound(ctx, state, task, lastDiagnosis, lastError, attempts, spent);
     }
     if (answer === undefined) {
       rung += 1;
@@ -225,9 +229,16 @@ export async function runLocalRetries(
     state = outcome.state;
     task = outcome.task;
     lastError = outcome.lastError;
+    lastDiagnosis = outcome.diagnosis ?? outcome.lastError;
     lastFailure = outcome.lastFailure;
     answer = outcome.answer;
     attemptSnapshot = outcome.attemptSnapshot ?? attemptSnapshot;
+    // An attempt whose failure halts the ladder is not a used attempt: the
+    // seat it proved dead is not a retry the next rung spent.
+    const haltFailure = outcome.lastFailure;
+    if (haltFailure !== undefined && haltsLocalRetries(haltFailure.outcome)) {
+      return { ...outcome, state };
+    }
     state = persistTransition(state, { type: 'COUNT_ATTEMPT', taskId: task.id });
     recordNoProgressCut(ctx, task, state, lastFailure);
     if (outcome.result === undefined && isAbortedOutcome(lastError, ctx.signal)) {
@@ -256,9 +267,6 @@ export async function runLocalRetries(
       };
     }
     const failure = outcome.lastFailure;
-    if (failure !== undefined && haltsLocalRetries(failure.outcome)) {
-      return { ...outcome, state };
-    }
     // An implementer that read the feedback and still wrote nothing will write
     // nothing again; the planner is the only thing left that can change it.
     if (failure?.outcome === 'no-staged-change') {
@@ -282,6 +290,7 @@ export async function runLocalRetries(
     state,
     task,
     lastError,
+    diagnosis: lastDiagnosis,
     attempts,
     ...(lastFailure !== undefined && { lastFailure }),
     ...(attemptSnapshot !== undefined && { attemptSnapshot }),

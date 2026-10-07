@@ -140,7 +140,7 @@ describe('runSingleTask — worktree isolation', () => {
     expect(receivedDirs).toEqual([wctx.workspaceDir, wctx.workspaceDir]);
     expect(wctx.workspaceDir).not.toBe(projectDir);
     expect(readFileSync(join(wctx.workspaceDir, 'src/main.ts'), 'utf-8')).toBe(
-      'export const main = 0;\n',
+      'export const main = 999;\n',
     );
     expect(readFileSync(join(wctx.workspaceDir, 'src/b.ts'), 'utf-8')).toBe(
       'export const b = 999;\n',

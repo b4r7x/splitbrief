@@ -1,7 +1,7 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
-import { formatValidationError } from '../validation/format-error.js';
+import { formatValidationError, validationFailureLine } from '../validation/format-error.js';
 
 import type { WorkflowContext } from '../types.js';
 import { recordTaskUsage } from '../tokens.js';
@@ -25,8 +25,10 @@ import {
   persistApprovalEvidence,
 } from '../evidence/persistence.js';
 import { captureTaskReviewChanges } from '../evidence/review-capture.js';
+import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import { denialMessage } from './attempt-gate.js';
 import { buildApprovalDeniedRecoveryIssue } from '../recovery/builders/task.js';
+import { isConsultBoundReason } from '../recovery/builders/consult.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { retryAndRecord, consultHandedBackToLoop, handleTaskPlannerCallFailure } from './retry.js';
 import { runPreTaskHooksAndPublish } from './pre-task.js';
@@ -146,12 +148,15 @@ async function refreshStaleTask(
   state: WorkflowState,
 ): Promise<StaleRefresh> {
   const revision = task.revision ?? 1;
-  if (state.lineages?.[lineageIdOf(task)]?.staleConsultedRevision[task.id] === revision) {
+  const lineage = state.lineages?.[lineageIdOf(task)];
+  if (lineage?.staleConsultedRevision[task.id] === revision) {
     return { kind: 'dispatch', state, task, guidance: undefined };
   }
   const step = { kind: 'brief' as const, taskId: task.id, attempt: state.attempt };
+  // A resumed attempt and a replay that carries a failure run on the brief's own files.
   if (
     opts.wctx.continuation?.resumesAttempt(step, hashTaskBrief([task])) === true ||
+    lineage?.carriedFailure !== undefined ||
     !inputsMovedUnexpectedly(
       opts.wctx.workspaceDir,
       task,
@@ -297,8 +302,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     guidance === undefined
       ? carriedFailure
       : consultAttemptError(
-          carriedFailure ??
-            `The task's inputs changed since the brief was compiled: ${taskInputFiles(task).join(', ')}`,
+          `The task's inputs changed since the brief was compiled: ${taskInputFiles(task).join(', ')}`,
           guidance,
         );
 
@@ -458,7 +462,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     return state;
   }
 
-  const taskChangedFiles = gate.approvedFiles;
+  const taskChangedFiles = await getChangedFilesSinceSnapshot(wctx.workspaceDir, taskStartSnapshot);
 
   const report = implState.implResult.report;
   let confirmed: Awaited<ReturnType<typeof confirmAttemptDecisions>>;
@@ -469,7 +473,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       state,
       report: report?.status === 'done' ? report : undefined,
       snapshot: implState.workspace.snapshot,
-      changedFiles: taskChangedFiles,
+      changedFiles: gate.approvedFiles,
       onStateChange: (next) => {
         state = next;
         setTrackedState(next);
@@ -630,6 +634,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     wctx,
     task,
     initialError: errorText,
+    initialDiagnosis: validationFailureLine(validationResults, acceptance),
     state,
     taskStartTime,
     taskStartSnapshot,
@@ -644,13 +649,9 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     const rerun = await rerunReplacedTask(opts, retry.state);
     return rerun ?? retry.state;
   }
-  if (!retry.completed && retry.state.pendingRecovery) {
-    await restoreExhaustedTaskFiles({
-      wctx,
-      phase: retry.state.phase,
-      taskChangedFiles,
-      taskStartSnapshot,
-    });
+  const halt = retry.state.pendingRecovery;
+  if (!retry.completed && halt !== undefined && !isConsultBoundReason(halt.reason)) {
+    await restoreExhaustedTaskFiles({ wctx, phase: retry.state.phase, taskStartSnapshot });
   }
   return retry.state;
 }

@@ -15,6 +15,7 @@ import {
 import { processError } from '../../../lib/process/errors.js';
 import { makeConfig, makeCommandRunner } from '#testing/helpers/validation-fixtures.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
+import type { ValidationCommandRunner } from './types.js';
 
 function mkTask(file: string): Task {
   return makeTask({ suggestedFiles: [file], action: 'modify' });
@@ -1314,6 +1315,8 @@ describe('formatting the changed files before the lint stage', () => {
   it("formats the brief's changed files before the lint command runs", async () => {
     writeTsProject(tempDir);
     writeFileSync(join(tempDir, 'biome.json'), '{}');
+    mkdirSync(join(tempDir, 'src'), { recursive: true });
+    writeFileSync(join(tempDir, 'src/app.ts'), 'export const app = 1;\n');
     const runner = makeCommandRunner();
     const validator = createValidator({ runCommand: runner });
 
@@ -1331,6 +1334,29 @@ describe('formatting the changed files before the lint stage', () => {
       'npx biome check .',
     ]);
     expect(results.map((r) => [r.stage, r.passed])).toEqual([['lint', true]]);
+  });
+
+  it('never hands the formatter a file the brief deleted', async () => {
+    writeTsProject(tempDir);
+    writeFileSync(join(tempDir, 'biome.json'), '{}');
+    mkdirSync(join(tempDir, 'src'), { recursive: true });
+    writeFileSync(join(tempDir, 'src/app.ts'), 'export const app = 1;\n');
+    const runner = makeCommandRunner();
+    const validator = createValidator({ runCommand: runner });
+
+    await validator.runValidation({
+      task: mkTask('src/app.ts'),
+      projectDir: tempDir,
+      config: lintOnly,
+      bus: fakeBus,
+      phase: 'implementing',
+      changedFiles: ['src/app.ts', 'src/deleted.ts'],
+    });
+
+    expect(runner.calls.map((call) => [call.cmd, ...call.args].join(' '))).toEqual([
+      'npx biome format --write src/app.ts',
+      'npx biome check .',
+    ]);
   });
 
   it('runs no formatter when the project has only a lint config', async () => {
@@ -1356,6 +1382,8 @@ describe('formatting the changed files before the lint stage', () => {
   it('warns once and lints anyway when the formatter exits non-zero', async () => {
     writeTsProject(tempDir);
     writeFileSync(join(tempDir, 'biome.json'), '{}');
+    mkdirSync(join(tempDir, 'src'), { recursive: true });
+    writeFileSync(join(tempDir, 'src/app.ts'), 'export const app = 1;\n');
     const runner = makeCommandRunner(
       processError.exitCode({
         command: 'npx biome format --write src/app.ts',
@@ -1390,6 +1418,66 @@ describe('formatting the changed files before the lint stage', () => {
       code: 'validation_format_failed',
     });
     expect(results.find((r) => r.stage === 'lint')?.passed).toBe(true);
+  });
+
+  it('records the format pass as one row naming the files it rewrote', async () => {
+    writeTsProject(tempDir);
+    writeFileSync(join(tempDir, 'biome.json'), '{}');
+    mkdirSync(join(tempDir, 'src'), { recursive: true });
+    writeFileSync(join(tempDir, 'src/app.ts'), 'export const app = [ 1,2 ];\n');
+    writeFileSync(join(tempDir, 'src/clean.ts'), 'export const clean = 1;\n');
+    const calls: string[] = [];
+    const runner: ValidationCommandRunner = async (cmd, args) => {
+      calls.push([cmd, ...args].join(' '));
+      if (args.includes('format')) {
+        writeFileSync(join(tempDir, 'src/app.ts'), 'export const app = [1, 2];\n');
+      }
+      return { stdout: '', stderr: '', code: 0 };
+    };
+    const validator = createValidator({ runCommand: runner });
+    const { bus, events } = makeBusRecorder();
+
+    await validator.runValidation({
+      task: mkTask('src/app.ts'),
+      projectDir: tempDir,
+      config: lintOnly,
+      bus,
+      phase: 'implementing',
+      changedFiles: ['src/app.ts', 'src/clean.ts'],
+    });
+
+    expect(calls).toEqual([
+      'npx biome format --write src/app.ts src/clean.ts',
+      'npx biome check .',
+    ]);
+    const rows = events.filter(
+      (e): e is EngineEventOf<'warning'> =>
+        e.type === 'warning' && e.code === 'validation_formatted',
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ category: 'validation', taskId: mkTask('src/app.ts').id });
+    expect(rows[0]?.message).toContain('src/app.ts');
+    expect(rows[0]?.message).not.toContain('src/clean.ts');
+  });
+
+  it('records no format row when the formatter rewrote nothing', async () => {
+    writeTsProject(tempDir);
+    writeFileSync(join(tempDir, 'biome.json'), '{}');
+    mkdirSync(join(tempDir, 'src'), { recursive: true });
+    writeFileSync(join(tempDir, 'src/app.ts'), 'export const app = 1;\n');
+    const validator = createValidator({ runCommand: makeCommandRunner() });
+    const { bus, events } = makeBusRecorder();
+
+    await validator.runValidation({
+      task: mkTask('src/app.ts'),
+      projectDir: tempDir,
+      config: lintOnly,
+      bus,
+      phase: 'implementing',
+      changedFiles: ['src/app.ts'],
+    });
+
+    expect(events.filter((e) => e.type === 'warning')).toEqual([]);
   });
 
   it('never formats during the baseline probe', async () => {

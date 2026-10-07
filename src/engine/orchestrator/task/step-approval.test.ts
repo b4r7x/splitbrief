@@ -325,17 +325,19 @@ describe('runSingleTask — approval gates', () => {
     const { bus, events } = makeBusRecorder();
 
     const result = await runSingleTask({
-      wctx: makeWorkflowContext({
-        projectDir,
-        sessionId,
-        callbacks,
-        implementer,
-        bus,
-        config: makeConfig({
-          approval: { feedRejectionsToPlanner: true },
-          validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      wctx: await openRunWorkspace(
+        makeWorkflowContext({
+          projectDir,
+          sessionId,
+          callbacks,
+          implementer,
+          bus,
+          config: makeConfig({
+            approval: { feedRejectionsToPlanner: true },
+            validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+          }),
         }),
-      }),
+      ),
       task,
       index: 0,
       totalTasks: 1,

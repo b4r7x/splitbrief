@@ -5,6 +5,7 @@ import {
   makeCallbacks,
   makeImplementer,
   makeBusRecorder,
+  openRunWorkspace,
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -59,26 +60,28 @@ describe('runSingleTask — baseline-exempt validation', () => {
     const { bus, events } = makeBusRecorder();
 
     const result = await runSingleTask({
-      wctx: makeWorkflowContext({
-        projectDir,
-        sessionId,
-        callbacks,
-        implementer,
-        bus,
-        config: makeConfig({
-          validation: { typecheck: true, lint: false, test: false, typecheckCommand: 'noop' },
+      wctx: await openRunWorkspace(
+        makeWorkflowContext({
+          projectDir,
+          sessionId,
+          callbacks,
+          implementer,
+          bus,
+          config: makeConfig({
+            validation: { typecheck: true, lint: false, test: false, typecheckCommand: 'noop' },
+          }),
+          validator: {
+            ...createValidator(),
+            runValidation,
+            decideAcceptance: ({ results, changedFiles }) =>
+              decideValidationAcceptance({
+                results,
+                changedFiles,
+                baselineFailingStages: new Set<ValidationStage>(['typecheck']),
+              }),
+          },
         }),
-        validator: {
-          ...createValidator(),
-          runValidation,
-          decideAcceptance: ({ results, changedFiles }) =>
-            decideValidationAcceptance({
-              results,
-              changedFiles,
-              baselineFailingStages: new Set<ValidationStage>(['typecheck']),
-            }),
-        },
-      }),
+      ),
       task,
       index: 0,
       totalTasks: 1,
@@ -109,11 +112,13 @@ describe('runSingleTask — baseline-exempt validation', () => {
     const state = implementingState([task]);
 
     const implementer = makeImplementer({
-      implement: vi.fn().mockImplementation(async () => {
-        mkdirSync(join(projectDir, 'src'), { recursive: true });
-        writeFileSync(join(projectDir, 'src/main.ts'), 'export const main = 1;\n');
-        return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
-      }),
+      implement: vi
+        .fn()
+        .mockImplementation(async ({ projectDir: runDir }: { projectDir: string }) => {
+          mkdirSync(join(runDir, 'src'), { recursive: true });
+          writeFileSync(join(runDir, 'src/main.ts'), 'export const main = 1;\n');
+          return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
+        }),
       retry: vi.fn(),
     });
     const runValidation = vi.fn().mockResolvedValue([
@@ -128,26 +133,28 @@ describe('runSingleTask — baseline-exempt validation', () => {
     const { bus, events } = makeBusRecorder();
 
     const result = await runSingleTask({
-      wctx: makeWorkflowContext({
-        projectDir,
-        sessionId,
-        callbacks,
-        implementer,
-        bus,
-        config: makeConfig({
-          validation: { typecheck: true, lint: false, test: false, typecheckCommand: 'noop' },
+      wctx: await openRunWorkspace(
+        makeWorkflowContext({
+          projectDir,
+          sessionId,
+          callbacks,
+          implementer,
+          bus,
+          config: makeConfig({
+            validation: { typecheck: true, lint: false, test: false, typecheckCommand: 'noop' },
+          }),
+          validator: {
+            ...createValidator(),
+            runValidation,
+            decideAcceptance: ({ results, changedFiles }) =>
+              decideValidationAcceptance({
+                results,
+                changedFiles,
+                baselineFailingStages: new Set<ValidationStage>(['typecheck']),
+              }),
+          },
         }),
-        validator: {
-          ...createValidator(),
-          runValidation,
-          decideAcceptance: ({ results, changedFiles }) =>
-            decideValidationAcceptance({
-              results,
-              changedFiles,
-              baselineFailingStages: new Set<ValidationStage>(['typecheck']),
-            }),
-        },
-      }),
+      ),
       task,
       index: 0,
       totalTasks: 1,

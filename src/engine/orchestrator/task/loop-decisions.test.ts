@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
@@ -10,6 +10,7 @@ import {
   makeImplementer,
   makePlanner,
   makeWctx,
+  makeWorktreeIsolation,
   openRunWorkspace,
 } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -28,6 +29,7 @@ import type { ValidationResult } from '../validation/result.js';
 import { createValidator } from '../validation/run.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
 import { runTaskLoop } from './loop.js';
+import { ABSENT_INPUT_HASH } from './stale-inputs.js';
 
 type Decision = { what: string; why: string };
 
@@ -739,6 +741,86 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       expect(resumed.state.lineages?.T001?.carriedFailure).toBeUndefined();
     },
   );
+
+  it('continues a brief past consult-bound-spent from the files its last attempt left', async () => {
+    const { projectDir, sessionId } = setupProject();
+    // Compile records the hashes of the brief's inputs; both files are absent then.
+    const task = makeTask({
+      id: 'T001',
+      suggestedFiles: ['src/a.ts', 'src/b.ts'],
+      inputHashes: { 'src/a.ts': ABSENT_INPUT_HASH, 'src/b.ts': ABSENT_INPUT_HASH },
+    });
+    const usage = { inputTokens: 10, outputTokens: 5 };
+    let continued = false;
+    const seenByReplay: string[] = [];
+    const implementer = makeImplementer({
+      implement: vi.fn(async (opts: ImplementerOptions) => {
+        mkdirSync(join(opts.projectDir, 'src'), { recursive: true });
+        writeFileSync(join(opts.projectDir, 'src/a.ts'), 'export const a = 1;\n');
+        return { success: true, output: 'implemented', usage };
+      }),
+      retry: vi.fn(async (opts: RetryOptions) => {
+        if (continued) {
+          seenByReplay.push(readFileSync(join(opts.projectDir, 'src/a.ts'), 'utf-8'));
+          writeFileSync(join(opts.projectDir, 'src/b.ts'), 'export const b = 1;\n');
+        } else {
+          writeFileSync(join(opts.projectDir, 'src/a.ts'), 'export const a = 2;\n');
+        }
+        return { success: true, output: 'implemented', usage };
+      }),
+    });
+    const validator = scriptedValidator({ T001: [TS_ERROR, LINT_ERROR, null] });
+    const { planner, prompts } = scriptedPlanner({ confirm: () => confirm([]) });
+    const { bus, events } = makeBusRecorder();
+    const wctx = await openRunWorkspace(
+      makeWctx({
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig(),
+        callbacks: makeCallbacks({ onPlannerReply: vi.fn() }).callbacks,
+        isolation: makeWorktreeIsolation({ projectDir, sessionId }),
+        planner,
+        implementer,
+        validator,
+        bus,
+      }),
+    );
+    const loop = (initialState: WorkflowState) =>
+      runTaskLoop({ wctx, initialState, setTrackedState: vi.fn(), setCurrentTask: vi.fn() });
+
+    const halted = await loop(
+      stateWithPlan([task], { lineages: { T001: lineage({ consults: 2 }) } }),
+    );
+    expect(halted.state.pendingRecovery?.reason).toBe('consult-bound-spent');
+    expect(readFileSync(join(wctx.workspaceDir, 'src/a.ts'), 'utf-8')).toBe(
+      'export const a = 2;\n',
+    );
+
+    const applied = await applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state: halted.state,
+      action: 'continue',
+      bus,
+    });
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    continued = true;
+    const resumed = await loop(applied.state);
+
+    expect(resumed.state.pendingRecovery).toBeUndefined();
+    expect(resumed.status).toBe('complete');
+    // The replay is a retry on the last attempt's files, not a rebuild from the pre-task state.
+    expect(seenByReplay).toEqual(['export const a = 2;\n']);
+    // The files the brief wrote itself are not inputs that moved under it: no stale consult.
+    expect(prompts.filter((prompt) => !isDecisionConfirm(prompt))).toEqual([]);
+    expect(eventTypes(events).filter((type) => type.startsWith('consult:'))).toEqual([]);
+    // Its validation reads every file the brief changed since it first started.
+    const replayValidation = vi.mocked(validator.runValidation).mock.calls.at(-1)?.[0];
+    expect(replayValidation?.changedFiles).toEqual(
+      expect.arrayContaining(['src/a.ts', 'src/b.ts']),
+    );
+  });
 
   it('keeps the carried failure across a stop, and drops it once the carrying attempt returns', async () => {
     const { projectDir, sessionId } = setupProject();

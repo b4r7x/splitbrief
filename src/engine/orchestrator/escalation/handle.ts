@@ -33,11 +33,11 @@ import {
 } from '../recovery/builders/consult.js';
 import {
   buildRetryExhaustedRecoveryIssue,
-  buildRunnerUnauthenticatedRecoveryIssue,
-  buildRunnerUsageLimitRecoveryIssue,
+  buildSeatDownIssue,
   recoveryBuilderForRunnerOutcome,
   runnerHaltRow,
 } from '../recovery/builders/task.js';
+import { classifySeatFailure, type SeatFailureClassification } from '../../runners/seat-failure.js';
 import { loadSeatSwapContext } from '../recovery/seat-swap-context.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
 import { nowIso } from '../../../utils/format-time.js';
@@ -54,6 +54,8 @@ type HandleRetryOptions = {
   wctx: WorkflowContext;
   task: Task;
   initialError: string;
+  /** The first attempt's validation failure line; the diagnosis falls back to `initialError`. */
+  initialDiagnosis?: string | undefined;
   currentState: WorkflowState;
   taskStartTime?: number;
   taskStartSnapshot?: ChangedFilesSnapshot;
@@ -80,78 +82,53 @@ function handBackOf(outcome: RetryStepOutcome): string | undefined {
 }
 
 /**
- * A signed-out runner halts the ladder: the next rung would spend a planner
- * call on a brief no retry can land until the login is fixed. Raise the login
- * recovery and stop.
+ * A seat that cannot work halts the ladder at once: a signed-out or
+ * quota-exhausted runner reproduces the same failure on every further attempt,
+ * and the next rung would spend a planner call on a brief no retry can land.
+ * The one seat-down halt is raised on the attempt that failed — no retry, no
+ * consult — and carries the fallback the seat can move to automatically.
  */
-async function unauthenticatedHalt(
+async function seatDownHalt(
   ctx: EscalationContext,
   task: Task,
   stepOutcome: RetryStepOutcome,
 ): Promise<{ state: WorkflowState; result: RetryResult } | null> {
   const failure = stepOutcome.lastFailure;
-  if (failure?.outcome !== 'unauthenticated') return null;
+  if (failure?.outcome !== 'unauthenticated' && failure?.outcome !== 'usage-limit') return null;
   const failingProfile = ctx.retryProfileOverride ?? ctx.implementerProfile;
   const seatSwap = await loadSeatSwapContext({
     projectDir: ctx.projectDir,
     seat: 'build',
     runner: failure.runner,
   });
-  const issue = buildRunnerUnauthenticatedRecoveryIssue({
+  const classification: SeatFailureClassification =
+    failure.outcome === 'unauthenticated'
+      ? { class: 'account', cause: 'auth' }
+      : classifySeatFailure({
+          message: stepOutcome.lastError,
+          outcome: 'usage-limit',
+          source: 'result-error',
+        });
+  const issue = buildSeatDownIssue({
     task,
     phase: stepOutcome.state.phase,
-    runner: failure.runner,
-    toolMessage: stepOutcome.lastError,
-    attempts: stepOutcome.attempts,
-    maxAttempts: DEFAULT_LOCAL_RETRIES,
-    ...(failingProfile !== undefined && { selectedImplementerProfile: failingProfile }),
-    ...(seatSwap !== undefined && { seatSwap }),
-    createdAt: nowIso(),
-  });
-  publishError({
-    bus: ctx.bus,
-    phase: stepOutcome.state.phase,
-    message: runnerHaltRow(issue, stepOutcome.lastError),
-  });
-  const nextState = raisePendingRecovery(ctx, stepOutcome.state, issue);
-  return { state: nextState, result: failedRetry(stepOutcome.attempts) };
-}
-
-/**
- * A quota-exhausted runner halts the ladder for the same reason a signed-out
- * one does — the next rung would spend a planner call on a retry the quota
- * blocks anyway. The recovery names the reset time when the tool reported one
- * and offers the profile switch instead of a pointless re-login.
- */
-async function usageLimitHalt(
-  ctx: EscalationContext,
-  task: Task,
-  stepOutcome: RetryStepOutcome,
-): Promise<{ state: WorkflowState; result: RetryResult } | null> {
-  const failure = stepOutcome.lastFailure;
-  if (failure?.outcome !== 'usage-limit') return null;
-  const failingProfile = ctx.retryProfileOverride ?? ctx.implementerProfile;
-  const seatSwap = await loadSeatSwapContext({
-    projectDir: ctx.projectDir,
     seat: 'build',
     runner: failure.runner,
-  });
-  const issue = buildRunnerUsageLimitRecoveryIssue({
-    task,
-    phase: stepOutcome.state.phase,
-    runner: failure.runner,
-    toolMessage: stepOutcome.lastError,
+    classification,
+    words: stepOutcome.lastError,
+    fallback: failure.runner.fallback,
     attempts: stepOutcome.attempts,
     maxAttempts: DEFAULT_LOCAL_RETRIES,
     ...(failingProfile !== undefined && { selectedImplementerProfile: failingProfile }),
     ...(seatSwap !== undefined && { seatSwap }),
+    seatSwitches: stepOutcome.state.seatSwitches,
     createdAt: nowIso(),
   });
   publishError({
     bus: ctx.bus,
     phase: stepOutcome.state.phase,
     message: runnerHaltRow(issue, stepOutcome.lastError),
-    resetAt: issue.resetAt,
+    ...(issue.resetAt !== undefined && { resetAt: issue.resetAt }),
   });
   const nextState = raisePendingRecovery(ctx, stepOutcome.state, issue);
   return { state: nextState, result: failedRetry(stepOutcome.attempts) };
@@ -159,7 +136,7 @@ async function usageLimitHalt(
 
 /**
  * An outcome the recovery builders recognise as a runner defect halts the
- * ladder for the same reason the auth and quota halts do — the next rung would
+ * ladder for the same reason the seat-down halt does — the next rung would
  * pay a planner call to hint around the same defect.
  */
 async function runnerDefectHalt(
@@ -203,11 +180,9 @@ async function runnerHalt(
   task: Task,
   stepOutcome: RetryStepOutcome,
 ): Promise<{ state: WorkflowState; result: RetryResult } | null> {
-  const unauthenticated = await unauthenticatedHalt(ctx, task, stepOutcome);
-  if (unauthenticated) return unauthenticated;
-  const defect = await runnerDefectHalt(ctx, task, stepOutcome);
-  if (defect) return defect;
-  return usageLimitHalt(ctx, task, stepOutcome);
+  const seatDown = await seatDownHalt(ctx, task, stepOutcome);
+  if (seatDown) return seatDown;
+  return runnerDefectHalt(ctx, task, stepOutcome);
 }
 
 /** The files this attempt changed since its snapshot; a diff the consult cannot render is empty. */
@@ -341,7 +316,7 @@ export async function handleRetryAndEscalation(
   let handBack: string | undefined;
   let blocked: BlockedReport | undefined = opts.initialBlocked;
   let attemptSnapshot: ChangedFilesSnapshot = taskStartSnapshot;
-  let lastDiagnosis = initialError;
+  let lastDiagnosis = opts.initialDiagnosis ?? initialError;
   let answer: string | undefined;
 
   if (ctx.signal?.aborted) return { state, result: failedRetry(attempts) };
@@ -354,13 +329,14 @@ export async function handleRetryAndEscalation(
       task,
       state,
       lastError,
+      lastDiagnosis,
       ...(opts.initialFailure !== undefined && { initialFailure: opts.initialFailure }),
       ...(opts.initialAnswer !== undefined && { answer: opts.initialAnswer }),
     });
     state = retries.state;
     task = retries.task;
     lastError = retries.lastError;
-    lastDiagnosis = lastError;
+    lastDiagnosis = retries.diagnosis ?? lastError;
     attempts = retries.attempts;
     handBack = handBackOf(retries) ?? handBack;
     attemptSnapshot = retries.attemptSnapshot ?? attemptSnapshot;
@@ -471,7 +447,7 @@ export async function handleRetryAndEscalation(
     attemptSnapshot = outcome.attemptSnapshot ?? attemptSnapshot;
     blocked = outcome.blocked;
     answer = outcome.answer;
-    lastDiagnosis = lastError;
+    lastDiagnosis = outcome.diagnosis ?? lastError;
     state = transitionAndSave(ctx, state, { type: 'COUNT_ATTEMPT', taskId: task.id });
     recordNoProgressCut(ctx, task, state, outcome.lastFailure);
     if (outcome.result) return { state, result: outcome.result };

@@ -113,7 +113,10 @@ async function fingerprintChangedFile(projectDir: string, file: string): Promise
   }
 }
 
-async function fingerprintFiles(projectDir: string, files: string[]): Promise<Map<string, string>> {
+export async function fingerprintFiles(
+  projectDir: string,
+  files: string[],
+): Promise<Map<string, string>> {
   const entries = await Promise.all(
     files.map(async (file) => [file, await fingerprintChangedFile(projectDir, file)] as const),
   );

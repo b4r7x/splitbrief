@@ -35,6 +35,9 @@ import {
 import { transitionAndSave } from '../state-ops.js';
 import { closeRunIfOpen } from '../run/close.js';
 import { appendMessage } from '../../../core/sessions/log-writer.js';
+import { restoreExhaustedTaskFiles } from '../task/rollback.js';
+import { runCodeDir } from '../run/task-execution.js';
+import { isConsultBoundReason } from './builders/consult.js';
 
 export type RecoveryActionBlockedCode =
   | 'no-pending-recovery'
@@ -163,6 +166,8 @@ export async function applyRecoveryAction(
     }
     case 'switch-seat':
       return applySwitchSeatRecoveryAction(opts);
+    case 'retry-later':
+      return applyRetryLaterRecoveryAction(opts, issue);
     default:
       return assertNever(opts.action);
   }
@@ -509,10 +514,10 @@ function applyReviewCorrectionAction(
   return { ok: true, action: opts.action, issue, state, status: 'continued' };
 }
 
-function applySkipCurrentTaskRecoveryAction(
+async function applySkipCurrentTaskRecoveryAction(
   opts: ApplyRecoveryActionOptions,
   issue: RecoveryIssue,
-): ApplyRecoveryActionResult {
+): Promise<ApplyRecoveryActionResult> {
   const target = currentRecoveryTask(opts.state, issue);
   if (!target) {
     return blockRecoveryAction({
@@ -545,6 +550,20 @@ function applySkipCurrentTaskRecoveryAction(
   }
 
   let state = markRecoveryApplying(opts, issue);
+  // A consult-bound halt kept the brief's files for a Continue; skipping the brief takes them back.
+  const taskStartSnapshot = opts.state.changedFilesBaseline?.activeTaskSnapshot;
+  if (isConsultBoundReason(issue.reason) && taskStartSnapshot !== undefined) {
+    await restoreExhaustedTaskFiles({
+      wctx: {
+        projectDir: opts.projectDir,
+        sessionId: opts.sessionId,
+        bus: opts.bus,
+        workspaceDir: runCodeDir(opts.projectDir, opts.state.workspace),
+      },
+      phase: state.phase,
+      taskStartSnapshot,
+    });
+  }
   state = transitionAndSave(
     opts,
     state,
@@ -752,6 +771,41 @@ function resolveSeatIssueWithoutTask(
       },
     });
   }
+  state = transitionAndSave(
+    opts,
+    state,
+    { type: 'RESOLVE_PENDING_RECOVERY' },
+    { expectedRevision: state.stateRevision ?? 0 },
+  );
+  publishRecoveryResolved({
+    bus: opts.bus,
+    phase: state.phase,
+    issue,
+    action: opts.action,
+    outcome: 'continued',
+  });
+  return { ok: true, action: opts.action, issue, state, status: 'continued' };
+}
+
+function applyRetryLaterRecoveryAction(
+  opts: ApplyRecoveryActionOptions,
+  issue: RecoveryIssue,
+): ApplyRecoveryActionResult {
+  if (issue.resetAt === undefined || issue.seat === undefined) {
+    return blockRecoveryAction({
+      ...opts,
+      issue,
+      code: 'action-not-available',
+      message: `Recovery action "${opts.action}" needs the reset the halt names.`,
+    });
+  }
+  let state = markRecoveryApplying(opts, issue);
+  state = transitionAndSave(
+    opts,
+    state,
+    { type: 'SET_SEAT_WAIT', seat: issue.seat, resetAt: issue.resetAt },
+    { expectedRevision: state.stateRevision ?? 0 },
+  );
   state = transitionAndSave(
     opts,
     state,

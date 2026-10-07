@@ -4,11 +4,22 @@ import type { ValidationAcceptance } from './acceptance.js';
 
 const MAX_ERROR_LINES = 20;
 
+const ERROR_MARK = /[×✖]|\b(?:error|Error|ERROR|FAIL)\b/;
+
+const RULE_CHARS = /[━─]/g;
+
+function blockingResult(
+  results: readonly ValidationResult[],
+  acceptance: ValidationAcceptance,
+): ValidationResult | undefined {
+  return results.find((r) => !r.passed && acceptance.blockingStages.includes(r.stage));
+}
+
 export function formatValidationError(
   results: ValidationResult[],
   acceptance: ValidationAcceptance,
 ): string {
-  const blocking = results.find((r) => !r.passed && acceptance.blockingStages.includes(r.stage));
+  const blocking = blockingResult(results, acceptance);
   if (!blocking) return '';
 
   const errorLines = excerptErrorLines(blocking.error || blocking.output || '', blocking.stage);
@@ -41,4 +52,27 @@ function excerptErrorLines(text: string, stage: ValidationResult['stage']): stri
     '…',
     truncateByTailLines(text, MAX_ERROR_LINES),
   ].join('\n');
+}
+
+/**
+ * The blocking stage and the one line of its output that says what failed: the
+ * first line naming a file the failure is attributed to, else the first error
+ * line, else the first line. A tool notice that leads the output is passed over.
+ */
+export function validationFailureLine(
+  results: readonly ValidationResult[],
+  acceptance: ValidationAcceptance,
+): string {
+  const blocking = blockingResult(results, acceptance);
+  if (!blocking) return '';
+  const lines = (blocking.error || blocking.output || '')
+    .split('\n')
+    .map((line) => line.replace(RULE_CHARS, '').trim())
+    .filter((line) => line.length > 0);
+  const files = blocking.failureFiles ?? [];
+  const line =
+    lines.find((candidate) => files.some((file) => candidate.includes(file))) ??
+    lines.find((candidate) => ERROR_MARK.test(candidate)) ??
+    lines[0];
+  return line === undefined ? `${blocking.stage} failed` : `${blocking.stage} failed: ${line}`;
 }

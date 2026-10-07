@@ -14,6 +14,11 @@ import { taskFiles } from './details.js';
 
 type ConsultBoundReason = Extract<RecoveryReason, 'consult-bound-spent' | 'planner-calls-spent'>;
 
+/** A consult-bound halt keeps the brief's files until the operator chooses: Continue retries on them, Skip restores them. */
+export function isConsultBoundReason(reason: RecoveryReason): reason is ConsultBoundReason {
+  return reason === 'consult-bound-spent' || reason === 'planner-calls-spent';
+}
+
 /** Which counter of a lineage or the run is spent, with both sides of the bound. */
 export type ConsultBoundSpent = Readonly<{
   reason: ConsultBoundReason;
@@ -85,10 +90,12 @@ export interface ConsultBoundRecoveryOptions extends RecoveryBuilderBase {
   plannerCallAllowance?: number | undefined;
 }
 
-function remedyLine(reason: ConsultBoundReason): string {
-  return reason === 'consult-bound-spent'
-    ? 'Continuing grants one more consult and four more attempts.'
-    : 'Continuing grants five more planner calls.';
+function remedyLine(reason: ConsultBoundReason, task: Task | undefined): string {
+  const grant =
+    reason === 'consult-bound-spent'
+      ? 'Continuing grants one more consult and four more attempts'
+      : 'Continuing grants five more planner calls';
+  return task === undefined ? `${grant}.` : `${grant}, starting from the last attempt's files.`;
 }
 
 function countersLine(opts: ConsultBoundRecoveryOptions): string {
@@ -122,7 +129,11 @@ export function buildConsultBoundRecoveryIssue(opts: ConsultBoundRecoveryOptions
       opts.reason === 'consult-bound-spent'
         ? `${opts.task?.id ?? 'The lineage'} used its consult allowance`
         : 'The run used its planner-call allowance',
-    details: [`Last diagnosis: ${opts.lastDiagnosis}`, remedyLine(opts.reason), countersLine(opts)],
+    details: [
+      `Last diagnosis: ${opts.lastDiagnosis}`,
+      remedyLine(opts.reason, opts.task),
+      countersLine(opts),
+    ],
     facts: compactFacts({
       lastDiagnosis: opts.lastDiagnosis,
       failingOutput: opts.failingOutput,

@@ -71,6 +71,8 @@ export type RetryStepOutcome = {
   state: WorkflowState;
   task: Task;
   lastError: string;
+  /** The failing stage and the line of its output that names the failure; absent when no validation ran. */
+  diagnosis?: string | undefined;
   attempts: number;
   result?: RetryResult;
   lastFailure?: RetryAttemptFailure | undefined;

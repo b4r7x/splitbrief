@@ -78,6 +78,7 @@ describe('runLocalRetries — aborted outcomes', () => {
       task: makeTask(),
       state: makeValidatingState(),
       lastError: ABORTED_OUTCOME_TEXT,
+      lastDiagnosis: ABORTED_OUTCOME_TEXT,
     });
 
     expect(outcome.attempts).toBe(0);
@@ -123,6 +124,7 @@ describe('runLocalRetries — aborted outcomes', () => {
       task: makeTask(),
       state: makeValidatingState(),
       lastError: 'type error',
+      lastDiagnosis: 'type error',
     });
 
     await retryEnteredPromise;
@@ -159,6 +161,7 @@ describe('runLocalRetries — aborted outcomes', () => {
       task: makeTask(),
       state: makeValidatingState(),
       lastError: 'type error',
+      lastDiagnosis: 'type error',
     });
 
     expect(order).toEqual(['row 1', 'call']);
@@ -183,6 +186,7 @@ describe('runLocalRetries — aborted outcomes', () => {
       task: makeTask(),
       state: makeValidatingState(),
       lastError: 'type error',
+      lastDiagnosis: 'type error',
     });
 
     expect(outcome.attempts).toBe(DEFAULT_LOCAL_RETRIES);
@@ -209,6 +213,7 @@ describe('runLocalRetries — attempt that throws', () => {
         task: makeTask(),
         state: makeValidatingState(),
         lastError: 'type error',
+        lastDiagnosis: 'type error',
       }),
     ).rejects.toThrow('implementer crashed');
 
@@ -274,6 +279,7 @@ describe('runLocalRetries — outcomes no further attempt can fix', () => {
       task: makeTask(),
       state: makeValidatingState(),
       lastError: 'type error',
+      lastDiagnosis: 'type error',
     });
 
     expect(retry).toHaveBeenCalledTimes(1);
@@ -298,6 +304,7 @@ describe('runLocalRetries — outcomes no further attempt can fix', () => {
       task: makeTask(),
       state: makeValidatingState(),
       lastError: 'implementer timed out',
+      lastDiagnosis: 'implementer timed out',
       initialFailure: { outcome: 'timeout', runner: ctx.config.implementer },
     });
 
@@ -322,6 +329,7 @@ describe('runLocalRetries — outcomes no further attempt can fix', () => {
       task: makeTask(),
       state: makeValidatingState(),
       lastError: 'type error',
+      lastDiagnosis: 'type error',
     });
 
     // The local rung stops here; no further retry is spent.
@@ -341,6 +349,7 @@ describe('runLocalRetries — outcomes no further attempt can fix', () => {
       task: makeTask(),
       state: makeValidatingState(),
       lastError: 'Input exceeds the maximum length of 1048576 characters.',
+      lastDiagnosis: 'Input exceeds the maximum length of 1048576 characters.',
       initialFailure: { outcome: 'input-too-large', runner: ctx.config.implementer },
     });
 
@@ -365,6 +374,7 @@ describe('runLocalRetries — outcomes no further attempt can fix', () => {
       task: makeTask(),
       state: makeValidatingState(),
       lastError: 'type error',
+      lastDiagnosis: 'type error',
     });
 
     expect(retry).toHaveBeenCalledTimes(1);
@@ -387,6 +397,7 @@ describe('runLocalRetries — outcomes no further attempt can fix', () => {
       task: makeTask(),
       state: makeValidatingState(),
       lastError: 'type error',
+      lastDiagnosis: 'type error',
     });
 
     expect(retry).toHaveBeenCalledTimes(1);
@@ -409,6 +420,7 @@ describe('runLocalRetries — outcomes no further attempt can fix', () => {
       task: makeTask(),
       state: makeValidatingState(),
       lastError: 'type error',
+      lastDiagnosis: 'type error',
     });
 
     expect(retry).toHaveBeenCalledTimes(1);
@@ -437,6 +449,7 @@ describe('runLocalRetries — outcomes no further attempt can fix', () => {
       task: makeTask(),
       state: makeValidatingState(),
       lastError: 'type error',
+      lastDiagnosis: 'type error',
     });
 
     expect(retry).toHaveBeenCalledTimes(DEFAULT_LOCAL_RETRIES);
@@ -472,6 +485,7 @@ describe('runLocalRetries — outcomes no further attempt can fix', () => {
       task: makeTask(),
       state: makeValidatingState(),
       lastError: 'type error',
+      lastDiagnosis: 'type error',
       initialFailure: { outcome: 'no-progress-cut', runner: config.implementer },
     });
 
@@ -536,6 +550,7 @@ describe('runLocalRetries — outcomes no further attempt can fix', () => {
       task: makeTask(),
       state: makeValidatingState(),
       lastError: 'type error',
+      lastDiagnosis: 'type error',
     });
 
     expect(retry).toHaveBeenCalledTimes(1);

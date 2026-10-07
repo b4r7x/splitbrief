@@ -6,6 +6,7 @@ import {
   makeCallbacks,
   makeImplementer,
   makeBusRecorder,
+  openRunWorkspace,
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -71,8 +72,8 @@ describe('runSingleTask — pre_validation hooks', () => {
     };
     markHooksConfigTrusted(projectDir, hooks);
 
-    const result = await runSingleTask({
-      wctx: makeWorkflowContext({
+    const wctx = await openRunWorkspace(
+      makeWorkflowContext({
         projectDir,
         sessionId,
         callbacks,
@@ -84,6 +85,9 @@ describe('runSingleTask — pre_validation hooks', () => {
         }),
         validator: { ...createValidator(), runValidation },
       }),
+    );
+    const result = await runSingleTask({
+      wctx,
       task,
       index: 0,
       totalTasks: 1,
@@ -103,7 +107,7 @@ describe('runSingleTask — pre_validation hooks', () => {
       reason: 'policy: validation gated',
     });
     expect(events.find((e) => e.type === 'task_completed')).toBeUndefined();
-    expect(existsSync(join(projectDir, 'src/hello.ts'))).toBe(false);
+    expect(existsSync(join(wctx.workspaceDir, 'src/hello.ts'))).toBe(false);
     expect(
       events.find(
         (e) =>

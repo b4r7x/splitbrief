@@ -42,14 +42,47 @@ async function restoreTaskFilesFromSnapshot(opts: {
   }
 }
 
-export function restoreExhaustedTaskFiles(opts: {
-  wctx: WorkflowContext;
+/** Every file changed since `snapshot` returns to what it held then. */
+async function restoreChangesSinceSnapshot(opts: {
+  wctx: RestoreContext;
   phase: WorkflowState['phase'];
-  taskChangedFiles: string[];
+  snapshot: ChangedFilesSnapshot;
+  listFailureMessage: string;
+  restoredMessage: (restoredFiles: string[]) => string;
+  failureMessage: string;
+}): Promise<void> {
+  let changedFiles: string[];
+  try {
+    changedFiles = await getChangedFilesSinceSnapshot(opts.wctx.workspaceDir, opts.snapshot);
+  } catch (err) {
+    publishWarningFromError(
+      { bus: opts.wctx.bus, phase: opts.phase },
+      opts.listFailureMessage,
+      err,
+    );
+    return;
+  }
+  await restoreTaskFilesFromSnapshot({
+    wctx: opts.wctx,
+    phase: opts.phase,
+    taskChangedFiles: changedFiles,
+    taskStartSnapshot: opts.snapshot,
+    restoredMessage: opts.restoredMessage,
+    failureMessage: opts.failureMessage,
+  });
+}
+
+/** Every file the brief changed since its task-start snapshot, across all its attempts, goes back. */
+export function restoreExhaustedTaskFiles(opts: {
+  wctx: RestoreContext;
+  phase: WorkflowState['phase'];
   taskStartSnapshot: ChangedFilesSnapshot;
 }): Promise<void> {
-  return restoreTaskFilesFromSnapshot({
-    ...opts,
+  return restoreChangesSinceSnapshot({
+    wctx: opts.wctx,
+    phase: opts.phase,
+    snapshot: opts.taskStartSnapshot,
+    listFailureMessage: 'Failed to list the failing task changes for rollback',
     restoredMessage: (restoredFiles) =>
       `Restored ${restoredFiles.length} failing task change(s) to the pre-task state after recovery: ${restoredFiles.join(', ')}`,
     failureMessage: 'Failed to restore failing task changes from the pre-task snapshot',
@@ -75,30 +108,16 @@ export function restoreDeniedPreValidationFiles(opts: {
  * snapshot returns to what it held then, so earlier attempts and earlier briefs keep their
  * results.
  */
-export async function restoreAttemptFiles(opts: {
+export function restoreAttemptFiles(opts: {
   wctx: RestoreContext;
   phase: WorkflowState['phase'];
   attemptSnapshot: ChangedFilesSnapshot;
 }): Promise<void> {
-  let attemptChangedFiles: string[];
-  try {
-    attemptChangedFiles = await getChangedFilesSinceSnapshot(
-      opts.wctx.workspaceDir,
-      opts.attemptSnapshot,
-    );
-  } catch (err) {
-    publishWarningFromError(
-      { bus: opts.wctx.bus, phase: opts.phase },
-      'Failed to list the attempt changes for rollback',
-      err,
-    );
-    return;
-  }
-  await restoreTaskFilesFromSnapshot({
+  return restoreChangesSinceSnapshot({
     wctx: opts.wctx,
     phase: opts.phase,
-    taskChangedFiles: attemptChangedFiles,
-    taskStartSnapshot: opts.attemptSnapshot,
+    snapshot: opts.attemptSnapshot,
+    listFailureMessage: 'Failed to list the attempt changes for rollback',
     restoredMessage: (restoredFiles) =>
       `Restored ${restoredFiles.length} change(s) from the failed attempt: ${restoredFiles.join(', ')}`,
     failureMessage: 'Failed to restore the failed attempt changes from its start snapshot',

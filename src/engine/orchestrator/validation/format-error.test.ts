@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatValidationError } from './format-error.js';
+import { formatValidationError, validationFailureLine } from './format-error.js';
 import type { ValidationResult } from './result.js';
 import type { ValidationAcceptance } from './acceptance.js';
 import type { ValidationStage } from '../../../core/schemas/enums.js';
@@ -110,5 +110,89 @@ describe('formatValidationError', () => {
     const error = formatValidationError(results, acceptance([], ['lint']));
     expect(error).toContain('lint');
     expect(error).toContain('some lint output');
+  });
+});
+
+// Captured from the S11 run's T008 attempt 10 (session.jsonl, 2026-10-07T10:48:10Z): a Biome
+// deprecation notice about biome.json leads the output, the brief's format diagnostic follows.
+const BIOME_NOTICE_THEN_FORMAT = [
+  'biome.json:38:13 deserialize  DEPRECATED  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+  '',
+  '  i The use of the recommended field has been deprecated, and will removed in the next major version of Biome. Use preset instead.',
+  '  ',
+  '    36 │     "lineWidth": 100',
+  '    37 │   },',
+  '  > 38 │   "linter": {',
+  '       │             ^',
+  '  ',
+  '  i Migrate the configuration with the proper command',
+  '  ',
+  '  $ biome migrate',
+  '  ',
+  '',
+  'src/engine/orchestrator/recovery/actions.test.ts format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+  '',
+  '  × Formatter would have printed the following content:',
+  '  ',
+  '    508     │ - ······expect.arrayContaining([',
+  "        508 │ + ······expect.arrayContaining(['recovery_action_selected',·'seat_switched',·'recovery_resolved']),",
+  '  ',
+  '',
+  'check ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+  '',
+  '  × Some errors were emitted while running checks.',
+].join('\n');
+
+describe('validationFailureLine', () => {
+  it('quotes the line that names a file the brief changed, never the notice before it', () => {
+    const results: ValidationResult[] = [
+      { passed: true, stage: 'typecheck', output: 'ok' },
+      {
+        passed: false,
+        stage: 'lint',
+        error: BIOME_NOTICE_THEN_FORMAT,
+        failureFiles: ['src/engine/orchestrator/recovery/actions.test.ts'],
+      },
+    ];
+
+    expect(validationFailureLine(results, acceptance([], ['lint']))).toBe(
+      'lint failed: src/engine/orchestrator/recovery/actions.test.ts format',
+    );
+  });
+
+  it('quotes the first error line when the output names no file of the brief', () => {
+    const results: ValidationResult[] = [
+      {
+        passed: false,
+        stage: 'lint',
+        error: BIOME_NOTICE_THEN_FORMAT,
+        failureFiles: [],
+      },
+    ];
+
+    expect(validationFailureLine(results, acceptance([], ['lint']))).toBe(
+      'lint failed: × Formatter would have printed the following content:',
+    );
+  });
+
+  it('quotes a type error as the checker printed it', () => {
+    const results: ValidationResult[] = [
+      {
+        passed: false,
+        stage: 'typecheck',
+        error:
+          "> tsc --noEmit\n\nsrc/core/config/load/record-seat.ts(122,7): error TS2367: This comparison appears to be unintentional because the types 'string' and 'number' have no overlap.",
+        failureFiles: ['src/core/config/load/record-seat.ts'],
+      },
+    ];
+
+    expect(validationFailureLine(results, acceptance([], ['typecheck']))).toBe(
+      "typecheck failed: src/core/config/load/record-seat.ts(122,7): error TS2367: This comparison appears to be unintentional because the types 'string' and 'number' have no overlap.",
+    );
+  });
+
+  it('is empty when no stage blocks', () => {
+    const results: ValidationResult[] = [{ passed: true, stage: 'lint', output: 'ok' }];
+    expect(validationFailureLine(results, acceptance())).toBe('');
   });
 });
