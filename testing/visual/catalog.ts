@@ -1330,7 +1330,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'seat-switched',
         title: 'Seat switch row in the transcript',
         kind: 'implementation',
-        marker: 'usage limit',
+        marker: 'BUILD →',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

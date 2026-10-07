@@ -6,7 +6,7 @@ import { configStore } from '../../src/stores/project/config.js';
 import { questionPromptStore } from '../../src/stores/question-prompt/prompt.js';
 import { controlsStore } from '../../src/stores/ui/controls.js';
 import { terminalSizeStore } from '../../src/stores/ui/terminal-size.js';
-import { eventsStore, projectEventForTuiEventLog } from '../../src/stores/workflow/events.js';
+import { eventsStore, mergeEventLog } from '../../src/stores/workflow/events.js';
 import { reviewStore } from '../../src/stores/workflow/review.js';
 import { streamingOutputStore } from '../../src/stores/workflow/streaming-output.js';
 import { stripTerminalControls } from '../../src/utils/display-text.js';
@@ -57,8 +57,7 @@ async function renderProjection(projection: WorkflowFixtureProjection): Promise<
       // that one event belongs to production, not to the projection's event list.
       const drivenEvents = projection.resumeState?.pendingRecovery === undefined ? 0 : 1;
       expect(eventsStore.get().events).toHaveLength(
-        projection.events.filter((event) => projectEventForTuiEventLog(event) !== null).length +
-          drivenEvents,
+        mergeEventLog([...projection.events]).length + drivenEvents,
       );
     } else {
       // A run at rest stages no events: its transcript is its own history, and the replay

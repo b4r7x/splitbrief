@@ -810,7 +810,29 @@ describe('retryAndRecord — a planner out of quota on the consult', () => {
     if (!moved.ok) throw new Error('expected the swap to apply');
     expect(moved.switchedConfig?.planner).toMatchObject({ tool: 'claude-code', model: 'opus' });
     expect(moved.switchedConfig?.implementer).toEqual(config.implementer);
-    expect(events).toContainEqual(expect.objectContaining({ type: 'task_reset', taskId: 'T001' }));
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'seat_switched',
+        seat: 'plan',
+        from: { tool: 'codex' },
+        to: { tool: 'claude-code', model: 'opus' },
+        cause: 'runner-usage-limit',
+        auto: false,
+      }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'recovery_resolved',
+        action: 'switch-seat',
+        outcome: 'retry-current-task',
+      }),
+    );
+    expect(events.map((event) => event.type)).not.toContain('task_reset');
+    expect(moved.state.seatSwitches).toHaveLength(1);
+    expect(moved.state.seatSwitches).toMatchObject([
+      { seat: 'plan', cause: 'runner-usage-limit', auto: false },
+    ]);
+    expect(moved.state.attempt).toBe(result.state.attempt);
     expect(moved.state.pendingRecovery).toBeUndefined();
   });
 

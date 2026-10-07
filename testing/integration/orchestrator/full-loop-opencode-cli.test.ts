@@ -269,11 +269,18 @@ describe('full workflow OpenCode CLI implementer', { timeout: 90_000 }, () => {
     });
     expect(
       events.find((event) => event.type === 'validate' && event.status === 'done'),
+    ).toBeUndefined();
+    expect(
+      events.find(
+        (event) =>
+          event.type === 'full_suite' && event.status === 'done' && event.moment === 'pre-review',
+      ),
     ).toMatchObject({
-      type: 'validate',
-      taskId: 'T001',
+      type: 'full_suite',
+      status: 'done',
+      moment: 'pre-review',
+      stage: 'test',
       passed: true,
-      stages: { typecheck: false, lint: false, test: true },
     });
     expect(events.map((event) => event.type)).toEqual(
       expect.arrayContaining([

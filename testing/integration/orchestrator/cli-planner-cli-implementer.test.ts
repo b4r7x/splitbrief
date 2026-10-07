@@ -303,8 +303,17 @@ describe('CLI planner to CLI implementer workflow', { timeout: 90_000 }, () => {
     );
     expect(
       events.find((event) => event.type === 'validate' && event.status === 'done'),
+    ).toBeUndefined();
+    expect(
+      events.find(
+        (event) =>
+          event.type === 'full_suite' && event.status === 'done' && event.moment === 'pre-review',
+      ),
     ).toMatchObject({
-      type: 'validate',
+      type: 'full_suite',
+      status: 'done',
+      moment: 'pre-review',
+      stage: 'test',
       passed: true,
     });
     expect(

@@ -300,6 +300,15 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
     seat: 'build',
     resetAt: '2026-10-03T12:00:00.000Z',
   },
+  seat_switched: {
+    phase: 'implementing',
+    seat: 'build',
+    from: { tool: 'codex' },
+    to: { tool: 'claude-code', model: 'opus' },
+    cause: 'runner-usage-limit',
+    auto: false,
+    configRevision: 'r1',
+  },
   seat_retry: { phase: 'implementing', seat: 'build', attempt: 1, delayMs: 1000 },
   no_progress_cut: {
     phase: 'implementing',
