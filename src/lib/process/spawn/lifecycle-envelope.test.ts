@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,6 +11,21 @@ import {
   spawnPipeError,
   type SpawnPipeFatalSignal,
 } from './lifecycle.js';
+
+// Counts the idle kill windows a live descendant carried past, so a test can
+// wait for those windows instead of sleeping through them.
+const killWindows = vi.hoisted(() => ({ survived: 0 }));
+vi.mock('../liveness.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../liveness.js')>();
+  return {
+    ...actual,
+    hasLiveDescendants: (pid: number): boolean => {
+      const live = actual.hasLiveDescendants(pid);
+      if (live) killWindows.survived += 1;
+      return live;
+    },
+  };
+});
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
@@ -158,6 +173,7 @@ describe('spawnPipe lifecycle termination', () => {
       const controller = new AbortController();
       let leaderPid = 0;
       let settled = false;
+      killWindows.survived = 0;
       const pending = pipe({
         script: [
           "const {spawn}=require('node:child_process')",
@@ -187,7 +203,10 @@ describe('spawnPipe lifecycle termination', () => {
       }
       // Several kill windows pass with no output; the running child keeps the
       // call alive each time.
-      await new Promise((resolve) => setTimeout(resolve, 2_500));
+      await vi.waitFor(() => expect(killWindows.survived).toBeGreaterThanOrEqual(2), {
+        timeout: 5_000,
+        interval: 20,
+      });
       expect(settled).toBe(false);
 
       controller.abort(new DOMException('test finished', 'AbortError'));
@@ -209,6 +228,10 @@ describe('spawnPipe lifecycle termination', () => {
       const marker = join(dir, 'sigterm');
       const env = { ...process.env, LIFECYCLE_TEST_MARKER: marker };
       let pid = 0;
+      // Only the grace deadline runs on the fake clock: the signals, the exit
+      // and the absence polling stay real.
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      const signals = vi.spyOn(process, 'kill');
       const pending = pipe({
         script: [
           "require('node:fs').writeFileSync(process.env.LIFECYCLE_TEST_MARKER,'sigterm')",
@@ -223,6 +246,16 @@ describe('spawnPipe lifecycle termination', () => {
         },
       });
 
+      const settled = pending.catch((err: unknown) => err);
+      try {
+        await vi.waitFor(() => expect(signals).toHaveBeenCalledWith(-pid, 'SIGTERM'));
+        await vi.advanceTimersByTimeAsync(SIGKILL_DELAY_MS);
+        await settled;
+        expect(signals).toHaveBeenCalledWith(-pid, 'SIGKILL');
+      } finally {
+        signals.mockRestore();
+        vi.useRealTimers();
+      }
       await expect(pending).rejects.toSatisfy(isFatalSignal);
       expect(pid).toBeGreaterThan(1);
       expect(processIsAbsent(pid)).toBe(true);

@@ -1,17 +1,18 @@
+import { readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { isCellRectOnGraphemeBoundaries, type CellGrid } from '../contracts/cells.js';
-import type { CheckpointDefinition, ScenarioDefinition } from '../contracts/catalog.js';
-import { isCellRectInViewport, viewport, type Viewport } from '../contracts/geometry.js';
-import { ArtifactProvenanceSchema } from '../contracts/selection.js';
+import type { ScenarioDefinition } from '../contracts/catalog.js';
+import { viewport } from '../contracts/geometry.js';
 import { findVisualScenario, listVisualScenarios } from '../catalog.js';
-import { createCropCellGrid } from '../artifacts/crop.js';
-import { mountGalleryScenario } from '../gallery/mount.js';
-import { parseTerminalFrame } from '../terminal/parse.js';
-import { readConversationHoverSnapshot } from '../../../src/features/workflow/layout/snapshot.js';
-import { createFrameIdentity } from '../visual-contract-fixtures.js';
 import { LOCATOR_FAILURE_CODE } from './types.js';
 import { LOCATOR_REGISTRY } from './registry.js';
 import { resolveElementLocator, tryResolveElementLocator } from './resolve.js';
+import {
+  createFrameGrid,
+  landsTranscript,
+  requireCheckpoint,
+  SCENARIO_LOCATOR_SHARDS,
+  scenarioLocatorShard,
+} from './scenario-locators.js';
 
 const ESC = '\u001b';
 const VIEWPORT = viewport({ cols: 80, rows: 24 });
@@ -24,148 +25,36 @@ function requireScenario(id: string): ScenarioDefinition {
   return scenario;
 }
 
-function requireCheckpoint(scenario: ScenarioDefinition): CheckpointDefinition {
-  const checkpoint = scenario.checkpoints[0];
-  if (checkpoint === undefined) throw new Error(`Missing checkpoint for ${scenario.id}`);
-  return checkpoint;
-}
-
-async function createFrameGrid(
-  scenario: ScenarioDefinition,
-  frameViewport: Viewport,
-  ansi: string,
-): Promise<CellGrid> {
-  const checkpoint = requireCheckpoint(scenario);
-  const provenance = ArtifactProvenanceSchema.parse({
-    scenarioId: scenario.id,
-    scenarioTitle: scenario.title,
-    fixtureVersion: scenario.fixtureVersion,
-    checkpointId: checkpoint.id,
-    viewport: frameViewport,
-  });
-  return parseTerminalFrame({
-    ansi,
-    identity: createFrameIdentity(provenance),
-    projectRoot: process.cwd(),
-  });
-}
-
 describe('semantic visual locators', { timeout: 90_000 }, () => {
-  it('resolves every catalog element at every viewport against production App frames', async () => {
-    let resolvedCount = 0;
+  it('registers a locator for every catalog element and nothing else', () => {
     const registryKeys = new Set<string>();
-
     for (const scenario of listVisualScenarios()) {
-      const checkpoint = requireCheckpoint(scenario);
       const surface = scenario.surface.kind === 'screen' ? scenario.surface.screen : 'overlay';
       for (const element of scenario.elements) registryKeys.add(`${surface}:${element.id}`);
-
-      for (const frameViewport of scenario.viewports) {
-        const handle = await mountGalleryScenario({
-          scenario,
-          checkpoint,
-          viewport: frameViewport,
-        });
-        try {
-          let frame: string;
-          try {
-            frame = await handle.waitForCheckpoint();
-          } catch (error) {
-            const message = error instanceof Error ? error.message : 'checkpoint wait failed';
-            throw new Error(`${message}\nLast frame:\n${handle.lastFrame() ?? '<empty>'}`);
-          }
-          let grid: Awaited<ReturnType<typeof createFrameGrid>>;
-          try {
-            grid = await createFrameGrid(scenario, frameViewport, frame);
-          } catch (error) {
-            const message = error instanceof Error ? error.message : 'frame grid failed';
-            throw new Error(
-              `${scenario.id}/${frameViewport.cols}x${frameViewport.rows}: ${message}\nFrame:\n${frame}`,
-            );
-          }
-
-          for (const element of scenario.elements) {
-            const label = `${scenario.id}/${frameViewport.cols}x${frameViewport.rows}/${element.id}`;
-            const result = tryResolveElementLocator({
-              scenario,
-              checkpoint,
-              grid,
-              elementId: element.id,
-            });
-            if (!result.ok) {
-              throw new Error(`${label}: ${result.failure.code}: ${result.failure.message}`);
-            }
-
-            expect(isCellRectInViewport(result.locator.rect, frameViewport), label).toBe(true);
-            expect(isCellRectOnGraphemeBoundaries(grid.cells, result.locator.rect), label).toBe(
-              true,
-            );
-            expect(result.locator.provenance, label).toEqual({
-              ...grid.identity.provenance,
-              sourceFrameKey: grid.identity.key,
-            });
-            let crop: CellGrid;
-            try {
-              crop = createCropCellGrid({ frame: grid, locator: result.locator });
-            } catch (error) {
-              const message = error instanceof Error ? error.message : 'crop creation failed';
-              throw new Error(`${label}: ${message}`);
-            }
-            expect(crop.rect, label).toEqual(result.locator.rect);
-            resolvedCount += 1;
-          }
-        } finally {
-          await handle.unmount();
-        }
-      }
     }
 
     expect(Object.keys(LOCATOR_REGISTRY).sort()).toEqual([...registryKeys].sort());
-    expect(resolvedCount).toBe(
-      listVisualScenarios().reduce(
-        (total, scenario) => total + scenario.elements.length * scenario.viewports.length,
-        0,
-      ),
+  });
+
+  it('mounts every catalog scenario in exactly one resolve-scenarios shard file', () => {
+    // resolve-scenarios-<n>.test.ts resolves every element of its scenarios at every viewport
+    // against production App frames, and lands each workflow transcript on its budgeted row.
+    const shardFiles = readdirSync(import.meta.dirname)
+      .filter((name) => /^resolve-scenarios-\d+\.test\.ts$/.test(name))
+      .sort();
+    const expectedFiles = Array.from(
+      { length: SCENARIO_LOCATOR_SHARDS },
+      (_, index) => `resolve-scenarios-${index + 1}.test.ts`,
+    ).sort();
+    expect(shardFiles).toEqual(expectedFiles);
+
+    const scenarios = listVisualScenarios();
+    const shards = new Set(scenarios.map((_, index) => scenarioLocatorShard(index)));
+    expect([...shards].sort((a, b) => a - b)).toEqual(
+      Array.from({ length: SCENARIO_LOCATOR_SHARDS }, (_, index) => index + 1),
     );
-  }, 120_000);
-
-  it('lands the transcript on the body row the mounted screen budgeted, for every workflow scenario', async () => {
-    let checked = 0;
-    for (const scenario of listVisualScenarios()) {
-      if (scenario.surface.kind !== 'screen' || scenario.surface.screen !== 'workflow') continue;
-      if (!scenario.elements.some((element) => element.id === 'transcript')) continue;
-      const checkpoint = requireCheckpoint(scenario);
-      for (const frameViewport of scenario.viewports) {
-        const label = `${scenario.id}/${frameViewport.cols}x${frameViewport.rows}`;
-        const handle = await mountGalleryScenario({
-          scenario,
-          checkpoint,
-          viewport: frameViewport,
-        });
-        let frame: string;
-        let paintedBodyTop: number;
-        try {
-          frame = await handle.waitForCheckpoint();
-          // The body top the mounted screen's own snapshot derives from its stores (1-based rect
-          // convention); the locator counts the 0-based rows the frame artifacts use.
-          paintedBodyTop = readConversationHoverSnapshot().contentRect.top - 1;
-        } finally {
-          await handle.unmount();
-        }
-        const grid = await createFrameGrid(scenario, frameViewport, frame);
-        const transcript = resolveElementLocator({
-          scenario,
-          checkpoint,
-          grid,
-          elementId: 'transcript',
-        });
-        expect(transcript.rect.y, label).toBe(paintedBodyTop);
-        checked += 1;
-      }
-    }
-
-    expect(checked).toBeGreaterThan(0);
-  }, 120_000);
+    expect(scenarios.some(landsTranscript)).toBe(true);
+  });
 
   it('pins the header, sidebar, composer, approval and hero rects at 80x24 / 120x40 / 160x45', async () => {
     const home = requireScenario('home-empty');
