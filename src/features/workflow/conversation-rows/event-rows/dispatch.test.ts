@@ -1191,38 +1191,6 @@ describe('event row dispatch', () => {
     expect(rows[1] && rowText(rows[1])).toBe('clarification: Use JWT? -> Yes, use JWT');
     expect(rows[1]?.segments[0]?.tone).toBe('text');
   });
-
-  it('renders the pre-existing-failure line when the baseline done event carries failing stages', () => {
-    const event: EngineEventOf<'validation_baseline'> = {
-      type: 'validation_baseline',
-      ts: 0,
-      phase: 'implementing',
-      status: 'done',
-      stages: { typecheck: false, lint: false, test: true },
-      failing: { typecheck: true },
-      commands: { typecheck: 'npx tsc --noEmit' },
-    };
-
-    const rows = eventRows({
-      event,
-      globalIndex: 0,
-      expanded: false,
-      ctx: { width: 80, viewportRows: 20, streaming },
-    });
-
-    const text = rows.map(rowText).join('\n').replace(/\s+/g, ' ');
-    expect(text).toContain('Baseline');
-    expect(text).toContain('typecheck (npx tsc --noEmit) failed');
-    expect(text).toContain('already failing before any task ran: typecheck');
-    expect(text).toContain('pre-existing failures will not fail this run');
-    expect(
-      rows.some((rowValue) =>
-        rowValue.segments.some(
-          (segment) => segment.tone === 'warning' && segment.text.includes('already failing'),
-        ),
-      ),
-    ).toBe(true);
-  });
 });
 
 describe('validate failure output', () => {

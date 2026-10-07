@@ -21,7 +21,6 @@ import { buildRequiredChecksUnrunnableRecoveryIssue } from '../recovery/builders
 import { failingFilesFromOutput } from '../task/file-owner.js';
 import {
   classifyRequiredChecks,
-  requiredCheckIds,
   runPreReviewChecks,
   runPreReview,
   type RunPreReviewChecksOptions,
@@ -82,6 +81,28 @@ describe('pre-review checks', () => {
       ...overrides,
     };
   }
+
+  it('runs optional checks and records results on their task or the last task for a plan check', async () => {
+    const first = makeTask({
+      id: 'T001',
+      status: 'done',
+      checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+    });
+    const last = makeTask({ id: 'T002', status: 'done' });
+    const plan = makePlan([{ id: 'K2', kind: 'cmd', value: 'node --version', required: false }]);
+    const runner = makeCommandRunner(
+      processError.exitCode({ command: 'node', code: 1, stderr: 'optional failure' }),
+      { stdout: 'pass', stderr: '', code: 0 },
+    );
+    const state = makeImplState([first, last], { plan });
+    saveState({ projectDir, sessionId: 'sess-pre-review' }, state);
+    const result = await runPreReviewChecks(options({ state, runCommand: runner }));
+    expect(result.runs.map((run) => run.checkId)).toEqual(['K2', 'K1']);
+    expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'K1', passed: true }]);
+    expect(result.state.tasks[1]?.checkResults).toEqual([{ id: 'K2', passed: false }]);
+    expect(result.defects).toEqual([]);
+    expect(result.unrunnable).toEqual([]);
+  });
 
   it('halts a refused required check and names its id', async () => {
     const plan = makePlan([
@@ -262,17 +283,7 @@ describe('pre-review checks', () => {
     expect(result.defects[0]?.text).toContain('test');
   });
 
-  it('selects the required checks and classifies every non-pass status', () => {
-    const plan = makePlan([
-      { id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true },
-      { id: 'K2', kind: 'cmd', value: 'true', required: false },
-    ]);
-    const task = makeTask({
-      id: 'T001',
-      checks: [{ id: 'K3', kind: 'render', value: 'overlay', required: true }],
-    });
-
-    expect(requiredCheckIds({ tasks: [task], plan })).toEqual(['K1', 'K3']);
+  it('classifies every non-pass required check status', () => {
     expect(
       classifyRequiredChecks([
         { checkId: 'K1', status: 'pass', output: '' },

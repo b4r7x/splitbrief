@@ -20,7 +20,7 @@ const SENTINELS: Record<string, string> = {
   'brief-template': '### Escalation',
   'implementer-preamble': 'directly in the working directory.',
   'consult-contract': 'Answer with exactly one JSON object',
-  'consult-table': '| `verify` | Run the named registered checks',
+  'consult-table': '| `verify` | Run the brief gate and named registered checks',
   'seat-recovery': 'retries with backoff',
   'halt-signatures': '`credit balance is too low`',
   'halt-signatures-sh': "*'sandbox required but unavailable'*) halt=spawn ;;",
@@ -305,7 +305,7 @@ describe('skill-blocks', () => {
       const before = statSync(mirror).mtimeMs;
       expect(runSyncCli(root, false, () => {}, renderBlock)).toBe(0);
       expect(readFileSync(join(root, 'splitbrief/references/recovery.md'), 'utf8')).toContain(
-        '| `verify` | Run the named registered checks',
+        '| `verify` | Run the brief gate and named registered checks',
       );
       expect(statSync(mirror).mtimeMs).toBe(before);
       expect(runSyncCli(root, true, () => {}, renderBlock)).toBe(0);

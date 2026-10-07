@@ -18,14 +18,18 @@ export function reviewScopeFor(state: WorkflowState, kind: 'final' | 'task'): Re
   }
   return {
     taskIds: state.tasks.filter((task) => isTaskCompleted(task.status)).map((task) => task.id),
-    criterionIds: (state.plan?.criteria ?? [])
-      .filter((criterion) =>
-        state.tasks
-          .filter((task) => (task.criteria ?? []).includes(criterion.id))
-          .every((task) => isTaskCompleted(task.status)),
-      )
-      .map((criterion) => criterion.id),
+    criterionIds: dueCriterionIds(state),
   };
+}
+
+export function dueCriterionIds(state: WorkflowState, completingTaskId?: string): string[] {
+  return (state.plan?.criteria ?? [])
+    .filter((criterion) =>
+      state.tasks
+        .filter((task) => (task.criteria ?? []).includes(criterion.id))
+        .every((task) => task.id === completingTaskId || isTaskCompleted(task.status)),
+    )
+    .map((criterion) => criterion.id);
 }
 
 export type ReviewOutcome = {

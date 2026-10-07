@@ -662,7 +662,7 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 **Likely cause:** A validation stage (typecheck, lint, or test) was already failing in the repository before the run started — a pre-existing error in a file no task touches. Acceptance is baseline-relative: a stage that was already red at baseline is exempt when its failure evidence names none of the task's changed files, and the task may advance without any Git write. A stage that was green at baseline always blocks.
 
 **Fix:**
-1. Check the baseline probe row at the start of the run — it names the stages that were already failing before the first task.
+1. Check the `Run-start suite` rows at the start of the run — the full suite runs every enabled stage before the first task, and each row says whether that stage passed or failed. A stage that failed there is the baseline.
 2. If the failing stage was red at baseline and its evidence names none of the task's changed files, the task is accepted; retry and consult do not fire for pre-existing failures.
 3. A task that introduces a **new** failure in a stage already red at baseline is still rejected — the evidence names one of the task's changed files.
 4. Fix the pre-existing failure itself to turn the whole tree green; until then, tasks that do not touch the failing files keep completing with the exemption noted.
@@ -693,14 +693,14 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 
 ### Symptom: The run seems stuck at `Implementing…` before the first task
 
-**Likely cause:** The run-start baseline probe or the run-start full suite is running. Before the first task, SPLITBRIEF probes every enabled validation stage once (typecheck → lint → test, with the test probe narrowed to the first task's affected file), then runs every enabled stage once over the whole project (`Run-start suite` in the byline). Each stage can block for `validation.timeoutMs` (default one hour) and neither pass stops at the first red stage, so slow stages can hold the phase for up to six hours.
+**Likely cause:** The run-start full suite is running. Before the first task, SPLITBRIEF runs every enabled validation stage once on the whole project (typecheck → lint → the full test suite). Each stage can block for `validation.timeoutMs` (default one hour) and the suite deliberately does not stop at the first red stage, so three slow stages can hold the phase for up to three hours.
 
 **Fix:**
-1. Look at the conversation rows — the probe publishes a `Baseline` row naming the stage currently being probed (`Baseline typecheck (npx tsc --noEmit) running …`). The run is not hung; it is waiting on that command.
-2. If a stage is genuinely slow, lower `validation.timeoutMs` in `.splitbrief/config.yaml` (minimum 1000 ms) so each probe step gives up sooner.
-3. If a stage can never pass in this repository (a pre-existing type error, a broken linter), leave it red: the probe records it as a pre-existing failure and the run continues past it rather than failing every task on it.
+1. Look at the composer byline and the conversation rows — the suite names the stage it runs and its command (`Run-start suite · npx tsc --noEmit · running`). The run is not hung; it is waiting on that command.
+2. If a stage is genuinely slow, lower `validation.timeoutMs` in `.splitbrief/config.yaml` (minimum 1000 ms). A stage that times out at the run-start suite is recorded with a warning and not run again in that run.
+3. If a stage can never pass in this repository (a pre-existing type error, a broken linter), leave it red: the suite records its failures as pre-existing and the run continues past them rather than failing every task on them.
 
-**Prevention:** Run `splitbrief doctor --probe-validation` before the first run. It runs every enabled stage once over the whole project without starting a run, and it names every stage that is already red, including a stage that outruns `validation.timeoutMs`.
+**Prevention:** Keep the validation commands fast enough to run the whole suite twice per run — once at the start and once before the final review. Run `splitbrief doctor --probe-validation` before the first run: it runs every enabled stage once over the whole project without starting a run, and it names every stage that is already red, including a stage that outruns `validation.timeoutMs`.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) (§4 `validation`), [docs/WORKFLOW.md](./WORKFLOW.md).
 

@@ -60,10 +60,12 @@ describe('runSingleTask — user edits', () => {
         implementer,
         bus,
         config: makeConfig({
+          workflow: { review: 'task' },
+
           approval: {
             feedRejectionsToPlanner: false,
           },
-          validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+          validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
         }),
       }),
       task,
@@ -118,10 +120,12 @@ describe('runSingleTask — user edits', () => {
         implementer,
         bus,
         config: makeConfig({
+          workflow: { review: 'task' },
+
           approval: {
             feedRejectionsToPlanner: false,
           },
-          validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+          validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
         }),
       }),
       task,
@@ -173,10 +177,12 @@ describe('runSingleTask — user edits', () => {
         implementer,
         bus,
         config: makeConfig({
+          workflow: { review: 'task' },
+
           approval: {
             feedRejectionsToPlanner: false,
           },
-          validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+          validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
         }),
         validator: { ...createValidator(), runValidation },
       }),
@@ -248,10 +254,12 @@ describe('runSingleTask — user edits', () => {
         implementer,
         bus,
         config: makeConfig({
+          workflow: { review: 'task' },
+
           approval: {
             feedRejectionsToPlanner: false,
           },
-          validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+          validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
         }),
         validator: { ...createValidator(), runValidation },
       }),

@@ -44,9 +44,9 @@ Attempt → 1 local retry with the exact errors → a planner consult.
 | `guidance` | Keep the brief. Attach instructions and context for one more implementer attempt. |
 | `rewrite-task` | Replace the TaskSpec at the same id and the same criteria. Raise its revision. |
 | `split-task` | Replace with 2–4 subtasks. Keep all criteria. Re-point pending dependents to all children. |
-| `verify` | Run the named registered checks and validation. Make no implementer call. |
+| `verify` | Run the brief gate and named registered checks. Make no implementer call. |
 | `ask-user` | Ask only when the user alone can answer. Record why, choices and a default. |
-| `confirm` | Decision-confirm only: record the accepted decisions, then validate the attempt. |
+| `confirm` | Decision-confirm only: record the accepted decisions, then run the brief gate. |
 
 Keep lineage counters across splits and resume: 2 consults and 8 attempts.
 Keep the run counter: 10 planner decisions after planning, including consults and triage.

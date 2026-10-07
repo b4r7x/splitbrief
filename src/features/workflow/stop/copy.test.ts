@@ -123,11 +123,11 @@ describe('stopByline', () => {
       phase: 'requested',
       currentTaskId: null,
       finishedTaskId: 'T003',
-      suite: { moment: 'boundary', command: 'npm test', elapsedMs: 602_000 },
+      suite: { moment: 'pre-review', command: 'npm test', elapsedMs: 602_000 },
     });
 
     expect(stopByline(paused)).toEqual({
-      lead: 'Batch suite · npm test 10:02',
+      lead: 'Pre-review suite · npm test 10:02',
       hint: 'Pause requested; no next brief will start',
     });
   });

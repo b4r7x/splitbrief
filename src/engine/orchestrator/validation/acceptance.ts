@@ -1,8 +1,9 @@
 import type { ValidationStage } from '../../../core/schemas/enums.js';
-import type { ValidationStageCommands } from '../../events/types.js';
+import { GATE_ORDER } from '../../../core/pipeline-spec/gates.js';
 import { normalizeProjectRelativePath } from '../../../utils/path-patterns.js';
 import { stageFailureKeys } from './extract-failure-keys.js';
 import type { ValidationResult } from './result.js';
+import type { FullSuiteFailureKeys } from './types.js';
 
 type ValidationFailureKeys = Partial<Record<ValidationStage, ReadonlySet<string>>>;
 
@@ -23,14 +24,6 @@ function evidenceNamesChangedFile(
   );
 }
 
-function matchesBaselineCommand(
-  result: ValidationResult,
-  baselineCommands: ValidationStageCommands | undefined,
-): boolean {
-  const probed = baselineCommands?.[result.stage];
-  return probed === undefined || probed === result.command;
-}
-
 function isSubset(after: readonly string[], baseline: ReadonlySet<string>): boolean {
   return after.every((key) => baseline.has(key));
 }
@@ -47,7 +40,6 @@ function failuresAreKnown(
 export function decideValidationAcceptance(opts: {
   results: readonly ValidationResult[];
   baselineFailingStages: ReadonlySet<ValidationStage>;
-  baselineCommands?: ValidationStageCommands | undefined;
   baselineFailureKeys?: ValidationFailureKeys | undefined;
   changedFiles: readonly string[];
 }): ValidationAcceptance {
@@ -57,7 +49,6 @@ export function decideValidationAcceptance(opts: {
     if (result.passed) continue;
     if (
       opts.baselineFailingStages.has(result.stage) &&
-      matchesBaselineCommand(result, opts.baselineCommands) &&
       failuresAreKnown(result, opts.baselineFailureKeys) &&
       !evidenceNamesChangedFile(result, opts.changedFiles)
     ) {
@@ -67,4 +58,22 @@ export function decideValidationAcceptance(opts: {
     }
   }
   return { accepted: blockingStages.length === 0, exemptStages, blockingStages };
+}
+
+export function acceptValidationResults(
+  results: ValidationResult[],
+  baseline: FullSuiteFailureKeys | undefined,
+  changedFiles: readonly string[],
+) {
+  const baselineFailureKeys: ValidationFailureKeys = {};
+  for (const stage of GATE_ORDER) {
+    const keys = baseline?.[stage];
+    if (keys !== undefined) baselineFailureKeys[stage] = new Set(keys);
+  }
+  return decideValidationAcceptance({
+    results,
+    baselineFailureKeys,
+    changedFiles,
+    baselineFailingStages: new Set(GATE_ORDER.filter((stage) => baseline?.[stage] !== undefined)),
+  });
 }

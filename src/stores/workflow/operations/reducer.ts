@@ -15,7 +15,7 @@ import type {
 } from './state.js';
 import { appendWarning, showsWarningOnPrimarySurface } from './warnings.js';
 
-type ValidationEvent = Extract<EngineEvent, { type: 'validate' | 'validation_baseline' }>;
+type ValidationEvent = Extract<EngineEvent, { type: 'validate' }>;
 type SuiteEvent = Extract<EngineEvent, { type: 'full_suite' }>;
 
 function runningValidationStage(event: ValidationEvent): RunningValidationStage | null {
@@ -101,7 +101,6 @@ function nextOpenTools(
 export function updateOperations(state: OperationsState, event: EngineEvent): OperationsState {
   switch (event.type) {
     case 'validate':
-    case 'validation_baseline':
       return applyValidationStage(state, event);
     case 'full_suite':
       return applySuiteStage(state, event);

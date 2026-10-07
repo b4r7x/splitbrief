@@ -8,8 +8,6 @@ import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeWctx } from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import type { ValidationStage } from '../../../core/schemas/enums.js';
-import { decideValidationAcceptance } from '../validation/acceptance.js';
 import type { Validator } from '../validation/types.js';
 import type { EscalationContext } from './types.js';
 import { validateAndCommit } from './validate-and-commit.js';
@@ -34,7 +32,8 @@ function configWithProfiles(): Config {
   return {
     ...makeNoValidationConfig({
       approval: { feedRejectionsToPlanner: true },
-      workflow: {},
+      workflow: { review: 'task' },
+      validation: { test: true },
     }),
     implementerProfiles: {
       default: 'local-small',
@@ -79,7 +78,7 @@ describe('validateAndCommit', () => {
     const task = makeTask({ id: 'T011', suggestedFiles: ['src/abort.ts'] });
     const controller = new AbortController();
     const validator: Validator = {
-      primeBaseline: vi.fn().mockResolvedValue(undefined),
+      formatChangedFiles: vi.fn().mockResolvedValue(undefined),
       runFullSuite: vi
         .fn()
         .mockResolvedValue({ results: [], failures: {}, newFailures: {}, stages: {} }),
@@ -87,12 +86,6 @@ describe('validateAndCommit', () => {
         controller.abort(new DOMException('The user aborted a request.', 'AbortError'));
         return [{ stage: 'test' as const, passed: true }];
       }),
-      decideAcceptance: ({ results, changedFiles }) =>
-        decideValidationAcceptance({
-          results,
-          changedFiles,
-          baselineFailingStages: new Set<ValidationStage>(),
-        }),
     };
 
     const result = await validateAndCommit({
@@ -103,7 +96,12 @@ describe('validateAndCommit', () => {
         signal: controller.signal,
       }),
       task,
-      state: makeImplState([task]),
+      state: makeImplState(
+        [task],
+        task.id === 'T012'
+          ? { fullSuiteBaseline: { test: ['test failed without diagnostics'] } }
+          : {},
+      ),
       method: 'local',
       transitionType: 'VALIDATION_PASS',
       retryCount: 1,
@@ -122,7 +120,7 @@ describe('validateAndCommit', () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T012', suggestedFiles: ['src/exempt.ts'] });
     const validator: Validator = {
-      primeBaseline: vi.fn().mockResolvedValue(undefined),
+      formatChangedFiles: vi.fn().mockResolvedValue(undefined),
       runFullSuite: vi
         .fn()
         .mockResolvedValue({ results: [], failures: {}, newFailures: {}, stages: {} }),
@@ -131,18 +129,17 @@ describe('validateAndCommit', () => {
         .mockResolvedValue([
           { stage: 'test' as const, passed: false, failureFiles: ['src/unrelated.ts'] },
         ]),
-      decideAcceptance: ({ results, changedFiles }) =>
-        decideValidationAcceptance({
-          results,
-          changedFiles,
-          baselineFailingStages: new Set<ValidationStage>(['test']),
-        }),
     };
 
     const result = await validateAndCommit({
       ctx: await makeValidateCtx({ projectDir, sessionId, validator }),
       task,
-      state: makeImplState([task]),
+      state: makeImplState(
+        [task],
+        task.id === 'T012'
+          ? { fullSuiteBaseline: { test: ['test failed without diagnostics'] } }
+          : {},
+      ),
       method: 'local',
       transitionType: 'VALIDATION_PASS',
       retryCount: 1,
@@ -159,7 +156,7 @@ describe('validateAndCommit', () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T013', suggestedFiles: ['src/blocks.ts'] });
     const validator: Validator = {
-      primeBaseline: vi.fn().mockResolvedValue(undefined),
+      formatChangedFiles: vi.fn().mockResolvedValue(undefined),
       runFullSuite: vi
         .fn()
         .mockResolvedValue({ results: [], failures: {}, newFailures: {}, stages: {} }),
@@ -168,18 +165,17 @@ describe('validateAndCommit', () => {
         .mockResolvedValue([
           { stage: 'test' as const, passed: false, failureFiles: ['src/blocking.ts'] },
         ]),
-      decideAcceptance: ({ results, changedFiles }) =>
-        decideValidationAcceptance({
-          results,
-          changedFiles,
-          baselineFailingStages: new Set<ValidationStage>(),
-        }),
     };
 
     const result = await validateAndCommit({
       ctx: await makeValidateCtx({ projectDir, sessionId, validator }),
       task,
-      state: makeImplState([task]),
+      state: makeImplState(
+        [task],
+        task.id === 'T012'
+          ? { fullSuiteBaseline: { test: ['test failed without diagnostics'] } }
+          : {},
+      ),
       method: 'local',
       transitionType: 'VALIDATION_PASS',
       retryCount: 1,

@@ -84,6 +84,13 @@ export type StateAction =
   | { type: 'CLEAR_PLANNER_CONVERSATION' }
   | { type: 'SET_PLANNER_SESSION_ID'; sessionId: string | null }
   | { type: 'RESET_TASK'; taskId: TaskId }
+  | {
+      type: 'REOPEN_TASK';
+      taskId: TaskId;
+      failure: NonNullable<NonNullable<WorkflowState['lineages']>[string]['gateFailure']> & {
+        output: string;
+      };
+    }
   | { type: 'REPLACE_TASK'; taskId: TaskId; task: Task }
   | { type: 'INSERT_TASKS'; parentId: TaskId | null; afterTaskId?: TaskId; tasks: Task[] }
   | {
@@ -107,8 +114,6 @@ export type StateAction =
     }
   | { type: 'START_SCHEDULED_REVIEW'; afterTaskId: TaskId }
   | { type: 'CLEAR_SCHEDULED_REVIEW' }
-  | { type: 'SET_PENDING_BOUNDARY'; batch: number; afterTaskId: TaskId }
-  | { type: 'CLEAR_PENDING_BOUNDARY' }
   | { type: 'SET_TASK_INPUT_HASHES'; taskId: TaskId; inputHashes: Record<string, string> }
   | { type: 'RECORD_CHECK_RESULTS'; taskId: TaskId; results: CheckResult[] }
   | { type: 'SET_SEAT_WAIT'; seat: CrewSeatId; resetAt: string }

@@ -212,7 +212,7 @@ workflow:
   approve: plan
 ```
 
-After each implementer task, the orchestrator runs the resolved typecheck, lint, and test pipeline — this config first, then a `package.json` script or `Makefile`/`justfile` target of that name, then planner discovery, then the detected stack's own defaults. On failure it retries once, then consults the planner for one typed answer (guidance, a rewritten or split brief, a check re-run, or one question for you).
+The orchestrator resolves each typecheck, lint and test command in this order: this config first, then a `package.json` script or `Makefile`/`justfile` target of that name, then planner discovery, then the detected stack's own defaults. `workflow.review` sets when the gates run. With `end` (the default) they run once, before the final review. With `task` each task also runs its related tests and due checks. A red brief retries once, then the orchestrator consults the planner for one typed answer (guidance, a rewritten or split brief, a check re-run, or one question for you).
 
 **3. Subscription CLI implementer (optional).** To type through the same admitted CLI instead of an API, set `implementer.kind: cli` with `tool: claude-code`. The child CLI edits files in the run workspace, never your checkout; SPLITBRIEF asks before a protected write stands, and the reviewed result reaches your checkout only when you Apply it. Posture and auth channels: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md#posture-trust-and-auth).
 

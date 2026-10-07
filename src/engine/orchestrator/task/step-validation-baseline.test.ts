@@ -16,8 +16,6 @@ import {
   setupTaskProject as setupProject,
 } from '#testing/helpers/orchestrator-task-context.js';
 import { createValidator } from '../validation/run.js';
-import { decideValidationAcceptance } from '../validation/acceptance.js';
-import type { ValidationStage } from '../../../core/schemas/enums.js';
 import { runSingleTask } from './step.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 
@@ -34,7 +32,7 @@ describe('runSingleTask — baseline-exempt validation', () => {
       suggestedFiles: ['src/main.ts'],
       scope: { inBounds: ['src/main.ts'] },
     });
-    const state = implementingState([task]);
+    const state = implementingState([task], { fullSuiteBaseline: { test: ['TS error'] } });
 
     const implementer = makeImplementer({
       implement: vi.fn().mockImplementation(async ({ projectDir }: { projectDir: string }) => {
@@ -50,7 +48,7 @@ describe('runSingleTask — baseline-exempt validation', () => {
     });
     const runValidation = vi.fn().mockResolvedValue([
       {
-        stage: 'typecheck' as const,
+        stage: 'test' as const,
         passed: false,
         error: 'TS error',
         failureFiles: ['src/main.ts'],
@@ -68,17 +66,13 @@ describe('runSingleTask — baseline-exempt validation', () => {
           implementer,
           bus,
           config: makeConfig({
-            validation: { typecheck: true, lint: false, test: false, typecheckCommand: 'noop' },
+            workflow: { review: 'task' },
+
+            validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
           }),
           validator: {
             ...createValidator(),
             runValidation,
-            decideAcceptance: ({ results, changedFiles }) =>
-              decideValidationAcceptance({
-                results,
-                changedFiles,
-                baselineFailingStages: new Set<ValidationStage>(['typecheck']),
-              }),
           },
         }),
       ),
@@ -109,7 +103,7 @@ describe('runSingleTask — baseline-exempt validation', () => {
       suggestedFiles: ['src/main.ts'],
       scope: { inBounds: ['src/main.ts'] },
     });
-    const state = implementingState([task]);
+    const state = implementingState([task], { fullSuiteBaseline: { test: ['TS error'] } });
 
     const implementer = makeImplementer({
       implement: vi
@@ -123,7 +117,7 @@ describe('runSingleTask — baseline-exempt validation', () => {
     });
     const runValidation = vi.fn().mockResolvedValue([
       {
-        stage: 'typecheck' as const,
+        stage: 'test' as const,
         passed: false,
         error: 'TS error',
         failureFiles: ['src/unrelated.ts'],
@@ -141,17 +135,13 @@ describe('runSingleTask — baseline-exempt validation', () => {
           implementer,
           bus,
           config: makeConfig({
-            validation: { typecheck: true, lint: false, test: false, typecheckCommand: 'noop' },
+            workflow: { review: 'task' },
+
+            validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
           }),
           validator: {
             ...createValidator(),
             runValidation,
-            decideAcceptance: ({ results, changedFiles }) =>
-              decideValidationAcceptance({
-                results,
-                changedFiles,
-                baselineFailingStages: new Set<ValidationStage>(['typecheck']),
-              }),
           },
         }),
       ),
@@ -171,7 +161,7 @@ describe('runSingleTask — baseline-exempt validation', () => {
     ).toMatchObject({ code: 'validation_baseline_exempt' });
     const ledger = readEvidenceLedger({ projectDir, sessionId });
     expect(ledger?.tasks.find((entry) => entry.id === 'T001')?.validation).toMatchObject([
-      { stage: 'typecheck', passed: false, baselineExempt: true },
+      { stage: 'test', passed: false, baselineExempt: true },
     ]);
   });
 });

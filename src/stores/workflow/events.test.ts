@@ -123,19 +123,6 @@ function makeRunnerActivity(
   });
 }
 
-function makeValidationBaseline(
-  overrides?: Partial<EngineEventOf<'validation_baseline'>>,
-): EngineEventOf<'validation_baseline'> {
-  return {
-    type: 'validation_baseline',
-    ts: Date.now(),
-    phase: 'implementing',
-    status: 'done',
-    stages: { typecheck: true, lint: true, test: true },
-    ...overrides,
-  };
-}
-
 function makeFullSuite(
   overrides?: Partial<EngineEventOf<'full_suite'>>,
 ): EngineEventOf<'full_suite'> {
@@ -146,7 +133,7 @@ function makeFullSuite(
     status: 'running',
     stage: 'test',
     command: 'npm test',
-    moment: 'boundary',
+    moment: 'pre-review',
     ...overrides,
   };
 }
@@ -514,47 +501,6 @@ describe('eventsStore — append via addEvent', () => {
         }),
       );
       expect(eventsStore.get().events).toHaveLength(2);
-    });
-  });
-
-  describe('validation_baseline coalescing', () => {
-    it('collapses two consecutive running events to one entry', () => {
-      addEvent(
-        makeValidationBaseline({
-          status: 'running',
-          stages: { typecheck: false, lint: false, test: false },
-          activeStage: 'typecheck',
-        }),
-      );
-      addEvent(
-        makeValidationBaseline({
-          status: 'running',
-          stages: { typecheck: true, lint: false, test: false },
-          activeStage: 'lint',
-        }),
-      );
-      const events = eventsStore.get().events;
-      expect(events).toHaveLength(1);
-      expect((events[0] as { activeStage: string }).activeStage).toBe('lint');
-    });
-
-    it('replaces the running event with the settled one', () => {
-      addEvent(
-        makeValidationBaseline({
-          status: 'running',
-          stages: { typecheck: true, lint: true, test: false },
-        }),
-      );
-      addEvent(
-        makeValidationBaseline({
-          status: 'done',
-          stages: { typecheck: true, lint: true, test: false },
-          duration: 18_500,
-        }),
-      );
-      const events = eventsStore.get().events;
-      expect(events).toHaveLength(1);
-      expect(events[0]).toMatchObject({ status: 'done', duration: 18_500 });
     });
   });
 

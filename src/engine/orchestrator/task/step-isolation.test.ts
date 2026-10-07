@@ -104,6 +104,8 @@ describe('runSingleTask — worktree isolation', () => {
         bus: makeBusRecorder().bus,
         isolation,
         config: makeConfig({
+          workflow: { review: 'task' },
+
           validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
         }),
         planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),

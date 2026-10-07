@@ -2,8 +2,7 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import { validateCommitAndAdvance } from '../task/commit.js';
-import { runTaskChecksAfterAcceptance } from '../task/task-checks.js';
-import { recordCheckRuns } from '../evidence/record-checks.js';
+import { runBriefGate } from '../task/brief-gate.js';
 import type { ValidationAcceptance } from '../validation/acceptance.js';
 import type { EscalationContext } from './types.js';
 
@@ -25,8 +24,9 @@ export type ValidateAndCommitOptions = {
 };
 
 export async function validateAndCommit(opts: ValidateAndCommitOptions) {
-  const { ctx, task, state, method, transitionType, retryCount, commitSuffix } = opts;
+  const { ctx, task, method, transitionType, retryCount, commitSuffix } = opts;
   const { preApprovedChangedFiles } = opts;
+  let state = opts.state;
   if (ctx.signal?.aborted) {
     return {
       state,
@@ -37,37 +37,17 @@ export async function validateAndCommit(opts: ValidateAndCommitOptions) {
     };
   }
 
-  const validationResults = await ctx.validator.runValidation({
+  const gated = await runBriefGate({
+    wctx: ctx,
     task,
-    projectDir: ctx.workspaceDir,
-    config: ctx.config,
-    bus: ctx.bus,
-    phase: state.phase,
-    discoveredValidation: state.discoveredValidation,
-    signal: ctx.signal,
-    changedFiles: preApprovedChangedFiles,
-  });
-  await recordCheckRuns({
-    projectDir: ctx.projectDir,
-    sessionId: ctx.sessionId,
-    workspaceDir: ctx.workspaceDir,
     state,
-    task,
-    validation: validationResults,
-  });
-  if (ctx.signal?.aborted) {
-    return {
-      state,
-      completed: false,
-      validationResults,
-      blockedReason: 'aborted',
-      acceptance: NOT_ACCEPTED_ACCEPTANCE,
-    };
-  }
-  const acceptance = ctx.validator.decideAcceptance({
-    results: validationResults,
     changedFiles: preApprovedChangedFiles,
+    taskStartSnapshot: ctx.taskStartSnapshot,
   });
+  state = gated.state;
+  const { validationResults, acceptance } = gated;
+  if (gated.stop !== undefined)
+    return { state, completed: false, validationResults, acceptance, blockedReason: gated.stop };
   const result = await validateCommitAndAdvance({
     task,
     projectDir: ctx.projectDir,
@@ -84,7 +64,11 @@ export async function validateAndCommit(opts: ValidateAndCommitOptions) {
     acceptance,
     taskChangedFiles: preApprovedChangedFiles,
   });
-  if (!result.completed) return { ...result, validationResults, acceptance };
-  const checked = await runTaskChecksAfterAcceptance({ wctx: ctx, state: result.state, task });
-  return { ...result, state: checked.state, validationResults, acceptance };
+  return {
+    ...result,
+    validationResults,
+    acceptance,
+    error: gated.error,
+    diagnosis: gated.diagnosis,
+  };
 }

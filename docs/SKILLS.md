@@ -116,8 +116,8 @@ An explicit plan approval confirms only the listed protected paths and operation
 | end, default | after all tasks and after each fix cycle | all current tasks and accepted criteria |
 | task | additionally after each completed task | completed tasks and criteria due so far; pending criteria stay pending |
 
-There is no batch review cadence. Batches group validation, with a full suite at each declared boundary.
-Before every review, run the full suite and all required registered checks on the current candidate.
+There is no batch review cadence and no batch-boundary suite.
+Before the final review, run the full suite and every registered check on the current candidate. A task-cadence review runs no full suite.
 Allow 2 fix cycles globally. At end cadence, this permits up to 3 reviews; task cadence adds reviews and shares the cap.
 The CLI runs the end/task cadence, the decisions ledger, typed review with a derived pass, planner triage and planner-first review questions.
 The skills follow that agreed design now. Render checks are unavailable in the skills.
@@ -148,7 +148,7 @@ Standalone skill records cannot serve as engine session state for `resume`.
 | End/task cadence and completed-task coverage | `workflow.review` (`src/core/schemas/config.ts`); TRACE §4 |
 | Typed review, derived pass and appended fixes | `src/core/schemas/review.ts`, `src/core/review/verdict.ts`; planner triage; DESIGN §§4, 7 |
 | Validation stages, narrowing and capture | `src/core/pipeline-spec/gates.ts`; `src/core/validation/stage-command.ts` and `stacks/` |
-| Registered checks and full-suite batch boundaries | Plan and TaskSpec checks/batch; the CLI ships this in S6 |
+| Registered checks and the cadence gates | Plan and TaskSpec checks; `src/engine/orchestrator/task/brief-gate.ts`, `src/engine/orchestrator/run/pre-review-checks.ts` |
 | Spawn recipes, halts and deadlines | `src/engine/runners/cli-tools/`; `src/core/pipeline-spec/halts.ts`, `timeouts.ts` |
 | Plain CLI output | `src/engine/events/sinks/stdout-text.ts` |
 

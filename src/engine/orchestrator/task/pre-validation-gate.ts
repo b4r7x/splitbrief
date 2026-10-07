@@ -9,11 +9,12 @@ import { persistTaskEvidence } from '../evidence/persistence.js';
 import { restoreDeniedPreValidationFiles } from './rollback.js';
 
 export async function runPreValidationGate(opts: {
-  wctx: WorkflowContext;
+  wctx: Pick<WorkflowContext, 'projectDir' | 'workspaceDir' | 'sessionId' | 'bus' | 'config'>;
   task: Task;
   state: WorkflowState;
   taskChangedFiles: string[];
-  taskStartSnapshot: ChangedFilesSnapshot;
+  /** Null when no attempt ran: there is nothing to roll back. */
+  taskStartSnapshot: ChangedFilesSnapshot | null;
   setTrackedState: (s: WorkflowState) => void;
 }): Promise<{ proceed: boolean; state: WorkflowState }> {
   const { wctx, task, taskChangedFiles, taskStartSnapshot, setTrackedState } = opts;
@@ -39,12 +40,13 @@ export async function runPreValidationGate(opts: {
   if (preVal.allow) return { proceed: true, state };
 
   const reason = preVal.reason ?? 'pre_validation hook denied';
-  await restoreDeniedPreValidationFiles({
-    wctx,
-    phase: state.phase,
-    taskChangedFiles,
-    taskStartSnapshot,
-  });
+  if (taskStartSnapshot !== null)
+    await restoreDeniedPreValidationFiles({
+      wctx,
+      phase: state.phase,
+      taskChangedFiles,
+      taskStartSnapshot,
+    });
   publishWarning({
     bus: wctx.bus,
     phase: state.phase,

@@ -440,7 +440,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     ...skills,
   };
 
-  const validator = createValidator({ captureBaseline: true });
+  const validator = createValidator();
   // A continue carries no runtime `@file` context; the state kept the one the run started with.
   const plannerContext = runtime.plannerContext ?? state.plannerContext;
   const wctx: WorkflowContext = {

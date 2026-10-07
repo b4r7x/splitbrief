@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ValidationStage } from '../../../core/schemas/enums.js';
 import type { Check } from '../../../core/schemas/task.js';
 import type { EvidenceCheckEntry } from '../../../core/schemas/evidence.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
@@ -11,9 +10,9 @@ import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { validateAndCommit } from '../escalation/validate-and-commit.js';
 import type { EscalationContext } from '../escalation/types.js';
-import { decideValidationAcceptance } from '../validation/acceptance.js';
 import type { Validator } from '../validation/types.js';
-import { runTaskChecksAfterAcceptance } from './task-checks.js';
+import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
+import { runTaskChecks } from './task-checks.js';
 
 const dirs: string[] = [];
 
@@ -40,17 +39,11 @@ function versionCheck(): Check[] {
 
 function acceptingValidator(): Validator {
   return {
-    primeBaseline: vi.fn().mockResolvedValue(undefined),
+    formatChangedFiles: vi.fn().mockResolvedValue(undefined),
     runFullSuite: vi
       .fn()
       .mockResolvedValue({ results: [], failures: {}, newFailures: {}, stages: {} }),
     runValidation: vi.fn().mockResolvedValue([{ stage: 'test' as const, passed: true }]),
-    decideAcceptance: ({ results, changedFiles }) =>
-      decideValidationAcceptance({
-        results,
-        changedFiles,
-        baselineFailingStages: new Set<ValidationStage>(),
-      }),
   };
 }
 
@@ -67,13 +60,14 @@ async function makeEscalationCtx(opts: {
       sessionId: opts.sessionId,
       bus,
       validator: opts.validator,
+      config: makeNoValidationConfig({ workflow: { review: 'task' } }),
     }),
     taskStartSnapshot: await getChangedFilesSnapshot(opts.projectDir),
     dependsOnFiles: [],
   };
 }
 
-describe('runTaskChecksAfterAcceptance', () => {
+describe('runTaskChecks', () => {
   it('runs and records a task checks once on the accepted first attempt', async () => {
     const { projectDir, sessionId } = setup('task-checks-first');
     const task = makeTask({ id: 'T001', checks: versionCheck() });
@@ -81,7 +75,12 @@ describe('runTaskChecksAfterAcceptance', () => {
     const { bus, events } = makeBusRecorder();
     const wctx = makeWctx({ projectDir, sessionId, bus });
 
-    const result = await runTaskChecksAfterAcceptance({ wctx, state, task });
+    const result = await runTaskChecks({
+      wctx,
+      state,
+      task,
+      checkIds: (task.checks ?? []).map((check) => check.id),
+    });
 
     expect(result.runs).toHaveLength(1);
     expect(result.runs[0]?.status).toBe('pass');
@@ -97,7 +96,12 @@ describe('runTaskChecksAfterAcceptance', () => {
     const { bus, events } = makeBusRecorder();
     const wctx = makeWctx({ projectDir, sessionId, bus });
 
-    const result = await runTaskChecksAfterAcceptance({ wctx, state, task });
+    const result = await runTaskChecks({
+      wctx,
+      state,
+      task,
+      checkIds: (task.checks ?? []).map((check) => check.id),
+    });
 
     expect(result.runs).toEqual([]);
     expect(result.state).toBe(state);

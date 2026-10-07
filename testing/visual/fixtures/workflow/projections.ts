@@ -468,8 +468,7 @@ const implementationProjection: WorkflowFixtureProjection = {
   },
 };
 
-// The three verdicts a gate row can carry, on one frame: a stage that passed, a stage that never
-// ran and says why, and a stage the baseline was already failing when the run started.
+// A reopened end-cadence brief rechecks its failed stages; unrelated known failures stay exempt.
 const validationProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_VALIDATION_ID,
   feature: WORKFLOW_FEATURE,
@@ -483,16 +482,6 @@ const validationProjection: WorkflowFixtureProjection = {
       feature: WORKFLOW_FEATURE,
     },
     FIXTURE_TASKS_PLANNED,
-    {
-      type: 'validation_baseline',
-      ts: FIXED_TS + 60,
-      phase: 'implementing',
-      status: 'done',
-      stages: { typecheck: true, lint: false, test: false },
-      commands: { typecheck: 'npm run typecheck', lint: 'npm run lint' },
-      failing: { lint: true },
-      duration: 2_100,
-    },
     {
       type: 'task_started',
       ts: FIXED_TS + 100,
@@ -510,7 +499,7 @@ const validationProjection: WorkflowFixtureProjection = {
     {
       type: 'validate',
       ts: FIXED_TS + 400,
-      phase: 'validating-task',
+      phase: 'implementing',
       taskId: WORKFLOW_FIXTURE_TASK_ID,
       status: 'done',
       passed: true,
@@ -728,9 +717,9 @@ function orphanBriefStarted(
   };
 }
 
-// S11 run 3 in miniature, within the fixture's eight events: the run-start suite timed out and
-// warned, T901 also changed files it did not plan, the batch suite passed, and T902 is live. Every
-// row above T902 belongs to the closed T901.
+// S11 run 3 in miniature, within the fixture's eight events: the run-start suite passed typecheck,
+// its test stage timed out and warned, T901 also changed files it did not plan, and T902 is live.
+// Every row above T902 belongs to the closed T901.
 const completedOrphanRowsProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-completed-orphan-rows'),
   feature: WORKFLOW_FEATURE,
@@ -739,6 +728,17 @@ const completedOrphanRowsProjection: WorkflowFixtureProjection = {
   events: [
     { type: 'workflow_started', ts: FIXED_TS, phase: 'implementing', feature: WORKFLOW_FEATURE },
     FIXTURE_TASKS_PLANNED,
+    {
+      type: 'full_suite',
+      ts: FIXED_TS + 70,
+      phase: 'implementing',
+      status: 'done',
+      stage: 'typecheck',
+      command: 'npm run typecheck',
+      moment: 'baseline',
+      passed: true,
+      duration: 16_003,
+    },
     {
       type: 'warning',
       ts: FIXED_TS + 80,
@@ -754,17 +754,6 @@ const completedOrphanRowsProjection: WorkflowFixtureProjection = {
       phase: 'implementing',
       taskId: WORKFLOW_FIXTURE_TASK_ID,
       files: ['src/shared/format.ts', 'src/shared/format.test.ts'],
-    },
-    {
-      type: 'full_suite',
-      ts: FIXED_TS + 220,
-      phase: 'implementing',
-      status: 'done',
-      stage: 'typecheck',
-      command: 'npm run typecheck',
-      moment: 'boundary',
-      passed: true,
-      duration: 16_003,
     },
     orphanBriefStarted(FIXTURE_PLANNED_BRIEFS[1], FIXED_TS + 300),
   ],

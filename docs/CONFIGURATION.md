@@ -497,11 +497,11 @@ validation: {
 | `typecheck` | boolean | `true` | Master switch for the type-checking stage |
 | `lint` | boolean | `true` | Master switch for the linting stage |
 | `test` | boolean | `true` | Master switch for the test stage |
-| `testCommand` | string | — | The escape hatch for the test stage: an argv-style command that runs **as-is** (the full suite) — shell operators and environment expansion are not interpreted, and no test-file argument is appended. When omitted, the stage resolves down the ladder below and a stack default is narrowed to the affected test file. |
+| `testCommand` | string | — | The escape hatch for the test stage: an argv-style command that runs **as-is** (the full suite) — shell operators and environment expansion are not interpreted, and no test-file argument is appended. The brief gate skips this command because it cannot select related tests. When omitted, the brief gate selects related tests through the stack. |
 | `typecheckCommand` | string | — | The escape hatch for the type-checking stage (e.g. `cargo check`, `go vet ./...`, `mypy src/`). Same as-is semantics as `testCommand`. |
 | `lintCommand` | string | — | The escape hatch for the linting stage (e.g. `cargo clippy --no-deps`, `ruff check`). Same as-is semantics as `testCommand`. |
 | `testPattern` | string | — | Optional glob for finding test files (e.g. `*_test.go`, `test_*.py`). Overrides the stack's own patterns. |
-| `timeoutMs` | number | `3600000` | Per-stage timeout in milliseconds (minimum `1000`) for each validation command, applying to the run-start baseline probe, the `doctor --probe-validation` diagnostic, and per-task validation. One red or slow stage can hold the loop for this long before the probe moves on. A stage that times out at the run-start baseline is not a known failure. The run-level full suite does not run that stage again in the run; a warning names the timeout, the measured time and the current `validation.timeoutMs` value to raise. A stage whose baseline completed gets three times its measured time at batch boundaries and before every review, never less than `timeoutMs`. The default is one hour, so a large suite finishes at the run-start baseline. |
+| `timeoutMs` | number | `3600000` | Milliseconds allowed per validation stage (minimum `1000`), including the run-start full-suite baseline, brief gates and the `doctor --probe-validation` diagnostic. The default is one hour, so a large suite finishes at the run-start baseline. Pre-review stages allow at least three times their measured baseline duration. A stage that times out at baseline stays skipped by later full suites, and a warning names the timeout, the measured time and the current `validation.timeoutMs` value to raise. |
 | `stack` | enum | detected | Pin the validation stack instead of detecting it: `typescript`, `javascript`, `python`, `go`, or `rust`. Use it when a repo carries more than one marker file and the detection order picks the wrong one, or when the markers are missing entirely. |
 | `render` | string | — | The command a `render` check runs. `{id}` (the check value, one argv element) is substituted into the parsed argv, and `{out}` becomes a fresh directory under `<workspace>/.test-artifacts/ui/`; the command runs with cwd = the workspace and is not filtered by the planner command policy. Every `.png` under `{out}` is copied to `.splitbrief/sessions/<id>/renders/<check-id>/` and logged with its sha256. A `render` check whose value is not a `[a-z0-9-]` slug is refused; with no `render` command the check is `not-runnable`. |
 
@@ -559,7 +559,7 @@ Master switches (`typecheck`, `lint`, `test`) still gate each stage: setting `li
 
 ### Baseline-relative acceptance
 
-A task's validation is judged against the run's baseline, not absolute repository health. Before the first task, SPLITBRIEF probes every enabled stage and records which are already red, **the exact command each probe ran**, and **the set of failures it saw** — one key per (file, message) pair. Baseline red is not a blanket exemption: a stage is exempt — and the task may still be accepted — only when all four hold: the stage was already red at baseline, the failing run used the same command the baseline probed, its failures after the attempt are a **subset** of the baseline's failure set, **and** its failure evidence names none of the task's changed files. A new failure in a file the task never touched (`b.ts` broken by a change to `a.ts`) is therefore not exempt and fails the stage. The command binding matters most for `test`: a stack-default test command is narrowed to the affected test file of the task at hand, so a baseline measured against the first task's test file never exempts a later task's failure in a different file. The exemption is per-stage and per-file: a stage that was green at baseline always blocks, and a new failure in a stage that was red at baseline still blocks when its evidence names a file the task touched. A skipped stage is never exempt and never blocks. The pipeline keeps running past a baseline-red stage instead of stopping, so the stages behind it still get a verdict, and an accepted task produces no retry prompt.
+A gate run is judged against the run's baseline, not absolute repository health. Before the first task, SPLITBRIEF runs the full suite once — every enabled stage on the whole project, the test stage unnarrowed — and records which stages are already red and **the set of failures each saw**, one key per (file, message) pair. Baseline red is not a blanket exemption: a stage is exempt — and the task may still be accepted — only when all three hold: the stage was already red at the run-start suite, its failures after the attempt are a **subset** of the baseline's failure set, **and** its failure evidence names none of the task's changed files. A new failure in a file the task never touched (`b.ts` broken by a change to `a.ts`) is therefore not exempt and fails the stage. The pre-review full suite uses the same baseline: only a failure the run-start suite did not see is a defect. The exemption is per-stage and per-file: a stage that was green at baseline always blocks, and a new failure in a stage that was red at baseline still blocks when its evidence names a file the task touched. A skipped stage is never exempt and never blocks. The pipeline keeps running past a baseline-red stage instead of stopping, so the stages behind it still get a verdict, and an accepted task produces no retry prompt.
 
 **See also:** [WORKFLOW.md](./WORKFLOW.md) (where validation sits in the loop), `src/engine/orchestrator/validation/run.ts`.
 
@@ -612,7 +612,7 @@ workflow: {
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `approve` | enum | `plan` | `plan`: the plan card waits for your approval before the build starts. `none`: the plan goes straight to the build. The retired values `all`, `spec` and `default` load as `plan` with one notice (§16). Approving the plan never overrides a failed plan check, and a write to a protected path still asks during the build under either value. |
-| `review` | enum | `end` | `end`: one review after the final brief. `task`: also one scoped review after every brief that passes its validation, covering the completed briefs and the criteria whose serving briefs are all completed; a pending criterion is never in scope. The final review always covers every brief and every criterion, and the fix-cycle cap is global, so a task-cadence review that passes spends no cycle. |
+| `review` | `end` \| `task` | `end` | `end` accepts each brief without stack gates. The final review runs all gates. A red reopens one owning brief or creates fix tasks. `task` runs related tests and due checks after each task, then reviews it. Its final review also runs all gates. |
 | `maxRetries` (`max_retries`) | retired | absent | Loads with one notice and changes nothing: `workflow.max_retries was retired and is ignored: the lineage attempt allowance bounds the ladder now. Delete workflow.max_retries.` The ladder is one local retry then the planner's consult; the lineage's bounds and grant live in `BOUNDS` (`src/core/pipeline-spec/bounds.ts`). |
 | `git.commitStrategy` | retired | absent | Legacy `none` is accepted with a deprecation warning and removed from the loaded config; `checkpoint` and `per-task` are rejected. Omit the field. |
 | `git.createBranch` | boolean | `false` | Auto-create `splitbrief/<slug>` branch at workflow start. |
@@ -661,7 +661,8 @@ workflow:
   approve: plan
 ```
 
-Review after every brief instead of only at the end:
+Run related tests and due checks after each task, then review that task. The final review runs all gates.
+A test command that cannot select related tests is skipped until the final review. A brief reopened for a test red runs it on the full suite:
 
 ```yaml
 workflow:
@@ -1168,7 +1169,7 @@ implementer:
   temperature: 0.3
   timeout: 240000
 
-# ---------- Validation: full gauntlet after every task ----------
+# ---------- Validation: every gate the cadence runs ----------
 validation:
   typecheck: true
   lint: true

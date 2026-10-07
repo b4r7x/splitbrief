@@ -56,8 +56,10 @@ describe('runSingleTask — approval gates', () => {
         implementer,
         bus,
         config: makeConfig({
+          workflow: { review: 'task' },
+
           approval: { feedRejectionsToPlanner: true },
-          validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+          validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
         }),
         validator: { ...createValidator(), runValidation },
       }),
@@ -116,8 +118,10 @@ describe('runSingleTask — approval gates', () => {
         implementer,
         bus,
         config: makeConfig({
+          workflow: { review: 'task' },
+
           approval: { feedRejectionsToPlanner: true },
-          validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+          validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
         }),
       }),
     );
@@ -175,7 +179,9 @@ describe('runSingleTask — approval gates', () => {
         implementer,
         bus,
         config: makeConfig({
-          validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+          workflow: { review: 'task' },
+
+          validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
         }),
       }),
     );
@@ -232,8 +238,10 @@ describe('runSingleTask — approval gates', () => {
         callbacks,
         implementer,
         config: makeConfig({
+          workflow: { review: 'task' },
+
           approval: { feedRejectionsToPlanner: true },
-          validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+          validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
         }),
       }),
       task,
@@ -280,8 +288,10 @@ describe('runSingleTask — approval gates', () => {
         implementer,
         bus,
         config: makeConfig({
+          workflow: { review: 'task' },
+
           approval: { feedRejectionsToPlanner: true },
-          validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+          validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
         }),
       }),
     );
@@ -333,8 +343,10 @@ describe('runSingleTask — approval gates', () => {
           implementer,
           bus,
           config: makeConfig({
+            workflow: { review: 'task' },
+
             approval: { feedRejectionsToPlanner: true },
-            validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+            validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
           }),
         }),
       ),
@@ -394,8 +406,10 @@ describe('runSingleTask — approval gates', () => {
       implementer,
       bus,
       config: makeConfig({
+        workflow: { review: 'task' },
+
         approval: { feedRejectionsToPlanner: false },
-        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
       }),
       ...(opts.runValidation === undefined
         ? {}

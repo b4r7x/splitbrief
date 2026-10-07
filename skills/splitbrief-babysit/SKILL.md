@@ -213,7 +213,7 @@ A catalog or model claim is verified by set equality, never by a count — "exit
 
 Record every trigger and its resolution in `<session-dir>/babysit.md`, with `file:line` evidence and commands actually run.
 
-Per-brief validation runs only the colocated tests, so it cannot see a break outside the declared files. After any deletion of an exported name, grep `src/`, `testing/` **and** `scripts/` for consumers and run those suites yourself.
+With `workflow.review: end` a brief runs no gate, and with `task` it runs only its related tests; only the pre-review full suite sees a break outside the declared files. After any deletion of an exported name, grep `src/`, `testing/` **and** `scripts/` for consumers and run those suites yourself.
 
 ## Usage limits
 

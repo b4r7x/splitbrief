@@ -1,3 +1,4 @@
+import { acceptValidationResults } from '../validation/acceptance.js';
 import { haltVerdictlessReview, triageFailedReview } from './review.js';
 import { isTaskCompleted, type Task } from '../../../core/schemas/task.js';
 import { fixCyclesOf, type WorkflowState } from '../../../core/schemas/workflow.js';
@@ -209,6 +210,8 @@ async function recheckMergedCandidate(
   for (const task of state.tasks) {
     const results = await wctx.validator.runValidation({
       task,
+      stages: ['typecheck', 'lint', 'test'],
+      baseline: state.fullSuiteBaseline,
       projectDir: wctx.workspaceDir,
       config: wctx.config,
       bus: wctx.bus,
@@ -217,7 +220,7 @@ async function recheckMergedCandidate(
       signal: wctx.signal,
       changedFiles: mergedPaths,
     });
-    const acceptance = wctx.validator.decideAcceptance({ results, changedFiles: mergedPaths });
+    const acceptance = acceptValidationResults(results, state.fullSuiteBaseline, mergedPaths);
     if (!acceptance.accepted) {
       const text = `${task.id} validation: ${formatValidationError(results, acceptance)}`;
       failures.push(text);

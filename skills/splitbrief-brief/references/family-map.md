@@ -50,5 +50,5 @@ These mappings describe user intent. Standalone skill records are not engine ses
 Do not feed a skill run directory to engine `resume` or claim state compatibility.
 For an explicit engine run, use its configured crew and commands; `--plain` supplies text output.
 The engine also owns its TUI, isolation, snapshots, and token accounting.
-The CLI runs registered checks and batch boundaries.
+The CLI runs registered checks and the cadence gates.
 The standalone skills follow that design now. Render checks are unavailable in these skills.

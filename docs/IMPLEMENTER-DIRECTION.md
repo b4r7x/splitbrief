@@ -93,7 +93,7 @@ The implementer is by definition the weaker side. If its own assessment decided 
 
 Correctness is owned by two things:
 
-- SPLITBRIEF's deterministic validation pipeline — typecheck → lint → test, stopping at the first failure attributable to the task, run in the run workspace after each brief (`src/engine/orchestrator/task/step.ts`),
+- SPLITBRIEF's deterministic validation pipeline — typecheck → lint → test, run in the run workspace at the moments `workflow.review` sets: with `end`, once on the full suite before the final review; with `task`, also as the related tests and due checks after each brief (`src/engine/orchestrator/task/brief-gate.ts`),
 - the planner's review of the finished change.
 
 An implementer implements; it does not run the project gates. The direct-writer preamble (`src/engine/spec/prompts/system.ts`) tells it that SPLITBRIEF runs the typecheck, lint and test gates after the hand-back and that their verdict is the authority, so it runs no test, typecheck, lint, format, screenshot, render or other gate command, not even the tests it writes. The brief's Tests section names the tests SPLITBRIEF runs, and the implementer writes or changes the ones in the files the brief lists. The P01 run showed why: one brief spent 13% of its tool calls on edits and 87% on reads, gates and renders. Whatever an implementer reports about its own validation lands in the evidence trail as a claim by the agent, never as a verdict.

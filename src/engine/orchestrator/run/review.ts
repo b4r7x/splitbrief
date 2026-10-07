@@ -22,7 +22,6 @@ import { buildSeatProtocolErrorRecoveryIssue } from '../recovery/builders/seat-p
 import { loadSeatSwapContext } from '../recovery/seat-swap-context.js';
 import type { SeatProtocolError } from '../../runners/typed-output.js';
 import { runTriage, startFixCycle } from '../triage.js';
-import { runPreReview } from './pre-review-checks.js';
 import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
 import type { OrchestratorCallbacks, WorkflowContext } from '../types.js';
 
@@ -384,16 +383,10 @@ export async function runScheduledReview(args: {
     }),
     scope: 'task',
     setTrackedState,
-    preReview: (s) => runPreReview({ wctx, state: s, setTrackedState }),
   });
   state = review.state;
   setTrackedState(state);
   if (wctx.signal?.aborted) return { state, status: 'stopped' };
-
-  // A pre-review that halted raised its own recovery; one that queued fix work
-  // sends the loop back to run it and re-reviews the candidate after.
-  if (review.preReview === 'stopped') return { state, status: 'stopped' };
-  if (review.preReview === 'fix-queued') return { state, status: 'continue' };
 
   const halted = await haltVerdictlessReview({ wctx, state, setTrackedState, review });
   if (halted !== undefined) return { state: halted, status: 'stopped' };

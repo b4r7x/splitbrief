@@ -19,10 +19,9 @@ export function formatValidationError(
   results: ValidationResult[],
   acceptance: ValidationAcceptance,
 ): string {
-  const blocking = blockingResult(results, acceptance);
-  if (!blocking) return '';
+  const blocking = results.filter((r) => !r.passed && acceptance.blockingStages.includes(r.stage));
+  if (blocking.length === 0) return '';
 
-  const errorLines = excerptErrorLines(blocking.error || blocking.output || '', blocking.stage);
   const header =
     acceptance.exemptStages.length > 0
       ? `${acceptance.exemptStages.length} pre-existing failure${
@@ -32,8 +31,10 @@ export function formatValidationError(
 
   return [
     header,
-    `Error type: ${blocking.stage}`,
-    `Error message: ${errorLines}`,
+    ...blocking.flatMap((result) => [
+      `Error type: ${result.stage}`,
+      `Error message: ${excerptErrorLines(result.error || result.output || '', result.stage)}`,
+    ]),
     'Fix the error and output the complete corrected file.',
   ].join('\n');
 }

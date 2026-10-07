@@ -1,3 +1,4 @@
+import { createValidator } from '../validation/run.js';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -15,7 +16,6 @@ import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow.js';
 import { loadState } from '../../../core/state/persistence.js';
-import { createValidator } from '../validation/run.js';
 import { runTaskLoop } from './loop.js';
 
 let dirs: string[] = [];
@@ -109,58 +109,41 @@ describe('runTaskLoop', { timeout: 120_000 }, () => {
     expect(implemented).toEqual(['T001']);
   });
 
-  it('persists the run-start validation baseline and hands it back on resume', async () => {
+  it('persists the full-suite baseline and reuses it when the run resumes', async () => {
     const { projectDir, sessionId } = setupGitSessionProject({
-      prefix: 'task-loop-baseline-test',
+      prefix: 'task-loop-baseline',
       sessionId: 'sess-baseline',
     });
     dirs.push(projectDir);
-
-    const probed = {
-      failingStages: ['typecheck' as const],
-      commands: { typecheck: 'npm run typecheck' },
+    const task = makeTask({ id: 'T001', status: 'done' });
+    const suite = {
+      results: [],
       failures: { typecheck: ['src/alpha.ts(12,5)'] },
+      newFailures: {},
+      stages: {},
     };
-    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
-    const primeBaseline = vi.fn().mockResolvedValue(probed);
-    const setTrackedState = vi.fn();
-
+    const runFullSuite = vi.fn().mockResolvedValue(suite);
+    const wctx = makeWctx({
+      projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      validator: { ...createValidator(), runFullSuite },
+    });
     const first = await runTaskLoop({
-      wctx: makeWctx({
-        projectDir,
-        sessionId,
-        config: makeNoValidationConfig({ workflow: {} }),
-        callbacks: makeCallbacks().callbacks,
-        bus: makeBusRecorder().bus,
-        validator: { ...createValidator(), primeBaseline },
-      }),
-      initialState: makeImplState(tasks),
-      setTrackedState,
+      wctx,
+      initialState: makeImplState([task]),
+      setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
     });
-
-    expect(primeBaseline.mock.calls[0]?.[0]?.persistedBaseline).toBeUndefined();
-    expect(first.state.validationBaseline).toEqual(probed);
-    expect(setTrackedState).toHaveBeenCalledWith(
-      expect.objectContaining({ validationBaseline: probed }),
-    );
-
-    const resumePrime = vi.fn().mockResolvedValue(probed);
+    expect(first.state.fullSuiteBaseline).toEqual(suite.failures);
+    expect(runFullSuite).toHaveBeenCalledTimes(1);
     await runTaskLoop({
-      wctx: makeWctx({
-        projectDir,
-        sessionId,
-        config: makeNoValidationConfig({ workflow: {} }),
-        callbacks: makeCallbacks().callbacks,
-        bus: makeBusRecorder().bus,
-        validator: { ...createValidator(), primeBaseline: resumePrime },
-      }),
+      wctx,
       initialState: first.state,
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
     });
-
-    expect(resumePrime.mock.calls[0]?.[0]?.persistedBaseline).toEqual(probed);
+    expect(runFullSuite).toHaveBeenCalledTimes(1);
   });
 
   it('has the task-start snapshot on disk before the brief runs', async () => {

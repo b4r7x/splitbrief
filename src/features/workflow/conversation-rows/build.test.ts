@@ -797,8 +797,8 @@ describe('buildConversationRows', () => {
   });
 });
 
-// S11 run 3: the run-start warning, `T004 also changed …` and the `Batch suite · …` rows sat above
-// the live brief for the rest of the run. Once the next brief starts they collapse with a brief.
+// S11 run 3: the `Run-start suite · …` row, the run-start warning and `T004 also changed …` sat
+// above the live brief for the rest of the run. Once the next brief starts they collapse with a brief.
 describe('rows no brief owns collapse with the completed briefs', () => {
   const runStartWarning: EngineEventOf<'warning'> = {
     type: 'warning',
@@ -806,14 +806,14 @@ describe('rows no brief owns collapse with the completed briefs', () => {
     phase: 'implementing',
     message: 'The test stage of the full suite timed out after 600s at the run-start baseline',
   };
-  const boundarySuite: EngineEventOf<'full_suite'> = {
+  const runStartSuite: EngineEventOf<'full_suite'> = {
     type: 'full_suite',
-    ts: 4,
+    ts: 2,
     phase: 'implementing',
     status: 'done',
     stage: 'typecheck',
     command: 'npm run typecheck',
-    moment: 'boundary',
+    moment: 'baseline',
     passed: true,
     duration: 16003,
   };
@@ -834,11 +834,11 @@ describe('rows no brief owns collapse with the completed briefs', () => {
         tasks: [],
         total: 2,
       },
+      runStartSuite,
       runStartWarning,
       makeTaskStart({ taskId: taskId('T001'), title: 'First brief', index: 0 }),
       makeTaskComplete({ taskId: taskId('T001') }),
       touched,
-      boundarySuite,
       makeTaskStart({ taskId: taskId('T002'), title: 'Second brief', index: 1 }),
     ];
 

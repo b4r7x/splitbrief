@@ -12,7 +12,7 @@ const MAX_VALIDATION_COMMAND_CHARS = 240;
 
 type TestTarget = { run: true; targets: string[] } | { run: false; skipReason: string };
 
-export type TestTargetMode = 'narrow' | 'full';
+export type TestTargetMode = 'related' | 'check' | 'full';
 
 /** The tests of the brief's declared files and of every file the attempt changed. */
 export function resolveTestTarget(opts: {
@@ -29,7 +29,13 @@ export function resolveTestTarget(opts: {
   if (opts.mode === 'full') return { run: true, targets: [] };
   const narrows =
     resolved.source === 'default' || (resolved.source === 'manifest' && stack !== null);
-  if (!narrows || stack === null) return { run: true, targets: [] };
+  if (!narrows || stack === null || stack.narrowing.kind === 'none') {
+    if (opts.mode === 'check') return { run: true, targets: [] };
+    return {
+      run: false,
+      skipReason: 'the test command cannot select related tests; the pre-review full suite runs it',
+    };
+  }
   const testPattern = config.validation.testPattern ?? discovered?.testPattern;
   const targets: string[] = [];
   for (const file of new Set([...task.suggestedFiles, ...opts.changedFiles])) {

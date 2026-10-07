@@ -1742,3 +1742,27 @@ describe('the run workspace and Apply', () => {
     expect(WorkflowStateSchema.safeParse(applying).success).toBe(true);
   });
 });
+
+it('reopens a completed brief with exact gate errors and clears its recheck after completion', () => {
+  const task = makeTask({ id: 'T002', status: 'done' });
+  const state = {
+    ...createInitialState('reopen'),
+    phase: 'final-review' as const,
+    tasks: [makeTask({ id: 'T001', status: 'done' }), task],
+    attempt: 3,
+  };
+  const failure = {
+    output: 'src/second.ts(1,1): error TS2304',
+    stages: ['typecheck' as const],
+    files: ['src/second.ts'],
+    checkIds: [],
+  };
+  const reopened = transition(state, { type: 'REOPEN_TASK', taskId: task.id, failure });
+  expect(reopened).toMatchObject({ phase: 'implementing', currentTaskIndex: 1, attempt: 0 });
+  expect(reopened.tasks.map((task) => task.status)).toEqual(['done', 'pending']);
+  expect(reopened.lineages?.T002?.carriedFailure).toBe(failure.output);
+  expect(reopened.lineages?.T002?.gateFailure?.stages).toEqual(['typecheck']);
+  const completed = transition(reopened, { type: 'VALIDATION_PASS' });
+  expect(completed.lineages?.T002?.gateFailure).toBeUndefined();
+  expect(getCompletedTaskIds(completed)).toHaveLength(2);
+});

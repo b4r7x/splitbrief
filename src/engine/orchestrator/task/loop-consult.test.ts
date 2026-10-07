@@ -127,7 +127,10 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
       makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig(),
+        config: makeNoValidationConfig({
+          workflow: { review: 'task' },
+          validation: { test: true },
+        }),
         callbacks,
         planner,
         implementer,

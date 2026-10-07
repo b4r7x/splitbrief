@@ -171,6 +171,8 @@ describe('runSingleTask — completion, abort and approval evidence', { timeout:
         bus,
         signal: controller.signal,
         config: makeConfig({
+          workflow: { review: 'task' },
+
           validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
         }),
         validator: { ...createValidator(), runValidation },
@@ -226,6 +228,8 @@ describe('runSingleTask — completion, abort and approval evidence', { timeout:
         bus,
         signal: controller.signal,
         config: makeConfig({
+          workflow: { review: 'task' },
+
           validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
         }),
         validator: { ...createValidator(), runValidation },
@@ -281,6 +285,8 @@ describe('runSingleTask — completion, abort and approval evidence', { timeout:
         callbacks,
         implementer,
         config: makeConfig({
+          workflow: { review: 'task' },
+
           approval: {
             feedRejectionsToPlanner: false,
           },
@@ -348,6 +354,11 @@ describe('runSingleTask — checks log per validation attempt', { timeout: 60_00
 
     const result = await runSingleTask({
       wctx: makeWorkflowContext({
+        config: makeConfig({
+          workflow: { review: 'task' },
+          validation: { typecheck: false, lint: false, test: true },
+        }),
+
         projectDir,
         sessionId,
         implementer,

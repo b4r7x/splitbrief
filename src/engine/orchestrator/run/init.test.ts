@@ -1,3 +1,4 @@
+import { acceptValidationResults } from '../validation/acceptance.js';
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
@@ -645,7 +646,7 @@ describe('initializeWorkflow', () => {
     });
   });
 
-  it('builds a validator that captures the run-start baseline and consults it at acceptance', async () => {
+  it('keeps the full-suite baseline in the caller instead of the validator', async () => {
     await withTempDir('splitbrief-init-baseline', async (projectDir) => {
       const feature = 'red-at-start project';
       const sessionId = 'session-init-baseline';
@@ -666,14 +667,19 @@ describe('initializeWorkflow', () => {
       expect(init.ok).toBe(true);
       if (!init.ok) return;
 
-      await init.wctx.validator.primeBaseline({
+      const suiteBaseline = await init.wctx.validator.runFullSuite({
+        moment: 'baseline',
         bus: init.wctx.bus,
         phase: 'implementing',
-        task: makeTask({ suggestedFiles: ['src/app.ts'], action: 'modify' }),
+
         projectDir,
         config,
       });
       const results = await init.wctx.validator.runValidation({
+        stages: ['typecheck', 'lint', 'test'],
+        changedFiles: [],
+        baseline: suiteBaseline.failures,
+
         task: makeTask({ suggestedFiles: ['src/app.ts'], action: 'modify' }),
         projectDir,
         config,
@@ -681,10 +687,10 @@ describe('initializeWorkflow', () => {
         phase: 'implementing',
       });
 
-      const acceptance = init.wctx.validator.decideAcceptance({
-        results,
-        changedFiles: ['src/app.ts'],
-      });
+      expect(
+        acceptValidationResults(results, suiteBaseline.failures, ['src/app.ts']).accepted,
+      ).toBe(true);
+      const acceptance = acceptValidationResults(results, undefined, ['src/app.ts']);
       expect(acceptance.accepted).toBe(false);
       expect(acceptance.blockingStages).toContain('typecheck');
 

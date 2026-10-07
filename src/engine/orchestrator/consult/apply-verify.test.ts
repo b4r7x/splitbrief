@@ -1,4 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import type { HooksConfig } from '../../../core/schemas/hooks.js';
+import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
+import { useTrustHome } from '#testing/helpers/trust-home.js';
 import type { ConsultAnswer } from '../../../core/schemas/consult.js';
 import type { Plan } from '../../../core/schemas/plan.js';
 import type { Check, Task } from '../../../core/schemas/task.js';
@@ -69,18 +74,12 @@ function askUser(defaultAnswer: string | null): ConsultAnswer {
 
 function fakeValidator(opts?: { results?: ValidationResult[]; accepted?: boolean }): Validator {
   const results = opts?.results ?? [{ stage: 'test' as const, passed: true }];
-  const accepted = opts?.accepted ?? true;
   return {
-    primeBaseline: vi.fn().mockResolvedValue(undefined),
+    formatChangedFiles: vi.fn().mockResolvedValue(undefined),
     runFullSuite: vi
       .fn()
       .mockResolvedValue({ results: [], failures: {}, newFailures: {}, stages: {} }),
     runValidation: vi.fn().mockResolvedValue(results),
-    decideAcceptance: vi.fn().mockReturnValue({
-      accepted,
-      exemptStages: [],
-      blockingStages: accepted ? [] : ['test'],
-    }),
   };
 }
 
@@ -122,7 +121,7 @@ function harness(opts: {
       workspaceDir: opts.projectDir,
       sessionId: opts.sessionId,
       bus,
-      config: makeConfig({}),
+      config: { ...makeConfig({}), workflow: { review: 'task', compactionFormat: 'auto' } },
       validator,
       callbacks,
       sinks: TEST_SINKS,
@@ -338,6 +337,46 @@ describe('applyConsultAnswer verify', () => {
     expect(states.at(-1)?.tasks[0]?.status).toBe('failed');
   });
 
+  it('completes when only an optional check the planner did not select fails', async () => {
+    const { projectDir, sessionId } = setupRepo();
+    const task = makeTask({
+      id: 'T003',
+      suggestedFiles: ['src/greet.ts'],
+      criteria: ['C1'],
+      status: 'failed',
+      checks: [
+        { id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true },
+        { id: 'K2', kind: 'cmd', value: 'node --version', required: false },
+      ],
+    });
+    const commandRunner = makeCommandRunner(
+      { stdout: 'clean', stderr: '', code: 0 },
+      processError.exitCode({ command: 'node', code: 1, stderr: 'optional red', output: '' }),
+    );
+    const { ctx, events } = harness({
+      projectDir,
+      sessionId,
+      task,
+      plan: planWith([], ['K1']),
+      runCommand: commandRunner,
+      changedFiles: ['src/greet.ts'],
+    });
+    const attempt = await getChangedFilesSnapshot(projectDir);
+
+    const result = await applyConsultAnswer(ctx, task, verify(['K1'], 'Verify K1'), attempt);
+
+    expect(result).toMatchObject({ action: 'completed' });
+    expect(events.filter((event) => event.type === 'checks_run')).toMatchObject([
+      {
+        taskId: 'T003',
+        results: [
+          { id: 'K1', passed: true },
+          { id: 'K2', passed: false },
+        ],
+      },
+    ]);
+  });
+
   it('runs the remaining task checks once and records the consult runs with them', async () => {
     const { projectDir, sessionId } = setupRepo();
     const task = makeTask({
@@ -370,7 +409,7 @@ describe('applyConsultAnswer verify', () => {
     );
 
     expect(result).toMatchObject({ action: 'completed' });
-    expect(commandRunner.calls).toHaveLength(1);
+    expect(commandRunner.calls).toHaveLength(2);
     expect(commandRunner.calls[0]?.cmd).toBe('tsc');
     expect(events.filter((event) => event.type === 'checks_run')).toMatchObject([
       {
@@ -388,6 +427,58 @@ describe('applyConsultAnswer verify', () => {
     const checks = readEvidenceLedger({ projectDir, sessionId })?.tasks[0]?.checks ?? [];
     expect(checks.filter((entry) => entry.id === 'K1')).toHaveLength(1);
     expect(checks.filter((entry) => entry.id === 'K2')).toHaveLength(1);
+  });
+});
+
+describe('applyConsultAnswer verify under a pre_validation hook', () => {
+  it("skips the task and restores the attempt's own changes when the hook denies the verify", async () => {
+    const trustHome = useTrustHome('consult-verify-trust-home');
+    try {
+      const { projectDir, sessionId } = setupRepo();
+      const task = makeTask({ id: 'T003', suggestedFiles: ['src/greet.ts'], criteria: ['C1'] });
+      const plan = planWith([{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }]);
+      writeFileSync(
+        join(projectDir, 'deny-validation.mjs'),
+        "console.log(JSON.stringify({ decision: 'deny', message: 'policy: validation gated' }));\n",
+      );
+      const hooks: HooksConfig = {
+        pre_validation: [
+          {
+            kind: 'command',
+            command: 'node',
+            args: ['deny-validation.mjs'],
+            timeout_ms: 30_000,
+            on_failure: 'warn',
+          },
+        ],
+      };
+      markHooksConfigTrusted(projectDir, hooks);
+      const attempt = await getChangedFilesSnapshot(projectDir);
+      writeFileSync(join(projectDir, 'src/greet.ts'), 'export const greet = "attempt";\n');
+      const { ctx, validator, states } = harness({
+        projectDir,
+        sessionId,
+        task,
+        plan,
+        changedFiles: ['src/greet.ts'],
+      });
+
+      const result = await applyConsultAnswer(
+        { ...ctx, config: { ...ctx.config, hooks } },
+        task,
+        verify(['K1'], 'Verify K1'),
+        attempt,
+      );
+
+      expect(result).toEqual({ action: 'skipped' });
+      expect(states.at(-1)?.tasks[0]?.status).toBe('skipped');
+      expect(validator.runValidation).not.toHaveBeenCalled();
+      expect(readFileSync(join(projectDir, 'src/greet.ts'), 'utf8')).toBe(
+        'export const greet = "base";\n',
+      );
+    } finally {
+      trustHome.restore();
+    }
   });
 });
 

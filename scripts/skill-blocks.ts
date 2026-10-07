@@ -335,9 +335,9 @@ function consultTable(): string {
     'rewrite-task':
       'Replace the TaskSpec at the same id and the same criteria. Raise its revision.',
     'split-task': 'Keep all criteria. Re-point pending dependents to all children.',
-    verify: 'Run the named registered checks and validation. Make no implementer call.',
+    verify: 'Run the brief gate and named registered checks. Make no implementer call.',
     'ask-user': 'Ask only when the user alone can answer. Record why, choices and a default.',
-    confirm: 'Decision-confirm only: record the accepted decisions, then validate the attempt.',
+    confirm: 'Decision-confirm only: record the accepted decisions, then run the brief gate.',
   };
   return [
     `Attempt → ${DEFAULT_LOCAL_RETRIES} local retry with the exact errors → a planner consult.`,
@@ -493,6 +493,11 @@ function gates(): string {
 
 function gateRules(): string {
   return bullets([
+    'With workflow.review: end, ordinary briefs run no stack gates. The final review runs all enabled gates and registered checks.',
+    'With workflow.review: task, each task runs related tests and due checks, then its scheduled review. The final review runs all gates.',
+    'A single completed owner retries final gate failures through its brief ladder. Other failures enter triage and create fix tasks.',
+    'A test command that cannot select related tests is skipped by the brief gate. The final review runs it.',
+    'When lint is enabled, format the brief changed files after every hand-back. A formatter failure records a warning.',
     `Order: ${GATE_ORDER.join(' → ')}. Stop at the first failing stage; every later stage is recorded \`not run\`.`,
     `Capture at most ${CAPTURE_LIMITS.outputChars} characters per stage, and keep the test stage's LAST ${CAPTURE_LIMITS.testTailLines} lines — runners print the pass/fail summary last.`,
     `Narrowing kinds: ${NARROWING_RULE.kinds.map((kind) => `\`${kind}\``).join(', ')}.`,

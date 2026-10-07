@@ -24,8 +24,6 @@ import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { transition } from '../../../core/state/machine.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
-import type { ValidationStage } from '../../../core/schemas/enums.js';
-import { decideValidationAcceptance } from '../validation/acceptance.js';
 import type { Validator } from '../validation/types.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { handleRetryAndEscalation } from '../escalation/handle.js';
@@ -115,21 +113,24 @@ describe('retryAndRecord — retry budget', () => {
         }),
     });
     const validator: Validator = {
-      primeBaseline: vi.fn().mockResolvedValue(undefined),
+      formatChangedFiles: vi.fn().mockResolvedValue(undefined),
       runFullSuite: vi
         .fn()
         .mockResolvedValue({ results: [], failures: {}, newFailures: {}, stages: {} }),
       runValidation: vi.fn().mockResolvedValue([{ stage: 'test' as const, passed: true }]),
-      decideAcceptance: ({ results, changedFiles }) =>
-        decideValidationAcceptance({
-          results,
-          changedFiles,
-          baselineFailingStages: new Set<ValidationStage>(),
-        }),
     };
 
     const result = await retryAndRecord({
-      wctx: makeWorkflowContext({ projectDir, sessionId, implementer, validator }),
+      wctx: makeWorkflowContext({
+        config: makeConfig({
+          workflow: { review: 'task' },
+          validation: { typecheck: false, lint: false, test: true },
+        }),
+        projectDir,
+        sessionId,
+        implementer,
+        validator,
+      }),
       task,
       initialError: 'test failed',
       initialValidation: [{ stage: 'test', passed: false, error: 'initial failed' }],
@@ -203,7 +204,9 @@ describe('retryAndRecord — retry budget', () => {
   it('stamps the initial-failure entry with the initial acceptance, not the retry acceptance', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001', suggestedFiles: ['src/task.ts'] });
-    let state = implementingState([task]);
+    let state = implementingState([task], {
+      fullSuiteBaseline: { test: ['test failed without diagnostics'] },
+    });
     state = transition(state, { type: 'START_TASK', taskId: task.id });
     state = transition(state, { type: 'TASK_SENT' });
 
@@ -221,7 +224,7 @@ describe('retryAndRecord — retry budget', () => {
         }),
     });
     const validator: Validator = {
-      primeBaseline: vi.fn().mockResolvedValue(undefined),
+      formatChangedFiles: vi.fn().mockResolvedValue(undefined),
       runFullSuite: vi
         .fn()
         .mockResolvedValue({ results: [], failures: {}, newFailures: {}, stages: {} }),
@@ -230,16 +233,19 @@ describe('retryAndRecord — retry budget', () => {
         .mockResolvedValue([
           { stage: 'test' as const, passed: false, failureFiles: ['src/unrelated.ts'] },
         ]),
-      decideAcceptance: ({ results, changedFiles }) =>
-        decideValidationAcceptance({
-          results,
-          changedFiles,
-          baselineFailingStages: new Set<ValidationStage>(['test']),
-        }),
     };
 
     const result = await retryAndRecord({
-      wctx: makeWorkflowContext({ projectDir, sessionId, implementer, validator }),
+      wctx: makeWorkflowContext({
+        config: makeConfig({
+          workflow: { review: 'task' },
+          validation: { typecheck: false, lint: false, test: true },
+        }),
+        projectDir,
+        sessionId,
+        implementer,
+        validator,
+      }),
       task,
       initialError: 'test failed',
       initialValidation: [{ stage: 'test', passed: false, error: 'initial failed' }],
@@ -295,6 +301,8 @@ describe('retryAndRecord — retry budget', () => {
       planner,
       bus,
       config: makeConfig({
+        workflow: { review: 'task' },
+
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       }),
     });
@@ -348,6 +356,8 @@ describe('retryAndRecord — retry budget', () => {
       planner,
       bus,
       config: makeConfig({
+        workflow: { review: 'task' },
+
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       }),
     });
@@ -479,6 +489,8 @@ describe('retryAndRecord — recovery stop points', () => {
       planner,
       implementer,
       config: makeConfig({
+        workflow: { review: 'task' },
+
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       }),
     });
@@ -536,6 +548,8 @@ describe('retryAndRecord — recovery stop points', () => {
       planner,
       implementer,
       config: makeConfig({
+        workflow: { review: 'task' },
+
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       }),
     });
@@ -582,6 +596,8 @@ describe('retryAndRecord — recovery stop points', () => {
       planner,
       implementer,
       config: makeConfig({
+        workflow: { review: 'task' },
+
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       }),
     });
@@ -630,6 +646,8 @@ describe('retryAndRecord — recovery stop points', () => {
       projectDir,
       sessionId,
       config: makeConfig({
+        workflow: { review: 'task' },
+
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       }),
     });
@@ -684,6 +702,8 @@ const CODEX_SIGNED_OUT =
 
 describe('retryAndRecord — a planner out of quota on the consult', () => {
   const config = makeConfig({
+    workflow: { review: 'task' },
+
     planner: { kind: 'cli', tool: 'codex', authChannel: defaultCliAuthChannel('codex').id },
     validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
   });

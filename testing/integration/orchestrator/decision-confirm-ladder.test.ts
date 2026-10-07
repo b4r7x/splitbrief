@@ -103,7 +103,10 @@ describe('decision-confirm on the S6 shape', { timeout: 90_000 }, () => {
       makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig(),
+        config: makeNoValidationConfig({
+          workflow: { review: 'task' },
+          validation: { test: true },
+        }),
         callbacks: makeCallbacks({ onPlannerReply: vi.fn() }).callbacks,
         planner,
         implementer,

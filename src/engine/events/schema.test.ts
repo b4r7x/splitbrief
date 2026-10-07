@@ -433,50 +433,6 @@ describe('parseEngineEvent', () => {
     );
   });
 
-  it('accepts validation_baseline events with only the required members', () => {
-    expect(
-      parseEngineEvent({
-        type: 'validation_baseline',
-        ts: 1,
-        phase: 'implementing',
-        status: 'running',
-        stages: { typecheck: false, lint: false, test: false },
-      }),
-    ).toEqual(
-      expect.objectContaining({
-        type: 'validation_baseline',
-        status: 'running',
-        stages: { typecheck: false, lint: false, test: false },
-      }),
-    );
-  });
-
-  it('accepts validation_baseline done events with commands, failing and duration', () => {
-    expect(
-      parseEngineEvent({
-        type: 'validation_baseline',
-        ts: 1,
-        phase: 'implementing',
-        status: 'done',
-        stages: { typecheck: true, lint: true, test: true },
-        commands: { typecheck: 'npm run typecheck', test: 'npm test -- src/x.test.ts' },
-        failing: { typecheck: true },
-        duration: 12_000,
-      }),
-    ).toEqual(
-      expect.objectContaining({
-        type: 'validation_baseline',
-        status: 'done',
-        commands: {
-          typecheck: 'npm run typecheck',
-          test: 'npm test -- src/x.test.ts',
-        },
-        failing: { typecheck: true },
-        duration: 12_000,
-      }),
-    );
-  });
-
   it('accepts a full_suite running event with its stage, command and moment', () => {
     expect(
       parseEngineEvent({
@@ -486,7 +442,7 @@ describe('parseEngineEvent', () => {
         status: 'running',
         stage: 'test',
         command: 'npm test',
-        moment: 'boundary',
+        moment: 'pre-review',
       }),
     ).toEqual(
       expect.objectContaining({
@@ -494,7 +450,7 @@ describe('parseEngineEvent', () => {
         status: 'running',
         stage: 'test',
         command: 'npm test',
-        moment: 'boundary',
+        moment: 'pre-review',
       }),
     );
   });

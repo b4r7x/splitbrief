@@ -94,34 +94,6 @@ describe('decideValidationAcceptance', () => {
     ).toEqual({ accepted: true, exemptStages: ['typecheck'], blockingStages: [] });
   });
 
-  it('does not exempt a failure produced by a different command than the baseline probed', () => {
-    const results: ValidationResult[] = [
-      { passed: false, stage: 'test', command: 'npm test -- src/bar.test.ts', failureFiles: [] },
-    ];
-    expect(
-      decideValidationAcceptance({
-        results,
-        baselineFailingStages: baseline(['test']),
-        baselineCommands: { test: 'npm test -- src/foo.test.ts' },
-        changedFiles: ['src/bar.ts'],
-      }),
-    ).toEqual({ accepted: false, exemptStages: [], blockingStages: ['test'] });
-  });
-
-  it('exempts the same stage when the command matches the one probed at baseline', () => {
-    const results: ValidationResult[] = [
-      { passed: false, stage: 'test', command: 'npm test -- src/foo.test.ts', failureFiles: [] },
-    ];
-    expect(
-      decideValidationAcceptance({
-        results,
-        baselineFailingStages: baseline(['test']),
-        baselineCommands: { test: 'npm test -- src/foo.test.ts' },
-        changedFiles: ['src/bar.ts'],
-      }),
-    ).toEqual({ accepted: true, exemptStages: ['test'], blockingStages: [] });
-  });
-
   it('new failure in untouched file is not exempt', () => {
     const results: ValidationResult[] = [
       {

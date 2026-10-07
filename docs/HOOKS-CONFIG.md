@@ -32,12 +32,17 @@ Lifecycle events fire during a workflow. Each can have multiple hooks declared.
 | `pre_planning`   | Before any planner phase starts             | `feature`                                                            |
 | `pre_task`       | Before each implementer task starts         | `taskId`, `title`, `file`, `files`, `action`, `index`, `total`       |
 | `post_task`      | After each implementer task succeeds        | `taskId`, `title`, `method`, `file`, `retries`, `duration`           |
-| `pre_validation` | Before tsc/lint/test runs                   | `taskId`                                                            |
-| `post_validation`| After validation finishes                   | `taskId`, `passed`, `stages` (`{typecheck,lint,test}`), `error?`     |
+| `pre_validation` | Before a brief gate runs commands                   | `taskId`                                                            |
+| `post_validation`| After the brief gate stage run                   | `taskId`, `passed`, `stages` (`{typecheck,lint,test}`), `error?`     |
 | `pre_escalation` | Before the planner's consult runs           | `taskId`                                                             |
 | `on_error`       | Any unrecoverable engine error              | `message`                                                            |
 | `on_halt`        | `recovery_prompted` event — the run stopped and is waiting for a decision | `reason`, `taskId`, `headline`, `recommendedAction`, `resumeCommand` (`sessionId` rides in `context`) |
 | `on_complete`    | `workflow_complete` event                   | (none)                                                               |
+
+The validation hooks fire for task gates in `review: task` cadence.
+In `review: end` cadence, they fire only when a reopened brief rechecks failed gates.
+The pre-review suite fires neither validation hook.
+
 
 `pre_*` hooks **block** the workflow until they finish. `post_*` and `on_*` hooks are fire-and-forget — failures log a warning but don't gate the flow.
 

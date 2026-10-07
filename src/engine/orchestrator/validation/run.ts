@@ -1,11 +1,7 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { ValidationStage } from '../../../core/schemas/enums.js';
-import type {
-  DiscoveredValidation,
-  FullSuiteStageRuns,
-  PersistedValidationBaseline,
-} from '../../../core/schemas/workflow.js';
+import type { DiscoveredValidation, FullSuiteStageRuns } from '../../../core/schemas/workflow.js';
 import type { ValidationStageCommands, ValidationStages } from '../../events/types.js';
 import {
   GATE_ORDER,
@@ -27,13 +23,8 @@ import { routeTestScript } from '../../../core/validation/test-script-route.js';
 import { runCommand } from '../../../lib/process/spawn/run-command.js';
 import { labelError } from '../../../utils/format-errors.js';
 import { parseShellCommand } from '../../../utils/parse-shell-command.js';
-import {
-  publishFullSuite,
-  publishValidation,
-  publishValidationBaseline,
-  publishWarning,
-} from '../events.js';
-import { decideValidationAcceptance, type ValidationAcceptance } from './acceptance.js';
+import { publishFullSuite, publishValidation, publishWarning } from '../events.js';
+import { acceptValidationResults } from './acceptance.js';
 import { stageFailureKeys } from './extract-failure-keys.js';
 import { sanitizeDiscoveredValidation } from '../planning/sanitize-discovered-validation.js';
 import { fingerprintFiles } from '../changed-files-baseline.js';
@@ -41,11 +32,9 @@ import { formatValidationCommand, resolveTestTarget, type TestTargetMode } from 
 import { runValidationStep, skippedStage } from './stage.js';
 import type { ValidationResult } from './result.js';
 import type {
-  PrimeBaselineOptions,
   RunFullSuiteOptions,
   RunFullSuiteResult,
   RunValidationOptions,
-  ValidationBaseline,
   ValidationCommandRunner,
   Validator,
   ValidatorDeps,
@@ -68,12 +57,6 @@ export function fullSuiteTimeoutWarning(
   run: { durationMs: number; timeoutMs: number },
 ): string {
   return `The ${stage} stage of the full suite ${fullSuiteTimeoutReason(run.timeoutMs)} (measured ${(run.durationMs / 1000).toFixed(1)}s); this run does not run it again. Set validation.timeoutMs (now ${run.timeoutMs}) above the suite's time to check it.`;
-}
-
-interface ValidationProgress {
-  stages: ValidationStages;
-  activeStage?: ValidationStage | undefined;
-  commands: ValidationStageCommands;
 }
 
 type StageContext = {
@@ -115,31 +98,6 @@ function unresolvedStackReason(stage: ValidationStage): string {
   return `no ${stage} command for an unrecognised stack`;
 }
 
-function toPersistedBaseline(baseline: ValidationBaseline): PersistedValidationBaseline {
-  const commands: PersistedValidationBaseline['commands'] = {};
-  const failures: PersistedValidationBaseline['failures'] = {};
-  for (const stage of GATE_ORDER) {
-    const command = baseline.commands[stage];
-    if (command !== undefined) commands[stage] = command;
-    const keys = baseline.failures[stage];
-    if (keys !== undefined) failures[stage] = [...keys];
-  }
-  return { failingStages: [...baseline.failingStages], commands, failures };
-}
-
-function fromPersistedBaseline(persisted: PersistedValidationBaseline): ValidationBaseline {
-  const failures: ValidationBaseline['failures'] = {};
-  for (const stage of GATE_ORDER) {
-    const keys = persisted.failures[stage];
-    if (keys !== undefined) failures[stage] = new Set(keys);
-  }
-  return {
-    failingStages: new Set(persisted.failingStages),
-    commands: persisted.commands,
-    failures,
-  };
-}
-
 const FORMATTABLE_FILE = /\.(c|m)?[jt]sx?$|\.(json|jsonc|css)$/;
 
 type FormatWarning = {
@@ -150,7 +108,7 @@ type FormatWarning = {
 // Layout the implementer left unformatted fails lint and costs an attempt, so the
 // project's own formatter runs first. Only the brief's own changed files are
 // rewritten: nothing outside its scope mutates and change attribution holds.
-async function formatChangedFiles(opts: {
+async function formatFiles(opts: {
   ctx: StageContext;
   changedFiles: readonly string[];
   runCommand: ValidationCommandRunner;
@@ -176,7 +134,7 @@ async function formatChangedFiles(opts: {
   } catch (err) {
     return {
       message: labelError(
-        `Formatting the changed files with ${command} failed; the lint stage ran anyway`,
+        `Formatting the changed files with ${command} failed; the review gates still run`,
         err,
       ),
       safety: { category: 'validation', code: 'validation_format_failed' },
@@ -186,7 +144,7 @@ async function formatChangedFiles(opts: {
   const rewritten = files.filter((file) => before.get(file) !== after.get(file));
   if (rewritten.length === 0) return undefined;
   return {
-    message: `Formatted ${rewritten.length} file(s) with ${command} before the lint stage: ${rewritten.join(', ')}`,
+    message: `Formatted ${rewritten.length} file(s) with ${command}: ${rewritten.join(', ')}`,
     safety: { category: 'validation', code: 'validation_formatted' },
   };
 }
@@ -196,7 +154,7 @@ export function planStage(
   task: Pick<Task, 'suggestedFiles'>,
   ctx: StageContext,
   changedFiles: readonly string[],
-  mode: TestTargetMode = 'narrow',
+  mode: TestTargetMode = 'related',
 ): StagePlan {
   const resolved = resolveStageCommand({ stage, ...ctx });
   if (resolved === null) return { kind: 'skip', reason: unresolvedStackReason(stage) };
@@ -232,52 +190,6 @@ export function planStage(
 
 export function createValidator(deps: ValidatorDeps = {}): Validator {
   const commandRunner = deps.runCommand ?? runCommand;
-  let baseline: ValidationBaseline | null = null;
-
-  async function probeBaseline(
-    task: Task,
-    ctx: StageContext,
-    signal: AbortSignal | undefined,
-    onProgress?: (progress: ValidationProgress) => void,
-  ): Promise<{ baseline: ValidationBaseline; results: ValidationResult[] }> {
-    const failingStages = new Set<ValidationStage>();
-    const failures: Partial<Record<ValidationStage, ReadonlySet<string>>> = {};
-    const results: ValidationResult[] = [];
-    const stages: ValidationStages = { typecheck: false, lint: false, test: false };
-    const commands: ValidationStageCommands = {};
-
-    for (const stage of GATE_ORDER) {
-      if (!ctx.config.validation[stage]) continue;
-      const plan = planStage(stage, task, ctx, []);
-      if (plan.kind === 'skip') continue;
-      commands[stage] = plan.command;
-      onProgress?.({ stages: { ...stages }, activeStage: stage, commands: { ...commands } });
-      const result = await runValidationStep({
-        stage,
-        cmd: plan.resolved.cmd,
-        args: plan.args,
-        source: plan.resolved.source,
-        cwd: ctx.projectDir,
-        timeout: resolveValidationTimeout(ctx.config),
-        runCommand: commandRunner,
-        command: plan.command,
-        stack: ctx.stack,
-        signal,
-      });
-      results.push(result);
-      if (!result.passed) {
-        if (result.timedOut !== true) {
-          failingStages.add(stage);
-          failures[stage] = new Set(stageFailureKeys(result));
-        }
-      } else if (result.skipped !== true) {
-        stages[stage] = true;
-      }
-      onProgress?.({ stages: { ...stages }, commands: { ...commands } });
-    }
-    return { baseline: { failingStages, commands, failures }, results };
-  }
-
   async function runFullSuite(opts: RunFullSuiteOptions): Promise<RunFullSuiteResult> {
     const {
       projectDir,
@@ -364,126 +276,6 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
     return { results, failures, newFailures, stages };
   }
 
-  async function validateTask(
-    task: Task,
-    ctx: StageContext,
-    changedFiles: readonly string[] | undefined,
-    signal?: AbortSignal | undefined,
-    onProgress?: (progress: ValidationProgress) => void,
-  ): Promise<{
-    results: ValidationResult[];
-    skipReasons: Partial<Record<ValidationStage, string>>;
-    formatWarning?: FormatWarning;
-  }> {
-    const results: ValidationResult[] = [];
-    const skipReasons: Partial<Record<ValidationStage, string>> = {};
-    const stages: ValidationStages = { typecheck: false, lint: false, test: false };
-    const commands: ValidationStageCommands = {};
-    let formatWarning: FormatWarning | undefined;
-
-    for (const stage of GATE_ORDER) {
-      if (!ctx.config.validation[stage]) continue;
-      const plan = planStage(stage, task, ctx, changedFiles ?? []);
-      if (plan.kind === 'skip') {
-        skipReasons[stage] = plan.reason;
-        results.push(skippedStage(stage, plan.reason));
-        continue;
-      }
-      commands[stage] = plan.command;
-      onProgress?.({ stages: { ...stages }, activeStage: stage, commands: { ...commands } });
-      if (stage === 'lint' && changedFiles !== undefined && changedFiles.length > 0) {
-        formatWarning = await formatChangedFiles({
-          ctx,
-          changedFiles,
-          runCommand: commandRunner,
-          signal,
-        });
-      }
-      const result = await runValidationStep({
-        stage,
-        cmd: plan.resolved.cmd,
-        args: plan.args,
-        source: plan.resolved.source,
-        cwd: ctx.projectDir,
-        timeout: resolveValidationTimeout(ctx.config),
-        runCommand: commandRunner,
-        command: plan.command,
-        stack: ctx.stack,
-        signal,
-        changedFiles,
-      });
-      results.push(result);
-      if (!result.passed) {
-        if (!baseline?.failingStages.has(stage)) {
-          return { results, skipReasons, ...(formatWarning !== undefined && { formatWarning }) };
-        }
-        onProgress?.({ stages: { ...stages }, commands: { ...commands } });
-        continue;
-      }
-      // A step that skipped itself — the binary is missing, the subcommand is unavailable —
-      // returns `passed`, and a tick for a gate that never ran reads as "everything green".
-      if (result.skipped !== true) stages[stage] = true;
-      onProgress?.({ stages: { ...stages }, commands: { ...commands } });
-    }
-
-    return { results, skipReasons, ...(formatWarning !== undefined && { formatWarning }) };
-  }
-
-  async function primeBaseline(
-    opts: PrimeBaselineOptions,
-  ): Promise<PersistedValidationBaseline | undefined> {
-    if (deps.captureBaseline !== true) return undefined;
-    if (baseline !== null) return toPersistedBaseline(baseline);
-    if (opts.persistedBaseline !== undefined) {
-      baseline = fromPersistedBaseline(opts.persistedBaseline);
-      return opts.persistedBaseline;
-    }
-    const { task, projectDir, config, bus, phase, discoveredValidation, signal } = opts;
-    const startTime = Date.now();
-    publishValidationBaseline({ bus: bus, phase: phase }, { phase: 'start' });
-    const ctx = buildStageContext({
-      projectDir,
-      config,
-      discoveredValidation,
-      notices: { bus, phase },
-    });
-    const probe = await probeBaseline(task, ctx, signal, (progress) => {
-      publishValidationBaseline(
-        { bus: bus, phase: phase },
-        {
-          phase: 'progress',
-          stages: progress.stages,
-          startTime,
-          ...(progress.activeStage !== undefined && { activeStage: progress.activeStage }),
-          commands: progress.commands,
-        },
-      );
-    });
-    baseline = probe.baseline;
-    publishValidationBaseline(
-      { bus: bus, phase: phase },
-      {
-        phase: 'result',
-        results: probe.results,
-        startTime,
-      },
-    );
-    return toPersistedBaseline(baseline);
-  }
-
-  function decideAcceptance(opts: {
-    results: readonly ValidationResult[];
-    changedFiles: readonly string[];
-  }): ValidationAcceptance {
-    return decideValidationAcceptance({
-      results: opts.results,
-      baselineFailingStages: baseline?.failingStages ?? new Set<ValidationStage>(),
-      baselineCommands: baseline?.commands,
-      baselineFailureKeys: baseline?.failures,
-      changedFiles: opts.changedFiles,
-    });
-  }
-
   async function runValidation(opts: RunValidationOptions): Promise<ValidationResult[]> {
     const { task, projectDir, config, bus, phase, discoveredValidation, signal } = opts;
     const taskId = task.id;
@@ -495,31 +287,51 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
       discoveredValidation,
       notices: { bus, phase },
     });
-    const { results, skipReasons, formatWarning } = await validateTask(
-      task,
-      ctx,
-      opts.changedFiles,
-      signal,
-      (progress) => {
-        publishValidation({ bus: bus, phase: phase }, taskId, {
-          phase: 'progress',
-          stages: progress.stages,
-          startTime,
-          ...(progress.activeStage !== undefined && { activeStage: progress.activeStage }),
-          commands: progress.commands,
-        });
-      },
-    );
-    if (formatWarning !== undefined) {
-      publishWarning({
-        bus: bus,
-        phase: phase,
-        taskId,
-        message: formatWarning.message,
-        safety: formatWarning.safety,
+    const results: ValidationResult[] = [];
+    const skipReasons: Partial<Record<ValidationStage, string>> = {};
+    const stages: ValidationStages = { typecheck: false, lint: false, test: false };
+    const commands: ValidationStageCommands = {};
+    const accept = () => acceptValidationResults(results, opts.baseline, opts.changedFiles);
+    for (const stage of GATE_ORDER) {
+      if (!opts.stages.includes(stage) || !config.validation[stage]) continue;
+      const plan = planStage(stage, task, ctx, opts.changedFiles, opts.testMode);
+      if (plan.kind === 'skip') {
+        skipReasons[stage] = plan.reason;
+        results.push(skippedStage(stage, plan.reason));
+        continue;
+      }
+      commands[stage] = plan.command;
+      publishValidation({ bus, phase }, taskId, {
+        phase: 'progress',
+        stages: { ...stages },
+        activeStage: stage,
+        startTime,
+        commands: { ...commands },
+      });
+      const result = await runValidationStep({
+        stage,
+        cmd: plan.resolved.cmd,
+        args: plan.args,
+        source: plan.resolved.source,
+        cwd: projectDir,
+        timeout: resolveValidationTimeout(config),
+        runCommand: commandRunner,
+        command: plan.command,
+        stack: ctx.stack,
+        signal,
+        changedFiles: opts.changedFiles,
+      });
+      results.push(result);
+      if (!accept().accepted) break;
+      if (result.passed && result.skipped !== true) stages[stage] = true;
+      publishValidation({ bus, phase }, taskId, {
+        phase: 'progress',
+        stages: { ...stages },
+        startTime,
+        commands: { ...commands },
       });
     }
-    const acceptance = decideAcceptance({ results, changedFiles: opts.changedFiles ?? [] });
+    const acceptance = accept();
     publishValidation({ bus: bus, phase: phase }, taskId, {
       phase: 'result',
       results,
@@ -542,12 +354,31 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
           : {
               bus: bus,
               phase: phase,
-              message: `Task ${taskId} was not validated: every enabled validation stage was skipped (${skippedStages.join(', ')}).`,
+              message: `Task ${taskId} was not validated: every enabled validation stage was skipped (${skippedStages.join(', ')}): ${Object.values(skipReasons).join('; ')}.`,
             },
       );
     }
     return results;
   }
 
-  return { primeBaseline, runFullSuite, runValidation, decideAcceptance };
+  async function formatChangedFiles(
+    opts: Omit<RunValidationOptions, 'stages' | 'baseline'>,
+  ): Promise<void> {
+    if (!opts.config.validation.lint || opts.changedFiles.length === 0) return;
+    const ctx = buildStageContext({
+      ...opts,
+      discoveredValidation: opts.discoveredValidation,
+      notices: { bus: opts.bus, phase: opts.phase },
+    });
+    const warning = await formatFiles({
+      ctx,
+      changedFiles: opts.changedFiles,
+      runCommand: commandRunner,
+      signal: opts.signal,
+    });
+    if (warning !== undefined)
+      publishWarning({ bus: opts.bus, phase: opts.phase, taskId: opts.task.id, ...warning });
+  }
+
+  return { runFullSuite, runValidation, formatChangedFiles };
 }

@@ -6,7 +6,7 @@ const H = TASK_BRIEF_HEADINGS;
 
 /** The gates are SPLITBRIEF's, so a brief never orders the implementer to run them. */
 export const GATES_ARE_SPLITBRIEFS =
-  "Name the test files and cases only: the implementer writes or changes the test files among the brief's files, and SPLITBRIEF runs typecheck, lint and the affected tests after every brief. Never tell the implementer to run a test, typecheck, lint, format, screenshot or render command.";
+  "Name the test files and cases only: the implementer writes or changes the test files among the brief's files, and SPLITBRIEF runs typecheck, lint and the tests itself, all of them before the final review. Never tell the implementer to run a test, typecheck, lint, format, screenshot or render command.";
 
 const EVIDENCE_PROOF =
   "(the focused tests that pass, the changed files, the behavior a reviewer can check). Renders and gate runs are the review seat's and SPLITBRIEF's evidence, not the implementer's steps.";

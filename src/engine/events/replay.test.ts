@@ -325,17 +325,13 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
     passed: true,
     stages: { typecheck: true, lint: true, test: true },
   },
-  validation_baseline: {
-    phase: 'analyzing',
-    status: 'done',
-    stages: { typecheck: true, lint: true, test: true },
-  },
+
   full_suite: {
     phase: 'implementing',
     status: 'done',
     stage: 'test',
     command: 'npm test',
-    moment: 'boundary',
+    moment: 'pre-review',
     passed: true,
     duration: 12_000,
   },

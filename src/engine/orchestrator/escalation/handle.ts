@@ -602,6 +602,9 @@ export async function handleRetryAndEscalation(
         },
       };
     }
+    if (applied.action === 'skipped') {
+      return { state, result: { completed: false, method: 'skipped', attempts } };
+    }
     if (applied.action === 'failed') {
       lastError = applied.reason;
       blocked = undefined;

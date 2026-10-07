@@ -72,7 +72,7 @@ export function publishRunnerCallEvent(
 
 const EMPTY_STAGES: ValidationStages = { typecheck: false, lint: false, test: false };
 
-type ValidationBaselinePhase =
+type ValidationProgressPhase =
   | { phase: 'start'; commands?: ValidationStageCommands | undefined }
   | {
       phase: 'progress';
@@ -88,8 +88,8 @@ type ValidationBaselinePhase =
     };
 
 type ValidationPhase =
-  | Exclude<ValidationBaselinePhase, { phase: 'result' }>
-  | (Extract<ValidationBaselinePhase, { phase: 'result' }> & {
+  | Exclude<ValidationProgressPhase, { phase: 'result' }>
+  | (Extract<ValidationProgressPhase, { phase: 'result' }> & {
       acceptance: ValidationAcceptance;
     });
 
@@ -282,56 +282,6 @@ export function publishValidation(ctx: BusContext, taskId: TaskId, opts: Validat
     ...(hasSkips && { skipped }),
     ...(Object.keys(skippedReason).length > 0 && { skippedReason }),
     ...(!exempt && failedError !== undefined && { error: failedError }),
-    duration: Date.now() - opts.startTime,
-  });
-}
-
-export function publishValidationBaseline(ctx: BusContext, opts: ValidationBaselinePhase): void {
-  if (opts.phase === 'start') {
-    ctx.bus.publish({
-      type: 'validation_baseline',
-      ts: Date.now(),
-      phase: ctx.phase,
-      status: 'running',
-      stages: { ...EMPTY_STAGES },
-      ...(hasValidationCommands(opts.commands) && { commands: opts.commands }),
-    });
-    return;
-  }
-
-  if (opts.phase === 'progress') {
-    ctx.bus.publish({
-      type: 'validation_baseline',
-      ts: opts.startTime,
-      phase: ctx.phase,
-      status: 'running',
-      stages: opts.stages,
-      ...(opts.activeStage !== undefined && { activeStage: opts.activeStage }),
-      ...(hasValidationCommands(opts.commands) && { commands: opts.commands }),
-    });
-    return;
-  }
-
-  const stages: ValidationStages = { ...EMPTY_STAGES };
-  const failing: ValidationStageSkips = {};
-  const commands: ValidationStageCommands = {};
-  for (const r of opts.results) {
-    if (r.command !== undefined) commands[r.stage] = r.command;
-    if (r.skipped) continue;
-    if (r.stage === 'typecheck') stages.typecheck = r.passed;
-    else if (r.stage === 'lint') stages.lint = r.passed;
-    else if (r.stage === 'test') stages.test = r.passed;
-    if (!r.passed) failing[r.stage] = true;
-  }
-  const hasFailing = Object.keys(failing).length > 0;
-  ctx.bus.publish({
-    type: 'validation_baseline',
-    ts: Date.now(),
-    phase: ctx.phase,
-    status: 'done',
-    stages,
-    ...(hasValidationCommands(commands) && { commands }),
-    ...(hasFailing && { failing }),
     duration: Date.now() - opts.startTime,
   });
 }

@@ -1,6 +1,5 @@
 import { loadState } from '../../../core/state/persistence.js';
 import { ImplementerReportSchema, type ImplementerReport } from '../../../core/schemas/consult.js';
-import { formatValidationError, validationFailureLine } from '../validation/format-error.js';
 import { addUsageAndSave } from '../state-ops.js';
 import { refreshAndPersistCode } from '../task/refresh-code.js';
 import { gateAttemptChanges } from '../task/attempt-gate.js';
@@ -292,7 +291,10 @@ async function runRetryStepAttempt(
       task,
       lastError: commitResult.blockedReason,
       attempts,
-      result: failedRetry(attempts),
+      result:
+        commitResult.blockedReason === 'skipped'
+          ? { completed: false, method: 'skipped', attempts }
+          : failedRetry(attempts),
     };
   }
   if (commitResult.completed) {
@@ -323,16 +325,12 @@ async function runRetryStepAttempt(
     };
   }
 
-  const validationError = formatValidationError(
-    commitResult.validationResults,
-    commitResult.acceptance,
-  );
-  onValidationAfterRetryFail?.(validationError);
+  onValidationAfterRetryFail?.(commitResult.error);
   return {
     state: commitResult.state,
     task,
-    lastError: validationError,
-    diagnosis: validationFailureLine(commitResult.validationResults, commitResult.acceptance),
+    lastError: commitResult.error,
+    diagnosis: commitResult.diagnosis,
     attempts,
   };
 }

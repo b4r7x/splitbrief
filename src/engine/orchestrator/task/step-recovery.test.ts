@@ -69,6 +69,8 @@ describe('runSingleTask — recovery', () => {
         implementer,
         bus,
         config: makeConfig({
+          workflow: { review: 'task' },
+
           validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
         }),
         planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
@@ -126,6 +128,8 @@ describe('runSingleTask — recovery', () => {
         isolation: makeWorktreeIsolation({ projectDir, sessionId }),
         implementer,
         config: makeConfig({
+          workflow: { review: 'task' },
+
           implementer: { kind: 'cli', tool: 'codex' },
           validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
         }),
@@ -212,6 +216,8 @@ describe('runSingleTask — recovery', () => {
         implementer,
         bus,
         config: makeConfig({
+          workflow: { review: 'task' },
+
           validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
         }),
         planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
@@ -353,7 +359,9 @@ describe('runSingleTask — the consult-bound halt names the last failure', () =
         implementer,
         bus,
         config: makeConfig({
-          validation: { typecheck: true, lint: true, test: false, lintCommand: 'noop' },
+          workflow: { review: 'task' },
+
+          validation: { typecheck: true, lint: true, test: true, lintCommand: 'noop' },
         }),
         planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
         validator: { ...createValidator(), runValidation },
@@ -448,6 +456,8 @@ describe('runSingleTask — a layout-only lint failure', () => {
         implementer,
         bus,
         config: makeConfig({
+          workflow: { review: 'task' },
+
           validation: {
             typecheck: true,
             lint: true,
@@ -514,6 +524,8 @@ describe('runSingleTask — signed-out runner', () => {
         planner,
         bus,
         config: makeConfig({
+          workflow: { review: 'task' },
+
           implementer: { kind: 'cli', tool: 'codex' },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         }),
@@ -602,6 +614,8 @@ describe('runSingleTask — signed-out runner', () => {
         planner,
         bus,
         config: makeConfig({
+          workflow: { review: 'task' },
+
           implementer: { kind: 'cli', tool: 'codex' },
           validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
         }),
@@ -681,6 +695,8 @@ describe('runSingleTask — usage-limited runner', () => {
         planner,
         bus,
         config: makeConfig({
+          workflow: { review: 'task' },
+
           implementer: { kind: 'cli', tool: 'codex' },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         }),
@@ -771,6 +787,8 @@ describe('runSingleTask — usage-limited runner', () => {
         planner,
         bus,
         config: makeConfig({
+          workflow: { review: 'task' },
+
           implementer: { kind: 'cli', tool: 'codex' },
           validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
         }),

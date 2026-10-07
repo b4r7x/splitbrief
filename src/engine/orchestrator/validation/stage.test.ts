@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { createValidator } from './run.js';
 import { runValidationStep } from './stage.js';
@@ -37,6 +37,9 @@ describe('validation output redaction', () => {
     bus.subscribe((e) => events.push(e));
 
     await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: makeTask({ suggestedFiles: ['src/a.ts'] }),
       projectDir: tempDir,
       config,
@@ -66,13 +69,22 @@ describe('validation output redaction', () => {
       typecheck: false,
       lint: false,
       test: true,
-      testCommand: 'vitest run',
     });
+    writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
+    writeFileSync(
+      join(tempDir, 'package.json'),
+      JSON.stringify({ scripts: { test: 'vitest run' } }),
+    );
+    mkdirSync(join(tempDir, 'src'), { recursive: true });
+    writeFileSync(join(tempDir, 'src/a.test.ts'), '');
     const events: EngineEvent[] = [];
     const bus = createEventBus();
     bus.subscribe((e) => events.push(e));
 
     await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: makeTask({ suggestedFiles: ['src/a.ts'] }),
       projectDir: tempDir,
       config,
@@ -99,6 +111,9 @@ describe('validation output redaction', () => {
     const bus = { publish: () => {}, subscribe: () => () => {} };
 
     const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: makeTask({ suggestedFiles: ['src/a.ts'] }),
       projectDir: tempDir,
       config,

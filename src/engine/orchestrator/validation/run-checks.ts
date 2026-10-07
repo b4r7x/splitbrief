@@ -106,7 +106,7 @@ async function runTestCheck(
   stageContext: ReturnType<typeof buildStageContext>,
 ): Promise<CheckRunResult> {
   const checkTask: Pick<Task, 'suggestedFiles'> = { suggestedFiles: [check.value] };
-  const planned = planStage('test', checkTask, stageContext, [check.value]);
+  const planned = planStage('test', checkTask, stageContext, [check.value], 'check');
   if (planned.kind === 'skip') {
     return { checkId: check.id, status: 'not-runnable', output: planned.reason };
   }

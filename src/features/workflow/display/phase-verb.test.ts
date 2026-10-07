@@ -56,8 +56,8 @@ describe('suiteStageText', () => {
     expect(suiteStageText({ moment: 'baseline', command: 'npm run typecheck' })).toBe(
       'Run-start suite · npm run typecheck',
     );
-    expect(suiteStageText({ moment: 'boundary', command: 'npm run lint' })).toBe(
-      'Batch suite · npm run lint',
+    expect(suiteStageText({ moment: 'pre-review', command: 'npm run lint' })).toBe(
+      'Pre-review suite · npm run lint',
     );
     expect(suiteStageText({ moment: 'pre-review', command: 'npm test' })).toBe(
       'Pre-review suite · npm test',

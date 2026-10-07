@@ -26,7 +26,6 @@ import { answeredQuestionsRowBlock } from './answered-questions.js';
 import { taskStartedMetadata, taskStartedRowBlock } from '../task-started-row-block.js';
 import { isRunnerCallTranscriptRowSuppressed } from '../runner-call-classification.js';
 import {
-  baselineValidationRowBlock,
   escalateRowBlock,
   fullSuiteRowBlock,
   implementerDoneRowBlock,
@@ -201,8 +200,6 @@ export function eventRowBlock(options: {
     }
     case 'validate':
       return validateRowBlock(keyPrefix, event, ctx.width);
-    case 'validation_baseline':
-      return baselineValidationRowBlock(keyPrefix, event, ctx.width);
     case 'full_suite':
       return fullSuiteRowBlock(keyPrefix, event, ctx.width);
     case 'escalate':

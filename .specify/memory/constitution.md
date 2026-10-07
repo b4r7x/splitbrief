@@ -279,23 +279,22 @@ ability to run anything itself is a bonus that improves first-pass rate,
 never a substitute for either. A task MUST NOT be accepted because the
 implementer reports success.
 
-Every task implementation MUST pass the validation pipeline before being
-accepted as complete. Worktree and staged-copy runs validate in the run
-workspace, one git worktree or staged copy per run, whether configured
-directly or used as a fallback. The pipeline does not write the run's
-result to the user's real project directory until Apply. Checkout runs
-and older runs without a recorded workspace validate in the user's real
-project directory. The stages run in order of speed and cost:
-1. TypeScript typecheck (`tsc --noEmit`)
-2. Lint (ESLint or Biome, auto-detected)
-3. Affected tests (matched by file naming convention)
+Task completion MUST follow `workflow.review`. With `end`, ordinary briefs
+complete without stack gates. With `task`, each task MUST pass its related
+tests and required due checks before its scheduled review. The final review
+MUST run all enabled stack gates and every plan and task check, including renders.
+A red whose files all belong to one completed brief MUST reopen that brief
+with the exact gate errors. Other failures MUST enter triage and create fix tasks.
+Each path MUST spend one fix cycle. The final review MUST rerun the gates after fixes.
 
-Validation MUST stop on the first failure attributable to the task. A
-stage already red at the run's baseline does not stop the pipeline and
-does not block acceptance when its evidence names none of the task's
-changed files. Failed tasks MUST NOT be accepted, checkpointed, or
-committed. Retry prompts MUST include the exact error message, line
-number, and relevant code context.
+Worktree and staged-copy runs validate in the run workspace. The pipeline
+writes the reviewed result to the user's project only at Apply. Checkout runs
+and older runs without a workspace validate in the user's project.
+The run-start full suite MUST record known failures. Acceptance MUST compare
+later failure keys with this baseline. A brief gate MUST stop at the first
+non-exempt failing stage. Retry prompts MUST carry the exact gate errors.
+When lint is enabled, the project formatter MUST run on each brief's changed files.
+A formatter failure MUST record a warning and MUST NOT reject the brief.
 
 Product-level git commit strategies are optional run-safety and review
 features. Agents working in this repository MUST NOT stage or commit;
@@ -429,6 +428,11 @@ This constitution supersedes all other development practices for
 the SPLITBRIEF project. All implementation decisions, code reviews,
 and architectural choices MUST be evaluated against these principles.
 
+The 3.0.0 amendment redefines Principle V to match the configured review cadence.
+This rule puts the gates at the review that owns their result. Regression tests
+verify both cadences and failure routing. The configuration, workflow, engine and
+generated skill references carry the same rule.
+
 **Amendment procedure**:
 1. Propose changes via `/speckit.constitution` with rationale
 2. Verify no existing features are broken by the amendment
@@ -444,4 +448,4 @@ MUST be documented in the plan.md Complexity Tracking table with:
 the violation, why it is needed, and why the simpler alternative
 was rejected.
 
-**Version**: 2.7.0 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-10-05
+**Version**: 3.0.0 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-10-07

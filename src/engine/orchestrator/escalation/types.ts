@@ -34,7 +34,9 @@ export type RetryResult =
       tool?: string | undefined;
       model?: string | undefined;
     }
-  | ({ completed: false; method: 'failed'; attempts: number } & RetryFailureDetail);
+  | ({ completed: false; method: 'failed'; attempts: number } & RetryFailureDetail)
+  /** A pre_validation hook denied the gate: the task is skipped and the ladder ends. */
+  | { completed: false; method: 'skipped'; attempts: number };
 
 export function failedRetry(attempts: number, detail?: RetryFailureDetail): RetryResult {
   return {

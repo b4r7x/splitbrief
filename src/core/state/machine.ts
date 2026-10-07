@@ -62,8 +62,7 @@ const anytimeActions = [
   'CLEAR_SEAT_WAIT',
   'START_SCHEDULED_REVIEW',
   'CLEAR_SCHEDULED_REVIEW',
-  'SET_PENDING_BOUNDARY',
-  'CLEAR_PENDING_BOUNDARY',
+  'REOPEN_TASK',
 ] as const satisfies readonly MachineAction['type'][];
 
 const VALIDATION_OR_ESCALATION_SHARED_ACTIONS = [
@@ -292,8 +291,17 @@ export function transition(
       return { ...cleaned, phase: 'validating-task' };
     }
 
-    case 'VALIDATION_PASS':
-      return advanceTask(state, taskStatusForCompletionMethod('local'));
+    case 'VALIDATION_PASS': {
+      const task = state.tasks[state.currentTaskIndex];
+      const cleared =
+        task === undefined
+          ? state
+          : withLineage(state, lineageKeyFor(state, task.id), (lineage) => {
+              const { gateFailure: _gateFailure, ...rest } = lineage;
+              return rest;
+            });
+      return advanceTask(cleared, taskStatusForCompletionMethod('local'));
+    }
 
     case 'VALIDATION_FAIL':
       if (state.attempt < DEFAULT_LOCAL_RETRIES) {
@@ -615,11 +623,24 @@ export function transition(
     case 'SET_PLANNER_SESSION_ID':
       return { ...state, plannerSessionId: action.sessionId };
 
+    case 'REOPEN_TASK':
     case 'RESET_TASK': {
       const idx = state.tasks.findIndex((t) => t.id === action.taskId);
       if (idx < 0) return state;
+      const reopened =
+        action.type === 'REOPEN_TASK'
+          ? withLineage(state, lineageKeyFor(state, action.taskId), (lineage) => ({
+              ...lineage,
+              carriedFailure: action.failure.output,
+              gateFailure: {
+                stages: action.failure.stages,
+                files: action.failure.files,
+                checkIds: action.failure.checkIds,
+              },
+            }))
+          : state;
       return {
-        ...state,
+        ...reopened,
         tasks: state.tasks.map((t, i) => (i === idx ? { ...t, status: 'pending' } : t)),
         currentTaskIndex: idx,
         attempt: 0,
@@ -796,15 +817,6 @@ export function transition(
 
     case 'CLEAR_SCHEDULED_REVIEW':
       return { ...state, pendingScheduledReview: undefined, pendingTriage: undefined };
-
-    case 'SET_PENDING_BOUNDARY':
-      return {
-        ...state,
-        pendingBoundary: { batch: action.batch, afterTaskId: action.afterTaskId },
-      };
-
-    case 'CLEAR_PENDING_BOUNDARY':
-      return { ...state, pendingBoundary: undefined };
 
     case 'SET_TASK_INPUT_HASHES':
       return {

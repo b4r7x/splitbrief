@@ -47,7 +47,8 @@ describe('captureTaskReviewChanges', () => {
         }),
     });
     const config = makeConfig({
-      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      workflow: { review: 'task' },
+      validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
     });
     const isolation = createRunIsolation({
       projectDir,
@@ -111,7 +112,8 @@ describe('captureTaskReviewChanges', () => {
         return { success: true, output: 'ok', usage: { inputTokens: 1, outputTokens: 1 } };
       });
     const config = makeConfig({
-      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      workflow: { review: 'task' },
+      validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
     });
     const isolation = createRunIsolation({
       projectDir,

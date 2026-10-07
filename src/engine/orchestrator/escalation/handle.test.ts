@@ -643,4 +643,72 @@ describe('handleRetryAndEscalation', () => {
       finalState.pendingRecovery?.message,
     );
   });
+
+  it('a pre_validation deny of a consult verify ends the ladder on the skipped task', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const first = makeTask({ id: 'T001', criteria: ['C1'] });
+    const second = makeTask({ id: 'T002' });
+    const state = transition(
+      makeImplState([first, second], {
+        plan: {
+          summary: 'Fix the greeting',
+          decisions: [],
+          criteria: [{ id: 'C1', text: 'The greeting is returned', checkIds: ['K1'] }],
+          checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+          validation: null,
+        },
+      }),
+      { type: 'TASK_SENT' },
+    );
+    writeFileSync(
+      join(projectDir, 'deny-validation.mjs'),
+      "console.log(JSON.stringify({ decision: 'deny', message: 'policy: validation gated' }));\n",
+    );
+    const hooks: HooksConfig = {
+      pre_validation: [
+        {
+          kind: 'command',
+          command: 'node',
+          args: ['deny-validation.mjs'],
+          timeout_ms: 30_000,
+          on_failure: 'warn',
+        },
+      ],
+    };
+    markHooksConfigTrusted(projectDir, hooks);
+    const { planner, prompts } = consultPlanner([
+      {
+        answer: {
+          diagnosis: 'K1 predates the task',
+          action: 'verify',
+          checkIds: ['K1'],
+          reason: 'Check K1',
+        },
+      },
+    ]);
+    const { bus, events } = makeBusRecorder();
+
+    const { result, state: finalState } = await handleRetryAndEscalation({
+      taskStartTime: Date.now(),
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ hooks }),
+        planner,
+        callbacks: makeCallbacks().callbacks,
+        implementer: failingImplementer(),
+        bus,
+      }),
+      task: first,
+      initialError: 'type error',
+      currentState: state,
+    });
+
+    expect(result).toMatchObject({ completed: false, method: 'skipped' });
+    expect(prompts).toHaveLength(1);
+    expect(finalState.tasks.map((task) => task.status)).toEqual(['skipped', 'pending']);
+    expect(finalState.currentTaskIndex).toBe(1);
+    expect(finalState.pendingRecovery).toBeUndefined();
+    expect(events.filter((e) => e.type === 'task_completed')).toEqual([]);
+  });
 });

@@ -56,17 +56,24 @@ describe('WorkflowStateSchema v4', () => {
     expect(ChangedFilesSnapshotSchema.parse(snapshot)).toEqual(snapshot);
   });
 
-  it('carries the run-start validation baseline through v4 persistence', () => {
+  it('strips retired gate state from v4 persistence', () => {
     const validationBaseline = {
       failingStages: ['typecheck'],
       commands: { typecheck: 'npm run typecheck' },
       failures: { typecheck: ['src/a.ts(12,5)'] },
     };
     const persisted = WorkflowStateSchema.parse(
-      JSON.parse(JSON.stringify({ ...state(), validationBaseline })),
+      JSON.parse(
+        JSON.stringify({
+          ...state(),
+          validationBaseline,
+          pendingBoundary: { batch: 1, afterTaskId: 'T001' },
+        }),
+      ),
     );
 
-    expect(persisted).toMatchObject({ validationBaseline });
+    expect(persisted).not.toHaveProperty('validationBaseline');
+    expect(persisted).not.toHaveProperty('pendingBoundary');
   });
 
   it('keeps the run-level plan through v4 persistence', () => {

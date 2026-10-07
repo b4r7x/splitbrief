@@ -40,7 +40,7 @@ export type TriagePromptInput = Readonly<{
 function triageContract(hasReview: boolean): string {
   const lead = hasReview
     ? 'A final review of this run failed; SPLITBRIEF asks you to turn its blocking findings into the work that fixes them.'
-    : 'A full-suite check at a batch boundary reported new failures; SPLITBRIEF asks you to turn its pending inputs into the work that fixes them.';
+    : 'The pre-review gates reported new failures; SPLITBRIEF asks you to turn its pending inputs into the work that fixes them.';
   return `You are the run's planner. ${lead} This call is read-only: do not write, edit or delete any file, and do not run commands that change the project.
 
 Answer with exactly one JSON object in the triage shape: \`{ "fixTasks": [...], "rejected": [...], "verify": [...], "ask": … }\`.
@@ -192,7 +192,7 @@ export function buildTriagePrompt(input: TriagePromptInput): string {
     title: 'Review triage',
     intro: hasReview
       ? 'The final review found blocking findings or a pending correction. Decide what work fixes them.'
-      : 'A batch-boundary full suite found new failures. Decide what work fixes them.',
+      : 'The pre-review gates found new failures. Decide what work fixes them.',
     sections,
   });
 }

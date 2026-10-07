@@ -350,15 +350,9 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
   passed: boolean; stages: ValidationStages; error?: string; duration?: number }
 // where ValidationStages = { typecheck: boolean; lint: boolean; test: boolean }
 
-{ type: 'validation_baseline'; status: 'running' | 'done';
-  stages: ValidationStages; activeStage?: 'typecheck' | 'lint' | 'test';
-  commands?: ValidationStageCommands; failing?: ValidationStageSkips; duration?: number }
-// The run-start probe. stages[s] === true means probed and green; failing[s] === true
-// means probed and red; a stage in neither was not probed.
-
 { type: 'full_suite'; status: 'running' | 'done';
   stage: 'typecheck' | 'lint' | 'test'; command: string;
-  moment: 'baseline' | 'boundary' | 'pre-review';
+  moment: 'baseline' | 'pre-review';
   passed?: boolean; duration?: number }
 // One running and one done event per full-suite stage the run runs. `passed` and
 // `duration` are set on the done event, and `moment` names where the suite runs.

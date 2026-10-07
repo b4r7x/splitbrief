@@ -47,7 +47,7 @@ A typical run, step by step:
 3. The planner answers one typed plan — criteria, checks, and Task Briefs, one per slice, ordered by dependency and grouped in batches
 4. SPLITBRIEF checks the plan deterministically (every criterion has a check and a task, the dependencies make sense, every task fits the implementer's context); a failing plan goes back to the planner once
 5. User reviews the plan on one plan card: approve, request changes, edit `plan.json`, or end the run. Approving also confirms the protected writes the plan lists
-6. For each task, the implementer writes in the run workspace. SPLITBRIEF gates changed files and validates there (typecheck → lint → test).
+6. For each task, the implementer writes in the run workspace. SPLITBRIEF gates the changed files there. It runs typecheck, lint and the full test suite once before the final review, and, with `workflow.review: task`, the related tests after each task.
 7. If validation fails: the implementer retries once, then the planner is consulted for one typed answer — guidance, a rewritten or split brief, a re-run of the checks, or one question for the user
 8. If the ladder cannot go on (a spent bound, a failed consult call, a runner halt): enter recovery — for a spent bound the user can continue with a note, skip the task or end the run; other halts offer retry same worker, switch the seat, skip or end the run. Each halt shows as *Needs you* (a decision only you can make) or *Seat down* (the seat cannot run)
 9. The review seat reviews the final result against the briefs and the request — the planner, unless a `reviewer` is configured

@@ -335,7 +335,6 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     case 'implementer_generate_done':
     case 'implementer_generate_failed':
     case 'validate':
-    case 'validation_baseline':
     case 'full_suite':
     case 'escalate':
     case 'git_commit':

@@ -10,11 +10,15 @@ export function makeImplState(tasks: Task[], overrides?: Partial<WorkflowState>)
   return { ...state, ...overrides };
 }
 
-export function makeImplStateWithMetadata(tasks: Task[]): WorkflowState {
+export function makeImplStateWithMetadata(
+  tasks: Task[],
+  overrides?: Partial<WorkflowState>,
+): WorkflowState {
   return makeImplState(tasks, {
     implementerTool: 'ollama',
     implementerModel: 'qwen2.5',
     plannerTool: 'claude-code',
+    ...overrides,
   });
 }
 

@@ -49,14 +49,6 @@ export const DiscoveredValidationSchema = z.object({
 
 export type DiscoveredValidation = z.infer<typeof DiscoveredValidationSchema>;
 
-export const ValidationBaselineSchema = z.object({
-  failingStages: z.array(ValidationStageSchema),
-  commands: z.partialRecord(ValidationStageSchema, z.string()),
-  failures: z.partialRecord(ValidationStageSchema, z.array(z.string())),
-});
-
-export type PersistedValidationBaseline = z.infer<typeof ValidationBaselineSchema>;
-
 export const FullSuiteStageRunSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('completed'), durationMs: nonnegativeInteger }),
   z.object({
@@ -157,6 +149,13 @@ export const LineageRecordSchema = z.object({
   replacedParents: z.array(TaskSchema).default([]),
   notes: z.array(z.string()).default([]),
   carriedFailure: z.string().optional(),
+  gateFailure: z
+    .object({
+      stages: z.array(ValidationStageSchema),
+      files: z.array(z.string()),
+      checkIds: z.array(z.string()),
+    })
+    .optional(),
   corrections: z.array(z.string()).optional(),
 });
 export type LineageRecord = z.infer<typeof LineageRecordSchema>;
@@ -297,7 +296,6 @@ const WorkflowStateFields = {
   pendingPlannerConversation: PlannerConversationSchema.optional(),
   discoveredValidation: DiscoveredValidationSchema.optional(),
   plan: PlanSchema.optional(),
-  validationBaseline: ValidationBaselineSchema.optional(),
   fullSuiteBaseline: z.partialRecord(ValidationStageSchema, z.array(z.string())).optional(),
   fullSuiteBaselineStages: FullSuiteStageRunsSchema.optional(),
   reviewFixes: z
@@ -311,9 +309,6 @@ const WorkflowStateFields = {
   triage: z.array(TriageRecordSchema).optional(),
   pendingTriage: PendingTriageSchema.optional(),
   pendingScheduledReview: z.object({ afterTaskId: TaskIdSchema }).optional(),
-  pendingBoundary: z
-    .object({ batch: z.number().int().positive(), afterTaskId: TaskIdSchema })
-    .optional(),
   reviewStatus: z.enum(REVIEW_STATUSES).optional(),
   interruptedStep: z
     .object({
@@ -366,6 +361,8 @@ const WorkflowStateFields = {
 };
 
 const LEGACY_STATE_KEYS = [
+  'validationBaseline',
+  'pendingBoundary',
   'stateFence',
   'authorityRevision',
   'generation',

@@ -24,15 +24,21 @@ describe('formatValidationError', () => {
     expect(formatValidationError([], acceptance())).toBe('');
   });
 
-  it('extracts the first blocking failed result', () => {
+  it('names every blocking failed result with its own errors', () => {
     const results: ValidationResult[] = [
       { passed: true, stage: 'typecheck', output: 'ok' },
       { passed: false, stage: 'lint', error: 'Unexpected token' },
       { passed: false, stage: 'test', error: 'Test failed' },
     ];
     const error = formatValidationError(results, acceptance([], ['lint', 'test']));
-    expect(error).toContain('lint');
-    expect(error).toContain('Unexpected token');
+    expect(error.split('\n')).toEqual([
+      'Your previous code had an error. Fix it.',
+      'Error type: lint',
+      'Error message: Unexpected token',
+      'Error type: test',
+      'Error message: Test failed',
+      'Fix the error and output the complete corrected file.',
+    ]);
   });
 
   it('keeps the head and the tail of a long typecheck failure', () => {

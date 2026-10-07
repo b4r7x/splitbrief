@@ -98,11 +98,8 @@ describe('deriveLiveStatus', () => {
     expect(status?.stageStart).toBe(5000);
   });
 
-  // S8 run 18:06–18:58 and S11 run 02:29–02:39: a ten-minute `npm test` at the run start, a batch
-  // boundary or before the review read `Implementing… 10:49`, the brief stage's clock.
   it.each([
     ['baseline', 'Run-start suite · npm test'],
-    ['boundary', 'Batch suite · npm test'],
     ['pre-review', 'Pre-review suite · npm test'],
   ] as const)('names the %s suite stage and its command on its own clock', (moment, verb) => {
     const status = deriveLiveStatus({

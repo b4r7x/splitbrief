@@ -195,10 +195,13 @@ describe('baseline-relative acceptance', { timeout: 90_000 }, () => {
     expect(events.map((event) => event.type)).toContain('task_completed');
 
     const baselineDone = events.find(
-      (event): event is Extract<EngineEvent, { type: 'validation_baseline' }> =>
-        event.type === 'validation_baseline' && event.status === 'done',
+      (event): event is Extract<EngineEvent, { type: 'full_suite' }> =>
+        event.type === 'full_suite' &&
+        event.moment === 'baseline' &&
+        event.stage === 'test' &&
+        event.status === 'done',
     );
-    expect(baselineDone?.failing?.test).toBe(true);
+    expect(baselineDone?.passed).toBe(false);
 
     const after = spawnSync('node', ['validate.mjs'], { cwd: projectDir, encoding: 'utf-8' });
     expect(after.status).not.toBe(0);

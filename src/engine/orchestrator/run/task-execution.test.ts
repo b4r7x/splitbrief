@@ -368,7 +368,8 @@ describe('runTasksAndReview boundary pause', { timeout: 120_000 }, () => {
       continuation: createContinuationHolder(),
       implementer,
       config: makeConfig({
-        validation: { typecheck: true, lint: false, test: false, typecheckCommand: 'noop' },
+        workflow: { review: 'task' },
+        validation: { typecheck: true, lint: false, test: true, typecheckCommand: 'noop' },
       }),
       validator: {
         ...createValidator(),
@@ -447,7 +448,8 @@ describe('runTasksAndReview boundary pause', { timeout: 120_000 }, () => {
       continuation: createContinuationHolder(),
       implementer,
       config: makeConfig({
-        validation: { typecheck: true, lint: false, test: false, typecheckCommand: 'noop' },
+        workflow: { review: 'task' },
+        validation: { typecheck: true, lint: false, test: true, typecheckCommand: 'noop' },
       }),
       validator: {
         ...createValidator(),
@@ -1094,7 +1096,8 @@ describe('runTasksAndReview review fix instruction', { timeout: 120_000 }, () =>
       onComplete: vi.fn(),
       implementer: promptRecordingImplementer(prompts),
       config: makeConfig({
-        validation: { typecheck: true, lint: false, test: false, typecheckCommand: 'noop' },
+        workflow: { review: 'task' },
+        validation: { typecheck: true, lint: false, test: true, typecheckCommand: 'noop' },
       }),
       validator: {
         ...createValidator(),

@@ -622,12 +622,12 @@ describe('operationsStore', () => {
       status: 'running',
       stage: 'test',
       command: 'npm test',
-      moment: 'boundary',
+      moment: 'pre-review',
     });
     expect(operationsStore.get().suiteStage).toEqual({
       stage: 'test',
       command: 'npm test',
-      moment: 'boundary',
+      moment: 'pre-review',
       stageStartedTs: 5_000,
     });
 
@@ -638,7 +638,7 @@ describe('operationsStore', () => {
       status: 'done',
       stage: 'test',
       command: 'npm test',
-      moment: 'boundary',
+      moment: 'pre-review',
       passed: true,
       duration: 7_000,
     });

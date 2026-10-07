@@ -892,7 +892,7 @@ S7 deletes `orchestrator/user-edit/`, `approval/gate-and-promote.ts`, `task/appl
 `implementer_generate_running`, `implementer_generate_done`, `implementer_generate_failed`
 
 **Validation / escalation / git (7):**
-`validate`, `validation_baseline`, `full_suite` (a running and a done event for every full-suite stage the run runs: its `stage`, `command` and `moment` — `baseline` | `boundary` | `pre-review` — with pass/fail and duration on done), `checks_run` (a consult `verify` answer's per-check results), `git_branch_created`. Replay only: `escalate`; historical `git_commit` and `git_checkpoint` events remain readable, and current execution never publishes them
+`validate`, `full_suite` (a running and a done event for every full-suite stage the run runs: its `stage`, `command` and `moment` — `baseline` | `pre-review` — with pass/fail and duration on done), `checks_run` (a consult `verify` answer's per-check results), `git_branch_created`. Replay only: `escalate`; historical `git_commit` and `git_checkpoint` events remain readable, and current execution never publishes them
 
 **Clarifications / queue / messages (7):**
 `clarifications_collected`, `clarification_answered` (replay only: no producer now), `message_queued`, `message_injected_native`, `queue_drained`, `queue_cleared`, `user_message`

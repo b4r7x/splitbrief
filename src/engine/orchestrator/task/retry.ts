@@ -225,7 +225,8 @@ export async function retryAndRecord(
   setTrackedState(nextState);
   const retryImplementerProfile = retryProfileOverride ?? wctx.implementerProfile;
   if (!result.completed) {
-    if (wctx.signal?.aborted) {
+    // A pre_validation deny already skipped the task, restored its files and wrote its evidence.
+    if (wctx.signal?.aborted || result.method === 'skipped') {
       return { state: nextState, completed: false };
     }
     // The consult replaced or split the brief: no recovery is raised, and the

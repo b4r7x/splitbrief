@@ -103,8 +103,9 @@ Verified against the `transition()` reducer in `src/core/state/machine.ts` and t
 | `validating-task` | `ESCALATE` | `escalating` | — |
 | `implementing` / `validating-task` / `escalating` | `SKIP_TASK` | *(same)* | Marks task `skipped`, advances `currentTaskIndex` |
 | `implementing` / `validating-task` / `escalating` | `RESET_TASK` | `implementing` | Sets task to `pending`, rewinds `currentTaskIndex` to that task's index, resets `attempt`. Tasks after it keep their status. |
+| `final-review` | `REOPEN_TASK` | `implementing` | Sets the owning task to pending. Resets its attempt. Its lineage carries exact errors and the failed stages, files and check ids. |
 | `implementing` | `ALL_DONE` | `final-review` | — |
-| `final-review` | `START_FIX_CYCLE` | `implementing` | Records the fix cycle (`fixCycles.used` + 1), clears `reviewStatus`, `completedAt` and `pendingTriage`, and sets `currentTaskIndex` to the first open task. No task is reopened: the triage appended its fix tasks |
+| `final-review` | `START_FIX_CYCLE` | `implementing` | Records the fix cycle (`fixCycles.used` + 1), clears `reviewStatus`, `completedAt` and `pendingTriage`, and sets `currentTaskIndex` to the first open task. Runs the reopened owner or the fix tasks from triage |
 | `final-review` | `REVIEW_DONE` | `complete` | Records `reviewStatus: 'passed' \| 'failed'` |
 | `complete` (review `failed`) | `REVIEW_CORRECTION` | `final-review` | The `revise` recovery action: queues the correction as a user triage input of kind `defect` with source `user`, and grants +1 fix cycle (`BOUNDS.extraFixCyclesPerRun`) when the cap is spent. Refused after a passed review |
 
@@ -112,7 +113,7 @@ Verified against the `transition()` reducer in `src/core/state/machine.ts` and t
 
 **Review fix cycles.** The review seat answers with a typed `ReviewVerdict` (one stateless, read-only call through `requestTyped`); SPLITBRIEF derives `pass`, `pass-with-notes` or `fail` from it (`deriveReviewOutcome`, `src/core/review/verdict.ts`). A criterion or finding the verdict leaves `unverified` runs its registered checks through `runChecks`; a `render` check stays unverified, and an unverified criterion blocks pass. The verdict lives in `state.review` and `review.json`; `review.md` is its rendering, and `parseFinalReview` stays only as the reader for old sessions that have no `review.json`.
 
-On a `fail`, one planner triage call answers with a typed `TriageResult` (`src/engine/orchestrator/triage.ts`). Its `fixTasks` are appended through `INSERT_TASKS` with new `T###` ids and `batch` = the highest plan batch + the fix cycle; each task carries its findings verbatim under `task.fix`. Done tasks stay done — no task is reopened. Its `verify` entries run their named checks; its `rejected` entries reach the next review; its `ask` is the one question the run puts to the user, and a review question goes to the triage first. Appended fix tasks publish `review_fix_started` with their ids. `START_FIX_CYCLE` records the cycle (`fixCycles.used`) and moves to the first open task; the task loop runs the appended tasks, then the review asks again.
+On a `fail`, one planner triage call answers with a typed `TriageResult` (`src/engine/orchestrator/triage.ts`). Its `fixTasks` are appended through `INSERT_TASKS` with new `T###` ids and `batch` = the highest plan batch + the fix cycle; each task carries its findings verbatim under `task.fix`. Review findings create new fix tasks. Pre-review gates can reopen one completed owner with the exact errors. Its `verify` entries run their named checks; its `rejected` entries reach the next review; its `ask` is the one question the run puts to the user, and a review question goes to the triage first. Appended fix tasks publish `review_fix_started` with their ids. `START_FIX_CYCLE` records the cycle (`fixCycles.used`) and moves to the first open task; the task loop runs the appended tasks, then the review asks again.
 
 A fix attempt may verify the existing code without changing it: `task.fix` permits that attempt, and normal validation decides whether it completes. `implementer_generate_done` records `noChange: true`; its done row reads `verified · no change needed`. Other attempts still fail `no-staged-change` when they change nothing.
 
@@ -422,9 +423,9 @@ An operator park keeps partial workspace edits at the same attempt. A crash with
 
 ## 7. Escalation and recovery
 
-When a task fails validation after its attempt and its one retry (`DEFAULT_LOCAL_RETRIES`), or its implementer reports `blocked`, or its recorded inputs moved since it was compiled, SPLITBRIEF consults the planner: one read-only typed call on the planner's own session (`requestConsult`, `src/engine/orchestrator/consult/request.ts`). The planner answers a `ConsultAnswer` (`src/core/schemas/consult.ts`) with exactly one action — `guidance`, `rewrite-task`, `split-task`, `verify` or `ask-user` — and the run acts on it: one more implementer attempt carrying the guidance in its error block, a replacement at the same id with `revision` raised by one, a split whose subtasks take the next free ids and share the lineage, a validation-and-checks run that can complete the task as `consulted`, or the one question the ladder asks the user. An answer that would drop a criterion becomes that question. The planner never writes the implementation, and a `blocked` report is answered by the planner, not by you. Each answer is one transcript row, `PLAN → T003: split into T011, T012 · <diagnosis>`. Planner questions about requirements still come to you.
+When a task fails validation after its attempt and its one retry (`DEFAULT_LOCAL_RETRIES`), or its implementer reports `blocked`, or its recorded inputs moved since it was compiled, SPLITBRIEF consults the planner: one read-only typed call on the planner's own session (`requestConsult`, `src/engine/orchestrator/consult/request.ts`). The planner answers a `ConsultAnswer` (`src/core/schemas/consult.ts`) with exactly one action — `guidance`, `rewrite-task`, `split-task`, `verify` or `ask-user` — and the run acts on it: one more implementer attempt carrying the guidance in its error block, a replacement at the same id with `revision` raised by one, a split whose subtasks take the next free ids and share the lineage, a brief gate and the named checks that can complete the task as `consulted`, or the one question the ladder asks the user. An answer that would drop a criterion becomes that question. The planner never writes the implementation, and a `blocked` report is answered by the planner, not by you. Each answer is one transcript row, `PLAN → T003: split into T011, T012 · <diagnosis>`. Planner questions about requirements still come to you.
 
-A hand-back that reports `decisions` is not a consult. Before its attempt is validated, the planner confirms the decisions the ledger does not hold yet for that task, in one cheap call (the *decision-confirm*): `confirm` adds the changes of how to the plan's decisions ledger, and `ask-user` puts a change of what to you. SPLITBRIEF then sends your answer to the implementer in one more attempt. That delivery is not a retry: it writes no `task_retry` row, spends no local retry and no consult, and counts only against the lineage attempt allowance. A retry that reports the same decisions again is not asked about twice. After the confirm, and after the delivered attempt, validation runs, and a red result takes the normal ladder: one retry with the exact errors, then a consult. A decision-confirm runs at most once per attempt, bounded by the brief's lineage attempt allowance. It spends no run counter, never a lineage consult and never one of the 10 planner calls. Its transcript row reads `PLAN confirmed 2 decisions for T004`.
+A hand-back that reports `decisions` is not a consult. Before its attempt is validated, the planner confirms the decisions the ledger does not hold yet for that task, in one cheap call (the *decision-confirm*): `confirm` adds the changes of how to the plan's decisions ledger, and `ask-user` puts a change of what to you. SPLITBRIEF then sends your answer to the implementer in one more attempt. That delivery is not a retry: it writes no `task_retry` row, spends no local retry and no consult, and counts only against the lineage attempt allowance. A retry that reports the same decisions again is not asked about twice. After the confirm, the brief gate follows the review cadence. A red takes the normal ladder: one retry with the exact errors, then a consult. A decision-confirm runs at most once per attempt, bounded by the brief's lineage attempt allowance. It spends no run counter, never a lineage consult and never one of the 10 planner calls. Its transcript row reads `PLAN confirmed 2 decisions for T004`.
 
 A lineage is bounded at 2 consults and 8 attempts, and the run at 10 planner calls after planning (`src/core/pipeline-spec/bounds.ts`). A spent bound halts with `consult-bound-spent` or `planner-calls-spent`, carrying the diagnosis of the failure that raised it — the planner's when a consult diagnosed that failure, else that failure's own output; the diagnosis of a validation failure is the failing stage and its first line that names a file of the brief, else its first error line. Continuing it grants one more consult and four more attempts, or five more planner calls, and replays the brief from the files its last attempt left, with the brief's first task-start snapshot, as a retry that carries the halt's last failing output and runs no stale consult; Skip restores the files; End run keeps them in `run.patch`. A stale consult spends no planner call and runs once per revision.
 
@@ -493,11 +494,9 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
 10. phase: reviewing-plan (or planning, with approve: none)
       → BEGIN_IMPLEMENTATION → implementing
     The run records one workspace and its workspace-base snapshot.
-    Before the first task, the validation baseline is probed in that workspace: each enabled stage
-    runs once (the test probe is narrowed to the first task's affected file) and
-    publishes `validation_baseline` running/done rows, so the run shows proof of
-    life instead of silent waiting. Stages already red before any task ran are
-    recorded as pre-existing failures.
+    Before the first task, each enabled full-suite stage runs once.
+    The run stores its failure keys and stage durations for the final review.
+    Each stage publishes full_suite running and done events.
 
 11. Per task:
       implementing → START_TASK (task in_progress, attempt 0)
@@ -515,7 +514,11 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
         confirm → the decisions join the ledger → validation
         ask-user → one question; the next attempt carries the answer
       implementing → TASK_SENT → validating-task
-      typecheck → lint → tests (stops at the first failure attributable to the task)
+      brief-gate selects commands by workflow.review:
+        end → no commands, unless the brief carries a pre-review gate failure
+        task → related tests and checks due when this task completes
+        reopened brief → failed stages and failed checks only
+      The formatter runs on this brief's changed files when validation.lint is enabled.
         pass → VALIDATION_PASS → implementing (next task)
         fail → VALIDATION_FAIL → implementing (attempt++, one retry)
         fail (retry spent) → escalating, where the planner is consulted:
@@ -529,7 +532,10 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
 12. implementing (last task) → ALL_DONE → final-review
     Drift report computed. The review seat reads the diff against the briefs
     and the plan. With workflow.review: task, one scoped review also runs after
-    every brief that passed its validation, without spending a fix cycle.
+    each task after its related tests and due checks pass. This review runs no pre-review gates.
+    Before the final review, all enabled stack gates and every registered check run.
+    A red with one completed owner reopens that brief with its exact errors.
+    Other failures enter triage and create fix tasks. Both paths spend one fix cycle.
 
 13. final-review → REVIEW_DONE → complete
     The review seat returns a typed verdict; SPLITBRIEF derives pass,

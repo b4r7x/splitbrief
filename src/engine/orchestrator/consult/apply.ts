@@ -2,7 +2,7 @@ import type { ConsultAnswer } from '../../../core/schemas/consult.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { Plan, TaskSpec } from '../../../core/schemas/plan.js';
 import type { ClarificationQuestion, PlannerReplyAnswer } from '../../../core/schemas/question.js';
-import type { CheckResult, Task } from '../../../core/schemas/task.js';
+import type { Task } from '../../../core/schemas/task.js';
 import type {
   ChangedFilesSnapshot,
   PlannerConversation,
@@ -13,23 +13,14 @@ import { error } from '../../../utils/error.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import type { EventBus } from '../../events/types.js';
 import { taskFromSpec } from '../../spec/plan-tasks.js';
-import { publishChecksRun, publishTaskReplaced, publishTasksInserted } from '../events.js';
+import { publishTaskReplaced, publishTasksInserted } from '../events.js';
 import { waitForPlannerReply } from '../planning/call-loop.js';
 import { transitionAndSave } from '../state-ops.js';
 import { validateCommitAndAdvance } from '../task/commit.js';
 import { restoreAttemptFiles } from '../task/rollback.js';
-import { runTaskChecksAfterAcceptance } from '../task/task-checks.js';
+import { runBriefGate } from '../task/brief-gate.js';
 import type { OrchestratorCallbacks, WorkflowSinks } from '../types.js';
-import type { ValidationAcceptance } from '../validation/acceptance.js';
-import { formatValidationError } from '../validation/format-error.js';
-import type { ValidationResult } from '../validation/result.js';
-import {
-  checkRegistry,
-  planApprovesNpmScripts,
-  runChecks,
-  type CheckRunResult,
-} from '../validation/run-checks.js';
-import { recordCheckRuns } from '../evidence/record-checks.js';
+import { checkRegistry } from '../validation/run-checks.js';
 import type { ValidationCommandRunner, Validator } from '../validation/types.js';
 
 export type ConsultApplyContext = Readonly<{
@@ -72,7 +63,8 @@ export type ConsultApplyOutcome =
       choices: string[] | null;
       default: string | null;
     }>
-  | Readonly<{ action: 'failed'; reason: string }>;
+  | Readonly<{ action: 'failed'; reason: string }>
+  | Readonly<{ action: 'skipped' }>;
 
 const consultApplyError = {
   taskMissing: (id: Task['id']) =>
@@ -238,96 +230,31 @@ function verifySelectionError(
   return null;
 }
 
-function verifyFailures(
-  validationResults: ValidationResult[],
-  acceptance: ValidationAcceptance,
-  checkRuns: readonly CheckRunResult[],
-): string[] {
-  const failures: string[] = [];
-  if (!acceptance.accepted) failures.push(formatValidationError(validationResults, acceptance));
-  for (const run of checkRuns) {
-    if (run.status === 'pass') continue;
-    failures.push(`check ${run.checkId} did not pass (${run.status}): ${run.output}`);
-  }
-  return failures;
-}
-
 async function applyVerify(
   ctx: ConsultApplyContext,
   task: Task,
   action: VerifyAction,
+  attempt: ChangedFilesSnapshot | null,
 ): Promise<ConsultApplyOutcome> {
   const plan = ctx.state.plan;
   const selectionError = verifySelectionError(task, plan, action.checkIds);
   if (selectionError !== null) return { action: 'failed', reason: selectionError };
 
   const changedFiles = ctx.changedFiles ?? [];
-  const validationResults = await ctx.validator.runValidation({
-    task,
-    projectDir: ctx.workspaceDir,
-    config: ctx.config,
-    bus: ctx.bus,
-    phase: ctx.state.phase,
-    discoveredValidation: ctx.state.discoveredValidation,
-    signal: ctx.signal,
-    changedFiles,
-  });
-  const acceptance = ctx.validator.decideAcceptance({ results: validationResults, changedFiles });
-  const checkRuns = await runChecks(action.checkIds, {
-    task,
-    plan,
-    projectDir: ctx.workspaceDir,
-    sessionId: ctx.sessionId,
-    checkoutDir: ctx.projectDir,
-    config: ctx.config,
-    bus: ctx.bus,
-    phase: ctx.state.phase,
-    npmScriptsApproved: planApprovesNpmScripts({ config: ctx.config, state: ctx.state }),
-    discoveredValidation: ctx.state.discoveredValidation,
-    signal: ctx.signal,
-    ...(ctx.runCommand !== undefined && { runCommand: ctx.runCommand }),
-  });
-
-  const failures = verifyFailures(validationResults, acceptance, checkRuns);
-  if (failures.length > 0) {
-    await recordCheckRuns({
-      projectDir: ctx.projectDir,
-      sessionId: ctx.sessionId,
-      workspaceDir: ctx.workspaceDir,
-      state: ctx.state,
-      task,
-      validation: validationResults,
-      runs: checkRuns,
-    });
-    const failedResults: CheckResult[] = checkRuns.map((run) => ({
-      id: run.checkId,
-      passed: run.status === 'pass',
-    }));
-    const failed = transitionAndSave(
-      { projectDir: ctx.projectDir, sessionId: ctx.sessionId },
-      ctx.state,
-      { type: 'RECORD_CHECK_RESULTS', taskId: task.id, results: failedResults },
-    );
-    ctx.onStateChange?.(failed);
-    publishChecksRun({ bus: ctx.bus, phase: failed.phase }, task.id, failedResults);
-    return { action: 'failed', reason: failures.join('\n\n') };
-  }
-
-  await recordCheckRuns({
-    projectDir: ctx.projectDir,
-    sessionId: ctx.sessionId,
-    workspaceDir: ctx.workspaceDir,
-    state: ctx.state,
-    task,
-    validation: validationResults,
-  });
-  const checked = await runTaskChecksAfterAcceptance({
+  const gated = await runBriefGate({
     wctx: ctx,
-    state: ctx.state,
     task,
-    alreadyRun: checkRuns,
-    ...(ctx.onStateChange !== undefined && { setTrackedState: ctx.onStateChange }),
+    state: ctx.state,
+    changedFiles,
+    taskStartSnapshot: attempt,
+    checkIds: action.checkIds,
+    runCommand: ctx.runCommand,
+    setTrackedState: ctx.onStateChange,
   });
+  if (gated.stop === 'skipped') return { action: 'skipped' };
+  const { acceptance } = gated;
+  if (gated.stop !== undefined || !acceptance.accepted)
+    return { action: 'failed', reason: gated.error || 'the brief gate stopped' };
 
   const commit = await validateCommitAndAdvance({
     task,
@@ -336,7 +263,7 @@ async function applyVerify(
     sessionId: ctx.sessionId,
     config: ctx.config,
     bus: ctx.bus,
-    state: checked.state,
+    state: gated.state,
     method: 'consulted',
     transitionType: 'VALIDATION_PASS',
     taskStartTime: ctx.taskStartTime,
@@ -426,7 +353,7 @@ async function applyAskUser(
  * Moves the run on the planner's answer: guidance hands back what the next attempt's error
  * block carries; a rewrite or a split rolls the current attempt back and replaces the task;
  * verify completes the task when its selection covers the criteria and the validation and
- * checks pass; ask-user puts the planner's one question to the operator and hands the answer
+ * checks pass, and a pre_validation deny of that gate skips the task; ask-user puts the planner's one question to the operator and hands the answer
  * back as guidance; an answer that would drop a criterion or one of its checks becomes ask-user.
  *
  * `attempt` is the current attempt's start snapshot; null means no attempt ran (a stale
@@ -451,7 +378,7 @@ export async function applyConsultAnswer(
     case 'split-task':
       return applySplit(ctx, task, action, attempt);
     case 'verify':
-      return applyVerify(ctx, task, action);
+      return applyVerify(ctx, task, action, attempt);
     case 'ask-user':
       return applyAskUser(ctx, action);
     case 'confirm':

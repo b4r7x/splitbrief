@@ -44,6 +44,9 @@ describe('runValidation', () => {
     const discovered: DiscoveredValidation = { typecheckCommand: 'cargo check' };
 
     const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/main.py'),
       projectDir: tempDir,
       config,
@@ -64,6 +67,9 @@ describe('runValidation', () => {
     writeFileSync(join(tempDir, 'go.mod'), 'module example.com/test');
 
     const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/main.rs'),
       projectDir: tempDir,
       config,
@@ -83,6 +89,9 @@ describe('runValidation', () => {
     writeFileSync(join(tempDir, 'Cargo.toml'), '[package]\nname = "test"');
 
     const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/main.rs'),
       projectDir: tempDir,
       config,
@@ -113,6 +122,9 @@ describe('runValidation', () => {
     const validator = createValidator({ runCommand: runner });
 
     const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/main.rs'),
       projectDir: tempDir,
       config,
@@ -131,6 +143,9 @@ describe('runValidation', () => {
     const config = makeConfig({ typecheck: false, lint: true, test: false });
 
     const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/foo.ts'),
       projectDir: tempDir,
       config,
@@ -150,6 +165,9 @@ describe('runValidation', () => {
     writeFileSync(join(tempDir, 'Cargo.toml'), '[package]\nname = "test"');
 
     const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/main.rs'),
       projectDir: tempDir,
       config,
@@ -175,6 +193,9 @@ describe('runValidation', () => {
     writeFileSync(join(tempDir, 'Cargo.toml'), '[package]\nname = "test"');
 
     const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/main.rs'),
       projectDir: tempDir,
       config,
@@ -204,6 +225,9 @@ describe('runValidation', () => {
     writeFileSync(join(tempDir, 'Cargo.toml'), '[package]\nname = "test"');
 
     const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/main.rs'),
       projectDir: tempDir,
       config,
@@ -227,6 +251,9 @@ describe('runValidation', () => {
     });
 
     const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/app.ts'),
       projectDir: tempDir,
       config,
@@ -249,6 +276,9 @@ describe('runValidation', () => {
     writeFileSync(join(tempDir, 'package.json'), '{"name":"plain"}');
 
     const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/app.js'),
       projectDir: tempDir,
       config,
@@ -271,6 +301,9 @@ describe('runValidation', () => {
     writeFileSync(join(tempDir, 'pyproject.toml'), '[tool.pytest]');
 
     const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/app.py'),
       projectDir: tempDir,
       config,
@@ -293,6 +326,9 @@ describe('runValidation', () => {
     writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
 
     const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/app.ts'),
       projectDir: tempDir,
       config,
@@ -310,6 +346,9 @@ describe('runValidation', () => {
     writeFileSync(join(tempDir, 'package.json'), '{"devDependencies":{"typescript":"^5"}}');
 
     const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/app.ts'),
       projectDir: tempDir,
       config,
@@ -333,6 +372,9 @@ describe('runValidation', () => {
     writeFileSync(join(tempDir, 'package.json'), '{"devDependencies":{"typescript":"^5"}}');
 
     const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/app.ts'),
       projectDir: tempDir,
       config,
@@ -357,6 +399,9 @@ describe('runValidation', () => {
     writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
 
     const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/app.ts'),
       projectDir: tempDir,
       config,
@@ -377,6 +422,9 @@ describe('runValidation', () => {
     writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
 
     await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/app.ts'),
       projectDir: tempDir,
       config,
@@ -401,6 +449,9 @@ describe('runValidation', () => {
     const validator = createValidator({ runCommand: runner });
 
     await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/app.ts'),
       projectDir: tempDir,
       config,
@@ -420,6 +471,9 @@ describe('runValidation', () => {
     writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
 
     await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/app.ts'),
       projectDir: tempDir,
       config,
@@ -442,6 +496,9 @@ describe('runValidation', () => {
     writeFileSync(join(tempDir, 'package.json'), '{"devDependencies":{"typescript":"^5"}}');
 
     const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/app.ts'),
       projectDir: tempDir,
       config,
@@ -462,6 +519,9 @@ describe('runValidation', () => {
     writeFileSync(join(tempDir, 'package.json'), '{"scripts":{"lint":"biome check"}}');
 
     await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/app.js'),
       projectDir: tempDir,
       config,
@@ -485,6 +545,9 @@ describe('runValidation', () => {
     writeFileSync(join(tempDir, 'src', 'b.test.ts'), '');
 
     await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: makeTask({ suggestedFiles: ['src/a.ts', 'src/b.ts'], action: 'modify' }),
       projectDir: tempDir,
       config,
@@ -515,6 +578,9 @@ describe('runValidation', () => {
     writeFileSync(join(tempDir, 'e2e', 'scenarios', 'stop.test.ts'), '');
 
     await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('e2e/scenarios/stop.test.ts'),
       projectDir: tempDir,
       config,
@@ -535,6 +601,9 @@ describe('runValidation', () => {
     writeFileSync(join(tempDir, 'tests', 'test_a.py'), '');
 
     await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/a.py'),
       projectDir: tempDir,
       config,
@@ -555,6 +624,9 @@ describe('runValidation', () => {
     writeFileSync(join(tempDir, 'pkg', 'x_test.go'), '');
 
     await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('pkg/x.go'),
       projectDir: tempDir,
       config,
@@ -575,6 +647,9 @@ describe('runValidation', () => {
     writeFileSync(join(tempDir, 'src', 'lib.rs'), '#[cfg(test)]\nmod tests {}');
 
     await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/lib.rs'),
       projectDir: tempDir,
       config,
@@ -586,7 +661,7 @@ describe('runValidation', () => {
     expect(runner.calls[0]?.args).toEqual(['test', '--', 'lib']);
   });
 
-  it('a config-pinned test command runs unnarrowed', async () => {
+  it('skips a config-pinned related-test command until the final review', async () => {
     const runner = makeCommandRunner();
     const validator = createValidator({ runCommand: runner });
     const config = makeConfig({
@@ -599,7 +674,10 @@ describe('runValidation', () => {
     mkdirSync(join(tempDir, 'src'), { recursive: true });
     writeFileSync(join(tempDir, 'src', 'a.test.ts'), '');
 
-    await validator.runValidation({
+    const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/a.ts'),
       projectDir: tempDir,
       config,
@@ -607,6 +685,11 @@ describe('runValidation', () => {
       phase: 'implementing',
     });
 
-    expect(runner.calls[0]?.args).toEqual(['test']);
+    expect(runner.calls).toEqual([]);
+    expect(results[0]).toMatchObject({
+      skipped: true,
+      skippedReason:
+        'the test command cannot select related tests; the pre-review full suite runs it',
+    });
   });
 });

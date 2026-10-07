@@ -286,7 +286,7 @@ A worktree isolates files, not the machine. It shares refs, git config, and hook
 
 An isolation strategy that copies the project instead of checking it out must exclude build output and report artifacts as well as the VCS, dependency, and SPLITBRIEF directories. The staged copy derives its file list from git's own ignore rules, so gitignored `dist/`, `coverage/`, and tool output never enter the copy -- otherwise it would move hundreds of megabytes per run.
 
-Whichever mode ran, SPLITBRIEF's validation stage runs in the run workspace (the checkout in checkout mode) after each attempt. The implementer's ability to run checks on its own work is a first-pass-rate improvement, not the source of truth about correctness.
+The brief gate runs in the run workspace. With `review: end`, ordinary briefs run no stack gates. With `review: task`, each task runs related tests and due checks. The final review runs all enabled stack gates and registered checks. A single owning brief rechecks its failed gates through its retry ladder. The implementer's ability to run checks on its own work is a first-pass-rate improvement, not the source of truth about correctness.
 
 ### Prompt contract per mode
 

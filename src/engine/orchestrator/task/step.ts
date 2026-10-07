@@ -1,7 +1,6 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
-import { formatValidationError, validationFailureLine } from '../validation/format-error.js';
 
 import type { WorkflowContext } from '../types.js';
 import { recordTaskUsage } from '../tokens.js';
@@ -38,9 +37,8 @@ import { gateAttemptChanges } from './attempt-gate.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
 import { restoreExhaustedTaskFiles } from './rollback.js';
 import { handleFailedImplementation } from './implementation-failure.js';
-import { runPreValidationGate } from './pre-validation-gate.js';
+import { runBriefGate } from './brief-gate.js';
 import { inputHashesNow, inputsMovedUnexpectedly, taskInputFiles } from './stale-inputs.js';
-import { runTaskChecksAfterAcceptance } from './task-checks.js';
 import { lineageIdOf } from '../../../core/state/task-insert.js';
 import { requestConsult } from '../consult/request.js';
 import { applyConsultAnswer } from '../consult/apply.js';
@@ -49,7 +47,6 @@ import { formatMessage } from '../queue/prompt.js';
 import { consultAttemptError, guidanceInstructions } from '../escalation/consult-guidance.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import { confirmAttemptDecisions } from '../consult/decision-confirm.js';
-import { recordCheckRuns } from '../evidence/record-checks.js';
 
 function recordApprovalDenial(opts: {
   wctx: WorkflowContext;
@@ -523,56 +520,23 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
 
   if (wctx.signal?.aborted) return state;
 
-  const preValidation = await runPreValidationGate({
-    wctx,
-    task,
-    state,
-    taskChangedFiles,
-    taskStartSnapshot,
-    setTrackedState,
-  });
-  if (!preValidation.proceed) return preValidation.state;
-  state = preValidation.state;
-
-  if (wctx.signal?.aborted) return state;
-
-  let validationResults: Awaited<ReturnType<typeof wctx.validator.runValidation>>;
+  let gated: Awaited<ReturnType<typeof runBriefGate>>;
   try {
-    validationResults = await wctx.validator.runValidation({
+    gated = await runBriefGate({
+      wctx,
+      state,
       task,
-      projectDir: wctx.workspaceDir,
-      config,
-      bus: wctx.bus,
-      phase: state.phase,
-      discoveredValidation: state.discoveredValidation,
-      signal: wctx.signal,
       changedFiles: taskChangedFiles,
+      taskStartSnapshot,
+      setTrackedState,
     });
   } catch (err) {
     if (isAbortError(err) || wctx.signal?.aborted) return state;
     throw err;
   }
-  await recordCheckRuns({
-    projectDir,
-    sessionId,
-    workspaceDir: wctx.workspaceDir,
-    state,
-    task,
-    validation: validationResults,
-  });
-  if (wctx.signal?.aborted) return state;
-
-  const acceptance = wctx.validator.decideAcceptance({
-    results: validationResults,
-    changedFiles: taskChangedFiles,
-  });
-
-  // The brief's own checks run on the candidate its validation just passed and
-  // are recorded against it, so the review and the checks log read one register.
-  if (acceptance.accepted) {
-    const checked = await runTaskChecksAfterAcceptance({ wctx, state, task, setTrackedState });
-    state = checked.state;
-  }
+  state = gated.state;
+  if (gated.stop !== undefined) return state;
+  const { validationResults, acceptance } = gated;
 
   const commitResult = await validateCommitAndAdvance({
     task,
@@ -632,12 +596,11 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
 
   if (wctx.signal?.aborted) return state;
 
-  const errorText = formatValidationError(validationResults, acceptance);
   const retry = await retryAndRecord({
     wctx,
     task,
-    initialError: errorText,
-    initialDiagnosis: validationFailureLine(validationResults, acceptance),
+    initialError: gated.error,
+    initialDiagnosis: gated.diagnosis,
     state,
     taskStartTime,
     taskStartSnapshot,

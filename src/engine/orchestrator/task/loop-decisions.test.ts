@@ -15,7 +15,7 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
-import { consultCallAnswering } from '#testing/helpers/typed-planner.js';
+import { consultCallAnswering, passingReviewVerdict } from '#testing/helpers/typed-planner.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { error } from '../../../utils/error.js';
 import { loadState } from '../../../core/state/persistence.js';
@@ -45,8 +45,7 @@ const WHAT: Decision = { what: 'Dropped the --json flag', why: 'It was hard to w
 const ANSWER = 'Keep the --json flag and wire it.';
 const TS_ERROR =
   "src/engine/orchestrator/task/loop.ts(5,15): error TS2305: Module '../../../core/schemas/review.js' has no exported member 'ReviewRecord'.";
-const LINT_ERROR =
-  'loop-batch-boundary.test.ts:224 Formatter would have printed different content.';
+const LINT_ERROR = 'prior-run.test.ts:224 Formatter would have printed different content.';
 
 let dirs: string[] = [];
 
@@ -217,7 +216,7 @@ async function runLoop(opts: {
     makeWctx({
       projectDir: opts.projectDir,
       sessionId: opts.sessionId,
-      config: makeNoValidationConfig(),
+      config: makeNoValidationConfig({ workflow: { review: 'task' }, validation: { test: true } }),
       callbacks: opts.callbacks ?? makeCallbacks({ onPlannerReply: vi.fn() }).callbacks,
       planner: opts.planner,
       implementer: opts.implementer,
@@ -594,7 +593,11 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
         seat: ctx.seat,
         typedOutput: 'fallback',
         canResume: false,
-        invoke: async () => makeRunnerCallResult({ status: 'completed', text: '{}' }),
+        invoke: async ({ prompt }) =>
+          makeRunnerCallResult({
+            status: 'completed',
+            text: ctx.seat === 'reviewer' ? JSON.stringify(passingReviewVerdict(prompt)) : '{}',
+          }),
       }),
     });
     const { bus, events } = makeBusRecorder();
@@ -776,7 +779,10 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig(),
+        config: makeNoValidationConfig({
+          workflow: { review: 'task' },
+          validation: { test: true },
+        }),
         callbacks: makeCallbacks({ onPlannerReply: vi.fn() }).callbacks,
         isolation: makeWorktreeIsolation({ projectDir, sessionId }),
         planner,

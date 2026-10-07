@@ -1,3 +1,4 @@
+import { acceptValidationResults } from './acceptance.js';
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -8,10 +9,7 @@ import type { EngineEvent, EngineEventOf } from '../../events/types.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import {
-  ValidationBaselineSchema,
-  type DiscoveredValidation,
-} from '../../../core/schemas/workflow.js';
+import type { DiscoveredValidation } from '../../../core/schemas/workflow.js';
 import { processError } from '../../../lib/process/errors.js';
 import { makeConfig, makeCommandRunner } from '#testing/helpers/validation-fixtures.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
@@ -39,7 +37,7 @@ describe('run-start baseline of pre-existing failures', () => {
     cleanupTempDir(tempDir);
   });
 
-  it('does not accept a task failure after its baseline stage timed out', async () => {
+  it('skips an unnarrowable brief test command after a timed-out full-suite baseline', async () => {
     const timeout = processError.timeout({
       command: 'npm test',
       label: 'test validation',
@@ -47,7 +45,6 @@ describe('run-start baseline of pre-existing failures', () => {
       output: '',
     });
     const validator = createValidator({
-      captureBaseline: true,
       runCommand: makeCommandRunner(
         timeout,
         processError.exitCode({
@@ -66,13 +63,17 @@ describe('run-start baseline of pre-existing failures', () => {
       phase: 'implementing' as const,
     };
 
-    const baseline = await validator.primeBaseline(opts);
-    const results = await validator.runValidation({ ...opts, changedFiles: ['src/app.ts'] });
+    const baseline = await validator.runFullSuite({ ...opts, moment: 'baseline' });
+    const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      baseline: baseline.failures,
+      ...opts,
+      changedFiles: ['src/app.ts'],
+    });
 
-    expect(validator.decideAcceptance({ results, changedFiles: ['src/app.ts'] }).accepted).toBe(
-      false,
-    );
-    expect(baseline).toMatchObject({ failingStages: [], failures: {} });
+    expect(results).toMatchObject([{ stage: 'test', skipped: true }]);
+    expect(acceptValidationResults(results, baseline.failures, ['src/app.ts']).accepted).toBe(true);
+    expect(baseline.failures).toEqual({});
   });
 
   it('continues to lint and test when typecheck was already red at baseline', async () => {
@@ -87,7 +88,6 @@ describe('run-start baseline of pre-existing failures', () => {
         { stdout: 'ok', stderr: '', code: 0 },
         { stdout: 'ok', stderr: '', code: 0 },
       ),
-      captureBaseline: true,
     });
     const config = makeConfig({
       typecheck: true,
@@ -98,14 +98,19 @@ describe('run-start baseline of pre-existing failures', () => {
       testCommand: 'npm test',
     });
 
-    await validator.primeBaseline({
-      task: mkTask('src/app.ts'),
+    const suiteBaseline = await validator.runFullSuite({
+      moment: 'baseline',
+
       projectDir: tempDir,
       config,
       bus: fakeBus,
       phase: 'implementing',
     });
     const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+      baseline: suiteBaseline.failures,
+
       task: mkTask('src/app.ts'),
       projectDir: tempDir,
       config,
@@ -126,7 +131,6 @@ describe('run-start baseline of pre-existing failures', () => {
         { stdout: 'ok', stderr: '', code: 0 },
         processError.exitCode({ command: 'tsc', code: 1, stderr: 'new error', output: '' }),
       ),
-      captureBaseline: true,
     });
     const config = makeConfig({
       typecheck: true,
@@ -137,14 +141,19 @@ describe('run-start baseline of pre-existing failures', () => {
       testCommand: 'npm test',
     });
 
-    await validator.primeBaseline({
-      task: mkTask('src/app.ts'),
+    const suiteBaseline = await validator.runFullSuite({
+      moment: 'baseline',
+
       projectDir: tempDir,
       config,
       bus: fakeBus,
       phase: 'implementing',
     });
     const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+      baseline: suiteBaseline.failures,
+
       task: mkTask('src/app.ts'),
       projectDir: tempDir,
       config,
@@ -153,7 +162,7 @@ describe('run-start baseline of pre-existing failures', () => {
     });
 
     expect(results.map((r) => r.stage)).toEqual(['typecheck']);
-    const acceptance = validator.decideAcceptance({ results, changedFiles: ['src/app.ts'] });
+    const acceptance = acceptValidationResults(results, suiteBaseline.failures, ['src/app.ts']);
     expect(acceptance.blockingStages).toContain('typecheck');
     expect(acceptance.exemptStages).toEqual([]);
     const error = formatValidationError(results, acceptance);
@@ -171,6 +180,9 @@ describe('run-start baseline of pre-existing failures', () => {
     writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
 
     const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/app.ts'),
       projectDir: tempDir,
       config,
@@ -178,7 +190,7 @@ describe('run-start baseline of pre-existing failures', () => {
       phase: 'implementing',
     });
 
-    const acceptance = validator.decideAcceptance({ results, changedFiles: ['src/app.ts'] });
+    const acceptance = acceptValidationResults(results, undefined, ['src/app.ts']);
     expect(acceptance.exemptStages).toEqual([]);
     expect(acceptance.blockingStages).toContain('typecheck');
     expect(acceptance.accepted).toBe(false);
@@ -189,13 +201,13 @@ describe('run-start baseline of pre-existing failures', () => {
       processError.exitCode({ command: 'tsc', code: 1, stderr, output: '' });
     const validator = createValidator({
       runCommand: makeCommandRunner(typeError('src/legacy.ts(3,1): error TS2322')()),
-      captureBaseline: true,
     });
     const config = makeConfig({ typecheck: true, lint: false, test: false });
     writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
 
-    await validator.primeBaseline({
-      task: mkTask('src/app.ts'),
+    const suiteBaseline = await validator.runFullSuite({
+      moment: 'baseline',
+
       projectDir: tempDir,
       config,
       bus: fakeBus,
@@ -204,8 +216,8 @@ describe('run-start baseline of pre-existing failures', () => {
 
     const probedCommand = 'npx tsc --noEmit';
     expect(
-      validator.decideAcceptance({
-        results: [
+      acceptValidationResults(
+        [
           {
             passed: false,
             stage: 'typecheck',
@@ -214,13 +226,14 @@ describe('run-start baseline of pre-existing failures', () => {
             error: 'src/legacy.ts(3,1): error TS2322',
           },
         ],
-        changedFiles: ['src/app.ts'],
-      }).exemptStages,
+        suiteBaseline.failures,
+        ['src/app.ts'],
+      ).exemptStages,
     ).toContain('typecheck');
 
     expect(
-      validator.decideAcceptance({
-        results: [
+      acceptValidationResults(
+        [
           {
             passed: false,
             stage: 'typecheck',
@@ -229,8 +242,9 @@ describe('run-start baseline of pre-existing failures', () => {
             error: 'src/legacy.ts(3,1): error TS2322\nsrc/other.ts(9,2): error TS2345',
           },
         ],
-        changedFiles: ['src/app.ts'],
-      }).blockingStages,
+        suiteBaseline.failures,
+        ['src/app.ts'],
+      ).blockingStages,
     ).toContain('typecheck');
   });
 
@@ -239,13 +253,13 @@ describe('run-start baseline of pre-existing failures', () => {
       processError.exitCode({ command: 'tsc', code: 1, stderr: 'type error', output: '' });
     const validator = createValidator({
       runCommand: makeCommandRunner(typeError()),
-      captureBaseline: true,
     });
     const config = makeConfig({ typecheck: true, lint: false, test: false });
     writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
 
-    await validator.primeBaseline({
-      task: mkTask('src/app.ts'),
+    const suiteBaseline = await validator.runFullSuite({
+      moment: 'baseline',
+
       projectDir: tempDir,
       config,
       bus: fakeBus,
@@ -253,8 +267,8 @@ describe('run-start baseline of pre-existing failures', () => {
     });
 
     const probedCommand = 'npx tsc --noEmit';
-    const exemptAcceptance = validator.decideAcceptance({
-      results: [
+    const exemptAcceptance = acceptValidationResults(
+      [
         {
           passed: false,
           stage: 'typecheck',
@@ -263,8 +277,9 @@ describe('run-start baseline of pre-existing failures', () => {
           error: 'type error',
         },
       ],
-      changedFiles: ['src/app.ts'],
-    });
+      suiteBaseline.failures,
+      ['src/app.ts'],
+    );
     expect(exemptAcceptance.exemptStages).toContain('typecheck');
     expect(exemptAcceptance.blockingStages).toEqual([]);
     expect(exemptAcceptance.accepted).toBe(true);
@@ -275,8 +290,8 @@ describe('run-start baseline of pre-existing failures', () => {
       ),
     ).toBe('');
 
-    const blockingAcceptance = validator.decideAcceptance({
-      results: [
+    const blockingAcceptance = acceptValidationResults(
+      [
         {
           passed: false,
           stage: 'typecheck',
@@ -285,8 +300,9 @@ describe('run-start baseline of pre-existing failures', () => {
           error: 'type error',
         },
       ],
-      changedFiles: ['src/app.ts'],
-    });
+      suiteBaseline.failures,
+      ['src/app.ts'],
+    );
     expect(blockingAcceptance.exemptStages).toEqual([]);
     expect(blockingAcceptance.blockingStages).toContain('typecheck');
     expect(blockingAcceptance.accepted).toBe(false);
@@ -297,13 +313,13 @@ describe('run-start baseline of pre-existing failures', () => {
       processError.exitCode({ command: 'tsc', code: 1, stderr: 'type error', output: '' });
     const validator = createValidator({
       runCommand: makeCommandRunner(typeError(), typeError()),
-      captureBaseline: true,
     });
     const config = makeConfig({ typecheck: true, lint: false, test: false });
     writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
 
-    await validator.primeBaseline({
-      task: mkTask('src/app.ts'),
+    const suiteBaseline = await validator.runFullSuite({
+      moment: 'baseline',
+
       projectDir: tempDir,
       config,
       bus: fakeBus,
@@ -314,6 +330,9 @@ describe('run-start baseline of pre-existing failures', () => {
     const bus = createEventBus();
     bus.subscribe((event) => events.push(event));
     await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      baseline: suiteBaseline.failures,
+
       task: mkTask('src/app.ts'),
       projectDir: tempDir,
       config,
@@ -330,27 +349,6 @@ describe('run-start baseline of pre-existing failures', () => {
     expect('error' in (done ?? {})).toBe(false);
   });
 
-  it('probes the default test baseline against the affected test file, not the whole suite', async () => {
-    mkdirSync(join(tempDir, 'src'), { recursive: true });
-    writeFileSync(join(tempDir, 'src', 'foo.test.ts'), '');
-    writeTsProject(tempDir);
-    const runner = makeCommandRunner();
-    const validator = createValidator({ runCommand: runner, captureBaseline: true });
-    const config = makeConfig({ typecheck: false, lint: false, test: true });
-
-    await validator.primeBaseline({
-      task: mkTask('src/foo.ts'),
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-    });
-
-    const baselineProbe = runner.calls[0];
-    expect(baselineProbe?.cmd).toBe('npm');
-    expect(baselineProbe?.args).toEqual(['test', '--', join('src', 'foo.test.ts')]);
-  });
-
   it('attributes a fresh test failure to the task when the affected file passed at baseline', async () => {
     mkdirSync(join(tempDir, 'src'), { recursive: true });
     writeFileSync(join(tempDir, 'src', 'foo.test.ts'), '');
@@ -360,18 +358,22 @@ describe('run-start baseline of pre-existing failures', () => {
         { stdout: 'ok', stderr: '', code: 0 },
         processError.exitCode({ command: 'npm', code: 1, stderr: 'test failed', output: '' }),
       ),
-      captureBaseline: true,
     });
     const config = makeConfig({ typecheck: false, lint: false, test: true });
 
-    await validator.primeBaseline({
-      task: mkTask('src/foo.ts'),
+    const suiteBaseline = await validator.runFullSuite({
+      moment: 'baseline',
+
       projectDir: tempDir,
       config,
       bus: fakeBus,
       phase: 'implementing',
     });
     const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+      baseline: suiteBaseline.failures,
+
       task: mkTask('src/foo.ts'),
       projectDir: tempDir,
       config,
@@ -379,103 +381,12 @@ describe('run-start baseline of pre-existing failures', () => {
       phase: 'implementing',
     });
 
-    const acceptance = validator.decideAcceptance({ results, changedFiles: ['src/foo.ts'] });
+    const acceptance = acceptValidationResults(results, suiteBaseline.failures, ['src/foo.ts']);
     expect(acceptance.exemptStages).toEqual([]);
     expect(acceptance.blockingStages).toContain('test');
     const error = formatValidationError(results, acceptance);
     expect(error).toContain('Your previous code had an error');
     expect(error).not.toContain('pre-existing');
-  });
-
-  it('does not exempt a test failure narrowed to a file the baseline never probed', async () => {
-    mkdirSync(join(tempDir, 'src'), { recursive: true });
-    writeFileSync(join(tempDir, 'src', 'foo.test.ts'), '');
-    writeFileSync(join(tempDir, 'src', 'bar.test.ts'), '');
-    writeTsProject(tempDir);
-    const validator = createValidator({
-      runCommand: makeCommandRunner(
-        processError.exitCode({
-          command: 'npm',
-          code: 1,
-          stderr: 'FAIL src/foo.test.ts',
-          output: '',
-        }),
-        processError.exitCode({
-          command: 'npm',
-          code: 1,
-          stderr: 'FAIL src/bar.test.ts',
-          output: '',
-        }),
-      ),
-      captureBaseline: true,
-    });
-    const config = makeConfig({ typecheck: false, lint: false, test: true });
-
-    await validator.primeBaseline({
-      task: mkTask('src/foo.ts'),
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-    });
-    const results = await validator.runValidation({
-      task: mkTask('src/bar.ts'),
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-      changedFiles: ['src/bar.ts'],
-    });
-
-    const acceptance = validator.decideAcceptance({ results, changedFiles: ['src/bar.ts'] });
-    expect(acceptance.exemptStages).toEqual([]);
-    expect(acceptance.blockingStages).toContain('test');
-    expect(acceptance.accepted).toBe(false);
-  });
-
-  it('still exempts the test stage when the task runs the same narrowed command as the baseline', async () => {
-    mkdirSync(join(tempDir, 'src'), { recursive: true });
-    writeFileSync(join(tempDir, 'src', 'foo.test.ts'), '');
-    writeTsProject(tempDir);
-    const validator = createValidator({
-      runCommand: makeCommandRunner(
-        processError.exitCode({
-          command: 'npm',
-          code: 1,
-          stderr: 'FAIL src/foo.test.ts',
-          output: '',
-        }),
-        processError.exitCode({
-          command: 'npm',
-          code: 1,
-          stderr: 'FAIL src/foo.test.ts',
-          output: '',
-        }),
-      ),
-      captureBaseline: true,
-    });
-    const config = makeConfig({ typecheck: false, lint: false, test: true });
-
-    await validator.primeBaseline({
-      task: mkTask('src/foo.ts'),
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-    });
-    const results = await validator.runValidation({
-      task: mkTask('src/foo.ts'),
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-      changedFiles: ['src/foo.ts'],
-    });
-
-    const acceptance = validator.decideAcceptance({ results, changedFiles: ['src/foo.ts'] });
-    expect(acceptance.exemptStages).toEqual(['test']);
-    expect(acceptance.blockingStages).toEqual([]);
-    expect(acceptance.accepted).toBe(true);
   });
 
   it('does not record a baseline failure when a heuristic command is missing its subcommand', async () => {
@@ -489,23 +400,24 @@ describe('run-start baseline of pre-existing failures', () => {
       });
     const validator = createValidator({
       runCommand: makeCommandRunner(missingClippy(), missingClippy()),
-      captureBaseline: true,
     });
     const config = makeConfig({ typecheck: false, lint: true, test: false });
     writeFileSync(join(tempDir, 'Cargo.toml'), '[package]\nname = "test"');
 
-    await validator.primeBaseline({
-      task: mkTask('src/main.rs'),
+    const suiteBaseline = await validator.runFullSuite({
+      moment: 'baseline',
+
       projectDir: tempDir,
       config,
       bus: fakeBus,
       phase: 'implementing',
     });
 
-    const acceptance = validator.decideAcceptance({
-      results: [{ passed: false, stage: 'lint', failureFiles: ['src/unrelated.rs'] }],
-      changedFiles: ['src/main.rs'],
-    });
+    const acceptance = acceptValidationResults(
+      [{ passed: false, stage: 'lint', failureFiles: ['src/unrelated.rs'] }],
+      suiteBaseline.failures,
+      ['src/main.rs'],
+    );
     expect(acceptance.exemptStages).toEqual([]);
     expect(acceptance.blockingStages).toContain('lint');
   });
@@ -531,17 +443,21 @@ describe('run-start baseline of pre-existing failures', () => {
         ].join('\n'),
       });
     const runner = makeCommandRunner(redSuite(), redSuite());
-    const validator = createValidator({ runCommand: runner, captureBaseline: true });
+    const validator = createValidator({ runCommand: runner });
     const config = makeConfig({ typecheck: false, lint: false, test: true });
 
-    await validator.primeBaseline({
-      task: mkTask('src/service.py'),
+    const suiteBaseline = await validator.runFullSuite({
+      moment: 'baseline',
+
       projectDir: tempDir,
       config,
       bus: fakeBus,
       phase: 'implementing',
     });
     const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      baseline: suiteBaseline.failures,
+
       task: mkTask('src/service.py'),
       projectDir: tempDir,
       config,
@@ -551,11 +467,12 @@ describe('run-start baseline of pre-existing failures', () => {
     });
 
     expect(runner.calls[0]?.cmd).toBe('pytest');
-    expect(runner.calls[0]?.args).toEqual([join('tests', 'service_test.py')]);
+    expect(runner.calls[0]?.args).toEqual([]);
+    expect(runner.calls[1]?.args).toEqual([join('tests', 'service_test.py')]);
     expect(results.find((r) => r.stage === 'test')?.command).toBe(
       `pytest ${join('tests', 'service_test.py')}`,
     );
-    const acceptance = validator.decideAcceptance({ results, changedFiles: ['src/service.py'] });
+    const acceptance = acceptValidationResults(results, suiteBaseline.failures, ['src/service.py']);
     expect(acceptance.exemptStages).toEqual(['test']);
     expect(acceptance.accepted).toBe(true);
   });
@@ -578,10 +495,13 @@ describe('run-start baseline of pre-existing failures', () => {
       redPackage(uptimeRed),
       redPackage(`${uptimeRed}\n${routesRed}`),
     );
-    const validator = createValidator({ runCommand: runner, captureBaseline: true });
+    const validator = createValidator({ runCommand: runner });
     const config = makeConfig({ typecheck: false, lint: false, test: true });
     const run = () =>
       validator.runValidation({
+        stages: ['typecheck', 'lint', 'test'],
+        baseline: suiteBaseline.failures,
+
         task: mkTask('pkg/handler.go'),
         projectDir: tempDir,
         config,
@@ -590,8 +510,9 @@ describe('run-start baseline of pre-existing failures', () => {
         changedFiles: ['pkg/handler.go'],
       });
 
-    await validator.primeBaseline({
-      task: mkTask('pkg/handler.go'),
+    const suiteBaseline = await validator.runFullSuite({
+      moment: 'baseline',
+
       projectDir: tempDir,
       config,
       bus: fakeBus,
@@ -601,18 +522,19 @@ describe('run-start baseline of pre-existing failures', () => {
     const regressed = await run();
 
     expect(runner.calls[0]?.cmd).toBe('go');
-    expect(runner.calls[0]?.args).toEqual(['test', './pkg/']);
-    expect(
-      validator.decideAcceptance({ results: kept, changedFiles: ['pkg/handler.go'] }),
-    ).toMatchObject({ exemptStages: ['test'], accepted: true });
+    expect(runner.calls[0]?.args).toEqual(['test', './...']);
+    expect(runner.calls[1]?.args).toEqual(['test', './pkg/']);
+    expect(acceptValidationResults(kept, suiteBaseline.failures, ['pkg/handler.go'])).toMatchObject(
+      { exemptStages: ['test'], accepted: true },
+    );
     expect(regressed.find((r) => r.stage === 'test')?.failureFiles).toEqual([]);
     expect(
-      validator.decideAcceptance({ results: regressed, changedFiles: ['pkg/handler.go'] }),
+      acceptValidationResults(regressed, suiteBaseline.failures, ['pkg/handler.go']),
     ).toMatchObject({ blockingStages: ['test'], accepted: false });
   });
 });
 
-describe('baseline probe heartbeat', () => {
+describe('full-suite baseline progress', () => {
   let tempDir: string;
 
   beforeEach(() => {
@@ -623,62 +545,12 @@ describe('baseline probe heartbeat', () => {
     cleanupTempDir(tempDir);
   });
 
-  function capturedBaselineDone(
-    events: EngineEvent[],
-  ): EngineEventOf<'validation_baseline'> | undefined {
-    return events.find(
-      (event): event is EngineEventOf<'validation_baseline'> =>
-        event.type === 'validation_baseline' && event.status === 'done',
-    );
-  }
-
-  it('publishes a running event naming the active stage before any done event', async () => {
-    const validator = createValidator({
-      runCommand: makeCommandRunner(
-        { stdout: 'ok', stderr: '', code: 0 },
-        { stdout: 'ok', stderr: '', code: 0 },
-      ),
-      captureBaseline: true,
-    });
-    const config = makeConfig({
-      typecheck: true,
-      typecheckCommand: 'npm run typecheck',
-      lint: true,
-      lintCommand: 'cargo clippy --no-deps',
-      test: false,
-    });
-    const events: EngineEvent[] = [];
-    const bus = createEventBus();
-    bus.subscribe((event) => events.push(event));
-
-    await validator.primeBaseline({
-      task: mkTask('src/app.ts'),
-      projectDir: tempDir,
-      config,
-      bus,
-      phase: 'implementing',
-    });
-
-    const activeStageIndex = events.findIndex(
-      (event): event is EngineEventOf<'validation_baseline'> =>
-        event.type === 'validation_baseline' &&
-        event.status === 'running' &&
-        event.activeStage !== undefined,
-    );
-    const doneIndex = events.findIndex(
-      (event) => event.type === 'validation_baseline' && event.status === 'done',
-    );
-    expect(activeStageIndex).toBeGreaterThanOrEqual(0);
-    expect(doneIndex).toBeGreaterThan(activeStageIndex);
-  });
-
   it('reports every enabled stage exactly once, red stages in failing and green stages true in stages', async () => {
     const validator = createValidator({
       runCommand: makeCommandRunner(
         { stdout: 'ok', stderr: '', code: 0 },
         processError.exitCode({ command: 'cargo', code: 1, stderr: 'clippy error', output: '' }),
       ),
-      captureBaseline: true,
     });
     const config = makeConfig({
       typecheck: true,
@@ -691,46 +563,22 @@ describe('baseline probe heartbeat', () => {
     const bus = createEventBus();
     bus.subscribe((event) => events.push(event));
 
-    await validator.primeBaseline({
-      task: mkTask('src/app.ts'),
+    const suiteBaseline = await validator.runFullSuite({
+      moment: 'baseline',
+
       projectDir: tempDir,
       config,
       bus,
       phase: 'implementing',
     });
 
-    expect(capturedBaselineDone(events)).toMatchObject({
-      stages: { typecheck: true, lint: false, test: false },
-      failing: { lint: true },
-      commands: {
-        typecheck: 'npm run typecheck',
-        lint: 'cargo clippy --no-deps',
-      },
-    });
-  });
-
-  it('reports the affected-test-narrowed test command actually run', async () => {
-    mkdirSync(join(tempDir, 'src'), { recursive: true });
-    writeFileSync(join(tempDir, 'src', 'foo.test.ts'), '');
-    writeTsProject(tempDir);
-    const validator = createValidator({
-      runCommand: makeCommandRunner(),
-      captureBaseline: true,
-    });
-    const config = makeConfig({ typecheck: false, lint: false, test: true });
-    const events: EngineEvent[] = [];
-    const bus = createEventBus();
-    bus.subscribe((event) => events.push(event));
-
-    await validator.primeBaseline({
-      task: mkTask('src/foo.ts'),
-      projectDir: tempDir,
-      config,
-      bus,
-      phase: 'implementing',
-    });
-
-    expect(capturedBaselineDone(events)?.commands?.test).toContain(join('src', 'foo.test.ts'));
+    expect(suiteBaseline.results.map((result) => [result.stage, result.passed])).toEqual([
+      ['typecheck', true],
+      ['lint', false],
+    ]);
+    expect(
+      events.filter((event) => event.type === 'full_suite' && event.status === 'done'),
+    ).toHaveLength(2);
   });
 
   it('narrows the test stage by the declared files plus the files the attempt changed', async () => {
@@ -742,6 +590,8 @@ describe('baseline probe heartbeat', () => {
     const config = makeConfig({ typecheck: false, lint: false, test: true });
 
     const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+
       task: mkTask('src/foo.ts'),
       projectDir: tempDir,
       config,
@@ -755,41 +605,9 @@ describe('baseline probe heartbeat', () => {
     expect(command).toContain(join('src', 'shared', 'button.test.ts'));
   });
 
-  it('never reports a skipped stage as green, and progress agrees with done', async () => {
-    mkdirSync(join(tempDir, 'src'), { recursive: true });
-    writeFileSync(join(tempDir, 'src', 'foo.test.ts'), '');
-    writeTsProject(tempDir);
-    const validator = createValidator({
-      runCommand: makeCommandRunner(processError.notFound('npm')),
-      captureBaseline: true,
-    });
-    const config = makeConfig({ typecheck: false, lint: false, test: true });
-    const events: EngineEvent[] = [];
-    const bus = createEventBus();
-    bus.subscribe((event) => events.push(event));
-
-    await validator.primeBaseline({
-      task: mkTask('src/foo.ts'),
-      projectDir: tempDir,
-      config,
-      bus,
-      phase: 'implementing',
-    });
-
-    const progress = events.filter(
-      (event): event is EngineEventOf<'validation_baseline'> =>
-        event.type === 'validation_baseline' && event.status === 'running',
-    );
-    const done = capturedBaselineDone(events);
-    expect(progress.at(-1)?.stages).toEqual({ typecheck: false, lint: false, test: false });
-    expect(done?.stages).toEqual(progress.at(-1)?.stages);
-    expect(done?.failing).toBeUndefined();
-  });
-
   it('keeps a stage disabled by its master switch out of both sets', async () => {
     const validator = createValidator({
       runCommand: makeCommandRunner({ stdout: 'ok', stderr: '', code: 0 }),
-      captureBaseline: true,
     });
     const config = makeConfig({
       typecheck: true,
@@ -801,40 +619,17 @@ describe('baseline probe heartbeat', () => {
     const bus = createEventBus();
     bus.subscribe((event) => events.push(event));
 
-    await validator.primeBaseline({
-      task: mkTask('src/app.ts'),
+    const suiteBaseline = await validator.runFullSuite({
+      moment: 'baseline',
+
       projectDir: tempDir,
       config,
       bus,
       phase: 'implementing',
     });
 
-    const done = capturedBaselineDone(events);
-    expect(done?.stages).toEqual({ typecheck: true, lint: false, test: false });
-    expect(done?.failing).toBeUndefined();
-  });
-
-  it('publishes nothing when baseline capture is not enabled', async () => {
-    const validator = createValidator({ runCommand: makeCommandRunner() });
-    const config = makeConfig({
-      typecheck: true,
-      typecheckCommand: 'npm run typecheck',
-      lint: false,
-      test: false,
-    });
-    const events: EngineEvent[] = [];
-    const bus = createEventBus();
-    bus.subscribe((event) => events.push(event));
-
-    await validator.primeBaseline({
-      task: mkTask('src/app.ts'),
-      projectDir: tempDir,
-      config,
-      bus,
-      phase: 'implementing',
-    });
-
-    expect(events.some((event) => event.type === 'validation_baseline')).toBe(false);
+    expect(suiteBaseline.results.map((result) => result.stage)).toEqual(['typecheck']);
+    expect(suiteBaseline.failures).toEqual({});
   });
 });
 
@@ -859,6 +654,9 @@ describe('validation pipeline', () => {
       test: false,
     });
     const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/main.rs'),
       projectDir: tempDir,
       config,
@@ -871,6 +669,9 @@ describe('validation pipeline', () => {
   it('skips lint when master switch is off', async () => {
     const config = makeConfig({ lint: false, lintCommand: 'cargo clippy' });
     const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/main.rs'),
       projectDir: tempDir,
       config,
@@ -887,6 +688,9 @@ describe('validation pipeline', () => {
     writeFileSync(join(tempDir, 'tests', 'foo.test.ts'), '');
     writeTsProject(tempDir);
     const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/foo.ts'),
       projectDir: tempDir,
       config,
@@ -906,6 +710,9 @@ describe('validation pipeline', () => {
     bus.subscribe((event) => events.push(event));
 
     const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/main.ts'),
       projectDir: tempDir,
       config,
@@ -934,6 +741,9 @@ describe('validation pipeline', () => {
     bus.subscribe((event) => events.push(event));
 
     await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/main.ts'),
       projectDir: tempDir,
       config,
@@ -965,6 +775,9 @@ describe('validation pipeline', () => {
     bus.subscribe((event) => events.push(event));
 
     const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/main.ts'),
       projectDir: tempDir,
       config,
@@ -1016,6 +829,9 @@ describe('all-stages-skipped warning', () => {
     bus.subscribe((e) => events.push(e));
 
     await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/app.js'),
       projectDir: tempDir,
       config,
@@ -1036,6 +852,9 @@ describe('all-stages-skipped warning', () => {
     bus.subscribe((e) => events.push(e));
 
     await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/app.ts'),
       projectDir: tempDir,
       config,
@@ -1074,6 +893,9 @@ describe('discovered validation sanitization', () => {
     writeTsProject(tempDir);
 
     const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/foo.ts'),
       projectDir: tempDir,
       config,
@@ -1108,6 +930,9 @@ describe('discovered validation sanitization', () => {
     writeTsProject(tempDir);
 
     await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/foo.ts'),
       projectDir: tempDir,
       config,
@@ -1134,8 +959,9 @@ describe('discovered validation sanitization', () => {
     });
     const discovered: DiscoveredValidation = { testCommand: 'npx vitest run' };
 
-    await validator.runValidation({
-      task: mkTask('src/foo.ts'),
+    await validator.runFullSuite({
+      moment: 'pre-review',
+
       projectDir: tempDir,
       config,
       bus: fakeBus,
@@ -1169,6 +995,9 @@ describe('unrecognised stack', () => {
     bus.subscribe((event) => events.push(event));
 
     const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/app.ts'),
       projectDir: tempDir,
       config,
@@ -1214,6 +1043,9 @@ describe('capture and baseline reuse', () => {
     });
 
     const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      changedFiles: [],
+
       task: mkTask('src/app.ts'),
       projectDir: tempDir,
       config,
@@ -1224,79 +1056,6 @@ describe('capture and baseline reuse', () => {
     expect(results[0]?.passed).toBe(true);
     expect(results[0]?.output).toContain('checked 12 files');
     expect(results[0]?.output).toContain('warning: 1 deprecated rule');
-  });
-
-  it('baseline is reused on resume', async () => {
-    const config = makeConfig({
-      typecheck: true,
-      typecheckCommand: 'npm run typecheck',
-      lint: false,
-      test: false,
-    });
-    const priorFailure = 'src/app.ts(12,5): error TS2322: Type mismatch';
-    const probeRunner = makeCommandRunner(
-      processError.exitCode({ command: 'tsc', code: 1, stderr: priorFailure, output: '' }),
-    );
-    const probed = await createValidator({
-      runCommand: probeRunner,
-      captureBaseline: true,
-    }).primeBaseline({
-      task: mkTask('src/app.ts'),
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-    });
-
-    expect(probeRunner.calls).toHaveLength(1);
-    expect(probed).toEqual({
-      failingStages: ['typecheck'],
-      commands: { typecheck: 'npm run typecheck' },
-      failures: { typecheck: ['src/app.ts(12,5)'] },
-    });
-
-    const persistedBaseline = ValidationBaselineSchema.parse(JSON.parse(JSON.stringify(probed)));
-    const resumeRunner = makeCommandRunner();
-    const resumed = createValidator({ runCommand: resumeRunner, captureBaseline: true });
-    const reprimed = await resumed.primeBaseline({
-      task: mkTask('src/app.ts'),
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-      persistedBaseline,
-    });
-
-    expect(resumeRunner.calls).toEqual([]);
-    expect(reprimed).toEqual(persistedBaseline);
-    expect(
-      resumed.decideAcceptance({
-        results: [
-          {
-            passed: false,
-            stage: 'typecheck',
-            command: 'npm run typecheck',
-            error: priorFailure,
-            failureFiles: [],
-          },
-        ],
-        changedFiles: ['src/app.ts'],
-      }).exemptStages,
-    ).toEqual(['typecheck']);
-    expect(
-      resumed.decideAcceptance({
-        results: [
-          {
-            passed: false,
-            stage: 'typecheck',
-            command: 'npm run typecheck',
-            error: 'src/other.ts(3,1): error TS2551: Unknown name',
-            failureFiles: [],
-          },
-        ],
-        changedFiles: ['src/app.ts'],
-      }).blockingStages,
-    ).toEqual(['typecheck']);
   });
 });
 describe('formatting the changed files before the lint stage', () => {
@@ -1320,7 +1079,17 @@ describe('formatting the changed files before the lint stage', () => {
     const runner = makeCommandRunner();
     const validator = createValidator({ runCommand: runner });
 
+    await validator.formatChangedFiles({
+      task: mkTask('src/app.ts'),
+      projectDir: tempDir,
+      config: lintOnly,
+      bus: fakeBus,
+      phase: 'implementing',
+      changedFiles: ['src/app.ts', 'README.md'],
+    });
     const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+
       task: mkTask('src/app.ts'),
       projectDir: tempDir,
       config: lintOnly,
@@ -1344,7 +1113,17 @@ describe('formatting the changed files before the lint stage', () => {
     const runner = makeCommandRunner();
     const validator = createValidator({ runCommand: runner });
 
+    await validator.formatChangedFiles({
+      task: mkTask('src/app.ts'),
+      projectDir: tempDir,
+      config: lintOnly,
+      bus: fakeBus,
+      phase: 'implementing',
+      changedFiles: ['src/app.ts', 'src/deleted.ts'],
+    });
     await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+
       task: mkTask('src/app.ts'),
       projectDir: tempDir,
       config: lintOnly,
@@ -1365,7 +1144,17 @@ describe('formatting the changed files before the lint stage', () => {
     const runner = makeCommandRunner();
     const validator = createValidator({ runCommand: runner });
 
+    await validator.formatChangedFiles({
+      task: mkTask('src/app.ts'),
+      projectDir: tempDir,
+      config: lintOnly,
+      bus: fakeBus,
+      phase: 'implementing',
+      changedFiles: ['src/app.ts'],
+    });
     await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+
       task: mkTask('src/app.ts'),
       projectDir: tempDir,
       config: lintOnly,
@@ -1398,7 +1187,17 @@ describe('formatting the changed files before the lint stage', () => {
     const bus = createEventBus();
     bus.subscribe((event) => events.push(event));
 
+    await validator.formatChangedFiles({
+      task: mkTask('src/app.ts'),
+      projectDir: tempDir,
+      config: lintOnly,
+      bus,
+      phase: 'implementing',
+      changedFiles: ['src/app.ts'],
+    });
     const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+
       task: mkTask('src/app.ts'),
       projectDir: tempDir,
       config: lintOnly,
@@ -1437,7 +1236,17 @@ describe('formatting the changed files before the lint stage', () => {
     const validator = createValidator({ runCommand: runner });
     const { bus, events } = makeBusRecorder();
 
+    await validator.formatChangedFiles({
+      task: mkTask('src/app.ts'),
+      projectDir: tempDir,
+      config: lintOnly,
+      bus,
+      phase: 'implementing',
+      changedFiles: ['src/app.ts', 'src/clean.ts'],
+    });
     await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+
       task: mkTask('src/app.ts'),
       projectDir: tempDir,
       config: lintOnly,
@@ -1468,7 +1277,17 @@ describe('formatting the changed files before the lint stage', () => {
     const validator = createValidator({ runCommand: makeCommandRunner() });
     const { bus, events } = makeBusRecorder();
 
+    await validator.formatChangedFiles({
+      task: mkTask('src/app.ts'),
+      projectDir: tempDir,
+      config: lintOnly,
+      bus,
+      phase: 'implementing',
+      changedFiles: ['src/app.ts'],
+    });
     await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+
       task: mkTask('src/app.ts'),
       projectDir: tempDir,
       config: lintOnly,
@@ -1484,10 +1303,11 @@ describe('formatting the changed files before the lint stage', () => {
     writeTsProject(tempDir);
     writeFileSync(join(tempDir, 'biome.json'), '{}');
     const runner = makeCommandRunner();
-    const validator = createValidator({ runCommand: runner, captureBaseline: true });
+    const validator = createValidator({ runCommand: runner });
 
-    await validator.primeBaseline({
-      task: mkTask('src/app.ts'),
+    await validator.runFullSuite({
+      moment: 'baseline',
+
       projectDir: tempDir,
       config: lintOnly,
       bus: fakeBus,
@@ -1586,7 +1406,6 @@ describe('runFullSuite', () => {
       typecheckCommand: 'tsc --noEmit',
     });
     const validator = createValidator({
-      captureBaseline: true,
       runCommand: makeCommandRunner(
         processError.exitCode({ command: 'tsc', code: 2, stderr: '', output: '' }),
         processError.exitCode({ command: 'tsc', code: 2, stderr: '', output: '' }),
@@ -1599,15 +1418,17 @@ describe('runFullSuite', () => {
       phase: 'implementing' as const,
       moment: 'baseline' as const,
     };
-    const baseline = await validator.primeBaseline({ ...opts, task: mkTask('src/app.ts') });
+    const baseline = await validator.runFullSuite({
+      ...opts,
+    });
     const suite = await validator.runFullSuite({ ...opts, baseline: baseline?.failures });
 
     expect(baseline?.failures.typecheck).toEqual(['typecheck exited with code 2']);
     expect(suite.failures).toEqual(baseline?.failures);
     expect(suite.newFailures).toEqual({});
     expect(
-      validator.decideAcceptance({
-        results: [
+      acceptValidationResults(
+        [
           {
             passed: false,
             stage: 'typecheck',
@@ -1616,12 +1437,13 @@ describe('runFullSuite', () => {
             failureFiles: [],
           },
         ],
-        changedFiles: ['src/app.ts'],
-      }).accepted,
+        baseline.failures,
+        ['src/app.ts'],
+      ).accepted,
     ).toBe(true);
     expect(
-      validator.decideAcceptance({
-        results: [
+      acceptValidationResults(
+        [
           {
             passed: false,
             stage: 'typecheck',
@@ -1630,8 +1452,9 @@ describe('runFullSuite', () => {
             failureFiles: [],
           },
         ],
-        changedFiles: ['src/app.ts'],
-      }).accepted,
+        baseline.failures,
+        ['src/app.ts'],
+      ).accepted,
     ).toBe(false);
   });
 
@@ -1644,7 +1467,6 @@ describe('runFullSuite', () => {
       typecheckCommand: 'tsc --noEmit',
     });
     const validator = createValidator({
-      captureBaseline: true,
       runCommand: makeCommandRunner(
         processError.exitCode({
           command: 'tsc',
@@ -1663,10 +1485,15 @@ describe('runFullSuite', () => {
       moment: 'baseline' as const,
       task: mkTask('src/app.ts'),
     };
-    await validator.primeBaseline(opts);
-    const results = await validator.runValidation({ ...opts, changedFiles: ['src/app.ts'] });
+    const suiteBaseline = await validator.runFullSuite({ ...opts });
+    const results = await validator.runValidation({
+      stages: ['typecheck', 'lint', 'test'],
+      baseline: suiteBaseline.failures,
+      ...opts,
+      changedFiles: ['src/app.ts'],
+    });
 
-    expect(validator.decideAcceptance({ results, changedFiles: ['src/app.ts'] }).accepted).toBe(
+    expect(acceptValidationResults(results, suiteBaseline.failures, ['src/app.ts']).accepted).toBe(
       false,
     );
   });

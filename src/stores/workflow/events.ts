@@ -99,13 +99,6 @@ function mergeIntoTail(last: EngineEvent | undefined, event: EngineEvent): TailM
     return { kind: 'replace', event };
   }
   if (
-    event.type === 'validation_baseline' &&
-    last?.type === 'validation_baseline' &&
-    last.status === 'running'
-  ) {
-    return { kind: 'replace', event };
-  }
-  if (
     event.type === 'full_suite' &&
     last?.type === 'full_suite' &&
     last.status === 'running' &&

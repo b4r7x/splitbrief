@@ -90,7 +90,7 @@ export function restoreExhaustedTaskFiles(opts: {
 }
 
 export function restoreDeniedPreValidationFiles(opts: {
-  wctx: WorkflowContext;
+  wctx: RestoreContext;
   phase: WorkflowState['phase'];
   taskChangedFiles: string[];
   taskStartSnapshot: ChangedFilesSnapshot;

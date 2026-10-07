@@ -5,7 +5,6 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
-import type { Plan } from '../../../core/schemas/plan.js';
 import { taskId } from '../../../core/schemas/task.js';
 import {
   makeBusRecorder,
@@ -20,8 +19,7 @@ import {
   rejectingTriageResult,
   typedCallPlanReviewAndTriage,
 } from '#testing/helpers/typed-planner.js';
-import { loadState, saveState } from '../../../core/state/persistence.js';
-import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
+import { saveState } from '../../../core/state/persistence.js';
 import { deriveRunStatus } from '../../../core/sessions/run-status.js';
 import { recoveryActionLabel } from '../../../core/recovery/action-label.js';
 import type { FinalReviewResult } from '../final-review.js';
@@ -115,16 +113,6 @@ function scheduledReviewState(): WorkflowState {
     changedFilesBaseline: { ...RUN_BASELINE },
     pendingScheduledReview: { afterTaskId: taskId('T001') },
   });
-}
-
-function planWithRefusedCheck(): Plan {
-  return {
-    summary: 'Plan summary',
-    decisions: [],
-    criteria: [],
-    checks: [{ id: 'K1', kind: 'cmd', value: 'npm run deploy', required: true }],
-    validation: null,
-  };
 }
 
 function firstFailsThenPassesReviewer(): Planner {
@@ -345,98 +333,6 @@ describe('runScheduledReview saved recovery', () => {
     expect(resumed.state.pendingScheduledReview).toBeUndefined();
     expect(resumed.state.pendingTriage).toBeUndefined();
     expect(events.filter((event) => event.type === 'workflow_complete')).toEqual([]);
-  });
-
-  it('keeps the scheduled review pending when a pre-review halt stops it and re-runs on continue', async () => {
-    const ref = setupProject();
-    const state = {
-      ...scheduledReviewState(),
-      plan: planWithRefusedCheck(),
-    };
-    saveState(ref, state);
-    const { bus, events } = makeBusRecorder();
-    const callbacks = makeCallbacks().callbacks;
-    const planner = makePlanner({
-      typedCall: typedCallPlanReviewAndTriage(
-        () => planFromTasks(state.tasks),
-        (prompt) => passingReviewVerdict(prompt),
-        (prompt) => rejectingTriageResult(prompt),
-      ),
-    });
-    const wctx = makeWctx({ ...ref, config: makeNoValidationConfig(), bus, callbacks, planner });
-    const args = { wctx, state, callbacks, setTrackedState: vi.fn() };
-    const halted = await runScheduledReview(args);
-
-    expect(halted.status).toBe('stopped');
-    expect(halted.state.pendingScheduledReview).toEqual({ afterTaskId: 'T001' });
-    expect(halted.state.pendingRecovery?.reason).toBe('required-checks-unrunnable');
-
-    const corrected = await applyRecoveryAction({
-      ...ref,
-      state: halted.state,
-      action: 'retry-same-worker',
-      bus,
-    });
-    expect(corrected.ok).toBe(true);
-    if (!corrected.ok) throw new Error(corrected.message);
-
-    const fixed: WorkflowState = {
-      ...corrected.state,
-      plan: {
-        ...planWithRefusedCheck(),
-        checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
-      },
-    };
-    const resumed = await runScheduledReview({ ...args, state: fixed });
-    expect(resumed.status).toBe('continue');
-    expect(resumed.state.review?.scope).toBe('task');
-    expect(resumed.state.pendingScheduledReview).toBeUndefined();
-    expect(events.filter((event) => event.type === 'workflow_complete')).toEqual([]);
-  });
-
-  it('clears the scheduled review when its pre-review queues fix work, so a restart runs the fix first', async () => {
-    const ref = setupProject();
-    const state: WorkflowState = {
-      ...scheduledReviewState(),
-      plan: {
-        ...planWithRefusedCheck(),
-        checks: [{ id: 'K1', kind: 'cmd', value: 'node --no-such-flag', required: true }],
-      },
-    };
-    saveState(ref, state);
-    const { bus } = makeBusRecorder();
-    const callbacks = makeCallbacks().callbacks;
-    const review = vi.fn((prompt: string) => passingReviewVerdict(prompt));
-    const planner = makePlanner({
-      typedCall: typedCallPlanReviewAndTriage(
-        () => planFromTasks(state.tasks),
-        review,
-        () => ({
-          fixTasks: [
-            {
-              ...makeTaskSpec({ id: 'T003', suggestedFiles: ['src/fix.ts'], criteria: [] }),
-              findingIds: ['P1'],
-            },
-          ],
-          rejected: [],
-          verify: [],
-          ask: null,
-        }),
-      ),
-    });
-    const wctx = makeWctx({ ...ref, config: makeNoValidationConfig(), bus, callbacks, planner });
-    const result = await runScheduledReview({
-      wctx,
-      state,
-      callbacks,
-      setTrackedState: vi.fn(),
-    });
-
-    expect(result.status).toBe('continue');
-    expect(review).not.toHaveBeenCalled();
-    expect(result.state.tasks.map((task) => task.id)).toContain('T003');
-    expect(result.state.pendingScheduledReview).toBeUndefined();
-    expect(loadState(ref)?.pendingScheduledReview).toBeUndefined();
   });
 
   it.each(['worktree', 'checkout', 'no-workspace'] as const)(

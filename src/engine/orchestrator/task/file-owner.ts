@@ -46,7 +46,7 @@ export function lastTaskChangingFile(
   ledger: EvidenceLedger | null,
   tasks: readonly Task[],
   file: string,
-): string | undefined {
+): Task['id'] | undefined {
   const normalized = normalizeProjectRelativePath(file);
   const changed = new Map<string, readonly string[]>();
   for (const entry of ledger?.tasks ?? []) changed.set(entry.id, entry.changedFiles);
@@ -67,8 +67,6 @@ export function buildFullSuiteInputs(input: {
   newFailures: FullSuiteFailureKeys;
   tasks: readonly Task[];
   ledger: EvidenceLedger | null;
-  idPrefix: 'P' | 'B';
-  place: 'before review' | 'at a batch boundary';
 }): TriageInput[] {
   const seen = new Set<string>();
   const inputs: TriageInput[] = [];
@@ -82,11 +80,11 @@ export function buildFullSuiteInputs(input: {
       const owner =
         file === null ? undefined : lastTaskChangingFile(input.ledger, input.tasks, file);
       inputs.push({
-        id: `${input.idPrefix}${inputs.length + 1}`,
+        id: `P${inputs.length + 1}`,
         kind: 'defect',
         source: 'check',
         file,
-        text: `The ${stage} full-suite check ${input.place} failed: ${key}. ${
+        text: `The ${stage} full-suite check before review failed: ${key}. ${
           owner === undefined ? 'No task changed it.' : `Last changed by ${owner}.`
         }`,
       });

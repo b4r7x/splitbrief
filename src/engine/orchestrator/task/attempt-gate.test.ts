@@ -40,8 +40,8 @@ const EARLIER_TEXT = 'export const earlier = true;\n';
 
 const BASE_CONFIG = {
   approval: { feedRejectionsToPlanner: true },
-  validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-  workflow: { maxRetries: 2 },
+  validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
+  workflow: { review: 'task', maxRetries: 2 },
 } as const;
 
 const disposers: Array<() => Promise<void>> = [];

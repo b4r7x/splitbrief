@@ -41,7 +41,7 @@ export function getOrCreateLedger(opts: { ref: SessionRef; state: WorkflowState 
 }
 
 export async function persistTaskEvidence(opts: {
-  wctx: WorkflowContext;
+  wctx: Pick<WorkflowContext, 'projectDir' | 'sessionId' | 'bus'>;
   state: WorkflowState;
   task: Task;
   recordKind: 'local' | 'retry' | 'skipped';

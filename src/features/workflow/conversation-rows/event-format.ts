@@ -108,16 +108,6 @@ function stageTone(state: ValidationStageState): ConversationRowTone {
   return 'textDim';
 }
 
-export function baselineValidationRow(
-  event: Extract<EngineEvent, { type: 'validation_baseline' }>,
-): string {
-  const stageText = ValidationStageSchema.options
-    .map((stage) => baselineValidationStageText(event, stage))
-    .join(' ');
-  const dur = event.duration ? ` ${formatDuration(event.duration)}` : '';
-  return `Baseline ${stageText}${dur}`;
-}
-
 export function fullSuiteRow(event: Extract<EngineEvent, { type: 'full_suite' }>): string {
   const label = suiteStageText({
     moment: event.moment,
@@ -165,24 +155,4 @@ function validationStageWasAttempted(
 ): boolean {
   if (event.attempted !== undefined) return event.attempted[stage];
   return event.stages[stage] || skipped?.[stage] === true || !event.passed;
-}
-
-function baselineValidationStageSymbol(
-  event: Extract<EngineEvent, { type: 'validation_baseline' }>,
-  stage: ValidationStage,
-): string {
-  if (event.status === 'running' && event.activeStage === stage) return 'running';
-  if (event.failing?.[stage]) return 'failed';
-  if (event.stages[stage]) return 'passed';
-  return 'not-run';
-}
-
-function baselineValidationStageText(
-  event: Extract<EngineEvent, { type: 'validation_baseline' }>,
-  stage: ValidationStage,
-): string {
-  const command = event.commands?.[stage];
-  const label =
-    command === undefined ? stage : `${stage} (${truncateTerminalDisplayText(command, 48)})`;
-  return `${label} ${baselineValidationStageSymbol(event, stage)}`;
 }
