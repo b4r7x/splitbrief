@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import type { z } from 'zod';
 import type { CliExecutableResolver } from '../resolve-cli-executable.js';
+import { gitBinary } from '../../../lib/git/client.js';
 import { createBoundedOutput, type BoundedOutput } from '../../../lib/process/bounded-output.js';
 import { isFatalSignal, spawnPipe } from '../../../lib/process/spawn/lifecycle.js';
 import { createSandboxEnv } from '../sandbox-env.js';
@@ -228,7 +229,7 @@ export async function createProject(projectDir: string | undefined): Promise<Con
   }
   const path = await mkdtemp(join(tmpdir(), 'splitbrief-cli-conformance-'));
   try {
-    await execFileAsync('git', ['init', '--quiet'], {
+    await execFileAsync(gitBinary(), ['init', '--quiet'], {
       cwd: path,
       env: { PATH: process.env.PATH ?? '' },
     });

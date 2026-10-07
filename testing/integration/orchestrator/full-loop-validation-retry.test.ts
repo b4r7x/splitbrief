@@ -9,7 +9,7 @@ import {
   reviewPacketJsonPath,
   sessionDir,
 } from '../../../src/core/paths.js';
-import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
+import { runTrackedWorkflow, settleTrackedWorkflows } from '#testing/helpers/tracked-workflow.js';
 import {
   makeCallbacks,
   makeImplementer,
@@ -39,7 +39,8 @@ beforeEach(() => {
   resetAllStores();
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await settleTrackedWorkflows();
   vi.unstubAllGlobals();
   while (dirs.length > 0) cleanupTempDir(dirs.pop() as string);
 });
@@ -153,7 +154,7 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
         maxRetries: 1,
       },
     });
-    const summary = await runWorkflow({
+    const summary = await runTrackedWorkflow({
       prepared: makePreparedExecution({
         projectDir,
         sessionId,
@@ -315,7 +316,7 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
         maxRetries: 1,
       },
     });
-    const summary = await runWorkflow({
+    const summary = await runTrackedWorkflow({
       prepared: makePreparedExecution({
         projectDir,
         sessionId,

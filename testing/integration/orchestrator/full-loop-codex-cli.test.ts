@@ -3,7 +3,7 @@ import { chmodSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
-import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
+import { runTrackedWorkflow, settleTrackedWorkflows } from '#testing/helpers/tracked-workflow.js';
 import {
   makeCallbacks,
   makePlanner,
@@ -29,7 +29,8 @@ beforeEach(() => {
   originalPath = process.env.PATH;
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await settleTrackedWorkflows();
   vi.unstubAllGlobals();
   if (originalPath === undefined) {
     delete process.env.PATH;
@@ -202,7 +203,7 @@ async function runCodexLoop(opts: {
     ],
   });
 
-  const summary = await runWorkflow({
+  const summary = await runTrackedWorkflow({
     prepared,
     callbacks: makeCallbacks().callbacks,
     sinks: TEST_WORKFLOW_SINKS,

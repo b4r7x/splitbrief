@@ -1,4 +1,5 @@
 import { stat } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -78,8 +79,11 @@ async function unifiedDiff(
     return fallbackDiff(snapshotFile, currentFile, path);
   }
 
+  const diffPath = ['/usr/bin/diff', '/bin/diff'].find((candidate) => existsSync(candidate));
+  if (diffPath === undefined) return fallbackDiff(snapshotFile, currentFile, path);
+
   try {
-    const result = await execFileAsync('diff', [
+    const result = await execFileAsync(diffPath, [
       '-u',
       '--label',
       `snapshot/${path}`,

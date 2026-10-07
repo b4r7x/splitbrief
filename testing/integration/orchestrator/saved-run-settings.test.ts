@@ -24,7 +24,7 @@ import { LOCKFILE } from '../../../src/core/paths.js';
 import { readProcessStartTimeMs } from '../../../src/lib/process/start-time.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
-import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
+import { runTrackedWorkflow, settleTrackedWorkflows } from '#testing/helpers/tracked-workflow.js';
 import { transitionAndSave } from '../../../src/engine/orchestrator/state-ops.js';
 import { readQueueForPrompt } from '../../../src/engine/orchestrator/queue/drain.js';
 
@@ -33,7 +33,8 @@ let trust: ReturnType<typeof useTrustHome>;
 beforeEach(() => {
   trust = useTrustHome('saved-run-mode');
 });
-afterEach(() => {
+afterEach(async () => {
+  await settleTrackedWorkflows();
   for (const dir of dirs.splice(0)) cleanupTempDir(dir);
   trust.restore();
   vi.restoreAllMocks();
@@ -150,7 +151,7 @@ describe('saved run settings through resume', () => {
       });
       const planner = makePlanner();
 
-      const running = runWorkflow({
+      const running = runTrackedWorkflow({
         prepared,
         callbacks,
         sinks: TEST_SINKS,
@@ -196,7 +197,7 @@ describe('saved run settings through resume', () => {
       onApprovalNeeded: vi.fn().mockResolvedValue({ approved: false, action: 'end-run' }),
     });
     // A parked gate reopens without a planner call.
-    const summary = await runWorkflow({
+    const summary = await runTrackedWorkflow({
       prepared,
       callbacks,
       sinks: TEST_SINKS,
@@ -222,7 +223,7 @@ describe('saved run settings through resume', () => {
     const events: EngineEvent[] = [];
     const planner = makePlanner({ isAvailable: vi.fn().mockResolvedValue(false) });
     const { callbacks } = makeCallbacks();
-    await runWorkflow({
+    await runTrackedWorkflow({
       prepared,
       callbacks,
       sinks: TEST_SINKS,
@@ -255,7 +256,7 @@ describe('saved run settings through resume', () => {
       resumeState: pinned,
       active: prepared.session.active,
     });
-    await runWorkflow({
+    await runTrackedWorkflow({
       prepared: next,
       callbacks,
       sinks: TEST_SINKS,
@@ -286,7 +287,7 @@ describe('saved run settings through resume', () => {
         })
         .mockResolvedValueOnce({ approved: false, action: 'end-run' }),
     });
-    const summary = await runWorkflow({
+    const summary = await runTrackedWorkflow({
       prepared,
       callbacks,
       sinks: TEST_SINKS,

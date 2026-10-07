@@ -4,6 +4,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeImplementer, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { settleTrackedWorkflows } from '#testing/helpers/tracked-workflow.js';
 import {
   createHeadlessGitProject,
   preparedHeadlessExecution,
@@ -36,10 +37,11 @@ import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
 const skipTheRun: { enabled: boolean } = { enabled: false };
 vi.mock('../engine/orchestrator/run/workflow.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../engine/orchestrator/run/workflow.js')>();
+  const { trackWorkflow } = await import('#testing/helpers/tracked-workflow.js');
   return {
     ...actual,
     runWorkflow: async (opts: Parameters<typeof actual.runWorkflow>[0]) =>
-      skipTheRun.enabled ? undefined : actual.runWorkflow(opts),
+      skipTheRun.enabled ? undefined : trackWorkflow(actual.runWorkflow, opts),
   };
 });
 
@@ -63,7 +65,8 @@ describe('runHeadless — every pending recovery status fails the run', () => {
     });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await settleTrackedWorkflows();
     stderrSpy.mockRestore();
     stdoutSpy.mockRestore();
     vi.clearAllMocks();
@@ -312,7 +315,8 @@ describe('runHeadless — with a reviewer configured', () => {
     });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await settleTrackedWorkflows();
     stderrSpy.mockRestore();
     stdoutSpy.mockRestore();
     vi.clearAllMocks();
@@ -490,7 +494,8 @@ describe('runHeadless — the run\u2019s terminal outcome sets the exit code', (
     skipTheRun.enabled = true;
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await settleTrackedWorkflows();
     skipTheRun.enabled = false;
     stderrSpy.mockRestore();
     stdoutSpy.mockRestore();
@@ -745,7 +750,8 @@ describe('runHeadless — the seat-down policy and the record', () => {
     skipTheRun.enabled = true;
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await settleTrackedWorkflows();
     skipTheRun.enabled = false;
     stderrSpy.mockRestore();
     stdoutSpy.mockRestore();

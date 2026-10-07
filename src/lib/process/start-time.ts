@@ -11,7 +11,7 @@ const SYSTEM_PS_PATHS: Partial<Record<NodeJS.Platform, readonly string[]>> = {
   sunos: ['/usr/bin/ps'],
 };
 
-function systemPsPath(): string | null {
+export function systemPsPath(): string | null {
   const candidates = SYSTEM_PS_PATHS[process.platform];
   if (candidates === undefined) return null;
   return candidates.find((candidate) => existsSync(candidate)) ?? null;

@@ -27,6 +27,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type { RunnerCallContext } from '../../../engine/calls/types.js';
 import type { PlannerOutputCallbacks } from '../../../engine/planners/types.js';
+import type { ImplementerOptions } from '../../implementers/types.js';
 import type { PreparedExecution } from '../../runners/prepared-execution.js';
 import { createEventBus } from '../../../engine/events/bus.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
@@ -57,7 +58,7 @@ import { registerProcess } from '../../../lib/process/registry.js';
 import { readProcessStartTimeMs } from '../../../lib/process/start-time.js';
 import { readRunnerPids, recordRunnerPid } from '../../../core/sessions/runner-pids.js';
 import { simpleGit } from 'simple-git';
-import { runWorkflow as runPreparedWorkflow } from './workflow.js';
+import { runTrackedWorkflow, settleTrackedWorkflows } from '#testing/helpers/tracked-workflow.js';
 import type { RunWorkflowOptions } from './init.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../events/workflow-cancel.js';
 import { error } from '../../../utils/error.js';
@@ -96,7 +97,8 @@ beforeEach(() => {
   trustHome = useTrustHome('run-workflow-trust-home');
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await settleTrackedWorkflows();
   for (const d of dirs) cleanupTempDir(d);
   dirs = [];
   trustHome.restore();
@@ -189,7 +191,7 @@ async function runWorkflow(input: WorkflowTestOptions) {
     ),
   ];
   const purpose = requestedPurpose ?? (input.savedState === undefined ? 'new-workflow' : 'resume');
-  return runPreparedWorkflow({
+  return runTrackedWorkflow({
     ...options,
     prepared: {
       purpose,
@@ -266,7 +268,7 @@ describe('runWorkflow — smoke', () => {
       command: '/changed/after/preparation',
     };
 
-    const summary = await runPreparedWorkflow({
+    const summary = await runTrackedWorkflow({
       prepared: {
         purpose: 'new-workflow',
         config,
@@ -1856,5 +1858,80 @@ describe('runWorkflow — recovery resume', () => {
     // Nothing was ever spent on the seat the run now names, so no cost may be
     // attributed to it: the breakdown follows the state, not the identity.
     expect(summary.costBreakdown?.providerCosts?.['custom-endpoint']).toBeUndefined();
+  });
+});
+
+describe('runWorkflow — a run still in flight when its test ends', () => {
+  const leaked: {
+    projectDir: string;
+    seatSignal: AbortSignal | undefined;
+    projectExistedOnAbort: boolean;
+    settled: boolean;
+  } = { projectDir: '', seatSignal: undefined, projectExistedOnAbort: false, settled: false };
+
+  it('ends its test with the run blocked in the implementer seat, as a timed-out test does', async () => {
+    const projectDir = setupProject();
+    leaked.projectDir = projectDir;
+    const { callbacks } = makeCallbacks();
+    let seatEntered: () => void = () => {};
+    const inSeat = new Promise<void>((resolve) => {
+      seatEntered = resolve;
+    });
+
+    const run = runWorkflow({
+      feature: 'in flight at teardown',
+      projectDir,
+      config: makeConfig({
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: { approve: 'none' },
+      }),
+      callbacks,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      _planner: makePlanner({
+        typedCall: typedCallFromTasks([
+          makeTask({
+            id: 'T001',
+            scope: { inBounds: ['src/hello.ts'], outOfBounds: ['other files'] },
+            evidence: ['task_completed event shows the planned task ran'],
+            typeDefs: 'type HelloTask = { file: string }',
+          }),
+        ]),
+      }),
+      _implementer: makeImplementer({
+        implement: vi.fn().mockImplementation(async (opts: ImplementerOptions) => {
+          leaked.seatSignal = opts.signal;
+          seatEntered();
+          await new Promise<void>((resolve) => {
+            opts.signal?.addEventListener(
+              'abort',
+              () => {
+                leaked.projectExistedOnAbort = existsSync(projectDir);
+                resolve();
+              },
+              { once: true },
+            );
+          });
+          return { success: false, output: '', usage: null };
+        }),
+      }),
+    });
+    void run.then(
+      () => {
+        leaked.settled = true;
+      },
+      () => {
+        leaked.settled = true;
+      },
+    );
+
+    await inSeat;
+  });
+
+  it('was aborted and awaited by the teardown before its project was deleted', () => {
+    expect(leaked.seatSignal, 'the previous test must run first').toBeDefined();
+    expect(leaked.seatSignal?.aborted).toBe(true);
+    expect(leaked.projectExistedOnAbort).toBe(true);
+    expect(leaked.settled).toBe(true);
+    expect(existsSync(leaked.projectDir)).toBe(false);
   });
 });

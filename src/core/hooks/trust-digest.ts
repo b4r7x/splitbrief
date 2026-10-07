@@ -10,6 +10,7 @@ import {
 } from 'node:fs';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { assertExistingPathConfined } from '../../lib/path-confinement.js';
+import { resolveBareCommandOnPath } from '../../lib/process/command-path.js';
 import { canonicalJSON } from '../../utils/canonical-json.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { sha256Hex } from '../../utils/sha256.js';
@@ -25,7 +26,6 @@ import {
   isRepoLocal,
   nodeEntryPointOperands,
   packageManagerScriptNames,
-  resolveBareCommandOnPath,
   resolveNodeEntryPath,
   scriptsRunFor,
 } from '../trust/path-classification.js';

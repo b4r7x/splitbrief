@@ -38,7 +38,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../../src/engine/orchestrator/run/workflow.js', async (importOriginal) => {
   const actual =
     await importOriginal<typeof import('../../../src/engine/orchestrator/run/workflow.js')>();
-  mocks.runWorkflow.mockImplementation(actual.runWorkflow);
+  const { trackWorkflow } = await import('#testing/helpers/tracked-workflow.js');
+  mocks.runWorkflow.mockImplementation((opts) => trackWorkflow(actual.runWorkflow, opts));
   return { ...actual, runWorkflow: mocks.runWorkflow };
 });
 

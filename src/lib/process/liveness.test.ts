@@ -1,5 +1,8 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { hasLiveDescendants } from './liveness.js';
 
@@ -43,5 +46,23 @@ describe('hasLiveDescendants', () => {
     await once(leader, 'spawn');
 
     expect(hasLiveDescendants(leader.pid ?? 0)).toBe(false);
+  });
+
+  itUnix('does not execute a ps binary supplied by the ambient PATH', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'splitbrief-liveness-'));
+    const shadowPs = join(dir, 'ps');
+    writeFileSync(shadowPs, '#!/bin/sh\n: > "$0.executed"\n', { mode: 0o755 });
+    const originalPath = process.env.PATH;
+    process.env.PATH = dir;
+
+    try {
+      hasLiveDescendants(process.pid);
+
+      expect(existsSync(`${shadowPs}.executed`)).toBe(false);
+    } finally {
+      if (originalPath === undefined) delete process.env.PATH;
+      else process.env.PATH = originalPath;
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

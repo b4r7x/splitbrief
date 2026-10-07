@@ -30,7 +30,7 @@ import { readRunEvents } from '../../events/replay.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../events/workflow-cancel.js';
 import { buildReviewFailedRecoveryIssue } from '../recovery/builders/task.js';
 import { closeRunIfOpen } from './close.js';
-import { runWorkflow } from './workflow.js';
+import { runTrackedWorkflow, settleTrackedWorkflows } from '#testing/helpers/tracked-workflow.js';
 
 const race = vi.hoisted(() => ({ writePassedAfterRead: false, writeOpenAfterRead: false }));
 vi.mock('../state-ops.js', async (importOriginal) => {
@@ -62,7 +62,8 @@ vi.mock('../state-ops.js', async (importOriginal) => {
 });
 
 const dirs: string[] = [];
-afterEach(() => {
+afterEach(async () => {
+  await settleTrackedWorkflows();
   race.writePassedAfterRead = false;
   race.writeOpenAfterRead = false;
   for (const dir of dirs.splice(0)) cleanupTempDir(dir);
@@ -131,7 +132,7 @@ describe('workflow closure', () => {
     });
     const controller = new AbortController();
     const events: EngineEvent[] = [];
-    await runWorkflow({
+    await runTrackedWorkflow({
       prepared,
       sinks: TEST_SINKS,
       callbacks: makeCallbacks().callbacks,
@@ -210,7 +211,7 @@ describe('workflow closure', () => {
         firstClosure = loadState(ref);
         controller.abort(WORKFLOW_USER_CANCELLED_ABORT_REASON);
       };
-      await runWorkflow({
+      await runTrackedWorkflow({
         prepared,
         sinks: TEST_SINKS,
         callbacks: makeCallbacks({

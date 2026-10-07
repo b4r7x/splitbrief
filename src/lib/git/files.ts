@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import type { GitClient } from './client.js';
-import { getGitForDir, parseNulSeparated, runGit } from './client.js';
+import { getGitForDir, gitBinary, parseNulSeparated, runGit } from './client.js';
 
 const GITLINK_MODE = '160000';
 
@@ -59,7 +59,7 @@ export async function discardSubmoduleChange(dir: string, submodule: string): Pr
 export async function checkIgnoredPaths(dir: string, paths: string[]): Promise<string[]> {
   if (paths.length === 0) return [];
   return new Promise<string[]>((resolve) => {
-    const child = spawn('git', ['check-ignore', '--stdin', '-z'], { cwd: dir });
+    const child = spawn(gitBinary(), ['check-ignore', '--stdin', '-z'], { cwd: dir });
     const chunks: Buffer[] = [];
     child.stdout.on('data', (chunk: Buffer) => chunks.push(chunk));
     child.on('error', () => resolve([]));

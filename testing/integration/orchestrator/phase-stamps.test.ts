@@ -6,7 +6,7 @@ import { createRunnerCallRecorder } from '../../../src/engine/calls/recorder.js'
 import { createStdoutTextSink } from '../../../src/engine/events/sinks/stdout-text.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import type { ImplementerOptions, RetryOptions } from '../../../src/engine/implementers/types.js';
-import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
+import { runTrackedWorkflow, settleTrackedWorkflows } from '#testing/helpers/tracked-workflow.js';
 import type { PlannerOutputCallbacks } from '../../../src/engine/planners/types.js';
 import { addEvent } from '../../../src/stores/workflow/actions/event.js';
 import { lifecycleStore } from '../../../src/stores/workflow/lifecycle.js';
@@ -35,7 +35,8 @@ beforeEach(() => {
   resetAllStores();
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await settleTrackedWorkflows();
   while (dirs.length > 0) cleanupTempDir(dirs.pop() as string);
 });
 
@@ -80,7 +81,7 @@ async function runConsultedBrief(): Promise<EngineEvent[]> {
   };
   const events: EngineEvent[] = [];
 
-  await runWorkflow({
+  await runTrackedWorkflow({
     prepared: makePreparedExecution({
       projectDir,
       sessionId: 'sess-phase-stamps',

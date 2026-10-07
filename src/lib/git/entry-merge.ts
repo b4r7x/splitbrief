@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { error } from '../../utils/error.js';
+import { gitBinary } from './client.js';
 
 type EntryMergeResult =
   | { kind: 'clean'; bytes: Buffer }
@@ -24,7 +25,7 @@ export async function mergeFileEntries(input: {
     await writeFile(join(root, 'theirs'), theirs, { mode: 0o600 });
     return await new Promise<EntryMergeResult>((resolve, reject) => {
       const child = spawn(
-        'git',
+        gitBinary(),
         [
           'merge-file',
           '-p',

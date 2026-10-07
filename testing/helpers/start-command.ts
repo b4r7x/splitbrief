@@ -14,6 +14,7 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeSessionLockfile } from '#testing/helpers/factories/session-lockfile.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { trustDeclaredRunners } from '#testing/helpers/runner-trust.js';
+import { settleTrackedWorkflows } from '#testing/helpers/tracked-workflow.js';
 import { registerStartCommand } from '../../src/cli/commands/start/register.js';
 import type { StartDeps } from '../../src/cli/commands/start/types.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR, LOCKFILE, STATE_FILE } from '../../src/core/paths.js';
@@ -105,7 +106,8 @@ export function setupStartCommandIntegration(): void {
     runHeadlessMock.mockResolvedValue(undefined);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await settleTrackedWorkflows();
     if (tmp) cleanupTempDir(tmp);
     delete (process.stdin as { isTTY?: boolean }).isTTY;
   });
