@@ -58,6 +58,7 @@ describe('validateCommitAndAdvance', () => {
     const { bus, events } = makeBusRecorder();
 
     await validateCommitAndAdvance({
+      taskStartTime: Date.now(),
       task,
       acceptance: acceptedAcceptance,
       projectDir,
@@ -83,6 +84,7 @@ describe('validateCommitAndAdvance', () => {
     const { bus, events } = makeBusRecorder();
 
     await validateCommitAndAdvance({
+      taskStartTime: Date.now(),
       task,
       acceptance: acceptedAcceptance,
       projectDir,
@@ -105,6 +107,7 @@ describe('validateCommitAndAdvance', () => {
     const { bus, events } = makeBusRecorder();
 
     await validateCommitAndAdvance({
+      taskStartTime: Date.now(),
       task,
       acceptance: acceptedAcceptance,
       projectDir,
@@ -126,6 +129,7 @@ describe('validateCommitAndAdvance', () => {
     const { bus, events } = makeBusRecorder();
 
     const result = await validateCommitAndAdvance({
+      taskStartTime: Date.now(),
       task: firstCommitTask(state),
       acceptance: { accepted: false, exemptStages: [], blockingStages: [] },
       projectDir,
@@ -153,6 +157,7 @@ describe('validateCommitAndAdvance', () => {
     const { bus, events } = makeBusRecorder();
 
     const result = await validateCommitAndAdvance({
+      taskStartTime: Date.now(),
       task: firstCommitTask(state),
       acceptance: { accepted: true, exemptStages: ['typecheck'], blockingStages: [] },
       projectDir,
@@ -187,6 +192,7 @@ describe('validateCommitAndAdvance', () => {
     const { bus, events } = makeBusRecorder();
 
     await validateCommitAndAdvance({
+      taskStartTime: Date.now(),
       task: firstCommitTask(state),
       acceptance: acceptedAcceptance,
       projectDir,
@@ -209,6 +215,7 @@ describe('validateCommitAndAdvance', () => {
     const { bus } = makeBusRecorder();
 
     const result = await validateCommitAndAdvance({
+      taskStartTime: Date.now(),
       task: firstCommitTask(state),
       acceptance: acceptedAcceptance,
       projectDir,
@@ -230,6 +237,7 @@ describe('validateCommitAndAdvance', () => {
     const { bus, events } = makeBusRecorder();
 
     await validateCommitAndAdvance({
+      taskStartTime: Date.now(),
       task: firstCommitTask(state),
       acceptance: acceptedAcceptance,
       projectDir,
@@ -254,6 +262,7 @@ describe('validateCommitAndAdvance', () => {
     const { bus, events } = makeBusRecorder();
 
     await validateCommitAndAdvance({
+      taskStartTime: Date.now(),
       task: firstCommitTask(state),
       acceptance: acceptedAcceptance,
       projectDir,
@@ -276,6 +285,7 @@ describe('validateCommitAndAdvance', () => {
     const { bus, events } = makeBusRecorder();
 
     await validateCommitAndAdvance({
+      taskStartTime: Date.now(),
       task: firstCommitTask(state),
       acceptance: acceptedAcceptance,
       projectDir,

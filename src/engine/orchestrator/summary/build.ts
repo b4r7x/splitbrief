@@ -13,7 +13,7 @@ import type { RunnerKind } from '../../../core/schemas/enums.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { readFinalReviewRecord } from '../../../core/review/store.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
-import { hashTaskBrief } from '../../brief-hash.js';
+import { sameCurrentBrief } from '../../../core/evidence/same-brief.js';
 import { calculateCostBreakdown } from '../../providers/cost/breakdown.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import { getFailedTaskIds, getSkippedTaskIds } from '../../../core/state/selectors.js';
@@ -102,17 +102,12 @@ function readFileAttribution(
   const changedFiles = [...new Set(ledger.tasks.flatMap((task) => task.changedFiles))].sort();
   const current = state.phase === 'complete' ? undefined : state.tasks[state.currentTaskIndex];
   if (current?.status !== 'in_progress') return { changedFiles };
-  const booked = ledger.tasks.find((task) => task.id === current.id);
-  const currentPlanHash = hashTaskBrief(state.tasks);
-  const sameBrief =
-    booked !== undefined &&
-    booked.status === 'in_progress' &&
-    (booked.briefHash != null
-      ? booked.briefHash === currentPlanHash
-      : booked.title === current.title && booked.file === current.suggestedFiles[0]);
+  const booked = ledger.tasks.find(
+    (task) => task.id === current.id && sameCurrentBrief(task, current),
+  );
   return {
     changedFiles,
-    stoppedAt: { taskId: current.id, partialFiles: sameBrief && booked ? booked.changedFiles : [] },
+    stoppedAt: { taskId: current.id, partialFiles: booked?.changedFiles ?? [] },
   };
 }
 

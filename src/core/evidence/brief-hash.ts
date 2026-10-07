@@ -1,6 +1,6 @@
-import type { Task } from '../core/schemas/task.js';
-import { canonicalJSON } from '../utils/canonical-json.js';
-import { sha256Hex } from '../utils/sha256.js';
+import type { Task } from '../schemas/task.js';
+import { canonicalJSON } from '../../utils/canonical-json.js';
+import { sha256Hex } from '../../utils/sha256.js';
 
 export function hashTaskBrief(tasks: Task[]): string {
   const stripped = tasks.map(
@@ -9,6 +9,8 @@ export function hashTaskBrief(tasks: Task[]): string {
       currentCodeByFile: _otherCode,
       contextCodeByFile: _contextCode,
       status: _s,
+      checkResults: _checkResults,
+      inputHashes: _inputHashes,
       ...rest
     }) => rest,
   );

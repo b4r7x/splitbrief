@@ -105,6 +105,7 @@ describe('handleRetryAndEscalation — a blocked implementer', () => {
     ]);
 
     const { result } = await handleRetryAndEscalation({
+      taskStartTime: Date.now(),
       wctx: makeWctx({
         projectDir,
         sessionId,
@@ -167,6 +168,7 @@ describe('handleRetryAndEscalation — a blocked implementer', () => {
     ]);
 
     const { result } = await handleRetryAndEscalation({
+      taskStartTime: Date.now(),
       wctx: makeWctx({
         projectDir,
         sessionId,
@@ -212,6 +214,7 @@ describe('handleRetryAndEscalation — a blocked implementer', () => {
     const { planner } = consultPlanner([]);
 
     const { result } = await handleRetryAndEscalation({
+      taskStartTime: Date.now(),
       wctx: makeWctx({
         projectDir,
         sessionId,

@@ -27,6 +27,7 @@ export async function confirmAttemptDecisions(opts: {
   report: Extract<ImplementerReport, { status: 'done' }> | undefined;
   snapshot: ChangedFilesSnapshot;
   changedFiles: readonly string[];
+  taskStartTime: number;
   onStateChange?: ((state: WorkflowState) => void) | undefined;
 }): Promise<DecisionConfirmOutcome> {
   const { wctx, task, report } = opts;
@@ -84,7 +85,13 @@ export async function confirmAttemptDecisions(opts: {
     );
   }
   const applied = await applyConsultAnswer(
-    { ...wctx, state, changedFiles: opts.changedFiles, onStateChange },
+    {
+      ...wctx,
+      state,
+      taskStartTime: opts.taskStartTime,
+      changedFiles: opts.changedFiles,
+      onStateChange,
+    },
     task,
     outcome.answer,
     opts.snapshot,

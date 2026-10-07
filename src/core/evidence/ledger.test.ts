@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { createEvidenceLedger, emptyEvidenceTask, upsertEvidenceTask } from './ledger-state.js';
+import { hashTaskBrief } from './brief-hash.js';
+import {
+  createEvidenceLedger,
+  emptyEvidenceTask,
+  findOrSeed,
+  upsertEvidenceTask,
+} from './ledger-state.js';
 import { mutateEvidenceLedger, writeEvidenceLedger, readEvidenceLedger } from './ledger-storage.js';
 import { evidenceError } from './errors.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -39,6 +45,25 @@ describe('upsertEvidenceTask', () => {
     });
     expect(appended.tasks.map((entry) => entry.id)).toEqual(['T001', 'T002', 'T003']);
     expect(appended.validationSummary).toEqual({ passed: 1, failed: 0, skipped: 0, escalated: 0 });
+  });
+});
+
+describe('findOrSeed', () => {
+  it('re-stamps a recorded entry with the hash of the revised brief', () => {
+    const planned = makeTask({ id: 'T001', revision: 1 });
+    const revised = makeTask({ id: 'T001', revision: 2, description: 'Rewritten by the planner' });
+    const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [planned] });
+    const recorded = upsertEvidenceTask(ledger, {
+      ...findOrSeed(ledger, planned),
+      status: 'failed',
+    });
+    expect(recorded.tasks[0]?.briefHash).toBe(hashTaskBrief([planned]));
+
+    const entry = findOrSeed(recorded, revised);
+
+    expect(entry.status).toBe('failed');
+    expect(entry.briefHash).toBe(hashTaskBrief([revised]));
+    expect(entry.briefHash).not.toBe(hashTaskBrief([planned]));
   });
 });
 

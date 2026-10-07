@@ -6,7 +6,7 @@ import {
   cleanupTaskProjects,
   makeTaskWorkflowContext as makeWorkflowContext,
 } from '#testing/helpers/orchestrator-task-context.js';
-import { hashTaskBrief } from '../../brief-hash.js';
+import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import { createContinuationHolder } from '../continuation.js';
 import { runPreTaskHooksAndPublish } from './pre-task.js';
 

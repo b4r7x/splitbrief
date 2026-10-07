@@ -418,6 +418,23 @@ describe('recordedTargetOutput', () => {
     ]);
   });
 
+  it('keeps the promoted files once the run records the brief’s check results', () => {
+    const task = makeTask();
+    const ref = { projectDir, sessionId: 'sess-1' };
+    const promoted = { path: 'src/promoted.ts', sha256: 'p1', mode: 0o644 };
+    writeEvidenceLedger(
+      ref,
+      recordPromotedFilesEvidence({
+        ledger: createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] }),
+        task,
+        files: [promoted],
+      }),
+    );
+
+    const checked = { ...task, checkResults: [{ id: 'K1', passed: true }] };
+    expect(recordedTargetOutput(ref, checked).files).toEqual([promoted]);
+  });
+
   it('proves no write when the ledger is missing or unreadable', () => {
     const task = makeTask();
     const ref = { projectDir, sessionId: 'sess-1' };

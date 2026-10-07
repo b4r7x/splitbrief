@@ -79,6 +79,37 @@ describe('runSingleTask — completion, abort and approval evidence', { timeout:
     expect(taskBreakdowns[0]).toMatchObject({ taskId: 'T001', method: 'local' });
   });
 
+  // S11 T001: task_completed said 664955 ms, the ledger said 666711 ms. The clock here ticks on
+  // every read, so a brief whose duration is read twice books two values.
+  it('books the one measured duration on the completion event and in the ledger', async () => {
+    const task = makeTask({ id: 'T001' });
+    const { bus, events } = makeBusRecorder();
+    const implementer = makeImplementer({
+      implement: vi.fn().mockResolvedValue({ success: true, output: 'ok' }),
+    });
+    const wctx = makeWorkflowContext({ implementer, bus });
+    let now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => ++now);
+    try {
+      await runSingleTask({
+        wctx,
+        task,
+        index: 0,
+        totalTasks: 1,
+        state: implementingState([task]),
+        taskBreakdowns: [],
+        setTrackedState: vi.fn(),
+        setCurrentTask: vi.fn(),
+      });
+    } finally {
+      clock.mockRestore();
+    }
+
+    const complete = events.find((e) => e.type === 'task_completed');
+    if (complete?.type !== 'task_completed') throw new Error('expected task_completed');
+    expect(readEvidenceLedger(wctx)?.tasks[0]?.durationMs).toBe(complete.duration);
+  });
+
   it('returns state unchanged when the signal is already aborted on entry', async () => {
     const task = makeTask({ id: 'T001' });
     const state = implementingState([task]);

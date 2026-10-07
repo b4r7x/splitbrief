@@ -177,7 +177,12 @@ export async function runTargetWriteRetry(opts: {
     },
   });
   return runRetryStep({
-    ctx: { ...wctx, taskStartSnapshot: opts.taskStartSnapshot, dependsOnFiles: [] },
+    ctx: {
+      ...wctx,
+      taskStartSnapshot: opts.taskStartSnapshot,
+      dependsOnFiles: [],
+      taskStartTime: Date.now(),
+    },
     task: opts.task,
     state: makeImplState([opts.task]),
     lastError: 'retry',

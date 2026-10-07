@@ -28,7 +28,7 @@ import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js'
 import { classifyTaskCompletionMethod } from '../../../core/task-completion.js';
 import { uniqueSorted } from '../../../utils/collections.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
-import { hashTaskBrief } from '../../../engine/brief-hash.js';
+import { sameCurrentBrief } from '../../../core/evidence/same-brief.js';
 
 /** A seat the run recorded, spelled by the same formatters the live crew surfaces use. */
 function seatView(input: {
@@ -192,10 +192,9 @@ export function briefRows(input: {
   const current: BriefRow[] = [];
 
   if (currentTasks !== null) {
-    const currentHash = hashTaskBrief(currentTasks);
     for (const task of currentTasks) {
       const ledgerTask = ledgerTasks.find(
-        (entry) => entry.id === task.id && sameCurrentBrief(entry, task, currentHash),
+        (entry) => entry.id === task.id && sameCurrentBrief(entry, task),
       );
       if (ledgerTask !== undefined) usedLedger.add(ledgerTask);
       const booked = spend.find(
@@ -284,15 +283,6 @@ function foldBriefSpend(taskBreakdown: readonly TaskTokenUsage[]): BookedBrief[]
   return [...folded.values()];
 }
 
-/** A brief still in progress joins the unsettled entry: the ledger books a retried attempt failed. */
-function sameCurrentBrief(ledgerTask: EvidenceTask, task: Task, planHash: string): boolean {
-  if (task.status === 'pending' && ledgerTask.status !== 'pending') return false;
-  const unsettled = ledgerTask.status === 'in_progress' || ledgerTask.status === 'failed';
-  if (task.status === 'in_progress' && !unsettled) return false;
-  if (ledgerTask.briefHash != null) return ledgerTask.briefHash === planHash;
-  return ledgerTask.title === task.title && ledgerTask.file === task.suggestedFiles[0];
-}
-
 /** Older summaries can name a stopped brief whose ID a later plan reused. */
 export function stoppedAtForCurrentPlan(input: {
   summary: Summary;
@@ -310,7 +300,7 @@ export function stoppedAtForCurrentPlan(input: {
   )
     return undefined;
   const booked = ledger?.tasks.find(
-    (task) => task.id === current.id && sameCurrentBrief(task, current, hashTaskBrief(state.tasks)),
+    (task) => task.id === current.id && sameCurrentBrief(task, current),
   );
   return {
     taskId: current.id,

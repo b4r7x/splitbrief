@@ -8,7 +8,12 @@ import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
 import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
-import { recordLocalTaskEvidence } from '../evidence/task.js';
+import { recordLocalTaskEvidence, recordRetryOrEscalationEvidence } from '../evidence/task.js';
+import { persistTaskEvidence } from '../evidence/persistence.js';
+import {
+  cleanupTaskProjects,
+  makeTaskWorkflowContext,
+} from '#testing/helpers/orchestrator-task-context.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { transition } from '../../../core/state/machine.js';
 import { reviewPacketJsonPath } from '../../../core/paths.js';
@@ -111,6 +116,88 @@ describe('buildSummary session artifact rollups', () => {
       expect(summary.changedFiles).toEqual(['src/first.ts', 'src/stopped.ts']);
     } finally {
       rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  // S11 summary.json: stoppedAt {T005, partialFiles: []} while the ledger booked T005's retried
+  // attempts, as failed, with their files.
+  it('books the partial files of a brief whose retried attempt the ledger booked failed', () => {
+    const projectDir = mkdtempSync(join(tmpdir(), 'summary-stopped-failed-'));
+    try {
+      const sessionId = 'stopped-after-a-failed-attempt';
+      const stopped = makeTask({ id: 'T001', suggestedFiles: ['src/stopped.ts'] });
+      const ledger = recordRetryOrEscalationEvidence({
+        ledger: createEvidenceLedger({ sessionId, feature: 'stopped', tasks: [stopped] }),
+        task: stopped,
+        status: 'failed',
+        method: 'failed',
+        retries: 3,
+        escalated: false,
+        changedFiles: ['src/stopped.ts'],
+      });
+      writeEvidenceLedger({ projectDir, sessionId }, ledger);
+
+      const summary = buildSummary({
+        feature: 'stopped',
+        state: makeState({
+          tasks: [{ ...stopped, status: 'in_progress' }],
+          phase: 'implementing',
+          currentTaskIndex: 0,
+        }),
+        startTime: Date.now(),
+        plannerTool: 'claude-code',
+        implementerTool: 'ollama',
+        projectDir,
+        sessionId,
+      });
+
+      expect(summary.stoppedAt).toEqual({ taskId: 'T001', partialFiles: ['src/stopped.ts'] });
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('books the partial files after the run wrote check results and revised another brief', async () => {
+    const wctx = makeTaskWorkflowContext();
+    try {
+      const first = makeTask({ id: 'T001', title: 'First', suggestedFiles: ['src/first.ts'] });
+      const stopped = makeTask({
+        id: 'T002',
+        title: 'Stopped',
+        suggestedFiles: ['src/stopped.ts'],
+      });
+      let state = transition(makeImplState([first, stopped]), {
+        type: 'RECORD_CHECK_RESULTS',
+        taskId: first.id,
+        results: [{ id: 'K1', passed: true }],
+      });
+      state = transition(state, { type: 'START_TASK', taskId: stopped.id });
+      await persistTaskEvidence({
+        wctx,
+        state,
+        task: stopped,
+        recordKind: 'local',
+        details: { status: 'in_progress', validation: [], changedFiles: ['src/stopped.ts'] },
+      });
+      state = transition(state, {
+        type: 'INSERT_TASKS',
+        parentId: null,
+        tasks: [makeTask({ id: 'T003', title: 'Fix', suggestedFiles: ['src/fix.ts'] })],
+      });
+
+      const summary = buildSummary({
+        feature: 'stopped',
+        state,
+        startTime: Date.now(),
+        plannerTool: 'claude-code',
+        implementerTool: 'ollama',
+        projectDir: wctx.projectDir,
+        sessionId: wctx.sessionId,
+      });
+
+      expect(summary.stoppedAt).toEqual({ taskId: 'T002', partialFiles: ['src/stopped.ts'] });
+    } finally {
+      cleanupTaskProjects();
     }
   });
 

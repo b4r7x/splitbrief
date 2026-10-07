@@ -7,7 +7,7 @@ import {
 import type { WorkflowContext } from '../types.js';
 import type { EngineEvent } from '../../events/types.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
-import { hashTaskBrief } from '../../brief-hash.js';
+import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
 import { buildSnapshotFailedRecoveryIssue } from '../recovery/builders/task.js';
 import { nowIso } from '../../../utils/format-time.js';

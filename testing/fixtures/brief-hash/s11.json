@@ -1,0 +1,1018 @@
+{
+  "session": "2026-10-07-s11-seat-down-seat-switching-declared-fallback-2",
+  "tasks": [
+    {
+      "id": "T001",
+      "title": "One seat-failure classifier, every caller migrated",
+      "intent": "Every failed seat call is classified by one function, `classifySeatFailure`, into authoritative, account (balance/billing/quota/auth), rate-limited (with resetAt), transient or other, with provenance rules for tail sources. All current callers route through it and the by-hand checks are deleted, so an opencode `provider.quota: Insufficient Balance` result maps to the `usage-limit` outcome on the first attempt.",
+      "criteria": ["C1", "C14"],
+      "checks": [
+        {
+          "id": "K-classifier",
+          "kind": "test",
+          "value": "src/engine/runners/seat-failure.test.ts",
+          "required": true
+        },
+        {
+          "id": "K-transient",
+          "kind": "test",
+          "value": "src/engine/runners/transient.test.ts",
+          "required": true
+        },
+        {
+          "id": "K-seat-wait",
+          "kind": "test",
+          "value": "src/engine/orchestrator/escalation/seat-wait.test.ts",
+          "required": true
+        },
+        {
+          "id": "K-process-invoke",
+          "kind": "test",
+          "value": "src/engine/runners/cli-tools/process-invoke.test.ts",
+          "required": true
+        },
+        {
+          "id": "K-call-result",
+          "kind": "test",
+          "value": "src/engine/implementers/pipeline/call-result.test.ts",
+          "required": true
+        },
+        {
+          "id": "K-planner-call-failure",
+          "kind": "test",
+          "value": "src/engine/orchestrator/recovery/planner-call-failure.test.ts",
+          "required": true
+        }
+      ],
+      "suggestedFiles": [
+        "src/engine/runners/seat-failure.ts",
+        "src/engine/runners/seat-failure.test.ts",
+        "src/engine/runners/transient.ts",
+        "src/engine/runners/usage-limit.ts",
+        "src/engine/runners/auth-failure.ts",
+        "src/engine/implementers/pipeline/call-result.ts",
+        "src/engine/implementers/pipeline/run.ts",
+        "src/engine/runners/cli-tools/process-invoke.ts",
+        "src/engine/orchestrator/recovery/planner-call-failure.ts",
+        "src/engine/orchestrator/escalation/seat-wait.ts",
+        "src/engine/runners/usage-limit.test.ts",
+        "src/engine/runners/auth-failure.test.ts"
+      ],
+      "contextFiles": [
+        "src/core/pipeline-spec/halts.ts",
+        "src/core/pipeline-spec/bounds.ts",
+        "src/engine/runners/errors.ts",
+        "src/engine/runners/cli-tools/registry.ts",
+        "src/core/pipeline-spec/conformance.test.ts"
+      ],
+      "exclusions": [
+        "Do not add phrases to `HALT_SIGNATURES` or change its groups.",
+        "Do not let a tail source (`stderr-tail`, `stdout-tail`) match `billing`, `payment required` or any account phrase outside `HALT_SIGNATURES`.",
+        "Do not change the recovery builders or the halt copy.",
+        "Do not add new outcome codes; map onto `usage-limit` and `unauthenticated`."
+      ],
+      "protectedOperations": null,
+      "steps": [
+        "Create `src/engine/runners/seat-failure.ts` exporting `classifySeatFailure(input: { message, code?, status?, providerType?, outcome?, source })`, `source` in `'result-error' | 'thrown' | 'stderr-tail' | 'stdout-tail'`. Results: `{ class: 'authoritative' }`, `{ class: 'account', cause: 'balance' | 'billing' | 'quota' | 'auth' }`, `{ class: 'rate-limited', resetAt }`, `{ class: 'transient' }`, `{ class: 'other' }`. Precedence authoritative -> account -> rate-limited -> transient -> other.",
+        "Authoritative outcomes: `user-abort`, `implementer-left-isolation`, `checkout-changed`, `implementer-recipe-invalid`, `input-too-large`, `missing-model`, `no-progress-cut`.",
+        "Account: status 402 (balance), 401/403 (auth); phrases `insufficient balance`, `insufficient credits`, `credit balance is too low`, `payment required`, `billing_hard_limit`, `billing_not_active`, `out of credits`, `account suspended`; `providerType === 'provider.quota'` with no parseable reset; auth phrases (`HALT_SIGNATURES.auth`, `unauthenticated`, `sign in`, 403 spellings). An account phrase outranks a 429 in the same text.",
+        "Tail sources match only `HALT_SIGNATURES` phrases; the broader account phrases live in `seat-failure.ts` and apply only to `result-error` and `thrown`.",
+        "Rate-limited: a limit phrase or 429 whose reset `parseUsageLimitReset` reads. Transient: the current `isTransientSeatFailure` rule unchanged. A bare 429 without status and without `hasUsageLimitNounCorroboration` is `other`.",
+        "Migrate callers: `runnerCallOutcome` (`call-result.ts`); the thrown-error branch in `implementers/pipeline/run.ts` (replace the `usageLimitDetailFromError` and `isAuthFailureError || isAuthFailureDiagnostic` branch with one classifier call, `source: 'thrown'`, status from `err.data.status ?? err.data.statusCode`); `haltFailure`/`namesHalt` in `process-invoke.ts`; `diagnosePlannerCallFailure`; `seatResetWaitDeadline`; `isTransientSeatFailure` becomes the classifier's transient arm.",
+        "Delete `usageLimitDetailFromError`; stop exporting `isAuthFailureDiagnostic`/`isAuthFailureError` to other modules. Keep `parseUsageLimitReset`, `usageLimitAdvice`, `runnerLoginInstruction`, `hasUsageLimitNounCorroboration`.",
+        "`seat-failure.test.ts`: a table of envelopes labelled `captured` or `synthetic` (opencode Go limit 429 and DeepSeek balance, codex usage limit and refresh-token, claude-code session/weekly/Opus limits, `Request rejected (429)`, `Credit balance is too low`, `Invalid API key · Please run /login`, antigravity `Individual quota reached … Resets in 2h6m30s` on stderr, command-code weekly limit and `Not authenticated`, Anthropic `rate_limit_error`, OpenAI `insufficient_quota`, Gemini `RESOURCE_EXHAUSTED`, DeepSeek 402 `Insufficient Balance`) plus precedence rows."
+      ],
+      "dependsOn": [],
+      "batch": 1
+    },
+    {
+      "id": "T002",
+      "title": "State and action vocabulary for seat down",
+      "intent": "The workflow state and recovery vocabulary can express a seat-down park, an automatic switch intent, a switch record and a later retry: `retry-later` is a recovery action labelled `Retry at <clock>` that seat-down halts allow; `interruptedStep.source` accepts `'seat'`; `pendingRecovery.switchSeat.auto` and `state.seatSwitches` parse; `RESTART_ATTEMPT_ON_SEAT` clears the pending recovery while keeping the attempt, the in-progress task and the interrupted step. Old state files still load.",
+      "criteria": ["C3", "C6", "C7", "C8"],
+      "checks": [
+        {
+          "id": "K-machine",
+          "kind": "test",
+          "value": "src/core/state/machine.test.ts",
+          "required": true
+        },
+        {
+          "id": "K-halt",
+          "kind": "test",
+          "value": "src/core/recovery/halt.test.ts",
+          "required": true
+        },
+        {
+          "id": "K-action-label",
+          "kind": "test",
+          "value": "src/core/recovery/action-label.test.ts",
+          "required": true
+        },
+        {
+          "id": "K-workflow-schema",
+          "kind": "test",
+          "value": "src/core/schemas/workflow.test.ts",
+          "required": true
+        }
+      ],
+      "suggestedFiles": [
+        "src/core/state/machine.ts",
+        "src/core/state/types.ts",
+        "src/core/schemas/workflow.ts",
+        "src/core/schemas/enums.ts",
+        "src/core/schemas/recovery/schemas.ts",
+        "src/core/recovery/halt.ts",
+        "src/core/recovery/action-label.ts",
+        "src/core/state/machine.test.ts",
+        "src/core/schemas/workflow.test.ts"
+      ],
+      "contextFiles": [
+        "src/core/recovery/reset-clock.ts",
+        "src/core/sessions/run-status.ts",
+        "src/core/crew/identity.ts"
+      ],
+      "exclusions": [
+        "Do not add a new recovery reason.",
+        "Do not change how `RESET_TASK` behaves.",
+        "Do not wire `retry-later` application into the engine here; only the vocabulary and label."
+      ],
+      "protectedOperations": null,
+      "steps": [
+        "Add `retry-later` to `RECOVERY_ACTIONS` (`src/core/schemas/enums.ts`); `action-label.ts` spells it `Retry at <clock>` from the issue's `resetAt` with the existing reset formatter.",
+        "`SEAT_DOWN_ACTIONS` in `halt.ts`: `switch-seat`, `retry-later`, `retry-same-worker`, `skip-current-task`, `end-run`; the recovery policy under `src/core/schemas/recovery/` admits `retry-later` for seat-down halts.",
+        "`WorkflowStateSchema` gains optional `seatSwitches: { seat, from, to, cause, auto, configRevision, ts }[]`; `interruptedStep.source` gains `'seat'`; `SwitchSeatOfferSchema` gains optional `auto: { candidate, configRevision }`.",
+        "Add `RESTART_ATTEMPT_ON_SEAT { taskId }` (types.ts, machine.ts): clears `pendingRecovery`, keeps the task's `attempt` and `in_progress`, keeps `interruptedStep`, no lineage counter change. Add an action that appends one `seatSwitches` record.",
+        "Schema test: an old `state.json` without the new fields loads."
+      ],
+      "dependsOn": [],
+      "batch": 1
+    },
+    {
+      "id": "T003",
+      "title": "Declared fallback in seat config, kept by every writer and shown in Settings",
+      "intent": "Each seat block accepts an optional `fallback: { tool, model, effort?, variant? }` validated through the seat's own schema as a cli runner; the config writers and the seat swap keep it; it is not part of the seat identity; Settings shows one read-only `fallback <identity>` line under each crew row that declares one.",
+      "criteria": ["C4"],
+      "checks": [
+        {
+          "id": "K-runner-fields",
+          "kind": "test",
+          "value": "src/core/schemas/runner-fields.test.ts",
+          "required": true
+        },
+        {
+          "id": "K-build-runner",
+          "kind": "test",
+          "value": "src/core/config/runtime/build-runner.test.ts",
+          "required": true
+        },
+        {
+          "id": "K-config-transforms",
+          "kind": "test",
+          "value": "src/features/runners/config-transforms.test.ts",
+          "required": true
+        },
+        {
+          "id": "K-seats",
+          "kind": "test",
+          "value": "src/core/state/seats.test.ts",
+          "required": true
+        },
+        {
+          "id": "K-crew-rows",
+          "kind": "test",
+          "value": "src/core/crew/rows.test.ts",
+          "required": true
+        },
+        {
+          "id": "K-switch-seat",
+          "kind": "test",
+          "value": "src/engine/orchestrator/recovery/switch-seat.test.ts",
+          "required": true
+        }
+      ],
+      "suggestedFiles": [
+        "src/core/schemas/runner-fields.ts",
+        "src/core/config/runtime/build-runner.ts",
+        "src/features/runners/config-transforms.ts",
+        "src/engine/orchestrator/recovery/switch-seat.ts",
+        "src/core/state/seats.ts",
+        "src/core/crew/rows.ts",
+        "src/features/crew/row-view.tsx",
+        "src/features/crew/format.ts"
+      ],
+      "contextFiles": [
+        "src/core/schemas/planner-config.ts",
+        "src/core/schemas/implementer-config.ts",
+        "src/core/schemas/reviewer-config.ts",
+        "src/core/crew/identity.ts",
+        "src/core/runners/effort-channel.ts",
+        "src/core/config/accessors/reviewer-runner.ts"
+      ],
+      "exclusions": [
+        "Do not add a default fallback, and do not change `init`.",
+        "Do not add a fallback editor to the picker or Settings.",
+        "Do not include `fallback` in the seat identity string."
+      ],
+      "protectedOperations": null,
+      "steps": [
+        "`createRunnerConfigSchema` and `createPlannerConfigSchema` accept optional `fallback`, validated as `{ kind: 'cli', ...fallback }` through the seat's schema; an unhostable tool fails with a message naming `fallback`; `effort` on a tool whose effort channel is `variant` fails.",
+        "`buildRunnerConfig`, the picker commit in `config-transforms.ts`, and `configWithSwitchedSeat` keep the seat's existing `fallback`.",
+        "`seatIdentitiesFromConfig` ignores `fallback`.",
+        "`deriveCrewRows` carries the fallback identity (`formatSeatCandidateIdentity`, axis word included); `row-view.tsx`/`format.ts` render one dim line `fallback <identity>`.",
+        "With no `reviewer:` block, the review seat uses `planner.fallback`."
+      ],
+      "dependsOn": [],
+      "batch": 1
+    },
+    {
+      "id": "T004",
+      "title": "Adapters pass observed status, provider type and the raw error line",
+      "intent": "A failed call carries the provider's observed HTTP status and error type when the tool printed them, and the `runner_call_error` event carries the first raw error line, so the classifier reads `provider.quota` and 402/429 directly; copilot error lines become failed results. The captured DeepSeek envelope replayed through opencode's protocol events classifies as account/balance.",
+      "criteria": ["C2"],
+      "checks": [
+        {
+          "id": "K-final-group",
+          "kind": "test",
+          "value": "src/engine/runners/cli-tools/final-group.test.ts",
+          "required": true
+        },
+        {
+          "id": "K-copilot",
+          "kind": "test",
+          "value": "src/engine/runners/cli-tools/copilot.test.ts",
+          "required": true
+        },
+        {
+          "id": "K-codex",
+          "kind": "test",
+          "value": "src/engine/runners/cli-tools/codex.test.ts",
+          "required": true
+        },
+        {
+          "id": "K-recorder",
+          "kind": "test",
+          "value": "src/engine/calls/recorder.test.ts",
+          "required": true
+        },
+        {
+          "id": "K-opencode",
+          "kind": "test",
+          "value": "src/engine/runners/cli-tools/opencode.test.ts",
+          "required": true
+        }
+      ],
+      "suggestedFiles": [
+        "src/engine/runners/cli-tools/final-group.ts",
+        "src/engine/calls/schema.ts",
+        "src/engine/calls/recorder.ts",
+        "src/engine/runners/cli-tools/codex.ts",
+        "src/engine/runners/cli-tools/copilot.ts",
+        "src/engine/events/schema.ts",
+        "src/engine/implementers/pipeline/call-result.ts",
+        "src/engine/runners/seat-failure.test.ts"
+      ],
+      "contextFiles": [
+        "src/engine/streaming/error-envelope.ts",
+        "src/engine/runners/seat-failure.ts",
+        "src/engine/runners/cli-tools/opencode.ts",
+        "src/engine/runners/cli-tools/kilo-code.ts",
+        "src/engine/runners/redaction.ts",
+        "src/engine/runners/cli-tools/process-invoke.ts"
+      ],
+      "exclusions": [
+        "No adapter invents a status or provider type it did not observe.",
+        "Do not change claude-code, cursor, command-code or antigravity parsing."
+      ],
+      "protectedOperations": null,
+      "steps": [
+        "`RunnerCallErrorSchema` gains optional integer `status` and bounded string `providerType`; `createRunnerCallRecorder` keeps them redacted and bounded like `message`.",
+        "`errorLineProtocolEvents` (final-group.ts, used by opencode and kilo) reads `error.status` or `error.data.statusCode` and `error.type` or `error.name`. Fixtures: `{\"type\":\"error\",\"error\":{\"type\":\"provider.quota\",\"message\":\"Insufficient Balance (request_id: 021cfcdf-…)\"}}` and the Go-limit envelope with `status: 429`.",
+        "`codexTurnFailedDetail` keeps a nested `error.type` as `providerType`.",
+        "`copilot.ts`: a `type: 'error'` line, or a result with `is_error` or a non-success subtype, becomes a failed result `{ code: 'copilot-error', message }`.",
+        "`runner_call_error` gains `rawTail`: the first error line, at most 2 KiB, redacted.",
+        "`runnerCallOutcome` and process-invoke pass `status` and `providerType` into `classifySeatFailure`."
+      ],
+      "dependsOn": ["T001"],
+      "batch": 2
+    },
+    {
+      "id": "T005",
+      "title": "One seat-down halt builder and a fallback-first swap offer",
+      "intent": "`buildSeatDownIssue` builds the seat-down halt for every seat and cause with the S11 copy and actions, replacing the usage-limit and unauthenticated builders, and the swap offer lists the seat's declared fallback first with its model and effort, allowing the same tool on another model and saying why a blocked fallback is not offered.",
+      "criteria": ["C3", "C5", "C14"],
+      "checks": [
+        {
+          "id": "K-builder",
+          "kind": "test",
+          "value": "src/engine/orchestrator/recovery/builders/task.test.ts",
+          "required": true
+        },
+        {
+          "id": "K-builder-planner",
+          "kind": "test",
+          "value": "src/engine/orchestrator/recovery/builders/planner.test.ts",
+          "required": true
+        },
+        {
+          "id": "K-seat-swap-context",
+          "kind": "test",
+          "value": "src/engine/orchestrator/recovery/seat-swap-context.test.ts",
+          "required": true
+        }
+      ],
+      "suggestedFiles": [
+        "src/engine/orchestrator/recovery/builders/task.ts",
+        "src/engine/orchestrator/recovery/builders/task.test.ts",
+        "src/engine/orchestrator/recovery/builders/planner.ts",
+        "src/engine/orchestrator/recovery/planner-call-failure.ts",
+        "src/engine/orchestrator/recovery/seat-swap-context.ts",
+        "src/engine/orchestrator/recovery/seat-swap-context.test.ts"
+      ],
+      "contextFiles": [
+        "src/core/recovery/halt.ts",
+        "src/core/recovery/reset-clock.ts",
+        "src/core/crew/identity.ts",
+        "src/core/schemas/recovery/schemas.ts",
+        "src/engine/runners/seat-failure.ts",
+        "src/engine/runners/auth-failure.ts",
+        "src/engine/detection/cache.ts"
+      ],
+      "exclusions": [
+        "Do not add a new recovery reason.",
+        "Touch the engine call sites only as far as needed to compile after the deletion."
+      ],
+      "protectedOperations": null,
+      "steps": [
+        "`buildSeatDownIssue({ seat, runner, classification, words, requestId?, resetAt?, fallback?, task?, phase, ... })` in builders/task.ts: reason `runner-unauthenticated` for auth, else `runner-usage-limit` with `facts.cause` in `balance|billing|quota|rate-limit`.",
+        "Copy: title `Seat down · <SEAT> · <tool>` (`recoveryHaltLabel`, `CREW_SEAT_LABELS`); line 1 the cause in plain words (`<Provider> account: balance spent`, `usage limit · resets <clock>` via `formatResetNote`, `signed out`); `details[0]` the provider words verbatim with the request id; line 3 `fallback: <identity>` (`formatSeatCandidateIdentity`) or `no fallback declared`; a sign-in cause keeps `runnerLoginInstruction`.",
+        "Actions: `switch-seat` when offered, `retry-later` only with `resetAt`, `retry-same-worker`, `skip-current-task` only when the halt names a task, `end-run`. Recommended: `switch-seat` when offered, else `retry-later` with a reset, else `retry-same-worker`.",
+        "Route usage and auth cases of `buildPlannerCallFailedRecoveryIssue`/`diagnosePlannerCallFailure` to `buildSeatDownIssue`; delete `buildRunnerUsageLimitRecoveryIssue` and `buildRunnerUnauthenticatedRecoveryIssue` and move their tests.",
+        "`switchSeatOffer` excludes the current identity (tool and model), not the current tool, and passes `effort` and `variant` through.",
+        "`loadSeatSwapContext` takes the seat's `fallback` and puts it first when the remembered snapshot has its tool `ready` or `unverified`; `not installed`, `incompatible`, `unauthenticated`, `unavailable` block it with one detail row naming why.",
+        "`runnerHaltRow` leads with the cause words and the provider quote, spelling the reset once from `resetAt`."
+      ],
+      "dependsOn": ["T001", "T002", "T003"],
+      "batch": 2
+    },
+    {
+      "id": "T006",
+      "title": "Every seat halts as seat down at once and parks the cut brief",
+      "intent": "An account or unrecoverable rate-limit failure on any seat (first build attempt, local retries, consult, planning, final review, triage) raises the seat-down halt on the attempt it failed, with 0 retries and 0 consults. A cut brief keeps its workspace, is parked with `source: 'seat'`, and its attempt is not counted. When the halted seat declares a usable fallback with no earlier automatic switch in this run, the halt carries `switchSeat.auto = { candidate, configRevision }`.",
+      "criteria": ["C3", "C6"],
+      "checks": [
+        {
+          "id": "K-impl-failure",
+          "kind": "test",
+          "value": "src/engine/orchestrator/task/implementation-failure.test.ts",
+          "required": true
+        },
+        {
+          "id": "K-local-retries",
+          "kind": "test",
+          "value": "src/engine/orchestrator/escalation/local-retries.test.ts",
+          "required": true
+        },
+        {
+          "id": "K-handle",
+          "kind": "test",
+          "value": "src/engine/orchestrator/escalation/handle.test.ts",
+          "required": true
+        },
+        {
+          "id": "K-final-review",
+          "kind": "test",
+          "value": "src/engine/orchestrator/final-review.test.ts",
+          "required": true
+        }
+      ],
+      "suggestedFiles": [
+        "src/engine/orchestrator/task/implementation-failure.ts",
+        "src/engine/orchestrator/task/run-implementation.ts",
+        "src/engine/orchestrator/escalation/handle.ts",
+        "src/engine/orchestrator/escalation/local-retries.ts",
+        "src/engine/orchestrator/planning/failure.ts",
+        "src/engine/orchestrator/task/retry.ts",
+        "src/engine/orchestrator/final-review.ts",
+        "src/engine/orchestrator/triage.ts"
+      ],
+      "contextFiles": [
+        "src/engine/orchestrator/recovery/builders/task.ts",
+        "src/engine/orchestrator/recovery/seat-swap-context.ts",
+        "src/engine/orchestrator/isolation/retention.ts",
+        "src/engine/orchestrator/state-ops.ts",
+        "src/engine/runners/seat-failure.ts",
+        "src/engine/orchestrator/escalation/seat-wait.ts",
+        "src/core/state/machine.ts",
+        "src/core/pipeline-spec/bounds.ts"
+      ],
+      "exclusions": [
+        "Do not apply the switch here; only raise the halt with its intent.",
+        "Do not change attempt or consult bounds; no refunds."
+      ],
+      "protectedOperations": null,
+      "steps": [
+        "`implementation-failure.ts`: one `buildSeatDownIssue` path for `unauthenticated` and `usage-limit` outcomes; no `workspace.cleanup()` on it; dispatch `INTERRUPT_STEP { step: { kind: 'brief', taskId, attempt }, source: 'seat', cut: 'mid-step' }` with the halt.",
+        "`run-implementation.ts` retains the workspace for a seat-down failure as for a resumable stop (`isResumableWorkspaceStop`).",
+        "`escalation/handle.ts`: `unauthenticatedHalt` and `usageLimitHalt` become one `seatDownHalt`; `runLocalRetries` checks `haltsLocalRetries` before `COUNT_ATTEMPT`.",
+        "`planning/failure.ts`, `task/retry.ts` (consult), `final-review.ts` (`seat-blocked`; no `reviewer:` targets the plan seat and `planner.fallback`) and `triage.ts` use `buildSeatDownIssue`.",
+        "Set the auto intent only when the class is account (or rate-limited past `BOUNDS.rateLimitResetWaitMs`), the halted seat declares `fallback`, the offer contains it, and `state.seatSwitches` has no `auto` entry for that seat; `configRevision` is the revision read at the halt.",
+        "Tests: an opencode balance result on attempt 1 halts with 0 retries and 0 consults and the provider's words; a seat with an `auto` entry gets no auto intent."
+      ],
+      "dependsOn": ["T005"],
+      "batch": 3
+    },
+    {
+      "id": "T007",
+      "title": "Retry later waits for the reset the user chose; a far reset halts",
+      "intent": "Taking `retry-later` on a seat-down halt resolves the recovery and sets the seat wait to the reset, so the next continue waits until then and re-runs the step; the run reads as stopped and the byline says `Waiting for <tool> · resets <clock>`. A codex reviewer 429 with a 2-minute reset waits and the review runs again and passes; with a reset outside `BOUNDS.rateLimitResetWaitMs` the reviewer halts as Seat down with `Retry at <clock>` offered.",
+      "criteria": ["C8"],
+      "checks": [
+        {
+          "id": "K-actions",
+          "kind": "test",
+          "value": "src/engine/orchestrator/recovery/actions.test.ts",
+          "required": true
+        },
+        {
+          "id": "K-final-review-wait",
+          "kind": "test",
+          "value": "src/engine/orchestrator/final-review-seat-wait.test.ts",
+          "required": true
+        },
+        {
+          "id": "K-byline",
+          "kind": "test",
+          "value": "src/features/workflow/closed/byline.test.ts",
+          "required": true
+        }
+      ],
+      "suggestedFiles": [
+        "src/engine/orchestrator/recovery/actions.ts",
+        "src/engine/orchestrator/run/init.ts",
+        "src/core/sessions/run-status.ts",
+        "src/features/workflow/closed/byline.ts",
+        "src/engine/orchestrator/final-review-seat-wait.test.ts"
+      ],
+      "contextFiles": [
+        "src/engine/orchestrator/escalation/seat-wait.ts",
+        "src/core/state/machine.ts",
+        "src/core/recovery/reset-clock.ts",
+        "src/core/pipeline-spec/bounds.ts",
+        "src/engine/orchestrator/final-review.ts",
+        "src/engine/orchestrator/final-review.test.ts"
+      ],
+      "exclusions": ["Do not offer `retry-later` without a known reset."],
+      "protectedOperations": null,
+      "steps": [
+        "`actions.ts` applies `retry-later`: resolve the recovery and dispatch `SET_SEAT_WAIT { seat, resetAt }`; no wait bound.",
+        "`resumeSeatWait` (`run/init.ts`) honours it (fake-clock test).",
+        "`StopReason` in `run-status.ts` reports a waiting seat as stopped; `openRunByline` reads `Waiting for <tool> · resets <clock>`.",
+        "`final-review-seat-wait.test.ts`: (a) a codex reviewer 429 with a 2-minute reset publishes `seat_wait_started`, then the review runs again and passes; (b) a codex reviewer 429 whose reset lies beyond `BOUNDS.rateLimitResetWaitMs` raises a seat-down halt on the review seat whose actions include `retry-later`, labelled `Retry at <clock>`."
+      ],
+      "dependsOn": ["T005"],
+      "batch": 3
+    },
+    {
+      "id": "T008",
+      "title": "The switch commits once: prepare, one-seat config write, state record",
+      "intent": "Applying a seat switch prepares the switched config first, then writes only that seat into `config.yaml` against the revision read at the halt, then resolves the recovery with `RESTART_ATTEMPT_ON_SEAT`, appends `state.seatSwitches` and publishes `seat_switched` (one transcript row). Stop, conflict and crash cases leave a consistent run, and `continue --action switch-seat:` uses the same one-seat writer. A scripted run with a spent implementer and a declared fallback switches, keeps the partial file and the attempt number, and completes.",
+      "criteria": ["C6", "C7", "C14"],
+      "checks": [
+        {
+          "id": "K-switch-resume",
+          "kind": "test",
+          "value": "src/engine/orchestrator/recovery/switch-seat-resume.test.ts",
+          "required": true
+        },
+        {
+          "id": "K-record-seat",
+          "kind": "test",
+          "value": "src/core/config/load/record-seat.test.ts",
+          "required": true
+        },
+        {
+          "id": "K-integration-switch",
+          "kind": "test",
+          "value": "testing/integration/orchestrator/seat-down-switch.test.ts",
+          "required": true
+        },
+        {
+          "id": "K-seat-switched-row",
+          "kind": "test",
+          "value": "src/features/workflow/conversation-rows/seat-switched-row.test.ts",
+          "required": true
+        },
+        {
+          "id": "K-continue",
+          "kind": "test",
+          "value": "src/cli/commands/continue/command.test.ts",
+          "required": true
+        }
+      ],
+      "suggestedFiles": [
+        "src/engine/orchestrator/recovery/switch-seat-resume.ts",
+        "src/core/config/load/record-seat.ts",
+        "src/core/config/load/record-seat.test.ts",
+        "src/engine/orchestrator/run/seat-swap.ts",
+        "src/cli/commands/continue/command.ts",
+        "src/engine/events/schema.ts",
+        "src/features/workflow/conversation-rows/seat-switched-row.test.ts",
+        "testing/integration/orchestrator/seat-down-switch.test.ts"
+      ],
+      "contextFiles": [
+        "src/core/config/load/io.ts",
+        "src/engine/orchestrator/recovery/actions.ts",
+        "src/engine/orchestrator/recovery/switch-seat.ts",
+        "src/engine/orchestrator/state-ops.ts",
+        "src/engine/orchestrator/run/init.ts",
+        "src/engine/orchestrator/events.ts",
+        "src/core/state/machine.ts",
+        "testing/integration/orchestrator/park-continue-direct-writer.test.ts"
+      ],
+      "exclusions": [
+        "Never rewrite seats other than the switched one.",
+        "Do not resolve the recovery before the config write is saved."
+      ],
+      "protectedOperations": null,
+      "steps": [
+        "Add `recordSeatOfRecord(projectDir, seat, runner, expectedRevision)` in `src/core/config/load/record-seat.ts`: patch one seat block (or the failing implementer profile) through `transactConfigDocument`. Delete `recordSeatsOfRecord` from the continue command and call the new function.",
+        "Reorder `switchSeatAndPrepareResume`: (1) prepare on the switched config, no writes; (2) only when `prepared` and not aborted, `recordSeatOfRecord`, rechecking the abort inside the transaction; `conflict` keeps the halt pending with one warning row `config changed meanwhile · the halt stays`; (3) on `saved`, `transitionAndSave` resolves the recovery, dispatches `RESTART_ATTEMPT_ON_SEAT` for a halt naming a brief (else re-issue the step as today), appends `seatSwitches`, publishes `seat_switched`.",
+        "Re-entry after a crash between 2 and 3: seat of record equal to the candidate -> step 3 without a second write, `auto: true`; different -> drop the intent, resolve onto the seat of record, `auto: false`.",
+        "A stop during steps 1-2 writes nothing and leaves the halt pending with its intent.",
+        "Add the `seat_switched` event and one transcript row `BUILD → <identity> · <cause words>`.",
+        "Integration test: a scripted `agent` implementer writes a partial file then emits the balance line at attempt 1 with a declared fallback -> `seat_switched`, partial file survives, `attempt` unchanged, the continued attempt counts once, the run completes; a second seat-down on the switched seat halts without auto intent; crash injection, manual change, abort and conflict cases."
+      ],
+      "dependsOn": ["T006", "T003"],
+      "batch": 4
+    },
+    {
+      "id": "T009",
+      "title": "TUI driver takes the automatic switch and opens the picker on the fallback",
+      "intent": "In the TUI, a seat-down halt with an `auto` intent switches without opening the picker; a halt without it opens the seat picker on the first candidate's tool row with its model and effort drafted, and Escape returns to the panel unchanged. Boundary seat-change requests are kept per seat, so the swap never discards another seat's change, and a newer manual change to the same seat wins.",
+      "criteria": ["C9"],
+      "checks": [
+        {
+          "id": "K-recovery-driver",
+          "kind": "test",
+          "value": "src/features/workflow/recovery-driver.test.ts",
+          "required": true
+        },
+        {
+          "id": "K-run-loop",
+          "kind": "test",
+          "value": "src/features/workflow/hooks/use-run-loop-stop.test.tsx",
+          "required": true
+        }
+      ],
+      "suggestedFiles": [
+        "src/features/workflow/recovery-driver.ts",
+        "src/features/workflow/handlers.ts",
+        "src/features/workflow/hooks/use-run-loop.ts",
+        "src/core/navigation/types.ts",
+        "src/features/workflow/recovery-driver.test.ts"
+      ],
+      "contextFiles": [
+        "src/engine/orchestrator/run/seat-swap.ts",
+        "src/app/overlays/runners.tsx",
+        "src/features/runners/model-catalog/option-axis.ts"
+      ],
+      "exclusions": [
+        "Do not fork a per-role picker.",
+        "Do not add a fallback editor to the picker."
+      ],
+      "protectedOperations": null,
+      "steps": [
+        "`createRecoveryDriver` routes an `auto` candidate straight to `applyOfferedSeatSwap`.",
+        "`pickSwappedSeat` opens the overlay with `toolRowFocus(tool)` plus the candidate's model and effort drafted in the picker's `OptionAxisName` state.",
+        "`requestSeatChangeAtBoundary`/`consumeSeatChange` hold a per-seat set `{ seat, configRevision }`; the swap consumes only its own seat's entry and only when its revision is not newer than the one it wrote.",
+        "Tests: auto skips the picker; another seat's boundary change survives; a newer same-seat change wins; Ink test for the drafted picker and Escape."
+      ],
+      "dependsOn": ["T008"],
+      "batch": 5
+    },
+    {
+      "id": "T010",
+      "title": "Headless seat-down policy and record",
+      "intent": "Headless `start` and `continue` follow `--on-seat-down halt|switch`: with a declared fallback they switch automatically (before the run and after each return) under the run's signal handlers; otherwise they exit 1 with a `recovery_required` record that names the halt, cause, provider words, request id, reset, fallback and a resume line with `@<effort>`. No picker opens headlessly.",
+      "criteria": ["C10"],
+      "checks": [
+        {
+          "id": "K-headless",
+          "kind": "test",
+          "value": "src/cli/headless.test.ts",
+          "required": true
+        },
+        {
+          "id": "K-options",
+          "kind": "test",
+          "value": "src/cli/options.test.ts",
+          "required": true
+        }
+      ],
+      "suggestedFiles": [
+        "src/cli/headless.ts",
+        "src/cli/options.ts",
+        "src/cli/commands/start/register.ts",
+        "src/cli/commands/continue/register.ts",
+        "src/core/recovery/resume-command.ts",
+        "src/cli/headless.test.ts"
+      ],
+      "contextFiles": [
+        "src/engine/orchestrator/run/seat-swap.ts",
+        "src/core/runners/effort-channel.ts",
+        "src/cli/commands/continue/command.ts"
+      ],
+      "exclusions": ["An automatic switch does not change the exit code rules."],
+      "protectedOperations": null,
+      "steps": [
+        "Add `--on-seat-down <halt|switch>` in `src/cli/options.ts` and on `start` and `continue`; default `switch` when the halted seat declares a fallback, else `halt`; explicit `halt` overrides any intent; explicit `switch` with no fallback anywhere exits 2 naming `fallback`.",
+        "`runHeadless` installs SIGINT/SIGTERM before the preflight and applies an auto intent through `applyOfferedSeatSwap` before the run and after each `runWorkflow` return, in a loop; write a `seat_switched` record.",
+        "`recovery_required` gains `halt`, `cause`, `providerMessage`, `requestId`, `resetAt`, `fallback`; the resume line prints `switch-seat:<tool>:<model>@<effort>`; `parseSeatSpecOption` carries `@<effort>` into the candidate by the tool's effort channel."
+      ],
+      "dependsOn": ["T008"],
+      "batch": 5
+    },
+    {
+      "id": "T011",
+      "title": "doctor --probe-seat captures one raw call",
+      "intent": "`splitbrief doctor --probe-seat <plan|build|review>` sends `Reply with the word ok.` through the seat's own adapter in an isolated workspace (60 s, 64 KiB), writes stdout, stderr, exit status and the classification, redacted, to `.splitbrief/probes/<tool>-<date>.jsonl`, and prints the class and first error line; plain `doctor` makes no call.",
+      "criteria": ["C11"],
+      "checks": [
+        {
+          "id": "K-doctor",
+          "kind": "test",
+          "value": "src/cli/commands/doctor.test.ts",
+          "required": true
+        }
+      ],
+      "suggestedFiles": ["src/cli/commands/doctor.ts", "src/cli/commands/doctor.test.ts"],
+      "contextFiles": [
+        "src/engine/runners/cli-tools/contract-harness-raw.ts",
+        "src/engine/runners/seat-failure.ts",
+        "src/engine/runners/redaction.ts",
+        "src/core/paths.ts"
+      ],
+      "exclusions": ["Ordinary `doctor` stays read-only and unchanged."],
+      "protectedOperations": null,
+      "steps": [
+        "Register the option; its help text says it makes one paid call.",
+        "Reuse the raw capture in `contract-harness-raw.ts` and `classifySeatFailure`.",
+        "Tests: a scripted tool writes the probe file with the class; without the flag no call is made."
+      ],
+      "dependsOn": ["T001"],
+      "batch": 5
+    },
+    {
+      "id": "T012",
+      "title": "Skills learn the account rule and retry later",
+      "intent": "The generated skill blocks state that an account refusal halts at once and a declared fallback switches the seat, list the `retry-later` row, and `wait-attempt.sh` takes its phrase list from `HALT_SIGNATURES`; the four skills are regenerated and in sync.",
+      "criteria": ["C12"],
+      "checks": [
+        {
+          "id": "K-skill-blocks",
+          "kind": "test",
+          "value": "scripts/skill-blocks.test.ts",
+          "required": true
+        }
+      ],
+      "suggestedFiles": [
+        "scripts/skill-blocks.ts",
+        "scripts/skill-blocks.test.ts",
+        "skills/splitbrief-run/scripts/wait-attempt.sh"
+      ],
+      "contextFiles": ["scripts/sync-skills.ts", "src/core/pipeline-spec/halts.ts"],
+      "exclusions": ["Do not hand-edit generated skill blocks; regenerate them."],
+      "protectedOperations": null,
+      "steps": [
+        "`seatRecovery()` gains the account rule and the `retry-later` row.",
+        "Generate the `wait-attempt.sh` phrase list from `HALT_SIGNATURES`, then regenerate the skill copies under `skills/` with the sync script."
+      ],
+      "dependsOn": ["T002"],
+      "batch": 6
+    },
+    {
+      "id": "T013",
+      "title": "Gallery scenarios show seat down, the fallback and the switched seat",
+      "intent": "The visual gallery renders the seat-down panels with a fallback in the fixture config, a new `workflow-seat-switched` scenario with the transcript row and the new header seat, the Settings fallback line, and a sessions row for a seat-down run.",
+      "criteria": ["C13"],
+      "checks": [
+        {
+          "id": "K-catalog",
+          "kind": "test",
+          "value": "testing/visual/catalog.test.ts",
+          "required": true
+        }
+      ],
+      "suggestedFiles": [
+        "testing/visual/catalog.ts",
+        "testing/visual/fixtures/workflow/projections.ts",
+        "testing/visual/fixtures/workflow/at-rest-projections.ts"
+      ],
+      "contextFiles": [
+        "src/engine/orchestrator/recovery/builders/task.ts",
+        "src/features/crew/row-view.tsx",
+        "src/core/crew/rows.ts"
+      ],
+      "exclusions": ["Do not run the screenshot tool; SPLITBRIEF collects the renders."],
+      "protectedOperations": null,
+      "steps": [
+        "`workflow-recovery-usage-limit`, `workflow-recovery-plan-seat`, `workflow-recovery-review-seat`, `workflow-at-rest-halted` fixtures use `buildSeatDownIssue` output and a config with a fallback.",
+        "Add `workflow-seat-switched` to `testing/visual/catalog.ts`.",
+        "`overlay-settings*` fixtures include a fallback; `sessions` includes a seat-down row.",
+        "Fixture projections reference no deleted builder."
+      ],
+      "dependsOn": ["T008", "T009"],
+      "batch": 6
+    },
+    {
+      "id": "T014",
+      "title": "Deleted-symbol invariant gate and docs for seat down, fallback, switch, headless policy and probe",
+      "intent": "A new invariant gate in `scripts/check-invariants.ts` fails when any file under `src/` contains `buildRunnerUsageLimitRecoveryIssue`, `buildRunnerUnauthenticatedRecoveryIssue`, `usageLimitDetailFromError` or `recordSeatsOfRecord`, and passes on the migrated tree. The canonical docs, CHANGELOG and CLAUDE.md describe the classifier and its classes, the one Seat down section with the builder, `retry-later`, the declared fallback, the automatic switch with its commit sequence and resume rules, the headless flag, the probe and the gaps of prose-only tools.",
+      "criteria": ["C14"],
+      "checks": [
+        {
+          "id": "K-invariants",
+          "kind": "cmd",
+          "value": "npm run check:invariants",
+          "required": true
+        }
+      ],
+      "suggestedFiles": [
+        "scripts/check-invariants.ts",
+        "docs/INVARIANTS.md",
+        "docs/APPROVAL-AND-RECOVERY.md",
+        "docs/CONFIGURATION.md",
+        "docs/CLI-REFERENCE.md",
+        "docs/FEATURES.md",
+        "docs/WORKFLOW.md",
+        "docs/TASK-CONTRACT.md",
+        "docs/ARCHITECTURE.md",
+        "docs/TROUBLESHOOTING.md",
+        "docs/SUBSYSTEMS.md",
+        "CLAUDE.md",
+        "CHANGELOG.md"
+      ],
+      "contextFiles": [
+        "src/engine/runners/seat-failure.ts",
+        "src/engine/orchestrator/recovery/builders/task.ts",
+        "src/core/schemas/runner-fields.ts",
+        "src/cli/headless.ts"
+      ],
+      "exclusions": [
+        "Do not edit any file under `.nuke/`.",
+        "Write in ASD-STE100 style, matching the surrounding docs.",
+        "Do not document behaviour the code does not have."
+      ],
+      "protectedOperations": null,
+      "steps": [
+        "Add one gate to `scripts/check-invariants.ts`, in the style of the existing gates, that scans `src/` for the four deleted symbol names and fails naming each file and symbol it finds; list the gate in `docs/INVARIANTS.md`.",
+        "`APPROVAL-AND-RECOVERY.md`: \"Seat trouble\" (classifier), one \"Seat down\" section, reason table rows, headless paragraph, gaps list (copilot, cursor, kilo, opencode sign-out, stderr-only balance text), first-attempt halt site `task/implementation-failure.ts`.",
+        "`CONFIGURATION.md` (`fallback` in §2, §2a, §3, full example); `CLI-REFERENCE.md` (`--on-seat-down`, `doctor --probe-seat`, `switch-seat:<tool>:<model>@<effort>`); `FEATURES.md`; `WORKFLOW.md` §4 seat-cut park; `TASK-CONTRACT.md` (`seatSwitches`, `interruptedStep.source`); `ARCHITECTURE.md`; `TROUBLESHOOTING.md`; `SUBSYSTEMS.md`; `CLAUDE.md` run-contract line; `CHANGELOG.md`."
+      ],
+      "dependsOn": ["T001", "T005", "T008", "T010", "T011"],
+      "batch": 6
+    }
+  ],
+  "ledger": [
+    {
+      "id": "T001",
+      "status": "done",
+      "briefHash": "223b4ceecca6a59b491625c1e93922cd22c838f255b4465858c2a4e19c23c771",
+      "checkResults": [
+        {
+          "id": "K-classifier",
+          "passed": true
+        },
+        {
+          "id": "K-transient",
+          "passed": true
+        },
+        {
+          "id": "K-seat-wait",
+          "passed": true
+        },
+        {
+          "id": "K-process-invoke",
+          "passed": true
+        },
+        {
+          "id": "K-call-result",
+          "passed": true
+        },
+        {
+          "id": "K-planner-call-failure",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "id": "T002",
+      "status": "done",
+      "briefHash": "4a24dd46bf353a746c9bc461a84861d9f60241edf0c133d91bcc3b8174969cf1",
+      "checkResults": [
+        {
+          "id": "K-machine",
+          "passed": true
+        },
+        {
+          "id": "K-halt",
+          "passed": true
+        },
+        {
+          "id": "K-action-label",
+          "passed": true
+        },
+        {
+          "id": "K-workflow-schema",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "id": "T003",
+      "status": "done",
+      "briefHash": "56a7212abf4541752311d58709cd1cca9763f63fc7604dc1877786f798bac13a",
+      "checkResults": [
+        {
+          "id": "K-runner-fields",
+          "passed": true
+        },
+        {
+          "id": "K-build-runner",
+          "passed": true
+        },
+        {
+          "id": "K-config-transforms",
+          "passed": true
+        },
+        {
+          "id": "K-seats",
+          "passed": true
+        },
+        {
+          "id": "K-crew-rows",
+          "passed": true
+        },
+        {
+          "id": "K-switch-seat",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "id": "T004",
+      "status": "done",
+      "briefHash": "48649560ef373bf8ee01ee817f2c1fbf81c20371a793447df30471432095fcdf",
+      "checkResults": [
+        {
+          "id": "K-final-group",
+          "passed": true
+        },
+        {
+          "id": "K-copilot",
+          "passed": true
+        },
+        {
+          "id": "K-codex",
+          "passed": true
+        },
+        {
+          "id": "K-recorder",
+          "passed": true
+        },
+        {
+          "id": "K-opencode",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "id": "T005",
+      "status": "done",
+      "briefHash": "5e35e43c324a8f9548f6d14050728075ae1f5e8380a719cb92fc61d252377c56",
+      "checkResults": [
+        {
+          "id": "K-builder",
+          "passed": true
+        },
+        {
+          "id": "K-builder-planner",
+          "passed": true
+        },
+        {
+          "id": "K-seat-swap-context",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "id": "T006",
+      "status": "done",
+      "briefHash": "2f48eb3bf6d8d45ee522b6e5b911bb614d5cf86b79f4c31b453b2cf207734d30",
+      "checkResults": [
+        {
+          "id": "K-impl-failure",
+          "passed": true
+        },
+        {
+          "id": "K-local-retries",
+          "passed": true
+        },
+        {
+          "id": "K-handle",
+          "passed": true
+        },
+        {
+          "id": "K-final-review",
+          "passed": true
+        }
+      ],
+      "refreshedInputHashes": {
+        "src/engine/orchestrator/task/implementation-failure.ts": "0fdf1f7f7cf6246e3634b478877b5afae40cb0a6fca6d40943b74b267d41c3c3",
+        "src/engine/orchestrator/task/run-implementation.ts": "174a3a2227bf64d965ff366e652fadf0b162983c99fae9da4d31fe50fa6da00d",
+        "src/engine/orchestrator/escalation/handle.ts": "3c7a89168ee63db0815c50093261463b4e166b8b927367cf665a953002757c35",
+        "src/engine/orchestrator/escalation/local-retries.ts": "78ca78b5072d94cabd2279cbaf8753c25d2c402680d8fb1ce0f19ef18f17cebd",
+        "src/engine/orchestrator/planning/failure.ts": "5c17448643c30f73d253f21e63d33b49a4ec656543e94267a0b8816e12da9d9d",
+        "src/engine/orchestrator/task/retry.ts": "356f5ac1e12242852640b5286ab9ec83edf7505ed1fd95a47fb2c3cb7e14dae1",
+        "src/engine/orchestrator/final-review.ts": "8427ee0ef8ff7f6bdc08937134080e22cd01b438020c5605d7fb2236ba1ccfea",
+        "src/engine/orchestrator/triage.ts": "528f54f6dd754857a9dd31f2b3877c60a47a6b2abc55f30c9cee2e68e739e169",
+        "src/engine/orchestrator/recovery/builders/task.ts": "4781f3da36af2e817c2b195cd38ee84265b38a69deddb8a39d6619bf13395c0c",
+        "src/engine/orchestrator/recovery/seat-swap-context.ts": "33a593c38f4997960b6924084a2cfe9f84750b2ee49f2fe452991162f67868f9",
+        "src/engine/orchestrator/isolation/retention.ts": "984ae1038b14c9ecba00265e68d805e37536203a0063c2601eec7a3df7cedfda",
+        "src/engine/orchestrator/state-ops.ts": "48ff4df6a9a050b7fa6d310da70bd5bd8f2dd1e605b4e831dc2b2789c6c37305",
+        "src/engine/runners/seat-failure.ts": "c1e78281529f7efd8f2daf27c55afb3008e7c6fc7175159b3c464e8eae416399",
+        "src/engine/orchestrator/escalation/seat-wait.ts": "263c07f293b31124b596fbcd6bfea6114e30f93d827709d7a42f49033dd47c8d",
+        "src/core/state/machine.ts": "badef654d98746897650ec39c734b214c0cad5fd2d2f2da06835d9b392e4c2cf",
+        "src/core/pipeline-spec/bounds.ts": "33a71a9414d8b85c1a307f6f68d652aabf1b4873a03f3fa1e70dc398ffd58e33"
+      }
+    },
+    {
+      "id": "T007",
+      "status": "done",
+      "briefHash": "caa7e6d144a91780e237f32a84ca14e2e8b77f52c77cf88b0fa31ef03b2362d2",
+      "checkResults": [
+        {
+          "id": "K-actions",
+          "passed": true
+        },
+        {
+          "id": "K-final-review-wait",
+          "passed": true
+        },
+        {
+          "id": "K-byline",
+          "passed": true
+        }
+      ],
+      "refreshedInputHashes": {
+        "src/engine/orchestrator/recovery/actions.ts": "414de096aff20a85902a5160526e116e43e90abe924cd8f1212e6db747cedeb7",
+        "src/engine/orchestrator/run/init.ts": "c9de3809a128caeee9e16da9fd34bfa04575b47d2342a0d07a969cc9fe1030c0",
+        "src/core/sessions/run-status.ts": "c9150fb355acb2283b07e0bdfdb8dfcbfc53aae09e978b1d73b422b854bc3544",
+        "src/features/workflow/closed/byline.ts": "8d0db47a3a539edf5bd995d1e2e01066303734ed8c4d1568ed90b6befec03d2d",
+        "src/engine/orchestrator/final-review-seat-wait.test.ts": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "src/engine/orchestrator/escalation/seat-wait.ts": "263c07f293b31124b596fbcd6bfea6114e30f93d827709d7a42f49033dd47c8d",
+        "src/core/state/machine.ts": "badef654d98746897650ec39c734b214c0cad5fd2d2f2da06835d9b392e4c2cf",
+        "src/core/recovery/reset-clock.ts": "3dabd326186f57e1c5c797ca9aff6ef6b09bf8cbf0072b84f44b089ed9d8ab10",
+        "src/core/pipeline-spec/bounds.ts": "33a71a9414d8b85c1a307f6f68d652aabf1b4873a03f3fa1e70dc398ffd58e33",
+        "src/engine/orchestrator/final-review.ts": "8427ee0ef8ff7f6bdc08937134080e22cd01b438020c5605d7fb2236ba1ccfea",
+        "src/engine/orchestrator/final-review.test.ts": "ea0c67ee0e97fd000b7aa6b3729a17d8663399b2bf5bacfcfd425dad9512bc1a"
+      }
+    },
+    {
+      "id": "T008",
+      "status": "failed",
+      "briefHash": "caa7e6d144a91780e237f32a84ca14e2e8b77f52c77cf88b0fa31ef03b2362d2"
+    },
+    {
+      "id": "T009",
+      "status": "pending",
+      "briefHash": "80b3fe402e2212bbe39cdc37e38130e85a9ba846aefa6338e76e99fb4ad0782d"
+    },
+    {
+      "id": "T010",
+      "status": "pending",
+      "briefHash": "80b3fe402e2212bbe39cdc37e38130e85a9ba846aefa6338e76e99fb4ad0782d"
+    },
+    {
+      "id": "T011",
+      "status": "pending",
+      "briefHash": "80b3fe402e2212bbe39cdc37e38130e85a9ba846aefa6338e76e99fb4ad0782d"
+    },
+    {
+      "id": "T012",
+      "status": "pending",
+      "briefHash": "80b3fe402e2212bbe39cdc37e38130e85a9ba846aefa6338e76e99fb4ad0782d"
+    },
+    {
+      "id": "T013",
+      "status": "pending",
+      "briefHash": "80b3fe402e2212bbe39cdc37e38130e85a9ba846aefa6338e76e99fb4ad0782d"
+    },
+    {
+      "id": "T014",
+      "status": "pending",
+      "briefHash": "80b3fe402e2212bbe39cdc37e38130e85a9ba846aefa6338e76e99fb4ad0782d"
+    }
+  ]
+}

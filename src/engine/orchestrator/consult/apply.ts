@@ -43,6 +43,8 @@ export type ConsultApplyContext = Readonly<{
   sinks: WorkflowSinks;
   /** The state the applied answer runs on; every transition it saves is persisted. */
   state: WorkflowState;
+  /** When the brief started: a verify that completes it books the time since. */
+  taskStartTime: number;
   signal?: AbortSignal | undefined;
   changedFiles?: readonly string[] | undefined;
   runCommand?: ValidationCommandRunner | undefined;
@@ -61,7 +63,7 @@ export type ConsultApplyOutcome =
   | Readonly<{ action: 'guidance'; instructions: string; context: string | null }>
   | Readonly<{ action: 'rewrite-task'; task: Task }>
   | Readonly<{ action: 'split-task'; tasks: Task[] }>
-  | Readonly<{ action: 'completed'; task: Task }>
+  | Readonly<{ action: 'completed'; task: Task; durationMs: number }>
   | Readonly<{ action: 'confirm'; decisions: ConfirmAction['decisions'] }>
   | Readonly<{
       action: 'ask-user';
@@ -337,6 +339,7 @@ async function applyVerify(
     state: checked.state,
     method: 'consulted',
     transitionType: 'VALIDATION_PASS',
+    taskStartTime: ctx.taskStartTime,
     taskChangedFiles: [...changedFiles],
   });
   if (!commit.completed) {
@@ -344,7 +347,7 @@ async function applyVerify(
   }
   ctx.onStateChange?.(commit.state);
   const completed = commit.state.tasks.find((candidate) => candidate.id === task.id) ?? task;
-  return { action: 'completed', task: completed };
+  return { action: 'completed', task: completed, durationMs: commit.durationMs };
 }
 
 function askUserQuestion(action: AskUserAction): ClarificationQuestion {

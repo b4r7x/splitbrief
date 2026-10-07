@@ -15,7 +15,7 @@ import { sessionDir } from '../../../core/paths.js';
 import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
 import { captureTaskReviewChanges } from './review-capture.js';
 import { appendReviewChanges, readReviewChanges } from '../../../core/evidence/review-changes.js';
-import { hashTaskBrief } from '../../brief-hash.js';
+import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import type { ImplementerOptions } from '../../implementers/types.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { createRunIsolation } from '../isolation/create.js';

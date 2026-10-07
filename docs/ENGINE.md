@@ -339,6 +339,8 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 { type: 'task_completed'; taskId: TaskId; title: string;
   method: TaskCompletionMethod; retries: number; duration: number;
   tool?: string; model?: string; implementerProfile?: string }
+// `duration` is measured once, at completion, from the brief's start time
+// (`validateCommitAndAdvance`). The ledger entry's `durationMs` carries the same value.
 
 // Review fix cycle — the review triage appended fix tasks and START_FIX_CYCLE sent the run back
 { type: 'review_fix_started'; cycle: number; taskIds: TaskId[] }

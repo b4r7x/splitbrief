@@ -14,7 +14,7 @@ import { gateChangedFiles, type GateChangedFilesDenial } from '../approval/gate-
 import { persistApiApplyEvidence, persistApprovalEvidence } from '../evidence/persistence.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
-import { hashTaskBrief } from '../../brief-hash.js';
+import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import { isAbortError } from '../../../utils/abort.js';
 import { implementerSeatAttempt, runSeatCall } from '../escalation/seat-wait.js';
 import {

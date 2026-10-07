@@ -60,6 +60,7 @@ async function makeValidateCtx(opts: {
   signal?: AbortSignal | undefined;
 }): Promise<EscalationContext> {
   return {
+    taskStartTime: Date.now(),
     ...makeWctx({
       projectDir: opts.projectDir,
       sessionId: opts.sessionId,

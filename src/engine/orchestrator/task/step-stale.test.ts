@@ -23,7 +23,7 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { EventBus } from '../../events/types.js';
 import type { Planner } from '../../planners/types.js';
-import { hashTaskBrief } from '../../brief-hash.js';
+import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import { type ContinuationHolder, createContinuationHolder } from '../continuation.js';
 import { inputHashesNow, specInputFiles } from './stale-inputs.js';
 import { runSingleTask } from './step.js';

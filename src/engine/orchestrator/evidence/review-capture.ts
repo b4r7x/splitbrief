@@ -4,7 +4,7 @@ import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { appendReviewChanges } from '../../../core/evidence/review-changes.js';
 import { warnError } from '../../../lib/warn.js';
-import { hashTaskBrief } from '../../brief-hash.js';
+import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import {
   readConfinedEntry,
   sameFileEntry,

@@ -33,7 +33,7 @@ import {
 import { projectName } from '../../../core/project-meta.js';
 import type { EventBus, EventSink } from '../../events/types.js';
 import { createBranch } from '../../../lib/git/refs.js';
-import { hashTaskBrief } from '../../brief-hash.js';
+import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { initLogger } from '../../../core/logger.js';
 import { slugify } from '../../../utils/slugify.js';

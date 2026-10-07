@@ -1,0 +1,639 @@
+{
+  "session": "2026-10-06-s9-verification-recovery-collapse-run-states-ui-de",
+  "tasks": [
+    {
+      "id": "T001",
+      "title": "Upsert appended fix tasks into the evidence ledger",
+      "intent": "A task that is not yet in the evidence ledger (a fix task appended after the ledger was created) is added when its evidence is recorded, instead of being dropped by `withUpdatedTask`, so `validationSummary` and the closed block's \"N/M briefs validated\" count every brief that passed.",
+      "criteria": ["C1"],
+      "checks": [
+        {
+          "id": "T001-K1",
+          "kind": "test",
+          "value": "src/core/evidence/ledger.test.ts",
+          "required": true
+        },
+        {
+          "id": "T001-K2",
+          "kind": "test",
+          "value": "src/engine/orchestrator/evidence/task.test.ts",
+          "required": true
+        }
+      ],
+      "suggestedFiles": [
+        "src/core/evidence/ledger-state.ts",
+        "src/engine/orchestrator/evidence/task.ts",
+        "src/engine/orchestrator/evidence/record-checks.ts",
+        "src/core/evidence/ledger.test.ts",
+        "src/engine/orchestrator/evidence/task.test.ts"
+      ],
+      "contextFiles": [
+        "src/engine/orchestrator/evidence/persistence.ts",
+        "src/engine/orchestrator/summary/artifact-rollups.ts",
+        "src/features/workflow/closed/copy.ts"
+      ],
+      "exclusions": [
+        "Do not change the ledger schema or the evidence.json file shape.",
+        "Do not change the closed block copy; the count must come right from the ledger.",
+        "Do not keep two seeding paths: record-checks.ts uses the same helper after the change."
+      ],
+      "protectedOperations": null,
+      "steps": [
+        "Add one upsert helper in ledger-state.ts (replace the entry when its id exists, else append it), and recompute validationSummary there.",
+        "Use it at the callers in evidence/task.ts that do `findOrSeed` then `withUpdatedTask(..., () => next)`, and replace the inline seeding in record-checks.ts with it.",
+        "Test: a ledger seeded with T001–T002, then recordLocalTaskEvidence for a fix task T003 with status done: the ledger has 3 tasks and validationSummary counts 3 passed."
+      ],
+      "dependsOn": [],
+      "batch": 1
+    },
+    {
+      "id": "T002",
+      "title": "Queue confirmation names the seat that receives the message",
+      "intent": "When the composer queues a message, the confirmation names the seat the placeholder names: during the final review it reads that the message is queued for the reviewer, because `drainQueueForReview` delivers it to the reviewer; for the planner it keeps the planner wording.",
+      "criteria": ["C2"],
+      "checks": [
+        {
+          "id": "T002-K1",
+          "kind": "test",
+          "value": "src/features/workflow/review-parser.test.ts",
+          "required": true
+        }
+      ],
+      "suggestedFiles": [
+        "src/features/workflow/review-parser.ts",
+        "src/features/workflow/input-hints.ts",
+        "src/features/workflow/review-parser.test.ts",
+        "src/features/workflow/input-hints.test.ts"
+      ],
+      "contextFiles": [
+        "src/engine/orchestrator/queue/drain.ts",
+        "src/engine/orchestrator/final-review.ts"
+      ],
+      "exclusions": [
+        "Do not change which seat the queue delivers to.",
+        "Do not add a second function that decides the seat: the placeholder and the confirmation read one role decision."
+      ],
+      "protectedOperations": null,
+      "steps": [
+        "Expose the role decision `queuePlaceholder` already makes (input-hints.ts) as one helper, and have the confirmation in review-parser.ts (`Message queued for the next planner turn.`) read it: 'Message queued for the reviewer.' for the validator role, the planner sentence otherwise."
+      ],
+      "dependsOn": [],
+      "batch": 1
+    },
+    {
+      "id": "T003",
+      "title": "Pause-after-brief byline names the brief that just finished",
+      "intent": "With Pause after this brief armed, after the running brief completes and while the batch-boundary suite runs, the stop byline reads `Finishing <last brief id>` instead of `Finishing the run`; `the run` stays only when no brief ran.",
+      "criteria": ["C3"],
+      "checks": [
+        {
+          "id": "T003-K1",
+          "kind": "test",
+          "value": "src/features/workflow/stop/use-stop-byline.test.tsx",
+          "required": true
+        },
+        {
+          "id": "T003-K2",
+          "kind": "test",
+          "value": "src/features/workflow/stop/copy.test.ts",
+          "required": true
+        }
+      ],
+      "suggestedFiles": [
+        "src/features/workflow/stop/use-stop-byline.ts",
+        "src/features/workflow/stop/copy.ts",
+        "src/features/workflow/stop/use-stop-byline.test.tsx",
+        "src/features/workflow/stop/copy.test.ts"
+      ],
+      "contextFiles": ["src/stores/workflow/tasks.ts", "src/features/workflow/stop/options.ts"],
+      "exclusions": [
+        "Do not change selectRunningBrief's meaning for the stop sheet rows (UI-DEBT #29 fix).",
+        "Do not change the keys or the stop sheet rows."
+      ],
+      "protectedOperations": null,
+      "steps": [
+        "In use-stop-byline.ts, when the intent is pause-after-brief and no brief is in progress, pass the most recently completed brief of the run as the subject (read it from the tasks store; add a selector there only if none exists).",
+        "Test: tasks T001 done, T002 done, T003 done (batch boundary), intent pause-after-brief → lead `Finishing T003`."
+      ],
+      "dependsOn": [],
+      "batch": 1
+    },
+    {
+      "id": "T004",
+      "title": "A cut, redacted value is never redacted again",
+      "intent": "`redactSecrets` treats an assignment value that is a cut prefix of the redaction marker or ends in the ellipsis of a cut as already redacted, so a value sanitized, cut with truncateTerminalDisplayText and sanitized again by cardRowsLayout/rowsBlock keeps its width; the `BUILD failed` card for `error: 'x'.repeat(width - 28) + ' password=x'` renders one row at 60, 80 and 120 columns.",
+      "criteria": ["C4"],
+      "checks": [
+        {
+          "id": "T004-K1",
+          "kind": "test",
+          "value": "src/utils/redact.test.ts",
+          "required": true
+        },
+        {
+          "id": "T004-K2",
+          "kind": "test",
+          "value": "src/features/workflow/conversation-rows/event-rows/dispatch.test.ts",
+          "required": true
+        }
+      ],
+      "suggestedFiles": [
+        "src/utils/redact.ts",
+        "src/utils/redact.test.ts",
+        "src/features/workflow/conversation-rows/event-rows/dispatch.test.ts"
+      ],
+      "contextFiles": [
+        "src/utils/display-text.ts",
+        "src/features/workflow/conversation-rows/event-rows/dispatch.ts",
+        "src/features/workflow/conversation-rows/row-format/label-card.ts",
+        "src/features/workflow/conversation-rows/row-block-compose.ts"
+      ],
+      "exclusions": [
+        "Do not weaken redaction of real secrets: an uncut credential value must still be redacted.",
+        "Do not remove the second sanitize pass in cardRowsLayout or rowsBlock."
+      ],
+      "protectedOperations": null,
+      "steps": [
+        "Extend the already-redacted guard in replaceAssignedSecret (redact.ts:105-111) to a non-empty prefix of the marker followed by the ellipsis, and to a lone ellipsis value.",
+        "Test in redact.test.ts: `password=***RED…` and `password=…` are unchanged; `password=hunter2` is still redacted.",
+        "Test in dispatch.test.ts: the repro renders one row at 60, 80, 120."
+      ],
+      "dependsOn": [],
+      "batch": 1
+    },
+    {
+      "id": "T010",
+      "title": "Pin the usage-limit halt's actions and panel rows",
+      "intent": "Tests prove that a usage-limit halt is a Seat down halt that offers exactly retry, switch seat (only with a seat offer), skip and End run: `buildRunnerUsageLimitRecoveryIssue` returns `['retry-same-worker', 'switch-seat', 'skip-current-task', 'end-run']` with an offer and the same list without `switch-seat` without one, and the recovery panel shows `Seat down · Usage limit on <tool>` with those rows and no pause row. If a test fails, fix the builder or the panel so it passes.",
+      "criteria": ["C11"],
+      "checks": [
+        {
+          "id": "T010-K1",
+          "kind": "test",
+          "value": "src/engine/orchestrator/recovery/builders/task.test.ts",
+          "required": true
+        },
+        {
+          "id": "T010-K2",
+          "kind": "test",
+          "value": "src/features/workflow/recovery-prompt.test.ts",
+          "required": true
+        }
+      ],
+      "suggestedFiles": [
+        "src/engine/orchestrator/recovery/builders/task.test.ts",
+        "src/features/workflow/recovery-prompt.test.ts"
+      ],
+      "contextFiles": [
+        "src/engine/orchestrator/recovery/builders/task.ts",
+        "src/core/recovery/halt.ts",
+        "src/core/recovery/action-label.ts",
+        "src/features/workflow/recovery-prompt.ts"
+      ],
+      "exclusions": [
+        "Do not change the halt policy in src/core/recovery/halt.ts unless a test proves it wrong.",
+        "Reuse the `usageLimitIssue` helper already in recovery-prompt.test.ts; do not add a new fixture factory."
+      ],
+      "protectedOperations": null,
+      "steps": null,
+      "dependsOn": [],
+      "batch": 1
+    },
+    {
+      "id": "T011",
+      "title": "Stale consults are counted per dependent task",
+      "intent": "A test in step-stale.test.ts proves the stale rule per dependent task: with T001 done (suggestedFiles src/elsewhere.ts), and T002 and T003 both recording src/shared.ts as an input, editing src/shared.ts makes each of T002 and T003 ask exactly one stale consult when it runs (two in total, one per task, keyed by task id); with T001's suggestedFiles naming src/shared.ts, neither asks one. If the test fails, fix the rule in src/engine/orchestrator/task/stale-inputs.ts so it passes.",
+      "criteria": ["C12"],
+      "checks": [
+        {
+          "id": "T011-K1",
+          "kind": "test",
+          "value": "src/engine/orchestrator/task/step-stale.test.ts",
+          "required": true
+        }
+      ],
+      "suggestedFiles": ["src/engine/orchestrator/task/step-stale.test.ts"],
+      "contextFiles": [
+        "src/engine/orchestrator/task/stale-inputs.ts",
+        "src/engine/orchestrator/task/stale-inputs.test.ts"
+      ],
+      "exclusions": [
+        "Reuse the helpers already in step-stale.test.ts (setupProject, staleTask, makeTask, implementingState, runForTask, staleConsultsOf, consultCallAnswering); do not add a second harness.",
+        "Do not change the consult bounds."
+      ],
+      "protectedOperations": null,
+      "steps": null,
+      "dependsOn": [],
+      "batch": 1
+    },
+    {
+      "id": "T012",
+      "title": "Tighten the tests of live items (a)–(e)",
+      "intent": "The existing tests of the live items assert each item in full: (a) in run-status.test.ts, a checkout-mode state (`workflow.isolation: none`, no workspace) with `acceptedAsIs` and a pending halt derives an open `waiting-for-you` status, and the same state without the halt derives `closed`, so no such state is neither ready nor closed; (e) in config.test.ts, loading a config with `approval.enabled` yields exactly one notice for that key. Where an assertion of (a)–(e) already exists, keep it unchanged. If a new assertion fails, fix the code so it passes.",
+      "criteria": ["C10"],
+      "checks": [
+        {
+          "id": "T012-K1",
+          "kind": "test",
+          "value": "src/core/sessions/run-status.test.ts",
+          "required": true
+        },
+        {
+          "id": "T012-K2",
+          "kind": "test",
+          "value": "src/core/config/load/validation/config.test.ts",
+          "required": true
+        }
+      ],
+      "suggestedFiles": [
+        "src/core/sessions/run-status.test.ts",
+        "src/core/config/load/validation/config.test.ts"
+      ],
+      "contextFiles": [
+        "src/core/sessions/run-status.ts",
+        "src/core/config/load/validation/config.ts",
+        "src/engine/orchestrator/run/task-execution.test.ts",
+        "src/cli/headless.test.ts",
+        "src/engine/orchestrator/run/init.test.ts",
+        "src/engine/orchestrator/task/step-approval.test.ts",
+        "src/cli/unknown-command.test.ts"
+      ],
+      "exclusions": [
+        "Do not rewrite or delete existing test cases; add assertions or cases next to them.",
+        "Reuse the fixtures already in each test file (statusOf, stopOf, passed, makeRecoveryIssue)."
+      ],
+      "protectedOperations": null,
+      "steps": null,
+      "dependsOn": [],
+      "batch": 1
+    },
+    {
+      "id": "T005",
+      "title": "The implementer's hand-back JSON renders as one report row",
+      "intent": "In the transcript, the implementer's streamed text no longer prints its trailing hand-back object (`{\"status\":\"done\",\"filesChanged\":[…],…}`) as raw wrapped lines; the row shows the narration before it and one dim `Report  <status> · <n> files · <m> decisions` line parsed with the existing ImplementerReport schema. Text with no parseable trailing report renders unchanged.",
+      "criteria": ["C5"],
+      "checks": [
+        {
+          "id": "T005-K1",
+          "kind": "test",
+          "value": "src/features/workflow/conversation-rows/event-rows/planner-text.test.ts",
+          "required": true
+        }
+      ],
+      "suggestedFiles": [
+        "src/features/workflow/conversation-rows/event-rows/planner-text.ts",
+        "src/features/workflow/conversation-rows/event-rows/planner-text.test.ts"
+      ],
+      "contextFiles": [
+        "src/core/schemas/consult.ts",
+        "src/engine/orchestrator/task/run-implementation.ts",
+        "src/stores/workflow/events.ts",
+        "src/engine/spec/prompts/system.ts"
+      ],
+      "exclusions": [
+        "Do not change the engine publisher or the session.jsonl content: this is a display change.",
+        "Do not write a second report parser: reuse the schema in src/core/schemas/consult.ts and the existing extraction helper if one exists (grep for where the engine parses ImplementerReport).",
+        "Apply only to role 'implementer' rows."
+      ],
+      "protectedOperations": null,
+      "steps": null,
+      "dependsOn": [],
+      "batch": 2
+    },
+    {
+      "id": "T006",
+      "title": "The failed-attempt card expands to its full cause",
+      "intent": "The one-row `BUILD failed  <cause>` card that cuts its cause with an ellipsis becomes expandable through the existing row-action mechanism (as the implementer diff card is): activating it shows the whole cause wrapped; a cause that fits shows no action.",
+      "criteria": ["C6"],
+      "checks": [
+        {
+          "id": "T006-K1",
+          "kind": "test",
+          "value": "src/features/workflow/conversation-rows/row-actions.test.ts",
+          "required": true
+        },
+        {
+          "id": "T006-K2",
+          "kind": "test",
+          "value": "src/features/workflow/conversation-rows/event-rows/dispatch.test.ts",
+          "required": true
+        }
+      ],
+      "suggestedFiles": [
+        "src/features/workflow/conversation-rows/event-rows/dispatch.ts",
+        "src/features/workflow/conversation-rows/row-actions.ts",
+        "src/features/workflow/conversation-rows/row-actions.test.ts",
+        "src/features/workflow/conversation-rows/event-rows/dispatch.test.ts"
+      ],
+      "contextFiles": [
+        "src/features/workflow/conversation-rows/activity-batch-key.ts",
+        "src/app/command-context.ts",
+        "src/features/workflow/conversation-rows/implementer-diff-card-block.ts"
+      ],
+      "exclusions": [
+        "Do not add a new key binding or a new command; reuse the row-action path the diff card uses.",
+        "Do not change the collapsed one-row form."
+      ],
+      "protectedOperations": null,
+      "steps": null,
+      "dependsOn": ["T004"],
+      "batch": 2
+    },
+    {
+      "id": "T007",
+      "title": "Full-suite stages publish an event, a row and a status verb",
+      "intent": "runFullSuite publishes `full_suite` running and done events (stage, command, moment: baseline | boundary | pre-review, duration and pass/fail on done) for every stage it runs; the transcript shows one `Suite` row per stage run (the done event replaces its running entry), the token switch handles it, and while a suite stage runs the status line names it (for example `Running the test suite · npm test`) instead of `Implementing…` or `Finishing the run`.",
+      "criteria": ["C7"],
+      "checks": [
+        {
+          "id": "T007-K1",
+          "kind": "test",
+          "value": "src/engine/orchestrator/validation/run.test.ts",
+          "required": true
+        },
+        {
+          "id": "T007-K2",
+          "kind": "test",
+          "value": "src/engine/events/schema.test.ts",
+          "required": true
+        },
+        {
+          "id": "T007-K3",
+          "kind": "test",
+          "value": "src/features/workflow/display/phase-verb.test.ts",
+          "required": true
+        }
+      ],
+      "suggestedFiles": [
+        "src/engine/orchestrator/validation/run.ts",
+        "src/engine/events/schema.ts",
+        "src/engine/orchestrator/events.ts",
+        "src/engine/orchestrator/validation/types.ts",
+        "src/engine/orchestrator/task/batch-boundary.ts",
+        "src/engine/orchestrator/run/pre-review-checks.ts",
+        "src/engine/orchestrator/task/loop.ts",
+        "src/features/workflow/conversation-rows/event-rows/dispatch.ts",
+        "src/stores/workflow/events.ts",
+        "src/stores/workflow/tokens.ts",
+        "src/stores/workflow/operations/reducer.ts",
+        "src/features/workflow/display/phase-verb.ts",
+        "src/engine/events/replay.test.ts",
+        "docs/ARCHITECTURE.md"
+      ],
+      "contextFiles": [
+        "src/engine/orchestrator/events.test.ts",
+        "src/features/workflow/conversation-rows/event-rows/execution.ts",
+        "src/engine/events/public-json.ts"
+      ],
+      "exclusions": [
+        "Do not add an ETA or a progress fraction.",
+        "Do not change suite timeouts, baseline handling or acceptance.",
+        "Model the event on validation_baseline (running/done, merged in the events store); do not add a second running-entry merge mechanism."
+      ],
+      "protectedOperations": null,
+      "steps": [
+        "Add the `full_suite` event to the schema and a publisher in orchestrator/events.ts; runFullSuite takes the moment from its callers (loop.ts baseline, batch-boundary.ts, pre-review-checks.ts) and publishes per stage.",
+        "Row: one dim `Suite` row naming stage, command and, when done, pass/fail and duration; mergeIntoTail replaces the running entry.",
+        "phase-verb.ts and the operations reducer: an open full_suite stage names the stage as the activity.",
+        "Add a replay fixture entry in replay.test.ts and the event to the event inventory in docs/ARCHITECTURE.md."
+      ],
+      "dependsOn": ["T003", "T006"],
+      "batch": 2
+    },
+    {
+      "id": "T008",
+      "title": "An in-place boundary resume publishes workflow_resumed",
+      "intent": "When a run parked at a brief boundary is resumed in place (parkAtBoundary after RESUME_STEP), the engine publishes one `workflow_resumed` event, as the re-entry from saved state already does, so the transcript and session.jsonl show the resume.",
+      "criteria": ["C8"],
+      "checks": [
+        {
+          "id": "T008-K1",
+          "kind": "test",
+          "value": "src/engine/orchestrator/run/task-execution.test.ts",
+          "required": true
+        }
+      ],
+      "suggestedFiles": [
+        "src/engine/orchestrator/run/task-execution.ts",
+        "src/engine/orchestrator/run/task-execution.test.ts"
+      ],
+      "contextFiles": [
+        "src/engine/orchestrator/run/init.ts",
+        "src/engine/orchestrator/continuation.ts",
+        "src/features/workflow/handlers.ts"
+      ],
+      "exclusions": [
+        "Do not change what bare ⏎ does at a park or any key binding.",
+        "Do not publish the event twice when a resume both settles a park and re-enters saved state."
+      ],
+      "protectedOperations": null,
+      "steps": null,
+      "dependsOn": [],
+      "batch": 2
+    },
+    {
+      "id": "T009",
+      "title": "Record the fixes and decisions in the CHANGELOG and docs",
+      "intent": "The CHANGELOG and docs state what this run fixed and decided: the CHANGELOG [Unreleased] line that lists the retired planner reasons and revise-spec as added is rewritten, and one entry covers the new `full_suite` event, the ledger fix-task count and the transcript fixes, naming the UI-DEBT numbers fixed (#31, #32, #33, #36, #38, #39, #40); docs/WORKFLOW.md records that the planning session streams no narration; docs/ENGINE.md lists the `full_suite` event.",
+      "criteria": ["C9"],
+      "checks": [
+        {
+          "id": "T009-K1",
+          "kind": "test",
+          "value": "scripts/recovery-producers.test.ts",
+          "required": false
+        }
+      ],
+      "suggestedFiles": ["CHANGELOG.md", "docs/WORKFLOW.md", "docs/ENGINE.md", "docs/FEATURES.md"],
+      "contextFiles": ["docs/INVARIANTS.md", "docs/ARCHITECTURE.md"],
+      "exclusions": [
+        "Do not edit any file under .nuke/: it is gitignored and the babysitter owns UI-DEBT.md.",
+        "Do not rewrite the whole [Unreleased] section; change only the stale line and add one entry.",
+        "Do not edit entries below [Unreleased].",
+        "Write in Simplified Technical English, matching the surrounding docs."
+      ],
+      "protectedOperations": null,
+      "steps": null,
+      "dependsOn": [
+        "T001",
+        "T002",
+        "T003",
+        "T004",
+        "T010",
+        "T011",
+        "T012",
+        "T005",
+        "T006",
+        "T007",
+        "T008"
+      ],
+      "batch": 3
+    }
+  ],
+  "ledger": [
+    {
+      "id": "T001",
+      "status": "done",
+      "briefHash": "f633e0dfee1b20e494d3e54b26edd567f0c1606be1a9edc1d0d5896aa64d75b6",
+      "checkResults": [
+        {
+          "id": "T001-K1",
+          "passed": true
+        },
+        {
+          "id": "T001-K2",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "id": "T002",
+      "status": "done",
+      "briefHash": "5be102df76d2d057e64c2754d5a7f4e6ca1c52406d346a45fbb82f16bc3400cc",
+      "checkResults": [
+        {
+          "id": "T002-K1",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "id": "T003",
+      "status": "done",
+      "briefHash": "98f51ade982090ea8c166d8cdff7ceef13cbba9d939d5fff073a77dae895b195",
+      "checkResults": [
+        {
+          "id": "T003-K1",
+          "passed": true
+        },
+        {
+          "id": "T003-K2",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "id": "T004",
+      "status": "done",
+      "briefHash": "f8216b322409efc58cb490665b51b002a0772881c4ccaa1612d6fa26ac62dabf",
+      "checkResults": [
+        {
+          "id": "T004-K1",
+          "passed": true
+        },
+        {
+          "id": "T004-K2",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "id": "T010",
+      "status": "done",
+      "briefHash": "27fbcd4f88d3c7f25b4d49b648d39cc19ebe4bb0c0f491f8c912fb9ea9309d54",
+      "checkResults": [
+        {
+          "id": "T010-K1",
+          "passed": true
+        },
+        {
+          "id": "T010-K2",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "id": "T011",
+      "status": "done",
+      "briefHash": "2c19ef3556779ba5dff94b3a7c9a35146d0c4a09f1669db303c901a84e6c3917",
+      "checkResults": [
+        {
+          "id": "T011-K1",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "id": "T012",
+      "status": "done",
+      "briefHash": "6b5703920010a5a64855490d34f400e22f0036335d2df1a8b0f06c52221070e9",
+      "checkResults": [
+        {
+          "id": "T012-K1",
+          "passed": true
+        },
+        {
+          "id": "T012-K2",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "id": "T005",
+      "status": "done",
+      "briefHash": "8338683d1b64b30fad1004f10cb2fce3889683605cc2573d18cad57aef8234f3",
+      "checkResults": [
+        {
+          "id": "T005-K1",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "id": "T006",
+      "status": "done",
+      "briefHash": "2c53c1a482c023ebaf51976ae74f3b6b399c76d93e8a82f31940f9429b217e47",
+      "checkResults": [
+        {
+          "id": "T006-K1",
+          "passed": true
+        },
+        {
+          "id": "T006-K2",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "id": "T007",
+      "status": "done",
+      "briefHash": "a658e42f8ac46c7138497f3998d25bcff426ca7b63f588b47ba29928655d4519",
+      "checkResults": [
+        {
+          "id": "T007-K1",
+          "passed": true
+        },
+        {
+          "id": "T007-K2",
+          "passed": true
+        },
+        {
+          "id": "T007-K3",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "id": "T008",
+      "status": "done",
+      "briefHash": "a515f2a7f997320b0318192e0eaa785c208e8dec636dee6022e595f4d789c209",
+      "checkResults": [
+        {
+          "id": "T008-K1",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "id": "T009",
+      "status": "done",
+      "briefHash": "cad92c200d39206c085377e47aa6d98e87b3b43c1684abba2c1a4abcf868dde8",
+      "checkResults": [
+        {
+          "id": "T009-K1",
+          "passed": true
+        }
+      ]
+    }
+  ]
+}

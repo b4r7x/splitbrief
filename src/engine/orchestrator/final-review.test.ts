@@ -35,7 +35,7 @@ import {
   EVIDENCE_FILE,
   SESSION_LOG_FILE,
 } from '../../core/paths.js';
-import { hashTaskBrief } from '../brief-hash.js';
+import { hashTaskBrief } from '../../core/evidence/brief-hash.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { loadState } from '../../core/state/persistence.js';
 import { ReviewRecordSchema } from '../../core/schemas/workflow.js';

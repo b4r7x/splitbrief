@@ -37,6 +37,29 @@ describe('hashTaskBrief', () => {
     expect(first).toBe(hashTaskBrief([task]));
   });
 
+  // S9 and S11: RECORD_CHECK_RESULTS and a stale refresh's SET_TASK_INPUT_HASHES wrote onto the
+  // briefs mid-run, so every brief recorded before them read as earlier work.
+  it('excludes the check results and input hashes the run writes onto a brief', () => {
+    const planned = makeTask({ inputHashes: { 'src/hello.ts': 'a'.repeat(64) } });
+    const ran = {
+      ...planned,
+      checkResults: [{ id: 'K1', passed: true }],
+      inputHashes: { 'src/hello.ts': 'b'.repeat(64) },
+    };
+    expect(hashTaskBrief([ran])).toBe(hashTaskBrief([planned]));
+  });
+
+  it('keeps the planned checks in the hash', () => {
+    const planned = makeTask({
+      checks: [{ id: 'K1', kind: 'test', value: 'a.test.ts', required: true }],
+    });
+    const replanned = {
+      ...planned,
+      checks: [{ id: 'K1', kind: 'test' as const, value: 'b.test.ts', required: true }],
+    };
+    expect(hashTaskBrief([replanned])).not.toBe(hashTaskBrief([planned]));
+  });
+
   it('produces different hashes for different titles', () => {
     const a = hashTaskBrief([makeTask({ title: 'Alpha task' })]);
     const b = hashTaskBrief([makeTask({ title: 'Beta task' })]);

@@ -479,6 +479,10 @@ src/
 │   │   └── errors.ts              ConfigError types
 │   ├── crew/                      identity (seat ids + seat identity
 │   │                              strings), rows, seats, presets, labs
+│   ├── evidence/brief-hash.ts     hashTaskBrief(tasks) — sha256 of the
+│   │                              canonical-JSON briefs without run fields
+│   ├── evidence/same-brief.ts     sameCurrentBrief: the one rule that joins
+│   │                              a ledger entry to a current brief
 │   ├── formatting.ts              formatCost, formatDuration, etc.
 │   ├── hooks/trust.ts             Hook trust receipts (~/.splitbrief/trust/hooks.json)
 │   ├── hooks/trust-digest.ts      Hook config + hook file digest hashing
@@ -539,8 +543,6 @@ src/
 │   └── validation/test-discovery  Test-command auto-detection
 │
 ├── engine/                        Workflow logic — zero React imports
-│   ├── brief-hash.ts              hashTaskBrief(tasks) — sha256 of
-│   │                              status-stripped canonical-JSON tasks
 │   ├── change-detection.ts        External-change detection (git status)
 │   ├── codebase/                  Repo-map: budget, cache, format, graph,
 │   │                              pagerank, parse, rebuild, repomap, types,
@@ -998,13 +1000,13 @@ The two implementer write modes are peers. Both write into the same run workspac
 
 The functions other code depends on. All paths absolute under `src/`.
 
-### `engine/brief-hash.ts`
+### `core/evidence/brief-hash.ts`
 
 ```ts
 export function hashTaskBrief(tasks: Task[]): string
 ```
 
-`status` is stripped from each task before canonical-JSON-serialization → SHA-256 hex.
+The hash covers the planned brief only. Each task loses the fields the run writes onto it: `status`, `currentCode`, `currentCodeByFile`, `contextCodeByFile`, `checkResults` and `inputHashes`. The rest is serialized as canonical JSON and hashed with SHA-256 (hex).
 
 ### `core/schemas/snapshot.ts`
 
@@ -1070,12 +1072,27 @@ export function formatSnapshotDiff(result, opts?: { color?: boolean }): string
 
 ```ts
 export function createEvidenceLedger(input: CreateEvidenceLedgerInput): EvidenceLedger
-//  input.briefHash propagates onto the ledger AND every task entry.
+//  Each task entry is seeded unstamped (briefHash: null). input.briefHash sets the top-level hash only.
+export function findOrSeed(ledger: EvidenceLedger, task: Task): EvidenceTask
+//  Stamps the entry it returns with hashTaskBrief([task]), on every call.
 export function getOrCreateLedger(
   input: CreateEvidenceLedgerInput,
   existing: EvidenceLedger | null,
 ): EvidenceLedger
 ```
+
+### `core/evidence/same-brief.ts`
+
+```ts
+export function sameCurrentBrief(entry: EvidenceTask, task: Task): boolean
+```
+
+The one rule that joins a ledger entry to a brief of the current plan. The closed run block (`features/workflow/closed/projections.ts`) and the summary's file attribution (`engine/orchestrator/summary/build.ts`) call it.
+
+1. A `pending` brief joins only a `pending` entry.
+2. An `in_progress` brief joins an `in_progress` or a `failed` entry. The ledger books a retried attempt `failed`.
+3. Then a stamped entry joins when its `briefHash` equals `hashTaskBrief([task])`.
+4. An unstamped entry joins when its title and its file equal the brief's title and anchor file (`suggestedFiles[0]`).
 
 ### `core/evidence/ledger-storage.ts`
 
@@ -1112,7 +1129,7 @@ export function persistRejectionEvidence(input): void
 export function persistApprovalEvidence(input): void
 ```
 
-Every `record*` takes an optional `briefHash: string | null` parameter. The invariant — **`briefHash` must be threaded from `createEvidenceLedger` to every `record*` call** — is maintained at the call sites in `src/engine/orchestrator/task/step.ts`, `src/engine/orchestrator/task/loop.ts`, and `src/engine/orchestrator/final-review.ts`.
+No `record*` takes a brief hash. Each one routes through `findOrSeed`, which stamps the entry with the hash of its own brief, `hashTaskBrief([task])`.
 
 ---
 
@@ -1217,7 +1234,7 @@ Enforced by hooks, type system, exhaustive switches, or pre-merge greps. Breakin
 
 1. **NEVER commit, NEVER stage** — `.claude/hooks/block-git-commits.sh` (`PreToolUse` hook, exit code 2) blocks `git add` / `git stage` / `git commit` (and `git -c …` variants). The user reviews and commits.
 2. **`.git/`, `.splitbrief/`, `node_modules/`, `.trees/` MUST be excluded from snapshots / drift / file collection, at any depth, and a directory the project ignores is never entered.** `INTERNAL_SKIP_DIRS` (`core/paths.ts`), re-exported as `ALWAYS_EXCLUDED` from `engine/snapshots/files.ts` and honoured by `collectTrackedFiles`. Including `.splitbrief/` causes exponential snapshot growth (snapshots-of-snapshots); including `.trees/` pulls any user-created worktree checkout into the project's snapshots and diffs. The run's own isolation worktree needs no exclusion entry at all: it lives outside the project root entirely, under `$XDG_STATE_HOME/splitbrief/trees/<hash>/<slug>/` (default `~/.local/state/splitbrief/trees/...`), where a project-rooted walker never reaches it.
-3. **`briefHash` must propagate** from `createEvidenceLedger` (or the existing-ledger fallback) to every `record*` call in the per-task path. Lost propagation produces `briefHash: null` entries that break post-hoc evidence audits.
+3. **`findOrSeed` stamps each ledger entry with its own brief's hash.** Every `record*` call routes through `findOrSeed` (`core/evidence/ledger-state.ts`), which writes `hashTaskBrief([task])` onto the entry it returns. No caller threads a hash into a `record*` call. A seed records no work, so it carries `briefHash: null`.
 4. **`TaskStatus` value is `'done'` NOT `'completed'`.** The enum is `['pending', 'in_progress', 'done', 'failed', 'escalated', 'skipped']` (`core/schemas/enums.ts`). `task_completed` is the *event* name; the *status* string is `'done'`.
 5. **Drift runs once per run, not per task.** `analyzeBriefDrift` (`engine/orchestrator/drift/analyze.ts`) runs before the final review from `final-review.ts`; no exit of `runSingleTask` carries drift state, and there is no drift-chain analysis.
 6. **Engine MUST NOT import React, Ink, or anything from `src/features/`, `src/components/`, `src/hooks/`.** This is what makes the workflow runnable headlessly under Vitest.

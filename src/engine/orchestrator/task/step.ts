@@ -47,7 +47,7 @@ import { applyConsultAnswer } from '../consult/apply.js';
 import { commitQueueMessagesConsulted, readQueueForConsult } from '../queue/drain.js';
 import { formatMessage } from '../queue/prompt.js';
 import { consultAttemptError, guidanceInstructions } from '../escalation/consult-guidance.js';
-import { hashTaskBrief } from '../../brief-hash.js';
+import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import { confirmAttemptDecisions } from '../consult/decision-confirm.js';
 import { recordCheckRuns } from '../evidence/record-checks.js';
 
@@ -146,6 +146,7 @@ async function refreshStaleTask(
   opts: RunSingleTaskOptions,
   task: Task,
   state: WorkflowState,
+  taskStartTime: number,
 ): Promise<StaleRefresh> {
   const revision = task.revision ?? 1;
   const lineage = state.lineages?.[lineageIdOf(task)];
@@ -230,6 +231,7 @@ async function refreshStaleTask(
       callbacks: opts.wctx.callbacks,
       sinks: opts.wctx.sinks,
       state,
+      taskStartTime,
       ...(opts.wctx.signal !== undefined && { signal: opts.wctx.signal }),
       changedFiles: [],
       onStateChange: (next) => {
@@ -288,9 +290,10 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     setTrackedState(state);
   }
 
+  const taskStartTime = Date.now();
   // A task whose recorded inputs changed under it is refreshed once per revision
   // before it is dispatched, so the brief runs on the workspace it will meet.
-  const staleRefresh = await refreshStaleTask(opts, task, state);
+  const staleRefresh = await refreshStaleTask(opts, task, state, taskStartTime);
   if (staleRefresh.kind === 'replaced') {
     return (await rerunReplacedTask(opts, staleRefresh.state)) ?? staleRefresh.state;
   }
@@ -307,7 +310,6 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
         );
 
   setCurrentTask(task);
-  const taskStartTime = Date.now();
 
   const preTaskResult = await runPreTaskHooksAndPublish({
     wctx,
@@ -474,6 +476,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       report: report?.status === 'done' ? report : undefined,
       snapshot: implState.workspace.snapshot,
       changedFiles: gate.approvedFiles,
+      taskStartTime,
       onStateChange: (next) => {
         state = next;
         setTrackedState(next);
@@ -618,7 +621,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
         status: 'done',
         method: 'local',
         retries: 0,
-        durationMs: Date.now() - taskStartTime,
+        durationMs: commitResult.durationMs,
         validation: validationResults,
         changedFiles: taskChangedFiles,
         exemptStages: acceptance.exemptStages,

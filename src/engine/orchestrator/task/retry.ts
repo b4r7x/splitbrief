@@ -295,7 +295,7 @@ export async function retryAndRecord(
       status,
       method: result.method,
       retries: result.attempts,
-      durationMs: Date.now() - taskStartTime,
+      durationMs: result.durationMs,
       escalated,
       initialValidation: opts.initialValidation,
       initialChangedFiles: opts.initialChangedFiles,

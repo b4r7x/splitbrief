@@ -6,9 +6,17 @@ import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeCostBreakdown } from '#testing/helpers/factories/cost-breakdown.js';
 import { createEvidenceLedger, emptyEvidenceTask } from '../../../core/evidence/ledger-state.js';
 import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
-import { hashTaskBrief } from '../../../engine/brief-hash.js';
+import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { Summary } from '../../../core/schemas/summary.js';
+import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import { transition } from '../../../core/state/machine.js';
+import { persistTaskEvidence } from '../../../engine/orchestrator/evidence/persistence.js';
+import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
+import {
+  cleanupTaskProjects,
+  makeTaskWorkflowContext,
+} from '#testing/helpers/orchestrator-task-context.js';
 import { deriveSummaryView } from './view-model.js';
 import { outcomeLine } from './outcome.js';
 
@@ -167,6 +175,50 @@ describe('independent closed attribution proof', () => {
     const result = deriveSummaryView({ record });
     expect(result?.briefs.rows.map((row) => row.title)).toEqual(['Old task']);
     expect(result?.briefs.earlierRows).toEqual([]);
+  });
+
+  // S9 run: 12 briefs passed and each one also read under `Earlier work ─`.
+  it('joins each passed brief to its current row after the run wrote check results onto the plan', async () => {
+    const wctx = makeTaskWorkflowContext();
+    try {
+      const first = makeTask({ id: 'T001', title: 'First', suggestedFiles: ['src/a.ts'] });
+      const second = makeTask({ id: 'T002', title: 'Second', suggestedFiles: ['src/b.ts'] });
+      let state = makeImplState([first, second]);
+      for (const task of [first, second]) {
+        state = transition(state, { type: 'START_TASK', taskId: task.id });
+        state = transition(state, {
+          type: 'RECORD_CHECK_RESULTS',
+          taskId: task.id,
+          results: [{ id: `K-${task.id}`, passed: true }],
+        });
+        state = transition(state, { type: 'VALIDATION_PASS' });
+        await persistTaskEvidence({
+          wctx,
+          state,
+          task,
+          recordKind: 'local',
+          details: {
+            status: 'done',
+            method: 'local',
+            validation: [],
+            changedFiles: task.suggestedFiles,
+          },
+        });
+      }
+
+      const result = view(
+        state.tasks,
+        { changedFiles: ['src/a.ts', 'src/b.ts'], taskBreakdown: [] },
+        readEvidenceLedger(wctx),
+      );
+      expect(result.briefs.rows.map(({ id, state: row }) => [id, row])).toEqual([
+        ['T001', 'local'],
+        ['T002', 'local'],
+      ]);
+      expect(result.briefs.earlierRows).toEqual([]);
+    } finally {
+      cleanupTaskProjects();
+    }
   });
 
   it('keeps an empty prebuild closure honest', () => {

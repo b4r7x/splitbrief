@@ -52,6 +52,7 @@ function makeLocalRetriesCtx(opts: {
   config?: Config | undefined;
 }): EscalationContext {
   return {
+    taskStartTime: Date.now(),
     ...makeWctx({
       projectDir: opts.projectDir,
       sessionId: opts.sessionId,
@@ -240,6 +241,7 @@ describe('handleRetryAndEscalation — aborted implementer call', () => {
     const state = makeValidatingState();
 
     const { result } = await handleRetryAndEscalation({
+      taskStartTime: Date.now(),
       wctx: makeWctx({
         projectDir,
         sessionId,
@@ -513,6 +515,7 @@ describe('runLocalRetries — outcomes no further attempt can fix', () => {
     const planner = makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) });
 
     const { result } = await handleRetryAndEscalation({
+      taskStartTime: Date.now(),
       wctx: makeWctx({
         projectDir,
         sessionId,

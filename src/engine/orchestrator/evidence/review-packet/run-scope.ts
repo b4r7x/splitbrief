@@ -9,7 +9,7 @@ import type { SessionRef } from '../../../../core/types/session-ref.js';
 import { diffFileEntries } from '../../../../lib/git/entry-diff.js';
 import { splitDiffByFile } from '../../../../lib/git/diff-sections.js';
 import { uniqueSorted } from '../../../../utils/collections.js';
-import { hashTaskBrief } from '../../../brief-hash.js';
+import { hashTaskBrief } from '../../../../core/evidence/brief-hash.js';
 import { readConfinedEntry } from '../../approval/file-snapshots/entry.js';
 
 export type RunReviewFile = { path: string; taskIds: string[]; diff: string };

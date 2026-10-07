@@ -87,6 +87,7 @@ describe('validateCommitAndAdvance — legacy commit hooks', () => {
     const { bus, events } = makeBusRecorder();
 
     const result = await validateCommitAndAdvance({
+      taskStartTime: Date.now(),
       task,
       acceptance: acceptedAcceptance,
       projectDir,

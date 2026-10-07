@@ -15,7 +15,7 @@ import {
   deserializeChangedFilesBaseline,
   type ChangedFilesBaseline,
 } from '../changed-files-baseline.js';
-import { hashTaskBrief } from '../../brief-hash.js';
+import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import { checkEntries } from './task.js';
 import type { ValidationResult } from '../validation/result.js';
 import type { CheckRunResult } from '../validation/run-checks.js';

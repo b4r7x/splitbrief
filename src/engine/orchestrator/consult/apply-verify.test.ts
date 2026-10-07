@@ -117,6 +117,7 @@ function harness(opts: {
   ).callbacks;
   return {
     ctx: {
+      taskStartTime: Date.now(),
       projectDir: opts.projectDir,
       workspaceDir: opts.projectDir,
       sessionId: opts.sessionId,
@@ -167,6 +168,7 @@ describe('applyConsultAnswer verify', () => {
     expect(result).toEqual({
       action: 'completed',
       task: expect.objectContaining({ id: 'T003', status: 'done' }),
+      durationMs: expect.any(Number),
     });
     expect(validator.runValidation).toHaveBeenCalledWith(
       expect.objectContaining({ task, phase: 'escalating', changedFiles: ['src/greet.ts'] }),
@@ -180,6 +182,43 @@ describe('applyConsultAnswer verify', () => {
     const saved = states.at(-1);
     expect(saved?.tasks[0]?.status).toBe('done');
     expect(saved?.tasks[0]?.checkResults).toEqual([{ id: 'K1', passed: true }]);
+  });
+
+  it('books the time since the brief started on the completion it publishes', async () => {
+    const { projectDir, sessionId } = setupRepo();
+    const task = makeTask({
+      id: 'T003',
+      suggestedFiles: ['src/greet.ts'],
+      criteria: ['C1'],
+      status: 'failed',
+    });
+    const plan = planWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }]);
+    const { ctx, events } = harness({
+      projectDir,
+      sessionId,
+      task,
+      plan,
+      runCommand: makeCommandRunner({ stdout: 'clean', stderr: '', code: 0 }),
+      changedFiles: ['src/greet.ts'],
+    });
+    const attempt = await getChangedFilesSnapshot(projectDir);
+    const taskStartTime = Date.now();
+    const started = { ...ctx, taskStartTime };
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(taskStartTime + 5_000);
+    try {
+      await applyConsultAnswer(
+        started,
+        task,
+        verify(['K1'], 'The check predates the task'),
+        attempt,
+      );
+    } finally {
+      clock.mockRestore();
+    }
+
+    expect(events.filter((event) => event.type === 'task_completed')).toMatchObject([
+      { taskId: 'T003', method: 'consulted', duration: 5_000 },
+    ]);
   });
 
   it('fails the consult on an empty selection without running anything', async () => {

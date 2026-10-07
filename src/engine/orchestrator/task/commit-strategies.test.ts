@@ -71,6 +71,7 @@ describe('validateCommitAndAdvance — legacy commit strategies', () => {
         const { bus, events } = makeBusRecorder();
 
         const result = await validateCommitAndAdvance({
+          taskStartTime: Date.now(),
           task,
           acceptance: acceptedAcceptance,
           projectDir,
@@ -105,6 +106,7 @@ describe('validateCommitAndAdvance — legacy commit strategies', () => {
     const { bus } = makeBusRecorder();
 
     const result = await validateCommitAndAdvance({
+      taskStartTime: Date.now(),
       task: firstCommitTask(state),
       acceptance: { accepted: false, exemptStages: [], blockingStages: ['test'] },
       projectDir,

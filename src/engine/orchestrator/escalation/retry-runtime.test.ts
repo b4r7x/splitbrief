@@ -204,6 +204,7 @@ async function makeRetryCtx(
   const { callbacks } = makeCallbacks();
   const { bus } = makeBusRecorder();
   return {
+    taskStartTime: Date.now(),
     projectDir: input.projectDir,
     workspaceDir: input.projectDir,
     sessionId: input.sessionId,

@@ -299,6 +299,7 @@ describe('configured direct stage canaries', () => {
           if (!init.ok) return;
           const retryRuntime = await createRetryRuntime(
             {
+              taskStartTime: Date.now(),
               ...init.wctx,
               taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
               dependsOnFiles: [],

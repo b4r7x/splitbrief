@@ -57,7 +57,7 @@ type HandleRetryOptions = {
   /** The first attempt's validation failure line; the diagnosis falls back to `initialError`. */
   initialDiagnosis?: string | undefined;
   currentState: WorkflowState;
-  taskStartTime?: number;
+  taskStartTime: number;
   taskStartSnapshot?: ChangedFilesSnapshot;
   dependsOnFiles?: string[];
   profileOverride?: string | undefined;
@@ -536,6 +536,7 @@ export async function handleRetryAndEscalation(
         callbacks: ctx.callbacks,
         sinks: ctx.sinks,
         state,
+        taskStartTime: ctx.taskStartTime,
         ...(ctx.signal !== undefined && { signal: ctx.signal }),
         changedFiles,
         onStateChange: (next) => {
@@ -559,6 +560,7 @@ export async function handleRetryAndEscalation(
           callbacks: ctx.callbacks,
           sinks: ctx.sinks,
           state,
+          taskStartTime: ctx.taskStartTime,
           ...(ctx.signal !== undefined && { signal: ctx.signal }),
           onStateChange: (next) => {
             state = next;
@@ -585,6 +587,7 @@ export async function handleRetryAndEscalation(
           method: 'consulted',
           attempts,
           acceptance: CONSULT_COMPLETION_ACCEPTANCE,
+          durationMs: applied.durationMs,
           ...(changedFiles.length > 0 && { changedFiles: [...changedFiles] }),
         },
       };

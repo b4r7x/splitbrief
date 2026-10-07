@@ -163,6 +163,43 @@ describe('retryAndRecord — retry budget', () => {
     ]);
   });
 
+  // S11 T004: task_completed said 2051168 ms after its retry, the ledger said 2073884 ms.
+  it('books the one measured duration of a retried brief on the event and in the ledger', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/task.ts'] });
+    let state = implementingState([task]);
+    state = transition(state, { type: 'START_TASK', taskId: task.id });
+    state = transition(state, { type: 'TASK_SENT' });
+    const { bus, events } = makeBusRecorder();
+    const implementer = makeImplementer({
+      retry: vi.fn().mockResolvedValue({ success: true, output: 'fixed' }),
+    });
+    const taskStartTime = Date.now();
+    let now = taskStartTime;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => ++now);
+    try {
+      const result = await retryAndRecord({
+        wctx: makeWorkflowContext({ projectDir, sessionId, implementer, bus }),
+        task,
+        initialError: 'test failed',
+        state,
+        taskStartTime,
+        tokensBefore: { ...state.tokenUsage },
+        taskBreakdowns: [],
+        setTrackedState: vi.fn(),
+      });
+      expect(result.completed).toBe(true);
+    } finally {
+      clock.mockRestore();
+    }
+
+    const complete = events.find((e) => e.type === 'task_completed');
+    if (complete?.type !== 'task_completed') throw new Error('expected task_completed');
+    expect(readEvidenceLedger({ projectDir, sessionId })?.tasks[0]?.durationMs).toBe(
+      complete.duration,
+    );
+  });
+
   it('stamps the initial-failure entry with the initial acceptance, not the retry acceptance', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001', suggestedFiles: ['src/task.ts'] });

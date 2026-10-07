@@ -8,7 +8,7 @@ import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { hashTaskBrief } from '../../../engine/brief-hash.js';
+import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import type { RunRecord } from '../../../core/sessions/run-record.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
@@ -751,16 +751,19 @@ describe('brief rows', () => {
   // ledger entry read failed: `Briefs ─` said T005 stopped with no file or duration, and
   // `Earlier work ─` said T005 failed. One brief, one row, one status word.
   it('joins the failed attempt the ledger booked to the brief the run stopped in', () => {
-    const tasks = [
-      makeTask({ id: 'T001', title: 'First brief', suggestedFiles: ['src/a.ts'], status: 'done' }),
-      makeTask({
-        id: 'T002',
-        title: 'Second brief',
-        suggestedFiles: ['src/b.ts'],
-        status: 'in_progress',
-      }),
-    ];
-    const planHash = hashTaskBrief(tasks);
+    const first = makeTask({
+      id: 'T001',
+      title: 'First brief',
+      suggestedFiles: ['src/a.ts'],
+      status: 'done',
+    });
+    const second = makeTask({
+      id: 'T002',
+      title: 'Second brief',
+      suggestedFiles: ['src/b.ts'],
+      status: 'in_progress',
+    });
+    const tasks = [first, second];
     const view = derive(
       makeSummary({
         totalTasks: 2,
@@ -781,7 +784,7 @@ describe('brief rows', () => {
             file: 'src/a.ts',
             durationMs: 666_711,
             changedFiles: ['src/a.ts'],
-            briefHash: planHash,
+            briefHash: hashTaskBrief([first]),
           }),
           ledgerTask({
             id: taskId('T002'),
@@ -791,7 +794,7 @@ describe('brief rows', () => {
             retries: 3,
             durationMs: 3_236_892,
             changedFiles: ['src/b.ts'],
-            briefHash: planHash,
+            briefHash: hashTaskBrief([second]),
           }),
         ]),
       },

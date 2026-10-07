@@ -21,7 +21,7 @@ type ValidateCommitOptions = {
   method: TaskCompletionMethod;
   transitionType: 'VALIDATION_PASS';
   commitSuffix?: string | undefined;
-  taskStartTime?: number | undefined;
+  taskStartTime: number;
   retryCount?: number | undefined;
   implementerProfile?: string | undefined;
   taskChangedFiles?: string[] | undefined;
@@ -46,9 +46,12 @@ export function touchedNotSuggestedFiles(opts: {
   return opts.taskChangedFiles.filter((file) => !isInDeclaredSet(file, suggested));
 }
 
-export async function validateCommitAndAdvance(
-  opts: ValidateCommitOptions,
-): Promise<{ state: WorkflowState; completed: boolean }> {
+/** A completion carries the brief's duration: one clock read for its event and its ledger entry. */
+type CommitResult =
+  | { state: WorkflowState; completed: false }
+  | { state: WorkflowState; completed: true; durationMs: number };
+
+export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Promise<CommitResult> {
   const {
     task,
     acceptance,
@@ -83,6 +86,7 @@ export async function validateCommitAndAdvance(
     });
   }
 
+  const durationMs = Date.now() - taskStartTime;
   const nextState = transitionAndSave({ projectDir, sessionId }, state, {
     type: transitionType,
   });
@@ -93,7 +97,7 @@ export async function validateCommitAndAdvance(
       title: task.title,
       method,
       retries: retryCount ?? state.attempt,
-      duration: taskStartTime ? Date.now() - taskStartTime : 0,
+      duration: durationMs,
       ...(state.implementerTool !== undefined && { tool: state.implementerTool }),
       ...(state.implementerModel !== undefined && { model: state.implementerModel }),
       ...(implementerProfile !== undefined && { implementerProfile }),
@@ -114,5 +118,5 @@ export async function validateCommitAndAdvance(
     });
   }
 
-  return { state: nextState, completed: true };
+  return { state: nextState, completed: true, durationMs };
 }

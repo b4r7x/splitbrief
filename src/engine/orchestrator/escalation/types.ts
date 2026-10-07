@@ -27,6 +27,8 @@ export type RetryResult =
       method: Exclude<TaskCompletionMethod, 'failed' | 'skipped'>;
       attempts: number;
       acceptance: ValidationAcceptance;
+      /** The brief's duration its completion event published. */
+      durationMs: number;
       validationResults?: ValidationResult[] | undefined;
       changedFiles?: string[] | undefined;
       tool?: string | undefined;
@@ -54,7 +56,7 @@ export function boundedHandBack(text: string | undefined): string | undefined {
 }
 
 export type EscalationContext = WorkflowContext & {
-  taskStartTime?: number | undefined;
+  taskStartTime: number;
   taskStartSnapshot: ChangedFilesSnapshot;
   dependsOnFiles: string[];
 };

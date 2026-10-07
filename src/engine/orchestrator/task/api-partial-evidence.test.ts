@@ -219,6 +219,7 @@ describe('partial evidence and resume', () => {
     expect(ledgerTask(ledger)?.validation).toEqual([]);
 
     const commit = await validateCommitAndAdvance({
+      taskStartTime: Date.now(),
       task,
       projectDir,
       sessionId,

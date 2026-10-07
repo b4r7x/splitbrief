@@ -66,7 +66,7 @@ import { makeSession } from '../../helpers/factories/session.js';
 import { makeSummary } from '../../helpers/factories/summary.js';
 import { makeTask } from '../../helpers/factories/task.js';
 import { createEvidenceLedger } from '../../../src/core/evidence/ledger-state.js';
-import { hashTaskBrief } from '../../../src/engine/brief-hash.js';
+import { hashTaskBrief } from '../../../src/core/evidence/brief-hash.js';
 import type { FixtureFactory, FixtureLifecycle, FixtureRegistry } from './common.js';
 import {
   publishVisualDiscovery,
@@ -1365,6 +1365,7 @@ const REWOUND_GATE_LEDGER: EvidenceLedger = {
     status: 'done',
     method: 'local',
     changedFiles: ['src/validation/old.ts'],
+    briefHash: hashTaskBrief([OLD_PLAN_TASK]),
   })),
 };
 

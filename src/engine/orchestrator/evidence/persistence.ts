@@ -18,7 +18,7 @@ import type { BundleApplyResult } from '../../implementers/file-bundle.js';
 import { recordApprovalEvidence, recordRejectionEvidence } from './approval.js';
 import type { ValidationResult } from '../validation/result.js';
 import type { ActionClass, TaskCompletionMethod, TaskStatus } from '../../../core/schemas/enums.js';
-import { hashTaskBrief } from '../../brief-hash.js';
+import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import type { GateDecision } from '../approval/types.js';
 import type { EvidenceLedger, EvidenceValidationEntry } from '../../../core/schemas/evidence.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
@@ -62,7 +62,6 @@ export async function persistTaskEvidence(opts: {
 }): Promise<void> {
   const { wctx, state, task, recordKind, details } = opts;
   try {
-    const briefHash = hashTaskBrief(state.tasks);
     mutateEvidenceLedger(wctx, (existing) => {
       const ledger = existing ?? getOrCreateLedger({ ref: wctx, state });
       if (recordKind === 'local') {
@@ -75,7 +74,6 @@ export async function persistTaskEvidence(opts: {
           durationMs: details.durationMs,
           validation: details.validation ?? [],
           changedFiles: details.changedFiles,
-          briefHash,
           validationRetryState: details.status === 'failed' ? 'failed' : undefined,
           exemptStages: details.exemptStages,
         });
@@ -93,7 +91,6 @@ export async function persistTaskEvidence(opts: {
             validation: details.initialValidation,
             escalated: details.escalated ?? false,
             changedFiles: details.initialChangedFiles,
-            briefHash,
             validationRetryState: 'initial-failure',
             exemptStages: details.initialExemptStages,
           });
@@ -108,7 +105,6 @@ export async function persistTaskEvidence(opts: {
           validation: details.validation,
           escalated: details.escalated ?? false,
           changedFiles: details.changedFiles,
-          briefHash,
           validationRetryState: details.escalated
             ? 'escalated'
             : details.status === 'failed'
@@ -121,7 +117,6 @@ export async function persistTaskEvidence(opts: {
         ledger,
         task,
         reason: details.reason ?? 'skipped',
-        briefHash,
       });
     });
   } catch (err) {
@@ -154,7 +149,6 @@ export function persistApiApplyEvidence(opts: {
         task,
         result,
         workspacePath: opts.workspacePath,
-        briefHash: hashTaskBrief(state.tasks),
       }),
     );
   } catch (err) {

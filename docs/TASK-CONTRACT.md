@@ -177,7 +177,7 @@ type Task = {
 };
 ```
 
-**Fresh code and read-only context.** Before each attempt the task's code is refreshed from disk (`src/engine/orchestrator/task/refresh-code.ts`). `UPDATE_TASK_CODE` replaces all three code fields — `currentCode`, `currentCodeByFile` and `contextCodeByFile` — so a stop and a resume never keep stale code. The code of `contextFiles` goes into `contextCodeByFile`, kept apart from the write targets. Context files share a budget of 40,000 characters per task (`CONTEXT_CODE_BUDGET_CHARS`, about 10K tokens); the file that crosses it is cut and ends with `…truncated`, and the context files after it are left out. Context files are read-only: they are not in the brief's Scope and never count as a write target. The prompt formatter adds each context file under `### Read-only context (do not modify) — <path>`. A prompt measured against a context length gives every target file and every context file an equal share of the code budget, so a large context file never crowds out the code the brief edits; the context-fit estimate counts what is sent. A task over BUILD's context fails the plan checks with its context files and their sizes named. The brief hash (`brief-hash.ts`) ignores captured code. A direct writer gets the read-only context code but not the code of the files it edits: it reads those in place.
+**Fresh code and read-only context.** Before each attempt the task's code is refreshed from disk (`src/engine/orchestrator/task/refresh-code.ts`). `UPDATE_TASK_CODE` replaces all three code fields — `currentCode`, `currentCodeByFile` and `contextCodeByFile` — so a stop and a resume never keep stale code. The code of `contextFiles` goes into `contextCodeByFile`, kept apart from the write targets. Context files share a budget of 40,000 characters per task (`CONTEXT_CODE_BUDGET_CHARS`, about 10K tokens); the file that crosses it is cut and ends with `…truncated`, and the context files after it are left out. Context files are read-only: they are not in the brief's Scope and never count as a write target. The prompt formatter adds each context file under `### Read-only context (do not modify) — <path>`. A prompt measured against a context length gives every target file and every context file an equal share of the code budget, so a large context file never crowds out the code the brief edits; the context-fit estimate counts what is sent. A task over BUILD's context fails the plan checks with its context files and their sizes named. The brief hash (`src/core/evidence/brief-hash.ts`) ignores captured code. It also ignores the run output that the run writes onto a brief: `checkResults` and `inputHashes`. A direct writer gets the read-only context code but not the code of the files it edits: it reads those in place.
 
 ### `TaskId`
 
@@ -435,7 +435,7 @@ written incrementally as tasks reach a terminal state and amended once the
 final review completes. API bundle applications in the run workspace update `promotedFiles` (the name
 predates the run workspace) from the writer's result before validation. This collection keeps only the latest receipt for each target path
 across all tasks. `promotedBriefHash` binds it to the single brief definition,
-excluding runtime status and current code. A changed brief resets its receipt
+excluding runtime status, captured code and run output (`checkResults`, `inputHashes`). A changed brief resets its receipt
 collection. Historical `promotionAttempts` from older runs remain available for
 review, but never authorize current ownership. Before a possible target write, the orchestrator invalidates prior ownership
 for the affected paths. If invalidation cannot persist, the writer does not run.
@@ -465,7 +465,7 @@ type EvidenceLedger = {
     status: 'pending' | 'in_progress' | 'done' | 'escalated' | 'failed' | 'skipped';
     method?: 'local' | 'consulted' | 'escalated-hint' | 'escalated-intermediate' | 'escalated-full' | 'failed' | 'skipped';
     retries: number;
-    durationMs?: number;
+    durationMs?: number;        // the same value as the brief's task_completed.duration
     changedFiles: string[];
     validation: Array<{ stage: 'typecheck' | 'lint' | 'test'; passed: boolean;
                         skipped?: boolean; skippedReason?: string; errorSummary?: string }>;
@@ -481,13 +481,16 @@ type EvidenceLedger = {
     expectedEvidence?: string[];  // retired; an older file's value loads and is ignored
     observedEvidence?: string[];  // retired; an older file's value loads and is ignored
     escalated: boolean;
-    briefHash?: string | null;  // absent on sessions written before this spec; readers must treat absent and `null` identically.
-    promotedBriefHash?: string; // hashTaskBrief([task]); independent of the whole-plan briefHash
+    // hashTaskBrief([task]) of the brief whose work the entry last recorded. A seed carries null.
+    // A ledger written before this rule keeps whole-plan stamps, and its briefs read as earlier work.
+    // Absent on sessions written before this spec; readers treat absent and `null` identically.
+    briefHash?: string | null;
+    promotedBriefHash?: string; // hashTaskBrief([task]) of the brief that wrote promotedFiles
     promotedFiles?: Array<{ path: string; sha256: string | null; mode: number | null; created?: true }>;  // latest writer receipt per target path; null digest and mode = deleted
   }>;
   validationSummary: { passed: number; failed: number; skipped: number; escalated: number };
   finalReview?: { path: string; status: 'written' | 'failed' | 'skipped' };
-  briefHash?: string | null;  // absent on sessions written before this spec; readers must treat absent and `null` identically.
+  briefHash?: string | null;  // the plan-level hash, hashTaskBrief(state.tasks); absent and `null` read the same
 };
 ```
 

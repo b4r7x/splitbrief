@@ -6,6 +6,7 @@ import type {
   EvidenceRejection,
 } from '../schemas/evidence.js';
 import { nowIso } from '../../utils/format-time.js';
+import { hashTaskBrief } from './brief-hash.js';
 
 export function emptyEvidenceTask(task: Task): EvidenceTask {
   return {
@@ -90,14 +91,11 @@ export function withAppendedRejection(
   return { ...ledger, rejections: [...(ledger.rejections ?? []), entry], generatedAt: nowIso() };
 }
 
-export function findOrSeed(
-  ledger: EvidenceLedger,
-  task: Task,
-  briefHash?: string | null,
-): EvidenceTask {
+/** The entry that records work on this brief, stamped with the hash of the brief as it is now. */
+export function findOrSeed(ledger: EvidenceLedger, task: Task): EvidenceTask {
+  const briefHash = hashTaskBrief([task]);
   const existing = ledger.tasks.find((t) => t.id === task.id);
   if (existing) {
-    const resolvedHash = existing.briefHash != null ? existing.briefHash : (briefHash ?? null);
     return {
       ...existing,
       title: task.title,
@@ -112,10 +110,10 @@ export function findOrSeed(
           ? { ...entry, artifacts: entry.artifacts.map((artifact) => ({ ...artifact })) }
           : { ...entry },
       ),
-      briefHash: resolvedHash,
+      briefHash,
     };
   }
-  return emptyEvidenceTask(task);
+  return { ...emptyEvidenceTask(task), briefHash };
 }
 
 export type CreateEvidenceLedgerInput = {
@@ -126,8 +124,7 @@ export type CreateEvidenceLedgerInput = {
 };
 
 export function createEvidenceLedger(input: CreateEvidenceLedgerInput): EvidenceLedger {
-  const bh = input.briefHash ?? null;
-  const tasks = input.tasks.map((task) => ({ ...emptyEvidenceTask(task), briefHash: bh }));
+  const tasks = input.tasks.map(emptyEvidenceTask);
   const ledger: EvidenceLedger = {
     version: 1,
     sessionId: input.sessionId,
@@ -135,7 +132,7 @@ export function createEvidenceLedger(input: CreateEvidenceLedgerInput): Evidence
     generatedAt: nowIso(),
     tasks,
     validationSummary: recomputeValidationSummary(tasks),
-    briefHash: bh,
+    briefHash: input.briefHash ?? null,
   };
   return ledger;
 }

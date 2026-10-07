@@ -7,7 +7,7 @@ import { anchorAction } from '../../spec/plan-tasks.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { transitionAndSave } from '../state-ops.js';
 import type { ContinuationHolder } from '../continuation.js';
-import { hashTaskBrief } from '../../brief-hash.js';
+import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 
 const isPathEscape = matches('path-confined-escape');
 

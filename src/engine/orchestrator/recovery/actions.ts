@@ -20,7 +20,7 @@ import { nowIso } from '../../../utils/format-time.js';
 import type { EventBus } from '../../events/types.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { loadConfig } from '../../../core/config/load/io.js';
-import { hashTaskBrief } from '../../brief-hash.js';
+import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { getOrCreateLedger } from '../../../core/evidence/ledger-state.js';
 import { readEvidenceLedger, writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
@@ -965,13 +965,12 @@ function recordRecoverySkipEvidence(opts: {
   reason: string;
 }): void {
   const existing = readEvidenceLedger(opts);
-  const briefHash = hashTaskBrief(opts.state.tasks);
   const ledger = getOrCreateLedger(
     {
       sessionId: opts.sessionId,
       feature: opts.state.feature,
       tasks: opts.state.tasks,
-      briefHash,
+      briefHash: hashTaskBrief(opts.state.tasks),
     },
     existing,
   );
@@ -979,7 +978,6 @@ function recordRecoverySkipEvidence(opts: {
     ledger,
     task: opts.task,
     reason: opts.reason,
-    briefHash,
   });
   writeEvidenceLedger(opts, updated);
 }

@@ -21,7 +21,7 @@ import {
 import { uniquePush } from '../../../utils/collections.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
-import { hashTaskBrief } from '../../brief-hash.js';
+import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import { nowIso } from '../../../utils/format-time.js';
 
 type CheckEntryMeta = {
@@ -281,14 +281,12 @@ export type RecordLocalTaskEvidenceInput = {
   durationMs?: number | undefined;
   validation: ValidationResult[];
   changedFiles?: string[] | undefined;
-  briefHash?: string | null;
   validationRetryState?: EvidenceValidationEntry['retryState'] | undefined;
   exemptStages?: readonly EvidenceValidationEntry['stage'][] | undefined;
 };
 
 export function recordLocalTaskEvidence(input: RecordLocalTaskEvidenceInput): EvidenceLedger {
-  const next = findOrSeed(input.ledger, input.task, input.briefHash);
-  next.briefHash = input.briefHash ?? next.briefHash ?? null;
+  const next = findOrSeed(input.ledger, input.task);
   next.status = input.status;
   if (input.method) next.method = input.method;
   if (typeof input.retries === 'number') next.retries = input.retries;
@@ -317,7 +315,6 @@ export type RecordRetryOrEscalationEvidenceInput = {
   validation?: ValidationResult[] | undefined;
   changedFiles?: string[] | undefined;
   escalated: boolean;
-  briefHash?: string | null;
   validationRetryState?: EvidenceValidationEntry['retryState'] | undefined;
   exemptStages?: readonly EvidenceValidationEntry['stage'][] | undefined;
 };
@@ -325,8 +322,7 @@ export type RecordRetryOrEscalationEvidenceInput = {
 export function recordRetryOrEscalationEvidence(
   input: RecordRetryOrEscalationEvidenceInput,
 ): EvidenceLedger {
-  const next = findOrSeed(input.ledger, input.task, input.briefHash);
-  next.briefHash = input.briefHash ?? next.briefHash ?? null;
+  const next = findOrSeed(input.ledger, input.task);
   next.status = input.status;
   if (input.method) next.method = input.method;
   if (typeof input.retries === 'number') next.retries = input.retries;
@@ -354,14 +350,12 @@ export type RecordPromotionFailureEvidenceInput = {
   ledger: EvidenceLedger;
   task: Task;
   attempt: EvidencePromotionAttempt;
-  briefHash?: string | null;
 };
 
 export function recordPromotionFailureEvidence(
   input: RecordPromotionFailureEvidenceInput,
 ): EvidenceLedger {
-  const next = findOrSeed(input.ledger, input.task, input.briefHash);
-  next.briefHash = input.briefHash ?? next.briefHash ?? null;
+  const next = findOrSeed(input.ledger, input.task);
   next.status = 'failed';
   next.promotionAttempts = [...(next.promotionAttempts ?? []), input.attempt];
   // The applied prefix is on the target, so it is a changed file of this task
@@ -379,7 +373,6 @@ export type RecordPromotedFilesEvidenceInput = {
   ledger: EvidenceLedger;
   task: Task;
   files: EvidencePromotedFile[];
-  briefHash?: string | null;
 };
 
 /**
@@ -390,8 +383,7 @@ export type RecordPromotedFilesEvidenceInput = {
 export function recordPromotedFilesEvidence(
   input: RecordPromotedFilesEvidenceInput,
 ): EvidenceLedger {
-  const next = findOrSeed(input.ledger, input.task, input.briefHash);
-  next.briefHash = input.briefHash ?? next.briefHash ?? null;
+  const next = findOrSeed(input.ledger, input.task);
   return withTargetWrites({
     ledger: upsertEvidenceTask(input.ledger, next),
     task: input.task,
@@ -404,7 +396,6 @@ export type RecordApiApplyEvidenceInput = {
   task: Task;
   result: BundleApplyResult;
   workspacePath?: string | undefined;
-  briefHash?: string | null;
 };
 
 /**
@@ -414,8 +405,7 @@ export type RecordApiApplyEvidenceInput = {
  * within the same dispatch parks a create brief whose anchor now exists.
  */
 export function recordApiApplyEvidence(input: RecordApiApplyEvidenceInput): EvidenceLedger {
-  const next = findOrSeed(input.ledger, input.task, input.briefHash);
-  next.briefHash = input.briefHash ?? next.briefHash ?? null;
+  const next = findOrSeed(input.ledger, input.task);
   const created = provenCreatedPaths(next);
   next.apiApply = {
     ...apiApplyReceipt(input.result),
@@ -453,12 +443,10 @@ export type RecordSkippedTaskEvidenceInput = {
   ledger: EvidenceLedger;
   task: Task;
   reason: string;
-  briefHash?: string | null;
 };
 
 export function recordSkippedTaskEvidence(input: RecordSkippedTaskEvidenceInput): EvidenceLedger {
-  const next = findOrSeed(input.ledger, input.task, input.briefHash);
-  next.briefHash = input.briefHash ?? next.briefHash ?? null;
+  const next = findOrSeed(input.ledger, input.task);
   next.status = 'skipped';
   next.method = 'skipped';
   return upsertEvidenceTask(input.ledger, next);
