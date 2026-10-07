@@ -52,9 +52,9 @@ function plannerCall(callbacks: PlannerOutputCallbacks, callId: string, text: st
 }
 
 /**
- * The canary's consulted brief: the attempt runs with no gate, the pre-review red reopens the brief
- * into implementing, and the reopened attempt, the local retry, the consult and the guided retry
- * run there before the review opens again. Every event it publishes names the phase the run is in.
+ * The canary's consulted brief: with the task review cadence the brief gate runs the test stage,
+ * validation fails, the local retry fails, the planner's consult call answers with guidance, and
+ * the guided retry lands. Every event it publishes names the phase the run is in.
  */
 async function runConsultedBrief(): Promise<EngineEvent[]> {
   const projectDir = createTempDir('orch-int-phase-stamps');
@@ -125,13 +125,13 @@ async function runConsultedBrief(): Promise<EngineEvent[]> {
   return events;
 }
 
-// The state machine's own path for this brief: the attempt runs with no gate, the pre-review red
-// reopens the brief into implementing, and the reopened attempt, the local retry, the consult and
-// the guided retry run there before the review opens again.
+// The state machine's own path for this brief: the attempt's validation runs in validating-task,
+// and the local retry, the consult and the guided retry all run in implementing before the brief
+// passes and the review opens.
 const PHASES = [
   'planning',
   'implementing',
-  'final-review',
+  'validating-task',
   'implementing',
   'final-review',
   'complete',
