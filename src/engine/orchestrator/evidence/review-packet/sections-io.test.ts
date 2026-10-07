@@ -5,11 +5,11 @@ import { execSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { createTestGitRepo } from '#testing/helpers/git.js';
+import { createTestGitRepo, recordGitLaunches } from '#testing/helpers/git.js';
 import type { DriftReport } from '../../../../core/schemas/drift.js';
 import { REVIEW_FILE, REVIEW_JSON_FILE, sessionDir } from '../../../../core/paths.js';
 import type { ReviewPacket } from '../../../../core/schemas/review-packet.js';
-import { buildFinalReview, resolveChangedFiles } from './sections-io.js';
+import { buildFinalReview, resolveChangedFiles, resolveRunUniverse } from './sections-io.js';
 import { renderReviewPacketMarkdown } from './render.js';
 import { makeReviewPacket } from '#testing/helpers/factories/review-packet.js';
 
@@ -181,6 +181,46 @@ describe('resolveChangedFiles', () => {
 
     expect(files).toContain('src/from-unborn.ts');
     expect(missing).not.toContain('changed files');
+  });
+
+  it('lists the changed files without building a diff of the untracked files', async () => {
+    const { projectDir, runStartHead } = makeProject();
+    writeFileSync(join(projectDir, 'init.txt'), 'changed');
+    writeFileSync(join(projectDir, 'new-a.txt'), 'a');
+    writeFileSync(join(projectDir, 'new-b.txt'), 'b');
+    const git = recordGitLaunches();
+    try {
+      const files = await resolveChangedFiles({
+        projectDir,
+        drift: null,
+        missing: [],
+        baseline: { head: runStartHead },
+      });
+      expect(files).toEqual(['init.txt', 'new-a.txt', 'new-b.txt']);
+      expect(git.launches().filter((args) => args.startsWith('diff '))).toEqual([
+        `diff --name-only -z ${runStartHead} HEAD`,
+      ]);
+    } finally {
+      git.restore();
+    }
+  });
+});
+
+describe('resolveRunUniverse', () => {
+  it('reads git status once for the changed files and the diff', async () => {
+    const { projectDir, runStartHead } = makeProject();
+    writeFileSync(join(projectDir, 'init.txt'), 'CHANGED_BODY');
+    writeFileSync(join(projectDir, 'new-a.txt'), 'UNTRACKED_BODY');
+    const git = recordGitLaunches();
+    try {
+      const universe = await resolveRunUniverse(projectDir, { head: runStartHead });
+      expect(universe.changedFiles).toEqual(['init.txt', 'new-a.txt']);
+      expect(universe.fullDiff).toContain('CHANGED_BODY');
+      expect(universe.fullDiff).toContain('UNTRACKED_BODY');
+      expect(git.launches().filter((args) => args.startsWith('status'))).toHaveLength(1);
+    } finally {
+      git.restore();
+    }
   });
 });
 

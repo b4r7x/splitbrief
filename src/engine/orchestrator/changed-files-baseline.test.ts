@@ -60,9 +60,12 @@ vi.mock('../../lib/git/files.js', () => ({
 }));
 vi.mock('../../lib/git/repository.js', () => ({
   hasCommits: async (dir: string) => (history.get(dir)?.length ?? 0) > 0,
+  readHeadSha: async (dir: string) => {
+    const commits = history.get(dir)?.length ?? 0;
+    return commits > 0 ? String(commits - 1) : null;
+  },
 }));
 vi.mock('../../lib/git/refs.js', () => ({
-  getCurrentCommitSha: async (dir: string) => String((history.get(dir)?.length ?? 0) - 1),
   resolveRunStartBase: async ({ head }: { head: string | null }) => ({
     kind: 'commit',
     ref: head ?? '-1',

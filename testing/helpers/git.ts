@@ -1,8 +1,9 @@
 import { execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { delimiter, dirname, join } from 'node:path';
 import { deflateSync } from 'node:zlib';
+import { cleanupTempDir, createTempDir } from './temp-dir.js';
 
 type RepoFiles = Record<string, string>;
 
@@ -171,4 +172,27 @@ export function startConflictingMerge(dir: string): void {
   } catch {
     // The merge is expected to fail with a conflict, leaving MERGE_HEAD in place.
   }
+}
+
+/**
+ * Counts every git launch, through simple-git or a raw spawn alike: a `git` shim
+ * first on PATH logs its arguments, one line per launch, then runs the real git.
+ */
+export function recordGitLaunches(): { launches: () => string[]; restore: () => void } {
+  const realGit = execSync('command -v git', { encoding: 'utf8' }).trim();
+  const dir = createTempDir('splitbrief-git-launches');
+  const log = join(dir, 'launches.log');
+  const shim = join(dir, 'git');
+  writeFileSync(shim, `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\nexec '${realGit}' "$@"\n`);
+  chmodSync(shim, 0o755);
+  const originalPath = process.env['PATH'];
+  process.env['PATH'] = [dir, originalPath].filter(Boolean).join(delimiter);
+  return {
+    launches: () => (existsSync(log) ? readFileSync(log, 'utf8').split('\n').filter(Boolean) : []),
+    restore: () => {
+      if (originalPath === undefined) delete process.env['PATH'];
+      else process.env['PATH'] = originalPath;
+      cleanupTempDir(dir);
+    },
+  };
 }

@@ -11,7 +11,7 @@ import {
   resolveRunStartBase,
 } from './refs.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { createTestGitRepo } from '#testing/helpers/git.js';
+import { createTestGitRepo, recordGitLaunches } from '#testing/helpers/git.js';
 
 function setupGitRepo(): string {
   const dir = createTempDir('splitbrief-git-test');
@@ -80,6 +80,39 @@ describe('resolveRunStartBase', () => {
     await expect(
       resolveRunStartBase({ projectDir: dir, head: 'not-a-valid-ref' }),
     ).rejects.toMatchObject({ kind: 'git-command-failed' });
+  });
+
+  it('verifies a captured head with one git launch across calls', async () => {
+    const dir = tracked(setupGitRepo());
+    const captured = execSync('git rev-parse HEAD', { cwd: dir }).toString().trim();
+    const git = recordGitLaunches();
+    try {
+      for (let call = 0; call < 3; call++) {
+        await expect(resolveRunStartBase({ projectDir: dir, head: captured })).resolves.toEqual({
+          kind: 'commit',
+          ref: captured,
+        });
+      }
+      expect(git.launches()).toEqual([`rev-parse --verify ${captured}^{commit}`]);
+    } finally {
+      git.restore();
+    }
+  });
+
+  it('rejects a missing captured head on every call', async () => {
+    const dir = tracked(setupGitRepo());
+    const missing = 'f'.repeat(40);
+    const git = recordGitLaunches();
+    try {
+      for (let call = 0; call < 2; call++) {
+        await expect(resolveRunStartBase({ projectDir: dir, head: missing })).rejects.toMatchObject(
+          { kind: 'git-command-failed' },
+        );
+      }
+      expect(git.launches()).toHaveLength(2);
+    } finally {
+      git.restore();
+    }
   });
 });
 

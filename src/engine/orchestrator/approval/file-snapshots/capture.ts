@@ -10,8 +10,8 @@ import {
   listGitlinkPaths,
   listTrackedAndUntrackedFiles,
 } from '../../../../lib/git/files.js';
-import { GIT_EMPTY_TREE_HASH, getCurrentCommitSha } from '../../../../lib/git/refs.js';
-import { hasCommits } from '../../../../lib/git/repository.js';
+import { GIT_EMPTY_TREE_HASH } from '../../../../lib/git/refs.js';
+import { hasCommits, readHeadSha } from '../../../../lib/git/repository.js';
 import {
   collectTrackedFiles,
   walkProjectEntries,
@@ -126,9 +126,7 @@ export async function getChangedFilesSnapshot(
         ] as const;
       }),
   );
-  const head = (await hasCommits(projectDir))
-    ? await getCurrentCommitSha(projectDir)
-    : GIT_EMPTY_TREE_HASH;
+  const head = (await readHeadSha(projectDir)) ?? GIT_EMPTY_TREE_HASH;
   return {
     head,
     files,

@@ -6,7 +6,7 @@ import type { ChangedFilesSnapshot } from '../../../../core/schemas/workflow.js'
 import { uniqueProjectFiles } from './types.js';
 import { getChangedFilesSinceSnapshot, getChangedFilesSnapshot } from './capture.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { createTestGitRepo } from '#testing/helpers/git.js';
+import { createTestGitRepo, recordGitLaunches } from '#testing/helpers/git.js';
 
 // The Git legs are stubbed per test so a working tree can be described without a
 // repository; every unset field falls through to the real implementation, which
@@ -27,7 +27,12 @@ vi.mock('../../../../lib/git/files.js', async (importOriginal) => {
 
 vi.mock('../../../../lib/git/repository.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../../lib/git/repository.js')>();
-  return { ...actual, hasCommits: async (dir: string) => git.hasCommits ?? actual.hasCommits(dir) };
+  return {
+    ...actual,
+    hasCommits: async (dir: string) => git.hasCommits ?? actual.hasCommits(dir),
+    readHeadSha: async (dir: string) =>
+      git.hasCommits === null ? actual.readHeadSha(dir) : git.hasCommits ? 'stub-head' : null,
+  };
 });
 
 vi.mock('../../../../lib/git/diff.js', async (importOriginal) => {
@@ -83,6 +88,23 @@ describe('getChangedFilesSnapshot', () => {
     expect(snapshot.head).toBe('4b825dc642cb6eb9a060e54bf8d69288fbee4904');
     expect(snapshot.files).toContain('pending.ts');
     cleanupTempDir(dir);
+  });
+
+  it('reads HEAD with one git launch', async () => {
+    const dir = createTempDir('snapshot-head-launch');
+    createTestGitRepo(dir);
+    const head = execSync('git rev-parse HEAD', { cwd: dir }).toString().trim();
+    const launches = recordGitLaunches();
+    try {
+      const snapshot = await getChangedFilesSnapshot(dir);
+      expect(snapshot.head).toBe(head);
+      expect(launches.launches().filter((args) => args.startsWith('rev-parse'))).toEqual([
+        'rev-parse --verify HEAD',
+      ]);
+    } finally {
+      launches.restore();
+      cleanupTempDir(dir);
+    }
   });
 
   it('omits a present .trees worktree directory from the change snapshot', async () => {

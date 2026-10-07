@@ -7,6 +7,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../../../core/paths-io.js';
 import { isInternalGitStatusPath } from '../../../../core/paths.js';
 import { getCurrentDiff } from '../../../../lib/git/diff.js';
+import { getGitStatus } from '../../../../lib/git/files.js';
 import { getChangedFilesSnapshot } from '../../approval/file-snapshots/capture.js';
 import { captureTaskReviewChanges } from '../review-capture.js';
 import { resolveRunReviewScope } from './run-scope.js';
@@ -43,7 +44,10 @@ describe('resolveRunReviewScope with Apply-merged paths', () => {
       taskStartSnapshot,
     });
     writeFileSync(join(p.projectDir, file), merged);
-    const workspaceDiff = await getCurrentDiff(p.projectDir, isInternalGitStatusPath);
+    const workspaceDiff = await getCurrentDiff(
+      p.projectDir,
+      (await getGitStatus(p.projectDir)).not_added.filter((f) => !isInternalGitStatusPath(f)),
+    );
 
     const base = {
       ref: p.ref,

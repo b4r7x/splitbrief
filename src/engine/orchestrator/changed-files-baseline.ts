@@ -3,8 +3,8 @@ import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { getCommittedFilesSince } from '../../lib/git/diff.js';
 import { getCurrentChangedFiles } from '../../lib/git/files.js';
-import { getCurrentCommitSha, resolveRunStartBase } from '../../lib/git/refs.js';
-import { hasCommits } from '../../lib/git/repository.js';
+import { resolveRunStartBase } from '../../lib/git/refs.js';
+import { readHeadSha } from '../../lib/git/repository.js';
 import { isInternalGitStatusPath } from '../../core/paths.js';
 import { isENOENT } from '../../lib/process/errors.js';
 import { isProcessOutputSink } from '../../lib/process/stdio-sinks.js';
@@ -80,7 +80,7 @@ export function unreadableChangedFiles(baseline: ChangedFilesBaseline): string[]
 
 async function captureHead(projectDir: string): Promise<string | null> {
   if (!existsSync(join(projectDir, '.git'))) return null;
-  return (await hasCommits(projectDir)) ? getCurrentCommitSha(projectDir) : null;
+  return readHeadSha(projectDir);
 }
 
 async function candidateChangedFiles(projectDir: string, head: string | null): Promise<string[]> {
