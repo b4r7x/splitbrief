@@ -17,37 +17,43 @@ function diffUntrackedFile(dir: string, file: string): Promise<string> {
   });
 }
 
-async function collectUntrackedDiffs(
-  dir: string,
-  notAdded: string[],
-  excludeUntracked?: (file: string) => boolean,
-): Promise<string[]> {
-  const untrackedFiles = excludeUntracked
-    ? notAdded.filter((file) => !excludeUntracked(file))
-    : notAdded;
-  return Promise.all(untrackedFiles.map((file) => diffUntrackedFile(dir, file)));
+const UNTRACKED_DIFF_CONCURRENCY = 8;
+
+// Each untracked file is one `git diff --no-index` launch; a fixed pool keeps a
+// working tree with many new files from forking them all at once. Results keep
+// the input order, so the joined diff reads the same as a serial walk.
+async function collectUntrackedDiffs(dir: string, untracked: readonly string[]): Promise<string[]> {
+  const diffs = new Array<string>(untracked.length).fill('');
+  let next = 0;
+  async function worker(): Promise<void> {
+    for (let index = next++; index < untracked.length; index = next++) {
+      const file = untracked[index];
+      if (file !== undefined) diffs[index] = await diffUntrackedFile(dir, file);
+    }
+  }
+  const workers = Math.min(UNTRACKED_DIFF_CONCURRENCY, untracked.length);
+  await Promise.all(Array.from({ length: workers }, () => worker()));
+  return diffs;
 }
 
-export async function getCurrentDiff(
-  dir: string,
-  excludeUntracked?: (file: string) => boolean,
-): Promise<string> {
+/** `untracked`: the untracked files to include, from the caller's one `git status`. */
+export async function getCurrentDiff(dir: string, untracked: readonly string[]): Promise<string> {
   return runGit('diff', async () => {
     const git = getGitForDir(dir);
-    const [staged, unstaged, status] = await Promise.all([
+    const [staged, unstaged] = await Promise.all([
       git.diff(['--cached', '--no-color']),
       git.diff(['--no-color']),
-      git.status(),
     ]);
-    const untracked = await collectUntrackedDiffs(dir, status.not_added, excludeUntracked);
-    return [staged, unstaged, ...untracked].filter(Boolean).join('\n');
+    const untrackedDiffs = await collectUntrackedDiffs(dir, untracked);
+    return [staged, unstaged, ...untrackedDiffs].filter(Boolean).join('\n');
   });
 }
 
+/** `untracked`: the untracked files to include, from the caller's one `git status`. */
 export async function getDiffSince(
   dir: string,
   baseRef: string,
-  excludeUntracked?: (file: string) => boolean,
+  untracked: readonly string[],
 ): Promise<string> {
   // The ref is a positional argument of `git diff`, where a leading `-` is read as
   // an option instead — `--output=<file>` would write the diff anywhere on disk.
@@ -56,10 +62,9 @@ export async function getDiffSince(
     throw gitError.commandFailed(`diff ${baseRef}`, "a git ref cannot start with '-'");
   }
   return runGit(`diff ${baseRef}`, async () => {
-    const git = getGitForDir(dir);
-    const [tracked, status] = await Promise.all([git.diff([baseRef, '--']), git.status()]);
-    const untracked = await collectUntrackedDiffs(dir, status.not_added, excludeUntracked);
-    return [tracked, ...untracked].filter(Boolean).join('\n');
+    const tracked = await getGitForDir(dir).diff([baseRef, '--']);
+    const untrackedDiffs = await collectUntrackedDiffs(dir, untracked);
+    return [tracked, ...untrackedDiffs].filter(Boolean).join('\n');
   });
 }
 

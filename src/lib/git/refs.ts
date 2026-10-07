@@ -8,6 +8,11 @@ export type RunStartBase =
   | { kind: 'empty-tree'; ref: typeof GIT_EMPTY_TREE_HASH }
   | { kind: 'working-tree-only' };
 
+// A run's captured head never changes, so one successful verify per project and
+// head serves the whole run. A failure is not kept: a missing base throws on every
+// call. The unborn case is not kept either, since a first commit turns it born.
+const verifiedRunBases = new Set<string>();
+
 export async function resolveRunStartBase(opts: {
   projectDir: string;
   head: string | null;
@@ -18,9 +23,13 @@ export async function resolveRunStartBase(opts: {
       ? { kind: 'empty-tree', ref: GIT_EMPTY_TREE_HASH }
       : { kind: 'working-tree-only' };
   }
-  await runGit(`rev-parse --verify ${head}^{commit}`, () =>
-    getGitForDir(projectDir).raw(['rev-parse', '--verify', `${head}^{commit}`]),
-  );
+  const key = `${projectDir}\0${head}`;
+  if (!verifiedRunBases.has(key)) {
+    await runGit(`rev-parse --verify ${head}^{commit}`, () =>
+      getGitForDir(projectDir).raw(['rev-parse', '--verify', `${head}^{commit}`]),
+    );
+    verifiedRunBases.add(key);
+  }
   return { kind: 'commit', ref: head };
 }
 

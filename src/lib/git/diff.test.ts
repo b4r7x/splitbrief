@@ -32,14 +32,14 @@ describe('getCurrentDiff', () => {
     writeFileSync(join(dir, 'staged-marker.txt'), 'STAGED_MARKER_BODY');
     execSync('git add staged-marker.txt', { cwd: dir, stdio: 'pipe' });
     writeFileSync(join(dir, 'init.txt'), 'UNSTAGED_MARKER_BODY');
-    const diff = await getCurrentDiff(dir);
+    const diff = await getCurrentDiff(dir, []);
     expect(diff).toContain('STAGED_MARKER_BODY');
     expect(diff).toContain('UNSTAGED_MARKER_BODY');
   });
 
   it('returns empty string when no changes', async () => {
     const dir = tracked(setupGitRepo());
-    const diff = await getCurrentDiff(dir);
+    const diff = await getCurrentDiff(dir, []);
     expect(diff).toBe('');
   });
 
@@ -48,11 +48,24 @@ describe('getCurrentDiff', () => {
     execSync('git config color.diff always', { cwd: dir, stdio: 'pipe' });
     writeFileSync(join(dir, 'init.txt'), 'changed');
     writeFileSync(join(dir, 'untracked.txt'), 'BRANDNEW');
-    const diff = await getCurrentDiff(dir);
+    const diff = await getCurrentDiff(dir, ['untracked.txt']);
     const esc = String.fromCharCode(27);
     expect(diff).not.toContain(esc);
     expect(diff).toContain('changed');
     expect(diff).toContain('BRANDNEW');
+  });
+
+  it('keeps the untracked diffs in input order beyond the launch pool', async () => {
+    const dir = tracked(setupGitRepo());
+    const files = Array.from(
+      { length: 20 },
+      (_, index) => `new-${String(index).padStart(2, '0')}.txt`,
+    );
+    for (const file of files) writeFileSync(join(dir, file), `BODY_${file}`);
+    const diff = await getCurrentDiff(dir, files);
+    const positions = files.map((file) => diff.indexOf(`BODY_${file}`));
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
   });
 });
 
@@ -67,7 +80,7 @@ describe('getDiffSince', () => {
     });
     writeFileSync(join(dir, 'untracked.txt'), 'UNTRACKED_BODY');
 
-    const diff = await getDiffSince(dir, base);
+    const diff = await getDiffSince(dir, base, ['untracked.txt']);
     expect(diff).toContain('COMMITTED_BODY');
     expect(diff).toContain('UNTRACKED_BODY');
   });
@@ -76,7 +89,7 @@ describe('getDiffSince', () => {
     const dir = tracked(setupGitRepo());
     const probe = join(dir, 'probe.txt');
 
-    await expect(getDiffSince(dir, `--output=${probe}`)).rejects.toThrow(
+    await expect(getDiffSince(dir, `--output=${probe}`, [])).rejects.toThrow(
       "a git ref cannot start with '-'",
     );
     expect(existsSync(probe)).toBe(false);

@@ -12,7 +12,12 @@ import type { IsolationStrategy } from '../../../core/schemas/enums.js';
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow.js';
 import { createGitClient, type GitClient } from '../../../lib/git/client.js';
 import { getCurrentCommitSha } from '../../../lib/git/refs.js';
-import { getGitCommonDir, hasCommits, isGitRepo } from '../../../lib/git/repository.js';
+import {
+  getGitCommonDir,
+  hasCommits,
+  isGitRepo,
+  readHeadSha,
+} from '../../../lib/git/repository.js';
 import { warnError } from '../../../lib/warn.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import {
@@ -270,7 +275,7 @@ export function createRunIsolation(opts: {
       runWorkspace = {
         kind: 'checkout',
         projectDir,
-        head: (await hasCommits(projectDir)) ? await getCurrentCommitSha(projectDir) : null,
+        head: await readHeadSha(projectDir),
         keptFiles: [],
       };
       return runWorkspace;

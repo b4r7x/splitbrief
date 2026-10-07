@@ -11,15 +11,10 @@ import type {
   ReviewPacket,
   ReviewPacketFinalReviewStatus,
 } from '../../../../core/schemas/review-packet.js';
-import {
-  REVIEW_FILE,
-  STATE_FILE,
-  isInternalGitStatusPath,
-  sessionDir,
-} from '../../../../core/paths.js';
+import { REVIEW_FILE, STATE_FILE, sessionDir } from '../../../../core/paths.js';
 import { getCommittedFilesSince, getCurrentDiff, getDiffSince } from '../../../../lib/git/diff.js';
-import { getCurrentChangedFiles } from '../../../../lib/git/files.js';
-import { resolveRunStartBase } from '../../../../lib/git/refs.js';
+import { getGitStatus } from '../../../../lib/git/files.js';
+import { type RunStartBase, resolveRunStartBase } from '../../../../lib/git/refs.js';
 import { userVisibleChangedFiles } from '../../changed-files-baseline.js';
 import { uniqueSorted } from '../../../../utils/collections.js';
 import { extractFrontmatter } from '../../../../utils/frontmatter.js';
@@ -36,23 +31,39 @@ type RunUniverse = {
   changedFiles: string[];
 };
 
+type RunWorkingTree = {
+  base: RunStartBase;
+  changedFiles: string[];
+  untracked: string[];
+};
+
+// One `git status` per call: it lists the changed files and the untracked files
+// the diff adds, so the diff never reads it again.
+async function readRunWorkingTree(
+  projectDir: string,
+  baseline: PersistedRunBaseline,
+): Promise<RunWorkingTree> {
+  const base = await resolveRunStartBase({ projectDir, head: baseline.head });
+  const status = await getGitStatus(projectDir);
+  const working = userVisibleChangedFiles(status.files.map((file) => file.path));
+  const untracked = userVisibleChangedFiles(status.not_added);
+  if (base.kind === 'working-tree-only') {
+    return { base, changedFiles: uniqueSorted(working), untracked };
+  }
+  const committed = userVisibleChangedFiles(await getCommittedFilesSince(projectDir, base.ref));
+  return { base, changedFiles: uniqueSorted([...committed, ...working]), untracked };
+}
+
 export async function resolveRunUniverse(
   projectDir: string,
   baseline: PersistedRunBaseline,
 ): Promise<RunUniverse> {
-  const base = await resolveRunStartBase({ projectDir, head: baseline.head });
-  const status = userVisibleChangedFiles(await getCurrentChangedFiles(projectDir));
-  if (base.kind === 'working-tree-only') {
-    return {
-      fullDiff: await getCurrentDiff(projectDir, isInternalGitStatusPath),
-      changedFiles: uniqueSorted(status),
-    };
-  }
-  const committed = userVisibleChangedFiles(await getCommittedFilesSince(projectDir, base.ref));
-  return {
-    fullDiff: await getDiffSince(projectDir, base.ref, isInternalGitStatusPath),
-    changedFiles: uniqueSorted([...committed, ...status]),
-  };
+  const { base, changedFiles, untracked } = await readRunWorkingTree(projectDir, baseline);
+  const fullDiff =
+    base.kind === 'working-tree-only'
+      ? await getCurrentDiff(projectDir, untracked)
+      : await getDiffSince(projectDir, base.ref, untracked);
+  return { fullDiff, changedFiles };
 }
 
 export async function resolveChangedFiles(opts: {
@@ -68,7 +79,7 @@ export async function resolveChangedFiles(opts: {
     return [];
   }
   try {
-    const { changedFiles: files } = await resolveRunUniverse(projectDir, baseline);
+    const { changedFiles: files } = await readRunWorkingTree(projectDir, baseline);
     if (files.length === 0) addMissing(missing, 'changed files');
     return files;
   } catch {

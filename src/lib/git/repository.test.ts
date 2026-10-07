@@ -2,9 +2,13 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
-import { isGitRepo, hasCommits, getInProgressGitOp } from './repository.js';
+import { isGitRepo, hasCommits, getInProgressGitOp, readHeadSha } from './repository.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { createTestGitRepo, startConflictingMerge } from '#testing/helpers/git.js';
+import {
+  createTestGitRepo,
+  recordGitLaunches,
+  startConflictingMerge,
+} from '#testing/helpers/git.js';
 
 function setupGitRepo(): string {
   const dir = createTempDir('splitbrief-git-test');
@@ -48,6 +52,26 @@ describe('hasCommits', () => {
     const dir = tracked(createTempDir('splitbrief-unborn'));
     execSync('git init', { cwd: dir, stdio: 'pipe' });
     expect(await hasCommits(dir)).toBe(false);
+  });
+});
+
+describe('readHeadSha', () => {
+  it('reads the HEAD commit with one git launch', async () => {
+    const dir = tracked(setupGitRepo());
+    const head = execSync('git rev-parse HEAD', { cwd: dir }).toString().trim();
+    const git = recordGitLaunches();
+    try {
+      expect(await readHeadSha(dir)).toBe(head);
+      expect(git.launches()).toEqual(['rev-parse --verify HEAD']);
+    } finally {
+      git.restore();
+    }
+  });
+
+  it('returns null for an unborn branch', async () => {
+    const dir = tracked(createTempDir('splitbrief-unborn-head'));
+    execSync('git init', { cwd: dir, stdio: 'pipe' });
+    expect(await readHeadSha(dir)).toBeNull();
   });
 });
 

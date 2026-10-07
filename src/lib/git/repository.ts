@@ -10,13 +10,19 @@ export async function isGitRepo(dir: string): Promise<boolean> {
   return git.checkIsRepo();
 }
 
-export async function hasCommits(dir: string): Promise<boolean> {
+// One launch reads HEAD: `rev-parse --verify HEAD` prints the commit SHA, and
+// fails on an unborn branch or outside a repository.
+export async function readHeadSha(dir: string): Promise<string | null> {
   try {
-    await getGitForDir(dir).raw(['rev-parse', '--verify', 'HEAD']);
-    return true;
+    const sha = (await getGitForDir(dir).raw(['rev-parse', '--verify', 'HEAD'])).trim();
+    return sha.length > 0 ? sha : null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+export async function hasCommits(dir: string): Promise<boolean> {
+  return (await readHeadSha(dir)) !== null;
 }
 
 // Resolves to the repository's shared git directory: `<repo>/.git` from the

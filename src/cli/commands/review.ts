@@ -36,6 +36,7 @@ import type { ArtifactApprovalReview } from '../../engine/runners/types.js';
 import { buildFinalReviewPrompt } from '../../engine/spec/prompts/review.js';
 import { confinedWriteFile } from '../../lib/confined-fs.js';
 import { getCurrentDiff, getDiffSince } from '../../lib/git/diff.js';
+import { getGitStatus } from '../../lib/git/files.js';
 import { sanitizeTerminalDisplayText, stripTerminalControls } from '../../utils/display-text.js';
 import { nowIso } from '../../utils/format-time.js';
 import {
@@ -126,10 +127,13 @@ export function registerReviewCommand(program: Command, deps: ReviewCommandDeps 
       await ensureGitAndConfig(projectDir);
 
       const baseRef = opts.base;
+      const untracked = (await withCliErrors(() => getGitStatus(projectDir))).not_added.filter(
+        (file) => !isInternalGitStatusPath(file),
+      );
       const diff =
         baseRef === undefined
-          ? await withCliErrors(() => getCurrentDiff(projectDir, isInternalGitStatusPath))
-          : await withCliErrors(() => getDiffSince(projectDir, baseRef, isInternalGitStatusPath));
+          ? await withCliErrors(() => getCurrentDiff(projectDir, untracked))
+          : await withCliErrors(() => getDiffSince(projectDir, baseRef, untracked));
       if (diff.trim() === '') {
         console.log(NOTHING_TO_REVIEW);
         return;
