@@ -1,7 +1,6 @@
 import { isTaskCompleted, type Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
-import { GATE_ORDER } from '../../../core/pipeline-spec/gates.js';
 import type { WorkflowContext } from '../types.js';
 import { runSingleTask } from './step.js';
 import { commitWorkflowState, raisePendingRecovery } from '../state-ops.js';
@@ -29,8 +28,6 @@ import { toErrorMessage } from '../../../utils/format-errors.js';
 import { error } from '../../../utils/error.js';
 import { buildImplementerUnavailableRecoveryIssue } from '../recovery/builders/task.js';
 import { runScheduledReview } from '../run/review.js';
-import { recordCheckRuns } from '../evidence/record-checks.js';
-import { fullSuiteTimeoutWarning } from '../validation/run.js';
 
 type RunTaskLoopOptions = {
   wctx: WorkflowContext;
@@ -127,42 +124,6 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
   // Republished on every entry, including resume and detached re-attach, so a client that missed
   // the first announcement still learns the plan before the next task starts.
   publishTasksPlanned({ bus: wctx.bus, phase: state.phase }, state.tasks);
-  const firstTask = state.tasks[state.currentTaskIndex];
-  if (firstTask) {
-    if (state.fullSuiteBaseline === undefined) {
-      const suite = await wctx.validator.runFullSuite({
-        bus: wctx.bus,
-        phase: state.phase,
-        projectDir: wctx.workspaceDir,
-        config,
-        moment: 'baseline',
-        discoveredValidation: state.discoveredValidation,
-        signal: wctx.signal,
-      });
-      state = syncBaselineIntoState({
-        ...state,
-        fullSuiteBaseline: suite.failures,
-        fullSuiteBaselineStages: suite.stages,
-      });
-      setTrackedState(state);
-      for (const stage of GATE_ORDER) {
-        const stageRun = suite.stages[stage];
-        if (stageRun?.kind !== 'timed-out') continue;
-        publishWarning({
-          bus: wctx.bus,
-          phase: state.phase,
-          message: fullSuiteTimeoutWarning(stage, stageRun),
-        });
-      }
-      await recordCheckRuns({
-        projectDir,
-        sessionId,
-        workspaceDir: wctx.workspaceDir,
-        state,
-        validation: suite.results,
-      });
-    }
-  }
   // The bound is re-read every pass: a consult that inserts subtasks grows the list the
   // loop still has to run, and their indices follow the parent the split replaced.
   for (let i = state.currentTaskIndex; i < state.tasks.length; i++) {

@@ -483,7 +483,7 @@ A commit, a branch switch or a pull in your checkout does not halt the brief: a 
 
 ### Symptom: The implementer says it finished but nothing changed
 
-**Likely cause:** The runner completed its call without writing any file. Change detection (`detectChanges()`, `src/engine/change-detection.ts`) reports the distinct `no-files-changed` reason, the task fails with the `no-staged-change` outcome, and SPLITBRIEF publishes one coded warning — `category: implementer`, `code: implementer_wrote_nothing` — naming the runner and the task. The warning lands in `session.jsonl` and in the review packet's warnings list (`review-packet.json` → `escalations.warnings`). A fix attempt for a brief the final review reopened is the exception: its code is already on disk, so it may verify and change nothing, and its done row reads `verified · no change needed`.
+**Likely cause:** The runner completed its call without writing any file. Change detection (`detectChanges()`, `src/engine/change-detection.ts`) reports the distinct `no-files-changed` reason, the task fails with the `no-staged-change` outcome, and SPLITBRIEF publishes one coded warning — `category: implementer`, `code: implementer_wrote_nothing` — naming the runner and the task. The warning lands in `session.jsonl` and in the review packet's warnings list (`review-packet.json` → `escalations.warnings`). A fix attempt for an appended review fix task is the exception: its code is already on disk, so it may verify and change nothing, and its done row reads `verified · no change needed`.
 
 **Fix:**
 1. Read the warning in the transcript or `review-packet.json`. A "finished but wrote nothing" response is a model behaviour problem, not a SPLITBRIEF failure — the retry ladder runs exactly as it would for any other failure.
@@ -659,17 +659,18 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 
 ### Symptom: Every task fails validation because the tree was already red
 
-**Likely cause:** A validation stage (typecheck, lint, or test) was already failing in the repository before the run started — a pre-existing error in a file no task touches. Acceptance is baseline-relative: a stage that was already red at baseline is exempt when its failure evidence names none of the task's changed files, and the task may advance without any Git write. A stage that was green at baseline always blocks.
+**Likely cause:** A validation stage has a failure the run started with. SPLITBRIEF checks this only after a gate is red. It re-runs failing test files or the failing command on a disposable run base copy outside the checkout.
 
 **Fix:**
-1. Check the `Run-start suite` rows at the start of the run — the full suite runs every enabled stage before the first task, and each row says whether that stage passed or failed. A stage that failed there is the baseline.
-2. If the failing stage was red at baseline and its evidence names none of the task's changed files, the task is accepted; retry and consult do not fire for pre-existing failures.
-3. A task that introduces a **new** failure in a stage already red at baseline is still rejected — the evidence names one of the task's changed files.
-4. Fix the pre-existing failure itself to turn the whole tree green; until then, tasks that do not touch the failing files keep completing with the exemption noted.
 
-To see which stages are already red **before** starting a run, run `splitbrief doctor --probe-validation`: it runs the configured validation commands and reports each failing stage, naming the exact commands in the check details (it can take minutes — it is a real run, not a posture check).
+1. Read the `Base re-run` rows. They name the command and say whether it fails at the run base too.
+2. Read the Checks Log's `pre-existing (also red at the run base)` line for the matching keys.
+3. A task accepts a red only when every failure key is pre-existing and its evidence names no changed file. Otherwise the red blocks.
+4. Fix the pre-existing failure separately to turn the whole tree green. SPLITBRIEF reports it without reopening, retrying or creating a brief for it.
 
-**Prevention:** Keep the tree green before starting a run (`npm run test-ci`); baseline-relative acceptance spares tasks from pre-existing failures, not from the failures they cause.
+`splitbrief doctor --probe-validation` remains an explicit way to measure the suite before starting a run. It runs the configured commands and reports each stage's result and command.
+
+**Prevention:** Maintain passing validation commands. The base comparison excludes pre-existing failures from fixes and still blocks failures the run causes.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) (§4 `validation`), [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md).
 
@@ -691,16 +692,15 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 
 ---
 
-### Symptom: The run seems stuck at `Implementing…` before the first task
+### Symptom: A pre-review suite or base re-run takes a long time
 
-**Likely cause:** The run-start full suite is running. Before the first task, SPLITBRIEF runs every enabled validation stage once on the whole project (typecheck → lint → the full test suite). Each stage can block for `validation.timeoutMs` (default one hour) and the suite deliberately does not stop at the first red stage, so three slow stages can hold the phase for up to three hours.
+**Likely cause:** A validation command is slow. Each enabled stage has its own `validation.timeoutMs`, which defaults to one hour. The pre-review suite runs every enabled stage. A red then re-runs failing tests or the command at the run base.
 
 **Fix:**
-1. Look at the composer byline and the conversation rows — the suite names the stage it runs and its command (`Run-start suite · npx tsc --noEmit · running`). The run is not hung; it is waiting on that command.
-2. If a stage is genuinely slow, lower `validation.timeoutMs` in `.splitbrief/config.yaml` (minimum 1000 ms). A stage that times out at the run-start suite is recorded with a warning and not run again in that run.
-3. If a stage can never pass in this repository (a pre-existing type error, a broken linter), leave it red: the suite records its failures as pre-existing and the run continues past them rather than failing every task on them.
 
-**Prevention:** Keep the validation commands fast enough to run the whole suite twice per run — once at the start and once before the final review. Run `splitbrief doctor --probe-validation` before the first run: it runs every enabled stage once over the whole project without starting a run, and it names every stage that is already red, including a stage that outruns `validation.timeoutMs`.
+1. Read the byline and transcript for `Pre-review suite · <command>` or `Base re-run · <command>` and the elapsed time.
+2. Set `validation.timeoutMs` to the time the command needs, with a minimum of 1000 ms. A review timeout is pre-existing only if the base re-run also times out.
+3. Use `splitbrief doctor --probe-validation` when you want to measure the suite explicitly. No gate runs before a run's first task.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) (§4 `validation`), [docs/WORKFLOW.md](./WORKFLOW.md).
 

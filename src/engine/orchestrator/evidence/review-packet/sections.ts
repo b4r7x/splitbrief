@@ -104,6 +104,7 @@ export function buildChecks(opts: {
       ...(entry.command !== undefined && { command: entry.command }),
       ...(entry.exitCode !== undefined && { exitCode: entry.exitCode }),
       ...(entry.output !== undefined && { output: entry.output }),
+      ...(entry.preExisting !== undefined && { preExisting: [...entry.preExisting] }),
       ...(entry.artifacts !== undefined && {
         artifacts: entry.artifacts.map((artifact) => ({ ...artifact })),
       }),

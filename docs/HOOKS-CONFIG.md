@@ -40,7 +40,7 @@ Lifecycle events fire during a workflow. Each can have multiple hooks declared.
 | `on_complete`    | `workflow_complete` event                   | (none)                                                               |
 
 The validation hooks fire for task gates in `review: task` cadence.
-In `review: end` cadence, they fire only when a reopened brief rechecks failed gates.
+In `review: end` cadence, ordinary briefs run no gate commands. The final review runs the stack gates and registered checks.
 The pre-review suite fires neither validation hook.
 
 

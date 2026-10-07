@@ -53,8 +53,8 @@ describe('inlineActiveVerb', () => {
 
 describe('suiteStageText', () => {
   it('names the moment of the full suite and the command it runs', () => {
-    expect(suiteStageText({ moment: 'baseline', command: 'npm run typecheck' })).toBe(
-      'Run-start suite · npm run typecheck',
+    expect(suiteStageText({ moment: 'base', command: 'npm test -- src/legacy.test.ts' })).toBe(
+      'Base re-run · npm test -- src/legacy.test.ts',
     );
     expect(suiteStageText({ moment: 'pre-review', command: 'npm run lint' })).toBe(
       'Pre-review suite · npm run lint',

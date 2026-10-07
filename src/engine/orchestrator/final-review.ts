@@ -30,7 +30,11 @@ import { nowIso } from '../../utils/format-time.js';
 import { labelError } from '../../utils/format-errors.js';
 import { warnError } from '../../lib/warn.js';
 import { isAbortError } from '../../utils/abort.js';
-import type { ReviewPlanData, ReviewTouchedNotSuggested } from '../spec/prompts/review.js';
+import {
+  triageLines,
+  type ReviewPlanData,
+  type ReviewTouchedNotSuggested,
+} from '../spec/prompts/review.js';
 import { workspaceReadInstructions } from '../spec/prompts/builder.js';
 import { recordFinalReviewEvidence } from './evidence/reporting.js';
 import { readPacketEvents } from './evidence/review-packet/artifacts.js';
@@ -81,7 +85,12 @@ import {
   diagnosePlannerCallFailure,
   type PlannerCallDiagnosis,
 } from './recovery/planner-call-failure.js';
-import { ReviewVerdictSchema, type ReviewVerdict } from '../../core/schemas/review.js';
+import {
+  ReviewAnswerSchema,
+  type ReviewAnswer,
+  type ReviewVerdict,
+  type TriageResult,
+} from '../../core/schemas/review.js';
 import {
   deriveReviewOutcome,
   verificationKey,
@@ -90,18 +99,19 @@ import {
   type ReviewOutcome,
 } from '../../core/review/verdict.js';
 import { renderReviewMarkdown } from '../../core/review/render.js';
-import {
-  planApprovesNpmScripts,
-  runChecks,
-  checkRegistry,
-  type CheckRunResult,
-} from './validation/run-checks.js';
+import { planApprovesNpmScripts, runChecks, checkRegistry } from './validation/run-checks.js';
 import { seatSupportsImages } from '../../core/runners/capabilities.js';
 import { forceUnverifiedRenderCriteria, reviewRenders } from './review-renders.js';
 import { currentCandidateId, recordCheckRuns } from './evidence/record-checks.js';
 import { deserializeChangedFilesBaseline } from './changed-files-baseline.js';
 import type { RequestTypedResult, SeatProtocolError } from '../runners/typed-output.js';
 import { fixCyclesOf } from '../../core/schemas/workflow.js';
+import {
+  checkVerificationOutput,
+  checkVerificationStatus,
+  runTriageVerification,
+  triageContractErrors,
+} from './triage.js';
 import type { PreReviewResult } from './run/pre-review-checks.js';
 
 /** The code a failed review carries when the failure names none of its own. */
@@ -141,6 +151,7 @@ export type FinalReviewResult = {
   state: WorkflowState;
   summaryBase?: SummaryBase | undefined;
   verdict: FinalReview | null;
+  fixWork: TriageResult | null;
   reviewText: string;
   reviewStatus: ReviewPhaseStatus;
   /**
@@ -149,11 +160,9 @@ export type FinalReviewResult = {
    */
   failure?: FinalReviewFailure;
   /**
-   * The pre-review's verdict, when one ran: `fix-queued` appended work so the
-   * caller runs the task loop; `stopped` raised a halt. Absent when the review
-   * was reached.
+   * The pre-review raised a halt before a reviewer call could run.
    */
-  preReview?: 'fix-queued' | 'stopped' | undefined;
+  preReview?: 'stopped' | undefined;
 };
 
 export const finalReviewError = {
@@ -216,38 +225,9 @@ function reviewConsultLog(state: WorkflowState): string {
   return lines.join('\n');
 }
 
-function reviewTriageLog(state: WorkflowState): string {
-  return (state.triage ?? [])
-    .flatMap((record) => [
-      ...record.result.rejected.map((rejected) => `- ${rejected.findingId}: ${rejected.reason}`),
-      ...(record.verification ?? []).map(
-        (entry) =>
-          `- cycle ${record.cycle}, candidate reviewed at ${record.reviewAt ?? record.at}, ${entry.id}: ${entry.status} — ${entry.output}`,
-      ),
-    ])
-    .join('\n');
-}
-
 function reviewPlanningAnswers(state: WorkflowState): string {
   return (state.userAnswers ?? [])
     .map((answer) => `- ${answer.reply} → ${answer.answer}`)
-    .join('\n');
-}
-
-export function checkVerificationStatus(
-  runs: readonly CheckRunResult[],
-): 'pass' | 'fail' | 'unverified' {
-  if (runs.some((run) => run.status === 'fail')) return 'fail';
-  if (runs.length > 0 && runs.every((run) => run.status === 'pass')) return 'pass';
-  return 'unverified';
-}
-
-export function checkVerificationOutput(runs: readonly CheckRunResult[]): string {
-  return runs
-    .map((run) => {
-      const output = run.output.trim();
-      return `${run.checkId}: ${run.status}${output === '' ? '' : ` — ${output}`}`;
-    })
     .join('\n');
 }
 
@@ -273,6 +253,9 @@ async function verifyReviewClaims(args: {
 }): Promise<ReviewVerification> {
   const entries: ReviewRecord['verification'] = [];
   const map = new Map<string, 'pass' | 'fail' | 'unverified'>();
+  if (args.state.pendingTriage?.inputs.some((input) => input.source === 'check')) {
+    return { entries, map };
+  }
   const criterionCheckIds = (criterionId: string | null): readonly string[] =>
     args.state.plan?.criteria.find((criterion) => criterion.id === criterionId)?.checkIds ?? [];
   const run = async (
@@ -348,8 +331,7 @@ export async function runFinalReviewPhase(opts: {
   scope?: 'final' | 'task' | undefined;
   /**
    * The full suite and required checks run on the candidate before the review
-   * call. The caller supplies it because the triage it may start needs the
-   * planner, which this phase does not hold.
+   * call. New failures become pending inputs in the review answer.
    */
   preReview?: ((state: WorkflowState) => Promise<PreReviewResult>) | undefined;
 }): Promise<FinalReviewResult> {
@@ -378,8 +360,7 @@ export async function runFinalReviewPhase(opts: {
     opts.setTrackedState?.(state);
   }
 
-  // The pre-review owns the candidate: a required check that cannot run halts
-  // before the review, and a failing check enters triage instead of it.
+  // A required check that cannot run halts before the review.
   if (opts.preReview !== undefined) {
     const pre = await opts.preReview(state);
     state = pre.state;
@@ -389,6 +370,7 @@ export async function runFinalReviewPhase(opts: {
         state,
         summaryBase,
         verdict: null,
+        fixWork: null,
         reviewText: '',
         reviewStatus: 'failed',
         preReview: pre.kind,
@@ -417,7 +399,14 @@ export async function runFinalReviewPhase(opts: {
       duration: Date.now() - finalReviewStart,
       summary: 'Final review aborted',
     });
-    return { state, summaryBase, verdict: null, reviewText: '', reviewStatus: 'failed' };
+    return {
+      state,
+      summaryBase,
+      verdict: null,
+      fixWork: null,
+      reviewText: '',
+      reviewStatus: 'failed',
+    };
   };
   if (opts.signal?.aborted) return interrupted();
   publishPlannerStatus(bus, state, 'running', reviewSeat);
@@ -428,6 +417,7 @@ export async function runFinalReviewPhase(opts: {
   let writeStatus: 'written' | 'failed' = 'written';
   let reviewText = '';
   let verdict: FinalReview | null = null;
+  let fixWork: TriageResult | null = null;
   let reviewScope: RunReviewScope | undefined;
   let failure: FinalReviewResult['failure'];
   let fullPrompt = '';
@@ -505,8 +495,17 @@ export async function runFinalReviewPhase(opts: {
     const scope = reviewScopeFor(state, opts.scope ?? 'final');
     // Coverage is a contract rule: an incomplete or invented answer fails the
     // schema, so the seat gets its one repair instead of a silent pass.
-    const verdictSchema = ReviewVerdictSchema.superRefine((candidate, ctx) => {
-      for (const message of verdictCoverageErrors(candidate, scope)) {
+    const verdictSchema = ReviewAnswerSchema.superRefine((candidate, ctx) => {
+      for (const message of [
+        ...verdictCoverageErrors(candidate, scope),
+        ...triageContractErrors(
+          candidate,
+          state.plan,
+          candidate.findings,
+          state.pendingTriage?.inputs ?? [],
+          state.tasks,
+        ),
+      ]) {
         ctx.addIssue({ code: 'custom', message });
       }
     });
@@ -550,7 +549,9 @@ export async function runFinalReviewPhase(opts: {
       .filter((entry) => entry.files.length > 0);
     const checkResults = reviewCheckResults(state);
     const consultLog = reviewConsultLog(state);
-    const triageLog = reviewTriageLog(state);
+    const triageLog = triageLines(state.triage ?? []);
+    const pendingInputs = state.pendingTriage?.inputs ?? [];
+    const fixCycle = fixCyclesOf(state).used + 1;
     const planningAnswers = reviewPlanningAnswers(state);
 
     // An API seat reads no file of its own, so it is dispatched only once the
@@ -575,6 +576,8 @@ export async function runFinalReviewPhase(opts: {
         consultLog,
         triageLog,
         planningAnswers,
+        pendingInputs,
+        fixCycle,
         ...(renders.section !== undefined && { renders: renders.section }),
         ...(opts.skillsContext !== undefined && { skillsContext: opts.skillsContext }),
         ...(reviewRunner.contextLength !== undefined && {
@@ -609,6 +612,8 @@ export async function runFinalReviewPhase(opts: {
           consultLog,
           triageLog,
           planningAnswers,
+          pendingInputs,
+          fixCycle,
           taskIds: scope.taskIds,
           criterionIds: scope.criterionIds,
           changeCoverage: reviewScope.description,
@@ -652,7 +657,7 @@ export async function runFinalReviewPhase(opts: {
     // with the operator's note on the end, never a session resume.
     let seed = opts.continuation?.take(reviewStep);
 
-    const callReviewer = async (prompt: string): Promise<RequestTypedResult<ReviewVerdict>> => {
+    const callReviewer = async (prompt: string): Promise<RequestTypedResult<ReviewAnswer>> => {
       if (opts.sinks === undefined) {
         const call = await runReviewerCall({
           reviewer,
@@ -671,7 +676,7 @@ export async function runFinalReviewPhase(opts: {
       }
       const loopSeed = seed;
       seed = undefined;
-      const loop = await withContinuationLoop<RequestTypedResult<ReviewVerdict>>({
+      const loop = await withContinuationLoop<RequestTypedResult<ReviewAnswer>>({
         ctx: {
           projectDir,
           sessionId,
@@ -717,7 +722,16 @@ export async function runFinalReviewPhase(opts: {
       failure = { kind: 'seat-protocol-error', error: typed.error };
       throw typed.error;
     }
-    let reviewerVerdict = typed.value;
+    const answer = typed.value;
+    const { tasks, criteria, findings } = answer;
+    let reviewerVerdict: ReviewVerdict = { tasks, criteria, findings };
+    fixWork = {
+      fixTasks: answer.fixTasks,
+      rejected: answer.rejected,
+      verify: answer.verify,
+      ask: answer.ask,
+    };
+    const fixVerification = await runTriageVerification(opts, state, fixWork);
     const verification = await verifyReviewClaims({
       verdict: reviewerVerdict,
       state,
@@ -760,6 +774,28 @@ export async function runFinalReviewPhase(opts: {
       type: 'RECORD_REVIEW',
       review: record,
     });
+    if (
+      fixWork.fixTasks.length > 0 ||
+      fixWork.verify.length > 0 ||
+      fixWork.rejected.length > 0 ||
+      fixWork.ask !== null
+    )
+      state = transitionAndSave({ projectDir, sessionId }, state, {
+        type: 'RECORD_TRIAGE',
+        record: {
+          cycle: fixCyclesOf(state).used + 1,
+          at: nowIso(),
+          reviewAt: record.at,
+          inputIds: [
+            ...findings
+              .filter((finding) => finding.severity === 'blocking' && finding.kind !== 'unverified')
+              .map((finding) => finding.id),
+            ...(state.pendingTriage?.inputs ?? []).map((input) => input.id),
+          ],
+          result: fixWork,
+          ...(fixVerification.length > 0 && { verification: fixVerification }),
+        },
+      });
     verdict = { verdict: reviewerVerdict, outcome };
     reviewText = renderReviewMarkdown(reviewerVerdict, outcome);
     writeSpecFile(
@@ -870,5 +906,13 @@ export async function runFinalReviewPhase(opts: {
 
   const reviewStatus: ReviewPhaseStatus =
     writeStatus === 'failed' || verdict === null ? 'failed' : 'written';
-  return { state, summaryBase, verdict, reviewText, reviewStatus, ...(failure && { failure }) };
+  return {
+    state,
+    summaryBase,
+    verdict,
+    fixWork,
+    reviewText,
+    reviewStatus,
+    ...(failure && { failure }),
+  };
 }

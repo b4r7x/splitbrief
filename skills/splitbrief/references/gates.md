@@ -57,9 +57,8 @@ The brief gate's test stage runs only the tests affected by the brief's files an
 For a new run, create `.splitbrief/runs/<YYYY-MM-DD>-<HHmmss>-<slug>/`; append a suffix on collision.
 Write its path to `.splitbrief/current-run`. Record whether `.splitbrief/` is ignored.
 Save baseline hashes and bytes before any dispatch. Preserve pre-existing edits.
-For a saved run or failed review, retain the original baseline and its validation results.
-Run resolved stages once before execution. Record commands, output, exits and failure sets.
-An unchanged baseline failure is not a new implementer failure. Record it explicitly; it proves no criterion by itself.
+For a saved run or failed review, retain the original baseline.
+A failure also red on the run base copy is pre-existing, not an implementer failure. Record it explicitly; it proves no criterion by itself.
 A new failure is a red at the gate that finds it, including a failure in a file outside the suggestions.
 A stage that cannot run is unavailable, with its reason. A required unavailable check blocks review pass.
 Ask the planner to repair defective tooling through a task. Keep the requirement that the command verifies.
@@ -103,6 +102,7 @@ At cadence=end, run no stack gate and no check after an ordinary task.
 At cadence=task, run the affected tests and the due checks after each task. A red goes to that task's retry ladder.
 A due check is a check of the task, or of a criterion whose serving tasks are all done.
 Before the final review, run the full suite and every registered check. Only required checks decide a red.
+When a gate is red, re-run only the failing tests or command on the run base copy. A failure also red there is pre-existing: report it, and route no task to it.
 A red that names only files of one completed task reopens that task with the exact errors.
 Triage any other red into appended fix tasks with new ids. Run the gates again after each fix cycle.
 Log check ids, commands, output, exits and artifact paths in validation.md.

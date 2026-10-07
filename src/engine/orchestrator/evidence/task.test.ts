@@ -70,6 +70,25 @@ describe('recordLocalTaskEvidence', () => {
     ]);
   });
 
+  it('records the failures a stage also showed at the run base as pre-existing', () => {
+    const entries = checkEntries({
+      validation: [
+        {
+          passed: false,
+          stage: 'test',
+          command: 'npm test',
+          exitCode: 1,
+          error: 'FAIL src/legacy.test.ts > adds\n  ❯ src/legacy.test.ts:5:20',
+          preExisting: ['src/legacy.test.ts:5'],
+        },
+        failing('typecheck', 'src/fresh.ts(1,1): error TS2304'),
+      ],
+    });
+
+    expect(entries[0]).toMatchObject({ id: 'test', preExisting: ['src/legacy.test.ts:5'] });
+    expect(entries[1]).not.toHaveProperty('preExisting');
+  });
+
   it('keeps the validation command and recorded output so the review can quote them', () => {
     const task = makeTask();
     const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });

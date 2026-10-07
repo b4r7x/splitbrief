@@ -84,13 +84,6 @@ export type StateAction =
   | { type: 'CLEAR_PLANNER_CONVERSATION' }
   | { type: 'SET_PLANNER_SESSION_ID'; sessionId: string | null }
   | { type: 'RESET_TASK'; taskId: TaskId }
-  | {
-      type: 'REOPEN_TASK';
-      taskId: TaskId;
-      failure: NonNullable<NonNullable<WorkflowState['lineages']>[string]['gateFailure']> & {
-        output: string;
-      };
-    }
   | { type: 'REPLACE_TASK'; taskId: TaskId; task: Task }
   | { type: 'INSERT_TASKS'; parentId: TaskId | null; afterTaskId?: TaskId; tasks: Task[] }
   | {

@@ -1,8 +1,8 @@
+import { runBaseOf } from '../isolation/base-tree.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { ValidationStage } from '../../../core/schemas/enums.js';
 import { dueCriterionIds } from '../../../core/review/verdict.js';
-import { lineageIdOf } from '../../../core/state/task-insert.js';
 import type { WorkflowContext } from '../types.js';
 import { recordCheckRuns } from '../evidence/record-checks.js';
 import { formatValidationError, validationFailureLine } from '../validation/format-error.js';
@@ -48,12 +48,9 @@ export async function runBriefGate(opts: {
   const { wctx, task, changedFiles } = opts;
   let state = opts.state;
   const track = opts.setTrackedState ?? (() => {});
-  // A reopened brief rechecks what failed at the pre-review on top of what its cadence runs.
-  const failure = state.lineages?.[lineageIdOf(task)]?.gateFailure;
   const cadence = wctx.config.workflow.review ?? 'end';
-  const stages: ValidationStage[] = [
-    ...new Set([...(cadence === 'task' ? ['test' as const] : []), ...(failure?.stages ?? [])]),
-  ].filter((stage) => wctx.config.validation[stage]);
+  const stages: ValidationStage[] =
+    cadence === 'task' && wctx.config.validation.test ? ['test'] : [];
   const due = new Set(dueCriterionIds(state, task.id));
   const checkIds = [
     ...new Set([
@@ -68,11 +65,9 @@ export async function runBriefGate(opts: {
               .flatMap((criterion) => criterion.checkIds),
           ]
         : []),
-      ...(failure?.checkIds ?? []),
       ...(opts.checkIds ?? []),
     ]),
   ];
-  const files = [...new Set([...changedFiles, ...(failure?.files ?? [])])];
   const validationOptions = {
     task,
     projectDir: wctx.workspaceDir,
@@ -113,9 +108,9 @@ export async function runBriefGate(opts: {
       ...validationOptions,
       phase: state.phase,
       stages,
-      changedFiles: files,
-      baseline: state.fullSuiteBaseline,
-      testMode: failure?.stages.includes('test') ? 'check' : 'related',
+      changedFiles,
+      base: runBaseOf(wctx, state),
+      testMode: 'related',
     });
     await recordCheckRuns({ ...wctx, state, task, validation: validationResults });
     const checked = await runTaskChecks({
@@ -129,11 +124,7 @@ export async function runBriefGate(opts: {
     state = checked.state;
     runs = checked.runs;
   }
-  const stageAcceptance = acceptValidationResults(
-    validationResults,
-    state.fullSuiteBaseline,
-    files,
-  );
+  const stageAcceptance = acceptValidationResults(validationResults, changedFiles);
   const registry = checkRegistry({ task, tasks: state.tasks, plan: state.plan });
   const selected = new Set(opts.checkIds ?? []);
   const failedChecks = runs.filter((run) =>

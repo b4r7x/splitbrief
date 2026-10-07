@@ -124,6 +124,51 @@ describe('validation output redaction', () => {
     expect(results[0]?.output?.length).toBe(4096);
   });
 
+  it('names the failing tests of a red test stage from the whole output, never the noise its passing tests wrote last', async () => {
+    const stderr = [
+      '⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯',
+      '',
+      ' FAIL  |default| src/totals.test.ts > totals > adds tax',
+      'AssertionError: expected 3 to be 4',
+      ' ❯ src/totals.test.ts:12:20',
+      '',
+      ...Array.from(
+        { length: 60 },
+        (_, i) =>
+          `Isolation cleanup failed for session sess-${i}: ENOENT: no such file or directory, rm '/var/folders/k8/T/task-step-test-${i}/state.json'`,
+      ),
+    ].join('\n');
+    const result = await runValidationStep({
+      stage: 'test',
+      cmd: 'npm',
+      args: ['test'],
+      source: 'config',
+      cwd: tempDir,
+      timeout: 1000,
+      runCommand: makeCommandRunner(
+        processError.exitCode({
+          command: 'npm test',
+          code: 1,
+          stderr,
+          output: ' Test Files  1 failed | 9 passed (10)\n      Tests  1 failed | 40 passed (41)',
+        }),
+      ),
+      command: 'npm test',
+    });
+
+    expect(result.passed).toBe(false);
+    expect(result.failingTests).toEqual([
+      {
+        file: 'src/totals.test.ts',
+        name: 'totals > adds tax',
+        message: 'AssertionError: expected 3 to be 4',
+      },
+    ]);
+    expect(result.error).toContain('FAIL  src/totals.test.ts > totals > adds tax');
+    expect(result.error).toContain('AssertionError: expected 3 to be 4');
+    expect(result.error).not.toContain('Isolation cleanup failed');
+  });
+
   it('keeps the tail of long passing test output so the runner summary line survives', async () => {
     const filler = Array.from({ length: 400 }, (_, i) => `check ${i} passed`).join('\n');
     const stdout = `${filler}\nTest Files  1 passed (1)\n     Tests  4 passed (4)`;

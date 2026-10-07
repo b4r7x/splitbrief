@@ -74,5 +74,8 @@ const { $schema: _reviewDraftRef, ...reviewVerdictJsonSchema } =
   z.toJSONSchema(ReviewVerdictSchema);
 export const REVIEW_VERDICT_JSON_SCHEMA = reviewVerdictJsonSchema;
 
-const { $schema: _triageDraftRef, ...triageResultJsonSchema } = z.toJSONSchema(TriageResultSchema);
-export const TRIAGE_RESULT_JSON_SCHEMA = triageResultJsonSchema;
+export const ReviewAnswerSchema = ReviewVerdictSchema.extend(TriageResultSchema.shape);
+export type ReviewAnswer = z.infer<typeof ReviewAnswerSchema>;
+
+const { $schema: _answerDraftRef, ...reviewAnswerJsonSchema } = z.toJSONSchema(ReviewAnswerSchema);
+export const REVIEW_ANSWER_JSON_SCHEMA = reviewAnswerJsonSchema;

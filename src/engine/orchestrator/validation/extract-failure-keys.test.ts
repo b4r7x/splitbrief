@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractFailureKeys } from './extract-failure-keys.js';
+import { extractFailureKeys, stageFailureKeys } from './extract-failure-keys.js';
 
 describe('extractFailureKeys', () => {
   it('keys a tsc diagnostic by path, line and column', () => {
@@ -82,5 +82,59 @@ describe('extractFailureKeys', () => {
 
   it('normalizes backslash separators', () => {
     expect(extractFailureKeys('src\\x.ts(12,5): error TS2322')).toEqual(['src/x.ts(12,5)']);
+  });
+});
+
+describe('stageFailureKeys', () => {
+  it('keys a test timeout by the timeout rather than missing diagnostics', () => {
+    expect(stageFailureKeys({ passed: false, stage: 'test', timedOut: true })).toEqual([
+      'test timed out',
+    ]);
+  });
+
+  it('keys a red test stage by its failing tests, file and name', () => {
+    expect(
+      stageFailureKeys({
+        passed: false,
+        stage: 'test',
+        exitCode: 1,
+        error: 'FAIL  src/totals.test.ts > totals > adds tax\nAssertionError: expected 3 to be 4',
+        failingTests: [
+          {
+            file: 'src/totals.test.ts',
+            name: 'totals > adds tax',
+            message: 'AssertionError: expected 3 to be 4',
+          },
+          { file: 'src/broken.test.ts', name: '', message: 'Error: Cannot find module' },
+          { file: '', name: 'TestTotals', message: 'got 3, want 4' },
+        ],
+      }),
+    ).toEqual(['src/totals.test.ts::totals > adds tax', 'src/broken.test.ts', 'TestTotals']);
+  });
+
+  it('never keys a red test stage by the lines its passing tests wrote', () => {
+    expect(
+      stageFailureKeys({
+        passed: false,
+        stage: 'test',
+        exitCode: 1,
+        error: [
+          "Isolation cleanup failed for session sess-1: ENOENT: no such file or directory, rm '/var/folders/k8/T/task-step-test-WMQyd9/state.json:3'",
+          'heartbeat write failed; liveness pings paused',
+          'implementer-temperature: dropped (cli backend claude-code does not take a temperature)',
+        ].join('\n'),
+      }),
+    ).toEqual(['test exited with code 1']);
+  });
+
+  it('keeps keying a typecheck stage by its diagnostics', () => {
+    expect(
+      stageFailureKeys({
+        passed: false,
+        stage: 'typecheck',
+        exitCode: 2,
+        error: 'src/x.ts(12,5): error TS2322: Type mismatch.',
+      }),
+    ).toEqual(['src/x.ts(12,5)']);
   });
 });

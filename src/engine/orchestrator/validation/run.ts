@@ -1,8 +1,8 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { Config } from '../../../core/schemas/config.js';
-import type { ValidationStage } from '../../../core/schemas/enums.js';
-import type { DiscoveredValidation, FullSuiteStageRuns } from '../../../core/schemas/workflow.js';
-import type { ValidationStageCommands, ValidationStages } from '../../events/types.js';
+import type { Phase, ValidationStage } from '../../../core/schemas/enums.js';
+import type { DiscoveredValidation } from '../../../core/schemas/workflow.js';
+import type { EventBus, ValidationStageCommands, ValidationStages } from '../../events/types.js';
 import {
   GATE_ORDER,
   NO_GATES_WARNING,
@@ -24,7 +24,9 @@ import { runCommand } from '../../../lib/process/spawn/run-command.js';
 import { labelError } from '../../../utils/format-errors.js';
 import { parseShellCommand } from '../../../utils/parse-shell-command.js';
 import { publishFullSuite, publishValidation, publishWarning } from '../events.js';
-import { acceptValidationResults } from './acceptance.js';
+import { acceptValidationResults, evidenceNamesChangedFile } from './acceptance.js';
+import { withRunBaseTree, type RunBase } from '../isolation/base-tree.js';
+import { failingFilesOf } from '../task/file-owner.js';
 import { stageFailureKeys } from './extract-failure-keys.js';
 import { sanitizeDiscoveredValidation } from '../planning/sanitize-discovered-validation.js';
 import { fingerprintFiles } from '../changed-files-baseline.js';
@@ -46,17 +48,6 @@ const FULL_SUITE_TASK: Pick<Task, 'suggestedFiles'> = { suggestedFiles: [''] };
 
 function resolveValidationTimeout(config: Config): number {
   return config.validation.timeoutMs ?? DEFAULT_VALIDATION_TIMEOUT_MS;
-}
-
-function fullSuiteTimeoutReason(timeoutMs: number): string {
-  return `timed out after ${Math.round(timeoutMs / 1000)}s at the run-start baseline`;
-}
-
-export function fullSuiteTimeoutWarning(
-  stage: ValidationStage,
-  run: { durationMs: number; timeoutMs: number },
-): string {
-  return `The ${stage} stage of the full suite ${fullSuiteTimeoutReason(run.timeoutMs)} (measured ${(run.durationMs / 1000).toFixed(1)}s); this run does not run it again. Set validation.timeoutMs (now ${run.timeoutMs}) above the suite's time to check it.`;
 }
 
 type StageContext = {
@@ -151,7 +142,7 @@ async function formatFiles(opts: {
 
 export function planStage(
   stage: ValidationStage,
-  task: Pick<Task, 'suggestedFiles'>,
+  task: { suggestedFiles: readonly string[] },
   ctx: StageContext,
   changedFiles: readonly string[],
   mode: TestTargetMode = 'related',
@@ -188,20 +179,92 @@ export function planStage(
   };
 }
 
+async function markPreExisting(input: {
+  red: readonly ValidationResult[];
+  ctx: StageContext;
+  base: RunBase;
+  workspaceDir: string;
+  config: Config;
+  bus: EventBus;
+  phase: Phase;
+  signal: AbortSignal | undefined;
+  runCommand: ValidationCommandRunner;
+}): Promise<ValidationResult[]> {
+  const eligible = input.red.filter(
+    (result) => result.stage !== 'test' || (result.failingTests?.length ?? 0) > 0,
+  );
+  if (eligible.length === 0) return [...input.red];
+  return withRunBaseTree(input.base, async (dir) => {
+    const at = { ...input.ctx, projectDir: dir };
+    const results: ValidationResult[] = [];
+    for (const result of input.red) {
+      if (result.stage === 'test' && (result.failingTests?.length ?? 0) === 0) {
+        results.push(result);
+        continue;
+      }
+      const files = result.stage === 'test' ? failingFilesOf(result, input.workspaceDir) : [];
+      const plan =
+        files.length === 0
+          ? planStage(result.stage, FULL_SUITE_TASK, at, [], 'full')
+          : planStage('test', { suggestedFiles: [] }, at, files, 'check');
+      if (plan.kind === 'skip') {
+        results.push(result);
+        continue;
+      }
+      const notices = { bus: input.bus, phase: input.phase };
+      const startedAt = Date.now();
+      publishFullSuite(notices, {
+        status: 'running',
+        stage: result.stage,
+        command: plan.command,
+        moment: 'base',
+      });
+      const checked = await runValidationStep({
+        stage: result.stage,
+        cmd: plan.resolved.cmd,
+        args: plan.args,
+        source: plan.resolved.source,
+        cwd: dir,
+        timeout: resolveValidationTimeout(input.config),
+        runCommand: input.runCommand,
+        command: plan.command,
+        stack: input.ctx.stack,
+        signal: input.signal,
+      });
+      publishFullSuite(notices, {
+        status: 'done',
+        stage: result.stage,
+        command: plan.command,
+        moment: 'base',
+        passed: checked.passed,
+        duration: Date.now() - startedAt,
+      });
+      const keys = stageFailureKeys(result);
+      let preExisting: string[] = [];
+      if (!checked.passed && checked.skipped !== true) {
+        if (result.timedOut === true) {
+          if (checked.timedOut === true) preExisting = keys;
+        } else if (checked.timedOut !== true) {
+          const known = new Set(
+            stageFailureKeys(checked).map((key) =>
+              result.stage === 'test' ? key : key.replaceAll(`${dir}/`, ''),
+            ),
+          );
+          preExisting = keys.filter((key) =>
+            known.has(result.stage === 'test' ? key : key.replaceAll(`${input.workspaceDir}/`, '')),
+          );
+        }
+      }
+      results.push(preExisting.length === 0 ? result : { ...result, preExisting });
+    }
+    return results;
+  });
+}
+
 export function createValidator(deps: ValidatorDeps = {}): Validator {
   const commandRunner = deps.runCommand ?? runCommand;
   async function runFullSuite(opts: RunFullSuiteOptions): Promise<RunFullSuiteResult> {
-    const {
-      projectDir,
-      config,
-      bus,
-      phase,
-      moment,
-      discoveredValidation,
-      signal,
-      baseline,
-      baselineStages,
-    } = opts;
+    const { projectDir, config, bus, phase, discoveredValidation, signal, base } = opts;
     const ctx = buildStageContext({
       projectDir,
       config,
@@ -209,35 +272,31 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
       notices: { bus, phase },
     });
     const results: ValidationResult[] = [];
-    const failures: Partial<Record<ValidationStage, string[]>> = {};
     const newFailures: Partial<Record<ValidationStage, string[]>> = {};
-    const stages: FullSuiteStageRuns = {};
-    const configuredTimeout = resolveValidationTimeout(config);
     for (const stage of GATE_ORDER) {
       if (!config.validation[stage]) continue;
-      const baselineStage = baselineStages?.[stage];
-      if (baselineStage?.kind === 'timed-out') {
-        results.push(skippedStage(stage, fullSuiteTimeoutReason(baselineStage.timeoutMs)));
-        continue;
-      }
       const plan = planStage(stage, FULL_SUITE_TASK, ctx, [], 'full');
       if (plan.kind === 'skip') {
         results.push(skippedStage(stage, plan.reason));
         continue;
       }
-      const timeout =
-        baselineStage?.kind === 'completed'
-          ? Math.max(configuredTimeout, 3 * baselineStage.durationMs)
-          : configuredTimeout;
       const startedAt = Date.now();
-      publishFullSuite({ bus, phase }, { status: 'running', stage, command: plan.command, moment });
+      publishFullSuite(
+        { bus, phase },
+        {
+          status: 'running',
+          stage,
+          command: plan.command,
+          moment: 'pre-review',
+        },
+      );
       const result = await runValidationStep({
         stage,
         cmd: plan.resolved.cmd,
         args: plan.args,
         source: plan.resolved.source,
         cwd: ctx.projectDir,
-        timeout,
+        timeout: resolveValidationTimeout(config),
         runCommand: commandRunner,
         command: plan.command,
         stack: ctx.stack,
@@ -250,30 +309,53 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
           status: 'done',
           stage,
           command: plan.command,
-          moment,
+          moment: 'pre-review',
           passed: result.passed,
           duration: durationMs,
         },
       );
-      results.push(result);
-      if (result.skipped !== true) {
-        stages[stage] =
-          result.timedOut === true
-            ? { kind: 'timed-out', durationMs, timeoutMs: timeout }
-            : { kind: 'completed', durationMs };
+      let checked = result;
+      if (!result.passed && result.skipped !== true && base !== undefined) {
+        [checked = result] = await markPreExisting({
+          red: [result],
+          ctx,
+          base,
+          workspaceDir: projectDir,
+          config,
+          bus,
+          phase,
+          signal,
+          runCommand: commandRunner,
+        });
       }
-      if (result.passed) continue;
-      const keys = stageFailureKeys(result);
-      if (result.timedOut === true) {
-        if (baseline !== undefined) newFailures[stage] = keys;
-        continue;
+      results.push(checked);
+      if (checked.passed || checked.skipped === true) continue;
+      const fresh = stageFailureKeys(checked).filter((key) => !checked.preExisting?.includes(key));
+      if (fresh.length > 0) {
+        newFailures[stage] = fresh;
+        for (const next of GATE_ORDER.slice(GATE_ORDER.indexOf(stage) + 1)) {
+          if (!config.validation[next]) continue;
+          const plan = planStage(next, FULL_SUITE_TASK, ctx, [], 'full');
+          const command = plan.kind === 'run' ? plan.command : next;
+          results.push({
+            ...skippedStage(next, `${stage} failed`),
+            command,
+            output: `not run: ${stage} failed`,
+          });
+          publishFullSuite(
+            { bus, phase },
+            {
+              status: 'not-run',
+              stage: next,
+              command,
+              moment: 'pre-review',
+            },
+          );
+        }
+        break;
       }
-      failures[stage] = keys;
-      const known = baseline?.[stage];
-      const fresh = known === undefined ? keys : keys.filter((key) => !known.includes(key));
-      if (fresh.length > 0) newFailures[stage] = fresh;
     }
-    return { results, failures, newFailures, stages };
+    return { results, newFailures };
   }
 
   async function runValidation(opts: RunValidationOptions): Promise<ValidationResult[]> {
@@ -291,7 +373,7 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
     const skipReasons: Partial<Record<ValidationStage, string>> = {};
     const stages: ValidationStages = { typecheck: false, lint: false, test: false };
     const commands: ValidationStageCommands = {};
-    const accept = () => acceptValidationResults(results, opts.baseline, opts.changedFiles);
+    const accept = () => acceptValidationResults(results, opts.changedFiles);
     for (const stage of GATE_ORDER) {
       if (!opts.stages.includes(stage) || !config.validation[stage]) continue;
       const plan = planStage(stage, task, ctx, opts.changedFiles, opts.testMode);
@@ -308,7 +390,7 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
         startTime,
         commands: { ...commands },
       });
-      const result = await runValidationStep({
+      let result = await runValidationStep({
         stage,
         cmd: plan.resolved.cmd,
         args: plan.args,
@@ -321,6 +403,24 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
         signal,
         changedFiles: opts.changedFiles,
       });
+      if (
+        !result.passed &&
+        result.skipped !== true &&
+        opts.base !== undefined &&
+        !evidenceNamesChangedFile(result, opts.changedFiles)
+      ) {
+        [result = result] = await markPreExisting({
+          red: [result],
+          ctx,
+          base: opts.base,
+          workspaceDir: projectDir,
+          config,
+          bus,
+          phase,
+          signal,
+          runCommand: commandRunner,
+        });
+      }
       results.push(result);
       if (!accept().accepted) break;
       if (result.passed && result.skipped !== true) stages[stage] = true;
@@ -362,7 +462,7 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
   }
 
   async function formatChangedFiles(
-    opts: Omit<RunValidationOptions, 'stages' | 'baseline'>,
+    opts: Omit<RunValidationOptions, 'stages' | 'base'>,
   ): Promise<void> {
     if (!opts.config.validation.lint || opts.changedFiles.length === 0) return;
     const ctx = buildStageContext({

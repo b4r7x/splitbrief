@@ -455,6 +455,21 @@ describe('parseEngineEvent', () => {
     );
   });
 
+  it('accepts a full_suite event for the base re-run and drops a run-start suite row', () => {
+    const event = {
+      type: 'full_suite',
+      ts: 1,
+      phase: 'final-review',
+      status: 'running',
+      stage: 'test',
+      command: 'npm test -- src/legacy.test.ts',
+    };
+    expect(parseEngineEvent({ ...event, moment: 'base' })).toEqual(
+      expect.objectContaining({ type: 'full_suite', moment: 'base' }),
+    );
+    expect(parseEngineEvent({ ...event, phase: 'implementing', moment: 'baseline' })).toBeNull();
+  });
+
   it('accepts a full_suite done event and rejects an unknown moment', () => {
     expect(
       parseEngineEvent({

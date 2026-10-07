@@ -289,7 +289,7 @@ export function publishValidation(ctx: BusContext, taskId: TaskId, opts: Validat
 export function publishFullSuite(
   ctx: BusContext,
   opts: {
-    status: 'running' | 'done';
+    status: 'running' | 'done' | 'not-run';
     stage: ValidationStage;
     command: string;
     moment: FullSuiteMoment;

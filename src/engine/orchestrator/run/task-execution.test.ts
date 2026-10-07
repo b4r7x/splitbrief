@@ -19,8 +19,7 @@ import {
   failedReviewVerdict,
   passingReviewVerdict,
   planFromTasks,
-  rejectingTriageResult,
-  typedCallPlanReviewAndTriage,
+  typedCallPlanAndReview,
 } from '#testing/helpers/typed-planner.js';
 import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -142,18 +141,19 @@ function runOptions(opts: {
   const reviewPrompts: string[] = [];
   const triagePrompts: string[] = [];
   const reviewer = makePlanner({
-    typedCall: typedCallPlanReviewAndTriage(
+    typedCall: typedCallPlanAndReview(
       () => planFromTasks(opts.state.tasks),
       (prompt, call) => {
         reviewPrompts.push(prompt);
-        if (typeof opts.review === 'function') return opts.review(prompt, call);
-        return opts.review;
-      },
-      (prompt, call) => {
+        const verdict = typeof opts.review === 'function' ? opts.review(prompt, call) : opts.review;
+        if (
+          opts.triage === undefined ||
+          (verdict.findings.length === 0 && prompt.includes('## Pending Inputs\nNone.'))
+        )
+          return verdict;
         triagePrompts.push(prompt);
-        return opts.triage === undefined
-          ? rejectingTriageResult(prompt)
-          : opts.triage(prompt, call);
+        const fixWork = opts.triage(prompt, call);
+        return typeof fixWork === 'string' ? fixWork : { ...verdict, ...fixWork };
       },
     ),
   });
@@ -524,7 +524,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
     };
   }
 
-  it('a failing review triages once, appends its fix task and the next review passes', async () => {
+  it('a failing review returns its fix task and the next review passes', async () => {
     const { projectDir, sessionId, head } = setupProject();
     const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
     const onComplete = vi.fn();
@@ -583,7 +583,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
     expect(fixed?.suggestedFiles[0]).toBe('src/shared/widget.ts');
     expect(result.state.tasks[0]?.status).toBe('done');
     expect(result.state.fixCycles?.used).toBe(1);
-    expect(result.state.plannerCalls?.used).toBe(1);
+    expect(result.state.plannerCalls?.used ?? 0).toBe(0);
     expect(events.find((e) => e.type === 'review_fix_started')).toMatchObject({
       cycle: 1,
       taskIds: ['T002'],
@@ -591,40 +591,6 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
     expect(vi.mocked(implementer.implement).mock.calls.map((call) => call[0].task.id)).toContain(
       'T002',
     );
-  });
-
-  it('spends a fix cycle even when the triage appends nothing, and halts at the cap', async () => {
-    const { projectDir, sessionId, head } = setupProject();
-    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
-    const onComplete = vi.fn();
-    const { events, implementer, triagePrompts, options } = runOptions({
-      projectDir,
-      sessionId,
-      state: plannedState(tasks, head),
-      review: (prompt) =>
-        failedReviewVerdict(prompt, 'src/alpha.ts drops the error', { taskId: 'T001' }),
-      onComplete,
-    });
-
-    const result = await runTasksAndReview(options);
-
-    expect(result.completed).toBe(false);
-    expect(onComplete).not.toHaveBeenCalled();
-    expect(triagePrompts).toHaveLength(2);
-    expect(result.state.fixCycles).toEqual({ used: 2, allowance: 2, notes: [] });
-    expect(result.state.reviewStatus).toBe('failed');
-    expect(result.state.pendingRecovery).toMatchObject({
-      reason: 'review-failed',
-      message: 'Final review failed after 2 fix cycles',
-    });
-    expect(result.state.pendingRecovery?.availableActions).toContain('accept-as-is');
-    expect(events.find((e) => e.type === 'workflow_complete')).toMatchObject({
-      review: 'failed',
-      blocking: 1,
-    });
-    // Nothing was appended, so there is nothing to reopen and no cycle to announce.
-    expect(events.find((e) => e.type === 'review_fix_started')).toBeUndefined();
-    expect(implementer.retry).not.toHaveBeenCalled();
   });
 
   it('the cap halt names the spent cycles and offers the exits', async () => {
@@ -752,33 +718,6 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
     expect(existsSync(join(sessionDir(projectDir, sessionId), 'run.patch'))).toBe(false);
   });
 
-  it('a spent planner-call bound halts the triage on the plan seat', async () => {
-    const { projectDir, sessionId, head } = setupProject();
-    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
-    const { options, triagePrompts } = runOptions({
-      projectDir,
-      sessionId,
-      state: {
-        ...plannedState(tasks, head),
-        plannerCalls: { used: 10, allowance: 10 },
-      },
-      review: (prompt) =>
-        failedReviewVerdict(prompt, 'src/alpha.ts drops the error', { taskId: 'T001' }),
-      onComplete: vi.fn(),
-    });
-
-    const result = await runTasksAndReview(options);
-
-    expect(result.completed).toBe(false);
-    expect(triagePrompts).toHaveLength(0);
-    expect(result.state.pendingRecovery).toMatchObject({
-      reason: 'planner-calls-spent',
-      message: 'The run used its planner-call allowance',
-    });
-    expect(result.state.pendingRecovery?.taskId).toBeUndefined();
-    expect(result.state.pendingRecovery?.affectedTaskIds).toEqual([]);
-  });
-
   it('a fail with only unverified criteria halts without a triage', async () => {
     const { projectDir, sessionId, head } = setupProject();
     const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
@@ -816,7 +755,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
     expect(result.state.pendingRecovery?.availableActions).toContain('revise');
   });
 
-  it('a pending triage consumes the saved review without a new review call', async () => {
+  it('pending inputs reach a new review before fix work starts', async () => {
     const { projectDir, sessionId, head } = setupProject();
     const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
     const { reviewPrompts, triagePrompts, options } = runOptions({
@@ -870,8 +809,8 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
     const result = await runTasksAndReview(options);
 
     expect(result.completed).toBe(true);
-    // Only the review after the fix ran; the correction was judged by the triage alone.
-    expect(reviewPrompts).toHaveLength(1);
+    // The reviewer judges the correction and then the fixed candidate.
+    expect(reviewPrompts).toHaveLength(2);
     expect(triagePrompts).toHaveLength(1);
     expect(triagePrompts[0]).toContain('log the error, then rethrow it');
     expect(result.state.fixCycles?.used).toBe(3);
@@ -882,7 +821,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
     expect(result.state.tasks[0]?.status).toBe('done');
   });
 
-  it('obtains a typed review before triaging a correction to an old Markdown-only review', async () => {
+  it('obtains a typed review for a correction to an old Markdown-only review', async () => {
     const { projectDir, sessionId, head } = setupProject();
     const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
     const old = {
@@ -927,11 +866,11 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
     });
     const result = await runTasksAndReview(options);
     expect(result.completed).toBe(true);
-    expect(reviewPrompts).toHaveLength(2);
+    expect(reviewPrompts).toHaveLength(1);
     expect(triagePrompts).toHaveLength(1);
     expect(triagePrompts[0]).toContain('Preserve the old session correction');
     expect(result.state.tasks[0]).toEqual(tasks[0]);
-    expect(result.state.fixCycles?.used).toBe(3);
+    expect(result.state.fixCycles?.used).toBe(2);
   });
 
   it('a twice-invalid review halts with reviewer protocol recovery', async () => {
@@ -955,7 +894,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
     expect(events.find((event) => event.type === 'workflow_complete')).toBeUndefined();
   });
 
-  it('a triage protocol error halts on the plan seat', async () => {
+  it('an invalid fix answer halts on the reviewer seat', async () => {
     const { projectDir, sessionId, head } = setupProject();
     const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
     const { events, options } = runOptions({
@@ -973,7 +912,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
     expect(result.completed).toBe(false);
     expect(result.state.pendingRecovery).toMatchObject({
       reason: 'seat-protocol-error',
-      seat: 'plan',
+      seat: 'review',
     });
     expect(events.find((e) => e.type === 'workflow_complete')).toBeUndefined();
   });
@@ -1142,7 +1081,7 @@ describe('runTasksAndReview review halt', { timeout: 120_000 }, () => {
     expect(reviewPrompts).toEqual([expect.stringContaining(skillsContext)]);
   });
 
-  it('a correction after the failed review triages the saved review again and re-runs the review', async () => {
+  it('an operator correction re-reviews without running gates before its fix tasks', async () => {
     const { projectDir, sessionId, head } = setupProject();
     const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
     const failed = runOptions({
@@ -1186,7 +1125,7 @@ describe('runTasksAndReview review halt', { timeout: 120_000 }, () => {
               criteria: [],
               checks: [{ id: 'K2', kind: 'cmd', value: 'node --version', required: true }],
             }),
-            findingIds: ['F1', 'U1'],
+            findingIds: ['U2'],
           },
         ],
         rejected: [],
@@ -1194,19 +1133,34 @@ describe('runTasksAndReview review halt', { timeout: 120_000 }, () => {
         ask: null,
       }),
       onComplete,
+      validator: {
+        runFullSuite: vi.fn().mockResolvedValue({ results: [], newFailures: {} }),
+        runValidation: vi.fn().mockResolvedValue([]),
+        formatChangedFiles: vi.fn(),
+      },
+    });
+    const suite = vi.mocked(options.wctx.validator.runFullSuite);
+    const answer = options.wctx.reviewer.typedCall;
+    let reviewerCalls = 0;
+    options.wctx.reviewer = makePlanner({
+      typedCall: (ctx) => {
+        expect(suite).toHaveBeenCalledTimes(reviewerCalls++ === 0 ? 0 : 1);
+        return answer(ctx);
+      },
     });
     const result = await runTasksAndReview(options);
 
-    // The correction reached the triage as an input; no completed brief was reopened.
+    // The reviewer answers the correction while completed briefs stay done.
     expect(triagePrompts).toHaveLength(1);
     expect(triagePrompts[0]).toContain('log the error, then rethrow it');
     expect(implementer.retry).not.toHaveBeenCalled();
     const fixed = result.state.tasks[1];
     expect(fixed?.fix?.cycle).toBe(3);
-    expect(fixed?.fix?.findings.map((finding) => finding.id)).toEqual(['F1', 'U1']);
+    expect(fixed?.fix?.findings.map((finding) => finding.id)).toEqual(['U2']);
     expect(events.filter((e) => e.type === 'workflow_complete')).toEqual([
       expect.objectContaining({ review: 'passed' }),
     ]);
+    expect(suite).toHaveBeenCalledTimes(1);
     expect(result.completed).toBe(true);
     expect(result.state.reviewStatus).toBe('passed');
     expect(onComplete).toHaveBeenCalledTimes(1);
@@ -1285,7 +1239,7 @@ function ledgerFor(tasks: Task[], changed: Record<string, string[]>): EvidenceLe
 }
 
 describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
-  it('halts every unrunnable required Apply check before triage or review, even with an optional failure', async () => {
+  it('halts every unrunnable required Apply check before review, even with an optional failure', async () => {
     const { projectDir, sessionId, head } = setupProject();
     const tasks = [
       makeTask({
@@ -1371,7 +1325,53 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
     }
   });
 
-  it('a changed candidate sends the fresh Apply failures to triage before the reviewer', async () => {
+  it('the Apply re-check checks a red at the run base and does not count a pre-existing one', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
+    const runValidation = vi.fn().mockResolvedValue([
+      {
+        stage: 'typecheck',
+        passed: false,
+        error: 'src/legacy.ts(3,7): error TS2322',
+        failureFiles: [],
+        preExisting: ['src/legacy.ts(3,7)'],
+      },
+    ]);
+    const { reviewPrompts, triagePrompts, options } = runOptions({
+      projectDir,
+      sessionId,
+      state: integrationReviewState(tasks, head, 1),
+      review: (prompt) => passingReviewVerdict(prompt),
+      onComplete: vi.fn(),
+      config: makeNoValidationConfig({ validation: { typecheck: true }, workflow: {} }),
+      validator: {
+        ...createValidator(),
+        runValidation,
+        runFullSuite: vi.fn().mockResolvedValue({ results: [], newFailures: {} }),
+      },
+    });
+
+    try {
+      const result = await runTasksAndReview(options);
+
+      expect(runValidation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          base: {
+            projectDir,
+            sessionId,
+            snapshotId: result.state.workspace?.base.snapshotId,
+          },
+        }),
+      );
+      expect(triagePrompts).toEqual([]);
+      expect(reviewPrompts[0]).toContain('All re-run checks passed.');
+      expect(result.state.reviewStatus).toBe('passed');
+    } finally {
+      await options.wctx.isolation.dispose();
+    }
+  });
+
+  it('a changed candidate hands fresh Apply failures to the reviewer', async () => {
     const { projectDir, sessionId, head } = setupProject();
     writeFileSync(
       join(projectDir, 'Makefile'),
@@ -1447,8 +1447,11 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
         }),
       );
       // The re-check ran fresh: the recorded pass is overwritten by the merge's failure.
-      expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'C1', passed: false }]);
-      expect(reviewPrompts).toHaveLength(0);
+      expect(result.state.tasks[0]?.checkResults).toEqual([
+        { id: 'C1', passed: false },
+        { id: 'P1', passed: false },
+      ]);
+      expect(reviewPrompts).toHaveLength(1);
       expect(triagePrompts).toHaveLength(1);
       expect(triagePrompts[0]).toContain('C1');
       expect(triagePrompts[0]).toContain('src/alpha.ts');

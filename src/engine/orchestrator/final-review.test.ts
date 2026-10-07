@@ -455,6 +455,63 @@ describe('runFinalReviewPhase', () => {
     expect(result.verdict?.outcome.kind).toBe('pass');
   });
 
+  it('records no triage cycle for a passing review with empty fix work', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    const { reviewer } = makeReviewer();
+    const result = await runFinalReviewPhase({
+      projectDir,
+      workspaceDir: projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks: makeCallbacks().callbacks,
+      bus: makeBusRecorder().bus,
+      state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+      reviewer,
+    });
+    expect(result.verdict?.outcome.kind).toBe('pass');
+    expect(result.state.triage ?? []).toEqual([]);
+  });
+
+  it('runs no claim check while a new red suite input is pending', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    const { reviewer } = makeReviewer((prompt) => ({
+      ...passingReviewVerdict(prompt),
+      criteria: [{ id: 'C1', status: 'unverified', evidence: 'The suite stopped.' }],
+      rejected: [{ findingId: 'P1', reason: 'No fix proposed' }],
+    }));
+    const result = await runFinalReviewPhase({
+      projectDir,
+      workspaceDir: projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks: makeCallbacks().callbacks,
+      bus: makeBusRecorder().bus,
+      state: {
+        ...allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+        plan: {
+          summary: 'Verify the greeting.',
+          decisions: [],
+          criteria: [{ id: 'C1', text: 'A greeting works', checkIds: ['K1'] }],
+          checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+          validation: null,
+        },
+        pendingTriage: {
+          inputs: [
+            { id: 'P1', kind: 'defect', source: 'check', file: null, text: 'Typecheck failed' },
+          ],
+        },
+      },
+      reviewer,
+    });
+    expect(result.reviewStatus).toBe('written');
+    expect(result.verdict?.outcome.unverifiedCriteria).toEqual(['C1']);
+    expect(result.state.review?.verification).toEqual([]);
+    expect(
+      readEvidenceLedger({ projectDir, sessionId })?.tasks.flatMap((task) => task.checks ?? []) ??
+        [],
+    ).toEqual([]);
+  });
+
   it('counts an unverified criterion as pass when its current task check passes', async () => {
     const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, PLAN_FILE, '# Plan\n\nGreet people by name.\n', null);

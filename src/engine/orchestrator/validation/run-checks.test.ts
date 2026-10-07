@@ -378,7 +378,10 @@ describe('runChecks', () => {
       planner,
       bus,
       config: makeConfig({ typecheck: false, lint: false, testCommand: 'missing-vitest run' }),
-      validator: createValidator(),
+      validator: {
+        ...createValidator(),
+        runFullSuite: vi.fn().mockResolvedValue({ results: [], newFailures: {} }),
+      },
     });
 
     const result = await runPreReview({ wctx, state, setTrackedState: vi.fn() });

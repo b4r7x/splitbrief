@@ -38,6 +38,9 @@ function renderChecksLog(checks: ReviewPacket['checks']): string[] {
     for (const line of (entry.output ?? '').split('\n')) {
       if (line.trim() !== '') lines.push(`  output: ${line}`);
     }
+    if (entry.preExisting !== undefined && entry.preExisting.length > 0) {
+      lines.push(`  pre-existing (also red at the run base): ${entry.preExisting.join(', ')}`);
+    }
     for (const artifact of entry.artifacts ?? []) {
       lines.push(`  artifact: ${artifact.path} sha256 ${artifact.sha256}`);
     }

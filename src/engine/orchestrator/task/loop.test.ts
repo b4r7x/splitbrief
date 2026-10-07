@@ -109,41 +109,41 @@ describe('runTaskLoop', { timeout: 120_000 }, () => {
     expect(implemented).toEqual(['T001']);
   });
 
-  it('persists the full-suite baseline and reuses it when the run resumes', async () => {
+  it('runs no full suite before the first brief', async () => {
     const { projectDir, sessionId } = setupGitSessionProject({
-      prefix: 'task-loop-baseline',
-      sessionId: 'sess-baseline',
+      prefix: 'task-loop-no-run-start-suite',
+      sessionId: 'sess-no-run-start-suite',
     });
     dirs.push(projectDir);
-    const task = makeTask({ id: 'T001', status: 'done' });
-    const suite = {
-      results: [],
-      failures: { typecheck: ['src/alpha.ts(12,5)'] },
-      newFailures: {},
-      stages: {},
-    };
-    const runFullSuite = vi.fn().mockResolvedValue(suite);
-    const wctx = makeWctx({
-      projectDir,
-      sessionId,
-      config: makeNoValidationConfig(),
-      validator: { ...createValidator(), runFullSuite },
+    const runFullSuite = vi.fn();
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async (opts) => {
+        expect(runFullSuite).not.toHaveBeenCalled();
+        mkdirSync(join(projectDir, 'src'), { recursive: true });
+        writeFileSync(join(projectDir, opts.task.file), 'implementation\n');
+        return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
+      }),
     });
-    const first = await runTaskLoop({
-      wctx,
-      initialState: makeImplState([task]),
+
+    const result = await runTaskLoop({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({
+          validation: { typecheck: true, lint: true, test: true },
+          workflow: {},
+        }),
+        implementer,
+        validator: { ...createValidator(), runFullSuite },
+      }),
+      initialState: makeImplState([makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'] })]),
       setTrackedState: vi.fn(),
       setCurrentTask: vi.fn(),
     });
-    expect(first.state.fullSuiteBaseline).toEqual(suite.failures);
-    expect(runFullSuite).toHaveBeenCalledTimes(1);
-    await runTaskLoop({
-      wctx,
-      initialState: first.state,
-      setTrackedState: vi.fn(),
-      setCurrentTask: vi.fn(),
-    });
-    expect(runFullSuite).toHaveBeenCalledTimes(1);
+
+    expect(result.status).toBe('complete');
+    expect(implementer.implement).toHaveBeenCalledTimes(1);
+    expect(runFullSuite).not.toHaveBeenCalled();
   });
 
   it('has the task-start snapshot on disk before the brief runs', async () => {

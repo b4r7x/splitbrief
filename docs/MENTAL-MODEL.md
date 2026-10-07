@@ -134,7 +134,7 @@ A worktree isolates files, not runtime and not trust. It shares the ports, the d
 
 ## Validation and consult
 
-SPLITBRIEF owns correctness through validation and the final review. The typecheck → lint → test pipeline runs inside the run workspace. It stops at the first failure attributable to the task. A stage already red at baseline does not block a task that introduces no new failure. The review seat assesses the result before Apply. The implementer's own checks can improve its work, but do not decide acceptance.
+SPLITBRIEF owns correctness through validation and the final review. No gate runs before the first task. The gates follow `workflow.review`: `end` runs them at the final review; `task` also runs related tests and due checks after each task. A red re-runs failing tests or the command on a disposable copy of the run base. Matching failures are pre-existing and start no fix. A task accepts them only when all failure keys match and the evidence names no changed file. The review reports them before Apply. The implementer's own checks can improve its work, but do not decide acceptance.
 
 If validation fails, the implementer retries once with the error message. Then SPLITBRIEF asks the planner, read-only, for one typed answer:
 

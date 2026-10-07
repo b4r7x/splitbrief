@@ -1,5 +1,6 @@
 import { normalizeProjectRelativePath } from '../../../utils/path-patterns.js';
 import type { ValidationResult } from './result.js';
+import { failingTestKey } from './test-failures.js';
 
 const TOKEN_PATTERNS = [
   /[\w./\\-]+\.\w+::[\w.:[\]-]+/,
@@ -15,9 +16,6 @@ function tokenOf(line: string): string | undefined {
   return undefined;
 }
 
-// A test runner's tail carries a fresh timestamp and duration on every run, so
-// keying pathless lines by their text makes two runs of one red suite compare
-// unequal. Pathless lines are the fallback for output that named no path at all.
 export function extractFailureKeys(rawOutput: string): string[] {
   const lines = rawOutput
     .split('\n')
@@ -32,7 +30,11 @@ export function extractFailureKeys(rawOutput: string): string[] {
 }
 
 export function stageFailureKeys(result: ValidationResult): string[] {
-  const keys = extractFailureKeys(result.error ?? result.output ?? '');
+  if (result.timedOut === true) return [`${result.stage} timed out`];
+  const keys =
+    result.stage === 'test'
+      ? (result.failingTests ?? []).map(failingTestKey)
+      : extractFailureKeys(result.error ?? result.output ?? '');
   if (keys.length > 0) return keys;
   return [
     result.exitCode === undefined

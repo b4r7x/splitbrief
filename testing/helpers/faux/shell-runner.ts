@@ -42,7 +42,7 @@ export const CODE_RESPONSE = [
 /**
  * The shell planner answers from stdin: planning calls get the brief markdown,
  * the final review (its prompt is titled "Final Implementation Review") gets a
- * typed verdict JSON built from the prompt's own Required Results ids, so the
+ * typed review answer built from the prompt's own Required Results ids, so the
  * review clears coverage without a markdown verdict to parse.
  */
 export function shellPlannerArgs(): string[] {
@@ -56,7 +56,7 @@ export function shellPlannerArgs(): string[] {
     "  return value === 'none' || value === '' ? [] : value.split(',').map((id) => id.trim()).filter(Boolean);",
     '};',
     "if (prompt.includes('# Final Implementation Review')) {",
-    "  const verdict = { tasks: ids('Task ids:').map((id) => ({ id, plan: 'met', note: '' })), criteria: ids('Criterion ids:').map((id) => ({ id, status: 'pass', evidence: '' })), findings: [] };",
+    "  const verdict = { tasks: ids('Task ids:').map((id) => ({ id, plan: 'met', note: '' })), criteria: ids('Criterion ids:').map((id) => ({ id, status: 'pass', evidence: '' })), findings: [], fixTasks: [], rejected: [], verify: [], ask: null };",
     '  process.stdout.write(JSON.stringify(verdict));',
     '} else {',
     '  process.stdout.write(tasks);',

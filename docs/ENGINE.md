@@ -40,7 +40,7 @@ The orchestrator is split by concern under `src/engine/orchestrator/`:
 - **`recovery/`** — User-facing recovery flow for anything a turn cannot decide alone: the ladder or a consult bound running out, and the planner-seat halts in `builders/planner.ts`. Presents the user with one of two halts, *Needs you* or *Seat down* (`src/core/recovery/halt.ts`), and the choices that halt allows: continue, retry the same worker, switch the seat, revise, accept as is, restore the backup, skip, or end the run. `bus.ts` builds the bus a recovery answered between two turns publishes on, so a host that holds no live orchestrator still records the prompt and the decision.
 - **`approval/`** — The write gate for declared file writes. Classifies changed paths by risk (in-scope, out-of-scope, control-plane, package change, CI or secret file) and asks only for a write to a protected path; `confirm.ts` also turns an approved plan's `protectedOperations` into confirmations (`planConfirmations`).
 - **`drift/`** — Brief drift detection. Checks the run's changed files against the briefs and the evidence ledger and reports findings (`analyze.ts`); the report passes when it has no `error` finding. There is no score and no cross-task chain.
-- **`evidence/`** — Collects evidence of task completion for the final review. The `review-packet/` subfolder assembles all evidence into a structured packet for the review seat. The review seat answers a typed `ReviewVerdict` (`src/core/schemas/review.ts`); the record lives in `review.json` and its rendering in `review.md`. `parseFinalReview()` in `src/engine/parsers/final-review.ts` stays only as the reader for sessions saved before the typed review. The verdict, criteria counts and finding counts land in the packet's final-review section and are rolled up into `summary.json` (`reviewPacket.finalReviewVerdict`, `reviewPacket.finalReviewFindingCounts`).
+- **`evidence/`** — Collects evidence of task completion for the final review. The `review-packet/` subfolder assembles all evidence into a structured packet for the review seat. The review seat answers a typed `ReviewAnswer` (`src/core/schemas/review.ts`). Its verdict lives in `review.json` and its rendering in `review.md`. Its fix work lives in `state.triage`. `parseFinalReview()` in `src/engine/parsers/final-review.ts` stays only as the reader for sessions saved before the typed review. The verdict, criteria counts and finding counts land in the packet's final-review section and are rolled up into `summary.json` (`reviewPacket.finalReviewVerdict`, `reviewPacket.finalReviewFindingCounts`).
 - **`apply/`** — Writes a ready run into the checkout once (`runApply`, `run.ts`): a three-way merge of the workspace base, the checkout and the run workspace (`merge.ts`), the backup before the first write (`backup.ts`), one hash-guarded write (`write.ts`), backup restore (`restore.ts`) and the `run.patch` that Discard and End run keep (`patch.ts`). A checkout edit during a run is not a halt: Apply merges it. See [WORKFLOW.md §Apply](./WORKFLOW.md#apply).
 
 ---
@@ -213,7 +213,7 @@ One API owns the file. `src/core/state/state-file.ts` reads and classifies it an
 
 A persisted changed-files baseline has two provenance states: `head: null` records a known unborn start, and a SHA records the exact run-start commit. State without a baseline is rejected at final review (`finalReviewError.missingRunBaseline`) rather than reconstructed from commit subjects.
 
-`runStartChangedFiles` is immutable run-start provenance, while rolling fingerprints retain absorbed `"missing"` tombstones. A symlink that stays inside the project is recorded by its target (`"symlink:<target>"`), the way git records it. An entry SPLITBRIEF refuses to read — any other symlink, a directory, an unreadable file — is recorded as `"unreadable"` rather than thrown. Right after baseline capture and before validation priming, the task loop publishes one warning naming those project-relative paths (code `unreadable_changed_files`); the entries are never opened.
+`runStartChangedFiles` is immutable run-start provenance, while rolling fingerprints retain absorbed `"missing"` tombstones. A symlink that stays inside the project is recorded by its target (`"symlink:<target>"`), the way git records it. An entry SPLITBRIEF refuses to read — any other symlink, a directory, an unreadable file — is recorded as `"unreadable"` rather than thrown. Right after changed-files baseline capture, the task loop publishes one warning naming those project-relative paths (code `unreadable_changed_files`); the entries are never opened.
 
 **`jsonlSink`** — appends bounded events to `session.jsonl` via `src/core/sessions/log-writer.ts`. This is the audit log and transcript source. Stateless backends (those that don't support session resume natively) rebuild planner context from the JSONL log on resume.
 
@@ -342,7 +342,7 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 // `duration` is measured once, at completion, from the brief's start time
 // (`validateCommitAndAdvance`). The ledger entry's `durationMs` carries the same value.
 
-// Review fix cycle — the review triage appended fix tasks and START_FIX_CYCLE sent the run back
+// Review fix cycle — the review answer appended fix tasks and START_FIX_CYCLE sent the run back
 { type: 'review_fix_started'; cycle: number; taskIds: TaskId[] }
 
 // Validation
@@ -352,7 +352,7 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 
 { type: 'full_suite'; status: 'running' | 'done';
   stage: 'typecheck' | 'lint' | 'test'; command: string;
-  moment: 'baseline' | 'pre-review';
+  moment: 'pre-review' | 'base';
   passed?: boolean; duration?: number }
 // One running and one done event per full-suite stage the run runs. `passed` and
 // `duration` are set on the done event, and `moment` names where the suite runs.

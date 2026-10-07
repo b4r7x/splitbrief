@@ -173,8 +173,6 @@ describe('run with no reviewer configured', () => {
       'snapshot_created',
       'snapshot_created',
       'tasks_planned',
-      'full_suite',
-      'full_suite',
       'task_started',
       'cost_update',
       'task_completed',

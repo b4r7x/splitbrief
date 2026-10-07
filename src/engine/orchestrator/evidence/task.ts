@@ -42,6 +42,9 @@ function stageCheckEntry(
   if (diagnostics !== undefined && diagnostics.trim() !== '') {
     entry.output = boundedOutputTail(diagnostics);
   }
+  if (result.preExisting !== undefined && result.preExisting.length > 0) {
+    entry.preExisting = [...result.preExisting];
+  }
   if (meta.workspaceSnapshotId !== undefined) entry.workspaceSnapshotId = meta.workspaceSnapshotId;
   return entry;
 }

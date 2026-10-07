@@ -23,7 +23,7 @@ afterEach(() => {
 });
 
 describe("runTaskLoop with workflow.review 'end'", { timeout: 120_000 }, () => {
-  it('runs no gate after a brief and no suite between batches: only the run-start baseline', async () => {
+  it('runs no gate command at all: none before the first brief, after a brief or between batches', async () => {
     const { projectDir, sessionId } = setupGitSessionProject({
       prefix: 'gate-cadence-end',
       sessionId: 'sess-gate-end',
@@ -74,11 +74,9 @@ describe("runTaskLoop with workflow.review 'end'", { timeout: 120_000 }, () => {
 
     expect(result.status).toBe('complete');
     expect(result.state.tasks.map((task) => task.status)).toEqual(['done', 'done']);
-    // The run-start baseline is the only gate run inside the task loop: one command per stage.
-    expect(commands).toEqual(['npx tsc --noEmit', 'npx biome check .', 'npm test']);
+    // At review: end the gates run once, at the final review: the task loop runs none.
+    expect(commands).toEqual([]);
     expect(events.filter((event) => event.type === 'validate')).toEqual([]);
-    const moments = events.flatMap((event) => (event.type === 'full_suite' ? [event.moment] : []));
-    expect(moments.length).toBeGreaterThan(0);
-    expect(new Set(moments)).toEqual(new Set(['baseline']));
+    expect(events.filter((event) => event.type === 'full_suite')).toEqual([]);
   });
 });

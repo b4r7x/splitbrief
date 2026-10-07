@@ -96,7 +96,7 @@ There is no batch review cadence. The final review runs the full gates first und
 
 Prepare the current packet and derive the verdict using references/review-format.md.
 Send unresolved findings to planner triage in references/recovery.md.
-Persist the triage and appended briefs before execution. Execute authorized fix tasks through this same dispatch procedure.
+Persist the triage and appended briefs before executing the fix tasks. Execute authorized fix tasks through this same dispatch procedure.
 Keep all reviews and fixes within the saved global allowance; continuation never renews it.
 For the review-only entry, stop after triage and hand back the fix request without executing it.
 

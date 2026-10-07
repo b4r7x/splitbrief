@@ -1,5 +1,15 @@
 <!--
 Sync Impact Report
+- Version change: 3.0.0 → 4.0.0. MAJOR: Principle V gives every new red to the review seat and removes brief reopening. Principle I and VI.3 let the same review answer return fix work.
+- Modified principles: I, V, VI.3.
+- Updated sections: Governance.
+- Templates checked: plan-template.md, spec-template.md and tasks-template.md remain compatible. They assign no planner triage call.
+- Docs and skills: workflow, task contract, reviewer, recovery, configuration, testing and CLI skill references updated.
+- Follow-up TODOs: none.
+-->
+
+<!--
+Sync Impact Report
 - Version change: 2.6.0 → 2.7.0 (MINOR: the Development Workflow section
   expands — the user chooses where the implementer writes; the git
   worktree stays the default, and `workflow.isolation: none` is the
@@ -196,8 +206,8 @@ and evidence.
 Two roles fill three seats: plan, build, and review. The review seat is
 the final review the stronger tool has always performed, made separately
 assignable — one stateless, read-only call over the run diff, which
-cannot plan, cannot write files, and holds no session. Assigning it to a
-different tool MUST NOT change the seat count, the contract, or the
+writes no file and holds no session. It returns the verdict and the fix
+work. Assigning it to a different tool MUST NOT change the seat count, the contract, or the
 review prompt; when it is left unassigned the planner fills it, exactly
 as before.
 
@@ -282,17 +292,24 @@ implementer reports success.
 Task completion MUST follow `workflow.review`. With `end`, ordinary briefs
 complete without stack gates. With `task`, each task MUST pass its related
 tests and required due checks before its scheduled review. The final review
-MUST run all enabled stack gates and every plan and task check, including renders.
-A red whose files all belong to one completed brief MUST reopen that brief
-with the exact gate errors. Other failures MUST enter triage and create fix tasks.
-Each path MUST spend one fix cycle. The final review MUST rerun the gates after fixes.
+MUST run the enabled stack gates in order. Each red typecheck or lint stage MUST be checked at the run base.
+A red test stage with parsed failures MUST check them at that base.
+The base check MUST precede the next stage. A stage with only
+pre-existing failures permits the next stage. The suite MUST stop at its
+first stage with a new failure. No plan or task check runs after it. With a
+green or all-pre-existing suite, every registered check runs, including
+renders. Every new red MUST reach the reviewer as a pending input. The same
+review answer returns the verdict and the fix tasks. Fix work MUST spend
+one fix cycle. Completed briefs MUST stay done. The final review MUST rerun
+the gates after fixes.
 
 Worktree and staged-copy runs validate in the run workspace. The pipeline
 writes the reviewed result to the user's project only at Apply. Checkout runs
 and older runs without a workspace validate in the user's project.
-The run-start full suite MUST record known failures. Acceptance MUST compare
-later failure keys with this baseline. A brief gate MUST stop at the first
-non-exempt failing stage. Retry prompts MUST carry the exact gate errors.
+A red stage MUST be compared with the same command at the run base. Test
+stages MUST compare parsed failing test names. A test red with no parsed
+failure stays new and does not run at the base. A brief gate MUST stop at
+the first non-exempt failing stage. Retry prompts MUST carry the exact gate errors.
 When lint is enabled, the project formatter MUST run on each brief's changed files.
 A formatter failure MUST record a warning and MUST NOT reject the brief.
 
@@ -366,8 +383,8 @@ Explicit anti-goals that MUST NOT be implemented:
    stays fixed at three, so there is no dynamic agent count; the reviewer
    is invoked by SPLITBRIEF and never by the planner, so nothing wraps an
    agent in an agent; and it exchanges no messages with the other seats —
-   it reads a diff and returns a verdict — so there is no coordination
-   layer. The one review cadence is the configured `workflow.review`:
+   it reads the run diff and returns a verdict and fix tasks — so there is
+   no coordination layer. The one review cadence is the configured `workflow.review`:
    `end` reviews once, after the final brief; `task` also reviews after
    every completed brief, with the final review at the end. A re-review of
    the whole run diff after each fix cycle continues that cadence, not a
@@ -428,7 +445,7 @@ This constitution supersedes all other development practices for
 the SPLITBRIEF project. All implementation decisions, code reviews,
 and architectural choices MUST be evaluated against these principles.
 
-The 3.0.0 amendment redefines Principle V to match the configured review cadence.
+The 4.0.0 amendment redefines Principle V. The review seat owns every new red and returns the fix work in the same answer.
 This rule puts the gates at the review that owns their result. Regression tests
 verify both cadences and failure routing. The configuration, workflow, engine and
 generated skill references carry the same rule.
@@ -448,4 +465,4 @@ MUST be documented in the plan.md Complexity Tracking table with:
 the violation, why it is needed, and why the simpler alternative
 was rejected.
 
-**Version**: 3.0.0 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-10-07
+**Version**: 4.0.0 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-10-08

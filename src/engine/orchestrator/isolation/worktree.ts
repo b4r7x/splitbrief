@@ -112,7 +112,7 @@ const NODE_MODULES = 'node_modules';
 const ROOT_NODE_MODULES = `/${NODE_MODULES}`;
 const EXCLUDE_MARKER_PREFIX = '# splitbrief run isolation ';
 
-async function linkProjectNodeModules(projectDir: string, wtPath: string): Promise<void> {
+export async function linkProjectNodeModules(projectDir: string, wtPath: string): Promise<void> {
   const source = join(projectDir, NODE_MODULES);
   const target = join(wtPath, NODE_MODULES);
   if (!existsSync(source) || existsSync(target)) return;

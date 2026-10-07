@@ -1,4 +1,3 @@
-import { acceptValidationResults } from '../validation/acceptance.js';
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
@@ -30,7 +29,6 @@ import { taskId, type Task } from '../../../core/schemas/task.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import type { EngineEvent, EventBus } from '../../events/types.js';
 import { createEventBus } from '../../events/bus.js';
-import { formatValidationError } from '../validation/format-error.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
 import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
@@ -643,59 +641,6 @@ describe('initializeWorkflow', () => {
       expect(errorEvent?.message).toBe(
         "Planner 'claude-code' is not available: probe timed out after 5s.",
       );
-    });
-  });
-
-  it('keeps the full-suite baseline in the caller instead of the validator', async () => {
-    await withTempDir('splitbrief-init-baseline', async (projectDir) => {
-      const feature = 'red-at-start project';
-      const sessionId = 'session-init-baseline';
-      const { init, config } = await initializeTestWorkflow({
-        projectDir,
-        sessionId,
-        feature,
-        configOverrides: {
-          validation: {
-            typecheck: true,
-            lint: false,
-            test: false,
-            typecheckCommand: 'node -e "process.exit(1)"',
-          },
-        },
-      });
-
-      expect(init.ok).toBe(true);
-      if (!init.ok) return;
-
-      const suiteBaseline = await init.wctx.validator.runFullSuite({
-        moment: 'baseline',
-        bus: init.wctx.bus,
-        phase: 'implementing',
-
-        projectDir,
-        config,
-      });
-      const results = await init.wctx.validator.runValidation({
-        stages: ['typecheck', 'lint', 'test'],
-        changedFiles: [],
-        baseline: suiteBaseline.failures,
-
-        task: makeTask({ suggestedFiles: ['src/app.ts'], action: 'modify' }),
-        projectDir,
-        config,
-        bus: init.wctx.bus,
-        phase: 'implementing',
-      });
-
-      expect(
-        acceptValidationResults(results, suiteBaseline.failures, ['src/app.ts']).accepted,
-      ).toBe(true);
-      const acceptance = acceptValidationResults(results, undefined, ['src/app.ts']);
-      expect(acceptance.accepted).toBe(false);
-      expect(acceptance.blockingStages).toContain('typecheck');
-
-      const error = formatValidationError(results, acceptance);
-      expect(error).toContain('typecheck');
     });
   });
 

@@ -109,6 +109,31 @@ describe('formatValidationError', () => {
     expect(error).not.toContain('pre-existing');
   });
 
+  it('labels pre-existing keys after their blocking stage error message', () => {
+    const results: ValidationResult[] = [
+      {
+        passed: false,
+        stage: 'typecheck',
+        error:
+          'src/legacy.ts(3,7): error TS2304\nsrc/old.ts(5,2): error TS2322\nsrc/fresh.ts(1,1): error TS2322',
+        preExisting: ['src/legacy.ts(3,7)', 'src/old.ts(5,2)'],
+      },
+      { passed: false, stage: 'lint', error: 'Unexpected token' },
+    ];
+    const error = formatValidationError(results, acceptance([], ['typecheck', 'lint']));
+    expect(error.split('\n')).toEqual([
+      'Your previous code had an error. Fix it.',
+      'Error type: typecheck',
+      'Error message: src/legacy.ts(3,7): error TS2304',
+      'src/old.ts(5,2): error TS2322',
+      'src/fresh.ts(1,1): error TS2322',
+      'Pre-existing (also red at the run base), not to be fixed: src/legacy.ts(3,7), src/old.ts(5,2)',
+      'Error type: lint',
+      'Error message: Unexpected token',
+      'Fix the error and output the complete corrected file.',
+    ]);
+  });
+
   it('falls back to output when error is undefined', () => {
     const results: ValidationResult[] = [
       { passed: false, stage: 'lint', error: undefined, output: 'some lint output' },

@@ -40,9 +40,7 @@ function versionCheck(): Check[] {
 function acceptingValidator(): Validator {
   return {
     formatChangedFiles: vi.fn().mockResolvedValue(undefined),
-    runFullSuite: vi
-      .fn()
-      .mockResolvedValue({ results: [], failures: {}, newFailures: {}, stages: {} }),
+    runFullSuite: vi.fn().mockResolvedValue({ results: [], newFailures: {}, stages: {} }),
     runValidation: vi.fn().mockResolvedValue([{ stage: 'test' as const, passed: true }]),
   };
 }

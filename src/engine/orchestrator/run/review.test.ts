@@ -16,8 +16,7 @@ import {
   failedReviewVerdict,
   passingReviewVerdict,
   planFromTasks,
-  rejectingTriageResult,
-  typedCallPlanReviewAndTriage,
+  typedCallPlanAndReview,
 } from '#testing/helpers/typed-planner.js';
 import { saveState } from '../../../core/state/persistence.js';
 import { deriveRunStatus } from '../../../core/sessions/run-status.js';
@@ -26,7 +25,12 @@ import type { FinalReviewResult } from '../final-review.js';
 import type { Planner } from '../../planners/types.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
-import { haltVerdictlessReview, runScheduledReview } from './review.js';
+import {
+  followReviewAnswer,
+  haltVerdictlessReview,
+  reviewPassed,
+  runScheduledReview,
+} from './review.js';
 
 const CODEX_INPUT_TOO_LARGE =
   'Error: turn/start: turn/start failed: Input exceeds the maximum length of 1048576 characters. (code -32602), data: {"input_error_code":"input_too_large","max_chars":1048576,"actual_chars":1106026}';
@@ -43,6 +47,184 @@ function setupProject(): { projectDir: string; sessionId: string } {
 }
 
 const RUN_BASELINE = { head: null, runStartChangedFiles: [], fingerprints: {} };
+
+describe('review answer follower', () => {
+  const fixWork = { fixTasks: [], rejected: [], verify: [], ask: null };
+  const input = {
+    id: 'P1',
+    kind: 'defect' as const,
+    source: 'check' as const,
+    file: 'src/a.ts',
+    text: 'Typecheck failed',
+  };
+
+  it('does not pass a passing verdict while a check input remains pending', () => {
+    expect(
+      reviewPassed(
+        {
+          kind: 'pass',
+          blocking: [],
+          minor: [],
+          unverifiedCriteria: [],
+          coverageErrors: [],
+          criteria: [],
+        },
+        fixWork,
+        [input],
+        [],
+      ),
+    ).toBe(false);
+  });
+
+  it('queues the answer to a reviewer question for another review without a planner call', async () => {
+    const ref = setupProject();
+    const state = {
+      ...pendingReview(),
+      phase: 'final-review' as const,
+      pendingTriage: { inputs: [input] },
+    };
+    saveState(ref, state);
+    const callbacks = makeCallbacks({
+      onPlannerReply: vi.fn(async () => 'Keep the planned API'),
+    }).callbacks;
+    const planner = makePlanner({ typedCall: vi.fn() });
+    const result = await followReviewAnswer({
+      wctx: makeWctx({ ...ref, callbacks, planner }),
+      state,
+      callbacks,
+      setTrackedState: vi.fn(),
+      candidate: undefined,
+      recheckFailures: [],
+      fixWork: {
+        ...fixWork,
+        ask: {
+          question: 'Change the API?',
+          whyOnlyUserCanAnswer: 'The plan defines the public API.',
+        },
+      },
+    });
+    expect(result).toMatchObject({ stopped: false, reviewAgain: true });
+    expect(result.state.phase).toBe('final-review');
+    expect(result.state.pendingTriage?.inputs).toEqual([
+      input,
+      { id: 'A2', kind: 'answer', source: 'user', text: 'Keep the planned API', file: null },
+    ]);
+    expect(result.state.pendingTriage?.question).toBeUndefined();
+    expect(result.state.fixCycles?.used).toBe(2);
+    expect(planner.typedCall).not.toHaveBeenCalled();
+  });
+
+  it('halts when no callback can answer the reviewer question', async () => {
+    const ref = setupProject();
+    const state = { ...pendingReview(), phase: 'final-review' as const };
+    saveState(ref, state);
+    const callbacks = makeCallbacks().callbacks;
+    const result = await followReviewAnswer({
+      wctx: makeWctx({ ...ref, callbacks }),
+      state,
+      callbacks,
+      setTrackedState: vi.fn(),
+      candidate: undefined,
+      recheckFailures: [],
+      fixWork: {
+        ...fixWork,
+        ask: {
+          question: 'Change the API?',
+          whyOnlyUserCanAnswer: 'The plan defines the public API.',
+        },
+      },
+    });
+    expect(result).toMatchObject({ stopped: true, reviewAgain: false });
+    expect(result.state.pendingRecovery?.details?.join('\n')).toContain(
+      'The review asked a question this run has no way to answer.',
+    );
+    expect(result.state.pendingTriage?.question?.question).toBe('Change the API?');
+  });
+
+  it('halts at the cap with a red input without REVIEW_DONE or Accept as is', async () => {
+    const ref = setupProject();
+    const state = {
+      ...pendingReview(),
+      phase: 'final-review' as const,
+      pendingTriage: { inputs: [input] },
+    };
+    saveState(ref, state);
+    const { bus, events } = makeBusRecorder();
+    const callbacks = makeCallbacks().callbacks;
+    const result = await followReviewAnswer({
+      wctx: makeWctx({ ...ref, bus, callbacks }),
+      state,
+      callbacks,
+      setTrackedState: vi.fn(),
+      candidate: undefined,
+      recheckFailures: [],
+      fixWork,
+    });
+    expect(result.stopped).toBe(true);
+    expect(result.state.phase).toBe('final-review');
+    expect(result.state.completedAt).toBeUndefined();
+    expect(result.state.reviewStatus).toBeUndefined();
+    expect(result.state.pendingRecovery?.facts).toMatchObject({ fixCycles: 2 });
+    expect(result.state.pendingRecovery?.availableActions).not.toContain('accept-as-is');
+    expect(result.state.pendingRecovery?.details?.join('\n')).toContain('P1');
+    expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
+    const corrected = await applyRecoveryAction({
+      ...ref,
+      state: result.state,
+      action: 'revise',
+      comment: 'Fix the typecheck failure',
+      bus,
+    });
+    expect(corrected.ok).toBe(true);
+    if (!corrected.ok) throw new Error(corrected.message);
+    expect(corrected.state.phase).toBe('final-review');
+    expect(corrected.state.fixCycles?.allowance).toBe(3);
+    expect(corrected.state.pendingTriage?.inputs).toEqual([
+      input,
+      expect.objectContaining({ text: 'Fix the typecheck failure' }),
+    ]);
+  });
+
+  it.each(['rejected', 'ask'] as const)(
+    'keeps a pending red input blocking when the reviewer returns %s',
+    async (answer) => {
+      const ref = setupProject();
+      const state: WorkflowState = {
+        ...pendingReview(),
+        phase: 'final-review',
+        fixCycles: { used: 0, allowance: 2, notes: [] },
+        pendingTriage: { inputs: [input] },
+      };
+      saveState(ref, state);
+      const { bus, events } = makeBusRecorder();
+      const callbacks = makeCallbacks().callbacks;
+      const result = await followReviewAnswer({
+        wctx: makeWctx({ ...ref, bus, callbacks }),
+        state,
+        callbacks,
+        setTrackedState: vi.fn(),
+        candidate: undefined,
+        recheckFailures: ['Typecheck failed'],
+        fixWork: {
+          ...fixWork,
+          rejected: answer === 'rejected' ? [{ findingId: 'P1', reason: 'No change needed' }] : [],
+          ask:
+            answer === 'ask'
+              ? { question: 'Change the API?', whyOnlyUserCanAnswer: 'The API is public.' }
+              : null,
+        },
+      });
+      expect(result.stopped).toBe(true);
+      expect(result.state.phase).toBe('final-review');
+      expect(result.state.reviewStatus).toBeUndefined();
+      expect(result.state.completedAt).toBeUndefined();
+      expect(result.state.pendingRecovery?.availableActions).not.toContain('accept-as-is');
+      expect(result.state.pendingRecovery?.details?.join('\n')).toContain('P1: Typecheck failed');
+      expect(result.state.pendingRecovery?.facts?.blocking).toBe(2);
+      expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
+    },
+  );
+});
 
 function pendingReview(): WorkflowState {
   return makeImplState([makeTask({ id: 'T001', status: 'done' }), makeTask({ id: 'T002' })], {
@@ -138,6 +320,49 @@ function firstFailsThenPassesReviewer(): Planner {
 }
 
 describe('runScheduledReview saved recovery', () => {
+  it('waits for the saved review question before another review call', async () => {
+    const ref = setupProject();
+    const state: WorkflowState = {
+      ...scheduledReviewState(),
+      review: pendingReview().review,
+      pendingTriage: {
+        inputs: [],
+        question: { question: 'Change the API?', whyOnlyUserCanAnswer: 'The API is public.' },
+      },
+    };
+    saveState(ref, state);
+    let asked = false;
+    const callbacks = makeCallbacks({
+      onPlannerReply: vi.fn(async (reply) => {
+        expect(reply.text).toBe('Change the API?');
+        asked = true;
+        return 'Keep the API';
+      }),
+    }).callbacks;
+    const planner = makePlanner({
+      typedCall: typedCallPlanAndReview(
+        () => planFromTasks(state.tasks),
+        (prompt) => {
+          expect(asked).toBe(true);
+          expect(prompt).toContain('Keep the API');
+          return {
+            ...passingReviewVerdict(prompt),
+            rejected: [{ findingId: 'A1', reason: 'The answer keeps the approved API' }],
+          };
+        },
+      ),
+    });
+    const result = await runScheduledReview({
+      wctx: makeWctx({ ...ref, callbacks, planner, config: makeNoValidationConfig() }),
+      state,
+      callbacks,
+      setTrackedState: vi.fn(),
+    });
+    expect(result.status).toBe('continue');
+    expect(callbacks.onPlannerReply).toHaveBeenCalledOnce();
+    expect(result.state.pendingTriage).toBeUndefined();
+  });
+
   it('halts a scheduled review at its cap and resumes triage with pending tasks intact', async () => {
     const ref = setupProject();
     const state = pendingReview();
@@ -146,17 +371,15 @@ describe('runScheduledReview saved recovery', () => {
     const triagePrompts: string[] = [];
     const callbacks = makeCallbacks().callbacks;
     const planner = makePlanner({
-      typedCall: typedCallPlanReviewAndTriage(
+      typedCall: typedCallPlanAndReview(
         () => planFromTasks(state.tasks),
-        (prompt) => failedReviewVerdict(prompt, 'Preserve the error', { taskId: 'T001' }),
-        (prompt) => {
+        (prompt, call) => {
+          if (call === 1)
+            return failedReviewVerdict(prompt, 'Preserve the error', { taskId: 'T001' });
           triagePrompts.push(prompt);
           return {
-            ...rejectingTriageResult(prompt),
-            rejected: [
-              { findingId: 'F1', reason: 'The review concern is answered' },
-              { findingId: 'U1', reason: 'The correction guides continuation' },
-            ],
+            ...passingReviewVerdict(prompt),
+            rejected: [{ findingId: 'U2', reason: 'The correction guides continuation' }],
           };
         },
       ),
@@ -194,14 +417,14 @@ describe('runScheduledReview saved recovery', () => {
     expect(continued.status).toBe('continue');
     expect(continued.state.phase).toBe('implementing');
     expect(continued.state.tasks).toEqual(state.tasks);
-    expect(continued.state.fixCycles?.used).toBe(3);
+    expect(continued.state.fixCycles?.used).toBe(2);
     expect(continued.state.pendingScheduledReview).toBeUndefined();
     expect(triagePrompts).toHaveLength(1);
     expect(triagePrompts[0]).toContain('Keep the reviewed correction');
     expect(events.filter((event) => event.type === 'workflow_complete')).toEqual([]);
   });
 
-  it('keeps a twice-invalid triage error on the plan seat', async () => {
+  it('keeps a twice-invalid review answer on the reviewer seat', async () => {
     const ref = setupProject();
     const state = {
       ...pendingReview(),
@@ -213,11 +436,8 @@ describe('runScheduledReview saved recovery', () => {
     const { bus, events } = makeBusRecorder();
     const callbacks = makeCallbacks().callbacks;
     const planner = makePlanner({
-      typedCall: typedCallPlanReviewAndTriage(
+      typedCall: typedCallPlanAndReview(
         () => planFromTasks(state.tasks),
-        () => {
-          throw new Error('The saved review must be reused');
-        },
         () => '{}',
       ),
     });
@@ -232,7 +452,7 @@ describe('runScheduledReview saved recovery', () => {
     expect(result.state.pendingTriage).toBeDefined();
     expect(result.state.pendingRecovery).toMatchObject({
       reason: 'seat-protocol-error',
-      seat: 'plan',
+      seat: 'review',
     });
     expect(result.state.pendingRecovery?.availableActions).toContain('retry-same-worker');
     expect(events.filter((event) => event.type === 'workflow_complete')).toEqual([]);
@@ -355,6 +575,7 @@ describe('runScheduledReview saved recovery', () => {
       const review: FinalReviewResult = {
         state,
         verdict: null,
+        fixWork: null,
         reviewText: '',
         reviewStatus: 'failed',
         failure: {
@@ -413,15 +634,11 @@ describe('runScheduledReview saved recovery', () => {
     const triagePrompts: string[] = [];
     let reviewCalls = 0;
     const planner = makePlanner({
-      typedCall: typedCallPlanReviewAndTriage(
+      typedCall: typedCallPlanAndReview(
         () => planFromTasks(state.tasks),
         (prompt) => {
           reviewCalls += 1;
           return passingReviewVerdict(prompt);
-        },
-        (prompt) => {
-          triagePrompts.push(prompt);
-          return rejectingTriageResult(prompt);
         },
       ),
     });

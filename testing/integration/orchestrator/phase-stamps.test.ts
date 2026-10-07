@@ -69,6 +69,7 @@ async function runConsultedBrief(): Promise<EngineEvent[]> {
     description: 'Create a module that needs a planner consult before validation passes.',
     implementationSteps: ['Create src/loop.ts with the retry marker export.'],
     tests: ['node validate.mjs passes after the consult'],
+    checks: [{ id: 'K-retry', kind: 'test', value: targetFile, required: true }],
     scope: { inBounds: [targetFile], outOfBounds: ['unrelated files'] },
     evidence: ['the consult answer appears before workflow_complete'],
     typeDefs: 'export const loop: string',
@@ -87,7 +88,7 @@ async function runConsultedBrief(): Promise<EngineEvent[]> {
       config: makeConfig({
         implementer: { kind: 'agent', command: 'node', model: 'cheap-direct-agent' },
         validation: { typecheck: false, lint: false, test: true, testCommand: 'node validate.mjs' },
-        workflow: { approve: 'none', maxRetries: 1 },
+        workflow: { approve: 'none', review: 'task', maxRetries: 1 },
       }),
     }),
     callbacks: makeCallbacks().callbacks,

@@ -1,3 +1,4 @@
+import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { execSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -14,8 +15,7 @@ import {
 import {
   passingReviewVerdict,
   planFromTasks,
-  rejectingTriageResult,
-  typedCallPlanReviewAndTriage,
+  typedCallPlanAndReview,
 } from '#testing/helpers/typed-planner.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
@@ -101,16 +101,32 @@ function runHarness(opts: {
   const reviewPrompts: string[] = [];
   const triagePrompts: string[] = [];
   const reviewer = makePlanner({
-    typedCall: typedCallPlanReviewAndTriage(
+    typedCall: typedCallPlanAndReview(
       () => planFromTasks(opts.state.tasks),
       (prompt) => {
         log.push('review');
         reviewPrompts.push(prompt);
-        return passingReviewVerdict(prompt);
-      },
-      (prompt) => {
+        const verdict = passingReviewVerdict(prompt);
+        const pending = prompt.split('## Pending Inputs')[1]?.split('\n## ')[0] ?? '';
+        const findingIds = [...pending.matchAll(/^- \*\*(\S+)\*\*/gm)].map(
+          (match) => match[1] ?? '',
+        );
+        if (findingIds.length === 0) return verdict;
         triagePrompts.push(prompt);
-        return rejectingTriageResult(prompt);
+        return {
+          ...verdict,
+          fixTasks: [
+            {
+              ...makeTaskSpec({
+                id: 'T003',
+                criteria: [],
+                checks: [],
+                suggestedFiles: ['src/alpha.ts'],
+              }),
+              findingIds,
+            },
+          ],
+        };
       },
     ),
   });
@@ -124,7 +140,11 @@ function runHarness(opts: {
       mkdirSync(join(call.projectDir, dirname(file)), { recursive: true });
       writeFileSync(
         join(call.projectDir, file),
-        file === 'src/alpha.ts' ? BROKEN : 'export const value = 1;\n',
+        call.task.fix !== undefined
+          ? FIXED
+          : file === 'src/alpha.ts'
+            ? BROKEN
+            : 'export const value = 1;\n',
       );
       return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
     }),
@@ -182,7 +202,7 @@ function runHarness(opts: {
 }
 
 describe("gates with workflow.review 'end'", { timeout: 120_000 }, () => {
-  it('runs the gates once at the final review and sends a red owned by one brief back to that brief', async () => {
+  it('runs the gates at final review and lets the reviewer append a fix task for a red owned by one brief', async () => {
     const { projectDir, sessionId, head } = setupProject();
     const tasks = [
       makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], criteria: ['C1'] }),
@@ -217,12 +237,9 @@ describe("gates with workflow.review 'end'", { timeout: 120_000 }, () => {
     const beforePreReview = harness.log.slice(0, firstPreReview);
     expect(beforePreReview.filter((entry) => entry.startsWith('validate:'))).toEqual([]);
     expect(beforePreReview.filter((entry) => entry.startsWith('retry:'))).toEqual([]);
-    expect(harness.implemented).toEqual(['T001', 'T002']);
-    // The red names src/alpha.ts, which only T001 changed: T001 gets the exact errors, no triage.
-    expect(harness.retries).toHaveLength(1);
-    expect(harness.retries[0]?.task.id).toBe('T001');
-    expect(harness.retries[0]?.error).toContain('TS2304');
-    expect(harness.triagePrompts).toEqual([]);
+    expect(harness.implemented).toEqual(['T001', 'T002', 'T003']);
+    expect(harness.retries).toEqual([]);
+    expect(harness.triagePrompts[0]).toContain('TS2304');
     expect(result.state.fixCycles?.used).toBe(1);
     // The gates run again before the review: the second pre-review suite is green.
     const preReviewVerdicts = harness.events.flatMap((event) =>
@@ -231,9 +248,9 @@ describe("gates with workflow.review 'end'", { timeout: 120_000 }, () => {
         : [],
     );
     expect(preReviewVerdicts).toEqual([false, true]);
-    expect(harness.reviewPrompts).toHaveLength(1);
-    expect(harness.log.indexOf('review')).toBeGreaterThan(harness.log.indexOf('retry:T001'));
-    expect(result.state.tasks.map((task) => task.status)).toEqual(['done', 'done']);
+    expect(harness.reviewPrompts).toHaveLength(2);
+    expect(harness.log.indexOf('review')).toBeLessThan(harness.log.indexOf('implement:T003'));
+    expect(result.state.tasks.map((task) => task.status)).toEqual(['done', 'done', 'done']);
   });
 });
 
@@ -325,35 +342,6 @@ describe("gates with workflow.review 'task'", { timeout: 120_000 }, () => {
     expect(harness.log.slice(0, firstReview)).not.toContain('suite:pre-review:running');
     expect(harness.triagePrompts).toEqual([]);
     expect(result.state.fixCycles?.used ?? 0).toBe(0);
-    expect(result.state.tasks.map((task) => task.status)).toEqual(['done']);
-  });
-
-  it('reruns the pre-review typecheck red in the brief gate of the reopened brief', async () => {
-    const { projectDir, sessionId, head } = setupProject(TS_PROJECT);
-    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], criteria: ['C1'] })];
-    const harness = runHarness({
-      projectDir,
-      sessionId,
-      state: gateState(tasks, head),
-      config: taskConfig(),
-      runCommand: (line, cwd) => {
-        if (line === 'npx tsc --noEmit' && alphaIsBroken(cwd)) {
-          throw processError.exitCode({ command: line, code: 2, stderr: TYPE_ERROR });
-        }
-      },
-    });
-
-    const result = await runTasksAndReview(harness.options);
-
-    expect(result.completed).toBe(true);
-    expect(harness.retries.map((retry) => retry.task.id)).toEqual(['T001']);
-    expect(harness.retries[0]?.error).toContain('TS2304');
-    expect(result.state.fixCycles?.used).toBe(1);
-    // The reopened attempt's own gate reruns typecheck before the next pre-review suite.
-    const reopened = harness.log.indexOf('retry:T001');
-    const nextPreReview = harness.log.indexOf('suite:pre-review:running', reopened);
-    expect(nextPreReview).toBeGreaterThan(reopened);
-    expect(harness.log.slice(reopened, nextPreReview)).toContain('cmd:npx tsc --noEmit');
     expect(result.state.tasks.map((task) => task.status)).toEqual(['done']);
   });
 });

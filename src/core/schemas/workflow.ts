@@ -6,7 +6,6 @@ import {
   WorkflowModeSchema,
   ApproveLevelSchema,
   REVIEW_STATUSES,
-  ValidationStageSchema,
   type Phase,
 } from './enums.js';
 import { TaskSchema, TaskIdSchema, type Task } from './task.js';
@@ -48,22 +47,6 @@ export const DiscoveredValidationSchema = z.object({
 });
 
 export type DiscoveredValidation = z.infer<typeof DiscoveredValidationSchema>;
-
-export const FullSuiteStageRunSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('completed'), durationMs: nonnegativeInteger }),
-  z.object({
-    kind: z.literal('timed-out'),
-    durationMs: nonnegativeInteger,
-    timeoutMs: z.number().int().positive(),
-  }),
-]);
-
-export const FullSuiteStageRunsSchema = z.partialRecord(
-  ValidationStageSchema,
-  FullSuiteStageRunSchema,
-);
-
-export type FullSuiteStageRuns = z.infer<typeof FullSuiteStageRunsSchema>;
 
 export const QueuedMessageSchema = z.object({
   id: z.string(),
@@ -149,13 +132,6 @@ export const LineageRecordSchema = z.object({
   replacedParents: z.array(TaskSchema).default([]),
   notes: z.array(z.string()).default([]),
   carriedFailure: z.string().optional(),
-  gateFailure: z
-    .object({
-      stages: z.array(ValidationStageSchema),
-      files: z.array(z.string()),
-      checkIds: z.array(z.string()),
-    })
-    .optional(),
   corrections: z.array(z.string()).optional(),
 });
 export type LineageRecord = z.infer<typeof LineageRecordSchema>;
@@ -296,8 +272,6 @@ const WorkflowStateFields = {
   pendingPlannerConversation: PlannerConversationSchema.optional(),
   discoveredValidation: DiscoveredValidationSchema.optional(),
   plan: PlanSchema.optional(),
-  fullSuiteBaseline: z.partialRecord(ValidationStageSchema, z.array(z.string())).optional(),
-  fullSuiteBaselineStages: FullSuiteStageRunsSchema.optional(),
   reviewFixes: z
     .object({
       cycle: z.number().int(),
@@ -361,6 +335,8 @@ const WorkflowStateFields = {
 };
 
 const LEGACY_STATE_KEYS = [
+  'fullSuiteBaseline',
+  'fullSuiteBaselineStages',
   'validationBaseline',
   'pendingBoundary',
   'stateFence',

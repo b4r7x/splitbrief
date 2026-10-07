@@ -2,7 +2,7 @@
 
 The host session plans once. Research the requested behaviour, affected code, tests, and callers before asking questions.
 Use project instruction files and carry every applicable constraint into each brief.
-Initialize the run and record baseline validation with references/gates.md.
+Initialize the run with references/gates.md.
 
 ## Planning session
 
@@ -12,7 +12,7 @@ Initialize the run and record baseline validation with references/gates.md.
 4. Write the typed plan below. Keep the behaviour, tests, and callers together under the brief grouping rule.
 5. Admit the plan and render briefs with references/brief-format.md.
 6. Save `plan.json`, `plan.md`, `tasks.md`, `briefs/index.md`, and one Markdown brief per task.
-7. Print the summary, criteria, tasks, dependencies, batches, crew, cadence, validation sources, and baseline results.
+7. Print the summary, criteria, tasks, dependencies, batches, crew, cadence, validation sources.
 8. Print protected operations, selected stages, run directory, and whether `.splitbrief/` is ignored.
 9. Apply the optional approval from references/family-map.md after rendering the complete plan and briefs.
 10. Record the approval, protected path/operation confirmations, and requested changes for later execution.

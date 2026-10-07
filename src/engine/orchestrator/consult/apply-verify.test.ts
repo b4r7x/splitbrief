@@ -76,9 +76,7 @@ function fakeValidator(opts?: { results?: ValidationResult[]; accepted?: boolean
   const results = opts?.results ?? [{ stage: 'test' as const, passed: true }];
   return {
     formatChangedFiles: vi.fn().mockResolvedValue(undefined),
-    runFullSuite: vi
-      .fn()
-      .mockResolvedValue({ results: [], failures: {}, newFailures: {}, stages: {} }),
+    runFullSuite: vi.fn().mockResolvedValue({ results: [], newFailures: {} }),
     runValidation: vi.fn().mockResolvedValue(results),
   };
 }

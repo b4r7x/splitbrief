@@ -171,6 +171,8 @@ describe('buildSkillsContext', () => {
     const context = { name: 'demo', dir: projectDir, skillsContext };
     const task = makeTask();
     const review = buildApiReviewContext({
+      pendingInputs: [],
+      fixCycle: 1,
       feature: 'feature',
       spec: '# Spec',
       taskBriefs: '## T001',

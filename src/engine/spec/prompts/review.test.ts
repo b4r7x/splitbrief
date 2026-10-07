@@ -32,8 +32,43 @@ afterEach(() => {
 });
 
 describe('buildFinalReviewPrompt', () => {
+  it('hands the reviewer every pending input and asks it for the fix tasks in the same answer', () => {
+    const result = buildFinalReviewPrompt({
+      spec: SPEC,
+      taskBriefs: TASK_BRIEFS,
+      diff: DIFF,
+      pendingInputs: [
+        {
+          id: 'P1',
+          kind: 'defect',
+          source: 'check',
+          file: 'src/totals.test.ts',
+          text: 'The test full-suite check before review failed: src/totals.test.ts > totals > adds tax — AssertionError: expected 3 to be 4. Last changed by T001.',
+        },
+      ],
+      fixCycle: 2,
+    });
+
+    const pending = result.split('## Pending Inputs')[1]?.split('\n## ')[0] ?? '';
+    expect(pending).toContain('**P1**');
+    expect(pending).toContain('AssertionError: expected 3 to be 4');
+    expect(pending).toContain('src/totals.test.ts');
+    expect(result).toContain('fixTasks');
+    expect(result).toContain('rejected');
+    expect(result).toContain('verify');
+    expect(result).toContain('ask');
+    expect(result).toContain('fix cycle 2');
+    expect(result).not.toContain("You are the run's planner");
+    expect(
+      result.match(/Return the verdict and the fix work in one review_answer\./g),
+    ).toHaveLength(1);
+    expect(result).not.toMatch(/\n{4}/);
+  });
+
   it('carries the plan, one diff per file with its tasks, the touched-not-suggested files, the check results, the consult log and the user answers', () => {
     const result = buildFinalReviewPrompt({
+      pendingInputs: [],
+      fixCycle: 1,
       spec: SPEC,
       taskBriefs: TASK_BRIEFS,
       diff: DIFF,
@@ -100,6 +135,8 @@ describe('buildFinalReviewPrompt', () => {
 
   it('states the required result ids, and none when the caller names none', () => {
     const named = buildFinalReviewPrompt({
+      pendingInputs: [],
+      fixCycle: 1,
       spec: SPEC,
       taskBriefs: TASK_BRIEFS,
       diff: DIFF,
@@ -112,7 +149,13 @@ describe('buildFinalReviewPrompt', () => {
     expect(named).toContain('Task ids: none');
     expect(named).toContain('Criterion ids: C1');
 
-    const bare = buildFinalReviewPrompt({ spec: SPEC, taskBriefs: TASK_BRIEFS, diff: DIFF });
+    const bare = buildFinalReviewPrompt({
+      pendingInputs: [],
+      fixCycle: 1,
+      spec: SPEC,
+      taskBriefs: TASK_BRIEFS,
+      diff: DIFF,
+    });
     expect(bare).toContain('Task ids: none');
     expect(bare).toContain('Criterion ids: none');
     expect(bare).toContain('one result per listed id');
@@ -129,7 +172,13 @@ describe('buildFinalReviewPrompt', () => {
   });
 
   it('drops the containment sentence that made a missing render at most a Note', () => {
-    const result = buildFinalReviewPrompt({ spec: SPEC, taskBriefs: TASK_BRIEFS, diff: DIFF });
+    const result = buildFinalReviewPrompt({
+      pendingInputs: [],
+      fixCycle: 1,
+      spec: SPEC,
+      taskBriefs: TASK_BRIEFS,
+      diff: DIFF,
+    });
 
     expect(result).not.toContain('A **Critical** finding must name a defect');
     expect(result).not.toContain('an evidence gap alone never causes `fail`');
@@ -183,7 +232,13 @@ describe('buildFinalReviewPrompt', () => {
   });
 
   it('returns a string without a drift section when driftReport is omitted', () => {
-    const result = buildFinalReviewPrompt({ spec: SPEC, taskBriefs: TASK_BRIEFS, diff: DIFF });
+    const result = buildFinalReviewPrompt({
+      pendingInputs: [],
+      fixCycle: 1,
+      spec: SPEC,
+      taskBriefs: TASK_BRIEFS,
+      diff: DIFF,
+    });
     expect(result).not.toContain('Deterministic Drift Report');
     expect(result).toContain('## Task Briefs');
     expect(result).toContain(TASK_BRIEFS);
@@ -195,6 +250,8 @@ describe('buildFinalReviewPrompt', () => {
   it('includes a drift section heading and content when driftReport is provided', () => {
     const driftSection = 'DRIFT: missing export in src/foo.ts';
     const result = buildFinalReviewPrompt({
+      pendingInputs: [],
+      fixCycle: 1,
       spec: SPEC,
       taskBriefs: TASK_BRIEFS,
       diff: DIFF,
@@ -208,6 +265,8 @@ describe('buildFinalReviewPrompt', () => {
     const evidence =
       '- test T001 (exit 0): npm test\n  output: Tests  4 passed (4)\n  snapshot: candidate-1';
     const result = buildFinalReviewPrompt({
+      pendingInputs: [],
+      fixCycle: 1,
       spec: SPEC,
       taskBriefs: TASK_BRIEFS,
       diff: DIFF,
@@ -222,8 +281,32 @@ describe('buildFinalReviewPrompt', () => {
     expect(result).toContain('never report counts or totals that do not appear there');
   });
 
+  it('tells the reviewer a pre-existing failure is reported as such, never a finding against the run', () => {
+    const result = buildFinalReviewPrompt({
+      pendingInputs: [],
+      fixCycle: 1,
+      spec: SPEC,
+      taskBriefs: TASK_BRIEFS,
+      diff: DIFF,
+      checksLog:
+        '- test T001 (exit 1): npm test\n  pre-existing (also red at the run base): src/legacy.test.ts::adds',
+    });
+    expect(result).toContain(
+      'A failure the Checks Log marks pre-existing was red at the run base before any task ran',
+    );
+    expect(result).toContain(
+      'report it as pre-existing and raise no finding against this run for it',
+    );
+  });
+
   it('still instructs how to handle missing validation evidence when none is provided', () => {
-    const result = buildFinalReviewPrompt({ spec: SPEC, taskBriefs: TASK_BRIEFS, diff: DIFF });
+    const result = buildFinalReviewPrompt({
+      pendingInputs: [],
+      fixCycle: 1,
+      spec: SPEC,
+      taskBriefs: TASK_BRIEFS,
+      diff: DIFF,
+    });
     expect(result).not.toContain('## Checks Log');
     expect(result).toContain(
       'state that validation output was not recorded instead of asserting results',
@@ -233,14 +316,26 @@ describe('buildFinalReviewPrompt', () => {
   it('includes a 200,000-character diff with its final line and without truncation marker', () => {
     const finalLine = '+last line of 200k diff';
     const diff = `${'x'.repeat(200_000 - finalLine.length - 1)}\n${finalLine}`;
-    const result = buildFinalReviewPrompt({ spec: SPEC, taskBriefs: TASK_BRIEFS, diff });
+    const result = buildFinalReviewPrompt({
+      pendingInputs: [],
+      fixCycle: 1,
+      spec: SPEC,
+      taskBriefs: TASK_BRIEFS,
+      diff,
+    });
     expect(result).toContain(finalLine);
     expect(result).not.toContain('diff truncated');
   });
 
   it('contains a 500-character diff verbatim', () => {
     const diff = '+'.repeat(500);
-    const result = buildFinalReviewPrompt({ spec: SPEC, taskBriefs: TASK_BRIEFS, diff });
+    const result = buildFinalReviewPrompt({
+      pendingInputs: [],
+      fixCycle: 1,
+      spec: SPEC,
+      taskBriefs: TASK_BRIEFS,
+      diff,
+    });
     expect(result).toContain(diff);
   });
 });

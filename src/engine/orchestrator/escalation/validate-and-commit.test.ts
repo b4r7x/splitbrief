@@ -79,9 +79,7 @@ describe('validateAndCommit', () => {
     const controller = new AbortController();
     const validator: Validator = {
       formatChangedFiles: vi.fn().mockResolvedValue(undefined),
-      runFullSuite: vi
-        .fn()
-        .mockResolvedValue({ results: [], failures: {}, newFailures: {}, stages: {} }),
+      runFullSuite: vi.fn().mockResolvedValue({ results: [], newFailures: {} }),
       runValidation: vi.fn().mockImplementation(async () => {
         controller.abort(new DOMException('The user aborted a request.', 'AbortError'));
         return [{ stage: 'test' as const, passed: true }];
@@ -96,12 +94,7 @@ describe('validateAndCommit', () => {
         signal: controller.signal,
       }),
       task,
-      state: makeImplState(
-        [task],
-        task.id === 'T012'
-          ? { fullSuiteBaseline: { test: ['test failed without diagnostics'] } }
-          : {},
-      ),
+      state: makeImplState([task]),
       method: 'local',
       transitionType: 'VALIDATION_PASS',
       retryCount: 1,
@@ -116,30 +109,26 @@ describe('validateAndCommit', () => {
     });
   });
 
-  it('accepts a retry whose only failing stage was exempt at baseline, like the task path', async () => {
+  it('accepts a retry whose only failing stage was pre-existing, like the task path', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T012', suggestedFiles: ['src/exempt.ts'] });
     const validator: Validator = {
       formatChangedFiles: vi.fn().mockResolvedValue(undefined),
-      runFullSuite: vi
-        .fn()
-        .mockResolvedValue({ results: [], failures: {}, newFailures: {}, stages: {} }),
-      runValidation: vi
-        .fn()
-        .mockResolvedValue([
-          { stage: 'test' as const, passed: false, failureFiles: ['src/unrelated.ts'] },
-        ]),
+      runFullSuite: vi.fn().mockResolvedValue({ results: [], newFailures: {} }),
+      runValidation: vi.fn().mockResolvedValue([
+        {
+          stage: 'test' as const,
+          passed: false,
+          failureFiles: ['src/unrelated.ts'],
+          preExisting: ['test failed without diagnostics'],
+        },
+      ]),
     };
 
     const result = await validateAndCommit({
       ctx: await makeValidateCtx({ projectDir, sessionId, validator }),
       task,
-      state: makeImplState(
-        [task],
-        task.id === 'T012'
-          ? { fullSuiteBaseline: { test: ['test failed without diagnostics'] } }
-          : {},
-      ),
+      state: makeImplState([task]),
       method: 'local',
       transitionType: 'VALIDATION_PASS',
       retryCount: 1,
@@ -152,14 +141,12 @@ describe('validateAndCommit', () => {
     });
   });
 
-  it('blocks a retry whose failing stage was green at baseline', async () => {
+  it('blocks a retry whose failing stage has no pre-existing attribution', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T013', suggestedFiles: ['src/blocks.ts'] });
     const validator: Validator = {
       formatChangedFiles: vi.fn().mockResolvedValue(undefined),
-      runFullSuite: vi
-        .fn()
-        .mockResolvedValue({ results: [], failures: {}, newFailures: {}, stages: {} }),
+      runFullSuite: vi.fn().mockResolvedValue({ results: [], newFailures: {} }),
       runValidation: vi
         .fn()
         .mockResolvedValue([
@@ -170,12 +157,7 @@ describe('validateAndCommit', () => {
     const result = await validateAndCommit({
       ctx: await makeValidateCtx({ projectDir, sessionId, validator }),
       task,
-      state: makeImplState(
-        [task],
-        task.id === 'T012'
-          ? { fullSuiteBaseline: { test: ['test failed without diagnostics'] } }
-          : {},
-      ),
+      state: makeImplState([task]),
       method: 'local',
       transitionType: 'VALIDATION_PASS',
       retryCount: 1,

@@ -47,7 +47,7 @@ Sync copies that reference and the explicitly listed scripts into each skill tha
 It announces that scope and prints the selected stages before dispatch.
 A run directory resumes its saved stage, including review or fixes, while preserving attempts, bounds, decisions, and completed tasks.
 It reconciles active processes before spawning. `--status` inspects the saved run without dispatch.
-`error: <review.md>` starts planner triage, appends fix tasks with new ids, then validates and reviews again.
+`error: <review.md>` asks the reviewer for verdict and fix work, appends fix tasks with new ids, then validates and reviews again.
 A single brief file selects one task. Unmet dependencies pause execution; completion applies to that selection only.
 A prose plan becomes the typed contract before dispatch, with its stated outcome preserved.
 A review request alone never authorizes source changes or execution of its appended fixes.
@@ -117,9 +117,9 @@ An explicit plan approval confirms only the listed protected paths and operation
 | task | additionally after each completed task | completed tasks and criteria due so far; pending criteria stay pending |
 
 There is no batch review cadence and no batch-boundary suite.
-Before the final review, run the full suite and every registered check on the current candidate. A task-cadence review runs no full suite.
+Before final review, run the full suite on the current candidate. Stop at the first stage with a new failure. Run registered checks only when every suite failure is pre-existing. A task-cadence review runs no full suite. Re-run parsed failing tests or a red typecheck or lint command at the run base. Report matching failures as pre-existing. Send every new red to the reviewer as a pending input.
 Allow 2 fix cycles globally. At end cadence, this permits up to 3 reviews; task cadence adds reviews and shares the cap.
-The CLI runs the end/task cadence, the decisions ledger, typed review with a derived pass, planner triage and planner-first review questions.
+The CLI runs the end/task cadence, the decisions ledger, one typed review answer with verdict and fix work, and reviewer questions about product changes.
 The skills follow that agreed design now. Render checks are unavailable in the skills.
 
 ## Engine command mapping
@@ -146,7 +146,7 @@ Standalone skill records cannot serve as engine session state for `resume`.
 | Stale refresh and persistent lineage bounds | `src/engine/orchestrator/task/stale-inputs.ts`; `src/core/pipeline-spec/bounds.ts` |
 | Proposed decisions and confirmed Plan context | ImplementerReport decisions and `plan.decisions`; TRACE §4 |
 | End/task cadence and completed-task coverage | `workflow.review` (`src/core/schemas/config.ts`); TRACE §4 |
-| Typed review, derived pass and appended fixes | `src/core/schemas/review.ts`, `src/core/review/verdict.ts`; planner triage; DESIGN §§4, 7 |
+| Typed review, derived pass and appended fixes | `src/core/schemas/review.ts`, `src/core/review/verdict.ts`; review answer with fix work; DESIGN §§4, 7 |
 | Validation stages, narrowing and capture | `src/core/pipeline-spec/gates.ts`; `src/core/validation/stage-command.ts` and `stacks/` |
 | Registered checks and the cadence gates | Plan and TaskSpec checks; `src/engine/orchestrator/task/brief-gate.ts`, `src/engine/orchestrator/run/pre-review-checks.ts` |
 | Spawn recipes, halts and deadlines | `src/engine/runners/cli-tools/`; `src/core/pipeline-spec/halts.ts`, `timeouts.ts` |

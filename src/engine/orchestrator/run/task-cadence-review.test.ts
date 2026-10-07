@@ -16,8 +16,7 @@ import {
   failedReviewVerdict,
   passingReviewVerdict,
   planFromTasks,
-  rejectingTriageResult,
-  typedCallPlanReviewAndTriage,
+  typedCallPlanAndReview,
 } from '#testing/helpers/typed-planner.js';
 import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -91,7 +90,7 @@ function runOptions(opts: {
   const reviewPrompts: string[] = [];
   const triagePrompts: string[] = [];
   const reviewer = makePlanner({
-    typedCall: typedCallPlanReviewAndTriage(
+    typedCall: typedCallPlanAndReview(
       () => planFromTasks(opts.state.tasks),
       (prompt, call) => {
         reviewPrompts.push(prompt);
@@ -100,13 +99,15 @@ function runOptions(opts: {
           json: readReviewRecord(ref)?.outcome,
           markdown: existsSync(join(sessionDir(ref.projectDir, ref.sessionId), REVIEW_FILE)),
         });
-        return opts.review(prompt, call);
-      },
-      (prompt, call) => {
+        const verdict = opts.review(prompt, call);
+        if (
+          opts.triage === undefined ||
+          (verdict.findings.length === 0 && prompt.includes('## Pending Inputs\nNone.'))
+        )
+          return verdict;
+        const fixWork = opts.triage(prompt, call);
         triagePrompts.push(prompt);
-        return opts.triage === undefined
-          ? rejectingTriageResult(prompt)
-          : opts.triage(prompt, call);
+        return typeof fixWork === 'string' ? fixWork : { ...verdict, ...fixWork };
       },
     ),
   });
@@ -234,7 +235,7 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
     expect(onComplete).toHaveBeenCalledTimes(1);
     expect(reviewPrompts).toHaveLength(3);
     expect(triagePrompts).toHaveLength(1);
-    expect(triagePrompts[0]).toContain('src/alpha.ts drops the error');
+    expect(result.state.tasks[1]?.fix?.findings[0]?.text).toBe('src/alpha.ts drops the error');
     const fixed = result.state.tasks[1];
     expect(fixed?.id).toBe('T002');
     expect(fixed?.fix?.cycle).toBe(1);
@@ -328,10 +329,7 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
       review: (prompt) => passingReviewVerdict(prompt),
       triage: () => ({
         fixTasks: [],
-        rejected: [
-          { findingId: 'F1', reason: 'The reviewed concern is answered' },
-          { findingId: 'U1', reason: 'The correction guides continuation' },
-        ],
+        rejected: [{ findingId: 'U2', reason: 'The correction guides continuation' }],
         verify: [],
         ask: null,
       }),
@@ -343,36 +341,11 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
     expect(completed.state.tasks.map((task) => task.status)).toEqual(['done', 'done']);
     expect(continued.triagePrompts).toHaveLength(1);
     expect(continued.triagePrompts[0]).toContain('Keep running with the reviewed correction');
-    expect(continued.reviewPrompts).toHaveLength(2);
-    expect(phases).toEqual(['implementing', 'final-review']);
+    expect(continued.reviewPrompts).toHaveLength(3);
+    expect(phases).toEqual(['implementing', 'implementing', 'final-review']);
     expect(continued.events.filter((event) => event.type === 'workflow_complete')).toEqual([
       expect.objectContaining({ review: 'passed' }),
     ]);
     expect(onComplete).toHaveBeenCalledTimes(1);
-  });
-
-  it('halts on the planner-call bound when a scheduled failure would triage', async () => {
-    const { projectDir, sessionId, head } = setupProject();
-    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], criteria: ['C1'] })];
-    const { triagePrompts, options } = runOptions({
-      projectDir,
-      sessionId,
-      state: cadenceState(tasks, head, {
-        plannerCalls: { used: 10, allowance: 10 },
-      }),
-      review: (prompt) =>
-        failedReviewVerdict(prompt, 'src/alpha.ts drops the error', { taskId: 'T001' }),
-      onComplete: vi.fn(),
-    });
-
-    const result = await runTasksAndReview(options);
-
-    expect(result.completed).toBe(false);
-    expect(triagePrompts).toHaveLength(0);
-    expect(result.state.pendingRecovery).toMatchObject({
-      reason: 'planner-calls-spent',
-      message: 'The run used its planner-call allowance',
-    });
-    expect(result.state.pendingRecovery?.taskId).toBeUndefined();
   });
 });

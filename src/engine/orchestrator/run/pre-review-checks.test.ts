@@ -15,7 +15,9 @@ import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeCommandRunner, makeConfig } from '#testing/helpers/validation-fixtures.js';
 import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
-import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import { readEvidenceLedger, writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import { buildChecks } from '../evidence/review-packet/sections.js';
+import { renderWholeChecksLog } from '../evidence/review-packet/render.js';
 import type { RunFullSuiteResult, Validator } from '../validation/types.js';
 import { buildRequiredChecksUnrunnableRecoveryIssue } from '../recovery/builders/checks.js';
 import { failingFilesFromOutput } from '../task/file-owner.js';
@@ -36,7 +38,7 @@ function makePlan(checks: Check[]): Plan {
   };
 }
 
-const emptySuite: RunFullSuiteResult = { results: [], failures: {}, newFailures: {}, stages: {} };
+const emptySuite: RunFullSuiteResult = { results: [], newFailures: {} };
 const validator: Pick<Validator, 'runFullSuite'> = { runFullSuite: async () => emptySuite };
 
 /** A ledger whose entries carry exactly the accepted changed files given. */
@@ -81,6 +83,42 @@ describe('pre-review checks', () => {
       ...overrides,
     };
   }
+
+  it('records the stages that did not run in the reviewer Checks Log after a red suite stop', async () => {
+    const state = {
+      ...makeImplState([makeTask({ id: 'T001', status: 'done' })]),
+      phase: 'final-review' as const,
+    };
+    const ref = { projectDir, sessionId: 'sess-pre-review' };
+    saveState(ref, state);
+    const runner = makeCommandRunner(
+      processError.exitCode({
+        command: 'tsc',
+        code: 1,
+        stderr: 'src/a.ts(1,1): error TS2322',
+        output: '',
+      }),
+    );
+    await runPreReview({
+      wctx: makeWctx({
+        ...ref,
+        config: makeConfig({ typecheck: true, lint: true, test: true }),
+        validator: createValidator({ runCommand: runner }),
+      }),
+      state,
+      setTrackedState: vi.fn(),
+    });
+    expect(runner.calls).toHaveLength(1);
+    const checks = buildChecks({ ledger: readEvidenceLedger(ref), events: [] });
+    expect(checks.entries.filter((entry) => entry.id === 'lint' || entry.id === 'test')).toEqual([
+      expect.objectContaining({ id: 'lint', output: 'not run: typecheck failed' }),
+      expect.objectContaining({ id: 'test', output: 'not run: typecheck failed' }),
+    ]);
+    const log = renderWholeChecksLog(checks);
+    expect(log).toContain('- lint T001');
+    expect(log).toContain('- test T001');
+    expect(log.match(/output: not run: typecheck failed/g)).toHaveLength(2);
+  });
 
   it('runs optional checks and records results on their task or the last task for a plan check', async () => {
     const first = makeTask({
@@ -176,7 +214,10 @@ describe('pre-review checks', () => {
       planner: makePlanner({ typedCall: vi.fn() }),
       bus,
       config: makeConfig({ typecheck: false, lint: false, testCommand: 'missing-vitest run' }),
-      validator: createValidator(),
+      validator: {
+        ...createValidator(),
+        runFullSuite: vi.fn().mockResolvedValue({ results: [], newFailures: {} }),
+      },
     });
 
     const result = await runPreReview({ wctx, state, setTrackedState: vi.fn() });
@@ -239,13 +280,12 @@ describe('pre-review checks', () => {
     ).toEqual(['src/a.ts', 'src/b.ts']);
   });
 
-  it('hands the full suite the baseline stage runs the run-start baseline recorded', async () => {
-    const baselineStages = { test: { kind: 'completed' as const, durationMs: 400_000 } };
+  it('hands the full suite the run base the workspace recorded, so a red is checked there', async () => {
     const calls: Parameters<Validator['runFullSuite']>[0][] = [];
     const suiteValidator: Pick<Validator, 'runFullSuite'> = {
       runFullSuite: async (opts) => {
         calls.push(opts);
-        return { ...emptySuite, stages: {} };
+        return emptySuite;
       },
     };
     await runPreReviewChecks(
@@ -253,22 +293,81 @@ describe('pre-review checks', () => {
         validator: suiteValidator,
         state: makeImplState([], {
           plan: makePlan([]),
-          fullSuiteBaseline: {},
-          fullSuiteBaselineStages: baselineStages,
+          workspace: {
+            kind: 'worktree',
+            path: '/state/trees/abc/sess-pre-review',
+            base: { snapshotId: 'snap-base', head: 'abc123' },
+          },
         }),
       }),
     );
 
-    expect(calls[0]?.baselineStages).toEqual(baselineStages);
+    expect(calls[0]?.base).toEqual({
+      projectDir,
+      sessionId: 'sess-pre-review',
+      snapshotId: 'snap-base',
+    });
+  });
+
+  it('routes no pre-existing failure to a brief: only the new ones become defects', async () => {
+    const suiteValidator: Pick<Validator, 'runFullSuite'> = {
+      runFullSuite: async () => ({
+        results: [
+          {
+            passed: false,
+            stage: 'test',
+            failingTests: [
+              { file: 'src/legacy.test.ts', name: 'adds', message: 'old failure' },
+              { file: 'src/fresh.test.ts', name: 'subtracts', message: 'new failure' },
+            ],
+            preExisting: ['src/legacy.test.ts::adds'],
+          },
+        ],
+        newFailures: { test: ['src/fresh.test.ts::subtracts'] },
+      }),
+    };
+    const result = await runPreReviewChecks(options({ validator: suiteValidator }));
+
+    expect(result.defects.map((defect) => defect.file)).toEqual(['src/fresh.test.ts']);
+  });
+
+  it('keeps a fileless failing test fileless when its name contains a dotted subtest', async () => {
+    const name = 'TestFetch/site.example';
+    const suiteValidator: Pick<Validator, 'runFullSuite'> = {
+      runFullSuite: async () => ({
+        results: [
+          {
+            stage: 'test',
+            passed: false,
+            failingTests: [{ file: '', name, message: 'connection failed' }],
+          },
+        ],
+        newFailures: { test: [name] },
+      }),
+    };
+    const result = await runPreReviewChecks(options({ validator: suiteValidator }));
+    expect(result.defects).toEqual([
+      {
+        id: 'P1',
+        kind: 'defect',
+        source: 'check',
+        file: null,
+        text: 'The test full-suite check before review failed: TestFetch/site.example — connection failed. No task changed it.',
+      },
+    ]);
   });
 
   it('turns a new full-suite failure into a defect keyed by its file', async () => {
     const suiteValidator: Pick<Validator, 'runFullSuite'> = {
       runFullSuite: async () => ({
-        results: [],
-        failures: { test: ['src/a.ts(1,1): boom'] },
-        newFailures: { test: ['src/a.ts(1,1): boom'] },
-        stages: {},
+        results: [
+          {
+            stage: 'test',
+            passed: false,
+            failingTests: [{ file: 'src/a.ts', name: '', message: 'boom' }],
+          },
+        ],
+        newFailures: { test: ['src/a.ts'] },
       }),
     };
     const result = await runPreReviewChecks(options({ validator: suiteValidator }));
@@ -281,6 +380,79 @@ describe('pre-review checks', () => {
       file: 'src/a.ts',
     });
     expect(result.defects[0]?.text).toContain('test');
+  });
+
+  it('turns every new failing test into its own input carrying its assertion message, two in one file included', async () => {
+    const failingTests = [
+      {
+        file: 'src/totals.test.ts',
+        name: 'totals > adds tax',
+        message: 'AssertionError: expected 3 to be 4',
+      },
+      {
+        file: 'src/totals.test.ts',
+        name: 'totals > rounds down',
+        message: 'AssertionError: expected 1.5 to be 1',
+      },
+    ];
+    const suiteValidator: Pick<Validator, 'runFullSuite'> = {
+      runFullSuite: async () => ({
+        results: [
+          {
+            passed: false,
+            stage: 'test',
+            exitCode: 1,
+            error: 'FAIL  src/totals.test.ts > totals > adds tax',
+            failingTests,
+          },
+        ],
+        newFailures: {
+          test: [
+            'src/totals.test.ts::totals > adds tax',
+            'src/totals.test.ts::totals > rounds down',
+          ],
+        },
+      }),
+    };
+    const result = await runPreReviewChecks(options({ validator: suiteValidator }));
+
+    expect(result.defects.map((defect) => [defect.id, defect.file])).toEqual([
+      ['P1', 'src/totals.test.ts'],
+      ['P2', 'src/totals.test.ts'],
+    ]);
+    expect(result.defects[0]?.text).toContain('totals > adds tax');
+    expect(result.defects[0]?.text).toContain('AssertionError: expected 3 to be 4');
+    expect(result.defects[1]?.text).toContain('totals > rounds down');
+    expect(result.defects[1]?.text).toContain('AssertionError: expected 1.5 to be 1');
+  });
+
+  it('runs no check after a suite stage with a new failure, so the review gets that red at once', async () => {
+    const plan = makePlan([{ id: 'K2', kind: 'cmd', value: 'node --version', required: true }]);
+    const runner = makeCommandRunner();
+    const suiteValidator: Pick<Validator, 'runFullSuite'> = {
+      runFullSuite: async () => ({
+        results: [
+          {
+            passed: false,
+            stage: 'typecheck',
+            exitCode: 2,
+            error: 'src/a.ts(1,1): error TS1005',
+          },
+        ],
+        newFailures: { typecheck: ['src/a.ts(1,1)'] },
+      }),
+    };
+    const result = await runPreReviewChecks(
+      options({
+        validator: suiteValidator,
+        state: makeImplState([], { plan }),
+        runCommand: runner,
+      }),
+    );
+
+    expect(runner.calls).toEqual([]);
+    expect(result.runs).toEqual([]);
+    expect(result.defects.map((defect) => defect.file)).toEqual(['src/a.ts']);
   });
 
   it('classifies every non-pass required check status', () => {

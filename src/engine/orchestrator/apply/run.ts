@@ -245,7 +245,7 @@ export async function runApply(input: {
       });
       setTrackedState?.(state);
       createBusTextHandler({ bus: wctx.bus, phase: state.phase })(
-        `Apply wrote conflict markers for ${countNoun(textConflicts.length, 'file')} both sides changed (${textConflicts.map((conflict) => conflict.path).join(', ')}); the triage turns them into fix tasks before Apply runs again.`,
+        `Apply wrote conflict markers for ${countNoun(textConflicts.length, 'file')} both sides changed (${textConflicts.map((conflict) => conflict.path).join(', ')}); the review turns them into fix tasks before Apply runs again.`,
       );
       return { outcome: 'review', state };
     }

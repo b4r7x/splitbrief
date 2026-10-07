@@ -45,7 +45,6 @@ import {
   type SeatSwapContext,
 } from '../../../../src/engine/orchestrator/recovery/builders/task.js';
 import { parseUsageLimitReset } from '../../../../src/engine/runners/usage-limit.js';
-import { fullSuiteTimeoutWarning } from '../../../../src/engine/orchestrator/validation/run.js';
 import type { SeatFailureClassification } from '../../../../src/engine/runners/seat-failure.js';
 import {
   consultHaltDetails,
@@ -717,9 +716,7 @@ function orphanBriefStarted(
   };
 }
 
-// S11 run 3 in miniature, within the fixture's eight events: the run-start suite passed typecheck,
-// its test stage timed out and warned, T901 also changed files it did not plan, and T902 is live.
-// Every row above T902 belongs to the closed T901.
+// Run-level rows and unsuggested files collapse with the completed brief when the next brief starts.
 const completedOrphanRowsProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-completed-orphan-rows'),
   feature: WORKFLOW_FEATURE,
@@ -729,22 +726,10 @@ const completedOrphanRowsProjection: WorkflowFixtureProjection = {
     { type: 'workflow_started', ts: FIXED_TS, phase: 'implementing', feature: WORKFLOW_FEATURE },
     FIXTURE_TASKS_PLANNED,
     {
-      type: 'full_suite',
-      ts: FIXED_TS + 70,
-      phase: 'implementing',
-      status: 'done',
-      stage: 'typecheck',
-      command: 'npm run typecheck',
-      moment: 'baseline',
-      passed: true,
-      duration: 16_003,
-    },
-    {
       type: 'warning',
       ts: FIXED_TS + 80,
       phase: 'implementing',
-      message:
-        'The test stage of the full suite timed out after 600s at the run-start baseline; this run does not run it again.',
+      message: 'Ignoring changed files that could not be read: src/tmp.lock.',
     },
     orphanBriefStarted(FIXTURE_PLANNED_BRIEFS[0], FIXED_TS + 100),
     fixtureBriefPassed(FIXTURE_PLANNED_BRIEFS[0], FIXED_TS + 200),
@@ -857,7 +842,7 @@ const completeAfterFixTasksProjection: WorkflowFixtureProjection = {
   },
 };
 
-/** The reopened brief's fix attempt verified the finding and edited nothing, then passed its gates. */
+/** The appended fix task's attempt verified the finding and edited nothing, then passed its gates. */
 const reviewFixNoChangeProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_REVIEW_FIX_NO_CHANGE_ID,
   feature: WORKFLOW_FEATURE,
@@ -2837,51 +2822,101 @@ const implementationFullSuiteProjection: WorkflowFixtureProjection = {
   ],
 };
 
-// S11 run 3, 19:34: the run-start `npm test` outran the stage timeout, so the run skips it from here
-// on and says which `validation.timeoutMs` to raise.
-const SUITE_TIMEOUT_STARTED_TS = FIXED_TS + 42_000 - 3_601_200;
-const BASELINE_SUITE = { phase: 'implementing', moment: 'baseline' } as const;
-const SUITE_TIMEOUT_WARNING = fullSuiteTimeoutWarning('test', {
-  durationMs: 3_601_200,
-  timeoutMs: 3_600_000,
-});
+const reviewRedGateProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-review-red-gate'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  config: { reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-6-astra' } },
+  get events(): EngineEvent[] {
+    return [
+      { type: 'workflow_started', ts: FIXED_TS, phase: 'implementing', feature: WORKFLOW_FEATURE },
+      { ...FIXTURE_TASKS_PLANNED, total: 1, tasks: FIXTURE_TASKS_PLANNED.tasks.slice(0, 1) },
+      fixtureBriefPassed(FIXTURE_PLANNED_BRIEFS[0], FIXED_TS + 300),
+      {
+        type: 'full_suite',
+        ts: FIXED_TS + 400,
+        phase: 'final-review',
+        moment: 'pre-review',
+        status: 'done',
+        stage: 'typecheck',
+        command: 'npx tsc --noEmit',
+        passed: false,
+        duration: 16_000,
+      },
+      ...(['lint', 'test'] as const).map(
+        (stage): EngineEvent => ({
+          type: 'full_suite',
+          ts: FIXED_TS + 401,
+          phase: 'final-review',
+          moment: 'pre-review',
+          status: 'not-run',
+          stage,
+          command: stage === 'lint' ? 'npm run lint' : 'npm test',
+        }),
+      ),
+      ...finalReviewProjection.events.filter((event) => event.type === 'runner_call_started'),
+      ...['Reading the typecheck failure and the pending input'].map(
+        (label, index): EngineEvent => ({
+          type: 'runner_call_activity',
+          ts: FIXED_TS + 560 + index * 10,
+          phase: 'final-review',
+          callId: 'visual-review-call-001',
+          role: 'review',
+          backendKind: 'cli',
+          runnerName: 'codex',
+          model: 'gpt-6-astra',
+          attempt: 1,
+          sequence: index + 1,
+          activityId: `visual-review-call-001:read:${index}`,
+          stage: 'completed',
+          kind: 'read',
+          label,
+          redacted: false,
+          rawAvailable: false,
+        }),
+      ),
+    ];
+  },
+};
 
-const implementationSuiteTimeoutProjection: WorkflowFixtureProjection = {
-  scenarioId: scenarioId('workflow-implementation-suite-timeout'),
+const reviewBaseRerunProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-review-base-rerun'),
   feature: WORKFLOW_FEATURE,
   inputMode: 'normal',
   sidebarVisible: true,
   events: [
-    {
-      type: 'workflow_started',
-      ts: SUITE_TIMEOUT_STARTED_TS - 60_000,
-      phase: 'implementing',
-      feature: WORKFLOW_FEATURE,
-    },
-    { ...FIXTURE_TASKS_PLANNED, ts: SUITE_TIMEOUT_STARTED_TS - 50_000 },
+    ...everyBriefPassed(),
     {
       type: 'full_suite',
-      ts: SUITE_TIMEOUT_STARTED_TS,
-      ...BASELINE_SUITE,
-      status: 'running',
-      stage: 'test',
-      command: 'npm test',
-    },
-    {
-      type: 'full_suite',
-      ts: SUITE_TIMEOUT_STARTED_TS + 3_601_200,
-      ...BASELINE_SUITE,
+      ts: FIXED_TS + 1_000,
+      phase: 'final-review',
+      moment: 'pre-review',
       status: 'done',
       stage: 'test',
       command: 'npm test',
       passed: false,
-      duration: 3_601_200,
+      duration: 12_000,
     },
     {
-      type: 'warning',
-      ts: SUITE_TIMEOUT_STARTED_TS + 3_601_300,
-      phase: 'implementing',
-      message: SUITE_TIMEOUT_WARNING,
+      type: 'full_suite',
+      ts: FIXED_TS + 1_500,
+      phase: 'final-review',
+      moment: 'base',
+      status: 'done',
+      stage: 'typecheck',
+      command: 'npx tsc --noEmit',
+      passed: false,
+      duration: 1_000,
+    },
+    {
+      type: 'full_suite',
+      ts: FIXED_TS + 2_000,
+      phase: 'final-review',
+      moment: 'base',
+      status: 'running',
+      stage: 'test',
+      command: 'npm test -- src/legacy.test.ts',
     },
   ],
 };
@@ -2948,7 +2983,8 @@ const projections = [
   implementationSilentProjection,
   implementationToolRunningProjection,
   implementationFullSuiteProjection,
-  implementationSuiteTimeoutProjection,
+  reviewBaseRerunProjection,
+  reviewRedGateProjection,
   plannerSessionExpiredProjection,
 ] as const;
 
@@ -3036,7 +3072,6 @@ function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
       value !== planCardSharedCommandProjection.review?.planJson &&
       value !== ANSWERED_QUESTIONS_TEXT &&
       !retainedWorkspaceNotices.includes(value) &&
-      value !== SUITE_TIMEOUT_WARNING &&
       !engineHaltText.includes(value) &&
       value.length > WORKFLOW_FIXTURE_BOUNDS.maxStringLength &&
       !projection.question?.questions?.some(

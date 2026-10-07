@@ -114,7 +114,7 @@ export function makePlanner(overrides?: Partial<Planner>): Planner {
     getVersion: vi.fn().mockResolvedValue('1.0'),
     review: vi.fn().mockResolvedValue({ text: '### Verdict\npass\n', usage: null }),
     summarize: vi.fn().mockResolvedValue({ text: '', usage: null }),
-    // The reviewer mock answers `review_verdict` with a passing verdict built from the
+    // The reviewer mock answers `review_answer` with a passing verdict built from the
     // prompt's own `Task ids:` / `Criterion ids:` lines; the planner mock plans the task.
     typedCall: typedCallPlanAndReview(
       () => planFromTasks([task]),

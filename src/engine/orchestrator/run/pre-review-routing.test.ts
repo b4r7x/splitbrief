@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
@@ -10,7 +9,6 @@ import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
 import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
-import type { TriageResult } from '../../../core/schemas/review.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { saveState } from '../../../core/state/persistence.js';
@@ -49,9 +47,7 @@ function typecheckSuite(errorLines: string[]): RunFullSuiteResult {
         output: errorLines.join('\n'),
       },
     ],
-    failures: { typecheck: keys },
     newFailures: { typecheck: keys },
-    stages: {},
   };
 }
 
@@ -88,8 +84,8 @@ function setup(state: WorkflowState, changed: Record<string, string[]>) {
   return { projectDir, sessionId };
 }
 
-describe('runPreReview routing of a red gate', () => {
-  it('reopens the one brief whose changed files the red names, carrying the exact errors', async () => {
+describe('runPreReview hands a red gate to the review', () => {
+  it('reopens no brief and calls no planner: a red that names one brief queues as a pending input for the reviewer', async () => {
     const tasks = [doneTask('T001', 'src/first.ts'), doneTask('T002', 'src/second.ts')];
     const state = makeImplState(tasks, {
       phase: 'final-review',
@@ -120,19 +116,20 @@ describe('runPreReview routing of a red gate', () => {
       setTrackedState: vi.fn(),
     });
 
-    expect(result.kind).toBe('fix-queued');
+    expect(result.kind).toBe('review');
     expect(planner.typedCall).not.toHaveBeenCalled();
-    expect(result.state.tasks.map((task) => task.id)).toEqual(['T001', 'T002']);
-    expect(result.state.tasks.map((task) => task.status)).toEqual(['done', 'pending']);
-    expect(result.state.currentTaskIndex).toBe(1);
-    expect(result.state.phase).toBe('implementing');
-    expect(result.state.fixCycles?.used).toBe(1);
-    expect(result.state.lineages?.['T002']?.carriedFailure).toContain('error TS2322');
-    expect(result.state.lineages?.['T001']?.carriedFailure).toBeUndefined();
-    expect(events).toContainEqual(expect.objectContaining({ type: 'task_reset', taskId: 'T002' }));
+    expect(result.state.tasks.map((task) => task.status)).toEqual(['done', 'done']);
+    expect(result.state.phase).toBe('final-review');
+    expect(result.state.fixCycles?.used).toBe(0);
+    expect(result.state.lineages?.['T002']?.carriedFailure).toBeUndefined();
+    expect(events.some((event) => event.type === 'task_reset')).toBe(false);
+    expect(result.state.pendingTriage?.inputs).toEqual([
+      expect.objectContaining({ id: 'P1', source: 'check', file: 'src/second.ts' }),
+    ]);
+    expect(result.state.pendingTriage?.inputs[0]?.text).toContain('Last changed by T002.');
   });
 
-  it('sends a red that names files of two briefs to the triage as fix tasks', async () => {
+  it('queues a red that names files of two briefs as one pending input per file, still with no planner call', async () => {
     const tasks = [doneTask('T001', 'src/first.ts'), doneTask('T002', 'src/second.ts')];
     const state = makeImplState(tasks, {
       phase: 'final-review',
@@ -142,23 +139,7 @@ describe('runPreReview routing of a red gate', () => {
       T001: ['src/first.ts'],
       T002: ['src/second.ts'],
     });
-    const triage: TriageResult = {
-      fixTasks: [
-        {
-          ...makeTaskSpec({
-            id: 'T003',
-            suggestedFiles: ['src/first.ts', 'src/second.ts'],
-            criteria: [],
-            checks: [],
-          }),
-          findingIds: ['P1', 'P2'],
-        },
-      ],
-      rejected: [],
-      verify: [],
-      ask: null,
-    };
-    const planner = scriptedPlanner([JSON.stringify(triage)]);
+    const planner = scriptedPlanner([]);
     const validator: Validator = {
       ...createValidator(),
       runFullSuite: async () =>
@@ -181,11 +162,12 @@ describe('runPreReview routing of a red gate', () => {
       setTrackedState: vi.fn(),
     });
 
-    expect(result.kind).toBe('fix-queued');
-    expect(planner.prompts).toHaveLength(1);
-    expect(result.state.tasks.map((task) => task.id)).toEqual(['T001', 'T002', 'T003']);
-    expect(result.state.tasks.slice(0, 2).map((task) => task.status)).toEqual(['done', 'done']);
-    expect(result.state.lineages?.['T001']?.carriedFailure).toBeUndefined();
-    expect(result.state.lineages?.['T002']?.carriedFailure).toBeUndefined();
+    expect(result.kind).toBe('review');
+    expect(planner.typedCall).not.toHaveBeenCalled();
+    expect(result.state.tasks.map((task) => task.id)).toEqual(['T001', 'T002']);
+    expect(result.state.pendingTriage?.inputs.map((input) => [input.id, input.file])).toEqual([
+      ['P1', 'src/first.ts'],
+      ['P2', 'src/second.ts'],
+    ]);
   });
 });

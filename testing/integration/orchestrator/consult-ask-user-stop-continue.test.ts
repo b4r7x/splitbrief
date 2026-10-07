@@ -84,6 +84,7 @@ describe('a run stopped while a consult question waits', { timeout: 120_000 }, (
       description: 'Create a module whose marker only the operator knows.',
       implementationSteps: ['Create src/loop.ts with the marker export.'],
       tests: ['node validate.mjs passes'],
+      checks: [{ id: 'K-retry', kind: 'test', value: targetFile, required: true }],
       scope: { inBounds: [targetFile], outOfBounds: ['unrelated files'] },
       evidence: ['validation passes after the operator answers'],
       typeDefs: 'export const loop: string',
@@ -121,7 +122,7 @@ describe('a run stopped while a consult question waits', { timeout: 120_000 }, (
     const config = makeConfig({
       implementer: { kind: 'agent', command: 'node', model: 'direct-agent', contextLength: 4096 },
       validation: { typecheck: false, lint: false, test: true, testCommand: 'node validate.mjs' },
-      workflow: { approve: 'none', maxRetries: 1 },
+      workflow: { approve: 'none', review: 'task', maxRetries: 1 },
     });
 
     const stop = new AbortController();

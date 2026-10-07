@@ -107,7 +107,7 @@ function installFakeCodexPlanner(binDir: string): string {
     "    const value = match ? match[1].trim() : 'none';",
     "    return value === 'none' || value === '' ? [] : value.split(',').map((id) => id.trim()).filter(Boolean);",
     '  };',
-    "  const verdict = { tasks: ids('Task ids:').map((id) => ({ id, plan: 'met', note: '' })), criteria: ids('Criterion ids:').map((id) => ({ id, status: 'pass', evidence: '' })), findings: [] };",
+    "  const verdict = { tasks: ids('Task ids:').map((id) => ({ id, plan: 'met', note: '' })), criteria: ids('Criterion ids:').map((id) => ({ id, status: 'pass', evidence: '' })), findings: [], fixTasks: [], rejected: [], verify: [], ask: null };",
     '  console.log(JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: JSON.stringify(verdict) } }));',
     '  console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 17, output_tokens: 9 } }));',
     '  process.exit(0);',

@@ -147,7 +147,7 @@ describe('buildConversationRows', () => {
         items: [
           activity({
             sequence: 1,
-            activityId: 'run-start',
+            activityId: 'run-level',
             kind: 'command',
             label: 'running /bin/zsh -lc "npm run typecheck"',
             target: '/bin/zsh -lc "npm run typecheck"',
@@ -797,23 +797,23 @@ describe('buildConversationRows', () => {
   });
 });
 
-// S11 run 3: the `Run-start suite · …` row, the run-start warning and `T004 also changed …` sat
+// S11 run 3: the `Base re-run · …` row, the run-level warning and `T004 also changed …` sat
 // above the live brief for the rest of the run. Once the next brief starts they collapse with a brief.
 describe('rows no brief owns collapse with the completed briefs', () => {
-  const runStartWarning: EngineEventOf<'warning'> = {
+  const runLevelWarning: EngineEventOf<'warning'> = {
     type: 'warning',
     ts: 2,
     phase: 'implementing',
-    message: 'The test stage of the full suite timed out after 600s at the run-start baseline',
+    message: 'Ignoring changed files that could not be read: src/tmp.lock.',
   };
-  const runStartSuite: EngineEventOf<'full_suite'> = {
+  const runLevelSuite: EngineEventOf<'full_suite'> = {
     type: 'full_suite',
     ts: 2,
     phase: 'implementing',
     status: 'done',
     stage: 'typecheck',
     command: 'npm run typecheck',
-    moment: 'baseline',
+    moment: 'base',
     passed: true,
     duration: 16003,
   };
@@ -834,8 +834,8 @@ describe('rows no brief owns collapse with the completed briefs', () => {
         tasks: [],
         total: 2,
       },
-      runStartSuite,
-      runStartWarning,
+      runLevelSuite,
+      runLevelWarning,
       makeTaskStart({ taskId: taskId('T001'), title: 'First brief', index: 0 }),
       makeTaskComplete({ taskId: taskId('T001') }),
       touched,

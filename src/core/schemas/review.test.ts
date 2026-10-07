@@ -3,7 +3,8 @@ import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import {
   REVIEW_VERDICT_JSON_SCHEMA,
   ReviewVerdictSchema,
-  TRIAGE_RESULT_JSON_SCHEMA,
+  ReviewAnswerSchema,
+  REVIEW_ANSWER_JSON_SCHEMA,
   TriageInputSchema,
   TriageResultSchema,
 } from './review.js';
@@ -111,13 +112,24 @@ describe('TriageInputSchema', () => {
 describe('review JSON schemas', () => {
   it('compose no allOf, which a closed object makes unsatisfiable', () => {
     expect(JSON.stringify(REVIEW_VERDICT_JSON_SCHEMA)).not.toContain('allOf');
-    expect(JSON.stringify(TRIAGE_RESULT_JSON_SCHEMA)).not.toContain('allOf');
+    expect(JSON.stringify(REVIEW_ANSWER_JSON_SCHEMA)).not.toContain('allOf');
   });
 
   it('strips the draft ref and keeps a root object', () => {
     expect(REVIEW_VERDICT_JSON_SCHEMA).not.toHaveProperty('$schema');
-    expect(TRIAGE_RESULT_JSON_SCHEMA).not.toHaveProperty('$schema');
+    expect(REVIEW_ANSWER_JSON_SCHEMA).not.toHaveProperty('$schema');
     expect(REVIEW_VERDICT_JSON_SCHEMA.type).toBe('object');
-    expect(TRIAGE_RESULT_JSON_SCHEMA.type).toBe('object');
+    expect(REVIEW_ANSWER_JSON_SCHEMA.type).toBe('object');
+  });
+});
+
+describe('ReviewAnswerSchema', () => {
+  it('requires the verdict and fix work in one answer and preserves both persisted shapes', () => {
+    const fix = { fixTasks: [], rejected: [], verify: [], ask: null };
+    const answer = { ...verdict, ...fix };
+    expect(ReviewAnswerSchema.parse(answer)).toEqual(answer);
+    expect(ReviewAnswerSchema.safeParse(verdict).success).toBe(false);
+    expect(ReviewVerdictSchema.parse(answer)).toEqual(verdict);
+    expect(TriageResultSchema.parse(answer)).toEqual(fix);
   });
 });

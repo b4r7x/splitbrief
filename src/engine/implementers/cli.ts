@@ -82,8 +82,8 @@ async function changedFilesSince(
 /**
  * REQ-016 declared-effect gate: a direct-write CLI implementer succeeds when
  * the child changed something. Nothing changed is a no-staged-change failure,
- * except in an attempt allowed to change nothing (a brief the final review
- * reopened, whose code is already on disk). A write outside the brief's
+ * except in an attempt allowed to change nothing (a fix task whose work
+ * is already on disk). A write outside the brief's
  * declared set — its `files` plus the paths its Scope names under In bounds or
  * Approved out of bounds — goes to the orchestrator's approval gate, unless the
  * caller rejects it here (the conformance harness). A child that changed nothing after

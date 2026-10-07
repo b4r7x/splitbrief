@@ -155,6 +155,20 @@ describe('validationStageNotes', () => {
 });
 
 describe('fullSuiteRow', () => {
+  it.each(['lint', 'test'] as const)('names the %s stage that did not run', (stage) => {
+    expect(
+      fullSuiteRow({
+        type: 'full_suite',
+        ts: 0,
+        phase: 'final-review',
+        stage,
+        command: stage === 'lint' ? 'npm run lint' : 'npm test',
+        moment: 'pre-review',
+        status: 'not-run',
+      }),
+    ).toBe(`Pre-review suite · ${stage === 'lint' ? 'npm run lint' : 'npm test'} · not run`);
+  });
+
   // S8 run 18:06–18:58: the transcript read `Suite test (npm test) running` beside a block and a
   // byline that name the suite by its moment.
   it('names the suite stage the way the build block and the byline do', () => {
@@ -179,6 +193,26 @@ describe('fullSuiteRow', () => {
         duration: 3_000,
       }),
     ).toBe('Pre-review suite · npm test · failed 3.0s');
+  });
+
+  it('says what a base re-run verdict means: the red was there before the run, or it was not', () => {
+    const rerun = {
+      type: 'full_suite',
+      ts: 0,
+      phase: 'final-review',
+      stage: 'test',
+      command: 'npm test -- src/legacy.test.ts',
+      moment: 'base',
+      status: 'done',
+      duration: 2_000,
+    } as const;
+
+    expect(fullSuiteRow({ ...rerun, passed: false })).toBe(
+      'Base re-run · npm test -- src/legacy.test.ts · fails at the run base too 2.0s',
+    );
+    expect(fullSuiteRow({ ...rerun, passed: true })).toBe(
+      'Base re-run · npm test -- src/legacy.test.ts · passes at the run base 2.0s',
+    );
   });
 });
 

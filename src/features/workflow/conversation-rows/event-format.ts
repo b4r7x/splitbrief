@@ -114,7 +114,15 @@ export function fullSuiteRow(event: Extract<EngineEvent, { type: 'full_suite' }>
     command: truncateTerminalDisplayText(event.command, 48),
   });
   if (event.status === 'running') return `${label}${SOFT_SEP}running`;
-  const verdict = event.passed === true ? 'passed' : 'failed';
+  if (event.status === 'not-run') return `${label}${SOFT_SEP}not run`;
+  const verdict =
+    event.moment === 'base'
+      ? event.passed === true
+        ? 'passes at the run base'
+        : 'fails at the run base too'
+      : event.passed === true
+        ? 'passed'
+        : 'failed';
   const dur = event.duration === undefined ? '' : ` ${formatDuration(event.duration)}`;
   return `${label}${SOFT_SEP}${verdict}${dur}`;
 }

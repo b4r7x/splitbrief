@@ -50,5 +50,5 @@ These mappings describe user intent. Standalone skill records are not engine ses
 Do not feed a skill run directory to engine `resume` or claim state compatibility.
 For an explicit engine run, use its configured crew and commands; `--plain` supplies text output.
 The engine also owns its TUI, isolation, snapshots, and token accounting.
-The CLI runs registered checks and the cadence gates.
-The standalone skills follow that design now. Render checks are unavailable in these skills.
+The CLI runs registered checks and the cadence gates. Its final suite stops at the first stage with a new failure. The reviewer returns the verdict and fix work in one answer. The CLI makes no planner triage call.
+Render checks are unavailable in these skills.

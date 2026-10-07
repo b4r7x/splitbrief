@@ -1,5 +1,11 @@
+import { runBaseOf } from '../isolation/base-tree.js';
 import { acceptValidationResults } from '../validation/acceptance.js';
-import { haltVerdictlessReview, triageFailedReview } from './review.js';
+import {
+  answerPendingReviewQuestion,
+  haltVerdictlessReview,
+  followReviewAnswer,
+  reviewPassed,
+} from './review.js';
 import { isTaskCompleted, type Task } from '../../../core/schemas/task.js';
 import { fixCyclesOf, type WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Summary } from '../../../core/schemas/summary.js';
@@ -27,10 +33,13 @@ import { formatValidationError } from '../validation/format-error.js';
 import { captureReviewedCandidate } from '../apply/states.js';
 import { transitionAndSave } from '../state-ops.js';
 import type { TriageInput } from '../../../core/schemas/review.js';
-import { haltUnansweredTriage, runTriage, startFixCycle } from '../triage.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { normalizeProjectRelativePath } from '../../../utils/path-patterns.js';
-import { failingFilesFromOutput, lastTaskChangingFile } from '../task/file-owner.js';
+import {
+  failingFilesOf,
+  failingFilesFromOutput,
+  lastTaskChangingFile,
+} from '../task/file-owner.js';
 import { ensureRunBaselineSnapshot, recordRunSnapshotForRun } from './snapshots.js';
 import { SNAPSHOT_BASELINE_ID } from '../../../core/paths.js';
 import type { PlanningPhaseResult } from '../planning/types.js';
@@ -175,10 +184,6 @@ async function recheckMergedCandidate(
       });
     }
   };
-  const pushOutput = (output: string, text: string): void => {
-    const named = failingFilesFromOutput(output, wctx.workspaceDir);
-    pushFiles(named.length > 0 ? named : [null], text);
-  };
   const pushRun = (run: CheckRunResult, text: string): void => {
     const check = registry.get(run.checkId);
     const named = failingFilesFromOutput(run.output, wctx.workspaceDir);
@@ -211,7 +216,7 @@ async function recheckMergedCandidate(
     const results = await wctx.validator.runValidation({
       task,
       stages: ['typecheck', 'lint', 'test'],
-      baseline: state.fullSuiteBaseline,
+      base: runBaseOf(wctx, state),
       projectDir: wctx.workspaceDir,
       config: wctx.config,
       bus: wctx.bus,
@@ -220,15 +225,14 @@ async function recheckMergedCandidate(
       signal: wctx.signal,
       changedFiles: mergedPaths,
     });
-    const acceptance = acceptValidationResults(results, state.fullSuiteBaseline, mergedPaths);
+    const acceptance = acceptValidationResults(results, mergedPaths);
     if (!acceptance.accepted) {
       const text = `${task.id} validation: ${formatValidationError(results, acceptance)}`;
       failures.push(text);
-      const blocking = results
+      const named = results
         .filter((result) => !result.passed && acceptance.blockingStages.includes(result.stage))
-        .map((result) => result.error ?? result.output ?? '')
-        .join('\n');
-      pushOutput(blocking, text);
+        .flatMap((result) => failingFilesOf(result, wctx.workspaceDir));
+      pushFiles(named.length > 0 ? [...new Set(named)] : [null], text);
     }
     const runs = await runChecks(
       (task.checks ?? []).map((check) => check.id),
@@ -463,168 +467,119 @@ export async function runTasksAndReview(
     };
   };
 
-  // The review owns the run's exit. A failing review goes to one planner triage call: its
-  // fix tasks are appended, one fix cycle is spent and the task loop runs them, then the
-  // review asks again. At the cap, or with nothing for a triage to answer, the run halts.
+  // Each pass reviews the candidate and follows the answer. Fix tasks run before
+  // the next gates; pending corrections and answers re-review the same candidate.
   for (;;) {
     if (wctx.signal?.aborted) return stopHere();
-    let candidate: Record<string, string> | undefined;
-    let recheckFailures: readonly string[] = [];
-
-    if (state.pendingTriage === undefined || state.review === undefined) {
-      candidate = await captureCandidate();
-      const recheck = await recheckMergedCandidate({ wctx, state, setTrackedState });
-      state = recheck.state;
-      recheckFailures = recheck.failures;
-
-      if (recheck.unrunnable.length > 0) {
-        state = haltRequiredChecksUnrunnable({
-          wctx,
-          state,
-          checks: recheck.unrunnable,
-          setTrackedState,
-        });
-        return stopHere();
-      }
-
-      // A fresh Apply re-check failure is a check-sourced defect: it reaches the
-      // triage before any review call, so a review word can never overrule a check
-      // run against the merged workspace. Its fix tasks run through the same
-      // re-run block the pre-review's fix-queued path uses, then the loop
-      // re-verifies the candidate and reviews it.
-      if (recheck.inputs.length > 0) {
-        const triaged = await runTriage(
-          {
-            projectDir: wctx.projectDir,
-            workspaceDir: wctx.workspaceDir,
-            sessionId: wctx.sessionId,
-            bus: wctx.bus,
-            config: wctx.config,
-            planner: wctx.planner,
-            callbacks: wctx.callbacks,
-            sinks: wctx.sinks,
-            state,
-            ...(wctx.signal !== undefined && { signal: wctx.signal }),
-            onStateChange: (next) => {
-              state = next;
-              setTrackedState(next);
-            },
-          },
-          { inputs: recheck.inputs },
-        );
-        if (triaged.kind !== 'triaged') {
-          state = haltUnansweredTriage({
-            wctx,
-            state,
-            outcome: triaged,
-            setTrackedState,
-            diagnosis: 'The Apply re-check found failures to triage.',
-            source: 'Apply re-check',
-          });
-          return stopHere();
-        }
-        state = startFixCycle({
-          wctx,
-          state,
-          setTrackedState,
-          taskIds: triaged.tasks.map((task) => task.id),
-        });
-        const stopped = await runFixTasks();
-        if (stopped !== undefined) return stopped;
-        continue;
-      }
-
-      const integration =
-        state.applyReview === undefined
-          ? undefined
-          : buildIntegrationSection(state.applyReview.merged, recheck.failures, recheck.notRun);
-      const review = await runFinalReviewPhase({
-        projectDir: wctx.projectDir,
-        workspaceDir: wctx.workspaceDir,
-        sessionId: wctx.sessionId,
-        config: wctx.config,
-        callbacks,
-        bus: wctx.bus,
-        state,
-        reviewer: wctx.reviewer,
-        metadata: wctx.metadata,
-        signal: wctx.signal,
-        sinks: wctx.sinks,
-        ...(wctx.continuation !== undefined && { continuation: wctx.continuation }),
-        summaryBase,
-        taskBreakdowns,
-        phaseTimings,
-        setTrackedState,
-        ...(wctx.context.skillsContext !== undefined && {
-          skillsContext: wctx.context.skillsContext,
-        }),
-        ...(integration !== undefined && { integration }),
-        preReview: (s) => runPreReview({ wctx, state: s, setTrackedState }),
-      });
-      state = review.state;
-      setTrackedState(state);
-      if (wctx.signal?.aborted) return stopHere();
-
-      // A pre-review that halted raised its own recovery; one that queued fix work
-      // runs those tasks here and re-enters the loop, where the candidate is
-      // verified and reviewed again.
-      if (review.preReview === 'stopped') return stopHere();
-      if (review.preReview === 'fix-queued') {
-        const stopped = await runFixTasks();
-        if (stopped !== undefined) return stopped;
-        continue;
-      }
-
-      // A review that judged nothing is not a review that failed: it has no
-      // blocker count to report, no brief to send back and no repair cycle to
-      // spend. The run stays on this phase, halted on the review seat, until that
-      // seat is answered — a fabricated `0 blocking findings` would close it.
-      const halted = await haltVerdictlessReview({ wctx, state, setTrackedState, review });
-      if (halted !== undefined) {
-        state = halted;
-        return stopHere();
-      }
-
-      const outcome = review.verdict?.outcome;
-      // A candidate whose fresh Apply re-checks failed is never passed: the review
-      // word cannot overrule the checks run against the merged workspace.
-      if (
-        outcome !== undefined &&
-        outcome.kind !== 'fail' &&
-        recheck.failures.length === 0 &&
-        state.pendingTriage === undefined
-      ) {
-        state = transitionAndSave(ref, state, {
-          type: 'REVIEW_DONE',
-          reviewStatus: 'passed',
-          ...(candidate !== undefined && { candidate }),
-        });
-        setTrackedState(state);
-        wctx.bus.publish({
-          type: 'workflow_complete',
-          ts: Date.now(),
-          phase: state.phase,
-          review: 'passed',
-          completedTasks: state.tasks.filter((task) => isTaskCompleted(task.status)).length,
-        });
-        const summary = summaryNow();
-        callbacks.onComplete(summary);
-        return { summary, completed: true, state };
-      }
-    }
-
-    // A judged failure: the review this pass ran, or the saved one an operator correction
-    // queued. Its blocking findings and the pending inputs are the triage's inputs.
-    const triaged = await triageFailedReview({
+    const candidate = await captureCandidate();
+    const answered = await answerPendingReviewQuestion({
       wctx,
       state,
       setTrackedState,
       callbacks,
       candidate,
-      recheckFailures,
     });
-    state = triaged.state;
-    if (triaged.stopped) return stopHere();
+    if (answered !== undefined) {
+      state = answered.state;
+      if (answered.stopped) return stopHere();
+    }
+    const reviewAgain = state.pendingTriage !== undefined && state.review !== undefined;
+    const recheck = reviewAgain
+      ? { state, failures: [], notRun: [], inputs: [], unrunnable: [] }
+      : await recheckMergedCandidate({ wctx, state, setTrackedState });
+    state = recheck.state;
+    if (recheck.unrunnable.length > 0) {
+      state = haltRequiredChecksUnrunnable({
+        wctx,
+        state,
+        checks: recheck.unrunnable,
+        setTrackedState,
+      });
+      return stopHere();
+    }
+    const integration =
+      state.applyReview === undefined
+        ? undefined
+        : buildIntegrationSection(state.applyReview.merged, recheck.failures, recheck.notRun);
+    const review = await runFinalReviewPhase({
+      projectDir: wctx.projectDir,
+      workspaceDir: wctx.workspaceDir,
+      sessionId: wctx.sessionId,
+      config: wctx.config,
+      callbacks,
+      bus: wctx.bus,
+      state,
+      reviewer: wctx.reviewer,
+      metadata: wctx.metadata,
+      signal: wctx.signal,
+      sinks: wctx.sinks,
+      ...(wctx.continuation !== undefined && { continuation: wctx.continuation }),
+      summaryBase,
+      taskBreakdowns,
+      phaseTimings,
+      setTrackedState,
+      ...(wctx.context.skillsContext !== undefined && {
+        skillsContext: wctx.context.skillsContext,
+      }),
+      ...(integration !== undefined && { integration }),
+      ...(!reviewAgain && {
+        preReview: (s: WorkflowState) =>
+          runPreReview({ wctx, state: s, setTrackedState, inputs: recheck.inputs }),
+      }),
+    });
+    state = review.state;
+    setTrackedState(state);
+    if (wctx.signal?.aborted) return stopHere();
+
+    if (review.preReview === 'stopped') return stopHere();
+
+    // A review that judged nothing is not a review that failed: it has no
+    // blocker count to report, no brief to send back and no repair cycle to
+    // spend. The run stays on this phase, halted on the review seat, until that
+    // seat is answered — a fabricated `0 blocking findings` would close it.
+    const halted = await haltVerdictlessReview({ wctx, state, setTrackedState, review });
+    if (halted !== undefined) {
+      state = halted;
+      return stopHere();
+    }
+
+    if (
+      reviewPassed(
+        review.verdict?.outcome,
+        review.fixWork,
+        state.pendingTriage?.inputs ?? [],
+        recheck.failures,
+      )
+    ) {
+      state = transitionAndSave(ref, state, {
+        type: 'REVIEW_DONE',
+        reviewStatus: 'passed',
+        ...(candidate !== undefined && { candidate }),
+      });
+      setTrackedState(state);
+      wctx.bus.publish({
+        type: 'workflow_complete',
+        ts: Date.now(),
+        phase: state.phase,
+        review: 'passed',
+        completedTasks: state.tasks.filter((task) => isTaskCompleted(task.status)).length,
+      });
+      const summary = summaryNow();
+      callbacks.onComplete(summary);
+      return { summary, completed: true, state };
+    }
+    const followed = await followReviewAnswer({
+      wctx,
+      state,
+      setTrackedState,
+      callbacks,
+      candidate,
+      recheckFailures: recheck.failures,
+      fixWork: review.fixWork,
+    });
+    state = followed.state;
+    if (followed.stopped) return stopHere();
+    if (followed.reviewAgain) continue;
 
     const stopped = await runFixTasks();
     if (stopped !== undefined) return stopped;

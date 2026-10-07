@@ -109,6 +109,7 @@ export const TREES_DIR = '.trees';
 // there as sensitive. It also lives outside the project root so project-rooted
 // test discovery never walks into the second checkout.
 export const ISOLATION_TREES_DIR = 'trees';
+export const RUN_BASE_TREES_DIR = 'bases';
 
 export const INTERNAL_SKIP_DIRS = ['.git', SPLITBRIEF_DIR, 'node_modules', TREES_DIR];
 
@@ -140,6 +141,9 @@ function userStateDir(): string {
 
 export const isolationTreesRoot = (): string =>
   join(userStateDir(), SPLITBRIEF_IDENTITY.slug, ISOLATION_TREES_DIR);
+
+export const runBaseTreesRoot = (): string =>
+  join(userStateDir(), SPLITBRIEF_IDENTITY.slug, RUN_BASE_TREES_DIR);
 
 export const isolationWorktreeRoot = (gitCommonDir: string): string =>
   join(isolationTreesRoot(), sha256Hex(realpathSync(gitCommonDir)).slice(0, 12));

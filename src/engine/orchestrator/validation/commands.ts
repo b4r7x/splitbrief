@@ -1,5 +1,4 @@
 import { relative } from 'node:path';
-import type { Task } from '../../../core/schemas/task.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { DiscoveredValidation } from '../../../core/schemas/workflow.js';
 import { findAffectedTestFiles } from '../../../core/validation/stacks/registry.js';
@@ -17,7 +16,7 @@ export type TestTargetMode = 'related' | 'check' | 'full';
 /** The tests of the brief's declared files and of every file the attempt changed. */
 export function resolveTestTarget(opts: {
   resolved: ResolvedCommand;
-  task: Pick<Task, 'suggestedFiles'>;
+  task: { suggestedFiles: readonly string[] };
   changedFiles: readonly string[];
   projectDir: string;
   config: Config;

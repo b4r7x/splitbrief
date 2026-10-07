@@ -117,79 +117,34 @@ describe('brief gate', () => {
     }
   });
 
-  it('rechecks only the stages and checks carried by a reopened brief', async () => {
+  it('hands its gate the run base the workspace recorded', async () => {
     const ref = setup();
     const task = makeTask({ id: 'T001', suggestedFiles: ['src/own.ts'] });
     const validator = { ...createValidator(), runValidation: vi.fn().mockResolvedValue([]) };
-    const state = makeImplState([task], {
-      lineages: {
-        T001: {
-          consults: 0,
-          attempts: 0,
-          consultAllowance: 2,
-          attemptAllowance: 8,
-          staleConsultedRevision: {},
-          consultRecords: [],
-          replacedParents: [],
-          notes: [],
-          gateFailure: { stages: ['typecheck'], files: ['src/prior.ts'], checkIds: [] },
-        },
-      },
-    });
-    const result = await runBriefGate({
+    await runBriefGate({
       wctx: makeWctx({
         ...ref,
         validator,
-        config: makeNoValidationConfig({ validation: { typecheck: true } }),
-      }),
-      state,
-      task,
-      changedFiles: ['src/own.ts'],
-      taskStartSnapshot: null,
-    });
-    expect(result.acceptance.accepted).toBe(true);
-    expect(validator.runValidation).toHaveBeenCalledWith(
-      expect.objectContaining({
-        stages: ['typecheck'],
-        changedFiles: ['src/own.ts', 'src/prior.ts'],
-      }),
-    );
-  });
-
-  it('runs a carried test red unnarrowed when the test command cannot select related tests', async () => {
-    const ref = setup();
-    const task = makeTask({ id: 'T001', suggestedFiles: ['src/own.ts'] });
-    const runCommand = vi.fn().mockResolvedValue({ stdout: 'ok', stderr: '', code: 0 });
-    const state = makeImplState([task], {
-      lineages: {
-        T001: {
-          consults: 0,
-          attempts: 0,
-          consultAllowance: 2,
-          attemptAllowance: 8,
-          staleConsultedRevision: {},
-          consultRecords: [],
-          replacedParents: [],
-          notes: [],
-          gateFailure: { stages: ['test'], files: ['src/own.test.ts'], checkIds: [] },
-        },
-      },
-    });
-    const result = await runBriefGate({
-      wctx: makeWctx({
-        ...ref,
-        validator: createValidator({ runCommand }),
         config: makeNoValidationConfig({
-          validation: { test: true, testCommand: 'node run-tests.mjs' },
+          validation: { test: true },
+          workflow: { review: 'task' },
         }),
       }),
-      state,
+      state: makeImplState([task], {
+        workspace: {
+          kind: 'worktree',
+          path: '/state/trees/abc/sess-gate',
+          base: { snapshotId: 'snap-base', head: 'abc123' },
+        },
+      }),
       task,
       changedFiles: ['src/own.ts'],
       taskStartSnapshot: null,
     });
-    expect(result.validationResults).toMatchObject([{ stage: 'test', passed: true }]);
-    expect(result.validationResults[0]?.skipped).toBeUndefined();
-    expect(runCommand).toHaveBeenCalledWith('node', ['run-tests.mjs'], expect.anything());
+    expect(validator.runValidation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        base: { projectDir: ref.projectDir, sessionId: ref.sessionId, snapshotId: 'snap-base' },
+      }),
+    );
   });
 });

@@ -1,3 +1,4 @@
+import type { TriageInput } from '../../core/schemas/review.js';
 import { DRIFT_REPORT_FILE, EVIDENCE_FILE, SPEC_FILE, TASKS_FILE } from '../../core/paths.js';
 import { estimateTokens } from '../../core/tokens/estimate.js';
 import { splitDiffByFile } from '../../lib/git/diff-sections.js';
@@ -5,6 +6,7 @@ import { apiPlanningInputBudget, type ApiContextManifestEntry } from '../planner
 import { renderWholeChecksLog } from './evidence/review-packet/render.js';
 import {
   buildFinalReviewPrompt,
+  reviewInputsSection,
   type ReviewPlanData,
   type ReviewFileDiff,
   type ReviewTouchedNotSuggested,
@@ -44,6 +46,8 @@ export type ApiReviewContext =
 export type ApiReviewContextInput = Readonly<{
   /** The original request, which a run without a spec is reviewed against. */
   feature: string;
+  pendingInputs: readonly TriageInput[];
+  fixCycle: number;
   spec: string;
   taskBriefs: string;
   /** The run universe's whole diff. This seat is never given a cut one. */
@@ -224,6 +228,9 @@ export function buildApiReviewContext(input: ApiReviewContextInput): ApiReviewCo
 
   const queueText = input.queueText ?? '';
   if (queueText !== '') parts.push({ name: QUEUED_MESSAGES, body: queueText });
+  if (input.pendingInputs.length > 0) {
+    required('pending inputs', reviewInputsSection(input.pendingInputs));
+  }
 
   if (missingSections.length > 0) {
     return {
@@ -239,6 +246,8 @@ export function buildApiReviewContext(input: ApiReviewContextInput): ApiReviewCo
   const prompt = buildFinalReviewPrompt({
     spec,
     taskBriefs,
+    pendingInputs: input.pendingInputs,
+    fixCycle: input.fixCycle,
     ...(input.reviewScope === undefined
       ? { diff: input.fullDiff }
       : {

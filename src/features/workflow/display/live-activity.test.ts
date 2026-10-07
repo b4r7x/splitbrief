@@ -99,8 +99,8 @@ describe('deriveLiveStatus', () => {
   });
 
   it.each([
-    ['baseline', 'Run-start suite · npm test'],
     ['pre-review', 'Pre-review suite · npm test'],
+    ['base', 'Base re-run · npm test'],
   ] as const)('names the %s suite stage and its command on its own clock', (moment, verb) => {
     const status = deriveLiveStatus({
       ...base,

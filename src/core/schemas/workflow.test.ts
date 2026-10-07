@@ -120,6 +120,21 @@ describe('WorkflowStateSchema v4', () => {
     }
   });
 
+  it('loads a state the run-start suite wrote and drops its baseline', () => {
+    const parsed = WorkflowStateSchema.safeParse({
+      ...state(),
+      fullSuiteBaseline: { test: ['src/legacy.test.ts:5'] },
+      fullSuiteBaselineStages: {
+        test: { kind: 'timed-out', durationMs: 600_508, timeoutMs: 600_000 },
+      },
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data).not.toHaveProperty('fullSuiteBaseline');
+      expect(parsed.data).not.toHaveProperty('fullSuiteBaselineStages');
+    }
+  });
+
   it('retains task graph and active-index invariants under v4', () => {
     expect(
       WorkflowStateSchema.safeParse(state({ tasks: [task, { ...task, title: 'Duplicate' }] }))

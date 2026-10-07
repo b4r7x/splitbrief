@@ -200,7 +200,18 @@ const checkpointPredicates = [
   [checkpointId('implementation-silent'), includesAll('Still working', 'a tool is running')],
   [checkpointId('implementation-tool-running'), includesAll('running npx vitest run')],
   [checkpointId('implementation-full-suite'), includesAll('Pre-review suite')],
-  [checkpointId('implementation-suite-timeout'), includesAll('validation.timeoutMs')],
+  // The red typecheck row scrolls out of a 60x18 transcript; the last stage that did not run stays.
+  [
+    checkpointId('review-red-gate'),
+    includesAll(
+      'REVIEW activity',
+      'OpenAI Codex CLI',
+      'GPT-6 Astra',
+      'npm test · not run',
+      'Review…',
+    ),
+  ],
+  [checkpointId('review-base-rerun'), includesAll('Base re-run', 'src/legacy.test.ts')],
   [checkpointId('planner-session-expired'), includesAll('Planner session expired')],
 ] as const satisfies readonly (readonly [CheckpointId, CheckpointPredicate])[];
 

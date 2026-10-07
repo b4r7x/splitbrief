@@ -28,6 +28,7 @@ import {
 import type { Config } from '../../core/schemas/config.js';
 import { buildApiReviewContext, type ApiReviewContextInput } from './api-review-context.js';
 import { runFinalReviewPhase } from './final-review.js';
+import { estimateTokens } from '../../core/tokens/estimate.js';
 
 const universe = vi.hoisted(() => ({ fullDiff: '', changedFiles: [] as string[] }));
 const drift = vi.hoisted(() => ({ fails: false }));
@@ -78,6 +79,8 @@ function diffOfLength(path: string, chars: number): string {
 
 /** A run whose every required source is present, for one field at a time. */
 const WHOLE: ApiReviewContextInput = {
+  pendingInputs: [],
+  fixCycle: 1,
   feature: 'Add a login route',
   spec: '# Spec\n\nAdd a login route.\n',
   taskBriefs: '## T001 — login route\n\nWrite it.\n',
@@ -104,6 +107,34 @@ function refused(overrides: Partial<ApiReviewContextInput> = {}) {
 }
 
 describe('the packet an API review seat is handed', () => {
+  it('lists pending inputs only when the prompt has inputs to include', () => {
+    expect(complete().manifest.map((entry) => entry.path)).not.toContain('pending inputs');
+    const packet = complete({
+      pendingInputs: [
+        { id: 'P1', kind: 'defect', source: 'check', text: 'Typecheck failed', file: null },
+      ],
+    });
+    expect(packet.manifest).toContainEqual({
+      path: 'pending inputs',
+      kind: 'required',
+      state: 'included',
+    });
+    expect(packet.text).toContain('- **P1** (check · defect) — Typecheck failed');
+  });
+
+  it('sizes the rendered pending input section when required context is missing', () => {
+    const empty = refused({ driftSection: '' });
+    const packet = refused({
+      driftSection: '',
+      pendingInputs: [
+        { id: 'P1', kind: 'defect', source: 'check', text: 'Typecheck failed', file: 'src/a.ts' },
+      ],
+    });
+    const rendered =
+      '## Pending Inputs\n- **P1** (check · defect) — Typecheck failed\n  File: src/a.ts';
+    expect(packet.requiredTokens - empty.requiredTokens).toBe(estimateTokens(rendered));
+  });
+
   it('sends a 100001-character diff whole when it fits', () => {
     const fullDiff = diffOfLength('src/big.ts', 100_001);
     expect(fullDiff).toHaveLength(100_001);

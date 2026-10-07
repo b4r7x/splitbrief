@@ -22,11 +22,14 @@ import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import { executableReceipt } from '#testing/helpers/custom-command-based.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import type { RunnerGate } from '../../../src/engine/runners/prepared-execution.js';
+import type { TypedCallContext } from '../../../src/engine/planners/types.js';
+import type { TypedSeatCall } from '../../../src/engine/runners/typed-output.js';
+import type { ReviewAnswer } from '../../../src/core/schemas/review.js';
+import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import {
   failedReviewVerdict,
   passingReviewVerdict,
   planFromTasks,
-  typedCallPlanReviewAndTriage,
 } from '#testing/helpers/typed-planner.js';
 
 const dirs: string[] = [];
@@ -69,8 +72,29 @@ const FIXED_WIDGET = [
   '};',
 ].join('\n');
 
-describe('review triage fix cycle', { timeout: 90_000 }, () => {
-  it('a failing review appends a fix task for an unsuggested file and the next review passes', async () => {
+/** A seat whose every typed call answers from `answer`, recording each prompt it was sent. */
+function scriptedSeat(answer: (prompt: string, call: number) => unknown) {
+  const prompts: string[] = [];
+  const typedCall = vi.fn(
+    (ctx: TypedCallContext): TypedSeatCall => ({
+      seat: ctx.seat,
+      typedOutput: 'fallback',
+      canResume: false,
+      invoke: async ({ prompt }) => {
+        prompts.push(prompt);
+        return makeRunnerCallResult({
+          status: 'completed',
+          text: JSON.stringify(answer(prompt, prompts.length)),
+          usage: { inputTokens: 10, outputTokens: 5 },
+        });
+      },
+    }),
+  );
+  return { typedCall, prompts };
+}
+
+describe('review fix cycle', { timeout: 90_000 }, () => {
+  it("the reviewer's own answer appends the fix task, the implementer runs it, and the next review passes; the planner only plans", async () => {
     const projectDir = createTempDir('orch-int-review-triage');
     dirs.push(projectDir);
     createTestGitRepo(projectDir, { 'src/shared/widget.ts': BASE_WIDGET });
@@ -90,39 +114,31 @@ describe('review triage fix cycle', { timeout: 90_000 }, () => {
       typeDefs: 'export const greeting: string',
     });
 
-    let reviews = 0;
-    const triagePrompts: string[] = [];
-    const planner = makePlanner({
-      typedCall: typedCallPlanReviewAndTriage(
-        () => planFromTasks([task]),
-        (prompt) => {
-          reviews += 1;
-          return reviews === 1
-            ? failedReviewVerdict(prompt, 'src/shared/widget.ts drops the error', {
-                taskId: 'T001',
-                file: 'src/shared/widget.ts',
-              })
-            : passingReviewVerdict(prompt);
-        },
-        (prompt) => {
-          triagePrompts.push(prompt);
-          return {
-            fixTasks: [
-              {
-                ...makeTaskSpec({
-                  id: 'T002',
-                  suggestedFiles: ['src/shared/widget.ts'],
-                  checks: [{ id: 'K2', kind: 'cmd', value: 'node --version', required: true }],
-                }),
-                findingIds: ['F1'],
-              },
-            ],
-            rejected: [],
-            verify: [],
-            ask: null,
-          };
-        },
-      ),
+    const plannerSeat = scriptedSeat((_prompt, call) => {
+      if (call > 1) throw new Error('the planner was asked a second time after planning');
+      return { result: planFromTasks([task]) };
+    });
+    const planner = makePlanner({ typedCall: plannerSeat.typedCall });
+    const reviewerSeat = scriptedSeat((prompt, call): ReviewAnswer => {
+      const noFixWork = { fixTasks: [], rejected: [], verify: [], ask: null };
+      if (call > 1) return { ...passingReviewVerdict(prompt), ...noFixWork };
+      return {
+        ...failedReviewVerdict(prompt, 'src/shared/widget.ts drops the error', {
+          taskId: 'T001',
+          file: 'src/shared/widget.ts',
+        }),
+        ...noFixWork,
+        fixTasks: [
+          {
+            ...makeTaskSpec({
+              id: 'T002',
+              suggestedFiles: ['src/shared/widget.ts'],
+              checks: [{ id: 'K2', kind: 'cmd', value: 'node --version', required: true }],
+            }),
+            findingIds: ['F1'],
+          },
+        ],
+      };
     });
 
     const implementer = makeImplementer({
@@ -142,6 +158,7 @@ describe('review triage fix cycle', { timeout: 90_000 }, () => {
     });
 
     const config = makeNoValidationConfig({
+      reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-5' },
       implementer: {
         kind: 'agent',
         command: 'node',
@@ -161,13 +178,16 @@ describe('review triage fix cycle', { timeout: 90_000 }, () => {
       callbacks: makeCallbacks().callbacks,
       sinks: TEST_WORKFLOW_SINKS,
       _planner: planner,
+      _reviewer: { review: vi.fn(), typedCall: reviewerSeat.typedCall },
       _implementer: implementer,
       _eventSink: (event) => events.push(event),
     });
 
-    // No user decision was needed: the triage appended the work and the run finished.
-    expect(reviews).toBe(2);
-    expect(triagePrompts).toHaveLength(1);
+    // No user decision was needed: the review appended the work and the run finished.
+    // The planner planned once; the reviewer was called once per review and wrote the fix task.
+    expect(plannerSeat.prompts).toHaveLength(1);
+    expect(reviewerSeat.prompts).toHaveLength(2);
+    expect(reviewerSeat.typedCall.mock.calls.every(([ctx]) => ctx.seat === 'reviewer')).toBe(true);
     expect(vi.mocked(implementer.implement).mock.calls.map((call) => call[0].task.id)).toEqual([
       'T001',
       'T002',
@@ -198,7 +218,10 @@ describe('review triage fix cycle', { timeout: 90_000 }, () => {
       },
     });
     expect(state?.fixCycles).toEqual({ used: 1, allowance: 2, notes: [] });
-    expect(state?.plannerCalls?.used).toBe(1);
+    expect(state?.plannerCalls?.used ?? 0).toBe(0);
+    expect(state?.triage?.map((record) => record.result.fixTasks.map((fix) => fix.id))).toEqual([
+      ['T002'],
+    ]);
     expect(state?.reviewStatus).toBe('passed');
 
     expect(events.find((event) => event.type === 'review_fix_started')).toMatchObject({

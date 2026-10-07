@@ -177,6 +177,7 @@ describe('workflow closure', () => {
       const state: WorkflowState = {
         ...createInitialState('Review closure'),
         phase: 'final-review',
+        ...(review === 'failed' && { fixCycles: { used: 2, allowance: 2, notes: [] } }),
         changedFilesBaseline: { head: null, fingerprints: {}, runStartChangedFiles: [] },
       };
       saveState(ref, state);

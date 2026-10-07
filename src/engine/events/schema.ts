@@ -615,10 +615,10 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     duration: z.number().optional(),
   }),
   phaseEvent('full_suite').extend({
-    status: z.enum(['running', 'done']),
+    status: z.enum(['running', 'done', 'not-run']),
     stage: z.enum(['typecheck', 'lint', 'test']),
     command: z.string(),
-    moment: z.enum(['baseline', 'pre-review']),
+    moment: z.enum(['pre-review', 'base']),
     passed: z.boolean().optional(),
     duration: z.number().optional(),
   }),

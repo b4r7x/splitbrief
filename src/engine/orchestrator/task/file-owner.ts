@@ -5,9 +5,11 @@ import { isTaskCompleted, type Task } from '../../../core/schemas/task.js';
 import { normalizeProjectRelativePath } from '../../../utils/path-patterns.js';
 import { typedEntries } from '../../../utils/type-guards.js';
 import { extractFailureKeys } from '../validation/extract-failure-keys.js';
-import type { FullSuiteFailureKeys } from '../validation/types.js';
+import type { ValidationResult } from '../validation/result.js';
+import { failingTestKey, failingTestLabel } from '../validation/test-failures.js';
+import type { RunFullSuiteResult } from '../validation/types.js';
 
-const FAILURE_KEY_FILE = /^(.*?\.\w+?)(?:\(|::|:)/;
+const FAILURE_KEY_FILE = /^(.*?\.\w+?)(?:\(|::|:|$)/;
 
 /** The file a full-suite failure key names; null when the key names no file. */
 export function fileFromFailureKey(key: string): string | null {
@@ -37,6 +39,14 @@ export function failingFilesFromOutput(output: string, workspaceDir: string): st
   return files;
 }
 
+export function failingFilesOf(result: ValidationResult, workspaceDir: string): string[] {
+  if (result.stage !== 'test')
+    return failingFilesFromOutput(result.error ?? result.output ?? '', workspaceDir);
+  return [
+    ...new Set((result.failingTests ?? []).map(({ file }) => file).filter((file) => file !== '')),
+  ];
+}
+
 /**
  * The last completed task whose accepted changed files include `file`, newest
  * task first. Ownership comes from the evidence ledger's recorded changed files,
@@ -64,19 +74,24 @@ export function lastTaskChangingFile(
 }
 
 export function buildFullSuiteInputs(input: {
-  newFailures: FullSuiteFailureKeys;
+  suite: RunFullSuiteResult;
   tasks: readonly Task[];
   ledger: EvidenceLedger | null;
 }): TriageInput[] {
-  const seen = new Set<string>();
   const inputs: TriageInput[] = [];
-  for (const [stage, keys] of typedEntries<string, string[] | undefined>(input.newFailures)) {
+  for (const [stage, keys] of typedEntries<string, string[] | undefined>(input.suite.newFailures)) {
     for (const key of keys ?? []) {
-      const file = fileFromFailureKey(key);
-      if (file !== null) {
-        if (seen.has(file)) continue;
-        seen.add(file);
-      }
+      const test = input.suite.results
+        .find((result) => result.stage === stage)
+        ?.failingTests?.find((test) => failingTestKey(test) === key);
+      const file =
+        test === undefined
+          ? fileFromFailureKey(key)
+          : test.file === ''
+            ? null
+            : normalizeProjectRelativePath(test.file);
+      const diagnostic = test === undefined ? key : failingTestLabel(test);
+      const message = test?.message ? ` — ${test.message}` : '';
       const owner =
         file === null ? undefined : lastTaskChangingFile(input.ledger, input.tasks, file);
       inputs.push({
@@ -84,7 +99,7 @@ export function buildFullSuiteInputs(input: {
         kind: 'defect',
         source: 'check',
         file,
-        text: `The ${stage} full-suite check before review failed: ${key}. ${
+        text: `The ${stage} full-suite check before review failed: ${diagnostic}${message}. ${
           owner === undefined ? 'No task changed it.' : `Last changed by ${owner}.`
         }`,
       });

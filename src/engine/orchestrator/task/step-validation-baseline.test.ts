@@ -21,8 +21,8 @@ import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 
 afterEach(cleanupTaskProjects);
 
-describe('runSingleTask — baseline-exempt validation', () => {
-  it('rejects a task that introduces a new failure in a stage already red at baseline', {
+describe('runSingleTask — a red also red at the run base', () => {
+  it('rejects a task whose red at the run base names a file the task changed', {
     timeout: 60_000,
   }, async () => {
     const { projectDir, sessionId } = setupProject();
@@ -32,7 +32,7 @@ describe('runSingleTask — baseline-exempt validation', () => {
       suggestedFiles: ['src/main.ts'],
       scope: { inBounds: ['src/main.ts'] },
     });
-    const state = implementingState([task], { fullSuiteBaseline: { test: ['TS error'] } });
+    const state = implementingState([task]);
 
     const implementer = makeImplementer({
       implement: vi.fn().mockImplementation(async ({ projectDir }: { projectDir: string }) => {
@@ -52,6 +52,8 @@ describe('runSingleTask — baseline-exempt validation', () => {
         passed: false,
         error: 'TS error',
         failureFiles: ['src/main.ts'],
+        failingTests: [{ file: 'src/main.ts', name: 'main', message: 'TS error' }],
+        preExisting: ['src/main.ts::main'],
       },
     ]);
     const { callbacks } = makeCallbacks();
@@ -103,7 +105,7 @@ describe('runSingleTask — baseline-exempt validation', () => {
       suggestedFiles: ['src/main.ts'],
       scope: { inBounds: ['src/main.ts'] },
     });
-    const state = implementingState([task], { fullSuiteBaseline: { test: ['TS error'] } });
+    const state = implementingState([task]);
 
     const implementer = makeImplementer({
       implement: vi
@@ -121,6 +123,8 @@ describe('runSingleTask — baseline-exempt validation', () => {
         passed: false,
         error: 'TS error',
         failureFiles: ['src/unrelated.ts'],
+        failingTests: [{ file: 'src/unrelated.ts', name: 'unrelated', message: 'TS error' }],
+        preExisting: ['src/unrelated.ts::unrelated'],
       },
     ]);
     const { callbacks } = makeCallbacks();

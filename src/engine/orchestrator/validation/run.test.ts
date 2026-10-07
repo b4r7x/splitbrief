@@ -1,7 +1,8 @@
 import { acceptValidationResults } from './acceptance.js';
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
-import { writeFileSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, writeFileSync, mkdirSync } from 'node:fs';
+import { isAbsolute, join, relative } from 'node:path';
+import { withApplyRun, type ApplyRun } from '#testing/helpers/apply-run.js';
 import { createValidator } from './run.js';
 import { formatValidationError } from './format-error.js';
 import { createEventBus } from '../../events/bus.js';
@@ -26,109 +27,20 @@ function writeTsProject(dir: string): void {
 
 const fakeBus = { publish: () => {}, subscribe: () => () => {} };
 
-describe('run-start baseline of pre-existing failures', () => {
+describe('validation failure attribution', () => {
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = createTempDir('val-baseline');
+    tempDir = createTempDir('val-attribution');
   });
 
   afterEach(() => {
     cleanupTempDir(tempDir);
   });
 
-  it('skips an unnarrowable brief test command after a timed-out full-suite baseline', async () => {
-    const timeout = processError.timeout({
-      command: 'npm test',
-      label: 'test validation',
-      timeoutMs: 600_000,
-      output: '',
-    });
+  it('stops at the first failure without a recorded run base', async () => {
     const validator = createValidator({
       runCommand: makeCommandRunner(
-        timeout,
-        processError.exitCode({
-          command: 'npm test',
-          code: 1,
-          stderr: timeout.message,
-          output: '',
-        }),
-      ),
-    });
-    const opts = {
-      task: mkTask('src/app.ts'),
-      projectDir: tempDir,
-      config: makeConfig({ typecheck: false, lint: false, test: true, testCommand: 'npm test' }),
-      bus: fakeBus,
-      phase: 'implementing' as const,
-    };
-
-    const baseline = await validator.runFullSuite({ ...opts, moment: 'baseline' });
-    const results = await validator.runValidation({
-      stages: ['typecheck', 'lint', 'test'],
-      baseline: baseline.failures,
-      ...opts,
-      changedFiles: ['src/app.ts'],
-    });
-
-    expect(results).toMatchObject([{ stage: 'test', skipped: true }]);
-    expect(acceptValidationResults(results, baseline.failures, ['src/app.ts']).accepted).toBe(true);
-    expect(baseline.failures).toEqual({});
-  });
-
-  it('continues to lint and test when typecheck was already red at baseline', async () => {
-    const typeError = () =>
-      processError.exitCode({ command: 'tsc', code: 1, stderr: 'type error', output: '' });
-    const validator = createValidator({
-      runCommand: makeCommandRunner(
-        typeError(),
-        { stdout: 'ok', stderr: '', code: 0 },
-        { stdout: 'ok', stderr: '', code: 0 },
-        typeError(),
-        { stdout: 'ok', stderr: '', code: 0 },
-        { stdout: 'ok', stderr: '', code: 0 },
-      ),
-    });
-    const config = makeConfig({
-      typecheck: true,
-      typecheckCommand: 'npm run typecheck',
-      lint: true,
-      lintCommand: 'npm run lint',
-      test: true,
-      testCommand: 'npm test',
-    });
-
-    const suiteBaseline = await validator.runFullSuite({
-      moment: 'baseline',
-
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-    });
-    const results = await validator.runValidation({
-      stages: ['typecheck', 'lint', 'test'],
-      changedFiles: [],
-      baseline: suiteBaseline.failures,
-
-      task: mkTask('src/app.ts'),
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-    });
-
-    expect(results.map((r) => r.stage)).toEqual(['typecheck', 'lint', 'test']);
-    expect(results.find((r) => r.stage === 'lint')?.passed).toBe(true);
-    expect(results.find((r) => r.stage === 'test')?.passed).toBe(true);
-  });
-
-  it('stops at the first failure when the baseline was green', async () => {
-    const validator = createValidator({
-      runCommand: makeCommandRunner(
-        { stdout: 'ok', stderr: '', code: 0 },
-        { stdout: 'ok', stderr: '', code: 0 },
-        { stdout: 'ok', stderr: '', code: 0 },
         processError.exitCode({ command: 'tsc', code: 1, stderr: 'new error', output: '' }),
       ),
     });
@@ -141,18 +53,9 @@ describe('run-start baseline of pre-existing failures', () => {
       testCommand: 'npm test',
     });
 
-    const suiteBaseline = await validator.runFullSuite({
-      moment: 'baseline',
-
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-    });
     const results = await validator.runValidation({
       stages: ['typecheck', 'lint', 'test'],
       changedFiles: [],
-      baseline: suiteBaseline.failures,
 
       task: mkTask('src/app.ts'),
       projectDir: tempDir,
@@ -162,7 +65,7 @@ describe('run-start baseline of pre-existing failures', () => {
     });
 
     expect(results.map((r) => r.stage)).toEqual(['typecheck']);
-    const acceptance = acceptValidationResults(results, suiteBaseline.failures, ['src/app.ts']);
+    const acceptance = acceptValidationResults(results, ['src/app.ts']);
     expect(acceptance.blockingStages).toContain('typecheck');
     expect(acceptance.exemptStages).toEqual([]);
     const error = formatValidationError(results, acceptance);
@@ -170,7 +73,7 @@ describe('run-start baseline of pre-existing failures', () => {
     expect(error).not.toContain('pre-existing');
   });
 
-  it('exempts nothing when the baseline was never primed', async () => {
+  it('exempts nothing without a recorded run base', async () => {
     const validator = createValidator({
       runCommand: makeCommandRunner(
         processError.exitCode({ command: 'tsc', code: 1, stderr: 'type error', output: '' }),
@@ -190,189 +93,26 @@ describe('run-start baseline of pre-existing failures', () => {
       phase: 'implementing',
     });
 
-    const acceptance = acceptValidationResults(results, undefined, ['src/app.ts']);
+    const acceptance = acceptValidationResults(results, ['src/app.ts']);
     expect(acceptance.exemptStages).toEqual([]);
     expect(acceptance.blockingStages).toContain('typecheck');
     expect(acceptance.accepted).toBe(false);
   });
 
-  it('blocks a red stage whose failure keys are not the ones the baseline probe recorded', async () => {
-    const typeError = (stderr: string) => () =>
-      processError.exitCode({ command: 'tsc', code: 1, stderr, output: '' });
-    const validator = createValidator({
-      runCommand: makeCommandRunner(typeError('src/legacy.ts(3,1): error TS2322')()),
-    });
-    const config = makeConfig({ typecheck: true, lint: false, test: false });
-    writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
-
-    const suiteBaseline = await validator.runFullSuite({
-      moment: 'baseline',
-
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-    });
-
-    const probedCommand = 'npx tsc --noEmit';
-    expect(
-      acceptValidationResults(
-        [
-          {
-            passed: false,
-            stage: 'typecheck',
-            command: probedCommand,
-            failureFiles: ['src/legacy.ts'],
-            error: 'src/legacy.ts(3,1): error TS2322',
-          },
-        ],
-        suiteBaseline.failures,
-        ['src/app.ts'],
-      ).exemptStages,
-    ).toContain('typecheck');
-
-    expect(
-      acceptValidationResults(
-        [
-          {
-            passed: false,
-            stage: 'typecheck',
-            command: probedCommand,
-            failureFiles: ['src/legacy.ts', 'src/other.ts'],
-            error: 'src/legacy.ts(3,1): error TS2322\nsrc/other.ts(9,2): error TS2345',
-          },
-        ],
-        suiteBaseline.failures,
-        ['src/app.ts'],
-      ).blockingStages,
-    ).toContain('typecheck');
-  });
-
-  it('exempts a baseline-red stage when its evidence names no changed file, and blocks one that does', async () => {
-    const typeError = () =>
-      processError.exitCode({ command: 'tsc', code: 1, stderr: 'type error', output: '' });
-    const validator = createValidator({
-      runCommand: makeCommandRunner(typeError()),
-    });
-    const config = makeConfig({ typecheck: true, lint: false, test: false });
-    writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
-
-    const suiteBaseline = await validator.runFullSuite({
-      moment: 'baseline',
-
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-    });
-
-    const probedCommand = 'npx tsc --noEmit';
-    const exemptAcceptance = acceptValidationResults(
-      [
-        {
-          passed: false,
-          stage: 'typecheck',
-          command: probedCommand,
-          failureFiles: ['src/unrelated.ts'],
-          error: 'type error',
-        },
-      ],
-      suiteBaseline.failures,
-      ['src/app.ts'],
-    );
-    expect(exemptAcceptance.exemptStages).toContain('typecheck');
-    expect(exemptAcceptance.blockingStages).toEqual([]);
-    expect(exemptAcceptance.accepted).toBe(true);
-    expect(
-      formatValidationError(
-        [{ passed: false, stage: 'typecheck', failureFiles: ['src/unrelated.ts'] }],
-        exemptAcceptance,
-      ),
-    ).toBe('');
-
-    const blockingAcceptance = acceptValidationResults(
-      [
-        {
-          passed: false,
-          stage: 'typecheck',
-          command: probedCommand,
-          failureFiles: ['src/app.ts'],
-          error: 'type error',
-        },
-      ],
-      suiteBaseline.failures,
-      ['src/app.ts'],
-    );
-    expect(blockingAcceptance.exemptStages).toEqual([]);
-    expect(blockingAcceptance.blockingStages).toContain('typecheck');
-    expect(blockingAcceptance.accepted).toBe(false);
-  });
-
-  it('an exempt-accepted run publishes the validate event as passed, with exempt', async () => {
-    const typeError = () =>
-      processError.exitCode({ command: 'tsc', code: 1, stderr: 'type error', output: '' });
-    const validator = createValidator({
-      runCommand: makeCommandRunner(typeError(), typeError()),
-    });
-    const config = makeConfig({ typecheck: true, lint: false, test: false });
-    writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
-
-    const suiteBaseline = await validator.runFullSuite({
-      moment: 'baseline',
-
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-    });
-
-    const events: EngineEvent[] = [];
-    const bus = createEventBus();
-    bus.subscribe((event) => events.push(event));
-    await validator.runValidation({
-      stages: ['typecheck', 'lint', 'test'],
-      baseline: suiteBaseline.failures,
-
-      task: mkTask('src/app.ts'),
-      projectDir: tempDir,
-      config,
-      bus,
-      phase: 'validating-task',
-      changedFiles: ['src/app.ts'],
-    });
-
-    const done = events.find(
-      (event): event is EngineEventOf<'validate'> =>
-        event.type === 'validate' && event.status === 'done',
-    );
-    expect(done).toMatchObject({ passed: true, exempt: true });
-    expect('error' in (done ?? {})).toBe(false);
-  });
-
-  it('attributes a fresh test failure to the task when the affected file passed at baseline', async () => {
+  it('attributes a test failure to the task without a recorded run base', async () => {
     mkdirSync(join(tempDir, 'src'), { recursive: true });
     writeFileSync(join(tempDir, 'src', 'foo.test.ts'), '');
     writeTsProject(tempDir);
     const validator = createValidator({
       runCommand: makeCommandRunner(
-        { stdout: 'ok', stderr: '', code: 0 },
         processError.exitCode({ command: 'npm', code: 1, stderr: 'test failed', output: '' }),
       ),
     });
     const config = makeConfig({ typecheck: false, lint: false, test: true });
 
-    const suiteBaseline = await validator.runFullSuite({
-      moment: 'baseline',
-
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-    });
     const results = await validator.runValidation({
       stages: ['typecheck', 'lint', 'test'],
       changedFiles: [],
-      baseline: suiteBaseline.failures,
 
       task: mkTask('src/foo.ts'),
       projectDir: tempDir,
@@ -381,7 +121,7 @@ describe('run-start baseline of pre-existing failures', () => {
       phase: 'implementing',
     });
 
-    const acceptance = acceptValidationResults(results, suiteBaseline.failures, ['src/foo.ts']);
+    const acceptance = acceptValidationResults(results, ['src/foo.ts']);
     expect(acceptance.exemptStages).toEqual([]);
     expect(acceptance.blockingStages).toContain('test');
     const error = formatValidationError(results, acceptance);
@@ -389,40 +129,29 @@ describe('run-start baseline of pre-existing failures', () => {
     expect(error).not.toContain('pre-existing');
   });
 
-  it('does not record a baseline failure when a heuristic command is missing its subcommand', async () => {
-    const missingClippy = () =>
-      processError.exitCode({
-        command: 'cargo',
-        label: 'lint validation',
-        code: 101,
-        stderr: 'error: no such command: `clippy`',
-        output: '',
-      });
+  it('skips a heuristic command whose subcommand is missing', async () => {
     const validator = createValidator({
-      runCommand: makeCommandRunner(missingClippy(), missingClippy()),
+      runCommand: makeCommandRunner(
+        processError.exitCode({
+          command: 'cargo',
+          code: 101,
+          stderr: 'error: no such command: `clippy`',
+          output: '',
+        }),
+      ),
     });
-    const config = makeConfig({ typecheck: false, lint: true, test: false });
     writeFileSync(join(tempDir, 'Cargo.toml'), '[package]\nname = "test"');
-
-    const suiteBaseline = await validator.runFullSuite({
-      moment: 'baseline',
-
+    const suite = await validator.runFullSuite({
       projectDir: tempDir,
-      config,
+      config: makeConfig({ typecheck: false, lint: true, test: false }),
       bus: fakeBus,
-      phase: 'implementing',
+      phase: 'final-review',
     });
-
-    const acceptance = acceptValidationResults(
-      [{ passed: false, stage: 'lint', failureFiles: ['src/unrelated.rs'] }],
-      suiteBaseline.failures,
-      ['src/main.rs'],
-    );
-    expect(acceptance.exemptStages).toEqual([]);
-    expect(acceptance.blockingStages).toContain('lint');
+    expect(suite.results[0]).toMatchObject({ stage: 'lint', skipped: true });
+    expect(suite.newFailures).toEqual({});
   });
 
-  it('pytest run narrows to the affected test file and exempts a baseline-red failure', async () => {
+  it('pytest run narrows to the affected test file and blocks an unattributed failure', async () => {
     mkdirSync(join(tempDir, 'tests'), { recursive: true });
     writeFileSync(join(tempDir, 'pyproject.toml'), '[project]\nname = "service"\n');
     writeFileSync(join(tempDir, 'tests', 'service_test.py'), '');
@@ -442,21 +171,12 @@ describe('run-start baseline of pre-existing failures', () => {
           '1 failed, 3 passed in 0.42s',
         ].join('\n'),
       });
-    const runner = makeCommandRunner(redSuite(), redSuite());
+    const runner = makeCommandRunner(redSuite());
     const validator = createValidator({ runCommand: runner });
     const config = makeConfig({ typecheck: false, lint: false, test: true });
 
-    const suiteBaseline = await validator.runFullSuite({
-      moment: 'baseline',
-
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-    });
     const results = await validator.runValidation({
       stages: ['typecheck', 'lint', 'test'],
-      baseline: suiteBaseline.failures,
 
       task: mkTask('src/service.py'),
       projectDir: tempDir,
@@ -467,14 +187,13 @@ describe('run-start baseline of pre-existing failures', () => {
     });
 
     expect(runner.calls[0]?.cmd).toBe('pytest');
-    expect(runner.calls[0]?.args).toEqual([]);
-    expect(runner.calls[1]?.args).toEqual([join('tests', 'service_test.py')]);
+    expect(runner.calls[0]?.args).toEqual([join('tests', 'service_test.py')]);
     expect(results.find((r) => r.stage === 'test')?.command).toBe(
       `pytest ${join('tests', 'service_test.py')}`,
     );
-    const acceptance = acceptValidationResults(results, suiteBaseline.failures, ['src/service.py']);
-    expect(acceptance.exemptStages).toEqual(['test']);
-    expect(acceptance.accepted).toBe(true);
+    const acceptance = acceptValidationResults(results, ['src/service.py']);
+    expect(acceptance.blockingStages).toEqual(['test']);
+    expect(acceptance.accepted).toBe(false);
   });
 
   it('go test run narrows to the package and blocks a new failure in an untouched file', async () => {
@@ -492,7 +211,6 @@ describe('run-start baseline of pre-existing failures', () => {
       });
     const runner = makeCommandRunner(
       redPackage(uptimeRed),
-      redPackage(uptimeRed),
       redPackage(`${uptimeRed}\n${routesRed}`),
     );
     const validator = createValidator({ runCommand: runner });
@@ -500,7 +218,6 @@ describe('run-start baseline of pre-existing failures', () => {
     const run = () =>
       validator.runValidation({
         stages: ['typecheck', 'lint', 'test'],
-        baseline: suiteBaseline.failures,
 
         task: mkTask('pkg/handler.go'),
         projectDir: tempDir,
@@ -510,42 +227,35 @@ describe('run-start baseline of pre-existing failures', () => {
         changedFiles: ['pkg/handler.go'],
       });
 
-    const suiteBaseline = await validator.runFullSuite({
-      moment: 'baseline',
-
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-    });
     const kept = await run();
     const regressed = await run();
 
     expect(runner.calls[0]?.cmd).toBe('go');
-    expect(runner.calls[0]?.args).toEqual(['test', './...']);
-    expect(runner.calls[1]?.args).toEqual(['test', './pkg/']);
-    expect(acceptValidationResults(kept, suiteBaseline.failures, ['pkg/handler.go'])).toMatchObject(
-      { exemptStages: ['test'], accepted: true },
-    );
+    expect(runner.calls[0]?.args).toEqual(['test', './pkg/']);
+    expect(acceptValidationResults(kept, ['pkg/handler.go'])).toMatchObject({
+      blockingStages: ['test'],
+      accepted: false,
+    });
     expect(regressed.find((r) => r.stage === 'test')?.failureFiles).toEqual([]);
-    expect(
-      acceptValidationResults(regressed, suiteBaseline.failures, ['pkg/handler.go']),
-    ).toMatchObject({ blockingStages: ['test'], accepted: false });
+    expect(acceptValidationResults(regressed, ['pkg/handler.go'])).toMatchObject({
+      blockingStages: ['test'],
+      accepted: false,
+    });
   });
 });
 
-describe('full-suite baseline progress', () => {
+describe('full-suite progress', () => {
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = createTempDir('val-baseline-heartbeat');
+    tempDir = createTempDir('val-suite-progress');
   });
 
   afterEach(() => {
     cleanupTempDir(tempDir);
   });
 
-  it('reports every enabled stage exactly once, red stages in failing and green stages true in stages', async () => {
+  it('reports every enabled stage exactly once, red stages in failures and green stages passed', async () => {
     const validator = createValidator({
       runCommand: makeCommandRunner(
         { stdout: 'ok', stderr: '', code: 0 },
@@ -563,16 +273,14 @@ describe('full-suite baseline progress', () => {
     const bus = createEventBus();
     bus.subscribe((event) => events.push(event));
 
-    const suiteBaseline = await validator.runFullSuite({
-      moment: 'baseline',
-
+    const suite = await validator.runFullSuite({
       projectDir: tempDir,
       config,
       bus,
       phase: 'implementing',
     });
 
-    expect(suiteBaseline.results.map((result) => [result.stage, result.passed])).toEqual([
+    expect(suite.results.map((result) => [result.stage, result.passed])).toEqual([
       ['typecheck', true],
       ['lint', false],
     ]);
@@ -619,17 +327,15 @@ describe('full-suite baseline progress', () => {
     const bus = createEventBus();
     bus.subscribe((event) => events.push(event));
 
-    const suiteBaseline = await validator.runFullSuite({
-      moment: 'baseline',
-
+    const suite = await validator.runFullSuite({
       projectDir: tempDir,
       config,
       bus,
       phase: 'implementing',
     });
 
-    expect(suiteBaseline.results.map((result) => result.stage)).toEqual(['typecheck']);
-    expect(suiteBaseline.failures).toEqual({});
+    expect(suite.results.map((result) => result.stage)).toEqual(['typecheck']);
+    expect(suite.newFailures).toEqual({});
   });
 });
 
@@ -960,8 +666,6 @@ describe('discovered validation sanitization', () => {
     const discovered: DiscoveredValidation = { testCommand: 'npx vitest run' };
 
     await validator.runFullSuite({
-      moment: 'pre-review',
-
       projectDir: tempDir,
       config,
       bus: fakeBus,
@@ -1298,26 +1002,6 @@ describe('formatting the changed files before the lint stage', () => {
 
     expect(events.filter((e) => e.type === 'warning')).toEqual([]);
   });
-
-  it('never formats during the baseline probe', async () => {
-    writeTsProject(tempDir);
-    writeFileSync(join(tempDir, 'biome.json'), '{}');
-    const runner = makeCommandRunner();
-    const validator = createValidator({ runCommand: runner });
-
-    await validator.runFullSuite({
-      moment: 'baseline',
-
-      projectDir: tempDir,
-      config: lintOnly,
-      bus: fakeBus,
-      phase: 'implementing',
-    });
-
-    expect(runner.calls.map((call) => [call.cmd, ...call.args].join(' '))).toEqual([
-      'npx biome check .',
-    ]);
-  });
 });
 
 describe('runFullSuite', () => {
@@ -1337,7 +1021,7 @@ describe('runFullSuite', () => {
     processError.exitCode({ command: 'npm', code: 1, stderr: '', output: text });
 
   it.each(['typecheck', 'lint', 'test'] as const)(
-    'detects a silent nonzero %s exit against a green baseline',
+    'detects a silent nonzero %s exit',
     async (stage) => {
       writeTsProject(tempDir);
       const config = makeConfig({
@@ -1351,7 +1035,6 @@ describe('runFullSuite', () => {
       });
       const validator = createValidator({
         runCommand: makeCommandRunner(
-          { stdout: '', stderr: '', code: 0 },
           processError.exitCode({ command: 'check', code: 7, stderr: ' \n', output: '' }),
         ),
       });
@@ -1360,271 +1043,24 @@ describe('runFullSuite', () => {
         config,
         bus: fakeBus,
         phase: 'implementing' as const,
-        moment: 'baseline' as const,
       };
-      const baseline = await validator.runFullSuite(opts);
-      const result = await validator.runFullSuite({ ...opts, baseline: baseline.failures });
+      const result = await validator.runFullSuite(opts);
 
       expect(result.results[0]?.passed).toBe(false);
-      expect(result.failures[stage]).toEqual([`${stage} exited with code 7`]);
-      expect(result.newFailures[stage]).toEqual(result.failures[stage]);
+      expect(result.newFailures[stage]).toEqual([`${stage} exited with code 7`]);
     },
   );
 
-  it('matches a silent full-suite baseline by stage and exit code, and detects a changed exit', async () => {
-    writeTsProject(tempDir);
-    const validator = createValidator({
-      runCommand: makeCommandRunner(
-        red(''),
-        red(''),
-        processError.exitCode({ command: 'npm', code: 2, stderr: '', output: '' }),
-      ),
-    });
-    const opts = {
-      projectDir: tempDir,
-      config: testOnly,
-      bus: fakeBus,
-      phase: 'implementing' as const,
-      moment: 'baseline' as const,
-    };
-    const baseline = await validator.runFullSuite(opts);
-    const same = await validator.runFullSuite({ ...opts, baseline: baseline.failures });
-    const changed = await validator.runFullSuite({ ...opts, baseline: baseline.failures });
-
-    expect(baseline.failures.test).toEqual(['test exited with code 1']);
-    expect(same.failures).toEqual(baseline.failures);
-    expect(same.newFailures).toEqual({});
-    expect(changed.newFailures.test).toEqual(['test exited with code 2']);
-  });
-
-  it('uses the same silent failure key for the task baseline, full suite and acceptance', async () => {
-    writeTsProject(tempDir);
-    const config = makeConfig({
-      typecheck: true,
-      lint: false,
-      test: false,
-      typecheckCommand: 'tsc --noEmit',
-    });
-    const validator = createValidator({
-      runCommand: makeCommandRunner(
-        processError.exitCode({ command: 'tsc', code: 2, stderr: '', output: '' }),
-        processError.exitCode({ command: 'tsc', code: 2, stderr: '', output: '' }),
-      ),
-    });
-    const opts = {
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing' as const,
-      moment: 'baseline' as const,
-    };
-    const baseline = await validator.runFullSuite({
-      ...opts,
-    });
-    const suite = await validator.runFullSuite({ ...opts, baseline: baseline?.failures });
-
-    expect(baseline?.failures.typecheck).toEqual(['typecheck exited with code 2']);
-    expect(suite.failures).toEqual(baseline?.failures);
-    expect(suite.newFailures).toEqual({});
-    expect(
-      acceptValidationResults(
-        [
-          {
-            passed: false,
-            stage: 'typecheck',
-            command: 'tsc --noEmit',
-            exitCode: 2,
-            failureFiles: [],
-          },
-        ],
-        baseline.failures,
-        ['src/app.ts'],
-      ).accepted,
-    ).toBe(true);
-    expect(
-      acceptValidationResults(
-        [
-          {
-            passed: false,
-            stage: 'typecheck',
-            command: 'tsc --noEmit',
-            exitCode: 3,
-            failureFiles: [],
-          },
-        ],
-        baseline.failures,
-        ['src/app.ts'],
-      ).accepted,
-    ).toBe(false);
-  });
-
-  it('does not exempt a silent task failure against a diagnostic baseline', async () => {
-    writeTsProject(tempDir);
-    const config = makeConfig({
-      typecheck: true,
-      lint: false,
-      test: false,
-      typecheckCommand: 'tsc --noEmit',
-    });
-    const validator = createValidator({
-      runCommand: makeCommandRunner(
-        processError.exitCode({
-          command: 'tsc',
-          code: 2,
-          stderr: 'src/legacy.ts(1,1): error TS2322',
-          output: '',
-        }),
-        processError.exitCode({ command: 'tsc', code: 2, stderr: '', output: '' }),
-      ),
-    });
-    const opts = {
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing' as const,
-      moment: 'baseline' as const,
-      task: mkTask('src/app.ts'),
-    };
-    const suiteBaseline = await validator.runFullSuite({ ...opts });
-    const results = await validator.runValidation({
-      stages: ['typecheck', 'lint', 'test'],
-      baseline: suiteBaseline.failures,
-      ...opts,
-      changedFiles: ['src/app.ts'],
-    });
-
-    expect(acceptValidationResults(results, suiteBaseline.failures, ['src/app.ts']).accepted).toBe(
-      false,
-    );
-  });
-
-  const timedOut = () =>
-    processError.timeout({
-      command: 'npm test',
-      label: 'test validation',
-      timeoutMs: 600_000,
-      output: '',
-    });
-
-  it('never keys a stage that timed out at the baseline as a known failure, and runs it no more', async () => {
-    writeTsProject(tempDir);
-    const runner = makeCommandRunner(timedOut());
-    const validator = createValidator({ runCommand: runner });
-    const opts = {
-      projectDir: tempDir,
-      config: makeConfig({ typecheck: false, lint: false, test: true, timeoutMs: 600_000 }),
-      bus: fakeBus,
-      phase: 'implementing' as const,
-      moment: 'baseline' as const,
-    };
-
-    const baseline = await validator.runFullSuite(opts);
-
-    expect(baseline.failures).toEqual({});
-    expect(baseline.stages.test).toMatchObject({ kind: 'timed-out', timeoutMs: 600_000 });
-    expect(baseline.stages.test?.durationMs).toBeGreaterThanOrEqual(0);
-
-    const boundary = await validator.runFullSuite({
-      ...opts,
-      baseline: baseline.failures,
-      baselineStages: baseline.stages,
-    });
-
-    expect(runner.calls).toHaveLength(1);
-    expect(boundary.results).toEqual([
-      expect.objectContaining({
-        stage: 'test',
-        passed: true,
-        skipped: true,
-        skippedReason: expect.stringContaining('timed out after 600s at the run-start baseline'),
-      }),
-    ]);
-    expect(boundary.newFailures).toEqual({});
-  });
-
-  it('counts a timeout after a completed baseline as a new failure', async () => {
-    writeTsProject(tempDir);
-    const validator = createValidator({
-      runCommand: makeCommandRunner({ stdout: 'ok', stderr: '', code: 0 }, timedOut()),
-    });
-    const opts = {
-      projectDir: tempDir,
-      config: testOnly,
-      bus: fakeBus,
-      phase: 'implementing' as const,
-      moment: 'baseline' as const,
-    };
-
-    const baseline = await validator.runFullSuite(opts);
-    const boundary = await validator.runFullSuite({
-      ...opts,
-      baseline: baseline.failures,
-      baselineStages: baseline.stages,
-    });
-
-    expect(baseline.stages.test).toMatchObject({ kind: 'completed' });
-    expect(boundary.failures).toEqual({});
-    expect(boundary.newFailures.test).toEqual([expect.stringContaining('timed out after 600s')]);
-  });
-
-  it('gives the run-start full suite one hour when validation.timeoutMs is unset', async () => {
-    writeTsProject(tempDir);
-    const runner = makeCommandRunner(timedOut());
-    const validator = createValidator({ runCommand: runner });
-    const opts = {
-      projectDir: tempDir,
-      config: testOnly,
-      bus: fakeBus,
-      phase: 'implementing' as const,
-      moment: 'baseline' as const,
-    };
-
-    const baseline = await validator.runFullSuite(opts);
-    const boundary = await validator.runFullSuite({
-      ...opts,
-      baseline: baseline.failures,
-      baselineStages: baseline.stages,
-    });
-
-    expect(runner.calls.map((call) => call.options?.timeout)).toEqual([3_600_000]);
-    expect(baseline.stages.test).toMatchObject({ kind: 'timed-out', timeoutMs: 3_600_000 });
-    expect(boundary.results[0]?.skippedReason).toBe(
-      'timed out after 3600s at the run-start baseline',
-    );
-  });
-
-  it('gives a run-level stage three times its measured baseline, never less than the configured timeout', async () => {
+  it('gives a review stage one hour when validation.timeoutMs is unset', async () => {
     writeTsProject(tempDir);
     const runner = makeCommandRunner();
-    const validator = createValidator({ runCommand: runner });
-    const opts = {
+    await createValidator({ runCommand: runner }).runFullSuite({
       projectDir: tempDir,
-      config: makeConfig({ typecheck: false, lint: false, test: true, timeoutMs: 600_000 }),
+      config: testOnly,
       bus: fakeBus,
-      phase: 'implementing' as const,
-      moment: 'baseline' as const,
-    };
-
-    await validator.runFullSuite({
-      ...opts,
-      baseline: {},
-      baselineStages: { test: { kind: 'completed', durationMs: 400_000 } },
+      phase: 'final-review',
     });
-    await validator.runFullSuite({
-      ...opts,
-      baseline: {},
-      baselineStages: { test: { kind: 'completed', durationMs: 1_000 } },
-    });
-    await validator.runFullSuite({
-      ...opts,
-      config: makeConfig({ typecheck: false, lint: false, test: true, timeoutMs: 2_000_000 }),
-      baseline: {},
-      baselineStages: { test: { kind: 'completed', durationMs: 400_000 } },
-    });
-
-    expect(runner.calls.map((call) => call.options?.timeout)).toEqual([
-      1_200_000, 600_000, 2_000_000,
-    ]);
+    expect(runner.calls.map((call) => call.options?.timeout)).toEqual([3_600_000]);
   });
 
   it('runs the whole test suite, not a narrowed target, and records its failure keys', async () => {
@@ -1634,56 +1070,40 @@ describe('runFullSuite', () => {
     );
     const validator = createValidator({ runCommand: runner });
 
-    const baseline = await validator.runFullSuite({
+    const suite = await validator.runFullSuite({
       projectDir: tempDir,
       config: testOnly,
       bus: fakeBus,
       phase: 'implementing',
-      moment: 'baseline' as const,
     });
 
     expect(runner.calls[0]?.cmd).toBe('npm');
     expect(runner.calls[0]?.args).toEqual(['test']);
-    expect(baseline.failures.test).toEqual(['src/legacy.test.ts:5']);
-    expect(baseline.newFailures.test).toEqual(['src/legacy.test.ts:5']);
+    expect(suite.newFailures.test).toEqual(['src/legacy.test.ts::adds']);
   });
 
-  it('counts only failures outside the baseline, so a pre-existing red test is not new', async () => {
+  it('names a test timeout without diagnostic output', async () => {
     writeTsProject(tempDir);
-    const runner = makeCommandRunner(
-      red('FAIL src/legacy.test.ts > adds\n  ❯ src/legacy.test.ts:5:20'),
-      red(
-        [
-          'FAIL src/legacy.test.ts > adds',
-          '  ❯ src/legacy.test.ts:5:20',
-          'FAIL src/new.test.ts > subtracts',
-          '  ❯ src/new.test.ts:3:10',
-        ].join('\n'),
+    const validator = createValidator({
+      runCommand: makeCommandRunner(
+        processError.timeout({
+          command: 'npm test',
+          timeoutMs: 3_600_000,
+          output: '',
+        }),
       ),
-    );
-    const validator = createValidator({ runCommand: runner });
-
-    const baseline = await validator.runFullSuite({
-      projectDir: tempDir,
-      config: testOnly,
-      bus: fakeBus,
-      phase: 'implementing',
-      moment: 'baseline' as const,
     });
-    const boundary = await validator.runFullSuite({
+    const suite = await validator.runFullSuite({
       projectDir: tempDir,
-      config: testOnly,
+      config: makeConfig({ typecheck: false, lint: false, test: true }),
       bus: fakeBus,
-      phase: 'implementing',
-      moment: 'baseline' as const,
-      baseline: baseline.failures,
+      phase: 'final-review',
     });
-
-    expect(boundary.newFailures.test).toEqual(['src/new.test.ts:3']);
-    expect(boundary.newFailures.test).not.toContain('src/legacy.test.ts:5');
+    expect(suite.newFailures).toEqual({ test: ['test timed out'] });
+    expect(suite.results[0]?.timedOut).toBe(true);
   });
 
-  it('reports every failing stage of the full suite, not only the first', async () => {
+  it('stops at the first stage with a new failure and runs no later stage', async () => {
     writeTsProject(tempDir);
     const runner = makeCommandRunner(
       processError.exitCode({
@@ -1695,19 +1115,37 @@ describe('runFullSuite', () => {
       red('FAIL src/legacy.test.ts > adds\n  ❯ src/legacy.test.ts:5:20'),
     );
     const validator = createValidator({ runCommand: runner });
-    const config = makeConfig({ typecheck: true, lint: false, test: true });
+    const config = makeConfig({ typecheck: true, lint: true, test: true });
+    const { bus, events } = makeBusRecorder();
 
     const result = await validator.runFullSuite({
       projectDir: tempDir,
       config,
-      bus: fakeBus,
+      bus,
       phase: 'implementing',
-      moment: 'baseline' as const,
     });
 
-    expect(result.results.map((r) => r.stage)).toEqual(['typecheck', 'test']);
-    expect(result.failures.typecheck).toEqual(['src/legacy.ts(1,1)']);
-    expect(result.failures.test).toEqual(['src/legacy.test.ts:5']);
+    expect(runner.calls).toHaveLength(1);
+    expect(result.results.map((r) => r.stage)).toEqual(['typecheck', 'lint', 'test']);
+    expect(result.results.slice(1)).toEqual([
+      expect.objectContaining({
+        stage: 'lint',
+        skipped: true,
+        output: 'not run: typecheck failed',
+      }),
+      expect.objectContaining({
+        stage: 'test',
+        skipped: true,
+        output: 'not run: typecheck failed',
+      }),
+    ]);
+    expect(
+      events.filter((event) => event.type === 'full_suite' && event.status === 'not-run'),
+    ).toEqual([
+      expect.objectContaining({ stage: 'lint', command: expect.any(String) }),
+      expect.objectContaining({ stage: 'test', command: expect.any(String) }),
+    ]);
+    expect(result.newFailures).toEqual({ typecheck: ['src/legacy.ts(1,1)'] });
   });
 
   it('publishes a running and a done full_suite event for every stage it runs', async () => {
@@ -1726,7 +1164,6 @@ describe('runFullSuite', () => {
       config,
       bus,
       phase: 'implementing',
-      moment: 'pre-review',
     });
 
     const suite = events.filter(
@@ -1741,5 +1178,405 @@ describe('runFullSuite', () => {
     const done = suite.find((event) => event.stage === 'test' && event.status === 'done');
     expect(done).toMatchObject({ passed: true, command: expect.stringContaining('test') });
     expect(done?.duration).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('known failures, checked at the red moment against the run base', {
+  timeout: 60_000,
+}, () => {
+  const PROJECT = {
+    'package.json': '{"scripts":{"test":"vitest run"}}',
+    'tsconfig.json': '{}',
+    'src/legacy.ts': 'export const legacy = 1;\n',
+    'src/legacy.test.ts': "import { legacy } from './legacy.js';\n",
+  };
+  const testOnly = makeConfig({ typecheck: false, lint: false, test: true });
+  const typecheckOnly = makeConfig({
+    typecheck: true,
+    typecheckCommand: 'npx tsc --noEmit',
+    lint: false,
+    test: false,
+  });
+  const LEGACY_RED = 'FAIL src/legacy.test.ts > adds\n  ❯ src/legacy.test.ts:5:20';
+  const FRESH_RED = 'FAIL src/fresh.test.ts > subtracts\n  ❯ src/fresh.test.ts:3:10';
+  const OLD_TYPE_ERROR = 'src/old.ts(3,7): error TS2322: Type string is not number.';
+  const NEW_TYPE_ERROR = 'src/legacy.ts(1,1): error TS2304: Cannot find name x.';
+
+  type Outcome = Awaited<ReturnType<ValidationCommandRunner>> | Error;
+  type Call = { cmd: string; args: string[]; cwd: string };
+
+  const green: Outcome = { stdout: 'ok', stderr: '', code: 0 };
+  const red = (output: string): Outcome =>
+    processError.exitCode({ command: 'npm', code: 1, stderr: '', output });
+  const timedOut = (): Outcome =>
+    processError.timeout({
+      command: 'npm test',
+      label: 'test validation',
+      timeoutMs: 3_600_000,
+      output: '',
+    });
+
+  /** Answers by tree: the run workspace gets `candidate`, every other directory `atBase`. */
+  function treeRunner(
+    ws: string,
+    candidate: (cmd: string, args: string[]) => Outcome,
+    atBase: (cmd: string, args: string[]) => Outcome,
+  ): { calls: Call[]; runCommand: ValidationCommandRunner } {
+    const calls: Call[] = [];
+    const runCommand: ValidationCommandRunner = async (cmd, args, options) => {
+      const cwd = options?.cwd ?? '';
+      calls.push({ cmd, args, cwd });
+      const outcome = cwd === ws ? candidate(cmd, args) : atBase(cmd, args);
+      if (outcome instanceof Error) throw outcome;
+      return outcome;
+    };
+    return { calls, runCommand };
+  }
+
+  function baseOf(run: ApplyRun) {
+    return {
+      projectDir: run.dir,
+      sessionId: run.sessionId,
+      snapshotId: run.workspace.base.snapshotId,
+    };
+  }
+
+  function outside(root: string, path: string): boolean {
+    const rel = relative(root, path);
+    return rel.startsWith('..') || isAbsolute(rel);
+  }
+
+  it('re-runs only the failing test file at the run base and keeps a red that is red there too out of the new failures', async () => {
+    await withApplyRun(PROJECT, { sessionId: 'sess-known-test' }, async (run) => {
+      writeFileSync(join(run.ws, 'src/fresh.test.ts'), 'export {};\n');
+      const { calls, runCommand } = treeRunner(
+        run.ws,
+        () => red(`${LEGACY_RED}\n${FRESH_RED}`),
+        () => red(LEGACY_RED),
+      );
+      const { bus, events } = makeBusRecorder();
+
+      const suite = await createValidator({ runCommand }).runFullSuite({
+        projectDir: run.ws,
+        config: testOnly,
+        bus,
+        phase: 'final-review',
+        base: baseOf(run),
+      });
+
+      expect(suite.newFailures).toEqual({ test: ['src/fresh.test.ts::subtracts'] });
+      expect(suite.results[0]?.preExisting).toEqual(['src/legacy.test.ts::adds']);
+      expect(calls).toHaveLength(2);
+      expect(calls[0]).toMatchObject({ cmd: 'npm', args: ['test'], cwd: run.ws });
+      // The file the run added is not at the base, so only the legacy test re-runs there.
+      expect(calls[1]).toMatchObject({ cmd: 'npm', args: ['test', '--', 'src/legacy.test.ts'] });
+      const baseTree = calls[1]?.cwd ?? '';
+      expect(outside(run.dir, baseTree)).toBe(true);
+      expect(outside(run.ws, baseTree)).toBe(true);
+      expect(existsSync(baseTree)).toBe(false);
+      const suiteEvents = events.filter(
+        (event): event is EngineEventOf<'full_suite'> => event.type === 'full_suite',
+      );
+      expect(suiteEvents.map((event) => [event.moment, event.status])).toEqual([
+        ['pre-review', 'running'],
+        ['pre-review', 'done'],
+        ['base', 'running'],
+        ['base', 'done'],
+      ]);
+      expect(suiteEvents[3]).toMatchObject({
+        stage: 'test',
+        command: expect.stringContaining('src/legacy.test.ts'),
+        passed: false,
+      });
+    });
+  });
+
+  it('checks a red stage at the base before the next stage runs, and runs on past a red that is all pre-existing', async () => {
+    await withApplyRun(PROJECT, { sessionId: 'sess-known-per-stage' }, async (run) => {
+      writeFileSync(join(run.ws, 'src/fresh.test.ts'), 'export {};\n');
+      const { calls, runCommand } = treeRunner(
+        run.ws,
+        (cmd) => (cmd === 'npx' ? red(OLD_TYPE_ERROR) : red(FRESH_RED)),
+        (cmd) => (cmd === 'npx' ? red(OLD_TYPE_ERROR) : green),
+      );
+
+      const suite = await createValidator({ runCommand }).runFullSuite({
+        projectDir: run.ws,
+        config: makeConfig({
+          typecheck: true,
+          typecheckCommand: 'npx tsc --noEmit',
+          lint: false,
+          test: true,
+        }),
+        bus: fakeBus,
+        phase: 'final-review',
+        base: baseOf(run),
+      });
+
+      expect(calls.map((call) => [call.cmd, call.cwd === run.ws ? 'candidate' : 'base'])).toEqual([
+        ['npx', 'candidate'],
+        ['npx', 'base'],
+        ['npm', 'candidate'],
+      ]);
+      expect(suite.results.map((result) => result.stage)).toEqual(['typecheck', 'test']);
+      expect(suite.results[0]?.preExisting).toEqual(['src/old.ts(3,7)']);
+      expect(suite.newFailures).toEqual({ test: ['src/fresh.test.ts::subtracts'] });
+    });
+  });
+
+  it('compares a whole typecheck run at the base by file and diagnostic', async () => {
+    await withApplyRun(PROJECT, { sessionId: 'sess-known-typecheck' }, async (run) => {
+      const { calls, runCommand } = treeRunner(
+        run.ws,
+        () => red(`${OLD_TYPE_ERROR}\n${NEW_TYPE_ERROR}`),
+        () => red(OLD_TYPE_ERROR),
+      );
+
+      const suite = await createValidator({ runCommand }).runFullSuite({
+        projectDir: run.ws,
+        config: typecheckOnly,
+        bus: fakeBus,
+        phase: 'final-review',
+        base: baseOf(run),
+      });
+
+      expect(calls.map((call) => [call.cmd, ...call.args])).toEqual([
+        ['npx', 'tsc', '--noEmit'],
+        ['npx', 'tsc', '--noEmit'],
+      ]);
+      expect(suite.newFailures).toEqual({ typecheck: ['src/legacy.ts(1,1)'] });
+      expect(suite.results[0]?.preExisting).toEqual(['src/old.ts(3,7)']);
+    });
+  });
+
+  it.each(['typecheck', 'lint', 'test'] as const)(
+    'compares absolute %s failure paths across the two trees and retains candidate keys',
+    async (stage) => {
+      await withApplyRun(PROJECT, { sessionId: `sess-known-absolute-${stage}` }, async (run) => {
+        const file = stage === 'test' ? 'src/legacy.test.ts' : 'src/legacy.ts';
+        const runCommand: ValidationCommandRunner = async (_cmd, _args, options) => {
+          throw processError.exitCode({
+            command: 'check',
+            code: 1,
+            stderr: '',
+            output: `${join(options?.cwd ?? '', file)}:5:20 error`,
+          });
+        };
+        const suite = await createValidator({ runCommand }).runFullSuite({
+          projectDir: run.ws,
+          config: makeConfig({
+            typecheck: false,
+            lint: false,
+            test: false,
+            [stage]: true,
+            typecheckCommand: 'npx tsc --noEmit',
+            lintCommand: 'npx biome check .',
+          }),
+          bus: fakeBus,
+          phase: 'final-review',
+          base: baseOf(run),
+        });
+        if (stage === 'test') {
+          expect(suite.newFailures).toEqual({ test: ['test exited with code 1'] });
+          expect(suite.results[0]?.preExisting).toBeUndefined();
+        } else {
+          expect(suite.newFailures).toEqual({});
+          expect(suite.results[0]?.preExisting).toEqual([`${join(run.ws, file)}:5`]);
+        }
+      });
+    },
+  );
+
+  it('runs nothing at the base when every stage is green', async () => {
+    await withApplyRun(PROJECT, { sessionId: 'sess-known-green' }, async (run) => {
+      const { calls, runCommand } = treeRunner(
+        run.ws,
+        () => green,
+        () => red(LEGACY_RED),
+      );
+
+      const suite = await createValidator({ runCommand }).runFullSuite({
+        projectDir: run.ws,
+        config: testOnly,
+        bus: fakeBus,
+        phase: 'final-review',
+        base: baseOf(run),
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(suite.newFailures).toEqual({});
+      expect(suite.results[0]?.preExisting).toBeUndefined();
+    });
+  });
+
+  it('counts every red as new for an older run with no recorded run base', async () => {
+    await withApplyRun(PROJECT, { sessionId: 'sess-known-no-base' }, async (run) => {
+      const { calls, runCommand } = treeRunner(
+        run.ws,
+        () => red(LEGACY_RED),
+        () => red(LEGACY_RED),
+      );
+
+      const suite = await createValidator({ runCommand }).runFullSuite({
+        projectDir: run.ws,
+        config: testOnly,
+        bus: fakeBus,
+        phase: 'final-review',
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(suite.newFailures).toEqual({ test: ['src/legacy.test.ts::adds'] });
+    });
+  });
+
+  it('keeps an unparsed test timeout new and runs nothing at the base', async () => {
+    await withApplyRun(PROJECT, { sessionId: 'sess-known-slow' }, async (run) => {
+      const { calls, runCommand } = treeRunner(run.ws, timedOut, timedOut);
+
+      const suite = await createValidator({ runCommand }).runFullSuite({
+        projectDir: run.ws,
+        config: testOnly,
+        bus: fakeBus,
+        phase: 'final-review',
+        base: baseOf(run),
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(suite.newFailures).toEqual({ test: ['test timed out'] });
+      expect(suite.results[0]?.timedOut).toBe(true);
+      expect(suite.results[0]?.preExisting).toBeUndefined();
+    });
+  });
+
+  it('counts a timeout as new when the same command finishes at the base', async () => {
+    await withApplyRun(PROJECT, { sessionId: 'sess-known-hang' }, async (run) => {
+      const { runCommand } = treeRunner(run.ws, timedOut, () => green);
+
+      const suite = await createValidator({ runCommand }).runFullSuite({
+        projectDir: run.ws,
+        config: testOnly,
+        bus: fakeBus,
+        phase: 'final-review',
+        base: baseOf(run),
+      });
+
+      expect(suite.newFailures.test).toHaveLength(1);
+      expect(suite.results[0]?.preExisting).toBeUndefined();
+    });
+  });
+
+  it('counts a diagnostic failure as new when its base command times out', async () => {
+    await withApplyRun(PROJECT, { sessionId: 'sess-known-base-timeout' }, async (run) => {
+      const { calls, runCommand } = treeRunner(run.ws, () => red(LEGACY_RED), timedOut);
+
+      const suite = await createValidator({ runCommand }).runFullSuite({
+        projectDir: run.ws,
+        config: testOnly,
+        bus: fakeBus,
+        phase: 'final-review',
+        base: baseOf(run),
+      });
+
+      expect(calls[1]).toMatchObject({ cmd: 'npm', args: ['test', '--', 'src/legacy.test.ts'] });
+      expect(suite.newFailures.test).toEqual(['src/legacy.test.ts::adds']);
+      expect(suite.results[0]?.preExisting).toBeUndefined();
+    });
+  });
+
+  it('keeps a failure red when every failing test file is absent at the base', async () => {
+    await withApplyRun(PROJECT, { sessionId: 'sess-known-base-skip' }, async (run) => {
+      writeFileSync(join(run.ws, 'src/fresh.test.ts'), 'export {};\n');
+      const { calls, runCommand } = treeRunner(
+        run.ws,
+        () => red(FRESH_RED),
+        () => red(FRESH_RED),
+      );
+
+      const suite = await createValidator({ runCommand }).runFullSuite({
+        projectDir: run.ws,
+        config: testOnly,
+        bus: fakeBus,
+        phase: 'final-review',
+        base: baseOf(run),
+      });
+
+      expect(calls.filter((call) => call.cwd !== run.ws)).toEqual([]);
+      expect(suite.newFailures.test).toEqual(['src/fresh.test.ts::subtracts']);
+      expect(suite.results[0]?.passed).toBe(false);
+      expect(suite.results[0]?.preExisting).toBeUndefined();
+    });
+  });
+
+  it('a brief gate continues past a stage red at the base and accepts it as pre-existing', async () => {
+    await withApplyRun(PROJECT, { sessionId: 'sess-known-gate' }, async (run) => {
+      const { calls, runCommand } = treeRunner(
+        run.ws,
+        (cmd) => (cmd === 'npx' ? red(OLD_TYPE_ERROR) : green),
+        () => red(OLD_TYPE_ERROR),
+      );
+      const config = makeConfig({
+        typecheck: true,
+        typecheckCommand: 'npx tsc --noEmit',
+        lint: false,
+        test: true,
+      });
+
+      const results = await createValidator({ runCommand }).runValidation({
+        task: mkTask('src/legacy.ts'),
+        projectDir: run.ws,
+        config,
+        bus: fakeBus,
+        phase: 'implementing',
+        stages: ['typecheck', 'lint', 'test'],
+        changedFiles: ['src/legacy.ts'],
+        base: baseOf(run),
+      });
+
+      expect(results.map((result) => [result.stage, result.passed])).toEqual([
+        ['typecheck', false],
+        ['test', true],
+      ]);
+      expect(results[0]?.preExisting).toEqual(['src/old.ts(3,7)']);
+      expect(acceptValidationResults(results, ['src/legacy.ts'])).toEqual({
+        accepted: true,
+        exemptStages: ['typecheck'],
+        blockingStages: [],
+      });
+      expect(calls.filter((call) => call.cwd !== run.ws)).toHaveLength(1);
+    });
+  });
+
+  it('a brief gate stops at a red that names its own changed file', async () => {
+    await withApplyRun(PROJECT, { sessionId: 'sess-known-gate-own' }, async (run) => {
+      const { calls, runCommand } = treeRunner(
+        run.ws,
+        (cmd) => (cmd === 'npx' ? red(`${OLD_TYPE_ERROR}\n${NEW_TYPE_ERROR}`) : green),
+        () => red(OLD_TYPE_ERROR),
+      );
+      const config = makeConfig({
+        typecheck: true,
+        typecheckCommand: 'npx tsc --noEmit',
+        lint: false,
+        test: true,
+      });
+
+      const results = await createValidator({ runCommand }).runValidation({
+        task: mkTask('src/legacy.ts'),
+        projectDir: run.ws,
+        config,
+        bus: fakeBus,
+        phase: 'implementing',
+        stages: ['typecheck', 'lint', 'test'],
+        changedFiles: ['src/legacy.ts'],
+        base: baseOf(run),
+      });
+
+      expect(results.map((result) => result.stage)).toEqual(['typecheck']);
+      expect(acceptValidationResults(results, ['src/legacy.ts'])).toMatchObject({
+        accepted: false,
+        blockingStages: ['typecheck'],
+      });
+      expect(calls.filter((call) => call.cwd !== run.ws)).toEqual([]);
+    });
   });
 });

@@ -3,7 +3,7 @@ import type { Attachment } from '../../core/schemas/attachment.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { Reviewer } from '../reviewers/types.js';
 import type { EventBus } from '../events/types.js';
-import { REVIEW_VERDICT_JSON_SCHEMA, type ReviewVerdict } from '../../core/schemas/review.js';
+import { REVIEW_ANSWER_JSON_SCHEMA, type ReviewAnswer } from '../../core/schemas/review.js';
 import { requestTyped, type RequestTypedResult } from '../runners/typed-output.js';
 import { createBusTextHandler } from './events.js';
 import { addUsageAndSave } from './state-ops.js';
@@ -12,7 +12,7 @@ export type RunReviewerCallOptions = {
   reviewer: Reviewer;
   prompt: string;
   /** The verdict contract, coverage refinement included. */
-  schema: z.ZodType<ReviewVerdict>;
+  schema: z.ZodType<ReviewAnswer>;
   projectDir: string;
   workspaceDir: string;
   sessionId: string;
@@ -25,7 +25,7 @@ export type RunReviewerCallOptions = {
 
 export type RunReviewerCallResult = {
   state: WorkflowState;
-  result: RequestTypedResult<ReviewVerdict>;
+  result: RequestTypedResult<ReviewAnswer>;
 };
 
 /**
@@ -49,8 +49,8 @@ export async function runReviewerCall(
   const result = await requestTyped({
     prompt,
     schema: opts.schema,
-    jsonSchema: REVIEW_VERDICT_JSON_SCHEMA,
-    schemaName: 'review_verdict',
+    jsonSchema: REVIEW_ANSWER_JSON_SCHEMA,
+    schemaName: 'review_answer',
     call,
   });
   const state = addUsageAndSave(

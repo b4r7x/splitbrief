@@ -109,7 +109,7 @@ export interface ImplementerOptions extends UndeclaredWritesPolicy {
     | ((file: string) => Promise<{ allow: boolean; reason?: string | undefined }>)
     | undefined;
   /**
-   * A brief reopened by the final review already has its code on disk, so a
+   * A fix task may find its work already on disk, so a
    * direct-write attempt that verifies and changes nothing completes instead of
    * failing `no-staged-change`. Every other attempt must change something.
    */

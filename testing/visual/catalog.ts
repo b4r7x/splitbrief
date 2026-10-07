@@ -420,7 +420,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-review-fix-no-change',
-      title: 'Workflow · a reopened brief that needed no change',
+      title: 'Workflow · a fix brief that needed no change',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'review-fix-no-change',
@@ -513,11 +513,11 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'sidebar', title: 'Workflow sidebar' },
       ],
     }),
-    // S11 run 3: the run-start warning, `T901 also changed …` and the `Batch suite · …` rows sat
+    // S11 run 3: the run-level warning, `T901 also changed …` and the `Batch suite · …` rows sat
     // above the live brief for the rest of the run. Once T902 runs they belong to the closed T901.
     defineScenario({
       id: 'workflow-completed-orphan-rows',
-      title: 'Workflow · run-start and boundary rows collapse with the completed briefs',
+      title: 'Workflow · run-level and boundary rows collapse with the completed briefs',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'completed-orphan-rows',
@@ -1658,21 +1658,35 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
-    // S11 run 3, 19:34: the run-start `npm test` timed out and the run skipped it with a warning.
     defineScenario({
-      id: 'workflow-implementation-suite-timeout',
-      title: 'Workflow · the run-start full suite timed out',
+      id: 'workflow-review-red-gate',
+      title: 'Workflow · the reviewer answers a red typecheck gate',
       surface: screenSurface('workflow'),
       checkpoint: {
-        id: 'implementation-suite-timeout',
-        title:
-          'The timeout warning names the stage, both times and the validation.timeoutMs to raise',
-        kind: 'implementation',
-        marker: 'validation.timeoutMs',
+        id: 'review-red-gate',
+        title: 'The red stage followed by the configured reviewer activity and byline',
+        kind: 'review',
+        marker: 'REVIEW activity',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
-        { id: 'transcript', title: 'Suite timeout warning' },
+        { id: 'transcript', title: 'Red gate and reviewer activity' },
+        { id: 'composer', title: 'Reviewer identity' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-review-base-rerun',
+      title: 'Workflow · a review failure re-runs at the run base',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-base-rerun',
+        title: 'The base command in the byline, build block and transcript',
+        kind: 'review',
+        marker: 'Base re-run',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Review validation transcript' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),

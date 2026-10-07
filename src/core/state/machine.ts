@@ -62,7 +62,6 @@ const anytimeActions = [
   'CLEAR_SEAT_WAIT',
   'START_SCHEDULED_REVIEW',
   'CLEAR_SCHEDULED_REVIEW',
-  'REOPEN_TASK',
 ] as const satisfies readonly MachineAction['type'][];
 
 const VALIDATION_OR_ESCALATION_SHARED_ACTIONS = [
@@ -108,6 +107,7 @@ const phaseActions = {
   escalating: [...VALIDATION_OR_ESCALATION_SHARED_ACTIONS, 'UPDATE_TASK_CODE'],
   'final-review': [
     'REVIEW_DONE',
+    'REVIEW_CORRECTION',
     'RECORD_APPLY_RECHECK',
     'RECORD_REVIEW',
     'RECORD_TRIAGE',
@@ -291,17 +291,8 @@ export function transition(
       return { ...cleaned, phase: 'validating-task' };
     }
 
-    case 'VALIDATION_PASS': {
-      const task = state.tasks[state.currentTaskIndex];
-      const cleared =
-        task === undefined
-          ? state
-          : withLineage(state, lineageKeyFor(state, task.id), (lineage) => {
-              const { gateFailure: _gateFailure, ...rest } = lineage;
-              return rest;
-            });
-      return advanceTask(cleared, taskStatusForCompletionMethod('local'));
-    }
+    case 'VALIDATION_PASS':
+      return advanceTask(state, taskStatusForCompletionMethod('local'));
 
     case 'VALIDATION_FAIL':
       if (state.attempt < DEFAULT_LOCAL_RETRIES) {
@@ -352,7 +343,10 @@ export function transition(
         completedAt: now.toISOString(),
         reviewStatus: action.reviewStatus,
         ...(action.candidate !== undefined && { reviewedCandidate: action.candidate }),
-        ...(action.reviewStatus === 'passed' && { applyReview: undefined }),
+        ...(action.reviewStatus === 'passed' && {
+          applyReview: undefined,
+          pendingTriage: undefined,
+        }),
       };
 
     case 'RECORD_REVIEW': {
@@ -388,7 +382,10 @@ export function transition(
 
     case 'REVIEW_CORRECTION': {
       const scheduled = state.phase === 'implementing' && state.review?.scope === 'task';
-      if (!scheduled && (state.phase !== 'complete' || state.reviewStatus !== 'failed')) {
+      const failedFinalReview =
+        (state.phase === 'complete' && state.reviewStatus === 'failed') ||
+        (state.phase === 'final-review' && state.pendingRecovery?.reason === 'review-failed');
+      if (!scheduled && !failedFinalReview) {
         throw transitionError.invalidActionForPhase(state.phase, action.type);
       }
       const fixCycles = fixCyclesOf(state);
@@ -623,24 +620,11 @@ export function transition(
     case 'SET_PLANNER_SESSION_ID':
       return { ...state, plannerSessionId: action.sessionId };
 
-    case 'REOPEN_TASK':
     case 'RESET_TASK': {
       const idx = state.tasks.findIndex((t) => t.id === action.taskId);
       if (idx < 0) return state;
-      const reopened =
-        action.type === 'REOPEN_TASK'
-          ? withLineage(state, lineageKeyFor(state, action.taskId), (lineage) => ({
-              ...lineage,
-              carriedFailure: action.failure.output,
-              gateFailure: {
-                stages: action.failure.stages,
-                files: action.failure.files,
-                checkIds: action.failure.checkIds,
-              },
-            }))
-          : state;
       return {
-        ...reopened,
+        ...state,
         tasks: state.tasks.map((t, i) => (i === idx ? { ...t, status: 'pending' } : t)),
         currentTaskIndex: idx,
         attempt: 0,

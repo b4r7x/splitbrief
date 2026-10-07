@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import type { ImplementerOptions } from '../../../src/engine/implementers/types.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
+import { readEvidenceLedger } from '../../../src/core/evidence/ledger-storage.js';
 import {
   makeCallbacks,
   makeImplementer,
@@ -38,10 +39,18 @@ afterEach(() => {
 });
 
 function setupProject(): string {
-  const projectDir = createTempDir('orch-int-baseline-acceptance');
+  const projectDir = createTempDir('orch-int-pre-existing-red');
   dirs.push(projectDir);
   createTestGitRepo(projectDir, { 'src/loop.ts': 'export const loop = "initial";\n' });
   seedValidationProject(projectDir, 'from-retry');
+  const script = join(projectDir, 'validate.mjs');
+  writeFileSync(
+    script,
+    readFileSync(script, 'utf-8').replace(
+      'src/loop.ts: expected from-retry implementation',
+      'FAIL  src/loop.ts > loop > carries retry marker\\nAssertionError: expected from-retry implementation',
+    ),
+  );
   return projectDir;
 }
 
@@ -99,10 +108,10 @@ function preparedExecution(input: {
   };
 }
 
-describe('baseline-relative acceptance', { timeout: 90_000 }, () => {
-  it('completes a task over a tree red before and after, with no retry and no escalation', async () => {
+describe('a red that was there before the run', { timeout: 90_000 }, () => {
+  it('runs no gate before the first brief, checks the review red at the run base and routes it to no brief', async () => {
     const projectDir = setupProject();
-    const sessionId = 'sess-baseline-relative-acceptance';
+    const sessionId = 'sess-pre-existing-red';
     const targetFile = 'src/other.ts';
     const redFile = 'src/loop.ts';
     const task = makeTask({
@@ -115,7 +124,7 @@ describe('baseline-relative acceptance', { timeout: 90_000 }, () => {
       implementationSteps: ['Create src/other.ts with the module export.'],
       tests: ['node validate.mjs still fails for the pre-existing reason'],
       scope: { inBounds: [targetFile], outOfBounds: [redFile] },
-      evidence: ['the task completes even though validation is red before and after'],
+      evidence: ['the review reports the red as pre-existing and starts no fix brief'],
       typeDefs: 'export const other: string',
     });
 
@@ -126,7 +135,7 @@ describe('baseline-relative acceptance', { timeout: 90_000 }, () => {
     const planner = makePlanner({
       typedCall: typedCallFromTasks([task], { inputTokens: 140, outputTokens: 90 }),
       review: vi.fn().mockResolvedValue({
-        text: '# Final review\n\nTask completed over a pre-existing red validation stage.',
+        text: '# Final review\n\nThe red validation stage was red before the run.',
         usage: { inputTokens: 60, outputTokens: 30 },
       }),
     });
@@ -170,7 +179,7 @@ describe('baseline-relative acceptance', { timeout: 90_000 }, () => {
       prepared: preparedExecution({
         projectDir,
         sessionId,
-        feature: 'run over a red baseline',
+        feature: 'run over a red tree',
         config,
       }),
       callbacks: makeCallbacks().callbacks,
@@ -183,25 +192,29 @@ describe('baseline-relative acceptance', { timeout: 90_000 }, () => {
     expect(
       readFileSync(join(runWorkspaceDir({ projectDir, sessionId }), targetFile), 'utf-8'),
     ).toBe('export const other = "unrelated";\n');
-    expect(summary).toMatchObject({
-      totalTasks: 1,
-      completedByLocal: 1,
-      escalatedToPlanner: 0,
-      failed: 0,
-    });
-
+    // No fix brief was appended for the pre-existing red.
+    expect(summary).toMatchObject({ totalTasks: 1, completedByLocal: 1, failed: 0 });
     expect(events.filter((event) => event.type === 'task_retry')).toHaveLength(0);
-    expect(events.filter((event) => event.type === 'escalate')).toHaveLength(0);
-    expect(events.map((event) => event.type)).toContain('task_completed');
+    expect(events.filter((event) => event.type === 'task_reset')).toHaveLength(0);
 
-    const baselineDone = events.find(
+    const firstBrief = events.findIndex((event) => event.type === 'task_started');
+    expect(firstBrief).toBeGreaterThan(-1);
+    expect(events.slice(0, firstBrief).filter((event) => event.type === 'full_suite')).toEqual([]);
+
+    const suiteDone = events.filter(
       (event): event is Extract<EngineEvent, { type: 'full_suite' }> =>
-        event.type === 'full_suite' &&
-        event.moment === 'baseline' &&
-        event.stage === 'test' &&
-        event.status === 'done',
+        event.type === 'full_suite' && event.status === 'done',
     );
-    expect(baselineDone?.passed).toBe(false);
+    expect(suiteDone.map((event) => [event.moment, event.stage, event.passed])).toEqual([
+      ['pre-review', 'test', false],
+      ['base', 'test', false],
+    ]);
+
+    const ledger = readEvidenceLedger({ projectDir, sessionId });
+    const testChecks = (ledger?.tasks.find((entry) => entry.id === 'T001')?.checks ?? []).filter(
+      (entry) => entry.id === 'test',
+    );
+    expect(testChecks.at(-1)?.preExisting).toEqual(['src/loop.ts::loop > carries retry marker']);
 
     const after = spawnSync('node', ['validate.mjs'], { cwd: projectDir, encoding: 'utf-8' });
     expect(after.status).not.toBe(0);

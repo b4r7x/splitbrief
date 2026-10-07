@@ -6,6 +6,7 @@ import { CAPTURE_LIMITS } from '../../../core/pipeline-spec/gates.js';
 import type { Stack } from '../../../core/validation/stacks/types.js';
 import { isMissingSubcommand, type CommandSource } from '../../../core/validation/stage-command.js';
 import { extractNamedChangedFiles } from './extract-named-changed-files.js';
+import { failingTestLabel, parseFailingTests } from './test-failures.js';
 import type { ValidationResult } from './result.js';
 import type { ValidationCommandRunner } from './types.js';
 
@@ -16,8 +17,6 @@ export type ValidationStepResult = ValidationResult & {
 export const MAX_VALIDATION_OUTPUT_CHARS = CAPTURE_LIMITS.outputChars;
 export const MAX_TEST_TAIL_LINES = CAPTURE_LIMITS.testTailLines;
 
-// A failing runner prints the diagnostic it wants quoted last, so the captured
-// output is a tail, never the head.
 export function boundedOutputTail(text: string): string {
   const tail =
     text.length <= MAX_VALIDATION_OUTPUT_CHARS ? text : text.slice(-MAX_VALIDATION_OUTPUT_CHARS);
@@ -133,11 +132,22 @@ export async function runValidationStep(opts: {
       const rawOutput = [stdout, String(stderr ?? '')]
         .filter((part) => part.trim().length > 0)
         .join('\n');
+      const failingTests = stage === 'test' ? parseFailingTests(rawOutput) : undefined;
+      const detail =
+        failingTests !== undefined && failingTests.length > 0
+          ? failingTests
+              .map(
+                (test) =>
+                  `FAIL  ${failingTestLabel(test)}${test.message === '' ? '' : `\n${test.message}`}`,
+              )
+              .join('\n\n')
+          : errText;
       return {
         passed: false,
         stage,
+        ...(failingTests !== undefined && { failingTests }),
         output: sanitizeStageOutput(stage, stdout),
-        error: boundedOutputTail(errText),
+        error: boundedOutputTail(detail),
         command,
         ...(err.data.code !== null && { exitCode: err.data.code }),
         ...(changedFiles !== undefined && {

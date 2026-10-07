@@ -8,7 +8,7 @@ import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js'
 import type { Reviewer } from '../reviewers/types.js';
 import type { TypedCallContext } from '../planners/types.js';
 import type { RunnerCallResult } from '../calls/types.js';
-import { ReviewVerdictSchema, type ReviewVerdict } from '../../core/schemas/review.js';
+import { ReviewAnswerSchema, type ReviewAnswer } from '../../core/schemas/review.js';
 import { taskId } from '../../core/schemas/task.js';
 import { runReviewerCall } from './review-call.js';
 
@@ -27,10 +27,14 @@ afterEach(() => {
   dirs = [];
 });
 
-const VERDICT: ReviewVerdict = {
+const VERDICT: ReviewAnswer = {
   tasks: [{ id: taskId('T001'), plan: 'met', note: '' }],
   criteria: [],
   findings: [],
+  fixTasks: [],
+  rejected: [],
+  verify: [],
+  ask: null,
 };
 
 /** A stateless review seat whose typed call is what the test scripts. */
@@ -72,7 +76,7 @@ describe('runReviewerCall', () => {
     const result = await runReviewerCall({
       reviewer,
       prompt: 'review the diff',
-      schema: ReviewVerdictSchema,
+      schema: ReviewAnswerSchema,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -102,7 +106,7 @@ describe('runReviewerCall', () => {
     await runReviewerCall({
       reviewer,
       prompt: 'review the diff',
-      schema: ReviewVerdictSchema,
+      schema: ReviewAnswerSchema,
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -139,7 +143,7 @@ describe('runReviewerCall', () => {
     const call = runReviewerCall({
       reviewer,
       prompt: 'review the diff',
-      schema: ReviewVerdictSchema,
+      schema: ReviewAnswerSchema,
       projectDir,
       workspaceDir: projectDir,
       sessionId,

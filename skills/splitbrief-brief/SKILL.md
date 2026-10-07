@@ -18,7 +18,7 @@ Write run artifacts only. Spawn no implementer or reviewer and edit no source fi
 An implementer seat is optional; record an absent seat as `unselected`.
 
 Stop after the typed plan and briefs pass admission and the optional approval is recorded.
-Print the run directory, criteria, task ids, suggested files, dependencies, batches, and baseline validation results.
+Print the run directory, criteria, task ids, suggested files, dependencies, batches.
 Print `next: splitbrief-run impl=<seat> cadence=<end|task> <run dir>`.
 Keep the plan and briefs on disk for later execution.
 

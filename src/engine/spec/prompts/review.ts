@@ -1,3 +1,5 @@
+import type { TriageInput } from '../../../core/schemas/review.js';
+import type { TriageRecord } from '../../../core/schemas/workflow.js';
 import {
   buildPrompt,
   fenced,
@@ -8,7 +10,9 @@ import {
 
 const REVIEW_INSTRUCTIONS = `Review the implementation diff against every acceptance criterion and requirement in the spec and task briefs. Be thorough but fair -- minor style differences are acceptable; missing functionality or incorrect behavior is not.
 
-Validation claims are evidence-bound. Any statement about test, typecheck, or lint results must quote the relevant line verbatim from the Checks Log section (for example the test runner's own summary line); never report counts or totals that do not appear there. If you run additional checks yourself, present them separately as reviewer observations -- they do not replace the recorded results. If the Checks Log section is absent or contains no relevant execution, state that validation output was not recorded instead of asserting results.`;
+Validation claims are evidence-bound. Any statement about test, typecheck, or lint results must quote the relevant line verbatim from the Checks Log section (for example the test runner's own summary line); never report counts or totals that do not appear there. If you run additional checks yourself, present them separately as reviewer observations -- they do not replace the recorded results. If the Checks Log section is absent or contains no relevant execution, state that validation output was not recorded instead of asserting results.
+
+A failure the Checks Log marks pre-existing was red at the run base before any task ran: report it as pre-existing and raise no finding against this run for it.`;
 
 const PROVENANCE_INSTRUCTIONS = `Use the Changed Files provenance to distinguish recorded run effects from workspace context. Do not attribute the whole workspace diff to the implementer. Independent operator or tool-fix hunks are context, including when they share a declared file with run changes; unrelated defects in those hunks alone do not fail this run. Evaluate the requested behavior in the integrated current workspace, including cross-file dependencies. A regression caused by a run effect, a broken interaction with existing code, or an unmet acceptance criterion still fails review. Keep unknown and overlapping edits explicit; if missing provenance or context prevents a required judgment, report that limit and fail that criterion rather than assuming it passed.`;
 
@@ -20,6 +24,15 @@ const REVIEW_CHECKLIST = `1. **Acceptance Criteria**: Check each criterion from 
 6. **Code Quality**: Are there obvious bugs, security issues, or performance problems?`;
 
 const REQUIRED_RESULTS = `Answer with one result per listed id, in the schema you were given. Every task not met and every failed criterion needs a blocking finding naming it. Mark a criterion unverified when no recorded evidence proves it, and name its checkIds. Verify a render only when its current-candidate images are attached and you critique the scenario. A manifest alone leaves the render unverified. Finding kinds are defect, plan-gap, unverified and question; minor findings are notes.`;
+
+const FIX_WORK_CONTRACT = `This review call is read-only. Do not write, edit or delete any file, or run commands that change the project. Return the verdict and the fix work in one review_answer.
+
+- fixTasks: complete TaskSpecs with findingIds. Each may edit any ordinary project file a finding needs, including a file no earlier task suggested.
+- rejected: { findingId, reason } for a pending input that needs no work. Reject pending inputs only. A finding you would reject is not a blocking finding.
+- verify: { findingId, checkIds } for a finding or input whose work may already be on disk. Name registered run or task checks.
+- ask: { question, whyOnlyUserCanAnswer } or null. Use it only for a change to what is built that the plan and decisions cannot answer.
+
+Unless ask is set, every blocking finding that is not unverified and every pending input id appears exactly once in fixTasks[].findingIds, rejected[].findingId or verify[].findingId. Unverified and minor findings never become fix tasks.`;
 
 const VALIDATION_EVIDENCE_PREAMBLE = `The orchestrator ran these validation commands and recorded their output. This section is the authoritative record of validation results for this run.`;
 
@@ -103,9 +116,14 @@ function touchedBody(entries: readonly ReviewTouchedNotSuggested[]): string {
   return lines.length === 0 ? 'None.' : lines.join('\n');
 }
 
-function requiredResultsBody(taskIds: readonly string[], criterionIds: readonly string[]): string {
+function requiredResultsBody(
+  taskIds: readonly string[],
+  criterionIds: readonly string[],
+  fixCycle: number | undefined,
+): string {
   return [
     REQUIRED_RESULTS,
+    ...(fixCycle === undefined ? [] : [FIX_WORK_CONTRACT]),
     '',
     `Task ids: ${taskIds.join(', ') || 'none'}`,
     `Criterion ids: ${criterionIds.join(', ') || 'none'}`,
@@ -115,6 +133,8 @@ function requiredResultsBody(taskIds: readonly string[], criterionIds: readonly 
 export type FinalReviewPromptInput = {
   spec: string;
   taskBriefs: string;
+  pendingInputs?: readonly TriageInput[] | undefined;
+  fixCycle?: number | undefined;
   /** The one-shot review diff, used only when files are undefined. */
   diff?: string | undefined;
   files?: readonly ReviewFileDiff[] | undefined;
@@ -129,7 +149,7 @@ export type FinalReviewPromptInput = {
   checkResults?: string | undefined;
   /** The run's consult records, in order. */
   consultLog?: string | undefined;
-  /** The rejected findings of every recorded triage. */
+  /** The fix work, verification, rejections and questions of each review cycle. */
   triageLog?: string | undefined;
   /** What the operator answered during planning. */
   planningAnswers?: string | undefined;
@@ -155,6 +175,12 @@ export function buildFinalReviewPrompt(opts: FinalReviewPromptInput): string {
   const sections: PromptPart[] = [
     { heading: 'Specification', body: opts.spec },
     { heading: 'Task Briefs', body: opts.taskBriefs },
+    ...(opts.fixCycle === undefined
+      ? []
+      : [
+          reviewInputsSection(opts.pendingInputs ?? []),
+          { heading: 'Fix Cycle', body: `This answer starts fix cycle ${opts.fixCycle}.` },
+        ]),
     ...skillsSection(opts.skillsContext),
   ];
   if (opts.plan !== undefined) {
@@ -211,12 +237,15 @@ export function buildFinalReviewPrompt(opts: FinalReviewPromptInput): string {
   }
   sections.push(
     instructionsSection(
-      opts.files === undefined
-        ? REVIEW_INSTRUCTIONS
-        : `${REVIEW_INSTRUCTIONS}\n\n${PROVENANCE_INSTRUCTIONS}`,
+      [REVIEW_INSTRUCTIONS, ...(opts.files === undefined ? [] : [PROVENANCE_INSTRUCTIONS])].join(
+        '\n\n',
+      ),
     ),
     { heading: 'Review Checklist', body: REVIEW_CHECKLIST },
-    { heading: 'Required Results', body: requiredResultsBody(taskIds, criterionIds) },
+    {
+      heading: 'Required Results',
+      body: requiredResultsBody(taskIds, criterionIds, opts.fixCycle),
+    },
   );
   return buildPrompt({
     title: 'Final Implementation Review',
@@ -224,4 +253,44 @@ export function buildFinalReviewPrompt(opts: FinalReviewPromptInput): string {
       'You are reviewing a completed implementation against its specification. Your job is to verify that the implementation satisfies the spec and identify any issues. Treat error-level drift findings as review blockers unless you can clearly explain why they are false positives.',
     sections,
   });
+}
+
+export function reviewInputsSection(inputs: readonly TriageInput[]): string {
+  return `## Pending Inputs\n${inputLines(inputs)}`;
+}
+
+function inputLines(inputs: readonly TriageInput[]): string {
+  if (inputs.length === 0) return 'None.';
+  return inputs
+    .map(
+      (input) =>
+        `- **${input.id}** (${input.source} · ${input.kind}) — ${input.text}${
+          input.file === null ? '' : `\n  File: ${input.file}`
+        }`,
+    )
+    .join('\n');
+}
+
+export function triageLines(records: readonly TriageRecord[]): string | undefined {
+  if (records.length === 0) return undefined;
+  return records
+    .map((record) => {
+      const rejected = record.result.rejected
+        .map((entry) => `${entry.findingId} rejected: ${entry.reason}`)
+        .join('; ');
+      const fixes = record.result.fixTasks.map((task) => task.title).join(', ');
+      const verified = record.result.verify.map((entry) => entry.findingId).join(', ');
+      const parts = [
+        fixes === '' ? undefined : `fix tasks: ${fixes}`,
+        verified === '' ? undefined : `verified: ${verified}`,
+        rejected === '' ? undefined : rejected,
+        ...(record.verification ?? []).map(
+          (entry) => `${entry.id}: ${entry.status} — ${entry.output}`,
+        ),
+      ].filter((part): part is string => part !== undefined);
+      return `- cycle ${record.cycle}${record.reviewAt === undefined ? '' : ` (candidate reviewed at ${record.reviewAt})`}: ${parts.join(' | ') || 'no outcome recorded'}${
+        record.result.ask === null ? '' : ` | asked: ${record.result.ask.question}`
+      }`;
+    })
+    .join('\n');
 }

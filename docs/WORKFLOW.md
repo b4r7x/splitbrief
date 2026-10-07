@@ -63,7 +63,7 @@ stateDiagram-v2
 
     escalating --> implementing : RESET_TASK (rewrite or split handed back)
 
-    final_review --> implementing : START_FIX_CYCLE (triage appended fix tasks)
+    final_review --> implementing : START_FIX_CYCLE (review answer appended fix tasks)
     complete --> implementing : START_FIX_CYCLE
     final_review --> complete : REVIEW_DONE
 
@@ -103,23 +103,22 @@ Verified against the `transition()` reducer in `src/core/state/machine.ts` and t
 | `validating-task` | `ESCALATE` | `escalating` | — |
 | `implementing` / `validating-task` / `escalating` | `SKIP_TASK` | *(same)* | Marks task `skipped`, advances `currentTaskIndex` |
 | `implementing` / `validating-task` / `escalating` | `RESET_TASK` | `implementing` | Sets task to `pending`, rewinds `currentTaskIndex` to that task's index, resets `attempt`. Tasks after it keep their status. |
-| `final-review` | `REOPEN_TASK` | `implementing` | Sets the owning task to pending. Resets its attempt. Its lineage carries exact errors and the failed stages, files and check ids. |
 | `implementing` | `ALL_DONE` | `final-review` | — |
-| `final-review` | `START_FIX_CYCLE` | `implementing` | Records the fix cycle (`fixCycles.used` + 1), clears `reviewStatus`, `completedAt` and `pendingTriage`, and sets `currentTaskIndex` to the first open task. Runs the reopened owner or the fix tasks from triage |
+| `final-review` | `START_FIX_CYCLE` | `implementing` | Records the fix cycle (`fixCycles.used` + 1), clears `reviewStatus`, `completedAt` and `pendingTriage`, and sets `currentTaskIndex` to the first open task. Runs the fix tasks from the review answer |
 | `final-review` | `REVIEW_DONE` | `complete` | Records `reviewStatus: 'passed' \| 'failed'` |
-| `complete` (review `failed`) | `REVIEW_CORRECTION` | `final-review` | The `revise` recovery action: queues the correction as a user triage input of kind `defect` with source `user`, and grants +1 fix cycle (`BOUNDS.extraFixCyclesPerRun`) when the cap is spent. Refused after a passed review |
+| `complete` (review `failed`) or `final-review` (`review-failed` halt) | `REVIEW_CORRECTION` | `final-review` | The `revise` recovery action: queues the correction as a user triage input of kind `defect` with source `user`, and grants +1 fix cycle (`BOUNDS.extraFixCyclesPerRun`) when the cap is spent. Refused after a passed review |
 
 `DEFAULT_LOCAL_RETRIES` is 1 (`src/core/pipeline-spec/retries.ts`); `workflow.max_retries` is retired and loads with one notice. The old `HINT_SUCCESS`, `HINT_FAIL` and `FULL_SUCCESS` transitions are gone from the reducer; old `escalated-hint`, `escalated-intermediate` and `escalated-full` completion values and the old `escalate`, `hint_failed` and `task_scope_widened` events stay parseable so a saved `state.json` and `session.jsonl` still load.
 
-**Review fix cycles.** The review seat answers with a typed `ReviewVerdict` (one stateless, read-only call through `requestTyped`); SPLITBRIEF derives `pass`, `pass-with-notes` or `fail` from it (`deriveReviewOutcome`, `src/core/review/verdict.ts`). A criterion or finding the verdict leaves `unverified` runs its registered checks through `runChecks`; a `render` check stays unverified, and an unverified criterion blocks pass. The verdict lives in `state.review` and `review.json`; `review.md` is its rendering, and `parseFinalReview` stays only as the reader for old sessions that have no `review.json`.
+**Review fix cycles.** The review seat answers with a typed `ReviewAnswer` (one stateless, read-only call through `requestTyped`). SPLITBRIEF derives `pass`, `pass-with-notes` or `fail` from its verdict (`deriveReviewOutcome`, `src/core/review/verdict.ts`). A criterion or finding the verdict leaves `unverified` runs its registered checks through `runChecks`; a `render` check stays unverified, and an unverified criterion blocks pass. The verdict lives in `state.review` and `review.json`; `review.md` is its rendering, and `parseFinalReview` stays only as the reader for old sessions that have no `review.json`.
 
-On a `fail`, one planner triage call answers with a typed `TriageResult` (`src/engine/orchestrator/triage.ts`). Its `fixTasks` are appended through `INSERT_TASKS` with new `T###` ids and `batch` = the highest plan batch + the fix cycle; each task carries its findings verbatim under `task.fix`. Review findings create new fix tasks. Pre-review gates can reopen one completed owner with the exact errors. Its `verify` entries run their named checks; its `rejected` entries reach the next review; its `ask` is the one question the run puts to the user, and a review question goes to the triage first. Appended fix tasks publish `review_fix_started` with their ids. `START_FIX_CYCLE` records the cycle (`fixCycles.used`) and moves to the first open task; the task loop runs the appended tasks, then the review asks again.
+The reviewer returns one typed `ReviewAnswer`. It contains the verdict and the fix work. The call reads the diff, the briefs, every gate and check result, and every pending input. Its `fixTasks` are complete TaskSpecs with `findingIds`. They may edit any ordinary project file a finding needs. SPLITBRIEF appends them through `INSERT_TASKS` with new `T###` ids and `batch` = the highest plan batch + the fix cycle. Each task carries its findings under `task.fix`. Its `verify` entries run registered checks. Its `rejected` entries answer pending inputs only. Its `ask` asks the user about a change to what is built. Without an ask, every blocking finding that is not unverified and every pending input has exactly one fix, rejection or verification. Unverified and minor findings never create fix tasks. `START_FIX_CYCLE` spends one cycle and starts the fix tasks. The gates and the reviewer run again after the fixes.
 
 A fix attempt may verify the existing code without changing it: `task.fix` permits that attempt, and normal validation decides whether it completes. `implementer_generate_done` records `noChange: true`; its done row reads `verified · no change needed`. Other attempts still fail `no-staged-change` when they change nothing.
 
-`REVIEW_CYCLE_CAP` is 2 fix cycles (`src/core/pipeline-spec/review.ts`), so a run reaches at most 3 reviews; every triage that leads to a re-review counts one cycle, and the Apply integration re-review counts one too. A scheduled review under `workflow.review: task` does not spend one when it passes. That key selects the cadence (`end` is the default): `end` reviews once after the final brief; `task` also reviews after every brief that passed its validation, scoped to the completed tasks and the criteria whose serving tasks are all done, while the final review still covers everything. A spent cap records a failed review and raises `review-failed`. The run stays open with three actions: fix again with a note, which records the operator's correction as a triage input and grants one more cycle (`BOUNDS.extraFixCyclesPerRun`); [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is), at final review for every run; and end the run. A `complete`/failed state takes that correction through `REVIEW_CORRECTION`, which moves it back to `final-review` with the input queued, so the loop triages the saved review and makes no new review call.
+`REVIEW_CYCLE_CAP` is 2 fix cycles (`src/core/pipeline-spec/review.ts`), so the run permits 2 automatic fix cycles; each review answer that starts fix work spends one cycle, and the Apply integration re-review counts one too. A scheduled review under `workflow.review: task` does not spend one when it passes. That key selects the cadence (`end` is the default): `end` reviews once after the final brief; `task` also reviews after every brief that passed its validation, scoped to the completed tasks and the criteria whose serving tasks are all done, while the final review still covers everything. A spent cap raises `review-failed`. With a red check or Apply input, it keeps the phase open and offers no Accept as is. Other failed reviews record `REVIEW_DONE` with a failed status. The run stays open with three actions: fix again with a note, which records the operator's correction as a triage input and grants one more cycle (`BOUNDS.extraFixCyclesPerRun`); [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is), at final review when no red check or Apply input blocks it; and end the run. A `complete`/failed state takes that correction through `REVIEW_CORRECTION`, which moves it back to `final-review` with the input queued, so the reviewer answers the pending inputs in a new call without running the gates.
 
-An Apply whose merge writes text conflict markers for a file both sides changed does not halt: it queues one triage input per conflicted file (`source: 'apply'`), re-enters `final-review` through `APPLY_REVIEW_START`, and the triage turns them into fix tasks before Apply runs again. Any other conflict still raises the [`apply-conflict` halt](./APPROVAL-AND-RECOVERY.md#apply-conflicts).
+An Apply whose merge writes text conflict markers for a file both sides changed does not halt: it queues one triage input per conflicted file (`source: 'apply'`), re-enters `final-review` through `APPLY_REVIEW_START`, and the review turns them into fix tasks before Apply runs again. Any other conflict still raises the [`apply-conflict` halt](./APPROVAL-AND-RECOVERY.md#apply-conflicts).
 
 **Retired chain actions.** `phaseActions` no longer lists the actions of the retired planning chain — `RESEARCH_DONE`, `SPEC_DONE`, `APPROVE_SPEC`, `SPEC_CLARIFY_START`, `SPEC_CLARIFY_DONE`, `CONSTITUTION_CHECK_PASS`, `BRIEFS_COMPILED`, `BRIEF_ADMISSION_OPENED` and `ANALYZE_START`. Their reducer cases are deleted: `state.json` loads through its schema and `session.jsonl` replays into the stores, and neither path calls `transition`. What an older state needs is its saved phase and `rewindPending`.
 
@@ -145,11 +144,11 @@ These fire from any phase. They modify sub-state without changing `phase`.
 | `MARK_RECOVERY_APPLYING` | Records selected recovery action and timestamp on `pendingRecovery`. |
 | `RESOLVE_PENDING_RECOVERY` | Removes `pendingRecovery` after the selected recovery path is handled. |
 | `REPLACE_TASK` | A consult's `rewrite-task` answer: replaces a task in place at the same id, keeps its criteria and `parentId`, sets `status: 'pending'`, raises `revision` by one and resets `attempt` to 0 |
-| `INSERT_TASKS` | A consult's `split-task` answer (with `parentId`): removes the parent from `state.tasks`, appends it to its lineage's `replacedParents`, inserts the subtasks at the parent's position with `parentId` set to the lineage root, re-points every pending `dependsOn` that named the parent to all subtasks and adjusts `currentTaskIndex`. With `parentId: null` the review triage's fix tasks are appended at the end, with no lineage change |
+| `INSERT_TASKS` | A consult's `split-task` answer (with `parentId`): removes the parent from `state.tasks`, appends it to its lineage's `replacedParents`, inserts the subtasks at the parent's position with `parentId` set to the lineage root, re-points every pending `dependsOn` that named the parent to all subtasks and adjusts `currentTaskIndex`. With `parentId: null` the review answer's fix tasks are appended at the end, with no lineage change |
 | `RECORD_CONSULT` | Appends the answer to the task's lineage with its reason, action and diagnosis, raises the lineage's consult count (a decision-confirm, reason `deviation`, does not raise it), and remembers the revision a stale consult saw |
 | `RECORD_REVIEW` | Stores the typed review as `state.review`: its verdict, its derived outcome and the check runs behind its unverified claims |
-| `RECORD_TRIAGE` | Appends one triage record (`cycle`, inputs, result, and the verify checks run) to `state.triage` |
-| `QUEUE_TRIAGE` | Saves the user or Apply inputs as `state.pendingTriage`, which the review loop triages without running the review again |
+| `RECORD_TRIAGE` | Appends the fix part of one review answer (`cycle`, input ids, result, and verification) to `state.triage` |
+| `QUEUE_TRIAGE` | Saves check, user or Apply inputs as `state.pendingTriage`. The reviewer answers them. A correction or question answer reviews again without the gates |
 | `COUNT_ATTEMPT` | Raises the lineage's attempt count. Never reset by a split or a resume |
 | `COUNT_PLANNER_CALL` | Raises the run's planner-call count after planning; a stale consult and a decision-confirm do not spend one |
 | `GRANT_ALLOWANCE` | `continue` on a spent consult bound: +1 consult and +4 attempts for the lineage, or +5 planner calls for the run, with the operator's note recorded on the lineage and the halt's last failing output recorded as the lineage's `carriedFailure` |
@@ -494,9 +493,11 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
 10. phase: reviewing-plan (or planning, with approve: none)
       → BEGIN_IMPLEMENTATION → implementing
     The run records one workspace and its workspace-base snapshot.
-    Before the first task, each enabled full-suite stage runs once.
-    The run stores its failure keys and stage durations for the final review.
-    Each stage publishes full_suite running and done events.
+    No gate runs before the first task.
+    review: end runs all gates at the final review over the run workspace.
+    review: task also runs related tests and due checks after each task.
+    A red is re-run at the run base; only new failures enter the fix ladder.
+    Pre-review and base stages publish full_suite running and done events.
 
 11. Per task:
       implementing → START_TASK (task in_progress, attempt 0)
@@ -515,9 +516,8 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
         ask-user → one question; the next attempt carries the answer
       implementing → TASK_SENT → validating-task
       brief-gate selects commands by workflow.review:
-        end → no commands, unless the brief carries a pre-review gate failure
+        end → no commands
         task → related tests and checks due when this task completes
-        reopened brief → failed stages and failed checks only
       The formatter runs on this brief's changed files when validation.lint is enabled.
         pass → VALIDATION_PASS → implementing (next task)
         fail → VALIDATION_FAIL → implementing (attempt++, one retry)
@@ -534,19 +534,20 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
     and the plan. With workflow.review: task, one scoped review also runs after
     each task after its related tests and due checks pass. This review runs no pre-review gates.
     Before the final review, all enabled stack gates and every registered check run.
-    A red with one completed owner reopens that brief with its exact errors.
-    Other failures enter triage and create fix tasks. Both paths spend one fix cycle.
+    Each red stage is checked at the run base before the next stage runs.
+    The suite stops at the first stage with a new failure. No check runs after it.
+    Every new red becomes a pending input for the reviewer. No brief reopens.
 
 13. final-review → REVIEW_DONE → complete
-    The review seat returns a typed verdict; SPLITBRIEF derives pass,
+    The review seat returns a typed verdict and fix work; SPLITBRIEF derives pass,
     pass-with-notes or fail. summary.json written. A passing workspace review
     makes the run ready to apply.
     Apply or Discard closes it. An older run without a workspace closes on pass.
-    A failed review goes to one planner triage call: its fix tasks are appended
+    The same review answer supplies the fix tasks. They are appended
     with new ids and batch = highest plan batch + cycle, one fix cycle is spent,
     and implementing re-runs them (START_FIX_CYCLE) up to the review cycle cap
     of 2. After the cap the run halts on review-failed: fix again with a note
-    (+1 cycle), Accept as is at final review for every run, or end.
+    (+1 cycle), Accept as is when no red check or Apply input blocks it, or end.
 ```
 
 During live model-call phases, `ctrl+c` is Stop now and parks the run; `esc` opens the stop menu. Messages typed during live planner phases queue; only still-pending delivery entries drain at the next safe-point. Request changes on the plan card to revise the plan.
@@ -587,8 +588,8 @@ type WorkflowState = {
   pendingRecovery?: RecoveryIssue
   review?: ReviewRecord                    // RECORD_REVIEW; the typed verdict and its derived outcome
   fixCycles?: { used: number; allowance: number; notes: string[] }  // cycle cap and grants
-  triage?: TriageRecord[]                  // RECORD_TRIAGE; one record per triage answer
-  pendingTriage?: { inputs: TriageInput[] }  // a QUEUE_TRIAGE input waiting for its triage
+  triage?: TriageRecord[]                  // RECORD_TRIAGE; fix part of each review answer
+  pendingTriage?: { inputs: TriageInput[] }  // pending inputs waiting for the reviewer
   reviewStatus?: 'passed' | 'failed'
   discoveredValidation?: DiscoveredValidation
 

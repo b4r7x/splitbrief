@@ -174,9 +174,9 @@ A **stack** is the language toolchain the project's gates come from — one of f
 
 A stage that resolves to no command is recorded as *skipped* (not a pass). When every enabled stage is skipped, the run emits a warning so a nothing-validated task is not mistaken for all-green.
 
-A failing stage that was already red at baseline is a third outcome: *failed but pre-existing*. It is recorded separately from skipped — a missing linter and a broken linter do not read the same — and it does not fail the task when the failure names none of the task's changed files. The evidence ledger marks such entries `baselineExempt` and records a `failed (pre-existing)` observed-evidence line so the exemption stays reviewable after the run.
+A failing stage whose failures are also red on a disposable run base copy is *failed but pre-existing*. The base check runs only after a red. It re-runs failing test files or the whole command for typecheck and lint. A task accepts this red only when every failure key is pre-existing and its evidence names no changed file. The evidence ledger retains `baselineExempt` for exempt stages and carries `preExisting` keys in check entries. The Checks Log reports these keys to the reviewer.
 
-Each step stops at the first failure *attributable to the task* and reports it back to the orchestrator, which either retries or consults the planner. A stage that was already red at baseline continues the pipeline so the stages behind it still get a verdict, and never produces a retry prompt.
+Each step stops at the first failure attributable to the task and reports it to the orchestrator, which retries or consults the planner. An exempt pre-existing red lets the pipeline continue so later stages still get a verdict. It produces no retry prompt.
 
 ---
 

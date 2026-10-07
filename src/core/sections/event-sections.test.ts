@@ -298,18 +298,20 @@ describe('groupEventsIntoSections', () => {
       expect(active.items).toEqual([events[6]]);
     });
 
-    it('joins the run-start rows to the first brief and leaves the planning rows loose', () => {
+    it('joins the run-level rows to the first brief and leaves the planning rows loose', () => {
       const planning = [
         row('planner_text', 'planning', { text: 'The plan' }),
         row('plan_approved', 'reviewing-plan'),
       ];
-      const runStart = [
+      const runLevel = [
         row('tasks_planned', 'implementing', { tasks: [], total: 1 }),
-        suite('running', 'baseline'),
-        suite('done', 'baseline'),
-        row('warning', 'implementing', { message: 'The test stage of the full suite timed out' }),
+        suite('running', 'base'),
+        suite('done', 'base'),
+        row('warning', 'implementing', {
+          message: 'Ignoring changed files that could not be read: src/tmp.lock.',
+        }),
       ];
-      const events = [...planning, ...runStart, start('T001', 0), complete('T001')];
+      const events = [...planning, ...runLevel, start('T001', 0), complete('T001')];
       const sections = groupEventsIntoSections(events);
 
       expect(sections.map((section) => section.type)).toEqual(['events', 'completed-task']);
@@ -319,10 +321,12 @@ describe('groupEventsIntoSections', () => {
       expect(first.items).toEqual(events.slice(2));
     });
 
-    it('keeps the run-start rows beside the first brief while it runs', () => {
+    it('keeps the run-level rows beside the first brief while it runs', () => {
       const events = [
         row('tasks_planned', 'implementing', { tasks: [], total: 1 }),
-        row('warning', 'implementing', { message: 'run start' }),
+        row('warning', 'implementing', {
+          message: 'Ignoring changed files that could not be read: src/tmp.lock.',
+        }),
         start('T001', 0),
       ];
       const sections = groupEventsIntoSections(events);

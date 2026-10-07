@@ -114,9 +114,7 @@ describe('retryAndRecord — retry budget', () => {
     });
     const validator: Validator = {
       formatChangedFiles: vi.fn().mockResolvedValue(undefined),
-      runFullSuite: vi
-        .fn()
-        .mockResolvedValue({ results: [], failures: {}, newFailures: {}, stages: {} }),
+      runFullSuite: vi.fn().mockResolvedValue({ results: [], newFailures: {} }),
       runValidation: vi.fn().mockResolvedValue([{ stage: 'test' as const, passed: true }]),
     };
 
@@ -204,9 +202,7 @@ describe('retryAndRecord — retry budget', () => {
   it('stamps the initial-failure entry with the initial acceptance, not the retry acceptance', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001', suggestedFiles: ['src/task.ts'] });
-    let state = implementingState([task], {
-      fullSuiteBaseline: { test: ['test failed without diagnostics'] },
-    });
+    let state = implementingState([task]);
     state = transition(state, { type: 'START_TASK', taskId: task.id });
     state = transition(state, { type: 'TASK_SENT' });
 
@@ -225,14 +221,15 @@ describe('retryAndRecord — retry budget', () => {
     });
     const validator: Validator = {
       formatChangedFiles: vi.fn().mockResolvedValue(undefined),
-      runFullSuite: vi
-        .fn()
-        .mockResolvedValue({ results: [], failures: {}, newFailures: {}, stages: {} }),
-      runValidation: vi
-        .fn()
-        .mockResolvedValue([
-          { stage: 'test' as const, passed: false, failureFiles: ['src/unrelated.ts'] },
-        ]),
+      runFullSuite: vi.fn().mockResolvedValue({ results: [], newFailures: {} }),
+      runValidation: vi.fn().mockResolvedValue([
+        {
+          stage: 'test' as const,
+          passed: false,
+          failureFiles: ['src/unrelated.ts'],
+          preExisting: ['test failed without diagnostics'],
+        },
+      ]),
     };
 
     const result = await retryAndRecord({
@@ -792,7 +789,7 @@ describe('retryAndRecord — a planner out of quota on the consult', () => {
     ).toMatchObject({ status: 'failed', method: 'failed' });
   });
 
-  it('moves the planner block and replays the brief on the new tool', async () => {
+  it("moves the planner block and keeps the brief's attempt on the new tool", async () => {
     const { projectDir, sessionId, result } = await consultHalted();
     const { bus, events } = makeBusRecorder();
 
@@ -832,6 +829,7 @@ describe('retryAndRecord — a planner out of quota on the consult', () => {
     expect(moved.state.seatSwitches).toMatchObject([
       { seat: 'plan', cause: 'runner-usage-limit', auto: false },
     ]);
+    expect(moved.state.tasks).toEqual(result.state.tasks);
     expect(moved.state.attempt).toBe(result.state.attempt);
     expect(moved.state.pendingRecovery).toBeUndefined();
   });

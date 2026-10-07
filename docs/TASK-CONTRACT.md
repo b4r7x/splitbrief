@@ -170,7 +170,7 @@ type Task = {
   revision?: number;                 // 1 at compile; raised by each consult rewrite
   inputHashes?: Record<string, string>;  // content hashes of this revision's suggested + context files
   checkResults?: Array<{ id: string; passed: boolean }>;  // a consult's verify answer, merged per check id
-  fix?: {                            // set on a task the review triage appended
+  fix?: {                            // set on a task the review answer appended
     cycle: number;                   // the fix cycle that created it
     findings: Array<{ id: string; text: string; acceptance: string | null }>;  // the verdict's findings, verbatim
   };
@@ -221,7 +221,7 @@ The retry counter lives at **`state.attempt`** (top-level on `WorkflowState`), n
 
 ## The typed review contract
 
-The review seat is a stateless, read-only call. It does not write `review.md`; it answers one typed `ReviewVerdict` (`src/core/schemas/review.ts`) through `requestTyped`, and SPLITBRIEF derives and renders the rest.
+The review seat is a stateless, read-only call. It does not write `review.md`; it answers one typed `ReviewAnswer` containing `ReviewVerdict` and `TriageResult` (`src/core/schemas/review.ts`) through `requestTyped`, and SPLITBRIEF derives and renders the rest.
 
 ```ts
 type ReviewVerdict = {
@@ -244,7 +244,7 @@ type ReviewVerdict = {
 
 Coverage is a contract rule: the answer carries exactly one result for every task and criterion in scope, and an `unverified` finding names non-empty `checkIds` or a `criterionId` whose criterion has registered checks. A missing, duplicated or invented id, or a `partial`/`missed` task or `fail` criterion with no blocking finding naming it, fails the schema and the seat gets its one repair. The checks behind an unverified claim run through `runChecks`, a `render` check running the configured `validation.render` command; a render criterion stays unverified when no image of its check reached the reviewer. The reviewer gets at most 4 PNGs per render check: every `frame.png` first, then the other PNGs, each group in path order; the prompt names the PNGs not attached. `deriveReviewOutcome` turns the answer plus those results into `pass`, `pass-with-notes` or `fail`. The record lives in `state.review` and `review.json`; `review.md` is its rendering from `renderReviewMarkdown` (`src/core/review/render.ts`). A session saved before the typed review still reads through `parseFinalReview()` (`src/engine/parsers/final-review.ts`).
 
-A failed review goes to one planner triage call, which answers one typed `TriageResult`:
+The same review call also returns the fix part, with the persisted `TriageResult` shape:
 
 ```ts
 type TriageResult = {
@@ -255,7 +255,11 @@ type TriageResult = {
 };
 ```
 
-Unless `ask` suspends the rule, each blocking finding and pending triage input is answered by exactly one `fixTasks` entry (naming the findings it fixes), `rejected` entry, or `verify` entry; a `verify` check id must be a plan check, and a fix task names only known criteria. A fix task is appended to `state.tasks` with a new `T###` id and `batch` = the highest plan batch + the fix cycle, and `task.fix` carries its cycle and its findings verbatim. Triage keeps completed tasks. Pre-review gates can reopen one completed owner. A task with `fix` may verify existing code and change nothing — the recorded checks still decide completion. A missing `touchedNotSuggested` reason never overturns a passing check: such reasons are recorded for the reviewer, not required for a pass. Rejected findings reach the next review's packet; `verify` runs its named checks before any fix call.
+Unless `ask` is set, the answer covers every blocking finding except an unverified finding. It also covers every pending input. Each id appears exactly once in `fixTasks[].findingIds`, `rejected[].findingId` or `verify[].findingId`. Rejections name pending inputs only. Unverified and minor findings never create fix tasks. A verification names registered plan or task checks. A fix task names only known criteria.
+
+SPLITBRIEF appends fix tasks to `state.tasks` with new `T###` ids. Their `batch` is the highest plan batch plus the fix cycle. Each task carries its cycle and findings in `task.fix`. Completed tasks stay done. The reviewer supplies every fix task. A fix task may verify existing code and change nothing. Its recorded checks still decide completion.
+
+A missing `touchedNotSuggested` reason never overturns a passing check. These reasons inform the reviewer. Rejected inputs reach the next review packet. SPLITBRIEF runs `verify` checks before it starts fix work.
 
 ## Advanced read-only consumer examples
 
@@ -326,12 +330,12 @@ If two tools need to coordinate, they agree on a key (e.g., `external.vcs-sync`)
 |---|---|
 | `Task.files` | parse-only now: a saved `files`, else `[file]`, reads as `suggestedFiles` |
 | `Task.currentCodeByFile` | only the anchor's `currentCode` was captured |
-| `Task.fix` | the task is a plan task, not a fix task the review triage appended |
+| `Task.fix` | the task is a plan task, not a fix task the review answer appended |
 | `WorkflowState.reviewFixes` | no review fix cycle has run. Parse-only now: `fixCycles` is the live home, and `reviewFixes.cycle` is read only when `fixCycles` is absent |
 | `WorkflowState.fixCycles` | no fix cycle has run; a state that carries only the older parse-only counter reads that instead |
 | `WorkflowState.review` | no typed review has resolved; `review.json` is the review's other home |
-| `WorkflowState.triage` | the review never went to triage |
-| `WorkflowState.pendingTriage` | no operator or Apply input waits for a triage |
+| `WorkflowState.triage` | no review answer recorded fix work |
+| `WorkflowState.pendingTriage` | no check, operator or Apply input waits for the reviewer |
 | `WorkflowState.reviewStatus` | the final review has not resolved |
 | `WorkflowState.interruptedStep` | nothing recorded where the run was cut; `cut` says which — `mid-step` inside a call, `boundary` where it cut nothing: between two briefs, or at a gate — and a record written before `cut` existed falls back to the presence of a `partialRef`. `source` is `user`, `watchdog` or `seat`, the last for a seat halt that cut a brief |
 | `WorkflowState.closed` | the run was never explicitly ended, so it is still continuable |
@@ -498,9 +502,9 @@ type EvidenceLedger = {
 
 A check is one of three kinds. A `test` check runs the named test file or pattern through the validation stage's own resolved command and narrowing. A `cmd` check runs its value as a command: `npm run <script>` is allowed only under an approved plan and only when `package.json` defines the script, and `npx` is allowed only as `npx --no-install <stack tool>`. `checkCommandRefusal` (`src/engine/orchestrator/planning/sanitize-discovered-validation.ts`) decides this; `planApprovesNpmScripts` reads the configured approval level and the run's recorded plan approval, and without approval every other command falls to `unsafeCommandReason`. The plan card lists approved `npm run` checks as confirmations (`planConfirmations`, `src/engine/orchestrator/approval/confirm.ts`). A `render` check runs the user's `validation.render` command — `{id}` is the check's value, one argv element matching `^[a-z0-9-]+$`, and `{out}` is a fresh directory under `<workspace>/.test-artifacts/ui/`, with cwd the workspace; it is not filtered by the planner command policy. Every `.png` under `{out}` is copied to `.splitbrief/sessions/<id>/renders/<check-id>/` and logged with its sha256. With no `validation.render` the check is `not-runnable` with `validation.render is not set`.
 
-A check's status is `pass`, `fail`, `not-runnable`, `refused` or `unknown`. A required check that cannot run — any status but `pass` or `fail` — halts before the review with `required-checks-unrunnable`, listing every check id; it never becomes a fix task. A required check that ran and failed enters the pre-review triage as a `defect`, keyed to the file it names. The brief gate follows `workflow.review`. End cadence runs no stack gates for ordinary briefs. Task cadence runs related tests and due checks. The final review runs the full suite and all plan and task checks, including renders. A red with one completed owner reopens that brief. Other failures enter triage. Each run appends one entry to the task's `checks` log; the review packet prints them under `## Checks Log` with every path read outside the workspace.
+A check's status is `pass`, `fail`, `not-runnable`, `refused` or `unknown`. A required check that cannot run — any status but `pass` or `fail` — halts before the review with `required-checks-unrunnable`, listing every check id; it never becomes a fix task. A required check that ran and failed reaches the reviewer as a pending `defect` input. The brief gate follows `workflow.review`. End cadence runs no stack gates for ordinary briefs. Task cadence runs related tests and due checks. The final review runs the full suite and all plan and task checks, including renders. The suite stops at the first stage with a new failure. No check runs after it. Every new red reaches the reviewer. Each run appends one entry to the task's `checks` log; the review packet prints them under `## Checks Log` with every path read outside the workspace.
 
-A `test`, `cmd` or `render` check whose executable is missing is `not-runnable` with `<executable> not found`. It never becomes `fail` and never enters triage.
+A `test`, `cmd` or `render` check whose executable is missing is `not-runnable` with `<executable> not found`. It never becomes `fail` or a pending review input.
 
 The reviewer prompt limits the Checks Log to 30,000 characters for a CLI seat. It selects outside reads first, then the latest execution of each check id if that execution failed. Next, it selects the other latest executions, then earlier failures, then the rest. The log keeps the selected entries in their recorded order. An omission line names the count and the path of `evidence.json`.
 

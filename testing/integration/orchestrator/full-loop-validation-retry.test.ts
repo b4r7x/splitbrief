@@ -90,6 +90,7 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
       description: 'Create a module that satisfies the project validation script.',
       implementationSteps: ['Create src/loop.ts with the retry marker export.'],
       tests: ['node validate.mjs passes'],
+      checks: [{ id: 'K-retry', kind: 'test', value: targetFile, required: true }],
       scope: { inBounds: [targetFile], outOfBounds: ['unrelated files'] },
       evidence: ['validation fails once, retries, and passes before workflow_complete'],
       typeDefs: 'export const loop: string',
@@ -148,6 +149,7 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
       },
       workflow: {
         approve: 'none',
+        review: 'task',
         maxRetries: 1,
       },
     });
@@ -168,7 +170,7 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
 
     expect(implementerProjectDirs).toHaveLength(1);
     expect(retryProjectDirs).toHaveLength(1);
-    expect(retryErrors[0]).toContain('Error type: test');
+    expect(retryErrors[0]).toContain('check K-retry did not pass (fail)');
     expect(
       readFileSync(join(runWorkspaceDir({ projectDir, sessionId }), targetFile), 'utf-8'),
     ).toBe(goodImplementation);
@@ -179,20 +181,34 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
       failed: 0,
     });
 
-    const preReviewSuiteResults = events.filter(
-      (event): event is Extract<EngineEvent, { type: 'full_suite' }> =>
-        event.type === 'full_suite' && event.moment === 'pre-review' && event.status === 'done',
-    );
-    expect(preReviewSuiteResults.map((event) => event.passed)).toEqual([false, true]);
+    const checkResults = events
+      .slice(
+        0,
+        events.findIndex((event) => event.type === 'task_completed'),
+      )
+      .filter(
+        (event): event is Extract<EngineEvent, { type: 'checks_run' }> =>
+          event.type === 'checks_run',
+      );
+    expect(checkResults.flatMap((event) => event.results.map((check) => check.passed))).toEqual([
+      false,
+      true,
+    ]);
 
     const validationResults = events.filter(
       (event): event is Extract<EngineEvent, { type: 'validate' }> =>
         event.type === 'validate' && event.status === 'done',
     );
-    expect(validationResults.map((event) => event.passed)).toEqual([true]);
+    expect(validationResults.map((event) => event.passed)).toEqual([true, true]);
+
+    const preReviewSuiteResults = events.filter(
+      (event): event is Extract<EngineEvent, { type: 'full_suite' }> =>
+        event.type === 'full_suite' && event.moment === 'pre-review' && event.status === 'done',
+    );
+    expect(preReviewSuiteResults.map((event) => event.passed)).toEqual([true]);
     expect(events.map((event) => event.type)).toEqual(
       expect.arrayContaining([
-        'task_reset',
+        'task_retry',
         'task_completed',
         'all_tasks_done',
         'workflow_complete',
@@ -204,7 +220,7 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
     // The typed record is the verdict's home; the markdown above is its rendering.
     expect(
       JSON.parse(readFileSync(join(sessionDir(projectDir, sessionId), REVIEW_JSON_FILE), 'utf-8')),
-    ).toMatchObject({ outcome: 'pass', cycle: 1 });
+    ).toMatchObject({ outcome: 'pass', cycle: 0 });
     expect(existsSync(reviewPacketJsonPath({ projectDir, sessionId }))).toBe(true);
   }, 90_000);
 
@@ -226,6 +242,7 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
       description: 'Create a module that needs a planner consult before validation passes.',
       implementationSteps: ['Create src/loop.ts with the retry marker export.'],
       tests: ['node validate.mjs passes after the consult'],
+      checks: [{ id: 'K-retry', kind: 'test', value: targetFile, required: true }],
       scope: { inBounds: [targetFile], outOfBounds: ['unrelated files'] },
       evidence: ['the consult answer appears before workflow_complete'],
       typeDefs: 'export const loop: string',
@@ -294,6 +311,7 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
       },
       workflow: {
         approve: 'none',
+        review: 'task',
         maxRetries: 1,
       },
     });
@@ -312,21 +330,13 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
       _eventSink: (event) => events.push(event),
     });
 
-    expect(retryKinds).toEqual(['local', 'local', 'consult']);
-    expect(retryErrors[0]).toContain('Error type: test');
+    expect(retryKinds).toEqual(['local', 'consult']);
+    expect(retryErrors[0]).toContain('check K-retry did not pass (fail)');
     const taskRetries = events.filter(
       (event): event is Extract<EngineEvent, { type: 'task_retry' }> => event.type === 'task_retry',
     );
     expect(taskRetries).toHaveLength(1);
     expect(taskRetries[0]?.taskId).toBe('T001');
-    const resetIndex = events.findIndex(
-      (event) => event.type === 'task_reset' && event.taskId === 'T001',
-    );
-    const retryIndex = events.findIndex(
-      (event) => event.type === 'task_retry' && event.taskId === 'T001',
-    );
-    expect(resetIndex).toBeGreaterThan(-1);
-    expect(retryIndex).toBeGreaterThan(resetIndex);
     expect(
       readFileSync(join(runWorkspaceDir({ projectDir, sessionId }), targetFile), 'utf-8'),
     ).toBe(consultImplementation);
@@ -337,11 +347,9 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
       failed: 0,
     });
     expect(events.find((event) => event.type === 'consult_answered')).toBeDefined();
-    const taskCompletions = events.filter(
-      (event): event is Extract<EngineEvent, { type: 'task_completed' }> =>
-        event.type === 'task_completed' && event.taskId === 'T001',
-    );
-    expect(taskCompletions.map((event) => event.method)).toEqual(['local', 'consulted']);
+    expect(events.find((event) => event.type === 'task_completed')).toMatchObject({
+      method: 'consulted',
+    });
     expect(events.map((event) => event.type)).toContain('workflow_complete');
     expect(readFileSync(join(sessionDir(projectDir, sessionId), REVIEW_FILE), 'utf-8')).toContain(
       '### Verdict\n\npass',

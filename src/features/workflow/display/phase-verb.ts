@@ -57,15 +57,15 @@ export function inlineActiveVerb(phase: Phase): string {
   return activeVerb(phase, null, null).replace('…', '').toLowerCase();
 }
 
-/** The full suite a run-start or pre-review stage runs, and its command. */
+/** The pre-review suite or base re-run, and its command. */
 export function suiteStageText(suite: Pick<RunningSuiteStage, 'moment' | 'command'>): string {
   return `${suiteMomentLabel(suite.moment)}${SOFT_SEP}${suite.command}`;
 }
 
 function suiteMomentLabel(moment: RunningSuiteStage['moment']): string {
   switch (moment) {
-    case 'baseline':
-      return 'Run-start suite';
+    case 'base':
+      return 'Base re-run';
     case 'pre-review':
       return 'Pre-review suite';
     default:

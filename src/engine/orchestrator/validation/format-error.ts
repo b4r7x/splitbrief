@@ -34,6 +34,11 @@ export function formatValidationError(
     ...blocking.flatMap((result) => [
       `Error type: ${result.stage}`,
       `Error message: ${excerptErrorLines(result.error || result.output || '', result.stage)}`,
+      ...(result.preExisting !== undefined && result.preExisting.length > 0
+        ? [
+            `Pre-existing (also red at the run base), not to be fixed: ${result.preExisting.join(', ')}`,
+          ]
+        : []),
     ]),
     'Fix the error and output the complete corrected file.',
   ].join('\n');

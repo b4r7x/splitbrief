@@ -117,6 +117,31 @@ describe('buildChecks', () => {
       'Task T001 searched ~ with run_command: find ~ -name x',
     ]);
   });
+
+  it('carries the failures a check showed at the run base too', () => {
+    const task = makeTask({ id: 'T001' });
+    const base = createEvidenceLedger({ sessionId: 's', feature: 'feat', tasks: [task] });
+    const ledger: EvidenceLedger = {
+      ...base,
+      tasks: base.tasks.map((entry) => ({
+        ...entry,
+        checks: [
+          {
+            id: 'test',
+            command: 'npm test',
+            exitCode: 1,
+            preExisting: ['src/legacy.test.ts:5'],
+            ts: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+      })),
+    };
+
+    expect(buildChecks({ ledger, events: [] }).entries[0]).toMatchObject({
+      id: 'test',
+      preExisting: ['src/legacy.test.ts:5'],
+    });
+  });
 });
 
 describe('buildChanges declared files', () => {

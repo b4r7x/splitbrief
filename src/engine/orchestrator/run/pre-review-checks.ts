@@ -1,5 +1,6 @@
+import { runBaseOf } from '../isolation/base-tree.js';
 import type { Check, Task } from '../../../core/schemas/task.js';
-import { fixCyclesOf, type WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
 import type { Phase } from '../../../core/schemas/enums.js';
@@ -11,13 +12,10 @@ import { recordCheckRuns } from '../evidence/record-checks.js';
 import { publishError } from '../events.js';
 import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
 import { recordTaskCheckRuns } from '../task/task-checks.js';
-import { verifyFailures } from '../task/brief-gate.js';
-import { buildReviewFailedRecoveryIssue } from '../recovery/builders/task.js';
 import {
   buildRequiredChecksUnrunnableRecoveryIssue,
   type UnrunnableCheck,
 } from '../recovery/builders/checks.js';
-import { haltUnansweredTriage, runTriage, startFixCycle } from '../triage.js';
 import type { EventBus } from '../../events/types.js';
 import type { WorkflowContext } from '../types.js';
 import {
@@ -32,7 +30,6 @@ import {
   type CheckRunResult,
 } from '../validation/run-checks.js';
 import type {
-  FullSuiteFailureKeys,
   RunFullSuiteResult,
   ValidationCommandRunner,
   Validator,
@@ -53,12 +50,11 @@ export function classifyRequiredChecks(runs: readonly CheckRunResult[]): {
 }
 
 /**
- * The failures the pre-review hands the triage: new full-suite failures, keyed by
- * the file they name, then every required check that ran and failed. Each carries
+ * The failures the pre-review hands the reviewer: every new full-suite failure, then every required check that ran and failed. Each carries
  * the path into the run registry so the fix task knows the file it owns.
  */
 export function buildPreReviewInputs(input: {
-  newFailures: FullSuiteFailureKeys;
+  suite: RunFullSuiteResult;
   failed: readonly CheckRunResult[];
   registry: ReadonlyMap<string, Check>;
   tasks: readonly Task[];
@@ -66,7 +62,7 @@ export function buildPreReviewInputs(input: {
   workspaceDir: string;
 }): TriageInput[] {
   const inputs = buildFullSuiteInputs({
-    newFailures: input.newFailures,
+    suite: input.suite,
     tasks: input.tasks,
     ledger: input.ledger,
   });
@@ -121,10 +117,11 @@ export type PreReviewChecks = Readonly<{
 }>;
 
 /**
- * The candidate verification the final review runs first: the full suite, baseline
- * relative, and every check of the combined task and run registry, each recorded on
- * the task that declares it (plan checks on the last task). Only required checks
- * decide defects and unrunnable halts.
+ * The candidate verification the final review runs first: the full suite and every
+ * check of the combined task and run registry. A red stage is re-run at the run
+ * base; only new failures become defects. Checks are recorded on their declaring
+ * task (plan checks on the last task). Only required checks decide check defects
+ * and unrunnable halts.
  */
 export async function runPreReviewChecks(
   opts: RunPreReviewChecksOptions,
@@ -136,14 +133,12 @@ export async function runPreReviewChecks(
     config: opts.config,
     bus: opts.bus,
     phase: opts.phase,
-    moment: 'pre-review',
     discoveredValidation: opts.state.discoveredValidation,
     signal: opts.signal,
-    baseline: opts.state.fullSuiteBaseline,
-    baselineStages: opts.state.fullSuiteBaselineStages,
+    base: runBaseOf(opts, opts.state),
   });
   const runs =
-    ids.length === 0
+    ids.length === 0 || Object.values(suite.newFailures).some((keys) => keys.length > 0)
       ? []
       : await runChecks(ids, {
           plan: opts.state.plan,
@@ -165,7 +160,7 @@ export async function runPreReviewChecks(
     runs.filter((run) => registry.get(run.checkId)?.required === true),
   );
   const defects = buildPreReviewInputs({
-    newFailures: suite.newFailures,
+    suite,
     failed,
     registry,
     tasks: opts.state.tasks,
@@ -189,7 +184,7 @@ export async function runPreReviewChecks(
 
 export type PreReviewResult = Readonly<{
   state: WorkflowState;
-  kind: 'review' | 'fix-queued' | 'stopped';
+  kind: 'review' | 'stopped';
 }>;
 
 export function haltRequiredChecksUnrunnable(args: {
@@ -242,17 +237,11 @@ async function recordPreReviewChecks(args: {
   });
 }
 
-/**
- * Before the final review: run the suite and the checks on the candidate. A required
- * check that cannot run halts. A red whose every failure names a file last changed by
- * one completed brief reopens that brief into its retry ladder with the exact errors;
- * any other red enters the triage as defects. The reopen and the triage each spend
- * one fix cycle.
- */
 export async function runPreReview(args: {
   wctx: WorkflowContext;
   state: WorkflowState;
   setTrackedState: (s: WorkflowState) => void;
+  inputs?: readonly TriageInput[] | undefined;
 }): Promise<PreReviewResult> {
   const { wctx, setTrackedState } = args;
   let state = args.state;
@@ -282,95 +271,10 @@ export async function runPreReview(args: {
     return { state, kind: 'stopped' };
   }
 
-  if (checks.defects.length === 0) return { state, kind: 'review' };
-
-  const cycles = fixCyclesOf(state);
-  if (cycles.used >= cycles.allowance) {
-    const issue = buildReviewFailedRecoveryIssue({
-      phase: state.phase,
-      blocking: checks.defects.length,
-      fixCycles: cycles.used,
-      createdAt: nowIso(),
-    });
-    publishError({ bus: wctx.bus, phase: state.phase, message: issue.message });
-    state = raisePendingRecovery(
-      { projectDir: wctx.projectDir, sessionId: wctx.sessionId, bus: wctx.bus },
-      state,
-      issue,
-      setTrackedState,
-    );
-    return { state, kind: 'stopped' };
-  }
-
-  const ledger = readEvidenceLedger({ projectDir: wctx.projectDir, sessionId: wctx.sessionId });
-  const owners = checks.defects.map((defect) =>
-    defect.file === null ? undefined : lastTaskChangingFile(ledger, state.tasks, defect.file),
-  );
-  const owner = owners[0];
-  if (
-    owner !== undefined &&
-    owners.every((candidate) => candidate === owner) &&
-    checks.failed.every((run) => failingFilesFromOutput(run.output, wctx.workspaceDir).length > 0)
-  ) {
-    const stages = checks.suite.results
-      .filter((result) => checks.suite.newFailures[result.stage] !== undefined)
-      .map((result) => result.stage);
-    const output = verifyFailures(
-      checks.suite.results,
-      { accepted: false, exemptStages: [], blockingStages: stages },
-      checks.failed,
-    ).join('\n\n');
-    state = transitionAndSave(wctx, state, {
-      type: 'REOPEN_TASK',
-      taskId: owner,
-      failure: {
-        output,
-        stages,
-        files: checks.defects.flatMap((defect) => (defect.file === null ? [] : [defect.file])),
-        checkIds: checks.failed.map((run) => run.checkId),
-      },
-    });
+  const inputs = [...(args.inputs ?? []), ...checks.defects];
+  if (inputs.length > 0) {
+    state = transitionAndSave(wctx, state, { type: 'QUEUE_TRIAGE', inputs });
     setTrackedState(state);
-    wctx.bus.publish({ type: 'task_reset', ts: Date.now(), phase: state.phase, taskId: owner });
-    state = startFixCycle({ wctx, state, setTrackedState, taskIds: [owner] });
-    return { state, kind: 'fix-queued' };
   }
-
-  const triaged = await runTriage(
-    {
-      projectDir: wctx.projectDir,
-      workspaceDir: wctx.workspaceDir,
-      sessionId: wctx.sessionId,
-      bus: wctx.bus,
-      config: wctx.config,
-      planner: wctx.planner,
-      callbacks: wctx.callbacks,
-      sinks: wctx.sinks,
-      state,
-      ...(wctx.signal !== undefined && { signal: wctx.signal }),
-      onStateChange: (next) => {
-        state = next;
-        setTrackedState(next);
-      },
-    },
-    { inputs: checks.defects },
-  );
-  if (triaged.kind !== 'triaged') {
-    state = haltUnansweredTriage({
-      wctx,
-      state,
-      outcome: triaged,
-      setTrackedState,
-      diagnosis: 'The pre-review checks found failures to triage.',
-      source: 'pre-review',
-    });
-    return { state, kind: 'stopped' };
-  }
-  state = startFixCycle({
-    wctx,
-    state,
-    setTrackedState,
-    taskIds: triaged.tasks.map((task) => task.id),
-  });
-  return { state, kind: 'fix-queued' };
+  return { state, kind: 'review' };
 }

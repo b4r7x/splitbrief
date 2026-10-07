@@ -1,5 +1,5 @@
 import { isTaskCompleted, type TaskId } from '../../../core/schemas/task.js';
-import { fixCyclesOf, plannerCallsOf, type WorkflowState } from '../../../core/schemas/workflow.js';
+import { fixCyclesOf, type WorkflowState } from '../../../core/schemas/workflow.js';
 import { reviewOutcomeOf } from '../../../core/review/verdict.js';
 import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import { getRunnerCatalogDisplayName } from '../../../core/config/accessors/runner-config.js';
@@ -15,14 +15,16 @@ import {
 } from '../final-review.js';
 import { buildReviewFailedRecoveryIssue } from '../recovery/builders/task.js';
 import { buildReviewInputTooLargeRecoveryIssue } from '../recovery/builders/review-input.js';
-import { buildConsultBoundRecoveryIssue } from '../recovery/builders/consult.js';
 import { reviewSeatDetails } from '../recovery/builders/details.js';
 import { plannerCallHaltIssue } from '../recovery/planner-call-failure.js';
 import { buildSeatProtocolErrorRecoveryIssue } from '../recovery/builders/seat-protocol.js';
 import { loadSeatSwapContext } from '../recovery/seat-swap-context.js';
 import type { SeatProtocolError } from '../../runners/typed-output.js';
-import { runTriage, startFixCycle } from '../triage.js';
+import { applyTriage, startFixCycle } from '../triage.js';
 import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
+import { waitForPlannerReply } from '../planning/call-loop.js';
+import type { TriageInput, TriageResult } from '../../../core/schemas/review.js';
+import type { ReviewOutcome } from '../../../core/review/verdict.js';
 import type { OrchestratorCallbacks, WorkflowContext } from '../types.js';
 
 function noVerdictFailure(review: FinalReviewResult): FinalReviewFailure | undefined {
@@ -60,6 +62,10 @@ function queueScheduledTriage(
   });
 }
 
+function isRedInput(input: TriageInput): boolean {
+  return input.source === 'check' || input.source === 'apply';
+}
+
 async function haltFailedReview(args: {
   wctx: WorkflowContext;
   state: WorkflowState;
@@ -72,15 +78,19 @@ async function haltFailedReview(args: {
 }): Promise<WorkflowState> {
   const ref = { projectDir: args.wctx.projectDir, sessionId: args.wctx.sessionId };
   const scheduled = args.state.review?.scope === 'task' && args.state.phase === 'implementing';
+  const redInputs = (args.state.pendingTriage?.inputs ?? []).filter(isRedInput);
+  const redPending = redInputs.length > 0;
   const state = scheduled
     ? queueScheduledTriage(ref, args.state)
-    : transitionAndSave(ref, args.state, {
-        type: 'REVIEW_DONE',
-        reviewStatus: 'failed',
-        ...(args.candidate !== undefined && { candidate: args.candidate }),
-      });
+    : redPending
+      ? args.state
+      : transitionAndSave(ref, args.state, {
+          type: 'REVIEW_DONE',
+          reviewStatus: 'failed',
+          ...(args.candidate !== undefined && { candidate: args.candidate }),
+        });
   args.setTrackedState(state);
-  if (!scheduled)
+  if (!scheduled && !redPending)
     args.wctx.bus.publish({
       type: 'workflow_complete',
       ts: Date.now(),
@@ -89,14 +99,17 @@ async function haltFailedReview(args: {
       blocking: args.blocking,
       completedTasks: state.tasks.filter((task) => isTaskCompleted(task.status)).length,
     });
+  const detail = [args.detail, ...redInputs.map((input) => `${input.id}: ${input.text}`)]
+    .filter(Boolean)
+    .join('\n');
   const issue = buildReviewFailedRecoveryIssue({
     phase: state.phase,
     createdAt: nowIso(),
     blocking: args.blocking,
     ...(args.fixCycles !== undefined && { fixCycles: args.fixCycles }),
     ...(args.unverified !== undefined && { unverified: args.unverified }),
-    ...(args.detail !== undefined && { detail: args.detail }),
-    acceptAsIs: !scheduled,
+    ...(detail !== '' && { detail }),
+    acceptAsIs: !scheduled && !redPending,
   });
   publishError({
     bus: args.wctx.bus,
@@ -105,28 +118,6 @@ async function haltFailedReview(args: {
     safety: { category: 'recovery', code: 'review_failed' },
   });
   return raisePendingRecovery({ ...ref, bus: args.wctx.bus }, state, issue, args.setTrackedState);
-}
-
-function haltPlannerCallsSpent(args: {
-  wctx: WorkflowContext;
-  state: WorkflowState;
-  setTrackedState: (s: WorkflowState) => void;
-}): WorkflowState {
-  const issue = buildConsultBoundRecoveryIssue({
-    reason: 'planner-calls-spent',
-    lastDiagnosis: 'The review needs planner triage.',
-    plannerCalls: plannerCallsOf(args.state).used,
-    plannerCallAllowance: plannerCallsOf(args.state).allowance,
-    phase: args.state.phase,
-    createdAt: nowIso(),
-  });
-  publishError({ bus: args.wctx.bus, phase: args.state.phase, message: issue.message });
-  return raisePendingRecovery(
-    { projectDir: args.wctx.projectDir, sessionId: args.wctx.sessionId, bus: args.wctx.bus },
-    args.state,
-    issue,
-    args.setTrackedState,
-  );
 }
 
 async function haltProtocolError(args: {
@@ -220,25 +211,89 @@ export async function haltVerdictlessReview(args: {
   return undefined;
 }
 
-export async function triageFailedReview(args: {
+export function reviewPassed(
+  outcome: ReviewOutcome | undefined,
+  fixWork: TriageResult | null,
+  pendingInputs: readonly TriageInput[],
+  recheckFailures: readonly string[],
+): boolean {
+  return (
+    outcome !== undefined &&
+    outcome.kind !== 'fail' &&
+    fixWork !== null &&
+    fixWork.fixTasks.length === 0 &&
+    fixWork.verify.length === 0 &&
+    fixWork.ask === null &&
+    !pendingInputs.some(isRedInput) &&
+    recheckFailures.length === 0
+  );
+}
+
+export async function followReviewAnswer(args: {
   wctx: WorkflowContext;
   state: WorkflowState;
   setTrackedState: (s: WorkflowState) => void;
   callbacks: OrchestratorCallbacks;
   candidate: Record<string, string> | undefined;
   recheckFailures: readonly string[];
-}): Promise<{ state: WorkflowState; stopped: boolean }> {
+  fixWork: TriageResult | null;
+}): Promise<{ state: WorkflowState; stopped: boolean; reviewAgain: boolean }> {
   const { wctx, setTrackedState, callbacks } = args;
   let state = args.state;
   const judged = state.review;
-  if (judged === undefined) {
-    throw error('triage-without-review', 'The run holds a pending triage but no review to triage.');
+  const fixWork = args.fixWork;
+  if (judged === undefined || fixWork === null) {
+    throw error('fix-without-review', 'The run holds no review answer to follow.');
   }
   const findings = reviewOutcomeOf(judged).blocking;
   const inputs = state.pendingTriage?.inputs ?? [];
   const cycles = fixCyclesOf(state);
-  const blocking = findings.length + args.recheckFailures.length;
-
+  const blocking = findings.length + inputs.filter(isRedInput).length;
+  if (fixWork.ask !== null) {
+    state = transitionAndSave(wctx, state, {
+      type: 'QUEUE_TRIAGE',
+      inputs: [...inputs],
+      question: fixWork.ask,
+    });
+    setTrackedState(state);
+    const question = fixWork.ask.question;
+    const reply = await waitForPlannerReply(
+      { callbacks, sinks: wctx.sinks, signal: wctx.signal },
+      {
+        call: 'plan',
+        text: question,
+        questions: [{ id: 'review-ask', type: 'input', text: question }],
+        answers: [],
+        answered: false,
+      },
+    );
+    if (reply === undefined) {
+      state = await haltFailedReview({
+        wctx,
+        state,
+        setTrackedState,
+        candidate: args.candidate,
+        blocking,
+        detail: 'The review asked a question this run has no way to answer.',
+      });
+      return { state, stopped: true, reviewAgain: false };
+    }
+    state = transitionAndSave(wctx, state, {
+      type: 'QUEUE_TRIAGE',
+      inputs: [
+        ...inputs,
+        {
+          id: `A${inputs.length + 1}`,
+          kind: 'answer',
+          source: 'user',
+          text: typeof reply === 'string' ? reply : reply.text,
+          file: null,
+        },
+      ],
+    });
+    setTrackedState(state);
+    return { state, stopped: false, reviewAgain: true };
+  }
   if (cycles.used >= cycles.allowance) {
     state = await haltFailedReview({
       wctx,
@@ -248,9 +303,9 @@ export async function triageFailedReview(args: {
       blocking,
       fixCycles: cycles.used,
     });
-    return { state, stopped: true };
+    return { state, stopped: true, reviewAgain: false };
   }
-  if (findings.length === 0 && inputs.length === 0) {
+  if (fixWork.fixTasks.length === 0 && fixWork.verify.length === 0) {
     const unverified = reviewOutcomeOf(judged).unverifiedCriteria;
     const detail =
       args.recheckFailures.length > 0
@@ -267,63 +322,42 @@ export async function triageFailedReview(args: {
       ...(unverified.length > 0 && { unverified: unverified.length }),
       ...(detail !== undefined && { detail }),
     });
-    return { state, stopped: true };
+    return { state, stopped: true, reviewAgain: false };
   }
-
-  const triaged = await runTriage(
-    {
-      projectDir: wctx.projectDir,
-      workspaceDir: wctx.workspaceDir,
-      sessionId: wctx.sessionId,
-      bus: wctx.bus,
-      config: wctx.config,
-      planner: wctx.planner,
-      callbacks,
-      sinks: wctx.sinks,
-      state,
-      ...(wctx.signal !== undefined && { signal: wctx.signal }),
-      onStateChange: (next) => {
-        state = next;
-        setTrackedState(next);
-      },
-    },
-    { review: judged, inputs },
-  );
-  if (triaged.kind === 'bound-spent') {
-    state = queueScheduledTriage({ projectDir: wctx.projectDir, sessionId: wctx.sessionId }, state);
-    state = haltPlannerCallsSpent({ wctx, state, setTrackedState });
-    return { state, stopped: true };
-  }
-  if (triaged.kind === 'error') {
-    state = queueScheduledTriage({ projectDir: wctx.projectDir, sessionId: wctx.sessionId }, state);
-    state = await haltProtocolError({ wctx, state, setTrackedState, error: triaged.error });
-    return { state, stopped: true };
-  }
-  if (triaged.kind === 'unanswered') {
-    state = await haltFailedReview({
-      wctx,
-      state,
-      setTrackedState,
-      candidate: args.candidate,
-      blocking,
-      detail: 'The triage asked a question this run has no way to answer.',
-    });
-    return { state, stopped: true };
-  }
-
-  state = startFixCycle({
+  const applied = applyTriage(
     wctx,
     state,
+    judged,
+    inputs,
+    fixWork,
+    undefined,
+    judged.scope === 'task' ? judged.afterTaskId : undefined,
+  );
+  state = startFixCycle({
+    wctx,
+    state: applied.state,
     setTrackedState,
-    taskIds: triaged.tasks.map((task) => task.id),
+    taskIds: applied.tasks.map((task) => task.id),
   });
-  return { state, stopped: false };
+  return { state, stopped: false, reviewAgain: false };
 }
 
 export type ScheduledReviewResult = Readonly<{
   state: WorkflowState;
   status: 'continue' | 'stopped';
 }>;
+
+export async function answerPendingReviewQuestion(
+  args: Omit<Parameters<typeof followReviewAnswer>[0], 'fixWork' | 'recheckFailures'>,
+): Promise<Awaited<ReturnType<typeof followReviewAnswer>> | undefined> {
+  const question = args.state.pendingTriage?.question;
+  if (question === undefined) return undefined;
+  return followReviewAnswer({
+    ...args,
+    recheckFailures: [],
+    fixWork: { fixTasks: [], rejected: [], verify: [], ask: question },
+  });
+}
 
 export async function runScheduledReview(args: {
   wctx: WorkflowContext;
@@ -335,28 +369,6 @@ export async function runScheduledReview(args: {
   const { wctx, setTrackedState, callbacks } = args;
   const ref = { projectDir: wctx.projectDir, sessionId: wctx.sessionId };
   let state = args.state;
-  const scheduledReview = state.pendingScheduledReview?.afterTaskId;
-  const judgedReview = state.review;
-  const resumesTriage =
-    state.pendingTriage?.reviewAfterTaskId !== undefined &&
-    scheduledReview !== undefined &&
-    judgedReview !== undefined &&
-    judgedReview.scope === 'task' &&
-    judgedReview.afterTaskId !== undefined &&
-    state.pendingTriage.reviewAfterTaskId === judgedReview.afterTaskId &&
-    judgedReview.afterTaskId === scheduledReview;
-  if (resumesTriage) {
-    const triaged = await triageFailedReview({
-      wctx,
-      state,
-      setTrackedState,
-      callbacks,
-      candidate: undefined,
-      recheckFailures: [],
-    });
-    if (triaged.stopped) return { state: triaged.state, status: 'stopped' };
-    return { state: triaged.state, status: 'continue' };
-  }
   const anchor = args.afterTaskId ?? state.pendingScheduledReview?.afterTaskId;
   if (anchor !== undefined) {
     state = transitionAndSave(ref, state, {
@@ -365,46 +377,62 @@ export async function runScheduledReview(args: {
     });
     setTrackedState(state);
   }
-  const review = await runFinalReviewPhase({
-    projectDir: wctx.projectDir,
-    workspaceDir: wctx.workspaceDir,
-    sessionId: wctx.sessionId,
-    config: wctx.config,
-    callbacks,
-    bus: wctx.bus,
-    state,
-    reviewer: wctx.reviewer,
-    metadata: wctx.metadata,
-    signal: wctx.signal,
-    sinks: wctx.sinks,
-    ...(wctx.continuation !== undefined && { continuation: wctx.continuation }),
-    ...(wctx.context.skillsContext !== undefined && {
-      skillsContext: wctx.context.skillsContext,
-    }),
-    scope: 'task',
-    setTrackedState,
-  });
-  state = review.state;
-  setTrackedState(state);
-  if (wctx.signal?.aborted) return { state, status: 'stopped' };
-
-  const halted = await haltVerdictlessReview({ wctx, state, setTrackedState, review });
-  if (halted !== undefined) return { state: halted, status: 'stopped' };
-
-  if (review.verdict !== null && review.verdict.outcome.kind !== 'fail') {
-    state = transitionAndSave(ref, state, { type: 'CLEAR_SCHEDULED_REVIEW' });
+  for (;;) {
+    const answered = await answerPendingReviewQuestion({
+      wctx,
+      state,
+      setTrackedState,
+      callbacks,
+      candidate: undefined,
+    });
+    if (answered !== undefined) {
+      state = answered.state;
+      if (answered.stopped) return { state, status: 'stopped' };
+    }
+    const review = await runFinalReviewPhase({
+      projectDir: wctx.projectDir,
+      workspaceDir: wctx.workspaceDir,
+      sessionId: wctx.sessionId,
+      config: wctx.config,
+      callbacks,
+      bus: wctx.bus,
+      state,
+      reviewer: wctx.reviewer,
+      metadata: wctx.metadata,
+      signal: wctx.signal,
+      sinks: wctx.sinks,
+      ...(wctx.continuation !== undefined && { continuation: wctx.continuation }),
+      ...(wctx.context.skillsContext !== undefined && {
+        skillsContext: wctx.context.skillsContext,
+      }),
+      scope: 'task',
+      setTrackedState,
+    });
+    state = review.state;
     setTrackedState(state);
-    return { state, status: 'continue' };
-  }
+    if (wctx.signal?.aborted) return { state, status: 'stopped' };
 
-  const triaged = await triageFailedReview({
-    wctx,
-    state,
-    setTrackedState,
-    callbacks,
-    candidate: undefined,
-    recheckFailures: [],
-  });
-  if (triaged.stopped) return { state: triaged.state, status: 'stopped' };
-  return { state: triaged.state, status: 'continue' };
+    const halted = await haltVerdictlessReview({ wctx, state, setTrackedState, review });
+    if (halted !== undefined) return { state: halted, status: 'stopped' };
+
+    if (
+      reviewPassed(review.verdict?.outcome, review.fixWork, state.pendingTriage?.inputs ?? [], [])
+    ) {
+      state = transitionAndSave(ref, state, { type: 'CLEAR_SCHEDULED_REVIEW' });
+      setTrackedState(state);
+      return { state, status: 'continue' };
+    }
+    const followed = await followReviewAnswer({
+      wctx,
+      state,
+      setTrackedState,
+      callbacks,
+      candidate: undefined,
+      recheckFailures: [],
+      fixWork: review.fixWork,
+    });
+    state = followed.state;
+    if (followed.stopped) return { state, status: 'stopped' };
+    if (!followed.reviewAgain) return { state, status: 'continue' };
+  }
 }

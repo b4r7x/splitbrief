@@ -90,6 +90,29 @@ describe('renderReviewPacketMarkdown checks log', () => {
 });
 
 describe('renderChecksLogForPrompt', () => {
+  it('names the failures that were red at the run base before any task ran', () => {
+    const checks = makeReviewPacket({
+      checks: {
+        entries: [
+          {
+            taskId: taskId('T002'),
+            id: 'test',
+            command: 'npm test',
+            exitCode: 1,
+            output: 'FAIL src/legacy.test.ts > adds',
+            preExisting: ['src/legacy.test.ts:5', 'src/old.test.ts:9'],
+            ts: '2026-10-08T00:00:00.000Z',
+          },
+        ],
+        outsideReadPaths: [],
+      },
+    }).checks;
+
+    expect(renderChecksLogForPrompt(checks, EVIDENCE_PATHS)).toContain(
+      '  pre-existing (also red at the run base): src/legacy.test.ts:5, src/old.test.ts:9',
+    );
+  });
+
   it('uses the packet checks renderer with command, output, artifact and candidate identity', () => {
     const checks = makeReviewPacket({
       checks: {

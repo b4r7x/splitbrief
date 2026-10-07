@@ -124,7 +124,7 @@ After planning, `runTasksAndReview()` (`src/engine/orchestrator/run/task-executi
 `runTasksAndReview()` runs only on a `ready-for-tasks` disposition; a terminal
 result makes zero implementer or task-loop calls.
 
-Before the first task, `runFullSuite()` records the full-suite baseline in the workspace. It publishes `full_suite` progress for each enabled stage. The final review compares failures with this saved baseline.
+No gate runs before the first task. With `workflow.review: end`, the final review runs all enabled gates over the run workspace. With `task`, related tests and due checks also run after each task. When a gate is red, SPLITBRIEF re-runs only the failing tests or command on a disposable run base copy outside the checkout. A failure also red there is pre-existing and starts no fix. The `full_suite` events show the pre-review stages and base re-runs.
 
 The loop iterates tasks in the order of `plan.json`. `checkPlan` (`src/engine/spec/plan-checks.ts`) refuses a plan that lists a task before a lower batch (`batch-out-of-order`) or before a dependency (`dependency-later-batch`, `dependency-later-task`), so that order is the build order. For each task:
 
@@ -143,7 +143,7 @@ Filesystem snapshots, diffs, and validation remain available; the Git index and 
 3. Captures the task-start snapshot in the run workspace
 4. Calls `runImplementation()` (`src/engine/orchestrator/task/run-implementation.ts`). Every writer receives the same run workspace. `cli` and `agent` write there directly. `api` and `shell` return code that SPLITBRIEF writes there. The extracted-code path keeps its guard against a destructive whole-file replacement.
 5. Calls `gateAttemptChanges()` (`src/engine/orchestrator/task/attempt-gate.ts`) on the attempt's changed files. The [protected gate](./APPROVAL-AND-RECOVERY.md#protected-path-confirmation) restores denied files inside the workspace. Task completion records before/after entries with `taskId` and `briefHash` through `captureTaskReviewChanges()` (`src/engine/orchestrator/evidence/review-capture.ts`).
-6. Calls `runBriefGate()` in `src/engine/orchestrator/task/brief-gate.ts`. End cadence runs no stack gates for ordinary briefs. Task cadence runs related tests and due checks. The final review runs all gates. A reopened brief rechecks only its failed gates.
+6. Calls `runBriefGate()` in `src/engine/orchestrator/task/brief-gate.ts`. End cadence runs no stack gates for ordinary briefs. Task cadence runs related tests and due checks. The final review runs all gates. The suite stops at its first new red. The reviewer returns the fix work for it.
 7. On pass: transitions to `VALIDATION_PASS` and records evidence
 8. On fail: retries once with the error message, then consults the planner for one typed answer — guidance, a rewritten or split brief, a check re-run, or one question for you — and a spent bound halts for recovery
 
