@@ -18,7 +18,12 @@ describe('GATE_ORDER', () => {
 describe('CAPTURE_LIMITS', () => {
   it('caps captured output and the test tail', () => {
     expect(CAPTURE_LIMITS).toEqual({ outputChars: 4096, testTailLines: 40 });
-    expect(STAGE_TIMEOUT_MS).toBe(600_000);
+  });
+});
+
+describe('STAGE_TIMEOUT_MS', () => {
+  it('gives a validation stage one hour when validation.timeoutMs is unset', () => {
+    expect(STAGE_TIMEOUT_MS).toBe(3_600_000);
   });
 });
 

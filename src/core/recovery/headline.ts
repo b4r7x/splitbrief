@@ -49,6 +49,17 @@ export function retryExhaustedCause(
   return `${cause.task} failed`;
 }
 
+/** A repository change under a brief, with the changes the audit saw, in the words every surface shares. */
+export function repositoryChangedCause(task: string, changes: string | undefined): string {
+  const lead = `Repository changed under ${task}`;
+  return changes === undefined ? lead : `${lead}${SOFT_SEP}${changes}`;
+}
+
+/** A brief whose tool call named a path outside the run's isolation directory. */
+export function leftIsolationCause(task: string): string {
+  return `${task} left the isolation directory`;
+}
+
 /**
  * The halt in the words the operator needs: what stopped, on which tool or
  * brief, and — for a quota halt — when it comes back. Never the raw enums.
@@ -80,12 +91,9 @@ export function formatRecoveryHeadline(issue: RecoveryIssue, now: number = Date.
     case 'implementer-recipe-invalid':
       return `Tool recipe rejected by ${toolName(issue)}`;
     case 'implementer-left-isolation':
-      return `${taskName(issue)} left the isolation directory`;
-    case 'checkout-changed': {
-      const changes = recoveryFactString(issue.facts, 'changes');
-      const lead = `Repository changed under ${taskName(issue)}`;
-      return changes === undefined ? lead : `${lead}${SOFT_SEP}${changes}`;
-    }
+      return leftIsolationCause(taskName(issue));
+    case 'checkout-changed':
+      return repositoryChangedCause(taskName(issue), recoveryFactString(issue.facts, 'changes'));
     case 'runner-timeout-repeated':
       return `Two timeouts in a row on ${taskName(issue)}`;
     case 'planner-call-failed':

@@ -1,9 +1,10 @@
-import type { TaskCompletionMethod } from '../schemas/enums.js';
+import { isImplementerPhase } from '../phases.js';
+import type { Phase, TaskCompletionMethod } from '../schemas/enums.js';
 
 export interface SectionableEvent {
   type: string;
   ts?: number;
-  phase?: string;
+  phase?: Phase;
 }
 
 type TaskStartedEvent = {
@@ -148,6 +149,8 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
     }
   }
 
+  joinBuildRowsToBriefs(events, taskRanges);
+
   const sections: Section<TEvent>[] = [];
   let cursor = 0;
 
@@ -232,6 +235,29 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
   }
 
   return sections;
+}
+
+function isBuildRow(event: SectionableEvent | undefined): boolean {
+  return event?.phase !== undefined && isImplementerPhase(event.phase);
+}
+
+// A build row between two briefs joins the brief that closed before it; the build rows left before a
+// brief (the run start, a fix cycle's re-entry) join that brief. The tail after the last brief stays.
+function joinBuildRowsToBriefs<TEvent extends SectionableEvent>(
+  events: TEvent[],
+  taskRanges: TaskRange<TEvent>[],
+): void {
+  for (let r = 0; r < taskRanges.length; r++) {
+    const range = taskRanges[r];
+    const previous = taskRanges[r - 1];
+    if (!range || (previous && previous.endIdx < 0)) return;
+    let gapStart = previous ? previous.endIdx + 1 : 0;
+    if (previous?.endEvent) {
+      while (gapStart < range.startIdx && isBuildRow(events[gapStart])) gapStart++;
+      previous.endIdx = gapStart - 1;
+    }
+    while (range.startIdx > gapStart && isBuildRow(events[range.startIdx - 1])) range.startIdx--;
+  }
 }
 
 function abandonOpenTask<TEvent extends SectionableEvent>(

@@ -9,7 +9,7 @@ import type { StepRef } from '../../../core/schemas/run-step.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import { taskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { stopByline, type StopBylineInput } from './copy.js';
+import { stepWord, stopByline, type StopBylineInput } from './copy.js';
 
 function input(overrides: Partial<StopBylineInput> = {}): StopBylineInput {
   return {
@@ -147,7 +147,8 @@ describe('stopByline', () => {
     });
   });
 
-  it('parks at a boundary with the count and the next brief', () => {
+  // UI debt #57: the transcript named the brief the stop held back, this byline the brief that passed.
+  it("parks at a boundary with the next brief and the count, in the transcript row's words", () => {
     expect(
       stopByline(
         input({
@@ -158,7 +159,7 @@ describe('stopByline', () => {
         }),
       ),
     ).toEqual({
-      lead: 'Paused after T002 · 2 of 5 briefs complete',
+      lead: 'Stopped before T003 · 2 of 5 briefs complete',
       hint: '⏎ resume · /stop options · esc back to sessions · ctrl+c quit',
     });
   });
@@ -185,7 +186,7 @@ describe('stopByline', () => {
   it('claims no partial changes for a brief the run stopped before', () => {
     expect(
       stopByline(settled({ kind: 'brief', taskId: taskId('T003'), attempt: 0 }, 'boundary'))?.lead,
-    ).toBe('Stopped at T003');
+    ).toBe('Stopped before T003');
   });
 
   it('says only that it paused when a park names no step at all', () => {
@@ -256,5 +257,17 @@ it('reports the actual cleanup failure and the retry action', () => {
   expect(stopByline(input({ intent: 'stop-now', phase: 'failed', error: 'Disk full' }))).toEqual({
     lead: 'Stop failed · Disk full',
     hint: '/stop to retry',
+  });
+});
+
+describe('stepWord', () => {
+  it.each([
+    [{ kind: 'planner', call: 'spec' } as const, 'the plan'],
+    [{ kind: 'planner', call: 'plan' } as const, 'the plan'],
+    [{ kind: 'gate', gate: 'briefs' } as const, 'the plan'],
+    [{ kind: 'brief', taskId: taskId('T007'), attempt: 0 } as const, 'T007'],
+    [{ kind: 'review', cycle: 1 } as const, 'the review'],
+  ])('names %o as %s', (step, word) => {
+    expect(stepWord(step)).toBe(word);
   });
 });

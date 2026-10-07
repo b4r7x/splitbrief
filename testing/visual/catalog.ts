@@ -513,6 +513,24 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'sidebar', title: 'Workflow sidebar' },
       ],
     }),
+    // S11 run 3: the run-start warning, `T901 also changed …` and the `Batch suite · …` rows sat
+    // above the live brief for the rest of the run. Once T902 runs they belong to the closed T901.
+    defineScenario({
+      id: 'workflow-completed-orphan-rows',
+      title: 'Workflow · run-start and boundary rows collapse with the completed briefs',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'completed-orphan-rows',
+        title: 'Completed briefs with no run-level row left above the live brief',
+        kind: 'implementation',
+        marker: '1/3 briefs passed',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
     defineScenario({
       id: 'workflow-planner-commands-refused',
       title: 'Workflow · stage commands not taken from the planner',
@@ -774,7 +792,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'paused-boundary',
         title: 'Parked at a boundary',
         kind: 'question',
-        marker: 'Paused after T',
+        marker: 'Stopped before T902',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -1637,6 +1655,24 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    // S11 run 3, 19:34: the run-start `npm test` timed out and the run skipped it with a warning.
+    defineScenario({
+      id: 'workflow-implementation-suite-timeout',
+      title: 'Workflow · the run-start full suite timed out',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'implementation-suite-timeout',
+        title:
+          'The timeout warning names the stage, both times and the validation.timeoutMs to raise',
+        kind: 'implementation',
+        marker: 'validation.timeoutMs',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Suite timeout warning' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),

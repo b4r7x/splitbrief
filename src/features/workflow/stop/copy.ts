@@ -1,8 +1,9 @@
+import type { StepCut, StepRef } from '../../../core/schemas/run-step.js';
+import { taskId } from '../../../core/schemas/task.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import type { RunRecord } from '../../../core/sessions/run-record.js';
 import type { RunningSuiteStage } from '../../../stores/workflow/operations/state.js';
 import type { StopIntent, StopParkKind, StopPhase } from '../../../stores/workflow/stop.js';
-import { stepWord } from '../closed/byline.js';
 import { formatStageElapsed } from '../display/live-activity.js';
 import { suiteStageText } from '../display/phase-verb.js';
 
@@ -37,6 +38,32 @@ export interface StopByline {
   readonly hint: string;
 }
 
+/**
+ * A step in the words the rest of the screen uses for it: a brief by id, and every planner call or
+ * gate as the plan, the one stage the rail shows for them.
+ */
+export function stepWord(step: StepRef): string {
+  switch (step.kind) {
+    case 'planner':
+    case 'gate':
+      return 'the plan';
+    case 'brief':
+      return step.taskId;
+    default:
+      return 'the review';
+  }
+}
+
+/**
+ * Where a stop left the run, in the words the transcript row and every byline share: before the
+ * brief a stop between briefs holds back, else at the step it stopped on.
+ */
+export function stopPoint(step: StepRef, at: StepCut | undefined): string {
+  return at === 'boundary' && step.kind === 'brief'
+    ? `before ${step.taskId}`
+    : `at ${stepWord(step)}`;
+}
+
 /** The run names its own brief where it has one, and says "the run" rather than nothing. */
 function subject(input: StopBylineInput): string {
   return input.parked?.taskId ?? input.currentTaskId ?? input.finishedTaskId ?? 'the run';
@@ -52,16 +79,14 @@ function stoppedLead(input: StopBylineInput): string {
     const brief = input.parked?.taskId ?? input.currentTaskId;
     return brief === null ? 'Stopped' : `Stopped at ${brief}${SOFT_SEP}Partial changes kept`;
   }
-  const lead = `Stopped at ${stepWord(status.resumeAt)}`;
-  const cutBrief =
-    status.resumeAt.kind === 'brief' &&
-    status.stop.on.kind === 'paused' &&
-    status.stop.on.at === 'mid-step';
+  const at = status.stop.on.kind === 'paused' ? status.stop.on.at : undefined;
+  const lead = `Stopped ${stopPoint(status.resumeAt, at)}`;
+  const cutBrief = status.resumeAt.kind === 'brief' && at === 'mid-step';
   return cutBrief ? `${lead}${SOFT_SEP}Partial changes kept` : lead;
 }
 
 export function stopByline(input: StopBylineInput): StopByline | null {
-  const taskId = subject(input);
+  const name = subject(input);
 
   if (input.intent === 'none') return null;
 
@@ -73,8 +98,12 @@ export function stopByline(input: StopBylineInput): StopByline | null {
 
   if (input.phase === 'parked') {
     if (input.parked?.kind === 'boundary') {
+      const next: StepRef =
+        input.nextTaskId === null
+          ? { kind: 'review', cycle: 0 }
+          : { kind: 'brief', taskId: taskId(input.nextTaskId), attempt: 0 };
       return {
-        lead: `Paused after ${taskId}${SOFT_SEP}${input.passed} of ${input.total} briefs complete`,
+        lead: `Stopped ${stopPoint(next, 'boundary')}${SOFT_SEP}${input.passed} of ${input.total} briefs complete`,
         hint: PARKED_HINT,
       };
     }
@@ -95,16 +124,16 @@ export function stopByline(input: StopBylineInput): StopByline | null {
   // rather than a termination that is not happening.
   if (input.intent === 'pause-after-brief') {
     if (input.questionPending) {
-      return { lead: `Answer needed to finish ${taskId}`, hint: 'Pause requested' };
+      return { lead: `Answer needed to finish ${name}`, hint: 'Pause requested' };
     }
     const lead =
       input.suite === null
-        ? `Finishing ${taskId}`
+        ? `Finishing ${name}`
         : `${suiteStageText(input.suite)} ${formatStageElapsed(input.suite.elapsedMs)}`;
     return { lead, hint: 'Pause requested; no next brief will start' };
   }
 
-  const lead = input.intent === 'end-run' ? 'Ending run' : `Stopping ${taskId}`;
+  const lead = input.intent === 'end-run' ? 'Ending run' : `Stopping ${name}`;
   if (input.phase === 'forcing') {
     return { lead: `${lead}${SOFT_SEP}Forcing remaining processes to exit`, hint: '' };
   }

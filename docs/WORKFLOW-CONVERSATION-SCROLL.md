@@ -52,7 +52,7 @@ segments, and each is one line, so the row count the scroll model charges is exa
 zero renderable units — it is not an event the run emitted, so it never counts toward the
 `N new events` banner.
 
-Completed task summaries are pinned above the dynamic conversation window. `src/core/sections/completed-task-summary-rows.ts` returns how many completed summaries fit in the current viewport; the dynamic scroll viewport subtracts those rows before building scroll state.
+Completed task summaries are pinned above the dynamic conversation window. `src/core/sections/completed-task-summary-rows.ts` returns how many completed summaries fit in the current viewport; the dynamic scroll viewport subtracts those rows before building scroll state. A build-phase row no brief owns belongs to a brief section (`groupEventsIntoSections`): a row between two briefs joins the brief that closed before it once the next brief starts, and a run-start row joins the first brief, so it collapses with that brief's summary. Planning and final-review rows, and the rows after the last closed brief, stay in the dynamic window.
 
 ## Scroll Window
 

@@ -173,7 +173,7 @@ describe('isolation halt through the orchestrator', { timeout: 90_000 }, () => {
     expect(state.pendingRecovery).toMatchObject({
       reason: 'implementer-left-isolation',
       taskId: 'T001',
-      message: `T001 left the isolation directory — OpenCode CLI wrote to ${checkoutFile} (your checkout) with bash: printf x > ${checkoutFile}`,
+      message: `T001 left the isolation directory · OpenCode CLI wrote to ${checkoutFile} (your checkout) with bash: printf x > ${checkoutFile}`,
       availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
       recommendedAction: 'retry-same-worker',
     });
@@ -307,7 +307,7 @@ describe('isolation halt through the orchestrator', { timeout: 90_000 }, () => {
         taskId: 'T001',
         availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
       });
-      expect(state.pendingRecovery?.message).toBe('Repository changed under T001 — branch escaped');
+      expect(state.pendingRecovery?.message).toBe('Repository changed under T001 · branch escaped');
       // The brief's own file was never promoted: the halt came before the gate.
       expect(existsSync(join(projectDir, TARGET))).toBe(false);
       return { state, calls };

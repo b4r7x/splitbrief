@@ -108,14 +108,14 @@ describe('handleFailedImplementation — runner defects halt before the ladder',
     expect(next.pendingRecovery).toMatchObject({
       reason: 'implementer-left-isolation',
       taskId: 'T001',
-      message: `T001 left the isolation directory — Ollama ${evidence}`,
+      message: `T001 left the isolation directory · Ollama ${evidence}`,
       recommendedAction: 'retry-same-worker',
     });
     expect(events.find((e) => e.type === 'task_retry')).toBeUndefined();
     expect(events).toContainEqual(
       expect.objectContaining({
         type: 'error',
-        message: `T001 left the isolation directory — Ollama ${evidence}`,
+        message: `T001 left the isolation directory · Ollama ${evidence}`,
       }),
     );
   });
@@ -148,14 +148,14 @@ describe('handleFailedImplementation — runner defects halt before the ladder',
     expect(next.pendingRecovery).toMatchObject({
       reason: 'checkout-changed',
       taskId: 'T001',
-      message: 'Repository changed under T001 — branch escaped',
+      message: 'Repository changed under T001 · branch escaped',
       recommendedAction: 'retry-same-worker',
     });
     expect(events.find((e) => e.type === 'task_retry')).toBeUndefined();
     expect(events).toContainEqual(
       expect.objectContaining({
         type: 'error',
-        message: 'Repository changed under T001 — branch escaped',
+        message: 'Repository changed under T001 · branch escaped',
       }),
     );
   });

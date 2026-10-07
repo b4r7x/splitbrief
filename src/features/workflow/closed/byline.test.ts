@@ -4,7 +4,7 @@ import { WIDE, endedInBuild, makeView } from '#testing/helpers/factories/summary
 import type { SummaryView } from './view-model.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { taskId } from '../../../core/schemas/task.js';
-import { bylineText, legendText, openRunByline, stepWord } from './byline.js';
+import { bylineText, legendText, openRunByline } from './byline.js';
 
 describe('bylineText', () => {
   it('offers the undo on an applied run', () => {
@@ -196,6 +196,20 @@ describe('openRunByline', () => {
     ).toBe('Stopped at T003 · type a correction or ⏎ to continue');
   });
 
+  // UI debt #57: a run parked between briefs reads as the live byline and the transcript row read it.
+  it('names the brief a run stopped before when it parked between briefs', () => {
+    expect(
+      openRunByline({
+        ...OPEN,
+        status: {
+          kind: 'open',
+          stop: { kind: 'stopped', on: { kind: 'paused', at: 'boundary' } },
+          resumeAt: { kind: 'brief', taskId: taskId('T003'), attempt: 0 },
+        },
+      }),
+    ).toBe('Stopped before T003 · type a correction or ⏎ to continue');
+  });
+
   it('reopens the plan card a run with a typed plan is parked at', () => {
     expect(
       openRunByline({
@@ -385,18 +399,6 @@ describe('openRunByline', () => {
     expect(openRunByline({ continuable: true, status, width: 30 })).toBe(
       'Type a correction or ⏎ to con…',
     );
-  });
-});
-
-describe('stepWord', () => {
-  it.each([
-    [{ kind: 'planner', call: 'spec' } as const, 'the plan'],
-    [{ kind: 'planner', call: 'plan' } as const, 'the plan'],
-    [{ kind: 'gate', gate: 'briefs' } as const, 'the plan'],
-    [{ kind: 'brief', taskId: taskId('T007'), attempt: 0 } as const, 'T007'],
-    [{ kind: 'review', cycle: 1 } as const, 'the review'],
-  ])('names %o as %s', (step, word) => {
-    expect(stepWord(step)).toBe(word);
   });
 });
 

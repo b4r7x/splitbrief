@@ -623,7 +623,7 @@ describe('buildLeftIsolationRecoveryIssue', () => {
     expect(issue.reason).toBe('implementer-left-isolation');
     expect(issue.seat).toBe('build');
     expect(issue.message).toBe(
-      `T004 left the isolation directory — Google Antigravity CLI ${toolMessage}`,
+      `T004 left the isolation directory · Google Antigravity CLI ${toolMessage}`,
     );
     expect(issue.details).toEqual([
       `Google Antigravity CLI ${toolMessage}`,
@@ -713,7 +713,7 @@ describe('buildCheckoutChangedRecoveryIssue', () => {
 
     expect(issue.reason).toBe('checkout-changed');
     expect(issue.seat).toBe('build');
-    expect(issue.message).toBe('Repository changed under T001 — branch escaped · hook pre-commit');
+    expect(issue.message).toBe('Repository changed under T001 · branch escaped · hook pre-commit');
     expect(issue.details).toEqual([
       'Changed while Google Antigravity CLI ran; the audit cannot tell who made the change.',
       "Your checkout gets the run's changes only through Apply, and nothing in your checkout was reverted.",
@@ -747,9 +747,8 @@ describe('buildCheckoutChangedRecoveryIssue', () => {
     expect(formatRecoveryHeadline(issue)).toBe(
       'Repository changed under T004 · branch fix/implementer-never-runs-gates',
     );
-    expect(issue.message).toBe(
-      'Repository changed under T004 — branch fix/implementer-never-runs-gates',
-    );
+    // The Error row and the recovery headline are one sentence with one separator (UI debt #55).
+    expect(issue.message).toBe(formatRecoveryHeadline(issue));
     expect(issue.files).toEqual([]);
     expect(issue.details.join(' ')).not.toContain('final-group.ts');
     expectValidRecoveryIssue(issue);

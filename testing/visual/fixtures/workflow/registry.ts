@@ -112,6 +112,15 @@ const checkpointPredicates = [
   [checkpointId('validation'), includesAll('Validate', 'test skipped')],
   [checkpointId('planner-commands-refused'), includesAll('Validation')],
   [checkpointId('touched-not-suggested'), includesAll('also changed')],
+  // The live brief is on screen and no row a closed brief owns is left above it.
+  [
+    checkpointId('completed-orphan-rows'),
+    (context) =>
+      includesAll('T902')(context) &&
+      ['timed out', 'also changed', 'Batch suite'].every(
+        (orphan) => !stripAnsiStyles(context.output).includes(orphan),
+      ),
+  ],
   // The tiered gate owns this checkpoint: it takes the prompt zone from the document panel, so the
   // panel's own words are never on this frame.
   [checkpointId('review'), includesAll('Confirm with a reason', WORKFLOW_FIXTURE_TEXT.review)],
@@ -190,6 +199,7 @@ const checkpointPredicates = [
   [checkpointId('implementation-silent'), includesAll('Still working', 'a tool is running')],
   [checkpointId('implementation-tool-running'), includesAll('running npx vitest run')],
   [checkpointId('implementation-full-suite'), includesAll('Pre-review suite')],
+  [checkpointId('implementation-suite-timeout'), includesAll('validation.timeoutMs')],
   [checkpointId('planner-session-expired'), includesAll('Planner session expired')],
 ] as const satisfies readonly (readonly [CheckpointId, CheckpointPredicate])[];
 

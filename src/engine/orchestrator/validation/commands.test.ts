@@ -387,6 +387,31 @@ describe('runValidation', () => {
     expect(runner.calls.at(-1)?.options?.timeout).toBe(900_000);
   });
 
+  it('runs a stage for up to one hour when the loaded config sets no validation.timeoutMs', async () => {
+    const configDir = join(tempDir, SPLITBRIEF_DIR);
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(
+      join(configDir, 'config.yaml'),
+      YAML.stringify({ version: 3, validation: { typecheck: true, lint: false, test: false } }),
+      'utf-8',
+    );
+    writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
+    const { config } = loadConfig(tempDir);
+    const runner = makeCommandRunner();
+    const validator = createValidator({ runCommand: runner });
+
+    await validator.runValidation({
+      task: mkTask('src/app.ts'),
+      projectDir: tempDir,
+      config,
+      bus: fakeBus,
+      phase: 'implementing',
+    });
+
+    expect(config.validation.timeoutMs).toBeUndefined();
+    expect(runner.calls.at(-1)?.options?.timeout).toBe(3_600_000);
+  });
+
   it('passes the abort signal through to validation commands', async () => {
     const runner = makeCommandRunner();
     const validator = createValidator({ runCommand: runner });

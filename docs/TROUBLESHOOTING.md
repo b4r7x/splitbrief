@@ -447,9 +447,9 @@ SPLITBRIEF tries to fix it before it tells you. Each Critical finding is mapped 
 
 ### Symptom: the run halted with "T00N left the isolation directory"
 
-**Likely cause:** One of the implementer's tool calls wrote outside the isolation directory it was given — into your checkout, into its linked `node_modules` through a package-manager install, or anywhere else on the disk — and the tripwire stopped the call. The halt's sentence carries the evidence: `T004 left the isolation directory — Google Antigravity CLI wrote to ~/Projects/app/src/index.ts (your checkout) with run_command: touch ~/Projects/app/src/index.ts`. When the git state of your checkout also changed during the stopped call, the evidence ends with `; ran while your checkout changed: tag v1.2`.
+**Likely cause:** One of the implementer's tool calls wrote outside the isolation directory it was given — into your checkout, into its linked `node_modules` through a package-manager install, or anywhere else on the disk — and the tripwire stopped the call. The halt's sentence carries the evidence: `T004 left the isolation directory · Google Antigravity CLI wrote to ~/Projects/app/src/index.ts (your checkout) with run_command: touch ~/Projects/app/src/index.ts`. When the git state of your checkout also changed during the stopped call, the evidence ends with `; ran while your checkout changed: tag v1.2`.
 
-A read, list or search outside the isolation directory does not halt. The tripwire logs it as an `isolation_outside_read` warning and the call goes on: `Task T004 searched ~ with run_command: find ~ -name "process-invoke.ts" 2>/dev/null`. The warning is in the transcript, in `session.jsonl` and in the review packet's warnings list. A tool whose shell does not start in the isolation directory is the usual source: it cannot find the project and searches the disk for it. See [Isolation checks](./APPROVAL-AND-RECOVERY.md#isolation-checks).
+A read, list or search outside the isolation directory does not halt. The tripwire logs it as an `isolation_outside_read` warning and the call goes on: `Task T004 searched ~ (outside the workspace) with run_command: find ~ -name "process-invoke.ts" 2>/dev/null`. The warning is in the transcript, in `session.jsonl` and in the review packet's warnings list. A tool whose shell does not start in the isolation directory is the usual source: it cannot find the project and searches the disk for it. See [Isolation checks](./APPROVAL-AND-RECOVERY.md#isolation-checks).
 
 **Fix:**
 1. Read the evidence on the recovery panel or in the `Seat down (implementer-left-isolation): …` line a headless run printed.
@@ -465,7 +465,7 @@ A read, list or search outside the isolation directory does not halt. The tripwi
 
 ### Symptom: the run halted with "Repository changed under T00N"
 
-**Likely cause:** Git state that the run shares with your checkout changed while an implementer call ran: a branch other than the current one, a tag, the stash, a hook, the git config or the installed `node_modules` set. A change to the run worktree's own `HEAD`, branch or index halts too. The halt's sentence names each change: `Repository changed under T004 — tag v1.2 · hook pre-commit`, or `Repository changed under T004 — run worktree branch splitbrief/<session-id>` when something committed inside the run worktree. The audit sees what changed, not who changed it: a hook that is still running, or another agent that creates or moves an audited branch ref in the same repository, halts the brief too. See [Isolation checks](./APPROVAL-AND-RECOVERY.md#isolation-checks).
+**Likely cause:** Git state that the run shares with your checkout changed while an implementer call ran: a branch other than the current one, a tag, the stash, a hook, the git config or the installed `node_modules` set. A change to the run worktree's own `HEAD`, branch or index halts too. The halt's sentence names each change: `Repository changed under T004 · tag v1.2 · hook pre-commit`, or `Repository changed under T004 · run worktree branch splitbrief/<session-id>` when something committed inside the run worktree. The audit sees what changed, not who changed it: a hook that is still running, or another agent that creates or moves an audited branch ref in the same repository, halts the brief too. See [Isolation checks](./APPROVAL-AND-RECOVERY.md#isolation-checks).
 
 A commit, a branch switch or a pull in your checkout does not halt the brief: a move of the checkout's `HEAD` or current branch is Apply's work. Apply merges it with the run's result, and an overlap it cannot merge stops Apply with an `apply-conflict` halt instead ([Apply conflicts](./APPROVAL-AND-RECOVERY.md#apply-conflicts)). A changed file does not halt the brief either, because an editor save changes files too. The run publishes the `checkout_changed_during_call` warning and continues: `Task T004: your checkout changed while Google Antigravity CLI ran — src/app.ts; nothing there was reverted`. The warning is in the transcript, in `session.jsonl` and in the review packet's warnings list.
 
@@ -693,14 +693,14 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 
 ### Symptom: The run seems stuck at `Implementing…` before the first task
 
-**Likely cause:** The run-start baseline probe is running. Before the first task, SPLITBRIEF probes every enabled validation stage once (typecheck → lint → test, with the test probe narrowed to the first task's affected file). Each stage can block for `validation.timeoutMs` (default 10 minutes) and the probe deliberately does not stop at the first red stage, so three slow stages can hold the phase for up to half an hour.
+**Likely cause:** The run-start baseline probe or the run-start full suite is running. Before the first task, SPLITBRIEF probes every enabled validation stage once (typecheck → lint → test, with the test probe narrowed to the first task's affected file), then runs every enabled stage once over the whole project (`Run-start suite` in the byline). Each stage can block for `validation.timeoutMs` (default one hour) and neither pass stops at the first red stage, so slow stages can hold the phase for up to six hours.
 
 **Fix:**
 1. Look at the conversation rows — the probe publishes a `Baseline` row naming the stage currently being probed (`Baseline typecheck (npx tsc --noEmit) running …`). The run is not hung; it is waiting on that command.
 2. If a stage is genuinely slow, lower `validation.timeoutMs` in `.splitbrief/config.yaml` (minimum 1000 ms) so each probe step gives up sooner.
 3. If a stage can never pass in this repository (a pre-existing type error, a broken linter), leave it red: the probe records it as a pre-existing failure and the run continues past it rather than failing every task on it.
 
-**Prevention:** Keep the validation commands fast enough for a pre-task probe (a full test suite is usually too slow); the probe runs them once before any task. The same stages can be probed on demand, without starting a run, via `splitbrief doctor --probe-validation`.
+**Prevention:** Run `splitbrief doctor --probe-validation` before the first run. It runs every enabled stage once over the whole project without starting a run, and it names every stage that is already red, including a stage that outruns `validation.timeoutMs`.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) (§4 `validation`), [docs/WORKFLOW.md](./WORKFLOW.md).
 

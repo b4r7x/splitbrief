@@ -179,6 +179,35 @@ describe('reviewDocumentForm', () => {
     }
   });
 
+  // UI debt #56: at 120 columns the S11 plan card read `…, npm run` / `check:invariants`.
+  it('breaks a confirms list between operations, never inside one', () => {
+    const operations = [
+      'write package.json',
+      'write package-lock.json',
+      'npm run typecheck',
+      'npm run check:invariants',
+      'npm run skills:check',
+    ];
+    for (let cols = 60; cols <= 160; cols++) {
+      const { confirmsText } = reviewDocumentForm({
+        artifact: 'plan',
+        confirms: operations,
+        cols,
+        budgetRows: Number.POSITIVE_INFINITY,
+      });
+      const lines = confirmsText?.split('\n') ?? [];
+      for (const operation of operations) {
+        expect(
+          lines.some((line) => line.includes(operation)),
+          `${operation} at ${cols} columns`,
+        ).toBe(true);
+      }
+      for (const line of lines.slice(0, -1)) {
+        expect(line, `at ${cols} columns`).toMatch(/,$/);
+      }
+    }
+  });
+
   it('keeps every option when even the fewest rows do not fit', () => {
     const form = reviewDocumentForm({ artifact: 'plan', confirms, cols: 60, budgetRows: 0 });
 

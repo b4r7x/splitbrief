@@ -45,6 +45,7 @@ import {
   type SeatSwapContext,
 } from '../../../../src/engine/orchestrator/recovery/builders/task.js';
 import { parseUsageLimitReset } from '../../../../src/engine/runners/usage-limit.js';
+import { fullSuiteTimeoutWarning } from '../../../../src/engine/orchestrator/validation/run.js';
 import type { SeatFailureClassification } from '../../../../src/engine/runners/seat-failure.js';
 import {
   consultHaltDetails,
@@ -707,6 +708,67 @@ function everyBriefPassed(): EngineEvent[] {
     ),
   ];
 }
+
+function orphanBriefStarted(
+  brief: (typeof FIXTURE_PLANNED_BRIEFS)[number],
+  ts: number,
+): EngineEvent {
+  return {
+    type: 'task_started',
+    ts,
+    phase: 'implementing',
+    taskId: brief.id,
+    title: brief.title,
+    index: brief.index,
+    total: 3,
+    file: WORKFLOW_FIXTURE_REVIEW_FILE,
+    action: 'modify',
+    tool: 'ollama',
+    model: FIXED_RUNNER_MODEL,
+  };
+}
+
+// S11 run 3 in miniature, within the fixture's eight events: the run-start suite timed out and
+// warned, T901 also changed files it did not plan, the batch suite passed, and T902 is live. Every
+// row above T902 belongs to the closed T901.
+const completedOrphanRowsProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-completed-orphan-rows'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: false,
+  events: [
+    { type: 'workflow_started', ts: FIXED_TS, phase: 'implementing', feature: WORKFLOW_FEATURE },
+    FIXTURE_TASKS_PLANNED,
+    {
+      type: 'warning',
+      ts: FIXED_TS + 80,
+      phase: 'implementing',
+      message:
+        'The test stage of the full suite timed out after 600s at the run-start baseline; this run does not run it again.',
+    },
+    orphanBriefStarted(FIXTURE_PLANNED_BRIEFS[0], FIXED_TS + 100),
+    fixtureBriefPassed(FIXTURE_PLANNED_BRIEFS[0], FIXED_TS + 200),
+    {
+      type: 'task_touched_not_suggested',
+      ts: FIXED_TS + 201,
+      phase: 'implementing',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      files: ['src/shared/format.ts', 'src/shared/format.test.ts'],
+    },
+    {
+      type: 'full_suite',
+      ts: FIXED_TS + 220,
+      phase: 'implementing',
+      status: 'done',
+      stage: 'typecheck',
+      command: 'npm run typecheck',
+      moment: 'boundary',
+      passed: true,
+      duration: 16_003,
+    },
+    orphanBriefStarted(FIXTURE_PLANNED_BRIEFS[1], FIXED_TS + 300),
+  ],
+};
 
 /** Every brief passed once; the review triage appended a fix task, and its build is starting. */
 const reviewFixProjection: WorkflowFixtureProjection = {
@@ -1597,9 +1659,9 @@ const leftIsolationRecoveryIssue: RecoveryIssue = {
   taskTitle: WORKFLOW_FIXTURE_TEXT.implementationTask,
   files: [WORKFLOW_FIXTURE_REVIEW_FILE],
   affectedTaskIds: [WORKFLOW_FIXTURE_TASK_ID],
-  message: `${WORKFLOW_FIXTURE_TASK_ID} left the isolation directory — Google Antigravity CLI searched ~ with run_command: find ~ -name "projections.ts" 2>/dev/null`,
+  message: `${WORKFLOW_FIXTURE_TASK_ID} left the isolation directory · Google Antigravity CLI searched ~ (outside the workspace) with run_command: find ~ -name "projections.ts" 2>/dev/null`,
   details: [
-    'Google Antigravity CLI searched ~ with run_command: find ~ -name "projections.ts" 2>/dev/null',
+    'Google Antigravity CLI searched ~ (outside the workspace) with run_command: find ~ -name "projections.ts" 2>/dev/null',
     "Your checkout gets the run's changes only through Apply.",
   ],
   selectedImplementerProfile: 'default',
@@ -2786,6 +2848,55 @@ const implementationFullSuiteProjection: WorkflowFixtureProjection = {
   ],
 };
 
+// S11 run 3, 19:34: the run-start `npm test` outran the stage timeout, so the run skips it from here
+// on and says which `validation.timeoutMs` to raise.
+const SUITE_TIMEOUT_STARTED_TS = FIXED_TS + 42_000 - 3_601_200;
+const BASELINE_SUITE = { phase: 'implementing', moment: 'baseline' } as const;
+const SUITE_TIMEOUT_WARNING = fullSuiteTimeoutWarning('test', {
+  durationMs: 3_601_200,
+  timeoutMs: 3_600_000,
+});
+
+const implementationSuiteTimeoutProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-implementation-suite-timeout'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  events: [
+    {
+      type: 'workflow_started',
+      ts: SUITE_TIMEOUT_STARTED_TS - 60_000,
+      phase: 'implementing',
+      feature: WORKFLOW_FEATURE,
+    },
+    { ...FIXTURE_TASKS_PLANNED, ts: SUITE_TIMEOUT_STARTED_TS - 50_000 },
+    {
+      type: 'full_suite',
+      ts: SUITE_TIMEOUT_STARTED_TS,
+      ...BASELINE_SUITE,
+      status: 'running',
+      stage: 'test',
+      command: 'npm test',
+    },
+    {
+      type: 'full_suite',
+      ts: SUITE_TIMEOUT_STARTED_TS + 3_601_200,
+      ...BASELINE_SUITE,
+      status: 'done',
+      stage: 'test',
+      command: 'npm test',
+      passed: false,
+      duration: 3_601_200,
+    },
+    {
+      type: 'warning',
+      ts: SUITE_TIMEOUT_STARTED_TS + 3_601_300,
+      phase: 'implementing',
+      message: SUITE_TIMEOUT_WARNING,
+    },
+  ],
+};
+
 const projections = [
   idleProjection,
   planningProjection,
@@ -2820,6 +2931,7 @@ const projections = [
   failureProjection,
   plannerCommandsRefusedProjection,
   touchedNotSuggestedProjection,
+  completedOrphanRowsProjection,
   usageLimitRecoveryProjection,
   retryExhaustedRecoveryProjection,
   consultBoundRecoveryProjection,
@@ -2847,6 +2959,7 @@ const projections = [
   implementationSilentProjection,
   implementationToolRunningProjection,
   implementationFullSuiteProjection,
+  implementationSuiteTimeoutProjection,
   plannerSessionExpiredProjection,
 ] as const;
 
@@ -2934,6 +3047,7 @@ function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
       value !== planCardSharedCommandProjection.review?.planJson &&
       value !== ANSWERED_QUESTIONS_TEXT &&
       !retainedWorkspaceNotices.includes(value) &&
+      value !== SUITE_TIMEOUT_WARNING &&
       !engineHaltText.includes(value) &&
       value.length > WORKFLOW_FIXTURE_BOUNDS.maxStringLength &&
       !projection.question?.questions?.some(

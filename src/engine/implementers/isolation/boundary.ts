@@ -102,6 +102,11 @@ type Zone = Readonly<{ root: string; allows: ReadonlySet<PathAccess> }>;
  */
 export type IsolationBoundary = Readonly<{
   isolationDir: string;
+  /**
+   * The directory whose other entries — another worktree under the same parent — evidence spells
+   * from the isolation directory; null when it holds a home, whose paths `~` spells shorter.
+   */
+  siblingsDir: string | null;
   checkoutDir: string;
   /** What `~` and `$HOME` expand to in the tool's shell. */
   home: string;
@@ -221,8 +226,10 @@ export function createIsolationBoundary(input: {
   zones.sort((a, b) => b.root.length - a.root.length || a.allows.size - b.allows.size);
   const displayHomes = [...new Set([home, homedir()])].sort((a, b) => b.length - a.length);
   const toolStateDirs = displayHomes.flatMap((root) => toolStates.map((dir) => join(root, dir)));
+  const parent = dirname(isolationDir);
   return {
     isolationDir,
+    siblingsDir: isAncestorOfAny(parent, homes) ? null : parent,
     checkoutDir,
     home,
     displayHomes,
@@ -317,23 +324,34 @@ function tildeHomes(boundary: IsolationBoundary, text: string): string {
   );
 }
 
+/**
+ * A path beside the isolation directory, spelled from it and compared canonical
+ * against canonical; any other path as the tool named it, its home spelled `~`.
+ */
+function spellPath(boundary: IsolationBoundary, named: string, canonical: string): string {
+  return boundary.siblingsDir !== null && isWithin(boundary.siblingsDir, canonical)
+    ? relative(boundary.isolationDir, canonical)
+    : tildeHomes(boundary, named);
+}
+
 type Inspection = Readonly<{ breaches: readonly IsolationBreach[]; cwd: string }>;
 
 function inspect(boundary: IsolationBoundary, toolUse: ToolUse, cwd: string): Inspection {
   const scope = { cwd, home: boundary.home, tmpdir: boundary.tmpdir };
   const reading = readToolUse(toolUse, scope);
+  const excerpt = tildeHomes(boundary, excerptOf(toolUse));
   const breaches: IsolationBreach[] = [];
   for (const reference of reading.references) {
     const canonical = crosses(boundary, reference);
     if (canonical === null) continue;
-    // Reported as the tool named it; the note says when a link carried it into the checkout.
+    // The note says when a link carried the path into the checkout.
     breaches.push({
       tool: toolUse.name,
-      path: tildeHomes(boundary, reference.path),
+      path: spellPath(boundary, reference.path, canonical),
       access: reference.access,
       where: breachWhere(boundary, canonical),
       changesPackages: reference.changesPackages === true,
-      excerpt: tildeHomes(boundary, excerptOf(toolUse)),
+      excerpt: excerpt === tildeHomes(boundary, reference.path) ? '' : excerpt,
     });
   }
   return { breaches, cwd: reading.cwd };
@@ -361,7 +379,7 @@ const ACCESS_VERBS: Readonly<Record<PathAccess, string>> = {
 const WHERE_NOTES: Readonly<Record<IsolationBreach['where'], string>> = {
   checkout: ' (your checkout)',
   dependencies: " (your checkout's node_modules)",
-  outside: '',
+  outside: ' (outside the workspace)',
 };
 
 /** The way through a package-manager halt, in the words of the implementer prompt's own rule. */
@@ -369,17 +387,15 @@ const PACKAGE_CHANGE_WAY_THROUGH =
   "a package-manager install, ci, add, remove or update writes to the project's shared node_modules; change the dependencies in the project yourself, then retry";
 
 /**
- * `searched ~ with run_command: find ~ -name x` — the evidence the halt carries,
- * worded to follow the name of the tool that did it.
+ * `searched ~ (outside the workspace) with run_command: find ~ -name x` — the
+ * evidence the halt carries, worded to follow the name of the tool that did it.
  */
 export function formatIsolationBreach(breach: IsolationBreach): string {
   if (breach.changesPackages) {
     return `ran a package-manager command with ${breach.tool}: ${breach.excerpt} — ${PACKAGE_CHANGE_WAY_THROUGH}`;
   }
   const head = `${ACCESS_VERBS[breach.access]} ${breach.path}${WHERE_NOTES[breach.where]} with ${breach.tool}`;
-  return breach.excerpt === '' || breach.excerpt === breach.path
-    ? head
-    : `${head}: ${breach.excerpt}`;
+  return breach.excerpt === '' ? head : `${head}: ${breach.excerpt}`;
 }
 
 /**

@@ -1,6 +1,7 @@
 import { isTaskCompleted, type Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
+import { GATE_ORDER } from '../../../core/pipeline-spec/gates.js';
 import type { WorkflowContext } from '../types.js';
 import { runSingleTask } from './step.js';
 import { commitWorkflowState, raisePendingRecovery, transitionAndSave } from '../state-ops.js';
@@ -30,6 +31,7 @@ import { buildImplementerUnavailableRecoveryIssue } from '../recovery/builders/t
 import { runScheduledReview } from '../run/review.js';
 import { recordCheckRuns } from '../evidence/record-checks.js';
 import { isBatchBoundary, runBatchBoundary } from './batch-boundary.js';
+import { fullSuiteTimeoutWarning } from '../validation/run.js';
 
 type RunTaskLoopOptions = {
   wctx: WorkflowContext;
@@ -158,12 +160,13 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
         fullSuiteBaselineStages: suite.stages,
       });
       setTrackedState(state);
-      for (const [stage, stageRun] of Object.entries(suite.stages)) {
-        if (stageRun.kind !== 'timed-out') continue;
+      for (const stage of GATE_ORDER) {
+        const stageRun = suite.stages[stage];
+        if (stageRun?.kind !== 'timed-out') continue;
         publishWarning({
           bus: wctx.bus,
           phase: state.phase,
-          message: `The ${stage} stage of the full suite timed out after ${Math.round(stageRun.timeoutMs / 1000)}s at the run-start baseline (measured ${(stageRun.durationMs / 1000).toFixed(1)}s); this run does not run it again. Set validation.timeoutMs above the suite's time to check it.`,
+          message: fullSuiteTimeoutWarning(stage, stageRun),
         });
       }
       await recordCheckRuns({

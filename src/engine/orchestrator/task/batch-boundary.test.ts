@@ -637,8 +637,8 @@ describe('runTaskLoop batch boundaries', { timeout: 120_000 }, () => {
     const warnings = events
       .filter((event) => event.type === 'warning')
       .map((event) => (event as { message: string }).message);
-    expect(warnings).toContainEqual(
-      expect.stringMatching(/test stage .*timed out after 600s.*600\.1s.*validation\.timeoutMs/),
+    expect(warnings).toContain(
+      "The test stage of the full suite timed out after 600s at the run-start baseline (measured 600.1s); this run does not run it again. Set validation.timeoutMs (now 600000) above the suite's time to check it.",
     );
   });
 

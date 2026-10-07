@@ -8,7 +8,7 @@ export const CAPTURE_LIMITS = {
   testTailLines: 40,
 } as const;
 
-export const STAGE_TIMEOUT_MS = 600_000;
+export const STAGE_TIMEOUT_MS = 3_600_000;
 
 export const NO_GATES_WARNING = {
   category: 'validation',

@@ -1,4 +1,4 @@
-import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
+import { getTerminalCellWidth, sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { fitKeyLegend } from '../../../core/key-legend.js';
 import type { ActionClass, Phase } from '../../../core/schemas/enums.js';
@@ -110,6 +110,7 @@ export const REVIEW_CONFIRMS_INDENT = 2;
  * The line that keeps what approving confirms in view while the plan scrolls: the card's body can
  * be one row tall, and these operations are what `y` grants beyond the plan itself. Counted, it
  * names how many: the plan lists each one under Protected operations, right under its summary.
+ * Listed, the line breaks after a `, ` only; an operation wider than the line wraps inside itself.
  */
 function reviewConfirmsText(
   confirms: readonly string[],
@@ -117,12 +118,24 @@ function reviewConfirmsText(
   form: 'listed' | 'counted',
 ): string | null {
   if (confirms.length === 0) return null;
-  return wrapPathAwareText(
-    form === 'listed'
-      ? `Approving also confirms: ${confirms.join(', ')}`
-      : `Approving also confirms ${countNoun(confirms.length, 'protected operation')}`,
-    width - REVIEW_CONFIRMS_INDENT,
-  );
+  const lineWidth = Math.max(MIN_TEXT_WIDTH, width - REVIEW_CONFIRMS_INDENT);
+  if (form === 'counted') {
+    return wrapPathAwareText(
+      `Approving also confirms ${countNoun(confirms.length, 'protected operation')}`,
+      lineWidth,
+    );
+  }
+  const lines: string[] = [];
+  confirms.forEach((operation, index) => {
+    const unit = `${index === 0 ? 'Approving also confirms: ' : ''}${operation}${index < confirms.length - 1 ? ',' : ''}`;
+    const last = lines.at(-1);
+    if (last !== undefined && getTerminalCellWidth(`${last} ${unit}`) <= lineWidth) {
+      lines[lines.length - 1] = `${last} ${unit}`;
+    } else {
+      lines.push(...wrapPathAwareText(unit, lineWidth).split('\n'));
+    }
+  });
+  return lines.join('\n');
 }
 
 export const REVIEW_DOCUMENT_HINTS = formatKeyHints([SELECT_HINT, { key: '⏎', verb: 'confirm' }]);

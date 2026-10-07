@@ -1685,7 +1685,7 @@ describe('runFullSuite', () => {
     const validator = createValidator({ runCommand: runner });
     const opts = {
       projectDir: tempDir,
-      config: testOnly,
+      config: makeConfig({ typecheck: false, lint: false, test: true, timeoutMs: 600_000 }),
       bus: fakeBus,
       phase: 'implementing' as const,
       moment: 'baseline' as const,
@@ -1740,13 +1740,39 @@ describe('runFullSuite', () => {
     expect(boundary.newFailures.test).toEqual([expect.stringContaining('timed out after 600s')]);
   });
 
+  it('gives the run-start full suite one hour when validation.timeoutMs is unset', async () => {
+    writeTsProject(tempDir);
+    const runner = makeCommandRunner(timedOut());
+    const validator = createValidator({ runCommand: runner });
+    const opts = {
+      projectDir: tempDir,
+      config: testOnly,
+      bus: fakeBus,
+      phase: 'implementing' as const,
+      moment: 'baseline' as const,
+    };
+
+    const baseline = await validator.runFullSuite(opts);
+    const boundary = await validator.runFullSuite({
+      ...opts,
+      baseline: baseline.failures,
+      baselineStages: baseline.stages,
+    });
+
+    expect(runner.calls.map((call) => call.options?.timeout)).toEqual([3_600_000]);
+    expect(baseline.stages.test).toMatchObject({ kind: 'timed-out', timeoutMs: 3_600_000 });
+    expect(boundary.results[0]?.skippedReason).toBe(
+      'timed out after 3600s at the run-start baseline',
+    );
+  });
+
   it('gives a run-level stage three times its measured baseline, never less than the configured timeout', async () => {
     writeTsProject(tempDir);
     const runner = makeCommandRunner();
     const validator = createValidator({ runCommand: runner });
     const opts = {
       projectDir: tempDir,
-      config: testOnly,
+      config: makeConfig({ typecheck: false, lint: false, test: true, timeoutMs: 600_000 }),
       bus: fakeBus,
       phase: 'implementing' as const,
       moment: 'baseline' as const,

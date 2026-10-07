@@ -37,7 +37,7 @@ import { plannerTextRowBlock } from './planner-text.js';
 import { isTranscriptRowlessEvent } from './visibility.js';
 import { WORKFLOW_CANCEL_REASON_USER } from '../../../../engine/events/workflow-cancel.js';
 import { formatResetAt, stripRecoveryResetClause } from '../../../../core/recovery/reset-clock.js';
-import { stepWord } from '../../closed/byline.js';
+import { stopPoint } from '../../stop/copy.js';
 import { recoveryActionLabel } from '../../../../core/recovery/action-label.js';
 import type { RecoveryFold } from '../transcript-walk.js';
 
@@ -332,13 +332,7 @@ export function eventRowBlock(options: {
         keyPrefix,
         label: 'Stopped',
         // The row states where the run stopped; the byline under the composer says what continues it.
-        // A boundary brief event names the brief to resume, not the one just completed.
-        value:
-          event.step === undefined
-            ? 'mid-turn'
-            : event.at === 'boundary' && event.step.kind === 'brief'
-              ? `before ${event.step.taskId}`
-              : `at ${stepWord(event.step)}`,
+        value: event.step === undefined ? 'mid-turn' : stopPoint(event.step, event.at),
         width: ctx.width,
         severity: 'warning',
       });

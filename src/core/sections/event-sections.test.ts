@@ -5,6 +5,7 @@ import {
   diffEventKey,
 } from './event-sections.js';
 import type { Section } from './event-sections.js';
+import type { Phase } from '../schemas/enums.js';
 import { taskId } from '../schemas/task.js';
 import { makePlannerText } from '#testing/helpers/events/planner.js';
 import { makeTaskStart, makeTaskComplete, makeTaskSkipped } from '#testing/helpers/events/task.js';
@@ -147,7 +148,7 @@ describe('groupEventsIntoSections', () => {
     const at = (type: string, fields: Record<string, unknown> = {}) => ({
       type,
       ts: 1,
-      phase: 'implementing',
+      phase: 'implementing' as const,
       ...fields,
     });
     const start = (id: string, index: number) =>
@@ -203,17 +204,14 @@ describe('groupEventsIntoSections', () => {
       expect(requireSection(sections, 0, 'events').items).toEqual(events);
     });
 
-    it('keeps a run-level error between two tasks loose', () => {
+    it('folds a run-level error between two tasks into the task that closed before it', () => {
       const runError = at('error', { message: 'run-level' });
       const events = [start('T001', 0), complete('T001'), runError, start('T002', 1)];
       const sections = groupEventsIntoSections(events);
 
-      expect(sections.map((section) => section.type)).toEqual([
-        'completed-task',
-        'events',
-        'active-task',
-      ]);
-      expect(requireSection(sections, 1, 'events').items).toEqual([runError]);
+      expect(sections.map((section) => section.type)).toEqual(['completed-task', 'active-task']);
+      expect(requireSection(sections, 0, 'completed-task').items).toEqual(events.slice(0, 3));
+      expect(requireSection(sections, 1, 'active-task').startIndex).toBe(3);
     });
 
     it('keeps attempts apart when another task ran between them', () => {
@@ -251,10 +249,10 @@ describe('groupEventsIntoSections', () => {
 
   it('interleaved: events, task, events, task', () => {
     const events = [
-      makePlannerText({ text: 'Start' }),
+      makePlannerText({ text: 'Start', phase: 'planning' }),
       makeTaskStart({ taskId: taskId('T001'), index: 0 }),
       makeTaskComplete({ taskId: taskId('T001') }),
-      makePlannerText({ text: 'Middle' }),
+      makePlannerText({ text: 'Middle', phase: 'final-review' }),
       makeTaskStart({ taskId: taskId('T002'), index: 1 }),
       makeTaskComplete({ taskId: taskId('T002') }),
     ];
@@ -264,6 +262,118 @@ describe('groupEventsIntoSections', () => {
     requireSection(sections, 1, 'completed-task');
     requireSection(sections, 2, 'events');
     requireSection(sections, 3, 'completed-task');
+  });
+
+  // S11 run 3 (owner screenshot, 2026-10-07 20:10): rows no brief owned stayed above the live brief
+  // for the rest of the run. A build row between briefs belongs to a brief and collapses with it.
+  describe('a build row no brief owns joins a brief', () => {
+    const row = (type: string, phase: Phase, fields: Record<string, unknown> = {}) => ({
+      type,
+      ts: 1,
+      phase,
+      ...fields,
+    });
+    const start = (id: string, index: number) =>
+      makeTaskStart({ taskId: taskId(id), title: id, index });
+    const complete = (id: string) => makeTaskComplete({ taskId: taskId(id) });
+    const suite = (status: 'running' | 'done', moment: string) =>
+      row('full_suite', 'implementing', { status, stage: 'test', command: 'npm test', moment });
+
+    it('joins the boundary rows to the brief that closed before them once the next brief starts', () => {
+      const events = [
+        start('T004', 3),
+        complete('T004'),
+        row('task_touched_not_suggested', 'implementing', { taskId: 'T004', files: ['a.md'] }),
+        row('task_tokens', 'implementing', { taskId: 'T004' }),
+        suite('running', 'boundary'),
+        suite('done', 'boundary'),
+        start('T005', 4),
+      ];
+      const sections = groupEventsIntoSections(events);
+
+      expect(sections.map((section) => section.type)).toEqual(['completed-task', 'active-task']);
+      expect(requireSection(sections, 0, 'completed-task').items).toEqual(events.slice(0, 6));
+      const active = requireSection(sections, 1, 'active-task');
+      expect(active.startIndex).toBe(6);
+      expect(active.items).toEqual([events[6]]);
+    });
+
+    it('joins the run-start rows to the first brief and leaves the planning rows loose', () => {
+      const planning = [
+        row('planner_text', 'planning', { text: 'The plan' }),
+        row('plan_approved', 'reviewing-plan'),
+      ];
+      const runStart = [
+        row('tasks_planned', 'implementing', { tasks: [], total: 1 }),
+        suite('running', 'baseline'),
+        suite('done', 'baseline'),
+        row('warning', 'implementing', { message: 'The test stage of the full suite timed out' }),
+      ];
+      const events = [...planning, ...runStart, start('T001', 0), complete('T001')];
+      const sections = groupEventsIntoSections(events);
+
+      expect(sections.map((section) => section.type)).toEqual(['events', 'completed-task']);
+      expect(requireSection(sections, 0, 'events').items).toEqual(planning);
+      const first = requireSection(sections, 1, 'completed-task');
+      expect(first.startIndex).toBe(2);
+      expect(first.items).toEqual(events.slice(2));
+    });
+
+    it('keeps the run-start rows beside the first brief while it runs', () => {
+      const events = [
+        row('tasks_planned', 'implementing', { tasks: [], total: 1 }),
+        row('warning', 'implementing', { message: 'run start' }),
+        start('T001', 0),
+      ];
+      const sections = groupEventsIntoSections(events);
+
+      expect(sections).toHaveLength(1);
+      const active = requireSection(sections, 0, 'active-task');
+      expect(active.startIndex).toBe(0);
+      expect(active.items).toEqual(events);
+    });
+
+    it('keeps the rows after the last closed brief loose while no next brief has started', () => {
+      const boundary = [suite('running', 'boundary'), suite('done', 'boundary')];
+      const events = [start('T001', 0), complete('T001'), ...boundary];
+      const sections = groupEventsIntoSections(events);
+
+      expect(sections.map((section) => section.type)).toEqual(['completed-task', 'events']);
+      expect(requireSection(sections, 1, 'events').items).toEqual(boundary);
+    });
+
+    it('keeps the final review loose between the last brief and a fix brief', () => {
+      const touched = row('task_touched_not_suggested', 'implementing', {
+        taskId: 'T003',
+        files: ['b.ts'],
+      });
+      const review = [
+        row('warning', 'final-review', { message: 'Review packet written' }),
+        row('planner_text', 'final-review', { text: 'Two blocking findings' }),
+      ];
+      const reentry = [
+        row('review_fix_started', 'implementing', { cycle: 1, taskIds: ['T004'] }),
+        row('tasks_planned', 'implementing', { tasks: [], total: 4 }),
+      ];
+      const events = [
+        start('T003', 2),
+        complete('T003'),
+        touched,
+        ...review,
+        ...reentry,
+        start('T004', 3),
+      ];
+      const sections = groupEventsIntoSections(events);
+
+      expect(sections.map((section) => section.type)).toEqual([
+        'completed-task',
+        'events',
+        'active-task',
+      ]);
+      expect(requireSection(sections, 0, 'completed-task').items).toEqual(events.slice(0, 3));
+      expect(requireSection(sections, 1, 'events').items).toEqual(events.slice(3, 5));
+      expect(requireSection(sections, 2, 'active-task').startIndex).toBe(5);
+    });
   });
 });
 

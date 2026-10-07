@@ -711,9 +711,9 @@ const AT_REST_LEFT_ISOLATION = record({
           taskId: BRIEFS.wire.id,
           files: [BRIEFS.wire.file],
           affectedTaskIds: [BRIEFS.wire.id],
-          message: `${BRIEFS.wire.id} left the isolation directory — Google Antigravity CLI searched ~ with run_command: find ~ -name "form.ts" 2>/dev/null`,
+          message: `${BRIEFS.wire.id} left the isolation directory · Google Antigravity CLI searched ~ (outside the workspace) with run_command: find ~ -name "form.ts" 2>/dev/null`,
           details: [
-            'Google Antigravity CLI searched ~ with run_command: find ~ -name "form.ts" 2>/dev/null',
+            'Google Antigravity CLI searched ~ (outside the workspace) with run_command: find ~ -name "form.ts" 2>/dev/null',
             "Your checkout gets the run's changes only through Apply.",
           ],
           facts: { tool: 'Google Antigravity CLI' },

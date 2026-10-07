@@ -59,6 +59,17 @@ function resolveValidationTimeout(config: Config): number {
   return config.validation.timeoutMs ?? DEFAULT_VALIDATION_TIMEOUT_MS;
 }
 
+function fullSuiteTimeoutReason(timeoutMs: number): string {
+  return `timed out after ${Math.round(timeoutMs / 1000)}s at the run-start baseline`;
+}
+
+export function fullSuiteTimeoutWarning(
+  stage: ValidationStage,
+  run: { durationMs: number; timeoutMs: number },
+): string {
+  return `The ${stage} stage of the full suite ${fullSuiteTimeoutReason(run.timeoutMs)} (measured ${(run.durationMs / 1000).toFixed(1)}s); this run does not run it again. Set validation.timeoutMs (now ${run.timeoutMs}) above the suite's time to check it.`;
+}
+
 interface ValidationProgress {
   stages: ValidationStages;
   activeStage?: ValidationStage | undefined;
@@ -294,12 +305,7 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
       if (!config.validation[stage]) continue;
       const baselineStage = baselineStages?.[stage];
       if (baselineStage?.kind === 'timed-out') {
-        results.push(
-          skippedStage(
-            stage,
-            `timed out after ${Math.round(baselineStage.timeoutMs / 1000)}s at the run-start baseline`,
-          ),
-        );
+        results.push(skippedStage(stage, fullSuiteTimeoutReason(baselineStage.timeoutMs)));
         continue;
       }
       const plan = planStage(stage, FULL_SUITE_TASK, ctx, [], 'full');

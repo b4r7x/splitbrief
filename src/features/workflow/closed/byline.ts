@@ -7,6 +7,7 @@ import { fitKeyLegend } from '../../../core/key-legend.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../../utils/display-text.js';
 import { countNoun } from '../../../utils/pluralize.js';
+import { stepWord, stopPoint } from '../stop/copy.js';
 
 const REVERT = 'revert it with /run reject confirm';
 const ALTERNATIVE = ', or ';
@@ -135,7 +136,7 @@ function openByline(stop: StopReason, resumeAt: StepRef): Byline {
   switch (stop.on.kind) {
     case 'paused':
       return {
-        reason: `Stopped at ${stepWord(resumeAt)}`,
+        reason: `Stopped ${stopPoint(resumeAt, stop.on.at)}`,
         action: 'Type a correction or ⏎ to continue',
       };
     // Only a typed plan's card reopens. An old run parked at a gate of the old chain continues as one
@@ -163,23 +164,7 @@ function openByline(stop: StopReason, resumeAt: StepRef): Byline {
         action: formatResetAt(stop.on.resetAt) ?? '⏎ to continue',
       };
     default:
-      return { reason: `Stopped at ${stepWord(resumeAt)}`, action: '⏎ to continue' };
-  }
-}
-
-/**
- * A step in the words the rest of the screen uses for it: a brief by id, and every planner call or
- * gate as the plan, the one stage the rail shows for them.
- */
-export function stepWord(step: StepRef): string {
-  switch (step.kind) {
-    case 'planner':
-    case 'gate':
-      return 'the plan';
-    case 'brief':
-      return step.taskId;
-    default:
-      return 'the review';
+      return { reason: `Stopped ${stopPoint(resumeAt, undefined)}`, action: '⏎ to continue' };
   }
 }
 

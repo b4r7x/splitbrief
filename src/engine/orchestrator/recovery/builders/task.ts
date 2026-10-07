@@ -40,8 +40,11 @@ import {
   finalReviewCapCause,
   finalReviewFailedCause,
   finalReviewUnverifiedCause,
+  leftIsolationCause,
+  repositoryChangedCause,
   retryExhaustedCause,
 } from '../../../../core/recovery/headline.js';
+import { SOFT_SEP } from '../../../../core/separators.js';
 import { stripRecoveryResetClause } from '../../../../core/recovery/reset-clock.js';
 import { HAND_BACK_PANEL_CHARS } from '../../../../core/pipeline-spec/ladder.js';
 import { uniqueSortedIds, uniqueSorted } from '../../../../utils/collections.js';
@@ -739,7 +742,7 @@ export function buildLeftIsolationRecoveryIssue(opts: RunnerFailureRecoveryOptio
     opts,
     {
       reason: 'implementer-left-isolation',
-      message: `${opts.task.id} left the isolation directory — ${evidence}`,
+      message: `${leftIsolationCause(opts.task.id)}${SOFT_SEP}${evidence}`,
       files: taskFiles(opts.task),
       details: [
         evidence,
@@ -771,7 +774,7 @@ export function buildCheckoutChangedRecoveryIssue(
     opts,
     {
       reason: 'checkout-changed',
-      message: `Repository changed under ${opts.task.id} — ${opts.toolMessage}`,
+      message: repositoryChangedCause(opts.task.id, opts.toolMessage),
       files: [],
       changes: opts.toolMessage,
       details: [

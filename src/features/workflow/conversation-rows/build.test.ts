@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { CREW_SEAT_LABELS } from '../../../core/crew/identity.js';
-import type { Section } from '../../../core/sections/event-sections.js';
+import { groupEventsIntoSections, type Section } from '../../../core/sections/event-sections.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
 import { makePlannerHeartbeat, makePlannerStatus } from '#testing/helpers/events/planner.js';
 import { makeRunnerCallActivity } from '#testing/helpers/events/runner-call.js';
-import { makeTaskTokens } from '#testing/helpers/events/task.js';
+import { makeTaskComplete, makeTaskStart, makeTaskTokens } from '#testing/helpers/events/task.js';
 import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';
 import { ACTIVITY_LABEL_PAD, displayActivityLabel } from '../display/activity-label-display.js';
 import { activityBatchKey } from './activity-batch-key.js';
@@ -797,6 +797,68 @@ describe('buildConversationRows', () => {
   });
 });
 
+// S11 run 3: the run-start warning, `T004 also changed …` and the `Batch suite · …` rows sat above
+// the live brief for the rest of the run. Once the next brief starts they collapse with a brief.
+describe('rows no brief owns collapse with the completed briefs', () => {
+  const runStartWarning: EngineEventOf<'warning'> = {
+    type: 'warning',
+    ts: 2,
+    phase: 'implementing',
+    message: 'The test stage of the full suite timed out after 600s at the run-start baseline',
+  };
+  const boundarySuite: EngineEventOf<'full_suite'> = {
+    type: 'full_suite',
+    ts: 4,
+    phase: 'implementing',
+    status: 'done',
+    stage: 'typecheck',
+    command: 'npm run typecheck',
+    moment: 'boundary',
+    passed: true,
+    duration: 16003,
+  };
+  const touched: EngineEventOf<'task_touched_not_suggested'> = {
+    type: 'task_touched_not_suggested',
+    ts: 3,
+    phase: 'implementing',
+    taskId: taskId('T001'),
+    files: ['skills/splitbrief-run/references/tool-recipes.md'],
+  };
+
+  it('shows none of them once the next brief runs', () => {
+    const events: EngineEvent[] = [
+      {
+        type: 'tasks_planned',
+        ts: 1,
+        phase: 'implementing',
+        tasks: [],
+        total: 2,
+      },
+      runStartWarning,
+      makeTaskStart({ taskId: taskId('T001'), title: 'First brief', index: 0 }),
+      makeTaskComplete({ taskId: taskId('T001') }),
+      touched,
+      boundarySuite,
+      makeTaskStart({ taskId: taskId('T002'), title: 'Second brief', index: 1 }),
+    ];
+
+    const { rows } = buildConversationRows({
+      sections: groupEventsIntoSections(events),
+      expandedDiffs: new Set(),
+      expandedActivityBatches: new Set(),
+      cols: 120,
+      viewportHeight: 30,
+      streaming,
+    });
+    const text = rows.map(rowText).join('\n');
+
+    expect(text).toContain('Second brief');
+    expect(text).not.toContain('timed out');
+    expect(text).not.toContain('tool-recipes.md');
+    expect(text).not.toContain('npm run typecheck');
+  });
+});
+
 describe('wrappedTextBlock', () => {
   it('wraps message rows at width minus their leading so nothing clips at the right edge', () => {
     const width = 20;
@@ -996,7 +1058,7 @@ describe('one recovery reads as one block', () => {
 
     expect(lines).toEqual([
       'Error',
-      'Repository changed under T002 — branch fix/implementer-never-runs-gates',
+      'Repository changed under T002 · branch fix/implementer-never-runs-gates',
       `Recovery  Try again${arrowSep()}T002 back to pending, retried`,
     ]);
   });

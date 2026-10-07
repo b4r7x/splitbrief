@@ -555,7 +555,7 @@ Stop options · Changes and draft stay.
 ```
 
 - **`Stop now`** (also `ctrl+c`, one press — that press also arms the two-second quit confirmation) aborts the in-flight call and any retry, escalation or per-task review call, schedules nothing new, and parks with the partial changes kept.
-- **`Pause after this brief`** lets `T002` finish its checks and per-task review, then parks before `T003`: `Paused after T002 · 2 of 7 briefs complete`. While the pause is pending, the sheet's second row reads `Keep running` — that is how you take it back.
+- **`Pause after this brief`** lets `T002` finish its checks and per-task review, then parks before `T003`: `Stopped before T003 · 2 of 7 briefs complete`, the words the transcript's `Stopped` row and the byline of the run at rest use. While the pause is pending, the sheet's second row reads `Keep running` — that is how you take it back.
 - **`End run`** stops the same way as Stop now and persists the session with status `ended`: the closed run reads `× Ended · Build 1/7 · stopped in T002 · changes saved in run.patch` and its byline `Ended · bring the changes back with git apply on the Patch file`.
 - **`ctrl+q` / `/quit`** stops safely, saves the session, and then exits.
 

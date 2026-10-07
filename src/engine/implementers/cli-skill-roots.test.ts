@@ -134,7 +134,7 @@ describe("createCliImplementer — the run's attached skills", { timeout: 30_000
       phase: 'implementing',
       taskId: 'T001',
       message: expect.stringMatching(
-        /^Task T001 read \S+\/references\/api\.md with bash: cat \S+$/,
+        /^Task T001 read \S+\/references\/api\.md \(outside the workspace\) with bash: cat \S+$/,
       ),
       safety: { category: 'implementer', code: 'isolation_outside_read' },
     });

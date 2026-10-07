@@ -74,7 +74,7 @@ describe('isolation boundary on the 2026-09-23 antigravity trail', () => {
     ).toEqual({
       code: 'implementer-left-isolation',
       message:
-        'wrote to ~/.local/state/splitbrief/trees/5b1e0c7d2a94/shared/src/types.ts with run_command: touch ../shared/src/types.ts',
+        'wrote to ../shared/src/types.ts (outside the workspace) with run_command: touch ../shared/src/types.ts',
     });
   });
 
@@ -83,13 +83,15 @@ describe('isolation boundary on the 2026-09-23 antigravity trail', () => {
       breachOf(boundary, 'run_command', {
         CommandLine: 'find /Users/dev -name "process-invoke.ts" 2>/dev/null',
       }),
-    ).toBe('searched ~ with run_command: find ~ -name "process-invoke.ts" 2>/dev/null');
+    ).toBe(
+      'searched ~ (outside the workspace) with run_command: find ~ -name "process-invoke.ts" 2>/dev/null',
+    );
     expect(
       breachOf(boundary, 'run_command', {
         CommandLine: `grep -rn '"name": "splitbrief"' /Users/dev/Projects/ 2>/dev/null`,
       }),
     ).toBe(
-      `searched ~/Projects with run_command: grep -rn '"name": "splitbrief"' ~/Projects/ 2>/dev/null`,
+      `searched ~/Projects (outside the workspace) with run_command: grep -rn '"name": "splitbrief"' ~/Projects/ 2>/dev/null`,
     );
   });
 
@@ -107,11 +109,13 @@ describe('isolation boundary on the 2026-09-23 antigravity trail', () => {
       tool: 'antigravity',
     });
     expect(breachOf(withLocalBin, 'list_dir', { DirectoryPath: '/' })).toBe(
-      'listed / with list_dir',
+      'listed / (outside the workspace) with list_dir',
     );
     expect(
       breachOf(withLocalBin, 'run_command', { CommandLine: 'cat ~/.local/share/app/token' }),
-    ).toBe('read ~/.local/share/app/token with run_command: cat ~/.local/share/app/token');
+    ).toBe(
+      'read ~/.local/share/app/token (outside the workspace) with run_command: cat ~/.local/share/app/token',
+    );
     expect(breachOf(withLocalBin, 'run_command', { CommandLine: 'ls ~/.local/bin' })).toBeNull();
   });
 
@@ -132,13 +136,13 @@ describe('isolation boundary on the 2026-09-23 antigravity trail', () => {
       }),
     ).toBe('read ~/Projects/splitbrief/src/cli.ts (your checkout) with view_file');
     expect(breachOf(boundary, 'list_dir', { DirectoryPath: '/Users/dev' })).toBe(
-      'listed ~ with list_dir',
+      'listed ~ (outside the workspace) with list_dir',
     );
     expect(breachOf(boundary, 'run_command', { CommandLine: 'cat ~/.ssh/id_ed25519' })).toBe(
-      'read ~/.ssh/id_ed25519 with run_command: cat ~/.ssh/id_ed25519',
+      'read ~/.ssh/id_ed25519 (outside the workspace) with run_command: cat ~/.ssh/id_ed25519',
     );
     expect(breachOf(boundary, 'list_dir', { DirectoryPath: '/Users/devel' })).toBe(
-      'listed /Users/devel with list_dir',
+      'listed /Users/devel (outside the workspace) with list_dir',
     );
   });
 });
@@ -181,7 +185,7 @@ describe("isolation boundary around a tool's own state", () => {
       ).toBeNull();
       expect(
         breachOf(boundary, 'write_to_file', { TargetFile: '~/.gemini/skills/x/SKILL.md' }),
-      ).toBe('wrote to ~/.gemini/skills/x/SKILL.md with write_to_file');
+      ).toBe('wrote to ~/.gemini/skills/x/SKILL.md (outside the workspace) with write_to_file');
     });
   });
 
@@ -247,7 +251,7 @@ describe("isolation boundary around the run's attached skills", () => {
     await withAttachedSkill(({ home, skill, boundaryFor }) => {
       const reference = join(skill, 'references', 'api.md');
       expect(breachOf(boundaryFor(), 'view_file', { AbsolutePath: reference })).toBe(
-        'read ~/.claude/skills/auth/references/api.md with view_file',
+        'read ~/.claude/skills/auth/references/api.md (outside the workspace) with view_file',
       );
 
       const boundary = boundaryFor([skill]);
@@ -256,13 +260,13 @@ describe("isolation boundary around the run's attached skills", () => {
         breachOf(boundary, 'list_dir', { DirectoryPath: join(skill, 'references') }),
       ).toBeNull();
       expect(breachOf(boundary, 'write_to_file', { TargetFile: reference })).toBe(
-        'wrote to ~/.claude/skills/auth/references/api.md with write_to_file',
+        'wrote to ~/.claude/skills/auth/references/api.md (outside the workspace) with write_to_file',
       );
       expect(
         breachOf(boundary, 'view_file', {
           AbsolutePath: join(home, '.claude', 'skills', 'other', 'SKILL.md'),
         }),
-      ).toBe('read ~/.claude/skills/other/SKILL.md with view_file');
+      ).toBe('read ~/.claude/skills/other/SKILL.md (outside the workspace) with view_file');
     });
   });
 
@@ -386,7 +390,8 @@ describe('isolation boundary around a linked node_modules', () => {
         guard({ name: 'Bash', input: { command: 'touch ../../../checkout/src/a.ts' } }),
       ).toEqual({
         code: 'implementer-left-isolation',
-        message: `wrote to ${join(boundary.checkoutDir, 'src', 'a.ts')} (your checkout) with Bash: touch ../../../checkout/src/a.ts`,
+        message:
+          'wrote to ../checkout/src/a.ts (your checkout) with Bash: touch ../../../checkout/src/a.ts',
       });
     });
   });
@@ -397,7 +402,7 @@ describe('isolation boundary around a linked node_modules', () => {
       expect(guard({ name: 'Bash', input: { command: `cd ${dir}` } })).toBeNull();
       expect(guard({ name: 'Bash', input: { command: 'touch checkout/src/a.ts' } })).toEqual({
         code: 'implementer-left-isolation',
-        message: `wrote to ${join(dir, 'checkout', 'src', 'a.ts')} (your checkout) with Bash: touch checkout/src/a.ts`,
+        message: 'wrote to ../checkout/src/a.ts (your checkout) with Bash: touch checkout/src/a.ts',
       });
     });
   });
@@ -420,7 +425,7 @@ describe('isolation boundary around a linked node_modules', () => {
       const file = join(dir, 'checkout', 'src', 'a.ts');
       expect(
         breachOf(boundary, 'Edit', { file_path: file, old_string: 'a', new_string: 'secret' }),
-      ).toBe(`wrote to ${file} (your checkout) with Edit`);
+      ).toBe('wrote to ../checkout/src/a.ts (your checkout) with Edit');
     });
   });
 
@@ -428,7 +433,7 @@ describe('isolation boundary around a linked node_modules', () => {
     await withLinkedWorktree((boundary, dir) => {
       const dependencies = join(dir, 'checkout', 'node_modules');
       expect(breachOf(boundary, 'Bash', { command: 'echo x > node_modules/pkg/index.js' })).toBe(
-        `wrote to ${join(boundary.isolationDir, 'node_modules', 'pkg', 'index.js')} (your checkout's node_modules) with Bash: echo x > node_modules/pkg/index.js`,
+        "wrote to ../checkout/node_modules/pkg/index.js (your checkout's node_modules) with Bash: echo x > node_modules/pkg/index.js",
       );
       expect(
         breachOf(boundary, 'Write', { file_path: join(dependencies, 'pkg', 'x.js') }),
@@ -531,7 +536,7 @@ describe('isolation boundary around a linked node_modules', () => {
     await withLinkedWorktree((boundary, dir) => {
       const file = join(dir, 'checkout', 'src', 'a.ts');
       expect(breachOf(boundary, 'Read', { file_path: file })).toBe(
-        `read ${file} (your checkout) with Read`,
+        'read ../checkout/src/a.ts (your checkout) with Read',
       );
     });
   });
@@ -542,7 +547,7 @@ describe('isolation boundary around a linked node_modules', () => {
       expect(guard({ name: 'Bash', input: { command: 'npm test' } })).toBeNull();
       expect(guard({ name: 'Bash', input: { command: 'touch /home/probe/x' } })).toEqual({
         code: 'implementer-left-isolation',
-        message: 'wrote to ~/x with Bash: touch ~/x',
+        message: 'wrote to ~/x (outside the workspace) with Bash: touch ~/x',
       });
     });
   });
@@ -557,9 +562,9 @@ describe('isolation boundary around a linked node_modules', () => {
       expect(guard({ name: 'Read', input: { file_path: file } })).toBeNull();
       expect(guard({ name: 'Bash', input: { command: 'ls /home/probe' } })).toBeNull();
       expect(reads).toEqual([
-        `searched ${boundary.checkoutDir} (your checkout) with Bash: grep -rn needle ${boundary.checkoutDir}`,
-        `read ${file} (your checkout) with Read`,
-        'listed ~ with Bash: ls ~',
+        `searched ../checkout (your checkout) with Bash: grep -rn needle ${boundary.checkoutDir}`,
+        'read ../checkout/src/a.ts (your checkout) with Read',
+        'listed ~ (outside the workspace) with Bash: ls ~',
       ]);
     });
   });
@@ -570,7 +575,7 @@ describe('isolation boundary around a linked node_modules', () => {
       const { guard, reads } = loggingGuard(boundary);
       expect(guard({ name: 'Write', input: { file_path: file, content: 'x' } })).toEqual({
         code: 'implementer-left-isolation',
-        message: `wrote to ${file} (your checkout) with Write`,
+        message: 'wrote to ../checkout/src/a.ts (your checkout) with Write',
       });
       expect(
         guard({
@@ -634,10 +639,51 @@ describe('isolation boundary in the checkout itself (workflow.isolation: none)',
       });
       expect(guard({ name: 'Bash', input: { command: 'touch /home/probe/x' } })).toEqual({
         code: 'implementer-left-isolation',
-        message: 'wrote to ~/x with Bash: touch ~/x',
+        message: 'wrote to ~/x (outside the workspace) with Bash: touch ~/x',
       });
       expect(guard({ name: 'Bash', input: { command: 'cat /home/probe/x' } })).toBeNull();
-      expect(reads).toEqual(['read ~/x with Bash: cat ~/x']);
+      expect(reads).toEqual(['read ~/x (outside the workspace) with Bash: cat ~/x']);
     });
+  });
+});
+
+// S11 run 3, T003: DeepSeek mistyped the worktree's date and read a sibling of the worktree. The
+// warning read `Task T003 read ~/.local/state/splitbrief/trees/d4e807f3ded0/2026-07-s11-…/src/core/
+// schemas/runner-fields.ts with read`, as if a read of the brief's own file had gone through.
+describe('the warning a read outside the workspace raises', () => {
+  const TREES = '/Users/dev/.local/state/splitbrief/trees/d4e807f3ded0';
+  const boundary = createIsolationBoundary({
+    isolationDir: `${TREES}/2026-10-07-s11-seat-down-seat-switching-declared-fallback-3`,
+    checkoutDir: '/Users/dev/Projects/splitbrief',
+    env: { HOME: '/Users/dev', PATH: ENV_PATH },
+    tool: 'opencode',
+  });
+
+  it('says the path is outside the workspace and spells a sibling of it from the workspace', () => {
+    const { guard, reads } = loggingGuard(boundary);
+    const mistyped = `${TREES}/2026-07-s11-seat-down-seat-switching-declared-fallback-3/src/core/schemas/runner-fields.ts`;
+
+    expect(guard({ name: 'read', input: { filePath: mistyped } })).toBeNull();
+    expect(reads).toEqual([
+      'read ../2026-07-s11-seat-down-seat-switching-declared-fallback-3/src/core/schemas/runner-fields.ts (outside the workspace) with read',
+    ]);
+  });
+
+  it('keeps the home spelling for a path that is not beside the workspace', () => {
+    expect(breachOf(boundary, 'read', { filePath: '/Users/dev/.ssh/config' })).toBe(
+      'read ~/.ssh/config (outside the workspace) with read',
+    );
+  });
+
+  it('keeps the home spelling when the workspace sits directly in a home', () => {
+    const inHome = createIsolationBoundary({
+      isolationDir: '/Users/dev/app',
+      checkoutDir: '/Users/dev/app',
+      env: { HOME: '/Users/dev', PATH: ENV_PATH },
+      tool: 'opencode',
+    });
+    expect(breachOf(inHome, 'read', { filePath: '/Users/dev/.ssh/config' })).toBe(
+      'read ~/.ssh/config (outside the workspace) with read',
+    );
   });
 });
