@@ -52,6 +52,7 @@ export interface CheckpointPredicateContext {
   readonly output: string;
   readonly scenario: ScenarioDefinition;
   readonly checkpoint: CheckpointDefinition;
+  readonly viewport: Viewport;
 }
 
 export type CheckpointPredicate = (context: CheckpointPredicateContext) => boolean;

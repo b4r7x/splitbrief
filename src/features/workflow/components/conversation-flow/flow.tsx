@@ -2,6 +2,7 @@ import { ThemeText as Text, useTheme } from '../../../../components/theme.js';
 import { useEffect } from 'react';
 import { Box } from 'ink';
 import { TaskSummary } from '../../../../components/task-summary.js';
+import { isSettledSection } from '../../../../core/sections/event-sections.js';
 import { getScrollWindowState } from '../../layout/scroll-window.js';
 import { getWorkflowSidebarWidth } from '../../layout/rect.js';
 import { controlsStore } from '../../../../stores/ui/controls.js';
@@ -29,6 +30,7 @@ import { rowLeadingCells } from '../../conversation-rows/row-markers.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
 import { countNoun, pluralize } from '../../../../utils/pluralize.js';
 import { ConversationRowView } from './row-view.js';
+import { stageSummaryRow } from './stage-summary.js';
 import {
   CompletedTaskSummariesWithHover,
   ConversationTranscriptRows,
@@ -49,7 +51,9 @@ interface ConversationFlowProps {
 // sidebar's own headings: a heading whose first character is a letter, above rows whose first
 // character is a symbol, differs in kind rather than in shape, and no glyph tier can collapse that.
 function taskListLabel(view: TaskListView): string {
-  return view.total > 0 ? `Completed ${view.passed}/${view.total}` : 'Completed';
+  return view.total > 0
+    ? `Completed${SOFT_SEP}${view.passed}/${view.total} briefs passed`
+    : 'Completed';
 }
 
 function computeScrollBannerLabel(
@@ -107,9 +111,7 @@ export function ConversationFlow({
   const sections = useSections();
   const viewportHeight = Math.max(0, height);
   const cols = conversationWidth;
-  const completedItems = sections.flatMap((section) =>
-    section.type === 'completed-task' ? [section.summary] : [],
-  );
+  const completedItems = sections.filter(isSettledSection);
   const taskListView = selectTaskListView(tasks);
   // The sidebar is the persistent list and the transcript is the narrative, so the queued block
   // stands down while the sidebar renders rather than printing the same pending titles twice, side
@@ -148,7 +150,10 @@ export function ConversationFlow({
     );
   const transcriptViewportHeight = viewportSplit.transcriptViewportHeight;
   const completedRows = viewportSplit.completedRows;
-  const visibleCompletedItems = completedRows > 0 ? completedItems.slice(-completedRows) : [];
+  const shownCompleted =
+    completedItems.length > completedRows && completedRows > 1 ? completedRows - 1 : completedRows;
+  const hiddenCompleted = completedRows > 1 ? completedItems.length - shownCompleted : 0;
+  const visibleCompletedItems = shownCompleted > 0 ? completedItems.slice(-shownCompleted) : [];
   const {
     newEventCount,
     rows,
@@ -221,7 +226,7 @@ export function ConversationFlow({
       {visibleCompletedItems.length > 0 ? (
         <CompletedTaskSummariesWithHover
           conversationWidth={conversationWidth}
-          summaryCount={visibleCompletedItems.length}
+          summaryCount={completedRows}
         >
           {(focusedSummaryIndex) => (
             <>
@@ -234,24 +239,43 @@ export function ConversationFlow({
               >
                 <Text color={t.textDim}>{taskListLabel(taskListView)}</Text>
               </Box>
-              {visibleCompletedItems.map((item, position) => (
+              {hiddenCompleted > 0 && (
                 <Box
-                  key={`completed-${item.index}`}
+                  height={1}
+                  width={conversationWidth}
+                  overflow="hidden"
+                  flexShrink={0}
+                  marginLeft={rowLeadingCells('message')}
+                >
+                  <Text color={t.textDim}>{`+${hiddenCompleted} earlier`}</Text>
+                </Box>
+              )}
+              {visibleCompletedItems.map((section, position) => (
+                <Box
+                  key={`completed-${section.startIndex}`}
                   height={1}
                   width={conversationWidth}
                   flexShrink={0}
                 >
-                  <TaskSummary
-                    width={conversationWidth}
-                    id={item.id}
-                    title={item.title}
-                    state={{ kind: 'settled', method: item.method }}
-                    retries={item.retries}
-                    duration={item.duration}
-                    file={item.file}
-                    reason={item.reason}
-                    focused={focusedSummaryIndex === position}
-                  />
+                  {section.type === 'completed-task' ? (
+                    <TaskSummary
+                      width={conversationWidth}
+                      id={section.summary.id}
+                      title={section.summary.title}
+                      state={{ kind: 'settled', method: section.summary.method }}
+                      retries={section.summary.retries}
+                      duration={section.summary.duration}
+                      file={section.summary.file}
+                      reason={section.summary.reason}
+                      focused={focusedSummaryIndex === position + (hiddenCompleted > 0 ? 1 : 0)}
+                    />
+                  ) : (
+                    <TaskSummary
+                      {...stageSummaryRow(section.summary)}
+                      width={conversationWidth}
+                      focused={focusedSummaryIndex === position + (hiddenCompleted > 0 ? 1 : 0)}
+                    />
+                  )}
                 </Box>
               ))}
               <Box height={1} width={conversationWidth} flexShrink={0} />

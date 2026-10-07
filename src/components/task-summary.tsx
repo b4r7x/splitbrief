@@ -26,6 +26,7 @@ const LEADING_CELLS = getTerminalCellWidth(leadingWith(glyph('check')));
 // Two spaces divide the title from the detail run, `·` divides the run's own parts — the same two
 // levels a running task header uses, so a settled row and a live row read the same way.
 const TITLE_SEP = '  ';
+const FAILED_SUFFIX = ' failed';
 
 interface FittedDetailRun {
   head: string;
@@ -54,14 +55,15 @@ export function fitDetailRun(head: string, tail: string[], width: number): Fitte
 }
 
 /**
- * What a brief row is reporting. `settled` is a brief that reached a verdict, `halted` is the one
- * the run stopped inside, and `pending` is a brief that never started — one marker column for all
- * three, so a ledger reads down its left edge.
+ * What a ledger row is reporting. `settled` is a brief that reached a verdict, `halted` is the one
+ * the run stopped inside, `pending` is a brief that never started, and `stage` is a settled run
+ * stage listed between briefs. All four share one marker column.
  */
 export type TaskSummaryState =
   | Readonly<{ kind: 'settled'; method: TaskCompletionMethod }>
   | Readonly<{ kind: 'halted'; tone: 'cancelled' | 'failed'; word: string }>
-  | Readonly<{ kind: 'pending' }>;
+  | Readonly<{ kind: 'pending' }>
+  | Readonly<{ kind: 'stage'; failed: boolean; detail: readonly string[] }>;
 
 interface TaskSummaryProps {
   id: string;
@@ -95,6 +97,11 @@ function settledMarker(method: TaskCompletionMethod, t: Theme): MarkerSpec {
 
 function markerSpec(state: TaskSummaryState, t: Theme): MarkerSpec {
   if (state.kind === 'pending') return { name: 'statusPending', color: t.textDim };
+  if (state.kind === 'stage') {
+    return state.failed
+      ? { name: 'statusFailed', color: t.error }
+      : { name: 'check', color: t.success };
+  }
   if (state.kind === 'halted') {
     return state.tone === 'failed'
       ? { name: 'statusFailed', color: t.error }
@@ -120,7 +127,7 @@ export function TaskSummary({
   const safeFile = file === undefined ? undefined : sanitizeTerminalDisplayText(file);
   const safeReason = reason === undefined ? undefined : sanitizeTerminalDisplayText(reason);
   const safeNote = note === undefined ? undefined : sanitizeTerminalDisplayText(note);
-  const head = `${id} ${safeTitle}`;
+  const head = safeTitle === '' ? id : `${id} ${safeTitle}`;
   const marker = markerSpec(state, t);
   // One leading for every row kind — the transcript's padding then the marker slot — so a settled
   // brief and a pending one line their marks up in the same column, and that column is the one the
@@ -143,24 +150,15 @@ export function TaskSummary({
       <Text color={marker.color}>{leading}</Text>
     );
 
-  if (state.kind === 'settled' && state.method === 'failed') {
-    return (
-      <Box>
-        <Text wrap="truncate-end">
-          {markerSlot}
-          <Text color={t.textDim}>{head}</Text>
-          <Text color={t.dimError}>{' failed'}</Text>
-        </Text>
-      </Box>
-    );
-  }
-
+  const failed =
+    (state.kind === 'settled' && state.method === 'failed') ||
+    (state.kind === 'stage' && state.failed);
   const quiet =
-    state.kind === 'pending' || (state.kind === 'settled' && state.method === 'skipped');
+    failed || state.kind === 'pending' || (state.kind === 'settled' && state.method === 'skipped');
   const fitted = fitDetailRun(
     head,
     detailRun({ state, safeFile, safeReason, safeNote, retries, duration, t }),
-    width,
+    width - (failed ? FAILED_SUFFIX.length : 0),
   );
 
   return (
@@ -168,6 +166,7 @@ export function TaskSummary({
       <Text wrap="truncate-end">
         {markerSlot}
         <Text color={quiet ? t.textDim : t.text}>{fitted.head}</Text>
+        {failed && <Text color={t.dimError}>{FAILED_SUFFIX}</Text>}
         {fitted.tail.length > 0 && (
           <Text color={t.textDim}>
             {TITLE_SEP}
@@ -190,9 +189,11 @@ function detailRun(input: {
 }): string[] {
   const { state, safeFile, safeReason, safeNote, retries, duration } = input;
   if (state.kind === 'pending') return [];
+  if (state.kind === 'stage') return state.detail.map((part) => sanitizeTerminalDisplayText(part));
   if (state.kind === 'halted') {
     return [safeFile, state.word, safeNote].filter(isPresent);
   }
+  if (state.method === 'failed') return [];
   if (state.method === 'skipped') return ['skipped', safeReason].filter(isPresent);
   const meta = [getMethodDisplay(state.method, input.t).text];
   if (retries !== undefined && retries > 0) meta.push(countNoun(retries, 'retry', 'retries'));

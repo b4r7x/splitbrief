@@ -1,6 +1,9 @@
-import type { Section } from '../../../core/sections/event-sections.js';
+import {
+  diffEventKey,
+  isSettledSection,
+  type Section,
+} from '../../../core/sections/event-sections.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
-import { diffEventKey } from '../../../core/sections/event-sections.js';
 import type {
   ConversationRowInputs,
   ConversationRowsResult,
@@ -156,7 +159,7 @@ function markdownProjectionCacheKeys(
 ): string[] {
   const keys: string[] = [];
   for (const section of sections) {
-    if (section.type === 'completed-task') continue;
+    if (isSettledSection(section)) continue;
     for (const [index, event] of section.items.entries()) {
       if (event.type !== 'planner_text' || !isPlannerTextRenderedAsMarkdown(event)) continue;
       keys.push(

@@ -17,6 +17,52 @@ afterEach(() => {
 });
 
 describe('TaskSummary', () => {
+  it('paints a settled stage mark, head and sanitized detail run', () => {
+    for (const failed of [false, true]) {
+      const ui = renderFeature(
+        <TaskSummary
+          width={80}
+          id="Review 1"
+          title={failed ? '' : 'passed'}
+          state={{
+            kind: 'stage',
+            failed,
+            detail: ['fixes \u001b[31mT006\u001b[0m', '8.0s'],
+          }}
+        />,
+      );
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+      expect(frame).toContain(
+        `${glyph(failed ? 'statusFailed' : 'check')} Review 1 ${failed ? 'failed' : 'passed'}`,
+      );
+      expect(frame).toContain('fixes T006 · 8.0s');
+      expect(frame).not.toContain('\u001b');
+
+      ui.unmount();
+    }
+  });
+
+  it('paints a failed review head and suffix with the failed brief treatment', () => {
+    chalk.level = 3;
+    for (const state of [
+      { kind: 'settled', method: 'failed' },
+      { kind: 'stage', failed: true, detail: ['fixes T904', '8.0s'] },
+    ] as const) {
+      const ui = renderFeature(<TaskSummary width={80} id="Review 1" title="" state={state} />);
+      const frame = ui.lastFrame() ?? '';
+
+      const [headColor] = paint(defaultTheme.textDim, '\0').split('\0');
+      const [failedColor] = paint(defaultTheme.dimError, '\0').split('\0');
+      expect(frame).toContain(`${headColor}Review 1${failedColor} failed`);
+      expect(stripAnsiStyles(frame)).toContain('Review 1 failed');
+      expect(stripAnsiStyles(frame).match(/failed/gu)).toHaveLength(1);
+      if (state.kind === 'stage') expect(stripAnsiStyles(frame)).toContain('fixes T904 · 8.0s');
+
+      ui.unmount();
+    }
+  });
+
   it('sanitizes completed task title and file text', () => {
     const ui = renderFeature(
       <TaskSummary

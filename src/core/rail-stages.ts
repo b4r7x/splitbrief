@@ -63,6 +63,10 @@ export function getRailActiveIndex(phase: Phase): number {
   }
 }
 
+export function phaseStage(phase: Phase): (typeof RAIL_STAGES)[number] | null {
+  return RAIL_STAGES[getRailActiveIndex(phase)] ?? null;
+}
+
 export function getRailStages(
   phase: Phase,
   options: { cancelled?: boolean; halted?: RailHalt; apply?: RailStageStatus } = {},

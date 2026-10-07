@@ -24,7 +24,7 @@ export async function waitForCheckpoint(options: WaitForCheckpointOptions): Prom
   while (true) {
     await flushEffects();
     const output = lastFrame() ?? '';
-    if (predicate({ output, scenario, checkpoint })) return output;
+    if (predicate({ output, scenario, checkpoint, viewport })) return output;
     if (performance.now() - startedAt >= timeoutMs) {
       throw new Error(
         `Checkpoint ${checkpoint.id} was not reached for scenario ${scenario.id} at ${formatViewport(viewport)} within ${timeoutMs}ms`,

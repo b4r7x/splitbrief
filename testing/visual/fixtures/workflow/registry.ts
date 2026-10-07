@@ -91,6 +91,7 @@ const checkpointPredicates = [
   // One planning session: the answered round stays in the transcript, the byline carries the call.
   [checkpointId('planning'), includesAll('Keep the public API?', 'Planning…')],
   [checkpointId('plan-compiled'), includesAll('plan.md', 'tasks.md')],
+  [checkpointId('first-brief-after-plan'), includesAll('Plan', 'T001', '0/3 briefs passed')],
   // The build-progress block is the fact the implementation checkpoint must carry at every width;
   // the task header scrolls out of a 60x18 transcript, so pinning it would pin the viewport too.
   [
@@ -105,6 +106,22 @@ const checkpointPredicates = [
   [checkpointId('implementation-after-retry'), includesAll()],
   [checkpointId('recovery-resolved-retry'), includesAll()],
   [checkpointId('review-fix'), includesAll()],
+  // The newest settled brief and live cycle appear at every width. At 80 columns and wider,
+  // the ledger also names the failed review and its fix brief; earlier stage rows stay collapsed.
+  [
+    checkpointId('review-fix-cycles'),
+    (context) => {
+      const text = stripAnsiStyles(context.output);
+      return (
+        includesAll('T904', 'npm test · running')(context) &&
+        (context.viewport.cols < 80 || includesAll('Review 1 failed', 'fixes T904')(context)) &&
+        !text.includes('does not take') &&
+        !text.includes('Tasks  ') &&
+        !/T90[1-3] {2}/u.test(text) &&
+        !text.includes('npm test · failed')
+      );
+    },
+  ],
   [checkpointId('complete-after-fix-tasks'), includesAll('4/4 briefs passed')],
   [checkpointId('review-fix-no-change'), includesAll('no change needed')],
   [checkpointId('final-review'), includesAll('3/3 briefs passed')],

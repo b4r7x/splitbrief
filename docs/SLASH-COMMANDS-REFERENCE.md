@@ -229,7 +229,7 @@ Commands that change what the workflow screen shows without touching the run. `c
 - **Screens**: `workflow`.
 - **Args**: none.
 - **Example**: `/tasks`
-- **Behavior**: Names a destination rather than a switch: it shows the sidebar and a second call leaves it on screen (the sidebar primitive is a toggle, so a toggle that hid it is undone), then reports `"Brief list shown"`. At or below 120 columns there is no sidebar to open, so the command answers with the list itself — `"Briefs: T001 passed, T002 running, T003 queued"`, or `"No briefs planned yet"` before the plan lands — and the transcript keeps its standing `Completed n/total` and `Pending n` blocks.
+- **Behavior**: Names a destination rather than a switch: it shows the sidebar and a second call leaves it on screen (the sidebar primitive is a toggle, so a toggle that hid it is undone), then reports `"Brief list shown"`. At or below 120 columns there is no sidebar to open, so the command answers with the list itself — `"Briefs: T001 passed, T002 running, T003 queued"`, or `"No briefs planned yet"` before the plan lands — and the transcript keeps its standing `Completed · n/total briefs passed` and `Pending n` blocks.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/view.ts`; toggles `controlsStore.sidebarVisible` through the command context, and reads the briefs from `tasksStore` through the context's `listBriefs` port.
 - **See also**: `/sidebar`, `/scroll`.
 

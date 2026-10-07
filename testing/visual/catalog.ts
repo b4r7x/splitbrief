@@ -325,6 +325,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-first-brief-after-plan',
+      title: 'Workflow · first brief running after a real plan',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'first-brief-after-plan',
+        title: 'The settled Plan and first running brief with no passed briefs',
+        kind: 'implementation',
+        marker: '0/3 briefs passed',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Plan ledger and running brief' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-implementation',
       title: 'Workflow · implementation activity',
       surface: screenSurface('workflow'),
@@ -404,6 +420,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Implementation transcript' },
         { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-review-fix-cycles',
+      title: 'Workflow · settled review cycles and their fix briefs',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-fix-cycles',
+        title: 'Settled ledger above the live review',
+        kind: 'implementation',
+        marker: '4/4 briefs passed',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Review cycle transcript' },
+        { id: 'composer', title: 'Workflow composer' },
       ],
     }),
     defineScenario({
@@ -1331,7 +1363,8 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'seat-switched',
         title: 'Seat switch row in the transcript',
         kind: 'implementation',
-        marker: 'BUILD →',
+        // The cause words wrap at 60 columns; the switch arrow and the new seat stay on one line.
+        marker: 'BUILD → OpenCode CLI',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

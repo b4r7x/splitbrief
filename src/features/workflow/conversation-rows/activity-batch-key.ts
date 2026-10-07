@@ -1,4 +1,4 @@
-import type { Section } from '../../../core/sections/event-sections.js';
+import { isSettledSection, type Section } from '../../../core/sections/event-sections.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import {
   COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT,
@@ -32,7 +32,7 @@ export function findLatestExpandableActivityBatchKey(
   };
 
   for (const section of sections) {
-    if (section.type === 'completed-task') {
+    if (isSettledSection(section)) {
       flushBatch();
       continue;
     }

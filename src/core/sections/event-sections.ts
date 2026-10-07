@@ -1,4 +1,4 @@
-import { isImplementerPhase } from '../phases.js';
+import { phaseStage } from '../rail-stages.js';
 import type { Phase, TaskCompletionMethod } from '../schemas/enums.js';
 
 export interface SectionableEvent {
@@ -10,7 +10,6 @@ export interface SectionableEvent {
 type TaskStartedEvent = {
   type: 'task_started';
   taskId: string;
-  index: number;
   title: string;
   file: string;
 };
@@ -26,6 +25,16 @@ type TaskFullFailEvent = { type: 'task_full_fail'; taskId: string };
 type TaskResetEvent = { type: 'task_reset'; taskId: string };
 type DiffEvent = { type: 'implementer_generate_done'; diff?: string | undefined };
 type TaskEndEvent = TaskCompletedEvent | TaskSkippedEvent | TaskFullFailEvent;
+type WorkflowStartedEvent = { type: 'workflow_started'; feature: string };
+type FullSuiteEvent = {
+  type: 'full_suite';
+  status: 'running' | 'done' | 'not-run';
+  command: string;
+  moment: 'pre-review' | 'base';
+  passed?: boolean;
+};
+type ChecksRunEvent = { type: 'checks_run'; results: { passed: boolean }[] };
+type ReviewFixStartedEvent = { type: 'review_fix_started'; taskIds: string[] };
 
 interface TaskRange<TEvent extends SectionableEvent> {
   taskId: string;
@@ -62,6 +71,30 @@ function isDiffEvent<TEvent extends SectionableEvent>(event: TEvent): event is T
   return event.type === 'implementer_generate_done';
 }
 
+function isWorkflowStartedEvent<TEvent extends SectionableEvent>(
+  event: TEvent,
+): event is TEvent & WorkflowStartedEvent {
+  return event.type === 'workflow_started';
+}
+
+function isFullSuiteEvent<TEvent extends SectionableEvent>(
+  event: TEvent,
+): event is TEvent & FullSuiteEvent {
+  return event.type === 'full_suite';
+}
+
+function isChecksRunEvent<TEvent extends SectionableEvent>(
+  event: TEvent,
+): event is TEvent & ChecksRunEvent {
+  return event.type === 'checks_run';
+}
+
+function isReviewFixStartedEvent<TEvent extends SectionableEvent>(
+  event: TEvent,
+): event is TEvent & ReviewFixStartedEvent {
+  return event.type === 'review_fix_started';
+}
+
 // The diff's stable identity is its global render index, not its timestamp: publishers stamp events
 // with `Date.now()`, so two diffs produced in the same millisecond would collide on a type+ts key and
 // expand/collapse together. The global index is unique per rendered event and survives appends.
@@ -74,7 +107,7 @@ export function findLatestRenderableDiffKey<TEvent extends SectionableEvent>(
 ): string | null {
   for (let sectionIndex = sections.length - 1; sectionIndex >= 0; sectionIndex--) {
     const section = sections[sectionIndex];
-    if (!section || section.type === 'completed-task') continue;
+    if (!section || isSettledSection(section)) continue;
     for (let index = section.items.length - 1; index >= 0; index--) {
       const event = section.items[index];
       if (!event) continue;
@@ -86,14 +119,25 @@ export function findLatestRenderableDiffKey<TEvent extends SectionableEvent>(
   return null;
 }
 
+export type StageSummary =
+  | { stage: 'plan'; feature: string; duration: number }
+  | {
+      stage: 'review';
+      ordinal: number;
+      failedCommands: string[];
+      failedChecks: number;
+      fixes: string[];
+      duration: number;
+    };
+
 export type Section<TEvent extends SectionableEvent = SectionableEvent> =
   | { type: 'events'; items: TEvent[]; startIndex: number }
+  | { type: 'settled-stage'; items: TEvent[]; startIndex: number; summary: StageSummary }
   | {
       type: 'completed-task';
       items: TEvent[];
       startIndex: number;
       summary: {
-        index: number;
         /** The brief's own id, which every other surface names it by. */
         id: string;
         title: string;
@@ -105,6 +149,12 @@ export type Section<TEvent extends SectionableEvent = SectionableEvent> =
       };
     }
   | { type: 'active-task'; items: TEvent[]; startIndex: number };
+
+export function isSettledSection<TEvent extends SectionableEvent>(
+  section: Section<TEvent>,
+): section is Extract<Section<TEvent>, { type: 'completed-task' | 'settled-stage' }> {
+  return section.type === 'completed-task' || section.type === 'settled-stage';
+}
 
 export function groupEventsIntoSections<TEvent extends SectionableEvent>(
   events: TEvent[],
@@ -153,14 +203,18 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
 
   const sections: Section<TEvent>[] = [];
   let cursor = 0;
+  let reviewStages = 0;
 
   for (const range of taskRanges) {
     if (cursor < range.startIdx) {
-      sections.push({
-        type: 'events',
-        items: events.slice(cursor, range.startIdx),
-        startIndex: cursor,
-      });
+      const items = events.slice(cursor, range.startIdx);
+      const summary = settledStageSummary(items, reviewStages + 1);
+      if (summary === null) {
+        sections.push({ type: 'events', items, startIndex: cursor });
+      } else {
+        sections.push({ type: 'settled-stage', items, startIndex: cursor, summary });
+        if (summary.stage === 'review') reviewStages++;
+      }
     }
 
     if (range.abandoned && range.endIdx >= range.startIdx) {
@@ -178,7 +232,6 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
           items: events.slice(range.startIdx, range.endIdx + 1),
           startIndex: range.startIdx,
           summary: {
-            index: range.startEvent.index + 1,
             id: range.taskId,
             title: range.startEvent.title,
             method: endEvent.method,
@@ -193,7 +246,6 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
           items: events.slice(range.startIdx, range.endIdx + 1),
           startIndex: range.startIdx,
           summary: {
-            index: range.startEvent.index + 1,
             id: range.taskId,
             title: range.startEvent.title,
             method: 'skipped',
@@ -208,7 +260,6 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
           items: events.slice(range.startIdx, range.endIdx + 1),
           startIndex: range.startIdx,
           summary: {
-            index: range.startEvent.index + 1,
             id: range.taskId,
             title: range.startEvent.title,
             method: 'failed',
@@ -237,8 +288,53 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
   return sections;
 }
 
-function isBuildRow(event: SectionableEvent | undefined): boolean {
-  return event?.phase !== undefined && isImplementerPhase(event.phase);
+function isBuildRow(event: SectionableEvent | undefined, hasReviewStage: boolean): boolean {
+  return (
+    event?.phase !== undefined &&
+    phaseStage(event.phase) === 'build' &&
+    !(hasReviewStage && event.type === 'review_fix_started')
+  );
+}
+
+function settledStageSummary<TEvent extends SectionableEvent>(
+  items: TEvent[],
+  ordinal: number,
+): StageSummary | null {
+  const stages = items.map((event) => (event.phase === undefined ? null : phaseStage(event.phase)));
+  const stage = stages.includes('review') ? 'review' : stages.includes('plan') ? 'plan' : null;
+  if (stage === null) return null;
+
+  let firstTs: number | undefined;
+  let lastTs: number | undefined;
+  for (const event of items) {
+    if (event.ts === undefined) continue;
+    firstTs ??= event.ts;
+    lastTs = event.ts;
+  }
+  const duration = firstTs === undefined || lastTs === undefined ? 0 : lastTs - firstTs;
+  if (stage === 'plan') {
+    return { stage, feature: items.find(isWorkflowStartedEvent)?.feature ?? '', duration };
+  }
+
+  const failedCommands = new Set<string>();
+  let failedChecks = 0;
+  let fixes: string[] = [];
+  for (const event of items) {
+    // A red base re-run marks the failure pre-existing; it is not a failed command of this review.
+    if (
+      isFullSuiteEvent(event) &&
+      event.moment === 'pre-review' &&
+      event.status === 'done' &&
+      event.passed === false
+    ) {
+      failedCommands.add(event.command);
+    }
+    if (isChecksRunEvent(event)) {
+      failedChecks += event.results.filter((result) => result.passed === false).length;
+    }
+    if (isReviewFixStartedEvent(event)) fixes = event.taskIds;
+  }
+  return { stage, ordinal, failedCommands: [...failedCommands], failedChecks, fixes, duration };
 }
 
 // A build row between two briefs joins the brief that closed before it; the build rows left before a
@@ -252,11 +348,22 @@ function joinBuildRowsToBriefs<TEvent extends SectionableEvent>(
     const previous = taskRanges[r - 1];
     if (!range || (previous && previous.endIdx < 0)) return;
     let gapStart = previous ? previous.endIdx + 1 : 0;
+    const hasReviewStage = events
+      .slice(gapStart, range.startIdx)
+      .some((event) => event.phase !== undefined && phaseStage(event.phase) === 'review');
     if (previous?.endEvent) {
-      while (gapStart < range.startIdx && isBuildRow(events[gapStart])) gapStart++;
+      while (
+        gapStart < range.startIdx &&
+        events[gapStart]?.type !== 'review_fix_started' &&
+        isBuildRow(events[gapStart], hasReviewStage)
+      ) {
+        gapStart++;
+      }
       previous.endIdx = gapStart - 1;
     }
-    while (range.startIdx > gapStart && isBuildRow(events[range.startIdx - 1])) range.startIdx--;
+    while (range.startIdx > gapStart && isBuildRow(events[range.startIdx - 1], hasReviewStage)) {
+      range.startIdx--;
+    }
   }
 }
 

@@ -8,7 +8,6 @@ function completedSection(index: number): Extract<Section, { type: 'completed-ta
     items: [],
     startIndex: index,
     summary: {
-      index,
       id: `T${String(index).padStart(3, '0')}`,
       title: `done-${index}`,
       method: 'local',
@@ -36,5 +35,19 @@ describe('getCompletedTaskSummaryRows', () => {
 
     expect(getCompletedTaskSummaryRows(sections, 2)).toBe(1);
     expect(getCompletedTaskSummaryRows(sections, 1)).toBe(0);
+  });
+
+  it('gives a settled stage a ledger row of its own, never a live one', () => {
+    const sections: Section[] = [
+      {
+        type: 'settled-stage',
+        startIndex: 0,
+        items: [{ type: 'planner_text' }],
+        summary: { stage: 'plan', feature: 'Fix the red tests', duration: 1 },
+      },
+      completedSection(1),
+    ];
+
+    expect(getCompletedTaskSummaryRows(sections, 10)).toBe(2);
   });
 });

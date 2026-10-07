@@ -23,6 +23,8 @@ import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import { configStore } from '../../../../stores/project/config.js';
 import * as projectionCache from '../../conversation-rows/projection-cache.js';
 import { resetMarkdownConversationRowsCache } from '../../conversation-rows/markdown-rows.js';
+import { workflowFixtureProjections } from '#testing/visual/fixtures/workflow/projections.js';
+import { scenarioId } from '#testing/visual/contracts/identifiers.js';
 
 const QUEUED_MARK = glyph('statusPending');
 const LIVE_MARK = glyph('statusInProgress');
@@ -513,6 +515,110 @@ describe('ConversationFlow', () => {
     expect(frame).toContain(COMPLETED_HEADER);
     expect(frame).toContain('Finished task');
     expect(frame.match(new RegExp(COMPLETED_HEADER, 'g')) ?? []).toHaveLength(1);
+
+    ui.unmount();
+  });
+
+  it('states the brief count above a settled Plan while the first brief runs', () => {
+    const projection = workflowFixtureProjections.get(
+      scenarioId('workflow-first-brief-after-plan'),
+    );
+    if (projection === undefined) throw new Error('Missing first brief after plan fixture');
+    for (const event of projection.events) addEvent(event);
+
+    const ui = renderConversation([...projection.events], 30, 90);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('Completed · 0/3 briefs passed');
+    expect(frame).toContain(`${glyph('check')} Plan ${projection.feature}`);
+    expect(frame).toContain('T001');
+    expect(tasksStore.get().tasks.find((task) => task.id === 'T001')?.status).toBe('in_progress');
+    expect(frame).not.toContain('+0 earlier');
+
+    ui.unmount();
+  });
+
+  // sb-RED (owner screenshot, 2026-10-08): under `Completed · 9/9 briefs passed` the Tasks card, its
+  // validation warning and the earlier pre-review cycles painted below the newest briefs.
+  it('counts hidden settled sections and lists the newest entries above the live review', async () => {
+    const suite = (
+      ts: number,
+      stage: 'typecheck' | 'test',
+      passed?: boolean,
+    ): Extract<EngineEvent, { type: 'full_suite' }> => ({
+      type: 'full_suite',
+      ts,
+      phase: 'final-review',
+      status: passed === undefined ? 'running' : 'done',
+      stage,
+      command: stage === 'test' ? 'npm test' : 'npm run typecheck',
+      moment: 'pre-review',
+      ...(passed !== undefined && { passed, duration: 1_000 }),
+    });
+    const events: EngineEvent[] = [
+      { type: 'workflow_started', ts: 1_000, phase: 'planning', feature: 'Fix the red tests' },
+      { type: 'user_message', ts: 1_000, phase: 'planning', text: 'Fix the red tests' },
+      {
+        type: 'artifact_written',
+        ts: 5_000,
+        phase: 'planning',
+        filename: 'tasks.md',
+        path: '.splitbrief/sessions/run/tasks.md',
+        lineCount: 12,
+        excerpt: ['T001  First brief of the first plan'],
+        omittedCount: 0,
+        omittedUnit: 'task',
+      },
+      {
+        type: 'warning',
+        ts: 5_000,
+        phase: 'planning',
+        message: 'The test stage does not take the file pattern from the planner.',
+      },
+      { type: 'plan_approved', ts: 9_000, phase: 'reviewing-plan' },
+      makeTaskStart({ ts: 10_000, taskId: taskId('T001'), index: 0, title: 'First brief' }),
+      makeTaskComplete({ ts: 11_000, taskId: taskId('T001'), duration: 1_000 }),
+      suite(20_000, 'typecheck', true),
+      suite(30_000, 'test', false),
+      {
+        type: 'review_fix_started',
+        ts: 40_000,
+        phase: 'implementing',
+        cycle: 1,
+        taskIds: [taskId('T002')],
+      },
+      makeTaskStart({ ts: 41_000, taskId: taskId('T002'), index: 1, title: 'Fix brief' }),
+      makeTaskComplete({ ts: 42_000, taskId: taskId('T002'), duration: 1_000 }),
+      suite(50_000, 'typecheck', true),
+      suite(51_000, 'test'),
+    ];
+
+    const ui = renderConversation(events, 30, 100);
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    const lineOf = (text: string) => lines.findIndex((line) => line.includes(text));
+
+    expect(lineOf('+2 earlier')).toBeGreaterThan(-1);
+    expect(lineOf('Review 1 failed')).toBeGreaterThan(lineOf('+2 earlier'));
+    expect(lines[lineOf('Review 1 failed')]).toContain('npm test · fixes T002');
+    expect(lineOf('T002 Fix brief')).toBeGreaterThan(lineOf('Review 1 failed'));
+    expect(lineOf('npm test · running')).toBeGreaterThan(lineOf('T002 Fix brief'));
+    expect(lineOf('First brief of the first plan')).toBe(-1);
+    expect(lineOf('does not take the file pattern')).toBe(-1);
+    expect(lineOf('npm test · failed')).toBe(-1);
+    expect(lineOf('T001 First brief')).toBe(-1);
+    expect(lineOf('Plan Fix the red tests')).toBe(-1);
+    expect(lineOf('T002 Fix brief') - lineOf(COMPLETED_HEADER)).toBe(3);
+    expect(frameRowCount(ui.lastFrame() ?? '')).toBeLessThanOrEqual(30);
+
+    hoverStore.set(1);
+    await tick(20);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain(FOCUS_MARK);
+    hoverStore.set(2);
+    await tick(20);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(
+      `${FOCUS_MARK}${glyph('statusFailed')} Review 1 failed`,
+    );
+    hoverStore.clear();
 
     ui.unmount();
   });

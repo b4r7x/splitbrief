@@ -52,7 +52,7 @@ segments, and each is one line, so the row count the scroll model charges is exa
 zero renderable units — it is not an event the run emitted, so it never counts toward the
 `N new events` banner.
 
-Completed task summaries are pinned above the dynamic conversation window. `src/core/sections/completed-task-summary-rows.ts` returns how many completed summaries fit in the current viewport; the dynamic scroll viewport subtracts those rows before building scroll state. A build-phase row no brief owns belongs to a brief section (`groupEventsIntoSections`): a row between two briefs joins the brief that closed before it once the next brief starts, and a run-start row joins the first brief, so it collapses with that brief's summary. Planning and final-review rows, and the rows after the last closed brief, stay in the dynamic window.
+The pinned block is the ledger of settled sections in event order: briefs and the settled Plan and Review N stages, grouped by `groupEventsIntoSections`. `src/core/sections/completed-task-summary-rows.ts` returns how many ledger entries fit in the current viewport; the dynamic scroll viewport subtracts those rows before building scroll state. The dynamic window holds the live stage and the running brief. A build-phase row no brief owns belongs to a brief section: a row between two briefs joins the brief that closed before it once the next brief starts, and a run-level row joins the first brief, so it collapses with that brief's summary. `review_fix_started` closes its review stage and names the fix briefs in that stage's ledger row. Rows after the last brief stay live until another brief starts.
 
 ## Scroll Window
 
@@ -125,7 +125,7 @@ The key regression coverage is observable Ink output, not implementation wiring:
   - adjacent scroll offsets move by one rendered row
   - wrapped `task_started` rows do not jump by card
   - streaming output participates in row height
-  - completed summaries remain pinned outside dynamic scroll
+  - the settled ledger remains pinned outside dynamic scroll
   - new-event counts surface through the chrome label, not viewport rows
 - `src/features/workflow/conversation-rows/projection-cache.test.ts`
   - unchanged source identity reuses projections
@@ -151,12 +151,12 @@ The key regression coverage is observable Ink output, not implementation wiring:
 - `src/features/workflow/layout/rect.test.ts`
   - prompt rows are capped to the available middle area
 - `src/core/sections/completed-task-summary-rows.test.ts`
-  - completed summaries cannot reserve more rows than the viewport has
+  - the settled ledger cannot reserve more rows than the viewport has
 
 ## Invariants
 
 - Scroll units are rendered terminal rows.
 - Row descriptors must render as exactly one terminal row.
-- Prompt rows and completed summaries are part of the row budget; scroll banners live on the chrome dividers.
+- Prompt rows and the settled ledger are part of the row budget; scroll banners live on the chrome dividers.
 - Terminal width changes must recompute row wrapping and total height.
 - Stores remain the data source; layout helpers remain pure enough to test without running the workflow engine.

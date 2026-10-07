@@ -37,7 +37,6 @@ describe('splitConversationViewport — bookend budget', () => {
         items: [],
         startIndex: index,
         summary: {
-          index,
           id: `T${String(index + 1).padStart(3, '0')}`,
           title: `completed ${index}`,
           method: 'local' as const,

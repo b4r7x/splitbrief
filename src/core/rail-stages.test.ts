@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   getRailStages,
+  phaseStage,
   selectRailStage,
   type RailStage,
   type RailStageState,
@@ -15,6 +16,16 @@ function statusOf(
 }
 
 describe('rail stage status', () => {
+  it('maps phases to their rail stage and leaves idle and complete without one', () => {
+    expect(phaseStage('planning')).toBe('plan');
+    expect(phaseStage('reviewing-briefs')).toBe('plan');
+    expect(phaseStage('validating-task')).toBe('build');
+    expect(phaseStage('escalating')).toBe('build');
+    expect(phaseStage('final-review')).toBe('review');
+    expect(phaseStage('idle')).toBeNull();
+    expect(phaseStage('complete')).toBeNull();
+  });
+
   it.each([
     'researching',
     'specifying',

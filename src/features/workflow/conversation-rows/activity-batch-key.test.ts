@@ -81,6 +81,30 @@ describe('findLatestExpandableActivityBatchKey', () => {
     expect(findLatestExpandableActivityBatchKey(sections)).toBeNull();
   });
 
+  it('skips a settled stage batch and returns the latest live batch', () => {
+    const batch = (callId: string) =>
+      ['a', 'b', 'c', 'd'].map((name, index) =>
+        activity({
+          callId,
+          sequence: index + 1,
+          activityId: `${callId}:${name}`,
+          label: `reading ${name}.ts`,
+        }),
+      );
+    const sections: Section<EngineEvent>[] = [
+      { type: 'events', startIndex: 0, items: batch('call-1') },
+      { type: 'active-task', startIndex: 4, items: batch('call-2') },
+      {
+        type: 'settled-stage',
+        startIndex: 8,
+        items: batch('call-3'),
+        summary: { stage: 'plan', feature: 'Settled plan', duration: 0 },
+      },
+    ];
+
+    expect(findLatestExpandableActivityBatchKey(sections)).toBe(activityBatchKey(4, 'call-2'));
+  });
+
   it('ignores duplicate raw events that normalize to the same visible activity row', () => {
     const sections: Section<EngineEvent>[] = [
       {

@@ -1,4 +1,4 @@
-import type { Section } from '../../../core/sections/event-sections.js';
+import { isSettledSection, type Section } from '../../../core/sections/event-sections.js';
 import { stripRecoveryResetClause } from '../../../core/recovery/reset-clock.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
@@ -30,7 +30,7 @@ export type TranscriptWalkStep =
 
 // The single traversal both the projection and the clickable-action builders consume, so the
 // consecutive-`runner_call_activity` batching stays byte-identical between rendered rows and their
-// click targets. A batch closes on a call-id change, a completed-task boundary, any non-rowless
+// click targets. A batch closes on a call-id change, a settled section boundary, any non-rowless
 // event (yielded before that event), or the end of the transcript; row-less events never split it.
 // A recovery folds the same way: its prompt or its selection opens the fold, and the selection,
 // the reset and the outcome of that issue join it until another row-producing event closes it.
@@ -52,7 +52,7 @@ export function* walkTranscript(
   }
 
   for (const section of sections) {
-    if (section.type === 'completed-task') {
+    if (isSettledSection(section)) {
       yield* flush();
       lastRowEvent = null;
       openHeader = null;

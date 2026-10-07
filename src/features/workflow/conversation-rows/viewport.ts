@@ -1,5 +1,5 @@
 import { getCompletedTaskSummaryRows } from '../../../core/sections/completed-task-summary-rows.js';
-import type { Section } from '../../../core/sections/event-sections.js';
+import { isSettledSection, type Section } from '../../../core/sections/event-sections.js';
 
 export interface ConversationViewportSplit {
   completedRows: number;
@@ -24,12 +24,12 @@ export function splitConversationViewport(input: {
 }): ConversationViewportSplit {
   const viewportHeight = Math.max(0, input.viewportHeight);
   const hasSectionContent = input.sections.some(
-    (section) => section.type === 'completed-task' || section.items.length > 0,
+    (section) => isSettledSection(section) || section.items.length > 0,
   );
   const completedDemand = getCompletedTaskSummaryRows(input.sections, viewportHeight);
   const queuedDemand = hasSectionContent ? input.pendingTaskCount : 0;
   const hasLiveRows = input.sections.some(
-    (section) => section.type !== 'completed-task' && section.items.length > 0,
+    (section) => !isSettledSection(section) && section.items.length > 0,
   );
   const budget = bookendBudget(
     hasLiveRows ? Math.floor(viewportHeight / 2) : viewportHeight,
