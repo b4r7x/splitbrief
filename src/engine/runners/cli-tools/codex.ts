@@ -216,14 +216,22 @@ function createCodexImplementerAdapter(): CliImplementerAdapter<'codex'> {
   };
 }
 
-function protocolFailure(code: string, message: string): CodexTerminalEvent {
+function protocolFailure(
+  code: string,
+  message: string,
+  providerType?: string | undefined,
+): CodexTerminalEvent {
   return {
     type: 'result',
     status: 'failed',
     text: '',
     usage: null,
     nativeSessionId: null,
-    error: { code, message },
+    error: {
+      code,
+      message,
+      ...(providerType !== undefined && { providerType }),
+    },
     partial: false,
   };
 }
@@ -373,10 +381,18 @@ function parseCodexRecord(record: Record<string, unknown>): readonly CliProtocol
       return events;
     }
     case 'turn.failed': {
-      const rawMessage = isRecord(record.error)
-        ? optionalString(record.error.message, { trim: true, nonEmpty: true })
-        : undefined;
-      return [protocolFailure('codex-turn-failed', codexTurnFailedDetail(rawMessage))];
+      const rawError = isRecord(record.error) ? record.error : undefined;
+      const rawMessage =
+        rawError === undefined
+          ? undefined
+          : optionalString(rawError.message, { trim: true, nonEmpty: true });
+      const providerType =
+        rawError === undefined
+          ? undefined
+          : optionalString(rawError.type, { trim: true, nonEmpty: true });
+      return [
+        protocolFailure('codex-turn-failed', codexTurnFailedDetail(rawMessage), providerType),
+      ];
     }
     case 'error': {
       const message = optionalString(record.message, { trim: true, nonEmpty: true });

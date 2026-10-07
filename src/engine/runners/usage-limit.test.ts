@@ -1,19 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HALT_SIGNATURES } from '../../core/pipeline-spec/halts.js';
-import {
-  isUsageLimitDiagnostic,
-  parseUsageLimitReset,
-  usageLimitAdvice,
-  usageLimitDetailFromError,
-} from './usage-limit.js';
+import { isUsageLimitDiagnostic, parseUsageLimitReset, usageLimitAdvice } from './usage-limit.js';
 import { isAuthFailureDiagnostic } from './auth-failure.js';
+import { classifySeatFailure } from './seat-failure.js';
 import { codexImplementerAdapter } from './cli-tools/codex.js';
 import { claudeProtocolEvents } from './cli-tools/claude-code.js';
 import { opencodeImplementerAdapter, opencodeProtocolEvents } from './cli-tools/opencode.js';
 import { kiloPlannerAdapter, kiloPlannerProtocolEvents } from './cli-tools/kilo-code.js';
 import { runnerCallOutcome } from '../implementers/pipeline/call-result.js';
-import { streamError } from '../streaming/stream-errors.js';
-import { error } from '../../utils/error.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 
 /** An OpenCode stream that ends on its error line: the line is the call's terminal. */
@@ -283,32 +277,6 @@ describe('usageLimitAdvice', () => {
   });
 });
 
-describe('usageLimitDetailFromError', () => {
-  it('reads the raw 429 detail from a mapped provider stream error', () => {
-    const err = streamError.httpStatus('openrouter', 429, OPENAI_QUOTA);
-    expect(usageLimitDetailFromError(err)).toBe(OPENAI_QUOTA);
-  });
-
-  it('classifies a bare 429 status even when the body matches no phrase', () => {
-    const err = streamError.httpStatus('together', 429, 'slow down');
-    expect(usageLimitDetailFromError(err)).toBe('slow down');
-  });
-
-  it('reads the nested runner-call error a failed planner call carries', () => {
-    const err = error('runner-call-failed', 'Planner planner call failed', {
-      error: { code: 'codex-turn-failed', message: CODEX_LIMIT_MESSAGE },
-    });
-    expect(usageLimitDetailFromError(err)).toBe(CODEX_LIMIT_MESSAGE);
-  });
-
-  it('returns null for non-limit errors', () => {
-    expect(usageLimitDetailFromError(streamError.httpStatus('deepseek', 401, 'Unauthorized'))).toBe(
-      null,
-    );
-    expect(usageLimitDetailFromError(new Error('connection failed'))).toBeNull();
-  });
-});
-
 describe('end-to-end classification of the live codex limit records', () => {
   it('parses, terminates, and classifies the verbatim records as usage-limit', () => {
     const events = CODEX_LIMIT_RECORDS.flatMap((line) => codexImplementerAdapter.parse(line));
@@ -467,8 +435,13 @@ describe('an account the provider will not bill is a seat-down limit', () => {
     expect(isAuthFailureDiagnostic(message)).toBe(false);
   });
 
-  it('reads a thrown provider 402 as a limit even when its body names no known phrase', () => {
-    const err = streamError.httpStatus('deepseek', 402, '{"error":{"message":"Account on hold"}}');
-    expect(usageLimitDetailFromError(err)).toBe('{"error":{"message":"Account on hold"}}');
+  it('reads a provider 402 as an account refusal even when its body names no known phrase', () => {
+    expect(
+      classifySeatFailure({
+        message: '{"error":{"message":"Account on hold"}}',
+        status: 402,
+        source: 'thrown',
+      }),
+    ).toEqual({ class: 'account', cause: 'balance' });
   });
 });

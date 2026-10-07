@@ -2,6 +2,7 @@ import type { StepRef } from '../../../core/schemas/run-step.js';
 import type { RunStatus, StopReason } from '../../../core/sessions/run-status.js';
 import type { SummaryView } from './view-model.js';
 import { formatRecoveryHeadline, formatRecoveryTitle } from '../../../core/recovery/headline.js';
+import { formatResetAt } from '../../../core/recovery/reset-clock.js';
 import { fitKeyLegend } from '../../../core/key-legend.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../../utils/display-text.js';
@@ -152,6 +153,11 @@ function openByline(stop: StopReason, resumeAt: StepRef): Byline {
       return {
         reason: `Stopped by an error${SOFT_SEP}${stop.on.message}`,
         action: '⏎ to retry the step',
+      };
+    case 'seat-wait':
+      return {
+        reason: `Waiting for ${stop.on.tool}`,
+        action: formatResetAt(stop.on.resetAt) ?? '⏎ to continue',
       };
     default:
       return { reason: `Stopped at ${stepWord(resumeAt)}`, action: '⏎ to continue' };

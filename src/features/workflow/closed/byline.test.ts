@@ -294,6 +294,23 @@ describe('openRunByline', () => {
     ).toBe('Stopped by an error · Planning failed. · ⏎ to retry the step');
   });
 
+  it('names the tool a run waits on and the clock its reset lands', () => {
+    const resetAt = new Date(new Date().setHours(17, 0, 0, 0)).toISOString();
+    expect(
+      openRunByline({
+        ...OPEN,
+        status: {
+          kind: 'open',
+          stop: {
+            kind: 'stopped',
+            on: { kind: 'seat-wait', seat: 'review', tool: 'codex', resetAt },
+          },
+          resumeAt: { kind: 'review', cycle: 0 },
+        },
+      }),
+    ).toBe('Waiting for codex · resets 17:00');
+  });
+
   it('names the step an interrupted run picks up at', () => {
     expect(
       openRunByline({

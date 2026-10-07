@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   PhaseSchema,
+  RecoveryReasonSchema,
   RunnerKindSchema,
   WorkflowModeSchema,
   ApproveLevelSchema,
@@ -236,6 +237,18 @@ export const SeatWaitSchema = z.object({
   resetAt: z.string(),
 });
 
+export const SeatSwitchRecordSchema = z.object({
+  seat: z.enum(CREW_SEAT_IDS),
+  from: z.string(),
+  to: z.string(),
+  cause: RecoveryReasonSchema,
+  auto: z.boolean(),
+  configRevision: z.string(),
+  ts: z.string(),
+});
+
+export type SeatSwitchRecord = z.infer<typeof SeatSwitchRecordSchema>;
+
 const WorkflowStateFields = {
   stateVersion: z.literal(WORKFLOW_STATE_VERSION),
   stateRevision: nonnegativeInteger,
@@ -272,6 +285,7 @@ const WorkflowStateFields = {
   decisionConfirms: PlannerCallsSchema.optional(),
   userAnswers: PlannerConversationSchema.shape.answers.optional(),
   seatWait: SeatWaitSchema.optional(),
+  seatSwitches: z.array(SeatSwitchRecordSchema).optional(),
   rewindPending: z
     .object({
       target: z.enum(['spec', 'plan']),
@@ -304,7 +318,7 @@ const WorkflowStateFields = {
   interruptedStep: z
     .object({
       step: StepRefSchema,
-      source: z.enum(['user', 'watchdog']),
+      source: z.enum(['user', 'watchdog', 'seat']),
       cut: StepCutSchema.optional(),
       partialRef: z.object({ kind: z.literal('session-log'), index: z.number().int() }).optional(),
       at: z.string(),

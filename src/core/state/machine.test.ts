@@ -754,6 +754,89 @@ describe('transition', () => {
     expect(next.pendingRecovery).toBeUndefined();
   });
 
+  it('RESTART_ATTEMPT_ON_SEAT clears the halt and keeps the attempt, task and parked step', () => {
+    const tasks = [makeTask({ id: 'T001', status: 'in_progress' })];
+    const interruptedStep: NonNullable<WorkflowState['interruptedStep']> = {
+      step: { kind: 'brief', taskId: taskId('T001'), attempt: 3 },
+      source: 'seat',
+      cut: 'mid-step',
+      at: '2026-04-01T00:00:00.000Z',
+    };
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+      tasks,
+      currentTaskIndex: 0,
+      attempt: 3,
+      pendingRecovery: makeRecoveryIssue({
+        status: 'applying',
+        selectedAction: 'switch-seat',
+        taskId: taskId('T001'),
+      }),
+      interruptedStep,
+      awaitingContinue: true,
+    };
+
+    const next = transition(state, { type: 'RESTART_ATTEMPT_ON_SEAT', taskId: taskId('T001') });
+
+    expect(next.pendingRecovery).toBeUndefined();
+    expect(next.attempt).toBe(3);
+    expect(next.currentTaskIndex).toBe(0);
+    expect(next.tasks[0]?.status).toBe('in_progress');
+    expect(next.interruptedStep).toEqual(interruptedStep);
+    expect(next.awaitingContinue).toBe(true);
+  });
+
+  it('RESTART_ATTEMPT_ON_SEAT leaves a task it does not know alone', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+      tasks: [makeTask({ id: 'T001' })],
+      pendingRecovery: makeRecoveryIssue({ status: 'applying', selectedAction: 'switch-seat' }),
+    };
+    const unknown = transition(state, {
+      type: 'RESTART_ATTEMPT_ON_SEAT',
+      taskId: taskId('T999'),
+    });
+
+    expect(unknown).toBe(state);
+  });
+
+  it('RECORD_SEAT_SWITCH appends one switch record with its timestamp', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'implementing',
+      tasks: [makeTask({ id: 'T001' })],
+    };
+
+    const next = transition(
+      state,
+      {
+        type: 'RECORD_SEAT_SWITCH',
+        seat: 'build',
+        from: 'codex',
+        to: 'claude-code',
+        cause: 'runner-usage-limit',
+        auto: true,
+        configRevision: 'abc123',
+      },
+      { now: new Date('2026-10-07T10:00:00Z') },
+    );
+
+    expect(next.seatSwitches).toEqual([
+      {
+        seat: 'build',
+        from: 'codex',
+        to: 'claude-code',
+        cause: 'runner-usage-limit',
+        auto: true,
+        configRevision: 'abc123',
+        ts: '2026-10-07T10:00:00.000Z',
+      },
+    ]);
+    expect(WorkflowStateSchema.safeParse(next).success).toBe(true);
+  });
+
   it('TASK_SENT strips currentCode from the sent task', () => {
     const tasks = [makeTask({ id: 'T001', currentCode: 'const x = 1;' })];
     const state: WorkflowState = {

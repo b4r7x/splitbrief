@@ -3,7 +3,12 @@ import {
   InvocationIdentitySchema,
   type InvocationIdentity,
 } from '../../core/schemas/invocation-identity.js';
-import { RunnerCallEventSchema, RunnerCallResultSchema } from './schema.js';
+import {
+  RUNNER_CALL_PROVIDER_TYPE_MAX_LENGTH,
+  RUNNER_CALL_RAW_TAIL_MAX_LENGTH,
+  RunnerCallEventSchema,
+  RunnerCallResultSchema,
+} from './schema.js';
 import {
   boundedRunnerCallMessage,
   createRunnerCallCredentialRedactor,
@@ -247,16 +252,23 @@ export function createRunnerCallRecorder(opts: {
     if (hasTerminalEvent) return snapshot();
     const defaults = currentTerminalDefaults(finishOpts);
     const toolUseLimit = toolUseLimitExceeded ? runnerCallToolUseCountLimit(recentToolUses) : null;
+    const providerType =
+      finishOpts.error.providerType === undefined
+        ? undefined
+        : boundedRunnerCallProviderType(redactCredential(finishOpts.error.providerType));
     const callError =
       toolUseLimit === null
         ? {
             code: redactCredential(finishOpts.error.code),
             message: boundedRunnerCallMessage(finishOpts.error.message, opts.credentialValues),
+            ...(finishOpts.error.status !== undefined && { status: finishOpts.error.status }),
+            ...(providerType !== undefined && { providerType }),
           }
         : {
             code: toolUseLimit.code,
             message: boundedRunnerCallMessage(toolUseLimit.message, opts.credentialValues),
           };
+    const rawTail = runnerCallRawTail(callError.message, opts.credentialValues);
     // Judged on the text the call ends with: a final text that fits replaced
     // whatever the budget cut from the narration streamed before it.
     if (toolUseLimit === null && textLimiter.limit !== null) {
@@ -272,6 +284,7 @@ export function createRunnerCallRecorder(opts: {
         usage: defaults.usage,
         nativeSessionId: defaults.nativeSessionId,
         partial: toolUseLimit === null ? (finishOpts.partial ?? defaults.partial) : true,
+        ...(rawTail !== undefined && { rawTail }),
       }),
     );
     return snapshot();
@@ -677,6 +690,24 @@ function recordType(input: RunnerCallEventInput): unknown {
 function metadataString(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   const clean = sanitizeTerminalDiagnosticText(value, { maxChars: 256 }).trim();
+  return clean.length > 0 ? clean : undefined;
+}
+
+function boundedRunnerCallProviderType(value: string): string {
+  return value.length <= RUNNER_CALL_PROVIDER_TYPE_MAX_LENGTH
+    ? value
+    : value.slice(0, RUNNER_CALL_PROVIDER_TYPE_MAX_LENGTH);
+}
+
+function runnerCallRawTail(
+  message: string,
+  credentialValues: readonly string[] = [],
+): string | undefined {
+  const firstLine = message.split('\n', 1)[0] ?? '';
+  const redacted = createRunnerCallCredentialRedactor(credentialValues)(firstLine);
+  const clean = sanitizeTerminalDiagnosticText(redacted, {
+    maxChars: RUNNER_CALL_RAW_TAIL_MAX_LENGTH,
+  }).trim();
   return clean.length > 0 ? clean : undefined;
 }
 

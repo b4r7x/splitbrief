@@ -7,6 +7,7 @@ import { contractSha256 } from '../../providers/candidate-contract.js';
 import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';
 import { validateCliArgs } from './validate-args.js';
 import { parseCopilotLine } from '../../streaming/parse-copilot.js';
+import { isRecord } from '../../../utils/type-guards.js';
 
 const COPILOT_ID = 'copilot' as const;
 const COPILOT_COMMAND = 'copilot' as const;
@@ -83,14 +84,62 @@ function toProtocolEvents(parsed: ParsedLine): readonly CliProtocolEvent[] {
 }
 
 export function copilotPlannerProtocolEvents(line: string): readonly CliProtocolEvent[] {
-  return toProtocolEvents(parseCopilotLine(line));
+  return copilotFailureEvents(line) ?? toProtocolEvents(parseCopilotLine(line));
 }
 
 export function copilotImplementerProtocolEvents(line: string): readonly CliProtocolEvent[] {
-  return toProtocolEvents(parseCopilotLine(line));
+  return copilotFailureEvents(line) ?? toProtocolEvents(parseCopilotLine(line));
+}
+
+function copilotFailureEvents(line: string): readonly CliProtocolEvent[] | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(line.trim());
+  } catch {
+    return null;
+  }
+  if (!isRecord(value)) return null;
+  const subtype = typeof value.subtype === 'string' ? value.subtype : undefined;
+  const isErrorLine = value.type === 'error';
+  const isFailedResult =
+    value.type === 'result' &&
+    (value.is_error === true || (subtype !== undefined && subtype !== 'success'));
+  if (!isErrorLine && !isFailedResult) return null;
+  const fallback = isErrorLine ? 'Copilot reported an error' : 'Copilot call failed';
+  const message = copilotErrorMessage(value) ?? fallback;
+  return [
+    {
+      type: 'result',
+      status: 'failed',
+      text: '',
+      usage: null,
+      nativeSessionId: null,
+      error: { code: 'copilot-error', message },
+      partial: false,
+    },
+  ];
+}
+
+function copilotErrorMessage(value: Record<string, unknown>): string | undefined {
+  const data = isRecord(value.data) ? value.data : undefined;
+  const error = isRecord(value.error) ? value.error : undefined;
+  for (const candidate of [
+    value.message,
+    data?.message,
+    error?.message,
+    typeof value.result === 'string' ? value.result : undefined,
+    typeof value.error === 'string' ? value.error : undefined,
+  ]) {
+    if (typeof candidate === 'string' && candidate.trim().length > 0) return candidate;
+  }
+  return undefined;
 }
 
 function terminal(input: { events: readonly CliProtocolEvent[] }): CopilotTerminalEvent {
+  const explicit = input.events.findLast(
+    (event): event is CopilotTerminalEvent => event.type === 'result',
+  );
+  if (explicit !== undefined && explicit.status !== 'completed') return explicit;
   let usage: TokenDelta | null = null;
   let nativeSessionId: string | null = null;
   for (const event of input.events) {

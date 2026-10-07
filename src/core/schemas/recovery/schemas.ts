@@ -31,6 +31,13 @@ export const SeatSwapCandidateSchema = z
   })
   .strict();
 
+export const SeatSwapAutoSchema = z
+  .object({
+    candidate: SeatSwapCandidateSchema,
+    configRevision: z.string(),
+  })
+  .strict();
+
 /**
  * The seat-swap offer a `runner-usage-limit` issue carries when other ready
  * tools exist. Absent — never present-but-empty — when the machine has none.
@@ -39,6 +46,7 @@ export const SwitchSeatOfferSchema = z
   .object({
     seat: z.enum(CREW_SEAT_IDS),
     candidates: z.array(SeatSwapCandidateSchema).min(1),
+    auto: SeatSwapAutoSchema.optional(),
   })
   .strict();
 

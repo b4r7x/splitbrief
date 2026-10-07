@@ -80,12 +80,26 @@ export function errorLineProtocolEvents(input: {
         : null;
   const events: CliProtocolEvent[] = [];
   if (nativeSessionId !== null) events.push({ type: 'session', nativeSessionId });
+  const envelope = isRecord(value.error) ? value.error : undefined;
+  const data = envelope !== undefined && isRecord(envelope.data) ? envelope.data : undefined;
+  const status = errorStatus(envelope?.status ?? data?.statusCode);
+  const providerType = errorProviderType(envelope?.type);
   events.push({
     type: 'warning',
     code: input.errorCode,
     message: envelopeErrorDetail(value, input.defaultMessage),
+    ...(status !== undefined && { status }),
+    ...(providerType !== undefined && { providerType }),
   });
   return events;
+}
+
+function errorStatus(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) ? value : undefined;
+}
+
+function errorProviderType(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
 export function errorLineTerminal(input: {
@@ -107,7 +121,12 @@ export function errorLineTerminal(input: {
     text: '',
     usage: group.usage,
     nativeSessionId: group.nativeSessionId,
-    error: { code: input.errorCode, message: last.message },
+    error: {
+      code: input.errorCode,
+      message: last.message,
+      ...(last.status !== undefined && { status: last.status }),
+      ...(last.providerType !== undefined && { providerType: last.providerType }),
+    },
     partial: true,
   };
 }

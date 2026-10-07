@@ -92,4 +92,82 @@ describe('loadSeatSwapContext', () => {
       }),
     ).resolves.toBeUndefined();
   });
+
+  it("leads with the seat's declared fallback when the pass saw its tool ready", async () => {
+    const projectDir = await projectWithRememberedTools('seat-swap-fallback-ready', [
+      cliDetectionFor('ready', 'codex'),
+      cliDetectionFor('ready', 'claude-code'),
+    ]);
+
+    const context = await loadSeatSwapContext({
+      projectDir,
+      seat: 'build',
+      runner: {
+        kind: 'cli',
+        tool: 'codex',
+        fallback: { tool: 'claude-code', model: 'sonnet', effort: 'high' },
+      },
+    });
+
+    expect(context?.fallbackBlockedReason).toBeUndefined();
+    expect(context?.detectedTools[0]).toEqual({
+      tool: 'claude-code',
+      model: 'sonnet',
+      effort: 'high',
+      ready: true,
+    });
+    expect(switchSeatOffer(context)).toEqual({
+      seat: 'build',
+      candidates: [{ tool: 'claude-code', model: 'sonnet', effort: 'high' }],
+    });
+  });
+
+  it('offers an unverified fallback and never duplicates its bare detection', async () => {
+    const projectDir = await projectWithRememberedTools('seat-swap-fallback-unverified', [
+      cliDetectionFor('ready', 'codex'),
+      cliDetectionFor('unverified', 'claude-code'),
+    ]);
+
+    const context = await loadSeatSwapContext({
+      projectDir,
+      seat: 'build',
+      runner: { kind: 'cli', tool: 'codex', fallback: { tool: 'claude-code', model: 'sonnet' } },
+    });
+
+    expect(context?.detectedTools.filter((tool) => tool.tool === 'claude-code')).toEqual([
+      { tool: 'claude-code', model: 'sonnet', ready: true },
+    ]);
+  });
+
+  it('names why a declared fallback is not offered', async () => {
+    const projectDir = await projectWithRememberedTools('seat-swap-fallback-blocked', [
+      cliDetectionFor('ready', 'codex'),
+      cliDetectionFor('unauthenticated', 'claude-code'),
+    ]);
+
+    const context = await loadSeatSwapContext({
+      projectDir,
+      seat: 'build',
+      runner: { kind: 'cli', tool: 'codex', fallback: { tool: 'claude-code' } },
+    });
+
+    expect(context?.fallbackBlockedReason).toBe('unauthenticated');
+    expect(context?.detectedTools).toContainEqual({ tool: 'claude-code', ready: false });
+    expect(switchSeatOffer(context)).toBeUndefined();
+  });
+
+  it('calls a declared fallback with no executable not installed', async () => {
+    const projectDir = await projectWithRememberedTools('seat-swap-fallback-absent', [
+      cliDetectionFor('ready', 'codex'),
+      cliDetectionFor('unavailable', 'claude-code'),
+    ]);
+
+    const context = await loadSeatSwapContext({
+      projectDir,
+      seat: 'build',
+      runner: { kind: 'cli', tool: 'codex', fallback: { tool: 'claude-code' } },
+    });
+
+    expect(context?.fallbackBlockedReason).toBe('not installed');
+  });
 });

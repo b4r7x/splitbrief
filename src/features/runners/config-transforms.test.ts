@@ -1122,3 +1122,44 @@ describe('removeCustomModel', () => {
     expect('model' in updated.implementer).toBe(false);
   });
 });
+
+describe('declared fallback survives the picker', () => {
+  it('keeps a planner fallback across a tool commit', () => {
+    const config = makeConfig({
+      planner: {
+        kind: 'cli',
+        tool: 'claude-code',
+        model: 'sonnet',
+        fallback: { tool: 'codex' },
+      },
+    });
+
+    const { config: updated } = commitPlannerTierSelection({
+      config,
+      role: 'planner',
+      selection: realPickerOption('planner', 'opencode'),
+      model: { id: 'auto' },
+    });
+
+    expect(updated.planner.fallback).toEqual({ tool: 'codex' });
+  });
+
+  it('keeps an implementer fallback across a tool commit', () => {
+    const config = makeConfig({
+      implementer: {
+        kind: 'cli',
+        tool: 'codex',
+        model: 'gpt-5.4',
+        fallback: { tool: 'claude-code' },
+      },
+    });
+
+    const { config: updated } = commitImplementerSelection({
+      config,
+      selection: realPickerOption('implementer', 'opencode'),
+      model: { id: 'auto' },
+    });
+
+    expect(updated.implementer.fallback).toEqual({ tool: 'claude-code' });
+  });
+});

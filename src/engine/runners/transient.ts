@@ -1,8 +1,7 @@
 import { BOUNDS } from '../../core/pipeline-spec/bounds.js';
 import { abortError, throwIfAborted } from '../../utils/abort.js';
-import { looksOfflineDiagnostic } from './cli-tools/registry.js';
 import type { RunnerFailureOutcomeState } from './errors.js';
-import { parseUsageLimitReset } from './usage-limit.js';
+import { classifySeatFailure } from './seat-failure.js';
 
 /**
  * One failed seat call, in the runner's own words and its machine outcome when
@@ -28,60 +27,21 @@ export type SeatRetryInfo = Readonly<{ attempt: number; delayMs: number }>;
 
 const SEAT_RETRY_BASE_DELAY_MS = 2_000;
 
-/** Transient troubles that name the network itself, not a whole-call timeout. */
-const TRANSIENT_NETWORK_MARKERS: readonly string[] = [
-  'connection reset',
-  'econnreset',
-  'econnrefused',
-  'socket hang up',
-  'fetch failed',
-  'eai_again',
-  'enotfound',
-  'etimedout',
-  'connect timed out',
-  'connection timed out',
-];
-
-function httpStatusOf(message: string): number | null {
-  const contextual = /(?:http|status(?:\s*code)?)[^0-9]{0,4}(\d{3})\b/i.exec(message);
-  if (contextual?.[1] !== undefined) return Number.parseInt(contextual[1], 10);
-  const parenthesized = /\((\d{3})\)/.exec(message);
-  if (parenthesized?.[1] !== undefined) return Number.parseInt(parenthesized[1], 10);
-  if (/\b429\b/.test(message)) return 429;
-  return /\b408\b/.test(message) ? 408 : null;
-}
-
 /**
- * Outcomes whose message still decides: a crashed tool and a dropped protocol
- * can both name a network fault, and a limit failure retries only when it names
- * no reset. Every other outcome is final for this classifier.
- */
-const MESSAGE_CLASSIFIED_OUTCOMES: ReadonlySet<RunnerFailureOutcomeState> = new Set([
-  'non-zero-exit',
-  'protocol-failure',
-  'usage-limit',
-]);
-
-/**
- * A network or server-side failure the same call can survive: a reset or
- * refused connection, a DNS miss, a connect timeout, HTTP 5xx or 408, or a
- * bare 429 that named no reset. A 429 that did name a reset is not retried:
- * it is either waited out (a near reset) or halted (a long or unknown one), so
- * `parseUsageLimitReset` decides that case. A reported outcome the message can
- * not explain — a changed checkout, a tool that left its isolation, a signed-out
- * account — is never transient.
+ * A network or server-side failure the same call can survive, as the one seat
+ * classifier reads it: a reset or refused connection, a DNS miss, a connect
+ * timeout, HTTP 5xx or 408, or a capacity 429 that named no reset. A 429 that
+ * did name a reset is not retried — it is either waited out or halted — and an
+ * outcome the message cannot explain is never transient.
  */
 export function isTransientSeatFailure(failure: SeatFailure): boolean {
-  if (failure.outcome !== undefined && !MESSAGE_CLASSIFIED_OUTCOMES.has(failure.outcome)) {
-    return false;
-  }
-  if (looksOfflineDiagnostic(failure.message)) return true;
-  const text = failure.message.toLowerCase();
-  if (TRANSIENT_NETWORK_MARKERS.some((marker) => text.includes(marker))) return true;
-  const status = httpStatusOf(failure.message);
-  if (status === null) return false;
-  if (status === 429) return parseUsageLimitReset(failure.message) === null;
-  return status === 408 || (status >= 500 && status <= 599);
+  return (
+    classifySeatFailure({
+      message: failure.message,
+      ...(failure.outcome !== undefined && { outcome: failure.outcome }),
+      source: 'thrown',
+    }).class === 'transient'
+  );
 }
 
 /** The backoff delay before retry `attempt` (1-based): 2s, then 4s, then 8s. */

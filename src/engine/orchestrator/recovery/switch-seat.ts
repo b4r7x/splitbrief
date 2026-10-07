@@ -25,9 +25,13 @@ function configWithSwitchedBuildSeat(
   implementer: ImplementerConfig,
   implementerProfile: string | undefined,
 ): Config | null {
+  // The profile that failed keeps its declared fallback across the swap; the
+  // candidate build runner carries none of its own.
+  const keepFallback = (existing: ImplementerConfig): ImplementerConfig =>
+    existing.fallback === undefined ? implementer : { ...implementer, fallback: existing.fallback };
   return implementerProfile === undefined
-    ? updateDefaultImplementerConfig(config, () => implementer)
-    : updateNamedImplementerConfig(config, implementerProfile, () => implementer);
+    ? updateDefaultImplementerConfig(config, keepFallback)
+    : updateNamedImplementerConfig(config, implementerProfile, keepFallback);
 }
 
 /**
@@ -56,7 +60,10 @@ export function configWithSwitchedSeat(
   };
   switch (seat) {
     case 'plan': {
-      const parsed = PlannerConfigSchema.safeParse(runner);
+      const parsed = PlannerConfigSchema.safeParse({
+        ...runner,
+        ...(config.planner.fallback !== undefined && { fallback: config.planner.fallback }),
+      });
       return parsed.success ? { ...config, planner: parsed.data } : null;
     }
     case 'build': {
@@ -66,7 +73,12 @@ export function configWithSwitchedSeat(
         : null;
     }
     case 'review': {
-      const parsed = ReviewerConfigSchema.safeParse(runner);
+      // An inherited review seat is the planner's seat, fallback and all.
+      const fallback = config.reviewer?.fallback ?? config.planner.fallback;
+      const parsed = ReviewerConfigSchema.safeParse({
+        ...runner,
+        ...(fallback !== undefined && { fallback }),
+      });
       return parsed.success ? { ...config, reviewer: parsed.data } : null;
     }
     default:

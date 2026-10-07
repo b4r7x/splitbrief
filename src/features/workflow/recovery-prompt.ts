@@ -73,6 +73,7 @@ const ACTION_KEYS: Record<RecoveryAction, string> = {
   'retry-same-worker': 'r',
   'restore-backup': 'u',
   'switch-seat': 'w',
+  'retry-later': 'l',
   revise: 'v',
   'accept-as-is': 'k',
   continue: 'c',
@@ -89,6 +90,7 @@ export const ACTION_ALIASES: Record<RecoveryAction, string[]> = {
   'retry-same-worker': ['r', 'retry', 'retry same worker', 'retry-same-worker'],
   'restore-backup': ['u', 'restore', 'restore backup', 'restore-backup'],
   'switch-seat': ['w', 'switch', 'switch seat', 'switch-seat'],
+  'retry-later': ['l', 'later', 'retry later', 'wait', 'retry-later'],
   revise: ['v', 'revise', 'comment'],
   'accept-as-is': ['k', 'accept', 'accept as is', 'accept-as-is'],
   continue: ['c', 'continue', 'cont'],
@@ -133,6 +135,10 @@ function formatRecoveryActionText(
       return 'restore backup';
     case 'switch-seat':
       return 'switch the seat to another tool';
+    case 'retry-later': {
+      const label = recoveryActionLabel('retry-later', context);
+      return label.charAt(0).toLowerCase() + label.slice(1);
+    }
     case 'revise':
       return context.reason === 'review-failed'
         ? 'fix again · add a note, grant one more fix cycle'
@@ -201,6 +207,7 @@ export function recoveryMenuLabel(action: RecoveryAction, issue: RecoveryIssue):
     reason: issue.reason,
     switchSeat: issue.switchSeat,
     seat: issue.seat,
+    resetAt: issue.resetAt,
   });
   const seatLevel = isSeatLevelRetry(issue);
   const consequence = seatLevel
@@ -327,6 +334,7 @@ function buildRecoveryPromptRows(issue: RecoveryIssue): PromptRow[] {
     switchSeat: issue.switchSeat,
     seat: issue.seat,
     seatRetry: seatLevelRetrySeat(issue),
+    resetAt: issue.resetAt,
   };
   const recommended = resolveRecommendedAction(issue, actions);
   const facts = [

@@ -1,12 +1,17 @@
 import type { Phase, RecoveryReason } from '../../../../core/schemas/enums.js';
 import type { RecoveryFact, RecoveryIssue } from '../../../../core/schemas/recovery/schemas.js';
 import type { Task } from '../../../../core/schemas/task.js';
+import type { SeatSwitchRecord } from '../../../../core/schemas/workflow.js';
+import type {
+  DeepReadonly,
+  RunnerConfig,
+} from '../../../../core/config/accessors/runner-config.js';
 import type { PlannerCallDiagnosis } from '../planner-call-failure.js';
 import type { RecoveryBuilderBase } from './issue.js';
 import { compactFacts, createRecoveryIssue } from './issue.js';
 import { chooseRecommended, haltActions } from './actions.js';
 import { taskFiles } from './details.js';
-import { switchSeatOffer, type SeatSwapContext } from './task.js';
+import { buildSeatDownIssue, switchSeatOffer, type SeatSwapContext } from './task.js';
 
 /** Why the plan seat could not produce its artifact. */
 export type PlannerSeatFailure = 'unauthenticated' | 'usage-limit' | 'call-failed';
@@ -24,6 +29,8 @@ export interface PlannerCallFailureRecoveryOptions extends RecoveryBuilderBase {
    */
   diagnosis: Pick<PlannerCallDiagnosis, 'failure' | 'message'> & Partial<PlannerCallDiagnosis>;
   phase: Phase;
+  /** The runner the halted call ran on; the seat-down halt names it and its declared fallback. */
+  runner: DeepReadonly<RunnerConfig>;
   /** The planner-tier seat the call ran on. The final review's call halts on the review seat. */
   seat?: 'plan' | 'review' | undefined;
   /** The brief whose hint call it was, when it was one: the halt names it and can skip it. */
@@ -31,6 +38,8 @@ export interface PlannerCallFailureRecoveryOptions extends RecoveryBuilderBase {
   /** What the halt adds after the tool's own words. */
   details?: string[] | undefined;
   seatSwap?: SeatSwapContext | undefined;
+  /** The switches this run already made, so a seat is moved to its fallback at most once. */
+  seatSwitches?: readonly SeatSwitchRecord[] | undefined;
   /**
    * Scalar diagnosis the halt carries beyond its prose — the insufficient-context
    * figures, which belong in facts because `details[]` renders inline and is
@@ -43,12 +52,32 @@ export interface PlannerCallFailureRecoveryOptions extends RecoveryBuilderBase {
  * A planner call that failed halts the run instead of ending it: the seat can be
  * re-issued, moved to another detected tool, or the run stopped on it. There is
  * no bigger profile to route to — the seat either runs again or it does not run —
- * and a task to skip only when the call was a brief's hint.
+ * and a task to skip only when the call was a brief's hint. A sign-out or a
+ * refusal the classifier named builds the one seat-down halt instead.
  */
 export function buildPlannerCallFailedRecoveryIssue(
   opts: PlannerCallFailureRecoveryOptions,
 ): RecoveryIssue {
   const { diagnosis } = opts;
+  if (diagnosis.seatDown !== undefined) {
+    return buildSeatDownIssue({
+      id: opts.id,
+      seat: opts.seat ?? 'plan',
+      runner: opts.runner,
+      classification: diagnosis.seatDown.classification,
+      words: diagnosis.seatDown.words,
+      ...(diagnosis.seatDown.requestId !== undefined && {
+        requestId: diagnosis.seatDown.requestId,
+      }),
+      fallback: opts.runner.fallback,
+      task: opts.task,
+      phase: opts.phase,
+      seatSwitches: opts.seatSwitches,
+      ...(opts.seatSwap !== undefined && { seatSwap: opts.seatSwap }),
+      ...(opts.details !== undefined && { details: opts.details }),
+      createdAt: opts.createdAt,
+    });
+  }
   const reason = PLANNER_FAILURE_REASONS[diagnosis.failure];
   const resetsAt = diagnosis.resetsAt ?? null;
   const offer = switchSeatOffer(opts.seatSwap);

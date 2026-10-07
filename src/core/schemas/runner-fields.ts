@@ -7,6 +7,7 @@ import {
   IMPLEMENTER_CLI_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
   cliModelPolicyViolations,
+  isCliToolId,
 } from '../runners/cli-tool-catalog.js';
 import {
   runnerRoleForActiveRole,
@@ -317,6 +318,43 @@ function validateCliAuthChannel(input: unknown, ctx: z.RefinementCtx): void {
   });
 }
 
+function cliToolTakesEffortAsVariant(tool: unknown): boolean {
+  if (typeof tool !== 'string' || !isCliToolId(tool)) return false;
+  return CLI_TOOL_CATALOG[tool].effortChannel === 'variant';
+}
+
+/**
+ * A declared fallback is a cli runner the seat has to be able to host, so it is
+ * re-parsed through the seat's own cli branch: a tool the seat cannot run, a
+ * model its policy refuses or an effort its channel cannot carry all fail here,
+ * with the issue kept under `fallback` so the reader knows which block to fix.
+ */
+function validateFallback(cliSeat: z.ZodType, input: unknown, ctx: z.RefinementCtx): void {
+  const runner = narrowRecord(input);
+  const fallback = runner === null ? null : narrowRecord(runner.fallback);
+  if (fallback === null) return;
+
+  const parsed = cliSeat.safeParse({ kind: 'cli', ...fallback });
+  if (!parsed.success) {
+    for (const issue of parsed.error.issues) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['fallback', ...issue.path],
+        message: `fallback ${issue.message}`,
+      });
+    }
+    return;
+  }
+
+  if (fallback.effort !== undefined && cliToolTakesEffortAsVariant(fallback.tool)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['fallback', 'effort'],
+      message: `fallback tool "${String(fallback.tool)}" takes its effort as a variant; set fallback.variant instead`,
+    });
+  }
+}
+
 const PlannerCapabilitiesPartialSchema = PlannerCapabilitiesSchema.partial();
 
 const PlannerCapabilitiesField = {
@@ -351,6 +389,24 @@ export const GenerationCommonFields = {
   variant: z.string().min(1).optional(),
 };
 
+/**
+ * The runner a seat moves to when it goes down: always a cli runner, always a
+ * subset of the seat's own fields. It is validated as a runner by the seat it
+ * is declared on, so it is not a runner block of its own.
+ */
+const FallbackRunnerFields = {
+  tool: z.string().min(1),
+  model: z.string().min(1).optional(),
+  effort: EffortLevelSchema.optional(),
+  variant: z.string().min(1).optional(),
+};
+
+const FallbackRunnerSchema = z.strictObject(FallbackRunnerFields);
+
+const SeatFallbackField = {
+  fallback: FallbackRunnerSchema.optional(),
+};
+
 const RUNNER_DESCRIPTORS = {
   cli: { fields: CliRunnerFields },
   api: { fields: ApiRunnerFields },
@@ -360,16 +416,25 @@ const RUNNER_DESCRIPTORS = {
 
 export function createRunnerConfigSchema<C extends z.ZodRawShape>(commonFields: C) {
   const { model: _requiredModel, ...cliCommonFields } = commonFields;
+  const cliBranchFields = {
+    ...cliCommonFields,
+    ...ImplementerCliRunnerFields,
+    model: z.string().min(1).optional(),
+  };
+  const cliSeat = z
+    .strictObject(cliBranchFields)
+    .superRefine((input, ctx) => {
+      validateAutomaticModelResolvable(input, ctx);
+      validateCliModelPolicy('implementer', input, ctx);
+      validateCliAuthChannel(input, ctx);
+    })
+    .refine(idleThresholdsOrdered, IDLE_THRESHOLD_ORDER);
   return z
     .discriminatedUnion('kind', [
-      z.strictObject({
-        ...cliCommonFields,
-        ...ImplementerCliRunnerFields,
-        model: z.string().min(1).optional(),
-      }),
-      z.strictObject({ ...commonFields, ...ImplementerApiRunnerFields }),
-      z.strictObject({ ...commonFields, ...RUNNER_DESCRIPTORS.shell.fields }),
-      z.strictObject({ ...commonFields, ...RUNNER_DESCRIPTORS.agent.fields }),
+      z.strictObject({ ...cliBranchFields, ...SeatFallbackField }),
+      z.strictObject({ ...commonFields, ...ImplementerApiRunnerFields, ...SeatFallbackField }),
+      z.strictObject({ ...commonFields, ...RUNNER_DESCRIPTORS.shell.fields, ...SeatFallbackField }),
+      z.strictObject({ ...commonFields, ...RUNNER_DESCRIPTORS.agent.fields, ...SeatFallbackField }),
     ])
     .superRefine((input, ctx) => {
       validateRemovedApiProvider(input, ctx);
@@ -378,6 +443,7 @@ export function createRunnerConfigSchema<C extends z.ZodRawShape>(commonFields: 
       validateAutomaticModelResolvable(input, ctx);
       validateCliModelPolicy('implementer', input, ctx);
       validateCliAuthChannel(input, ctx);
+      validateFallback(cliSeat, input, ctx);
     })
     .refine(idleThresholdsOrdered, IDLE_THRESHOLD_ORDER);
 }
@@ -387,27 +453,39 @@ export function createPlannerConfigSchema<C extends z.ZodRawShape>(
   seat: PlannerTierRole = 'planner',
 ) {
   const { model: _configuredModel, ...cliCommonFields } = commonFields;
+  const cliBranchFields = {
+    ...cliCommonFields,
+    ...PlannerCliRunnerFields,
+    model: z.string().min(1).optional(),
+  };
+  const cliSeat = z
+    .strictObject(cliBranchFields)
+    .superRefine((input, ctx) => {
+      validateAutomaticModelResolvable(input, ctx);
+      validateCliModelPolicy('planner', input, ctx);
+      validateCliAuthChannel(input, ctx);
+    })
+    .refine(idleThresholdsOrdered, IDLE_THRESHOLD_ORDER);
   return z
     .discriminatedUnion('kind', [
-      z.strictObject({
-        ...cliCommonFields,
-        ...PlannerCliRunnerFields,
-        model: z.string().min(1).optional(),
-      }),
+      z.strictObject({ ...cliBranchFields, ...SeatFallbackField }),
       z.strictObject({
         ...commonFields,
         ...ApiRunnerFields,
         provider: apiProviderSchemaForSeat(seat),
+        ...SeatFallbackField,
       }),
       z.strictObject({
         ...commonFields,
         ...RUNNER_DESCRIPTORS.shell.fields,
         ...PlannerCapabilitiesField,
+        ...SeatFallbackField,
       }),
       z.strictObject({
         ...commonFields,
         ...RUNNER_DESCRIPTORS.agent.fields,
         ...PlannerCapabilitiesField,
+        ...SeatFallbackField,
       }),
     ])
     .superRefine((input, ctx) => {
@@ -417,6 +495,7 @@ export function createPlannerConfigSchema<C extends z.ZodRawShape>(
       validateAutomaticModelResolvable(input, ctx);
       validateCliModelPolicy('planner', input, ctx);
       validateCliAuthChannel(input, ctx);
+      validateFallback(cliSeat, input, ctx);
     })
     .refine(idleThresholdsOrdered, IDLE_THRESHOLD_ORDER);
 }

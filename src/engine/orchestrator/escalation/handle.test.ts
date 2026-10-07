@@ -551,7 +551,7 @@ describe('handleRetryAndEscalation', () => {
     expect(events.filter((e) => e.type === 'consult_answered')).toEqual([]);
     expect(state.pendingRecovery).toMatchObject({
       reason: 'runner-unauthenticated',
-      recommendedAction: 'retry-same-worker',
+      recommendedAction: 'switch-seat',
       switchSeat: { seat: 'build', candidates: [{ tool: 'claude-code' }] },
     });
     expect(state.pendingRecovery?.availableActions).toEqual([

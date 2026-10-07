@@ -23,6 +23,8 @@ import { handleFailedImplementation } from './implementation-failure.js';
 import { runnerCallOutcome } from '../../implementers/pipeline/call-result.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
+import { writeConfigYaml } from '#testing/helpers/config-io.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
 
 afterEach(cleanupTaskProjects);
 
@@ -298,6 +300,80 @@ describe('handleFailedImplementation — an account the provider refuses is a se
     );
     const row = events.find((e) => e.type === 'error');
     expect(row?.type === 'error' && row.message).toContain('HTTP 403 Forbidden');
+  });
+});
+
+describe('handleFailedImplementation — the automatic seat switch intent', () => {
+  async function haltWith(state: WorkflowState) {
+    const { projectDir, sessionId } = setupProject();
+    writeConfigYaml(projectDir, {});
+    await rememberDetectedTools(projectDir, cliDetectionsFor('ready', ['opencode', 'claude-code']));
+    const task = makeTask({ id: 'T001' });
+    const implementer = makeImplementer({ retry: vi.fn() });
+    const { bus } = makeBusRecorder();
+    const wctx = makeWorkflowContext({
+      projectDir,
+      sessionId,
+      implementer,
+      planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
+      bus,
+      config: makeConfig({
+        implementer: {
+          kind: 'cli',
+          tool: 'opencode',
+          model: 'deepseek/deepseek-flash',
+          fallback: { tool: 'claude-code' },
+        },
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      }),
+    });
+
+    return handleFailedImplementation({
+      wctx,
+      task,
+      state,
+      implState: implState({
+        success: false,
+        output: '',
+        error: OPENCODE_DEEPSEEK_BALANCE,
+        outcome: 'usage-limit',
+      }),
+      taskStartTime: Date.now(),
+      taskStartSnapshot: await getChangedFilesSnapshot(wctx.projectDir),
+      tokensBefore: { ...state.tokenUsage },
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+    });
+  }
+
+  it('carries the fallback and config hash when the seat can move itself', async () => {
+    const next = await haltWith(implementingState([makeTask({ id: 'T001' })]));
+
+    const auto = next.pendingRecovery?.switchSeat?.auto;
+    expect(auto?.candidate).toEqual({ tool: 'claude-code' });
+    expect(auto?.configRevision).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('offers no automatic switch when this run already switched the seat', async () => {
+    const state: WorkflowState = {
+      ...implementingState([makeTask({ id: 'T001' })]),
+      seatSwitches: [
+        {
+          seat: 'build',
+          from: 'opencode',
+          to: 'claude-code',
+          cause: 'runner-usage-limit',
+          auto: true,
+          configRevision: 'abc',
+          ts: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    };
+
+    const next = await haltWith(state);
+
+    expect(next.pendingRecovery?.switchSeat?.auto).toBeUndefined();
+    expect(next.pendingRecovery?.switchSeat?.candidates).toEqual([{ tool: 'claude-code' }]);
   });
 });
 

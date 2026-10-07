@@ -1,4 +1,5 @@
 import { opensPlanGate } from '../pipeline-spec/steps.js';
+import type { CrewSeatId } from '../crew/identity.js';
 import type { Phase } from '../schemas/enums.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
 import type { GateName, StepCut, StepRef } from '../schemas/run-step.js';
@@ -14,6 +15,7 @@ export type WaitingOn =
 export type StoppedOn =
   | { kind: 'paused'; at: StepCut }
   | { kind: 'failed'; message: string }
+  | { kind: 'seat-wait'; seat: CrewSeatId; tool: string; resetAt: string }
   | { kind: 'interrupted' };
 
 /**
@@ -116,6 +118,12 @@ export function isAnsweredApplyRecovery(issue: RecoveryIssue): issue is Recovery
   );
 }
 
+function seatToolWord(state: WorkflowState, seat: CrewSeatId): string {
+  if (seat === 'plan') return state.plannerTool ?? seat;
+  if (seat === 'build') return state.implementerTool ?? seat;
+  return state.reviewerTool ?? state.plannerTool ?? seat;
+}
+
 /**
  * How a run stands, from the state it saved and whether a process still holds it.
  * A passing review, or a failed one accepted as is, closes a run without a workspace or on the
@@ -161,6 +169,14 @@ export function deriveRunStatus(
 
   if (state.pendingRecovery !== undefined) {
     return waiting({ kind: 'halt', issue: state.pendingRecovery });
+  }
+  if (state.seatWait !== undefined) {
+    return stopped({
+      kind: 'seat-wait',
+      seat: state.seatWait.seat,
+      tool: seatToolWord(state, state.seatWait.seat),
+      resetAt: state.seatWait.resetAt,
+    });
   }
   if (
     state.pendingPlannerConversation !== undefined &&

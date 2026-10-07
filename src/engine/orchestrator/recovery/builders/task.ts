@@ -1,12 +1,19 @@
 import type { Config } from '../../../../core/schemas/config.js';
 import type { Phase, RecoveryAction } from '../../../../core/schemas/enums.js';
+import { BOUNDS } from '../../../../core/pipeline-spec/bounds.js';
+import type { SeatSwitchRecord } from '../../../../core/schemas/workflow.js';
 import type {
   RecoveryIssue,
   SeatSwapCandidate,
   SwitchSeatOffer,
 } from '../../../../core/schemas/recovery/schemas.js';
-import type { CrewSeatId } from '../../../../core/crew/identity.js';
+import { formatSeatCandidateIdentity, type CrewSeatId } from '../../../../core/crew/identity.js';
 import { CREW_SEAT_ROLES } from '../../../../core/crew/seats.js';
+import type {
+  DeepReadonly,
+  RunnerConfig,
+} from '../../../../core/config/accessors/runner-config.js';
+import type { SeatAccountCause, SeatFailureClassification } from '../../../runners/seat-failure.js';
 import {
   IMPLEMENTER_CLI_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
@@ -24,7 +31,7 @@ import type { RoutingDecision } from '../../context-routing/types.js';
 import { runnerAuthDisplayName, runnerLoginInstruction } from '../../../runners/auth-failure.js';
 import { inputTooLargeFigures } from '../../../runners/input-limit.js';
 import { inputTooLargeSentence } from './review-input.js';
-import { parseUsageLimitReset, usageLimitAdvice } from '../../../runners/usage-limit.js';
+import { usageLimitAdvice } from '../../../runners/usage-limit.js';
 import {
   finalReviewCapCause,
   finalReviewFailedCause,
@@ -99,31 +106,56 @@ export interface RunnerFailureRecoveryOptions extends RecoveryBuilderBase, TaskR
 
 /**
  * One row of the discovery snapshot as the recovery context carries it: a tool
- * the machine detected for this seat, and whether that detection came back
- * ready to run.
+ * the machine detected for this seat, whether that detection came back ready to
+ * run, and the model, effort and variant when the row is the seat's declared
+ * fallback rather than a bare detection.
  */
 export type DetectedSeatTool = Readonly<{
   tool: string;
   model?: string | undefined;
+  effort?: SeatSwapCandidate['effort'];
+  variant?: string | undefined;
   ready: boolean;
 }>;
 
 /**
- * What a quota-blocked seat needs to offer a swap: which seat hit the limit,
- * the tool that hit it, and the detection snapshot to pick a replacement from.
+ * What a seat-down halt needs to offer a swap: which seat went down, the
+ * identity it was on, the detection snapshot to pick a replacement from, and —
+ * when the seat declared a fallback the last readiness pass cannot run — why
+ * that fallback is not offered. A declared fallback the snapshot saw ready or
+ * unverified leads `detectedTools`, so the offer lists it first.
  */
 export type SeatSwapContext = Readonly<{
   seat: CrewSeatId;
   currentTool: string;
+  currentModel?: string | undefined;
   detectedTools: readonly DetectedSeatTool[];
+  fallbackBlockedReason?: string | undefined;
+  /**
+   * The config document's hash as the halt read it. The automatic-switch intent
+   * records it so the engine can refuse to move a seat whose config changed
+   * underneath it.
+   */
+  configRevision?: string | undefined;
 }>;
 
 /**
- * The ready tools this seat could move to, current one excluded, each tool named
- * once, and only tools the seat's own role admits — the seat's schema would refuse
- * the rest after the operator picked one. Returns undefined — never an empty
- * offer — when the machine has nothing else detected, so the caller omits the
- * action entirely.
+ * Whether a detected row is the seat's current identity. The tool alone does not
+ * decide: a fallback on the same tool and another model is a move, so only a
+ * matching tool whose row names no model — the tool's own default — or the same
+ * model is the identity the offer excludes.
+ */
+function isCurrentSeatIdentity(context: SeatSwapContext, detected: DetectedSeatTool): boolean {
+  if (detected.tool !== context.currentTool) return false;
+  return detected.model === undefined || detected.model === context.currentModel;
+}
+
+/**
+ * The ready tools this seat could move to, current identity excluded, each
+ * identity named once, and only tools the seat's own role admits — the seat's
+ * schema would refuse the rest after the operator picked one. Returns undefined —
+ * never an empty offer — when the machine has nothing else detected, so the
+ * caller omits the action entirely.
  */
 export function switchSeatOffer(context: SeatSwapContext | undefined): SwitchSeatOffer | undefined {
   if (context === undefined) return undefined;
@@ -136,66 +168,182 @@ export function switchSeatOffer(context: SeatSwapContext | undefined): SwitchSea
   for (const detected of context.detectedTools) {
     if (!detected.ready) continue;
     if (!includes(hostable, detected.tool)) continue;
-    if (detected.tool === context.currentTool) continue;
-    if (seen.has(detected.tool)) continue;
-    seen.add(detected.tool);
+    if (isCurrentSeatIdentity(context, detected)) continue;
+    const identity = `${detected.tool}\u0000${detected.model ?? ''}`;
+    if (seen.has(identity)) continue;
+    seen.add(identity);
     candidates.push({
       tool: detected.tool,
       ...(detected.model !== undefined && { model: detected.model }),
+      ...(detected.effort !== undefined && { effort: detected.effort }),
+      ...(detected.variant !== undefined && { variant: detected.variant }),
     });
   }
   if (candidates.length === 0) return undefined;
   return { seat: context.seat, candidates };
 }
 
+/** The plain words of an account cause, after the tool and the word `account`. */
+const ACCOUNT_CAUSE_WORDS: Readonly<Record<Exclude<SeatAccountCause, 'auth'>, string>> = {
+  balance: 'balance spent',
+  billing: 'billing refused',
+  quota: 'quota spent',
+};
+
 /**
- * A runner that ran out of quota halts the run the same way a signed-out one
- * does: retrying cannot succeed until the limit resets, and silently
- * escalating every task to the planner is the outcome the halt exists to
- * prevent. The halt records the reset time whenever the tool's own diagnostic
- * carried one; login is never suggested because it cannot restore quota.
+ * What every seat-down halt carries beyond its cause: the seat, the tool's own
+ * words and what the classifier made of them. A `account` classification with
+ * the `auth` cause is a sign-out (`runner-unauthenticated`); every other account
+ * cause and a rate-limited call halt as `runner-usage-limit`, with the cause
+ * kept in `facts.cause`.
  */
-export function buildRunnerUsageLimitRecoveryIssue(
-  opts: RunnerFailureRecoveryOptions,
-): RecoveryIssue {
-  const phase = opts.phase ?? 'implementing';
+export interface SeatDownRecoveryOptions extends RecoveryBuilderBase {
+  seat: CrewSeatId;
+  runner: DeepReadonly<RunnerConfig>;
+  classification: SeatFailureClassification;
+  words: string;
+  requestId?: string | undefined;
+  resetAt?: Date | undefined;
+  fallback?: SeatSwapCandidate | undefined;
+  task?: Task | undefined;
+  phase: Phase;
+  attempts?: number | undefined;
+  maxAttempts?: number | undefined;
+  selectedImplementerProfile?: string | undefined;
+  seatSwap?: SeatSwapContext | undefined;
+  /**
+   * The switches this run already made, so a seat is moved to its fallback
+   * automatically at most once. Absent means none.
+   */
+  seatSwitches?: readonly SeatSwitchRecord[] | undefined;
+  /** Rows a caller adds below the halt's own (the consult advice, the seat it inherits). */
+  details?: readonly string[] | undefined;
+}
+
+/** The fallback row: the declared fallback's identity, or that the seat declares none. */
+function fallbackDetail(
+  fallback: SeatSwapCandidate | undefined,
+  blockedReason: string | undefined,
+): string {
+  if (fallback === undefined) return 'no fallback declared';
+  const identity = formatSeatCandidateIdentity(fallback);
+  return blockedReason === undefined
+    ? `fallback: ${identity}`
+    : `fallback: ${identity} · not offered: ${blockedReason}`;
+}
+
+/** The tool's own words, attributed, with the request id when the caller parsed one out. */
+function reportedDetail(displayName: string, opts: SeatDownRecoveryOptions): string {
+  const requestId = opts.requestId === undefined ? '' : ` (request_id: ${opts.requestId})`;
+  return `${displayName} reported: ${opts.words}${requestId}`;
+}
+
+/**
+ * The automatic-switch intent a seat-down halt carries: the seat moves itself to
+ * its declared fallback without asking. Only a seat that cannot work qualifies —
+ * an account refusal, or a rate-limited call whose reset is further away than a
+ * run will wait — and only when the offer leads with that fallback and this run
+ * has not already switched the seat automatically. The config hash travels with
+ * the intent so a config the operator changed is not overwritten.
+ */
+function autoSwitchIntent(
+  opts: SeatDownRecoveryOptions,
+  offer: SwitchSeatOffer,
+): NonNullable<SwitchSeatOffer['auto']> | undefined {
+  const fallback = opts.fallback;
+  const configRevision = opts.seatSwap?.configRevision;
+  if (fallback === undefined || configRevision === undefined) return undefined;
+  if ((opts.seatSwitches ?? []).some((record) => record.seat === offer.seat && record.auto)) {
+    return undefined;
+  }
+  const classification = opts.classification;
+  const switchable =
+    classification.class === 'account' ||
+    (classification.class === 'rate-limited' &&
+      classification.resetAt.getTime() - Date.now() > BOUNDS.rateLimitResetWaitMs);
+  if (!switchable) return undefined;
+  const first = offer.candidates[0];
+  const leadsWithFallback =
+    first !== undefined &&
+    first.tool === fallback.tool &&
+    first.model === fallback.model &&
+    first.effort === fallback.effort &&
+    first.variant === fallback.variant;
+  if (!leadsWithFallback) return undefined;
+  return { candidate: fallback, configRevision };
+}
+
+/**
+ * The one seat-down halt: a seat that cannot work ends here, on the plan, build
+ * or review seat alike. A refused account and a dead sign-in raise the same halt
+ * — the seat moves, waits out its reset, retries, skips the brief or ends the
+ * run — so the cause, the tool's verbatim words and the fallback are stated once
+ * and every caller builds through here.
+ */
+export function buildSeatDownIssue(opts: SeatDownRecoveryOptions): RecoveryIssue {
+  const { classification } = opts;
   const displayName = runnerAuthDisplayName(opts.runner);
-  const resetsAt = parseUsageLimitReset(opts.toolMessage);
-  const seatSwap = switchSeatOffer(opts.seatSwap);
-  const actions = haltActions('runner-usage-limit', [
+  const isAuth = classification.class === 'account' && classification.cause === 'auth';
+  const reason = isAuth ? 'runner-unauthenticated' : 'runner-usage-limit';
+  const resetAt =
+    opts.resetAt ?? (classification.class === 'rate-limited' ? classification.resetAt : undefined);
+  const offer = switchSeatOffer(opts.seatSwap);
+  const auto = offer === undefined ? undefined : autoSwitchIntent(opts, offer);
+  const switchSeat =
+    offer === undefined ? undefined : auto === undefined ? offer : { ...offer, auto };
+  const actions = haltActions(reason, [
     'retry-same-worker',
-    seatSwap === undefined ? undefined : 'switch-seat',
-    'skip-current-task',
+    switchSeat === undefined ? undefined : 'switch-seat',
+    resetAt === undefined ? undefined : 'retry-later',
+    opts.task === undefined ? undefined : 'skip-current-task',
     'end-run',
   ]);
+  const cause =
+    classification.class === 'rate-limited'
+      ? 'rate-limit'
+      : classification.class === 'account' && classification.cause !== 'auth'
+        ? classification.cause
+        : undefined;
+  const message =
+    classification.class === 'account'
+      ? classification.cause === 'auth'
+        ? `${displayName} is signed out. ${runnerLoginInstruction(opts.runner)}`
+        : `${displayName} account: ${ACCOUNT_CAUSE_WORDS[classification.cause]}`
+      : usageLimitAdvice({ tool: displayName, seat: opts.seatSwap?.seat ?? opts.seat });
+  // A seat that cannot work recommends the move that gets it working: a detected
+  // seat to switch to, then a named reset's wait, then the same-seat retry.
+  const preferences: RecoveryAction[] = [];
+  if (offer !== undefined) preferences.push('switch-seat');
+  if (resetAt !== undefined) preferences.push('retry-later');
 
   return createRecoveryIssue({
     id: opts.id,
-    seat: 'build',
-    reason: 'runner-usage-limit',
-    phase,
+    seat: opts.seat,
+    reason,
+    phase: opts.phase,
     task: opts.task,
-    files: taskFiles(opts.task),
-    affectedTaskIds: [opts.task.id],
-    message: usageLimitAdvice({ tool: displayName, seat: 'build' }),
+    files: opts.task === undefined ? [] : taskFiles(opts.task),
+    affectedTaskIds: opts.task === undefined ? [] : [opts.task.id],
+    message,
     details: [
-      `${displayName} reported: ${opts.toolMessage}`,
-      'The run stopped instead of escalating this task to the planner.',
+      reportedDetail(displayName, opts),
+      fallbackDetail(opts.fallback, opts.seatSwap?.fallbackBlockedReason),
       ...attemptDetails(opts.attempts, opts.maxAttempts),
       ...implementerDetails(opts.selectedImplementerProfile),
+      ...(opts.details ?? []),
     ],
     ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
     ...(opts.maxAttempts !== undefined ? { maxAttempts: opts.maxAttempts } : {}),
     selectedImplementerProfile: opts.selectedImplementerProfile,
-    ...(resetsAt !== null && { resetAt: resetsAt.toISOString() }),
-    ...(seatSwap !== undefined && { switchSeat: seatSwap }),
+    ...(resetAt !== undefined && { resetAt: resetAt.toISOString() }),
+    ...(switchSeat !== undefined && { switchSeat }),
     facts: compactFacts({
       tool: displayName,
-      limitMessage: opts.toolMessage,
-      resetsAt: resetsAt?.toISOString(),
+      cause,
+      ...(resetAt !== undefined && { resetsAt: resetAt.toISOString() }),
     }),
     availableActions: actions,
-    recommendedAction: chooseRecommended(actions, ['switch-seat']),
+    recommendedAction: chooseRecommended(actions, preferences),
     createdAt: opts.createdAt,
   });
 }
@@ -208,56 +356,6 @@ export function buildRunnerUsageLimitRecoveryIssue(
 export function runnerHaltRow(issue: RecoveryIssue, toolMessage: string): string {
   const words = issue.resetAt === undefined ? toolMessage : stripRecoveryResetClause(toolMessage);
   return `${issue.message} (runner reported: ${words})`;
-}
-
-/**
- * A signed-out runner halts the run instead of escalating: retrying cannot
- * succeed, and silently routing every task to the planner is the outcome the
- * halt exists to prevent. The message carries
- * the exact login command; the details keep the tool's own words verbatim.
- */
-export function buildRunnerUnauthenticatedRecoveryIssue(
-  opts: RunnerFailureRecoveryOptions,
-): RecoveryIssue {
-  const phase = opts.phase ?? 'implementing';
-  const displayName = runnerAuthDisplayName(opts.runner);
-  const instruction = runnerLoginInstruction(opts.runner);
-  const seatSwap = switchSeatOffer(opts.seatSwap);
-  const actions = haltActions('runner-unauthenticated', [
-    'retry-same-worker',
-    seatSwap === undefined ? undefined : 'switch-seat',
-    'skip-current-task',
-    'end-run',
-  ]);
-
-  return createRecoveryIssue({
-    id: opts.id,
-    seat: 'build',
-    reason: 'runner-unauthenticated',
-    phase,
-    task: opts.task,
-    files: taskFiles(opts.task),
-    affectedTaskIds: [opts.task.id],
-    message: `${displayName} is signed out. ${instruction}`,
-    details: [
-      `${displayName} reported: ${opts.toolMessage}`,
-      'The run stopped instead of escalating this task to the planner.',
-      ...attemptDetails(opts.attempts, opts.maxAttempts),
-      ...implementerDetails(opts.selectedImplementerProfile),
-    ],
-    ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
-    ...(opts.maxAttempts !== undefined ? { maxAttempts: opts.maxAttempts } : {}),
-    selectedImplementerProfile: opts.selectedImplementerProfile,
-    ...(seatSwap !== undefined && { switchSeat: seatSwap }),
-    facts: compactFacts({
-      tool: displayName,
-      loginInstruction: instruction,
-      authMessage: opts.toolMessage,
-    }),
-    availableActions: actions,
-    recommendedAction: chooseRecommended(actions),
-    createdAt: opts.createdAt,
-  });
 }
 
 /** The error a retry-exhausted brief stopped on; a denial or a no-change message is not a check result. */

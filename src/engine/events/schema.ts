@@ -33,6 +33,7 @@ import {
   RunnerCallActivityKindSchema,
   RunnerCallActivityStageSchema,
   CallIdSchema,
+  RUNNER_CALL_RAW_TAIL_MAX_LENGTH,
   RunnerCallErrorSchema,
   RunnerCallFailureStatusSchema,
   RunnerCallTextSemanticsSchema,
@@ -359,6 +360,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     status: RunnerCallFailureStatusSchema,
     error: RunnerCallErrorSchema,
     partial: z.boolean(),
+    rawTail: z.string().max(RUNNER_CALL_RAW_TAIL_MAX_LENGTH).optional(),
     ...runnerCallTerminalFields,
   }),
   strictCallPhaseEvent('runner_call_completed').extend({

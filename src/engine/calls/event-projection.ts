@@ -107,6 +107,7 @@ export function projectRunnerCallEvent(
           ...event.error,
           message: boundedRunnerCallMessage(event.error.message),
         },
+        ...(event.rawTail !== undefined && { rawTail: event.rawTail }),
         startedAt: event.startedAt,
         endedAt: event.endedAt,
         durationMs: event.durationMs,

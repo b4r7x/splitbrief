@@ -7,8 +7,7 @@ import {
 } from '../../runners/errors.js';
 import type { ImplementerOptions } from '../types.js';
 import { processError } from '../../../lib/process/errors.js';
-import { isAuthFailureDiagnostic } from '../../runners/auth-failure.js';
-import { isUsageLimitDiagnostic } from '../../runners/usage-limit.js';
+import { classifySeatFailure } from '../../runners/seat-failure.js';
 import { isRecord } from '../../../utils/type-guards.js';
 
 export const ABORTED_OUTCOME_TEXT = 'Aborted';
@@ -121,13 +120,23 @@ export function runnerCallOutcome(result: RunnerCallResult): RunnerOutcome {
   // Subscription CLIs report an exhausted quota and a dead login alike as
   // ordinary turn failures (codex: `codex-turn-failed`, claude:
   // `runner_result_error`); the message is the only signal that retrying
-  // cannot succeed. Limits are checked first: a limit message must never
-  // earn login advice, because logging in does not restore quota.
-  if (isUsageLimitDiagnostic(result.error.message)) {
-    return runnerOutcome.failure('usage-limit');
+  // cannot succeed. The one classifier reads it: an account refusal is a
+  // usage-limit, a signed-out account is unauthenticated, and a limit whose
+  // reset it names is a usage-limit too.
+  const classification = classifySeatFailure({
+    message: result.error.message,
+    code: result.error.code,
+    ...(result.error.status !== undefined && { status: result.error.status }),
+    ...(result.error.providerType !== undefined && { providerType: result.error.providerType }),
+    source: 'result-error',
+  });
+  if (classification.class === 'account') {
+    return runnerOutcome.failure(
+      classification.cause === 'auth' ? 'unauthenticated' : 'usage-limit',
+    );
   }
-  if (isAuthFailureDiagnostic(result.error.message)) {
-    return runnerOutcome.failure('unauthenticated');
+  if (classification.class === 'rate-limited') {
+    return runnerOutcome.failure('usage-limit');
   }
 
   switch (result.status) {

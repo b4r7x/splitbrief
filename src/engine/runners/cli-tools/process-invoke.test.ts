@@ -24,9 +24,8 @@ import type {
   CliProtocolEvent,
 } from './contract.js';
 import { CLI_RAW_OUTPUT_MAX_BYTES, invokeProcessCli } from './process-invoke.js';
-import { runnerCallOutcome } from '../../implementers/pipeline/call-result.js';
+import { runnerCallOutcome, runnerOwnWords } from '../../implementers/pipeline/call-result.js';
 import { requireCompletedCall } from '../../planners/require-completed-call.js';
-import { usageLimitDetailFromError } from '../usage-limit.js';
 import { antigravityImplementerAdapter } from './antigravity.js';
 import { claudeCodeImplementerAdapter } from './claude-code.js';
 import { codexImplementerAdapter } from './codex.js';
@@ -306,7 +305,7 @@ describe('invokeProcessCli', () => {
     } catch (err) {
       plannerError = err;
     }
-    expect(usageLimitDetailFromError(plannerError)).toBe(line);
+    expect(runnerOwnWords(plannerError)).toBe(line);
   });
 
   it('rejects transport overflow, malformed placeholders, and configured argument conflicts before spawn', async () => {

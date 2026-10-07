@@ -295,6 +295,7 @@ describe('handlePlanningFailure', () => {
     expect(result.state.pendingRecovery?.resetAt).toBeDefined();
     expect(result.state.pendingRecovery?.details).toEqual([
       `OpenAI Codex CLI reported: ${codexLimit}`,
+      'no fallback declared',
     ]);
     // The error row carries the halt's reset for the row to spell; its words name no clock, and
     // codex's own words drop theirs.

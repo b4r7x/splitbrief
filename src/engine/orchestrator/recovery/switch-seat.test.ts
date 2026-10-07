@@ -165,4 +165,34 @@ describe('configWithSwitchedSeat', () => {
 
     expect(configWithSwitchedSeat(config, 'plan', { tool: 'not-a-real-tool' })).toBeNull();
   });
+
+  it('keeps the plan seat fallback across the switch', () => {
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'claude-code', fallback: { tool: 'codex' } },
+    });
+
+    const switched = configWithSwitchedSeat(config, 'plan', { tool: 'opencode' });
+
+    expect(switched?.planner.fallback).toEqual({ tool: 'codex' });
+  });
+
+  it('keeps the build seat fallback across the switch', () => {
+    const config = makeConfig({
+      implementer: { kind: 'cli', tool: 'codex', fallback: { tool: 'claude-code' } },
+    });
+
+    const switched = configWithSwitchedSeat(config, 'build', { tool: 'opencode' });
+
+    expect(switched?.implementer.fallback).toEqual({ tool: 'claude-code' });
+  });
+
+  it('gives an inherited review seat the planner fallback', () => {
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'claude-code', fallback: { tool: 'codex' } },
+    });
+
+    const switched = configWithSwitchedSeat(config, 'review', { tool: 'opencode' });
+
+    expect(switched?.reviewer?.fallback).toEqual({ tool: 'codex' });
+  });
 });

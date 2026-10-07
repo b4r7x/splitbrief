@@ -128,3 +128,47 @@ describe('crewRowFilterText', () => {
     expect(text).toContain('high');
   });
 });
+
+describe('declared fallback rows', () => {
+  it('carries the fallback identity on the seat that declares one', () => {
+    const config = makeConfig({
+      planner: {
+        kind: 'cli',
+        tool: 'claude-code',
+        model: 'sonnet',
+        fallback: { tool: 'codex', model: 'gpt-5' },
+      },
+    });
+
+    const plan = rowAt(deriveCrewRows({ config }), 'seat:plan');
+    expect(plan.fallback).toContain('Codex');
+  });
+
+  it('states the fallback axis word once', () => {
+    const config = makeConfig({
+      planner: {
+        kind: 'cli',
+        tool: 'claude-code',
+        model: 'sonnet',
+        fallback: { tool: 'opencode', model: 'openai/gpt-5.6', variant: 'xhigh' },
+      },
+    });
+
+    const plan = rowAt(deriveCrewRows({ config }), 'seat:plan');
+    expect(plan.fallback?.endsWith('xhigh')).toBe(true);
+  });
+
+  it('leaves the fallback off every seat that declares none', () => {
+    for (const row of deriveCrewRows({ config: makeConfig() })) {
+      expect(row.fallback).toBeUndefined();
+    }
+  });
+
+  it('gives an inherited review seat the planner fallback', () => {
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'claude-code', fallback: { tool: 'codex' } },
+    });
+
+    expect(rowAt(deriveCrewRows({ config }), 'seat:review').fallback).toBeDefined();
+  });
+});

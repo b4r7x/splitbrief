@@ -43,7 +43,8 @@ export function planSeatBlock(
     input.innerWidth - CREW_IDENTITY_COLUMN - (posture ? CREW_POSTURE_COLUMN : 0);
 
   let verdict = input.verdict !== undefined;
-  const rowCount = (): number => input.rows.length + (verdict ? 1 : 0);
+  const fallbackRows = input.rows.filter((row) => row.fallback !== undefined).length;
+  const rowCount = (): number => input.rows.length + fallbackRows + (verdict ? 1 : 0);
 
   if (rowCount() > input.rowBudget && verdict) verdict = false;
 
@@ -65,18 +66,26 @@ function rowLabel(row: CrewRow): string {
   return row.seat.label;
 }
 
+/** The one line a seat with a declared fallback shows under its own. */
+function fallbackLine(row: CrewRow): string | undefined {
+  return row.fallback === undefined ? undefined : `fallback ${row.fallback}`;
+}
+
 export function formatCrewRow(
   input: Readonly<{ row: CrewRow; layout: SeatBlockLayout }>,
 ): Readonly<{
   label: string;
   content: string;
   posture?: string | undefined;
+  fallback?: string | undefined;
 }> {
   const { row, layout } = input;
   const posture = layout.posture ? billingWord(row.seat.posture) : undefined;
+  const fallback = fallbackLine(row);
   return {
     label: rowLabel(row).padEnd(CREW_LABEL_WIDTH),
     content: cutSeatIdentity(rowContent(row), layout.identityWidth),
     ...(posture !== undefined && { posture }),
+    ...(fallback !== undefined && { fallback }),
   };
 }

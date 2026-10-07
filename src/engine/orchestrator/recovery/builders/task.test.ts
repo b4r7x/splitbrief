@@ -18,8 +18,7 @@ import {
   buildRetryExhaustedRecoveryIssue,
   buildReviewFailedRecoveryIssue,
   buildRunnerInputTooLargeRecoveryIssue,
-  buildRunnerUnauthenticatedRecoveryIssue,
-  buildRunnerUsageLimitRecoveryIssue,
+  buildSeatDownIssue,
   buildSnapshotFailedRecoveryIssue,
   recoveryBuilderForRunnerOutcome,
   switchSeatOffer,
@@ -208,16 +207,21 @@ describe('buildRetryExhaustedRecoveryIssue', () => {
   });
 });
 
-describe('buildRunnerUsageLimitRecoveryIssue', () => {
+describe('buildSeatDownIssue', () => {
   // Captured live from `codex exec --json` on 2026-08-06.
   const codexLimit =
     "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Aug 8th, 2026 3:27 PM.";
+  const codexReset = new Date(2026, 7, 8, 15, 27);
+  const codexRunner = makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }).implementer;
 
-  it('records the reset time, keeps the tool message verbatim, and never suggests logging in', () => {
-    const issue = buildRunnerUsageLimitRecoveryIssue({
+  it('records the reset, keeps the tool words verbatim, and never suggests logging in', () => {
+    const issue = buildSeatDownIssue({
+      seat: 'build',
+      runner: codexRunner,
+      classification: { class: 'rate-limited', resetAt: codexReset },
+      words: codexLimit,
       task: makeTask({ id: 'T003' }),
-      runner: makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }).implementer,
-      toolMessage: codexLimit,
+      phase: 'implementing',
       attempts: 1,
       maxAttempts: 3,
       createdAt,
@@ -228,23 +232,68 @@ describe('buildRunnerUsageLimitRecoveryIssue', () => {
     expect(issue.message).toBe(
       'OpenAI Codex CLI hit its usage limit. Wait for the limit to reset or change the BUILD tool, then continue.',
     );
-    expect(issue.resetAt).toBe(new Date(2026, 7, 8, 15, 27).toISOString());
-    expect(issue.details.join('\n')).toContain(codexLimit);
-    expect(issue.details.join('\n')).toContain('stopped instead of escalating');
+    expect(issue.resetAt).toBe(codexReset.toISOString());
+    expect(issue.details[0]).toBe(`OpenAI Codex CLI reported: ${codexLimit}`);
+    expect(issue.details[1]).toBe('no fallback declared');
+    expect(issue.facts?.cause).toBe('rate-limit');
     expect(issue.facts?.resetsAt).toMatch(/^2026-08-08T/);
-    expect(issue.availableActions).toEqual(['retry-same-worker', 'skip-current-task', 'end-run']);
-    expect(issue.recommendedAction).toBe('retry-same-worker');
+    expect(issue.availableActions).toEqual([
+      'retry-same-worker',
+      'retry-later',
+      'skip-current-task',
+      'end-run',
+    ]);
+    expect(issue.recommendedAction).toBe('retry-later');
     expectValidRecoveryIssue(issue);
+  });
+
+  it('names the declared fallback and its model on the halt', () => {
+    const issue = buildSeatDownIssue({
+      seat: 'build',
+      runner: codexRunner,
+      classification: { class: 'account', cause: 'balance' },
+      words: 'provider.quota: Insufficient Balance',
+      fallback: { tool: 'claude-code', model: 'sonnet' },
+      task: makeTask({ id: 'T003' }),
+      phase: 'implementing',
+      createdAt,
+    });
+
+    expect(issue.details[1]).toMatch(/^fallback: Claude Code CLI/);
+  });
+
+  it('names why a declared fallback is not offered', () => {
+    const issue = buildSeatDownIssue({
+      seat: 'build',
+      runner: codexRunner,
+      classification: { class: 'account', cause: 'balance' },
+      words: 'provider.quota: Insufficient Balance',
+      fallback: { tool: 'claude-code' },
+      seatSwap: {
+        seat: 'build',
+        currentTool: 'codex',
+        detectedTools: [],
+        fallbackBlockedReason: 'unauthenticated',
+      },
+      task: makeTask({ id: 'T003' }),
+      phase: 'implementing',
+      createdAt,
+    });
+
+    expect(issue.details[1]).toBe('fallback: Claude Code CLI · not offered: unauthenticated');
   });
 
   it("files a seat down halt's actions, dropping only the switch with no offer", () => {
     const base = {
+      seat: 'build' as const,
+      runner: codexRunner,
+      classification: { class: 'rate-limited', resetAt: codexReset } as const,
+      words: codexLimit,
       task: makeTask({ id: 'T003' }),
-      runner: makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }).implementer,
-      toolMessage: codexLimit,
+      phase: 'implementing' as const,
       createdAt,
     };
-    const withOffer = buildRunnerUsageLimitRecoveryIssue({
+    const withOffer = buildSeatDownIssue({
       ...base,
       seatSwap: {
         seat: 'build',
@@ -255,33 +304,37 @@ describe('buildRunnerUsageLimitRecoveryIssue', () => {
         ],
       },
     });
-    const withoutOffer = buildRunnerUsageLimitRecoveryIssue(base);
+    const withoutOffer = buildSeatDownIssue(base);
 
     expect(haltOf(withOffer.reason)).toBe('seat-down');
     expect(haltOf(withoutOffer.reason)).toBe('seat-down');
     expect(withOffer.availableActions).toEqual([
       'retry-same-worker',
       'switch-seat',
+      'retry-later',
       'skip-current-task',
       'end-run',
     ]);
     expect(withoutOffer.availableActions).toEqual([
       'retry-same-worker',
+      'retry-later',
       'skip-current-task',
       'end-run',
     ]);
-    expect(withoutOffer.availableActions).toEqual(
-      withOffer.availableActions.filter((action) => action !== 'switch-seat'),
-    );
+    expect(withOffer.recommendedAction).toBe('switch-seat');
+    expect(withoutOffer.recommendedAction).toBe('retry-later');
     expectValidRecoveryIssue(withOffer);
     expectValidRecoveryIssue(withoutOffer);
   });
 
   it('offers the other detected ready tools as seats to switch to', () => {
-    const issue = buildRunnerUsageLimitRecoveryIssue({
+    const issue = buildSeatDownIssue({
+      seat: 'build',
+      runner: codexRunner,
+      classification: { class: 'rate-limited', resetAt: codexReset },
+      words: codexLimit,
       task: makeTask({ id: 'T003' }),
-      runner: makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }).implementer,
-      toolMessage: codexLimit,
+      phase: 'implementing',
       createdAt,
       seatSwap: {
         seat: 'build',
@@ -300,21 +353,25 @@ describe('buildRunnerUsageLimitRecoveryIssue', () => {
     });
     expect(issue.details.join('\n')).not.toContain('claude-code');
     expect(issue.resetAt).toMatch(/^2026-08-08T/);
+    expect(issue.recommendedAction).toBe('switch-seat');
     expect(issue.availableActions).toEqual([
       'retry-same-worker',
       'switch-seat',
+      'retry-later',
       'skip-current-task',
       'end-run',
     ]);
-    expect(issue.recommendedAction).toBe('switch-seat');
     expectValidRecoveryIssue(issue);
   });
 
   it('omits the seat switch when nothing else is detected ready', () => {
-    const issue = buildRunnerUsageLimitRecoveryIssue({
+    const issue = buildSeatDownIssue({
+      seat: 'build',
+      runner: codexRunner,
+      classification: { class: 'rate-limited', resetAt: codexReset },
+      words: codexLimit,
       task: makeTask({ id: 'T003' }),
-      runner: makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }).implementer,
-      toolMessage: codexLimit,
+      phase: 'implementing',
       createdAt,
       seatSwap: {
         seat: 'build',
@@ -342,6 +399,7 @@ describe('a seat whose account the provider refuses', () => {
   const seatSwap = {
     seat: 'build' as const,
     currentTool: 'opencode',
+    currentModel: 'deepseek/deepseek-flash',
     detectedTools: [
       { tool: 'opencode', ready: true },
       { tool: 'claude-code', model: 'sonnet', ready: true },
@@ -349,10 +407,13 @@ describe('a seat whose account the provider refuses', () => {
   };
 
   it('halts on the spent balance with the seat switch recommended and the provider words kept', () => {
-    const issue = buildRunnerUsageLimitRecoveryIssue({
-      task: makeTask({ id: 'T001' }),
+    const issue = buildSeatDownIssue({
+      seat: 'build',
       runner,
-      toolMessage: balance,
+      classification: { class: 'account', cause: 'balance' },
+      words: balance,
+      task: makeTask({ id: 'T001' }),
+      phase: 'implementing',
       attempts: 1,
       maxAttempts: 1,
       seatSwap,
@@ -361,6 +422,8 @@ describe('a seat whose account the provider refuses', () => {
 
     expect(issue.reason).toBe('runner-usage-limit');
     expect(issue.resetAt).toBeUndefined();
+    expect(issue.facts?.cause).toBe('balance');
+    expect(issue.message).toBe('OpenCode CLI account: balance spent');
     expect(issue.recommendedAction).toBe('switch-seat');
     expect(issue.availableActions).toEqual([
       'retry-same-worker',
@@ -376,11 +439,14 @@ describe('a seat whose account the provider refuses', () => {
     expectValidRecoveryIssue(issue);
   });
 
-  it('offers the seat switch beside the login when the account is signed out', () => {
-    const issue = buildRunnerUnauthenticatedRecoveryIssue({
-      task: makeTask({ id: 'T001' }),
+  it('recommends the seat switch beside the login when the account is signed out', () => {
+    const issue = buildSeatDownIssue({
+      seat: 'build',
       runner,
-      toolMessage: 'HTTP 403 Forbidden',
+      classification: { class: 'account', cause: 'auth' },
+      words: 'HTTP 403 Forbidden',
+      task: makeTask({ id: 'T001' }),
+      phase: 'implementing',
       attempts: 1,
       maxAttempts: 1,
       seatSwap,
@@ -388,6 +454,8 @@ describe('a seat whose account the provider refuses', () => {
     });
 
     expect(issue.reason).toBe('runner-unauthenticated');
+    expect(issue.message).toContain('OpenCode CLI is signed out');
+    expect(issue.recommendedAction).toBe('switch-seat');
     expect(issue.availableActions).toEqual([
       'retry-same-worker',
       'switch-seat',
@@ -426,6 +494,39 @@ describe('switchSeatOffer', () => {
       }),
     ).toBeUndefined();
   });
+
+  it('offers a fallback on the same tool and another model, not the tool alone', () => {
+    expect(
+      switchSeatOffer({
+        seat: 'build',
+        currentTool: 'codex',
+        currentModel: 'gpt-5',
+        detectedTools: [
+          { tool: 'codex', ready: true },
+          { tool: 'codex', model: 'gpt-5', ready: true },
+          { tool: 'codex', model: 'gpt-5-mini', effort: 'high', ready: true },
+        ],
+      }),
+    ).toEqual({
+      seat: 'build',
+      candidates: [{ tool: 'codex', model: 'gpt-5-mini', effort: 'high' }],
+    });
+  });
+
+  it("passes a candidate's variant through", () => {
+    expect(
+      switchSeatOffer({
+        seat: 'plan',
+        currentTool: 'codex',
+        detectedTools: [
+          { tool: 'claude-code', model: 'opus', effort: 'xhigh', variant: 'xhigh', ready: true },
+        ],
+      }),
+    ).toEqual({
+      seat: 'plan',
+      candidates: [{ tool: 'claude-code', model: 'opus', effort: 'xhigh', variant: 'xhigh' }],
+    });
+  });
 });
 
 describe('buildContextOverflowRecoveryIssue', () => {
@@ -458,48 +559,6 @@ describe('buildImplementerUnavailableRecoveryIssue', () => {
     expect(issue.reason).toBe('implementation-error');
     expect(issue.availableActions).toEqual(['retry-same-worker', 'skip-current-task', 'end-run']);
     expect(issue.recommendedAction).toBe('retry-same-worker');
-    expectValidRecoveryIssue(issue);
-  });
-});
-
-describe('buildRunnerUnauthenticatedRecoveryIssue', () => {
-  const runner = makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }).implementer;
-
-  it('offers a retry, skip or end and recommends the retry', () => {
-    const issue = buildRunnerUnauthenticatedRecoveryIssue({
-      task: makeTask({ id: 'T015' }),
-      runner,
-      toolMessage: 'Not logged in',
-      createdAt,
-    });
-
-    expect(issue.reason).toBe('runner-unauthenticated');
-    expect(issue.availableActions).toEqual(['retry-same-worker', 'skip-current-task', 'end-run']);
-    expect(issue.recommendedAction).toBe('retry-same-worker');
-    expectValidRecoveryIssue(issue);
-  });
-
-  it('offers the seat switch when another ready tool was detected, still recommending the retry', () => {
-    const issue = buildRunnerUnauthenticatedRecoveryIssue({
-      task: makeTask({ id: 'T015' }),
-      runner,
-      toolMessage: 'Not logged in',
-      createdAt,
-      seatSwap: {
-        seat: 'build',
-        currentTool: 'codex',
-        detectedTools: [{ tool: 'claude-code', ready: true }],
-      },
-    });
-
-    expect(issue.availableActions).toEqual([
-      'retry-same-worker',
-      'switch-seat',
-      'skip-current-task',
-      'end-run',
-    ]);
-    expect(issue.recommendedAction).toBe('retry-same-worker');
-    expect(issue.switchSeat).toEqual({ seat: 'build', candidates: [{ tool: 'claude-code' }] });
     expectValidRecoveryIssue(issue);
   });
 });

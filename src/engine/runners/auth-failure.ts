@@ -6,7 +6,6 @@ import {
 import { HALT_SIGNATURES } from '../../core/pipeline-spec/halts.js';
 import { getRunnerIdentityDisplayName } from '../../core/providers/catalog.js';
 import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool-catalog.js';
-import { isRecord } from '../../utils/type-guards.js';
 
 /**
  * Signed-out diagnostics match the shared halt phrases (`HALT_SIGNATURES.auth`),
@@ -23,13 +22,6 @@ export function isAuthFailureDiagnostic(message: string): boolean {
     /\bunauthenticated\b/.test(text) ||
     /\bsign in\b/.test(text)
   );
-}
-
-/** A thrown runner error's HTTP status marks a rejected login at 401 or 403. */
-export function isAuthFailureError(err: unknown): boolean {
-  if (!isRecord(err) || !isRecord(err.data)) return false;
-  const status = err.data.status ?? err.data.statusCode;
-  return status === 401 || status === 403;
 }
 
 /** How the runner is named in signed-out messages: catalog names, not config ids. */

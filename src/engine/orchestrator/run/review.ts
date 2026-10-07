@@ -198,6 +198,7 @@ export async function haltVerdictlessReview(args: {
       diagnosis: failure.diagnosis,
       phase: state.phase,
       seat: 'review',
+      seatSwitches: state.seatSwitches,
       swap: { seat: followsPlan ? 'plan' : 'review', runner: reviewer.runner },
       details: reviewSeatDetails(followsPlan),
     });

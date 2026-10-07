@@ -1,6 +1,9 @@
 import type { RecoveryAction, RecoveryReason } from '../schemas/enums.js';
 import type { SwitchSeatOffer } from '../schemas/recovery/schemas.js';
 import { CREW_SEAT_LABELS, type CrewSeatId } from '../crew/identity.js';
+import { formatResetAt } from './reset-clock.js';
+
+const RESET_PREFIX = 'resets ';
 
 export interface RecoveryActionChoiceContext {
   reason?: RecoveryReason | undefined;
@@ -9,6 +12,7 @@ export interface RecoveryActionChoiceContext {
   seat?: CrewSeatId | undefined;
   /** The seat a retry re-issues when the halt names no brief; absent when it replays one. */
   seatRetry?: CrewSeatId | undefined;
+  resetAt?: string | undefined;
 }
 
 /**
@@ -27,6 +31,10 @@ export function recoveryActionLabel(
         : `Try again with ${CREW_SEAT_LABELS[context.seatRetry]}`;
     case 'restore-backup':
       return 'Restore backup';
+    case 'retry-later': {
+      const reset = formatResetAt(context.resetAt);
+      return reset === undefined ? 'Retry later' : `Retry at ${reset.slice(RESET_PREFIX.length)}`;
+    }
     case 'switch-seat': {
       // The seat is the one that halted; a label that cannot name it names no seat at all.
       const seat = context.switchSeat?.seat ?? context.seat;

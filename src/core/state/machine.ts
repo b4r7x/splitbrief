@@ -45,6 +45,8 @@ const anytimeActions = [
   'SET_PENDING_RECOVERY',
   'MARK_RECOVERY_APPLYING',
   'RESOLVE_PENDING_RECOVERY',
+  'RESTART_ATTEMPT_ON_SEAT',
+  'RECORD_SEAT_SWITCH',
   'REPLACE_TASK',
   'INSERT_TASKS',
   'RECORD_CONSULT',
@@ -897,6 +899,29 @@ export function transition(
 
     case 'RESOLVE_PENDING_RECOVERY':
       return { ...state, pendingRecovery: undefined };
+
+    case 'RESTART_ATTEMPT_ON_SEAT': {
+      const idx = state.tasks.findIndex((t) => t.id === action.taskId);
+      if (idx < 0) return state;
+      return { ...state, currentTaskIndex: idx, pendingRecovery: undefined };
+    }
+
+    case 'RECORD_SEAT_SWITCH':
+      return {
+        ...state,
+        seatSwitches: [
+          ...(state.seatSwitches ?? []),
+          {
+            seat: action.seat,
+            from: action.from,
+            to: action.to,
+            cause: action.cause,
+            auto: action.auto,
+            configRevision: action.configRevision,
+            ts: now.toISOString(),
+          },
+        ],
+      };
 
     default:
       return assertNever(action);

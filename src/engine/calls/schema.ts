@@ -25,6 +25,8 @@ import { UsageBoundarySchema } from '../../core/schemas/usage-evidence.js';
 
 export const UNKNOWN_UPSTREAM_RAW_PREVIEW_MAX_LENGTH = 4096;
 export const RUNNER_CALL_MESSAGE_MAX_LENGTH = 8192;
+export const RUNNER_CALL_PROVIDER_TYPE_MAX_LENGTH = 256;
+export const RUNNER_CALL_RAW_TAIL_MAX_LENGTH = 2048;
 
 const boundedName = z.string().min(1).max(256);
 const boundedId = z.string().min(1).max(128);
@@ -92,6 +94,8 @@ export const RunnerCallArtifactSchema = z.strictObject({
 export const RunnerCallErrorSchema = z.strictObject({
   code: boundedName,
   message: boundedMessage,
+  status: nonnegativeInteger.optional(),
+  providerType: boundedName.optional(),
 });
 
 export const RunnerCallWarningSchema = z
@@ -186,6 +190,7 @@ export const RunnerCallEventSchema = z.discriminatedUnion('type', [
     status: RunnerCallFailureStatusSchema,
     error: RunnerCallErrorSchema,
     partial: z.boolean(),
+    rawTail: z.string().max(RUNNER_CALL_RAW_TAIL_MAX_LENGTH).optional(),
     ...runnerCallTerminalFields,
   }),
   callEvent('call_completed', {

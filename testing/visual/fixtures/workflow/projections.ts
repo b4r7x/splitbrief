@@ -38,11 +38,13 @@ import { tasksCardProjection } from './artifact-card-projections.js';
 import {
   buildRetryExhaustedRecoveryIssue,
   buildReviewFailedRecoveryIssue,
-  buildRunnerUsageLimitRecoveryIssue,
+  buildSeatDownIssue,
   buildLeftIsolationRecoveryIssue,
   runnerHaltRow,
   type SeatSwapContext,
 } from '../../../../src/engine/orchestrator/recovery/builders/task.js';
+import { parseUsageLimitReset } from '../../../../src/engine/runners/usage-limit.js';
+import type { SeatFailureClassification } from '../../../../src/engine/runners/seat-failure.js';
 import {
   consultHaltDetails,
   reviewSeatDetails,
@@ -1345,12 +1347,17 @@ const OLLAMA_LIMIT_WORDS = 'quota exhausted · resets 5pm';
  */
 function usageLimitRecoveryIssue(): RecoveryIssue {
   const config = visualConfig();
-  return buildRunnerUsageLimitRecoveryIssue({
+  const resetAt = parseUsageLimitReset(OLLAMA_LIMIT_WORDS);
+  const classification: SeatFailureClassification =
+    resetAt === null ? { class: 'account', cause: 'quota' } : { class: 'rate-limited', resetAt };
+  return buildSeatDownIssue({
     id: 'rec_visual_usage_limit',
+    seat: 'build',
+    runner: config.implementer,
+    classification,
+    words: OLLAMA_LIMIT_WORDS,
     task: HALTED_TASK,
     phase: 'implementing',
-    runner: config.implementer,
-    toolMessage: OLLAMA_LIMIT_WORDS,
     attempts: 1,
     maxAttempts: DEFAULT_LOCAL_RETRIES,
     selectedImplementerProfile: 'local-fixture',
@@ -1757,6 +1764,7 @@ function planSeatRecoveryIssue(): RecoveryIssue {
       runner: planner,
     }),
     phase: 'planning',
+    runner: planner,
     seatSwap: planSeatSwap('claude-code', ['claude-code', 'codex', 'opencode']),
     createdAt: new Date(FIXED_TS).toISOString(),
   });
@@ -1776,6 +1784,7 @@ function reviewSeatRecoveryIssue(): RecoveryIssue {
     }),
     seat: 'review',
     phase: 'final-review',
+    runner: CODEX_PLAN_SEAT,
     details: reviewSeatDetails(true),
     seatSwap: planSeatSwap('codex', ['codex', 'claude-code', 'opencode']),
     createdAt: new Date(FIXED_TS).toISOString(),
@@ -1797,6 +1806,7 @@ function consultSeatRecoveryIssue(): RecoveryIssue {
     }),
     task: HALTED_TASK,
     phase: 'escalating',
+    runner: CODEX_PLAN_SEAT,
     details: consultHaltDetails(WORKFLOW_FIXTURE_TASK_ID),
     seatSwap: planSeatSwap('codex', ['codex', 'claude-code', 'opencode']),
     createdAt: new Date(FIXED_TS).toISOString(),
@@ -1813,6 +1823,7 @@ function planSwappedRecoveryIssue(): RecoveryIssue {
       runner: CODEX_PLAN_SEAT,
     }),
     phase: 'planning',
+    runner: CODEX_PLAN_SEAT,
     seatSwap: planSeatSwap('codex', ['codex', 'claude-code']),
     createdAt: new Date(FIXED_TS).toISOString(),
   });

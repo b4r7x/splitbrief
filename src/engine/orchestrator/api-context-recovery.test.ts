@@ -497,6 +497,7 @@ describe('the diagnosis a halt persists', () => {
       buildPlannerCallFailedRecoveryIssue({
         diagnosis: { failure: 'call-failed', message: 'Planning failed.' },
         phase: 'planning',
+        runner: makeNoValidationConfig().planner,
         details: ['Missing: spec.md'],
         facts: {
           apiContextCode: 'insufficient-context',
@@ -554,6 +555,7 @@ describe('answering a halt that names no brief', () => {
       : buildPlannerCallFailedRecoveryIssue({
           diagnosis: { failure: 'call-failed', message: 'Planning failed.' },
           phase: 'planning',
+          runner: config.planner,
           facts: { apiContextCode: 'insufficient-context', apiContextSeat: 'plan' },
           createdAt: CREATED_AT,
         });
@@ -733,6 +735,7 @@ describe('a REVIEW seat out of quota', () => {
     expect(new Date(issue?.resetAt ?? '')).toEqual(new Date(2026, 9, 3, 13, 2));
     expect(issue?.details).toEqual([
       `OpenAI Codex CLI reported: ${CODEX_LIMIT}`,
+      'no fallback declared',
       'The review runs on the PLAN tool. A new PLAN tool also runs the review.',
     ]);
     expect(issue?.message).toContain('hit its usage limit');
@@ -743,7 +746,12 @@ describe('a REVIEW seat out of quota', () => {
     expect(row?.type === 'error' && row.resetAt).toBe(issue?.resetAt);
     const rowText = row?.type === 'error' ? row.message : '';
     expect(rowText).not.toMatch(/13:02|1:02 PM|try again/);
-    expect(issue?.availableActions).toEqual(['retry-same-worker', 'switch-seat', 'end-run']);
+    expect(issue?.availableActions).toEqual([
+      'retry-same-worker',
+      'switch-seat',
+      'retry-later',
+      'end-run',
+    ]);
     expect(issue?.recommendedAction).toBe('switch-seat');
     // Nothing was judged, so the run waits on the review it never finished.
     expect(result.state.phase).toBe('final-review');
@@ -827,7 +835,7 @@ describe('a REVIEW seat signed out', () => {
     expect(issue).toMatchObject({
       reason: 'runner-unauthenticated',
       seat: 'review',
-      recommendedAction: 'retry-same-worker',
+      recommendedAction: 'switch-seat',
       switchSeat: { seat: 'plan', candidates: [{ tool: 'claude-code' }] },
     });
     expect(issue?.taskId).toBeUndefined();

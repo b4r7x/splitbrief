@@ -1,6 +1,5 @@
 import { CREW_SEAT_LABELS, type CrewSeatId } from '../../core/crew/identity.js';
 import { HALT_SIGNATURES } from '../../core/pipeline-spec/halts.js';
-import { isRecord } from '../../utils/type-guards.js';
 import type { RunnerCallWarning } from '../calls/types.js';
 
 /**
@@ -55,7 +54,7 @@ const USAGE_LIMIT_STRONG_PATTERNS: readonly RegExp[] = [
 const USAGE_LIMIT_WEAK_429 = /\b429\b/;
 const USAGE_LIMIT_WEAK_RATE_LIMIT = /rate.?limit/;
 
-function hasUsageLimitNounCorroboration(text: string): boolean {
+export function hasUsageLimitNounCorroboration(text: string): boolean {
   if (/too many requests/.test(text)) return true;
   if (/retry-after/.test(text)) return true;
   if (/\bquota\b/.test(text)) return true;
@@ -324,30 +323,6 @@ export function parseUsageLimitReset(
     parseRelative(message, now) ??
     parseResetsAt(message, now)
   );
-}
-
-/**
- * The provider's own words for a limit failure that arrived as a thrown typed
- * error instead of a failed call result — the API-runner path. Prefers the
- * nested runner-call error, then the raw HTTP detail (`stream-http-status`
- * keeps it under `data.detail` while its top-level message is a rewritten
- * hint), then the error message. A bare 402 or 429 status counts as a limit even
- * when the body text matches no known phrase.
- */
-export function usageLimitDetailFromError(err: unknown): string | null {
-  if (!isRecord(err)) return null;
-  const data = isRecord(err.data) ? err.data : undefined;
-  const nested = data !== undefined && isRecord(data.error) ? data.error : undefined;
-  const raw = [nested?.message, data?.detail].filter(
-    (value): value is string => typeof value === 'string',
-  );
-  const matched = raw.find((text) => isUsageLimitDiagnostic(text));
-  if (matched !== undefined) return matched;
-  const status = data?.status ?? data?.statusCode;
-  const message = typeof err.message === 'string' ? err.message : undefined;
-  if (status === 402 || status === 429) return raw[0] ?? message ?? `HTTP ${status}`;
-  if (message !== undefined && isUsageLimitDiagnostic(message)) return raw[0] ?? message;
-  return null;
 }
 
 /**

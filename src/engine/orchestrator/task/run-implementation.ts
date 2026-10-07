@@ -302,6 +302,12 @@ export async function runImplementation(opts: {
     });
   }
 
+  // A seat that cannot work parks its brief: the workspace is kept so the
+  // continued attempt reads the partial edits it already wrote.
+  if (loop.value.outcome === 'usage-limit' || loop.value.outcome === 'unauthenticated') {
+    await workspace.retain?.();
+  }
+
   return {
     state,
     implResult: loop.value,

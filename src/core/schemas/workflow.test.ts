@@ -181,4 +181,64 @@ describe('WorkflowStateSchema v4', () => {
     expect(parsed).not.toHaveProperty('plannerKind');
     expect(parsed).not.toHaveProperty('implementerKind');
   });
+
+  it('loads an old state that carries none of the seat-switch fields', () => {
+    const parsed = WorkflowStateSchema.parse(state());
+
+    expect(parsed.seatSwitches).toBeUndefined();
+    expect(parsed.interruptedStep).toBeUndefined();
+  });
+
+  it('keeps a seat switch record, a seat-sourced park and an automatic offer', () => {
+    const parsed = WorkflowStateSchema.parse({
+      ...state({
+        phase: 'implementing',
+        tasks: [{ ...task, status: 'in_progress' }],
+      }),
+      seatSwitches: [
+        {
+          seat: 'build',
+          from: 'codex',
+          to: 'claude-code',
+          cause: 'runner-usage-limit',
+          auto: true,
+          configRevision: 'abc123',
+          ts: '2026-10-07T10:00:00.000Z',
+        },
+      ],
+      interruptedStep: {
+        step: { kind: 'brief', taskId: 'T001', attempt: 2 },
+        source: 'seat',
+        cut: 'mid-step',
+        at: '2026-10-07T10:00:00.000Z',
+      },
+      pendingRecovery: {
+        id: 'rec1',
+        reason: 'runner-usage-limit',
+        phase: 'implementing',
+        status: 'awaiting-user',
+        seat: 'build',
+        files: [],
+        affectedTaskIds: [],
+        message: 'Usage limit',
+        details: [],
+        resetAt: '2026-10-07T10:00:00.000Z',
+        switchSeat: {
+          seat: 'build',
+          candidates: [{ tool: 'codex' }],
+          auto: { candidate: { tool: 'codex' }, configRevision: 'abc123' },
+        },
+        availableActions: ['retry-later', 'end-run'],
+        recommendedAction: 'retry-later',
+        createdAt: '2026-10-07T10:00:00.000Z',
+      },
+    });
+
+    expect(parsed.seatSwitches?.[0]?.cause).toBe('runner-usage-limit');
+    expect(parsed.interruptedStep?.source).toBe('seat');
+    expect(parsed.pendingRecovery?.switchSeat?.auto).toEqual({
+      candidate: { tool: 'codex' },
+      configRevision: 'abc123',
+    });
+  });
 });

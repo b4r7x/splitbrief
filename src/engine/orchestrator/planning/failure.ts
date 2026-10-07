@@ -56,6 +56,7 @@ export async function handlePlanningFailure(opts: {
       projectDir,
       diagnosis: { failure: 'call-failed', message },
       phase: latest.phase,
+      seatSwitches: latest.seatSwitches,
       swap: { seat: 'plan', runner: wctx.config.planner },
       details: [
         ...(contextDiagnostic.missingSections.length > 0
@@ -89,6 +90,7 @@ export async function handlePlanningFailure(opts: {
     projectDir,
     diagnosis,
     phase: latest.phase,
+    seatSwitches: latest.seatSwitches,
     swap: { seat: 'plan', runner: wctx.config.planner },
   });
 

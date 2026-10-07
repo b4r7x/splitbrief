@@ -5,13 +5,14 @@ import { loadState } from '../../../core/state/persistence.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { runnerOwnWords } from '../../implementers/pipeline/call-result.js';
 import type { RunnerFailureOutcomeState } from '../../runners/errors.js';
+import { classifySeatFailure } from '../../runners/seat-failure.js';
 import {
   abortableDelay,
   withSeatRetry,
   type SeatAttempt,
   type SeatFailure,
 } from '../../runners/transient.js';
-import { isUsageLimitDiagnostic, parseUsageLimitReset } from '../../runners/usage-limit.js';
+import { parseUsageLimitReset } from '../../runners/usage-limit.js';
 import { publishSeatRetry, publishSeatWaitStarted } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import type { WorkflowPersistenceContext } from '../types.js';
@@ -65,8 +66,12 @@ export function seatResetWaitDeadline(
   failure: SeatFailure,
   now: Date = new Date(),
 ): Date | undefined {
-  if (failure.outcome !== undefined && failure.outcome !== 'usage-limit') return undefined;
-  if (failure.outcome === undefined && !isUsageLimitDiagnostic(failure.message)) return undefined;
+  const classification = classifySeatFailure({
+    message: failure.message,
+    ...(failure.outcome !== undefined && { outcome: failure.outcome }),
+    source: 'thrown',
+  });
+  if (classification.class !== 'rate-limited') return undefined;
   const resetAt = parseUsageLimitReset(failure.message, now);
   if (resetAt === null) return undefined;
   const waitMs = resetAt.getTime() - now.getTime();

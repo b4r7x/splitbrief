@@ -32,7 +32,7 @@ import { assertNever, isRecord } from '../../../utils/type-guards.js';
 import { error } from '../../../utils/error.js';
 import { isCredentialEnvironmentName } from '../../../utils/redact.js';
 import { sandboxCredentialValues } from '../sandbox-credential-values.js';
-import { isUsageLimitDiagnostic } from '../usage-limit.js';
+import { classifySeatFailure } from '../seat-failure.js';
 import { revalidateCliExecutableIdentity } from '../resolve-cli-executable.js';
 import { type PreparedPrompt, preparePrompt } from './prompt-transport.js';
 import type {
@@ -623,11 +623,23 @@ const HALT_CODES: ReadonlySet<string> = new Set(
 );
 
 /** A failed terminal whose own words already name a halt keeps them over anything on stderr. */
-function namesHalt(failure: Readonly<{ code: string; message: string }>): boolean {
+function namesHalt(
+  failure: Readonly<{
+    code: string;
+    message: string;
+    status?: number | undefined;
+    providerType?: string | undefined;
+  }>,
+): boolean {
   return (
     HALT_CODES.has(failure.code) ||
-    isUsageLimitDiagnostic(failure.message) ||
-    haltFailure([failure.message]) !== null
+    haltFailure([failure.message]) !== null ||
+    classifySeatFailure({
+      message: failure.message,
+      ...(failure.status !== undefined && { status: failure.status }),
+      ...(failure.providerType !== undefined && { providerType: failure.providerType }),
+      source: 'result-error',
+    }).class !== 'other'
   );
 }
 

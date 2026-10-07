@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
@@ -12,6 +12,7 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { applyRecoveryAction } from './actions.js';
+import { resumeSeatWait } from '../escalation/seat-wait.js';
 import { buildConsultBoundRecoveryIssue } from './builders/consult.js';
 import { buildReviewFailedRecoveryIssue } from './builders/task.js';
 
@@ -79,6 +80,7 @@ describe('typed review overrides', () => {
 let dirs: string[] = [];
 
 afterEach(() => {
+  vi.useRealTimers();
   for (const dir of dirs) cleanupTempDir(dir);
   dirs = [];
 });
@@ -568,6 +570,102 @@ describe('applyRecoveryAction: switch-seat', () => {
     });
 
     expect(result).toMatchObject({ ok: false, code: 'seat-swap-unavailable' });
+  });
+});
+
+describe('applyRecoveryAction: retry-later', () => {
+  function seatDownHalt(resetAt: string | undefined): RecoveryIssue {
+    return makeRecoveryIssue({
+      reason: 'runner-usage-limit',
+      phase: 'final-review',
+      seat: 'review',
+      ...(resetAt !== undefined && { resetAt }),
+      availableActions: ['retry-later', 'end-run'],
+      recommendedAction: 'retry-later',
+    });
+  }
+
+  it('parks the seat on the reset the halt names and clears the halt', async () => {
+    const { projectDir, sessionId } = setupSession('retry-later');
+    const issue = seatDownHalt('2026-05-01T10:00:00.000Z');
+    const base = makeImplState([makeTask({ id: 'T001' })]);
+    saveState({ projectDir, sessionId }, { ...base, pendingRecovery: issue });
+    const { bus, events } = makeBusRecorder();
+
+    const result = await applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state: { ...base, pendingRecovery: issue },
+      action: 'retry-later',
+      bus,
+    });
+
+    expect(result).toMatchObject({ ok: true, status: 'continued' });
+    if (!result.ok) return;
+    expect(result.state.pendingRecovery).toBeUndefined();
+    expect(result.state.seatWait).toEqual({ seat: 'review', resetAt: '2026-05-01T10:00:00.000Z' });
+    expect(loadState({ projectDir, sessionId })?.seatWait).toEqual({
+      seat: 'review',
+      resetAt: '2026-05-01T10:00:00.000Z',
+    });
+    expect(events.map((event) => event.type)).toEqual(
+      expect.arrayContaining(['recovery_action_selected', 'recovery_resolved']),
+    );
+  });
+
+  it('blocks when the halt names no reset to wait for', async () => {
+    const { projectDir, sessionId } = setupSession('retry-later-no-reset');
+    const issue = seatDownHalt(undefined);
+    const base = makeImplState([makeTask({ id: 'T001' })]);
+    saveState({ projectDir, sessionId }, { ...base, pendingRecovery: issue });
+    const { bus } = makeBusRecorder();
+
+    const result = await applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state: { ...base, pendingRecovery: issue },
+      action: 'retry-later',
+      bus,
+    });
+
+    expect(result).toMatchObject({ ok: false, code: 'action-not-available' });
+    expect(result.state.pendingRecovery).toEqual(issue);
+    expect(result.state.seatWait).toBeUndefined();
+  });
+
+  it('honours a seat wait beyond the rate-limit bound when the run resumes', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-01T00:00:00.000Z'));
+    const { projectDir, sessionId } = setupSession('retry-later-far');
+    const resetAt = '2026-05-01T02:00:00.000Z';
+    const issue = seatDownHalt(resetAt);
+    const base = makeImplState([makeTask({ id: 'T001' })]);
+    saveState({ projectDir, sessionId }, { ...base, pendingRecovery: issue });
+    const { bus, events } = makeBusRecorder();
+
+    const applied = await applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state: { ...base, pendingRecovery: issue },
+      action: 'retry-later',
+      bus,
+    });
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    expect(applied.state.seatWait?.resetAt).toBe(resetAt);
+
+    const pending = resumeSeatWait({
+      ref: { projectDir, sessionId, bus },
+      state: applied.state,
+    });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(events.filter((event) => event.type === 'seat_wait_started')).toHaveLength(1);
+    expect(loadState({ projectDir, sessionId })?.seatWait?.resetAt).toBe(resetAt);
+
+    await vi.advanceTimersByTimeAsync(2 * 60 * 60 * 1000);
+    const resumed = await pending;
+    expect(resumed.seatWait).toBeUndefined();
+    expect(loadState({ projectDir, sessionId })?.seatWait).toBeUndefined();
   });
 });
 

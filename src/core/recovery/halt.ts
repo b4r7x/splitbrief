@@ -24,8 +24,9 @@ const NEEDS_YOU_ACTIONS = [
 ] as const satisfies readonly RecoveryAction[];
 
 const SEAT_DOWN_ACTIONS = [
-  'retry-same-worker',
   'switch-seat',
+  'retry-later',
+  'retry-same-worker',
   'skip-current-task',
   'end-run',
 ] as const satisfies readonly RecoveryAction[];

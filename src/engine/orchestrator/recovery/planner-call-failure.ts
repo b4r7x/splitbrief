@@ -4,21 +4,14 @@ import {
   runnerOwnWords,
   typedRunnerCallErrorMessage,
 } from '../../implementers/pipeline/call-result.js';
-import {
-  isAuthFailureDiagnostic,
-  isAuthFailureError,
-  runnerAuthDisplayName,
-  runnerLoginInstruction,
-} from '../../runners/auth-failure.js';
-import {
-  isUsageLimitDiagnostic,
-  parseUsageLimitReset,
-  usageLimitAdvice,
-  usageLimitDetailFromError,
-} from '../../runners/usage-limit.js';
+import { runnerAuthDisplayName, runnerLoginInstruction } from '../../runners/auth-failure.js';
+import { classifySeatFailure } from '../../runners/seat-failure.js';
+import type { SeatFailureClassification } from '../../runners/seat-failure.js';
+import { usageLimitAdvice } from '../../runners/usage-limit.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text.js';
 import { labelError } from '../../../utils/format-errors.js';
+import { isRecord } from '../../../utils/type-guards.js';
 import { nowIso } from '../../../utils/format-time.js';
 import {
   buildPlannerCallFailedRecoveryIssue,
@@ -26,6 +19,16 @@ import {
   type PlannerSeatFailure,
 } from './builders/planner.js';
 import { loadSeatSwapContext } from './seat-swap-context.js';
+
+/**
+ * What the classifier read from a seat-down failure: the classification and the
+ * tool's own words, which the one seat-down halt builder consumes.
+ */
+type PlannerSeatDownDiagnosis = Readonly<{
+  classification: SeatFailureClassification;
+  words: string;
+  requestId?: string | undefined;
+}>;
 
 /**
  * What a failed planner-tier call — a planning step, a brief's hint, the final review — says
@@ -41,6 +44,8 @@ export type PlannerCallDiagnosis = Readonly<{
   details: string[];
   /** When the quota comes back, when the tool's words named it. */
   resetsAt: Date | null;
+  /** Present when the failure is a seat-down cause: what the one halt builder consumes. */
+  seatDown?: PlannerSeatDownDiagnosis | undefined;
 }>;
 
 /** The tool's own words usually end their sentence already; a second full stop is noise. */
@@ -74,14 +79,23 @@ export function diagnosePlannerCallFailure(
     words === null ? message : `${input.label}: ${sanitizeTerminalDiagnosticText(words)}`;
   const tool = runnerAuthDisplayName(runner);
   const details = typed === null ? [] : [`${tool} reported: ${typed}`];
-  // A limit outranks the auth check: its message must never earn login
-  // advice, because logging in does not restore quota. API planners throw
-  // their provider errors, so the raw 429 detail is read from typed data.
-  const limitDetail =
-    usageLimitDetailFromError(err) ??
-    (isUsageLimitDiagnostic(typed ?? message) ? (typed ?? message) : null);
-  if (limitDetail !== null) {
-    const resetsAt = parseUsageLimitReset(limitDetail);
+  // The one classifier reads the tool's own words. A limit outranks the auth
+  // check: its message must never earn login advice, because logging in does
+  // not restore quota. API planners throw their provider errors, so the status
+  // is read from the typed data.
+  const data = isRecord(err) && isRecord(err.data) ? err.data : undefined;
+  const rawStatus = data?.status ?? data?.statusCode;
+  const status = typeof rawStatus === 'number' ? rawStatus : undefined;
+  const classification = classifySeatFailure({
+    message: words ?? typed ?? message,
+    ...(status !== undefined && { status }),
+    source: 'thrown',
+  });
+  if (
+    classification.class === 'rate-limited' ||
+    (classification.class === 'account' && classification.cause !== 'auth')
+  ) {
+    const resetsAt = classification.class === 'rate-limited' ? classification.resetAt : null;
     // The row spells the reset from `resetsAt`, so the tool's words that end the message drop theirs.
     const said = resetsAt === null ? advised : stripRecoveryResetClause(advised);
     return {
@@ -90,15 +104,17 @@ export function diagnosePlannerCallFailure(
       tool,
       details,
       resetsAt,
+      seatDown: { classification, words: typed ?? words ?? message },
     };
   }
-  if (isAuthFailureError(err) || isAuthFailureDiagnostic(typed ?? message)) {
+  if (classification.class === 'account') {
     return {
       failure: 'unauthenticated',
       message: `${endSentence(advised)} ${runnerLoginInstruction(runner)}`,
       tool,
       details,
       resetsAt: null,
+      seatDown: { classification, words: typed ?? words ?? message },
     };
   }
   return { failure: 'call-failed', message, tool, details, resetsAt: null };
@@ -109,7 +125,7 @@ export function diagnosePlannerCallFailure(
  * the tools the last readiness pass saw ready for the seat a swap moves.
  */
 export async function plannerCallHaltIssue(
-  input: Omit<PlannerCallFailureRecoveryOptions, 'id' | 'seatSwap' | 'createdAt'> &
+  input: Omit<PlannerCallFailureRecoveryOptions, 'id' | 'seatSwap' | 'createdAt' | 'runner'> &
     Readonly<{
       projectDir: string;
       /** The seat a swap moves, and the runner it runs now. */
@@ -120,6 +136,7 @@ export async function plannerCallHaltIssue(
   const seatSwap = await loadSeatSwapContext({ projectDir, ...swap });
   return buildPlannerCallFailedRecoveryIssue({
     ...halt,
+    runner: swap.runner,
     ...(seatSwap !== undefined && { seatSwap }),
     createdAt: nowIso(),
   });

@@ -703,13 +703,20 @@ describe('retryAndRecord — a planner out of quota on the consult', () => {
       files: ['src/alpha.ts'],
       affectedTaskIds: ['T001'],
       switchSeat: { seat: 'plan', candidates: [{ tool: 'claude-code' }] },
-      availableActions: ['retry-same-worker', 'switch-seat', 'skip-current-task', 'end-run'],
+      availableActions: [
+        'retry-same-worker',
+        'switch-seat',
+        'retry-later',
+        'skip-current-task',
+        'end-run',
+      ],
       recommendedAction: 'switch-seat',
       facts: { tool: 'OpenAI Codex CLI' },
     });
     expect(new Date(issue?.resetAt ?? '')).toEqual(new Date(2026, 9, 3, 13, 2));
     expect(issue?.details).toEqual([
       `OpenAI Codex CLI reported: ${CODEX_LIMIT}`,
+      'no fallback declared',
       'The planner could not answer the consult for T001.',
     ]);
     expect(issue?.message).toContain('hit its usage limit');
@@ -758,7 +765,7 @@ describe('retryAndRecord — a planner out of quota on the consult', () => {
       reason: 'runner-unauthenticated',
       seat: 'plan',
       taskId: 'T001',
-      recommendedAction: 'retry-same-worker',
+      recommendedAction: 'switch-seat',
     });
     expect(issue?.availableActions).toContain('skip-current-task');
     expect(issue?.message).toContain('`codex logout` then `codex login`');

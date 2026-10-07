@@ -43,7 +43,12 @@ export function redactRunnerCallEventInput(
         error: {
           code: redact(input.error.code),
           message: redact(input.error.message),
+          ...(input.error.status !== undefined && { status: input.error.status }),
+          ...(input.error.providerType !== undefined && {
+            providerType: redact(input.error.providerType),
+          }),
         },
+        ...(input.rawTail !== undefined && { rawTail: redact(input.rawTail) }),
         nativeSessionId: input.nativeSessionId === null ? null : redact(input.nativeSessionId),
       };
     case 'call_completed':

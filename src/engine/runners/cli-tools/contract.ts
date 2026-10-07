@@ -46,7 +46,12 @@ type CliProtocolTerminalEvent =
       text: string;
       usage: TokenDelta | null;
       nativeSessionId: string | null;
-      error: Readonly<{ code: string; message: string }>;
+      error: Readonly<{
+        code: string;
+        message: string;
+        status?: number | undefined;
+        providerType?: string | undefined;
+      }>;
       partial: boolean;
     }>;
 
@@ -78,6 +83,8 @@ export type CliProtocolEvent =
       /** Raw model ids a fallback or refusal frame names, for display-layer resolution. */
       originalModel?: string | undefined;
       fallbackModel?: string | undefined;
+      status?: number | undefined;
+      providerType?: string | undefined;
     }>
   /** A frame with nothing to show that still proves the tool is working. */
   | Readonly<{ type: 'heartbeat' }>

@@ -190,6 +190,13 @@ function spreadWatchdogs(watchdogs: ReturnType<typeof resolveWatchdogs>): Record
   };
 }
 
+/** The seat's declared fallback is its own choice, not the target's: every rebuild keeps it. */
+function spreadFallback(
+  existing: PlannerConfig | ImplementerConfig | undefined,
+): Record<string, unknown> {
+  return existing?.fallback === undefined ? {} : { fallback: existing.fallback };
+}
+
 function existingPlannerCapabilities(
   existing: PlannerConfig | ImplementerConfig | undefined,
 ): PlannerCapabilities | undefined {
@@ -303,6 +310,7 @@ function buildCliConfig(
     ...(outputFormat !== undefined && { outputFormat }),
     ...spreadWatchdogs(resolveWatchdogs(opts, target)),
     ...spreadGenParams(gen),
+    ...spreadFallback(opts.existing),
   };
 
   return parseRunnerConfig(role, config);
@@ -360,6 +368,7 @@ function buildApiConfig(
     apiBase,
     ...(apiKey !== undefined && { apiKey }),
     ...spreadGenParams(gen),
+    ...spreadFallback(opts.existing),
   };
 
   return parseRunnerConfig(role, config);
@@ -397,6 +406,7 @@ function buildCommandConfig(
     ...(capabilities !== undefined && { capabilities }),
     ...spreadWatchdogs(resolveWatchdogs(opts, target)),
     ...spreadGenParams(gen),
+    ...spreadFallback(opts.existing),
   };
 
   return parseRunnerConfig(role, config);

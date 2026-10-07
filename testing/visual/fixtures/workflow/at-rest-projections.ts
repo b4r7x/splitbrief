@@ -664,7 +664,7 @@ const AT_REST_HALTED = record({
           taskId: BRIEFS.wire.id,
           files: [],
           affectedTaskIds: [BRIEFS.wire.id],
-          // The halt `buildRunnerUsageLimitRecoveryIssue` writes: the tool by its display name.
+          // The halt `buildSeatDownIssue` writes: the tool by its display name.
           message: usageLimitAdvice({ tool: 'Ollama', seat: 'build' }),
           details: [
             'Ollama reported: usage limit reached',

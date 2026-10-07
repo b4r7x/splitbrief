@@ -1,6 +1,6 @@
 import type { CheckResult, Task, TaskId } from '../schemas/task.js';
 import type { QueuedMessage, WorkflowState, PlannerConversation } from '../schemas/workflow.js';
-import type { RecoveryAction, ReviewStatus } from '../schemas/enums.js';
+import type { RecoveryAction, RecoveryReason, ReviewStatus } from '../schemas/enums.js';
 import type { ConsultAnswer, ConsultReason } from '../schemas/consult.js';
 import type { CrewSeatId } from '../crew/identity.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
@@ -68,7 +68,7 @@ export type StateAction =
   | {
       type: 'INTERRUPT_STEP';
       step: StepRef;
-      source: 'user' | 'watchdog';
+      source: 'user' | 'watchdog' | 'seat';
       /** Where the stop landed: inside the call, or on a boundary — between two briefs, or at a gate. */
       cut: StepCut;
       partialRef?: { kind: 'session-log'; index: number };
@@ -77,7 +77,7 @@ export type StateAction =
   | {
       type: 'RESTORE_BRIEF_PARK';
       step: Extract<StepRef, { kind: 'brief' }>;
-      source: 'user' | 'watchdog';
+      source: 'user' | 'watchdog' | 'seat';
       at: string;
     }
   | { type: 'SET_PLANNER_CONVERSATION'; conversation: PlannerConversation }
@@ -122,7 +122,17 @@ export type StateAction =
   | { type: 'CLEAR_QUEUE' }
   | { type: 'SET_PENDING_RECOVERY'; issue: RecoveryIssue }
   | { type: 'MARK_RECOVERY_APPLYING'; action: RecoveryAction }
-  | { type: 'RESOLVE_PENDING_RECOVERY' };
+  | { type: 'RESOLVE_PENDING_RECOVERY' }
+  | { type: 'RESTART_ATTEMPT_ON_SEAT'; taskId: TaskId }
+  | {
+      type: 'RECORD_SEAT_SWITCH';
+      seat: CrewSeatId;
+      from: string;
+      to: string;
+      cause: RecoveryReason;
+      auto: boolean;
+      configRevision: string;
+    };
 
 export interface TokenBudget {
   system: number;

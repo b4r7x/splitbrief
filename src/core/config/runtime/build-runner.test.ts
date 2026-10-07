@@ -680,3 +680,32 @@ describe('inferKindFromTool', () => {
     ).toMatchObject({ kind: 'cli', tool: 'opencode' });
   });
 });
+
+describe('declared fallback', () => {
+  const existing = {
+    kind: 'cli' as const,
+    tool: 'codex' as const,
+    fallback: { tool: 'claude-code' as const },
+  };
+
+  it('keeps the fallback when the seat switches tool', () => {
+    const result = buildRunnerConfig('planner', {
+      kind: 'cli',
+      tool: 'opencode',
+      existing,
+    });
+
+    expect(expectCli(result).fallback).toEqual({ tool: 'claude-code' });
+  });
+
+  it('keeps the fallback across a kind change', () => {
+    const result = buildRunnerConfig('implementer', {
+      kind: 'api',
+      tool: 'ollama',
+      model: 'qwen2.5:7b',
+      existing,
+    });
+
+    expect(expectApi(result).fallback).toEqual({ tool: 'claude-code' });
+  });
+});

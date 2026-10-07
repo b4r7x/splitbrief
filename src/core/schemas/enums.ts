@@ -145,6 +145,7 @@ export const RECOVERY_ACTIONS = [
   'continue',
   'retry-same-worker',
   'switch-seat',
+  'retry-later',
   'revise',
   'accept-as-is',
   'restore-backup',

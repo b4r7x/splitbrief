@@ -41,6 +41,11 @@ describe('recovery halts', () => {
     expect(allowedActionsForHalt('needs-you')).not.toContain('switch-seat');
   });
 
+  it('offers a seat down halt a wait for the reset, and no other halt one', () => {
+    expect(allowedActionsForHalt('seat-down')).toContain('retry-later');
+    expect(allowedActionsForHalt('needs-you')).not.toContain('retry-later');
+  });
+
   it('tells a retired cause from a live one', () => {
     expect(isRetiredRecoveryReason('user-edit-conflict')).toBe(true);
     expect(isRetiredRecoveryReason('retry-exhausted')).toBe(false);

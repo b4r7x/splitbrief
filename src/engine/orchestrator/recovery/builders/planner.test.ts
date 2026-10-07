@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 import { RecoveryIssueSchema } from '../../../../core/schemas/recovery/schemas.js';
 import type { SeatSwapContext } from './task.js';
 import {
@@ -8,6 +9,7 @@ import {
 } from './planner.js';
 
 const createdAt = '2026-04-28T12:00:00.000Z';
+const plannerRunner = makeConfig({ planner: { kind: 'cli', tool: 'codex' } }).planner;
 
 function expectValidRecoveryIssue(issue: unknown): void {
   const result = RecoveryIssueSchema.safeParse(issue);
@@ -29,6 +31,7 @@ describe('buildPlannerCallFailedRecoveryIssue', () => {
     const issue = buildPlannerCallFailedRecoveryIssue({
       diagnosis: { failure: 'call-failed', message: 'Planning failed.' },
       phase: 'planning',
+      runner: plannerRunner,
       createdAt,
     });
 
@@ -44,6 +47,7 @@ describe('buildPlannerCallFailedRecoveryIssue', () => {
     const issue = buildPlannerCallFailedRecoveryIssue({
       diagnosis: { failure: 'call-failed', message: 'Planning failed.' },
       phase: 'planning',
+      runner: plannerRunner,
       seatSwap: plannerSeatSwap,
       createdAt,
     });
@@ -57,31 +61,49 @@ describe('buildPlannerCallFailedRecoveryIssue', () => {
     expectValidRecoveryIssue(issue);
   });
 
-  it('recommends the seat swap for a quota halt and the re-issue for a sign-out', () => {
+  it('builds the one seat-down halt for a quota halt and a sign-out', () => {
     const limit = buildPlannerCallFailedRecoveryIssue({
       diagnosis: {
         failure: 'usage-limit',
-        message: 'Codex hit its usage limit.',
-        tool: 'Codex',
+        message: 'OpenAI Codex CLI hit its usage limit.',
+        tool: 'OpenAI Codex CLI',
         resetsAt: new Date('2026-08-08T15:27:00.000Z'),
+        seatDown: {
+          classification: { class: 'rate-limited', resetAt: new Date('2026-08-08T15:27:00.000Z') },
+          words: "You've hit your usage limit.",
+        },
       },
       phase: 'planning',
+      runner: plannerRunner,
       seatSwap: plannerSeatSwap,
       createdAt,
     });
     const signedOut = buildPlannerCallFailedRecoveryIssue({
-      diagnosis: { failure: 'unauthenticated', message: 'Codex is signed out.' },
+      diagnosis: {
+        failure: 'unauthenticated',
+        message: 'OpenAI Codex CLI is signed out.',
+        tool: 'OpenAI Codex CLI',
+        seatDown: { classification: { class: 'account', cause: 'auth' }, words: 'HTTP 403' },
+      },
       phase: 'planning',
+      runner: plannerRunner,
       seatSwap: plannerSeatSwap,
       createdAt,
     });
 
     expect(limit.reason).toBe('runner-usage-limit');
     expect(limit.resetAt).toBe('2026-08-08T15:27:00.000Z');
-    expect(limit.facts?.tool).toBe('Codex');
+    expect(limit.facts?.tool).toBe('OpenAI Codex CLI');
+    expect(limit.facts?.cause).toBe('rate-limit');
     expect(limit.recommendedAction).toBe('switch-seat');
+    expect(limit.availableActions).toEqual([
+      'retry-same-worker',
+      'switch-seat',
+      'retry-later',
+      'end-run',
+    ]);
     expect(signedOut.reason).toBe('runner-unauthenticated');
-    expect(signedOut.recommendedAction).toBe('retry-same-worker');
+    expect(signedOut.recommendedAction).toBe('switch-seat');
     expectValidRecoveryIssue(limit);
     expectValidRecoveryIssue(signedOut);
   });
@@ -92,6 +114,7 @@ describe('buildPlannerCallFailedRecoveryIssue', () => {
       diagnosis: { failure: 'usage-limit', message: 'Codex hit its usage limit.' },
       task,
       phase: 'escalating',
+      runner: plannerRunner,
       seatSwap: plannerSeatSwap,
       createdAt,
     });
@@ -99,6 +122,7 @@ describe('buildPlannerCallFailedRecoveryIssue', () => {
       diagnosis: { failure: 'usage-limit', message: 'Codex hit its usage limit.' },
       seat: 'review',
       phase: 'final-review',
+      runner: plannerRunner,
       seatSwap: plannerSeatSwap,
       createdAt,
     });

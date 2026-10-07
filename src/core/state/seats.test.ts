@@ -170,3 +170,30 @@ describe('reconcileSeatIdentities', () => {
     });
   });
 });
+
+describe('seat identities ignore the declared fallback', () => {
+  it('reads a fallback-only edit as no seat change', () => {
+    const before = seatIdentitiesFromConfig(
+      makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code', fallback: { tool: 'codex' } },
+      }),
+    );
+    const after = seatIdentitiesFromConfig(
+      makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code', fallback: { tool: 'opencode' } },
+      }),
+    );
+
+    expect(after).toEqual(before);
+  });
+
+  it('keeps the fallback out of the recorded ids', () => {
+    const identities = seatIdentitiesFromConfig(
+      makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code', fallback: { tool: 'codex' } },
+      }),
+    );
+
+    expect(identities.ids?.plan).not.toHaveProperty('fallback');
+  });
+});

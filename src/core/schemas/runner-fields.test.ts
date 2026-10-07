@@ -762,3 +762,67 @@ describe('createRunnerConfigSchema', () => {
     ).toBe(false);
   });
 });
+
+describe('seat fallback', () => {
+  const seatSchemas = [
+    createRunnerConfigSchema(GenerationCommonFields),
+    createPlannerConfigSchema(GenerationCommonFields),
+    createPlannerConfigSchema(GenerationCommonFields, 'reviewer'),
+  ] as const;
+
+  it('parses a declared fallback on every seat block', () => {
+    const blocks = [
+      { kind: 'cli' as const, tool: 'codex' as const },
+      { kind: 'shell' as const, command: './run', model: 'local-shell' },
+      { kind: 'agent' as const, command: 'my-agent', model: 'local-agent' },
+    ] as const;
+
+    for (const schema of seatSchemas) {
+      for (const block of blocks) {
+        const result = schema.safeParse({ ...block, fallback: { tool: 'claude-code' } });
+        expect(result.success).toBe(true);
+        expect(result.data?.fallback).toEqual({ tool: 'claude-code' });
+      }
+    }
+  });
+
+  it('rejects a fallback tool the seat cannot host, under the fallback path', () => {
+    const result = createRunnerConfigSchema(GenerationCommonFields).safeParse({
+      kind: 'cli',
+      tool: 'codex',
+      fallback: { tool: 'aider' },
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues).toContainEqual(
+      expect.objectContaining({
+        path: ['fallback', 'tool'],
+        message: expect.stringContaining('fallback'),
+      }),
+    );
+  });
+
+  it('rejects effort on a fallback whose tool takes its effort as a variant', () => {
+    const schema = createRunnerConfigSchema(GenerationCommonFields);
+
+    const rejected = schema.safeParse({
+      kind: 'cli',
+      tool: 'codex',
+      fallback: { tool: 'opencode', model: 'openai/gpt-5.6', effort: 'high' },
+    });
+    expect(rejected.success).toBe(false);
+    expect(rejected.error?.issues).toContainEqual(
+      expect.objectContaining({
+        path: ['fallback', 'effort'],
+        message: expect.stringContaining('variant'),
+      }),
+    );
+
+    const accepted = schema.safeParse({
+      kind: 'cli',
+      tool: 'codex',
+      fallback: { tool: 'opencode', model: 'openai/gpt-5.6', variant: 'xhigh' },
+    });
+    expect(accepted.success).toBe(true);
+  });
+});
