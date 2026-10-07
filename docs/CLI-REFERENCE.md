@@ -322,7 +322,7 @@ splitbrief doctor [--project <dir>] [--json] [--probe-validation] [--probe-seat 
 | `--project <dir>` | path | cwd | Project directory. |
 | `--json` | boolean | `false` | Emit one stable JSON readiness object to stdout for automation (`doctor --json`). |
 | `--probe-validation` | boolean | `false` | Run the configured validation commands against the working tree and report a `validation.already-failing` warning naming every stage that is already red before any task. It runs real commands (`validation.timeoutMs` per stage) and can take minutes. The resolved commands are listed in the check details, and the check notes that during a run SPLITBRIEF may resolve different commands from planner discovery. |
-| `--probe-seat <seat>` | string | — | Make one paid call through the `plan`, `build` or `review` seat's CLI adapter, classify its output, and print `Seat probe <seat>: <class>`. CLI seats only: an `api`, `shell` or `agent` seat exits `1`. Runs only the probe: the readiness report and the preparation preflights do not run. The record is appended to `.splitbrief/probes/<tool>-<date>.jsonl`. |
+| `--probe-seat <seat>` | string | — | Make one paid call through the `plan`, `build` or `review` seat's CLI adapter, read its terminal result, and print `Seat probe <seat>: <class>`: `passed` for a completed call, else the failure class. CLI seats only: an `api`, `shell` or `agent` seat exits `1`. Runs only the probe: the readiness report and the preparation preflights do not run. The record is appended to `.splitbrief/probes/<tool>-<date>.jsonl`. |
 
 ### Examples
 

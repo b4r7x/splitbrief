@@ -43,6 +43,7 @@ import type {
   CliImplementerAdapter,
   CliInvocation,
   CliPlannerAdapter,
+  CliProtocolEvent,
 } from '../../engine/runners/cli-tools/contract.js';
 import { preparePrompt } from '../../engine/runners/cli-tools/prompt-transport.js';
 import {
@@ -80,6 +81,7 @@ export type SeatProbeCapture = Readonly<{
   stdout: string;
   stderr: string;
   exitStatus: number | null;
+  signal: string | null;
   timedOut: boolean;
   outputExceeded: boolean;
 }>;
@@ -91,10 +93,12 @@ export type SeatProbeCall = (
 export type SeatProbeResult = Readonly<{
   seat: SeatProbeSeat;
   tool: string;
-  class: SeatFailureClassification['class'];
+  class: SeatFailureClassification['class'] | 'passed';
   firstErrorLine: string | null;
   recordPath: string;
 }>;
+
+type CliTerminalEvent = Extract<CliProtocolEvent, { type: 'result' }>;
 
 const SEAT_PROBE_PROMPT = 'Reply with the word ok.';
 const SEAT_PROBE_TIMEOUT_MS = 60_000;
@@ -132,14 +136,29 @@ export async function runSeatProbe(
   input: Readonly<{ projectDir: string; seat: SeatProbeSeat; call: SeatProbeCall }>,
 ): Promise<SeatProbeResult> {
   const capture = await input.call({ projectDir: input.projectDir, seat: input.seat });
-  const classification = classifySeatFailure({
-    message: [capture.stderr, capture.stdout].filter((part) => part.trim().length > 0).join('\n'),
-    ...(capture.exitStatus !== null && capture.exitStatus !== 0
-      ? { outcome: 'non-zero-exit' as const }
-      : {}),
-    source: 'thrown',
-  });
-  const firstErrorLine = firstNonEmptyLine(capture.stderr) ?? firstNonEmptyLine(capture.stdout);
+  const terminal = seatProbeTerminal(capture);
+  const passed = terminal?.status === 'completed' && capture.exitStatus === 0;
+  // A terminal result speaks for the call: its stream frames list tool names such as
+  // `browser_get_network_request` that read as a network fault.
+  const error = terminal?.error ?? null;
+  const diagnostics = (
+    terminal === null ? [capture.stderr, capture.stdout] : [error?.message ?? '', capture.stderr]
+  )
+    .filter((part) => part.trim().length > 0)
+    .join('\n');
+  const verdict = passed
+    ? 'passed'
+    : classifySeatFailure({
+        message: diagnostics,
+        ...(error !== null && { code: error.code }),
+        ...(error?.status !== undefined && { status: error.status }),
+        ...(error?.providerType !== undefined && { providerType: error.providerType }),
+        ...(capture.exitStatus !== null && capture.exitStatus !== 0
+          ? { outcome: 'non-zero-exit' as const }
+          : {}),
+        source: error === null ? 'thrown' : 'result-error',
+      }).class;
+  const firstErrorLine = passed ? null : firstNonEmptyLine(diagnostics);
   const recordPath = getSplitbriefPath(
     input.projectDir,
     SEAT_PROBE_RECORDS_DIR,
@@ -149,7 +168,7 @@ export async function runSeatProbe(
     ts: new Date().toISOString(),
     seat: input.seat,
     tool: capture.tool,
-    class: classification.class,
+    class: verdict,
     exitStatus: capture.exitStatus,
     timedOut: capture.timedOut,
     outputExceeded: capture.outputExceeded,
@@ -159,10 +178,34 @@ export async function runSeatProbe(
   return {
     seat: input.seat,
     tool: capture.tool,
-    class: classification.class,
+    class: verdict,
     firstErrorLine,
     recordPath,
   };
+}
+
+function seatProbeAdapter(
+  tool: string,
+  seat: SeatProbeSeat,
+): CliPlannerAdapter | CliImplementerAdapter {
+  return seat === 'build' ? lookupCliImplementerAdapter(tool) : lookupCliPlannerAdapter(tool);
+}
+
+/** The call's terminal result as the seat adapter reads it in a run; null when the stream has none. */
+function seatProbeTerminal(capture: SeatProbeCapture): CliTerminalEvent | null {
+  const adapter = seatProbeAdapter(capture.tool, capture.seat);
+  const parse = adapter.createParser?.() ?? adapter.parse;
+  try {
+    return adapter.terminal({
+      outputContract: adapter.outputContract,
+      events: capture.stdout.split('\n').flatMap((line) => [...parse(line)]),
+      stderr: capture.stderr,
+      exitCode: capture.exitStatus,
+      signal: capture.signal,
+    });
+  } catch {
+    return null;
+  }
 }
 
 function seatProbeRunner(config: Config, seat: SeatProbeSeat): RunnerConfig {
@@ -188,10 +231,7 @@ async function defaultSeatProbeCall(
     );
   }
   const role: RunnerRole = input.seat === 'build' ? 'implementer' : 'planner';
-  const adapter =
-    role === 'implementer'
-      ? lookupCliImplementerAdapter(runner.tool)
-      : lookupCliPlannerAdapter(runner.tool);
+  const adapter = seatProbeAdapter(runner.tool, input.seat);
   const workspace = await createProject(undefined);
   const workspaceDir = await realpath(workspace.path);
   try {
@@ -231,6 +271,7 @@ async function defaultSeatProbeCall(
         stdout: redact(result.stdout),
         stderr: redact(result.stderr),
         exitStatus: result.exitCode,
+        signal: result.signal,
         timedOut: result.timedOut,
         outputExceeded: result.outputExceeded,
       };

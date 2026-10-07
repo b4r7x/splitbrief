@@ -1084,6 +1084,7 @@ describe('doctor --probe-seat', () => {
         stdout: '',
         stderr: 'Insufficient balance: the account has no credits.\n',
         exitStatus: 1,
+        signal: null,
         timedOut: false,
         outputExceeded: false,
       };
@@ -1121,6 +1122,80 @@ describe('doctor --probe-seat', () => {
       exitStatus: 1,
     });
     expect(record.stderr).toContain('Insufficient balance');
+  });
+
+  it('passes a call whose stream ends in a completed result', async () => {
+    initGitRepo(tmp);
+    writeConfig(tmp);
+    const logged = captureLogged();
+    const stdout = readFileSync(
+      join(import.meta.dirname, '../../../testing/fixtures/antigravity/stream-json-1.3.1.ndjson'),
+      'utf8',
+    );
+    const probeSeatCall: SeatProbeCall = async (input) => ({
+      seat: input.seat,
+      tool: 'antigravity',
+      stdout,
+      stderr: '',
+      exitStatus: 0,
+      signal: null,
+      timedOut: false,
+      outputExceeded: false,
+    });
+
+    await runDoctor(
+      ['--project', tmp, '--probe-seat', 'build'],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      probeSeatCall,
+    );
+
+    expect(logged).toEqual(['Seat probe build: passed']);
+    const probesDir = join(tmp, SPLITBRIEF_DIR, 'probes');
+    const record = JSON.parse(
+      readFileSync(join(probesDir, readdirSync(probesDir)[0] ?? ''), 'utf8'),
+    ) as { class: string };
+    expect(record.class).toBe('passed');
+  });
+
+  it('classifies a failed result by its own error, not by the stream frames', async () => {
+    initGitRepo(tmp);
+    writeConfig(tmp);
+    const logged = captureLogged();
+    const stdout = [
+      JSON.stringify({
+        event: 'init',
+        conversation_id: 'c1',
+        init: { tools: ['browser_get_network_request'] },
+      }),
+      JSON.stringify({
+        event: 'result',
+        result: { conversation_id: 'c1', status: 'ERROR', error: 'Model refused the request' },
+      }),
+    ].join('\n');
+    const probeSeatCall: SeatProbeCall = async (input) => ({
+      seat: input.seat,
+      tool: 'antigravity',
+      stdout,
+      stderr: '',
+      exitStatus: 0,
+      signal: null,
+      timedOut: false,
+      outputExceeded: false,
+    });
+
+    await runDoctor(
+      ['--project', tmp, '--probe-seat', 'build'],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      probeSeatCall,
+    );
+
+    expect(logged).toEqual(['Seat probe build: other', 'First error: Model refused the request']);
   });
 
   it('makes no seat call without the flag', async () => {

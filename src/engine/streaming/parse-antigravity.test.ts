@@ -90,6 +90,27 @@ describe('parseAntigravityLine', () => {
     expect(events.at(-1)).toBe(terminal);
   });
 
+  it('reads the agy 1.3.1 stream: session, text delta, usage and a completed result', () => {
+    expect(fixtureEvents('stream-json-1.3.1.ndjson')).toEqual([
+      { type: 'session', nativeSessionId: 'df8f4fa7-413a-4ccd-b70f-908f44494fa6' },
+      { type: 'text', channel: 'assistant', text: 'ok\n' },
+      {
+        type: 'usage',
+        semantics: 'delta',
+        usage: { inputTokens: 13888, outputTokens: 1, reasoningTokens: 84, cacheReadTokens: 0 },
+      },
+      {
+        type: 'result',
+        status: 'completed',
+        text: 'ok\n',
+        usage: { inputTokens: 13888, outputTokens: 1, reasoningTokens: 84, cacheReadTokens: 0 },
+        nativeSessionId: 'df8f4fa7-413a-4ccd-b70f-908f44494fa6',
+        error: null,
+        partial: false,
+      },
+    ]);
+  });
+
   it('books each response step as a usage delta whose sum is the result total', () => {
     const events = fixtureEvents('stream-json.ndjson');
     const deltas = usages(events);
